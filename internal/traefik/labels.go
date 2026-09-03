@@ -11,10 +11,10 @@ func Labels(appName, domain string, port int) map[string]string {
 	router := "cubeship-" + appName
 	return map[string]string{
 		"traefik.enable": "true",
-		"traefik.http.routers." + router + ".rule":            fmt.Sprintf("Host(`%s`)", domain),
-		"traefik.http.routers." + router + ".entrypoints":      "websecure",
-		"traefik.http.routers." + router + ".tls.certresolver": "letsencrypt",
+		"traefik.http.routers." + router + ".rule":                      fmt.Sprintf("Host(`%s`)", domain),
+		"traefik.http.routers." + router + ".entrypoints":               "websecure",
+		"traefik.http.routers." + router + ".tls.certresolver":          "letsencrypt",
 		"traefik.http.services." + router + ".loadbalancer.server.port": strconv.Itoa(port),
-		"traefik.docker.network": "cubeship",
+		"traefik.docker.network":                                        "cubeship",
 	}
 }
