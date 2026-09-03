@@ -3188,6 +3188,13 @@ git commit -m "Extend dockerx for ports, binds, and networks"
     fails (most likely: the name is already in use from a previous run)
     it logs and returns nil rather than erroring, since "already
     running" is the desired end state either way.
+  - `bootstrap.APIRouterConfigYAML(cfg *config.Config, daemonPort int) string`
+    and `bootstrap.WriteAPIRouterConfig(cfg *config.Config, daemonPort int) error`
+    — the daemon is a host process, not a container, so Traefik's Docker
+    provider can't discover it; these give Traefik a file-provider
+    route to it instead. This is what makes the spec's "daemon API
+    reached over HTTPS through Traefik" (Global Constraints) real
+    rather than aspirational — see Task 16 for where it's called.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -3198,6 +3205,8 @@ package bootstrap
 import (
 	"context"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 
 	"cubeship/internal/config"
@@ -3246,8 +3255,8 @@ func TestTraefikContainerOptsUsesHostNetwork(t *testing.T) {
 	if !opts.HostNetwork {
 		t.Fatal("expected Traefik to run with host networking")
 	}
-	if len(opts.Binds) != 2 {
-		t.Fatalf("expected docker socket + acme storage binds, got %v", opts.Binds)
+	if len(opts.Binds) != 3 {
+		t.Fatalf("expected docker socket + acme storage + dynamic config binds, got %v", opts.Binds)
 	}
 	hasEmailFlag := false
 	for _, c := range opts.Cmd {
@@ -3257,6 +3266,46 @@ func TestTraefikContainerOptsUsesHostNetwork(t *testing.T) {
 	}
 	if !hasEmailFlag {
 		t.Fatalf("expected the ACME email flag, got %v", opts.Cmd)
+	}
+	hasFileProvider := false
+	for _, c := range opts.Cmd {
+		if c == "--providers.file.directory=/etc/traefik/dynamic" {
+			hasFileProvider = true
+		}
+	}
+	if !hasFileProvider {
+		t.Fatalf("expected the file provider flag, got %v", opts.Cmd)
+	}
+}
+
+func TestAPIRouterConfigYAMLRoutesToDaemonPort(t *testing.T) {
+	yaml := APIRouterConfigYAML(testConfig(), 9000)
+
+	if !strings.Contains(yaml, "Host(`api.example.com`)") {
+		t.Fatalf("expected the API host rule, got:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, "http://127.0.0.1:9000") {
+		t.Fatalf("expected the daemon's loopback address, got:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, "certResolver: letsencrypt") {
+		t.Fatalf("expected the letsencrypt cert resolver, got:\n%s", yaml)
+	}
+}
+
+func TestWriteAPIRouterConfigWritesFile(t *testing.T) {
+	cfg := testConfig()
+	cfg.DataDir = t.TempDir()
+
+	if err := WriteAPIRouterConfig(cfg, 9000); err != nil {
+		t.Fatalf("WriteAPIRouterConfig: %v", err)
+	}
+
+	data, err := os.ReadFile(cfg.DataDir + "/traefik-dynamic/api.yml")
+	if err != nil {
+		t.Fatalf("expected the config file to exist: %v", err)
+	}
+	if !strings.Contains(string(data), "api.example.com") {
+		t.Fatalf("unexpected file content: %s", data)
 	}
 }
 
@@ -3324,6 +3373,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 
 	"cubeship/internal/config"
 	"cubeship/internal/dockerx"
@@ -3362,6 +3412,8 @@ func TraefikContainerOpts(cfg *config.Config, acmeEmail string) dockerx.Containe
 		Cmd: []string{
 			"--providers.docker=true",
 			"--providers.docker.exposedbydefault=false",
+			"--providers.file.directory=/etc/traefik/dynamic",
+			"--providers.file.watch=true",
 			"--entrypoints.web.address=:80",
 			"--entrypoints.websecure.address=:443",
 			"--certificatesresolvers.letsencrypt.acme.tlschallenge=true",
@@ -3372,9 +3424,50 @@ func TraefikContainerOpts(cfg *config.Config, acmeEmail string) dockerx.Containe
 		Binds: []string{
 			"/var/run/docker.sock:/var/run/docker.sock:ro",
 			cfg.DataDir + "/letsencrypt:/letsencrypt",
+			cfg.DataDir + "/traefik-dynamic:/etc/traefik/dynamic",
 		},
 		HostNetwork: true,
 	}
+}
+
+// APIRouterConfigYAML returns a Traefik file-provider dynamic
+// configuration that routes cfg.APIHost to the daemon's own HTTP API.
+// The daemon is a host process (not a container), so it can't be
+// discovered via the Docker provider like app containers and the
+// registry are — Traefik reaches it over the host-network loopback
+// instead. This is what makes the daemon API reachable over HTTPS
+// through Traefik, per the spec's architecture and global constraints.
+func APIRouterConfigYAML(cfg *config.Config, daemonPort int) string {
+	return fmt.Sprintf(`http:
+  routers:
+    cubeship-api:
+      rule: "Host(`+"`%s`"+`)"
+      entrypoints:
+        - websecure
+      tls:
+        certResolver: letsencrypt
+      service: cubeship-api
+  services:
+    cubeship-api:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:%d"
+`, cfg.APIHost, daemonPort)
+}
+
+// WriteAPIRouterConfig writes APIRouterConfigYAML to the path Traefik's
+// file provider watches (see the Binds entry above). Call it before
+// starting Traefik, and again any time cfg changes.
+func WriteAPIRouterConfig(cfg *config.Config, daemonPort int) error {
+	dir := cfg.DataDir + "/traefik-dynamic"
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return fmt.Errorf("create traefik dynamic config dir: %w", err)
+	}
+	path := dir + "/api.yml"
+	if err := os.WriteFile(path, []byte(APIRouterConfigYAML(cfg, daemonPort)), 0o600); err != nil {
+		return fmt.Errorf("write traefik dynamic config: %w", err)
+	}
+	return nil
 }
 
 // dockerAPI is the subset of dockerx.Client this package needs.
@@ -3454,6 +3547,7 @@ import (
 )
 
 const version = "0.1.0-dev"
+const daemonPort = 9000
 const listenAddr = ":9000"
 
 func main() {
@@ -3501,6 +3595,9 @@ func run() error {
 	notifyURL := "http://127.0.0.1" + listenAddr + "/hooks/registry"
 	if err := bootstrap.Ensure(ctx, docker, bootstrap.RegistryContainerOpts(cfg, notifyURL)); err != nil {
 		return fmt.Errorf("bootstrap registry: %w", err)
+	}
+	if err := bootstrap.WriteAPIRouterConfig(cfg, daemonPort); err != nil {
+		return fmt.Errorf("write traefik API router config: %w", err)
 	}
 	if err := bootstrap.Ensure(ctx, docker, bootstrap.TraefikContainerOpts(cfg, cfg.AcmeEmail)); err != nil {
 		return fmt.Errorf("bootstrap traefik: %w", err)
