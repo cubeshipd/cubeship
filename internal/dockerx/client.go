@@ -29,6 +29,11 @@ type apiClient interface {
 	ContainerRemove(ctx context.Context, containerID string, options container.RemoveOptions) error
 	ContainerInspect(ctx context.Context, containerID string) (types.ContainerJSON, error)
 	ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
+	// NOTE: NetworkCreate's option/response types are types.NetworkCreate /
+	// types.NetworkCreateResponse in this installed SDK version (v25.0.6),
+	// not network.CreateOptions / network.CreateResponse from a later SDK
+	// version's api/types/network package — see the note above.
+	NetworkCreate(ctx context.Context, name string, options types.NetworkCreate) (types.NetworkCreateResponse, error)
 }
 
 type Client struct {

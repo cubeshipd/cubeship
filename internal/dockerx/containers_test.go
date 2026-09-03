@@ -14,14 +14,16 @@ import (
 )
 
 type fakeAPI struct {
-	pulledRef        string
-	createdConfig    *container.Config
-	createdName      string
-	startedID        string
-	stoppedID        string
-	removedID        string
-	inspectedRunning bool
-	inspectErr       error
+	pulledRef               string
+	createdConfig           *container.Config
+	createdHostConfig       *container.HostConfig
+	createdNetworkingConfig *network.NetworkingConfig
+	createdName             string
+	startedID               string
+	stoppedID               string
+	removedID               string
+	inspectedRunning        bool
+	inspectErr              error
 }
 
 func (f *fakeAPI) ImagePull(ctx context.Context, ref string, options types.ImagePullOptions) (io.ReadCloser, error) {
@@ -31,8 +33,14 @@ func (f *fakeAPI) ImagePull(ctx context.Context, ref string, options types.Image
 
 func (f *fakeAPI) ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
 	f.createdConfig = config
+	f.createdHostConfig = hostConfig
+	f.createdNetworkingConfig = networkingConfig
 	f.createdName = containerName
 	return container.CreateResponse{ID: "new-container-id"}, nil
+}
+
+func (f *fakeAPI) NetworkCreate(ctx context.Context, name string, options types.NetworkCreate) (types.NetworkCreateResponse, error) {
+	return types.NetworkCreateResponse{ID: "net-1"}, nil
 }
 
 func (f *fakeAPI) ContainerStart(ctx context.Context, id string, options container.StartOptions) error {
@@ -153,5 +161,66 @@ func TestStopAndRemoveForwardID(t *testing.T) {
 	}
 	if fake.removedID != "id-2" {
 		t.Fatalf("expected remove to forward id-2, got %q", fake.removedID)
+	}
+}
+
+func TestCreateContainerForwardsPortsBindsCmdAndNetwork(t *testing.T) {
+	fake := &fakeAPI{}
+	c := newWithAPI(fake)
+
+	_, err := c.CreateContainer(context.Background(), ContainerOpts{
+		Name:    "cubeship-traefik",
+		Image:   "traefik:v3.1",
+		Cmd:     []string{"--api.dashboard=false"},
+		Binds:   []string{"/var/run/docker.sock:/var/run/docker.sock:ro"},
+		Ports:   []string{"80:80", "443:443"},
+		Network: "cubeship",
+	})
+	if err != nil {
+		t.Fatalf("CreateContainer: %v", err)
+	}
+	if len(fake.createdConfig.Cmd) != 1 || fake.createdConfig.Cmd[0] != "--api.dashboard=false" {
+		t.Fatalf("expected Cmd to be forwarded, got %v", fake.createdConfig.Cmd)
+	}
+	if len(fake.createdConfig.ExposedPorts) != 2 {
+		t.Fatalf("expected 2 exposed ports, got %v", fake.createdConfig.ExposedPorts)
+	}
+	if len(fake.createdHostConfig.Binds) != 1 {
+		t.Fatalf("expected 1 bind, got %v", fake.createdHostConfig.Binds)
+	}
+	if len(fake.createdHostConfig.PortBindings) != 2 {
+		t.Fatalf("expected 2 port bindings, got %v", fake.createdHostConfig.PortBindings)
+	}
+	if fake.createdNetworkingConfig == nil || fake.createdNetworkingConfig.EndpointsConfig["cubeship"] == nil {
+		t.Fatalf("expected the container to be attached to the cubeship network")
+	}
+}
+
+func TestCreateContainerHostNetworkSkipsPortsAndNetwork(t *testing.T) {
+	fake := &fakeAPI{}
+	c := newWithAPI(fake)
+
+	_, err := c.CreateContainer(context.Background(), ContainerOpts{
+		Name:        "cubeship-traefik",
+		Image:       "traefik:v3.1",
+		HostNetwork: true,
+	})
+	if err != nil {
+		t.Fatalf("CreateContainer: %v", err)
+	}
+	if fake.createdHostConfig.NetworkMode != "host" {
+		t.Fatalf("expected host network mode, got %q", fake.createdHostConfig.NetworkMode)
+	}
+	if fake.createdNetworkingConfig != nil {
+		t.Fatalf("expected no networking config in host mode, got %v", fake.createdNetworkingConfig)
+	}
+}
+
+func TestEnsureNetworkIgnoresErrors(t *testing.T) {
+	fake := &fakeAPI{}
+	c := newWithAPI(fake)
+
+	if err := c.EnsureNetwork(context.Background(), "cubeship"); err != nil {
+		t.Fatalf("EnsureNetwork: %v", err)
 	}
 }
