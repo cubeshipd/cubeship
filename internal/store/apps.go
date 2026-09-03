@@ -1,0 +1,85 @@
+package store
+
+import (
+	"context"
+	"fmt"
+	"time"
+)
+
+type App struct {
+	ID          int64
+	Name        string
+	Domain      string
+	Image       string
+	ContainerID string
+	Status      string
+	CreatedAt   time.Time
+}
+
+func (s *Store) CreateApp(ctx context.Context, name, domain, image string) (*App, error) {
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO apps (name, domain, image) VALUES (?, ?, ?)`,
+		name, domain, image); err != nil {
+		return nil, fmt.Errorf("create app: %w", err)
+	}
+	return s.GetAppByName(ctx, name)
+}
+
+func (s *Store) scanApp(row interface {
+	Scan(dest ...any) error
+}) (*App, error) {
+	var a App
+	if err := row.Scan(&a.ID, &a.Name, &a.Domain, &a.Image, &a.ContainerID, &a.Status, &a.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &a, nil
+}
+
+func (s *Store) GetAppByName(ctx context.Context, name string) (*App, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, name, domain, image, container_id, status, created_at FROM apps WHERE name = ?`, name)
+	a, err := s.scanApp(row)
+	if err != nil {
+		return nil, fmt.Errorf("get app %q: %w", name, err)
+	}
+	return a, nil
+}
+
+func (s *Store) GetAppByImage(ctx context.Context, image string) (*App, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT id, name, domain, image, container_id, status, created_at FROM apps WHERE image = ?`, image)
+	a, err := s.scanApp(row)
+	if err != nil {
+		return nil, fmt.Errorf("get app by image %q: %w", image, err)
+	}
+	return a, nil
+}
+
+func (s *Store) ListApps(ctx context.Context) ([]*App, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, name, domain, image, container_id, status, created_at FROM apps ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var apps []*App
+	for rows.Next() {
+		a, err := s.scanApp(rows)
+		if err != nil {
+			return nil, err
+		}
+		apps = append(apps, a)
+	}
+	return apps, rows.Err()
+}
+
+func (s *Store) UpdateAppContainer(ctx context.Context, appID int64, containerID, status string) error {
+	_, err := s.db.ExecContext(ctx,
+		`UPDATE apps SET container_id = ?, status = ? WHERE id = ?`,
+		containerID, status, appID)
+	if err != nil {
+		return fmt.Errorf("update app container: %w", err)
+	}
+	return nil
+}
