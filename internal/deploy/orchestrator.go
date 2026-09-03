@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"cubeship/internal/dockerx"
@@ -67,6 +68,7 @@ func (o *Orchestrator) Deploy(ctx context.Context, appName, imageRef string) err
 		Name:   newName,
 		Image:  imageRef,
 		Labels: labels,
+		Env:    envSlice(app.Env),
 	})
 	if err != nil {
 		o.store.RecordDeployment(ctx, app.ID, imageRef, "failed", err.Error())
@@ -110,4 +112,17 @@ func (o *Orchestrator) waitHealthy(ctx context.Context, containerID string) bool
 		}
 	}
 	return false
+}
+
+func envSlice(env map[string]string) []string {
+	keys := make([]string, 0, len(env))
+	for k := range env {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]string, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, k+"="+env[k])
+	}
+	return out
 }

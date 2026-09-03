@@ -161,6 +161,29 @@ func TestDeployHealthCheckFailureLeavesOldContainerRunning(t *testing.T) {
 	}
 }
 
+func TestDeployForwardsAppEnv(t *testing.T) {
+	ctx := context.Background()
+	docker := &fakeDocker{nextCreateID: "container-1", running: true}
+	o, s := newTestOrchestrator(t, docker)
+
+	app, _ := s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	s.SetAppEnv(ctx, app.ID, map[string]string{"PORT": "8080"})
+
+	if err := o.Deploy(ctx, "myapp", "registry.example.com/myapp:latest"); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+
+	found := false
+	for _, kv := range docker.createdOpts.Env {
+		if kv == "PORT=8080" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected PORT=8080 in container env, got %v", docker.createdOpts.Env)
+	}
+}
+
 func TestDeployUnknownApp(t *testing.T) {
 	ctx := context.Background()
 	o, _ := newTestOrchestrator(t, &fakeDocker{})

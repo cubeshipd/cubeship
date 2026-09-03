@@ -68,3 +68,26 @@ func TestUpdateAppContainer(t *testing.T) {
 		t.Fatalf("unexpected app after update: %+v", got)
 	}
 }
+
+func TestSetAndGetAppEnv(t *testing.T) {
+	s, _ := Open(":memory:")
+	defer s.Close()
+	ctx := context.Background()
+	app, _ := s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+
+	if len(app.Env) != 0 {
+		t.Fatalf("expected empty env on creation, got %v", app.Env)
+	}
+
+	if err := s.SetAppEnv(ctx, app.ID, map[string]string{"PORT": "8080", "LOG_LEVEL": "info"}); err != nil {
+		t.Fatalf("SetAppEnv: %v", err)
+	}
+
+	got, err := s.GetAppByName(ctx, "myapp")
+	if err != nil {
+		t.Fatalf("GetAppByName: %v", err)
+	}
+	if got.Env["PORT"] != "8080" || got.Env["LOG_LEVEL"] != "info" {
+		t.Fatalf("unexpected env: %v", got.Env)
+	}
+}

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -13,6 +14,7 @@ type App struct {
 	Image       string
 	ContainerID string
 	Status      string
+	Env         map[string]string
 	CreatedAt   time.Time
 }
 
@@ -29,15 +31,19 @@ func (s *Store) scanApp(row interface {
 	Scan(dest ...any) error
 }) (*App, error) {
 	var a App
-	if err := row.Scan(&a.ID, &a.Name, &a.Domain, &a.Image, &a.ContainerID, &a.Status, &a.CreatedAt); err != nil {
+	var envJSON string
+	if err := row.Scan(&a.ID, &a.Name, &a.Domain, &a.Image, &a.ContainerID, &a.Status, &envJSON, &a.CreatedAt); err != nil {
 		return nil, err
+	}
+	if err := json.Unmarshal([]byte(envJSON), &a.Env); err != nil {
+		return nil, fmt.Errorf("decode env for app %q: %w", a.Name, err)
 	}
 	return &a, nil
 }
 
 func (s *Store) GetAppByName(ctx context.Context, name string) (*App, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, domain, image, container_id, status, created_at FROM apps WHERE name = ?`, name)
+		`SELECT id, name, domain, image, container_id, status, env, created_at FROM apps WHERE name = ?`, name)
 	a, err := s.scanApp(row)
 	if err != nil {
 		return nil, fmt.Errorf("get app %q: %w", name, err)
@@ -47,7 +53,7 @@ func (s *Store) GetAppByName(ctx context.Context, name string) (*App, error) {
 
 func (s *Store) GetAppByImage(ctx context.Context, image string) (*App, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, domain, image, container_id, status, created_at FROM apps WHERE image = ?`, image)
+		`SELECT id, name, domain, image, container_id, status, env, created_at FROM apps WHERE image = ?`, image)
 	a, err := s.scanApp(row)
 	if err != nil {
 		return nil, fmt.Errorf("get app by image %q: %w", image, err)
@@ -57,7 +63,7 @@ func (s *Store) GetAppByImage(ctx context.Context, image string) (*App, error) {
 
 func (s *Store) ListApps(ctx context.Context) ([]*App, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, domain, image, container_id, status, created_at FROM apps ORDER BY id`)
+		`SELECT id, name, domain, image, container_id, status, env, created_at FROM apps ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -80,6 +86,17 @@ func (s *Store) UpdateAppContainer(ctx context.Context, appID int64, containerID
 		containerID, status, appID)
 	if err != nil {
 		return fmt.Errorf("update app container: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) SetAppEnv(ctx context.Context, appID int64, env map[string]string) error {
+	envJSON, err := json.Marshal(env)
+	if err != nil {
+		return fmt.Errorf("encode env: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, `UPDATE apps SET env = ? WHERE id = ?`, string(envJSON), appID); err != nil {
+		return fmt.Errorf("set app env: %w", err)
 	}
 	return nil
 }
