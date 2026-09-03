@@ -3,6 +3,7 @@ package dockerx
 import (
 	"context"
 	"fmt"
+	"io"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -67,6 +68,14 @@ func (c *Client) RemoveContainer(ctx context.Context, id string) error {
 		return fmt.Errorf("remove container %q: %w", id, err)
 	}
 	return nil
+}
+
+func (c *Client) Logs(ctx context.Context, id string) (io.ReadCloser, error) {
+	rc, err := c.api.ContainerLogs(ctx, id, container.LogsOptions{ShowStdout: true, ShowStderr: true})
+	if err != nil {
+		return nil, fmt.Errorf("logs for container %q: %w", id, err)
+	}
+	return rc, nil
 }
 
 func (c *Client) IsRunning(ctx context.Context, id string) (bool, error) {

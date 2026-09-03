@@ -28,6 +28,7 @@ type apiClient interface {
 	ContainerStop(ctx context.Context, containerID string, options container.StopOptions) error
 	ContainerRemove(ctx context.Context, containerID string, options container.RemoveOptions) error
 	ContainerInspect(ctx context.Context, containerID string) (types.ContainerJSON, error)
+	ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
 }
 
 type Client struct {

@@ -50,6 +50,10 @@ func (f *fakeAPI) ContainerRemove(ctx context.Context, id string, options contai
 	return nil
 }
 
+func (f *fakeAPI) ContainerLogs(ctx context.Context, id string, options container.LogsOptions) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("log line 1\nlog line 2\n")), nil
+}
+
 func (f *fakeAPI) ContainerInspect(ctx context.Context, id string) (types.ContainerJSON, error) {
 	if f.inspectErr != nil {
 		return types.ContainerJSON{}, f.inspectErr
@@ -114,6 +118,21 @@ func TestIsRunningFalseOnInspectError(t *testing.T) {
 	}
 	if running {
 		t.Fatal("expected running=false on error")
+	}
+}
+
+func TestLogsReturnsContainerOutput(t *testing.T) {
+	fake := &fakeAPI{}
+	c := newWithAPI(fake)
+
+	rc, err := c.Logs(context.Background(), "some-id")
+	if err != nil {
+		t.Fatalf("Logs: %v", err)
+	}
+	defer rc.Close()
+	data, _ := io.ReadAll(rc)
+	if string(data) != "log line 1\nlog line 2\n" {
+		t.Fatalf("unexpected log output: %q", data)
 	}
 }
 

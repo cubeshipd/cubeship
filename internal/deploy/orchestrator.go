@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"time"
 
@@ -17,6 +18,7 @@ import (
 const appPort = 8080
 
 var ErrAppNotFound = errors.New("app not found")
+var ErrNoContainer = errors.New("app has no running container")
 
 // dockerAPI is the subset of dockerx.Client this package needs.
 // *dockerx.Client satisfies it structurally.
@@ -27,6 +29,7 @@ type dockerAPI interface {
 	StopContainer(ctx context.Context, id string) error
 	RemoveContainer(ctx context.Context, id string) error
 	IsRunning(ctx context.Context, id string) (bool, error)
+	Logs(ctx context.Context, id string) (io.ReadCloser, error)
 }
 
 type Orchestrator struct {
@@ -99,6 +102,17 @@ func (o *Orchestrator) Deploy(ctx context.Context, appName, imageRef string) err
 	}
 
 	return nil
+}
+
+func (o *Orchestrator) Logs(ctx context.Context, appName string) (io.ReadCloser, error) {
+	app, err := o.store.GetAppByName(ctx, appName)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", ErrAppNotFound, appName)
+	}
+	if app.ContainerID == "" {
+		return nil, ErrNoContainer
+	}
+	return o.docker.Logs(ctx, app.ContainerID)
 }
 
 func (o *Orchestrator) waitHealthy(ctx context.Context, containerID string) bool {

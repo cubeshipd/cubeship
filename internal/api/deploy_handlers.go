@@ -2,7 +2,11 @@ package api
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
+
+	"cubeship/internal/deploy"
 )
 
 func (s *Server) handleManualDeploy(w http.ResponseWriter, r *http.Request) {
@@ -50,4 +54,26 @@ func (s *Server) handleSetEnv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
+	name := r.PathValue("name")
+	if _, err := s.store.GetAppByName(r.Context(), name); err != nil {
+		http.Error(w, "app not found", http.StatusNotFound)
+		return
+	}
+
+	rc, err := s.orch.Logs(r.Context(), name)
+	if errors.Is(err, deploy.ErrNoContainer) {
+		http.Error(w, "app has no running container yet", http.StatusConflict)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer rc.Close()
+
+	w.WriteHeader(http.StatusOK)
+	io.Copy(w, rc)
 }

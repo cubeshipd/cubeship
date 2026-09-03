@@ -3,8 +3,10 @@ package api
 import (
 	"bytes"
 	"context"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"cubeship/internal/deploy"
@@ -16,6 +18,7 @@ type webhookFakeDocker struct {
 	running      bool
 	pulledRef    string
 	createCalled bool
+	logsContent  string
 }
 
 func (f *webhookFakeDocker) PullImage(ctx context.Context, ref string) error {
@@ -31,6 +34,10 @@ func (f *webhookFakeDocker) StopContainer(ctx context.Context, id string) error 
 func (f *webhookFakeDocker) RemoveContainer(ctx context.Context, id string) error { return nil }
 func (f *webhookFakeDocker) IsRunning(ctx context.Context, id string) (bool, error) {
 	return f.running, nil
+}
+
+func (f *webhookFakeDocker) Logs(ctx context.Context, id string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader(f.logsContent)), nil
 }
 
 const registryNotificationPayload = `{

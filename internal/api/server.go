@@ -32,6 +32,7 @@ func NewServer(s *store.Store, orch *deploy.Orchestrator, token, registryHost st
 	srv.handleAuth("GET /apps/{name}", srv.handleGetApp)
 	srv.handleAuth("POST /apps/{name}/deploy", srv.handleManualDeploy)
 	srv.handleAuth("PUT /apps/{name}/env", srv.handleSetEnv)
+	srv.handleAuth("GET /apps/{name}/logs", srv.handleGetLogs)
 	return srv
 }
 

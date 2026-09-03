@@ -3,6 +3,8 @@ package deploy
 import (
 	"context"
 	"errors"
+	"io"
+	"strings"
 	"testing"
 
 	"cubeship/internal/dockerx"
@@ -54,6 +56,10 @@ func (f *fakeDocker) RemoveContainer(ctx context.Context, id string) error {
 
 func (f *fakeDocker) IsRunning(ctx context.Context, id string) (bool, error) {
 	return f.running, nil
+}
+
+func (f *fakeDocker) Logs(ctx context.Context, id string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("")), nil
 }
 
 func newTestOrchestrator(t *testing.T, docker *fakeDocker) (*Orchestrator, *store.Store) {
@@ -191,5 +197,16 @@ func TestDeployUnknownApp(t *testing.T) {
 	err := o.Deploy(ctx, "does-not-exist", "registry.example.com/does-not-exist:latest")
 	if !errors.Is(err, ErrAppNotFound) {
 		t.Fatalf("expected ErrAppNotFound, got %v", err)
+	}
+}
+
+func TestLogsReturnsErrNoContainerBeforeFirstDeploy(t *testing.T) {
+	ctx := context.Background()
+	o, s := newTestOrchestrator(t, &fakeDocker{})
+	s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+
+	_, err := o.Logs(ctx, "myapp")
+	if !errors.Is(err, ErrNoContainer) {
+		t.Fatalf("expected ErrNoContainer, got %v", err)
 	}
 }
