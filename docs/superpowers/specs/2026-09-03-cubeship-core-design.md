@@ -1,20 +1,20 @@
-# Kubeship — Core Design (Sub-project 1)
+# Cubeship — Core Design (Sub-project 1)
 
 ## Context
 
-Kubeship is a self-hosted PaaS (alternative to Dokploy/Coolify) that the
+Cubeship is a self-hosted PaaS (alternative to Dokploy/Coolify) that the
 user runs on their own VPS. Initial goal is personal use, with an intent
 to expand later (multi-tenant, web UI). This document specs the first
 sub-project: the core deploy engine. Later sub-projects (not specced
 yet): building images from a Git repo, managed databases, web UI.
 
-Differentiator from Dokploy/Coolify: Kubeship has a built-in container
+Differentiator from Dokploy/Coolify: Cubeship has a built-in container
 registry, and a `docker push` to it is the deploy trigger — no Git
 webhook required for the core loop.
 
 ## Goals
 
-- Deploy a containerized app to the VPS by pushing an image to Kubeship's
+- Deploy a containerized app to the VPS by pushing an image to Cubeship's
   own registry.
 - Automatic HTTPS on a custom domain per app, zero manual proxy config.
 - New image pushed to a tracked repository triggers automatic,
@@ -67,7 +67,7 @@ bearer token generated at install time.
 
 ## Data flow — deploying an app
 
-1. `kubeship app create myapp --domain myapp.example.com` — daemon
+1. `cubeship app create myapp --domain myapp.example.com` — daemon
    registers the app in SQLite, returns the image path in the internal
    registry (e.g. `registry.example.com/myapp`).
 2. User builds locally and runs
