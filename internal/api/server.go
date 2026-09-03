@@ -26,6 +26,9 @@ func NewServer(s *store.Store, orch *deploy.Orchestrator, token, registryHost st
 	srv.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+	srv.handleAuth("POST /apps", srv.handleCreateApp)
+	srv.handleAuth("GET /apps", srv.handleListApps)
+	srv.handleAuth("GET /apps/{name}", srv.handleGetApp)
 	return srv
 }
 
