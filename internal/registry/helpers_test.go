@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"cubeship/internal/platform/regauth"
 	"cubeship/internal/server/servertest"
 )
 
@@ -23,7 +24,14 @@ func newSignedFixture(t *testing.T) *servertest.Fixture {
 	if err != nil {
 		t.Fatalf("generate signing key: %v", err)
 	}
-	f.Server.SetRegistrySigningKey(key)
+	// The certificate matters to the registry, not to these tests: what
+	// they exercise is who may have which scope, which is decided before
+	// a token is signed.
+	_, certDER, err := regauth.SelfSignedCert(key, "cubeship")
+	if err != nil {
+		t.Fatalf("self-signed cert: %v", err)
+	}
+	f.Server.SetRegistrySigningKey(key, certDER)
 	return f
 }
 

@@ -4,6 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { CheckIcon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
@@ -57,7 +58,6 @@ export function InstanceDomain({
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
 
   const providers = useQuery({
     queryKey: ["dns", org],
@@ -112,7 +112,6 @@ export function InstanceDomain({
   async function apply() {
     setBusy(true);
     setError(null);
-    setDone(false);
     try {
       if (providerID && zoneID) {
         for (const name of [domain, wildcard]) {
@@ -133,7 +132,13 @@ export function InstanceDomain({
           dns_provider_id: providerID,
         }),
       );
-      setDone(true);
+      // A toast rather than a line beside the button: what this says is
+      // about apps on the rest of the instance, not about this form, and
+      // it kept sitting under a button whose job was already done.
+      toast.success("Domain set up", {
+        description:
+          "Apps already running keep the routing they were deployed with — redeploy them to serve over HTTPS.",
+      });
     } catch (err) {
       setError(message(err));
     }
@@ -294,13 +299,6 @@ export function InstanceDomain({
                 Both records already point here.
               </span>
             )}
-            {done && (
-              <span className="text-xs text-muted-foreground">
-                Done. Apps already running keep the routing they were deployed with — redeploy them
-                to serve over HTTPS.
-              </span>
-            )}
-
             <span className="flex-1" />
             {automatic && zone && (
               <span className="font-mono text-[11px] text-subtle-foreground">

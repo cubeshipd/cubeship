@@ -49,6 +49,10 @@ type Handler struct {
 	// until SetSigningKey is called; the endpoint 503s until then rather
 	// than issuing unsigned tokens.
 	signingKey *rsa.PrivateKey
+	// signingCert is the DER of the certificate the registry trusts,
+	// which every token carries so the registry can find the key that
+	// signed it.
+	signingCert []byte
 }
 
 // Maintainer is what runs a command inside the registry container, and
@@ -82,10 +86,11 @@ func (h *Handler) registryHost(ctx context.Context) string {
 	return settings.RegistryHostFor(values.Get(settings.Domain))
 }
 
-// SetSigningKey wires in the daemon's registry-token signing key. Must be
+// SetSigningKey wires in the daemon's registry-token signing key and the
+// certificate that vouches for it. Must be
 // called before the daemon accepts requests; not safe to call
 // concurrently with serving.
-func (h *Handler) SetSigningKey(key *rsa.PrivateKey) {
+func (h *Handler) SetSigningKey(key *rsa.PrivateKey, certDER []byte) {
 	h.signingKey = key
 }
 

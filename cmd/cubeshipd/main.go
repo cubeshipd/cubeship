@@ -285,6 +285,15 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("load registry signing key: %w", err)
 	}
+	// One certificate, made here and used in both places it has to
+	// match: the registry's trust root on disk, and the x5c header of
+	// every token issued. Two certificates over one key would leave
+	// whether the registry accepts the pairing up to how it builds its
+	// pool, rather than to anything decided here.
+	registryCert, registryCertDER, err := regauth.SelfSignedCert(registrySigningKey, "cubeship")
+	if err != nil {
+		return fmt.Errorf("create registry token certificate: %w", err)
+	}
 
 	docker, err := dockerx.New()
 	if err != nil {
@@ -296,7 +305,7 @@ func run() error {
 	// every time (tokens expire in regauth.TokenTTL).
 	localRegistry := bootstrap.LocalRegistryAddress(cfg)
 	docker.SetRegistryTokenSigner(localRegistry, func(repository string) (string, error) {
-		return regauth.IssueToken(registrySigningKey, regauth.TokenIssuer, regauth.TokenService, "cubeshipd",
+		return regauth.IssueToken(registrySigningKey, registryCertDER, regauth.TokenIssuer, regauth.TokenService, "cubeshipd",
 			[]regauth.AccessEntry{{Type: "repository", Name: repository, Actions: []string{"pull"}}})
 	})
 
@@ -337,10 +346,6 @@ func run() error {
 		return fmt.Errorf("carry the old environment into settings: %w", err)
 	}
 
-	registryCert, err := regauth.SelfSignedCert(registrySigningKey, "cubeship")
-	if err != nil {
-		return fmt.Errorf("create registry token certificate: %w", err)
-	}
 	if err := bootstrap.WriteRegistryTokenCert(cfg, registryCert); err != nil {
 		return fmt.Errorf("write registry token certificate: %w", err)
 	}
@@ -364,7 +369,7 @@ func run() error {
 		return fmt.Errorf("reconcile: %w", err)
 	}
 
-	srv.SetRegistrySigningKey(registrySigningKey)
+	srv.SetRegistrySigningKey(registrySigningKey, registryCertDER)
 
 	go purgeExpiredSessions(ctx, srv.Users)
 

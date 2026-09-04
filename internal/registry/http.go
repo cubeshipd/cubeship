@@ -151,7 +151,7 @@ func (h *Handler) issueToken(w http.ResponseWriter, r *http.Request) {
 		access = append(access, h.authorizeScope(r.Context(), caller, scope)...)
 	}
 
-	token, err := regauth.IssueToken(h.signingKey, regauth.TokenIssuer, regauth.TokenService, caller.Username, access)
+	token, err := regauth.IssueToken(h.signingKey, h.signingCert, regauth.TokenIssuer, regauth.TokenService, caller.Username, access)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

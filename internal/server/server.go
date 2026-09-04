@@ -123,8 +123,8 @@ func (s *Server) WaitForGitHubDeploys() { s.githubHandler.WaitForDeploys() }
 
 // SetRegistrySigningKey wires the daemon's registry-token signing key
 // into the registry module. Must be called before serving.
-func (s *Server) SetRegistrySigningKey(key *rsa.PrivateKey) {
-	s.Registry.SetSigningKey(key)
+func (s *Server) SetRegistrySigningKey(key *rsa.PrivateKey, certDER []byte) {
+	s.Registry.SetSigningKey(key, certDER)
 }
 
 // Router returns the daemon's HTTP handler.

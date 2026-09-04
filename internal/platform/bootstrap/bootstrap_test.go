@@ -126,7 +126,7 @@ func TestWriteRegistryTokenCertWritesFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadOrCreateKeyPair: %v", err)
 	}
-	certPEM, err := regauth.SelfSignedCert(key, "cubeship")
+	certPEM, _, err := regauth.SelfSignedCert(key, "cubeship")
 	if err != nil {
 		t.Fatalf("SelfSignedCert: %v", err)
 	}

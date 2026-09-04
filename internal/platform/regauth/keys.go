@@ -65,7 +65,7 @@ func LoadOrCreateKeyPair(dataDir string) (*rsa.PrivateKey, error) {
 // machinery for a personal-scale daemon. Regenerate it (delete the file
 // bootstrap.WriteRegistryTokenCert writes) if the underlying key ever
 // changes.
-func SelfSignedCert(key *rsa.PrivateKey, commonName string) ([]byte, error) {
+func SelfSignedCert(key *rsa.PrivateKey, commonName string) ([]byte, []byte, error) {
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject:      pkix.Name{CommonName: commonName},
@@ -75,7 +75,13 @@ func SelfSignedCert(key *rsa.PrivateKey, commonName string) ([]byte, error) {
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
-		return nil, fmt.Errorf("create self-signed certificate: %w", err)
+		return nil, nil, fmt.Errorf("create self-signed certificate: %w", err)
 	}
-	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), nil
+	// Both encodings, because both are needed and they must be the same
+	// certificate. The PEM goes to the registry as its trust root; the
+	// DER goes in every token's x5c header. Generating them separately
+	// would produce two certificates over one key, and whether the
+	// registry accepted the pairing would be a detail of how it builds
+	// its pool rather than something this code decided.
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), der, nil
 }

@@ -100,7 +100,7 @@ func (h *Handler) callRegistry(ctx context.Context, path string, access []regaut
 	if h.signingKey == nil || h.localRegistry == "" {
 		return ErrNoRegistry
 	}
-	token, err := regauth.IssueToken(h.signingKey, regauth.TokenIssuer, regauth.TokenService,
+	token, err := regauth.IssueToken(h.signingKey, h.signingCert, regauth.TokenIssuer, regauth.TokenService,
 		"cubeshipd", access)
 	if err != nil {
 		return fmt.Errorf("mint a registry token: %w", err)
@@ -269,7 +269,7 @@ func (h *Handler) registryRequest(ctx context.Context, method, path string, acce
 	if h.signingKey == nil || h.localRegistry == "" {
 		return nil, ErrNoRegistry
 	}
-	token, err := regauth.IssueToken(h.signingKey, regauth.TokenIssuer, regauth.TokenService,
+	token, err := regauth.IssueToken(h.signingKey, h.signingCert, regauth.TokenIssuer, regauth.TokenService,
 		"cubeshipd", access)
 	if err != nil {
 		return nil, fmt.Errorf("mint a registry token: %w", err)
