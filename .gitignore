@@ -1,2 +1,4 @@
 .worktrees/
 .superpowers/
+bin/
+coverage.out
