@@ -107,6 +107,44 @@ func (c *Client) ListProjects(ctx context.Context, orgSlug string) ([]Project, e
 		"/orgs/"+segment(orgSlug)+"/projects", nil, http.StatusOK, DefaultTimeout)
 }
 
+// EnvVars is what reading variables at one level returns: the ones set
+// there, and — below a project — the inherited result with each value's
+// source.
+type EnvVars struct {
+	Vars      map[string]string `json:"vars"`
+	Effective []ResolvedVar     `json:"effective,omitempty"`
+}
+
+// ResolvedVar is one variable in the final environment, and the level
+// that set it.
+type ResolvedVar struct {
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+	Source string `json:"source"`
+}
+
+// mergeEnv is the PATCH body: change only what is named.
+type mergeEnv struct {
+	Set   map[string]string `json:"set,omitempty"`
+	Unset []string          `json:"unset,omitempty"`
+}
+
+func (c *Client) ProjectEnv(ctx context.Context, orgSlug, projectSlug string) (EnvVars, error) {
+	return request[EnvVars](ctx, c, "read project env", http.MethodGet,
+		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/env", nil, http.StatusOK, DefaultTimeout)
+}
+
+// MergeProjectEnv adds or overwrites set and removes unset, leaving every
+// other variable alone.
+func (c *Client) MergeProjectEnv(ctx context.Context, orgSlug, projectSlug string, set map[string]string, unset []string) error {
+	_, err := request[noContent](ctx, c, "update project env", http.MethodPatch,
+		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/env",
+		mergeEnv{Set: set, Unset: unset}, http.StatusOK, DefaultTimeout)
+	return err
+}
+
+// SetProjectEnv replaces every project-level variable. Callers that mean
+// "change these" want MergeProjectEnv.
 func (c *Client) SetProjectEnv(ctx context.Context, orgSlug, projectSlug string, vars map[string]string) error {
 	_, err := request[noContent](ctx, c, "set project env", http.MethodPut,
 		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/env",
@@ -126,6 +164,22 @@ func (c *Client) ListEnvironments(ctx context.Context, orgSlug, projectSlug stri
 		nil, http.StatusOK, DefaultTimeout)
 }
 
+func (c *Client) EnvironmentEnv(ctx context.Context, orgSlug, projectSlug, envSlug string) (EnvVars, error) {
+	return request[EnvVars](ctx, c, "read environment env", http.MethodGet,
+		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/environments/"+segment(envSlug)+"/env",
+		nil, http.StatusOK, DefaultTimeout)
+}
+
+// MergeEnvironmentEnv adds or overwrites set and removes unset, leaving
+// every other variable alone.
+func (c *Client) MergeEnvironmentEnv(ctx context.Context, orgSlug, projectSlug, envSlug string, set map[string]string, unset []string) error {
+	_, err := request[noContent](ctx, c, "update environment env", http.MethodPatch,
+		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/environments/"+segment(envSlug)+"/env",
+		mergeEnv{Set: set, Unset: unset}, http.StatusOK, DefaultTimeout)
+	return err
+}
+
+// SetEnvironmentEnv replaces every environment-level variable.
 func (c *Client) SetEnvironmentEnv(ctx context.Context, orgSlug, projectSlug, envSlug string, vars map[string]string) error {
 	_, err := request[noContent](ctx, c, "set environment env", http.MethodPut,
 		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/environments/"+segment(envSlug)+"/env",
@@ -167,6 +221,20 @@ func (c *Client) Deploy(ctx context.Context, name, tag string) error {
 	return err
 }
 
+func (c *Client) AppEnv(ctx context.Context, name string) (EnvVars, error) {
+	return request[EnvVars](ctx, c, "read app env", http.MethodGet,
+		"/apps/"+segment(name)+"/env", nil, http.StatusOK, DefaultTimeout)
+}
+
+// MergeAppEnv adds or overwrites set and removes unset, leaving every
+// other variable alone.
+func (c *Client) MergeAppEnv(ctx context.Context, name string, set map[string]string, unset []string) error {
+	_, err := request[noContent](ctx, c, "update app env", http.MethodPatch,
+		"/apps/"+segment(name)+"/env", mergeEnv{Set: set, Unset: unset}, http.StatusOK, DefaultTimeout)
+	return err
+}
+
+// SetAppEnv replaces every app-level variable.
 func (c *Client) SetAppEnv(ctx context.Context, name string, vars map[string]string) error {
 	_, err := request[noContent](ctx, c, "set app env", http.MethodPut,
 		"/apps/"+segment(name)+"/env", envVars{Vars: vars}, http.StatusOK, DefaultTimeout)

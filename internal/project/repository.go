@@ -81,6 +81,8 @@ func (r *Repository) ListForOrg(ctx context.Context, orgID int64) ([]*Project, e
 	return out, rows.Err()
 }
 
+// SetEnv replaces the project's variables wholesale. Callers that mean
+// "add these" want MergeEnv.
 func (r *Repository) SetEnv(ctx context.Context, projectID int64, env envvar.Map) error {
 	envJSON, err := envvar.MarshalJSONB(env)
 	if err != nil {
@@ -91,4 +93,14 @@ func (r *Repository) SetEnv(ctx context.Context, projectID int64, env envvar.Map
 		return fmt.Errorf("set project env: %w", err)
 	}
 	return nil
+}
+
+// MergeEnv sets the given variables and removes the unset ones, leaving
+// every other key alone.
+func (r *Repository) MergeEnv(ctx context.Context, projectID int64, set envvar.Map, unset []string) error {
+	setJSON, err := envvar.MarshalJSONB(set)
+	if err != nil {
+		return err
+	}
+	return database.MergeJSONBMap(ctx, r.q, "projects", "env", projectID, setJSON, unset)
 }

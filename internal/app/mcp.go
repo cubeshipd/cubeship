@@ -53,8 +53,12 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Description: `Manually redeploy an app from an image tag already pushed to its registry path (tag defaults to "latest"). Requires member role in the organization.`,
 	}, t.deploy)
 	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "get_app_env",
+		Description: "Read an app's environment variables: the ones set on the app itself, and the effective set its container runs with (project, then environment, then app — each overriding the last), with the source of every value. Read this before changing anything.",
+	}, t.getEnv)
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "set_app_env",
-		Description: "Set an app's own environment variables. Replaces the full set of app-level variables. These are layered on top of (and override) the app's environment's and project's variables. Requires member role in the organization.",
+		Description: "Add, change or remove an app's own environment variables. Only the keys you name are touched — variables you don't mention are left alone. These are layered on top of (and override) the app's environment's and project's variables. Requires member role in the organization.",
 	}, t.setEnv)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_app_logs",
@@ -118,13 +122,33 @@ func (t *Tools) deploy(ctx context.Context, _ *mcp.CallToolRequest, in deployInp
 	return nil, user.ActionResult{Message: fmt.Sprintf("deployed %s from tag %s", a.Name, tag)}, nil
 }
 
-type setEnvInput struct {
-	Name string     `json:"name" jsonschema:"app name"`
-	Vars envvar.Map `json:"vars" jsonschema:"the full set of app-level environment variables — this REPLACES whatever was set before"`
+type envOutput struct {
+	Vars      envvar.Map        `json:"vars" jsonschema:"the variables set on the app itself"`
+	Effective []envvar.Resolved `json:"effective" jsonschema:"every variable the container actually runs with, and the level that set it"`
 }
 
+func (t *Tools) getEnv(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, envOutput, error) {
+	own, effective, err := t.svc.Env(ctx, t.caller, in.Name)
+	if err != nil {
+		return nil, envOutput{}, err
+	}
+	return nil, envOutput{Vars: own, Effective: effective}, nil
+}
+
+type setEnvInput struct {
+	Name  string     `json:"name" jsonschema:"app name"`
+	Set   envvar.Map `json:"set,omitempty" jsonschema:"variables to add or overwrite"`
+	Unset []string   `json:"unset,omitempty" jsonschema:"names of variables to remove"`
+}
+
+// setEnv merges rather than replaces. An agent that means to change one
+// variable must not be able to erase the rest by omitting them, which is
+// exactly what the old replace-everything tool made easy.
 func (t *Tools) setEnv(ctx context.Context, _ *mcp.CallToolRequest, in setEnvInput) (*mcp.CallToolResult, user.ActionResult, error) {
-	a, err := t.svc.SetEnv(ctx, t.caller, in.Name, in.Vars)
+	if len(in.Set) == 0 && len(in.Unset) == 0 {
+		return nil, user.ActionResult{}, fmt.Errorf("give set, unset, or both")
+	}
+	a, err := t.svc.MergeEnv(ctx, t.caller, in.Name, in.Set, in.Unset)
 	if err != nil {
 		return nil, user.ActionResult{}, err
 	}

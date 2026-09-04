@@ -147,6 +147,20 @@ Slugs — orgs, projects, environments, apps — go through `slug.Valid`,
 because they become path segments of a registry image reference and
 Docker rejects anything else.
 
+## Environment variables
+
+Set at three levels, and an app inherits all of them: project, then
+environment, then the app's own, each overriding the last. `envvar.Merge`
+computes the result a container runs with; `envvar.Resolve` computes the
+same thing but labels each value with the level that won it, which is
+what the read endpoints return.
+
+**PATCH merges, PUT replaces.** The merge is one SQL statement
+(`database.MergeJSONBMap`), not a read-modify-write, so two callers
+setting different keys cannot lose each other's. Reach for PUT only when
+"delete everything not listed" is genuinely what you mean — the CLI hides
+it behind `env replace --yes`, and the MCP tools do not expose it at all.
+
 ## Tests
 
 Unit tests need a real Postgres; there is no in-memory mode. `make test`

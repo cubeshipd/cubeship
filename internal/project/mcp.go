@@ -29,8 +29,12 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Description: "List the projects in an organization.",
 	}, t.list)
 	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "get_project_env",
+		Description: "Read the environment variables set on a project. Every environment and every app below inherits them.",
+	}, t.getEnv)
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "set_project_env",
-		Description: "Set environment variables shared by every environment (and every app) in a project. Replaces the full set of project-level variables. Requires admin role in the organization.",
+		Description: "Add, change or remove environment variables shared by every environment (and every app) in a project. Only the keys you name are touched. Requires admin role in the organization.",
 	}, t.setEnv)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "create_environment",
@@ -41,8 +45,12 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Description: "List the environments in a project.",
 	}, t.listEnvironments)
 	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "get_environment_env",
+		Description: "Read the environment variables set on one environment, plus the effective set an app there inherits (the project's, overridden by this environment's) with the source of every value.",
+	}, t.getEnvironmentEnv)
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "set_environment_env",
-		Description: "Set environment variables shared by every app in one environment. Replaces the full set of environment-level variables. Requires admin role in the organization.",
+		Description: "Add, change or remove environment variables shared by every app in one environment. Only the keys you name are touched. Requires admin role in the organization.",
 	}, t.setEnvironmentEnv)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_environment",
@@ -76,14 +84,31 @@ func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, in orgScopedIn
 	return nil, toResponses(projects), nil
 }
 
+type envOutput struct {
+	Vars      envvar.Map        `json:"vars" jsonschema:"the variables set at this level"`
+	Effective []envvar.Resolved `json:"effective,omitempty" jsonschema:"the inherited result, and the level that set each value"`
+}
+
+func (t *Tools) getEnv(ctx context.Context, _ *mcp.CallToolRequest, in projectScopedInput) (*mcp.CallToolResult, envOutput, error) {
+	vars, err := t.svc.Env(ctx, t.caller, in.Org, in.Project)
+	if err != nil {
+		return nil, envOutput{}, err
+	}
+	return nil, envOutput{Vars: vars}, nil
+}
+
 type setEnvInput struct {
 	Org     string     `json:"org" jsonschema:"organization slug"`
 	Project string     `json:"project" jsonschema:"project slug"`
-	Vars    envvar.Map `json:"vars" jsonschema:"the full set of project-level environment variables — this REPLACES whatever was set before"`
+	Set     envvar.Map `json:"set,omitempty" jsonschema:"variables to add or overwrite"`
+	Unset   []string   `json:"unset,omitempty" jsonschema:"names of variables to remove"`
 }
 
 func (t *Tools) setEnv(ctx context.Context, _ *mcp.CallToolRequest, in setEnvInput) (*mcp.CallToolResult, user.ActionResult, error) {
-	p, err := t.svc.SetEnv(ctx, t.caller, in.Org, in.Project, in.Vars)
+	if len(in.Set) == 0 && len(in.Unset) == 0 {
+		return nil, user.ActionResult{}, fmt.Errorf("give set, unset, or both")
+	}
+	p, err := t.svc.MergeEnv(ctx, t.caller, in.Org, in.Project, in.Set, in.Unset)
 	if err != nil {
 		return nil, user.ActionResult{}, err
 	}
@@ -122,11 +147,23 @@ type setEnvironmentEnvInput struct {
 	Org         string     `json:"org" jsonschema:"organization slug"`
 	Project     string     `json:"project" jsonschema:"project slug"`
 	Environment string     `json:"environment" jsonschema:"environment slug"`
-	Vars        envvar.Map `json:"vars" jsonschema:"the full set of environment-level variables — this REPLACES whatever was set before"`
+	Set         envvar.Map `json:"set,omitempty" jsonschema:"variables to add or overwrite"`
+	Unset       []string   `json:"unset,omitempty" jsonschema:"names of variables to remove"`
+}
+
+func (t *Tools) getEnvironmentEnv(ctx context.Context, _ *mcp.CallToolRequest, in environmentScopedInput) (*mcp.CallToolResult, envOutput, error) {
+	vars, effective, err := t.svc.EnvironmentEnv(ctx, t.caller, in.Org, in.Project, in.Environment)
+	if err != nil {
+		return nil, envOutput{}, err
+	}
+	return nil, envOutput{Vars: vars, Effective: effective}, nil
 }
 
 func (t *Tools) setEnvironmentEnv(ctx context.Context, _ *mcp.CallToolRequest, in setEnvironmentEnvInput) (*mcp.CallToolResult, user.ActionResult, error) {
-	env, err := t.svc.SetEnvironmentEnv(ctx, t.caller, in.Org, in.Project, in.Environment, in.Vars)
+	if len(in.Set) == 0 && len(in.Unset) == 0 {
+		return nil, user.ActionResult{}, fmt.Errorf("give set, unset, or both")
+	}
+	env, err := t.svc.MergeEnvironmentEnv(ctx, t.caller, in.Org, in.Project, in.Environment, in.Set, in.Unset)
 	if err != nil {
 		return nil, user.ActionResult{}, err
 	}

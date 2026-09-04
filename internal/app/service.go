@@ -112,14 +112,53 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Scoped, error
 	return s.Repo().ListScopedForOrgs(ctx, orgIDs)
 }
 
-// SetEnv replaces the app's own variables. They are layered on top of
-// (and override) its environment's and project's.
+// Env returns the app's own variables plus the effective environment its
+// container actually runs with: the project's, overridden by the
+// environment's, overridden by the app's, each value labelled with the
+// level that won it.
+//
+// Without this there is no way to see what an app is configured with —
+// which is what made replacing the whole map so easy to do by accident.
+func (s *Service) Env(ctx context.Context, caller *user.User, name string) (envvar.Map, []envvar.Resolved, error) {
+	a, err := s.Resolve(ctx, caller, name, org.RoleMember)
+	if err != nil {
+		return nil, nil, err
+	}
+	p, err := s.projects.Repo().ByID(ctx, a.ProjectID)
+	if err != nil {
+		return nil, nil, err
+	}
+	e, err := s.projects.EnvironmentRepo().ByID(ctx, a.EnvironmentID)
+	if err != nil {
+		return nil, nil, err
+	}
+	resolved := envvar.Resolve(
+		envvar.Layer{Source: envvar.SourceProject, Vars: p.Env},
+		envvar.Layer{Source: envvar.SourceEnvironment, Vars: e.Env},
+		envvar.Layer{Source: envvar.SourceApp, Vars: a.Env},
+	)
+	return a.Env, resolved, nil
+}
+
+// SetEnv replaces the app's own variables, deleting any key not present.
+// They are layered on top of (and override) its environment's and
+// project's.
 func (s *Service) SetEnv(ctx context.Context, caller *user.User, name string, env envvar.Map) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, name, org.RoleMember)
 	if err != nil {
 		return nil, err
 	}
 	return a, s.Repo().SetEnv(ctx, a.ID, env)
+}
+
+// MergeEnv adds or overwrites the given variables and removes the unset
+// ones, leaving every other key untouched.
+func (s *Service) MergeEnv(ctx context.Context, caller *user.User, name string, set envvar.Map, unset []string) (*Scoped, error) {
+	a, err := s.Resolve(ctx, caller, name, org.RoleMember)
+	if err != nil {
+		return nil, err
+	}
+	return a, s.Repo().MergeEnv(ctx, a.ID, set, unset)
 }
 
 // Deploy redeploys an app from a tag already pushed to its registry path.

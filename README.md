@@ -36,7 +36,7 @@ sudo systemctl enable --now cubeshipd
 `CUBESHIP_DOMAIN` and `CUBESHIP_ACME_EMAIL` are required; both
 `api.<domain>` and `registry.<domain>` must resolve to this host for
 certificates to issue. The rest is optional and defaulted in
-[`internal/config`](internal/config/config.go) — most importantly
+[`internal/platform/config`](internal/platform/config/config.go) — most importantly
 `CUBESHIP_DATA_DIR` (default `/var/lib/cubeship`), which holds the
 database, the images and Traefik's `acme.json`. **Back it up.** The
 daemon needs the Docker socket, so it runs as root.
@@ -70,10 +70,20 @@ docker build -t registry.example.com/acme/myapp:latest .
 docker push registry.example.com/acme/myapp:latest    # this deploys
 ```
 
-App containers must listen on port **8080**. `cubeship --help` covers the
-rest: users and roles, extra environments, env vars (set per project, per
-environment or per app, each level inheriting the ones above), logs,
-manual redeploys, additional API keys.
+App containers must listen on port **8080**.
+
+Environment variables can be set on a project, an environment or a single
+app, and an app inherits all three — its own value winning, then its
+environment's, then its project's:
+
+```sh
+cubeship app env set myapp DATABASE_URL=postgres://...   # adds; leaves the rest alone
+cubeship app env list myapp                              # every value, and which level set it
+cubeship app env unset myapp OLD_FLAG
+```
+
+`cubeship --help` covers the rest: users and roles, extra environments,
+logs, manual redeploys, additional API keys.
 
 ## API reference
 

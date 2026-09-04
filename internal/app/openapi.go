@@ -1,6 +1,17 @@
 package app
 
-import "cubeship/internal/platform/openapi"
+import (
+	"maps"
+
+	"cubeship/internal/platform/openapi"
+	"cubeship/internal/project"
+)
+
+// mergeSchemas folds b into a and returns a.
+func mergeSchemas(a, b map[string]*openapi.Schema) map[string]*openapi.Schema {
+	maps.Copy(a, b)
+	return a
+}
 
 func (h *Handler) OpenAPI() openapi.Spec {
 	nameParam := openapi.PathParam("name", "The app's name.")
@@ -10,7 +21,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			Name:        "Apps",
 			Description: "A deployable service. Pushing a tag to an app's registry path is what deploys it; these endpoints register apps, configure them, and redeploy on demand.",
 		}},
-		Schemas: map[string]*openapi.Schema{
+		Schemas: mergeSchemas(project.EnvSchemas(), map[string]*openapi.Schema{
 			"App": openapi.Object(map[string]*openapi.Schema{
 				"name":        openapi.String(""),
 				"domain":      openapi.String("The domain Traefik routes to this app, over HTTPS."),
@@ -20,7 +31,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"project":     openapi.String(""),
 				"environment": openapi.String(""),
 			}, "name", "domain", "image", "status", "org", "project", "environment"),
-		},
+		}),
 		Paths: map[string]openapi.PathItem{
 			"/apps": {
 				"post": {
@@ -91,6 +102,36 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				},
 			},
 			"/apps/{name}/env": {
+				"get": {
+					OperationID: "getAppEnv",
+					Summary:     "Read an app's environment variables",
+					Description: "`vars` is what the app itself sets. `effective` is what its container actually runs with — the project's variables, overridden by the environment's, overridden by the app's — with each value labelled by the level that won it.\n\nRead this before changing anything: it is the only way to see what an app is configured with.",
+					Tags:        []string{"Apps"},
+					Parameters:  []openapi.Parameter{nameParam},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The app's own and effective variables.", openapi.Ref("EnvVars")),
+						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
+					},
+				},
+				"patch": {
+					OperationID: "mergeAppEnv",
+					Summary:     "Add, change or remove some of an app's variables",
+					Description: "The safe way to change configuration: only the keys you name are touched, so you cannot delete a variable by forgetting to mention it. Requires the member role.",
+					Tags:        []string{"Apps"},
+					Parameters:  []openapi.Parameter{nameParam},
+					RequestBody: &openapi.RequestBody{
+						Required:    true,
+						Description: "Adds or overwrites the variables in `set` and removes those named in `unset`. Every other app-level variable is left exactly as it was.",
+						Content:     openapi.JSON(openapi.Ref("MergeEnv")),
+					},
+					Responses: openapi.Responses{
+						"200": openapi.Empty("The variables are stored. The running container picks them up on its next deploy."),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
+					},
+				},
 				"put": {
 					OperationID: "setAppEnv",
 					Summary:     "Set an app's environment variables",
@@ -99,7 +140,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Parameters:  []openapi.Parameter{nameParam},
 					RequestBody: &openapi.RequestBody{
 						Required:    true,
-						Description: "Replaces the full set of app-level variables. Keys you omit are removed.",
+						Description: "**Replaces** the full set of app-level variables: any key you omit is deleted. Use PATCH to change some without disturbing the rest.",
 						Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
 							"vars": openapi.StringMap("The complete set of app-level variables."),
 						}, "vars")),

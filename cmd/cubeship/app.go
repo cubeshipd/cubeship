@@ -143,29 +143,6 @@ func newAppCmd() *cobra.Command {
 	}
 	logsCmd.Flags().StringVar(&tail, "tail", "", `number of trailing lines, or "all" (default: the daemon's own limit)`)
 
-	envCmd := &cobra.Command{Use: "env", Short: "Manage an app's environment variables"}
-	envSetCmd := &cobra.Command{
-		Use:   "set <name> KEY=VALUE [KEY=VALUE...]",
-		Short: "Set environment variables for an app",
-		Args:  cobra.MinimumNArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			vars, err := parseEnvPairs(args[1:])
-			if err != nil {
-				return err
-			}
-			c, err := newAPIClient()
-			if err != nil {
-				return err
-			}
-			if err := c.SetAppEnv(context.Background(), args[0], vars); err != nil {
-				return err
-			}
-			fmt.Printf("Updated env for %s\n", args[0])
-			return nil
-		},
-	}
-	envCmd.AddCommand(envSetCmd)
-
-	appCmd.AddCommand(createCmd, listCmd, getCmd, deployCmd, logsCmd, envCmd)
+	appCmd.AddCommand(createCmd, listCmd, getCmd, deployCmd, logsCmd, appEnvCommands())
 	return appCmd
 }

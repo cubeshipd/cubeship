@@ -1,16 +1,59 @@
 package project
 
-import "cubeship/internal/platform/openapi"
+import (
+	"maps"
+
+	"cubeship/internal/platform/openapi"
+)
+
+// mergeSchemas folds b into a and returns a.
+func mergeSchemas(a, b map[string]*openapi.Schema) map[string]*openapi.Schema {
+	maps.Copy(a, b)
+	return a
+}
 
 // envVarsBody is the body every "set env" endpoint takes. Naming it once
 // keeps the replace-not-merge warning identical everywhere it applies.
 func envVarsBody(level string) *openapi.RequestBody {
 	return &openapi.RequestBody{
 		Required:    true,
-		Description: "Replaces the full set of " + level + "-level variables. Keys you omit are removed.",
+		Description: "**Replaces** the full set of " + level + "-level variables: any key you omit is deleted. Use PATCH to change some without disturbing the rest.",
 		Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
 			"vars": openapi.StringMap("The complete set of variables at this level."),
 		}, "vars")),
+	}
+}
+
+// EnvSchemas describes reading and merging variables at any level.
+// internal/app includes them too, so neither module depends on the other
+// having been mounted for its $refs to resolve.
+func EnvSchemas() map[string]*openapi.Schema {
+	return map[string]*openapi.Schema{
+		"ResolvedVar": openapi.Object(map[string]*openapi.Schema{
+			"key":    openapi.String(""),
+			"value":  openapi.String(""),
+			"source": {Type: "string", Enum: []string{"project", "environment", "app"}, Description: "The level that set this value, after inheritance."},
+		}, "key", "value", "source"),
+
+		"EnvVars": openapi.Object(map[string]*openapi.Schema{
+			"vars":      openapi.StringMap("The variables set at this level, and only this level."),
+			"effective": openapi.Array(openapi.Ref("ResolvedVar")),
+		}, "vars"),
+
+		"MergeEnv": openapi.Object(map[string]*openapi.Schema{
+			"set":   openapi.StringMap("Variables to add or overwrite."),
+			"unset": openapi.Array(openapi.String("A variable name to remove.")),
+		}),
+	}
+}
+
+// mergeEnvBody is the PATCH body, with the wording that matters most:
+// what it does NOT touch.
+func mergeEnvBody(level string) *openapi.RequestBody {
+	return &openapi.RequestBody{
+		Required:    true,
+		Description: "Adds or overwrites the variables in `set` and removes those named in `unset`. Every other " + level + "-level variable is left exactly as it was.",
+		Content:     openapi.JSON(openapi.Ref("MergeEnv")),
 	}
 }
 
@@ -24,7 +67,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			Name:        "Projects & environments",
 			Description: "Apps live in an environment, inside a project, inside an organization. Environment variables can be set at each level, and an app inherits the levels above it: project, then environment, then the app's own — each overriding the last.",
 		}},
-		Schemas: map[string]*openapi.Schema{
+		Schemas: mergeSchemas(EnvSchemas(), map[string]*openapi.Schema{
 			"Project": openapi.Object(map[string]*openapi.Schema{
 				"slug":         openapi.String(""),
 				"name":         openapi.String(""),
@@ -35,7 +78,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"slug": openapi.String(""),
 				"name": openapi.String(""),
 			}, "slug", "name"),
-		},
+		}),
 		Paths: map[string]openapi.PathItem{
 			"/orgs/{orgSlug}/projects": {
 				"post": {
@@ -70,6 +113,33 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				},
 			},
 			"/orgs/{orgSlug}/projects/{projectSlug}/env": {
+				"get": {
+					OperationID: "getProjectEnv",
+					Summary:     "Read a project's environment variables",
+					Description: "What is set on the project itself. Every environment and every app below inherits these.",
+					Tags:        []string{"Projects & environments"},
+					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The project's variables.", openapi.Ref("EnvVars")),
+						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
+					},
+				},
+				"patch": {
+					OperationID: "mergeProjectEnv",
+					Summary:     "Add, change or remove some of a project's variables",
+					Description: "The safe way to change configuration: only the keys you name are touched. Requires the admin role.",
+					Tags:        []string{"Projects & environments"},
+					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					RequestBody: mergeEnvBody("project"),
+					Responses: openapi.Responses{
+						"200": openapi.Empty("The variables are stored. Running containers pick them up on their next deploy."),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+					},
+				},
 				"put": {
 					OperationID: "setProjectEnv",
 					Summary:     "Set a project's environment variables",
@@ -119,6 +189,33 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				},
 			},
 			"/orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env": {
+				"get": {
+					OperationID: "getEnvironmentEnv",
+					Summary:     "Read an environment's variables",
+					Description: "`vars` is what this environment sets; `effective` is what an app here inherits — the project's, overridden by this environment's — with each value labelled by the level that won it.",
+					Tags:        []string{"Projects & environments"},
+					Parameters:  []openapi.Parameter{orgParam, projectParam, envParam},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The environment's own and effective variables.", openapi.Ref("EnvVars")),
+						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
+					},
+				},
+				"patch": {
+					OperationID: "mergeEnvironmentEnv",
+					Summary:     "Add, change or remove some of an environment's variables",
+					Description: "Only the keys you name are touched. Requires the admin role.",
+					Tags:        []string{"Projects & environments"},
+					Parameters:  []openapi.Parameter{orgParam, projectParam, envParam},
+					RequestBody: mergeEnvBody("environment"),
+					Responses: openapi.Responses{
+						"200": openapi.Empty("The variables are stored. Running containers pick them up on their next deploy."),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+					},
+				},
 				"put": {
 					OperationID: "setEnvironmentEnv",
 					Summary:     "Set an environment's variables",

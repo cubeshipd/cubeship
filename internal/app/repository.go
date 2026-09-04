@@ -99,6 +99,8 @@ func (r *Repository) UpdateContainer(ctx context.Context, appID int64, container
 	return nil
 }
 
+// SetEnv replaces the app's variables wholesale. Callers that mean "add
+// these" want MergeEnv — this one deletes every key not in env.
 func (r *Repository) SetEnv(ctx context.Context, appID int64, env envvar.Map) error {
 	envJSON, err := envvar.MarshalJSONB(env)
 	if err != nil {
@@ -109,6 +111,17 @@ func (r *Repository) SetEnv(ctx context.Context, appID int64, env envvar.Map) er
 		return fmt.Errorf("set app env: %w", err)
 	}
 	return nil
+}
+
+// MergeEnv sets the given variables and removes the unset ones, leaving
+// every other key alone. This is what "env set" means to a user: add
+// these, keep the rest.
+func (r *Repository) MergeEnv(ctx context.Context, appID int64, set envvar.Map, unset []string) error {
+	setJSON, err := envvar.MarshalJSONB(set)
+	if err != nil {
+		return err
+	}
+	return database.MergeJSONBMap(ctx, r.q, "apps", "env", appID, setJSON, unset)
 }
 
 func (r *Repository) RecordDeployment(ctx context.Context, appID int64, imageRef, status, errMsg string) error {

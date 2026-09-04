@@ -56,7 +56,9 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET /apps", auth(http.HandlerFunc(h.list)))
 	r.Handle("GET /apps/{name}", auth(http.HandlerFunc(h.get)))
 	r.Handle("POST /apps/{name}/deploy", auth(http.HandlerFunc(h.deploy)))
+	r.Handle("GET /apps/{name}/env", auth(http.HandlerFunc(h.getEnv)))
 	r.Handle("PUT /apps/{name}/env", auth(http.HandlerFunc(h.setEnv)))
+	r.Handle("PATCH /apps/{name}/env", auth(http.HandlerFunc(h.mergeEnv)))
 	r.Handle("GET /apps/{name}/logs", auth(http.HandlerFunc(h.logs)))
 }
 
@@ -130,6 +132,45 @@ func (h *Handler) deploy(w http.ResponseWriter, r *http.Request) {
 		// The app exists and the caller may deploy it; the deploy itself
 		// failed, which is an upstream problem, not a bad request.
 		httpx.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+// EnvResponse is what reading an app's variables returns: the ones set
+// on the app itself, and the full set its container runs with, each
+// value labelled with the level it came from.
+type EnvResponse struct {
+	Vars      envvar.Map        `json:"vars"`
+	Effective []envvar.Resolved `json:"effective"`
+}
+
+func (h *Handler) getEnv(w http.ResponseWriter, r *http.Request) {
+	own, effective, err := h.svc.Env(r.Context(), user.FromContext(r.Context()), r.PathValue("name"))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, EnvResponse{Vars: own, Effective: effective})
+}
+
+// MergeEnvRequest adds or overwrites the variables in set and removes
+// those named in unset. Anything not mentioned is left alone — which is
+// the difference between this and PUT.
+type MergeEnvRequest struct {
+	Set   envvar.Map `json:"set"`
+	Unset []string   `json:"unset"`
+}
+
+func (h *Handler) mergeEnv(w http.ResponseWriter, r *http.Request) {
+	var req MergeEnvRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if _, err := h.svc.MergeEnv(r.Context(), user.FromContext(r.Context()),
+		r.PathValue("name"), req.Set, req.Unset); err != nil {
+		WriteError(w, err)
 		return
 	}
 	w.WriteHeader(http.StatusOK)

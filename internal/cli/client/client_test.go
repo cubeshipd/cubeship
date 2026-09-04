@@ -251,3 +251,79 @@ func TestUnauthenticatedClientIsRejected(t *testing.T) {
 		t.Fatalf("Status(err) is %d, want 401 (err: %v)", got, err)
 	}
 }
+
+// `env set` must not delete what it doesn't mention — the reason the
+// merge endpoints exist. This drives the same calls the CLI does.
+func TestClientMergeEnvKeepsOtherVariables(t *testing.T) {
+	c, _ := connect(t)
+	ctx := context.Background()
+
+	if _, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", ""); err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+
+	if err := c.MergeAppEnv(ctx, "myapp", map[string]string{"A": "1", "B": "2"}, nil); err != nil {
+		t.Fatalf("MergeAppEnv: %v", err)
+	}
+	if err := c.MergeAppEnv(ctx, "myapp", map[string]string{"C": "3"}, []string{"B"}); err != nil {
+		t.Fatalf("MergeAppEnv: %v", err)
+	}
+
+	got, err := c.AppEnv(ctx, "myapp")
+	if err != nil {
+		t.Fatalf("AppEnv: %v", err)
+	}
+	if got.Vars["A"] != "1" || got.Vars["C"] != "3" {
+		t.Errorf("A and C should both survive, got %v", got.Vars)
+	}
+	if _, present := got.Vars["B"]; present {
+		t.Errorf("B should have been unset, got %v", got.Vars)
+	}
+
+	// The effective view has to decode, source and all.
+	if len(got.Effective) != 2 {
+		t.Fatalf("expected two effective variables, got %v", got.Effective)
+	}
+	for _, v := range got.Effective {
+		if v.Source != "app" {
+			t.Errorf("%s came from %q, want app", v.Key, v.Source)
+		}
+	}
+}
+
+// Reading at a project shows only that level; an environment shows what
+// an app there would inherit.
+func TestClientReadsEnvAtEveryLevel(t *testing.T) {
+	c, _ := connect(t)
+	ctx := context.Background()
+
+	if err := c.MergeProjectEnv(ctx, "acme", "web", map[string]string{"SHARED": "p", "P": "1"}, nil); err != nil {
+		t.Fatalf("MergeProjectEnv: %v", err)
+	}
+	if err := c.MergeEnvironmentEnv(ctx, "acme", "web", "production", map[string]string{"SHARED": "e"}, nil); err != nil {
+		t.Fatalf("MergeEnvironmentEnv: %v", err)
+	}
+
+	project, err := c.ProjectEnv(ctx, "acme", "web")
+	if err != nil {
+		t.Fatalf("ProjectEnv: %v", err)
+	}
+	if project.Vars["SHARED"] != "p" || project.Vars["P"] != "1" {
+		t.Errorf("project vars are %v", project.Vars)
+	}
+
+	environment, err := c.EnvironmentEnv(ctx, "acme", "web", "production")
+	if err != nil {
+		t.Fatalf("EnvironmentEnv: %v", err)
+	}
+	if environment.Vars["SHARED"] != "e" || len(environment.Vars) != 1 {
+		t.Errorf("the environment's own vars are %v, want only SHARED", environment.Vars)
+	}
+	effective := map[string]string{}
+	for _, v := range environment.Effective {
+		effective[v.Key] = v.Source
+	}
+	if effective["SHARED"] != "environment" || effective["P"] != "project" {
+		t.Errorf("effective sources are %v; SHARED should win at the environment", effective)
+	}
+}

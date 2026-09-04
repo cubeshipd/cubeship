@@ -103,14 +103,35 @@ func (s *Service) List(ctx context.Context, caller *user.User, orgSlug string) (
 	return s.Repo().ListForOrg(ctx, o.ID)
 }
 
-// SetEnv replaces the project's full set of variables. Every environment
-// and every app in the project inherits them.
+// Env returns the variables set on a project. Reading at RoleMember:
+// anyone who can deploy an app needs to see what it will inherit.
+func (s *Service) Env(ctx context.Context, caller *user.User, orgSlug, projectSlug string) (envvar.Map, error) {
+	p, err := s.Resolve(ctx, caller, orgSlug, projectSlug, org.RoleMember)
+	if err != nil {
+		return nil, err
+	}
+	return p.Env, nil
+}
+
+// SetEnv replaces the project's full set of variables, deleting any key
+// not present. Every environment and every app in the project inherits
+// what remains.
 func (s *Service) SetEnv(ctx context.Context, caller *user.User, orgSlug, projectSlug string, env envvar.Map) (*Project, error) {
 	p, err := s.Resolve(ctx, caller, orgSlug, projectSlug, org.RoleAdmin)
 	if err != nil {
 		return nil, err
 	}
 	return p, s.Repo().SetEnv(ctx, p.ID, env)
+}
+
+// MergeEnv adds or overwrites the given variables and removes the unset
+// ones, leaving every other key untouched.
+func (s *Service) MergeEnv(ctx context.Context, caller *user.User, orgSlug, projectSlug string, set envvar.Map, unset []string) (*Project, error) {
+	p, err := s.Resolve(ctx, caller, orgSlug, projectSlug, org.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	return p, s.Repo().MergeEnv(ctx, p.ID, set, unset)
 }
 
 // CreateEnvironment adds an environment to an existing project.
@@ -136,13 +157,43 @@ func (s *Service) ListEnvironments(ctx context.Context, caller *user.User, orgSl
 	return s.EnvironmentRepo().ListForProject(ctx, p.ID)
 }
 
-// SetEnvironmentEnv replaces one environment's full set of variables.
+// EnvironmentEnv returns the variables set on one environment, plus the
+// effective set an app there would inherit — the project's, overridden
+// by this environment's.
+func (s *Service) EnvironmentEnv(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug string) (envvar.Map, []envvar.Resolved, error) {
+	p, err := s.Resolve(ctx, caller, orgSlug, projectSlug, org.RoleMember)
+	if err != nil {
+		return nil, nil, err
+	}
+	e, err := s.EnvironmentRepo().BySlug(ctx, p.ID, envSlug)
+	if err != nil {
+		return nil, nil, ErrEnvironmentNotFound
+	}
+	resolved := envvar.Resolve(
+		envvar.Layer{Source: envvar.SourceProject, Vars: p.Env},
+		envvar.Layer{Source: envvar.SourceEnvironment, Vars: e.Env},
+	)
+	return e.Env, resolved, nil
+}
+
+// SetEnvironmentEnv replaces one environment's full set of variables,
+// deleting any key not present.
 func (s *Service) SetEnvironmentEnv(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug string, env envvar.Map) (*Environment, error) {
 	e, err := s.ResolveEnvironment(ctx, caller, orgSlug, projectSlug, envSlug, org.RoleAdmin)
 	if err != nil {
 		return nil, err
 	}
 	return e, s.EnvironmentRepo().SetEnv(ctx, e.ID, env)
+}
+
+// MergeEnvironmentEnv adds or overwrites the given variables and removes
+// the unset ones, leaving every other key untouched.
+func (s *Service) MergeEnvironmentEnv(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug string, set envvar.Map, unset []string) (*Environment, error) {
+	e, err := s.ResolveEnvironment(ctx, caller, orgSlug, projectSlug, envSlug, org.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	return e, s.EnvironmentRepo().MergeEnv(ctx, e.ID, set, unset)
 }
 
 // DeleteEnvironment removes an environment, refusing to delete

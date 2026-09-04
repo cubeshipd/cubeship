@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
+	"strings"
 )
 
 // Map is one level's worth of variables. It is stored as JSONB.
@@ -56,5 +57,46 @@ func Slice(m Map) []string {
 	for _, k := range keys {
 		out = append(out, k+"="+m[k])
 	}
+	return out
+}
+
+// Source names the level a variable was set at.
+const (
+	SourceProject     = "project"
+	SourceEnvironment = "environment"
+	SourceApp         = "app"
+)
+
+// Layer is one level's variables together with where they came from.
+type Layer struct {
+	Source string
+	Vars   Map
+}
+
+// Resolved is one variable in an app's final environment, and the level
+// that won it. It answers the question Merge alone cannot: not just what
+// the container will see, but why.
+type Resolved struct {
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+	Source string `json:"source"`
+}
+
+// Resolve applies the same precedence as Merge — each layer overriding
+// the last — and reports which one supplied each surviving value, sorted
+// by key.
+func Resolve(layers ...Layer) []Resolved {
+	winner := make(map[string]Resolved)
+	for _, layer := range layers {
+		for k, v := range layer.Vars {
+			winner[k] = Resolved{Key: k, Value: v, Source: layer.Source}
+		}
+	}
+
+	out := make([]Resolved, 0, len(winner))
+	for _, r := range winner {
+		out = append(out, r)
+	}
+	slices.SortFunc(out, func(a, b Resolved) int { return strings.Compare(a.Key, b.Key) })
 	return out
 }

@@ -82,34 +82,6 @@ func newEnvironmentCmd() *cobra.Command {
 	deleteCmd.Flags().StringVar(&deleteProject, "project", "", "project slug")
 	deleteCmd.MarkFlagRequired("project")
 
-	var envOrg, envProject string
-	envCmd := &cobra.Command{Use: "env", Short: "Manage an environment's environment variables"}
-	envSetCmd := &cobra.Command{
-		Use:   "set <env-slug> KEY=VALUE [KEY=VALUE...]",
-		Short: "Set environment variables inherited by every app in this environment",
-		Args:  cobra.MinimumNArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			vars, err := parseEnvPairs(args[1:])
-			if err != nil {
-				return err
-			}
-			c, err := newAPIClient()
-			if err != nil {
-				return err
-			}
-			if err := c.SetEnvironmentEnv(context.Background(), envOrg, envProject, args[0], vars); err != nil {
-				return err
-			}
-			fmt.Printf("Updated env for environment %s\n", args[0])
-			return nil
-		},
-	}
-	envSetCmd.Flags().StringVar(&envOrg, "org", "", "organization slug")
-	envSetCmd.MarkFlagRequired("org")
-	envSetCmd.Flags().StringVar(&envProject, "project", "", "project slug")
-	envSetCmd.MarkFlagRequired("project")
-	envCmd.AddCommand(envSetCmd)
-
-	environmentCmd.AddCommand(createCmd, listCmd, deleteCmd, envCmd)
+	environmentCmd.AddCommand(createCmd, listCmd, deleteCmd, environmentEnvCommands())
 	return environmentCmd
 }

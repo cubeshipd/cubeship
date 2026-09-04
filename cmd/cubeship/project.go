@@ -57,46 +57,6 @@ func newProjectCmd() *cobra.Command {
 	listCmd.Flags().StringVar(&listOrg, "org", "", "organization slug")
 	listCmd.MarkFlagRequired("org")
 
-	var envOrg string
-	envCmd := &cobra.Command{Use: "env", Short: "Manage a project's environment variables"}
-	envSetCmd := &cobra.Command{
-		Use:   "set <project-slug> KEY=VALUE [KEY=VALUE...]",
-		Short: "Set environment variables inherited by every environment (and app) in this project",
-		Args:  cobra.MinimumNArgs(2),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			vars, err := parseEnvPairs(args[1:])
-			if err != nil {
-				return err
-			}
-			c, err := newAPIClient()
-			if err != nil {
-				return err
-			}
-			if err := c.SetProjectEnv(context.Background(), envOrg, args[0], vars); err != nil {
-				return err
-			}
-			fmt.Printf("Updated env for project %s\n", args[0])
-			return nil
-		},
-	}
-	envSetCmd.Flags().StringVar(&envOrg, "org", "", "organization slug")
-	envSetCmd.MarkFlagRequired("org")
-	envCmd.AddCommand(envSetCmd)
-
-	projectCmd.AddCommand(createCmd, listCmd, envCmd)
+	projectCmd.AddCommand(createCmd, listCmd, projectEnvCommands())
 	return projectCmd
-}
-
-// parseEnvPairs parses a list of "KEY=VALUE" strings, the shape `app env
-// set` and `project/environment env set` all take.
-func parseEnvPairs(pairs []string) (map[string]string, error) {
-	vars := map[string]string{}
-	for _, kv := range pairs {
-		parts := strings.SplitN(kv, "=", 2)
-		if len(parts) != 2 {
-			return nil, fmt.Errorf("invalid KEY=VALUE pair: %q", kv)
-		}
-		vars[parts[0]] = parts[1]
-	}
-	return vars, nil
 }

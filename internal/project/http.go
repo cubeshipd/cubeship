@@ -48,10 +48,14 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.Handle("POST /orgs/{orgSlug}/projects", auth(http.HandlerFunc(h.create)))
 	r.Handle("GET /orgs/{orgSlug}/projects", auth(http.HandlerFunc(h.list)))
+	r.Handle("GET /orgs/{orgSlug}/projects/{projectSlug}/env", auth(http.HandlerFunc(h.getEnv)))
 	r.Handle("PUT /orgs/{orgSlug}/projects/{projectSlug}/env", auth(http.HandlerFunc(h.setEnv)))
+	r.Handle("PATCH /orgs/{orgSlug}/projects/{projectSlug}/env", auth(http.HandlerFunc(h.mergeEnv)))
 	r.Handle("POST /orgs/{orgSlug}/projects/{projectSlug}/environments", auth(http.HandlerFunc(h.createEnvironment)))
 	r.Handle("GET /orgs/{orgSlug}/projects/{projectSlug}/environments", auth(http.HandlerFunc(h.listEnvironments)))
+	r.Handle("GET /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.getEnvironmentEnv)))
 	r.Handle("PUT /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.setEnvironmentEnv)))
+	r.Handle("PATCH /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.mergeEnvironmentEnv)))
 	r.Handle("DELETE /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}", auth(http.HandlerFunc(h.deleteEnvironment)))
 }
 
@@ -100,6 +104,69 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 // replaces whatever was set before — there is no partial update.
 type envVarsRequest struct {
 	Vars envvar.Map `json:"vars"`
+}
+
+// EnvResponse is what reading variables at one level returns. Effective
+// is empty for a project, which inherits from nothing.
+type EnvResponse struct {
+	Vars      envvar.Map        `json:"vars"`
+	Effective []envvar.Resolved `json:"effective,omitempty"`
+}
+
+// MergeEnvRequest adds or overwrites the variables in set and removes
+// those named in unset, leaving everything else alone.
+type MergeEnvRequest struct {
+	Set   envvar.Map `json:"set"`
+	Unset []string   `json:"unset"`
+}
+
+func (h *Handler) getEnv(w http.ResponseWriter, r *http.Request) {
+	vars, err := h.svc.Env(r.Context(), user.FromContext(r.Context()),
+		r.PathValue("orgSlug"), r.PathValue("projectSlug"))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, EnvResponse{Vars: vars})
+}
+
+func (h *Handler) mergeEnv(w http.ResponseWriter, r *http.Request) {
+	var req MergeEnvRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if _, err := h.svc.MergeEnv(r.Context(), user.FromContext(r.Context()),
+		r.PathValue("orgSlug"), r.PathValue("projectSlug"), req.Set, req.Unset); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
+}
+
+func (h *Handler) getEnvironmentEnv(w http.ResponseWriter, r *http.Request) {
+	vars, effective, err := h.svc.EnvironmentEnv(r.Context(), user.FromContext(r.Context()),
+		r.PathValue("orgSlug"), r.PathValue("projectSlug"), r.PathValue("envSlug"))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, EnvResponse{Vars: vars, Effective: effective})
+}
+
+func (h *Handler) mergeEnvironmentEnv(w http.ResponseWriter, r *http.Request) {
+	var req MergeEnvRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if _, err := h.svc.MergeEnvironmentEnv(r.Context(), user.FromContext(r.Context()),
+		r.PathValue("orgSlug"), r.PathValue("projectSlug"), r.PathValue("envSlug"),
+		req.Set, req.Unset); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *Handler) setEnv(w http.ResponseWriter, r *http.Request) {
