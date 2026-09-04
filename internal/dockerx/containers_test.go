@@ -10,11 +10,16 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/registry"
+	"github.com/docker/docker/errdefs"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
 type fakeAPI struct {
 	pulledRef               string
+	pulledAuth              string
+	pullStream              string
+	pullErr                 error
 	createdConfig           *container.Config
 	createdHostConfig       *container.HostConfig
 	createdNetworkingConfig *network.NetworkingConfig
@@ -22,13 +27,20 @@ type fakeAPI struct {
 	startedID               string
 	stoppedID               string
 	removedID               string
+	inspectedID             string
+	inspectedName           string
 	inspectedRunning        bool
 	inspectErr              error
+	networkCreateErr        error
 }
 
 func (f *fakeAPI) ImagePull(ctx context.Context, ref string, options types.ImagePullOptions) (io.ReadCloser, error) {
 	f.pulledRef = ref
-	return io.NopCloser(strings.NewReader("")), nil
+	f.pulledAuth = options.RegistryAuth
+	if f.pullErr != nil {
+		return nil, f.pullErr
+	}
+	return io.NopCloser(strings.NewReader(f.pullStream)), nil
 }
 
 func (f *fakeAPI) ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
@@ -40,6 +52,9 @@ func (f *fakeAPI) ContainerCreate(ctx context.Context, config *container.Config,
 }
 
 func (f *fakeAPI) NetworkCreate(ctx context.Context, name string, options types.NetworkCreate) (types.NetworkCreateResponse, error) {
+	if f.networkCreateErr != nil {
+		return types.NetworkCreateResponse{}, f.networkCreateErr
+	}
 	return types.NetworkCreateResponse{ID: "net-1"}, nil
 }
 
@@ -63,11 +78,13 @@ func (f *fakeAPI) ContainerLogs(ctx context.Context, id string, options containe
 }
 
 func (f *fakeAPI) ContainerInspect(ctx context.Context, id string) (types.ContainerJSON, error) {
+	f.inspectedName = id
 	if f.inspectErr != nil {
 		return types.ContainerJSON{}, f.inspectErr
 	}
 	return types.ContainerJSON{
 		ContainerJSONBase: &types.ContainerJSONBase{
+			ID:    f.inspectedID,
 			State: &types.ContainerState{Running: f.inspectedRunning},
 		},
 	}, nil
@@ -234,11 +251,157 @@ func TestCreateContainerHostNetworkSkipsPortsAndNetwork(t *testing.T) {
 	}
 }
 
-func TestEnsureNetworkIgnoresErrors(t *testing.T) {
+func TestEnsureNetworkSucceedsOnCreate(t *testing.T) {
 	fake := &fakeAPI{}
 	c := newWithAPI(fake)
 
 	if err := c.EnsureNetwork(context.Background(), "cubeship"); err != nil {
 		t.Fatalf("EnsureNetwork: %v", err)
+	}
+}
+
+func TestEnsureNetworkIgnoresAlreadyExists(t *testing.T) {
+	for _, existsErr := range []error{
+		errors.New(`network with name cubeship already exists`),
+		errdefs.Conflict(errors.New("boom")),
+	} {
+		fake := &fakeAPI{networkCreateErr: existsErr}
+		c := newWithAPI(fake)
+		if err := c.EnsureNetwork(context.Background(), "cubeship"); err != nil {
+			t.Fatalf("expected %v to be treated as already-exists, got %v", existsErr, err)
+		}
+	}
+}
+
+func TestEnsureNetworkReturnsRealErrors(t *testing.T) {
+	fake := &fakeAPI{networkCreateErr: errors.New("cannot connect to the docker daemon")}
+	c := newWithAPI(fake)
+
+	err := c.EnsureNetwork(context.Background(), "cubeship")
+	if err == nil {
+		t.Fatal("expected a genuine network creation failure to be returned, not swallowed")
+	}
+	if !strings.Contains(err.Error(), "cannot connect to the docker daemon") {
+		t.Fatalf("expected the underlying error to be wrapped, got %v", err)
+	}
+}
+
+func TestPullImageReturnsStreamedError(t *testing.T) {
+	// The Engine reports most pull failures as HTTP 200 with a JSON
+	// error object inside the progress stream.
+	fake := &fakeAPI{pullStream: `{"status":"Pulling from myapp"}
+{"errorDetail":{"message":"manifest unknown"},"error":"manifest unknown"}
+`}
+	c := newWithAPI(fake)
+
+	err := c.PullImage(context.Background(), "127.0.0.1:5000/myapp:nope")
+	if err == nil {
+		t.Fatal("expected an in-stream pull error to be returned")
+	}
+	if !strings.Contains(err.Error(), "manifest unknown") {
+		t.Fatalf("expected the streamed message in the error, got %v", err)
+	}
+}
+
+func TestPullImageReturnsDeprecatedErrorField(t *testing.T) {
+	fake := &fakeAPI{pullStream: `{"error":"unauthorized: authentication required"}` + "\n"}
+	c := newWithAPI(fake)
+
+	err := c.PullImage(context.Background(), "127.0.0.1:5000/myapp:latest")
+	if err == nil {
+		t.Fatal("expected an error for a stream carrying only the deprecated error field")
+	}
+	if !strings.Contains(err.Error(), "unauthorized") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestPullImageSucceedsOnCleanStream(t *testing.T) {
+	fake := &fakeAPI{pullStream: `{"status":"Pulling from myapp"}
+{"status":"Download complete"}
+{"status":"Status: Downloaded newer image"}
+`}
+	c := newWithAPI(fake)
+
+	if err := c.PullImage(context.Background(), "127.0.0.1:5000/myapp:latest"); err != nil {
+		t.Fatalf("PullImage: %v", err)
+	}
+}
+
+func TestPullImageAttachesRegistryAuthForMatchingHost(t *testing.T) {
+	fake := &fakeAPI{}
+	c := newWithAPI(fake)
+	c.SetRegistryAuth("127.0.0.1:5000", "cubeship", "s3cret")
+
+	if err := c.PullImage(context.Background(), "127.0.0.1:5000/myapp:latest"); err != nil {
+		t.Fatalf("PullImage: %v", err)
+	}
+	if fake.pulledAuth == "" {
+		t.Fatal("expected credentials to be attached to a pull from the authenticated registry")
+	}
+	decoded, err := registry.DecodeAuthConfig(fake.pulledAuth)
+	if err != nil {
+		t.Fatalf("decode auth: %v", err)
+	}
+	if decoded.Username != "cubeship" || decoded.Password != "s3cret" {
+		t.Fatalf("unexpected credentials: %+v", decoded)
+	}
+}
+
+func TestPullImageSendsNoAuthForOtherHosts(t *testing.T) {
+	fake := &fakeAPI{}
+	c := newWithAPI(fake)
+	c.SetRegistryAuth("127.0.0.1:5000", "cubeship", "s3cret")
+
+	// Bootstrap images come from Docker Hub and must not carry the
+	// local registry's credentials.
+	if err := c.PullImage(context.Background(), "registry:2"); err != nil {
+		t.Fatalf("PullImage: %v", err)
+	}
+	if fake.pulledAuth != "" {
+		t.Fatalf("expected no auth for a Docker Hub image, got %q", fake.pulledAuth)
+	}
+
+	if err := c.PullImage(context.Background(), "registry.example.com/myapp:latest"); err != nil {
+		t.Fatalf("PullImage: %v", err)
+	}
+	if fake.pulledAuth != "" {
+		t.Fatalf("expected no auth for an unregistered host, got %q", fake.pulledAuth)
+	}
+}
+
+func TestInspectContainerByNameReturnsIDAndRunning(t *testing.T) {
+	fake := &fakeAPI{inspectedID: "abc123", inspectedRunning: true}
+	c := newWithAPI(fake)
+
+	id, running, err := c.InspectContainerByName(context.Background(), "cubeship-traefik")
+	if err != nil {
+		t.Fatalf("InspectContainerByName: %v", err)
+	}
+	if fake.inspectedName != "cubeship-traefik" {
+		t.Fatalf("expected the name to be forwarded, got %q", fake.inspectedName)
+	}
+	if id != "abc123" || !running {
+		t.Fatalf("unexpected result: id=%q running=%v", id, running)
+	}
+}
+
+func TestInspectContainerByNameNotFound(t *testing.T) {
+	fake := &fakeAPI{inspectErr: errdefs.NotFound(errors.New("no such container: cubeship-traefik"))}
+	c := newWithAPI(fake)
+
+	_, _, err := c.InspectContainerByName(context.Background(), "cubeship-traefik")
+	if !errors.Is(err, ErrContainerNotFound) {
+		t.Fatalf("expected ErrContainerNotFound, got %v", err)
+	}
+}
+
+func TestInspectContainerByNameReturnsOtherErrors(t *testing.T) {
+	fake := &fakeAPI{inspectErr: errors.New("cannot connect to the docker daemon")}
+	c := newWithAPI(fake)
+
+	_, _, err := c.InspectContainerByName(context.Background(), "cubeship-traefik")
+	if err == nil || errors.Is(err, ErrContainerNotFound) {
+		t.Fatalf("expected a real error to be returned, got %v", err)
 	}
 }

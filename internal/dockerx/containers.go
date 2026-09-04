@@ -2,15 +2,24 @@ package dockerx
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
-	"log"
+	"strings"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/registry"
+	"github.com/docker/docker/errdefs"
+	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/go-connections/nat"
 )
+
+// ErrContainerNotFound is returned by InspectContainerByName when no
+// container with the requested name or ID exists.
+var ErrContainerNotFound = errors.New("container not found")
 
 // NOTE: the brief targets "github.com/docker/docker/api/types/nat", but the
 // installed SDK (v25.0.6, see client.go) has no api/types/nat package —
@@ -33,19 +42,59 @@ type ContainerOpts struct {
 }
 
 func (c *Client) PullImage(ctx context.Context, ref string) error {
-	rc, err := c.api.ImagePull(ctx, ref, types.ImagePullOptions{})
+	opts := types.ImagePullOptions{}
+	if auth, ok := c.authForRef(ref); ok {
+		encoded, err := registry.EncodeAuthConfig(auth)
+		if err != nil {
+			return fmt.Errorf("encode registry auth for %q: %w", ref, err)
+		}
+		opts.RegistryAuth = encoded
+	}
+
+	rc, err := c.api.ImagePull(ctx, ref, opts)
 	if err != nil {
 		return fmt.Errorf("pull image %q: %w", ref, err)
 	}
 	defer rc.Close()
-	// Drain the pull progress stream; callers don't need the output.
-	buf := make([]byte, 4096)
+
+	// The Engine API reports most pull failures (auth, TLS, "manifest
+	// unknown") as HTTP 200 with a JSON error object *inside* the
+	// progress stream rather than as a transport error, so draining the
+	// body blindly reports a failed pull as a success. Decode every
+	// message and surface the first error one.
+	dec := json.NewDecoder(rc)
 	for {
-		if _, err := rc.Read(buf); err != nil {
-			break
+		var msg jsonmessage.JSONMessage
+		if err := dec.Decode(&msg); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return fmt.Errorf("pull image %q: read progress stream: %w", ref, err)
+		}
+		if msg.Error != nil {
+			return fmt.Errorf("pull image %q: %s", ref, msg.Error.Message)
+		}
+		if msg.ErrorMessage != "" {
+			return fmt.Errorf("pull image %q: %s", ref, msg.ErrorMessage)
 		}
 	}
 	return nil
+}
+
+// authForRef returns the credentials registered for the registry host of
+// ref, if any. The host is the segment before the first "/"; a reference
+// with no "/" (e.g. "registry:2") is a Docker Hub official image and
+// never carries credentials here.
+func (c *Client) authForRef(ref string) (registry.AuthConfig, bool) {
+	if len(c.registryAuths) == 0 {
+		return registry.AuthConfig{}, false
+	}
+	i := strings.Index(ref, "/")
+	if i < 0 {
+		return registry.AuthConfig{}, false
+	}
+	auth, ok := c.registryAuths[ref[:i]]
+	return auth, ok
 }
 
 func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (string, error) {
@@ -94,14 +143,50 @@ func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (strin
 }
 
 // EnsureNetwork creates the named Docker network if it doesn't already
-// exist. It's idempotent: an "already exists" style error from the daemon
-// is logged and swallowed rather than returned, since callers just want the
-// network to be present afterward.
+// exist. It's idempotent: an "already exists" conflict from the daemon is
+// treated as success, since callers just want the network to be present
+// afterward. Any other failure is returned — swallowing those hides a
+// genuinely broken Docker setup until it resurfaces as a much more
+// confusing error at container-create time.
 func (c *Client) EnsureNetwork(ctx context.Context, name string) error {
 	if _, err := c.api.NetworkCreate(ctx, name, types.NetworkCreate{}); err != nil {
-		log.Printf("dockerx: create network %q: %v (assuming it already exists)", name, err)
+		if isAlreadyExists(err) {
+			return nil
+		}
+		return fmt.Errorf("create network %q: %w", name, err)
 	}
 	return nil
+}
+
+// isAlreadyExists reports whether err is the daemon's "this object
+// already exists" conflict. The installed SDK (v25.0.6) wraps a 409 as an
+// errdefs.ErrConflict, but the daemon also returns plain 500s carrying an
+// "already exists" message for some object types depending on API version,
+// so the message is checked as a fallback.
+func isAlreadyExists(err error) bool {
+	if errdefs.IsConflict(err) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "already exists") || strings.Contains(msg, "already in use")
+}
+
+// InspectContainerByName looks up a container by name (or ID) and reports
+// its ID and whether it is running. It returns ErrContainerNotFound if no
+// such container exists, so callers can distinguish "not there yet" from
+// "Docker is broken".
+func (c *Client) InspectContainerByName(ctx context.Context, name string) (string, bool, error) {
+	info, err := c.api.ContainerInspect(ctx, name)
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return "", false, ErrContainerNotFound
+		}
+		return "", false, fmt.Errorf("inspect container %q: %w", name, err)
+	}
+	if info.ContainerJSONBase == nil {
+		return "", false, fmt.Errorf("inspect container %q: empty response from docker", name)
+	}
+	return info.ID, info.State != nil && info.State.Running, nil
 }
 
 func (c *Client) StartContainer(ctx context.Context, id string) error {

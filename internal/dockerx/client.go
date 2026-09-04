@@ -7,6 +7,7 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/registry"
 	dockerclient "github.com/docker/docker/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -38,6 +39,12 @@ type apiClient interface {
 
 type Client struct {
 	api apiClient
+
+	// registryAuths holds basic-auth credentials keyed by registry host
+	// (e.g. "127.0.0.1:5000"). PullImage attaches the matching entry to
+	// the pull so the daemon can read from its own authenticated
+	// registry. Set once at startup, read-only afterwards.
+	registryAuths map[string]registry.AuthConfig
 }
 
 func New() (*Client, error) {
@@ -51,4 +58,19 @@ func New() (*Client, error) {
 // newWithAPI is used by tests to inject a fake apiClient.
 func newWithAPI(api apiClient) *Client {
 	return &Client{api: api}
+}
+
+// SetRegistryAuth registers basic-auth credentials for a registry host.
+// Any later PullImage whose reference starts with that host sends them.
+// Call this before serving requests; it is not safe to call concurrently
+// with PullImage.
+func (c *Client) SetRegistryAuth(host, username, password string) {
+	if c.registryAuths == nil {
+		c.registryAuths = make(map[string]registry.AuthConfig)
+	}
+	c.registryAuths[host] = registry.AuthConfig{
+		Username:      username,
+		Password:      password,
+		ServerAddress: host,
+	}
 }
