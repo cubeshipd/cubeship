@@ -89,6 +89,47 @@ func TestOpenMigratesPreOrganizationsDatabase(t *testing.T) {
 	}
 }
 
+// apps.env was added the same no-op way one release earlier, so a
+// database from before it has the identical problem.
+func TestOpenMigratesDatabaseWithoutAppsEnv(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cubeship.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE apps (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			domain TEXT NOT NULL,
+			image TEXT NOT NULL UNIQUE,
+			container_id TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'pending',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+		INSERT INTO apps (name, domain, image) VALUES ('oldapp', 'old.example.com', 'registry.example.com/oldapp');`); err != nil {
+		t.Fatalf("create pre-env schema: %v", err)
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open on a pre-env database: %v", err)
+	}
+	defer s.Close()
+
+	app, err := s.GetAppByName(context.Background(), "oldapp")
+	if err != nil {
+		t.Fatalf("GetAppByName after migration: %v", err)
+	}
+	if len(app.Env) != 0 {
+		t.Fatalf("expected an empty env map for a migrated app, got %v", app.Env)
+	}
+	if app.OrgID == 0 {
+		t.Fatal("expected the migrated app to be adopted into an organization")
+	}
+}
+
 func TestMigrationIsIdempotent(t *testing.T) {
 	path := writeLegacyDB(t, "legacyapp")
 

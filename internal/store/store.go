@@ -92,17 +92,21 @@ func Open(path string) (*Store, error) {
 
 // migrate brings an older database up to the current schema. The
 // statements above are all CREATE TABLE IF NOT EXISTS, which is a no-op
-// against a table that already exists — so a column added to an existing
-// table (apps.org_id) never appears on an upgraded database unless it is
-// added here explicitly. Without this, a daemon upgraded from the
-// pre-organizations release starts, then fails every apps query with
-// "no such column: org_id".
+// against a table that already exists — so a column added to the apps
+// table never appears on an upgraded database unless it is added here
+// explicitly. Without this, a daemon upgraded from an older release
+// starts, then fails every apps query with "no such column: org_id"
+// (or, from further back, "no such column: env").
 func migrate(db *sql.DB) error {
+	hasEnv, err := hasColumn(db, "apps", "env")
+	if err != nil {
+		return err
+	}
 	hasOrgID, err := hasColumn(db, "apps", "org_id")
 	if err != nil {
 		return err
 	}
-	if hasOrgID {
+	if hasEnv && hasOrgID {
 		return nil
 	}
 
@@ -112,28 +116,36 @@ func migrate(db *sql.DB) error {
 	}
 	defer tx.Rollback()
 
-	// DEFAULT 0 is what makes this possible at all: SQLite requires a
-	// non-null default to add a NOT NULL column to a table with rows.
-	// The rows it leaves behind (org_id = 0, no such organization) are
-	// adopted below.
-	if _, err := tx.Exec(`ALTER TABLE apps ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`); err != nil {
-		return fmt.Errorf("add apps.org_id: %w", err)
+	if !hasEnv {
+		if _, err := tx.Exec(`ALTER TABLE apps ADD COLUMN env TEXT NOT NULL DEFAULT '{}'`); err != nil {
+			return fmt.Errorf("add apps.env: %w", err)
+		}
 	}
 
-	var orphaned int
-	if err := tx.QueryRow(`SELECT COUNT(*) FROM apps WHERE org_id = 0`).Scan(&orphaned); err != nil {
-		return fmt.Errorf("count unowned apps: %w", err)
-	}
-	if orphaned > 0 {
-		// Existing apps must end up owned by a real organization, or
-		// every authorization check against them fails and their owner
-		// can no longer see them.
-		orgID, err := ensureDefaultOrg(tx)
-		if err != nil {
-			return err
+	if !hasOrgID {
+		// DEFAULT 0 is what makes this possible at all: SQLite requires
+		// a non-null default to add a NOT NULL column to a table with
+		// rows. The rows it leaves behind (org_id = 0, no such
+		// organization) are adopted below.
+		if _, err := tx.Exec(`ALTER TABLE apps ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add apps.org_id: %w", err)
 		}
-		if _, err := tx.Exec(`UPDATE apps SET org_id = ? WHERE org_id = 0`, orgID); err != nil {
-			return fmt.Errorf("adopt unowned apps: %w", err)
+
+		var orphaned int
+		if err := tx.QueryRow(`SELECT COUNT(*) FROM apps WHERE org_id = 0`).Scan(&orphaned); err != nil {
+			return fmt.Errorf("count unowned apps: %w", err)
+		}
+		if orphaned > 0 {
+			// Existing apps must end up owned by a real organization, or
+			// every authorization check against them fails and their
+			// owner can no longer see them.
+			orgID, err := ensureDefaultOrg(tx)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`UPDATE apps SET org_id = ? WHERE org_id = 0`, orgID); err != nil {
+				return fmt.Errorf("adopt unowned apps: %w", err)
+			}
 		}
 	}
 
