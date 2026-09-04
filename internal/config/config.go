@@ -13,12 +13,12 @@ import (
 
 type Config struct {
 	Domain string
-	// Token is the instance-wide system credential: the embedded
-	// registry's htpasswd password (username bootstrap.RegistryUsername)
-	// and the shared secret on the registry's push-notification webhook.
-	// It is NOT a user's API key — users authenticate to the daemon API
-	// with per-user keys, and the super-admin's own key is generated
-	// separately (see cmd/cubeshipd's loadOrCreateAdminKey).
+	// Token is the instance-wide system credential: the shared secret on
+	// the registry's push-notification webhook. It is NOT a user's API
+	// key and NOT a registry login credential — registry push/pull now
+	// goes through per-user tokens (see internal/regauth), and the
+	// super-admin's own API key is generated separately (see
+	// cmd/cubeshipd's loadOrCreateAdminKey).
 	Token        string
 	DataDir      string
 	RegistryHost string

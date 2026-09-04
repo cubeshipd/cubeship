@@ -63,9 +63,11 @@ func TestEnsureSuperAdminCreatesOnFirstBoot(t *testing.T) {
 }
 
 // The super-admin's API key must not be the daemon's system token: that
-// token is the registry's htpasswd password, so anyone who has to
-// `docker push` would otherwise hold a credential that also creates
-// organizations and reads every app's environment.
+// token is only the registry webhook's shared secret. Conflating them
+// would mean anyone with the daemon token — including, previously,
+// anyone who had to push before per-user registry tokens existed —
+// holding a credential that also creates organizations and reads every
+// app's environment.
 func TestEnsureSuperAdminKeyIsNotTheDaemonToken(t *testing.T) {
 	s, err := store.Open(":memory:")
 	if err != nil {

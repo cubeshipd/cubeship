@@ -21,18 +21,25 @@
 // certificate has to exist for a deploy to happen. Only the final
 // HTTPS-through-Traefik assertion needs Linux.
 //
-// CONFIRMED on Docker Desktop for Mac (2026-09-04, after the orgs/users/
-// API-key auth plan's fix wave separated the super-admin's API key from
-// the registry/webhook token): the daemon starts, bootstraps a super-admin
-// with its own key (no longer CUBESHIP_TOKEN), the registry and Traefik
-// bootstrap, org creation, org-scoped app creation, `docker login` +
-// `docker push` to localhost:5000/<org>/<app> succeed against the
-// htpasswd auth, the registry's push notification fires the webhook, and
-// the daemon pulls and deploys the app successfully — the test gets all
-// the way to and fails only at the final "app reachable via Traefik"
-// assertion, exactly the --network host limitation described above and
-// nothing earlier. Re-verify this note if the deploy pipeline or the
-// auth/credential model changes again.
+// LAST CONFIRMED on Docker Desktop for Mac (2026-09-04, before the
+// registry moved from a shared htpasswd credential to per-user Docker
+// Registry v2 token auth — see internal/regauth): the daemon starts,
+// bootstraps a super-admin with its own key (separate from
+// CUBESHIP_TOKEN), the registry and Traefik bootstrap, org creation,
+// org-scoped app creation, `docker login` + `docker push` to
+// localhost:5000/<org>/<app> succeed, the registry's push notification
+// fires the webhook, and the daemon pulls and deploys the app
+// successfully — the test got all the way to and failed only at the
+// final "app reachable via Traefik" assertion, exactly the --network
+// host limitation described above and nothing earlier.
+//
+// NOT YET RE-CONFIRMED since the token-auth switch. The login step now
+// authenticates as the super-admin's real username ("admin") against
+// the registry's token realm (GET /v2/token) instead of a fixed
+// htpasswd account — that path is covered by unit tests
+// (internal/api/token_handler_test.go) but not by a live run against
+// real Docker yet. Re-verify this note (and update it) the next time
+// this test is run live.
 package integration
 
 import (
@@ -48,7 +55,6 @@ import (
 	"time"
 
 	"cubeship/internal/apiclient"
-	"cubeship/internal/bootstrap"
 )
 
 const testToken = "integration-test-token"
@@ -142,10 +148,13 @@ func TestDeployEndToEnd(t *testing.T) {
 		t.Fatalf("build fixture image: %v\n%s", err, out)
 	}
 
-	// The registry rejects anonymous pushes; these are the same
-	// credentials `cubeship registry login` uses.
-	login := exec.Command("docker", "login", "localhost:5000", "-u", bootstrap.RegistryUsername, "--password-stdin")
-	login.Stdin = strings.NewReader(testToken)
+	// The registry rejects anonymous pushes and grants access per the
+	// pushing user's org membership — the super-admin ("admin", the
+	// hardcoded bootstrap username) is authorized everywhere, same as
+	// `cubeship registry login` would do for any real user with their
+	// own username and API key.
+	login := exec.Command("docker", "login", "localhost:5000", "-u", "admin", "--password-stdin")
+	login.Stdin = strings.NewReader(adminKey)
 	if out, err := login.CombinedOutput(); err != nil {
 		t.Fatalf("docker login to the local registry: %v\n%s", err, out)
 	}
