@@ -16,6 +16,7 @@ import (
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/project"
 	"cubeship/internal/registry"
+	"cubeship/internal/settings"
 	"cubeship/internal/user"
 )
 
@@ -25,25 +26,23 @@ type Server struct {
 	Orgs     *org.Service
 	Projects *project.Service
 	Apps     *app.Service
+	Settings *settings.Service
 	Registry *registry.Handler
 
-	apiHost string
-	router  *httpx.Router
+	router *httpx.Router
 }
 
 // Options are what the daemon has to supply that the modules cannot
 // derive for themselves.
+//
+// Everything that follows the instance's domain — the registry host, the
+// API host — is deliberately absent: those live in the settings module
+// now, because an operator sets the domain from the dashboard after
+// installing and the answer has to change without a restart.
 type Options struct {
 	// WebhookToken is the shared secret on the registry's push
 	// notifications. Not anyone's API key.
 	WebhookToken string
-	// RegistryHost is the public registry name (registry.<domain>) that
-	// app image paths are built from.
-	RegistryHost string
-	// APIHost is the daemon's own public name (api.<domain>). It appears
-	// in the OpenAPI document as the canonical server, so the reference
-	// page targets a real address rather than a placeholder.
-	APIHost string
 }
 
 // New wires the modules together. The dependency order here is the real
@@ -53,15 +52,16 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	users := user.NewService(db)
 	orgs := org.NewService(db, users)
 	projects := project.NewService(db, orgs)
-	apps := app.NewService(db, orgs, projects, app.NewOrchestrator(db, docker), opts.RegistryHost)
+	cfg := settings.NewService(db)
+	apps := app.NewService(db, orgs, projects, app.NewOrchestrator(db, docker, cfg), cfg)
 
 	srv := &Server{
 		Users:    users,
 		Orgs:     orgs,
 		Projects: projects,
 		Apps:     apps,
-		Registry: registry.NewHandler(users, orgs, apps, opts.WebhookToken, opts.RegistryHost),
-		apiHost:  opts.APIHost,
+		Settings: cfg,
+		Registry: registry.NewHandler(users, orgs, apps, cfg, opts.WebhookToken),
 		router:   httpx.NewRouter(),
 	}
 	srv.routes()
@@ -107,6 +107,7 @@ func (s *Server) routes() {
 	userHandler.Routes(s.router, auth)
 	org.NewHandler(s.Orgs).Routes(s.router, auth)
 	project.NewHandler(s.Projects).Routes(s.router, auth)
+	settings.NewHandler(s.Settings).Routes(s.router, auth)
 	app.NewHandler(s.Apps).Routes(s.router, auth)
 
 	// The registry's own two endpoints authenticate differently (Basic

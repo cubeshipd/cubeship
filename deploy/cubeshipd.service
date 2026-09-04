@@ -9,12 +9,12 @@ Requires=docker.service
 Type=simple
 ExecStart=/usr/local/bin/cubeshipd
 
-# Base domain: the API is served at api.<domain> and the registry at
-# registry.<domain>. Both must resolve to this host.
-Environment=CUBESHIP_DOMAIN=example.com
-# Contact address Let's Encrypt registers for expiry notices.
-Environment=CUBESHIP_ACME_EMAIL=admin@example.com
-# Persistent state: SQLite database, the daemon's tokens (including the
+# The domain and the Let's Encrypt contact address are NOT set here: the
+# daemon starts without them and they are configured afterwards, through
+# PUT /settings. See the README.
+#
+# Persistent state: the Postgres data directory, the daemon's secrets
+# (including the
 # super-admin's API key in admin-api-key), registry config and image
 # storage, Traefik acme.json.
 Environment=CUBESHIP_DATA_DIR=/var/lib/cubeship

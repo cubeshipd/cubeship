@@ -13,18 +13,14 @@ import (
 )
 
 type Config struct {
-	Domain string
 	// Token is the instance-wide system credential: the shared secret on
 	// the registry's push-notification webhook. It is NOT a user's API
 	// key and NOT a registry login credential — registry push/pull now
 	// goes through per-user tokens (see internal/regauth), and the
 	// super-admin's own API key is generated separately (see
 	// cmd/cubeshipd's adminKeyFileName).
-	Token        string
-	DataDir      string
-	RegistryHost string
-	APIHost      string
-	AcmeEmail    string
+	Token   string
+	DataDir string
 
 	// TokenFile is where a generated token is persisted. Empty when the
 	// token came from CUBESHIP_TOKEN.
@@ -43,17 +39,15 @@ func (c *Config) ManagedDatabase() bool {
 	return c.DatabaseURL == ""
 }
 
+// Load reads the configuration the daemon needs before it can reach its
+// own database.
+//
+// The domain and the ACME contact address are deliberately not here any
+// more: Cubeship is installed with one command and reached by IP, and
+// those are configured from the dashboard afterwards. They are still read
+// from the environment, but only to seed an install upgrading from the
+// release where they were required — see SeedSettings.
 func Load() (*Config, error) {
-	domain := os.Getenv("CUBESHIP_DOMAIN")
-	if domain == "" {
-		return nil, fmt.Errorf("CUBESHIP_DOMAIN environment variable is required")
-	}
-
-	acmeEmail := os.Getenv("CUBESHIP_ACME_EMAIL")
-	if acmeEmail == "" {
-		return nil, fmt.Errorf("CUBESHIP_ACME_EMAIL environment variable is required")
-	}
-
 	dataDir := os.Getenv("CUBESHIP_DATA_DIR")
 	if dataDir == "" {
 		dataDir = "/var/lib/cubeship"
@@ -71,15 +65,21 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		Domain:       domain,
-		Token:        token,
-		DataDir:      dataDir,
-		RegistryHost: "registry." + domain,
-		APIHost:      "api." + domain,
-		AcmeEmail:    acmeEmail,
-		TokenFile:    tokenFile,
-		DatabaseURL:  os.Getenv("CUBESHIP_DATABASE_URL"),
+		Token:       token,
+		DataDir:     dataDir,
+		TokenFile:   tokenFile,
+		DatabaseURL: os.Getenv("CUBESHIP_DATABASE_URL"),
 	}, nil
+}
+
+// SeedSettings returns the values an older release kept in the
+// environment, for a one-time write into the settings table. Empty
+// entries are ignored, and nothing already configured is overwritten.
+func SeedSettings() map[string]string {
+	return map[string]string{
+		"domain":     os.Getenv("CUBESHIP_DOMAIN"),
+		"acme_email": os.Getenv("CUBESHIP_ACME_EMAIL"),
+	}
 }
 
 // loadOrCreateToken reads the persisted system token, generating and

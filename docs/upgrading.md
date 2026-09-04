@@ -1,5 +1,28 @@
 # Upgrading an existing install
 
+## From a release that required CUBESHIP_DOMAIN and CUBESHIP_ACME_EMAIL
+
+Nothing to do, but worth knowing what changed. The daemon now starts
+knowing neither: it is meant to be installed with one command, reached by
+IP, and configured afterwards. Both values moved to the instance's
+settings, editable through `PUT /settings`.
+
+Your existing environment variables are read once, on the first start
+after upgrading, and written into the settings — so an install that had
+them keeps working unchanged. After that they are ignored: the settings
+are the source of truth, and a value changed through the API is never
+overwritten by the environment.
+
+Two things behave differently while an instance has no domain or contact
+address configured, which cannot happen to an upgraded install but is the
+normal state of a new one:
+
+- No domain means no registry container and no push path. Apps can still
+  be created; `image` comes back empty until a domain exists.
+- No contact address means no certificate resolver, so apps are served
+  over plain HTTP and `:80` is not redirected. Setting one and redeploying
+  an app moves it to HTTPS.
+
 ## From a release where deploying blocked the request
 
 `POST /apps/.../deploy` used to run the deploy inline and answer 200 or

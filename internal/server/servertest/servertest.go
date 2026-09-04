@@ -24,6 +24,7 @@ import (
 	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/project"
 	"cubeship/internal/server"
+	"cubeship/internal/settings"
 	"cubeship/internal/user"
 )
 
@@ -31,11 +32,14 @@ import (
 // notifications with.
 const WebhookToken = "webhook-secret"
 
-// RegistryHost is the public registry name test app image paths are
-// built from, and APIHost the daemon's own public name.
+// Domain is the base domain the fixture configures, and the two names
+// derived from it. A real instance starts with no domain at all; the
+// fixture sets one because most tests are about what happens after it is
+// configured.
 const (
-	RegistryHost = "registry.example.com"
-	APIHost      = "api.example.com"
+	Domain       = "example.com"
+	RegistryHost = "registry." + Domain
+	APIHost      = "api." + Domain
 )
 
 // Fixture is a running server plus the identities and scopes a test
@@ -87,18 +91,31 @@ func (noDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {
 	return nil, errNoDocker
 }
 
+// NewUnconfigured is New without a domain — the state a fresh install is
+// in, before anyone has been to the settings page.
+func NewUnconfigured(t testing.TB) *Fixture {
+	t.Helper()
+	return newFixture(t, noDocker{}, "")
+}
+
 // NewWithDocker is New with a Docker client (usually a fake) wired into
 // the deploy orchestrator.
 func NewWithDocker(t testing.TB, docker app.DockerAPI) *Fixture {
 	t.Helper()
+	return newFixture(t, docker, Domain)
+}
+
+func newFixture(t testing.TB, docker app.DockerAPI, domain string) *Fixture {
+	t.Helper()
 	ctx := context.Background()
 	db := dbtest.New(t)
 
-	srv := server.New(db, docker, server.Options{
-		WebhookToken: WebhookToken,
-		RegistryHost: RegistryHost,
-		APIHost:      APIHost,
-	})
+	srv := server.New(db, docker, server.Options{WebhookToken: WebhookToken})
+	if domain != "" {
+		if err := srv.Settings.SeedFromEnv(ctx, map[string]string{settings.Domain: domain}); err != nil {
+			t.Fatalf("configure the fixture's domain: %v", err)
+		}
+	}
 
 	admin, adminKey := CreateUser(t, db, "admin", true)
 	o, err := srv.Orgs.Repo().Create(ctx, "acme", "Acme Inc")

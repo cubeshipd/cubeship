@@ -14,9 +14,13 @@ import (
 	"cubeship/internal/envvar"
 )
 
-// App is one deployable service: a name, the domain Traefik routes to it,
-// the registry image a push to it lands in, and whichever container is
-// currently serving it.
+// App is one deployable service: a name, the domain Traefik routes to
+// it, and whichever container is currently serving it.
+//
+// Where its image comes from is not stored here. For an app pushed to the
+// embedded registry the path is derived from its reference, so an app
+// created before the instance had a domain gets a correct push path the
+// moment one is configured.
 type App struct {
 	ID            int64
 	OrgID         int64
@@ -24,7 +28,6 @@ type App struct {
 	EnvironmentID int64
 	Name          string
 	Domain        string
-	Image         string
 	ContainerID   string
 	Status        string
 	Env           envvar.Map
@@ -89,4 +92,8 @@ var (
 	// ErrDeploymentNotFound covers a deployment id that does not belong
 	// to the app it was asked for.
 	ErrDeploymentNotFound = errors.New("deployment not found")
+
+	// ErrNoRegistry reports that the instance has no domain yet, so
+	// there is no registry to push to or pull from.
+	ErrNoRegistry = errors.New("no registry: set a domain in the instance settings first")
 )

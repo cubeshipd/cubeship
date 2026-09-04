@@ -8,12 +8,14 @@
 package registry
 
 import (
+	"context"
 	"crypto/rsa"
 	"strings"
 
 	"cubeship/internal/app"
 	"cubeship/internal/org"
 	"cubeship/internal/platform/regauth"
+	"cubeship/internal/settings"
 	"cubeship/internal/user"
 )
 
@@ -27,7 +29,10 @@ type Handler struct {
 	// notifications carry. It is a system-to-system credential, unrelated
 	// to per-user API keys.
 	webhookToken string
-	registryHost string
+
+	// settings supplies the registry host, which follows the instance's
+	// domain and therefore changes without a restart.
+	settings *settings.Service
 
 	// signingKey signs the access tokens the token endpoint issues. nil
 	// until SetSigningKey is called; the endpoint 503s until then rather
@@ -35,8 +40,18 @@ type Handler struct {
 	signingKey *rsa.PrivateKey
 }
 
-func NewHandler(users *user.Service, orgs *org.Service, apps *app.Service, webhookToken, registryHost string) *Handler {
-	return &Handler{users: users, orgs: orgs, apps: apps, webhookToken: webhookToken, registryHost: registryHost}
+func NewHandler(users *user.Service, orgs *org.Service, apps *app.Service, cfg *settings.Service, webhookToken string) *Handler {
+	return &Handler{users: users, orgs: orgs, apps: apps, settings: cfg, webhookToken: webhookToken}
+}
+
+// registryHost is the public registry name, or "" while the instance has
+// no domain — in which case there is no registry running to notify us.
+func (h *Handler) registryHost(ctx context.Context) string {
+	values, err := h.settings.Load(ctx)
+	if err != nil {
+		return ""
+	}
+	return settings.RegistryHostFor(values.Get(settings.Domain))
 }
 
 // SetSigningKey wires in the daemon's registry-token signing key. Must be

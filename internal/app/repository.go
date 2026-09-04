@@ -16,7 +16,7 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, org_id, project_id, environment_id, name, domain, image, container_id, status, env, created_at`
+const columns = `id, org_id, project_id, environment_id, name, domain, container_id, status, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -24,7 +24,7 @@ func scan(row scanner) (*App, error) {
 	var a App
 	var envJSON []byte
 	if err := row.Scan(&a.ID, &a.OrgID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Domain,
-		&a.Image, &a.ContainerID, &a.Status, &envJSON, &a.CreatedAt); err != nil {
+		&a.ContainerID, &a.Status, &envJSON, &a.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &a.Env); err != nil {
@@ -33,12 +33,12 @@ func scan(row scanner) (*App, error) {
 	return &a, nil
 }
 
-func (r *Repository) Create(ctx context.Context, orgID, projectID, environmentID int64, name, domain, image string) (*App, error) {
+func (r *Repository) Create(ctx context.Context, orgID, projectID, environmentID int64, name, domain string) (*App, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO apps (org_id, project_id, environment_id, name, domain, image)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO apps (org_id, project_id, environment_id, name, domain)
+		 VALUES ($1, $2, $3, $4, $5)
 		 RETURNING `+columns,
-		orgID, projectID, environmentID, name, domain, image)
+		orgID, projectID, environmentID, name, domain)
 	a, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("create app: %w", err)
@@ -79,16 +79,6 @@ func (r *Repository) Delete(ctx context.Context, appID int64) error {
 		return fmt.Errorf("delete app: %w", err)
 	}
 	return nil
-}
-
-// ByImage resolves the app a registry push notification refers to.
-func (r *Repository) ByImage(ctx context.Context, image string) (*App, error) {
-	row := r.q.QueryRowContext(ctx, `SELECT `+columns+` FROM apps WHERE image = $1`, image)
-	a, err := scan(row)
-	if err != nil {
-		return nil, fmt.Errorf("get app by image %q: %w", image, err)
-	}
-	return a, nil
 }
 
 // List returns every app on the instance. Only the reconciler, which is
@@ -230,7 +220,7 @@ type Scoped struct {
 // matches scanScoped.
 const scopedQuery = `
 	SELECT a.id, a.org_id, a.project_id, a.environment_id, a.name, a.domain,
-	       a.image, a.container_id, a.status, a.env, a.created_at,
+	       a.container_id, a.status, a.env, a.created_at,
 	       o.slug, p.slug, e.slug
 	FROM apps a
 	JOIN organizations o ON o.id = a.org_id
@@ -241,7 +231,7 @@ func scanScoped(row scanner) (*Scoped, error) {
 	var s Scoped
 	var envJSON []byte
 	if err := row.Scan(&s.ID, &s.OrgID, &s.ProjectID, &s.EnvironmentID, &s.Name, &s.Domain,
-		&s.Image, &s.ContainerID, &s.Status, &envJSON, &s.CreatedAt,
+		&s.ContainerID, &s.Status, &envJSON, &s.CreatedAt,
 		&s.OrgSlug, &s.ProjectSlug, &s.EnvironmentSlug); err != nil {
 		return nil, err
 	}

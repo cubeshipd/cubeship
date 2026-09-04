@@ -26,28 +26,37 @@ const DefaultLogTail = "500"
 type Response struct {
 	// Reference is the app's canonical identifier,
 	// org/project/environment/name — also its registry repository path.
-	Reference   string `json:"reference"`
-	Name        string `json:"name"`
-	Domain      string `json:"domain"`
-	Image       string `json:"image"`
+	Reference string `json:"reference"`
+	Name      string `json:"name"`
+	Domain    string `json:"domain"`
+	// Image is where a push to this app goes. Empty while the instance
+	// has no domain: there is nowhere to push yet.
+	Image       string `json:"image,omitempty"`
 	Status      string `json:"status"`
 	Org         string `json:"org"`
 	Project     string `json:"project"`
 	Environment string `json:"environment"`
 }
 
-func toResponse(a *Scoped) Response {
-	return Response{
+// toResponse needs the registry host, which is instance configuration
+// rather than a property of the app, so it is passed in — resolved once
+// per request instead of once per app in a listing.
+func toResponse(a *Scoped, registryHost string) Response {
+	r := Response{
 		Reference: ReferenceOf(a).String(),
-		Name:      a.Name, Domain: a.Domain, Image: a.Image, Status: a.Status,
+		Name:      a.Name, Domain: a.Domain, Status: a.Status,
 		Org: a.OrgSlug, Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
 	}
+	if registryHost != "" {
+		r.Image = ReferenceOf(a).ImageFor(registryHost)
+	}
+	return r
 }
 
-func toResponses(apps []*Scoped) []Response {
+func toResponses(apps []*Scoped, registryHost string) []Response {
 	out := make([]Response, 0, len(apps))
 	for _, a := range apps {
-		out = append(out, toResponse(a))
+		out = append(out, toResponse(a, registryHost))
 	}
 	return out
 }
@@ -94,6 +103,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	case errors.Is(err, ErrAlreadyExists):
 		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, ErrNoRegistry):
+		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrNoContainer):
 		http.Error(w, "app has no running container yet", http.StatusConflict)
 	case errors.Is(err, ErrDeploymentNotFound):
@@ -122,7 +133,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusCreated, toResponse(created))
+	httpx.WriteJSON(w, http.StatusCreated, toResponse(created, h.svc.RegistryHost(r.Context())))
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
@@ -131,7 +142,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, toResponses(apps))
+	httpx.WriteJSON(w, http.StatusOK, toResponses(apps, h.svc.RegistryHost(r.Context())))
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
@@ -140,7 +151,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, toResponse(a))
+	httpx.WriteJSON(w, http.StatusOK, toResponse(a, h.svc.RegistryHost(r.Context())))
 }
 
 // delete removes an app and the container serving it. Requires the

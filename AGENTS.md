@@ -158,6 +158,29 @@ is unique only within its environment.
 validates every part as a slug, so a malformed reference can never reach
 a registry path or a router name.
 
+## Instance settings
+
+The domain and the Let's Encrypt contact address are rows in `settings`,
+not environment variables: Cubeship is installed with one command,
+reached by IP, and configured from there. `config.Load` therefore
+requires nothing, and `config.SeedSettings` carries the old environment
+variables into the table once, for an install upgrading from the release
+where they were mandatory.
+
+Two things follow from a setting rather than being captured at startup,
+because an operator changes them without restarting:
+
+- **The registry host.** An app's push path is derived from its
+  reference, never stored, so an app created before a domain existed gets
+  a correct one the moment there is one.
+- **Whether TLS is possible.** `traefik.Labels` takes it, and a container
+  keeps the labels it was created with — an app deployed before
+  certificates were possible stays on HTTP until it is redeployed.
+
+Writing a setting re-runs `applyInfrastructure` in `cmd/cubeshipd`, which
+is what brings the registry up when a domain appears. It works because
+`bootstrap.Ensure` replaces a container whose configuration changed.
+
 ## Infrastructure containers
 
 `bootstrap.Ensure` fingerprints the `ContainerOpts` it is given into a

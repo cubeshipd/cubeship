@@ -29,17 +29,18 @@ On the server, install the binary and the unit file at
 ```sh
 sudo install -m 0755 bin/cubeshipd-linux-amd64 /usr/local/bin/cubeshipd
 sudo install -m 0644 deploy/cubeshipd.service /etc/systemd/system/
-sudo systemctl edit cubeshipd     # set CUBESHIP_DOMAIN and CUBESHIP_ACME_EMAIL
 sudo systemctl enable --now cubeshipd
 ```
 
-`CUBESHIP_DOMAIN` and `CUBESHIP_ACME_EMAIL` are required; both
-`api.<domain>` and `registry.<domain>` must resolve to this host for
-certificates to issue. The rest is optional and defaulted in
-[`internal/platform/config`](internal/platform/config/config.go) — most importantly
-`CUBESHIP_DATA_DIR` (default `/var/lib/cubeship`), which holds the
-database, the images and Traefik's `acme.json`. **Back it up.** The
-daemon needs the Docker socket, so it runs as root.
+Nothing has to be configured for it to start. The domain and the Let's
+Encrypt contact address are set afterwards, through the API — see
+[Configuring the instance](#configuring-the-instance).
+
+What the environment still holds is defaulted in
+[`internal/platform/config`](internal/platform/config/config.go) — most
+importantly `CUBESHIP_DATA_DIR` (default `/var/lib/cubeship`), which
+holds the database, the images and Traefik's `acme.json`. **Back it up.**
+The daemon needs the Docker socket, so it runs as root.
 
 State lives in Postgres. By default the daemon runs it for you, as a
 `cubeship-postgres` container bound to loopback with its data under the
@@ -55,6 +56,24 @@ The first boot against an empty database creates a super-admin and writes
 its API key to `$CUBESHIP_DATA_DIR/admin-api-key`, mode 0600. That is the
 credential `cubeship login` takes — nothing is printed to the log but a
 fingerprint.
+
+## Configuring the instance
+
+Until a domain is set there is no registry to push to, and until a
+contact address is set there are no certificates, so apps are served over
+plain HTTP.
+
+```sh
+curl -X PUT https://api.example.com/settings \
+  -H "Authorization: Bearer $KEY" \
+  -d '{"domain":"example.com","acme_email":"admin@example.com"}'
+```
+
+Both `api.<domain>` and `registry.<domain>` must resolve to this host for
+certificates to issue. Applying this replaces the affected containers,
+which costs a few seconds of downtime for them; apps already running keep
+the routing they were deployed with, so **redeploy them to serve over
+HTTPS**.
 
 ## Deploy an app
 

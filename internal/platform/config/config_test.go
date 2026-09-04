@@ -7,52 +7,8 @@ import (
 	"testing"
 )
 
-func TestLoadRequiresDomain(t *testing.T) {
-	t.Setenv("CUBESHIP_DOMAIN", "")
-	if _, err := Load(); err == nil {
-		t.Fatal("expected an error when CUBESHIP_DOMAIN is unset")
-	}
-}
-
-func TestLoadDerivesHostsFromDomain(t *testing.T) {
-	t.Setenv("CUBESHIP_DOMAIN", "example.com")
-	t.Setenv("CUBESHIP_ACME_EMAIL", "admin@example.com")
-	t.Setenv("CUBESHIP_TOKEN", "fixed-token")
-	t.Setenv("CUBESHIP_DATA_DIR", "")
-
-	cfg, err := Load()
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.RegistryHost != "registry.example.com" {
-		t.Fatalf("expected registry.example.com, got %q", cfg.RegistryHost)
-	}
-	if cfg.APIHost != "api.example.com" {
-		t.Fatalf("expected api.example.com, got %q", cfg.APIHost)
-	}
-	if cfg.Token != "fixed-token" {
-		t.Fatalf("expected the provided token to be used, got %q", cfg.Token)
-	}
-	if cfg.DataDir != "/var/lib/cubeship" {
-		t.Fatalf("expected the default data dir, got %q", cfg.DataDir)
-	}
-	if cfg.AcmeEmail != "admin@example.com" {
-		t.Fatalf("expected the ACME email to be read, got %q", cfg.AcmeEmail)
-	}
-}
-
-func TestLoadRequiresAcmeEmail(t *testing.T) {
-	t.Setenv("CUBESHIP_DOMAIN", "example.com")
-	t.Setenv("CUBESHIP_ACME_EMAIL", "")
-	if _, err := Load(); err == nil {
-		t.Fatal("expected an error when CUBESHIP_ACME_EMAIL is unset")
-	}
-}
-
 func TestLoadGeneratesTokenWhenUnset(t *testing.T) {
 	dataDir := t.TempDir()
-	t.Setenv("CUBESHIP_DOMAIN", "example.com")
-	t.Setenv("CUBESHIP_ACME_EMAIL", "admin@example.com")
 	t.Setenv("CUBESHIP_TOKEN", "")
 	t.Setenv("CUBESHIP_DATA_DIR", dataDir)
 
@@ -69,8 +25,6 @@ func TestLoadPersistsGeneratedTokenAcrossRestarts(t *testing.T) {
 	// A token regenerated on every restart silently invalidates every
 	// saved CLI credential and the registry login.
 	dataDir := t.TempDir()
-	t.Setenv("CUBESHIP_DOMAIN", "example.com")
-	t.Setenv("CUBESHIP_ACME_EMAIL", "admin@example.com")
 	t.Setenv("CUBESHIP_TOKEN", "")
 	t.Setenv("CUBESHIP_DATA_DIR", dataDir)
 
@@ -105,8 +59,6 @@ func TestLoadPersistsGeneratedTokenAcrossRestarts(t *testing.T) {
 
 func TestLoadCreatesDataDirForTheTokenFile(t *testing.T) {
 	dataDir := filepath.Join(t.TempDir(), "nested", "cubeship")
-	t.Setenv("CUBESHIP_DOMAIN", "example.com")
-	t.Setenv("CUBESHIP_ACME_EMAIL", "admin@example.com")
 	t.Setenv("CUBESHIP_TOKEN", "")
 	t.Setenv("CUBESHIP_DATA_DIR", dataDir)
 
@@ -123,8 +75,6 @@ func TestLoadReplacesEmptyTokenFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dataDir, "token"), []byte("\n"), 0o600); err != nil {
 		t.Fatalf("seed token file: %v", err)
 	}
-	t.Setenv("CUBESHIP_DOMAIN", "example.com")
-	t.Setenv("CUBESHIP_ACME_EMAIL", "admin@example.com")
 	t.Setenv("CUBESHIP_TOKEN", "")
 	t.Setenv("CUBESHIP_DATA_DIR", dataDir)
 
@@ -142,8 +92,6 @@ func TestLoadPrefersEnvTokenOverFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dataDir, "token"), []byte("persisted-token\n"), 0o600); err != nil {
 		t.Fatalf("seed token file: %v", err)
 	}
-	t.Setenv("CUBESHIP_DOMAIN", "example.com")
-	t.Setenv("CUBESHIP_ACME_EMAIL", "admin@example.com")
 	t.Setenv("CUBESHIP_TOKEN", "env-token")
 	t.Setenv("CUBESHIP_DATA_DIR", dataDir)
 
@@ -171,5 +119,42 @@ func TestTokenFingerprintHidesTheToken(t *testing.T) {
 	}
 	if TokenFingerprint("another-token") == fp {
 		t.Fatal("expected different tokens to fingerprint differently")
+	}
+}
+
+// The daemon has to start knowing neither a domain nor a contact
+// address: it is installed with one command and configured from the
+// dashboard afterwards.
+func TestLoadNeedsNoDomain(t *testing.T) {
+	t.Setenv("CUBESHIP_DOMAIN", "")
+	t.Setenv("CUBESHIP_ACME_EMAIL", "")
+	t.Setenv("CUBESHIP_DATA_DIR", t.TempDir())
+
+	if _, err := Load(); err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+}
+
+// An install upgrading from the release where these were required keeps
+// its configuration: the values are handed to the settings table once,
+// where they never overwrite what an operator has since changed.
+func TestSeedSettingsCarriesTheOldEnvironment(t *testing.T) {
+	t.Setenv("CUBESHIP_DOMAIN", "example.com")
+	t.Setenv("CUBESHIP_ACME_EMAIL", "admin@example.com")
+
+	seed := SeedSettings()
+	if seed["domain"] != "example.com" || seed["acme_email"] != "admin@example.com" {
+		t.Fatalf("unexpected seed: %v", seed)
+	}
+}
+
+func TestSeedSettingsIsEmptyWithoutTheOldEnvironment(t *testing.T) {
+	t.Setenv("CUBESHIP_DOMAIN", "")
+	t.Setenv("CUBESHIP_ACME_EMAIL", "")
+
+	for key, value := range SeedSettings() {
+		if value != "" {
+			t.Errorf("%s seeded %q from an unset variable", key, value)
+		}
 	}
 }

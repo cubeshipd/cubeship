@@ -91,7 +91,7 @@ func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInp
 	if err != nil {
 		return nil, Response{}, err
 	}
-	return nil, toResponse(created), nil
+	return nil, toResponse(created, t.svc.RegistryHost(ctx)), nil
 }
 
 func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, []Response, error) {
@@ -99,7 +99,7 @@ func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*
 	if err != nil {
 		return nil, nil, err
 	}
-	return nil, toResponses(apps), nil
+	return nil, toResponses(apps, t.svc.RegistryHost(ctx)), nil
 }
 
 type nameInput struct {
@@ -111,7 +111,7 @@ func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (
 	if err != nil {
 		return nil, Response{}, err
 	}
-	return nil, toResponse(a), nil
+	return nil, toResponse(a, t.svc.RegistryHost(ctx)), nil
 }
 
 type deployInput struct {

@@ -14,6 +14,7 @@ import (
 	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/platform/traefik"
 	"cubeship/internal/project"
+	"cubeship/internal/settings"
 )
 
 // DockerAPI is the subset of dockerx.Client the deploy engine needs.
@@ -31,11 +32,12 @@ type DockerAPI interface {
 // Orchestrator runs deploys: it is the only thing in Cubeship that
 // creates or retires an app's container.
 type Orchestrator struct {
-	db     *database.DB
-	docker DockerAPI
-	apps   *Repository
-	proj   *project.Repository
-	envs   *project.EnvironmentRepository
+	db       *database.DB
+	docker   DockerAPI
+	apps     *Repository
+	proj     *project.Repository
+	envs     *project.EnvironmentRepository
+	settings *settings.Service
 
 	// HealthCheckAttempts bounds how many observations waitHealthy takes
 	// before giving up; HealthCheckSuccesses is how many of them must be
@@ -60,13 +62,14 @@ type Orchestrator struct {
 // a wedged deploy running forever.
 const DeployTimeout = 10 * time.Minute
 
-func NewOrchestrator(db *database.DB, d DockerAPI) *Orchestrator {
+func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service) *Orchestrator {
 	return &Orchestrator{
 		db:                   db,
 		docker:               d,
 		apps:                 NewRepository(db),
 		proj:                 project.NewRepository(db),
 		envs:                 project.NewEnvironmentRepository(db),
+		settings:             cfg,
 		HealthCheckAttempts:  10,
 		HealthCheckSuccesses: 3,
 		HealthCheckInterval:  500 * time.Millisecond,
@@ -198,12 +201,21 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, imageRef string)
 		return fmt.Errorf("pull image: %w", err)
 	}
 
+	// Whether the app can be served over HTTPS is instance
+	// configuration, read now rather than captured at startup: an
+	// operator sets the contact address from the dashboard, and the next
+	// deploy is what picks it up.
+	values, err := o.settings.Load(ctx)
+	if err != nil {
+		return fmt.Errorf("read instance settings: %w", err)
+	}
+
 	base := resourceName(ref)
 	newName := fmt.Sprintf("%s-%d", base, time.Now().UnixNano())
 	newID, err := o.docker.CreateContainer(ctx, dockerx.ContainerOpts{
 		Name:    newName,
 		Image:   imageRef,
-		Labels:  traefik.Labels(base, a.Domain, Port),
+		Labels:  traefik.Labels(base, a.Domain, Port, values.HasTLS()),
 		Env:     envvar.Slice(env),
 		Network: Network,
 	})

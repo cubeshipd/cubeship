@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -9,6 +10,7 @@ import (
 	"cubeship/internal/org"
 	"cubeship/internal/platform/openapi"
 	"cubeship/internal/project"
+	"cubeship/internal/settings"
 	"cubeship/internal/user"
 )
 
@@ -35,6 +37,7 @@ func (s *Server) OpenAPI() openapi.Document {
 		org.NewHandler(s.Orgs).OpenAPI(),
 		project.NewHandler(s.Projects).OpenAPI(),
 		app.NewHandler(s.Apps).OpenAPI(),
+		settings.NewHandler(s.Settings).OpenAPI(),
 	)
 
 	return openapi.Document{
@@ -85,13 +88,19 @@ func (s *Server) servers(origin string) []openapi.Server {
 	return out
 }
 
-// canonicalURL is the daemon's configured public address, or empty when
-// it was never configured (as in tests).
+// canonicalURL is the daemon's public address, or empty while the
+// instance has no domain — which is the normal state right after
+// installing, when the dashboard is reached by IP.
 func (s *Server) canonicalURL() string {
-	if s.apiHost == "" {
+	values, err := s.Settings.Load(context.Background())
+	if err != nil {
 		return ""
 	}
-	return "https://" + s.apiHost
+	host := settings.APIHostFor(values.Get(settings.Domain))
+	if host == "" {
+		return ""
+	}
+	return "https://" + host
 }
 
 // handleOpenAPI serves the document. It is generated on each request

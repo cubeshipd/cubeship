@@ -21,6 +21,7 @@ import (
 	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/platform/regauth"
 	"cubeship/internal/server"
+	"cubeship/internal/settings"
 	"cubeship/internal/user"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -220,12 +221,53 @@ func waitForDatabase(ctx context.Context, dsn string, timeout time.Duration) err
 	return fmt.Errorf("database did not become ready within %s: %w", timeout, lastErr)
 }
 
+// applyInfrastructure brings the containers that depend on instance
+// configuration into line with it.
+//
+// The registry is only started once a domain exists: its token realm has
+// to be an address a remote `docker push` can reach, and there is no such
+// address before then. Traefik always runs — it routes apps by their own
+// domains, which have nothing to do with the instance's — but only gains
+// a certificate resolver once a contact address is configured.
+//
+// Both are idempotent, and bootstrap.Ensure replaces a container whose
+// settings have changed, so calling this again after a settings change is
+// all it takes to apply one.
+func applyInfrastructure(ctx context.Context, cfg *config.Config, docker *dockerx.Client, values settings.Values) error {
+	if values.HasDomain() {
+		apiHost := settings.APIHostFor(values.Get(settings.Domain))
+
+		// The registry container runs on the "cubeship" bridge network,
+		// not the host's namespace, so it reaches the daemon via
+		// host.docker.internal rather than 127.0.0.1 (see ExtraHosts in
+		// RegistryContainerOpts).
+		notifyURL := fmt.Sprintf("http://host.docker.internal:%d/hooks/registry", daemonPort)
+		if err := bootstrap.WriteRegistryConfig(cfg, apiHost, notifyURL, cfg.Token); err != nil {
+			return fmt.Errorf("write registry config: %w", err)
+		}
+		registryHost := settings.RegistryHostFor(values.Get(settings.Domain))
+		if err := bootstrap.Ensure(ctx, docker,
+			bootstrap.RegistryContainerOpts(cfg, registryHost, values.HasTLS())); err != nil {
+			return fmt.Errorf("bootstrap registry: %w", err)
+		}
+		if err := bootstrap.WriteAPIRouterConfig(cfg, apiHost, daemonPort); err != nil {
+			return fmt.Errorf("write traefik API router config: %w", err)
+		}
+	}
+
+	if err := bootstrap.Ensure(ctx, docker,
+		bootstrap.TraefikContainerOpts(cfg, values.Get(settings.ACMEEmail))); err != nil {
+		return fmt.Errorf("bootstrap traefik: %w", err)
+	}
+	return nil
+}
+
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
-	log.Printf("cubeshipd starting for domain %s", cfg.Domain)
+	log.Printf("cubeshipd starting")
 	// Never log the token itself — the daemon's logs are not a secret
 	// store. A fingerprint is enough to tell which token is in use.
 	// This is the instance-wide system credential for the registry's
@@ -276,24 +318,18 @@ func run() error {
 	}
 	defer db.Close()
 
-	srv := server.New(db, docker, server.Options{
-		WebhookToken: cfg.Token,
-		RegistryHost: cfg.RegistryHost,
-		APIHost:      cfg.APIHost,
-	})
+	srv := server.New(db, docker, server.Options{WebhookToken: cfg.Token})
+
+	// An install upgrading from the release where the domain and contact
+	// address were required environment variables keeps them, once.
+	if err := srv.Settings.SeedFromEnv(ctx, config.SeedSettings()); err != nil {
+		return fmt.Errorf("carry the old environment into settings: %w", err)
+	}
 
 	if err := ensureSuperAdmin(ctx, srv.Users, cfg.DataDir); err != nil {
 		return fmt.Errorf("bootstrap super-admin: %w", err)
 	}
 
-	// The registry container that POSTs to this URL runs on the "cubeship"
-	// bridge network, not the host's network namespace, so it must reach
-	// the daemon via host.docker.internal rather than 127.0.0.1 (see the
-	// registry container's ExtraHosts in bootstrap.RegistryContainerOpts).
-	notifyURL := fmt.Sprintf("http://host.docker.internal:%d/hooks/registry", daemonPort)
-	if err := bootstrap.WriteRegistryConfig(cfg, notifyURL, cfg.Token); err != nil {
-		return fmt.Errorf("write registry config: %w", err)
-	}
 	registryCert, err := regauth.SelfSignedCert(registrySigningKey, "cubeship")
 	if err != nil {
 		return fmt.Errorf("create registry token certificate: %w", err)
@@ -301,15 +337,21 @@ func run() error {
 	if err := bootstrap.WriteRegistryTokenCert(cfg, registryCert); err != nil {
 		return fmt.Errorf("write registry token certificate: %w", err)
 	}
-	if err := bootstrap.Ensure(ctx, docker, bootstrap.RegistryContainerOpts(cfg)); err != nil {
-		return fmt.Errorf("bootstrap registry: %w", err)
+
+	// applyInfrastructure is run now with whatever is configured, and
+	// again whenever the operator changes it — adding a domain has to
+	// bring the registry up without a restart.
+	apply := func(ctx context.Context, values settings.Values) error {
+		return applyInfrastructure(ctx, cfg, docker, values)
 	}
-	if err := bootstrap.WriteAPIRouterConfig(cfg, daemonPort); err != nil {
-		return fmt.Errorf("write traefik API router config: %w", err)
+	current, err := srv.Settings.Load(ctx)
+	if err != nil {
+		return fmt.Errorf("read instance settings: %w", err)
 	}
-	if err := bootstrap.Ensure(ctx, docker, bootstrap.TraefikContainerOpts(cfg, cfg.AcmeEmail)); err != nil {
-		return fmt.Errorf("bootstrap traefik: %w", err)
+	if err := apply(ctx, current); err != nil {
+		return err
 	}
+	srv.Settings.OnChange(apply)
 
 	if err := app.Reconcile(ctx, srv.Apps.Repo(), docker); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
@@ -318,6 +360,8 @@ func run() error {
 	srv.SetRegistrySigningKey(registrySigningKey)
 
 	log.Printf("cubeshipd listening on %s", listenAddr)
-	log.Printf("MCP server available at https://%s/mcp (any API key authenticates; see \"cubeship user api-key create\" for a dedicated one)", cfg.APIHost)
+	if !current.HasDomain() {
+		log.Printf("no domain configured yet: apps can be created, but there is no registry to push to until one is set")
+	}
 	return http.ListenAndServe(listenAddr, srv.Router())
 }

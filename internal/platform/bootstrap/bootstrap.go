@@ -75,8 +75,12 @@ func EnsurePostgresDataDir(cfg *config.Config) error {
 	return nil
 }
 
-func RegistryContainerOpts(cfg *config.Config) dockerx.ContainerOpts {
-	labels := traefik.Labels("registry", cfg.RegistryHost, registryPort)
+// RegistryContainerOpts describes the embedded registry. registryHost
+// is the public name it is reached at; it only exists once the instance
+// has a domain, which is why the daemon does not start this container
+// before then.
+func RegistryContainerOpts(cfg *config.Config, registryHost string, tls bool) dockerx.ContainerOpts {
+	labels := traefik.Labels("registry", registryHost, registryPort, tls)
 	return dockerx.ContainerOpts{
 		Name:    "cubeship-registry",
 		Image:   "registry:2",
@@ -144,8 +148,8 @@ func RegistryContainerOpts(cfg *config.Config) dockerx.ContainerOpts {
 // a genuine push notification from a forged one — it has nothing to do
 // with registry push/pull authentication, which is entirely the token
 // realm's job now.
-func RegistryConfigYAML(cfg *config.Config, notifyURL, notifyToken string) string {
-	realm := "https://" + cfg.APIHost + "/v2/token"
+func RegistryConfigYAML(apiHost, notifyURL, notifyToken string) string {
+	realm := "https://" + apiHost + "/v2/token"
 	return fmt.Sprintf(`version: 0.1
 log:
   fields:
@@ -186,14 +190,14 @@ notifications:
 // RegistryContainerOpts' bind mount expects, and creates the registry's
 // persistent storage directory. Call it before starting the registry
 // container.
-func WriteRegistryConfig(cfg *config.Config, notifyURL, notifyToken string) error {
+func WriteRegistryConfig(cfg *config.Config, apiHost, notifyURL, notifyToken string) error {
 	// Docker would create a missing bind source itself, but only as
 	// root-owned; creating it here keeps ownership with the daemon.
 	if err := os.MkdirAll(cfg.DataDir+"/registry-data", 0o700); err != nil {
 		return fmt.Errorf("create registry data dir: %w", err)
 	}
 	path := cfg.DataDir + "/registry-config.yml"
-	if err := os.WriteFile(path, []byte(RegistryConfigYAML(cfg, notifyURL, notifyToken)), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(RegistryConfigYAML(apiHost, notifyURL, notifyToken)), 0o600); err != nil {
 		return fmt.Errorf("write registry config: %w", err)
 	}
 	return nil
@@ -213,34 +217,41 @@ func WriteRegistryTokenCert(cfg *config.Config, certPEM []byte) error {
 	return nil
 }
 
+// TraefikContainerOpts describes the proxy. An empty acmeEmail means no
+// certificate resolver at all: Let's Encrypt will not register an account
+// without a contact address, so until one is configured apps are served
+// over plain HTTP.
+//
+// Adding the email later changes these options, which is what makes
+// Ensure replace the container — the resolver cannot be added to a
+// running one.
 func TraefikContainerOpts(cfg *config.Config, acmeEmail string) dockerx.ContainerOpts {
-	return dockerx.ContainerOpts{
-		Name:  "cubeship-traefik",
-		Image: "traefik:v3.1",
-		Cmd: []string{
-			"--providers.docker=true",
-			"--providers.docker.exposedbydefault=false",
-			"--providers.file.directory=/etc/traefik/dynamic",
-			"--providers.file.watch=true",
-			"--entrypoints.web.address=:80",
-			// Everything Cubeship serves is HTTPS-only, so plain :80 had
-			// nothing routed on it and answered 404 — for apps, for the
-			// API, for anyone who typed the domain without a scheme.
-			// Redirect the whole entrypoint rather than labelling each
-			// router, so an app gets this without knowing about it.
-			//
-			// This does not interfere with certificates: the ACME
-			// resolver below uses the TLS-ALPN challenge on :443, not
-			// the HTTP challenge on :80.
+	cmd := []string{
+		"--providers.docker=true",
+		"--providers.docker.exposedbydefault=false",
+		"--providers.file.directory=/etc/traefik/dynamic",
+		"--providers.file.watch=true",
+		"--entrypoints.web.address=:80",
+		"--entrypoints.websecure.address=:443",
+		"--api.dashboard=false",
+	}
+	if acmeEmail != "" {
+		cmd = append(cmd,
+			"--certificatesresolvers.letsencrypt.acme.tlschallenge=true",
+			"--certificatesresolvers.letsencrypt.acme.email="+acmeEmail,
+			"--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json",
+			// Redirecting :80 is only right once :443 can actually serve.
+			// Without a resolver it would send every visitor to a port
+			// with no certificate.
 			"--entrypoints.web.http.redirections.entryPoint.to=websecure",
 			"--entrypoints.web.http.redirections.entryPoint.scheme=https",
 			"--entrypoints.web.http.redirections.entryPoint.permanent=true",
-			"--entrypoints.websecure.address=:443",
-			"--certificatesresolvers.letsencrypt.acme.tlschallenge=true",
-			"--certificatesresolvers.letsencrypt.acme.email=" + acmeEmail,
-			"--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json",
-			"--api.dashboard=false",
-		},
+		)
+	}
+	return dockerx.ContainerOpts{
+		Name:  "cubeship-traefik",
+		Image: "traefik:v3.1",
+		Cmd:   cmd,
 		Binds: []string{
 			"/var/run/docker.sock:/var/run/docker.sock:ro",
 			cfg.DataDir + "/letsencrypt:/letsencrypt",
@@ -257,7 +268,7 @@ func TraefikContainerOpts(cfg *config.Config, acmeEmail string) dockerx.Containe
 // registry are — Traefik reaches it over the host-network loopback
 // instead. This is what makes the daemon API reachable over HTTPS
 // through Traefik, per the spec's architecture and global constraints.
-func APIRouterConfigYAML(cfg *config.Config, daemonPort int) string {
+func APIRouterConfigYAML(apiHost string, daemonPort int) string {
 	return fmt.Sprintf(`http:
   routers:
     cubeship-api:
@@ -272,19 +283,19 @@ func APIRouterConfigYAML(cfg *config.Config, daemonPort int) string {
       loadBalancer:
         servers:
           - url: "http://127.0.0.1:%d"
-`, cfg.APIHost, daemonPort)
+`, apiHost, daemonPort)
 }
 
 // WriteAPIRouterConfig writes APIRouterConfigYAML to the path Traefik's
 // file provider watches (see the Binds entry above). Call it before
 // starting Traefik, and again any time cfg changes.
-func WriteAPIRouterConfig(cfg *config.Config, daemonPort int) error {
+func WriteAPIRouterConfig(cfg *config.Config, apiHost string, daemonPort int) error {
 	dir := cfg.DataDir + "/traefik-dynamic"
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create traefik dynamic config dir: %w", err)
 	}
 	path := dir + "/api.yml"
-	if err := os.WriteFile(path, []byte(APIRouterConfigYAML(cfg, daemonPort)), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(APIRouterConfigYAML(apiHost, daemonPort)), 0o600); err != nil {
 		return fmt.Errorf("write traefik dynamic config: %w", err)
 	}
 	return nil

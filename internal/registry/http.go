@@ -118,17 +118,23 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	host := h.registryHost(r.Context())
 	for _, ev := range payload.Events {
 		if ev.Action != "push" || ev.Target.Tag == "" {
 			continue
 		}
-		// The stored image column holds the public push path, which is
-		// what the notification's repository name maps to.
-		image := h.registryHost + "/" + ev.Target.Repository
-		a, err := h.apps.Repo().ByImage(r.Context(), image)
+		// The repository a push landed in *is* the app's reference —
+		// org/project/environment/app — so the notification resolves
+		// without consulting a stored path.
+		ref, err := app.ParseReference(ev.Target.Repository)
 		if err != nil {
-			continue // no app tracks this repository
+			continue // not a repository shaped like one of our apps
 		}
+		a, err := h.apps.Repo().ScopedByReference(r.Context(), ref.Org, ref.Project, ref.Environment, ref.Name)
+		if err != nil {
+			continue // no app owns this repository
+		}
+		image := host + "/" + ref.String()
 		// ...but the daemon pulls over loopback. Start returns as soon as
 		// the deploy is recorded; the registry's notification client
 		// gives up after 5s, and a real deploy takes far longer.

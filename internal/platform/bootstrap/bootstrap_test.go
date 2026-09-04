@@ -16,16 +16,11 @@ import (
 )
 
 func testConfig() *config.Config {
-	return &config.Config{
-		Domain:       "example.com",
-		RegistryHost: "registry.example.com",
-		APIHost:      "api.example.com",
-		DataDir:      "/var/lib/cubeship",
-	}
+	return &config.Config{DataDir: "/var/lib/cubeship"}
 }
 
 func TestRegistryContainerOptsRoutesThroughTraefik(t *testing.T) {
-	opts := RegistryContainerOpts(testConfig())
+	opts := RegistryContainerOpts(testConfig(), "registry.example.com", true)
 
 	if opts.Name != "cubeship-registry" {
 		t.Fatalf("unexpected name: %q", opts.Name)
@@ -60,7 +55,7 @@ func TestRegistryContainerOptsRoutesThroughTraefik(t *testing.T) {
 }
 
 func TestRegistryConfigYAMLIncludesNotificationEndpoint(t *testing.T) {
-	yaml := RegistryConfigYAML(testConfig(), "http://host.docker.internal:9000/hooks/registry", "tok3n")
+	yaml := RegistryConfigYAML("api.example.com", "http://host.docker.internal:9000/hooks/registry", "tok3n")
 
 	if !strings.Contains(yaml, "url: http://host.docker.internal:9000/hooks/registry") {
 		t.Fatalf("expected the notify URL in the endpoint config, got:\n%s", yaml)
@@ -74,7 +69,7 @@ func TestRegistryConfigYAMLIncludesNotificationEndpoint(t *testing.T) {
 }
 
 func TestRegistryConfigYAMLRequiresTokenAuth(t *testing.T) {
-	yaml := RegistryConfigYAML(testConfig(), "http://host.docker.internal:9000/hooks/registry", "tok3n")
+	yaml := RegistryConfigYAML("api.example.com", "http://host.docker.internal:9000/hooks/registry", "tok3n")
 
 	if !strings.Contains(yaml, "auth:") || !strings.Contains(yaml, "token:") {
 		t.Fatalf("expected a token auth section — an anonymous-push registry is remote code execution, got:\n%s", yaml)
@@ -94,7 +89,7 @@ func TestRegistryConfigYAMLRequiresTokenAuth(t *testing.T) {
 }
 
 func TestRegistryConfigYAMLAuthenticatesTheWebhook(t *testing.T) {
-	yaml := RegistryConfigYAML(testConfig(), "http://host.docker.internal:9000/hooks/registry", "tok3n")
+	yaml := RegistryConfigYAML("api.example.com", "http://host.docker.internal:9000/hooks/registry", "tok3n")
 
 	if !strings.Contains(yaml, "Authorization: [Bearer tok3n]") {
 		t.Fatalf("expected the notification endpoint to send the daemon's bearer token, got:\n%s", yaml)
@@ -105,7 +100,7 @@ func TestWriteRegistryConfigWritesFileAndStorageDir(t *testing.T) {
 	cfg := testConfig()
 	cfg.DataDir = t.TempDir()
 
-	if err := WriteRegistryConfig(cfg, "http://host.docker.internal:9000/hooks/registry", "tok3n"); err != nil {
+	if err := WriteRegistryConfig(cfg, "api.example.com", "http://host.docker.internal:9000/hooks/registry", "tok3n"); err != nil {
 		t.Fatalf("WriteRegistryConfig: %v", err)
 	}
 
@@ -179,7 +174,7 @@ func TestTraefikContainerOptsUsesHostNetwork(t *testing.T) {
 }
 
 func TestAPIRouterConfigYAMLRoutesToDaemonPort(t *testing.T) {
-	yaml := APIRouterConfigYAML(testConfig(), 9000)
+	yaml := APIRouterConfigYAML("api.example.com", 9000)
 
 	if !strings.Contains(yaml, "Host(`api.example.com`)") {
 		t.Fatalf("expected the API host rule, got:\n%s", yaml)
@@ -196,7 +191,7 @@ func TestWriteAPIRouterConfigWritesFile(t *testing.T) {
 	cfg := testConfig()
 	cfg.DataDir = t.TempDir()
 
-	if err := WriteAPIRouterConfig(cfg, 9000); err != nil {
+	if err := WriteAPIRouterConfig(cfg, "api.example.com", 9000); err != nil {
 		t.Fatalf("WriteAPIRouterConfig: %v", err)
 	}
 
@@ -537,5 +532,36 @@ func TestTraefikRedirectsHTTPToHTTPS(t *testing.T) {
 	// TLS-ALPN on :443, not the HTTP challenge on :80.
 	if !slices.Contains(opts.Cmd, "--certificatesresolvers.letsencrypt.acme.tlschallenge=true") {
 		t.Error("the ACME resolver is no longer using the TLS challenge; redirecting :80 would break issuance")
+	}
+}
+
+// Until a contact address is configured, Traefik must have no ACME
+// resolver at all — Let's Encrypt will not register an account without
+// one — and must not redirect :80 to a port that cannot serve.
+func TestTraefikWithoutAnACMEEmailHasNoResolver(t *testing.T) {
+	opts := TraefikContainerOpts(testConfig(), "")
+
+	for _, flag := range opts.Cmd {
+		if strings.Contains(flag, "certificatesresolvers") {
+			t.Errorf("a certificate resolver was configured with no contact address: %q", flag)
+		}
+		if strings.Contains(flag, "redirections") {
+			t.Errorf("plain HTTP is redirected to a port that cannot serve: %q", flag)
+		}
+	}
+	if !slices.Contains(opts.Cmd, "--entrypoints.web.address=:80") {
+		t.Error("apps have nowhere to be served without the plain entrypoint")
+	}
+}
+
+// Adding the contact address changes the options, which is what makes
+// Ensure replace the container — a resolver cannot be added to a running
+// Traefik.
+func TestConfiguringTLSChangesTheTraefikContainer(t *testing.T) {
+	without := configHash(TraefikContainerOpts(testConfig(), ""))
+	with := configHash(TraefikContainerOpts(testConfig(), "admin@example.com"))
+
+	if without == with {
+		t.Fatal("configuring a contact address left the container unchanged, so TLS would never take effect")
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"cubeship/internal/org"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/project"
+	"cubeship/internal/settings"
 	"cubeship/internal/slug"
 	"cubeship/internal/user"
 )
@@ -25,15 +26,37 @@ const LocalRegistryHost = "127.0.0.1:5000"
 // Service holds the app use cases. Authorization is always the owning
 // organization's answer.
 type Service struct {
-	db           *database.DB
-	orgs         *org.Service
-	projects     *project.Service
-	orch         *Orchestrator
-	registryHost string
+	db       *database.DB
+	orgs     *org.Service
+	projects *project.Service
+	orch     *Orchestrator
+	settings *settings.Service
 }
 
-func NewService(db *database.DB, orgs *org.Service, projects *project.Service, orch *Orchestrator, registryHost string) *Service {
-	return &Service{db: db, orgs: orgs, projects: projects, orch: orch, registryHost: registryHost}
+func NewService(db *database.DB, orgs *org.Service, projects *project.Service, orch *Orchestrator, cfg *settings.Service) *Service {
+	return &Service{db: db, orgs: orgs, projects: projects, orch: orch, settings: cfg}
+}
+
+// registryHost is where apps are pushed, or "" while the instance has no
+// domain. Read per call rather than captured at startup, because an
+// operator configures the domain from the dashboard after installing —
+// the answer changes without a restart.
+func (s *Service) RegistryHost(ctx context.Context) string {
+	values, err := s.settings.Load(ctx)
+	if err != nil {
+		return ""
+	}
+	return settings.RegistryHostFor(values.Get(settings.Domain))
+}
+
+// ImageFor returns the registry path a push to this app targets, or ""
+// while no domain is configured — there is nowhere to push to yet.
+func (s *Service) ImageFor(ctx context.Context, a *Scoped) string {
+	host := s.RegistryHost(ctx)
+	if host == "" {
+		return ""
+	}
+	return ReferenceOf(a).ImageFor(host)
 }
 
 func (s *Service) Repo() *Repository { return NewRepository(s.db) }
@@ -91,8 +114,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 		return nil, project.ErrEnvironmentNotFound
 	}
 	ref := Reference{Org: o.Slug, Project: p.Slug, Environment: env.Slug, Name: name}
-	image := ref.ImageFor(s.registryHost)
-	if _, err := s.Repo().Create(ctx, o.ID, p.ID, env.ID, name, domain, image); err != nil {
+	if _, err := s.Repo().Create(ctx, o.ID, p.ID, env.ID, name, domain); err != nil {
 		// The unique index is the authority, not a preceding lookup:
 		// two concurrent creates of the same name would both pass a
 		// check and the loser would surface as a 500.
@@ -203,7 +225,11 @@ func (s *Service) Deploy(ctx context.Context, caller *user.User, ref Reference, 
 	if err != nil {
 		return nil, nil, err
 	}
-	deployment, err := s.orch.Start(ctx, a.ID, LocalPullRef(a.Image, tag))
+	image := s.ImageFor(ctx, a)
+	if image == "" {
+		return nil, nil, ErrNoRegistry
+	}
+	deployment, err := s.orch.Start(ctx, a.ID, LocalPullRef(image, tag))
 	if err != nil {
 		return nil, nil, err
 	}
