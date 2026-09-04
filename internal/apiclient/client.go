@@ -126,6 +126,9 @@ func (c *Client) ListOrgs(ctx context.Context) ([]Org, error) {
 	return out, nil
 }
 
+// CreateOrgUser adds a user to an organization. The returned API key is
+// empty when the username already existed and only gained a membership —
+// that user keeps the key they already have.
 func (c *Client) CreateOrgUser(ctx context.Context, orgSlug, username, role string) (string, error) {
 	resp, err := c.do(ctx, http.MethodPost, "/orgs/"+orgSlug+"/users", map[string]string{"username": username, "role": role})
 	if err != nil {

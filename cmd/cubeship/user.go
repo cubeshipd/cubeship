@@ -13,8 +13,12 @@ func newUserCmd() *cobra.Command {
 	var org, role string
 	createCmd := &cobra.Command{
 		Use:   "create <username>",
-		Short: "Create a user in an organization and print their API key",
-		Args:  cobra.ExactArgs(1),
+		Short: "Add a user to an organization, creating them if they are new",
+		Long: "Add a user to an organization.\n\n" +
+			"A new username creates the user and prints their API key, shown\n" +
+			"once. An existing username is added to this organization as well —\n" +
+			"users can belong to several — keeping the API key they already have.",
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := newAPIClient()
 			if err != nil {
@@ -23,6 +27,11 @@ func newUserCmd() *cobra.Command {
 			key, err := c.CreateOrgUser(context.Background(), org, args[0], role)
 			if err != nil {
 				return err
+			}
+			if key == "" {
+				fmt.Printf("Added existing user %q to %s (role: %s)\n", args[0], org, role)
+				fmt.Println("Their existing API key is unchanged.")
+				return nil
 			}
 			fmt.Printf("Created user %q in %s (role: %s)\n", args[0], org, role)
 			fmt.Printf("API key (shown once, save it now): %s\n", key)
