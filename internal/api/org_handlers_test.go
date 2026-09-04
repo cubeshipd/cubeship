@@ -47,6 +47,59 @@ func TestCreateOrgAsSuperAdmin(t *testing.T) {
 	}
 }
 
+// The slug becomes a path component of every image reference the org
+// pushes (registry.<domain>/<slug>/<app>), so a slug Docker would reject
+// has to be rejected here instead of at `docker push` time.
+func TestCreateOrgRejectsInvalidSlugs(t *testing.T) {
+	s, _ := store.Open(":memory:")
+	t.Cleanup(func() { s.Close() })
+	srv := NewServer(s, nil, "webhook-secret", "registry.example.com")
+	adminKey := testAPIKeyFor(t, s, true)
+
+	for _, slug := range []string{"Acme", "acme corp", "acme/evil", "-acme", "acme-", "acme_corp", "ACME", "acme:latest", "."} {
+		body, _ := json.Marshal(map[string]string{"slug": slug, "name": "Acme Inc"})
+		rec := httptest.NewRecorder()
+		srv.Router().ServeHTTP(rec, authedRequest(http.MethodPost, "/orgs", body, adminKey))
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("slug %q: expected 400, got %d: %s", slug, rec.Code, rec.Body.String())
+		}
+		if _, err := s.GetOrganizationBySlug(context.Background(), slug); err == nil {
+			t.Fatalf("slug %q: expected no organization to be created", slug)
+		}
+	}
+
+	for _, slug := range []string{"acme", "acme-corp", "a", "acme2", "1acme"} {
+		body, _ := json.Marshal(map[string]string{"slug": slug, "name": "Acme Inc"})
+		rec := httptest.NewRecorder()
+		srv.Router().ServeHTTP(rec, authedRequest(http.MethodPost, "/orgs", body, adminKey))
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("slug %q: expected 201, got %d: %s", slug, rec.Code, rec.Body.String())
+		}
+	}
+}
+
+// A duplicate slug used to surface the raw SQLite constraint error as a
+// 500.
+func TestCreateOrgDuplicateSlugConflicts(t *testing.T) {
+	s, _ := store.Open(":memory:")
+	t.Cleanup(func() { s.Close() })
+	srv := NewServer(s, nil, "webhook-secret", "registry.example.com")
+	adminKey := testAPIKeyFor(t, s, true)
+
+	body, _ := json.Marshal(map[string]string{"slug": "acme", "name": "Acme Inc"})
+	first := httptest.NewRecorder()
+	srv.Router().ServeHTTP(first, authedRequest(http.MethodPost, "/orgs", body, adminKey))
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first create: expected 201, got %d", first.Code)
+	}
+
+	second := httptest.NewRecorder()
+	srv.Router().ServeHTTP(second, authedRequest(http.MethodPost, "/orgs", body, adminKey))
+	if second.Code != http.StatusConflict {
+		t.Fatalf("second create: expected 409, got %d: %s", second.Code, second.Body.String())
+	}
+}
+
 func TestListOrgsSuperAdminSeesAll(t *testing.T) {
 	s, _ := store.Open(":memory:")
 	t.Cleanup(func() { s.Close() })
