@@ -18,9 +18,10 @@ Environment=CUBESHIP_ACME_EMAIL=admin@example.com
 # super-admin's API key in admin-api-key), registry config and image
 # storage, Traefik acme.json.
 Environment=CUBESHIP_DATA_DIR=/var/lib/cubeship
-# Optional. The registry password and webhook secret, not an API key.
-# Leave unset to have the daemon generate one on first start and persist
-# it to $CUBESHIP_DATA_DIR/token (0600).
+# Optional. The registry webhook's shared secret only — not an API key
+# and not a registry login credential (registry push/pull is per-user
+# token auth now). Leave unset to have the daemon generate one on first
+# start and persist it to $CUBESHIP_DATA_DIR/token (0600).
 #Environment=CUBESHIP_TOKEN=
 
 # The daemon talks to the Docker socket, so it runs as root.
