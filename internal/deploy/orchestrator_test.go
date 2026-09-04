@@ -107,7 +107,8 @@ func TestDeploySuccessFirstDeploy(t *testing.T) {
 	docker := &fakeDocker{nextCreateID: "container-1", running: true}
 	o, s := newTestOrchestrator(t, docker)
 
-	s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	if err := o.Deploy(ctx, "myapp", "registry.example.com/myapp:latest"); err != nil {
 		t.Fatalf("Deploy: %v", err)
@@ -145,7 +146,8 @@ func TestDeployAttachesContainerToCubeshipNetwork(t *testing.T) {
 	docker := &fakeDocker{nextCreateID: "container-1", running: true}
 	o, s := newTestOrchestrator(t, docker)
 
-	s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	if err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:latest"); err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
@@ -164,7 +166,8 @@ func TestDeploySwapsOldContainer(t *testing.T) {
 	docker := &fakeDocker{nextCreateID: "container-2", running: true}
 	o, s := newTestOrchestrator(t, docker)
 
-	app, _ := s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	if err := o.Deploy(ctx, "myapp", "registry.example.com/myapp:v2"); err != nil {
@@ -189,7 +192,8 @@ func TestDeployHealthCheckFailureLeavesOldContainerRunning(t *testing.T) {
 	docker := &fakeDocker{nextCreateID: "container-2", running: false}
 	o, s := newTestOrchestrator(t, docker)
 
-	app, _ := s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	err := o.Deploy(ctx, "myapp", "registry.example.com/myapp:v2")
@@ -220,7 +224,8 @@ func TestDeployForwardsAppEnv(t *testing.T) {
 	docker := &fakeDocker{nextCreateID: "container-1", running: true}
 	o, s := newTestOrchestrator(t, docker)
 
-	app, _ := s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.SetAppEnv(ctx, app.ID, map[string]string{"PORT": "8080"})
 
 	if err := o.Deploy(ctx, "myapp", "registry.example.com/myapp:latest"); err != nil {
@@ -260,7 +265,8 @@ func TestDeployRejectsSingleRunningObservation(t *testing.T) {
 	o.HealthCheckAttempts = 1
 	o.HealthCheckSuccesses = 3
 
-	app, _ := s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	if err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:v2"); err == nil {
@@ -285,7 +291,8 @@ func TestDeployRejectsFlappingContainer(t *testing.T) {
 	o.HealthCheckAttempts = 6
 	o.HealthCheckSuccesses = 3
 
-	app, _ := s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	if err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:v2"); err == nil {
@@ -307,7 +314,8 @@ func TestDeployAcceptsConsecutiveRunningObservations(t *testing.T) {
 	o.HealthCheckAttempts = 4
 	o.HealthCheckSuccesses = 3
 
-	s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	if err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:latest"); err != nil {
 		t.Fatalf("expected a container that settles to running to pass: %v", err)
 	}
@@ -322,7 +330,8 @@ func TestDeployWaitsBeforeTheFirstHealthObservation(t *testing.T) {
 	o.HealthCheckSuccesses = 3
 	o.HealthCheckInterval = interval
 
-	s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	if err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:latest"); err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
@@ -343,7 +352,8 @@ func TestDeployPullFailure(t *testing.T) {
 	docker := &fakeDocker{nextCreateID: "container-2", running: true, pullErr: errors.New("manifest unknown")}
 	o, s := newTestOrchestrator(t, docker)
 
-	app, _ := s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:v2")
@@ -376,7 +386,8 @@ func TestDeployCreateFailure(t *testing.T) {
 	docker := &fakeDocker{nextCreateID: "container-2", running: true, createErr: errors.New("no such image")}
 	o, s := newTestOrchestrator(t, docker)
 
-	app, _ := s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:v2")
@@ -406,7 +417,8 @@ func TestDeployStartFailure(t *testing.T) {
 	docker := &fakeDocker{nextCreateID: "container-2", running: true, startErr: errors.New("port is already allocated")}
 	o, s := newTestOrchestrator(t, docker)
 
-	app, _ := s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:v2")
@@ -522,7 +534,8 @@ func TestConcurrentDeploysOfSameAppAreSerialized(t *testing.T) {
 	o.HealthCheckAttempts = 3
 	o.HealthCheckInterval = 0
 
-	s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	var wg sync.WaitGroup
 	errs := make([]error, 2)
@@ -572,8 +585,9 @@ func TestConcurrentDeploysOfDifferentAppsRunInParallel(t *testing.T) {
 	o.HealthCheckAttempts = 3
 	o.HealthCheckInterval = 0
 
-	s.CreateApp(ctx, "one", "one.example.com", "registry.example.com/one")
-	s.CreateApp(ctx, "two", "two.example.com", "registry.example.com/two")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	s.CreateApp(ctx, org.ID, "one", "one.example.com", "registry.example.com/one")
+	s.CreateApp(ctx, org.ID, "two", "two.example.com", "registry.example.com/two")
 
 	var wg sync.WaitGroup
 	for _, name := range []string{"one", "two"} {
@@ -593,7 +607,8 @@ func TestConcurrentDeploysOfDifferentAppsRunInParallel(t *testing.T) {
 func TestLogsReturnsErrNoContainerBeforeFirstDeploy(t *testing.T) {
 	ctx := context.Background()
 	o, s := newTestOrchestrator(t, &fakeDocker{})
-	s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	_, err := o.Logs(ctx, "myapp")
 	if !errors.Is(err, ErrNoContainer) {

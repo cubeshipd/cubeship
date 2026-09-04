@@ -24,7 +24,8 @@ func TestReconcileMarksMissingContainerDown(t *testing.T) {
 	s, _ := store.Open(":memory:")
 	t.Cleanup(func() { s.Close() })
 
-	app, _ := s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	docker := &fakeDocker{running: map[string]bool{}} // container-1 not found -> not running
@@ -47,7 +48,8 @@ func TestReconcileConfirmsRunningContainer(t *testing.T) {
 	s, _ := store.Open(":memory:")
 	t.Cleanup(func() { s.Close() })
 
-	app, _ := s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	docker := &fakeDocker{running: map[string]bool{"container-1": true}}
@@ -66,7 +68,8 @@ func TestReconcileSkipsAppsNeverDeployed(t *testing.T) {
 	ctx := context.Background()
 	s, _ := store.Open(":memory:")
 	t.Cleanup(func() { s.Close() })
-	s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	// Should not panic or error even though there's no container to check.
 	if err := Run(ctx, s, &fakeDocker{}); err != nil {
