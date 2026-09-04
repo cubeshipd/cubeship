@@ -7,6 +7,15 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// TokenIssuer and TokenService must match the registry's config.yml
+// (see bootstrap.RegistryConfigYAML's auth.token.issuer/service) —
+// they're claims the registry itself validates on every token it
+// receives before trusting the signature.
+const (
+	TokenIssuer  = "cubeship"
+	TokenService = "cubeship-registry"
+)
+
 // TokenTTL is how long an issued registry access token remains valid.
 // Docker's CLI/daemon re-requests a token transparently on expiry, so a
 // short TTL (matching what registries like Docker Hub use) limits how

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"crypto/rsa"
 	"net/http"
 	"strings"
 	"sync"
@@ -38,6 +39,19 @@ type Server struct {
 	// deployWG tracks deploys started by the registry webhook, which run
 	// in the background after the response is sent. Tests wait on it.
 	deployWG sync.WaitGroup
+
+	// registrySigningKey signs the access tokens handleRegistryToken
+	// issues. nil until SetRegistrySigningKey is called (which
+	// cmd/cubeshipd/main.go does at startup); the token endpoint 503s
+	// until then rather than issuing unsigned/broken tokens.
+	registrySigningKey *rsa.PrivateKey
+}
+
+// SetRegistrySigningKey wires the daemon's registry-token signing key
+// into the server. Must be called before the daemon starts accepting
+// requests; not safe to call concurrently with handleRegistryToken.
+func (s *Server) SetRegistrySigningKey(key *rsa.PrivateKey) {
+	s.registrySigningKey = key
 }
 
 func NewServer(s *store.Store, orch *deploy.Orchestrator, token, registryHost string) *Server {
@@ -52,6 +66,7 @@ func NewServer(s *store.Store, orch *deploy.Orchestrator, token, registryHost st
 		w.WriteHeader(http.StatusOK)
 	})
 	srv.mux.HandleFunc("POST /hooks/registry", srv.handleRegistryWebhook)
+	srv.mux.HandleFunc("GET /v2/token", srv.handleRegistryToken)
 	srv.handleAuth("POST /orgs", srv.handleCreateOrg)
 	srv.handleAuth("GET /orgs", srv.handleListOrgs)
 	srv.handleAuth("POST /apps", srv.handleCreateApp)
