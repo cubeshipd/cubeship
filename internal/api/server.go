@@ -1,11 +1,13 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
+	"cubeship/internal/authkey"
 	"cubeship/internal/deploy"
 	"cubeship/internal/store"
 )
@@ -24,8 +26,11 @@ const localRegistryHost = "127.0.0.1:5000"
 const webhookDeployTimeout = 10 * time.Minute
 
 type Server struct {
-	store        *store.Store
-	orch         *deploy.Orchestrator
+	store *store.Store
+	orch  *deploy.Orchestrator
+	// token is the shared secret the registry's own push-notification
+	// webhook authenticates with — a system-to-system credential,
+	// unrelated to per-user API keys. See handleRegistryWebhook.
 	token        string
 	registryHost string
 	mux          *http.ServeMux
@@ -60,26 +65,46 @@ func (s *Server) Router() http.Handler {
 	return s.mux
 }
 
+type contextKey string
+
+const userContextKey contextKey = "cubeship-user"
+
+// userFromContext returns the authenticated caller set by authMiddleware.
+// Only valid inside a handler registered via handleAuth.
+func userFromContext(ctx context.Context) *store.User {
+	u, _ := ctx.Value(userContextKey).(*store.User)
+	return u
+}
+
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("Authorization") != "Bearer "+s.token {
+		authHeader := r.Header.Get("Authorization")
+		const prefix = "Bearer "
+		if !strings.HasPrefix(authHeader, prefix) {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
-		next.ServeHTTP(w, r)
+		keyHash := authkey.Hash(strings.TrimPrefix(authHeader, prefix))
+		user, err := s.store.GetUserByAPIKeyHash(r.Context(), keyHash)
+		if err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		s.store.TouchAPIKeyLastUsed(r.Context(), keyHash)
+		ctx := context.WithValue(r.Context(), userContextKey, user)
+		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
 // handleAuth registers a handler on the mux behind authMiddleware.
-// Task 8+ use this instead of calling s.mux.HandleFunc directly.
 func (s *Server) handleAuth(pattern string, h http.HandlerFunc) {
 	s.mux.Handle(pattern, s.authMiddleware(h))
 }
 
 // localPullRef rewrites a public image reference
-// (registry.<domain>/<repo>) into the loopback-published reference the
-// daemon actually pulls. Only the repository part is kept; the host is
-// replaced. See localRegistryHost.
+// (registry.<domain>/<org-slug>/<app>) into the loopback-published
+// reference the daemon actually pulls. Only the repository part is
+// kept; the host is replaced. See localRegistryHost.
 func localPullRef(image, tag string) string {
 	repo := image
 	if i := strings.Index(image, "/"); i >= 0 {
