@@ -129,7 +129,7 @@ func EnsurePostgresDataDir(cfg *config.Config) error {
 // is the public name it is reached at; it only exists once the instance
 // has a domain, which is why the daemon does not start this container
 // before then.
-func RegistryContainerOpts(cfg *config.Config, registryHost string, tls bool) dockerx.ContainerOpts {
+func RegistryContainerOpts(cfg *config.Config, registryHost string, tls bool, tokenCert []byte) dockerx.ContainerOpts {
 	// No domain, no router: a Traefik rule with an empty host matches
 	// nothing and is worth less than not existing. The registry still
 	// runs — the daemon pulls from it directly, and a push from this
@@ -139,6 +139,23 @@ func RegistryContainerOpts(cfg *config.Config, registryHost string, tls bool) do
 	if registryHost != "" {
 		labels = traefik.Labels("registry", registryHost, registryPort, tls)
 	}
+	// The trust root goes into the container's own labels, and it has to.
+	//
+	// The registry reads its rootcertbundle once, when it starts, and
+	// accepts only that exact certificate. Nothing else in these options
+	// changes when the certificate does — same image, same binds, same
+	// path — so Ensure saw an unchanged container and left a registry
+	// running that trusted a certificate the daemon no longer signs
+	// with. Every token was refused, with "unable to get token signing
+	// key" in the registry's log and a bare 401 everywhere else.
+	//
+	// A fingerprint rather than the certificate: a label is metadata a
+	// person reads with `docker inspect`, not a place to put a PEM.
+	if labels == nil {
+		labels = map[string]string{}
+	}
+	labels[TokenCertLabel] = fingerprint(tokenCert)
+
 	return dockerx.ContainerOpts{
 		Name:    RegistryContainerName,
 		Image:   "registry:2",
@@ -522,6 +539,18 @@ type dockerAPI interface {
 	StopContainer(ctx context.Context, id string) error
 	RemoveContainer(ctx context.Context, id string) error
 	InspectContainerByName(ctx context.Context, name string) (dockerx.ContainerInfo, error)
+}
+
+// TokenCertLabel records which trust root the registry container was
+// started with, so a changed one replaces it rather than being written
+// to a file the running registry has already read.
+const TokenCertLabel = "cubeship.token-cert"
+
+// fingerprint is a short, stable digest — enough to tell two values
+// apart in a label, and not the value itself.
+func fingerprint(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:8])
 }
 
 // ConfigHashLabel records, on the container itself, a fingerprint of the

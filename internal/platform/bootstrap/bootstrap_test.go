@@ -20,7 +20,7 @@ func testConfig() *config.Config {
 }
 
 func TestRegistryContainerOptsRoutesThroughTraefik(t *testing.T) {
-	opts := RegistryContainerOpts(testConfig(), "registry.example.com", true)
+	opts := RegistryContainerOpts(testConfig(), "registry.example.com", true, []byte("cert"))
 
 	if opts.Name != "cubeship-registry" {
 		t.Fatalf("unexpected name: %q", opts.Name)
@@ -670,7 +670,7 @@ func TestTraefikIsOnTheSharedNetwork(t *testing.T) {
 func TestTheRegistryRunsWithoutADomain(t *testing.T) {
 	cfg := testConfig()
 
-	opts := RegistryContainerOpts(cfg, "", false)
+	opts := RegistryContainerOpts(cfg, "", false, []byte("cert"))
 	if opts.Name != RegistryContainerName || opts.Image == "" {
 		t.Fatalf("no registry container without a domain: %+v", opts)
 	}
@@ -693,7 +693,7 @@ func TestTheRegistryRunsWithoutADomain(t *testing.T) {
 	}
 
 	// With a domain it gains the router.
-	withDomain := RegistryContainerOpts(cfg, "registry.example.com", true)
+	withDomain := RegistryContainerOpts(cfg, "registry.example.com", true, []byte("cert"))
 	if len(withDomain.Labels) == 0 {
 		t.Error("a registry with a domain has no Traefik labels")
 	}
@@ -793,5 +793,28 @@ func TestEnsureReplacesAContainerWhoseImageWasRebuilt(t *testing.T) {
 	}
 	if rebuilt.createdName != opts.Name {
 		t.Error("no replacement container was created")
+	}
+}
+
+// A changed trust root has to replace the registry container, not just
+// rewrite the file it already read.
+//
+// The registry loads its rootcertbundle once, at startup, and accepts
+// only that exact certificate. Nothing else about the container changes
+// when the certificate does — same image, same binds, same path — so
+// without this the daemon wrote a new root to disk, Ensure saw an
+// unchanged container, and the registry went on refusing every token
+// the daemon signed.
+func TestANewTokenCertificateReplacesTheRegistry(t *testing.T) {
+	cfg := testConfig()
+	before := RegistryContainerOpts(cfg, "registry.example.com", true, []byte("first"))
+	after := RegistryContainerOpts(cfg, "registry.example.com", true, []byte("second"))
+
+	const image = "sha256:registry2"
+	if configHash(before, image) == configHash(after, image) {
+		t.Error("a different trust root left the container looking unchanged, so the registry keeps the old one")
+	}
+	if before.Labels[TokenCertLabel] == "" {
+		t.Error("the container does not record which trust root it was started with")
 	}
 }

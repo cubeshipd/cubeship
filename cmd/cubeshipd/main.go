@@ -183,7 +183,7 @@ func waitForDatabase(ctx context.Context, dsn string, timeout time.Duration) err
 // Both are idempotent, and bootstrap.Ensure replaces a container whose
 // settings have changed, so calling this again after a settings change is
 // all it takes to apply one.
-func applyInfrastructure(ctx context.Context, cfg *config.Config, docker *dockerx.Client, values settings.Values) error {
+func applyInfrastructure(ctx context.Context, cfg *config.Config, docker *dockerx.Client, values settings.Values, tokenCert []byte) error {
 	// The registry always runs. It is part of what Cubeship is, not
 	// something a domain switches on: the daemon pulls an app's own
 	// image from it, and a push from this host reaches it on loopback.
@@ -200,7 +200,7 @@ func applyInfrastructure(ctx context.Context, cfg *config.Config, docker *docker
 		return fmt.Errorf("write registry config: %w", err)
 	}
 	if err := bootstrap.Ensure(ctx, docker,
-		bootstrap.RegistryContainerOpts(cfg, registryHost, values.HasTLS())); err != nil {
+		bootstrap.RegistryContainerOpts(cfg, registryHost, values.HasTLS(), tokenCert)); err != nil {
 		return fmt.Errorf("bootstrap registry: %w", err)
 	}
 
@@ -354,7 +354,7 @@ func run() error {
 	// again whenever the operator changes it — adding a domain has to
 	// bring the registry up without a restart.
 	apply := func(ctx context.Context, values settings.Values) error {
-		return applyInfrastructure(ctx, cfg, docker, values)
+		return applyInfrastructure(ctx, cfg, docker, values, registryCert)
 	}
 	current, err := srv.Settings.Load(ctx)
 	if err != nil {
