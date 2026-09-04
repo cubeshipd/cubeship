@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"cubeship/internal/authkey"
 	"cubeship/internal/store"
@@ -50,6 +52,27 @@ func authedRequest(method, path string, body []byte, apiKey string) *http.Reques
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	return req
+}
+
+// testAPIKeyFor creates a user (super-admin if isSuperAdmin) and returns
+// a fresh API key for them. Use this in tests that build their own
+// store/server directly (e.g. with a custom orchestrator) instead of
+// newTestServer.
+func testAPIKeyFor(t *testing.T, s *store.Store, isSuperAdmin bool) string {
+	t.Helper()
+	username := fmt.Sprintf("test-user-%d", time.Now().UnixNano())
+	user, err := s.CreateUser(context.Background(), username, isSuperAdmin)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	key, err := authkey.Generate()
+	if err != nil {
+		t.Fatalf("authkey.Generate: %v", err)
+	}
+	if _, err := s.CreateAPIKey(context.Background(), user.ID, authkey.Hash(key)); err != nil {
+		t.Fatalf("CreateAPIKey: %v", err)
+	}
+	return key
 }
 
 func TestCreateAppReturnsImagePath(t *testing.T) {

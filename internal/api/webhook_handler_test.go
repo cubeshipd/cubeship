@@ -112,7 +112,8 @@ func TestRegistryWebhookTriggersDeployForMatchedApp(t *testing.T) {
 	docker := &webhookFakeDocker{running: true}
 	srv, s := newWebhookTestServer(t, docker)
 	ctx := context.Background()
-	s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	rec := httptest.NewRecorder()
 	srv.Router().ServeHTTP(rec, webhookRequest(registryNotificationPayload))
@@ -157,7 +158,8 @@ func TestRegistryWebhookIgnoresUnknownRepository(t *testing.T) {
 func TestRegistryWebhookRejectsMissingToken(t *testing.T) {
 	docker := &webhookFakeDocker{running: true}
 	srv, s := newWebhookTestServer(t, docker)
-	s.CreateApp(context.Background(), "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(context.Background(), "acme", "Acme Inc")
+	s.CreateApp(context.Background(), org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	req := httptest.NewRequest(http.MethodPost, "/hooks/registry", bytes.NewReader([]byte(registryNotificationPayload)))
 	// deliberately no Authorization header, as a forged notification
@@ -177,7 +179,8 @@ func TestRegistryWebhookRejectsMissingToken(t *testing.T) {
 func TestRegistryWebhookRejectsWrongToken(t *testing.T) {
 	docker := &webhookFakeDocker{running: true}
 	srv, s := newWebhookTestServer(t, docker)
-	s.CreateApp(context.Background(), "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(context.Background(), "acme", "Acme Inc")
+	s.CreateApp(context.Background(), org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	req := httptest.NewRequest(http.MethodPost, "/hooks/registry", bytes.NewReader([]byte(registryNotificationPayload)))
 	req.Header.Set("Authorization", "Bearer nope")
@@ -201,7 +204,8 @@ func TestRegistryWebhookAcksBeforeDeployFinishes(t *testing.T) {
 	docker := &webhookFakeDocker{running: true, pullGate: make(chan struct{})}
 	srv, s := newWebhookTestServer(t, docker)
 	ctx := context.Background()
-	s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	reqCtx, cancelReq := context.WithCancel(context.Background())
 	req := webhookRequest(registryNotificationPayload).WithContext(reqCtx)
@@ -242,7 +246,8 @@ func TestRegistryWebhookConcurrentNotificationsDoNotRace(t *testing.T) {
 		t.Fatalf("store.Open: %v", err)
 	}
 	t.Cleanup(func() { s.Close() })
-	s.CreateApp(context.Background(), "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(context.Background(), "acme", "Acme Inc")
+	s.CreateApp(context.Background(), org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	orch := deploy.New(s, docker)
 	orch.HealthCheckAttempts = 3

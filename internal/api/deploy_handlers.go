@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"cubeship/internal/deploy"
+	"cubeship/internal/store"
 
 	"github.com/docker/docker/pkg/stdcopy"
 )
@@ -15,6 +16,10 @@ func (s *Server) handleManualDeploy(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	app, err := s.store.GetAppByName(r.Context(), name)
 	if err != nil {
+		http.Error(w, "app not found", http.StatusNotFound)
+		return
+	}
+	if !s.authorizeApp(r, app, store.RoleMember) {
 		http.Error(w, "app not found", http.StatusNotFound)
 		return
 	}
@@ -44,6 +49,10 @@ func (s *Server) handleSetEnv(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "app not found", http.StatusNotFound)
 		return
 	}
+	if !s.authorizeApp(r, app, store.RoleMember) {
+		http.Error(w, "app not found", http.StatusNotFound)
+		return
+	}
 
 	var req struct {
 		Vars map[string]string `json:"vars"`
@@ -62,7 +71,12 @@ func (s *Server) handleSetEnv(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
-	if _, err := s.store.GetAppByName(r.Context(), name); err != nil {
+	app, err := s.store.GetAppByName(r.Context(), name)
+	if err != nil {
+		http.Error(w, "app not found", http.StatusNotFound)
+		return
+	}
+	if !s.authorizeApp(r, app, store.RoleMember) {
 		http.Error(w, "app not found", http.StatusNotFound)
 		return
 	}
