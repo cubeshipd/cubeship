@@ -37,7 +37,7 @@ type dockerAPI interface {
 	StopContainer(ctx context.Context, id string) error
 	RemoveContainer(ctx context.Context, id string) error
 	IsRunning(ctx context.Context, id string) (bool, error)
-	Logs(ctx context.Context, id string) (io.ReadCloser, error)
+	Logs(ctx context.Context, id, tail string) (io.ReadCloser, error)
 }
 
 type Orchestrator struct {
@@ -151,7 +151,9 @@ func (o *Orchestrator) Deploy(ctx context.Context, appName, imageRef string) err
 	return nil
 }
 
-func (o *Orchestrator) Logs(ctx context.Context, appName string) (io.ReadCloser, error) {
+// Logs returns appName's container log. tail limits it to that many
+// trailing lines; an empty tail returns the whole log.
+func (o *Orchestrator) Logs(ctx context.Context, appName, tail string) (io.ReadCloser, error) {
 	app, err := o.store.GetAppByName(ctx, appName)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", ErrAppNotFound, appName)
@@ -159,7 +161,7 @@ func (o *Orchestrator) Logs(ctx context.Context, appName string) (io.ReadCloser,
 	if app.ContainerID == "" {
 		return nil, ErrNoContainer
 	}
-	return o.docker.Logs(ctx, app.ContainerID)
+	return o.docker.Logs(ctx, app.ContainerID, tail)
 }
 
 // waitHealthy reports whether a freshly started container looks healthy.

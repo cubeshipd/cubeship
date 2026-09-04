@@ -84,7 +84,11 @@ func NewServer(s *store.Store, orch *deploy.Orchestrator, token, registryHost st
 	srv.handleAuth("GET /apps/{name}/logs", srv.handleGetLogs)
 	srv.handleAuth("POST /orgs/{slug}/users", srv.handleCreateOrgUser)
 	srv.handleAuth("POST /users/me/api-key/rotate", srv.handleRotateAPIKey)
+	srv.handleAuth("POST /users/me/api-keys", srv.handleCreateAPIKey)
+	srv.handleAuth("GET /users/me/api-keys", srv.handleListAPIKeys)
+	srv.handleAuth("DELETE /users/me/api-keys/{id}", srv.handleRevokeAPIKey)
 	srv.handleAuth("GET /users/me", srv.handleWhoAmI)
+	srv.mux.Handle("/mcp", srv.authMiddleware(srv.newMCPHandler()))
 	return srv
 }
 
@@ -94,13 +98,25 @@ func (s *Server) Router() http.Handler {
 
 type contextKey string
 
-const userContextKey contextKey = "cubeship-user"
+const (
+	userContextKey   contextKey = "cubeship-user"
+	apiKeyHashCtxKey contextKey = "cubeship-api-key-hash"
+)
 
 // userFromContext returns the authenticated caller set by authMiddleware.
 // Only valid inside a handler registered via handleAuth.
 func userFromContext(ctx context.Context) *store.User {
 	u, _ := ctx.Value(userContextKey).(*store.User)
 	return u
+}
+
+// apiKeyHashFromContext returns the hash of the API key the current
+// request authenticated with — the specific key, not just the user it
+// belongs to. handleRotateAPIKey needs this to replace exactly the key
+// in use, leaving every other key that user holds untouched.
+func apiKeyHashFromContext(ctx context.Context) string {
+	h, _ := ctx.Value(apiKeyHashCtxKey).(string)
+	return h
 }
 
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
@@ -119,6 +135,7 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 		s.store.TouchAPIKeyLastUsed(r.Context(), keyHash)
 		ctx := context.WithValue(r.Context(), userContextKey, user)
+		ctx = context.WithValue(ctx, apiKeyHashCtxKey, keyHash)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

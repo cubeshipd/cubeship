@@ -19,7 +19,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "organization not found", http.StatusNotFound)
 		return
 	}
-	if !s.authorizeOrg(r, org.ID, store.RoleAdmin) {
+	if !s.authorizeOrgRequest(r, org.ID, store.RoleAdmin) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -55,7 +55,7 @@ func (s *Server) handleListProjects(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "organization not found", http.StatusNotFound)
 		return
 	}
-	if !s.authorizeOrg(r, org.ID, store.RoleMember) {
+	if !s.authorizeOrgRequest(r, org.ID, store.RoleMember) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -83,7 +83,7 @@ func (s *Server) projectFromRequest(w http.ResponseWriter, r *http.Request, minR
 		http.Error(w, "project not found", http.StatusNotFound)
 		return nil, false
 	}
-	if !s.authorizeOrg(r, org.ID, minRole) {
+	if !s.authorizeOrgRequest(r, org.ID, minRole) {
 		http.Error(w, "project not found", http.StatusNotFound)
 		return nil, false
 	}

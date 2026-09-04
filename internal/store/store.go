@@ -86,6 +86,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	user_id INTEGER NOT NULL REFERENCES users(id),
 	key_hash TEXT NOT NULL UNIQUE,
+	name TEXT NOT NULL DEFAULT '',
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	last_used_at DATETIME
 );
@@ -141,7 +142,11 @@ func migrate(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	if hasEnv && hasOrgID && hasProjectID && hasEnvironmentID {
+	hasAPIKeyName, err := hasColumn(db, "api_keys", "name")
+	if err != nil {
+		return err
+	}
+	if hasEnv && hasOrgID && hasProjectID && hasEnvironmentID && hasAPIKeyName {
 		return nil
 	}
 
@@ -201,6 +206,21 @@ func migrate(db *sql.DB) error {
 		// to merge in inherited env vars fails outright.
 		if err := adoptOrphanedApps(tx); err != nil {
 			return err
+		}
+	}
+
+	if !hasAPIKeyName {
+		// Every existing key becomes DefaultAPIKeyName rather than empty:
+		// an empty name is indistinguishable from "never named", which
+		// would make ListAPIKeysForUser's output confusing for keys that
+		// predate named keys entirely. SQLite's ALTER TABLE requires the
+		// DEFAULT to be a constant, not a bound parameter, so this is
+		// built with Sprintf instead of Exec's usual placeholders — safe
+		// here because DefaultAPIKeyName is a fixed Go constant, never
+		// user input.
+		stmt := fmt.Sprintf(`ALTER TABLE api_keys ADD COLUMN name TEXT NOT NULL DEFAULT '%s'`, DefaultAPIKeyName)
+		if _, err := tx.Exec(stmt); err != nil {
+			return fmt.Errorf("add api_keys.name: %w", err)
 		}
 	}
 

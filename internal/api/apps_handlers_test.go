@@ -50,7 +50,7 @@ func newTestServer(t *testing.T) (*Server, string, *store.Organization) {
 	if err != nil {
 		t.Fatalf("authkey.Generate: %v", err)
 	}
-	if _, err := s.CreateAPIKey(ctx, user.ID, authkey.Hash(key)); err != nil {
+	if _, err := s.CreateAPIKey(ctx, user.ID, authkey.Hash(key), "default"); err != nil {
 		t.Fatalf("CreateAPIKey: %v", err)
 	}
 
@@ -79,7 +79,7 @@ func testAPIKeyFor(t *testing.T, s *store.Store, isSuperAdmin bool) string {
 	if err != nil {
 		t.Fatalf("authkey.Generate: %v", err)
 	}
-	if _, err := s.CreateAPIKey(context.Background(), user.ID, authkey.Hash(key)); err != nil {
+	if _, err := s.CreateAPIKey(context.Background(), user.ID, authkey.Hash(key), "default"); err != nil {
 		t.Fatalf("CreateAPIKey: %v", err)
 	}
 	return key
@@ -93,7 +93,7 @@ func testAPIKeyForExistingUser(t *testing.T, s *store.Store, userID int64) strin
 	if err != nil {
 		t.Fatalf("authkey.Generate: %v", err)
 	}
-	if _, err := s.CreateAPIKey(context.Background(), userID, authkey.Hash(key)); err != nil {
+	if _, err := s.CreateAPIKey(context.Background(), userID, authkey.Hash(key), "default"); err != nil {
 		t.Fatalf("CreateAPIKey: %v", err)
 	}
 	return key
@@ -179,7 +179,7 @@ func TestCreateAppRequiresMembership(t *testing.T) {
 	ctx := context.Background()
 	outsider, _ := srv.store.CreateUser(ctx, "outsider", false)
 	outsiderKey, _ := authkey.Generate()
-	srv.store.CreateAPIKey(ctx, outsider.ID, authkey.Hash(outsiderKey))
+	srv.store.CreateAPIKey(ctx, outsider.ID, authkey.Hash(outsiderKey), "default")
 
 	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug, "project": testProjectSlug})
 	req := authedRequest(http.MethodPost, "/apps", body, outsiderKey)
@@ -246,7 +246,7 @@ func TestGetAppHidesAppsFromOtherOrgs(t *testing.T) {
 	ctx := context.Background()
 	outsider, _ := srv.store.CreateUser(ctx, "outsider", false)
 	outsiderKey, _ := authkey.Generate()
-	srv.store.CreateAPIKey(ctx, outsider.ID, authkey.Hash(outsiderKey))
+	srv.store.CreateAPIKey(ctx, outsider.ID, authkey.Hash(outsiderKey), "default")
 
 	rec := httptest.NewRecorder()
 	srv.Router().ServeHTTP(rec, authedRequest(http.MethodGet, "/apps/myapp", nil, outsiderKey))

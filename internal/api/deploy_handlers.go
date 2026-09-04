@@ -19,7 +19,7 @@ func (s *Server) handleManualDeploy(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "app not found", http.StatusNotFound)
 		return
 	}
-	if !s.authorizeApp(r, app, store.RoleMember) {
+	if !s.authorizeAppRequest(r, app, store.RoleMember) {
 		http.Error(w, "app not found", http.StatusNotFound)
 		return
 	}
@@ -49,7 +49,7 @@ func (s *Server) handleSetEnv(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "app not found", http.StatusNotFound)
 		return
 	}
-	if !s.authorizeApp(r, app, store.RoleMember) {
+	if !s.authorizeAppRequest(r, app, store.RoleMember) {
 		http.Error(w, "app not found", http.StatusNotFound)
 		return
 	}
@@ -76,12 +76,12 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "app not found", http.StatusNotFound)
 		return
 	}
-	if !s.authorizeApp(r, app, store.RoleMember) {
+	if !s.authorizeAppRequest(r, app, store.RoleMember) {
 		http.Error(w, "app not found", http.StatusNotFound)
 		return
 	}
 
-	rc, err := s.orch.Logs(r.Context(), name)
+	rc, err := s.orch.Logs(r.Context(), name, "")
 	if errors.Is(err, deploy.ErrNoContainer) {
 		http.Error(w, "app has no running container yet", http.StatusConflict)
 		return

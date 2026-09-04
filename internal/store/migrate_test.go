@@ -268,3 +268,60 @@ func TestMigrationCreatesNoDefaultOrgWithoutOrphanedApps(t *testing.T) {
 		}
 	}
 }
+
+// A database from before api_keys.name existed hits the same "no such
+// column" crash as every other column added by migrate — this covers
+// api_keys specifically, including that a pre-existing key survives with
+// a real name rather than an empty one (which would be indistinguishable
+// from "never named" once ListAPIKeysForUser exists).
+func TestOpenMigratesDatabaseWithoutAPIKeyName(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cubeship.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE users (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			username TEXT NOT NULL UNIQUE,
+			is_super_admin INTEGER NOT NULL DEFAULT 0,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE api_keys (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			user_id INTEGER NOT NULL REFERENCES users(id),
+			key_hash TEXT NOT NULL UNIQUE,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			last_used_at DATETIME
+		);
+		INSERT INTO users (username, is_super_admin) VALUES ('admin', 1);
+		INSERT INTO api_keys (user_id, key_hash) VALUES (1, 'old-key-hash');`); err != nil {
+		t.Fatalf("create pre-name schema: %v", err)
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open on a pre-name database: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	key, err := s.GetAPIKeyByHash(ctx, "old-key-hash")
+	if err != nil {
+		t.Fatalf("GetAPIKeyByHash after migration: %v", err)
+	}
+	if key.Name != DefaultAPIKeyName {
+		t.Fatalf("expected the pre-existing key to be named %q, got %q", DefaultAPIKeyName, key.Name)
+	}
+
+	// The old key still authenticates — migration must not have touched
+	// its hash or its ability to resolve to the user.
+	user, err := s.GetUserByAPIKeyHash(ctx, "old-key-hash")
+	if err != nil {
+		t.Fatalf("GetUserByAPIKeyHash after migration: %v", err)
+	}
+	if user.Username != "admin" {
+		t.Fatalf("expected the key to still resolve to admin, got %q", user.Username)
+	}
+}

@@ -53,7 +53,7 @@ func (f *webhookFakeDocker) IsRunning(ctx context.Context, id string) (bool, err
 	return f.running, nil
 }
 
-func (f *webhookFakeDocker) Logs(ctx context.Context, id string) (io.ReadCloser, error) {
+func (f *webhookFakeDocker) Logs(ctx context.Context, id, tail string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(f.logsContent)), nil
 }
 
@@ -302,7 +302,7 @@ func (f *countingWebhookDocker) RemoveContainer(ctx context.Context, id string) 
 func (f *countingWebhookDocker) IsRunning(ctx context.Context, id string) (bool, error) {
 	return true, nil
 }
-func (f *countingWebhookDocker) Logs(ctx context.Context, id string) (io.ReadCloser, error) {
+func (f *countingWebhookDocker) Logs(ctx context.Context, id, tail string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
 }
 

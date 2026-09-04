@@ -20,7 +20,7 @@ func TestAuthorizeOrgSuperAdminAlwaysPasses(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(
 		context.WithValue(context.Background(), userContextKey, admin))
 
-	if !srv.authorizeOrg(req, org.ID, store.RoleAdmin) {
+	if !srv.authorizeOrgRequest(req, org.ID, store.RoleAdmin) {
 		t.Fatal("expected super-admin to be authorized regardless of membership")
 	}
 }
@@ -37,10 +37,10 @@ func TestAuthorizeOrgMemberPassesMemberButFailsAdmin(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(
 		context.WithValue(context.Background(), userContextKey, user))
 
-	if !srv.authorizeOrg(req, org.ID, store.RoleMember) {
+	if !srv.authorizeOrgRequest(req, org.ID, store.RoleMember) {
 		t.Fatal("expected a member to pass the member-level check")
 	}
-	if srv.authorizeOrg(req, org.ID, store.RoleAdmin) {
+	if srv.authorizeOrgRequest(req, org.ID, store.RoleAdmin) {
 		t.Fatal("expected a member to fail the admin-level check")
 	}
 }
@@ -56,7 +56,7 @@ func TestAuthorizeOrgNoMembershipFails(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil).WithContext(
 		context.WithValue(context.Background(), userContextKey, user))
 
-	if srv.authorizeOrg(req, org.ID, store.RoleMember) {
+	if srv.authorizeOrgRequest(req, org.ID, store.RoleMember) {
 		t.Fatal("expected a user with no membership to be unauthorized")
 	}
 }

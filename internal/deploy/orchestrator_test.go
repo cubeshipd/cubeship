@@ -80,7 +80,7 @@ func (f *fakeDocker) IsRunning(ctx context.Context, id string) (bool, error) {
 	return f.running, nil
 }
 
-func (f *fakeDocker) Logs(ctx context.Context, id string) (io.ReadCloser, error) {
+func (f *fakeDocker) Logs(ctx context.Context, id, tail string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
 }
 
@@ -562,7 +562,7 @@ func (f *serialConcurrencyDocker) IsRunning(ctx context.Context, id string) (boo
 	return true, nil
 }
 
-func (f *serialConcurrencyDocker) Logs(ctx context.Context, id string) (io.ReadCloser, error) {
+func (f *serialConcurrencyDocker) Logs(ctx context.Context, id, tail string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
 }
 
@@ -672,7 +672,7 @@ func TestLogsReturnsErrNoContainerBeforeFirstDeploy(t *testing.T) {
 	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
 	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
-	_, err := o.Logs(ctx, "myapp")
+	_, err := o.Logs(ctx, "myapp", "")
 	if !errors.Is(err, ErrNoContainer) {
 		t.Fatalf("expected ErrNoContainer, got %v", err)
 	}

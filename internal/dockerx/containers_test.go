@@ -33,6 +33,8 @@ type fakeAPI struct {
 	inspectedRunning        bool
 	inspectErr              error
 	networkCreateErr        error
+	loggedID                string
+	loggedOptions           container.LogsOptions
 }
 
 func (f *fakeAPI) ImagePull(ctx context.Context, ref string, options types.ImagePullOptions) (io.ReadCloser, error) {
@@ -75,6 +77,8 @@ func (f *fakeAPI) ContainerRemove(ctx context.Context, id string, options contai
 }
 
 func (f *fakeAPI) ContainerLogs(ctx context.Context, id string, options container.LogsOptions) (io.ReadCloser, error) {
+	f.loggedID = id
+	f.loggedOptions = options
 	return io.NopCloser(strings.NewReader("log line 1\nlog line 2\n")), nil
 }
 
@@ -151,7 +155,7 @@ func TestLogsReturnsContainerOutput(t *testing.T) {
 	fake := &fakeAPI{}
 	c := newWithAPI(fake)
 
-	rc, err := c.Logs(context.Background(), "some-id")
+	rc, err := c.Logs(context.Background(), "some-id", "")
 	if err != nil {
 		t.Fatalf("Logs: %v", err)
 	}
@@ -159,6 +163,24 @@ func TestLogsReturnsContainerOutput(t *testing.T) {
 	data, _ := io.ReadAll(rc)
 	if string(data) != "log line 1\nlog line 2\n" {
 		t.Fatalf("unexpected log output: %q", data)
+	}
+	if fake.loggedOptions.Tail != "" {
+		t.Fatalf("expected an empty tail to request the full log, got %q", fake.loggedOptions.Tail)
+	}
+}
+
+func TestLogsForwardsTail(t *testing.T) {
+	fake := &fakeAPI{}
+	c := newWithAPI(fake)
+
+	if _, err := c.Logs(context.Background(), "some-id", "200"); err != nil {
+		t.Fatalf("Logs: %v", err)
+	}
+	if fake.loggedID != "some-id" {
+		t.Fatalf("expected container %q, got %q", "some-id", fake.loggedID)
+	}
+	if fake.loggedOptions.Tail != "200" {
+		t.Fatalf("expected tail 200 to be forwarded, got %q", fake.loggedOptions.Tail)
 	}
 }
 

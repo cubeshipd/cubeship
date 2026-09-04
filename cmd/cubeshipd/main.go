@@ -126,7 +126,7 @@ func ensureSuperAdmin(ctx context.Context, s *store.Store, dataDir string) error
 			return err
 		}
 		username = user.Username
-		_, err = tx.CreateAPIKey(ctx, user.ID, authkey.Hash(key))
+		_, err = tx.CreateAPIKey(ctx, user.ID, authkey.Hash(key), store.DefaultAPIKeyName)
 		return err
 	}); err != nil {
 		return err
@@ -230,5 +230,6 @@ func run() error {
 	srv.SetRegistrySigningKey(registrySigningKey)
 
 	log.Printf("cubeshipd listening on %s", listenAddr)
+	log.Printf("MCP server available at https://%s/mcp (any API key authenticates; see \"cubeship user api-key create\" for a dedicated one)", cfg.APIHost)
 	return http.ListenAndServe(listenAddr, srv.Router())
 }

@@ -23,7 +23,7 @@ func TestWithTxCommitsOnSuccess(t *testing.T) {
 		if err := tx.AddMembership(ctx, user.ID, org.ID, RoleMember); err != nil {
 			return err
 		}
-		_, err = tx.CreateAPIKey(ctx, user.ID, "hash-1")
+		_, err = tx.CreateAPIKey(ctx, user.ID, "hash-1", "default")
 		return err
 	})
 	if err != nil {

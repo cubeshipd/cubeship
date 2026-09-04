@@ -231,8 +231,11 @@ func (c *Client) RemoveContainer(ctx context.Context, id string) error {
 	return nil
 }
 
-func (c *Client) Logs(ctx context.Context, id string) (io.ReadCloser, error) {
-	rc, err := c.api.ContainerLogs(ctx, id, container.LogsOptions{ShowStdout: true, ShowStderr: true})
+// Logs returns id's stdout/stderr, demand-multiplexed per Docker's log
+// framing (see stdcopy in callers). tail limits it to that many trailing
+// lines; an empty tail returns the whole log.
+func (c *Client) Logs(ctx context.Context, id, tail string) (io.ReadCloser, error) {
+	rc, err := c.api.ContainerLogs(ctx, id, container.LogsOptions{ShowStdout: true, ShowStderr: true, Tail: tail})
 	if err != nil {
 		return nil, fmt.Errorf("logs for container %q: %w", id, err)
 	}

@@ -39,7 +39,7 @@ func newAuthMiddlewareTestServer(t *testing.T) (*Server, string) {
 	if err != nil {
 		t.Fatalf("authkey.Generate: %v", err)
 	}
-	if _, err := st.CreateAPIKey(ctx, user.ID, authkey.Hash(key)); err != nil {
+	if _, err := st.CreateAPIKey(ctx, user.ID, authkey.Hash(key), "default"); err != nil {
 		t.Fatalf("CreateAPIKey: %v", err)
 	}
 

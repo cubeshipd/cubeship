@@ -68,7 +68,7 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "organization not found", http.StatusNotFound)
 		return
 	}
-	if !s.authorizeOrg(r, org.ID, store.RoleMember) {
+	if !s.authorizeOrgRequest(r, org.ID, store.RoleMember) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -111,7 +111,7 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := make([]appResponse, 0, len(apps))
 	for _, a := range apps {
-		if !s.authorizeApp(r, a, store.RoleMember) {
+		if !s.authorizeAppRequest(r, a, store.RoleMember) {
 			continue
 		}
 		ar, err := s.toAppResponse(r.Context(), a)
@@ -131,7 +131,7 @@ func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "app not found", http.StatusNotFound)
 		return
 	}
-	if !s.authorizeApp(r, app, store.RoleMember) {
+	if !s.authorizeAppRequest(r, app, store.RoleMember) {
 		http.Error(w, "app not found", http.StatusNotFound)
 		return
 	}
