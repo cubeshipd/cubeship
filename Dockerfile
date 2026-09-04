@@ -15,7 +15,13 @@ FROM node:22-alpine AS web
 WORKDIR /src
 
 RUN corepack enable
-COPY web/package.json web/pnpm-lock.yaml ./
+
+# pnpm-workspace.yaml travels with the manifest and the lockfile because
+# it carries the settings the install itself is governed by, not just the
+# workspace layout. Leaving it out made the install here run under
+# different policy from the install everywhere else — which surfaced as a
+# build that fails on a dependency published today and passes tomorrow.
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY web/ ./
