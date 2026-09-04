@@ -17,7 +17,12 @@ func TestGetLogsStreamsContainerOutput(t *testing.T) {
 	app, _ := s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
-	docker := &webhookFakeDocker{logsContent: "hello from the app\n"}
+	// Containers run without a TTY, so the Engine multiplexes stdout and
+	// stderr behind an 8-byte binary frame header. The handler must
+	// demultiplex; copying the raw stream prints binary garbage.
+	docker := &webhookFakeDocker{
+		logsContent: dockerStdoutFrame("hello from the app\n") + dockerStdoutFrame("second line\n"),
+	}
 	srv := NewServer(s, deploy.New(s, docker), "secret-token", "registry.example.com")
 
 	req := authedRequest(http.MethodGet, "/apps/myapp/logs", nil)
@@ -27,8 +32,8 @@ func TestGetLogsStreamsContainerOutput(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
-	if rec.Body.String() != "hello from the app\n" {
-		t.Fatalf("unexpected body: %q", rec.Body.String())
+	if rec.Body.String() != "hello from the app\nsecond line\n" {
+		t.Fatalf("expected the demultiplexed log lines, got %q", rec.Body.String())
 	}
 }
 

@@ -19,7 +19,7 @@ func TestManualDeployEndpoint(t *testing.T) {
 
 	docker := &webhookFakeDocker{running: true}
 	orch := deploy.New(s, docker)
-	orch.HealthCheckAttempts = 1
+	orch.HealthCheckAttempts = 3
 	orch.HealthCheckInterval = 0
 	srv := NewServer(s, orch, "secret-token", "registry.example.com")
 
@@ -31,8 +31,11 @@ func TestManualDeployEndpoint(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
-	if docker.pulledRef != "registry.example.com/myapp:v2" {
-		t.Fatalf("expected pull of tag v2, got %q", docker.pulledRef)
+	// The daemon pulls the app's repository over loopback, never the
+	// public registry.<domain> host (which would need a valid ACME cert
+	// to already exist).
+	if docker.pulledRef != "127.0.0.1:5000/myapp:v2" {
+		t.Fatalf("expected pull of 127.0.0.1:5000/myapp:v2, got %q", docker.pulledRef)
 	}
 }
 
@@ -44,15 +47,16 @@ func TestManualDeployDefaultsToLatestTag(t *testing.T) {
 
 	docker := &webhookFakeDocker{running: true}
 	orch := deploy.New(s, docker)
-	orch.HealthCheckAttempts = 1
+	orch.HealthCheckAttempts = 3
+	orch.HealthCheckInterval = 0
 	srv := NewServer(s, orch, "secret-token", "registry.example.com")
 
 	req := authedRequest(http.MethodPost, "/apps/myapp/deploy", []byte(`{}`))
 	rec := httptest.NewRecorder()
 	srv.Router().ServeHTTP(rec, req)
 
-	if docker.pulledRef != "registry.example.com/myapp:latest" {
-		t.Fatalf("expected default tag latest, got %q", docker.pulledRef)
+	if docker.pulledRef != "127.0.0.1:5000/myapp:latest" {
+		t.Fatalf("expected default tag latest pulled over loopback, got %q", docker.pulledRef)
 	}
 }
 

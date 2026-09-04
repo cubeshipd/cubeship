@@ -3,10 +3,12 @@ package api
 import (
 	"encoding/json"
 	"errors"
-	"io"
+	"log"
 	"net/http"
 
 	"cubeship/internal/deploy"
+
+	"github.com/docker/docker/pkg/stdcopy"
 )
 
 func (s *Server) handleManualDeploy(w http.ResponseWriter, r *http.Request) {
@@ -25,8 +27,10 @@ func (s *Server) handleManualDeploy(w http.ResponseWriter, r *http.Request) {
 		req.Tag = "latest"
 	}
 
-	imageRef := app.Image + ":" + req.Tag
-	if err := s.orch.Deploy(r.Context(), app.Name, imageRef); err != nil {
+	// app.Image is the public push path (registry.<domain>/<app>); the
+	// daemon pulls the same repository over loopback instead.
+	pullRef := localPullRef(app.Image, req.Tag)
+	if err := s.orch.Deploy(r.Context(), app.Name, pullRef); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
 		return
 	}
@@ -75,5 +79,12 @@ func (s *Server) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	defer rc.Close()
 
 	w.WriteHeader(http.StatusOK)
-	io.Copy(w, rc)
+	// Containers are created without a TTY, so the Engine returns
+	// stdout and stderr multiplexed behind an 8-byte binary frame
+	// header per chunk. Copying that straight through prints binary
+	// garbage between the log lines — demultiplex it first.
+	if _, err := stdcopy.StdCopy(w, w, rc); err != nil {
+		// The status line is already sent; all we can do is record it.
+		log.Printf("logs for app %s: %v", name, err)
+	}
 }

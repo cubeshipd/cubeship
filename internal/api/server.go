@@ -2,10 +2,26 @@ package api
 
 import (
 	"net/http"
+	"strings"
+	"sync"
+	"time"
 
 	"cubeship/internal/deploy"
 	"cubeship/internal/store"
 )
+
+// localRegistryHost is where the daemon pulls app images from. The
+// registry container publishes 127.0.0.1:5000 precisely so the daemon's
+// own pulls stay on loopback: pulling the public registry.<domain> name
+// would hairpin out to the VPS's public IP and require a valid ACME
+// certificate to already exist, which the spec forbids as a
+// precondition for deploying.
+const localRegistryHost = "127.0.0.1:5000"
+
+// webhookDeployTimeout bounds a deploy kicked off by a registry push.
+// The webhook itself acks immediately, so this is not the registry's
+// notification timeout — it just stops a wedged deploy running forever.
+const webhookDeployTimeout = 10 * time.Minute
 
 type Server struct {
 	store        *store.Store
@@ -13,6 +29,10 @@ type Server struct {
 	token        string
 	registryHost string
 	mux          *http.ServeMux
+
+	// deployWG tracks deploys started by the registry webhook, which run
+	// in the background after the response is sent. Tests wait on it.
+	deployWG sync.WaitGroup
 }
 
 func NewServer(s *store.Store, orch *deploy.Orchestrator, token, registryHost string) *Server {
@@ -54,4 +74,16 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 // Task 8+ use this instead of calling s.mux.HandleFunc directly.
 func (s *Server) handleAuth(pattern string, h http.HandlerFunc) {
 	s.mux.Handle(pattern, s.authMiddleware(h))
+}
+
+// localPullRef rewrites a public image reference
+// (registry.<domain>/<repo>) into the loopback-published reference the
+// daemon actually pulls. Only the repository part is kept; the host is
+// replaced. See localRegistryHost.
+func localPullRef(image, tag string) string {
+	repo := image
+	if i := strings.Index(image, "/"); i >= 0 {
+		repo = image[i+1:]
+	}
+	return localRegistryHost + "/" + repo + ":" + tag
 }
