@@ -40,7 +40,7 @@ internal/
   web/          serves the built dashboard out of the binary
   server/       mounts every module on the HTTP mux and the MCP endpoint
   platform/     infrastructure: database, dockerx, traefik, bootstrap,
-                config, authkey, regauth, httpx
+                buildkit, config, authkey, regauth, httpx
   envvar/ slug/ small shared vocabulary
 cmd/cubeshipd/  the daemon
 cmd/cubeship/   the CLI (cobra), one file per noun
@@ -357,6 +357,61 @@ the point:
 `Orchestrator.Start` takes a tag, not an image reference: which image a
 tag names is the source's answer. `deployments.image_ref` holds what was
 asked for until `Resolve` says what actually ran.
+
+## Building images
+
+`internal/platform/buildkit` turns a directory of source into an image,
+through a `cubeship-buildkit` container.
+
+**The result is loaded into the Docker Engine, not pushed anywhere.** On
+one VPS the image never has to leave the box, and a registry round-trip
+would need credentials, a reachable host and a certificate — three things
+that can all be missing on a fresh install. `dockerx.LoadImage` imports
+the tarball BuildKit writes, streamed through a pipe so a whole image is
+never held in memory.
+
+The build context is streamed from the *daemon's* filesystem over the
+client session, so the builder container needs no access to it.
+
+Two things about that container:
+
+- **It is privileged**, the only one Cubeship runs that way, because
+  building an image means running one.
+- **It starts on demand**, not at boot. An instance that only runs images
+  it is given never builds anything, and a privileged container idling on
+  it is cost with no return. `bootstrap.EnsureBuildKit` is what the first
+  build calls; `Ensure` makes it idempotent after that.
+
+The daemon reaches buildkitd over a **unix socket** in a host bind mount,
+not a port: it is a build service running as root with no authentication
+of its own, so filesystem permissions are the guard and there is no port
+for a misconfigured firewall to expose. `Builder` takes an address, so
+its tests use TCP instead — Docker Desktop's file sharing refuses to
+create a socket in a bind mount, and a socket-only test on a Mac would
+prove nothing but the Mac's limits. Everything above the dial is the same
+either way.
+
+`Build` calls `ListWorkers` before solving. `client.New` does not dial, so
+without it an unreachable builder arrives as a solve failure buried in
+gRPC wording rather than as `ErrUnavailable`.
+
+## Who may build
+
+`Source.Builds()` is the question authorization asks, and `RoleToDeploy`
+is the answer: running an image someone already published is a
+**member's** job, turning source into an image is an **admin's**. A build
+executes whatever the source contains, on this host, with the builder's
+privileges — a different kind of act from running a published artifact.
+
+It binds both creating an app and deploying one. A member who could
+create an app they can never deploy would be an odd thing to allow.
+
+Deploy still resolves as a member first, so someone outside the
+organization gets the 404 an unknown app gets rather than learning it
+exists; the source's own requirement is checked after.
+
+No source builds yet, and `TestBuildingSourcesNeedAnAdmin` fails the
+moment one does — so its role is a decision someone made.
 
 ## Pulling from someone else's registry
 

@@ -10,6 +10,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/errdefs"
@@ -35,15 +36,29 @@ type fakeAPI struct {
 	networkCreateErr        error
 	loggedID                string
 	loggedOptions           container.LogsOptions
+	loaded                  []byte
+	loadStream              string
 }
 
-func (f *fakeAPI) ImagePull(ctx context.Context, ref string, options types.ImagePullOptions) (io.ReadCloser, error) {
+func (f *fakeAPI) ImagePull(ctx context.Context, ref string, options image.PullOptions) (io.ReadCloser, error) {
 	f.pulledRef = ref
 	f.pulledAuth = options.RegistryAuth
 	if f.pullErr != nil {
 		return nil, f.pullErr
 	}
 	return io.NopCloser(strings.NewReader(f.pullStream)), nil
+}
+
+func (f *fakeAPI) ImageLoad(_ context.Context, r io.Reader, _ bool) (image.LoadResponse, error) {
+	loaded, err := io.ReadAll(r)
+	f.loaded = loaded
+	if err != nil {
+		return image.LoadResponse{}, err
+	}
+	return image.LoadResponse{
+		Body: io.NopCloser(strings.NewReader(f.loadStream)),
+		JSON: f.loadStream != "",
+	}, nil
 }
 
 func (f *fakeAPI) ContainerCreate(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/errdefs"
@@ -39,6 +40,9 @@ type ContainerOpts struct {
 	Network     string
 	HostNetwork bool
 	ExtraHosts  []string
+	// Privileged drops the container's isolation. Only BuildKit needs
+	// it, and only because building an image means running one.
+	Privileged bool
 }
 
 // RegistryAuth is a username and password for a registry Cubeship does
@@ -56,7 +60,7 @@ type RegistryAuth struct {
 // said what to use there, and silently preferring anything else would
 // make a failed pull impossible to explain.
 func (c *Client) PullImage(ctx context.Context, ref string, creds *RegistryAuth) error {
-	opts := types.ImagePullOptions{}
+	opts := image.PullOptions{}
 
 	auth, ok, err := c.authFor(ref, creds)
 	if err != nil {
@@ -158,6 +162,38 @@ func (c *Client) authForRef(ref string) (registry.AuthConfig, bool, error) {
 	return registry.AuthConfig{IdentityToken: token, ServerAddress: host}, true, nil
 }
 
+// LoadImage imports an image tarball into the Engine's own store, which
+// is how a build gets from BuildKit to something a container can run
+// without a registry in between. On one VPS the image never has to leave
+// the box.
+func (c *Client) LoadImage(ctx context.Context, r io.Reader) error {
+	resp, err := c.api.ImageLoad(ctx, r, true)
+	if err != nil {
+		return fmt.Errorf("load image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	// Like a pull, a load reports its failures inside the progress
+	// stream rather than as a transport error.
+	if resp.JSON {
+		dec := json.NewDecoder(resp.Body)
+		for {
+			var msg jsonmessage.JSONMessage
+			if err := dec.Decode(&msg); err != nil {
+				if errors.Is(err, io.EOF) {
+					return nil
+				}
+				return fmt.Errorf("load image: %w", err)
+			}
+			if msg.Error != nil {
+				return fmt.Errorf("load image: %s", msg.Error.Message)
+			}
+		}
+	}
+	_, err = io.Copy(io.Discard, resp.Body)
+	return err
+}
+
 func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (string, error) {
 	var exposedPorts nat.PortSet
 	var portBindings nat.PortMap
@@ -195,6 +231,7 @@ func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (strin
 			PortBindings:  portBindings,
 			NetworkMode:   networkMode,
 			ExtraHosts:    opts.ExtraHosts,
+			Privileged:    opts.Privileged,
 		},
 		networkingConfig, nil, opts.Name)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"cubeship/internal/org"
 	"cubeship/internal/platform/dockerx"
 )
 
@@ -37,6 +38,29 @@ const DefaultSource = SourceRegistry
 // would let someone create an app that can never deploy.
 func (s Source) Valid() bool {
 	return s == SourceRegistry || s == SourceExternal
+}
+
+// Builds reports whether deploying this source runs a build on the
+// host.
+//
+// It is the question authorization asks. A build executes whatever the
+// source contains, with the builder's privileges — that is a different
+// kind of act from running an image someone already vetted, and it needs
+// a different role. No source builds yet; the ones that will are a
+// Dockerfile and a detected runtime.
+func (s Source) Builds() bool {
+	return false
+}
+
+// RoleToDeploy is the role a caller needs to deploy this source.
+//
+// Running a published image is what a member is for. Turning source into
+// an image means executing it, so that is an admin's.
+func RoleToDeploy(s Source) org.Role {
+	if s.Builds() {
+		return org.RoleAdmin
+	}
+	return org.RoleMember
 }
 
 // ErrUnknownSource reports a source this version cannot deploy.

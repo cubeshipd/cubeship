@@ -9,6 +9,19 @@ curl -sSL https://cubeship.dev/install.sh | sh
 Nothing under `CUBESHIP_DATA_DIR` is touched. The sections below are the
 changes worth knowing about, newest first.
 
+## From a release without an image builder
+
+Nothing to do, and nothing changes yet: no app source builds, so the
+`cubeship-buildkit` container is never started. It appears when the first
+source that builds does.
+
+The Docker SDK moved from v25 to v27 in this release. That is internal,
+but it added a field to the options every infrastructure container is
+described by, so their configuration fingerprints changed — the first
+start after upgrading replaces Postgres, the registry and Traefik once,
+costing each a few seconds. Nothing is lost: everything they must keep is
+in a host bind mount.
+
 ## From a release with only the embedded registry
 
 Nothing to do. Every existing app keeps `source: "registry"` and behaves

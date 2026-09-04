@@ -130,7 +130,11 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 		return nil, slug.ErrInvalid
 	}
 
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, org.RoleMember)
+	// Creating an app that builds is deciding that this instance will
+	// execute whatever that source contains, so it takes the same role
+	// deploying it does. A member creating one they could never deploy
+	// would be an odd thing to allow.
+	o, err := s.orgs.Resolve(ctx, caller, orgSlug, RoleToDeploy(source))
 	if err != nil {
 		return nil, err
 	}
@@ -250,9 +254,17 @@ func (s *Service) Deploy(ctx context.Context, caller *user.User, ref Reference, 
 	if tag == "" {
 		tag = "latest"
 	}
+	// Resolved as a member first, so someone outside the organization
+	// gets the same 404 an unknown app gets rather than learning it
+	// exists. The source's own requirement is checked after.
 	a, err := s.Resolve(ctx, caller, ref, org.RoleMember)
 	if err != nil {
 		return nil, nil, err
+	}
+	if role := RoleToDeploy(Source(a.Source)); role != org.RoleMember {
+		if !s.orgs.Authorize(ctx, caller, a.OrgID, role) {
+			return nil, nil, org.ErrForbidden
+		}
 	}
 	deployment, err := s.orch.Start(ctx, a.ID, tag)
 	if err != nil {

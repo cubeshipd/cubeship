@@ -217,6 +217,65 @@ func WriteRegistryTokenCert(cfg *config.Config, certPEM []byte) error {
 	return nil
 }
 
+// The image builder. Everything Cubeship builds goes through it, and
+// nothing else talks to it.
+const (
+	BuildKitContainerName = "cubeship-buildkit"
+	BuildKitImage         = "moby/buildkit:v0.17.2"
+)
+
+// BuildKitSocket is where the daemon reaches buildkitd: a unix socket
+// the container creates inside a host bind mount.
+//
+// A socket rather than a port because this is a build service running as
+// root with no authentication of its own — anyone who can reach it can
+// run anything. Filesystem permissions on a root-owned directory are the
+// guard, and there is no port for a misconfigured firewall to expose.
+func BuildKitSocket(cfg *config.Config) string {
+	return "unix://" + cfg.DataDir + "/buildkit-run/buildkitd.sock"
+}
+
+// BuildKitContainerOpts describes the builder.
+//
+// Privileged, because building an image means running one: the build
+// steps of a Dockerfile execute, and they need the same isolation
+// primitives the Engine itself uses. This is the only container Cubeship
+// runs that way.
+//
+// The layer cache is a host bind mount like everything else that has to
+// survive — Ensure replaces a container whose configuration changed, and
+// a cache inside the writable layer would be destroyed with it. Losing it
+// is not incorrect, only slow, but slow builds are the thing a cache
+// exists to prevent.
+func BuildKitContainerOpts(cfg *config.Config) dockerx.ContainerOpts {
+	return dockerx.ContainerOpts{
+		Name:       BuildKitContainerName,
+		Image:      BuildKitImage,
+		Privileged: true,
+		Binds: []string{
+			cfg.DataDir + "/buildkit:/var/lib/buildkit",
+			cfg.DataDir + "/buildkit-run:/run/buildkit",
+		},
+		Network: "cubeship",
+	}
+}
+
+// EnsureBuildKit starts the builder if it is not already running.
+//
+// It is called before a build rather than at startup, and deliberately:
+// an instance that only runs images it is given never builds anything,
+// and a privileged container idling on it would be cost with no return.
+// The first build on a box pays for the container starting; the ones
+// after it do not.
+func EnsureBuildKit(ctx context.Context, docker dockerAPI, cfg *config.Config) error {
+	for _, dir := range []string{cfg.DataDir + "/buildkit", cfg.DataDir + "/buildkit-run"} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("create buildkit dir: %w", err)
+		}
+	}
+	return Ensure(ctx, docker, BuildKitContainerOpts(cfg))
+}
+
 // TraefikContainerOpts describes the proxy. An empty acmeEmail means no
 // certificate resolver at all: Let's Encrypt will not register an account
 // without a contact address, so until one is configured apps are served
