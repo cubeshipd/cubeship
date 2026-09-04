@@ -65,19 +65,21 @@ container, set `CUBESHIP_DATABASE_URL` before starting it.
 
 ## Any upgrade
 
-`cubeshipd` leaves an already-running `cubeship-registry`,
-`cubeship-traefik` or `cubeship-postgres` container alone, and starts it
-if it exists but is stopped. A release that changes how those containers
-are configured therefore needs the old container removed once, by hand:
+Nothing to do. `cubeshipd` records on each of its containers a
+fingerprint of the settings it was created from, and replaces one whose
+settings have changed — Docker cannot alter an existing container's
+image, binds, ports or environment, so a new setting only takes effect
+in a new container.
 
-```sh
-sudo systemctl stop cubeshipd
-docker rm -f cubeship-registry
-sudo systemctl start cubeshipd
-```
+That costs a few seconds of downtime for whichever container changed, on
+the start that changes it. Nothing is lost: everything those containers
+must keep lives in a bind mount on the host — pushed images in
+`registry-data`, certificates in `letsencrypt/acme.json`, the database in
+`postgres/`.
 
-Pushed images survive this — they live in `$CUBESHIP_DATA_DIR/registry-data`
-on the host, not inside the container.
+The first start after upgrading to this behaviour replaces all three
+once, since containers created before it carry no fingerprint. That is
+the `docker rm -f` step earlier releases asked you to run by hand.
 
 ## From a release without organizations
 
@@ -105,7 +107,7 @@ changes. `cubeship app create` now needs `--project`.
 
 If `cubeship registry login` used to take `--password <daemon-token>` and
 every push went through one shared `cubeship` account, the registry has
-to switch from that htpasswd credential to per-user token auth. Recreate
-the registry container (the `docker rm -f cubeship-registry` step above),
-then have every user run `cubeship registry login` again — no
-`--password` flag now, it uses their own saved API key.
+to switch from that htpasswd credential to per-user token auth. The
+daemon recreates it on the next start (see [Any upgrade](#any-upgrade));
+every user then runs `cubeship registry login` again — no `--password`
+flag now, it uses their own saved API key.

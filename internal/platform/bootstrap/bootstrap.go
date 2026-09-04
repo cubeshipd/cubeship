@@ -2,6 +2,9 @@ package bootstrap
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -220,6 +223,18 @@ func TraefikContainerOpts(cfg *config.Config, acmeEmail string) dockerx.Containe
 			"--providers.file.directory=/etc/traefik/dynamic",
 			"--providers.file.watch=true",
 			"--entrypoints.web.address=:80",
+			// Everything Cubeship serves is HTTPS-only, so plain :80 had
+			// nothing routed on it and answered 404 — for apps, for the
+			// API, for anyone who typed the domain without a scheme.
+			// Redirect the whole entrypoint rather than labelling each
+			// router, so an app gets this without knowing about it.
+			//
+			// This does not interfere with certificates: the ACME
+			// resolver below uses the TLS-ALPN challenge on :443, not
+			// the HTTP challenge on :80.
+			"--entrypoints.web.http.redirections.entryPoint.to=websecure",
+			"--entrypoints.web.http.redirections.entryPoint.scheme=https",
+			"--entrypoints.web.http.redirections.entryPoint.permanent=true",
 			"--entrypoints.websecure.address=:443",
 			"--certificatesresolvers.letsencrypt.acme.tlschallenge=true",
 			"--certificatesresolvers.letsencrypt.acme.email=" + acmeEmail,
@@ -280,26 +295,104 @@ type dockerAPI interface {
 	PullImage(ctx context.Context, ref string) error
 	CreateContainer(ctx context.Context, opts dockerx.ContainerOpts) (string, error)
 	StartContainer(ctx context.Context, id string) error
-	InspectContainerByName(ctx context.Context, name string) (string, bool, error)
+	StopContainer(ctx context.Context, id string) error
+	RemoveContainer(ctx context.Context, id string) error
+	InspectContainerByName(ctx context.Context, name string) (dockerx.ContainerInfo, error)
 }
 
-// Ensure makes the described infrastructure container exist and run.
+// ConfigHashLabel records, on the container itself, a fingerprint of the
+// options it was created from. Comparing it against what the current
+// binary wants is what lets Ensure tell "this container is running" from
+// "this container is running the right thing".
+const ConfigHashLabel = "cubeship.config-hash"
+
+// configHash fingerprints the options a container should be created
+// from. Anything that would need a new container to take effect — the
+// image, the binds, the environment, the ports — is part of it.
 //
-// It inspects by name first: an existing running container is left
-// alone, an existing stopped one is started (a host reboot otherwise
-// leaves the daemon "up" with no proxy running at all), and only a
-// genuinely absent one is pulled and created. Creation failures are
-// returned rather than assumed to mean "already exists" — a bad bind
-// path or port conflict is a real failure, not a no-op.
+// JSON is the serialization because encoding/json orders map keys, so
+// the same options always hash the same way. The hash is not a security
+// boundary, just a change detector.
+func configHash(opts dockerx.ContainerOpts) string {
+	// The label itself is excluded: it holds the result.
+	opts.Labels = withoutConfigHash(opts.Labels)
+
+	encoded, err := json.Marshal(opts)
+	if err != nil {
+		// ContainerOpts is plain data and cannot fail to encode. If that
+		// ever changes, a hash nothing matches is the safe answer: it
+		// recreates rather than skipping a change.
+		return "unhashable"
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:])
+}
+
+func withoutConfigHash(labels map[string]string) map[string]string {
+	if _, present := labels[ConfigHashLabel]; !present {
+		return labels
+	}
+	out := make(map[string]string, len(labels))
+	for k, v := range labels {
+		if k != ConfigHashLabel {
+			out[k] = v
+		}
+	}
+	return out
+}
+
+// withConfigHash returns opts carrying its own fingerprint as a label.
+func withConfigHash(opts dockerx.ContainerOpts) dockerx.ContainerOpts {
+	hash := configHash(opts)
+
+	labels := make(map[string]string, len(opts.Labels)+1)
+	for k, v := range opts.Labels {
+		labels[k] = v
+	}
+	labels[ConfigHashLabel] = hash
+	opts.Labels = labels
+	return opts
+}
+
+// Ensure makes the described infrastructure container exist, run, and
+// match the configuration this binary wants.
+//
+// A container whose configuration still matches is left alone if it is
+// running, and started if it is stopped — a host reboot otherwise leaves
+// the daemon "up" with no proxy running at all. One whose configuration
+// has changed is replaced, because Docker cannot alter the image, binds,
+// ports or environment of an existing container: the only way a new
+// setting takes effect is a new container.
+//
+// Replacing is safe for all three of these because everything they must
+// keep lives in a host bind mount — the registry's images, Traefik's
+// acme.json, Postgres' data directory. It does mean a few seconds of
+// downtime for that container on a release that changes its
+// configuration, which is the cost of the alternative being silently
+// running stale settings.
+//
+// Creation failures are returned rather than assumed to mean "already
+// exists" — a bad bind path or port conflict is a real failure.
 func Ensure(ctx context.Context, docker dockerAPI, opts dockerx.ContainerOpts) error {
-	existingID, running, err := docker.InspectContainerByName(ctx, opts.Name)
+	opts = withConfigHash(opts)
+	want := opts.Labels[ConfigHashLabel]
+
+	existing, err := docker.InspectContainerByName(ctx, opts.Name)
 	switch {
-	case err == nil && running:
+	case err == nil && existing.Labels[ConfigHashLabel] != want:
+		// Also covers a container created before this label existed,
+		// which is exactly the case operators used to fix by hand with
+		// `docker rm -f`.
+		log.Printf("bootstrap: %s was created from different settings; replacing it", opts.Name)
+		if err := replace(ctx, docker, existing.ID, opts.Name); err != nil {
+			return err
+		}
+	case err == nil && existing.Running:
 		log.Printf("bootstrap: %s already running", opts.Name)
 		return nil
 	case err == nil:
 		log.Printf("bootstrap: %s exists but is stopped; starting it", opts.Name)
-		if err := docker.StartContainer(ctx, existingID); err != nil {
+		if err := docker.StartContainer(ctx, existing.ID); err != nil {
 			return fmt.Errorf("start existing %s: %w", opts.Name, err)
 		}
 		return nil
@@ -324,6 +417,20 @@ func Ensure(ctx context.Context, docker dockerAPI, opts dockerx.ContainerOpts) e
 
 	if err := docker.StartContainer(ctx, id); err != nil {
 		return fmt.Errorf("start %s: %w", opts.Name, err)
+	}
+	return nil
+}
+
+// replace removes an out-of-date container so a new one can take its
+// name. A stop that fails is not fatal — the container may already be
+// stopped — but a remove that fails is: creating the replacement would
+// then collide on the name and be mistaken for a concurrent create.
+func replace(ctx context.Context, docker dockerAPI, id, name string) error {
+	if err := docker.StopContainer(ctx, id); err != nil {
+		log.Printf("bootstrap: could not stop %s before replacing it: %v", name, err)
+	}
+	if err := docker.RemoveContainer(ctx, id); err != nil {
+		return fmt.Errorf("remove the outdated %s: %w", name, err)
 	}
 	return nil
 }

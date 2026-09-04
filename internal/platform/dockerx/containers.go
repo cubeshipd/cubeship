@@ -192,22 +192,37 @@ func isAlreadyExists(err error) bool {
 	return strings.Contains(msg, "already exists") || strings.Contains(msg, "already in use")
 }
 
-// InspectContainerByName looks up a container by name (or ID) and reports
-// its ID and whether it is running. It returns ErrContainerNotFound if no
-// such container exists, so callers can distinguish "not there yet" from
-// "Docker is broken".
-func (c *Client) InspectContainerByName(ctx context.Context, name string) (string, bool, error) {
+// ContainerInfo is what an inspection tells us about an existing
+// container. Labels matter as much as the rest: they are where the
+// configuration a container was created from is recorded, which is how a
+// caller tells a container that is merely running from one that is
+// running the right thing.
+type ContainerInfo struct {
+	ID      string
+	Running bool
+	Labels  map[string]string
+}
+
+// InspectContainerByName looks up a container by name (or ID). It returns
+// ErrContainerNotFound if no such container exists, so callers can
+// distinguish "not there yet" from "Docker is broken".
+func (c *Client) InspectContainerByName(ctx context.Context, name string) (ContainerInfo, error) {
 	info, err := c.api.ContainerInspect(ctx, name)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
-			return "", false, ErrContainerNotFound
+			return ContainerInfo{}, ErrContainerNotFound
 		}
-		return "", false, fmt.Errorf("inspect container %q: %w", name, err)
+		return ContainerInfo{}, fmt.Errorf("inspect container %q: %w", name, err)
 	}
 	if info.ContainerJSONBase == nil {
-		return "", false, fmt.Errorf("inspect container %q: empty response from docker", name)
+		return ContainerInfo{}, fmt.Errorf("inspect container %q: empty response from docker", name)
 	}
-	return info.ID, info.State != nil && info.State.Running, nil
+
+	out := ContainerInfo{ID: info.ID, Running: info.State != nil && info.State.Running}
+	if info.Config != nil {
+		out.Labels = info.Config.Labels
+	}
+	return out, nil
 }
 
 func (c *Client) StartContainer(ctx context.Context, id string) error {

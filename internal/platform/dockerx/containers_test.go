@@ -419,15 +419,15 @@ func TestInspectContainerByNameReturnsIDAndRunning(t *testing.T) {
 	fake := &fakeAPI{inspectedID: "abc123", inspectedRunning: true}
 	c := newWithAPI(fake)
 
-	id, running, err := c.InspectContainerByName(context.Background(), "cubeship-traefik")
+	info, err := c.InspectContainerByName(context.Background(), "cubeship-traefik")
 	if err != nil {
 		t.Fatalf("InspectContainerByName: %v", err)
 	}
 	if fake.inspectedName != "cubeship-traefik" {
 		t.Fatalf("expected the name to be forwarded, got %q", fake.inspectedName)
 	}
-	if id != "abc123" || !running {
-		t.Fatalf("unexpected result: id=%q running=%v", id, running)
+	if info.ID != "abc123" || !info.Running {
+		t.Fatalf("unexpected result: id=%q running=%v", info.ID, info.Running)
 	}
 }
 
@@ -435,7 +435,7 @@ func TestInspectContainerByNameNotFound(t *testing.T) {
 	fake := &fakeAPI{inspectErr: errdefs.NotFound(errors.New("no such container: cubeship-traefik"))}
 	c := newWithAPI(fake)
 
-	_, _, err := c.InspectContainerByName(context.Background(), "cubeship-traefik")
+	_, err := c.InspectContainerByName(context.Background(), "cubeship-traefik")
 	if !errors.Is(err, ErrContainerNotFound) {
 		t.Fatalf("expected ErrContainerNotFound, got %v", err)
 	}
@@ -445,7 +445,7 @@ func TestInspectContainerByNameReturnsOtherErrors(t *testing.T) {
 	fake := &fakeAPI{inspectErr: errors.New("cannot connect to the docker daemon")}
 	c := newWithAPI(fake)
 
-	_, _, err := c.InspectContainerByName(context.Background(), "cubeship-traefik")
+	_, err := c.InspectContainerByName(context.Background(), "cubeship-traefik")
 	if err == nil || errors.Is(err, ErrContainerNotFound) {
 		t.Fatalf("expected a real error to be returned, got %v", err)
 	}

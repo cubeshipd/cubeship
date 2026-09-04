@@ -218,13 +218,19 @@ type fakeDocker struct {
 	createdName string
 	startedID   string
 
-	// inspectID/inspectRunning describe an existing container;
-	// inspectErr (default: dockerx.ErrContainerNotFound) describes its
-	// absence or a broken daemon.
+	// inspectID/inspectRunning/inspectLabels describe an existing
+	// container; inspectErr (default: dockerx.ErrContainerNotFound)
+	// describes its absence or a broken daemon.
 	inspectID      string
 	inspectRunning bool
+	inspectLabels  map[string]string
 	inspectErr     error
 	inspectedName  string
+
+	stopped   []string
+	removed   []string
+	stopErr   error
+	removeErr error
 }
 
 func newFakeDocker() *fakeDocker {
@@ -246,12 +252,33 @@ func (f *fakeDocker) StartContainer(ctx context.Context, id string) error {
 	f.startedID = id
 	return nil
 }
-func (f *fakeDocker) InspectContainerByName(ctx context.Context, name string) (string, bool, error) {
+func (f *fakeDocker) StopContainer(ctx context.Context, id string) error {
+	f.stopped = append(f.stopped, id)
+	return f.stopErr
+}
+
+func (f *fakeDocker) RemoveContainer(ctx context.Context, id string) error {
+	f.removed = append(f.removed, id)
+	return f.removeErr
+}
+
+func (f *fakeDocker) InspectContainerByName(ctx context.Context, name string) (dockerx.ContainerInfo, error) {
 	f.inspectedName = name
 	if f.inspectErr != nil {
-		return "", false, f.inspectErr
+		return dockerx.ContainerInfo{}, f.inspectErr
 	}
-	return f.inspectID, f.inspectRunning, nil
+	return dockerx.ContainerInfo{
+		ID: f.inspectID, Running: f.inspectRunning, Labels: f.inspectLabels,
+	}, nil
+}
+
+// matching makes the fake describe an existing container created from
+// exactly these options, so Ensure sees nothing to change.
+func (f *fakeDocker) matching(opts dockerx.ContainerOpts) *fakeDocker {
+	f.inspectErr = nil
+	f.inspectID = "existing-container"
+	f.inspectLabels = map[string]string{ConfigHashLabel: configHash(opts)}
+	return f
 }
 
 func TestEnsureCreatesAndStartsContainer(t *testing.T) {
@@ -272,12 +299,11 @@ func TestEnsureCreatesAndStartsContainer(t *testing.T) {
 }
 
 func TestEnsureLeavesRunningContainerAlone(t *testing.T) {
-	docker := newFakeDocker()
-	docker.inspectErr = nil
-	docker.inspectID = "existing-1"
+	opts := dockerx.ContainerOpts{Name: "cubeship-traefik", Image: "traefik:v3.1"}
+	docker := newFakeDocker().matching(opts)
 	docker.inspectRunning = true
 
-	if err := Ensure(context.Background(), docker, dockerx.ContainerOpts{Name: "cubeship-traefik", Image: "traefik:v3.1"}); err != nil {
+	if err := Ensure(context.Background(), docker, opts); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
 	if docker.createdName != "" {
@@ -294,15 +320,14 @@ func TestEnsureLeavesRunningContainerAlone(t *testing.T) {
 func TestEnsureStartsExistingStoppedContainer(t *testing.T) {
 	// After a host reboot cubeship-traefik exists but is exited; the
 	// daemon must start it, not report success with no proxy running.
-	docker := newFakeDocker()
-	docker.inspectErr = nil
-	docker.inspectID = "existing-1"
+	opts := dockerx.ContainerOpts{Name: "cubeship-traefik", Image: "traefik:v3.1"}
+	docker := newFakeDocker().matching(opts)
 	docker.inspectRunning = false
 
-	if err := Ensure(context.Background(), docker, dockerx.ContainerOpts{Name: "cubeship-traefik", Image: "traefik:v3.1"}); err != nil {
+	if err := Ensure(context.Background(), docker, opts); err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
-	if docker.startedID != "existing-1" {
+	if docker.startedID != "existing-container" {
 		t.Fatalf("expected the existing stopped container to be started, got %q", docker.startedID)
 	}
 	if docker.createdName != "" {
@@ -385,5 +410,132 @@ func TestPostgresContainerPersistsItsDataOnTheHost(t *testing.T) {
 	}
 	if !slices.Contains(opts.Env, "POSTGRES_PASSWORD=secret") {
 		t.Errorf("env %v does not carry the password", opts.Env)
+	}
+}
+
+// The reason this exists: Docker cannot change an existing container's
+// image, binds, ports or environment, so a release that changes any of
+// them used to need a manual `docker rm -f` — and silently ran the old
+// settings until someone did it.
+func TestEnsureReplacesAContainerWhoseConfigurationChanged(t *testing.T) {
+	before := dockerx.ContainerOpts{Name: "cubeship-registry", Image: "registry:2"}
+	after := before
+	after.Binds = []string{"/var/lib/cubeship/registry-data:/var/lib/registry"}
+
+	docker := newFakeDocker().matching(before)
+	docker.inspectRunning = true
+
+	if err := Ensure(context.Background(), docker, after); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+
+	if !slices.Contains(docker.removed, "existing-container") {
+		t.Errorf("the outdated container was not removed: %v", docker.removed)
+	}
+	if docker.createdName != "cubeship-registry" {
+		t.Errorf("no replacement was created, got %q", docker.createdName)
+	}
+	if docker.startedID != "container-1" {
+		t.Errorf("the replacement was not started, got %q", docker.startedID)
+	}
+}
+
+// A container created before the config-hash label existed carries no
+// hash, so it is replaced once — which performs the manual step the
+// upgrade notes used to ask for.
+func TestEnsureReplacesAContainerWithNoConfigHash(t *testing.T) {
+	opts := dockerx.ContainerOpts{Name: "cubeship-traefik", Image: "traefik:v3.1"}
+
+	docker := newFakeDocker()
+	docker.inspectErr = nil
+	docker.inspectID = "legacy-container"
+	docker.inspectRunning = true
+	docker.inspectLabels = map[string]string{"traefik.enable": "true"}
+
+	if err := Ensure(context.Background(), docker, opts); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	if !slices.Contains(docker.removed, "legacy-container") {
+		t.Errorf("the unlabelled container was not replaced: %v", docker.removed)
+	}
+}
+
+// If the replacement cannot be removed, creating one would collide on
+// the name and be mistaken for a concurrent create — leaving the stale
+// container running and the daemon reporting success.
+func TestEnsureFailsWhenTheOutdatedContainerCannotBeRemoved(t *testing.T) {
+	before := dockerx.ContainerOpts{Name: "cubeship-registry", Image: "registry:2"}
+	after := before
+	after.Image = "registry:3"
+
+	docker := newFakeDocker().matching(before)
+	docker.inspectRunning = true
+	docker.removeErr = errors.New("device busy")
+
+	if err := Ensure(context.Background(), docker, after); err == nil {
+		t.Fatal("expected Ensure to fail when it cannot remove the outdated container")
+	}
+	if docker.createdName != "" {
+		t.Errorf("a replacement was created anyway: %q", docker.createdName)
+	}
+}
+
+// The label records the options, so identical options must hash
+// identically and any change must not.
+func TestConfigHashTracksTheOptions(t *testing.T) {
+	base := dockerx.ContainerOpts{
+		Name:   "cubeship-registry",
+		Image:  "registry:2",
+		Env:    []string{"A=1"},
+		Binds:  []string{"/data:/var/lib/registry"},
+		Labels: map[string]string{"traefik.enable": "true"},
+	}
+	if configHash(base) != configHash(base) {
+		t.Fatal("the same options hashed differently")
+	}
+
+	for name, mutate := range map[string]func(o *dockerx.ContainerOpts){
+		"image":   func(o *dockerx.ContainerOpts) { o.Image = "registry:3" },
+		"env":     func(o *dockerx.ContainerOpts) { o.Env = []string{"A=2"} },
+		"binds":   func(o *dockerx.ContainerOpts) { o.Binds = []string{"/other:/var/lib/registry"} },
+		"ports":   func(o *dockerx.ContainerOpts) { o.Ports = []string{"127.0.0.1:5000:5000"} },
+		"labels":  func(o *dockerx.ContainerOpts) { o.Labels = map[string]string{"traefik.enable": "false"} },
+		"network": func(o *dockerx.ContainerOpts) { o.Network = "other" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			changed := base
+			mutate(&changed)
+			if configHash(changed) == configHash(base) {
+				t.Errorf("changing the %s did not change the hash", name)
+			}
+		})
+	}
+
+	// The hash lives in a label, so its own presence must not affect it —
+	// otherwise every container would look changed on the next start.
+	labelled := withConfigHash(base)
+	if configHash(labelled) != configHash(base) {
+		t.Error("the config-hash label changed the hash of the options it describes")
+	}
+}
+
+// Plain HTTP used to answer 404 for everything, since nothing was routed
+// on :80.
+func TestTraefikRedirectsHTTPToHTTPS(t *testing.T) {
+	opts := TraefikContainerOpts(testConfig(), "admin@example.com")
+
+	for _, want := range []string{
+		"--entrypoints.web.http.redirections.entryPoint.to=websecure",
+		"--entrypoints.web.http.redirections.entryPoint.scheme=https",
+	} {
+		if !slices.Contains(opts.Cmd, want) {
+			t.Errorf("missing %q; plain HTTP would 404 instead of redirecting", want)
+		}
+	}
+
+	// The redirect is only safe because certificates are issued over
+	// TLS-ALPN on :443, not the HTTP challenge on :80.
+	if !slices.Contains(opts.Cmd, "--certificatesresolvers.letsencrypt.acme.tlschallenge=true") {
+		t.Error("the ACME resolver is no longer using the TLS challenge; redirecting :80 would break issuance")
 	}
 }

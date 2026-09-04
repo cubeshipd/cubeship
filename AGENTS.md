@@ -158,6 +158,24 @@ is unique only within its environment.
 validates every part as a slug, so a malformed reference can never reach
 a registry path or a router name.
 
+## Infrastructure containers
+
+`bootstrap.Ensure` fingerprints the `ContainerOpts` it is given into a
+`cubeship.config-hash` label. A container whose label still matches is
+left alone or started; one whose settings changed is replaced, because
+Docker cannot alter an existing container's image, binds, ports or
+environment.
+
+That is only safe because everything those containers must keep is in a
+host bind mount. Anything you add to them has to keep that true —
+persistent state inside a container's writable layer will be silently
+destroyed the next time its configuration changes.
+
+Traefik redirects the whole `web` entrypoint to `websecure`, so plain
+HTTP reaches every app and the API without per-router labels. It does not
+interfere with certificates: ACME uses the TLS-ALPN challenge on :443,
+never the HTTP challenge on :80. Changing that would break the redirect.
+
 ## Deploys are detached
 
 `Orchestrator.Start` records a `deployments` row, returns it, and does
