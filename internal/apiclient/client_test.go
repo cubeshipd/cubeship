@@ -333,3 +333,77 @@ func TestDeleteEnvironment(t *testing.T) {
 		t.Fatalf("DeleteEnvironment: %v", err)
 	}
 }
+
+func TestCreateAPIKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/users/me/api-keys" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["name"] != "mcp" {
+			t.Errorf("unexpected body: %v", body)
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{"id": 7, "name": "mcp", "api_key": "new-mcp-key"})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	id, key, err := c.CreateAPIKey(context.Background(), "mcp")
+	if err != nil {
+		t.Fatalf("CreateAPIKey: %v", err)
+	}
+	if id != 7 || key != "new-mcp-key" {
+		t.Fatalf("unexpected result: id=%d key=%q", id, key)
+	}
+}
+
+func TestListAPIKeys(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/users/me/api-keys" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		json.NewEncoder(w).Encode([]map[string]any{
+			{"id": 1, "name": "default", "current_key": true},
+			{"id": 2, "name": "mcp", "current_key": false},
+		})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	keys, err := c.ListAPIKeys(context.Background())
+	if err != nil {
+		t.Fatalf("ListAPIKeys: %v", err)
+	}
+	if len(keys) != 2 || keys[0].Name != "default" || !keys[0].CurrentKey || keys[1].Name != "mcp" || keys[1].CurrentKey {
+		t.Fatalf("unexpected keys: %+v", keys)
+	}
+}
+
+func TestRevokeAPIKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/users/me/api-keys/7" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	if err := c.RevokeAPIKey(context.Background(), 7); err != nil {
+		t.Fatalf("RevokeAPIKey: %v", err)
+	}
+}
+
+func TestRevokeAPIKeyReturnsErrorOnFailure(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "cannot revoke your only remaining API key", http.StatusConflict)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	if err := c.RevokeAPIKey(context.Background(), 1); err == nil {
+		t.Fatal("expected an error")
+	}
+}

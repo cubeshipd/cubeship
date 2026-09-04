@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 )
 
 type Client struct {
@@ -301,4 +302,64 @@ func (c *Client) WhoAmI(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return out.Username, nil
+}
+
+// APIKey is one of the caller's API keys, as reported by ListAPIKeys.
+// The key value itself is only ever returned once, at creation.
+type APIKey struct {
+	ID         int64      `json:"id"`
+	Name       string     `json:"name"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	CurrentKey bool       `json:"current_key"`
+}
+
+// CreateAPIKey issues an additional API key for the caller under name,
+// independent of any key they already hold.
+func (c *Client) CreateAPIKey(ctx context.Context, name string) (id int64, apiKey string, err error) {
+	resp, err := c.do(ctx, http.MethodPost, "/users/me/api-keys", map[string]string{"name": name})
+	if err != nil {
+		return 0, "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return 0, "", fmt.Errorf("create api key: unexpected status %d", resp.StatusCode)
+	}
+	var out struct {
+		ID     int64  `json:"id"`
+		APIKey string `json:"api_key"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return 0, "", err
+	}
+	return out.ID, out.APIKey, nil
+}
+
+func (c *Client) ListAPIKeys(ctx context.Context) ([]APIKey, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/users/me/api-keys", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list api keys: unexpected status %d", resp.StatusCode)
+	}
+	var out []APIKey
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *Client) RevokeAPIKey(ctx context.Context, id int64) error {
+	resp, err := c.do(ctx, http.MethodDelete, fmt.Sprintf("/users/me/api-keys/%d", id), nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("revoke api key: unexpected status %d: %s", resp.StatusCode, body)
+	}
+	return nil
 }
