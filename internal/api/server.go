@@ -52,6 +52,8 @@ func NewServer(s *store.Store, orch *deploy.Orchestrator, token, registryHost st
 		w.WriteHeader(http.StatusOK)
 	})
 	srv.mux.HandleFunc("POST /hooks/registry", srv.handleRegistryWebhook)
+	srv.handleAuth("POST /orgs", srv.handleCreateOrg)
+	srv.handleAuth("GET /orgs", srv.handleListOrgs)
 	srv.handleAuth("POST /apps", srv.handleCreateApp)
 	srv.handleAuth("GET /apps", srv.handleListApps)
 	srv.handleAuth("GET /apps/{name}", srv.handleGetApp)

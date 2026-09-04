@@ -75,6 +75,20 @@ func testAPIKeyFor(t *testing.T, s *store.Store, isSuperAdmin bool) string {
 	return key
 }
 
+// testAPIKeyForExistingUser issues an API key for a user you already
+// created, as opposed to testAPIKeyFor which creates the user too.
+func testAPIKeyForExistingUser(t *testing.T, s *store.Store, userID int64) string {
+	t.Helper()
+	key, err := authkey.Generate()
+	if err != nil {
+		t.Fatalf("authkey.Generate: %v", err)
+	}
+	if _, err := s.CreateAPIKey(context.Background(), userID, authkey.Hash(key)); err != nil {
+		t.Fatalf("CreateAPIKey: %v", err)
+	}
+	return key
+}
+
 func TestCreateAppReturnsImagePath(t *testing.T) {
 	srv, key, org := newTestServer(t)
 	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug})
