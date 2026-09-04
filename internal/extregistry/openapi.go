@@ -144,14 +144,20 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			"/orgs/{orgSlug}/registries/{id}/images": {
 				"delete": {
 					OperationID: "deleteRegistryImage",
-					Summary:     "Delete one tag",
-					Description: "By tag, not by digest: a digest would take every other tag pointing at the same image with it, and a tag is what was picked.\n\n" +
-						"Whether it frees anything is the registry's business — ECR reclaims the storage. What is promised is that nothing can pull that tag afterwards. Organization admins only.",
-					Tags:       []string{"Registries"},
-					Parameters: []openapi.Parameter{orgParam, idParam, openapi.QueryParam("repository", "Which repository."), openapi.QueryParam("tag", "Which tag.")},
+					Summary:     "Delete one image",
+					Description: "Name it with `tag` where it has one: deleting by tag leaves every other tag on the same image alone, and a tag is what was picked off a list.\n\n" +
+						"`digest` is for an image with no tag at all. Those cannot be named any other way — a stand-in name would be one two of them share, and no delete could reach either.\n\n" +
+						"Whether it frees anything is the registry's business — ECR reclaims the storage. What is promised is that nothing can pull that image afterwards. Organization admins only.",
+					Tags: []string{"Registries"},
+					Parameters: []openapi.Parameter{
+						orgParam, idParam,
+						openapi.QueryParam("repository", "Which repository."),
+						openapi.QueryParam("tag", "Which tag, for an image that has one."),
+						openapi.QueryParam("digest", "Which image, for one with no tag."),
+					},
 					Responses: openapi.Responses{
 						"204": openapi.Empty("Deleted."),
-						"400": openapi.TextResponse("No repository or no tag was named."),
+						"400": openapi.TextResponse("No repository, or neither a tag nor a digest, was named."),
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,
@@ -161,7 +167,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"get": {
 					OperationID: "listRegistryImages",
 					Summary:     "List one repository's images",
-					Description: "An image with no tag is listed as <untagged>: it still occupies the registry, and hiding it would make this listing disagree with the registry's own.\n\nOrganization admins only.",
+					Description: "An image with no tag comes back with an empty `tag` and a `digest`: it still occupies the registry, and hiding it would make this listing disagree with the registry's own. The digest is the only thing that identifies one, and the only way to delete one.\n\nOrganization admins only.",
 					Tags:        []string{"Registries"},
 					Parameters: []openapi.Parameter{
 						orgParam, idParam,
@@ -199,14 +205,17 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					OperationID: "replaceRegistryCredential",
 					Summary:     "Replace a registry login",
 					Description: "Rotation: the host stays, the username and password are replaced.\n\n" +
-						"A credential cannot be re-pointed at a different registry — that is a different credential, and changing it in place would silently start authenticating an app's pulls somewhere else. Delete it and add the new one.\n\n" +
+						"A credential cannot be re-pointed at a different **registry** — that is a different credential, and changing it in place would silently start authenticating an app's pulls somewhere else. Delete it and add the new one.\n\n" +
+						"`namespace` is the exception, and only for DigitalOcean: the registry's name is typed by hand rather than derived, so a typo is worth correcting in place instead of forcing a delete and a re-entered token. Omit the field to leave it alone; sending an empty string is refused.\n\n" +
+						"Sending `namespace` alone corrects the name and leaves the login untouched — making someone re-enter a token to fix a typo is how the typo stays. Otherwise `username` and `password` travel together: half a login is not one.\n\n" +
 						"Organization admins only.",
 					Tags:       []string{"Registries"},
 					Parameters: []openapi.Parameter{orgParam, idParam},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"username": openapi.String(""),
-						"password": openapi.String(""),
-					}, "username", "password")),
+						"username":  openapi.String(""),
+						"password":  openapi.String(""),
+						"namespace": openapi.String("DigitalOcean only: the registry's name, which is the path segment between the host and the image. Omit to leave it unchanged."),
+					})),
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The login as it now stands.", openapi.Ref("RegistryCredential")),
 						"400": openapi.BadRequest,

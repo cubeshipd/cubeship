@@ -8,12 +8,14 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyButton } from "@/components/copy-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { AWSIcon, DigitalOceanIcon } from "@/components/icons";
+import { LoadingList, LoadingNote } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
 import { SearchBar } from "@/components/search-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -54,7 +56,10 @@ function Detail() {
   const own = id === "" || id === "cubeship";
 
   const [repos, setRepos] = useState<RegistryRepository[] | null>(null);
-  const [open, setOpen] = useState<string | null>(null);
+  // A set, not one name: comparing two repositories means having both
+  // open, and one that closes when you open the next makes that
+  // impossible.
+  const [open, setOpen] = useState<Set<string>>(new Set());
   const [images, setImages] = useState<Record<string, RegistryImage[]>>({});
   const [error, setError] = useState<string | null>(null);
   const [unsupported, setUnsupported] = useState(false);
@@ -94,12 +99,30 @@ function Detail() {
       .catch(() => setUsage(null));
   }, [base, org, own, repos]);
 
-  function toggle(name: string) {
-    if (open === name) {
-      setOpen(null);
-      return;
+  // refresh re-reads the tags of repositories whose contents changed.
+  // A row that is open has to be re-read here, because nothing else
+  // will: expanding is what fetches, and it has already happened.
+  function refresh(names: Set<string>) {
+    setImages((prev) => {
+      const next = { ...prev };
+      for (const name of names) delete next[name];
+      return next;
+    });
+    for (const name of names) {
+      if (!open.has(name)) continue;
+      api
+        .get<RegistryImage[]>(`${base}/images?repository=${encodeURIComponent(name)}`)
+        .then((list) => setImages((prev) => ({ ...prev, [name]: list })))
+        .catch((e) => setError(message(e)));
     }
-    setOpen(name);
+  }
+
+  function toggle(name: string) {
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(name)) next.add(name);
+      return next;
+    });
     if (images[name]) return;
     api
       .get<RegistryImage[]>(`${base}/images?repository=${encodeURIComponent(name)}`)
@@ -115,8 +138,18 @@ function Detail() {
 
   // Cubeship's own registry has no host in the query string — it is
   // instance configuration, and it is empty until there is a domain.
+  // Selection is by name, not by index: the list is filtered and
+  // reloaded under it, and a position stops meaning the same row the
+  // moment either happens.
+  const [pickedRepos, setPickedRepos] = useState<Set<string>>(new Set());
+  // A tag is only identified by its repository *and* its tag, so the
+  // key carries both. The separator is a character neither can hold.
+  const [pickedTags, setPickedTags] = useState<Set<string>>(new Set());
+  const [bulk, setBulk] = useState<"repos" | "tags" | null>(null);
+
   const [deletingRepo, setDeletingRepo] = useState<string | null>(null);
-  const [deletingTag, setDeletingTag] = useState<{ repo: string; tag: string } | null>(null);
+  // `ref` is a tag, or "@<digest>" for an image that has none.
+  const [deletingTag, setDeletingTag] = useState<{ repo: string; ref: string } | null>(null);
   const [ownHost, setOwnHost] = useState("");
 
   useEffect(() => {
@@ -136,6 +169,124 @@ function Detail() {
   const filtered = repos
     ? repos.filter((r) => r.name.toLowerCase().includes(query.trim().toLowerCase()))
     : [];
+
+  // A ticked repository means every tag in it, and the tag boxes read
+  // that rather than being ticked one by one. Nothing is fetched to
+  // decide it — ticking a repository whose row was never expanded, or
+  // ticking two hundred of them from the header box, would otherwise be
+  // two hundred requests to someone else's registry on one click.
+  const tagPicked = (repo: string, ref: string) =>
+    pickedRepos.has(repo) || pickedTags.has(tagKey(repo, ref));
+
+  function setRepoPicked(name: string, on: boolean) {
+    setPickedRepos((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(name);
+      else next.delete(name);
+      return next;
+    });
+    // Its tags were carried by it, so they go when it does.
+    if (!on) setPickedTags((prev) => withoutRepo(prev, name));
+  }
+
+  // Unticking one tag inside a ticked repository unticks the
+  // repository — it is no longer "all of this" — and writes down the
+  // rest explicitly, so the other tags stay ticked. The list is at hand
+  // because you can only untick a tag you can see.
+  function toggleTag(repo: string, ref: string, siblings: RegistryImage[]) {
+    if (pickedRepos.has(repo)) {
+      setRepoPicked(repo, false);
+      setPickedTags((prev) => {
+        const next = new Set(prev);
+        for (const image of siblings) {
+          if (imageRef(image) !== ref) next.add(tagKey(repo, imageRef(image)));
+        }
+        return next;
+      });
+      return;
+    }
+    setPickedTags((prev) => {
+      const next = new Set(prev);
+      const key = tagKey(repo, ref);
+      if (!next.delete(key)) next.add(key);
+      return next;
+    });
+  }
+
+  // The header box acts on what is on screen, not on everything the
+  // registry holds: a filter that narrowed the list to four rows and a
+  // box that then selected two hundred would be a trap.
+  const allShownPicked = filtered.length > 0 && filtered.every((r) => pickedRepos.has(r.name));
+
+  // A ticked repository already carries its tags, so those tags are not
+  // a second thing to delete and not a second thing to count. Only tags
+  // outside a ticked repository stand on their own.
+  const looseTags = [...pickedTags].filter(
+    (key) => !pickedRepos.has(key.split(TAG_KEY_SEPARATOR)[0]),
+  );
+
+  // Deletes run one after another rather than at once. Each is a call
+  // to someone else's registry, and a burst of them is how you get rate
+  // limited half way through a set — which leaves the worst outcome, a
+  // selection partly gone with no record of which half.
+  async function deletePicked(kind: "repos" | "tags") {
+    setError(null);
+    const failed: string[] = [];
+
+    if (kind === "repos") {
+      const gone: string[] = [];
+      for (const name of pickedRepos) {
+        try {
+          await api.del(`${base}/repositories?repository=${encodeURIComponent(name)}`);
+          gone.push(name);
+        } catch {
+          failed.push(name);
+        }
+      }
+      setPickedRepos(new Set(failed));
+      // Their tags went with them, so they stop being selected too.
+      setPickedTags((prev) => gone.reduce(withoutRepo, prev));
+      setOpen((prev) => {
+        const next = new Set(prev);
+        for (const name of gone) next.delete(name);
+        return next;
+      });
+      setImages((prev) => {
+        const next = { ...prev };
+        for (const name of gone) delete next[name];
+        return next;
+      });
+    } else {
+      for (const key of looseTags) {
+        const [repo, ref] = key.split(TAG_KEY_SEPARATOR);
+        try {
+          await api.del(`${base}/images?repository=${encodeURIComponent(repo)}&${refQuery(ref)}`);
+        } catch {
+          failed.push(key);
+        }
+      }
+      setPickedTags((prev) => {
+        const next = new Set(prev);
+        for (const key of looseTags) next.delete(key);
+        for (const key of failed) next.add(key);
+        return next;
+      });
+      // Only the repositories that were touched are stale. Clearing the
+      // whole cache left every expanded row reading "Reading tags…"
+      // forever: nothing refetches a row that is already open.
+      refresh(new Set(looseTags.map((key) => key.split(TAG_KEY_SEPARATOR)[0])));
+    }
+
+    if (failed.length > 0) {
+      setError(
+        `${failed.length} of them could not be deleted, and are still selected: ${failed
+          .map((f) => f.replace(TAG_KEY_SEPARATOR, f.includes(`${TAG_KEY_SEPARATOR}@`) ? "" : ":"))
+          .join(", ")}`,
+      );
+    }
+    setBulk(null);
+    load();
+  }
 
   return (
     <>
@@ -203,6 +354,15 @@ function Detail() {
 
       <ErrorAlert error={error} />
 
+      {/* The catalogue is a live call to someone else's registry, so
+          this is a wait worth naming rather than an empty page. */}
+      {repos === null && !error && !unsupported && (
+        <div>
+          <LoadingList rows={5} />
+          <LoadingNote>Asking the registry what it holds</LoadingNote>
+        </div>
+      )}
+
       {unsupported && (
         <Notice>
           This registry does not list what it holds. Docker Hub and GitHub&apos;s disable the
@@ -217,6 +377,30 @@ function Detail() {
           </CardContent>
         </Card>
       )}
+
+      {/* One dialog for both, because the question is the same shape
+          and the count is what makes it dangerous. Typing "delete" is
+          the guard rather than a name — there is no one name to type. */}
+      <ConfirmDialog
+        open={bulk !== null}
+        onOpenChange={(open) => !open && setBulk(null)}
+        title={
+          bulk === "repos"
+            ? `Delete ${pickedRepos.size} ${pickedRepos.size === 1 ? "repository" : "repositories"}?`
+            : `Delete ${looseTags.length} ${looseTags.length === 1 ? "tag" : "tags"}?`
+        }
+        // The count is the warning, not the list. Naming every one of
+        // them ran off the screen at the sizes this is actually used
+        // at, and a wall of references is not something anyone reads
+        // before typing the confirmation anyway.
+        description={
+          bulk === "repos"
+            ? "Every tag in each of them goes. Apps pulling from any of them keep running — a container already exists — and their next deploy fails."
+            : "Anything pinned to one of these stops being able to pull."
+        }
+        confirmWord={bulk === "repos" ? "delete my repositories" : "delete my tags"}
+        onConfirm={() => deletePicked(bulk ?? "repos")}
+      />
 
       <ConfirmDialog
         open={deletingRepo !== null}
@@ -241,17 +425,21 @@ function Detail() {
       <ConfirmDialog
         open={deletingTag !== null}
         onOpenChange={(open) => !open && setDeletingTag(null)}
-        title={`Delete ${deletingTag?.tag}?`}
+        title={
+          deletingTag?.ref.startsWith("@")
+            ? "Delete this untagged image?"
+            : `Delete ${deletingTag?.ref}?`
+        }
         description={
           <>
-            Only this tag, out of <code>{deletingTag?.repo}</code>. Anything pinned to it stops
+            Only this image, out of <code>{deletingTag?.repo}</code>. Anything pinned to it stops
             being able to pull.
           </>
         }
         onConfirm={async () => {
           if (!deletingTag) return;
           await api.del(
-            `${base}/images?repository=${encodeURIComponent(deletingTag.repo)}&tag=${encodeURIComponent(deletingTag.tag)}`,
+            `${base}/images?repository=${encodeURIComponent(deletingTag.repo)}&${refQuery(deletingTag.ref)}`,
           );
           setImages((prev) => {
             const next = { ...prev };
@@ -270,11 +458,38 @@ function Detail() {
         </Card>
       )}
 
+      {(pickedRepos.size > 0 || looseTags.length > 0) && !own && (
+        <SelectionBar
+          repos={pickedRepos.size}
+          tags={looseTags.length}
+          onClear={() => {
+            setPickedRepos(new Set());
+            setPickedTags(new Set());
+          }}
+          onDeleteRepos={() => setBulk("repos")}
+          onDeleteTags={() => setBulk("tags")}
+        />
+      )}
+
       {filtered.length > 0 && (
         <Card className="py-0">
           <Table>
             <TableHeader>
               <TableRow>
+                {!own && (
+                  <TableHead className="w-10 px-4">
+                    <Checkbox
+                      aria-label="Select every repository shown"
+                      checked={allShownPicked}
+                      indeterminate={
+                        !allShownPicked && filtered.some((r) => pickedRepos.has(r.name))
+                      }
+                      onCheckedChange={(on) => {
+                        for (const r of filtered) setRepoPicked(r.name, Boolean(on));
+                      }}
+                    />
+                  </TableHead>
+                )}
                 <TableHead className="px-4">Repository</TableHead>
                 <TableHead className="px-4" />
               </TableRow>
@@ -287,10 +502,15 @@ function Detail() {
                   host={registryHost}
                   usage={byRepo[repo.name]}
                   onDelete={own ? undefined : () => setDeletingRepo(repo.name)}
-                  onDeleteTag={own ? undefined : (tag) => setDeletingTag({ repo: repo.name, tag })}
-                  open={open === repo.name}
+                  onDeleteTag={own ? undefined : (ref) => setDeletingTag({ repo: repo.name, ref })}
+                  open={open.has(repo.name)}
                   images={images[repo.name]}
                   onToggle={() => toggle(repo.name)}
+                  selectable={!own}
+                  picked={pickedRepos.has(repo.name)}
+                  onPick={() => setRepoPicked(repo.name, !pickedRepos.has(repo.name))}
+                  tagPicked={tagPicked}
+                  onPickTag={toggleTag}
                 />
               ))}
             </TableBody>
@@ -298,6 +518,93 @@ function Detail() {
         </Card>
       )}
     </>
+  );
+}
+
+// withoutRepo drops every tag belonging to one repository.
+function withoutRepo(keys: Set<string>, repo: string): Set<string> {
+  const next = new Set<string>();
+  for (const key of keys) {
+    if (!key.startsWith(repo + TAG_KEY_SEPARATOR)) next.add(key);
+  }
+  return next;
+}
+
+// An image is identified by its repository and, inside it, by its tag —
+// or by its digest where it has no tag. Two untagged images would share
+// any stand-in name, so selecting one would select both and deleting
+// either would be a request the registry cannot answer.
+//
+// The separator is a character neither a repository path, a tag nor a
+// digest can contain, so no pair of real names collides with another
+// pair's key.
+const TAG_KEY_SEPARATOR = "\u0000";
+
+// imageRef is how one image is named inside its repository: its tag, or
+// "@<digest>" when it has none. It is what the key is built from and
+// what the delete sends.
+function imageRef(image: RegistryImage): string {
+  return image.tag || `@${image.digest ?? ""}`;
+}
+
+function tagKey(repo: string, ref: string) {
+  return repo + TAG_KEY_SEPARATOR + ref;
+}
+
+// The query a delete carries for one image.
+function refQuery(ref: string): string {
+  return ref.startsWith("@")
+    ? `digest=${encodeURIComponent(ref.slice(1))}`
+    : `tag=${encodeURIComponent(ref)}`;
+}
+
+// What an image is called on screen. An untagged one has no name, and
+// saying so is better than inventing one.
+function imageLabel(image: RegistryImage): string {
+  return image.tag || "<untagged>";
+}
+
+// What sits above the table once anything is selected. It names the
+// count rather than showing a bare Delete, because the count is the
+// whole difference between this and the button on a row.
+function SelectionBar({
+  repos,
+  tags,
+  onClear,
+  onDeleteRepos,
+  onDeleteTags,
+}: {
+  repos: number;
+  tags: number;
+  onClear: () => void;
+  onDeleteRepos: () => void;
+  onDeleteTags: () => void;
+}) {
+  return (
+    <div className="mb-3 flex flex-wrap items-center gap-3 border border-primary/30 bg-primary/5 px-4 py-2.5">
+      <span className="font-mono text-[11px] tracking-[0.12em] text-primary uppercase">
+        {repos > 0 && `${repos} ${repos === 1 ? "repository" : "repositories"}`}
+        {repos > 0 && tags > 0 && " · "}
+        {tags > 0 && `${tags} ${tags === 1 ? "tag" : "tags"}`}
+        {" selected"}
+      </span>
+      <span className="flex-1" />
+      {tags > 0 && (
+        <Button variant="outline" size="sm" onClick={onDeleteTags}>
+          <Trash2Icon />
+          Delete tags
+        </Button>
+      )}
+      {repos > 0 && (
+        <Button variant="destructive" size="sm" onClick={onDeleteRepos}>
+          <Trash2Icon />
+          Delete repositories
+        </Button>
+      )}
+      <Button variant="ghost" size="sm" onClick={onClear}>
+        Clear
+      </Button>
+    </div>
   );
 }
 
@@ -324,6 +631,11 @@ function RepoRows({
   onToggle,
   onDelete,
   onDeleteTag,
+  selectable,
+  picked,
+  onPick,
+  tagPicked,
+  onPickTag,
 }: {
   name: string;
   // The registry's address, so a row can offer the whole reference
@@ -336,42 +648,69 @@ function RepoRows({
   // Absent where the registry cannot delete, which is what removes the
   // button rather than a button that fails.
   onDelete?: () => void;
-  onDeleteTag?: (tag: string) => void;
+  onDeleteTag?: (ref: string) => void;
+  // Absent on Cubeship's own registry, which nothing here deletes from.
+  selectable: boolean;
+  picked: boolean;
+  onPick: () => void;
+  tagPicked: (repo: string, ref: string) => boolean;
+  onPickTag: (repo: string, ref: string, siblings: RegistryImage[]) => void;
 }) {
   return (
     <>
-      <TableRow className="cursor-pointer" onClick={onToggle}>
-        <TableCell className="px-4 py-2.5 font-mono text-xs">{name}</TableCell>
-        <TableCell className="px-4 py-2.5 text-right whitespace-nowrap">
-          {usage && (
-            <span className="mr-3 font-mono text-[11px] text-muted-foreground">
-              {usage.images} · {bytes(usage.bytes)}
-            </span>
-          )}
-          {onDelete && (
-            <Button
-              variant="ghost"
-              size="xs"
-              className="mr-1 text-muted-foreground hover:text-destructive"
-              onClick={(e) => {
-                e.stopPropagation();
-                onDelete();
-              }}
-            >
-              <Trash2Icon className="size-3.5" />
-            </Button>
-          )}
-          <ChevronRightIcon
-            className={`inline size-3.5 text-muted-foreground transition-transform ${
-              open ? "rotate-90" : ""
-            }`}
-          />
+      {/* select-none: dragging across a row to click it should not
+          leave half the page highlighted. Every row here is a button in
+          all but name. */}
+      <TableRow className="cursor-pointer select-none" onClick={onToggle}>
+        {selectable && (
+          // The row expands on click and the box must not, so the cell
+          // swallows the event rather than the box alone: the box's own
+          // hit area is deliberately larger than the box.
+          <TableCell
+            className="w-10 px-4 py-2.5"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => e.stopPropagation()}
+          >
+            <Checkbox aria-label={`Select ${name}`} checked={picked} onCheckedChange={onPick} />
+          </TableCell>
+        )}
+        <TableCell className="px-4 py-2.5 font-mono text-xs leading-6">{name}</TableCell>
+        {/* A flex row, not three things in a line of text: a count, a
+            ghost button and an inline icon each sit on their own
+            baseline, and the button's line-height is not the span's.
+            One row, centred, with gaps instead of margins. */}
+        <TableCell className="px-4 py-2.5 whitespace-nowrap">
+          <div className="flex items-center justify-end gap-2">
+            {usage && (
+              <span className="font-mono text-[11px] leading-none text-muted-foreground">
+                {usage.images} · {bytes(usage.bytes)}
+              </span>
+            )}
+            {onDelete && (
+              <Button
+                variant="ghost"
+                size="xs"
+                className="size-6 p-0 text-muted-foreground hover:text-destructive"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+              >
+                <Trash2Icon className="size-3.5" />
+              </Button>
+            )}
+            <ChevronRightIcon
+              className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${
+                open ? "rotate-90" : ""
+              }`}
+            />
+          </div>
         </TableCell>
       </TableRow>
 
       {open && (
         <TableRow className="hover:bg-transparent">
-          <TableCell colSpan={2} className="px-4 py-0">
+          <TableCell colSpan={selectable ? 3 : 2} className="px-4 py-0">
             {images === undefined && (
               <p className="py-3 text-xs text-muted-foreground">Reading tags…</p>
             )}
@@ -384,10 +723,22 @@ function RepoRows({
               <ul className="py-2">
                 {images.map((image) => (
                   <li
-                    key={`${image.tag}-${image.digest ?? ""}`}
-                    className="flex items-center gap-4 py-0.5 font-mono text-xs"
+                    key={tagKey(name, imageRef(image))}
+                    className="flex items-center gap-4 py-1 font-mono text-xs select-none"
                   >
-                    <span className="min-w-0 flex-1 truncate">{image.tag}</span>
+                    {selectable && (
+                      <Checkbox
+                        aria-label={`Select ${name}:${imageLabel(image)}`}
+                        className="shrink-0"
+                        checked={tagPicked(name, imageRef(image))}
+                        onCheckedChange={() => onPickTag(name, imageRef(image), images)}
+                      />
+                    )}
+                    <span
+                      className={`min-w-0 flex-1 truncate ${image.tag ? "" : "text-subtle-foreground"}`}
+                    >
+                      {imageLabel(image)}
+                    </span>
                     <span className="w-20 shrink-0 text-right text-muted-foreground">
                       {image.size ? `${(image.size / 1_048_576).toFixed(0)} MB` : ""}
                     </span>
@@ -400,14 +751,15 @@ function RepoRows({
                     <CopyButton
                       value={host ? `${host}/${name}:${image.tag}` : `${name}:${image.tag}`}
                       label={`Copy ${name}:${image.tag}`}
+                      className="size-6 shrink-0 p-0"
                     />
                     {onDeleteTag && (
                       <Button
                         variant="ghost"
                         size="xs"
-                        aria-label={`Delete ${image.tag}`}
-                        className="text-muted-foreground hover:text-destructive"
-                        onClick={() => onDeleteTag(image.tag)}
+                        aria-label={`Delete ${imageLabel(image)}`}
+                        className="size-6 shrink-0 p-0 text-muted-foreground hover:text-destructive"
+                        onClick={() => onDeleteTag(imageRef(image))}
                       >
                         <Trash2Icon className="size-3.5" />
                       </Button>

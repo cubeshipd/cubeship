@@ -251,7 +251,12 @@ func listECRImages(ctx context.Context, client *http.Client, c *Credential, repo
 		if len(d.ImageTags) == 0 {
 			// An untagged image is still occupying the registry, and a
 			// listing that hid it would not add up against the console.
-			out = append(out, Image{Tag: "<untagged>", Digest: d.ImageDigest,
+			//
+			// Its Tag is empty rather than a stand-in like "<untagged>":
+			// a stand-in is a name two different images would share, and
+			// it is not something a delete could ever address. Nothing
+			// but the digest identifies one of these.
+			out = append(out, Image{Digest: d.ImageDigest,
 				Size: d.ImageSizeInBytes, PushedAt: &pushed})
 			continue
 		}
@@ -309,13 +314,20 @@ func callECR(ctx context.Context, client *http.Client, c *Credential, action, bo
 	return json.NewDecoder(resp.Body).Decode(into)
 }
 
-// deleteECRImage removes one tag. ECR deletes by tag or by digest; a tag
-// is what a person picked, and deleting by digest would take every other
-// tag pointing at the same image with it.
-func deleteECRImage(ctx context.Context, client *http.Client, c *Credential, repository, tag string) error {
+// deleteECRImage removes one image, addressed by tag or by digest.
+//
+// A tag is what a person picked off a list, and deleting it leaves every
+// other tag on the same image alone — which is why it is preferred where
+// there is one. An untagged image has no tag to name, and the digest is
+// the only thing that identifies it.
+func deleteECRImage(ctx context.Context, client *http.Client, c *Credential, repository string, ref ImageRef) error {
+	id := map[string]string{"imageTag": ref.Tag}
+	if ref.Tag == "" {
+		id = map[string]string{"imageDigest": ref.Digest}
+	}
 	body, err := json.Marshal(map[string]any{
 		"repositoryName": repository,
-		"imageIds":       []map[string]string{{"imageTag": tag}},
+		"imageIds":       []map[string]string{id},
 	})
 	if err != nil {
 		return err
@@ -333,8 +345,8 @@ func deleteECRImage(ctx context.Context, client *http.Client, c *Credential, rep
 	// A batch of one that failed comes back 200 with the reason inside,
 	// so the transport succeeding is not the delete succeeding.
 	if len(answer.Failures) > 0 {
-		return fmt.Errorf("AWS refused to delete %s:%s: %s",
-			repository, tag, answer.Failures[0].FailureReason)
+		return fmt.Errorf("AWS refused to delete %s: %s",
+			ref.In(repository), answer.Failures[0].FailureReason)
 	}
 	return nil
 }

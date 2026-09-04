@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
 import { AWSIcon, DigitalOceanIcon } from "@/components/icons";
+import { LoadingNote } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { useOrg } from "@/components/org-context";
 import { PageHeader, SectionHeader } from "@/components/page-header";
@@ -49,16 +50,44 @@ function Settings() {
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const [namespace, setNamespace] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [savingName, setSavingName] = useState(false);
+
+  // The name goes on its own, without the login: sending it alone is
+  // what corrects a typo without making someone find their token again.
+  async function saveName(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingName(true);
+    setError(null);
+    try {
+      const updated = await api.put<RegistryCredential>(`/orgs/${org}/registries/${id}`, {
+        namespace,
+      });
+      setCredential(updated);
+      probe();
+    } catch (err) {
+      setError(message(err));
+    }
+    setSavingName(false);
+  }
 
   useEffect(() => {
     if (!org || !id) return;
     api
       .get<RegistryCredential[]>(`/orgs/${org}/registries`)
-      .then((list) => setCredential(list.find((c) => String(c.id) === id) ?? null))
+      .then((list) => {
+        const found = list.find((c) => String(c.id) === id) ?? null;
+        setCredential(found);
+        setNamespace(found?.namespace ?? "");
+        // The username is not a secret and comes back with the listing,
+        // so the field starts on it: an empty box next to a stored
+        // login reads as nothing configured.
+        setUsername(found?.username ?? "");
+      })
       .catch((e) => setError(message(e)));
   }, [org, id]);
 
@@ -77,6 +106,7 @@ function Settings() {
 
   const provider = credential?.provider ?? "generic";
   const aws = provider === "aws";
+  const digitalocean = provider === "digitalocean";
   const Icon =
     provider === "aws" ? AWSIcon : provider === "digitalocean" ? DigitalOceanIcon : BoxIcon;
 
@@ -87,7 +117,6 @@ function Settings() {
     setSaved(false);
     try {
       await api.put(`/orgs/${org}/registries/${id}`, { username, password });
-      setUsername("");
       setPassword("");
       setSaved(true);
       probe();
@@ -99,12 +128,15 @@ function Settings() {
 
   return (
     <>
+      {/* Back to the registry, not to the list: this screen is reached
+          from that one, and a settings screen that returns you two
+          levels up loses your place. */}
       <Link
-        href="/registries"
+        href={`/registries/detail?id=${id}&host=${encodeURIComponent(host)}`}
         className="mb-4 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
       >
         <ChevronLeftIcon className="size-3.5" />
-        Registries
+        {host || "Registry"}
       </Link>
 
       <PageHeader
@@ -116,6 +148,8 @@ function Settings() {
       />
 
       <ErrorAlert error={error} />
+
+      {!status && !error && <LoadingNote>Checking this login against the registry</LoadingNote>}
 
       {status?.state === "unauthorized" && (
         <Notice tone="warning">
@@ -130,12 +164,46 @@ function Settings() {
         </Notice>
       )}
 
+      {digitalocean && (
+        <>
+          <SectionHeader
+            title="Registry"
+            sub="The one part of a registry's address that is typed rather than derived, which is the one part that can be wrong. Get it wrong and DigitalOcean answers “wrong owner”."
+          />
+          <Card>
+            <CardContent>
+              <form onSubmit={saveName} className="max-w-md space-y-4">
+                <TextField
+                  label="Registry name"
+                  spellCheck={false}
+                  value={namespace}
+                  onChange={(e) => setNamespace(e.target.value)}
+                  hint="What follows registry.digitalocean.com/ in an image path. Your account has one registry, and this is its name."
+                />
+                <div className="flex items-center gap-3">
+                  <ActionButton
+                    type="submit"
+                    busy={savingName}
+                    disabled={!namespace || namespace === (credential?.namespace ?? "")}
+                  >
+                    Save
+                  </ActionButton>
+                  <span className="text-xs text-muted-foreground">
+                    Changing this changes where apps on this login pull from.
+                  </span>
+                </div>
+              </form>
+            </CardContent>
+          </Card>
+        </>
+      )}
+
       <SectionHeader
         title="Login"
         sub={
           aws
             ? "The access key. What Docker logs in with is a token fetched from it at each pull, so nothing here expires."
-            : "What is stored is sent to the registry as given. It is never returned, so replacing it means entering both parts again."
+            : "What is stored is sent to the registry as given."
         }
       />
 
@@ -148,11 +216,18 @@ function Settings() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
             />
+            {/* The password is never returned — an endpoint that
+                handed it back would turn every read of this page into a
+                way out for it — so the field cannot start on it. The
+                placeholder says something is stored; the box being
+                empty on arrival says only that you have not typed. */}
             <TextField
               label={aws ? "Secret access key" : "Password or token"}
               type="password"
+              placeholder="••••••••••"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              hint="Stored and never returned, so replacing it means entering it again in full."
             />
             <div className="flex items-center gap-3">
               <ActionButton type="submit" busy={saving} disabled={!username || !password}>

@@ -351,16 +351,22 @@ func (v *v2Client) manifest(ctx context.Context, repository, reference, scope st
 // first. That means deleting a tag deletes the image, and every other
 // tag pointing at the same image goes with it — which is what the
 // registry does and worth knowing before you ask for it.
-func deleteV2Image(ctx context.Context, client *http.Client, c *Credential, repository, tag string) error {
+func deleteV2Image(ctx context.Context, client *http.Client, c *Credential, repository string, ref ImageRef) error {
 	v := newV2Client(client, c)
 	scope := "repository:" + repository + ":pull,push,delete"
 
-	digest, _, err := v.manifest(ctx, repository, tag, scope)
-	if err != nil {
-		return err
+	digest := ref.Digest
+	if ref.Tag != "" {
+		// Resolved rather than trusted: a tag can have moved since the
+		// listing was read, and the digest that comes back with the
+		// manifest is the one this registry will accept.
+		var err error
+		if digest, _, err = v.manifest(ctx, repository, ref.Tag, scope); err != nil {
+			return err
+		}
 	}
 	if digest == "" {
-		return fmt.Errorf("the registry did not say what %s:%s is, so there is nothing to address", repository, tag)
+		return fmt.Errorf("the registry did not say what %s is, so there is nothing to address", ref.In(repository))
 	}
 	return v.deleteManifest(ctx, repository, digest, scope)
 }

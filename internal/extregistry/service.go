@@ -118,18 +118,46 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug string,
 // registry that has to be re-pointed at a different host is a different
 // credential — delete it and add the new one, so no app silently starts
 // authenticating somewhere else.
-func (s *Service) Update(ctx context.Context, caller *user.User, orgSlug string, id int64, username, password string) (*Credential, error) {
+// Update rotates the login, and for a provider whose namespace is a
+// name rather than something derived, corrects that too.
+//
+// The host is still not editable — an app's pulls are matched to a
+// credential by host, so re-pointing one in place would silently send
+// them somewhere else. A namespace is different in kind: it is typed by
+// hand, it is wrong in exactly one way, and until now the only way to
+// fix a typo was to delete the login and enter the password again.
+func (s *Service) Update(ctx context.Context, caller *user.User, orgSlug string, id int64, username, password string, namespace *string) (*Credential, error) {
 	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
 	if err != nil {
 		return nil, err
 	}
-	if username == "" {
+
+	if namespace != nil {
+		normalized, err := checkNamespace(ctx, s, caller, orgSlug, id, *namespace)
+		if err != nil {
+			return nil, err
+		}
+		namespace = &normalized
+	}
+
+	// A login is replaced as a pair or not at all: half of one is not a
+	// login. Correcting only the registry name is the exception, and it
+	// is why the name is worth having here — making someone re-enter a
+	// token to fix a typo is how a typo stays.
+	var user, pass *string
+	switch {
+	case username != "" && password != "":
+		user, pass = &username, &password
+	case username != "" || password != "":
+		if username == "" {
+			return nil, ErrUsernameRequired
+		}
+		return nil, ErrPasswordRequired
+	case namespace == nil:
 		return nil, ErrUsernameRequired
 	}
-	if password == "" {
-		return nil, ErrPasswordRequired
-	}
-	c, err := s.Repo().Update(ctx, id, o.ID, username, password)
+
+	c, err := s.Repo().Update(ctx, id, o.ID, user, pass, namespace)
 	if errors.Is(err, database.ErrNotFound) {
 		return nil, ErrNotFound
 	}
@@ -208,8 +236,11 @@ func (s *Service) Repositories(ctx context.Context, caller *user.User, orgSlug s
 	if err != nil {
 		return nil, err
 	}
-	if c.Provider == ProviderAWS {
+	switch c.Provider {
+	case ProviderAWS:
 		return listECRRepositories(ctx, s.client, c)
+	case ProviderDigitalOcean:
+		return listDORepositories(ctx, s.client, c)
 	}
 	return listV2Repositories(ctx, s.client, c)
 }
@@ -223,8 +254,11 @@ func (s *Service) Images(ctx context.Context, caller *user.User, orgSlug string,
 	if repository == "" {
 		return nil, fmt.Errorf("name the repository to list")
 	}
-	if c.Provider == ProviderAWS {
+	switch c.Provider {
+	case ProviderAWS:
 		return listECRImages(ctx, s.client, c, repository)
+	case ProviderDigitalOcean:
+		return listDOImages(ctx, s.client, c, repository)
 	}
 	return listV2Images(ctx, s.client, c, repository)
 }
@@ -252,18 +286,21 @@ func (s *Service) resolve(ctx context.Context, caller *user.User, orgSlug string
 // Whether it frees anything is the registry's business: ECR reclaims the
 // storage, and a registry that only untags does not. What is promised
 // here is that nothing can pull that tag afterwards.
-func (s *Service) DeleteImage(ctx context.Context, caller *user.User, orgSlug string, id int64, repository, tag string) error {
+func (s *Service) DeleteImage(ctx context.Context, caller *user.User, orgSlug string, id int64, repository string, ref ImageRef) error {
 	c, err := s.resolve(ctx, caller, orgSlug, id)
 	if err != nil {
 		return err
 	}
-	if repository == "" || tag == "" {
-		return fmt.Errorf("name the repository and the tag to delete")
+	if repository == "" || !ref.Named() {
+		return fmt.Errorf("name the repository, and the tag or digest to delete")
 	}
-	if c.Provider == ProviderAWS {
-		return deleteECRImage(ctx, s.client, c, repository, tag)
+	switch c.Provider {
+	case ProviderAWS:
+		return deleteECRImage(ctx, s.client, c, repository, ref)
+	case ProviderDigitalOcean:
+		return deleteDOImage(ctx, s.client, c, repository, ref)
 	}
-	return deleteV2Image(ctx, s.client, c, repository, tag)
+	return deleteV2Image(ctx, s.client, c, repository, ref)
 }
 
 // DeleteRepository removes a repository and everything in it.
@@ -275,8 +312,11 @@ func (s *Service) DeleteRepository(ctx context.Context, caller *user.User, orgSl
 	if repository == "" {
 		return fmt.Errorf("name the repository to delete")
 	}
-	if c.Provider == ProviderAWS {
+	switch c.Provider {
+	case ProviderAWS:
 		return deleteECRRepository(ctx, s.client, c, repository)
+	case ProviderDigitalOcean:
+		return deleteDORepository(ctx, s.client, c, repository)
 	}
 	return deleteV2Repository(ctx, s.client, c, repository)
 }
@@ -291,7 +331,10 @@ func (s *Service) Usage(ctx context.Context, caller *user.User, orgSlug string, 
 	if err != nil {
 		return nil, err
 	}
-	if c.Provider != ProviderAWS {
+	switch c.Provider {
+	case ProviderDigitalOcean:
+		return doUsage(ctx, s.client, c)
+	case ProviderGeneric:
 		return usageV2(ctx, s.client, c)
 	}
 	repos, err := listECRRepositories(ctx, s.client, c)
@@ -340,9 +383,12 @@ func (s *Service) Probe(ctx context.Context, caller *user.User, orgSlug string, 
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 
-	if c.Provider == ProviderAWS {
+	switch c.Provider {
+	case ProviderAWS:
 		_, err = getECRAuthorization(ctx, s.client, c.Username, c.Password, c.Region)
-	} else {
+	case ProviderDigitalOcean:
+		err = pingDO(ctx, s.client, c)
+	default:
 		err = pingV2(ctx, s.client, c)
 	}
 	if err == nil {
@@ -358,3 +404,28 @@ func (s *Service) Probe(ctx context.Context, caller *user.User, orgSlug string, 
 // registry that has not answered in this long is not available whatever
 // it would eventually have said.
 const probeTimeout = 10 * time.Second
+
+// checkNamespace refuses a namespace on a provider that has none.
+//
+// ECR's host carries the account and there is nothing between it and
+// the image; a generic registry's path is whatever the image says. Only
+// DigitalOcean has a name sitting in the middle that someone types, so
+// only DigitalOcean has one to correct.
+func checkNamespace(ctx context.Context, s *Service, caller *user.User, orgSlug string, id int64, namespace string) (string, error) {
+	c, err := s.resolve(ctx, caller, orgSlug, id)
+	if err != nil {
+		return "", err
+	}
+	if c.Provider != ProviderDigitalOcean {
+		return "", fmt.Errorf("%w: only a DigitalOcean login has a registry name", ErrNamespaceRequired)
+	}
+
+	namespace = strings.Trim(strings.TrimSpace(namespace), "/")
+	if namespace == "" {
+		return "", ErrNamespaceRequired
+	}
+	if strings.ContainsAny(namespace, "/ ") {
+		return "", fmt.Errorf("%w: a DigitalOcean registry name is one path segment", ErrNamespaceRequired)
+	}
+	return namespace, nil
+}

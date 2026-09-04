@@ -173,6 +173,19 @@
   [data-slot="select-trigger"]:hover:not(:focus-visible) {
     border-color: var(--border-strong);
   }
+
+  /* shadcn's checkbox ships `rounded-[4px]`, an arbitrary value the
+     zeroed --radius scale cannot reach. Squared here rather than by
+     editing ui/, so a re-run of `shadcn add` does not take the house
+     style with it. */
+  [data-slot="checkbox"] {
+    border-radius: 0;
+    border-color: var(--input);
+  }
+
+  [data-slot="checkbox"]:hover:not(:focus-visible) {
+    border-color: var(--border-strong);
+  }
 }
 
 /* Everything a field looks like is decided here, and nowhere else.
@@ -279,4 +292,69 @@
   box-shadow:
     0 0 0 1px color-mix(in srgb, var(--primary) 45%, transparent),
     0 0 22px -6px color-mix(in srgb, var(--primary) 60%, transparent);
+}
+
+/* What a value looks like before it arrives.
+ *
+ * A sweep of the accent along a 1px rule rather than a pulsing grey
+ * block: depth in this interface comes from lines and glow, and a
+ * rounded grey rectangle is neither. The bar is the width the value
+ * will be, so the layout does not move when it lands. */
+@utility scan-line {
+  position: relative;
+  overflow: hidden;
+  height: 1px;
+  background: var(--border);
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to right,
+      transparent,
+      color-mix(in srgb, var(--primary) 85%, transparent),
+      transparent
+    );
+    animation: scan 1.4s ease-in-out infinite;
+  }
+}
+
+/* The same sweep across a block that stands in for a row rather than a
+   value — a table waiting on a registry it has to go and ask. */
+@utility scan-block {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--foreground) 4%, transparent);
+
+  &::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      to right,
+      transparent,
+      color-mix(in srgb, var(--primary) 12%, transparent),
+      transparent
+    );
+    animation: scan 1.4s ease-in-out infinite;
+  }
+}
+
+@keyframes scan {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Someone who has asked not to be shown motion is shown the rule and
+   the block, holding still. */
+@media (prefers-reduced-motion: reduce) {
+  .scan-line::after,
+  .scan-block::after {
+    animation: none;
+  }
 }

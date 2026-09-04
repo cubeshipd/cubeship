@@ -7,6 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { AWSIcon, DigitalOceanIcon } from "@/components/icons";
+import { LoadingRows } from "@/components/loading";
 import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
 import { SearchableSelect } from "@/components/searchable-select";
@@ -185,7 +186,7 @@ export default function Registries() {
                   credential — each user authenticates with their own API
                   key — so there is nothing here to add or replace. */}
               <TableRow
-                className="cursor-pointer"
+                className="cursor-pointer select-none"
                 onClick={() => router.push("/registries/detail")}
               >
                 <TableCell className="px-4 py-2.5 font-mono text-xs">
@@ -203,6 +204,8 @@ export default function Registries() {
                 </TableCell>
               </TableRow>
 
+              {creds === null && <LoadingRows rows={2} columns={4} />}
+
               {creds?.length === 0 && (
                 <TableRow className="hover:bg-transparent">
                   <TableCell colSpan={4} className="px-4 py-3 text-sm text-muted-foreground">
@@ -213,7 +216,7 @@ export default function Registries() {
               )}
 
               {creds?.map((c) => (
-                <TableRow key={c.id} className="cursor-pointer" onClick={() => open(c)}>
+                <TableRow key={c.id} className="cursor-pointer select-none" onClick={() => open(c)}>
                   <TableCell className="px-4 py-2.5 font-mono text-xs">
                     {c.host}
                     {c.namespace && <span className="text-muted-foreground">/{c.namespace}</span>}

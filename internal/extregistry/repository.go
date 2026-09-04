@@ -43,11 +43,20 @@ func (r *Repository) Create(ctx context.Context, orgID int64, in Credential) (*C
 	return c, nil
 }
 
-func (r *Repository) Update(ctx context.Context, id, orgID int64, username, password string) (*Credential, error) {
+// Update writes whichever of the three fields it was given.
+//
+// All three are pointers because "leave it alone" and "set it to empty"
+// are different requests, and a nil is the only way to say the first
+// one. Correcting a registry name must not blank the password.
+func (r *Repository) Update(ctx context.Context, id, orgID int64, username, password, namespace *string) (*Credential, error) {
 	row := r.q.QueryRowContext(ctx,
-		`UPDATE external_registries SET username = $1, password = $2, updated_at = now()
+		`UPDATE external_registries
+		 SET username  = COALESCE($1, username),
+		     password  = COALESCE($2, password),
+		     namespace = COALESCE($5, namespace),
+		     updated_at = now()
 		 WHERE id = $3 AND org_id = $4 RETURNING `+columns,
-		username, password, id, orgID)
+		username, password, id, orgID, namespace)
 	c, err := scan(row)
 	if err != nil {
 		return nil, database.ErrNotFound

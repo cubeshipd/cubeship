@@ -37,7 +37,12 @@ const nav = [
     icon: FolderTreeIcon,
     owns: ["/projects", "/environments", "/apps"],
   },
-  { href: "/registries", label: "Registries", icon: ContainerIcon },
+  {
+    href: "/registries",
+    label: "Registries",
+    icon: ContainerIcon,
+    owns: ["/registries"],
+  },
   { href: "/settings", label: "Instance", icon: ServerCogIcon },
   { href: "/account", label: "Account", icon: UserRoundIcon },
 ];

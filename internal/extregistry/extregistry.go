@@ -128,3 +128,26 @@ func HostOf(image string) string {
 	}
 	return strings.ToLower(first)
 }
+
+// ImageRef is how one image inside a repository is named for a delete.
+//
+// Two ways, and which one is available is not a preference. A tagged
+// image is addressed by its tag, so removing it leaves the other tags on
+// the same image alone. An untagged one has nothing but its digest —
+// which is also why it cannot be given a stand-in name in a listing: a
+// stand-in is a name two of them would share and no delete could reach.
+type ImageRef struct {
+	Tag    string
+	Digest string
+}
+
+// Named reports whether the reference identifies anything at all.
+func (r ImageRef) Named() bool { return r.Tag != "" || r.Digest != "" }
+
+// In renders the reference the way someone would write it, for an error.
+func (r ImageRef) In(repository string) string {
+	if r.Tag != "" {
+		return repository + ":" + r.Tag
+	}
+	return repository + "@" + r.Digest
+}

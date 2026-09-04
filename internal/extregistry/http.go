@@ -139,6 +139,10 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		// A pointer, because omitting it means "leave the name alone"
+		// and sending "" means "you gave me nothing" — two different
+		// requests that a plain string cannot tell apart.
+		Namespace *string `json:"namespace"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -151,7 +155,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	updated, err := h.svc.Update(ctx, user.FromContext(ctx), r.PathValue("orgSlug"),
-		id, req.Username, req.Password)
+		id, req.Username, req.Password, req.Namespace)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -225,7 +229,10 @@ func (h *Handler) deleteImage(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	if err := h.svc.DeleteImage(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), id,
-		r.URL.Query().Get("repository"), r.URL.Query().Get("tag")); err != nil {
+		r.URL.Query().Get("repository"), ImageRef{
+			Tag:    r.URL.Query().Get("tag"),
+			Digest: r.URL.Query().Get("digest"),
+		}); err != nil {
 		WriteError(w, err)
 		return
 	}
