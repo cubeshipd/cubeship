@@ -100,6 +100,11 @@ func (o *Orchestrator) Deploy(ctx context.Context, appName, imageRef string) err
 		return fmt.Errorf("%w: %s", ErrAppNotFound, appName)
 	}
 
+	env, err := o.inheritedEnv(ctx, app)
+	if err != nil {
+		return fmt.Errorf("resolve inherited env: %w", err)
+	}
+
 	if err := o.docker.PullImage(ctx, imageRef); err != nil {
 		o.store.RecordDeployment(ctx, app.ID, imageRef, "failed", err.Error())
 		return fmt.Errorf("pull image: %w", err)
@@ -112,7 +117,7 @@ func (o *Orchestrator) Deploy(ctx context.Context, appName, imageRef string) err
 		Name:    newName,
 		Image:   imageRef,
 		Labels:  labels,
-		Env:     envSlice(app.Env),
+		Env:     envSlice(env),
 		Network: appNetwork,
 	})
 	if err != nil {
@@ -193,6 +198,35 @@ func (o *Orchestrator) waitHealthy(ctx context.Context, containerID string) bool
 		}
 	}
 	return false
+}
+
+// inheritedEnv resolves the full environment a deploy of app should run
+// with: the project's vars, overridden by its environment's vars,
+// overridden by the app's own vars — so an app can override a value its
+// environment sets, and an environment can override one its project
+// sets, but never the other way around.
+func (o *Orchestrator) inheritedEnv(ctx context.Context, app *store.App) (map[string]string, error) {
+	project, err := o.store.GetProjectByID(ctx, app.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("get project: %w", err)
+	}
+	env, err := o.store.GetEnvironmentByID(ctx, app.EnvironmentID)
+	if err != nil {
+		return nil, fmt.Errorf("get environment: %w", err)
+	}
+	return mergeEnv(project.Env, env.Env, app.Env), nil
+}
+
+// mergeEnv layers each map over the last, in order: a key set by a later
+// map overrides the same key set by an earlier one.
+func mergeEnv(layers ...map[string]string) map[string]string {
+	merged := make(map[string]string)
+	for _, layer := range layers {
+		for k, v := range layer {
+			merged[k] = v
+		}
+	}
+	return merged
 }
 
 func envSlice(env map[string]string) []string {

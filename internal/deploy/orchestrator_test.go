@@ -108,7 +108,8 @@ func TestDeploySuccessFirstDeploy(t *testing.T) {
 	o, s := newTestOrchestrator(t, docker)
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	if err := o.Deploy(ctx, "myapp", "registry.example.com/myapp:latest"); err != nil {
 		t.Fatalf("Deploy: %v", err)
@@ -147,7 +148,8 @@ func TestDeployAttachesContainerToCubeshipNetwork(t *testing.T) {
 	o, s := newTestOrchestrator(t, docker)
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	if err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:latest"); err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
@@ -167,7 +169,8 @@ func TestDeploySwapsOldContainer(t *testing.T) {
 	o, s := newTestOrchestrator(t, docker)
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	app, _ := s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	if err := o.Deploy(ctx, "myapp", "registry.example.com/myapp:v2"); err != nil {
@@ -193,7 +196,8 @@ func TestDeployHealthCheckFailureLeavesOldContainerRunning(t *testing.T) {
 	o, s := newTestOrchestrator(t, docker)
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	app, _ := s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	err := o.Deploy(ctx, "myapp", "registry.example.com/myapp:v2")
@@ -225,7 +229,8 @@ func TestDeployForwardsAppEnv(t *testing.T) {
 	o, s := newTestOrchestrator(t, docker)
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	app, _ := s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.SetAppEnv(ctx, app.ID, map[string]string{"PORT": "8080"})
 
 	if err := o.Deploy(ctx, "myapp", "registry.example.com/myapp:latest"); err != nil {
@@ -240,6 +245,53 @@ func TestDeployForwardsAppEnv(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected PORT=8080 in container env, got %v", docker.createdOpts.Env)
+	}
+}
+
+// An app's effective environment is its project's vars, overridden by
+// its environment's vars, overridden by its own vars — never the other
+// direction. TestDeployForwardsAppEnv above already covers an app's own
+// vars reaching the container; this covers the inheritance and the
+// precedence order between all three layers.
+func TestDeployInheritsProjectAndEnvironmentEnv(t *testing.T) {
+	ctx := context.Background()
+	docker := &fakeDocker{nextCreateID: "container-1", running: true}
+	o, s := newTestOrchestrator(t, docker)
+
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	project, env, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "web", "Web")
+	s.SetProjectEnv(ctx, project.ID, map[string]string{
+		"SHARED":       "from-project",
+		"PROJECT_ONLY": "from-project",
+	})
+	s.SetEnvironmentEnv(ctx, env.ID, map[string]string{
+		"SHARED":   "from-environment",
+		"ENV_ONLY": "from-environment",
+	})
+	app, _ := s.CreateApp(ctx, org.ID, project.ID, env.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	s.SetAppEnv(ctx, app.ID, map[string]string{"SHARED": "from-app", "APP_ONLY": "from-app"})
+
+	if err := o.Deploy(ctx, "myapp", "registry.example.com/myapp:latest"); err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+
+	got := map[string]string{}
+	for _, kv := range docker.createdOpts.Env {
+		parts := strings.SplitN(kv, "=", 2)
+		got[parts[0]] = parts[1]
+	}
+
+	if got["SHARED"] != "from-app" {
+		t.Fatalf("expected the app's own value to win for a key set at every layer, got %q", got["SHARED"])
+	}
+	if got["PROJECT_ONLY"] != "from-project" {
+		t.Fatalf("expected the project's value to be inherited, got %q", got["PROJECT_ONLY"])
+	}
+	if got["ENV_ONLY"] != "from-environment" {
+		t.Fatalf("expected the environment's value to be inherited, got %q", got["ENV_ONLY"])
+	}
+	if got["APP_ONLY"] != "from-app" {
+		t.Fatalf("expected the app's own value to be present, got %q", got["APP_ONLY"])
 	}
 }
 
@@ -266,7 +318,8 @@ func TestDeployRejectsSingleRunningObservation(t *testing.T) {
 	o.HealthCheckSuccesses = 3
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	app, _ := s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	if err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:v2"); err == nil {
@@ -292,7 +345,8 @@ func TestDeployRejectsFlappingContainer(t *testing.T) {
 	o.HealthCheckSuccesses = 3
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	app, _ := s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	if err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:v2"); err == nil {
@@ -315,7 +369,8 @@ func TestDeployAcceptsConsecutiveRunningObservations(t *testing.T) {
 	o.HealthCheckSuccesses = 3
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	if err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:latest"); err != nil {
 		t.Fatalf("expected a container that settles to running to pass: %v", err)
 	}
@@ -331,7 +386,8 @@ func TestDeployWaitsBeforeTheFirstHealthObservation(t *testing.T) {
 	o.HealthCheckInterval = interval
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	if err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:latest"); err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
@@ -353,7 +409,8 @@ func TestDeployPullFailure(t *testing.T) {
 	o, s := newTestOrchestrator(t, docker)
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	app, _ := s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:v2")
@@ -387,7 +444,8 @@ func TestDeployCreateFailure(t *testing.T) {
 	o, s := newTestOrchestrator(t, docker)
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	app, _ := s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:v2")
@@ -418,7 +476,8 @@ func TestDeployStartFailure(t *testing.T) {
 	o, s := newTestOrchestrator(t, docker)
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	app, _ := s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 
 	err := o.Deploy(ctx, "myapp", "127.0.0.1:5000/myapp:v2")
@@ -535,7 +594,8 @@ func TestConcurrentDeploysOfSameAppAreSerialized(t *testing.T) {
 	o.HealthCheckInterval = 0
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	var wg sync.WaitGroup
 	errs := make([]error, 2)
@@ -586,8 +646,9 @@ func TestConcurrentDeploysOfDifferentAppsRunInParallel(t *testing.T) {
 	o.HealthCheckInterval = 0
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	s.CreateApp(ctx, org.ID, "one", "one.example.com", "registry.example.com/one")
-	s.CreateApp(ctx, org.ID, "two", "two.example.com", "registry.example.com/two")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "one", "one.example.com", "registry.example.com/one")
+	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "two", "two.example.com", "registry.example.com/two")
 
 	var wg sync.WaitGroup
 	for _, name := range []string{"one", "two"} {
@@ -608,7 +669,8 @@ func TestLogsReturnsErrNoContainerBeforeFirstDeploy(t *testing.T) {
 	ctx := context.Background()
 	o, s := newTestOrchestrator(t, &fakeDocker{})
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	_, err := o.Logs(ctx, "myapp")
 	if !errors.Is(err, ErrNoContainer) {
