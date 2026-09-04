@@ -21,7 +21,7 @@ func testConfig() *config.Config {
 }
 
 func TestRegistryContainerOptsRoutesThroughTraefik(t *testing.T) {
-	opts := RegistryContainerOpts(testConfig(), "http://127.0.0.1:9000/hooks/registry")
+	opts := RegistryContainerOpts(testConfig())
 
 	if opts.Name != "cubeship-registry" {
 		t.Fatalf("unexpected name: %q", opts.Name)
@@ -36,18 +36,43 @@ func TestRegistryContainerOptsRoutesThroughTraefik(t *testing.T) {
 		t.Fatalf("expected the registry published on localhost:5000, got %v", opts.Ports)
 	}
 
-	found := false
-	for _, e := range opts.Env {
-		if e == "REGISTRY_NOTIFICATIONS_ENDPOINTS_0_URL=http://127.0.0.1:9000/hooks/registry" {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected the notify URL in env, got %v", opts.Env)
+	if len(opts.Binds) != 1 || opts.Binds[0] != "/var/lib/cubeship/registry-config.yml:/etc/docker/registry/config.yml:ro" {
+		t.Fatalf("expected the registry config.yml to be mounted (registry:2 ignores notification env vars), got %v", opts.Binds)
 	}
 
 	if len(opts.ExtraHosts) != 1 || opts.ExtraHosts[0] != "host.docker.internal:host-gateway" {
 		t.Fatalf("expected host.docker.internal to resolve to the host gateway so the container can reach a notifyURL on the host, got %v", opts.ExtraHosts)
+	}
+}
+
+func TestRegistryConfigYAMLIncludesNotificationEndpoint(t *testing.T) {
+	yaml := RegistryConfigYAML("http://host.docker.internal:9000/hooks/registry")
+
+	if !strings.Contains(yaml, "url: http://host.docker.internal:9000/hooks/registry") {
+		t.Fatalf("expected the notify URL in the endpoint config, got:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, "notifications:") || !strings.Contains(yaml, "endpoints:") {
+		t.Fatalf("expected a notifications.endpoints section, got:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, "addr: :5000") {
+		t.Fatalf("expected the base registry http config to be present (this replaces, not merges with, the image default), got:\n%s", yaml)
+	}
+}
+
+func TestWriteRegistryConfigWritesFile(t *testing.T) {
+	cfg := testConfig()
+	cfg.DataDir = t.TempDir()
+
+	if err := WriteRegistryConfig(cfg, "http://host.docker.internal:9000/hooks/registry"); err != nil {
+		t.Fatalf("WriteRegistryConfig: %v", err)
+	}
+
+	data, err := os.ReadFile(cfg.DataDir + "/registry-config.yml")
+	if err != nil {
+		t.Fatalf("expected the config file to exist: %v", err)
+	}
+	if !strings.Contains(string(data), "host.docker.internal:9000") {
+		t.Fatalf("unexpected file content: %s", data)
 	}
 }
 

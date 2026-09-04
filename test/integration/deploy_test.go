@@ -1,5 +1,20 @@
 //go:build integration
 
+// This test needs a real Linux host to fully pass. Traefik is bootstrapped
+// with Docker's --network host (see bootstrap.TraefikContainerOpts) so it
+// can reach both the host-process daemon and other containers — that's a
+// real, working mode on the Linux Docker daemon a production VPS runs, but
+// on Docker Desktop for Mac/Windows the Docker Engine runs inside a VM and
+// host networking is NOT bridged out to the physical machine: a container
+// started with --network host binds ports inside that VM only, invisible
+// to `lsof` or connections from the Mac/Windows host itself. Concretely:
+// this test's app-reachable-via-Traefik step (and any docker push to
+// registry.<domain> through Traefik on :443) cannot succeed on Docker
+// Desktop for that reason — confirmed by direct observation (nothing
+// listens on :443 on the host despite Traefik running and reporting
+// healthy). Steps up through the registry-triggered deploy (webhook fires,
+// image is pulled, container starts and passes its health check) can and
+// do pass locally; only the final HTTPS-through-Traefik hop needs Linux.
 package integration
 
 import (

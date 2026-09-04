@@ -68,7 +68,10 @@ func run() error {
 	// the daemon via host.docker.internal rather than 127.0.0.1 (see the
 	// registry container's ExtraHosts in bootstrap.RegistryContainerOpts).
 	notifyURL := fmt.Sprintf("http://host.docker.internal:%d/hooks/registry", daemonPort)
-	if err := bootstrap.Ensure(ctx, docker, bootstrap.RegistryContainerOpts(cfg, notifyURL)); err != nil {
+	if err := bootstrap.WriteRegistryConfig(cfg, notifyURL); err != nil {
+		return fmt.Errorf("write registry config: %w", err)
+	}
+	if err := bootstrap.Ensure(ctx, docker, bootstrap.RegistryContainerOpts(cfg)); err != nil {
 		return fmt.Errorf("bootstrap registry: %w", err)
 	}
 	if err := bootstrap.WriteAPIRouterConfig(cfg, daemonPort); err != nil {
