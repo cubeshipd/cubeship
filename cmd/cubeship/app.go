@@ -28,7 +28,7 @@ func newAPIClient() (*apiclient.Client, error) {
 func newAppCmd() *cobra.Command {
 	appCmd := &cobra.Command{Use: "app", Short: "Manage Cubeship apps"}
 
-	var domain string
+	var domain, org string
 	createCmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Register a new app and get its registry image path",
@@ -38,7 +38,7 @@ func newAppCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			image, err := c.CreateApp(context.Background(), args[0], domain)
+			image, err := c.CreateApp(context.Background(), args[0], domain, org)
 			if err != nil {
 				return err
 			}
@@ -48,6 +48,8 @@ func newAppCmd() *cobra.Command {
 	}
 	createCmd.Flags().StringVar(&domain, "domain", "", "domain the app will be served on")
 	createCmd.MarkFlagRequired("domain")
+	createCmd.Flags().StringVar(&org, "org", "", "organization slug that will own this app")
+	createCmd.MarkFlagRequired("org")
 
 	var tag string
 	deployCmd := &cobra.Command{
