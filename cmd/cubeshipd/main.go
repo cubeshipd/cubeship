@@ -19,6 +19,21 @@ import (
 
 const version = "0.1.0-dev"
 const daemonPort = 9000
+
+// localRegistryHost is the loopback address the registry container
+// publishes, and the host the daemon's own image pulls target. It must
+// match internal/api's constant of the same name.
+const localRegistryHost = "127.0.0.1:5000"
+
+// listenAddr binds all interfaces on purpose: the registry container
+// reaches the webhook through host.docker.internal, which resolves to
+// the host's bridge-gateway address, not loopback — binding 127.0.0.1
+// would cut that path.
+//
+// This port MUST NOT be exposed to the public internet by the host
+// firewall. The API is meant to be reached over HTTPS through Traefik
+// (api.<domain>); :9000 additionally serves the same API in plaintext.
+// See README.md.
 const listenAddr = ":9000"
 
 func main() {
@@ -40,7 +55,13 @@ func run() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 	log.Printf("cubeshipd starting for domain %s", cfg.Domain)
-	log.Printf("daemon API token: %s", cfg.Token)
+	// Never log the token itself — the daemon's logs are not a secret
+	// store. A fingerprint is enough to tell which token is in use.
+	if cfg.TokenFile != "" {
+		log.Printf("daemon API token (fingerprint %s) is stored in %s", config.TokenFingerprint(cfg.Token), cfg.TokenFile)
+	} else {
+		log.Printf("daemon API token (fingerprint %s) taken from CUBESHIP_TOKEN", config.TokenFingerprint(cfg.Token))
+	}
 
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
@@ -50,6 +71,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("connect to docker: %w", err)
 	}
+	// The embedded registry requires basic auth (see
+	// bootstrap.RegistryConfigYAML); the daemon pulls from it over
+	// loopback with the same credentials the CLI's `registry login`
+	// uses.
+	docker.SetRegistryAuth(localRegistryHost, bootstrap.RegistryUsername, cfg.Token)
 
 	ctx := context.Background()
 
@@ -68,8 +94,11 @@ func run() error {
 	// the daemon via host.docker.internal rather than 127.0.0.1 (see the
 	// registry container's ExtraHosts in bootstrap.RegistryContainerOpts).
 	notifyURL := fmt.Sprintf("http://host.docker.internal:%d/hooks/registry", daemonPort)
-	if err := bootstrap.WriteRegistryConfig(cfg, notifyURL); err != nil {
+	if err := bootstrap.WriteRegistryConfig(cfg, notifyURL, cfg.Token); err != nil {
 		return fmt.Errorf("write registry config: %w", err)
+	}
+	if err := bootstrap.WriteRegistryHtpasswd(cfg, cfg.Token); err != nil {
+		return fmt.Errorf("write registry credentials: %w", err)
 	}
 	if err := bootstrap.Ensure(ctx, docker, bootstrap.RegistryContainerOpts(cfg)); err != nil {
 		return fmt.Errorf("bootstrap registry: %w", err)
