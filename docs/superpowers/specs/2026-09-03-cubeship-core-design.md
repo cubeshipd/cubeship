@@ -57,7 +57,16 @@ bearer token generated at install time.
   compares SQLite state against actual Docker state (recovers from a
   crash mid-deploy).
 - **Registry**: stock `distribution/distribution` container, configured
-  with a notification webhook to the daemon.
+  with a notification webhook to the daemon. The registry **requires
+  authentication** (htpasswd, single `cubeship` account, the daemon's
+  API token as the password) — it is published over TLS at
+  `registry.<domain>`, so anonymous pushes would let anyone on the
+  internet have an image of their choosing pulled and run on the VPS.
+  Its notification webhook carries the same token in a static
+  `Authorization` header, so the daemon can tell a genuine push
+  notification from a forged one. Pushed images are stored on a host
+  volume, not in the container's writable layer, so recreating the
+  registry container does not destroy them.
 - **Traefik**: routing is driven entirely by Docker labels set by the
   daemon on app containers (`traefik.enable`, `Host(...)` rule, cert
   resolver). The daemon never writes Traefik config files directly.

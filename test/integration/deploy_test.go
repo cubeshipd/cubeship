@@ -12,9 +12,20 @@
 // registry.<domain> through Traefik on :443) cannot succeed on Docker
 // Desktop for that reason — confirmed by direct observation (nothing
 // listens on :443 on the host despite Traefik running and reporting
-// healthy). Steps up through the registry-triggered deploy (webhook fires,
-// image is pulled, container starts and passes its health check) can and
-// do pass locally; only the final HTTPS-through-Traefik hop needs Linux.
+// healthy).
+//
+// The test therefore avoids Traefik for everything before that last hop:
+// it logs in and pushes to the registry's loopback publication
+// (localhost:5000, which Docker trusts as insecure-by-default), and the
+// daemon pulls from 127.0.0.1:5000 rather than registry.<domain>, so no
+// certificate has to exist for a deploy to happen. Only the final
+// HTTPS-through-Traefik assertion needs Linux.
+//
+// NOTE: the "everything up to the Traefik hop passes on Docker Desktop"
+// claim held before the registry required authentication and before the
+// daemon's pulls moved to loopback. Both changed in the fix wave that
+// added the docker login step below; how far this gets locally has not
+// been re-observed since, so treat it as expected rather than confirmed.
 package integration
 
 import (
@@ -25,10 +36,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"cubeship/internal/apiclient"
+	"cubeship/internal/bootstrap"
 )
 
 const testToken = "integration-test-token"
@@ -93,7 +106,9 @@ func TestDeployEndToEnd(t *testing.T) {
 			return false
 		}
 		resp.Body.Close()
-		return resp.StatusCode == http.StatusOK
+		// The registry now requires basic auth, so an anonymous /v2/
+		// probe gets 401 — which still proves it is up and serving.
+		return resp.StatusCode == http.StatusOK || resp.StatusCode == http.StatusUnauthorized
 	})
 
 	ctx := context.Background()
@@ -111,6 +126,16 @@ func TestDeployEndToEnd(t *testing.T) {
 	if out, err := buildApp.CombinedOutput(); err != nil {
 		t.Fatalf("build fixture image: %v\n%s", err, out)
 	}
+
+	// The registry rejects anonymous pushes; these are the same
+	// credentials `cubeship registry login` uses.
+	login := exec.Command("docker", "login", "localhost:5000", "-u", bootstrap.RegistryUsername, "--password-stdin")
+	login.Stdin = strings.NewReader(testToken)
+	if out, err := login.CombinedOutput(); err != nil {
+		t.Fatalf("docker login to the local registry: %v\n%s", err, out)
+	}
+	t.Cleanup(func() { exec.Command("docker", "logout", "localhost:5000").Run() })
+
 	push := exec.Command("docker", "push", "localhost:5000/myapp:latest")
 	if out, err := push.CombinedOutput(); err != nil {
 		t.Fatalf("push fixture image: %v\n%s", err, out)

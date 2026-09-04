@@ -1,0 +1,38 @@
+[Unit]
+Description=Cubeship deploy daemon
+# The daemon manages containers and cannot start before Docker is up.
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/cubeshipd
+
+# Base domain: the API is served at api.<domain> and the registry at
+# registry.<domain>. Both must resolve to this host.
+Environment=CUBESHIP_DOMAIN=example.com
+# Contact address Let's Encrypt registers for expiry notices.
+Environment=CUBESHIP_ACME_EMAIL=admin@example.com
+# Persistent state: SQLite database, API token, registry config and
+# image storage, Traefik acme.json.
+Environment=CUBESHIP_DATA_DIR=/var/lib/cubeship
+# Optional. Leave unset to have the daemon generate a token on first
+# start and persist it to $CUBESHIP_DATA_DIR/token (0600).
+#Environment=CUBESHIP_TOKEN=
+
+# The daemon talks to the Docker socket, so it runs as root.
+User=root
+StateDirectory=cubeship
+StateDirectoryMode=0700
+
+Restart=always
+RestartSec=5s
+
+# NOTE: the daemon listens on 0.0.0.0:9000 in plaintext (the registry
+# container reaches its webhook via host.docker.internal). Block that
+# port at the host firewall — the API is meant to be reached over HTTPS
+# through Traefik at api.<domain>.
+
+[Install]
+WantedBy=multi-user.target
