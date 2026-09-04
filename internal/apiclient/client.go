@@ -164,3 +164,25 @@ func (c *Client) RotateAPIKey(ctx context.Context) (string, error) {
 	}
 	return out.APIKey, nil
 }
+
+// WhoAmI returns the username of the account the client's saved API key
+// belongs to. `cubeship registry login` uses this to learn the username
+// to log the registry in as — the credentials file only ever stores the
+// key itself.
+func (c *Client) WhoAmI(ctx context.Context) (string, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/users/me", nil)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("whoami: unexpected status %d", resp.StatusCode)
+	}
+	var out struct {
+		Username string `json:"username"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", err
+	}
+	return out.Username, nil
+}

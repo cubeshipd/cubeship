@@ -186,3 +186,22 @@ func TestRotateAPIKey(t *testing.T) {
 		t.Fatalf("expected rotated-key-456, got %q", key)
 	}
 }
+
+func TestWhoAmI(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/users/me" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		json.NewEncoder(w).Encode(map[string]any{"username": "lucas", "is_super_admin": false})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	username, err := c.WhoAmI(context.Background())
+	if err != nil {
+		t.Fatalf("WhoAmI: %v", err)
+	}
+	if username != "lucas" {
+		t.Fatalf("expected lucas, got %q", username)
+	}
+}

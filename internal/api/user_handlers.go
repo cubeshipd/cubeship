@@ -132,3 +132,20 @@ func (s *Server) handleRotateAPIKey(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"api_key": key})
 }
+
+// handleWhoAmI reports the identity of the caller's own API key. The
+// CLI's `registry login` uses this to learn the username to
+// authenticate the registry's per-user token auth with — the saved
+// credentials file only ever stored the key itself, never the
+// username.
+func (s *Server) handleWhoAmI(w http.ResponseWriter, r *http.Request) {
+	user := userFromContext(r.Context())
+	if user == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"username":       user.Username,
+		"is_super_admin": user.IsSuperAdmin,
+	})
+}

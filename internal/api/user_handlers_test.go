@@ -90,3 +90,35 @@ func TestRotateAPIKeyIssuesWorkingKeyAndRevokesOld(t *testing.T) {
 		t.Fatalf("expected the new key to work, got %d", newRec.Code)
 	}
 }
+
+func TestWhoAmIReturnsCallerUsername(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	memberKey := testAPIKeyFor(t, srv.store, false)
+
+	req := authedRequest(http.MethodGet, "/users/me", nil, memberKey)
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var got map[string]any
+	json.Unmarshal(rec.Body.Bytes(), &got)
+	if got["is_super_admin"] != false {
+		t.Fatalf("expected is_super_admin false, got %v", got["is_super_admin"])
+	}
+	if got["username"] == "" || got["username"] == nil {
+		t.Fatalf("expected a non-empty username, got %v", got["username"])
+	}
+}
+
+func TestWhoAmIRejectsUnauthenticated(t *testing.T) {
+	srv, _, _ := newTestServer(t)
+	req := httptest.NewRequest(http.MethodGet, "/users/me", nil)
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+}
