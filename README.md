@@ -106,11 +106,61 @@ cubeship user create bob --org acme --role member
 cubeship user create alice --org globex --role member
 
 cubeship org list                  # orgs you belong to (all of them, if super-admin)
-cubeship user api-key rotate       # revoke your key, get a new one
+cubeship user api-key rotate       # replace the key you're using right now
 ```
 
 Slugs are what the registry paths are built from, so they must be
 lowercase letters, digits and dashes (`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`).
+
+### Multiple API keys
+
+You aren't limited to one key: hold as many independent, named keys as
+you like — one your terminal uses day to day, another for an MCP client
+(see [MCP](#mcp)), another for a script. Rotating or revoking one never
+touches any other.
+
+```sh
+cubeship user api-key create mcp   # prints a new key, shown once
+cubeship user api-key list         # id, name, last used, which one you're using now
+cubeship user api-key revoke 3     # by id from the list above; refused if it's your last key
+```
+
+## MCP
+
+The daemon serves an [MCP](https://modelcontextprotocol.io) server at
+`https://api.<domain>/mcp` (streamable HTTP transport). Everything the
+CLI can do — organizations, projects, environments, apps, deploys, env
+vars, logs, even your own API keys — is available as an MCP tool, so an
+agent (Claude Code, for instance) can operate Cubeship directly.
+
+Authentication is the same bearer API key as the rest of the API: send
+`Authorization: Bearer <key>`. Give the MCP client its own key rather
+than reusing your terminal's:
+
+```sh
+cubeship user api-key create mcp
+```
+
+Point your MCP client at `https://api.<domain>/mcp` with that key as
+its bearer token — consult the client's own docs for exactly where a
+custom header goes (for `claude mcp add`, `--header "Authorization: Bearer <key>"`).
+Every tool call is authorized exactly like the equivalent HTTP request:
+a member can create and deploy apps in their orgs, only an org admin can
+create projects or environments or set project/environment env vars,
+and only a super-admin can create organizations.
+
+A few tools are worth calling out:
+
+- `get_app_logs` returns the last 200 lines by default (`tail` overrides
+  this), not the entire history — logs can be long, and an agent almost
+  always wants the recent, relevant part.
+- `rotate_my_api_key` replaces the key the MCP session is using *right
+  now*. That session's next call fails with the old key — expected, but
+  worth knowing before calling it on a whim.
+- Registry push/pull auth (`docker login`, `docker push`) is not
+  reachable through MCP: it runs on your own machine's Docker client,
+  which the daemon has no way to drive remotely. `cubeship registry
+  login` still covers that.
 
 ## Projects, environments and env vars
 
