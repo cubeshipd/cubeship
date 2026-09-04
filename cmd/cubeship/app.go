@@ -63,23 +63,74 @@ func newAppCmd() *cobra.Command {
 	createCmd.Flags().StringVar(&environment, "env", "", `environment slug within the project (default "production")`)
 
 	var tag string
+	var detach bool
 	deployCmd := &cobra.Command{
 		Use:   "deploy <app>",
 		Short: "Manually redeploy an app from the given (or latest) image tag",
+		Long: "Redeploy an app from a tag already pushed to its registry path.\n\n" +
+			"The deploy runs on the daemon, not in this command — pressing\n" +
+			"Ctrl-C, or losing the connection, stops the waiting, not the\n" +
+			"deploy. Use \"app deployments\" to catch up on one you stopped\n" +
+			"watching.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			deployment, err := c.Deploy(context.Background(), args[0], tag)
+			if err != nil {
+				return err
+			}
+			if detach {
+				fmt.Printf("Deploy %d of %s started. Check it with: cubeship app deployments %s\n",
+					deployment.ID, args[0], args[0])
+				return nil
+			}
+
+			fmt.Printf("Deploying %s from tag %s...\n", args[0], tag)
+			finished, err := c.WaitForDeployment(context.Background(), args[0], deployment.ID)
+			if err != nil {
+				return err
+			}
+			switch finished.Status {
+			case client.DeploymentSucceeded:
+				fmt.Printf("Deployed %s\n", args[0])
+				return nil
+			case client.DeploymentFailed:
+				return fmt.Errorf("deploy failed: %s", finished.Error)
+			default:
+				fmt.Printf("Deploy %d is still running. Check it with: cubeship app deployments %s\n",
+					finished.ID, args[0])
+				return nil
+			}
+		},
+	}
+	deployCmd.Flags().StringVar(&tag, "tag", "latest", "image tag to deploy")
+	deployCmd.Flags().BoolVar(&detach, "detach", false, "start the deploy and return without waiting for it")
+
+	deploymentsCmd := &cobra.Command{
+		Use:   "deployments <app>",
+		Short: "Show an app's recent deploys and how each one went",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := newAPIClient()
 			if err != nil {
 				return err
 			}
-			if err := c.Deploy(context.Background(), args[0], tag); err != nil {
+			history, err := c.Deployments(context.Background(), args[0])
+			if err != nil {
 				return err
 			}
-			fmt.Printf("Deployed %s\n", args[0])
-			return nil
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "ID\tSTATUS\tWHEN\tIMAGE\tERROR")
+			for _, d := range history {
+				fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n",
+					d.ID, d.Status, d.CreatedAt.Format("2006-01-02 15:04"), d.Image, d.Error)
+			}
+			return w.Flush()
 		},
 	}
-	deployCmd.Flags().StringVar(&tag, "tag", "latest", "image tag to deploy")
 
 	listCmd := &cobra.Command{
 		Use:   "list",
@@ -174,6 +225,6 @@ func newAppCmd() *cobra.Command {
 	}
 	deleteCmd.Flags().BoolVar(&deleteConfirmed, "yes", false, "confirm that the app should be deleted")
 
-	appCmd.AddCommand(createCmd, listCmd, getCmd, deployCmd, deleteCmd, logsCmd, appEnvCommands())
+	appCmd.AddCommand(createCmd, listCmd, getCmd, deployCmd, deploymentsCmd, deleteCmd, logsCmd, appEnvCommands())
 	return appCmd
 }

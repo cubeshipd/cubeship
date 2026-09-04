@@ -1,9 +1,12 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"log"
 	"net/http"
+	"strconv"
+	"time"
 
 	"cubeship/internal/envvar"
 	"cubeship/internal/platform/httpx"
@@ -65,6 +68,8 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET "+appPath, auth(http.HandlerFunc(h.get)))
 	r.Handle("DELETE "+appPath, auth(http.HandlerFunc(h.delete)))
 	r.Handle("POST "+appPath+"/deploy", auth(http.HandlerFunc(h.deploy)))
+	r.Handle("GET "+appPath+"/deployments", auth(http.HandlerFunc(h.deployments)))
+	r.Handle("GET "+appPath+"/deployments/{id}", auth(http.HandlerFunc(h.deployment)))
 	r.Handle("GET "+appPath+"/env", auth(http.HandlerFunc(h.getEnv)))
 	r.Handle("PUT "+appPath+"/env", auth(http.HandlerFunc(h.setEnv)))
 	r.Handle("PATCH "+appPath+"/env", auth(http.HandlerFunc(h.mergeEnv)))
@@ -91,6 +96,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrNoContainer):
 		http.Error(w, "app has no running container yet", http.StatusConflict)
+	case errors.Is(err, ErrDeploymentNotFound):
+		http.Error(w, err.Error(), http.StatusNotFound)
 	default:
 		project.WriteError(w, err)
 	}
@@ -146,6 +153,24 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// DeploymentResponse is one deploy attempt, as the API reports it.
+type DeploymentResponse struct {
+	ID        int64     `json:"id"`
+	Status    string    `json:"status"`
+	Image     string    `json:"image"`
+	Error     string    `json:"error,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func toDeploymentResponse(d *Deployment) DeploymentResponse {
+	return DeploymentResponse{
+		ID: d.ID, Status: d.Status, Image: d.ImageRef, Error: d.Error, CreatedAt: d.CreatedAt,
+	}
+}
+
+// deploy accepts a redeploy and answers 202 with the deployment that
+// records it. The work runs detached, so hanging up here does not stop
+// it — poll the deployment to find out how it went.
 func (h *Handler) deploy(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Tag string `json:"tag"`
@@ -153,17 +178,56 @@ func (h *Handler) deploy(w http.ResponseWriter, r *http.Request) {
 	// An empty or absent body is fine; Tag stays "" and defaults later.
 	_ = httpx.DecodeJSON(r, &req)
 
-	if _, err := h.svc.Deploy(r.Context(), user.FromContext(r.Context()), refFrom(r), req.Tag); err != nil {
-		if errors.Is(err, ErrNotFound) {
-			WriteError(w, err)
-			return
-		}
-		// The app exists and the caller may deploy it; the deploy itself
-		// failed, which is an upstream problem, not a bad request.
-		httpx.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
+	_, deployment, err := h.svc.Deploy(r.Context(), user.FromContext(r.Context()), refFrom(r), req.Tag)
+	if err != nil {
+		WriteError(w, err)
 		return
 	}
-	w.WriteHeader(http.StatusOK)
+	httpx.WriteJSON(w, http.StatusAccepted, toDeploymentResponse(deployment))
+}
+
+func (h *Handler) deployments(w http.ResponseWriter, r *http.Request) {
+	history, err := h.svc.Deployments(r.Context(), user.FromContext(r.Context()), refFrom(r))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	out := make([]DeploymentResponse, 0, len(history))
+	for _, d := range history {
+		out = append(out, toDeploymentResponse(d))
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+// deployment reads one deploy. `?wait=true` holds the response open
+// until it finishes, which is what a CLI wants — but the deploy runs
+// regardless of whether anyone waits.
+func (h *Handler) deployment(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid deployment id", http.StatusBadRequest)
+		return
+	}
+
+	ctx, caller, ref := r.Context(), user.FromContext(r.Context()), refFrom(r)
+
+	var d *Deployment
+	if r.URL.Query().Get("wait") == "true" {
+		d, err = h.svc.WaitForDeployment(ctx, caller, ref, id)
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			// The wait ran out, not the deploy. Hand back where it had
+			// got to and let the caller ask again.
+			httpx.WriteJSON(w, http.StatusOK, toDeploymentResponse(d))
+			return
+		}
+	} else {
+		d, err = h.svc.Deployment(ctx, caller, ref, id)
+	}
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toDeploymentResponse(d))
 }
 
 // EnvResponse is what reading an app's variables returns: the ones set

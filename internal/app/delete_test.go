@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"slices"
@@ -52,9 +53,16 @@ func TestDeletingAnAppStopsItsContainerFirst(t *testing.T) {
 		"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
 	}, key, &created), http.StatusCreated)
 
-	// Give it a container by deploying once.
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost,
-		"/apps/"+created.Reference+"/deploy", map[string]string{"tag": "v1"}, key), http.StatusOK)
+	// Give it a container by deploying once. The deploy is accepted
+	// immediately and runs detached, so wait for it before deleting.
+	var deployment struct {
+		ID int64 `json:"id"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost,
+		"/apps/"+created.Reference+"/deploy", map[string]string{"tag": "v1"}, key, &deployment),
+		http.StatusAccepted)
+	servertest.RequireStatus(t, f.Do(t, http.MethodGet, fmt.Sprintf(
+		"/apps/%s/deployments/%d?wait=true", created.Reference, deployment.ID), nil, key), http.StatusOK)
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodDelete, "/apps/"+created.Reference, nil, key), http.StatusOK)
 

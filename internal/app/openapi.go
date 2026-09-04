@@ -2,6 +2,7 @@ package app
 
 import (
 	"maps"
+	"strconv"
 
 	"cubeship/internal/platform/openapi"
 	"cubeship/internal/project"
@@ -30,6 +31,14 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			Description: "A deployable service. Pushing a tag to an app's registry path is what deploys it; these endpoints register apps, configure them, and redeploy on demand.",
 		}},
 		Schemas: mergeSchemas(project.EnvSchemas(), map[string]*openapi.Schema{
+			"Deployment": openapi.Object(map[string]*openapi.Schema{
+				"id":         openapi.Integer("Poll this deploy at .../deployments/{id}."),
+				"status":     {Type: "string", Enum: []string{"pending", "succeeded", "failed"}},
+				"image":      openapi.String("The reference the daemon pulled."),
+				"error":      openapi.String("Why it failed, when it did."),
+				"created_at": {Type: "string", Format: "date-time"},
+			}, "id", "status", "image", "created_at"),
+
 			"App": openapi.Object(map[string]*openapi.Schema{
 				"reference":   openapi.String("The app's identifier, org/project/environment/name — also its registry repository path."),
 				"name":        openapi.String("Unique within its environment, not across the instance."),
@@ -105,7 +114,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"post": {
 					OperationID: "deployApp",
 					Summary:     "Redeploy an app",
-					Description: "Deploys a tag already pushed to the app's registry path. The daemon pulls the image, starts a container, waits for it to look healthy, and only then retires the previous one — so a bad image never takes down a working app.\n\n**This request blocks for the whole deploy**, which includes several seconds of health checks. Use a client timeout of at least a few minutes.",
+					Description: "Deploys a tag already pushed to the app's registry path. The daemon pulls the image, starts a container, waits for it to look healthy, and only then retires the previous one — so a bad image never takes down a working app.\n\n**Returns immediately.** The deploy runs detached from this request, so hanging up does not stop it. Poll the returned deployment — `GET .../deployments/{id}?wait=true` holds the response open until it finishes — to find out how it went.",
 					Tags:        []string{"Apps"},
 					Parameters:  refParams,
 					RequestBody: &openapi.RequestBody{
@@ -115,11 +124,41 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						})),
 					},
 					Responses: openapi.Responses{
-						"200": openapi.Empty("The new container is running and the old one is retired."),
+						"202": openapi.JSONResponse("The deploy was accepted and is running.", openapi.Ref("Deployment")),
 						"401": openapi.Unauthorized,
 						"404": openapi.NotFound,
-						"502": openapi.JSONResponse("The deploy failed — the image could not be pulled, or the container never became healthy. The app is untouched.",
-							openapi.Object(map[string]*openapi.Schema{"error": openapi.String("What went wrong.")}, "error")),
+					},
+				},
+			},
+			appPath + "/deployments": {
+				"get": {
+					OperationID: "listDeployments",
+					Summary:     "List an app's deploy history",
+					Description: "Newest first, capped at the most recent " + strconv.Itoa(MaxDeploymentHistory) + ".",
+					Tags:        []string{"Apps"},
+					Parameters:  refParams,
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The app's recent deploys.", openapi.Array(openapi.Ref("Deployment"))),
+						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
+					},
+				},
+			},
+			appPath + "/deployments/{id}": {
+				"get": {
+					OperationID: "getDeployment",
+					Summary:     "Check one deploy",
+					Description: "How a deploy went, or how far it has got.\n\nWith `wait=true` the response is held open until the deploy finishes. If your own timeout runs out first you get the deployment as it stands and can ask again — the deploy is not affected either way.",
+					Tags:        []string{"Apps"},
+					Parameters: append(refParams,
+						openapi.PathParam("id", "The deployment's id, from the deploy response."),
+						openapi.QueryParam("wait", `"true" to hold the response open until the deploy finishes.`),
+					),
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The deployment.", openapi.Ref("Deployment")),
+						"400": openapi.TextResponse("The id is not a number."),
+						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
 					},
 				},
 			},

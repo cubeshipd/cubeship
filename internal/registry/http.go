@@ -5,7 +5,6 @@ import (
 	"crypto/subtle"
 	"log"
 	"net/http"
-	"time"
 
 	"cubeship/internal/app"
 	"cubeship/internal/platform/httpx"
@@ -15,11 +14,6 @@ import (
 // scopeContext is context.Context; named so authorizeScope's signature
 // reads as "the request's context" without importing context there.
 type scopeContext = context.Context
-
-// webhookDeployTimeout bounds a deploy kicked off by a registry push. The
-// webhook acks immediately, so this is not the registry's notification
-// timeout — it just stops a wedged deploy running forever.
-const webhookDeployTimeout = 10 * time.Minute
 
 // Routes registers the two endpoints the registry container itself calls.
 // Neither sits behind the API's bearer-key middleware — the registry is
@@ -32,10 +26,10 @@ func (h *Handler) Routes(r *httpx.Router) {
 	r.HandleInternalFunc("POST /hooks/registry", h.webhook)
 }
 
-// WaitForDeploys blocks until every webhook-triggered deploy has
+// WaitForDeploys blocks until every deploy the daemon started has
 // finished. Tests use it; the daemon does not.
 func (h *Handler) WaitForDeploys() {
-	h.deployWG.Wait()
+	h.apps.Orchestrator().Wait()
 }
 
 // issueToken implements the realm the registry's config.yml points at:
@@ -135,22 +129,12 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue // no app tracks this repository
 		}
-		// ...but the daemon pulls over loopback.
-		h.deployInBackground(a.ID, a.Name, app.LocalPullRef(image, ev.Target.Tag))
+		// ...but the daemon pulls over loopback. Start returns as soon as
+		// the deploy is recorded; the registry's notification client
+		// gives up after 5s, and a real deploy takes far longer.
+		if _, err := h.apps.Orchestrator().Start(r.Context(), a.ID, app.LocalPullRef(image, ev.Target.Tag)); err != nil {
+			log.Printf("registry webhook: could not start a deploy for %s: %v", a.Name, err)
+		}
 	}
 	w.WriteHeader(http.StatusOK)
-}
-
-// deployInBackground runs a deploy detached from the request that
-// triggered it, so the caller's timeout can't cancel it.
-func (h *Handler) deployInBackground(appID int64, appName, pullRef string) {
-	h.deployWG.Add(1)
-	go func() {
-		defer h.deployWG.Done()
-		ctx, cancel := context.WithTimeout(context.Background(), webhookDeployTimeout)
-		defer cancel()
-		if err := h.apps.Orchestrator().Deploy(ctx, appID, pullRef); err != nil {
-			log.Printf("registry webhook: deploy failed for %s: %v", appName, err)
-		}
-	}()
 }

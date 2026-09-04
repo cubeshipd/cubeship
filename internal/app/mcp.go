@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"time"
 
 	"cubeship/internal/envvar"
 	"cubeship/internal/org"
@@ -50,7 +51,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.get)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "deploy_app",
-		Description: `Manually redeploy an app from an image tag already pushed to its registry path (tag defaults to "latest"). Requires member role in the organization.`,
+		Description: `Manually redeploy an app from an image tag already pushed to its registry path (tag defaults to "latest"). Waits for the deploy to finish and reports the outcome; if this call times out first, the deploy carries on regardless — check it with get_app_deployments. Requires member role in the organization.`,
 	}, t.deploy)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_app_env",
@@ -60,6 +61,10 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Name:        "set_app_env",
 		Description: "Add, change or remove an app's own environment variables. Only the keys you name are touched — variables you don't mention are left alone. These are layered on top of (and override) the app's environment's and project's variables. Requires member role in the organization.",
 	}, t.setEnv)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "get_app_deployments",
+		Description: "List an app's recent deploys, newest first: whether each succeeded, and why it failed if it did. A deploy runs detached from the call that started it, so this is how you find out how one ended.",
+	}, t.deployments)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_app",
 		Description: "Delete an app and stop the container serving it. Images already pushed stay in the registry. This cannot be undone. Requires member role in the organization.",
@@ -123,11 +128,51 @@ func (t *Tools) deploy(ctx context.Context, _ *mcp.CallToolRequest, in deployInp
 	if err != nil {
 		return nil, user.ActionResult{}, err
 	}
-	a, err := t.svc.Deploy(ctx, t.caller, ref, tag)
+	a, deployment, err := t.svc.Deploy(ctx, t.caller, ref, tag)
 	if err != nil {
 		return nil, user.ActionResult{}, err
 	}
+
+	// The deploy runs detached, so waiting here is a convenience, not a
+	// dependency: if this call times out the deploy carries on, and
+	// get_app_deployments reports how it ended.
+	finished, waitErr := t.svc.WaitForDeployment(ctx, t.caller, ref, deployment.ID)
+	if waitErr != nil {
+		return nil, user.ActionResult{Message: fmt.Sprintf(
+			"deploy %d of %s from tag %s is still running; check it with get_app_deployments",
+			deployment.ID, a.Name, tag)}, nil
+	}
+	if finished.Status == DeploymentFailed {
+		return nil, user.ActionResult{}, fmt.Errorf("deploy of %s from tag %s failed: %s", a.Name, tag, finished.Error)
+	}
 	return nil, user.ActionResult{Message: fmt.Sprintf("deployed %s from tag %s", a.Name, tag)}, nil
+}
+
+type deploymentOutput struct {
+	ID        int64  `json:"id"`
+	Status    string `json:"status" jsonschema:"pending, succeeded or failed"`
+	Image     string `json:"image"`
+	Error     string `json:"error,omitempty" jsonschema:"why it failed, when it did"`
+	CreatedAt string `json:"created_at"`
+}
+
+func (t *Tools) deployments(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, []deploymentOutput, error) {
+	ref, err := ParseReference(in.App)
+	if err != nil {
+		return nil, nil, err
+	}
+	history, err := t.svc.Deployments(ctx, t.caller, ref)
+	if err != nil {
+		return nil, nil, err
+	}
+	out := make([]deploymentOutput, 0, len(history))
+	for _, d := range history {
+		out = append(out, deploymentOutput{
+			ID: d.ID, Status: d.Status, Image: d.ImageRef, Error: d.Error,
+			CreatedAt: d.CreatedAt.Format(time.RFC3339),
+		})
+	}
+	return nil, out, nil
 }
 
 func (t *Tools) delete(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, user.ActionResult, error) {

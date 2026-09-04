@@ -31,8 +31,10 @@ type App struct {
 	CreatedAt     time.Time
 }
 
-// Deployment is one attempt to run a new image for an app, successful or
-// not. It is the audit trail behind an app's current state.
+// Deployment is one attempt to run a new image for an app. It is created
+// when the deploy is accepted and finished when it ends, so it is also
+// how a caller finds out how a deploy went after the request that
+// started it is long gone.
 type Deployment struct {
 	ID        int64
 	AppID     int64
@@ -40,6 +42,18 @@ type Deployment struct {
 	Status    string
 	Error     string
 	CreatedAt time.Time
+}
+
+// Deployment statuses.
+const (
+	DeploymentPending   = "pending"
+	DeploymentSucceeded = "succeeded"
+	DeploymentFailed    = "failed"
+)
+
+// Done reports whether the deployment has finished, either way.
+func (d *Deployment) Done() bool {
+	return d.Status == DeploymentSucceeded || d.Status == DeploymentFailed
 }
 
 // Statuses an app can be in. "pending" is the initial state of an app
@@ -65,13 +79,14 @@ var (
 	// response never confirms that another organization's app exists.
 	ErrNotFound = errors.New("app not found")
 
-	// ErrAlreadyExists reports a name already taken.
-	//
-	// App names are unique across the whole instance today, not per
-	// environment — see the TODO on the apps table.
+	// ErrAlreadyExists reports a name already taken in that environment.
 	ErrAlreadyExists = errors.New("app already exists")
 
 	// ErrNoContainer reports an app that has never had an image pushed
 	// to it, so there is nothing to read logs from.
 	ErrNoContainer = errors.New("app has no running container")
+
+	// ErrDeploymentNotFound covers a deployment id that does not belong
+	// to the app it was asked for.
+	ErrDeploymentNotFound = errors.New("deployment not found")
 )

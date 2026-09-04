@@ -78,6 +78,8 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"DELETE /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}",
 		"GET /apps",
 		"GET /apps/{org}/{project}/{env}/{name}",
+		"GET /apps/{org}/{project}/{env}/{name}/deployments",
+		"GET /apps/{org}/{project}/{env}/{name}/deployments/{id}",
 		"GET /apps/{org}/{project}/{env}/{name}/env",
 		"GET /apps/{org}/{project}/{env}/{name}/logs",
 		"GET /orgs",

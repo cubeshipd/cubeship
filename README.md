@@ -78,6 +78,8 @@ which is also its registry path. Three parts means `production`:
 cubeship app list
 cubeship app get acme/web/myapp
 cubeship app logs acme/web/staging/myapp
+cubeship app deploy acme/web/myapp --tag v2   # waits, but the deploy is the daemon's
+cubeship app deployments acme/web/myapp       # how recent deploys went
 ```
 
 Names only have to be unique within their environment, so the same app

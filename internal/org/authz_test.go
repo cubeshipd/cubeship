@@ -84,6 +84,7 @@ func TestOutsiderCannotLearnThatAnAppExists(t *testing.T) {
 		{"logs", http.MethodGet, "/apps/acme/web/production/secret-app/logs", nil},
 		{"set env", http.MethodPut, "/apps/acme/web/production/secret-app/env", map[string]any{"vars": map[string]string{"A": "1"}}},
 		{"deploy", http.MethodPost, "/apps/acme/web/production/secret-app/deploy", map[string]string{"tag": "latest"}},
+		{"deployments", http.MethodGet, "/apps/acme/web/production/secret-app/deployments", nil},
 		{"delete", http.MethodDelete, "/apps/acme/web/production/secret-app", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

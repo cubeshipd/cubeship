@@ -191,16 +191,60 @@ func (s *Service) MergeEnv(ctx context.Context, caller *user.User, ref Reference
 	return a, s.Repo().MergeEnv(ctx, a.ID, set, unset)
 }
 
-// Deploy redeploys an app from a tag already pushed to its registry path.
-func (s *Service) Deploy(ctx context.Context, caller *user.User, ref Reference, tag string) (*Scoped, error) {
+// Deploy accepts a redeploy of an app from a tag already pushed to its
+// registry path, and returns the deployment recording it. The work runs
+// detached — see Orchestrator.Start — so the caller can stop waiting
+// without stopping the deploy.
+func (s *Service) Deploy(ctx context.Context, caller *user.User, ref Reference, tag string) (*Scoped, *Deployment, error) {
 	if tag == "" {
 		tag = "latest"
 	}
 	a, err := s.Resolve(ctx, caller, ref, org.RoleMember)
 	if err != nil {
+		return nil, nil, err
+	}
+	deployment, err := s.orch.Start(ctx, a.ID, LocalPullRef(a.Image, tag))
+	if err != nil {
+		return nil, nil, err
+	}
+	return a, deployment, nil
+}
+
+// WaitForDeployment blocks until a deployment finishes or ctx is done.
+// Abandoning the wait does not abandon the deploy.
+func (s *Service) WaitForDeployment(ctx context.Context, caller *user.User, ref Reference, deploymentID int64) (*Deployment, error) {
+	a, err := s.Resolve(ctx, caller, ref, org.RoleMember)
+	if err != nil {
 		return nil, err
 	}
-	return a, s.orch.Deploy(ctx, a.ID, LocalPullRef(a.Image, tag))
+	return s.orch.WaitFor(ctx, a.ID, deploymentID)
+}
+
+// Deployment reads one of an app's deployments.
+func (s *Service) Deployment(ctx context.Context, caller *user.User, ref Reference, deploymentID int64) (*Deployment, error) {
+	a, err := s.Resolve(ctx, caller, ref, org.RoleMember)
+	if err != nil {
+		return nil, err
+	}
+	d, err := s.Repo().DeploymentByID(ctx, a.ID, deploymentID)
+	if err != nil {
+		return nil, ErrDeploymentNotFound
+	}
+	return d, nil
+}
+
+// MaxDeploymentHistory bounds how much of an app's history a listing
+// returns. Deploy history grows without limit; nobody reads past the
+// recent ones.
+const MaxDeploymentHistory = 50
+
+// Deployments returns an app's recent deploy history, newest first.
+func (s *Service) Deployments(ctx context.Context, caller *user.User, ref Reference) ([]*Deployment, error) {
+	a, err := s.Resolve(ctx, caller, ref, org.RoleMember)
+	if err != nil {
+		return nil, err
+	}
+	return s.Repo().ListDeployments(ctx, a.ID, MaxDeploymentHistory)
 }
 
 // Logs returns an app's container output. tail limits it to that many

@@ -11,6 +11,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http/httptest"
 	"testing"
@@ -20,6 +21,7 @@ import (
 	"cubeship/internal/platform/authkey"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/database/dbtest"
+	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/project"
 	"cubeship/internal/server"
 	"cubeship/internal/user"
@@ -57,11 +59,32 @@ type Fixture struct {
 // New returns a server wired over an empty database, with a super-admin
 // and an "acme" organization holding a "web" project.
 //
-// docker may be nil for tests that never deploy; a nil client panics only
-// if something actually calls it, which no HTTP-level test does.
+// Docker is a stub that refuses every operation, so a test that deploys
+// without meaning to gets a failed deployment rather than a panic in a
+// background goroutine. Pass a real fake to NewWithDocker to exercise a
+// deploy.
 func New(t testing.TB) *Fixture {
 	t.Helper()
-	return NewWithDocker(t, nil)
+	return NewWithDocker(t, noDocker{})
+}
+
+// noDocker stands in for a Docker daemon that isn't there.
+type noDocker struct{}
+
+var errNoDocker = errors.New("this test has no Docker configured")
+
+func (noDocker) PullImage(context.Context, string) error { return errNoDocker }
+func (noDocker) CreateContainer(context.Context, dockerx.ContainerOpts) (string, error) {
+	return "", errNoDocker
+}
+func (noDocker) StartContainer(context.Context, string) error  { return errNoDocker }
+func (noDocker) StopContainer(context.Context, string) error   { return errNoDocker }
+func (noDocker) RemoveContainer(context.Context, string) error { return errNoDocker }
+func (noDocker) IsRunning(context.Context, string) (bool, error) {
+	return false, errNoDocker
+}
+func (noDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {
+	return nil, errNoDocker
 }
 
 // NewWithDocker is New with a Docker client (usually a fake) wired into

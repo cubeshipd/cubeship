@@ -1,5 +1,19 @@
 # Upgrading an existing install
 
+## From a release where deploying blocked the request
+
+`POST /apps/.../deploy` used to run the deploy inline and answer 200 or
+502 when it ended. It now answers **202** with a deployment id, and the
+work runs detached — a client that hangs up no longer kills a deploy
+halfway.
+
+If you call the API directly, follow the deployment:
+`GET /apps/<ref>/deployments/{id}?wait=true` holds the response open
+until it finishes, and `GET /apps/<ref>/deployments` lists recent ones.
+`cubeship app deploy` still waits and still prints the outcome, so
+nothing changes at the command line except that Ctrl-C now stops the
+watching rather than the deploy.
+
 ## From a release where app names were unique instance-wide
 
 An app's name used to be unique across the whole Cubeship, which made

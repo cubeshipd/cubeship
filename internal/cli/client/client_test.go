@@ -331,3 +331,47 @@ func TestClientReadsEnvAtEveryLevel(t *testing.T) {
 		t.Errorf("effective sources are %v; SHARED should win at the environment", effective)
 	}
 }
+
+// A deploy is accepted, not performed, by the request that asks for it.
+// The client has to reflect that: Deploy returns as soon as the daemon
+// has recorded the attempt, and waiting is a separate call that can be
+// abandoned without abandoning the deploy.
+func TestClientDeployReturnsADeploymentToFollow(t *testing.T) {
+	c, _ := connect(t)
+	ctx := context.Background()
+
+	created, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", "")
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+
+	deployment, err := c.Deploy(ctx, created.Reference, "v1")
+	if err != nil {
+		t.Fatalf("Deploy: %v", err)
+	}
+	if deployment.ID == 0 {
+		t.Fatal("Deploy returned no deployment id to follow")
+	}
+
+	// The fixture has no Docker, so the deploy fails — which is the
+	// point: the failure is reported through the deployment, not by the
+	// request that started it.
+	finished, err := c.WaitForDeployment(ctx, created.Reference, deployment.ID)
+	if err != nil {
+		t.Fatalf("WaitForDeployment: %v", err)
+	}
+	if !finished.Done() {
+		t.Fatalf("the deploy is %q after waiting for it", finished.Status)
+	}
+	if finished.Status == client.DeploymentFailed && finished.Error == "" {
+		t.Error("a failed deploy came back with no reason")
+	}
+
+	history, err := c.Deployments(ctx, created.Reference)
+	if err != nil {
+		t.Fatalf("Deployments: %v", err)
+	}
+	if len(history) != 1 || history[0].ID != deployment.ID {
+		t.Fatalf("the history should hold exactly the deploy just made, got %v", history)
+	}
+}

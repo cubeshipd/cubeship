@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -43,12 +44,21 @@ type Orchestrator struct {
 	HealthCheckSuccesses int
 	HealthCheckInterval  time.Duration
 
-	// appLocks serializes Deploy per app name. Without it two pushes in
-	// quick succession both read the same app.ContainerID, both create a
+	// appLocks serializes deploys per app. Without it two pushes in quick
+	// succession both read the same app.ContainerID, both create a
 	// container, and the loser's container is leaked while Traefik load
 	// balances two versions under one router name.
-	appLocks sync.Map // app name -> *sync.Mutex
+	appLocks sync.Map // app id -> *sync.Mutex
+
+	// running tracks deploys that outlive the request that started them.
+	// Tests wait on it; the daemon does not.
+	running sync.WaitGroup
 }
+
+// DeployTimeout bounds a detached deploy. It is not any client's
+// timeout — nobody is waiting on the connection any more — it only stops
+// a wedged deploy running forever.
+const DeployTimeout = 10 * time.Minute
 
 func NewOrchestrator(db *database.DB, d DockerAPI) *Orchestrator {
 	return &Orchestrator{
@@ -70,7 +80,92 @@ func (o *Orchestrator) lockApp(appID int64) *sync.Mutex {
 	return mu.(*sync.Mutex)
 }
 
-// Deploy pulls imageRef, starts a container from it, waits for it to look
+// Start accepts a deploy and returns immediately with the deployment
+// that records it. The work runs detached, on a context of its own.
+//
+// Detaching is the point: a deploy takes minutes — a pull, a container
+// start, several seconds of health checks — and used to run on the
+// request's context, so a client that timed out or hung up killed it
+// halfway, sometimes after the new container was already running. The
+// caller now polls the returned deployment instead, and can stop
+// watching whenever it likes.
+func (o *Orchestrator) Start(ctx context.Context, appID int64, imageRef string) (*Deployment, error) {
+	// Resolve first, so asking to deploy something that isn't there is
+	// an error the caller sees rather than a background failure.
+	if _, err := o.apps.ByID(ctx, appID); err != nil {
+		return nil, ErrNotFound
+	}
+	deployment, err := o.apps.StartDeployment(ctx, appID, imageRef)
+	if err != nil {
+		return nil, err
+	}
+
+	o.running.Add(1)
+	go func() {
+		defer o.running.Done()
+		// A fresh context: the request that asked for this may already
+		// be gone, and that must not matter.
+		ctx, cancel := context.WithTimeout(context.Background(), DeployTimeout)
+		defer cancel()
+		o.run(ctx, appID, imageRef, deployment.ID)
+	}()
+	return deployment, nil
+}
+
+// run performs one detached deploy and records how it ended.
+//
+// It recovers, because this runs on a goroutine of its own: an
+// unrecovered panic here would take the whole daemon down, and with it
+// every app it is proxying — a far worse outcome than one failed deploy.
+// The panic is turned into the deployment's error so it is not lost.
+func (o *Orchestrator) run(ctx context.Context, appID int64, imageRef string, deploymentID int64) {
+	status, errMsg := DeploymentSucceeded, ""
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				status = DeploymentFailed
+				errMsg = fmt.Sprintf("the deploy panicked: %v", r)
+				log.Printf("deploy %s for app %d panicked: %v\n%s", imageRef, appID, r, debug.Stack())
+			}
+		}()
+		if err := o.deploy(ctx, appID, imageRef); err != nil {
+			status, errMsg = DeploymentFailed, err.Error()
+			log.Printf("deploy %s for app %d failed: %v", imageRef, appID, err)
+		}
+	}()
+
+	if err := o.apps.FinishDeployment(ctx, deploymentID, status, errMsg); err != nil {
+		log.Printf("could not record the outcome of deployment %d: %v", deploymentID, err)
+	}
+}
+
+// Wait blocks until every detached deploy has finished. Tests use it;
+// the daemon does not.
+func (o *Orchestrator) Wait() { o.running.Wait() }
+
+// WaitFor polls a deployment until it finishes or ctx is done. Giving up
+// on the wait does not give up on the deploy — that is what detaching
+// bought.
+func (o *Orchestrator) WaitFor(ctx context.Context, appID, deploymentID int64) (*Deployment, error) {
+	const poll = 250 * time.Millisecond
+	for {
+		d, err := o.apps.DeploymentByID(ctx, appID, deploymentID)
+		if err != nil {
+			return nil, ErrDeploymentNotFound
+		}
+		if d.Done() {
+			return d, nil
+		}
+		select {
+		case <-ctx.Done():
+			return d, ctx.Err()
+		case <-time.After(poll):
+		}
+	}
+}
+
+// deploy pulls imageRef, starts a container from it, waits for it to look
 // healthy, and only then retires the app's previous container.
 //
 // imageRef is the reference the daemon itself can pull — for apps in the
@@ -82,7 +177,7 @@ func (o *Orchestrator) lockApp(appID int64) *sync.Mutex {
 //
 // Deploys of the same app are serialized; deploys of different apps run
 // concurrently.
-func (o *Orchestrator) Deploy(ctx context.Context, appID int64, imageRef string) error {
+func (o *Orchestrator) deploy(ctx context.Context, appID int64, imageRef string) error {
 	mu := o.lockApp(appID)
 	mu.Lock()
 	defer mu.Unlock()
@@ -100,7 +195,6 @@ func (o *Orchestrator) Deploy(ctx context.Context, appID int64, imageRef string)
 	}
 
 	if err := o.docker.PullImage(ctx, imageRef); err != nil {
-		o.recordFailure(ctx, a.ID, imageRef, err.Error())
 		return fmt.Errorf("pull image: %w", err)
 	}
 
@@ -114,19 +208,16 @@ func (o *Orchestrator) Deploy(ctx context.Context, appID int64, imageRef string)
 		Network: Network,
 	})
 	if err != nil {
-		o.recordFailure(ctx, a.ID, imageRef, err.Error())
 		return fmt.Errorf("create container: %w", err)
 	}
 
 	if err := o.docker.StartContainer(ctx, newID); err != nil {
 		o.removeContainer(ctx, newID, "abandoning a container that would not start")
-		o.recordFailure(ctx, a.ID, imageRef, err.Error())
 		return fmt.Errorf("start container: %w", err)
 	}
 
 	if !o.waitHealthy(ctx, newID) {
 		o.removeContainer(ctx, newID, "abandoning a container that never became healthy")
-		o.recordFailure(ctx, a.ID, imageRef, "health check timed out")
 		return fmt.Errorf("health check timed out for container %s", newID)
 	}
 
@@ -136,11 +227,7 @@ func (o *Orchestrator) Deploy(ctx context.Context, appID int64, imageRef string)
 		// about it, so nothing will ever retire it. Remove it rather
 		// than leave two containers answering one router.
 		o.removeContainer(ctx, newID, "rolling back a deploy the database did not record")
-		o.recordFailure(ctx, a.ID, imageRef, err.Error())
 		return fmt.Errorf("update app container: %w", err)
-	}
-	if err := o.apps.RecordDeployment(ctx, a.ID, imageRef, "success", ""); err != nil {
-		log.Printf("deploy %s: could not record the successful deployment: %v", appName, err)
 	}
 
 	if oldContainerID != "" {
@@ -150,15 +237,6 @@ func (o *Orchestrator) Deploy(ctx context.Context, appID int64, imageRef string)
 		o.removeContainer(ctx, oldContainerID, "retiring the previous container")
 	}
 	return nil
-}
-
-// recordFailure writes a failed deployment row. The deploy has already
-// failed by the time this runs, so a further failure here is logged
-// rather than returned — it must not mask the error the caller needs.
-func (o *Orchestrator) recordFailure(ctx context.Context, appID int64, imageRef, msg string) {
-	if err := o.apps.RecordDeployment(ctx, appID, imageRef, "failed", msg); err != nil {
-		log.Printf("could not record the failed deployment of %s: %v", imageRef, err)
-	}
 }
 
 // removeContainer removes a container that should no longer exist. A

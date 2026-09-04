@@ -158,6 +158,22 @@ is unique only within its environment.
 validates every part as a slug, so a malformed reference can never reach
 a registry path or a router name.
 
+## Deploys are detached
+
+`Orchestrator.Start` records a `deployments` row, returns it, and does
+the work on a goroutine with a context of its own. Nothing that asks for
+a deploy is holding it up: a client that times out, hangs up, or presses
+Ctrl-C stops waiting, not deploying. Both entry points — `POST
+.../deploy` (202) and the registry webhook — go through it.
+
+That goroutine recovers. An unrecovered panic there would take the daemon
+down and every app it proxies with it, which is far worse than one failed
+deploy; the panic becomes the deployment's error instead.
+
+How a deploy went lives in its row, since nobody is on the connection to
+be told. `WaitFor` polls it, `?wait=true` does the same over HTTP, and
+abandoning either does not touch the deploy.
+
 ## Deleting
 
 Each level refuses while the one below it is occupied: an app can always

@@ -10,7 +10,6 @@ package registry
 import (
 	"crypto/rsa"
 	"strings"
-	"sync"
 
 	"cubeship/internal/app"
 	"cubeship/internal/org"
@@ -34,10 +33,6 @@ type Handler struct {
 	// until SetSigningKey is called; the endpoint 503s until then rather
 	// than issuing unsigned tokens.
 	signingKey *rsa.PrivateKey
-
-	// deployWG tracks deploys started by the webhook, which run in the
-	// background after the response is sent. Tests wait on it.
-	deployWG sync.WaitGroup
 }
 
 func NewHandler(users *user.Service, orgs *org.Service, apps *app.Service, webhookToken, registryHost string) *Handler {

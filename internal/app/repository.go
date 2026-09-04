@@ -150,19 +150,56 @@ func (r *Repository) MergeEnv(ctx context.Context, appID int64, set envvar.Map, 
 	return database.MergeJSONBMap(ctx, r.q, "apps", "env", appID, setJSON, unset)
 }
 
-func (r *Repository) RecordDeployment(ctx context.Context, appID int64, imageRef, status, errMsg string) error {
+const deploymentColumns = `id, app_id, image_ref, status, error, created_at`
+
+func scanDeployment(row scanner) (*Deployment, error) {
+	var d Deployment
+	if err := row.Scan(&d.ID, &d.AppID, &d.ImageRef, &d.Status, &d.Error, &d.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+// StartDeployment records a deploy that is about to begin. The row is
+// what a caller polls afterwards, so it has to exist before any work
+// does — including before the response that hands back its id.
+func (r *Repository) StartDeployment(ctx context.Context, appID int64, imageRef string) (*Deployment, error) {
+	row := r.q.QueryRowContext(ctx,
+		`INSERT INTO deployments (app_id, image_ref, status) VALUES ($1, $2, $3) RETURNING `+deploymentColumns,
+		appID, imageRef, DeploymentPending)
+	d, err := scanDeployment(row)
+	if err != nil {
+		return nil, fmt.Errorf("start deployment: %w", err)
+	}
+	return d, nil
+}
+
+// FinishDeployment writes a deploy's outcome.
+func (r *Repository) FinishDeployment(ctx context.Context, id int64, status, errMsg string) error {
 	if _, err := r.q.ExecContext(ctx,
-		`INSERT INTO deployments (app_id, image_ref, status, error) VALUES ($1, $2, $3, $4)`,
-		appID, imageRef, status, errMsg); err != nil {
-		return fmt.Errorf("record deployment: %w", err)
+		`UPDATE deployments SET status = $1, error = $2 WHERE id = $3`, status, errMsg, id); err != nil {
+		return fmt.Errorf("finish deployment: %w", err)
 	}
 	return nil
 }
 
-func (r *Repository) ListDeployments(ctx context.Context, appID int64) ([]*Deployment, error) {
+// DeploymentByID reads one deployment, scoped to its app so an id from
+// another app's history resolves to nothing.
+func (r *Repository) DeploymentByID(ctx context.Context, appID, id int64) (*Deployment, error) {
+	row := r.q.QueryRowContext(ctx,
+		`SELECT `+deploymentColumns+` FROM deployments WHERE id = $1 AND app_id = $2`, id, appID)
+	d, err := scanDeployment(row)
+	if err != nil {
+		return nil, fmt.Errorf("get deployment %d: %w", id, err)
+	}
+	return d, nil
+}
+
+// ListDeployments returns an app's deploy history, newest first.
+func (r *Repository) ListDeployments(ctx context.Context, appID int64, limit int) ([]*Deployment, error) {
 	rows, err := r.q.QueryContext(ctx,
-		`SELECT id, app_id, image_ref, status, error, created_at FROM deployments WHERE app_id = $1 ORDER BY id`,
-		appID)
+		`SELECT `+deploymentColumns+` FROM deployments WHERE app_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2`,
+		appID, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -170,11 +207,11 @@ func (r *Repository) ListDeployments(ctx context.Context, appID int64) ([]*Deplo
 
 	var out []*Deployment
 	for rows.Next() {
-		var d Deployment
-		if err := rows.Scan(&d.ID, &d.AppID, &d.ImageRef, &d.Status, &d.Error, &d.CreatedAt); err != nil {
+		d, err := scanDeployment(rows)
+		if err != nil {
 			return nil, err
 		}
-		out = append(out, &d)
+		out = append(out, d)
 	}
 	return out, rows.Err()
 }

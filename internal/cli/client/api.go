@@ -249,12 +249,48 @@ func appPath(ref string) string {
 	return "/apps/" + strings.Join(escaped, "/")
 }
 
-// Deploy redeploys an app and blocks until the new container is healthy
-// and the old one retired, which is why it gets DeployTimeout.
-func (c *Client) Deploy(ctx context.Context, ref, tag string) error {
-	_, err := request[noContent](ctx, c, "deploy", http.MethodPost,
-		appPath(ref)+"/deploy", map[string]string{"tag": tag}, http.StatusOK, DeployTimeout)
-	return err
+// Deployment is one deploy attempt.
+type Deployment struct {
+	ID        int64     `json:"id"`
+	Status    string    `json:"status"`
+	Image     string    `json:"image"`
+	Error     string    `json:"error,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Deployment statuses.
+const (
+	DeploymentPending   = "pending"
+	DeploymentSucceeded = "succeeded"
+	DeploymentFailed    = "failed"
+)
+
+// Done reports whether the deploy has finished, either way.
+func (d Deployment) Done() bool {
+	return d.Status == DeploymentSucceeded || d.Status == DeploymentFailed
+}
+
+// Deploy asks the daemon to redeploy an app and returns as soon as the
+// deploy is accepted. The work runs on the daemon, detached from this
+// request — use WaitForDeployment to follow it, or don't, and it still
+// runs.
+func (c *Client) Deploy(ctx context.Context, ref, tag string) (Deployment, error) {
+	return request[Deployment](ctx, c, "deploy", http.MethodPost,
+		appPath(ref)+"/deploy", map[string]string{"tag": tag}, http.StatusAccepted, DefaultTimeout)
+}
+
+// WaitForDeployment blocks until a deploy finishes, or until ctx runs
+// out — in which case it returns the deployment as it stands, with no
+// error, because giving up on watching is not a failure.
+func (c *Client) WaitForDeployment(ctx context.Context, ref string, id int64) (Deployment, error) {
+	return request[Deployment](ctx, c, "check deploy", http.MethodGet,
+		fmt.Sprintf("%s/deployments/%d?wait=true", appPath(ref), id), nil, http.StatusOK, DeployTimeout)
+}
+
+// Deployments returns an app's recent deploy history, newest first.
+func (c *Client) Deployments(ctx context.Context, ref string) ([]Deployment, error) {
+	return request[[]Deployment](ctx, c, "list deploys", http.MethodGet,
+		appPath(ref)+"/deployments", nil, http.StatusOK, DefaultTimeout)
 }
 
 func (c *Client) AppEnv(ctx context.Context, ref string) (EnvVars, error) {
