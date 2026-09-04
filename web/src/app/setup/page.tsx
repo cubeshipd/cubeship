@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { ActionButton } from "@/components/action-button";
+import { AuthLayout } from "@/components/auth-layout";
+import { ErrorAlert } from "@/components/error-alert";
+import { TextField } from "@/components/text-field";
 import { api, type SetupStatus } from "@/lib/api";
-import { Button, ErrorNote, Field, inputClass, message } from "@/components/ui";
+import { message } from "@/lib/errors";
 
 // The one moment an account can be created without one already
 // existing. If the instance is already claimed this page is a dead end,
@@ -23,8 +27,6 @@ export default function Setup() {
       .catch(() => setReady(true));
   }, [router]);
 
-  if (!ready) return null;
-
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -39,37 +41,40 @@ export default function Setup() {
     }
   }
 
+  if (!ready) return null;
+
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <form onSubmit={submit} className="w-full max-w-sm rounded-lg border border-line bg-panel p-6">
-        <h1 className="text-lg font-semibold">Claim this instance</h1>
-        <p className="mt-1 mb-5 text-sm text-muted">
-          This creates the only account that can be created without one. Everyone else is added
-          from inside.
-        </p>
-        <ErrorNote error={error} />
-        <Field label="Username" hint="Lowercase letters, digits and dashes. Also your docker login user.">
-          <input
-            className={inputClass}
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoFocus
-            autoComplete="username"
-          />
-        </Field>
-        <Field label="Password" hint="At least 12 characters.">
-          <input
-            className={inputClass}
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="new-password"
-          />
-        </Field>
-        <Button type="submit" variant="primary" disabled={busy} className="mt-2 w-full">
-          {busy ? "Creating…" : "Create account"}
-        </Button>
+    <AuthLayout
+      title="Claim this instance"
+      description="This creates the only account that can be created without one. Everyone else is added from inside."
+      footer="Setup closes the moment this succeeds. It cannot be run twice."
+    >
+      <form onSubmit={submit} className="space-y-5">
+        <ErrorAlert error={error} />
+
+        <TextField
+          label="Username"
+          hint="Lowercase letters, digits and dashes. Also your docker login user."
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoFocus
+          autoComplete="username"
+          spellCheck={false}
+          className="font-mono"
+        />
+        <TextField
+          label="Password"
+          hint="At least 12 characters."
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="new-password"
+        />
+
+        <ActionButton type="submit" busy={busy} size="lg" className="h-10 w-full">
+          {busy ? "Creating account" : "Create account"}
+        </ActionButton>
       </form>
-    </div>
+    </AuthLayout>
   );
 }

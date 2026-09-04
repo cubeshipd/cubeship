@@ -1,19 +1,251 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
-@theme {
-  --color-ink: #0f1115;
-  --color-panel: #171a21;
-  --color-raised: #1e222b;
-  --color-line: #2a2f3a;
-  --color-body: #e6e9ef;
-  --color-muted: #8b93a7;
-  --color-brand: #5b8cff;
-  --color-good: #3fb950;
-  --color-warn: #d29922;
-  --color-bad: #f85149;
+/* The dashboard is dark, and only dark. It is an infrastructure
+   console: it is read next to a terminal, for hours, and a light theme
+   would be a second palette to keep honest for no one who asked. The
+   `dark` variant is still wired to a class, because the shadcn
+   primitives carry `dark:` rules and <html> carries the class. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  /* Surfaces. Near-black with a blue cast, four steps apart by a hair:
+     depth comes from 1px lines and glow, never from shadow. */
+  --background: #05070a;
+  --card: #0a0e14;
+  --popover: #0d1219;
+  --secondary: #10161f;
+  --muted: #10161f;
+  --accent: #16202c;
+
+  /* Text, in three levels — a label, a value and a hint are three
+     different things, and flattening them is what makes a dense screen
+     read as one grey mass. */
+  --foreground: #d7e3ec;
+  --card-foreground: #d7e3ec;
+  --popover-foreground: #d7e3ec;
+  --secondary-foreground: #d7e3ec;
+  --accent-foreground: #d7e3ec;
+  --muted-foreground: #7d8fa3;
+  --subtle-foreground: #4e5c6b;
+
+  /* Lines. */
+  --border: #182430;
+  --border-strong: #263644;
+  --input: #1d2b38;
+
+  /* Cyan is the interface accent; magenta is the brand's second light,
+     used for glow and the mark and nothing you have to read. Neither
+     collides with the status colours below — which matters, because
+     green, amber and red already mean running, deploying and failed. */
+  --primary: #2de2e6;
+  --primary-foreground: #03151a;
+  --ring: #2de2e6;
+  --magenta: #ff2e88;
+
+  --success: #8dff5a;
+  --warning: #ffb020;
+  --destructive: #ff2e5b;
+  --destructive-foreground: #ffffff;
+
+  /* Square. Every corner in the interface is 90°; the only round things
+     left are status dots, which read as indicator lamps. */
+  --radius: 0px;
 }
 
-body {
-  background: var(--color-ink);
-  color: var(--color-body);
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle-foreground: var(--subtle-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-magenta: var(--magenta);
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --font-sans: var(--font-chakra), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jbmono), ui-monospace, SFMono-Regular, monospace;
+
+  /* The shadcn primitives reach for rounded-sm … rounded-4xl by name.
+     Zeroing the scale squares every one of them at once, rather than
+     one className at a time. */
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+  --radius-4xl: 0px;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+  }
+
+  /* Identifiers — references, image names, hosts, commands — are typed
+     and compared character by character, so they are set in mono
+     everywhere. Ligatures off so `->` and `!=` stay countable. */
+  code,
+  kbd,
+  pre,
+  samp {
+    font-family: var(--font-mono);
+    font-variant-ligatures: none;
+  }
+
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 35%, transparent);
+    color: var(--foreground);
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--background);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border-strong);
+    border: 2px solid var(--background);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--primary) 55%, var(--border-strong));
+  }
+}
+
+/* Everything below themes the generated shadcn primitives through their
+   `data-slot` attributes, so `src/components/ui/` stays untouched and a
+   re-run of `shadcn add` cannot silently drop the house style. */
+@layer components {
+  [data-slot="button"],
+  [data-slot="badge"],
+  [data-slot="alert-title"] {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  /* A field's name is a machine label, not prose. */
+  [data-slot="label"],
+  [data-slot="table"] thead [data-slot="table-head"] {
+    font-family: var(--font-sans);
+    font-weight: 600;
+    font-size: 0.6875rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  /* Focus is a light coming on, not a fatter outline: the ring stays
+     1px and the glow does the shouting. */
+  [data-slot="button"]:focus-visible,
+  [data-slot="input"]:focus-visible,
+  [data-slot="select-trigger"]:focus-visible,
+  [data-slot="dropdown-menu-trigger"]:focus-visible {
+    box-shadow:
+      0 0 0 1px var(--ring),
+      0 0 16px -2px color-mix(in srgb, var(--ring) 70%, transparent);
+  }
+
+  [data-slot="input"],
+  [data-slot="select-trigger"] {
+    border-color: var(--input);
+    transition:
+      border-color 120ms ease,
+      box-shadow 120ms ease;
+  }
+
+  [data-slot="input"]:hover:not(:focus-visible),
+  [data-slot="select-trigger"]:hover:not(:focus-visible) {
+    border-color: var(--border-strong);
+  }
+}
+
+@utility bg-grid {
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--primary) 9%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--primary) 9%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 40px 40px;
+}
+
+/* A CRT's horizontal lines. Kept to the brand panel: over a table of
+   values it would be noise sitting on top of the thing being read. */
+@utility bg-scanlines {
+  background-image: repeating-linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--foreground) 4%, transparent) 0px,
+    color-mix(in srgb, var(--foreground) 4%, transparent) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+/* Corner brackets, the way a HUD frames the thing it is tracking. Two
+   opposite corners rather than four — four reads as a decorative box,
+   two as a sight. */
+@utility hud-frame {
+  position: relative;
+
+  &::before,
+  &::after {
+    content: "";
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-color: var(--primary);
+    pointer-events: none;
+  }
+  &::before {
+    top: -1px;
+    left: -1px;
+    border-top: 1px solid;
+    border-left: 1px solid;
+  }
+  &::after {
+    right: -1px;
+    bottom: -1px;
+    border-right: 1px solid;
+    border-bottom: 1px solid;
+  }
+}
+
+@utility text-glow {
+  text-shadow: 0 0 18px color-mix(in srgb, currentColor 55%, transparent);
+}
+
+@utility neon-edge {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--primary) 45%, transparent),
+    0 0 22px -6px color-mix(in srgb, var(--primary) 60%, transparent);
 }

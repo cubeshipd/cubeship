@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { ActionButton } from "@/components/action-button";
+import { AuthLayout } from "@/components/auth-layout";
+import { ErrorAlert } from "@/components/error-alert";
+import { TextField } from "@/components/text-field";
 import { api, type SetupStatus } from "@/lib/api";
-import { Button, ErrorNote, Field, inputClass, message } from "@/components/ui";
+import { message } from "@/lib/errors";
 
 export default function Login() {
   const router = useRouter();
@@ -31,32 +35,40 @@ export default function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-6">
-      <form onSubmit={submit} className="w-full max-w-sm rounded-lg border border-line bg-panel p-6">
-        <h1 className="mb-5 text-lg font-semibold">Sign in to Cubeship</h1>
-        <ErrorNote error={error} />
-        <Field label="Username">
-          <input
-            className={inputClass}
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            autoFocus
-            autoComplete="username"
-          />
-        </Field>
-        <Field label="Password">
-          <input
-            className={inputClass}
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            autoComplete="current-password"
-          />
-        </Field>
-        <Button type="submit" variant="primary" disabled={busy} className="mt-2 w-full">
-          {busy ? "Signing in…" : "Sign in"}
-        </Button>
+    <AuthLayout
+      title="Sign in"
+      description="Use the account this instance was claimed with, or one an admin made for you."
+      footer={
+        <>
+          Signing in from a terminal instead?{" "}
+          <code className="text-muted-foreground">cubeship login</code> uses an API key.
+        </>
+      }
+    >
+      <form onSubmit={submit} className="space-y-5">
+        <ErrorAlert error={error} />
+
+        <TextField
+          label="Username"
+          value={username}
+          onChange={(e) => setUsername(e.target.value)}
+          autoFocus
+          autoComplete="username"
+          spellCheck={false}
+          className="font-mono"
+        />
+        <TextField
+          label="Password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          autoComplete="current-password"
+        />
+
+        <ActionButton type="submit" busy={busy} size="lg" className="h-10 w-full">
+          {busy ? "Signing in" : "Sign in"}
+        </ActionButton>
       </form>
-    </div>
+    </AuthLayout>
   );
 }

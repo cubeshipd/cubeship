@@ -13,6 +13,7 @@ const dev = process.env.NODE_ENV === "development";
 const nextConfig: NextConfig = {
   output: dev ? undefined : "export",
   images: { unoptimized: true },
+  devIndicators: false,
 
   // `make web-dev` serves this on its own port, so /api has to be sent
   // to the daemon. In a build there is no proxy and none is needed:

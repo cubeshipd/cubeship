@@ -1,10 +1,21 @@
 "use client";
 
+import { ChevronLeftIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
-import { api, type App, type Deployment, type EnvView } from "@/lib/api";
-import { Button, Card, ErrorNote, Field, Shell, Status, inputClass, message } from "@/components/ui";
+import { ErrorAlert } from "@/components/error-alert";
+import { Notice } from "@/components/notice";
+import { PageHeader, SectionHeader } from "@/components/page-header";
+import { Shell } from "@/components/shell";
+import { StatusBadge } from "@/components/status-badge";
+import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import { ValueCard } from "@/components/value-card";
+import { type App, api, type Deployment, type EnvView } from "@/lib/api";
+import { message } from "@/lib/errors";
 
 // One app, identified by its reference in the query string. A static
 // export has no dynamic segments, and the reference is four path
@@ -28,57 +39,93 @@ function Detail() {
   const path = `/apps/${reference}`;
   const reload = useCallback(() => {
     if (!reference) return;
-    api.get<App>(path).then(setApp).catch((e) => setError(message(e)));
+    api
+      .get<App>(path)
+      .then(setApp)
+      .catch((e) => setError(message(e)));
   }, [path, reference]);
   useEffect(reload, [reload]);
 
-  if (!reference) return <p className="text-sm text-muted">No app named. <Link href="/">Back to apps</Link>.</p>;
-  if (error) return <ErrorNote error={error} />;
+  if (!reference) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No app named.{" "}
+        <Link href="/" className="text-foreground underline underline-offset-4">
+          Back to projects
+        </Link>
+        .
+      </p>
+    );
+  }
+  if (error) return <ErrorAlert error={error} />;
   if (!app) return null;
+
+  // Where this app came from, and where deleting it returns to.
+  const environment = `/projects?ref=${app.org}/${app.project}&env=${app.environment}`;
 
   return (
     <>
-      <header className="mb-6 flex items-start justify-between">
-        <div>
-          <h1 className="font-mono text-lg">{app.reference}</h1>
-          <p className="mt-1 text-sm text-muted">
-            {app.domain} · <Status value={app.status} />
-          </p>
-        </div>
-        <Button
-          variant="danger"
-          onClick={async () => {
-            try {
-              await api.del(path);
-              router.push("/");
-            } catch (e) {
-              setError(message(e));
-            }
-          }}
-        >
-          Delete app
-        </Button>
-      </header>
+      <Link
+        href={environment}
+        className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
+      >
+        <ChevronLeftIcon className="size-3.5" />
+        {app.org}/{app.project}/{app.environment}
+      </Link>
+
+      <PageHeader
+        title={<span className="font-mono text-lg tracking-normal normal-case">{app.name}</span>}
+        sub={
+          <span className="flex items-center gap-2">
+            {app.domain || "no domain"}
+            <StatusBadge value={app.status} />
+          </span>
+        }
+        actions={
+          <Button
+            variant="destructive"
+            onClick={async () => {
+              try {
+                await api.del(path);
+                router.push(environment);
+              } catch (e) {
+                setError(message(e));
+              }
+            }}
+          >
+            <Trash2Icon />
+            Delete app
+          </Button>
+        }
+      />
 
       {app.source === "external" ? (
-        <Card>
-          <div className="text-xs text-muted">
-            Pulls from another registry. Nothing tells Cubeship when it is pushed to, so it deploys
-            when you ask — add a login under <Link href="/registries">Registries</Link> if it is
-            private.
-          </div>
-          <div className="mt-1 font-mono text-sm break-all">{app.image}</div>
-        </Card>
+        <ValueCard
+          label={
+            <>
+              Pulls from another registry. Nothing tells Cubeship when it is pushed to, so it
+              deploys when you ask — add a login under{" "}
+              <Link href="/registries" className="underline underline-offset-4">
+                Registries
+              </Link>{" "}
+              if it is private.
+            </>
+          }
+          value={app.image}
+        />
       ) : app.image ? (
-        <Card>
-          <div className="text-xs text-muted">Push an image here and it deploys</div>
-          <div className="mt-1 font-mono text-sm break-all">docker push {app.image}:latest</div>
-        </Card>
+        <ValueCard
+          label="Push an image here and it deploys"
+          value={`docker push ${app.image}:latest`}
+        />
       ) : (
-        <div className="mb-3.5 rounded-md border border-warn/45 bg-warn/10 px-3 py-2.5 text-sm">
+        <Notice tone="warning">
           There is nowhere to push yet — this instance has no domain. Set one under{" "}
-          <Link href="/settings">Instance</Link>.
-        </div>
+          <Link href="/settings" className="underline underline-offset-4">
+            Instance
+          </Link>
+          .
+        </Notice>
       )}
 
       <Deployments reference={reference} onDeployed={reload} />
@@ -96,7 +143,10 @@ function Deployments({ reference, onDeployed }: { reference: string; onDeployed:
 
   const path = `/apps/${reference}/deployments`;
   const reload = useCallback(() => {
-    api.get<Deployment[]>(path).then(setList).catch((e) => setError(message(e)));
+    api
+      .get<Deployment[]>(path)
+      .then(setList)
+      .catch((e) => setError(message(e)));
   }, [path]);
   useEffect(reload, [reload]);
 
@@ -113,58 +163,67 @@ function Deployments({ reference, onDeployed }: { reference: string; onDeployed:
 
   return (
     <>
-      <div className="mt-7 mb-2.5 flex items-center justify-between">
-        <h2 className="text-[15px] font-medium">Deployments</h2>
-        <form
-          className="flex items-center gap-2"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            setError(null);
-            try {
-              await api.post(`/apps/${reference}/deploy`, { tag: tag.trim() });
-              reload();
-            } catch (err) {
-              setError(message(err));
-            }
-            setBusy(false);
-          }}
-        >
-          <input
-            className={`${inputClass} w-32 py-1.5`}
-            value={tag}
-            onChange={(e) => setTag(e.target.value)}
-            placeholder="latest"
-            aria-label="Tag to deploy"
-          />
-          <Button type="submit" disabled={busy}>
-            Deploy
-          </Button>
-        </form>
-      </div>
-      <ErrorNote error={error} />
-      <Card className="p-0">
-        <table className="w-full text-sm">
-          <tbody>
+      <SectionHeader
+        title="Deployments"
+        actions={
+          <form
+            className="flex items-center gap-2"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setError(null);
+              try {
+                await api.post(`/apps/${reference}/deploy`, { tag: tag.trim() });
+                reload();
+              } catch (err) {
+                setError(message(err));
+              }
+              setBusy(false);
+            }}
+          >
+            <Input
+              value={tag}
+              onChange={(e) => setTag(e.target.value)}
+              placeholder="latest"
+              aria-label="Tag to deploy"
+              className="w-32 font-mono text-xs"
+            />
+            <Button type="submit" variant="outline" disabled={busy}>
+              Deploy
+            </Button>
+          </form>
+        }
+      />
+      <ErrorAlert error={error} />
+
+      <Card className="py-0">
+        <Table>
+          <TableBody>
             {list?.map((d) => (
-              <tr key={d.id} className="border-b border-line last:border-0">
-                <td className="p-3">
-                  <Status value={d.status} />
-                </td>
-                <td className="p-3 font-mono text-xs text-muted break-all">{d.image}</td>
-                <td className="p-3 text-xs text-muted whitespace-nowrap">
+              <TableRow key={d.id}>
+                <TableCell className="px-4 py-2.5">
+                  <StatusBadge value={d.status} />
+                </TableCell>
+                <TableCell className="px-4 py-2.5 font-mono text-xs break-all text-muted-foreground">
+                  {d.image}
+                </TableCell>
+                <TableCell className="px-4 py-2.5 text-xs whitespace-nowrap text-muted-foreground">
                   {new Date(d.created_at).toLocaleString()}
-                </td>
-                {d.error && <td className="p-3 text-xs text-bad">{d.error}</td>}
-              </tr>
+                </TableCell>
+                {d.error && (
+                  <TableCell className="px-4 py-2.5 text-xs text-destructive">{d.error}</TableCell>
+                )}
+              </TableRow>
             ))}
             {list?.length === 0 && (
-              <tr>
-                <td className="p-3 text-sm text-muted">Nothing deployed yet.</td>
-              </tr>
+              <TableRow className="hover:bg-transparent">
+                <TableCell className="px-4 py-3 text-sm text-muted-foreground">
+                  Nothing deployed yet.
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </Card>
     </>
   );
@@ -178,30 +237,35 @@ function EnvVars({ reference }: { reference: string }) {
 
   const path = `/apps/${reference}/env`;
   const reload = useCallback(() => {
-    api.get<EnvView>(path).then(setView).catch((e) => setError(message(e)));
+    api
+      .get<EnvView>(path)
+      .then(setView)
+      .catch((e) => setError(message(e)));
   }, [path]);
   useEffect(reload, [reload]);
 
   return (
     <>
-      <h2 className="mt-7 mb-2.5 text-[15px] font-medium">Environment</h2>
-      <p className="mb-2.5 text-sm text-muted">
-        What the container runs with: the project&apos;s variables, then the environment&apos;s, then
-        the app&apos;s own. Setting one here overrides the levels above it.
-      </p>
-      <ErrorNote error={error} />
-      <Card className="p-0">
-        <table className="w-full text-sm">
-          <tbody>
+      <SectionHeader
+        title="Environment"
+        sub="The project's variables, then the environment's, then the app's own. Setting one here overrides the levels above it."
+      />
+      <ErrorAlert error={error} />
+
+      <Card className="mb-3 py-0">
+        <Table>
+          <TableBody>
             {view?.effective?.map((v) => (
-              <tr key={v.key} className="border-b border-line last:border-0">
-                <td className="p-3 font-mono text-xs">{v.key}</td>
-                <td className="p-3 font-mono text-xs break-all">{v.value}</td>
-                <td className="p-3 text-right text-xs text-muted">
+              <TableRow key={v.key}>
+                <TableCell className="px-4 py-2.5 font-mono text-xs">{v.key}</TableCell>
+                <TableCell className="px-4 py-2.5 font-mono text-xs break-all">{v.value}</TableCell>
+                <TableCell className="px-4 py-2.5 text-right text-xs text-muted-foreground">
                   {v.source}
                   {v.source === "app" && (
-                    <button
-                      className="ml-3 hover:text-bad"
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      className="ml-2 text-muted-foreground hover:text-destructive"
                       onClick={async () => {
                         try {
                           await api.patch(path, { unset: [v.key] });
@@ -212,21 +276,24 @@ function EnvVars({ reference }: { reference: string }) {
                       }}
                     >
                       Unset
-                    </button>
+                    </Button>
                   )}
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
             {view?.effective?.length === 0 && (
-              <tr>
-                <td className="p-3 text-sm text-muted">No variables.</td>
-              </tr>
+              <TableRow className="hover:bg-transparent">
+                <TableCell className="px-4 py-3 text-sm text-muted-foreground">
+                  No variables.
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </Card>
+
       <form
-        className="flex items-end gap-2"
+        className="flex items-center gap-2"
         onSubmit={async (e) => {
           e.preventDefault();
           setError(null);
@@ -240,21 +307,25 @@ function EnvVars({ reference }: { reference: string }) {
           }
         }}
       >
-        <div className="flex-1">
-          <Field label="Key">
-            <input className={inputClass} value={key} onChange={(e) => setKey(e.target.value)} />
-          </Field>
-        </div>
-        <div className="flex-[2]">
-          <Field label="Value">
-            <input className={inputClass} value={value} onChange={(e) => setValue(e.target.value)} />
-          </Field>
-        </div>
-        <Button type="submit" className="mb-3">
+        <Input
+          value={key}
+          onChange={(e) => setKey(e.target.value)}
+          placeholder="KEY"
+          aria-label="Variable name"
+          className="w-56 font-mono text-xs"
+        />
+        <Input
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder="value"
+          aria-label="Variable value"
+          className="flex-1 font-mono text-xs"
+        />
+        <Button type="submit" variant="outline">
           Set
         </Button>
       </form>
-      <p className="text-xs text-muted">Takes effect on the next deploy.</p>
+      <p className="mt-2 text-xs text-subtle-foreground">Takes effect on the next deploy.</p>
     </>
   );
 }
@@ -267,7 +338,9 @@ function Logs({ reference }: { reference: string }) {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const res = await fetch(`/api/apps/${reference}/logs?tail=200`, { credentials: "same-origin" });
+      const res = await fetch(`/api/apps/${reference}/logs?tail=200`, {
+        credentials: "same-origin",
+      });
       const body = await res.text();
       if (!res.ok) throw new Error(body.trim() || res.statusText);
       setText(body);
@@ -278,13 +351,18 @@ function Logs({ reference }: { reference: string }) {
 
   return (
     <>
-      <div className="mt-7 mb-2.5 flex items-center justify-between">
-        <h2 className="text-[15px] font-medium">Logs</h2>
-        <Button onClick={load}>{text === null ? "Load" : "Refresh"}</Button>
-      </div>
-      <ErrorNote error={error} />
+      <SectionHeader
+        title="Logs"
+        actions={
+          <Button variant="outline" onClick={load}>
+            <RefreshCwIcon />
+            {text === null ? "Load" : "Refresh"}
+          </Button>
+        }
+      />
+      <ErrorAlert error={error} />
       {text !== null && (
-        <pre className="max-h-[420px] overflow-auto rounded-md border border-line bg-black/40 p-3 text-xs whitespace-pre-wrap break-all">
+        <pre className="max-h-[420px] overflow-auto border border-border bg-black p-3 font-mono text-xs break-all whitespace-pre-wrap text-success/90">
           {text || "(no output)"}
         </pre>
       )}

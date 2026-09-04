@@ -1,8 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { api, type Org, type RegistryCredential } from "@/lib/api";
-import { Button, Card, ErrorNote, Field, PageHeader, Shell, inputClass, message } from "@/components/ui";
+import { ActionButton } from "@/components/action-button";
+import { ErrorAlert } from "@/components/error-alert";
+import { useOrg } from "@/components/org-context";
+import { PageHeader } from "@/components/page-header";
+import { Shell } from "@/components/shell";
+import { TextField } from "@/components/text-field";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
+import { api, type RegistryCredential } from "@/lib/api";
+import { message } from "@/lib/errors";
 
 // Logins for registries Cubeship does not run. Cubeship's own registry
 // needs none of this — it authenticates each user with their API key.
@@ -11,7 +20,7 @@ export default function Registries() {
     <Shell>
       <PageHeader
         title="Registries"
-        sub="Logins for registries Cubeship does not run. An app with an external image pulls through whichever of these matches its registry."
+        sub="Logins for registries Cubeship does not run, held by the selected organization. An app with an external image pulls through whichever of these matches its registry."
       />
       <Body />
     </Shell>
@@ -19,39 +28,20 @@ export default function Registries() {
 }
 
 function Body() {
-  const [orgs, setOrgs] = useState<Org[]>([]);
-  const [org, setOrg] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const { org, loaded } = useOrg();
 
-  useEffect(() => {
-    api
-      .get<Org[]>("/orgs")
-      .then((o) => {
-        setOrgs(o);
-        setOrg((current) => current || o[0]?.slug || "");
-      })
-      .catch((e) => setError(message(e)));
-  }, []);
+  if (loaded && !org) {
+    return (
+      <Card>
+        <CardContent className="py-2 text-sm text-muted-foreground">
+          No organization selected. A login belongs to one — pick or create an organization from the
+          switcher at the top of the sidebar.
+        </CardContent>
+      </Card>
+    );
+  }
 
-  return (
-    <>
-      <ErrorNote error={error} />
-      {orgs.length > 1 && (
-        <Card>
-          <Field label="Organization">
-            <select className={inputClass} value={org} onChange={(e) => setOrg(e.target.value)}>
-              {orgs.map((o) => (
-                <option key={o.slug} value={o.slug}>
-                  {o.slug}
-                </option>
-              ))}
-            </select>
-          </Field>
-        </Card>
-      )}
-      {org && <List org={org} />}
-    </>
-  );
+  return org ? <List org={org} /> : null;
 }
 
 function List({ org }: { org: string }) {
@@ -61,27 +51,42 @@ function List({ org }: { org: string }) {
 
   const path = `/orgs/${org}/registries`;
   const reload = useCallback(() => {
-    api.get<RegistryCredential[]>(path).then(setCreds).catch((e) => setError(message(e)));
+    api
+      .get<RegistryCredential[]>(path)
+      .then(setCreds)
+      .catch((e) => setError(message(e)));
   }, [path]);
   useEffect(reload, [reload]);
 
   return (
     <>
-      <ErrorNote error={error} />
-      <Card className="p-0">
-        <table className="w-full text-sm">
-          <tbody>
+      <ErrorAlert error={error} />
+
+      <Card className="mb-4 py-0">
+        <Table>
+          <TableBody>
             {creds?.map((c) => (
-              <tr key={c.id} className="border-b border-line last:border-0">
-                <td className="p-3">{c.name}</td>
-                <td className="p-3 font-mono text-xs text-muted">{c.host}</td>
-                <td className="p-3 text-xs text-muted">{c.username}</td>
-                <td className="p-3 text-right text-xs">
-                  <button className="text-muted hover:text-body" onClick={() => setRotating(c.id)}>
+              <TableRow key={c.id}>
+                <TableCell className="px-4 py-2.5">{c.name}</TableCell>
+                <TableCell className="px-4 py-2.5 font-mono text-xs text-muted-foreground">
+                  {c.host}
+                </TableCell>
+                <TableCell className="px-4 py-2.5 text-xs text-muted-foreground">
+                  {c.username}
+                </TableCell>
+                <TableCell className="px-4 py-2.5 text-right">
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="text-muted-foreground"
+                    onClick={() => setRotating(c.id)}
+                  >
                     Replace login
-                  </button>
-                  <button
-                    className="ml-3 text-muted hover:text-bad"
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="xs"
+                    className="ml-1 text-muted-foreground hover:text-destructive"
                     onClick={async () => {
                       try {
                         await api.del(`${path}/${c.id}`);
@@ -92,20 +97,20 @@ function List({ org }: { org: string }) {
                     }}
                   >
                     Delete
-                  </button>
-                </td>
-              </tr>
+                  </Button>
+                </TableCell>
+              </TableRow>
             ))}
             {creds?.length === 0 && (
-              <tr>
-                <td className="p-3 text-sm text-muted">
+              <TableRow className="hover:bg-transparent">
+                <TableCell className="px-4 py-3 text-sm text-muted-foreground">
                   No logins. Public images need none — add one when a registry refuses an anonymous
                   pull.
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </Card>
 
       {rotating !== null && (
@@ -135,44 +140,49 @@ function Rotate({
 }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
 
   return (
-    <Card className="border-brand/50">
-      <p className="mb-3 text-xs text-muted">
-        The registry stays the same. To point at a different one, delete this and add another —
-        changing it in place would silently send an app&apos;s pulls somewhere else.
-      </p>
-      <form
-        className="flex items-end gap-2"
-        onSubmit={async (e) => {
-          e.preventDefault();
-          try {
-            await api.put(path, { username, password });
-            onDone();
-          } catch (err) {
-            onError(message(err));
-          }
-        }}
-      >
-        <div className="flex-1">
-          <Field label="Username">
-            <input className={inputClass} value={username} onChange={(e) => setUsername(e.target.value)} />
-          </Field>
-        </div>
-        <div className="flex-1">
-          <Field label="Password or token">
-            <input
-              className={inputClass}
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          </Field>
-        </div>
-        <Button type="submit" className="mb-3">
-          Replace
-        </Button>
-      </form>
+    <Card className="mb-4 ring-primary/40">
+      <CardContent>
+        <p className="mb-4 text-xs text-muted-foreground">
+          The registry stays the same. To point at a different one, delete this and add another —
+          changing it in place would silently send an app&apos;s pulls somewhere else.
+        </p>
+        <form
+          className="flex items-end gap-2"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setBusy(true);
+            try {
+              await api.put(path, { username, password });
+              onDone();
+            } catch (err) {
+              onError(message(err));
+            }
+            setBusy(false);
+          }}
+        >
+          <TextField
+            label="Username"
+            fieldClassName="flex-1"
+            className="h-8"
+            value={username}
+            onChange={(e) => setUsername(e.target.value)}
+          />
+          <TextField
+            label="Password or token"
+            fieldClassName="flex-1"
+            className="h-8"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <ActionButton type="submit" busy={busy} variant="outline">
+            Replace
+          </ActionButton>
+        </form>
+      </CardContent>
     </Card>
   );
 }
@@ -190,55 +200,63 @@ function Add({
   const [host, setHost] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
 
   return (
     <Card>
-      <form
-        onSubmit={async (e) => {
-          e.preventDefault();
-          try {
-            await api.post(path, { name, host, username, password });
-            setName("");
-            setHost("");
-            setUsername("");
-            setPassword("");
-            onCreated();
-          } catch (err) {
-            onError(message(err));
-          }
-        }}
-      >
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Name">
-            <input
-              className={inputClass}
+      <CardContent>
+        <form
+          className="space-y-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setBusy(true);
+            try {
+              await api.post(path, { name, host, username, password });
+              setName("");
+              setHost("");
+              setUsername("");
+              setPassword("");
+              onCreated();
+            } catch (err) {
+              onError(message(err));
+            }
+            setBusy(false);
+          }}
+        >
+          <div className="grid gap-4 sm:grid-cols-2">
+            <TextField
+              label="Name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="DigitalOcean"
             />
-          </Field>
-          <Field label="Registry" hint="docker.io for the Hub.">
-            <input
-              className={inputClass}
+            <TextField
+              label="Registry"
+              hint="docker.io for the Hub."
+              className="font-mono"
+              spellCheck={false}
               value={host}
               onChange={(e) => setHost(e.target.value)}
               placeholder="registry.digitalocean.com"
             />
-          </Field>
-          <Field label="Username">
-            <input className={inputClass} value={username} onChange={(e) => setUsername(e.target.value)} />
-          </Field>
-          <Field label="Password or token" hint="An access token wherever the registry offers one.">
-            <input
-              className={inputClass}
+            <TextField
+              label="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+            <TextField
+              label="Password or token"
+              hint="An access token wherever the registry offers one."
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-          </Field>
-        </div>
-        <Button type="submit">Add registry</Button>
-      </form>
+          </div>
+          <ActionButton type="submit" busy={busy} variant="outline">
+            Add registry
+          </ActionButton>
+        </form>
+      </CardContent>
     </Card>
   );
 }

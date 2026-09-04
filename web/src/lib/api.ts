@@ -32,17 +32,22 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
-  get: <T,>(path: string) => request<T>("GET", path),
-  post: <T,>(path: string, body?: unknown) => request<T>("POST", path, body ?? {}),
-  put: <T,>(path: string, body: unknown) => request<T>("PUT", path, body),
-  patch: <T,>(path: string, body: unknown) => request<T>("PATCH", path, body),
-  del: <T,>(path: string) => request<T>("DELETE", path),
+  get: <T>(path: string) => request<T>("GET", path),
+  post: <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {}),
+  put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
+  patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
+  del: <T>(path: string) => request<T>("DELETE", path),
 };
 
 export type SetupStatus = { needed: boolean };
 export type Me = { username: string; is_super_admin: boolean };
 export type Org = { slug: string; name: string };
-export type Project = { slug: string; name: string; environments?: string[] };
+export type Project = {
+  slug: string;
+  name: string;
+  description: string;
+  environments?: string[];
+};
 export type Environment = { slug: string; name: string };
 
 export type App = {

@@ -1,8 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ActionButton } from "@/components/action-button";
+import { ErrorAlert } from "@/components/error-alert";
+import { Notice } from "@/components/notice";
+import { PageHeader } from "@/components/page-header";
+import { Shell } from "@/components/shell";
+import { TextField } from "@/components/text-field";
+import { Card, CardContent } from "@/components/ui/card";
+import { ValueCard } from "@/components/value-card";
 import { api, type Settings } from "@/lib/api";
-import { Button, Card, ErrorNote, Field, PageHeader, Shell, inputClass, message } from "@/components/ui";
+import { message } from "@/lib/errors";
 
 export default function Instance() {
   return (
@@ -35,7 +43,7 @@ function Form() {
       .catch((e) => setError(message(e)));
   }, []);
 
-  if (!current) return <ErrorNote error={error} />;
+  if (!current) return <ErrorAlert error={error} />;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -53,54 +61,52 @@ function Form() {
 
   return (
     <>
-      <ErrorNote error={error} />
+      <ErrorAlert error={error} />
+
       {!current.tls_enabled && (
-        <div className="mb-3.5 rounded-md border border-warn/45 bg-warn/10 px-3 py-2.5 text-sm">
+        <Notice tone="warning">
           No certificates yet. Both a domain and a contact address are needed, and{" "}
-          <span className="font-mono text-xs">api.{domain || "<domain>"}</span> and{" "}
-          <span className="font-mono text-xs">registry.{domain || "<domain>"}</span> must resolve to
-          this host.
-        </div>
+          <code>api.{domain || "<domain>"}</code> and <code>registry.{domain || "<domain>"}</code>{" "}
+          must resolve to this host.
+        </Notice>
       )}
 
-      <Card>
-        <form onSubmit={save}>
-          <Field label="Domain" hint="Apps and the API are served under it.">
-            <input
-              className={inputClass}
+      <Card className="mb-4">
+        <CardContent>
+          <form onSubmit={save} className="space-y-4">
+            <TextField
+              label="Domain"
+              hint="Apps and the API are served under it."
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
               placeholder="example.com"
+              spellCheck={false}
+              className="font-mono"
             />
-          </Field>
-          <Field label="Let's Encrypt contact address" hint="Where expiry warnings go.">
-            <input
-              className={inputClass}
+            <TextField
+              label="Let's Encrypt contact address"
+              hint="Where expiry warnings go."
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="admin@example.com"
+              spellCheck={false}
             />
-          </Field>
-          <div className="flex items-center gap-3">
-            <Button type="submit" variant="primary" disabled={busy}>
-              {busy ? "Applying…" : "Save"}
-            </Button>
-            {saved && (
-              <span className="text-xs text-muted">
-                Saved. Apps already running keep the routing they were deployed with — redeploy them
-                to serve over HTTPS.
-              </span>
-            )}
-          </div>
-        </form>
+            <div className="flex items-center gap-3">
+              <ActionButton type="submit" busy={busy}>
+                {busy ? "Applying" : "Save"}
+              </ActionButton>
+              {saved && (
+                <span className="text-xs text-muted-foreground">
+                  Saved. Apps already running keep the routing they were deployed with — redeploy
+                  them to serve over HTTPS.
+                </span>
+              )}
+            </div>
+          </form>
+        </CardContent>
       </Card>
 
-      {current.registry_host && (
-        <Card>
-          <div className="text-xs text-muted">Push images to</div>
-          <div className="mt-1 font-mono text-sm">{current.registry_host}</div>
-        </Card>
-      )}
+      {current.registry_host && <ValueCard label="Push images to" value={current.registry_host} />}
     </>
   );
 }
