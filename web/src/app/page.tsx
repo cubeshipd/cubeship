@@ -9,7 +9,7 @@ import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
 import { ProjectCard } from "@/components/project-card";
 import { Shell } from "@/components/shell";
-import { TextField } from "@/components/text-field";
+import { SlugField } from "@/components/slug-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -22,7 +22,6 @@ import {
 } from "@/components/ui/dialog";
 import { type App, api, type Environment, type Project } from "@/lib/api";
 import { message } from "@/lib/errors";
-import { sanitize } from "@/lib/slug";
 
 // The first page anyone opens, so it is also the gate: an unclaimed
 // instance goes to setup before anything else renders.
@@ -206,15 +205,7 @@ function NewProjectDialog({
 
           <div className="space-y-4 py-5">
             <ErrorAlert error={error} className="mb-0" />
-            <TextField
-              label="Slug"
-              hint="Lowercase letters, digits and dashes. Permanent — a display name comes from it and can be changed later, this cannot."
-              spellCheck={false}
-              autoFocus
-              value={slug}
-              onChange={(e) => setSlug(sanitize(e.target.value))}
-              placeholder="public-api"
-            />
+            <SlugField autoFocus value={slug} onChange={setSlug} placeholder="public-api" />
           </div>
 
           <DialogFooter>

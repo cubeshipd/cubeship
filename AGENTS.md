@@ -184,6 +184,25 @@ read-only, with that reason. `PATCH` accepts no `slug` field at any
 level, so the rule holds for the API and the MCP tools too — not just
 for the screen.
 
+### An app is created empty
+
+Creating an app asks for a slug and a description, in a modal, like
+every other resource. It arrives with **no domain and nothing chosen**,
+and `Orchestrator.Start` refuses to deploy it: Traefik routes by host,
+so an app without one would come up answering nothing.
+
+That is the point rather than an omission. Where an app is served has to
+resolve to this host, and where its image comes from decides whether
+this instance executes a repository — two decisions with consequences,
+made in the app's settings with the reasons in front of you, not guessed
+at in the moment you name it. `PATCH /apps/{ref}` is what makes an app
+deployable, and it is the only place any of it can be changed.
+
+The source and its settings are one field group there, never four
+independent ones: `checkOrigin` judges them together, and moving an app
+onto a source that builds re-checks the role against the source being
+moved *to*, because that is the decision being made.
+
 ### Two sources, not four
 
 The daemon has four: `registry`, `external`, `dockerfile`, `railpack`.

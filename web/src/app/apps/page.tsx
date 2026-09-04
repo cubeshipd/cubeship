@@ -1,8 +1,8 @@
 "use client";
 
-import { ChevronLeftIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import { ChevronLeftIcon, RefreshCwIcon, SettingsIcon } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
@@ -31,7 +31,6 @@ export default function AppPage() {
 }
 
 function Detail() {
-  const router = useRouter();
   const reference = useSearchParams().get("ref") ?? "";
   const [app, setApp] = useState<App | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -60,7 +59,7 @@ function Detail() {
   if (error) return <ErrorAlert error={error} />;
   if (!app) return null;
 
-  // Where this app came from, and where deleting it returns to.
+  // Where this app came from.
   const environment = `/projects?ref=${app.org}/${app.project}&env=${app.environment}`;
 
   return (
@@ -83,27 +82,35 @@ function Detail() {
         }
         actions={
           <Button
-            variant="destructive"
-            onClick={async () => {
-              try {
-                await api.del(path);
-                router.push(environment);
-              } catch (e) {
-                setError(message(e));
-              }
-            }}
-          >
-            <Trash2Icon />
-            Delete app
-          </Button>
+            variant="outline"
+            nativeButton={false}
+            render={
+              <Link href={`/apps/settings?ref=${reference}`}>
+                <SettingsIcon />
+                Settings
+              </Link>
+            }
+          />
         }
       />
+
+      {!app.domain && (
+        <Notice tone="warning">
+          Nothing is configured yet, so this app cannot deploy. Give it a domain and say where its
+          image comes from in{" "}
+          <Link href={`/apps/settings?ref=${reference}`} className="underline underline-offset-4">
+            settings
+          </Link>
+          .
+        </Notice>
+      )}
 
       <Origin app={app} />
 
       <Deployments
         reference={reference}
         buildsFromRepo={BUILDING_SOURCES.includes(app.source)}
+        canDeploy={!!app.domain}
         onDeployed={reload}
       />
       <EnvVars reference={reference} />
@@ -179,9 +186,13 @@ function Origin({ app }: { app: App }) {
 function Deployments({
   reference,
   buildsFromRepo,
+  canDeploy,
   onDeployed,
 }: {
   reference: string;
+  // An app with no domain would come up answering nothing, so the
+  // daemon refuses it. Saying so here beats a 409 after the click.
+  canDeploy: boolean;
   // A build takes a branch or a commit; an image takes a tag. Same
   // field, same endpoint, two different things to type into it.
   buildsFromRepo: boolean;
@@ -239,7 +250,7 @@ function Deployments({
               aria-label={buildsFromRepo ? "Branch or commit to deploy" : "Tag to deploy"}
               className="w-32 text-xs"
             />
-            <Button type="submit" variant="outline" disabled={busy}>
+            <Button type="submit" variant="outline" disabled={busy || !canDeploy}>
               Deploy
             </Button>
           </form>

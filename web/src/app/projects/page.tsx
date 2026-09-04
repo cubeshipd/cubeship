@@ -10,7 +10,8 @@ import { ErrorAlert } from "@/components/error-alert";
 import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
 import { Shell } from "@/components/shell";
-import { TextAreaField, TextField } from "@/components/text-field";
+import { SlugField } from "@/components/slug-field";
+import { TextAreaField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -24,7 +25,6 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { type App, api, type Environment } from "@/lib/api";
 import { message } from "@/lib/errors";
-import { sanitize } from "@/lib/slug";
 
 // One project, opened on an environment. A static export has no dynamic
 // segments, so the project travels in the query string as org/project —
@@ -263,15 +263,7 @@ function NewEnvironmentDialog({
 
           <div className="space-y-4 py-5">
             <ErrorAlert error={error} className="mb-0" />
-            <TextField
-              label="Slug"
-              hint="Lowercase letters, digits and dashes. Permanent."
-              spellCheck={false}
-              autoFocus
-              value={slug}
-              onChange={(e) => setSlug(sanitize(e.target.value))}
-              placeholder="staging"
-            />
+            <SlugField autoFocus value={slug} onChange={setSlug} placeholder="staging" />
           </div>
 
           <DialogFooter>
@@ -349,23 +341,7 @@ function NewAppDialog({
 
           <div className="space-y-4 py-5">
             <ErrorAlert error={error} className="mb-0" />
-            <TextField
-              label="Slug"
-              hint={
-                <>
-                  Permanent. The app will be{" "}
-                  <code className="text-muted-foreground">
-                    {org}/{project}/{environment}/{slug || "<slug>"}
-                  </code>
-                  .
-                </>
-              }
-              spellCheck={false}
-              autoFocus
-              value={slug}
-              onChange={(e) => setSlug(sanitize(e.target.value))}
-              placeholder="gateway"
-            />
+            <SlugField autoFocus value={slug} onChange={setSlug} placeholder="gateway" />
             <TextAreaField
               label="Description"
               hint="What this app is. Empty is fine."

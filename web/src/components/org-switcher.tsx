@@ -7,7 +7,7 @@ import { CubeMark } from "@/components/brand";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
 import { useOrg } from "@/components/org-context";
-import { TextField } from "@/components/text-field";
+import { SlugField } from "@/components/slug-field";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -28,7 +28,6 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
 import { message } from "@/lib/errors";
-import { sanitize } from "@/lib/slug";
 
 // The organization is not a page — it is the frame everything else on
 // the screen is inside, so it lives at the top of the sidebar and is
@@ -164,15 +163,7 @@ function CreateDialog({
 
           <div className="space-y-4 py-5">
             <ErrorAlert error={error} className="mb-0" />
-            <TextField
-              label="Slug"
-              hint="Lowercase letters, digits and dashes. Permanent — a display name comes from it and can be changed later, this cannot."
-              spellCheck={false}
-              autoFocus
-              value={slug}
-              onChange={(e) => setSlug(sanitize(e.target.value))}
-              placeholder="acme-industries"
-            />
+            <SlugField autoFocus value={slug} onChange={setSlug} placeholder="acme-industries" />
           </div>
 
           <DialogFooter>
