@@ -60,6 +60,8 @@ func NewServer(s *store.Store, orch *deploy.Orchestrator, token, registryHost st
 	srv.handleAuth("POST /apps/{name}/deploy", srv.handleManualDeploy)
 	srv.handleAuth("PUT /apps/{name}/env", srv.handleSetEnv)
 	srv.handleAuth("GET /apps/{name}/logs", srv.handleGetLogs)
+	srv.handleAuth("POST /orgs/{slug}/users", srv.handleCreateOrgUser)
+	srv.handleAuth("POST /users/me/api-key/rotate", srv.handleRotateAPIKey)
 	return srv
 }
 
