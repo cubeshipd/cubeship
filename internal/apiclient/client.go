@@ -39,8 +39,8 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 	return c.http.Do(req)
 }
 
-func (c *Client) CreateApp(ctx context.Context, name, domain string) (string, error) {
-	resp, err := c.do(ctx, http.MethodPost, "/apps", map[string]string{"name": name, "domain": domain})
+func (c *Client) CreateApp(ctx context.Context, name, domain, org string) (string, error) {
+	resp, err := c.do(ctx, http.MethodPost, "/apps", map[string]string{"name": name, "domain": domain, "org": org})
 	if err != nil {
 		return "", err
 	}
@@ -91,4 +91,73 @@ func (c *Client) Logs(ctx context.Context, name string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("logs: unexpected status %d", resp.StatusCode)
 	}
 	return resp.Body, nil
+}
+
+type Org struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
+func (c *Client) CreateOrg(ctx context.Context, slug, name string) error {
+	resp, err := c.do(ctx, http.MethodPost, "/orgs", map[string]string{"slug": slug, "name": name})
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("create org: unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *Client) ListOrgs(ctx context.Context) ([]Org, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/orgs", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list orgs: unexpected status %d", resp.StatusCode)
+	}
+	var out []Org
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *Client) CreateOrgUser(ctx context.Context, orgSlug, username, role string) (string, error) {
+	resp, err := c.do(ctx, http.MethodPost, "/orgs/"+orgSlug+"/users", map[string]string{"username": username, "role": role})
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return "", fmt.Errorf("create user: unexpected status %d", resp.StatusCode)
+	}
+	var out struct {
+		APIKey string `json:"api_key"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", err
+	}
+	return out.APIKey, nil
+}
+
+func (c *Client) RotateAPIKey(ctx context.Context) (string, error) {
+	resp, err := c.do(ctx, http.MethodPost, "/users/me/api-key/rotate", nil)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("rotate api key: unexpected status %d", resp.StatusCode)
+	}
+	var out struct {
+		APIKey string `json:"api_key"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", err
+	}
+	return out.APIKey, nil
 }

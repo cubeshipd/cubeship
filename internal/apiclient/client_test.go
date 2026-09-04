@@ -19,21 +19,21 @@ func TestCreateAppSendsAuthAndReturnsImage(t *testing.T) {
 		}
 		var body map[string]string
 		json.NewDecoder(r.Body).Decode(&body)
-		if body["name"] != "myapp" || body["domain"] != "myapp.example.com" {
+		if body["name"] != "myapp" || body["domain"] != "myapp.example.com" || body["org"] != "acme" {
 			t.Errorf("unexpected body: %v", body)
 		}
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]string{"image": "registry.example.com/myapp"})
+		json.NewEncoder(w).Encode(map[string]string{"image": "registry.example.com/acme/myapp"})
 	}))
 	defer srv.Close()
 
 	c := New(srv.URL, "secret-token")
-	image, err := c.CreateApp(context.Background(), "myapp", "myapp.example.com")
+	image, err := c.CreateApp(context.Background(), "myapp", "myapp.example.com", "acme")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
-	if image != "registry.example.com/myapp" {
-		t.Fatalf("expected image registry.example.com/myapp, got %q", image)
+	if image != "registry.example.com/acme/myapp" {
+		t.Fatalf("expected image registry.example.com/acme/myapp, got %q", image)
 	}
 }
 
@@ -101,5 +101,88 @@ func TestLogsStreamsBody(t *testing.T) {
 	data, _ := io.ReadAll(rc)
 	if string(data) != "hello from the app\n" {
 		t.Fatalf("unexpected log output: %q", data)
+	}
+}
+
+func TestCreateOrg(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/orgs" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["slug"] != "acme" || body["name"] != "Acme Inc" {
+			t.Errorf("unexpected body: %v", body)
+		}
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	if err := c.CreateOrg(context.Background(), "acme", "Acme Inc"); err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+}
+
+func TestListOrgs(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		json.NewEncoder(w).Encode([]map[string]string{
+			{"slug": "acme", "name": "Acme Inc"},
+			{"slug": "globex", "name": "Globex Corp"},
+		})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	orgs, err := c.ListOrgs(context.Background())
+	if err != nil {
+		t.Fatalf("ListOrgs: %v", err)
+	}
+	if len(orgs) != 2 || orgs[0].Slug != "acme" {
+		t.Fatalf("unexpected orgs: %+v", orgs)
+	}
+}
+
+func TestCreateOrgUser(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/orgs/acme/users" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["username"] != "employee1" || body["role"] != "member" {
+			t.Errorf("unexpected body: %v", body)
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{"api_key": "new-key-123"})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	key, err := c.CreateOrgUser(context.Background(), "acme", "employee1", "member")
+	if err != nil {
+		t.Fatalf("CreateOrgUser: %v", err)
+	}
+	if key != "new-key-123" {
+		t.Fatalf("expected new-key-123, got %q", key)
+	}
+}
+
+func TestRotateAPIKey(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/users/me/api-key/rotate" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		json.NewEncoder(w).Encode(map[string]string{"api_key": "rotated-key-456"})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	key, err := c.RotateAPIKey(context.Background())
+	if err != nil {
+		t.Fatalf("RotateAPIKey: %v", err)
+	}
+	if key != "rotated-key-456" {
+		t.Fatalf("expected rotated-key-456, got %q", key)
 	}
 }
