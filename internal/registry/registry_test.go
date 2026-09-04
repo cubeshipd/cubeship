@@ -1,9 +1,11 @@
 package registry_test
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 
 	"cubeship/internal/org"
@@ -163,5 +165,52 @@ func TestAPushDoesNotDeployAnExternalApp(t *testing.T) {
 		"/apps/"+created.Reference+"/deployments", nil, f.AdminKey, &history), http.StatusOK)
 	if len(history) != 0 {
 		t.Fatalf("a push started %d deploy(s) for an external app", len(history))
+	}
+}
+
+// Every token the daemon hands out has to carry the certificate that
+// vouches for the key it was signed with.
+//
+// The registry looks in the token's header for x5c, a raw JWK, or a key
+// id, and refuses with "unable to get token signing key" when it finds
+// none of them — a bare 401 to whoever asked. Nothing about the claims
+// or the signature is wrong in that state, which is why every other test
+// in this file passed while `docker push` and the catalogue were both
+// refused.
+func TestIssuedTokensCarryTheCertificate(t *testing.T) {
+	f := newSignedFixture(t)
+	_, memberKey := f.AddMember(t, "member", org.RoleMember)
+
+	req := httptestRequest(t, "/v2/token?scope="+url.QueryEscape("repository:"+f.Org.Slug+"/myapp:pull"))
+	req.SetBasicAuth("member", memberKey)
+	rec := newRecorder()
+	f.Server.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("token request: expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	var body struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode token response: %v", err)
+	}
+
+	header, _, ok := strings.Cut(body.Token, ".")
+	if !ok {
+		t.Fatal("the token is not a JWT")
+	}
+	raw, err := base64.RawURLEncoding.DecodeString(header)
+	if err != nil {
+		t.Fatalf("decode header: %v", err)
+	}
+	var decoded struct {
+		X5C []string `json:"x5c"`
+	}
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal header: %v", err)
+	}
+	if len(decoded.X5C) == 0 {
+		t.Fatalf("no x5c in the token header, so the registry cannot find the key that signed it: %s", raw)
 	}
 }

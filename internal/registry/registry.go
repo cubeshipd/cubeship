@@ -92,6 +92,7 @@ func (h *Handler) registryHost(ctx context.Context) string {
 // concurrently with serving.
 func (h *Handler) SetSigningKey(key *rsa.PrivateKey, certDER []byte) {
 	h.signingKey = key
+	h.signingCert = certDER
 }
 
 // pushPullActions is the complete set of registry actions Cubeship will
