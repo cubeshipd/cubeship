@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
 
+	"cubeship/internal/apiclient"
 	"cubeship/internal/clicreds"
 
 	"github.com/spf13/cobra"
@@ -36,17 +38,14 @@ func newRegistryCmd() *cobra.Command {
 		Use:   "registry",
 		Short: "Manage the Cubeship container registry",
 	}
-	var password string
 	registryLoginCmd := &cobra.Command{
 		Use:   "login",
-		Short: "Run 'docker login' against the Cubeship registry",
-		// The registry credential is still instance-wide (one htpasswd
-		// account), not per-user: its password is the daemon's system
-		// token from $CUBESHIP_DATA_DIR/token on the server, which is
-		// not the same thing as your API key. Per-org registry
-		// authorization arrives with the follow-up registry-token work;
-		// until then --password is how a user who isn't the operator
-		// logs in to push.
+		Short: "Run 'docker login' against the Cubeship registry as your own user",
+		// Registry push/pull is per-user token auth now: your saved API
+		// key is your registry password too, and the registry only
+		// grants access to the orgs you actually belong to. No flags —
+		// there's nothing to choose, unlike the old shared-credential
+		// model.
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path, err := clicreds.DefaultPath()
@@ -61,19 +60,19 @@ func newRegistryCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if password == "" {
-				password = creds.Token
+
+			username, err := apiclient.New(creds.BaseURL, creds.Token).WhoAmI(context.Background())
+			if err != nil {
+				return fmt.Errorf("look up your username: %w", err)
 			}
 
-			dockerLogin := exec.Command("docker", "login", registryHost, "-u", "cubeship", "--password-stdin")
-			dockerLogin.Stdin = strings.NewReader(password)
+			dockerLogin := exec.Command("docker", "login", registryHost, "-u", username, "--password-stdin")
+			dockerLogin.Stdin = strings.NewReader(creds.Token)
 			dockerLogin.Stdout = os.Stdout
 			dockerLogin.Stderr = os.Stderr
 			return dockerLogin.Run()
 		},
 	}
-	registryLoginCmd.Flags().StringVar(&password, "password", "",
-		"registry password (the daemon's token from $CUBESHIP_DATA_DIR/token); defaults to your saved API key")
 	registryCmd.AddCommand(registryLoginCmd)
 	return registryCmd
 }
