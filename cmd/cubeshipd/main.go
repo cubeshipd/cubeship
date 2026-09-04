@@ -18,6 +18,7 @@ import (
 	"cubeship/internal/deploy"
 	"cubeship/internal/dockerx"
 	"cubeship/internal/reconcile"
+	"cubeship/internal/regauth"
 	"cubeship/internal/store"
 )
 
@@ -62,11 +63,13 @@ const adminKeyFileName = "admin-api-key"
 // lives in, generating and persisting one on first call.
 //
 // This is deliberately NOT cfg.Token. That token is an instance-wide
-// system credential: it is the registry's htpasswd password (so every
-// user who pushes an image needs it) and the registry webhook's shared
-// secret. Seeding the super-admin's API key from it would mean handing
-// anyone who has to `docker push` a credential that also creates orgs,
-// creates admins anywhere and reads every app's environment.
+// system credential: the registry webhook's shared secret. Registry
+// push/pull now goes through per-user tokens (internal/regauth), so
+// there's no longer any reason cfg.Token would need to double as
+// anyone's API key — but the separation predates that and stays
+// correct regardless: seeding the super-admin's API key from a
+// system-wide secret would mean anyone who obtained it could create
+// orgs, create admins anywhere, and read every app's environment.
 func loadOrCreateAdminKey(dataDir string) (string, string, error) {
 	path := filepath.Join(dataDir, adminKeyFileName)
 	data, err := os.ReadFile(path)
@@ -145,27 +148,37 @@ func run() error {
 	log.Printf("cubeshipd starting for domain %s", cfg.Domain)
 	// Never log the token itself — the daemon's logs are not a secret
 	// store. A fingerprint is enough to tell which token is in use.
-	// This is the instance-wide system credential (registry password +
-	// webhook secret), not anyone's API key; see loadOrCreateAdminKey.
+	// This is the instance-wide system credential for the registry's
+	// push-notification webhook, not anyone's API key or a registry
+	// login credential (registry push/pull now goes through per-user
+	// tokens; see loadOrCreateAdminKey and internal/regauth).
 	if cfg.TokenFile != "" {
-		log.Printf("daemon registry token (fingerprint %s) is stored in %s", config.TokenFingerprint(cfg.Token), cfg.TokenFile)
+		log.Printf("daemon webhook token (fingerprint %s) is stored in %s", config.TokenFingerprint(cfg.Token), cfg.TokenFile)
 	} else {
-		log.Printf("daemon registry token (fingerprint %s) taken from CUBESHIP_TOKEN", config.TokenFingerprint(cfg.Token))
+		log.Printf("daemon webhook token (fingerprint %s) taken from CUBESHIP_TOKEN", config.TokenFingerprint(cfg.Token))
 	}
 
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
 	}
 
+	registrySigningKey, err := regauth.LoadOrCreateKeyPair(cfg.DataDir)
+	if err != nil {
+		return fmt.Errorf("load registry signing key: %w", err)
+	}
+
 	docker, err := dockerx.New()
 	if err != nil {
 		return fmt.Errorf("connect to docker: %w", err)
 	}
-	// The embedded registry requires basic auth (see
-	// bootstrap.RegistryConfigYAML); the daemon pulls from it over
-	// loopback with the same credentials the CLI's `registry login`
-	// uses.
-	docker.SetRegistryAuth(localRegistryHost, bootstrap.RegistryUsername, cfg.Token)
+	// The daemon's own pulls need no HTTP round-trip through /v2/token:
+	// it already holds the private key in-process, so it mints a
+	// pull-only token for exactly the repository being pulled, fresh
+	// every time (tokens expire in regauth.TokenTTL).
+	docker.SetRegistryTokenSigner(localRegistryHost, func(repository string) (string, error) {
+		return regauth.IssueToken(registrySigningKey, regauth.TokenIssuer, regauth.TokenService, "cubeshipd",
+			[]regauth.AccessEntry{{Type: "repository", Name: repository, Actions: []string{"pull"}}})
+	})
 
 	ctx := context.Background()
 
@@ -191,8 +204,12 @@ func run() error {
 	if err := bootstrap.WriteRegistryConfig(cfg, notifyURL, cfg.Token); err != nil {
 		return fmt.Errorf("write registry config: %w", err)
 	}
-	if err := bootstrap.WriteRegistryHtpasswd(cfg, cfg.Token); err != nil {
-		return fmt.Errorf("write registry credentials: %w", err)
+	registryCert, err := regauth.SelfSignedCert(registrySigningKey, "cubeship")
+	if err != nil {
+		return fmt.Errorf("create registry token certificate: %w", err)
+	}
+	if err := bootstrap.WriteRegistryTokenCert(cfg, registryCert); err != nil {
+		return fmt.Errorf("write registry token certificate: %w", err)
 	}
 	if err := bootstrap.Ensure(ctx, docker, bootstrap.RegistryContainerOpts(cfg)); err != nil {
 		return fmt.Errorf("bootstrap registry: %w", err)
@@ -210,6 +227,7 @@ func run() error {
 
 	orch := deploy.NewOrchestrator(s, docker)
 	srv := api.NewServer(s, orch, cfg.Token, cfg.RegistryHost)
+	srv.SetRegistrySigningKey(registrySigningKey)
 
 	log.Printf("cubeshipd listening on %s", listenAddr)
 	return http.ListenAndServe(listenAddr, srv.Router())
