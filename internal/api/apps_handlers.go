@@ -56,6 +56,12 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 	if req.Environment == "" {
 		req.Environment = store.ProductionEnvSlug
 	}
+	// The name becomes a path component of the app's registry image
+	// reference (registry.<domain>/<org>/<name>) — see slugPattern.
+	if !slugPattern.MatchString(req.Name) {
+		http.Error(w, "name must be lowercase letters, digits and dashes, starting and ending with a letter or digit", http.StatusBadRequest)
+		return
+	}
 
 	org, err := s.store.GetOrganizationBySlug(r.Context(), req.Org)
 	if err != nil {

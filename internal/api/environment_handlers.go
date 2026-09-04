@@ -27,7 +27,7 @@ func (s *Server) handleCreateEnvironment(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "slug and name are required", http.StatusBadRequest)
 		return
 	}
-	if !orgSlugPattern.MatchString(req.Slug) {
+	if !slugPattern.MatchString(req.Slug) {
 		http.Error(w, "slug must be lowercase letters, digits and dashes, starting and ending with a letter or digit", http.StatusBadRequest)
 		return
 	}

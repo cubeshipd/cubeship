@@ -11,12 +11,17 @@ type orgResponse struct {
 	Name string `json:"name"`
 }
 
-// orgSlugPattern is what a slug has to look like. The slug is not just a
-// URL segment: it becomes a path component of every one of the org's
-// registry image references (registry.<domain>/<slug>/<app>), and Docker
-// rejects a repository path with uppercase letters, spaces or an extra
-// "/" in it — a push against such an org could never work.
-var orgSlugPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
+// slugPattern is what every slug in the API — organization, project,
+// environment, and app name — has to look like: kebab-case, no accents
+// or other special characters. Org and app name both become path
+// components of the app's registry image reference
+// (registry.<domain>/<org-slug>/<app-name>), and Docker rejects a
+// repository path with uppercase letters, accents, spaces or an extra
+// "/" in it — a push against such a name could never work. Project and
+// environment slugs carry no such constraint from Docker, but are held
+// to the same shape for consistency and because they appear verbatim in
+// URLs.
+var slugPattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 
 func (s *Server) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
 	user := userFromContext(r.Context())
@@ -33,7 +38,7 @@ func (s *Server) handleCreateOrg(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "slug and name are required", http.StatusBadRequest)
 		return
 	}
-	if !orgSlugPattern.MatchString(req.Slug) {
+	if !slugPattern.MatchString(req.Slug) {
 		http.Error(w, "slug must be lowercase letters, digits and dashes, starting and ending with a letter or digit", http.StatusBadRequest)
 		return
 	}

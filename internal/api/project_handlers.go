@@ -32,11 +32,7 @@ func (s *Server) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "slug and name are required", http.StatusBadRequest)
 		return
 	}
-	// The slug becomes a path component of every app image this project's
-	// apps push under (registry.<domain>/<org>/<app>) only indirectly —
-	// but it is also used verbatim in URLs, so hold it to the same rule
-	// as an organization slug.
-	if !orgSlugPattern.MatchString(req.Slug) {
+	if !slugPattern.MatchString(req.Slug) {
 		http.Error(w, "slug must be lowercase letters, digits and dashes, starting and ending with a letter or digit", http.StatusBadRequest)
 		return
 	}

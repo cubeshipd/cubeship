@@ -119,6 +119,35 @@ func TestCreateAppReturnsImagePath(t *testing.T) {
 	}
 }
 
+// An app's name becomes a path component of its registry image
+// reference (registry.<domain>/<org>/<name>), same as an org's slug —
+// so it is held to the same kebab-case rule: reject accents, uppercase,
+// spaces and other special characters Docker would reject at push time.
+func TestCreateAppRejectsInvalidNames(t *testing.T) {
+	srv, key, org := newTestServer(t)
+
+	for _, name := range []string{"MyApp", "my app", "café", "my_app", "my/app", "-myapp", "myapp-", "."} {
+		body, _ := json.Marshal(map[string]string{"name": name, "domain": "myapp.example.com", "org": org.Slug, "project": testProjectSlug})
+		rec := httptest.NewRecorder()
+		srv.Router().ServeHTTP(rec, authedRequest(http.MethodPost, "/apps", body, key))
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("name %q: expected 400, got %d: %s", name, rec.Code, rec.Body.String())
+		}
+		if _, err := srv.store.GetAppByName(context.Background(), name); err == nil {
+			t.Fatalf("name %q: expected no app to be created", name)
+		}
+	}
+
+	for _, name := range []string{"myapp", "my-app", "a", "myapp2", "1myapp"} {
+		body, _ := json.Marshal(map[string]string{"name": name, "domain": name + ".example.com", "org": org.Slug, "project": testProjectSlug})
+		rec := httptest.NewRecorder()
+		srv.Router().ServeHTTP(rec, authedRequest(http.MethodPost, "/apps", body, key))
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("name %q: expected 201, got %d: %s", name, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 func TestCreateAppMissingFields(t *testing.T) {
 	srv, key, org := newTestServer(t)
 	body, _ := json.Marshal(map[string]string{"name": "myapp", "org": org.Slug})
