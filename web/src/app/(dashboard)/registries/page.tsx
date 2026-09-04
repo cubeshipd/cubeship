@@ -233,7 +233,7 @@ export default function Registries() {
                   <TableCell className="px-4 py-2.5 font-mono text-xs text-muted-foreground">
                     {c.region || "—"}
                   </TableCell>
-                  <TableCell className="px-4 py-2.5">
+                  <TableCell className="px-4 py-2.5" title={statuses[c.id]?.detail}>
                     <StatusBadge value={statuses[c.id]?.state ?? "checking"} />
                   </TableCell>
                 </TableRow>

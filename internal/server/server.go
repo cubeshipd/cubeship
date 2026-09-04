@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"cubeship/internal/app"
+	"cubeship/internal/dns"
 	"cubeship/internal/extregistry"
 	"cubeship/internal/github"
 	"cubeship/internal/org"
@@ -33,12 +34,17 @@ type Server struct {
 	Settings   *settings.Service
 	Setup      *setup.Service
 	Registries *extregistry.Service
+	DNS        *dns.Service
 	GitHub     *github.Service
 	Registry   *registry.Handler
 
 	// githubHandler is kept so a test can wait for the deploys a
 	// webhook set going.
 	githubHandler *github.Handler
+
+	// frontend is where page requests are proxied. Empty in a test,
+	// where nothing asks for a page.
+	frontend string
 
 	router *httpx.Router
 }
@@ -64,6 +70,12 @@ type Options struct {
 	// It depends on whether the daemon is a container or a host process,
 	// which only the daemon knows.
 	LocalRegistry string
+
+	// Frontend is where the dashboard's server answers. The daemon is
+	// the only thing in front of it, so this is the address of a
+	// container on the shared network — or, on a developer's machine,
+	// of `make web-dev`.
+	Frontend string
 }
 
 // New wires the modules together. The dependency order here is the real
@@ -75,6 +87,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	projects := project.NewService(db, orgs)
 	cfg := settings.NewService(db)
 	registries := extregistry.NewService(db, orgs)
+	dnsProviders := dns.NewService(db, orgs)
 	gh := github.NewService(db, orgs, cfg)
 	apps := app.NewService(db, orgs, projects,
 		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gh, opts.LocalRegistry), cfg)
@@ -87,8 +100,10 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Settings:   cfg,
 		Setup:      setup.NewService(db, users),
 		Registries: registries,
+		DNS:        dnsProviders,
 		GitHub:     gh,
 		Registry:   registry.NewHandler(users, orgs, apps, cfg, opts.WebhookToken, opts.LocalRegistry),
+		frontend:   opts.Frontend,
 		router:     httpx.NewRouter(),
 	}
 	// Garbage collection runs a command inside the registry container,
@@ -151,6 +166,7 @@ func (s *Server) routes() {
 	project.NewHandler(s.Projects).Routes(s.router, auth)
 	settings.NewHandler(s.Settings).Routes(s.router, auth)
 	extregistry.NewHandler(s.Registries).Routes(s.router, auth)
+	dns.NewHandler(s.DNS).Routes(s.router, auth)
 	s.githubHandler = github.NewHandler(s.GitHub, s.Apps)
 	s.githubHandler.Routes(s.router, auth)
 	app.NewHandler(s.Apps).Routes(s.router, auth)
@@ -178,5 +194,5 @@ func (s *Server) routes() {
 	// ambiguous to the mux — one matches fewer methods, the other a
 	// narrower path — and it refuses to choose. The handler answers 405
 	// to anything but a read.
-	s.router.HandleRoot("/", web.Handler())
+	s.router.HandleRoot("/", web.Handler(s.frontend))
 }

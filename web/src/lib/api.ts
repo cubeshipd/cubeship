@@ -101,6 +101,38 @@ export type RegistryStatus = {
   detail?: string;
 };
 
+export type DNSProvider = "cloudflare" | "route53";
+
+export type DNSCredential = {
+  id: number;
+  provider: DNSProvider;
+  // What tells two accounts on one provider apart. Unique in the org.
+  label: string;
+  // Route 53's access key id. Absent for Cloudflare, whose token is a
+  // single value with no name attached to it.
+  username?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DNSStatus = {
+  state: "available" | "unauthorized" | "unreachable";
+  detail?: string;
+};
+
+export type DNSZone = { id: string; name: string };
+
+// A record is a list at both providers: two A records for one name are
+// one record with two values here.
+export type DNSRecord = {
+  id?: string;
+  name: string;
+  type: string;
+  values: string[];
+  ttl: number;
+  proxied?: boolean;
+};
+
 export type Deployment = {
   id: number;
   status: string;

@@ -9,23 +9,11 @@
 # resolved by the Engine on the HOST, not inside this container. The
 # data directory therefore has to be mounted at the same path on both
 # sides — see install.sh, and the note in AGENTS.md.
-
-# --- the dashboard -----------------------------------------------------
-FROM node:22-alpine AS web
-WORKDIR /src
-
-RUN corepack enable
-
-# pnpm-workspace.yaml travels with the manifest and the lockfile because
-# it carries the settings the install itself is governed by, not just the
-# workspace layout. Leaving it out made the install here run under
-# different policy from the install everywhere else — which surfaced as a
-# build that fails on a dependency published today and passes tomorrow.
-COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
-RUN pnpm install --frozen-lockfile
-
-COPY web/ ./
-RUN pnpm run build
+#
+# The dashboard is NOT in here — it is its own image, built by
+# Dockerfile.web, and the daemon starts a container from it. The two
+# ship at the same version, and the daemon is told which one to use so
+# that it never has to guess or derive it.
 
 # --- the binary --------------------------------------------------------
 FROM golang:1.27-alpine AS build
@@ -37,9 +25,6 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-# The dashboard is embedded, so it has to be in place before the compile
-# rather than copied alongside the binary afterwards.
-COPY --from=web /src/out ./internal/web/dist
 
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=$VERSION" \
@@ -59,6 +44,14 @@ COPY --from=build /cubeshipd /usr/local/bin/cubeshipd
 # image, because it describes the image rather than the deployment.
 ENV CUBESHIP_IN_CONTAINER=1
 ENV CUBESHIP_DATA_DIR=/var/lib/cubeship
+
+# Which image the dashboard's container is started from. The default is
+# the matching version of the published one, baked from the same build
+# arg as the binary's — so an image pulled from the registry knows its
+# own counterpart without being told. install.sh overrides it when it
+# builds locally, where neither image is published.
+ARG VERSION=dev
+ENV CUBESHIP_WEB_IMAGE=ghcr.io/cubeship/cubeship-frontend:${VERSION}
 
 EXPOSE 3000
 ENTRYPOINT ["/usr/local/bin/cubeshipd"]

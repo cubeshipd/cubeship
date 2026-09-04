@@ -41,6 +41,16 @@ type Config struct {
 	// still supported, and is the reason this is a flag rather than an
 	// assumption.
 	InContainer bool
+
+	// WebImage is the image the dashboard's container runs from.
+	//
+	// It is told rather than derived. The daemon could take its own
+	// image reference and substitute the name, but that is string
+	// surgery on a registry path an operator is free to change — and
+	// getting it wrong means an instance whose dashboard silently
+	// never starts. The daemon's own image bakes in the matching
+	// version; install.sh overrides it when it builds locally.
+	WebImage string
 }
 
 // ManagedDatabase reports whether the daemon is responsible for running
@@ -82,6 +92,7 @@ func Load() (*Config, error) {
 		DatabaseURL: os.Getenv("CUBESHIP_DATABASE_URL"),
 		// Set in the image, not by whoever runs it.
 		InContainer: os.Getenv("CUBESHIP_IN_CONTAINER") == "1",
+		WebImage:    os.Getenv("CUBESHIP_WEB_IMAGE"),
 	}, nil
 }
 

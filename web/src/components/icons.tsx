@@ -8,6 +8,7 @@ import type { SVGProps } from "react";
 // whichever package happens to hold it today — which matters, because
 // one of them does not.
 export {
+  SiCloudflare as CloudflareIcon,
   SiDigitalocean as DigitalOceanIcon,
   SiGithub as GitHubIcon,
 } from "@icons-pack/react-simple-icons";

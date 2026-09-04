@@ -4,6 +4,7 @@ import { cn } from "cn";
 import {
   ContainerIcon,
   FolderTreeIcon,
+  GlobeIcon,
   LogOutIcon,
   ServerCogIcon,
   UserRoundIcon,
@@ -43,6 +44,7 @@ const nav = [
     icon: ContainerIcon,
     owns: ["/registries"],
   },
+  { href: "/dns", label: "DNS", icon: GlobeIcon, owns: ["/dns"] },
   { href: "/settings", label: "Instance", icon: ServerCogIcon },
   { href: "/account", label: "Account", icon: UserRoundIcon },
 ];

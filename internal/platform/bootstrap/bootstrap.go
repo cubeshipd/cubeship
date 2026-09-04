@@ -327,6 +327,72 @@ func BuildKitContainerOpts(cfg *config.Config) dockerx.ContainerOpts {
 	}
 }
 
+// The dashboard, which runs as a Next server in its own container.
+//
+// It used to be a static export compiled into the daemon, and that
+// bought one binary at the cost of every route being static — no
+// dynamic path segments, so what identified a resource travelled in the
+// query string. Four levels deep that stopped being a constraint worth
+// paying.
+//
+// It is its own image, published beside the daemon's at the same
+// version. The daemon is *told* which one — CUBESHIP_WEB_IMAGE, baked
+// into the daemon's image at the matching version and overridden by
+// install.sh when it builds locally — rather than deriving it from its
+// own image reference, because deriving means string surgery on a
+// registry path that an operator is free to change.
+const (
+	FrontendContainerName = "cubeship-frontend"
+	FrontendPort          = 3000
+)
+
+// FrontendAddress is where the daemon proxies a page request.
+//
+// The daemon is the only thing in front of this container — nothing
+// publishes its port — so the address follows where the daemon runs,
+// the same way every other address here does. On the host it is
+// `make web-dev`'s Next on :3001, which is deliberately not this
+// container: a developer editing the dashboard wants hot reload, not a
+// rebuilt image.
+func FrontendAddress(cfg *config.Config) string {
+	if cfg.InContainer {
+		return fmt.Sprintf("%s:%d", FrontendContainerName, FrontendPort)
+	}
+	return fmt.Sprintf("127.0.0.1:%d", localFrontendDevPort)
+}
+
+// localFrontendDevPort is where `make web-dev` serves the dashboard.
+const localFrontendDevPort = 3001
+
+// FrontendContainerOpts describes the dashboard's container.
+//
+// Nothing publishes a port. The daemon reaches it by name on the shared
+// network, and exposing the dashboard directly would be a second
+// address answering for the same instance without the API beside it —
+// where a session cookie set on one would not be sent to the other.
+func FrontendContainerOpts(image string) dockerx.ContainerOpts {
+	return dockerx.ContainerOpts{
+		Name:    FrontendContainerName,
+		Image:   image,
+		Network: Network,
+	}
+}
+
+// EnsureFrontend starts the dashboard's container.
+//
+// A daemon on the host does not have one and does not need one:
+// `make web-dev` is what serves the dashboard there, with hot reload,
+// which is what someone editing it wants.
+func EnsureFrontend(ctx context.Context, docker dockerAPI, cfg *config.Config) error {
+	if !cfg.InContainer {
+		return nil
+	}
+	if cfg.WebImage == "" {
+		return fmt.Errorf("nothing says which image the dashboard runs from; set CUBESHIP_WEB_IMAGE")
+	}
+	return Ensure(ctx, docker, FrontendContainerOpts(cfg.WebImage))
+}
+
 // EnsureBuildKit starts the builder if it is not already running.
 //
 // It is called before a build rather than at startup, and deliberately:

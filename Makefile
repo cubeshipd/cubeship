@@ -5,7 +5,6 @@ BINDIR  ?= bin
 COVER   ?= coverage.out
 WEBDIR  ?= web
 PNPM    ?= pnpm
-WEBDIST ?= internal/web/dist
 RELEASEDIR ?= dist
 
 # The daemon runs on the VPS, which is Linux; the CLI runs wherever you
@@ -26,19 +25,15 @@ build: web ## Build cubeship and cubeshipd for this machine into bin/
 	$(GO) build -o $(BINDIR)/ ./cmd/...
 
 .PHONY: daemon-linux
-daemon-linux: web ## Cross-compile the daemon for the VPS (linux/amd64 unless overridden)
+daemon-linux: ## Cross-compile the daemon for the VPS (linux/amd64 unless overridden)
 	GOOS=$(DAEMON_GOOS) GOARCH=$(DAEMON_GOARCH) $(GO) build -o $(DAEMON_BIN) ./cmd/cubeshipd
 
-# The dashboard is compiled into the daemon, so it has to exist before
-# the Go build runs. It is not in the repository: this target is the only
-# thing that puts it there, and `go build` alone yields a daemon that
-# serves the API and says the dashboard is missing.
+# The dashboard is its own image and its own container now, so the Go
+# build no longer waits on it. This target is here to fail a broken
+# dashboard on your machine rather than in the image build.
 .PHONY: web
-web: ## Build the dashboard into the daemon's embedded assets
+web: ## Build the dashboard, the way its image does
 	cd $(WEBDIR) && $(PNPM) install --frozen-lockfile && $(PNPM) run build
-	rm -rf $(WEBDIST)
-	cp -R $(WEBDIR)/out $(WEBDIST)
-	touch $(WEBDIST)/.gitkeep
 
 # The data directory a dev daemon keeps its state in. Override it to run
 # against a different instance; the default is yours, outside the repo,
@@ -65,8 +60,12 @@ dev: db-up ## Run the daemon with live reload, rebuilding on every Go change
 		docker exec $(PG_CONTAINER) createdb -U cubeship cubeship_dev
 	CUBESHIP_DATA_DIR=$(DEV_DATA_DIR) CUBESHIP_DATABASE_URL="$(DEV_DATABASE_URL)" $(GO) tool air
 
+# The daemon proxies to :3001 when it runs on the host — see
+# bootstrap.FrontendAddress — so this is the dashboard for `make dev`
+# rather than a second thing to open. Reach the instance at :3000 either
+# way; :3001 works too, and rewrites /api to the daemon itself.
 .PHONY: web-dev
-web-dev: ## Run the dashboard against a daemon on :3000, with hot reload
+web-dev: ## Run the dashboard for `make dev`, with hot reload
 	cd $(WEBDIR) && $(PNPM) run dev
 
 .PHONY: install
@@ -75,8 +74,9 @@ install: ## Install the CLI into GOBIN
 
 # Deliberately not `systemctl restart` on a host you haven't named: pass
 # HOST explicitly, every time.
-# The release is the image: it carries the daemon and the dashboard, and
-# install.sh pulls it. Nothing else has to be hosted anywhere.
+# The release is two images — the daemon and the dashboard — at the same
+# version, and install.sh pulls both. Nothing else has to be hosted
+# anywhere, and an upgrade is still a pull.
 VERSION ?= dev
 IMAGE   ?= ghcr.io/cubeship/cubeshipd
 
@@ -194,6 +194,4 @@ tidy: ## Sync go.mod/go.sum with the imports
 
 .PHONY: clean
 clean: ## Remove build output
-	rm -rf $(BINDIR) $(COVER) $(RELEASEDIR) $(WEBDIR)/out $(WEBDIR)/.next
-	rm -rf $(WEBDIST)
-	mkdir -p $(WEBDIST) && touch $(WEBDIST)/.gitkeep
+	rm -rf $(BINDIR) $(COVER) $(RELEASEDIR) $(WEBDIR)/.next

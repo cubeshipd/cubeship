@@ -1,0 +1,57 @@
+# The dashboard, as it ships.
+#
+# Its own image, and its own container: cubeship-frontend, a sibling of
+# the daemon on the "cubeship" network. Nothing publishes its port — the
+# daemon is the only thing in front of it, serving /api itself and
+# proxying everything else here, so the instance is still one address.
+#
+# It used to be a static export compiled into the daemon, which bought
+# one binary at the cost of every route being static: no dynamic path
+# segments, so whatever identified a resource travelled in the query
+# string. Four levels deep — an organization, a project, an environment,
+# an app — that stopped being a constraint worth paying.
+
+# --- the build ---------------------------------------------------------
+FROM node:22-alpine AS build
+WORKDIR /src
+
+RUN corepack enable
+
+# pnpm-workspace.yaml travels with the manifest and the lockfile because
+# it carries the settings the install itself is governed by, not just the
+# workspace layout. Leaving it out makes the install here run under
+# different policy from the install everywhere else — which surfaces as a
+# build that fails on a dependency published today and passes tomorrow.
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+
+COPY web/ ./
+RUN pnpm run build
+
+# `output: "standalone"` writes a server plus exactly the files Next
+# traced as needed — no node_modules, no toolchain. Static assets are
+# not among them, because Next expects those served from beside the
+# server, so they are put back here.
+RUN cp -r .next/static .next/standalone/.next/static && \
+    if [ -d public ]; then cp -r public .next/standalone/public; fi
+
+# --- what runs ---------------------------------------------------------
+FROM node:22-alpine
+WORKDIR /app
+
+# Not root. This container renders HTML and talks to nothing but the
+# daemon; it has no reason to hold any privilege, and node:alpine ships
+# an unprivileged user for exactly this.
+USER node
+
+COPY --from=build --chown=node:node /src/.next/standalone ./
+
+# Next binds loopback by default, which inside a container means nothing
+# outside it can connect. Set here rather than by whoever runs the image,
+# because it describes the image rather than the deployment.
+ENV HOSTNAME=0.0.0.0
+ENV PORT=3000
+ENV NODE_ENV=production
+
+EXPOSE 3000
+CMD ["node", "server.js"]

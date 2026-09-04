@@ -2,10 +2,7 @@ package extregistry
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"cubeship/internal/platform/awssig"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -61,9 +60,7 @@ func getECRAuthorization(ctx context.Context, client *http.Client, accessKeyID, 
 	req.Header.Set("Content-Type", "application/x-amz-json-1.1")
 	req.Header.Set("X-Amz-Target", target)
 
-	if err := signV4(req, body, accessKeyID, secret, region, service, time.Now().UTC()); err != nil {
-		return nil, err
-	}
+	awssig.Sign(req, body, accessKeyID, secret, region, service, time.Now())
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -128,64 +125,6 @@ func getECRAuthorization(ctx context.Context, client *http.Client, accessKeyID, 
 		Registry: strings.TrimPrefix(data.ProxyEndpoint, "https://"),
 		Expires:  expires,
 	}, nil
-}
-
-// signV4 signs a request the way AWS requires. It is the canonical
-// request, the string to sign, and a chain of HMACs — no more, because
-// this signs one endpoint with no query and a fixed set of headers.
-func signV4(req *http.Request, body []byte, accessKeyID, secret, region, service string, now time.Time) error {
-	amzDate := now.Format("20060102T150405Z")
-	dateStamp := now.Format("20060102")
-
-	req.Header.Set("X-Amz-Date", amzDate)
-	host := req.URL.Host
-	req.Host = host
-
-	payloadHash := sha256.Sum256(body)
-	hashedPayload := hex.EncodeToString(payloadHash[:])
-	req.Header.Set("X-Amz-Content-Sha256", hashedPayload)
-
-	// Signed headers must be sorted, lowercase, and exactly the ones
-	// listed — AWS recomputes this and compares.
-	signedHeaders := "content-type;host;x-amz-content-sha256;x-amz-date;x-amz-target"
-	canonicalHeaders := strings.Join([]string{
-		"content-type:" + req.Header.Get("Content-Type"),
-		"host:" + host,
-		"x-amz-content-sha256:" + hashedPayload,
-		"x-amz-date:" + amzDate,
-		"x-amz-target:" + req.Header.Get("X-Amz-Target"),
-	}, "\n") + "\n"
-
-	path := req.URL.EscapedPath()
-	if path == "" {
-		path = "/"
-	}
-	canonicalRequest := strings.Join([]string{
-		req.Method, path, req.URL.RawQuery, canonicalHeaders, signedHeaders, hashedPayload,
-	}, "\n")
-
-	requestHash := sha256.Sum256([]byte(canonicalRequest))
-	scope := strings.Join([]string{dateStamp, region, service, "aws4_request"}, "/")
-	stringToSign := strings.Join([]string{
-		"AWS4-HMAC-SHA256", amzDate, scope, hex.EncodeToString(requestHash[:]),
-	}, "\n")
-
-	key := hmacSHA256([]byte("AWS4"+secret), dateStamp)
-	key = hmacSHA256(key, region)
-	key = hmacSHA256(key, service)
-	key = hmacSHA256(key, "aws4_request")
-	signature := hex.EncodeToString(hmacSHA256(key, stringToSign))
-
-	req.Header.Set("Authorization", fmt.Sprintf(
-		"AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
-		accessKeyID, scope, signedHeaders, signature))
-	return nil
-}
-
-func hmacSHA256(key []byte, data string) []byte {
-	mac := hmac.New(sha256.New, key)
-	mac.Write([]byte(data))
-	return mac.Sum(nil)
 }
 
 // Repo is one repository in a registry, and Image one tag in it. They
@@ -285,9 +224,7 @@ func callECR(ctx context.Context, client *http.Client, c *Credential, action, bo
 	req.Header.Set("Content-Type", "application/x-amz-json-1.1")
 	req.Header.Set("X-Amz-Target", "AmazonEC2ContainerRegistry_V20150921."+action)
 
-	if err := signV4(req, []byte(body), c.Username, c.Password, c.Region, "ecr", time.Now().UTC()); err != nil {
-		return err
-	}
+	awssig.Sign(req, []byte(body), c.Username, c.Password, c.Region, "ecr", time.Now())
 
 	resp, err := client.Do(req)
 	if err != nil {

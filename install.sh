@@ -26,6 +26,10 @@ set -eu
 # Where releases are pulled from. Point these somewhere else to install a
 # build of your own.
 IMAGE="${CUBESHIP_IMAGE:-ghcr.io/cubeship/cubeshipd}"
+# The dashboard is its own image and its own container, started by the
+# daemon rather than by this script — so all that happens here is making
+# sure it is on the box and telling the daemon its name.
+WEB_IMAGE="${CUBESHIP_WEB_IMAGE:-ghcr.io/cubeship/cubeship-frontend}"
 VERSION="${CUBESHIP_VERSION:-latest}"
 
 # LOCAL builds from source instead of pulling. Set by --local.
@@ -56,7 +60,8 @@ usage() {
 		            repository; the build itself runs inside Docker.
 
 		Environment:
-		  CUBESHIP_IMAGE      image to pull (default $IMAGE)
+		  CUBESHIP_IMAGE      daemon image to pull (default $IMAGE)
+		  CUBESHIP_WEB_IMAGE  dashboard image to pull (default $WEB_IMAGE)
 		  CUBESHIP_VERSION    tag to pull (default $VERSION)
 		  CUBESHIP_DATA_DIR   where the instance keeps its state (default $DATA_DIR)
 	USAGE
@@ -116,26 +121,42 @@ ensure_docker() {
 # Postgres, the registry and Traefik, and those are resolved by the
 # Engine on the host. A different path inside would make every one of
 # them bind a directory that does not exist.
-# build_image makes the image from the source next to this script. The
-# Dockerfile is multi-stage, so the compiler and the front-end toolchain
-# live in the build rather than on the host.
-build_image() {
+# build_images makes both images from the source next to this script.
+# Each Dockerfile is multi-stage, so the compiler and the front-end
+# toolchain live in the builds rather than on the host.
+#
+# The daemon is built second and last on purpose: it is the one that
+# starts everything, and a half-built pair is better discovered before
+# anything is replaced.
+build_images() {
 	dir=$(source_dir)
 	[ -f "$dir/Dockerfile" ] ||
 		die "--local needs the repository. Run it from a checkout: git clone, then sudo ./install.sh --local"
 
 	IMAGE="${CUBESHIP_IMAGE:-cubeship/cubeshipd}"
+	WEB_IMAGE="${CUBESHIP_WEB_IMAGE:-cubeship/cubeship-frontend}"
 	VERSION="${CUBESHIP_VERSION:-local}"
+
+	say "Building $WEB_IMAGE:$VERSION from $dir…"
+	docker build -f "$dir/Dockerfile.web" -t "$WEB_IMAGE:$VERSION" "$dir" ||
+		die "the dashboard image did not build. Nothing was changed."
 
 	say "Building $IMAGE:$VERSION from $dir…"
 	docker build --build-arg "VERSION=$VERSION" -t "$IMAGE:$VERSION" "$dir" ||
-		die "the image did not build. Nothing was changed."
+		die "the daemon image did not build. Nothing was changed."
 }
 
 run_daemon() {
 	if [ "$LOCAL" = 1 ]; then
-		build_image
+		build_images
 	else
+		# Both, and the dashboard first: the daemon starts a container
+		# from it the moment it comes up, and pulling it there instead
+		# would be a pull with nobody watching it fail.
+		say "Pulling $WEB_IMAGE:$VERSION…"
+		docker pull "$WEB_IMAGE:$VERSION" >/dev/null ||
+			die "could not pull $WEB_IMAGE:$VERSION"
+
 		say "Pulling $IMAGE:$VERSION…"
 		docker pull "$IMAGE:$VERSION" >/dev/null || die "could not pull $IMAGE:$VERSION"
 	fi
@@ -159,6 +180,7 @@ run_daemon() {
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v "$DATA_DIR:$DATA_DIR" \
 		-e CUBESHIP_DATA_DIR="$DATA_DIR" \
+		-e CUBESHIP_WEB_IMAGE="$WEB_IMAGE:$VERSION" \
 		-p "$PORT:$PORT" \
 		"$IMAGE:$VERSION" >/dev/null ||
 		die "could not start $CONTAINER. See: docker logs $CONTAINER"

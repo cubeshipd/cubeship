@@ -38,6 +38,8 @@ export function SearchableSelect({
   onChange,
   disabled,
   busy,
+  searchable: searchableProp,
+  fieldClassName,
 }: {
   label: string;
   hint?: string;
@@ -48,12 +50,19 @@ export function SearchableSelect({
   onChange: (value: string) => void;
   disabled?: boolean;
   busy?: boolean;
+  // Overrides the length threshold. Eight record types are eight short
+  // words you read at a glance; a search box over them is a control
+  // asking to be used for nothing.
+  searchable?: boolean;
+  // Layout for the field as a whole — its width in a row of them, the
+  // way TextField's does.
+  fieldClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
 
-  const searchable = choices.length >= SEARCH_FROM;
+  const searchable = searchableProp ?? choices.length >= SEARCH_FROM;
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -66,7 +75,7 @@ export function SearchableSelect({
   const selected = choices.find((c) => c.value === value);
 
   return (
-    <div className="space-y-1.5">
+    <div className={cn("space-y-1.5", fieldClassName)}>
       <Label>{label}</Label>
       <Popover
         open={open}

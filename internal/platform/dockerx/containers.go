@@ -30,11 +30,17 @@ var ErrContainerNotFound = errors.New("container not found")
 // themselves import in this version.
 
 type ContainerOpts struct {
-	Name        string
-	Image       string
-	Labels      map[string]string
-	Env         []string
-	Cmd         []string
+	Name   string
+	Image  string
+	Labels map[string]string
+	Env    []string
+	Cmd    []string
+	// Entrypoint replaces the image's own. It exists for the one
+	// container Cubeship starts from its own image to run something
+	// other than the daemon — the dashboard's Next server — where Cmd
+	// alone would be arguments to the daemon rather than a different
+	// program.
+	Entrypoint  []string
 	Binds       []string
 	Ports       []string
 	Network     string
@@ -223,6 +229,7 @@ func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (strin
 			Labels:       opts.Labels,
 			Env:          opts.Env,
 			Cmd:          opts.Cmd,
+			Entrypoint:   opts.Entrypoint,
 			ExposedPorts: exposedPorts,
 		},
 		&container.HostConfig{
@@ -278,6 +285,11 @@ type ContainerInfo struct {
 	ID      string
 	Running bool
 	Labels  map[string]string
+	// Image is the reference the container was created from. The daemon
+	// reads its own so it can start a sibling from the same image —
+	// which is how the dashboard's container is the release rather than
+	// a second thing to publish and keep in step.
+	Image string
 }
 
 // InspectContainerByName looks up a container by name (or ID). It returns
@@ -298,6 +310,11 @@ func (c *Client) InspectContainerByName(ctx context.Context, name string) (Conta
 	out := ContainerInfo{ID: info.ID, Running: info.State != nil && info.State.Running}
 	if info.Config != nil {
 		out.Labels = info.Config.Labels
+		// Config.Image is what was asked for — a tag — where the
+		// container's own Image field is the digest it resolved to. A
+		// tag is what a sibling should be started from: it is what the
+		// operator upgrades.
+		out.Image = info.Config.Image
 	}
 	return out, nil
 }

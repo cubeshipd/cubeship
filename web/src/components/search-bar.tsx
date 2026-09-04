@@ -31,10 +31,14 @@ export function SearchBar({
   className?: string;
 }) {
   return (
+    // Focus is decided in globals.css, with the other fields, so this
+    // control lights up the same way they do. A ring here would be a
+    // second answer to a question the house style already answers —
+    // which is how it came to draw two borders at once.
     <div
+      data-slot="search-bar"
       className={cn(
         "flex items-center gap-2 border border-border px-3 transition-colors",
-        "focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50",
         className,
       )}
     >

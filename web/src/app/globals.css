@@ -217,7 +217,13 @@
 }
 
 /* Focus is a light coming on, not a fatter outline: the ring stays 1px
-   and the glow does the shouting. */
+   and the glow does the shouting.
+ *
+ * The search bar is :focus-within rather than :focus-visible, because
+ * the thing that takes focus is the input inside it and the thing that
+ * lights up is the whole control — the mark and the count are part of
+ * it, and a ring around only the middle reads as a mistake. */
+[data-slot="search-bar"]:focus-within,
 [data-slot="button"]:focus-visible,
 [data-slot="input"]:focus-visible,
 [data-slot="textarea"]:focus-visible,
@@ -226,6 +232,13 @@
   box-shadow:
     0 0 0 1px var(--ring),
     0 0 16px -2px color-mix(in srgb, var(--ring) 70%, transparent);
+}
+
+/* The 1px ring sits on top of the border rather than beside it, so the
+   border has to become the ring's colour or it shows through as a
+   second, duller line under the first. */
+[data-slot="search-bar"]:focus-within {
+  border-color: var(--ring);
 }
 
 @utility bg-grid {

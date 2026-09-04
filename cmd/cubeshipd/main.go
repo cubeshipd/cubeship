@@ -214,6 +214,18 @@ func applyInfrastructure(ctx context.Context, cfg *config.Config, docker *docker
 		bootstrap.TraefikContainerOpts(cfg, values.Get(settings.ACMEEmail))); err != nil {
 		return fmt.Errorf("bootstrap traefik: %w", err)
 	}
+
+	// The dashboard. Its own container, which the daemon proxies to for
+	// everything that is not /api — so the instance is one address and
+	// a session cookie is same-origin for both halves.
+	//
+	// A failure here does not stop the daemon: the API, the CLI and
+	// every running app are unaffected by a dashboard that is down, and
+	// refusing to start over it would turn a cosmetic problem into an
+	// outage. internal/web says so at the address instead.
+	if err := bootstrap.EnsureFrontend(ctx, docker, cfg); err != nil {
+		log.Printf("bootstrap: the dashboard did not start: %v", err)
+	}
 	return nil
 }
 
@@ -316,6 +328,7 @@ func run() error {
 		WebhookToken:  cfg.Token,
 		Builder:       builder,
 		LocalRegistry: localRegistry,
+		Frontend:      bootstrap.FrontendAddress(cfg),
 	})
 
 	// An install upgrading from the release where the domain and contact

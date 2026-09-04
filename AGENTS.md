@@ -38,14 +38,14 @@ internal/
   github/       the GitHub App: private clones, and deploy on push
   setup/        the first-run flow that claims an instance
   settings/     the instance's domain and contact address
-  web/          serves the built dashboard out of the binary
+  web/          proxies page requests to the dashboard's container
   server/       mounts every module on the HTTP mux and the MCP endpoint
   platform/     infrastructure: database, dockerx, traefik, bootstrap,
                 buildkit, config, authkey, regauth, httpx
   envvar/ slug/ small shared vocabulary
 cmd/cubeshipd/  the daemon
 cmd/cubeship/   the CLI (cobra), one file per noun
-web/            the dashboard: Next.js, static export, built by `make web`
+web/            the dashboard: Next.js standalone, its own image and container
 internal/apiclient, internal/clicreds — what the CLI talks to the daemon with
 ```
 
@@ -92,28 +92,38 @@ in the prefix. `servertest`'s `Do` prefixes for you; `DoRoot` does not.
 
 ## The dashboard
 
-`web/` is a Next.js app with `output: "export"`, built by `make web`,
-copied into `internal/web/dist` and compiled into the daemon. An install
-is still one binary.
+`web/` is a Next.js app with `output: "standalone"`, built by
+`Dockerfile.web` into its own image and run as `cubeship-frontend`, a
+sibling of the daemon on the `cubeship` network.
 
-**Static export means no `[dynamic]` segments.** There is no server to
-fall back on, so every route is a real static route and whatever
-identifies a resource travels in the query string —
-`/apps?ref=org/project/env/name`. The reference is four path components
-anyway, and carrying it as one value keeps it whole.
+**The daemon is the only thing in front of it.** It answers `/api`
+itself and proxies everything else to that container, so an instance is
+still **one address**: Cubeship is installed with one command and
+reached by IP before there is a domain, and a dashboard on a second port
+would be a second thing to open, a second thing to firewall, and a
+session cookie set on one would not be sent to the other. Nothing
+publishes the container's port.
 
-The build output is not in the repository; `internal/web/dist/.gitkeep`
-is what keeps the embed legal without it. A `go build` with no `make web`
-produces a daemon that serves the API and tells you the dashboard is
-missing, rather than a blank 404 at the address the installer told you to
-open.
+It used to be a static export compiled into the daemon. That bought one
+binary at the cost of every route being static — no `[dynamic]`
+segments, so whatever identified a resource travelled in the query
+string. Four levels deep that stopped being a constraint worth paying,
+and the product was bending around a build flag. **Write real dynamic
+segments.** The `?ref=` pages predate this and are being converted.
 
-`make web-dev` runs it on :3001 against a daemon on :3000, proxying
-`/api` — the proxy exists only in development, because in a build the
-daemon serves both.
+`internal/web` is the proxy, and the one thing it does beyond proxying
+is explain itself: a dashboard container that is not up answers 502 with
+the container's name and the fact that the API is unaffected, rather
+than a bare gateway error at the address the installer told you to open.
 
-Package manager is **pnpm** (`pnpm-lock.yaml` is the lockfile `make web`
-installs from), and linting and formatting are both **Biome** —
+`make web-dev` runs the dashboard on :3001 with hot reload, and a daemon
+on the host proxies there rather than to a container —
+`bootstrap.FrontendAddress` is the one place that branches. Reaching
+:3001 directly works too; it rewrites `/api` to the daemon.
+
+Package manager is **pnpm** (`pnpm-lock.yaml` is the lockfile the image
+build installs from, along with `pnpm-workspace.yaml`, which carries the
+settings that install is governed by), and linting and formatting are both **Biome** —
 `pnpm lint` checks, `pnpm format` writes. There is no ESLint and no
 Prettier.
 
@@ -134,12 +144,28 @@ else — so a page that listed every app on the instance was listing
 things whose names do not identify them. A project opens on
 `production`, the environment it always has and cannot lose.
 
-The project and the app both travel as a `ref` in the query string
-rather than a path segment, because a static export has no dynamic
-segments. `ref` carries the organization too, so a link works for
+The project and the app travel as a `ref` in the query string. That is
+left over from the static export and is being converted to real path
+segments; `ref` carries the organization too, so a link works for
 someone whose sidebar is pointing elsewhere — opening it moves the
 whole dashboard to that organization rather than showing one page out
-of frame.
+of frame, and whatever replaces it has to keep that true.
+
+DNS is the shape the rest is moving to:
+
+```
+/dns                        the credentials
+/dns/[id]                   one credential's zones
+/dns/[id]/settings          its label, its secret, deleting it
+/dns/[id]/zones/[zone]      a zone's records, by domain name
+```
+
+A zone is addressed by its **name**, not by the provider's id for it: a
+name is what someone recognises in a link they were sent, and it is
+unique within an account either way. The id is what every API call
+needs, so it is resolved from the zone listing on arrival — one extra
+request in exchange for a URL that says what it is. A credential keeps
+its numeric id, because its label is a thing its owner renames.
 
 A project and an environment each have a **settings screen** (`/projects/settings?ref=org/project`)
 rather than a delete button in its header: renaming it, describing it and
@@ -236,9 +262,9 @@ which one. Apps, projects and registry logins all read it; the projects
 page, the registries page and the new-app form no longer ask a second
 time.
 
-It is deliberately **not in the URL**: a static export has no dynamic
-segments, and threading it through every query string would mean every
-link in the dashboard has to carry it. It is remembered in
+It is deliberately **not in the URL**: threading it through every path
+would mean every link in the dashboard has to carry it, and an
+organization is the frame rather than a thing you navigate to. It is remembered in
 `localStorage`, and a remembered slug that no longer exists falls back
 to the first organization the daemon returns rather than leaving the
 dashboard pointing at nothing.
@@ -276,7 +302,7 @@ state is turned into a colour.
 Type is **Chakra Petch** for the interface and **JetBrains Mono** for
 anything you would type or compare — references, images, hosts,
 commands. Both are vendored as woff2 under `web/src/fonts` and loaded
-with `next/font/local`: `make web` already needs the network for
+with `next/font/local`: the image build already needs the network for
 `pnpm install`, and a second place a build can fail is one too many.
 
 **Everything a field looks like is decided in `globals.css` and nowhere
@@ -306,8 +332,17 @@ and a visitor whose OS is light would otherwise get half of them.
 ## Installing
 
 `install.sh` is the product's front door: it installs Docker if needed,
-pulls the image and runs it. **The release is the image** — nothing else
-has to be hosted anywhere, and an upgrade is a pull.
+pulls the images and runs the daemon. **The release is two images** —
+the daemon and the dashboard, at the same version — and nothing else has
+to be hosted anywhere. An upgrade is still a pull.
+
+The daemon starts the dashboard's container, so it has to know which
+image: `CUBESHIP_WEB_IMAGE`. It is *told* rather than deriving it from
+its own reference, because deriving means string surgery on a registry
+path an operator is free to change, and getting it wrong is an instance
+whose dashboard silently never starts. The daemon's image bakes in the
+matching published version as the default; `install.sh` overrides it
+with `--local`, where neither image is published.
 
 `uninstall.sh` is its counterpart, and the default is **not** the
 destructive one: it removes the containers and leaves the data
@@ -323,22 +358,24 @@ says otherwise.
 the confirmation under a real pseudo-terminal. A destructive script that
 is wrong is the worst kind.
 
-`--local` builds from the checkout the script is in instead of pulling,
-which is how you run unpublished code on a box: push, pull on the server,
-install. It refuses when there is no checkout beside it — piped from
-curl there is nothing to build, and saying so beats a build that fails on
-a missing Dockerfile.
+`--local` builds both images from the checkout the script is in instead
+of pulling, which is how you run unpublished code on a box: push, pull
+on the server, install. The dashboard is built first and the daemon
+last, because the daemon is what starts everything and a half-built pair
+is better discovered before anything is replaced. It refuses when there
+is no checkout beside it — piped from curl there is nothing to build,
+and saying so beats a build that fails on a missing Dockerfile.
 
 **The daemon is a container**, a sibling of Postgres, the registry,
-Traefik, BuildKit and every app on the `cubeship` network. Each finds the
-others by container name.
+Traefik, BuildKit, the dashboard and every app on the `cubeship`
+network. Each finds the others by container name.
 
 **`config.InContainer` is what decides every address**, and it is set in
 the image rather than by whoever runs it. A daemon on the host is still
 supported — that is what `make dev` runs — and reaches the same things
 over loopback, with containers reaching back through
-`host.docker.internal`. `bootstrap.PostgresDSN`, `LocalRegistryAddress`
-and `DaemonAddress` are the three places that branch, and
+`host.docker.internal`. `bootstrap.PostgresDSN`, `LocalRegistryAddress`,
+`DaemonAddress` and `FrontendAddress` are the four places that branch, and
 `TestAddressesFollowWhereTheDaemonRuns` pins both modes: getting this
 wrong is not a compile error and not a failure anywhere else, it is a
 daemon that starts, looks healthy and cannot reach its own database.
