@@ -203,7 +203,11 @@ func TestWriteAPIRouterConfigWritesFile(t *testing.T) {
 
 type fakeDocker struct {
 	pulledRef string
-	createErr error
+	// localImages are the ones already on the host, which Ensure must
+	// not try to pull.
+	localImages map[string]bool
+	pullErr     error
+	createErr   error
 	// createdName stays "" until CreateContainer is actually called, so
 	// tests can assert Ensure did *not* try to recreate an existing
 	// container.
@@ -231,7 +235,11 @@ func newFakeDocker() *fakeDocker {
 
 func (f *fakeDocker) PullImage(ctx context.Context, ref string, _ *dockerx.RegistryAuth) error {
 	f.pulledRef = ref
-	return nil
+	return f.pullErr
+}
+
+func (f *fakeDocker) HasImage(_ context.Context, ref string) (bool, error) {
+	return f.localImages[ref], nil
 }
 func (f *fakeDocker) CreateContainer(ctx context.Context, opts dockerx.ContainerOpts) (string, error) {
 	if f.createErr != nil {
@@ -685,5 +693,45 @@ func TestTheTokenRealmFallsBackToThisHost(t *testing.T) {
 	without := RegistryConfigYAML("", "http://daemon/hooks", "tok3n")
 	if !strings.Contains(without, "realm: http://127.0.0.1:3000/v2/token") {
 		t.Errorf("the realm has no working fallback:\n%s", without)
+	}
+}
+
+// An image built on this host exists in no registry, so pulling it fails
+// — and pulling it at all is the bug: `install.sh --local` builds the
+// daemon and the dashboard here, and Ensure used to pull unconditionally,
+// which meant the dashboard's container never started on a local install.
+func TestEnsureDoesNotPullAnImageItAlreadyHas(t *testing.T) {
+	docker := &fakeDocker{
+		localImages: map[string]bool{"cubeship/cubeship-frontend:local": true},
+		pullErr:     errors.New("pull access denied: repository does not exist"),
+	}
+
+	err := Ensure(context.Background(), docker, dockerx.ContainerOpts{
+		Name:  "cubeship-frontend",
+		Image: "cubeship/cubeship-frontend:local",
+	})
+	if err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	if docker.pulledRef != "" {
+		t.Errorf("pulled %q, which is already on the host", docker.pulledRef)
+	}
+	if docker.createdName != "cubeship-frontend" {
+		t.Errorf("created %q, want the container to have been created", docker.createdName)
+	}
+}
+
+// The other half: an image that is genuinely absent is still fetched.
+func TestEnsurePullsAnImageItDoesNotHave(t *testing.T) {
+	docker := &fakeDocker{}
+
+	if err := Ensure(context.Background(), docker, dockerx.ContainerOpts{
+		Name:  "cubeship-postgres",
+		Image: "postgres:16-alpine",
+	}); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	if docker.pulledRef != "postgres:16-alpine" {
+		t.Errorf("pulled %q, want postgres:16-alpine", docker.pulledRef)
 	}
 }

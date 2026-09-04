@@ -61,7 +61,10 @@ func unreachable(w http.ResponseWriter, r *http.Request, err error) {
 	w.WriteHeader(http.StatusBadGateway)
 	w.Write([]byte(
 		"The dashboard is not answering.\n\n" +
-			"It runs as its own container, cubeship-frontend, started by the daemon from " +
-			"the same image the daemon runs. `docker logs cubeship-frontend` says why.\n\n" +
+			"It runs as its own container, cubeship-frontend, which the daemon starts from " +
+			"the image named in CUBESHIP_WEB_IMAGE.\n\n" +
+			"Two places say why:\n" +
+			"  docker logs cubeship-daemon    — if the container was never started\n" +
+			"  docker logs cubeship-frontend  — if it started and then failed\n\n" +
 			"The API is unaffected: it is under /api, and /docs describes it.\n"))
 }

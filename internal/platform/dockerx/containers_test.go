@@ -36,6 +36,7 @@ type fakeAPI struct {
 	networkCreateErr        error
 	loggedID                string
 	loggedOptions           container.LogsOptions
+	localImages             map[string]bool
 	loaded                  []byte
 	loadStream              string
 }
@@ -89,6 +90,13 @@ func (f *fakeAPI) ContainerStop(ctx context.Context, id string, options containe
 func (f *fakeAPI) ContainerRemove(ctx context.Context, id string, options container.RemoveOptions) error {
 	f.removedID = id
 	return nil
+}
+
+func (f *fakeAPI) ImageInspectWithRaw(_ context.Context, ref string) (types.ImageInspect, []byte, error) {
+	if f.localImages[ref] {
+		return types.ImageInspect{ID: "sha256:" + ref}, nil, nil
+	}
+	return types.ImageInspect{}, nil, errdefs.NotFound(errors.New("no such image"))
 }
 
 // The exec trio is here so the fake satisfies the interface. Nothing in

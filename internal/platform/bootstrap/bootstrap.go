@@ -516,6 +516,7 @@ func WriteAPIRouterConfig(cfg *config.Config, apiHost string, daemonPort int) er
 // dockerAPI is the subset of dockerx.Client this package needs.
 type dockerAPI interface {
 	PullImage(ctx context.Context, ref string, creds *dockerx.RegistryAuth) error
+	HasImage(ctx context.Context, ref string) (bool, error)
 	CreateContainer(ctx context.Context, opts dockerx.ContainerOpts) (string, error)
 	StartContainer(ctx context.Context, id string) error
 	StopContainer(ctx context.Context, id string) error
@@ -623,9 +624,23 @@ func Ensure(ctx context.Context, docker dockerAPI, opts dockerx.ContainerOpts) e
 		return fmt.Errorf("inspect %s: %w", opts.Name, err)
 	}
 
-	// Infrastructure images come from Docker Hub anonymously.
-	if err := docker.PullImage(ctx, opts.Image, nil); err != nil {
-		return fmt.Errorf("pull %s: %w", opts.Image, err)
+	// Pull only what is not already here.
+	//
+	// Every image Cubeship starts is pinned to a tag, so an image that
+	// is present is the right one and fetching it again is a round trip
+	// to be told so. That is a small saving for the ones from Docker
+	// Hub and the whole ballgame for the ones that were built on this
+	// box: `install.sh --local` builds the daemon and the dashboard
+	// here, and those references exist in no registry — pulling them
+	// unconditionally failed, and the dashboard never started.
+	present, err := docker.HasImage(ctx, opts.Image)
+	if err != nil {
+		return err
+	}
+	if !present {
+		if err := docker.PullImage(ctx, opts.Image, nil); err != nil {
+			return fmt.Errorf("pull %s: %w (if this image was built on this host, it is not there — check the tag)", opts.Image, err)
+		}
 	}
 
 	id, err := docker.CreateContainer(ctx, opts)

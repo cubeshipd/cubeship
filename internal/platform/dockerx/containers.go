@@ -402,3 +402,20 @@ func (c *Client) Exec(ctx context.Context, containerID string, cmd []string) (ou
 // pass names every blob it walks, and on a busy registry that is more
 // than anything reading it needs.
 const maxExecOutput = 1 << 20
+
+// HasImage reports whether an image is already on this host.
+//
+// It exists so nothing pulls what it already has. That is a round trip
+// saved for the images Cubeship gets from Docker Hub, and it is the
+// difference between working and not for an image that was built here:
+// `install.sh --local` builds the daemon and the dashboard on the box
+// itself, and those references exist in no registry to be pulled from.
+func (c *Client) HasImage(ctx context.Context, ref string) (bool, error) {
+	if _, _, err := c.api.ImageInspectWithRaw(ctx, ref); err != nil {
+		if errdefs.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("inspect image %q: %w", ref, err)
+	}
+	return true, nil
+}

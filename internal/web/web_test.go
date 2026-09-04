@@ -58,4 +58,10 @@ func TestADownDashboardExplainsItself(t *testing.T) {
 	if !strings.Contains(body, "/api") {
 		t.Errorf("the answer does not say the API is unaffected:\n%s", body)
 	}
+	// Both logs, because the two failures look identical from here and
+	// are found in different places: a container that never started
+	// leaves its reason in the daemon's log, not its own.
+	if !strings.Contains(body, "cubeship-daemon") {
+		t.Errorf("the answer does not send you to the daemon's log:\n%s", body)
+	}
 }
