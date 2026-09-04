@@ -75,8 +75,11 @@ export function SearchableSelect({
   const selected = choices.find((c) => c.value === value);
 
   return (
-    <div className={cn("space-y-1.5", fieldClassName)}>
-      <Label>{label}</Label>
+    // The same shell as TextField — the same label, the same spacing,
+    // the same height — because this is a field in a form of fields and
+    // the one that looked different was this one.
+    <div className={cn("space-y-2", fieldClassName)}>
+      <Label className="text-xs text-muted-foreground">{label}</Label>
       <Popover
         open={open}
         onOpenChange={(next) => {
@@ -91,12 +94,17 @@ export function SearchableSelect({
       >
         <PopoverTrigger
           render={
+            // data-slot="select-trigger" is what puts this under the
+            // house field rules in globals.css: the surface, the face
+            // and the focus light are decided there for every field at
+            // once, and a `bg-input` here is how this one came out a
+            // different colour from the box beside it.
             <button
               type="button"
+              data-slot="select-trigger"
               disabled={disabled || busy}
               className={cn(
-                "flex h-9 w-full items-center justify-between gap-2 border border-border bg-input px-3 text-left text-sm",
-                "hover:border-ring focus-visible:border-ring focus-visible:outline-none",
+                "flex h-10 w-full items-center justify-between gap-2 border border-border px-3 text-left text-sm",
                 "disabled:cursor-not-allowed disabled:opacity-50",
               )}
             >

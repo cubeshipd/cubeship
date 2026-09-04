@@ -216,6 +216,76 @@
   font-family: var(--font-mono);
 }
 
+/* The switch, as a panel toggle rather than a pill.
+ *
+ * UNLAYERED, like the field rules above and for the same reason: the
+ * primitive ships `rounded-full`, its own size and its own translate as
+ * Tailwind utilities, and inside a layer none of this had any effect.
+ *
+ * The thumb is positioned ABSOLUTELY, and that is the load-bearing
+ * part. Two earlier attempts failed on the same fact: the switch root
+ * renders one or two hidden `<input>`s as siblings of the thumb. A
+ * transform had to agree with a width the primitive computes; flex
+ * justification put the thumb at the end of a line the hidden input was
+ * also on, so it never reached the edge. Out of flow, nothing can move
+ * it but these rules.
+ *
+ * Off it is an empty socket with a 1px edge; on, the track lights and
+ * the thumb takes the accent, so the lit half is the state rather than
+ * the position of a knob. Square, because the only round things in this
+ * interface are the status dots, and that is what makes them read as
+ * lamps. */
+[data-slot="switch"] {
+  position: relative;
+  border-radius: 0;
+  display: inline-block;
+  flex: none;
+  height: 1.125rem;
+  width: 2.25rem;
+  padding: 0;
+  border-color: var(--border-strong);
+  background-color: var(--background);
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+[data-slot="switch"][data-checked] {
+  border-color: var(--primary);
+  background-color: color-mix(in srgb, var(--primary) 18%, transparent);
+  box-shadow: 0 0 12px -3px color-mix(in srgb, var(--primary) 80%, transparent);
+}
+
+[data-slot="switch-thumb"] {
+  position: absolute;
+  border-radius: 0;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  right: auto;
+  width: calc(50% - 3px);
+  height: auto;
+  /* The primitive's own translate, neutralised: `left` and `right` are
+     what move this now, and both together moved it twice. */
+  transform: none;
+  background-color: var(--border-strong);
+  transition:
+    left 120ms ease,
+    background-color 120ms ease;
+}
+
+[data-slot="switch"][data-checked] [data-slot="switch-thumb"] {
+  left: calc(50% + 1px);
+  transform: none;
+  background-color: var(--primary);
+  box-shadow: 0 0 8px -1px var(--primary);
+}
+
+[data-slot="switch"]:hover:not(:focus-visible) {
+  border-color: var(--ring);
+}
+
 /* Focus is a light coming on, not a fatter outline: the ring stays 1px
    and the glow does the shouting.
  *
@@ -224,6 +294,7 @@
  * lights up is the whole control — the mark and the count are part of
  * it, and a ring around only the middle reads as a mistake. */
 [data-slot="search-bar"]:focus-within,
+[data-slot="switch"]:focus-visible,
 [data-slot="button"]:focus-visible,
 [data-slot="input"]:focus-visible,
 [data-slot="textarea"]:focus-visible,

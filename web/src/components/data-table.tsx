@@ -1,12 +1,11 @@
 "use client";
 
 import {
-  type ColumnDef,
-  flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
+  createSortedRowModel,
+  rowSortingFeature,
   type SortingState,
-  useReactTable,
+  tableFeatures,
+  useTable,
 } from "@tanstack/react-table";
 import { cn } from "cn";
 import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
@@ -24,30 +23,52 @@ import {
 
 // Every table in the dashboard, over TanStack Table.
 //
-// It exists for one thing the tables here kept getting wrong: **a cell
-// with no declared width is a cell that can be any width.** A DKIM
-// record's value is two thousand characters, and one of those in a
-// column that sizes to its content drags the whole table sideways —
-// the header stops lining up with the rows, and everything after it is
-// off screen. So the layout is fixed, every column declares a size, and
-// what does not fit is truncated rather than allowed to push.
+// It exists for one thing the hand-rolled tables here kept getting
+// wrong: **a cell with no declared width is a cell that can be any
+// width.** A DKIM record's value is two thousand characters, and one of
+// those in a column that sizes to its content drags the whole table
+// sideways — the header stops lining up with the rows, and everything
+// after it is off screen. So the layout is fixed, every column declares
+// a width, and what does not fit is truncated rather than allowed to
+// push.
 //
-// The rest is what TanStack gives for free and what every one of these
-// tables was hand-rolling: sorting, and one place for a column to say
+// The rest is what TanStack gives and what each of these tables was
+// otherwise reimplementing: sorting, and one place for a column to say
 // how it renders.
 //
-// `size` on a column is a **proportion**, not pixels: `table-layout:
-// fixed` distributes the declared widths, so what matters is their
-// ratio to each other. A column that must not shrink says so with a
-// class instead.
-export type DataTableColumn<T> = ColumnDef<T> & {
-  // Truncate is the default and the reason this component exists. Set
-  // it false for a column whose content must wrap instead — a value
-  // someone has to read all of.
+// Features are registered explicitly in v9 — sorting state does not
+// exist until the feature is — and this is the set every table here
+// gets. Adding one is an edit in this file, not a per-page option.
+const features = tableFeatures({
+  rowSortingFeature,
+  sortedRowModel: createSortedRowModel(),
+});
+
+// A fresh array every render invalidates every data-dependent model, so
+// the empty case is one value rather than one per render.
+const NO_ROWS: never[] = [];
+
+// Column is deliberately not TanStack's ColumnDef spelled out: what a
+// page here needs to say about a column is its heading, how to read a
+// value out of a row, how wide it is and whether it wraps.
+export type Column<T extends object> = {
+  // id doubles as the sort key and the React key.
+  id: string;
+  header: ReactNode;
+  cell: (row: T) => ReactNode;
+  // width is a **proportion**, not pixels: `table-layout: fixed`
+  // distributes the declared widths, so what matters is their ratio to
+  // each other. They should add up to 100.
+  width: number;
+  // sortBy makes the column sortable. Without it the header is a label.
+  sortBy?: (row: T) => string | number;
+  // wrap is for a column whose content must be read in full — a value,
+  // a key. Everything else truncates, which is the point of this file.
   wrap?: boolean;
+  align?: "left" | "right";
 };
 
-export function DataTable<T>({
+export function DataTable<T extends object>({
   columns,
   rows,
   empty,
@@ -56,7 +77,7 @@ export function DataTable<T>({
   onRowClick,
   className,
 }: {
-  columns: DataTableColumn<T>[];
+  columns: Column<T>[];
   // null means still loading, which is not the same as loaded-and-empty
   // and must not look the same.
   rows: T[] | null;
@@ -68,13 +89,18 @@ export function DataTable<T>({
 }) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
-  const table = useReactTable({
-    data: rows ?? [],
-    columns,
+  const table = useTable({
+    features,
+    data: rows ?? NO_ROWS,
+    columns: columns.map((c) => ({
+      id: c.id,
+      header: () => c.header,
+      accessorFn: (row: T) => (c.sortBy ? c.sortBy(row) : ""),
+      cell: ({ row }: { row: { original: T } }) => c.cell(row.original),
+      enableSorting: c.sortBy !== undefined,
+    })),
     state: { sorting },
     onSortingChange: setSorting,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
   });
 
   if (rows !== null && rows.length === 0 && empty) {
@@ -96,26 +122,27 @@ export function DataTable<T>({
             {table.getHeaderGroups().map((group) => (
               <TableRow key={group.id}>
                 {group.headers.map((header) => {
-                  const sortable = header.column.getCanSort();
-                  const direction = header.column.getIsSorted();
+                  const column = columns.find((c) => c.id === header.column.id);
+                  if (!column) return null;
+                  const direction = header.column.getIsSorted?.();
                   return (
                     <TableHead
                       key={header.id}
-                      className="px-4"
-                      style={{ width: `${header.getSize()}%` }}
+                      className={cn("px-4", column.align === "right" && "text-right")}
+                      style={{ width: `${column.width}%` }}
                     >
-                      {header.isPlaceholder ? null : sortable ? (
+                      {column.sortBy ? (
                         <button
                           type="button"
-                          onClick={header.column.getToggleSortingHandler()}
+                          onClick={header.column.getToggleSortingHandler?.()}
                           className="inline-flex items-center gap-1.5 hover:text-foreground"
                         >
-                          {flexRender(header.column.columnDef.header, header.getContext())}
+                          {column.header}
                           {direction === "asc" && <ArrowUpIcon className="size-3" />}
                           {direction === "desc" && <ArrowDownIcon className="size-3" />}
                         </button>
                       ) : (
-                        flexRender(header.column.columnDef.header, header.getContext())
+                        column.header
                       )}
                     </TableHead>
                   );
@@ -133,17 +160,18 @@ export function DataTable<T>({
                 className={cn("select-none", onRowClick && "cursor-pointer")}
                 onClick={onRowClick ? () => onRowClick(row.original) : undefined}
               >
-                {row.getVisibleCells().map((cell) => {
-                  const wrap = (cell.column.columnDef as DataTableColumn<T>).wrap;
-                  return (
-                    <TableCell
-                      key={cell.id}
-                      className={cn("px-4 py-2.5", wrap ? "break-words" : "truncate")}
-                    >
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  );
-                })}
+                {columns.map((column) => (
+                  <TableCell
+                    key={column.id}
+                    className={cn(
+                      "px-4 py-2.5",
+                      column.wrap ? "break-words" : "truncate",
+                      column.align === "right" && "text-right",
+                    )}
+                  >
+                    {column.cell(row.original)}
+                  </TableCell>
+                ))}
               </TableRow>
             ))}
           </TableBody>
