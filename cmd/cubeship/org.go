@@ -20,7 +20,7 @@ func newOrgCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := c.CreateOrg(context.Background(), slug, args[0]); err != nil {
+			if _, err := c.CreateOrg(context.Background(), slug, args[0]); err != nil {
 				return err
 			}
 			fmt.Printf("Created organization %q (slug: %s)\n", args[0], slug)

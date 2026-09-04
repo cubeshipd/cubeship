@@ -63,7 +63,7 @@ import (
 	"testing"
 	"time"
 
-	"cubeship/internal/apiclient"
+	"cubeship/internal/cli/client"
 )
 
 const testToken = "integration-test-token"
@@ -138,21 +138,21 @@ func TestDeployEndToEnd(t *testing.T) {
 	// super-admin's API key is generated on first boot and persisted
 	// under the data dir, so that is what talks to the daemon API.
 	adminKey := readAdminAPIKey(t, dataDir)
-	client := apiclient.New("http://127.0.0.1:9000", adminKey)
+	client := client.New("http://127.0.0.1:9000", adminKey)
 
-	if err := client.CreateOrg(ctx, "acme", "Acme Inc"); err != nil {
+	if _, err := client.CreateOrg(ctx, "acme", "Acme Inc"); err != nil {
 		t.Fatalf("CreateOrg: %v", err)
 	}
 	if _, err := client.CreateProject(ctx, "acme", "web", "Web"); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
 
-	image, err := client.CreateApp(ctx, "myapp", "myapp.localtest.me", "acme", "web", "production")
+	created, err := client.CreateApp(ctx, "myapp", "myapp.localtest.me", "acme", "web", "production")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
-	if image != "registry.localtest.me/acme/myapp" {
-		t.Fatalf("unexpected image: %q", image)
+	if created.Image != "registry.localtest.me/acme/myapp" {
+		t.Fatalf("unexpected image: %q", created.Image)
 	}
 
 	buildApp := exec.Command("docker", "build", "-t", "localhost:5000/acme/myapp:latest", "./testapp")

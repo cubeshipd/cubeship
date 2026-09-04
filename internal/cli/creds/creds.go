@@ -1,4 +1,4 @@
-package clicreds
+package creds
 
 import (
 	"encoding/json"

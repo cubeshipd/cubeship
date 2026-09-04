@@ -7,8 +7,8 @@ import (
 	"os/exec"
 	"strings"
 
-	"cubeship/internal/apiclient"
-	"cubeship/internal/clicreds"
+	"cubeship/internal/cli/client"
+	"cubeship/internal/cli/creds"
 
 	"github.com/spf13/cobra"
 )
@@ -19,12 +19,12 @@ func newLoginCmd() *cobra.Command {
 		Short: "Save credentials for talking to a Cubeship daemon",
 		Args:  cobra.ExactArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path, err := clicreds.DefaultPath()
+			path, err := creds.DefaultPath()
 			if err != nil {
 				return err
 			}
-			creds := clicreds.Credentials{BaseURL: strings.TrimRight(args[0], "/"), Token: args[1]}
-			if err := clicreds.Save(path, creds); err != nil {
+			saved := creds.Credentials{BaseURL: strings.TrimRight(args[0], "/"), Token: args[1]}
+			if err := creds.Save(path, saved); err != nil {
 				return err
 			}
 			fmt.Printf("Saved credentials to %s\n", path)
@@ -48,26 +48,26 @@ func newRegistryCmd() *cobra.Command {
 		// model.
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			path, err := clicreds.DefaultPath()
+			path, err := creds.DefaultPath()
 			if err != nil {
 				return err
 			}
-			creds, err := clicreds.Load(path)
+			saved, err := creds.Load(path)
 			if err != nil {
 				return err
 			}
-			registryHost, err := clicreds.RegistryHostFromBaseURL(creds.BaseURL)
+			registryHost, err := creds.RegistryHostFromBaseURL(saved.BaseURL)
 			if err != nil {
 				return err
 			}
 
-			username, err := apiclient.New(creds.BaseURL, creds.Token).WhoAmI(context.Background())
+			username, err := client.New(saved.BaseURL, saved.Token).WhoAmI(context.Background())
 			if err != nil {
 				return fmt.Errorf("look up your username: %w", err)
 			}
 
 			dockerLogin := exec.Command("docker", "login", registryHost, "-u", username, "--password-stdin")
-			dockerLogin.Stdin = strings.NewReader(creds.Token)
+			dockerLogin.Stdin = strings.NewReader(saved.Token)
 			dockerLogin.Stdout = os.Stdout
 			dockerLogin.Stderr = os.Stderr
 			return dockerLogin.Run()

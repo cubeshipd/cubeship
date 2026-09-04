@@ -5,23 +5,24 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"text/tabwriter"
 
-	"cubeship/internal/apiclient"
-	"cubeship/internal/clicreds"
+	"cubeship/internal/cli/client"
+	"cubeship/internal/cli/creds"
 
 	"github.com/spf13/cobra"
 )
 
-func newAPIClient() (*apiclient.Client, error) {
-	path, err := clicreds.DefaultPath()
+func newAPIClient() (*client.Client, error) {
+	path, err := creds.DefaultPath()
 	if err != nil {
 		return nil, err
 	}
-	creds, err := clicreds.Load(path)
+	saved, err := creds.Load(path)
 	if err != nil {
 		return nil, err
 	}
-	return apiclient.New(creds.BaseURL, creds.Token), nil
+	return client.New(saved.BaseURL, saved.Token), nil
 }
 
 func newAppCmd() *cobra.Command {
@@ -37,11 +38,12 @@ func newAppCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			image, err := c.CreateApp(context.Background(), args[0], domain, org, project, environment)
+			created, err := c.CreateApp(context.Background(), args[0], domain, org, project, environment)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Created %s. Push to: %s\n", args[0], image)
+			fmt.Printf("Created %s in %s/%s/%s. Push to: %s\n",
+				created.Name, created.Org, created.Project, created.Environment, created.Image)
 			return nil
 		},
 	}
@@ -72,16 +74,65 @@ func newAppCmd() *cobra.Command {
 	}
 	deployCmd.Flags().StringVar(&tag, "tag", "latest", "image tag to deploy")
 
-	logsCmd := &cobra.Command{
-		Use:   "logs <name>",
-		Short: "Stream an app's container logs",
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List the apps you can see",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			apps, err := c.ListApps(context.Background())
+			if err != nil {
+				return err
+			}
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "NAME\tORG\tPROJECT\tENV\tSTATUS\tDOMAIN")
+			for _, a := range apps {
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+					a.Name, a.Org, a.Project, a.Environment, a.Status, a.Domain)
+			}
+			return w.Flush()
+		},
+	}
+
+	getCmd := &cobra.Command{
+		Use:   "get <name>",
+		Short: "Show one app, including its registry push path",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := newAPIClient()
 			if err != nil {
 				return err
 			}
-			rc, err := c.Logs(context.Background(), args[0])
+			a, err := c.GetApp(context.Background(), args[0])
+			if err != nil {
+				return err
+			}
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			for _, row := range [][2]string{
+				{"Name", a.Name}, {"Organization", a.Org}, {"Project", a.Project},
+				{"Environment", a.Environment}, {"Domain", a.Domain},
+				{"Status", a.Status}, {"Push to", a.Image},
+			} {
+				fmt.Fprintf(w, "%s:\t%s\n", row[0], row[1])
+			}
+			return w.Flush()
+		},
+	}
+
+	var tail string
+	logsCmd := &cobra.Command{
+		Use:   "logs <name>",
+		Short: "Print an app's recent container logs",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			rc, err := c.Logs(context.Background(), args[0], tail)
 			if err != nil {
 				return err
 			}
@@ -90,6 +141,7 @@ func newAppCmd() *cobra.Command {
 			return err
 		},
 	}
+	logsCmd.Flags().StringVar(&tail, "tail", "", `number of trailing lines, or "all" (default: the daemon's own limit)`)
 
 	envCmd := &cobra.Command{Use: "env", Short: "Manage an app's environment variables"}
 	envSetCmd := &cobra.Command{
@@ -105,7 +157,7 @@ func newAppCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := c.SetEnv(context.Background(), args[0], vars); err != nil {
+			if err := c.SetAppEnv(context.Background(), args[0], vars); err != nil {
 				return err
 			}
 			fmt.Printf("Updated env for %s\n", args[0])
@@ -114,6 +166,6 @@ func newAppCmd() *cobra.Command {
 	}
 	envCmd.AddCommand(envSetCmd)
 
-	appCmd.AddCommand(createCmd, deployCmd, logsCmd, envCmd)
+	appCmd.AddCommand(createCmd, listCmd, getCmd, deployCmd, logsCmd, envCmd)
 	return appCmd
 }

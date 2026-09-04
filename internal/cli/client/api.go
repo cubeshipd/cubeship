@@ -1,0 +1,249 @@
+package client
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"time"
+)
+
+// errorsAs is errors.As, wrapped so client.go needn't import errors just
+// for Status.
+func errorsAs(err error, target any) bool { return errors.As(err, target) }
+
+// --- wire types ---
+
+type Org struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
+type Project struct {
+	Slug         string   `json:"slug"`
+	Name         string   `json:"name"`
+	Environments []string `json:"environments,omitempty"`
+}
+
+type Environment struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
+type App struct {
+	Name        string `json:"name"`
+	Domain      string `json:"domain"`
+	Image       string `json:"image"`
+	Status      string `json:"status"`
+	Org         string `json:"org"`
+	Project     string `json:"project"`
+	Environment string `json:"environment"`
+}
+
+// APIKey is one of the caller's keys. The key value itself is only ever
+// returned once, at creation.
+type APIKey struct {
+	ID         int64      `json:"id"`
+	Name       string     `json:"name"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	CurrentKey bool       `json:"current_key"`
+}
+
+// noContent is the Out type for an endpoint that answers with an empty
+// body.
+type noContent = struct{}
+
+type envVars struct {
+	Vars map[string]string `json:"vars"`
+}
+
+// --- identity ---
+
+// WhoAmI returns the username the client's key belongs to. `registry
+// login` uses it to learn the username to log Docker in as — the saved
+// credentials file only ever stores the key itself.
+func (c *Client) WhoAmI(ctx context.Context) (string, error) {
+	out, err := request[struct {
+		Username string `json:"username"`
+	}](ctx, c, "look up your username", http.MethodGet, "/users/me", nil, http.StatusOK, DefaultTimeout)
+	return out.Username, err
+}
+
+// --- organizations ---
+
+func (c *Client) CreateOrg(ctx context.Context, slug, name string) (Org, error) {
+	return request[Org](ctx, c, "create organization", http.MethodPost, "/orgs",
+		map[string]string{"slug": slug, "name": name}, http.StatusCreated, DefaultTimeout)
+}
+
+func (c *Client) ListOrgs(ctx context.Context) ([]Org, error) {
+	return request[[]Org](ctx, c, "list organizations", http.MethodGet, "/orgs", nil, http.StatusOK, DefaultTimeout)
+}
+
+// CreateOrgUser adds a user to an organization. The returned API key is
+// empty when the username already existed and only gained a membership —
+// that user keeps the key they already have.
+func (c *Client) CreateOrgUser(ctx context.Context, orgSlug, username, role string) (string, error) {
+	out, err := request[struct {
+		APIKey string `json:"api_key"`
+	}](ctx, c, "add user to organization", http.MethodPost, "/orgs/"+segment(orgSlug)+"/users",
+		map[string]string{"username": username, "role": role}, http.StatusCreated, DefaultTimeout)
+	return out.APIKey, err
+}
+
+// --- projects and environments ---
+
+func (c *Client) CreateProject(ctx context.Context, orgSlug, slug, name string) (Project, error) {
+	return request[Project](ctx, c, "create project", http.MethodPost,
+		"/orgs/"+segment(orgSlug)+"/projects",
+		map[string]string{"slug": slug, "name": name}, http.StatusCreated, DefaultTimeout)
+}
+
+func (c *Client) ListProjects(ctx context.Context, orgSlug string) ([]Project, error) {
+	return request[[]Project](ctx, c, "list projects", http.MethodGet,
+		"/orgs/"+segment(orgSlug)+"/projects", nil, http.StatusOK, DefaultTimeout)
+}
+
+func (c *Client) SetProjectEnv(ctx context.Context, orgSlug, projectSlug string, vars map[string]string) error {
+	_, err := request[noContent](ctx, c, "set project env", http.MethodPut,
+		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/env",
+		envVars{Vars: vars}, http.StatusOK, DefaultTimeout)
+	return err
+}
+
+func (c *Client) CreateEnvironment(ctx context.Context, orgSlug, projectSlug, slug, name string) (Environment, error) {
+	return request[Environment](ctx, c, "create environment", http.MethodPost,
+		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/environments",
+		map[string]string{"slug": slug, "name": name}, http.StatusCreated, DefaultTimeout)
+}
+
+func (c *Client) ListEnvironments(ctx context.Context, orgSlug, projectSlug string) ([]Environment, error) {
+	return request[[]Environment](ctx, c, "list environments", http.MethodGet,
+		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/environments",
+		nil, http.StatusOK, DefaultTimeout)
+}
+
+func (c *Client) SetEnvironmentEnv(ctx context.Context, orgSlug, projectSlug, envSlug string, vars map[string]string) error {
+	_, err := request[noContent](ctx, c, "set environment env", http.MethodPut,
+		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/environments/"+segment(envSlug)+"/env",
+		envVars{Vars: vars}, http.StatusOK, DefaultTimeout)
+	return err
+}
+
+func (c *Client) DeleteEnvironment(ctx context.Context, orgSlug, projectSlug, envSlug string) error {
+	_, err := request[noContent](ctx, c, "delete environment", http.MethodDelete,
+		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/environments/"+segment(envSlug),
+		nil, http.StatusOK, DefaultTimeout)
+	return err
+}
+
+// --- apps ---
+
+// CreateApp registers an app and returns it, including the registry path
+// to push to. environment may be empty, which means "production".
+func (c *Client) CreateApp(ctx context.Context, name, domain, orgSlug, projectSlug, environment string) (App, error) {
+	return request[App](ctx, c, "create app", http.MethodPost, "/apps", map[string]string{
+		"name": name, "domain": domain, "org": orgSlug,
+		"project": projectSlug, "environment": environment,
+	}, http.StatusCreated, DefaultTimeout)
+}
+
+func (c *Client) ListApps(ctx context.Context) ([]App, error) {
+	return request[[]App](ctx, c, "list apps", http.MethodGet, "/apps", nil, http.StatusOK, DefaultTimeout)
+}
+
+func (c *Client) GetApp(ctx context.Context, name string) (App, error) {
+	return request[App](ctx, c, "get app", http.MethodGet, "/apps/"+segment(name), nil, http.StatusOK, DefaultTimeout)
+}
+
+// Deploy redeploys an app and blocks until the new container is healthy
+// and the old one retired, which is why it gets DeployTimeout.
+func (c *Client) Deploy(ctx context.Context, name, tag string) error {
+	_, err := request[noContent](ctx, c, "deploy", http.MethodPost,
+		"/apps/"+segment(name)+"/deploy", map[string]string{"tag": tag}, http.StatusOK, DeployTimeout)
+	return err
+}
+
+func (c *Client) SetAppEnv(ctx context.Context, name string, vars map[string]string) error {
+	_, err := request[noContent](ctx, c, "set app env", http.MethodPut,
+		"/apps/"+segment(name)+"/env", envVars{Vars: vars}, http.StatusOK, DefaultTimeout)
+	return err
+}
+
+// Logs streams an app's container output. tail limits it to that many
+// trailing lines; empty means the daemon's default. The caller closes
+// the reader.
+func (c *Client) Logs(ctx context.Context, name, tail string) (io.ReadCloser, error) {
+	const op = "read logs"
+
+	path := "/apps/" + segment(name) + "/logs"
+	if tail != "" {
+		path += "?" + url.Values{"tail": {tail}}.Encode()
+	}
+
+	// Not through request: the body is the result, so it must outlive
+	// this call — which also means no deadline that would cut the stream
+	// short. The caller's context still cancels it.
+	ctx, cancel := context.WithTimeout(ctx, LogsTimeout)
+	resp, err := c.send(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		cancel()
+		return nil, fmt.Errorf("%s: %w", op, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		defer cancel()
+		return nil, apiError(op, resp)
+	}
+	return &cancelOnClose{ReadCloser: resp.Body, cancel: cancel}, nil
+}
+
+// cancelOnClose releases the request context when the caller is done
+// reading, so a stream abandoned early doesn't leak it.
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (c *cancelOnClose) Close() error {
+	err := c.ReadCloser.Close()
+	c.cancel()
+	return err
+}
+
+// --- API keys ---
+//
+// These endpoints are absent from the OpenAPI document by design: they
+// are self-service plumbing the CLI drives, not an integration surface.
+
+func (c *Client) RotateAPIKey(ctx context.Context) (string, error) {
+	out, err := request[struct {
+		APIKey string `json:"api_key"`
+	}](ctx, c, "rotate api key", http.MethodPost, "/users/me/api-key/rotate", nil, http.StatusOK, DefaultTimeout)
+	return out.APIKey, err
+}
+
+// CreateAPIKey issues an additional key under name, independent of any
+// the caller already holds.
+func (c *Client) CreateAPIKey(ctx context.Context, name string) (id int64, apiKey string, err error) {
+	out, err := request[struct {
+		ID     int64  `json:"id"`
+		APIKey string `json:"api_key"`
+	}](ctx, c, "create api key", http.MethodPost, "/users/me/api-keys",
+		map[string]string{"name": name}, http.StatusCreated, DefaultTimeout)
+	return out.ID, out.APIKey, err
+}
+
+func (c *Client) ListAPIKeys(ctx context.Context) ([]APIKey, error) {
+	return request[[]APIKey](ctx, c, "list api keys", http.MethodGet, "/users/me/api-keys",
+		nil, http.StatusOK, DefaultTimeout)
+}
+
+func (c *Client) RevokeAPIKey(ctx context.Context, id int64) error {
+	_, err := request[noContent](ctx, c, "revoke api key", http.MethodDelete,
+		fmt.Sprintf("/users/me/api-keys/%d", id), nil, http.StatusOK, DefaultTimeout)
+	return err
+}
