@@ -93,10 +93,13 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, name s
 	if !slug.Valid(orgSlug) {
 		return nil, slug.ErrInvalid
 	}
-	if _, err := s.Repo().BySlug(ctx, orgSlug); err == nil {
+	created, err := s.Repo().Create(ctx, orgSlug, name)
+	if database.IsUniqueViolation(err) {
+		// The unique index decides, not a preceding lookup — see
+		// database.IsUniqueViolation.
 		return nil, ErrAlreadyExists
 	}
-	return s.Repo().Create(ctx, orgSlug, name)
+	return created, err
 }
 
 // List returns the organizations caller can see: all of them for a
@@ -150,12 +153,26 @@ func (s *Service) AddUser(ctx context.Context, caller *user.User, o *Organizatio
 			} else if !errors.Is(err, database.ErrNotFound) {
 				return err
 			}
-			return orgs.AddMembership(ctx, existing.ID, o.ID, role)
+			if err := orgs.AddMembership(ctx, existing.ID, o.ID, role); err != nil {
+				// Two concurrent adds of the same user: the primary key
+				// says what the lookup above could not.
+				if database.IsUniqueViolation(err) {
+					return ErrAlreadyMember
+				}
+				return err
+			}
+			return nil
 		case !errors.Is(err, database.ErrNotFound):
 			return err
 		}
 
 		created, key, err := s.users.CreateWithAPIKey(ctx, tx, username, false)
+		if database.IsUniqueViolation(err) {
+			// Another request created this username between the lookup
+			// above and here. Both cannot own it; the loser is told so
+			// rather than shown a driver error.
+			return ErrUsernameTaken
+		}
 		if err != nil {
 			return err
 		}

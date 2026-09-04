@@ -66,4 +66,8 @@ var (
 
 	// ErrInvalidRole reports a role string that is neither admin nor member.
 	ErrInvalidRole = errors.New(`role must be "admin" or "member"`)
+
+	// ErrUsernameTaken reports that the username was claimed by a
+	// concurrent request while this one was working.
+	ErrUsernameTaken = errors.New("that username was just taken; try again")
 )

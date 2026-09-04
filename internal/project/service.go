@@ -74,10 +74,6 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 	if !slug.Valid(projectSlug) {
 		return nil, nil, slug.ErrInvalid
 	}
-	if _, err := s.Repo().BySlug(ctx, o.ID, projectSlug); err == nil {
-		return nil, nil, ErrAlreadyExists
-	}
-
 	var created *Project
 	var env *Environment
 	err = s.db.WithTx(ctx, func(tx database.Queryer) error {
@@ -89,6 +85,11 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 		env, err = NewEnvironmentRepository(tx).Create(ctx, created.ID, ProductionEnvSlug, "Production")
 		return err
 	})
+	if database.IsUniqueViolation(err) {
+		// The unique index decides, not a preceding lookup — see
+		// database.IsUniqueViolation.
+		return nil, nil, ErrAlreadyExists
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -143,10 +144,11 @@ func (s *Service) CreateEnvironment(ctx context.Context, caller *user.User, orgS
 	if !slug.Valid(envSlug) {
 		return nil, slug.ErrInvalid
 	}
-	if _, err := s.EnvironmentRepo().BySlug(ctx, p.ID, envSlug); err == nil {
+	env, err := s.EnvironmentRepo().Create(ctx, p.ID, envSlug, name)
+	if database.IsUniqueViolation(err) {
 		return nil, ErrEnvironmentExists
 	}
-	return s.EnvironmentRepo().Create(ctx, p.ID, envSlug, name)
+	return env, err
 }
 
 func (s *Service) ListEnvironments(ctx context.Context, caller *user.User, orgSlug, projectSlug string) ([]*Environment, error) {

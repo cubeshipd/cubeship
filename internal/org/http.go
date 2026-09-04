@@ -56,7 +56,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	case errors.Is(err, ErrForbidden), errors.Is(err, ErrSuperAdminOnly):
 		http.Error(w, err.Error(), http.StatusForbidden)
-	case errors.Is(err, ErrAlreadyExists), errors.Is(err, ErrAlreadyMember):
+	case errors.Is(err, ErrAlreadyExists), errors.Is(err, ErrAlreadyMember), errors.Is(err, ErrUsernameTaken):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrInvalidRole):
 		http.Error(w, err.Error(), http.StatusBadRequest)

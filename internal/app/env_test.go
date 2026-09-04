@@ -180,3 +180,43 @@ func TestReadingEnvRequiresAccessToTheApp(t *testing.T) {
 		t.Fatalf("expected 404, got %d", rec.Code)
 	}
 }
+
+// Creating the same name twice must be a 409, and stay a 409 when the
+// two attempts race. The old check-then-insert had both callers pass the
+// lookup, and the loser surfaced as a 500 built from a driver error.
+func TestConcurrentCreatesOfTheSameNameConflictCleanly(t *testing.T) {
+	f := servertest.New(t)
+	_, key := f.AddMember(t, "member", org.RoleMember)
+
+	const attempts = 6
+	codes := make([]int, attempts)
+	var wg sync.WaitGroup
+	for i := range attempts {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			codes[i] = f.Do(t, http.MethodPost, "/apps", map[string]string{
+				"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
+			}, key).Code
+		}()
+	}
+	wg.Wait()
+
+	created, conflicts := 0, 0
+	for _, code := range codes {
+		switch code {
+		case http.StatusCreated:
+			created++
+		case http.StatusConflict:
+			conflicts++
+		default:
+			t.Errorf("a racing create answered %d; only 201 and 409 are correct", code)
+		}
+	}
+	if created != 1 {
+		t.Errorf("%d creates succeeded, want exactly 1", created)
+	}
+	if conflicts != attempts-1 {
+		t.Errorf("%d creates conflicted, want %d", conflicts, attempts-1)
+	}
+}

@@ -80,12 +80,14 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 	if err != nil {
 		return nil, project.ErrEnvironmentNotFound
 	}
-	if _, err := s.Repo().ByName(ctx, name); err == nil {
-		return nil, ErrAlreadyExists
-	}
-
 	image := s.registryHost + "/" + o.Slug + "/" + name
 	if _, err := s.Repo().Create(ctx, o.ID, p.ID, env.ID, name, domain, image); err != nil {
+		// The unique index is the authority, not a preceding lookup:
+		// two concurrent creates of the same name would both pass a
+		// check and the loser would surface as a 500.
+		if database.IsUniqueViolation(err) {
+			return nil, ErrAlreadyExists
+		}
 		return nil, err
 	}
 	return s.Repo().ScopedByName(ctx, name)
