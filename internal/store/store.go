@@ -44,6 +44,13 @@ CREATE TABLE IF NOT EXISTS users (
 	is_super_admin INTEGER NOT NULL DEFAULT 0,
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS memberships (
+	user_id INTEGER NOT NULL REFERENCES users(id),
+	org_id INTEGER NOT NULL REFERENCES organizations(id),
+	role TEXT NOT NULL,
+	PRIMARY KEY (user_id, org_id)
+);
 `
 
 func Open(path string) (*Store, error) {
