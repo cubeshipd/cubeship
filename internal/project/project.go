@@ -16,12 +16,16 @@ import (
 // Project groups an organization's environments, and holds the variables
 // every app in every one of them inherits.
 type Project struct {
-	ID        int64
-	OrgID     int64
-	Slug      string
-	Name      string
-	Env       envvar.Map
-	CreatedAt time.Time
+	ID    int64
+	OrgID int64
+	Slug  string
+	Name  string
+	// Description is what the project is for, in a sentence or two. The
+	// slug cannot say it — it is a path component — and the name barely
+	// can.
+	Description string
+	Env         envvar.Map
+	CreatedAt   time.Time
 }
 
 var (
@@ -34,4 +38,9 @@ var (
 
 	// ErrHasApps refuses a delete that would orphan apps.
 	ErrHasApps = errors.New("project still has apps in it")
+
+	// ErrNameRequired refuses an update that would leave a project with
+	// nothing to call it. Clearing the description is fine; clearing the
+	// name is not.
+	ErrNameRequired = errors.New("name cannot be empty")
 )

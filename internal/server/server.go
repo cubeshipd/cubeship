@@ -12,6 +12,7 @@ import (
 
 	"cubeship/internal/app"
 	"cubeship/internal/extregistry"
+	"cubeship/internal/github"
 	"cubeship/internal/org"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/httpx"
@@ -32,7 +33,12 @@ type Server struct {
 	Settings   *settings.Service
 	Setup      *setup.Service
 	Registries *extregistry.Service
+	GitHub     *github.Service
 	Registry   *registry.Handler
+
+	// githubHandler is kept so a test can wait for the deploys a
+	// webhook set going.
+	githubHandler *github.Handler
 
 	router *httpx.Router
 }
@@ -64,8 +70,9 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	projects := project.NewService(db, orgs)
 	cfg := settings.NewService(db)
 	registries := extregistry.NewService(db, orgs)
+	gh := github.NewService(db, orgs, cfg)
 	apps := app.NewService(db, orgs, projects,
-		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder), cfg)
+		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gh), cfg)
 
 	srv := &Server{
 		Users:      users,
@@ -75,12 +82,17 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Settings:   cfg,
 		Setup:      setup.NewService(db, users),
 		Registries: registries,
+		GitHub:     gh,
 		Registry:   registry.NewHandler(users, orgs, apps, cfg, opts.WebhookToken),
 		router:     httpx.NewRouter(),
 	}
 	srv.routes()
 	return srv
 }
+
+// WaitForGitHubDeploys blocks until every deploy a GitHub webhook
+// started has finished. For tests.
+func (s *Server) WaitForGitHubDeploys() { s.githubHandler.WaitForDeploys() }
 
 // SetRegistrySigningKey wires the daemon's registry-token signing key
 // into the registry module. Must be called before serving.
@@ -127,11 +139,15 @@ func (s *Server) routes() {
 	project.NewHandler(s.Projects).Routes(s.router, auth)
 	settings.NewHandler(s.Settings).Routes(s.router, auth)
 	extregistry.NewHandler(s.Registries).Routes(s.router, auth)
+	s.githubHandler = github.NewHandler(s.GitHub, s.Apps)
+	s.githubHandler.Routes(s.router, auth)
 	app.NewHandler(s.Apps).Routes(s.router, auth)
 
 	// The registry's own two endpoints authenticate differently (Basic
-	// auth, and a shared webhook secret), so they mount unwrapped.
+	// auth, and a shared webhook secret), so they mount unwrapped. So
+	// does GitHub's, which is signed rather than bearing a key.
 	s.Registry.Routes(s.router)
+	s.githubHandler.WebhookRoutes(s.router)
 
 	s.router.HandleRoot("POST /mcp", auth(s.mcpHandler()))
 

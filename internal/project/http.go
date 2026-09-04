@@ -14,6 +14,7 @@ import (
 type Response struct {
 	Slug         string   `json:"slug"`
 	Name         string   `json:"name"`
+	Description  string   `json:"description"`
 	Environments []string `json:"environments,omitempty"`
 }
 
@@ -26,9 +27,13 @@ type EnvironmentResponse struct {
 func toResponses(projects []*Project) []Response {
 	out := make([]Response, 0, len(projects))
 	for _, p := range projects {
-		out = append(out, Response{Slug: p.Slug, Name: p.Name})
+		out = append(out, toResponse(p))
 	}
 	return out
+}
+
+func toResponse(p *Project) Response {
+	return Response{Slug: p.Slug, Name: p.Name, Description: p.Description}
 }
 
 func toEnvironmentResponses(envs []*Environment) []EnvironmentResponse {
@@ -48,6 +53,7 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.Handle("POST /orgs/{orgSlug}/projects", auth(http.HandlerFunc(h.create)))
 	r.Handle("GET /orgs/{orgSlug}/projects", auth(http.HandlerFunc(h.list)))
+	r.Handle("PATCH /orgs/{orgSlug}/projects/{projectSlug}", auth(http.HandlerFunc(h.update)))
 	r.Handle("DELETE /orgs/{orgSlug}/projects/{projectSlug}", auth(http.HandlerFunc(h.delete)))
 	r.Handle("GET /orgs/{orgSlug}/projects/{projectSlug}/env", auth(http.HandlerFunc(h.getEnv)))
 	r.Handle("PUT /orgs/{orgSlug}/projects/{projectSlug}/env", auth(http.HandlerFunc(h.setEnv)))
@@ -69,6 +75,8 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrAlreadyExists), errors.Is(err, ErrEnvironmentExists),
 		errors.Is(err, ErrEnvironmentHasApps), errors.Is(err, ErrHasApps):
 		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, ErrNameRequired):
+		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrProductionUndeletable):
 		http.Error(w, err.Error(), http.StatusForbidden)
 	default:
@@ -90,7 +98,31 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusCreated, Response{Slug: p.Slug, Name: p.Name, Environments: []string{env.Slug}})
+	httpx.WriteJSON(w, http.StatusCreated, Response{Slug: p.Slug, Name: p.Name, Description: p.Description, Environments: []string{env.Slug}})
+}
+
+// update is PATCH: a field left out of the body is left alone, which is
+// what lets the dashboard save one edit without sending the other back.
+func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name        *string `json:"name"`
+		Description *string `json:"description"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if req.Name == nil && req.Description == nil {
+		http.Error(w, "give name, description, or both", http.StatusBadRequest)
+		return
+	}
+	p, err := h.svc.Update(r.Context(), user.FromContext(r.Context()),
+		r.PathValue("orgSlug"), r.PathValue("projectSlug"), req.Name, req.Description)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toResponse(p))
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {

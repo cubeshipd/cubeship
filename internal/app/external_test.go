@@ -41,7 +41,7 @@ func externalFixture(t *testing.T, image string) (*Orchestrator, *fakeDocker, *S
 	}
 
 	docker := &fakeDocker{nextCreateID: "new-container", running: true}
-	orch := NewOrchestrator(db, docker, settings.NewService(db), extregistry.NewService(db, nil), nil)
+	orch := NewOrchestrator(db, docker, settings.NewService(db), extregistry.NewService(db, nil), nil, nil)
 	orch.HealthCheckInterval = 0
 	return orch, docker, a, extregistry.NewRepository(db)
 }

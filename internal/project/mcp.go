@@ -29,6 +29,10 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Description: "List the projects in an organization.",
 	}, t.list)
 	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "update_project",
+		Description: "Rename a project or change its description. A field you leave out is left as it was. The slug cannot be changed — it is part of every registry reference under the project. Requires admin role in the organization.",
+	}, t.update)
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_project",
 		Description: "Delete a project and the environments inside it. Refused while any app still lives in the project — delete those first. Requires admin role in the organization.",
 	}, t.delete)
@@ -73,7 +77,7 @@ func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInp
 	if err != nil {
 		return nil, Response{}, err
 	}
-	return nil, Response{Slug: p.Slug, Name: p.Name, Environments: []string{env.Slug}}, nil
+	return nil, Response{Slug: p.Slug, Name: p.Name, Description: p.Description, Environments: []string{env.Slug}}, nil
 }
 
 type orgScopedInput struct {
@@ -99,6 +103,24 @@ func (t *Tools) getEnv(ctx context.Context, _ *mcp.CallToolRequest, in projectSc
 		return nil, envOutput{}, err
 	}
 	return nil, envOutput{Vars: vars}, nil
+}
+
+type updateInput struct {
+	Org         string  `json:"org" jsonschema:"organization slug"`
+	Project     string  `json:"project" jsonschema:"project slug"`
+	Name        *string `json:"name,omitempty" jsonschema:"the new name; leave out to keep the current one"`
+	Description *string `json:"description,omitempty" jsonschema:"what the project is for; leave out to keep it, send empty to clear it"`
+}
+
+func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInput) (*mcp.CallToolResult, Response, error) {
+	if in.Name == nil && in.Description == nil {
+		return nil, Response{}, fmt.Errorf("give name, description, or both")
+	}
+	p, err := t.svc.Update(ctx, t.caller, in.Org, in.Project, in.Name, in.Description)
+	if err != nil {
+		return nil, Response{}, err
+	}
+	return nil, toResponse(p), nil
 }
 
 func (t *Tools) delete(ctx context.Context, _ *mcp.CallToolRequest, in projectScopedInput) (*mcp.CallToolResult, user.ActionResult, error) {

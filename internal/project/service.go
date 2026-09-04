@@ -96,6 +96,21 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 	return created, env, nil
 }
 
+// Update changes a project's name or description. Neither is part of
+// its identity — the slug is, and it is the one thing that cannot
+// change, because it is a path component of every registry reference
+// under the project. A nil field is left as it was.
+func (s *Service) Update(ctx context.Context, caller *user.User, orgSlug, projectSlug string, name, description *string) (*Project, error) {
+	p, err := s.Resolve(ctx, caller, orgSlug, projectSlug, org.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	if name != nil && *name == "" {
+		return nil, ErrNameRequired
+	}
+	return s.Repo().Update(ctx, p.ID, name, description)
+}
+
 func (s *Service) List(ctx context.Context, caller *user.User, orgSlug string) ([]*Project, error) {
 	o, err := s.orgs.Resolve(ctx, caller, orgSlug, org.RoleMember)
 	if err != nil {

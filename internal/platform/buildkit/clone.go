@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport"
+	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
 )
 
 // Clone fetches a repository to a temporary directory.
@@ -18,7 +20,10 @@ import (
 //
 // go-git rather than the git command, so a Cubeship install stays one
 // binary with nothing else to put on the box.
-func Clone(ctx context.Context, url, ref string) (dir string, cleanup func(), err error) {
+//
+// token, when given, is a GitHub App installation token. An empty one is
+// an anonymous clone, which is all a public repository needs.
+func Clone(ctx context.Context, url, ref, token string) (dir string, cleanup func(), err error) {
 	dir, err = os.MkdirTemp("", "cubeship-src-")
 	if err != nil {
 		return "", nil, fmt.Errorf("create a directory for the source: %w", err)
@@ -26,7 +31,8 @@ func Clone(ctx context.Context, url, ref string) (dir string, cleanup func(), er
 	cleanup = func() { os.RemoveAll(dir) }
 
 	opts := &git.CloneOptions{
-		URL: url,
+		URL:  url,
+		Auth: basicAuth(token),
 		// One commit is all a build needs, and a large repository's
 		// history is the slowest part of fetching it.
 		Depth:             1,
@@ -44,7 +50,7 @@ func Clone(ctx context.Context, url, ref string) (dir string, cleanup func(), er
 	if err != nil && ref != "" {
 		// Not a branch. Tags and commits both need the clone to happen
 		// first and the checkout after.
-		repo, err = cloneThenCheckout(ctx, dir, url, ref)
+		repo, err = cloneThenCheckout(ctx, dir, url, ref, token)
 	}
 	if err != nil {
 		cleanup()
@@ -54,10 +60,20 @@ func Clone(ctx context.Context, url, ref string) (dir string, cleanup func(), er
 	return dir, cleanup, nil
 }
 
+// basicAuth is how a GitHub App installation token is presented: as the
+// password, with the fixed user "x-access-token". No token means an
+// anonymous clone, which is all a public repository needs.
+func basicAuth(token string) transport.AuthMethod {
+	if token == "" {
+		return nil
+	}
+	return &githttp.BasicAuth{Username: "x-access-token", Password: token}
+}
+
 // cloneThenCheckout handles a ref that is not a branch. It gives up the
 // shallow fetch: a commit that is not the tip is not in a depth-1 clone,
 // and finding out after cloning is worse than fetching more than needed.
-func cloneThenCheckout(ctx context.Context, dir, url, ref string) (*git.Repository, error) {
+func cloneThenCheckout(ctx context.Context, dir, url, ref, token string) (*git.Repository, error) {
 	if err := os.RemoveAll(dir); err != nil {
 		return nil, err
 	}
@@ -65,7 +81,10 @@ func cloneThenCheckout(ctx context.Context, dir, url, ref string) (*git.Reposito
 		return nil, err
 	}
 
-	repo, err := git.PlainCloneContext(ctx, dir, false, &git.CloneOptions{URL: url})
+	repo, err := git.PlainCloneContext(ctx, dir, false, &git.CloneOptions{
+		URL:  url,
+		Auth: basicAuth(token),
+	})
 	if err != nil {
 		return nil, err
 	}

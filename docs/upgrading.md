@@ -9,6 +9,23 @@ curl -sSL https://cubeship.dev/install.sh | sh
 Nothing under `CUBESHIP_DATA_DIR` is touched. The sections below are the
 changes worth knowing about, newest first.
 
+## From a release with no GitHub integration
+
+Nothing to do, and nothing changes for an existing app.
+
+New: the instance can be registered as a GitHub App, under Instance, and
+each organization connects the GitHub accounts it deploys from. Doing so
+buys two things — building a **private** repository, and **deploying on a
+push** to one that is built.
+
+An app with no ref of its own deploys on a push to any branch of its
+repository. If that is not what you want, give it a ref.
+
+The webhook is `POST /hooks/github` on the daemon, and it is refused
+unless a webhook secret is configured — an endpoint that starts deploys
+on an unauthenticated POST would be a way to make the instance build
+anything.
+
 ## From a release that could only build a Dockerfile
 
 Nothing to do. New: `source: "railpack"`, an app built from a repository

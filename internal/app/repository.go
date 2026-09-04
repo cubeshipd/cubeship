@@ -282,6 +282,39 @@ func scanScoped(row scanner) (*Scoped, error) {
 	return &s, nil
 }
 
+// BuildingFromRepository finds every app in an organization that builds
+// from a repository at a branch.
+//
+// The repository is matched on the "owner/name" a URL and a webhook
+// payload both reduce to, because the two are rarely spelled the same —
+// one may carry .git, a trailing slash, or www.
+//
+// An app with no ref of its own tracks whatever branch it is told about,
+// which is what makes "deploy on push" work without anybody naming a
+// branch twice.
+func (r *Repository) BuildingFromRepository(ctx context.Context, orgID int64, fullName, branch string) ([]*Scoped, error) {
+	rows, err := r.q.QueryContext(ctx, scopedQuery+`
+		WHERE a.org_id = $1
+		  AND a.source = ANY($2)
+		  AND lower(regexp_replace(regexp_replace(a.source_repo, '^https?://(www\.)?github\.com/', ''), '(\.git)?/?$', '')) = lower($3)
+		  AND (a.source_ref = '' OR a.source_ref = $4)`,
+		orgID, []string{string(SourceDockerfile), string(SourceRailpack)}, fullName, branch)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []*Scoped
+	for rows.Next() {
+		a, err := scanScoped(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 // ScopedByReference resolves the four-part reference that identifies an
 // app, in one query.
 func (r *Repository) ScopedByReference(ctx context.Context, org, proj, env, name string) (*Scoped, error) {

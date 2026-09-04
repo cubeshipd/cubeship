@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 
 	"cubeship/internal/envvar"
@@ -310,4 +311,36 @@ func LocalPullRef(image, tag string) string {
 		repo = image[i+1:]
 	}
 	return LocalRegistryHost + "/" + repo + ":" + tag
+}
+
+// DeployOnPush starts a deploy for every app in an organization that
+// builds from this repository at this branch, and reports how many.
+//
+// It authorizes nothing, deliberately: the caller is a webhook GitHub
+// signed, not a person. What stands in for a role check is the
+// installation — an organization only receives events for repositories
+// it has connected, and only its own apps are looked at.
+//
+// An app with no ref of its own deploys on a push to any branch. That is
+// what "track the default branch" means without anybody having to name
+// it, and naming a ref is how you opt out.
+func (s *Service) DeployOnPush(ctx context.Context, orgID int64, fullName, branch string) (int, error) {
+	apps, err := s.Repo().BuildingFromRepository(ctx, orgID, fullName, branch)
+	if err != nil {
+		return 0, err
+	}
+
+	started := 0
+	for _, a := range apps {
+		// The branch, not a tag: for a building source the deploy's
+		// argument is which commit-ish to build.
+		if _, err := s.orch.Start(ctx, a.ID, branch); err != nil {
+			// One app refusing must not stop the others. A repository
+			// with four apps on it should deploy the three that can.
+			log.Printf("deploy on push: %s: %v", ReferenceOf(a), err)
+			continue
+		}
+		started++
+	}
+	return started, nil
 }

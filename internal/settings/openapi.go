@@ -11,11 +11,13 @@ func (h *Handler) OpenAPI() openapi.Spec {
 		}},
 		Schemas: map[string]*openapi.Schema{
 			"Settings": openapi.Object(map[string]*openapi.Schema{
-				"domain":        openapi.String("Base domain. The API is served at api.<domain> and the registry at registry.<domain>; both must resolve to this host. Empty until configured."),
-				"acme_email":    openapi.String("Contact address Let's Encrypt registers for expiry notices. Empty until configured."),
-				"registry_host": openapi.String("Where a `docker push` goes. Absent while no domain is set — there is nowhere to push yet."),
-				"tls_enabled":   openapi.Bool("Whether certificates can be issued, which needs both a domain and a contact address. While false, apps are served over plain HTTP."),
-			}, "domain", "acme_email", "tls_enabled"),
+				"domain":           openapi.String("Base domain. The API is served at api.<domain> and the registry at registry.<domain>; both must resolve to this host. Empty until configured."),
+				"acme_email":       openapi.String("Contact address Let's Encrypt registers for expiry notices. Empty until configured."),
+				"registry_host":    openapi.String("Where a `docker push` goes. Absent while no domain is set — there is nowhere to push yet."),
+				"tls_enabled":      openapi.Bool("Whether certificates can be issued, which needs both a domain and a contact address. While false, apps are served over plain HTTP."),
+				"github_app_slug":  openapi.String("The GitHub App this instance acts as. Absent until one is registered."),
+				"github_connected": openapi.Bool("Whether the GitHub App's credentials are present. The credentials themselves are never returned — an endpoint that handed a private key back would turn every read of this into a way out for it."),
+			}, "domain", "acme_email", "tls_enabled", "github_connected"),
 		},
 		Paths: map[string]openapi.PathItem{
 			"/settings": {
@@ -38,8 +40,12 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"Super-admin only: this is the VPS's configuration, not an organization's.",
 					Tags: []string{"Instance"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"domain":     openapi.String("Base domain, e.g. example.com."),
-						"acme_email": openapi.String("Contact address for Let's Encrypt."),
+						"domain":                openapi.String("Base domain, e.g. example.com."),
+						"acme_email":            openapi.String("Contact address for Let's Encrypt."),
+						"github_app_id":         openapi.String("The numeric id of the GitHub App this instance acts as."),
+						"github_app_slug":       openapi.String("The App's slug, which its install page is addressed by."),
+						"github_private_key":    openapi.String("The App's private key, in PEM. Write-only: it is never returned."),
+						"github_webhook_secret": openapi.String("The secret GitHub signs its webhooks with. Write-only. Without it a webhook cannot be trusted, and deliveries are refused."),
 					})),
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The configuration as it now stands.", openapi.Ref("Settings")),

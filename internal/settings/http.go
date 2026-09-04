@@ -22,6 +22,15 @@ type Response struct {
 	// TLSEnabled is false until both a domain and a contact address
 	// exist. While it is false, apps are served over plain HTTP.
 	TLSEnabled bool `json:"tls_enabled"`
+
+	// GitHubAppSlug names the App this instance acts as, which is what
+	// its install page is addressed by. Empty until one is registered.
+	GitHubAppSlug string `json:"github_app_slug,omitempty"`
+	// GitHubConnected reports whether the App's credentials are present.
+	// The credentials themselves are never returned: an endpoint that
+	// handed a private key back would turn every read of the
+	// configuration into a way out for it.
+	GitHubConnected bool `json:"github_connected"`
 }
 
 func toResponse(v Values) Response {
@@ -33,6 +42,8 @@ func toResponse(v Values) Response {
 	if v.HasDomain() {
 		r.RegistryHost = RegistryHostFor(v.Get(Domain))
 	}
+	r.GitHubAppSlug = v.Get(GitHubAppSlug)
+	r.GitHubConnected = v.HasGitHub()
 	return r
 }
 
@@ -76,6 +87,13 @@ func (h *Handler) set(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Domain    *string `json:"domain"`
 		ACMEEmail *string `json:"acme_email"`
+
+		// The GitHub App's registration. Write-only, and normally
+		// written once by the connect flow rather than typed.
+		GitHubAppID         *string `json:"github_app_id"`
+		GitHubAppSlug       *string `json:"github_app_slug"`
+		GitHubPrivateKey    *string `json:"github_private_key"`
+		GitHubWebhookSecret *string `json:"github_webhook_secret"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -88,6 +106,16 @@ func (h *Handler) set(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ACMEEmail != nil {
 		values[ACMEEmail] = *req.ACMEEmail
+	}
+	for key, given := range map[string]*string{
+		GitHubAppID:         req.GitHubAppID,
+		GitHubAppSlug:       req.GitHubAppSlug,
+		GitHubPrivateKey:    req.GitHubPrivateKey,
+		GitHubWebhookSecret: req.GitHubWebhookSecret,
+	} {
+		if given != nil {
+			values[key] = *given
+		}
 	}
 	if len(values) == 0 {
 		http.Error(w, "give domain, acme_email, or both", http.StatusBadRequest)

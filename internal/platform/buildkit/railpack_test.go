@@ -154,7 +154,7 @@ func TestBuildWithRailpack(t *testing.T) {
 func TestCloneFetchesARef(t *testing.T) {
 	repoURL := localRepoPath(t, map[string]string{"README.md": "hello"})
 
-	dir, cleanup, err := buildkit.Clone(context.Background(), repoURL, "main")
+	dir, cleanup, err := buildkit.Clone(context.Background(), repoURL, "main", "")
 	if err != nil {
 		t.Fatalf("Clone: %v", err)
 	}
@@ -174,7 +174,7 @@ func TestCloneFetchesARef(t *testing.T) {
 func TestCloneRefusesAnUnknownRef(t *testing.T) {
 	repoURL := localRepoPath(t, map[string]string{"README.md": "hello"})
 
-	_, _, err := buildkit.Clone(context.Background(), repoURL, "no-such-branch")
+	_, _, err := buildkit.Clone(context.Background(), repoURL, "no-such-branch", "")
 	if err == nil {
 		t.Fatal("an unknown ref was cloned anyway")
 	}

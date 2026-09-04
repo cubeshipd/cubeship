@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/tonistiigi/fsutil"
 	"golang.org/x/sync/errgroup"
 )
@@ -79,6 +81,14 @@ type Request struct {
 
 	// Labels go onto the built image.
 	Labels map[string]string
+
+	// GitToken authenticates the clone of a private ContextGit.
+	//
+	// It is handed to BuildKit as a secret rather than put in the URL,
+	// which is the whole point: a URL appears in the build's own
+	// progress output, and that output goes into a deployment row and
+	// then into a browser.
+	GitToken string
 }
 
 // Build runs one build, writing BuildKit's progress to logs as it goes,
@@ -134,6 +144,7 @@ func (b *Builder) Build(ctx context.Context, req Request, logs io.Writer) error 
 		frontend:  "dockerfile.v0",
 		attrs:     frontendAttrs,
 		localDirs: localDirs,
+		gitToken:  req.GitToken,
 	}, logs)
 }
 
@@ -145,6 +156,25 @@ type solveRequest struct {
 	frontend  string
 	attrs     map[string]string
 	localDirs map[string]string
+	gitToken  string
+}
+
+// gitAuth hands a clone credential to BuildKit as a session secret.
+//
+// GIT_AUTH_TOKEN is BuildKit's own name for it, and it means Basic auth
+// with the user "x-access-token" — which is exactly what a GitHub App
+// installation token is used as. The secret never reaches a Dockerfile
+// instruction or the build's output; it authenticates the fetch and
+// nothing else.
+const gitAuthSecret = "GIT_AUTH_TOKEN"
+
+func gitAuth(token string) []session.Attachable {
+	if token == "" {
+		return nil
+	}
+	return []session.Attachable{secretsprovider.FromMap(map[string][]byte{
+		gitAuthSecret: []byte(token),
+	})}
 }
 
 // localMounts turns directories on the daemon's filesystem into what
@@ -199,6 +229,7 @@ func (b *Builder) solve(ctx context.Context, req solveRequest, logs io.Writer) e
 		Frontend:      req.frontend,
 		FrontendAttrs: req.attrs,
 		LocalMounts:   mounts,
+		Session:       gitAuth(req.gitToken),
 		Exports: []client.ExportEntry{{
 			Type:   client.ExporterDocker,
 			Attrs:  map[string]string{"name": req.image},

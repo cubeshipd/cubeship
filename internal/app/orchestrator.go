@@ -43,6 +43,7 @@ type Orchestrator struct {
 	settings *settings.Service
 	creds    CredentialLookup
 	builder  ImageBuilder
+	git      GitTokens
 
 	// HealthCheckAttempts bounds how many observations waitHealthy takes
 	// before giving up; HealthCheckSuccesses is how many of them must be
@@ -81,7 +82,14 @@ type ImageBuilder interface {
 	BuildPlanned(ctx context.Context, req buildkit.PlannedRequest, logs io.Writer) error
 }
 
-func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds CredentialLookup, builder ImageBuilder) *Orchestrator {
+// GitTokens answers what credential a clone of one organization's
+// repository should use. Only a private repository ever needs one, so it
+// may be nil.
+type GitTokens interface {
+	TokenForRepository(ctx context.Context, orgID int64, repoURL string) (string, bool, error)
+}
+
+func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds CredentialLookup, builder ImageBuilder, git GitTokens) *Orchestrator {
 	return &Orchestrator{
 		db:                   db,
 		docker:               d,
@@ -91,6 +99,7 @@ func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds 
 		settings:             cfg,
 		creds:                creds,
 		builder:              builder,
+		git:                  git,
 		HealthCheckAttempts:  10,
 		HealthCheckSuccesses: 3,
 		HealthCheckInterval:  500 * time.Millisecond,
@@ -127,24 +136,44 @@ func (o *Orchestrator) buildFromRepository(ctx context.Context, a *Scoped, ref s
 	}
 	image := BuildImageName(a, ref)
 
+	// A private repository needs a credential, and an organization holds
+	// one only for accounts it has connected. Nothing found means a
+	// public repository — letting the clone be refused is better than
+	// refusing one that would have worked.
+	token, err := o.cloneToken(ctx, a)
+	if err != nil {
+		return "", err
+	}
+
 	if Source(a.Source) == SourceRailpack {
-		return image, o.buildWithRailpack(ctx, a, ref, image, logs)
+		return image, o.buildWithRailpack(ctx, a, ref, image, token, logs)
 	}
 
 	target := a.SourceRepo
 	if ref != "" {
 		target += "#" + ref
 	}
-	err := o.builder.Build(ctx, buildkit.Request{
+	err = o.builder.Build(ctx, buildkit.Request{
 		ContextGit: target,
 		Dockerfile: a.SourceDockerfile,
 		Image:      image,
 		Labels:     map[string]string{"cubeship.app": ReferenceOf(a).String()},
+		GitToken:   token,
 	}, logs)
 	if err != nil {
 		return "", err
 	}
 	return image, nil
+}
+
+// cloneToken is what authenticates a clone of a private repository, or
+// "" for one that needs nothing.
+func (o *Orchestrator) cloneToken(ctx context.Context, a *Scoped) (string, error) {
+	if o.git == nil {
+		return "", nil
+	}
+	token, _, err := o.git.TokenForRepository(ctx, a.OrgID, a.SourceRepo)
+	return token, err
 }
 
 // buildWithRailpack clones, plans and builds.
@@ -153,9 +182,9 @@ func (o *Orchestrator) buildFromRepository(ctx context.Context, a *Scoped, ref s
 // Railpack reads it for the versions and commands a project pins, so two
 // apps on the same repository with different NODE_VERSION are two
 // different builds.
-func (o *Orchestrator) buildWithRailpack(ctx context.Context, a *Scoped, ref, image string, logs io.Writer) error {
+func (o *Orchestrator) buildWithRailpack(ctx context.Context, a *Scoped, ref, image, token string, logs io.Writer) error {
 	fmt.Fprintf(logs, "Fetching %s\n", a.SourceRepo)
-	dir, cleanupSource, err := buildkit.Clone(ctx, a.SourceRepo, ref)
+	dir, cleanupSource, err := buildkit.Clone(ctx, a.SourceRepo, ref, token)
 	if err != nil {
 		return err
 	}

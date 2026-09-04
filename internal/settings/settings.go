@@ -27,7 +27,26 @@ const (
 	// over plain HTTP. Apps deployed before it is set keep their old
 	// routing until they are redeployed.
 	ACMEEmail = "acme_email"
+
+	// The GitHub App this instance acts as. One App per instance: it is
+	// registered by whoever runs the VPS, and organizations install it
+	// on their own accounts.
+	//
+	// GitHubPrivateKey and GitHubWebhookSecret are credentials. Nothing
+	// reads them back out through the API — the settings endpoint
+	// reports whether they are set, never what they are.
+	GitHubAppID         = "github_app_id"
+	GitHubAppSlug       = "github_app_slug"
+	GitHubPrivateKey    = "github_private_key"
+	GitHubWebhookSecret = "github_webhook_secret"
 )
+
+// Secret reports whether a key holds a credential. A credential is
+// writable and never readable: an endpoint that hands one back turns
+// every read of the configuration into a way out for it.
+func Secret(key string) bool {
+	return key == GitHubPrivateKey || key == GitHubWebhookSecret
+}
 
 // ErrUnknownKey is returned for a key this version does not define.
 // Settings are a fixed set, not arbitrary storage.
@@ -39,8 +58,12 @@ var ErrSuperAdminOnly = errors.New("forbidden: only a super-admin can change ins
 
 // known is every key this version recognizes, with what it is for.
 var known = map[string]string{
-	Domain:    "Base domain. The API is served at api.<domain> and the registry at registry.<domain>; both must resolve to this host.",
-	ACMEEmail: "Contact address for Let's Encrypt. Certificates are only issued once this is set.",
+	Domain:              "Base domain. The API is served at api.<domain> and the registry at registry.<domain>; both must resolve to this host.",
+	ACMEEmail:           "Contact address for Let's Encrypt. Certificates are only issued once this is set.",
+	GitHubAppID:         "The numeric id of the GitHub App this instance acts as.",
+	GitHubAppSlug:       "The App's slug, which is what its install page is addressed by.",
+	GitHubPrivateKey:    "The App's private key, in PEM. Write-only.",
+	GitHubWebhookSecret: "The secret GitHub signs its webhooks with. Write-only.",
 }
 
 // Describe returns what a key is for, and whether it is a key at all.
@@ -55,6 +78,13 @@ type Values map[string]string
 
 // Get returns a setting, or "" when it has never been set.
 func (v Values) Get(key string) string { return v[key] }
+
+// HasGitHub reports whether this instance can act as a GitHub App at
+// all. Without it, building a private repository and deploying on a push
+// are both impossible.
+func (v Values) HasGitHub() bool {
+	return v.Get(GitHubAppID) != "" && v.Get(GitHubPrivateKey) != ""
+}
 
 // HasDomain reports whether a registry and TLS-capable routing are
 // possible at all.

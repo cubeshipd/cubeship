@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"cubeship/internal/app"
@@ -256,6 +257,24 @@ func (f *Fixture) DoRoot(t testing.TB, method, path string) *httptest.ResponseRe
 	t.Helper()
 	rec := httptest.NewRecorder()
 	f.Server.Router().ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+	return rec
+}
+
+// RawRequest builds a request to a root-level route with a body sent
+// exactly as given. A signed webhook is verified over the bytes on the
+// wire, so re-encoding them would change what is being tested.
+func (f *Fixture) RawRequest(t testing.TB, method, path, body string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(method, path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	return req
+}
+
+// Serve runs a request through the real router.
+func (f *Fixture) Serve(t testing.TB, req *http.Request) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	f.Server.Router().ServeHTTP(rec, req)
 	return rec
 }
 

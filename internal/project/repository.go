@@ -16,14 +16,14 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, org_id, slug, name, env, created_at`
+const columns = `id, org_id, slug, name, description, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
 func scan(row scanner) (*Project, error) {
 	var p Project
 	var envJSON []byte
-	if err := row.Scan(&p.ID, &p.OrgID, &p.Slug, &p.Name, &envJSON, &p.CreatedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.OrgID, &p.Slug, &p.Name, &p.Description, &envJSON, &p.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &p.Env); err != nil {
@@ -39,6 +39,21 @@ func (r *Repository) Create(ctx context.Context, orgID int64, slug, name string)
 	p, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("create project: %w", err)
+	}
+	return p, nil
+}
+
+// Update changes a project's editable fields. A nil argument leaves the
+// column alone, so PATCH with one field named cannot blank the other —
+// and it stays one statement rather than a read-modify-write.
+func (r *Repository) Update(ctx context.Context, projectID int64, name, description *string) (*Project, error) {
+	row := r.q.QueryRowContext(ctx,
+		`UPDATE projects SET name = COALESCE($1, name), description = COALESCE($2, description)
+		 WHERE id = $3 RETURNING `+columns,
+		name, description, projectID)
+	p, err := scan(row)
+	if err != nil {
+		return nil, fmt.Errorf("update project: %w", err)
 	}
 	return p, nil
 }

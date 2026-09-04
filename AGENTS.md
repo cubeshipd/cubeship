@@ -35,6 +35,7 @@ internal/
   app/          apps, deployments, and the deploy orchestrator
   registry/     who may docker push/pull, and the push webhook
   extregistry/  logins for registries Cubeship does not run
+  github/       the GitHub App: private clones, and deploy on push
   setup/        the first-run flow that claims an instance
   settings/     the instance's domain and contact address
   web/          serves the built dashboard out of the binary
@@ -115,6 +116,46 @@ Package manager is **pnpm** (`pnpm-lock.yaml` is the lockfile `make web`
 installs from), and linting and formatting are both **Biome** —
 `pnpm lint` checks, `pnpm format` writes. There is no ESLint and no
 Prettier.
+
+### How the dashboard is navigated
+
+Four levels, and only the first is in the sidebar:
+
+```
+organization   the switcher at the top of the sidebar
+  project      /                       the grid of cards you land on
+    environment  /projects?ref=org/project&env=…   tabs inside a project
+      app        /apps?ref=org/project/env/app
+```
+
+There is **no flat list of apps**. An app only means something inside an
+environment — `gateway` is unique in `acme/api/production` and nowhere
+else — so a page that listed every app on the instance was listing
+things whose names do not identify them. A project opens on
+`production`, the environment it always has and cannot lose.
+
+The project and the app both travel as a `ref` in the query string
+rather than a path segment, because a static export has no dynamic
+segments. `ref` carries the organization too, so a link works for
+someone whose sidebar is pointing elsewhere — opening it moves the
+whole dashboard to that organization rather than showing one page out
+of frame.
+
+### The selected organization
+
+There is no organizations *page*. An organization is the frame every
+other screen sits inside, so it is a switcher at the top of the sidebar
+— pick one, create one, delete one — and `useOrg()` is how a page asks
+which one. Apps, projects and registry logins all read it; the projects
+page, the registries page and the new-app form no longer ask a second
+time.
+
+It is deliberately **not in the URL**: a static export has no dynamic
+segments, and threading it through every query string would mean every
+link in the dashboard has to carry it. It is remembered in
+`localStorage`, and a remembered slug that no longer exists falls back
+to the first organization the daemon returns rather than leaving the
+dashboard pointing at nothing.
 
 ### The components
 
@@ -389,8 +430,9 @@ can never deploy.
 - **`railpack`** — built here from a Git repository with **no Dockerfile
   at all**: Railpack reads the code and works the build out.
 
-Neither build autodeploys: nothing tells Cubeship about a push until the
-GitHub App exists.
+Both builds autodeploy once the organization has connected the GitHub
+account the repository is on. Until then, and for a repository anywhere
+else, a deploy is something you ask for.
 
 A building app stores `source_repo`, `source_ref` and
 `source_dockerfile`. The repository and ref are not Dockerfile-specific —
@@ -505,6 +547,58 @@ grows with every build — the same shape as an app's images outliving the
 app, which also needs a garbage collection pass Cubeship does not run.
 `docker exec cubeship-buildkit buildctl prune` is the manual answer for
 now.
+
+## Acting as a GitHub App
+
+One App per instance, registered by whoever runs the VPS; its
+credentials are settings. Organizations install that App on their own
+GitHub accounts, and **an installation belongs to a Cubeship
+organization** — that is what stops one tenant deploying another's
+private code by naming its URL.
+
+**The installation, not the payload, decides whose push this is.** The
+signature already stops a forgery, but resolving the organization from
+the installation is what makes tenancy true rather than merely unlikely:
+two tenants can legitimately build the same public repository.
+
+The App's private key and webhook secret are **write-only**. `settings`
+reports `github_connected`, never the values;
+`TestTheAppCredentialsAreNeverReturned` pins that.
+
+**A delivery with no secret configured is refused, not trusted.** An
+endpoint that starts deploys on an unauthenticated POST is a way to make
+this instance build anything. Everything else about a delivery answers
+200 — GitHub retries what it could not deliver, and a payload this daemon
+cannot act on is not something a retry fixes.
+
+An app with no `source_ref` deploys on a push to any branch; naming a ref
+is how you opt out. A tag is never a branch.
+
+## Cloning a private repository
+
+`TokenForRepository` mints an installation token, cached until shortly
+before it expires — GitHub's last an hour and a clone takes seconds of
+that, so minting one per clone would be a round trip against a rate limit
+for nothing.
+
+**The token never goes in the URL.** A URL appears in BuildKit's own
+progress output, and that output goes into a deployment row and then into
+a browser. It is handed over as:
+
+- BuildKit's `GIT_AUTH_TOKEN` session secret, for a Dockerfile build —
+  BuildKit's own name for Basic auth with the user `x-access-token`,
+  which is exactly what a GitHub App token is used as.
+- go-git's `BasicAuth`, for the clone a Railpack build does here.
+
+The JWT is hand-rolled: an RS256 assertion is a header, a payload and a
+signature over their base64, and a dependency for that is one more thing
+to keep current for no gain. `iat` is backdated a minute, because GitHub
+refuses an assertion issued in its future and a VPS clock a few seconds
+fast is enough.
+
+No installation found is **not** an error. A public repository needs no
+token, and letting GitHub refuse a private one beats refusing a clone
+that would have worked.
 
 ## What a build's output does
 

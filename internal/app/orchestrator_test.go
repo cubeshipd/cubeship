@@ -52,7 +52,7 @@ func newDeployFixture(t *testing.T, docker DockerAPI) (*Orchestrator, *database.
 	if err := cfg.SeedFromEnv(ctx, map[string]string{settings.Domain: "example.com"}); err != nil {
 		t.Fatalf("configure the domain: %v", err)
 	}
-	orch := NewOrchestrator(db, docker, cfg, extregistry.NewService(db, nil), nil)
+	orch := NewOrchestrator(db, docker, cfg, extregistry.NewService(db, nil), nil, nil)
 	// The health check's real timing has nothing to test here, and
 	// sleeping through it would make every deploy test slow.
 	orch.HealthCheckInterval = 0

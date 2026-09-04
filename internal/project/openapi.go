@@ -71,8 +71,9 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			"Project": openapi.Object(map[string]*openapi.Schema{
 				"slug":         openapi.String(""),
 				"name":         openapi.String(""),
+				"description":  openapi.String("What the project is for. Empty unless someone set it."),
 				"environments": openapi.Array(openapi.String("Environment slug. Only returned when the project is created.")),
-			}, "slug", "name"),
+			}, "slug", "name", "description"),
 
 			"Environment": openapi.Object(map[string]*openapi.Schema{
 				"slug": openapi.String(""),
@@ -113,6 +114,28 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				},
 			},
 			"/orgs/{orgSlug}/projects/{projectSlug}": {
+				"patch": {
+					OperationID: "updateProject",
+					Summary:     "Rename a project or describe it",
+					Description: "Changes the name, the description, or both. **A field you leave out is left as it was**, so one can be edited without sending the other back. The slug is not editable: it is a path component of every registry reference under the project. Requires the admin role.",
+					Tags:        []string{"Projects & environments"},
+					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					RequestBody: &openapi.RequestBody{
+						Required:    true,
+						Description: "Name, description, or both. Omit a field to leave it alone; send an empty description to clear it.",
+						Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
+							"name":        openapi.String("Cannot be empty."),
+							"description": openapi.String("May be empty."),
+						})),
+					},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The project as it now stands.", openapi.Ref("Project")),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+					},
+				},
 				"delete": {
 					OperationID: "deleteProject",
 					Summary:     "Delete a project",
