@@ -1,6 +1,6 @@
 {
-    "files.associations": {
-        "*.css": "tailwindcss"
-    },
-    "tailwindCSS.lint.suggestCanonicalClasses": "ignore"
+  "files.associations": {
+    "*.css": "tailwindcss"
+  },
+  "tailwindCSS.lint.suggestCanonicalClasses": "ignore"
 }

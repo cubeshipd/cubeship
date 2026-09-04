@@ -1,6 +1,6 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.12/schema.json",
-  "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
+  "root": false,
   "files": {
     "includes": ["**", "!.next", "!out", "!next-env.d.ts"]
   },
@@ -15,7 +15,7 @@
     "enabled": true,
     "domains": { "next": "recommended", "react": "recommended" },
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "a11y": {
         "noAutofocus": "off"
       }
