@@ -3,6 +3,7 @@ package dockerx
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -331,10 +332,17 @@ func TestPullImageSucceedsOnCleanStream(t *testing.T) {
 func TestPullImageAttachesRegistryAuthForMatchingHost(t *testing.T) {
 	fake := &fakeAPI{}
 	c := newWithAPI(fake)
-	c.SetRegistryAuth("127.0.0.1:5000", "cubeship", "s3cret")
+	var signedFor string
+	c.SetRegistryTokenSigner("127.0.0.1:5000", func(repository string) (string, error) {
+		signedFor = repository
+		return "signed-jwt", nil
+	})
 
-	if err := c.PullImage(context.Background(), "127.0.0.1:5000/myapp:latest"); err != nil {
+	if err := c.PullImage(context.Background(), "127.0.0.1:5000/acme/myapp:latest"); err != nil {
 		t.Fatalf("PullImage: %v", err)
+	}
+	if signedFor != "acme/myapp" {
+		t.Fatalf("expected the signer to be called with repository acme/myapp, got %q", signedFor)
 	}
 	if fake.pulledAuth == "" {
 		t.Fatal("expected credentials to be attached to a pull from the authenticated registry")
@@ -343,15 +351,30 @@ func TestPullImageAttachesRegistryAuthForMatchingHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode auth: %v", err)
 	}
-	if decoded.Username != "cubeship" || decoded.Password != "s3cret" {
+	if decoded.IdentityToken != "signed-jwt" {
 		t.Fatalf("unexpected credentials: %+v", decoded)
+	}
+}
+
+func TestPullImagePropagatesSignerError(t *testing.T) {
+	fake := &fakeAPI{}
+	c := newWithAPI(fake)
+	c.SetRegistryTokenSigner("127.0.0.1:5000", func(repository string) (string, error) {
+		return "", fmt.Errorf("signing key unavailable")
+	})
+
+	err := c.PullImage(context.Background(), "127.0.0.1:5000/acme/myapp:latest")
+	if err == nil {
+		t.Fatal("expected an error when the signer fails")
 	}
 }
 
 func TestPullImageSendsNoAuthForOtherHosts(t *testing.T) {
 	fake := &fakeAPI{}
 	c := newWithAPI(fake)
-	c.SetRegistryAuth("127.0.0.1:5000", "cubeship", "s3cret")
+	c.SetRegistryTokenSigner("127.0.0.1:5000", func(repository string) (string, error) {
+		return "signed-jwt", nil
+	})
 
 	// Bootstrap images come from Docker Hub and must not carry the
 	// local registry's credentials.

@@ -7,7 +7,6 @@ import (
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/registry"
 	dockerclient "github.com/docker/docker/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -40,11 +39,13 @@ type apiClient interface {
 type Client struct {
 	api apiClient
 
-	// registryAuths holds basic-auth credentials keyed by registry host
-	// (e.g. "127.0.0.1:5000"). PullImage attaches the matching entry to
-	// the pull so the daemon can read from its own authenticated
-	// registry. Set once at startup, read-only afterwards.
-	registryAuths map[string]registry.AuthConfig
+	// registryTokenSigners holds a token-minting function per registry
+	// host (e.g. "127.0.0.1:5000"). PullImage calls the matching signer
+	// fresh for every pull — tokens from the embedded registry's
+	// token-auth flow expire in regauth.TokenTTL (5 minutes), so caching
+	// one across pulls would go stale. Set once at startup, read-only
+	// afterwards.
+	registryTokenSigners map[string]func(repository string) (string, error)
 }
 
 func New() (*Client, error) {
@@ -60,17 +61,15 @@ func newWithAPI(api apiClient) *Client {
 	return &Client{api: api}
 }
 
-// SetRegistryAuth registers basic-auth credentials for a registry host.
-// Any later PullImage whose reference starts with that host sends them.
-// Call this before serving requests; it is not safe to call concurrently
-// with PullImage.
-func (c *Client) SetRegistryAuth(host, username, password string) {
-	if c.registryAuths == nil {
-		c.registryAuths = make(map[string]registry.AuthConfig)
+// SetRegistryTokenSigner registers a token-minting function for a
+// registry host. Any later PullImage whose reference starts with that
+// host calls signer with the pulled repository (the reference minus
+// host and tag) to obtain a fresh identity token, scoped to exactly
+// that repository, for the pull. Call this before serving requests; it
+// is not safe to call concurrently with PullImage.
+func (c *Client) SetRegistryTokenSigner(host string, signer func(repository string) (string, error)) {
+	if c.registryTokenSigners == nil {
+		c.registryTokenSigners = make(map[string]func(repository string) (string, error))
 	}
-	c.registryAuths[host] = registry.AuthConfig{
-		Username:      username,
-		Password:      password,
-		ServerAddress: host,
-	}
+	c.registryTokenSigners[host] = signer
 }

@@ -43,7 +43,11 @@ type ContainerOpts struct {
 
 func (c *Client) PullImage(ctx context.Context, ref string) error {
 	opts := types.ImagePullOptions{}
-	if auth, ok := c.authForRef(ref); ok {
+	auth, ok, err := c.authForRef(ref)
+	if err != nil {
+		return fmt.Errorf("sign registry auth for %q: %w", ref, err)
+	}
+	if ok {
 		encoded, err := registry.EncodeAuthConfig(auth)
 		if err != nil {
 			return fmt.Errorf("encode registry auth for %q: %w", ref, err)
@@ -81,20 +85,37 @@ func (c *Client) PullImage(ctx context.Context, ref string) error {
 	return nil
 }
 
-// authForRef returns the credentials registered for the registry host of
-// ref, if any. The host is the segment before the first "/"; a reference
-// with no "/" (e.g. "registry:2") is a Docker Hub official image and
-// never carries credentials here.
-func (c *Client) authForRef(ref string) (registry.AuthConfig, bool) {
-	if len(c.registryAuths) == 0 {
-		return registry.AuthConfig{}, false
+// authForRef mints a fresh identity token for the registry host of ref,
+// if a signer is registered for it. The host is the segment before the
+// first "/"; a reference with no "/" (e.g. "registry:2") is a Docker
+// Hub official image and never carries credentials here. The token is
+// scoped to exactly the repository being pulled (everything between the
+// host and the last ":"), matching the least-privilege scope the
+// signer's registry token endpoint would grant anyway.
+func (c *Client) authForRef(ref string) (registry.AuthConfig, bool, error) {
+	if len(c.registryTokenSigners) == 0 {
+		return registry.AuthConfig{}, false, nil
 	}
 	i := strings.Index(ref, "/")
 	if i < 0 {
-		return registry.AuthConfig{}, false
+		return registry.AuthConfig{}, false, nil
 	}
-	auth, ok := c.registryAuths[ref[:i]]
-	return auth, ok
+	host := ref[:i]
+	signer, ok := c.registryTokenSigners[host]
+	if !ok {
+		return registry.AuthConfig{}, false, nil
+	}
+
+	repo := ref[i+1:]
+	if j := strings.LastIndex(repo, ":"); j >= 0 {
+		repo = repo[:j]
+	}
+
+	token, err := signer(repo)
+	if err != nil {
+		return registry.AuthConfig{}, false, err
+	}
+	return registry.AuthConfig{IdentityToken: token, ServerAddress: host}, true, nil
 }
 
 func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (string, error) {
