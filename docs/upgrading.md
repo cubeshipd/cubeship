@@ -9,6 +9,19 @@ curl -sSL https://cubeship.dev/install.sh | sh
 Nothing under `CUBESHIP_DATA_DIR` is touched. The sections below are the
 changes worth knowing about, newest first.
 
+## From a release that could not build
+
+Nothing to do. Existing apps are unaffected.
+
+New: `source: "dockerfile"`, an app built here from a Git repository.
+**Creating or deploying one takes the admin role** — a build runs
+whatever the repository contains, on this host — while running a
+published image stays a member's. Nothing about existing sources changed.
+
+The first build on a box starts the `cubeship-buildkit` container and
+pulls its image, so it takes several minutes longer than the ones after
+it.
+
 ## From a release without an image builder
 
 Nothing to do, and nothing changes yet: no app source builds, so the

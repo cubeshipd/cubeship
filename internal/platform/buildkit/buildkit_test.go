@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -39,6 +41,7 @@ func buildkitd(t *testing.T) string {
 	port := freePort(t)
 	run := exec.Command("docker", "run", "-d", "--rm", "--name", name,
 		"--privileged", "-p", fmt.Sprintf("127.0.0.1:%d:1234", port),
+		"--add-host", "host.docker.internal:host-gateway",
 		buildkitImage, "--addr", "tcp://0.0.0.0:1234")
 	if out, err := run.CombinedOutput(); err != nil {
 		t.Fatalf("start buildkitd: %v\n%s", err, out)
@@ -236,5 +239,120 @@ func TestAnUnreachableBuilderSaysSo(t *testing.T) {
 	}
 	if !errors.Is(err, buildkit.ErrUnavailable) {
 		t.Errorf("got %v, want it to be ErrUnavailable so the deploy path can explain it", err)
+	}
+}
+
+// gitRepo makes a repository BuildKit can clone, served over Git's dumb
+// HTTP protocol — static files out of a bare repo, which needs no git
+// server, only `git update-server-info`.
+//
+// A real third-party URL would make this test depend on someone else's
+// uptime and someone else's repository staying as it is.
+func gitRepo(t *testing.T, files map[string]string) string {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Fatal("this test needs git")
+	}
+
+	work := source(t, files)
+	git := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = work
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=cubeship", "GIT_AUTHOR_EMAIL=test@cubeship.invalid",
+			"GIT_COMMITTER_NAME=cubeship", "GIT_COMMITTER_EMAIL=test@cubeship.invalid")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("init", "--quiet", "--initial-branch=main")
+	git("add", ".")
+	git("commit", "--quiet", "-m", "initial")
+
+	bare := filepath.Join(t.TempDir(), "repo.git")
+	if out, err := exec.Command("git", "clone", "--quiet", "--bare", work, bare).CombinedOutput(); err != nil {
+		t.Fatalf("clone bare: %v\n%s", err, out)
+	}
+	if out, err := exec.Command("git", "--git-dir", bare, "update-server-info").CombinedOutput(); err != nil {
+		t.Fatalf("update-server-info: %v\n%s", err, out)
+	}
+
+	srv := httptest.NewServer(http.FileServer(http.Dir(filepath.Dir(bare))))
+	t.Cleanup(srv.Close)
+
+	// The builder is a container, so it reaches this server by the
+	// host's gateway rather than by the loopback the test sees.
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return "http://host.docker.internal:" + port + "/repo.git"
+}
+
+// Building from a repository, which is the whole of what a Dockerfile
+// app does: BuildKit clones it itself, so nothing here needs git on the
+// host or a working copy on disk.
+func TestBuildFromAGitRepository(t *testing.T) {
+	docker, err := dockerx.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := buildkit.New(buildkitd(t), docker)
+
+	repo := gitRepo(t, map[string]string{
+		"Dockerfile": "FROM busybox\nCOPY greeting .\nCMD [\"cat\", \"greeting\"]\n",
+		"greeting":   "hello from a clone\n",
+	})
+
+	image := fmt.Sprintf("cubeship-test/cloned:%d", time.Now().UnixNano())
+	t.Cleanup(func() { exec.Command("docker", "rmi", "-f", image).Run() })
+
+	var logs bytes.Buffer
+	if err := b.Build(context.Background(), buildkit.Request{
+		ContextGit: repo + "#main", Image: image,
+	}, &logs); err != nil {
+		t.Fatalf("Build: %v\n%s", err, logs.String())
+	}
+
+	out, err := exec.Command("docker", "run", "--rm", image).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run the built image: %v\n%s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); got != "hello from a clone" {
+		t.Errorf("the built image printed %q", got)
+	}
+}
+
+// A Dockerfile somewhere other than the root, which is what a monorepo
+// needs.
+func TestBuildFromANestedDockerfile(t *testing.T) {
+	docker, err := dockerx.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := buildkit.New(buildkitd(t), docker)
+
+	repo := gitRepo(t, map[string]string{
+		"services/api/Dockerfile": "FROM busybox\nCOPY services/api/greeting .\nCMD [\"cat\", \"greeting\"]\n",
+		"services/api/greeting":   "hello from a subdirectory\n",
+	})
+
+	image := fmt.Sprintf("cubeship-test/nested:%d", time.Now().UnixNano())
+	t.Cleanup(func() { exec.Command("docker", "rmi", "-f", image).Run() })
+
+	var logs bytes.Buffer
+	if err := b.Build(context.Background(), buildkit.Request{
+		ContextGit: repo + "#main", Dockerfile: "services/api/Dockerfile", Image: image,
+	}, &logs); err != nil {
+		t.Fatalf("Build: %v\n%s", err, logs.String())
+	}
+
+	out, err := exec.Command("docker", "run", "--rm", image).CombinedOutput()
+	if err != nil {
+		t.Fatalf("run: %v\n%s", err, out)
+	}
+	if got := strings.TrimSpace(string(out)); got != "hello from a subdirectory" {
+		t.Errorf("the built image printed %q", got)
 	}
 }

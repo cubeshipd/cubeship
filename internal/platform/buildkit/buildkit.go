@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/moby/buildkit/client"
 	"golang.org/x/sync/errgroup"
@@ -30,6 +31,12 @@ type Loader interface {
 type Builder struct {
 	addr   string
 	loader Loader
+
+	// EnsureRunning starts buildkitd if it is not up, and is called
+	// before every build. The daemon sets it; the package does not know
+	// about containers. Nil means "assume something else runs it",
+	// which is what the tests do.
+	EnsureRunning func(ctx context.Context) error
 }
 
 // New returns a Builder that talks to buildkitd at addr — a
@@ -52,6 +59,13 @@ type Request struct {
 	// no access to it.
 	ContextDir string
 
+	// ContextGit is a repository BuildKit clones itself, as an
+	// alternative to ContextDir. Doing the clone there rather than here
+	// means no git on the host and a clone BuildKit can cache between
+	// builds. Append "#ref" to build something other than the default
+	// branch.
+	ContextGit string
+
 	// Dockerfile is the build recipe's path, relative to ContextDir.
 	// Defaults to "Dockerfile".
 	Dockerfile string
@@ -73,8 +87,11 @@ type Request struct {
 // end, because a build is the one part of a deploy long enough that
 // watching it is the point.
 func (b *Builder) Build(ctx context.Context, req Request, logs io.Writer) error {
-	if req.ContextDir == "" {
-		return fmt.Errorf("build: no context directory")
+	if req.ContextDir == "" && req.ContextGit == "" {
+		return fmt.Errorf("build: no source to build")
+	}
+	if req.ContextDir != "" && req.ContextGit != "" {
+		return fmt.Errorf("build: a build has one source, not two")
 	}
 	if req.Image == "" {
 		return fmt.Errorf("build: the result has no name")
@@ -83,12 +100,11 @@ func (b *Builder) Build(ctx context.Context, req Request, logs io.Writer) error 
 	if dockerfile == "" {
 		dockerfile = "Dockerfile"
 	}
-	// The recipe is streamed as its own local directory, so a Dockerfile
-	// in a subdirectory works without sending that subdirectory as the
-	// whole context.
-	recipeDir := filepath.Join(req.ContextDir, filepath.Dir(dockerfile))
-	if _, err := os.Stat(filepath.Join(recipeDir, filepath.Base(dockerfile))); err != nil {
-		return fmt.Errorf("build: %s not found in the source", dockerfile)
+
+	if b.EnsureRunning != nil {
+		if err := b.EnsureRunning(ctx); err != nil {
+			return fmt.Errorf("%w: %v", ErrUnavailable, err)
+		}
 	}
 
 	c, err := client.New(ctx, b.addr)
@@ -98,10 +114,10 @@ func (b *Builder) Build(ctx context.Context, req Request, logs io.Writer) error 
 	defer c.Close()
 
 	// client.New does not dial, so an unreachable builder would
-	// otherwise surface as a solve failure buried in gRPC wording. One
-	// round trip buys an answer someone reading a deployment row can act
-	// on, and it costs nothing against a build.
-	if _, err := c.ListWorkers(ctx); err != nil {
+	// otherwise surface as a solve failure buried in gRPC wording. This
+	// also waits: EnsureRunning may have just started the container, and
+	// buildkitd takes a moment to open its socket.
+	if err := waitReady(ctx, c); err != nil {
 		return fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 
@@ -109,7 +125,26 @@ func (b *Builder) Build(ctx context.Context, req Request, logs io.Writer) error 
 	// image is never held in memory or on disk in full.
 	pr, pw := io.Pipe()
 
-	frontendAttrs := map[string]string{"filename": filepath.Base(dockerfile)}
+	frontendAttrs := map[string]string{"filename": dockerfile}
+	localDirs := map[string]string{}
+
+	if req.ContextGit != "" {
+		// BuildKit resolves this itself, inside the builder, and the
+		// dockerfile is read from the same clone.
+		frontendAttrs["context"] = req.ContextGit
+	} else {
+		// The recipe is streamed as its own local directory, so a
+		// Dockerfile in a subdirectory works without sending that
+		// subdirectory as the whole context.
+		recipeDir := filepath.Join(req.ContextDir, filepath.Dir(dockerfile))
+		if _, err := os.Stat(filepath.Join(recipeDir, filepath.Base(dockerfile))); err != nil {
+			return fmt.Errorf("build: %s not found in the source", dockerfile)
+		}
+		frontendAttrs["filename"] = filepath.Base(dockerfile)
+		localDirs["context"] = req.ContextDir
+		localDirs["dockerfile"] = recipeDir
+	}
+
 	for k, v := range req.Args {
 		frontendAttrs["build-arg:"+k] = v
 	}
@@ -120,10 +155,7 @@ func (b *Builder) Build(ctx context.Context, req Request, logs io.Writer) error 
 	opt := client.SolveOpt{
 		Frontend:      "dockerfile.v0",
 		FrontendAttrs: frontendAttrs,
-		LocalDirs: map[string]string{
-			"context":    req.ContextDir,
-			"dockerfile": recipeDir,
-		},
+		LocalDirs:     localDirs,
 		Exports: []client.ExportEntry{{
 			Type:   client.ExporterDocker,
 			Attrs:  map[string]string{"name": req.Image},
@@ -160,6 +192,35 @@ func (b *Builder) Build(ctx context.Context, req Request, logs io.Writer) error 
 	})
 
 	return group.Wait()
+}
+
+// readyTimeout bounds how long a build waits for a builder that is
+// starting. It is generous because the very first build on a box is also
+// pulling the builder's image.
+const readyTimeout = 90 * time.Second
+
+func waitReady(ctx context.Context, c *client.Client) error {
+	deadline := time.Now().Add(readyTimeout)
+	for {
+		workers, err := c.ListWorkers(ctx)
+		if err == nil && len(workers) > 0 {
+			return nil
+		}
+		if err == nil {
+			err = errors.New("the builder reports no workers")
+		}
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		if time.Now().After(deadline) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
 }
 
 // writeStatus renders BuildKit's progress as the lines someone reading a

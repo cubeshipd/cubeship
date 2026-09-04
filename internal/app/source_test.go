@@ -11,16 +11,83 @@ import (
 // contains, on this host, with the builder's privileges — a different
 // kind of act, and an admin's.
 //
-// No source builds yet. This pins the rule so that adding one is a
-// decision about its role rather than an accident: the first source that
-// builds fails this test until someone looks at it.
-func TestBuildingSourcesNeedAnAdmin(t *testing.T) {
-	for _, s := range []Source{SourceRegistry, SourceExternal} {
-		if s.Builds() {
-			t.Fatalf("%q builds now — check that its role below is deliberate", s)
+// Every source is listed, so adding one is a decision about its role
+// rather than an accident.
+func TestTheRoleEachSourceNeeds(t *testing.T) {
+	for source, want := range map[Source]org.Role{
+		SourceRegistry:   org.RoleMember,
+		SourceExternal:   org.RoleMember,
+		SourceDockerfile: org.RoleAdmin,
+	} {
+		if got := RoleToDeploy(source); got != want {
+			t.Errorf("RoleToDeploy(%q) = %q, want %q", source, got, want)
 		}
-		if got := RoleToDeploy(s); got != org.RoleMember {
-			t.Errorf("RoleToDeploy(%q) = %q, want %q", s, got, org.RoleMember)
+	}
+}
+
+// A Git ref is not a Docker tag: branches carry slashes and a commit-ish
+// can carry anything. The built image is named after it, so it has to
+// survive the trip.
+func TestABuiltImageIsNamedAfterItsRef(t *testing.T) {
+	a := &Scoped{OrgSlug: "acme", ProjectSlug: "web", EnvironmentSlug: "production"}
+	a.Name = "api"
+
+	for ref, want := range map[string]string{
+		"main":            "cubeship-build/acme/web/production/api:main",
+		"v1.2.0":          "cubeship-build/acme/web/production/api:v1.2.0",
+		"feature/log-in":  "cubeship-build/acme/web/production/api:feature-log-in",
+		"release~1":       "cubeship-build/acme/web/production/api:release-1",
+		"":                "cubeship-build/acme/web/production/api:default",
+		"---":             "cubeship-build/acme/web/production/api:build",
+		"refs/heads/main": "cubeship-build/acme/web/production/api:refs-heads-main",
+	} {
+		if got := BuildImageName(a, ref); got != want {
+			t.Errorf("BuildImageName(%q) = %q, want %q", ref, got, want)
 		}
+	}
+}
+
+// An app that could never deploy must not be creatable, and neither must
+// one carrying a setting its source would silently ignore. Finding out
+// at deploy time — minutes later, with nobody watching — is the
+// alternative.
+func TestWhatEachSourceMayBeGiven(t *testing.T) {
+	tests := []struct {
+		name   string
+		source Source
+		origin Origin
+		want   error
+	}{
+		{"registry needs nothing", SourceRegistry, Origin{}, nil},
+		{"registry refuses an image", SourceRegistry, Origin{Image: "nginx"}, ErrImageNotAllowed},
+		{"registry refuses a repository", SourceRegistry, Origin{Repo: "https://x/y.git"}, ErrRepoNotAllowed},
+
+		{"external needs an image", SourceExternal, Origin{}, ErrImageRequired},
+		{"external refuses a tag", SourceExternal, Origin{Image: "nginx:1"}, ErrImageCarriesTag},
+		{"external refuses a repository", SourceExternal, Origin{Image: "nginx", Repo: "https://x/y.git"}, ErrRepoNotAllowed},
+
+		{"dockerfile needs a repository", SourceDockerfile, Origin{}, ErrRepoRequired},
+		{"dockerfile takes https", SourceDockerfile, Origin{Repo: "https://github.com/acme/api.git"}, nil},
+		{"dockerfile takes git", SourceDockerfile, Origin{Repo: "git://example.com/api.git"}, nil},
+		// A private network with a self-hosted Git server is a real way
+		// to run this, even though nothing authenticates what comes back.
+		{"dockerfile takes http", SourceDockerfile, Origin{Repo: "http://gitea.internal/acme/api.git"}, nil},
+		// ssh would need a key this instance does not have; a clone
+		// failing on a host key inside the builder explains nothing.
+		{"dockerfile refuses ssh", SourceDockerfile, Origin{Repo: "git@github.com:acme/api.git"}, ErrRepoNotSupported},
+		// The ref belongs to the app or the deploy, never to the URL.
+		{"dockerfile refuses a ref in the URL", SourceDockerfile,
+			Origin{Repo: "https://github.com/acme/api.git#main"}, ErrRepoNotSupported},
+		{"dockerfile refuses an image", SourceDockerfile,
+			Origin{Repo: "https://github.com/acme/api.git", Image: "nginx"}, ErrImageNotAllowed},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			origin := tt.origin
+			if got := checkOrigin(tt.source, &origin); got != tt.want {
+				t.Errorf("checkOrigin = %v, want %v", got, tt.want)
+			}
+		})
 	}
 }

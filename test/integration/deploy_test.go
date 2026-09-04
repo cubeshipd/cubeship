@@ -228,6 +228,16 @@ func TestDeployEndToEnd(t *testing.T) {
 	if string(body) != "hello from cubeship\n" {
 		t.Fatalf("unexpected response body from the deployed app: %q", body)
 	}
+
+	// Building runs on the same daemon, and needs the organization and
+	// project this test already made. A second daemon would want the
+	// same port and the same infrastructure containers as this one.
+	t.Run("builds an app from a repository", func(t *testing.T) {
+		buildFromARepository(t, adminKey)
+	})
+	t.Run("a build's output arrives while it runs", func(t *testing.T) {
+		buildLogsArriveWhileTheBuildRuns(t, adminKey)
+	})
 }
 
 const (

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path"
 	"strings"
 
 	"cubeship/internal/envvar"
@@ -91,7 +90,7 @@ func (s *Service) ResolveString(ctx context.Context, caller *user.User, ref stri
 
 // Create registers an app in a project's environment and returns it,
 // including the registry path a push should target.
-func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug, name, domain string, source Source, sourceImage string) (*Scoped, error) {
+func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug, name, domain string, source Source, origin Origin) (*Scoped, error) {
 	if envSlug == "" {
 		envSlug = project.ProductionEnvSlug
 	}
@@ -101,27 +100,8 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 	if !source.Valid() {
 		return nil, ErrUnknownSource
 	}
-	// An image is meaningless for a source that derives its own, and
-	// mandatory for the one that cannot. Refusing both mistakes at
-	// creation is what keeps an app that can never deploy from existing.
-	sourceImage = strings.TrimSpace(sourceImage)
-	switch source {
-	case SourceExternal:
-		if sourceImage == "" {
-			return nil, ErrImageRequired
-		}
-		if strings.ContainsAny(sourceImage, " \t") || strings.Contains(sourceImage, "://") {
-			return nil, ErrImageRequired
-		}
-		// The tag is the deploy's argument, not the app's identity: an
-		// app pinned to one tag could never be told to run another.
-		if _, tag, found := strings.Cut(path.Base(sourceImage), ":"); found && tag != "" {
-			return nil, ErrImageCarriesTag
-		}
-	default:
-		if sourceImage != "" {
-			return nil, ErrImageNotAllowed
-		}
+	if err := checkOrigin(source, &origin); err != nil {
+		return nil, err
 	}
 	// The name becomes a path component of the app's registry image
 	// reference (registry.<domain>/<org>/<name>), so it is checked before
@@ -147,7 +127,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 		return nil, project.ErrEnvironmentNotFound
 	}
 	ref := Reference{Org: o.Slug, Project: p.Slug, Environment: env.Slug, Name: name}
-	if _, err := s.Repo().Create(ctx, o.ID, p.ID, env.ID, name, domain, source, sourceImage); err != nil {
+	if _, err := s.Repo().Create(ctx, o.ID, p.ID, env.ID, name, domain, source, origin); err != nil {
 		// The unique index is the authority, not a preceding lookup:
 		// two concurrent creates of the same name would both pass a
 		// check and the loser would surface as a 500.

@@ -48,6 +48,11 @@ type Options struct {
 	// WebhookToken is the shared secret on the registry's push
 	// notifications. Not anyone's API key.
 	WebhookToken string
+
+	// Builder turns a repository into an image. A server without one
+	// serves everything except a deploy of an app that builds, which
+	// refuses rather than panicking — which is what most tests want.
+	Builder app.ImageBuilder
 }
 
 // New wires the modules together. The dependency order here is the real
@@ -59,7 +64,8 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	projects := project.NewService(db, orgs)
 	cfg := settings.NewService(db)
 	registries := extregistry.NewService(db, orgs)
-	apps := app.NewService(db, orgs, projects, app.NewOrchestrator(db, docker, cfg, registries), cfg)
+	apps := app.NewService(db, orgs, projects,
+		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder), cfg)
 
 	srv := &Server{
 		Users:      users,

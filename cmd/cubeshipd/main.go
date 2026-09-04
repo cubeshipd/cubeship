@@ -16,6 +16,7 @@ import (
 	"cubeship/internal/app"
 	"cubeship/internal/platform/authkey"
 	"cubeship/internal/platform/bootstrap"
+	"cubeship/internal/platform/buildkit"
 	"cubeship/internal/platform/config"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/dockerx"
@@ -302,7 +303,18 @@ func run() error {
 	}
 	defer db.Close()
 
-	srv := server.New(db, docker, server.Options{WebhookToken: cfg.Token})
+	// The builder starts buildkitd the first time something needs it.
+	// An instance that only runs images it is given never pays for a
+	// privileged container it will not use.
+	builder := buildkit.New(bootstrap.BuildKitSocket(cfg), docker)
+	builder.EnsureRunning = func(ctx context.Context) error {
+		return bootstrap.EnsureBuildKit(ctx, docker, cfg)
+	}
+
+	srv := server.New(db, docker, server.Options{
+		WebhookToken: cfg.Token,
+		Builder:      builder,
+	})
 
 	// An install upgrading from the release where the domain and contact
 	// address were required environment variables keeps them, once.

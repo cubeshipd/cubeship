@@ -32,10 +32,18 @@ type App struct {
 	// SourceImage is the image an external app pulls, without a tag.
 	// Empty for every other source.
 	SourceImage string
-	ContainerID string
-	Status      string
-	Env         envvar.Map
-	CreatedAt   time.Time
+	// SourceRepo and SourceRef are the repository a building app builds
+	// from, and which commit-ish of it. An empty ref means the
+	// repository's default branch.
+	SourceRepo string
+	SourceRef  string
+	// SourceDockerfile is the recipe's path within that repository.
+	// Empty means "Dockerfile" at the root.
+	SourceDockerfile string
+	ContainerID      string
+	Status           string
+	Env              envvar.Map
+	CreatedAt        time.Time
 }
 
 // Deployment is one attempt to run a new image for an app. It is created
@@ -43,11 +51,15 @@ type App struct {
 // how a caller finds out how a deploy went after the request that
 // started it is long gone.
 type Deployment struct {
-	ID        int64
-	AppID     int64
-	ImageRef  string
-	Status    string
-	Error     string
+	ID       int64
+	AppID    int64
+	ImageRef string
+	Status   string
+	Error    string
+	// Logs is what the build printed, when the source builds. It lives
+	// here because a detached deploy has nobody on the connection to
+	// tell, and a build that failed is only explicable by its output.
+	Logs      string
 	CreatedAt time.Time
 }
 
@@ -100,4 +112,8 @@ var (
 	// ErrNoRegistry reports that the instance has no domain yet, so
 	// there is no registry to push to or pull from.
 	ErrNoRegistry = errors.New("no registry: set a domain in the instance settings first")
+	// ErrNoBuilder reports a daemon built without one. It cannot happen
+	// in a real install; it exists so a test wiring the orchestrator
+	// without a builder fails loudly rather than at a nil pointer.
+	ErrNoBuilder = errors.New("this daemon has no image builder")
 )

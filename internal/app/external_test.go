@@ -32,7 +32,7 @@ func externalFixture(t *testing.T, image string) (*Orchestrator, *fakeDocker, *S
 		t.Fatal(err)
 	}
 	if _, err := NewRepository(db).Create(ctx, o.ID, p.ID, env.ID,
-		"myapp", "myapp.example.com", SourceExternal, image); err != nil {
+		"myapp", "myapp.example.com", SourceExternal, Origin{Image: image}); err != nil {
 		t.Fatal(err)
 	}
 	a, err := NewRepository(db).ScopedByReference(ctx, "acme", "web", "production", "myapp")
@@ -41,7 +41,7 @@ func externalFixture(t *testing.T, image string) (*Orchestrator, *fakeDocker, *S
 	}
 
 	docker := &fakeDocker{nextCreateID: "new-container", running: true}
-	orch := NewOrchestrator(db, docker, settings.NewService(db), extregistry.NewService(db, nil))
+	orch := NewOrchestrator(db, docker, settings.NewService(db), extregistry.NewService(db, nil), nil)
 	orch.HealthCheckInterval = 0
 	return orch, docker, a, extregistry.NewRepository(db)
 }

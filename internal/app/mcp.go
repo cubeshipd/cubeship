@@ -81,8 +81,11 @@ type createInput struct {
 	Environment string `json:"environment,omitempty" jsonschema:"environment slug (default \"production\")"`
 	Name        string `json:"name" jsonschema:"app name: lowercase letters, digits and dashes — becomes part of its registry image path"`
 	Domain      string `json:"domain" jsonschema:"domain the app will be served on"`
-	Source      string `json:"source,omitempty" jsonschema:"where the image comes from: \"registry\" (the default) for an image you push to Cubeship, or \"external\" for one in a registry Cubeship does not run."`
-	Image       string `json:"image,omitempty" jsonschema:"for an external app, the image it pulls, without a tag — e.g. \"registry.digitalocean.com/acme/api\". Leave empty for a registry app."`
+	Source      string `json:"source,omitempty" jsonschema:"where the image comes from: \"registry\" (the default) for an image you push to Cubeship, \"external\" for one in a registry Cubeship does not run, or \"dockerfile\" to build from a Git repository. Building requires the admin role."`
+	Image       string `json:"image,omitempty" jsonschema:"for an external app, the image it pulls, without a tag — e.g. \"registry.digitalocean.com/acme/api\". Leave empty otherwise."`
+	Repo        string `json:"repo,omitempty" jsonschema:"for a dockerfile app, the https:// Git repository to build from. Leave empty otherwise."`
+	Ref         string `json:"ref,omitempty" jsonschema:"for a dockerfile app, the branch, tag or commit to build. Defaults to the repository's default branch."`
+	Dockerfile  string `json:"dockerfile,omitempty" jsonschema:"for a dockerfile app, the recipe's path within the repository. Defaults to \"Dockerfile\" at the root."`
 }
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
@@ -90,7 +93,8 @@ func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInp
 		return nil, Response{}, fmt.Errorf("domain is required")
 	}
 	created, err := t.svc.Create(ctx, t.caller, in.Org, in.Project, in.Environment,
-		in.Name, in.Domain, Source(in.Source), in.Image)
+		in.Name, in.Domain, Source(in.Source),
+		Origin{Image: in.Image, Repo: in.Repo, Ref: in.Ref, Dockerfile: in.Dockerfile})
 	if err != nil {
 		return nil, Response{}, err
 	}

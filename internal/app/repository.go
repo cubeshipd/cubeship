@@ -16,7 +16,8 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, org_id, project_id, environment_id, name, domain, source, source_image, container_id, status, env, created_at`
+const columns = `id, org_id, project_id, environment_id, name, domain, source, source_image,
+	source_repo, source_ref, source_dockerfile, container_id, status, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -24,7 +25,8 @@ func scan(row scanner) (*App, error) {
 	var a App
 	var envJSON []byte
 	if err := row.Scan(&a.ID, &a.OrgID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Domain,
-		&a.Source, &a.SourceImage, &a.ContainerID, &a.Status, &envJSON, &a.CreatedAt); err != nil {
+		&a.Source, &a.SourceImage, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
+		&a.ContainerID, &a.Status, &envJSON, &a.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &a.Env); err != nil {
@@ -33,12 +35,24 @@ func scan(row scanner) (*App, error) {
 	return &a, nil
 }
 
-func (r *Repository) Create(ctx context.Context, orgID, projectID, environmentID int64, name, domain string, source Source, sourceImage string) (*App, error) {
+// Origin is where an app's images come from, beyond the source that
+// says which of these fields mean anything. Passing them as one value
+// keeps Create from growing an argument per source.
+type Origin struct {
+	Image      string
+	Repo       string
+	Ref        string
+	Dockerfile string
+}
+
+func (r *Repository) Create(ctx context.Context, orgID, projectID, environmentID int64, name, domain string, source Source, origin Origin) (*App, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO apps (org_id, project_id, environment_id, name, domain, source, source_image)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`INSERT INTO apps (org_id, project_id, environment_id, name, domain, source,
+		                   source_image, source_repo, source_ref, source_dockerfile)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		 RETURNING `+columns,
-		orgID, projectID, environmentID, name, domain, string(source), sourceImage)
+		orgID, projectID, environmentID, name, domain, string(source),
+		origin.Image, origin.Repo, origin.Ref, origin.Dockerfile)
 	a, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("create app: %w", err)
@@ -140,11 +154,11 @@ func (r *Repository) MergeEnv(ctx context.Context, appID int64, set envvar.Map, 
 	return database.MergeJSONBMap(ctx, r.q, "apps", "env", appID, setJSON, unset)
 }
 
-const deploymentColumns = `id, app_id, image_ref, status, error, created_at`
+const deploymentColumns = `id, app_id, image_ref, status, error, logs, created_at`
 
 func scanDeployment(row scanner) (*Deployment, error) {
 	var d Deployment
-	if err := row.Scan(&d.ID, &d.AppID, &d.ImageRef, &d.Status, &d.Error, &d.CreatedAt); err != nil {
+	if err := row.Scan(&d.ID, &d.AppID, &d.ImageRef, &d.Status, &d.Error, &d.Logs, &d.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &d, nil
@@ -188,6 +202,18 @@ func (r *Repository) FinishDeployment(ctx context.Context, id int64, status, err
 
 // DeploymentByID reads one deployment, scoped to its app so an id from
 // another app's history resolves to nothing.
+// SetDeploymentLogs replaces a deployment's captured output. It is
+// called repeatedly while a build runs, so it replaces rather than
+// appends: the writer holds the whole text and the row is a mirror of
+// it, which cannot drift or interleave with a concurrent write.
+func (r *Repository) SetDeploymentLogs(ctx context.Context, id int64, logs string) error {
+	if _, err := r.q.ExecContext(ctx,
+		`UPDATE deployments SET logs = $1 WHERE id = $2`, logs, id); err != nil {
+		return fmt.Errorf("save deployment logs: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) DeploymentByID(ctx context.Context, appID, id int64) (*Deployment, error) {
 	row := r.q.QueryRowContext(ctx,
 		`SELECT `+deploymentColumns+` FROM deployments WHERE id = $1 AND app_id = $2`, id, appID)
@@ -233,7 +259,8 @@ type Scoped struct {
 // matches scanScoped.
 const scopedQuery = `
 	SELECT a.id, a.org_id, a.project_id, a.environment_id, a.name, a.domain,
-	       a.source, a.source_image, a.container_id, a.status, a.env, a.created_at,
+	       a.source, a.source_image, a.source_repo, a.source_ref, a.source_dockerfile,
+	       a.container_id, a.status, a.env, a.created_at,
 	       o.slug, p.slug, e.slug
 	FROM apps a
 	JOIN organizations o ON o.id = a.org_id
@@ -244,7 +271,8 @@ func scanScoped(row scanner) (*Scoped, error) {
 	var s Scoped
 	var envJSON []byte
 	if err := row.Scan(&s.ID, &s.OrgID, &s.ProjectID, &s.EnvironmentID, &s.Name, &s.Domain,
-		&s.Source, &s.SourceImage, &s.ContainerID, &s.Status, &envJSON, &s.CreatedAt,
+		&s.Source, &s.SourceImage, &s.SourceRepo, &s.SourceRef, &s.SourceDockerfile,
+		&s.ContainerID, &s.Status, &envJSON, &s.CreatedAt,
 		&s.OrgSlug, &s.ProjectSlug, &s.EnvironmentSlug); err != nil {
 		return nil, err
 	}

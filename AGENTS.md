@@ -332,6 +332,22 @@ can never deploy.
   autodeploy**: a deploy is something you ask for. It needs nothing
   configured, which makes it the one thing an instance can run the minute
   it is installed.
+- **`dockerfile`** — built here, from a Dockerfile in a Git repository.
+  BuildKit does the clone, so nothing needs git on the host. Also no
+  autodeploy: nothing tells Cubeship about a push until the GitHub App
+  exists.
+
+A building app stores `source_repo`, `source_ref` and
+`source_dockerfile`. The repository and ref are not Dockerfile-specific —
+anything that builds from a repository needs them — so they are not named
+for it. A deploy's tag argument overrides the stored ref, which is how
+"deploy this branch" works.
+
+The repository must be `https://`, `http://` or `git://`. That rule is
+about what the builder can fetch **unaided**, not about what is safe: ssh
+needs a key this instance does not have, and a clone failing on a host
+key deep inside a build explains nothing. Only https authenticates what
+comes back, and a build runs whatever comes back.
 
 An external app stores `source_image`, the reference minus the tag,
 because it has nothing to derive one from. The tag is the deploy's
@@ -394,6 +410,26 @@ either way.
 `Build` calls `ListWorkers` before solving. `client.New` does not dial, so
 without it an unreachable builder arrives as a solve failure buried in
 gRPC wording rather than as `ErrUnavailable`.
+
+## What a build's output does
+
+A build is the one part of a deploy long enough that watching it is the
+point, so `deployments.logs` is written **while it runs**, on a timer
+matched to how fast a dashboard polls — not once at the end.
+
+`deploymentLog` buffers and flushes rather than writing per line, because
+BuildKit emits output in small pieces and an UPDATE per piece would make
+a noisy build heavier on the database than on the builder. It is capped
+at `MaxDeploymentLogBytes` and **keeps the tail**: the reason a build
+failed is at the end of what it printed. Truncation says so rather than
+leaving a reader thinking they have the whole build.
+
+`Close` writes whatever is left, and the deploy path defers it, because
+that last flush is the one carrying the explanation of a failure.
+
+`Image.Local` is what stops the orchestrator pulling something it just
+built — a registry that has never heard of that image would be the only
+place to look.
 
 ## Who may build
 

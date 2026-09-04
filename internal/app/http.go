@@ -36,7 +36,12 @@ type Response struct {
 	Image  string `json:"image,omitempty"`
 	Status string `json:"status"`
 	// Source is where this app's image comes from.
-	Source      string `json:"source"`
+	Source string `json:"source"`
+	// Repo, Ref and Dockerfile describe a building app's source. Absent
+	// for one that does not build.
+	Repo        string `json:"repo,omitempty"`
+	Ref         string `json:"ref,omitempty"`
+	Dockerfile  string `json:"dockerfile,omitempty"`
 	Org         string `json:"org"`
 	Project     string `json:"project"`
 	Environment string `json:"environment"`
@@ -54,6 +59,8 @@ func toResponse(a *Scoped, registryHost string) Response {
 	switch Source(a.Source) {
 	case SourceExternal:
 		r.Image = a.SourceImage
+	case SourceDockerfile:
+		r.Repo, r.Ref, r.Dockerfile = a.SourceRepo, a.SourceRef, a.SourceDockerfile
 	default:
 		if registryHost != "" {
 			r.Image = ReferenceOf(a).ImageFor(registryHost)
@@ -113,8 +120,12 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrAlreadyExists):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrUnknownSource), errors.Is(err, ErrImageRequired),
-		errors.Is(err, ErrImageNotAllowed), errors.Is(err, ErrImageCarriesTag):
+		errors.Is(err, ErrImageNotAllowed), errors.Is(err, ErrImageCarriesTag),
+		errors.Is(err, ErrRepoRequired), errors.Is(err, ErrRepoNotAllowed),
+		errors.Is(err, ErrRepoNotSupported):
 		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrNoBuilder):
+		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrNoRegistry):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrNoContainer):
@@ -136,6 +147,10 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		Source      string `json:"source"`
 		// Image is where an external app pulls from, without a tag.
 		Image string `json:"image"`
+		// Repo, Ref and Dockerfile are where a building app builds from.
+		Repo       string `json:"repo"`
+		Ref        string `json:"ref"`
+		Dockerfile string `json:"dockerfile"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil ||
 		req.Name == "" || req.Domain == "" || req.Org == "" || req.Project == "" {
@@ -143,7 +158,8 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	created, err := h.svc.Create(r.Context(), user.FromContext(r.Context()),
-		req.Org, req.Project, req.Environment, req.Name, req.Domain, Source(req.Source), req.Image)
+		req.Org, req.Project, req.Environment, req.Name, req.Domain, Source(req.Source),
+		Origin{Image: req.Image, Repo: req.Repo, Ref: req.Ref, Dockerfile: req.Dockerfile})
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -181,16 +197,19 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 
 // DeploymentResponse is one deploy attempt, as the API reports it.
 type DeploymentResponse struct {
-	ID        int64     `json:"id"`
-	Status    string    `json:"status"`
-	Image     string    `json:"image"`
-	Error     string    `json:"error,omitempty"`
+	ID     int64  `json:"id"`
+	Status string `json:"status"`
+	Image  string `json:"image"`
+	Error  string `json:"error,omitempty"`
+	// Logs is what a build printed. Absent for a source that only pulls.
+	Logs      string    `json:"logs,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 func toDeploymentResponse(d *Deployment) DeploymentResponse {
 	return DeploymentResponse{
-		ID: d.ID, Status: d.Status, Image: d.ImageRef, Error: d.Error, CreatedAt: d.CreatedAt,
+		ID: d.ID, Status: d.Status, Image: d.ImageRef, Error: d.Error,
+		Logs: d.Logs, CreatedAt: d.CreatedAt,
 	}
 }
 

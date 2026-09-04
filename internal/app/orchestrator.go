@@ -11,6 +11,7 @@ import (
 
 	"cubeship/internal/envvar"
 	"cubeship/internal/extregistry"
+	"cubeship/internal/platform/buildkit"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/platform/traefik"
@@ -40,6 +41,7 @@ type Orchestrator struct {
 	envs     *project.EnvironmentRepository
 	settings *settings.Service
 	creds    CredentialLookup
+	builder  ImageBuilder
 
 	// HealthCheckAttempts bounds how many observations waitHealthy takes
 	// before giving up; HealthCheckSuccesses is how many of them must be
@@ -70,7 +72,14 @@ type CredentialLookup interface {
 	ForImage(ctx context.Context, orgID int64, image string) (*extregistry.Credential, bool, error)
 }
 
-func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds CredentialLookup) *Orchestrator {
+// ImageBuilder turns a repository into an image in the Engine's store.
+// Only a source that builds ever needs one, so it may be nil on an
+// instance that has none.
+type ImageBuilder interface {
+	Build(ctx context.Context, req buildkit.Request, logs io.Writer) error
+}
+
+func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds CredentialLookup, builder ImageBuilder) *Orchestrator {
 	return &Orchestrator{
 		db:                   db,
 		docker:               d,
@@ -79,6 +88,7 @@ func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds 
 		envs:                 project.NewEnvironmentRepository(db),
 		settings:             cfg,
 		creds:                creds,
+		builder:              builder,
 		HealthCheckAttempts:  10,
 		HealthCheckSuccesses: 3,
 		HealthCheckInterval:  500 * time.Millisecond,
@@ -98,6 +108,31 @@ func (o *Orchestrator) registryCredentials(ctx context.Context, orgID int64, ima
 		return nil, err
 	}
 	return &dockerx.RegistryAuth{Username: c.Username, Password: c.Password}, nil
+}
+
+// buildFromRepository is what dockerfileSource calls. It returns the
+// name the built image was given in the Engine's store.
+func (o *Orchestrator) buildFromRepository(ctx context.Context, a *Scoped, ref string, logs io.Writer) (string, error) {
+	if o.builder == nil {
+		return "", ErrNoBuilder
+	}
+	image := BuildImageName(a, ref)
+	context := a.SourceRepo
+	if ref != "" {
+		context += "#" + ref
+	}
+	err := o.builder.Build(ctx, buildkit.Request{
+		ContextGit: context,
+		Dockerfile: a.SourceDockerfile,
+		Image:      image,
+		Labels: map[string]string{
+			"cubeship.app": ReferenceOf(a).String(),
+		},
+	}, logs)
+	if err != nil {
+		return "", err
+	}
+	return image, nil
 }
 
 // lockApp returns the mutex guarding deploys of one app. Keyed by id
@@ -245,7 +280,14 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	if err != nil {
 		return err
 	}
-	image, err := source.Resolve(ctx, a, tag)
+	// A source that builds writes to this while it works, so the
+	// deployment row is watchable rather than a blank wait. Closed
+	// however the deploy ends: the last lines are the ones explaining
+	// it.
+	logs := newDeploymentLog(o.saveDeploymentLogs(deploymentID))
+	defer logs.Close()
+
+	image, err := source.Resolve(ctx, a, tag, logs)
 	if err != nil {
 		return fmt.Errorf("resolve image: %w", err)
 	}
@@ -258,8 +300,13 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 		return fmt.Errorf("resolve inherited env: %w", err)
 	}
 
-	if err := o.docker.PullImage(ctx, image.Ref, image.Auth); err != nil {
-		return fmt.Errorf("pull image: %w", err)
+	// A built image is already in the Engine's store — this deploy is
+	// what put it there. Pulling would look for it in a registry that
+	// has never heard of it.
+	if !image.Local {
+		if err := o.docker.PullImage(ctx, image.Ref, image.Auth); err != nil {
+			return fmt.Errorf("pull image: %w", err)
+		}
 	}
 
 	// Whether the app can be served over HTTPS is instance
