@@ -516,7 +516,7 @@ func WriteAPIRouterConfig(cfg *config.Config, apiHost string, daemonPort int) er
 // dockerAPI is the subset of dockerx.Client this package needs.
 type dockerAPI interface {
 	PullImage(ctx context.Context, ref string, creds *dockerx.RegistryAuth) error
-	HasImage(ctx context.Context, ref string) (bool, error)
+	ImageID(ctx context.Context, ref string) (string, error)
 	CreateContainer(ctx context.Context, opts dockerx.ContainerOpts) (string, error)
 	StartContainer(ctx context.Context, id string) error
 	StopContainer(ctx context.Context, id string) error
@@ -537,11 +537,22 @@ const ConfigHashLabel = "cubeship.config-hash"
 // JSON is the serialization because encoding/json orders map keys, so
 // the same options always hash the same way. The hash is not a security
 // boundary, just a change detector.
-func configHash(opts dockerx.ContainerOpts) string {
+func configHash(opts dockerx.ContainerOpts, imageID string) string {
 	// The label itself is excluded: it holds the result.
 	opts.Labels = withoutConfigHash(opts.Labels)
 
-	encoded, err := json.Marshal(opts)
+	encoded, err := json.Marshal(struct {
+		Opts dockerx.ContainerOpts
+		// The resolved image, not the reference in Opts.
+		//
+		// A tag is a moving name. `install.sh --local` rebuilds
+		// `cubeship/cubeship-frontend:local` on every install, and the
+		// options are identical every time — so a fingerprint taken from
+		// them alone said "unchanged", the container was left alone, and
+		// the box went on running the previous build. It looked exactly
+		// like a cache.
+		Image string
+	}{opts, imageID})
 	if err != nil {
 		// ContainerOpts is plain data and cannot fail to encode. If that
 		// ever changes, a hash nothing matches is the safe answer: it
@@ -566,8 +577,8 @@ func withoutConfigHash(labels map[string]string) map[string]string {
 }
 
 // withConfigHash returns opts carrying its own fingerprint as a label.
-func withConfigHash(opts dockerx.ContainerOpts) dockerx.ContainerOpts {
-	hash := configHash(opts)
+func withConfigHash(opts dockerx.ContainerOpts, imageID string) dockerx.ContainerOpts {
+	hash := configHash(opts, imageID)
 
 	labels := make(map[string]string, len(opts.Labels)+1)
 	for k, v := range opts.Labels {
@@ -598,7 +609,22 @@ func withConfigHash(opts dockerx.ContainerOpts) dockerx.ContainerOpts {
 // Creation failures are returned rather than assumed to mean "already
 // exists" — a bad bind path or port conflict is a real failure.
 func Ensure(ctx context.Context, docker dockerAPI, opts dockerx.ContainerOpts) error {
-	opts = withConfigHash(opts)
+	// The image is resolved before anything is compared, because what it
+	// resolves to is part of what is being compared.
+	imageID, err := docker.ImageID(ctx, opts.Image)
+	if err != nil {
+		return err
+	}
+	if imageID == "" {
+		if err := docker.PullImage(ctx, opts.Image, nil); err != nil {
+			return fmt.Errorf("pull %s: %w (if this image was built on this host, it is not there — check the tag)", opts.Image, err)
+		}
+		if imageID, err = docker.ImageID(ctx, opts.Image); err != nil {
+			return err
+		}
+	}
+
+	opts = withConfigHash(opts, imageID)
 	want := opts.Labels[ConfigHashLabel]
 
 	existing, err := docker.InspectContainerByName(ctx, opts.Name)
@@ -622,25 +648,6 @@ func Ensure(ctx context.Context, docker dockerAPI, opts dockerx.ContainerOpts) e
 		return nil
 	case !errors.Is(err, dockerx.ErrContainerNotFound):
 		return fmt.Errorf("inspect %s: %w", opts.Name, err)
-	}
-
-	// Pull only what is not already here.
-	//
-	// Every image Cubeship starts is pinned to a tag, so an image that
-	// is present is the right one and fetching it again is a round trip
-	// to be told so. That is a small saving for the ones from Docker
-	// Hub and the whole ballgame for the ones that were built on this
-	// box: `install.sh --local` builds the daemon and the dashboard
-	// here, and those references exist in no registry — pulling them
-	// unconditionally failed, and the dashboard never started.
-	present, err := docker.HasImage(ctx, opts.Image)
-	if err != nil {
-		return err
-	}
-	if !present {
-		if err := docker.PullImage(ctx, opts.Image, nil); err != nil {
-			return fmt.Errorf("pull %s: %w (if this image was built on this host, it is not there — check the tag)", opts.Image, err)
-		}
 	}
 
 	id, err := docker.CreateContainer(ctx, opts)

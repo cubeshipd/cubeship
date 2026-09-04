@@ -309,6 +309,17 @@
   border-color: var(--ring);
 }
 
+/* Except the one inside a select's popup, which lights up nothing.
+   Focus goes there the moment the popup opens — it is the reason the
+   popup exists — so a ring on it is a light that is always on, drawn
+   around the top of a surface that is already the thing you are looking
+   at. */
+[data-slot="popover-content"] [data-slot="search-bar"],
+[data-slot="popover-content"] [data-slot="search-bar"]:focus-within {
+  border-color: var(--border);
+  box-shadow: none;
+}
+
 @utility bg-grid {
   background-image:
     linear-gradient(

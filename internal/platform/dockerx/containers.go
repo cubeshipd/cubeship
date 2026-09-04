@@ -403,19 +403,26 @@ func (c *Client) Exec(ctx context.Context, containerID string, cmd []string) (ou
 // than anything reading it needs.
 const maxExecOutput = 1 << 20
 
-// HasImage reports whether an image is already on this host.
+// ImageID resolves a reference to the id of the image it currently
+// names, or "" when this host does not have it.
 //
-// It exists so nothing pulls what it already has. That is a round trip
-// saved for the images Cubeship gets from Docker Hub, and it is the
-// difference between working and not for an image that was built here:
-// `install.sh --local` builds the daemon and the dashboard on the box
-// itself, and those references exist in no registry to be pulled from.
-func (c *Client) HasImage(ctx context.Context, ref string) (bool, error) {
-	if _, _, err := c.api.ImageInspectWithRaw(ctx, ref); err != nil {
+// The id rather than the reference, and that difference is the point.
+// A tag is a moving name: `docker build -t cubeship/cubeship-frontend:local`
+// makes a *new* image under the *same* tag, and anything comparing
+// references sees no change. Comparing ids is what tells a rebuilt image
+// from the one a container is already running.
+//
+// It doubles as the presence check, so nothing pulls what it already
+// has — a round trip saved for the images from Docker Hub, and the
+// difference between working and not for one built here, which exists
+// in no registry to be pulled from.
+func (c *Client) ImageID(ctx context.Context, ref string) (string, error) {
+	info, _, err := c.api.ImageInspectWithRaw(ctx, ref)
+	if err != nil {
 		if errdefs.IsNotFound(err) {
-			return false, nil
+			return "", nil
 		}
-		return false, fmt.Errorf("inspect image %q: %w", ref, err)
+		return "", fmt.Errorf("inspect image %q: %w", ref, err)
 	}
-	return true, nil
+	return info.ID, nil
 }

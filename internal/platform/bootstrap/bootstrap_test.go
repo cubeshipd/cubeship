@@ -203,16 +203,17 @@ func TestWriteAPIRouterConfigWritesFile(t *testing.T) {
 
 type fakeDocker struct {
 	pulledRef string
-	// localImages are the ones already on the host, which Ensure must
-	// not try to pull.
-	localImages map[string]bool
+	// localImages maps a reference to the id it resolves to on this
+	// host. Absent means Ensure has to pull it.
+	localImages map[string]string
 	pullErr     error
 	createErr   error
 	// createdName stays "" until CreateContainer is actually called, so
 	// tests can assert Ensure did *not* try to recreate an existing
 	// container.
-	createdName string
-	startedID   string
+	createdName   string
+	createdLabels map[string]string
+	startedID     string
 
 	// inspectID/inspectRunning/inspectLabels describe an existing
 	// container; inspectErr (default: dockerx.ErrContainerNotFound)
@@ -230,7 +231,16 @@ type fakeDocker struct {
 }
 
 func newFakeDocker() *fakeDocker {
-	return &fakeDocker{inspectErr: dockerx.ErrContainerNotFound}
+	return &fakeDocker{inspectErr: dockerx.ErrContainerNotFound, localImages: map[string]string{}}
+}
+
+// has puts an image on the fake host, at a given id. Ensure resolves the
+// image before it compares anything — what a tag resolves to is part of
+// what is compared — so a test about containers still has to say which
+// images exist.
+func (f *fakeDocker) has(ref, id string) *fakeDocker {
+	f.localImages[ref] = id
+	return f
 }
 
 func (f *fakeDocker) PullImage(ctx context.Context, ref string, _ *dockerx.RegistryAuth) error {
@@ -238,7 +248,7 @@ func (f *fakeDocker) PullImage(ctx context.Context, ref string, _ *dockerx.Regis
 	return f.pullErr
 }
 
-func (f *fakeDocker) HasImage(_ context.Context, ref string) (bool, error) {
+func (f *fakeDocker) ImageID(_ context.Context, ref string) (string, error) {
 	return f.localImages[ref], nil
 }
 func (f *fakeDocker) CreateContainer(ctx context.Context, opts dockerx.ContainerOpts) (string, error) {
@@ -246,6 +256,7 @@ func (f *fakeDocker) CreateContainer(ctx context.Context, opts dockerx.Container
 		return "", f.createErr
 	}
 	f.createdName = opts.Name
+	f.createdLabels = opts.Labels
 	return "container-1", nil
 }
 func (f *fakeDocker) StartContainer(ctx context.Context, id string) error {
@@ -277,7 +288,7 @@ func (f *fakeDocker) InspectContainerByName(ctx context.Context, name string) (d
 func (f *fakeDocker) matching(opts dockerx.ContainerOpts) *fakeDocker {
 	f.inspectErr = nil
 	f.inspectID = "existing-container"
-	f.inspectLabels = map[string]string{ConfigHashLabel: configHash(opts)}
+	f.inspectLabels = map[string]string{ConfigHashLabel: configHash(opts, f.localImages[opts.Image])}
 	return f
 }
 
@@ -300,7 +311,7 @@ func TestEnsureCreatesAndStartsContainer(t *testing.T) {
 
 func TestEnsureLeavesRunningContainerAlone(t *testing.T) {
 	opts := dockerx.ContainerOpts{Name: "cubeship-traefik", Image: "traefik:v3.1"}
-	docker := newFakeDocker().matching(opts)
+	docker := newFakeDocker().has(opts.Image, "sha256:traefik").matching(opts)
 	docker.inspectRunning = true
 
 	if err := Ensure(context.Background(), docker, opts); err != nil {
@@ -490,8 +501,15 @@ func TestConfigHashTracksTheOptions(t *testing.T) {
 		Binds:  []string{"/data:/var/lib/registry"},
 		Labels: map[string]string{"traefik.enable": "true"},
 	}
-	if configHash(base) != configHash(base) {
+	const image = "sha256:registry2"
+	if configHash(base, image) != configHash(base, image) {
 		t.Fatal("the same options hashed differently")
+	}
+
+	// A tag is a moving name: the same options against a rebuilt image
+	// are a different container, and this is what says so.
+	if configHash(base, image) == configHash(base, "sha256:rebuilt") {
+		t.Error("rebuilding the image under the same tag did not change the hash")
 	}
 
 	for name, mutate := range map[string]func(o *dockerx.ContainerOpts){
@@ -505,7 +523,7 @@ func TestConfigHashTracksTheOptions(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			changed := base
 			mutate(&changed)
-			if configHash(changed) == configHash(base) {
+			if configHash(changed, image) == configHash(base, image) {
 				t.Errorf("changing the %s did not change the hash", name)
 			}
 		})
@@ -513,8 +531,8 @@ func TestConfigHashTracksTheOptions(t *testing.T) {
 
 	// The hash lives in a label, so its own presence must not affect it —
 	// otherwise every container would look changed on the next start.
-	labelled := withConfigHash(base)
-	if configHash(labelled) != configHash(base) {
+	labelled := withConfigHash(base, "sha256:x")
+	if configHash(labelled, "sha256:x") != configHash(base, "sha256:x") {
 		t.Error("the config-hash label changed the hash of the options it describes")
 	}
 }
@@ -563,8 +581,9 @@ func TestTraefikWithoutAnACMEEmailHasNoResolver(t *testing.T) {
 // Ensure replace the container — a resolver cannot be added to a running
 // Traefik.
 func TestConfiguringTLSChangesTheTraefikContainer(t *testing.T) {
-	without := configHash(TraefikContainerOpts(testConfig(), ""))
-	with := configHash(TraefikContainerOpts(testConfig(), "admin@example.com"))
+	const image = "sha256:same"
+	without := configHash(TraefikContainerOpts(testConfig(), ""), image)
+	with := configHash(TraefikContainerOpts(testConfig(), "admin@example.com"), image)
 
 	if without == with {
 		t.Fatal("configuring a contact address left the container unchanged, so TLS would never take effect")
@@ -702,7 +721,7 @@ func TestTheTokenRealmFallsBackToThisHost(t *testing.T) {
 // which meant the dashboard's container never started on a local install.
 func TestEnsureDoesNotPullAnImageItAlreadyHas(t *testing.T) {
 	docker := &fakeDocker{
-		localImages: map[string]bool{"cubeship/cubeship-frontend:local": true},
+		localImages: map[string]string{"cubeship/cubeship-frontend:local": "sha256:aaa"},
 		pullErr:     errors.New("pull access denied: repository does not exist"),
 	}
 
@@ -733,5 +752,46 @@ func TestEnsurePullsAnImageItDoesNotHave(t *testing.T) {
 	}
 	if docker.pulledRef != "postgres:16-alpine" {
 		t.Errorf("pulled %q, want postgres:16-alpine", docker.pulledRef)
+	}
+}
+
+// A rebuilt image under the same tag is a different image, and the
+// container running the old one has to go.
+//
+// This is what `install.sh --local` does on every install: it rebuilds
+// `cubeship/cubeship-frontend:local`, whose ContainerOpts are identical
+// every time. A fingerprint taken from the options alone said nothing
+// had changed, so the box kept running the previous build — which looked
+// exactly like a cache and was not one.
+func TestEnsureReplacesAContainerWhoseImageWasRebuilt(t *testing.T) {
+	opts := dockerx.ContainerOpts{Name: "cubeship-frontend", Image: "cubeship/cubeship-frontend:local"}
+
+	// What the container was created from, the first time round.
+	first := &fakeDocker{localImages: map[string]string{opts.Image: "sha256:old"}}
+	if err := Ensure(context.Background(), first, opts); err != nil {
+		t.Fatalf("first Ensure: %v", err)
+	}
+	stamped := first.createdLabels[ConfigHashLabel]
+	if stamped == "" {
+		t.Fatal("the container was created without a config hash")
+	}
+
+	// The same tag, rebuilt: the container exists, is running, and
+	// carries the old fingerprint.
+	rebuilt := &fakeDocker{
+		localImages:    map[string]string{opts.Image: "sha256:new"},
+		inspectID:      "old-container",
+		inspectRunning: true,
+		inspectLabels:  map[string]string{ConfigHashLabel: stamped},
+		inspectErr:     nil,
+	}
+	if err := Ensure(context.Background(), rebuilt, opts); err != nil {
+		t.Fatalf("second Ensure: %v", err)
+	}
+	if len(rebuilt.removed) == 0 {
+		t.Error("the container running the previous build was left in place")
+	}
+	if rebuilt.createdName != opts.Name {
+		t.Error("no replacement container was created")
 	}
 }

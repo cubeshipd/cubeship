@@ -78,8 +78,16 @@ export function SearchableSelect({
     // The same shell as TextField — the same label, the same spacing,
     // the same height — because this is a field in a form of fields and
     // the one that looked different was this one.
-    <div className={cn("space-y-2", fieldClassName)}>
-      <Label className="text-xs text-muted-foreground">{label}</Label>
+    //
+    // The gap is a margin on the label rather than `space-y-*` on the
+    // wrapper, and that is not a style preference. Opening the popup
+    // makes Base UI insert focus guards after the trigger; the trigger
+    // stops being the last child, `space-y-*` gives every child but the
+    // last a gap, and the field silently grew by 8px the first time you
+    // opened it — pushing everything below it down, and leaving it
+    // there. A margin on the label depends on nothing but the label.
+    <div className={fieldClassName}>
+      <Label className="mb-2 block text-xs text-muted-foreground">{label}</Label>
       <Popover
         open={open}
         onOpenChange={(next) => {
