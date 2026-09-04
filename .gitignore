@@ -8,3 +8,4 @@ coverage.out
 internal/web/dist/*
 !internal/web/dist/.gitkeep
 dist/
+.air/

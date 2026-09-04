@@ -1,0 +1,25 @@
+# Live reload for the daemon. Run it with `make dev`.
+#
+# Only Go changes matter here: the dashboard is served from
+# internal/web/dist, which `make web` fills, and rebuilding the daemon
+# does not rebuild it. Use `make web-dev` for the front end.
+root = "."
+tmp_dir = ".air"
+
+[build]
+  cmd = "go build -o .air/cubeshipd ./cmd/cubeshipd"
+  entrypoint = ".air/cubeshipd"
+  include_ext = ["go", "sql"]
+  exclude_dir = [".air", ".git", "bin", "dist", "node_modules", "web", "internal/web/dist"]
+  exclude_regex = ["_test\\.go$"]
+  # The daemon bootstraps containers and runs migrations on every start,
+  # so a rebuild that lands mid-start would leave two of it running.
+  kill_delay = "2s"
+  send_interrupt = true
+  stop_on_error = true
+
+[log]
+  main_only = false
+
+[misc]
+  clean_on_exit = true

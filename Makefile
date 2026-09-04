@@ -40,6 +40,16 @@ web: ## Build the dashboard into the daemon's embedded assets
 	cp -R $(WEBDIR)/out $(WEBDIST)
 	touch $(WEBDIST)/.gitkeep
 
+# The data directory a dev daemon keeps its state in. Override it to run
+# against a different instance; the default is yours, outside the repo,
+# so it survives a `make clean` and a fresh checkout.
+DEV_DATA_DIR ?= $(HOME)/.cubeship-dev
+
+.PHONY: dev
+dev: ## Run the daemon with live reload, rebuilding on every Go change
+	@mkdir -p $(DEV_DATA_DIR)
+	CUBESHIP_DATA_DIR=$(DEV_DATA_DIR) $(GO) tool air
+
 .PHONY: web-dev
 web-dev: ## Run the dashboard against a daemon on :3000, with hot reload
 	cd $(WEBDIR) && $(PNPM) run dev
