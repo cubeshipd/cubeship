@@ -9,8 +9,7 @@ import (
 
 	"cubeship/internal/config"
 	"cubeship/internal/dockerx"
-
-	"golang.org/x/crypto/bcrypt"
+	"cubeship/internal/regauth"
 )
 
 func testConfig() *config.Config {
@@ -40,11 +39,11 @@ func TestRegistryContainerOptsRoutesThroughTraefik(t *testing.T) {
 
 	wantBinds := []string{
 		"/var/lib/cubeship/registry-config.yml:/etc/docker/registry/config.yml:ro",
-		"/var/lib/cubeship/registry-htpasswd:/etc/docker/registry/htpasswd:ro",
+		"/var/lib/cubeship/registry-token.crt:/etc/docker/registry/token.crt:ro",
 		"/var/lib/cubeship/registry-data:/var/lib/registry",
 	}
 	if len(opts.Binds) != len(wantBinds) {
-		t.Fatalf("expected config.yml + htpasswd + persistent storage binds, got %v", opts.Binds)
+		t.Fatalf("expected config.yml + token cert + persistent storage binds, got %v", opts.Binds)
 	}
 	for i, want := range wantBinds {
 		if opts.Binds[i] != want {
@@ -58,7 +57,7 @@ func TestRegistryContainerOptsRoutesThroughTraefik(t *testing.T) {
 }
 
 func TestRegistryConfigYAMLIncludesNotificationEndpoint(t *testing.T) {
-	yaml := RegistryConfigYAML("http://host.docker.internal:9000/hooks/registry", "tok3n")
+	yaml := RegistryConfigYAML(testConfig(), "http://host.docker.internal:9000/hooks/registry", "tok3n")
 
 	if !strings.Contains(yaml, "url: http://host.docker.internal:9000/hooks/registry") {
 		t.Fatalf("expected the notify URL in the endpoint config, got:\n%s", yaml)
@@ -71,19 +70,28 @@ func TestRegistryConfigYAMLIncludesNotificationEndpoint(t *testing.T) {
 	}
 }
 
-func TestRegistryConfigYAMLRequiresAuth(t *testing.T) {
-	yaml := RegistryConfigYAML("http://host.docker.internal:9000/hooks/registry", "tok3n")
+func TestRegistryConfigYAMLRequiresTokenAuth(t *testing.T) {
+	yaml := RegistryConfigYAML(testConfig(), "http://host.docker.internal:9000/hooks/registry", "tok3n")
 
-	if !strings.Contains(yaml, "auth:") || !strings.Contains(yaml, "htpasswd:") {
-		t.Fatalf("expected an htpasswd auth section — an anonymous-push registry is remote code execution, got:\n%s", yaml)
+	if !strings.Contains(yaml, "auth:") || !strings.Contains(yaml, "token:") {
+		t.Fatalf("expected a token auth section — an anonymous-push registry is remote code execution, got:\n%s", yaml)
 	}
-	if !strings.Contains(yaml, "path: /etc/docker/registry/htpasswd") {
-		t.Fatalf("expected the auth section to point at the mounted htpasswd file, got:\n%s", yaml)
+	if !strings.Contains(yaml, "realm: https://api.example.com/v2/token") {
+		t.Fatalf("expected the realm to point at the daemon's own token endpoint, got:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, "service: "+regauth.TokenService) {
+		t.Fatalf("expected the service to match regauth.TokenService, got:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, "issuer: "+regauth.TokenIssuer) {
+		t.Fatalf("expected the issuer to match regauth.TokenIssuer, got:\n%s", yaml)
+	}
+	if !strings.Contains(yaml, "rootcertbundle: /etc/docker/registry/token.crt") {
+		t.Fatalf("expected the auth section to point at the mounted token cert, got:\n%s", yaml)
 	}
 }
 
 func TestRegistryConfigYAMLAuthenticatesTheWebhook(t *testing.T) {
-	yaml := RegistryConfigYAML("http://host.docker.internal:9000/hooks/registry", "tok3n")
+	yaml := RegistryConfigYAML(testConfig(), "http://host.docker.internal:9000/hooks/registry", "tok3n")
 
 	if !strings.Contains(yaml, "Authorization: [Bearer tok3n]") {
 		t.Fatalf("expected the notification endpoint to send the daemon's bearer token, got:\n%s", yaml)
@@ -112,39 +120,29 @@ func TestWriteRegistryConfigWritesFileAndStorageDir(t *testing.T) {
 	}
 }
 
-func TestWriteRegistryHtpasswdIsBcryptAndVerifies(t *testing.T) {
+func TestWriteRegistryTokenCertWritesFile(t *testing.T) {
 	cfg := testConfig()
 	cfg.DataDir = t.TempDir()
 
-	if err := WriteRegistryHtpasswd(cfg, "the-daemon-token"); err != nil {
-		t.Fatalf("WriteRegistryHtpasswd: %v", err)
+	key, err := regauth.LoadOrCreateKeyPair(cfg.DataDir)
+	if err != nil {
+		t.Fatalf("LoadOrCreateKeyPair: %v", err)
+	}
+	certPEM, err := regauth.SelfSignedCert(key, "cubeship")
+	if err != nil {
+		t.Fatalf("SelfSignedCert: %v", err)
 	}
 
-	info, err := os.Stat(cfg.DataDir + "/registry-htpasswd")
-	if err != nil {
-		t.Fatalf("expected the htpasswd file to exist: %v", err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("expected 0600 on the credentials file, got %v", info.Mode().Perm())
+	if err := WriteRegistryTokenCert(cfg, certPEM); err != nil {
+		t.Fatalf("WriteRegistryTokenCert: %v", err)
 	}
 
-	data, err := os.ReadFile(cfg.DataDir + "/registry-htpasswd")
+	data, err := os.ReadFile(cfg.DataDir + "/registry-token.crt")
 	if err != nil {
-		t.Fatalf("read htpasswd: %v", err)
+		t.Fatalf("expected the cert file to exist: %v", err)
 	}
-	user, hash, ok := strings.Cut(strings.TrimSpace(string(data)), ":")
-	if !ok || user != RegistryUsername {
-		t.Fatalf("expected a %q entry, got %q", RegistryUsername, data)
-	}
-	// distribution's htpasswd backend only accepts bcrypt.
-	if !strings.HasPrefix(hash, "$2a$") && !strings.HasPrefix(hash, "$2b$") && !strings.HasPrefix(hash, "$2y$") {
-		t.Fatalf("expected a bcrypt hash, got %q", hash)
-	}
-	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte("the-daemon-token")); err != nil {
-		t.Fatalf("hash does not verify against the token: %v", err)
-	}
-	if err := bcrypt.CompareHashAndPassword([]byte(hash), []byte("wrong")); err == nil {
-		t.Fatal("expected the wrong password to be rejected")
+	if string(data) != string(certPEM) {
+		t.Fatal("expected the written file to match the cert exactly")
 	}
 }
 

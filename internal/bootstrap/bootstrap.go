@@ -10,23 +10,13 @@ import (
 
 	"cubeship/internal/config"
 	"cubeship/internal/dockerx"
+	"cubeship/internal/regauth"
 	"cubeship/internal/traefik"
 
 	"github.com/docker/docker/errdefs"
-	"golang.org/x/crypto/bcrypt"
 )
 
 const registryPort = 5000
-
-// RegistryUsername is the single account the embedded registry accepts.
-// `cubeship registry login` authenticates as this user with the daemon's
-// system token (cfg.Token) as the password, and the daemon itself uses
-// the same credentials to pull what was pushed.
-//
-// The registry credential is instance-wide, not per-user: it is not
-// anyone's API key, and it grants no access to the daemon API. Per-org
-// registry authorization arrives with the follow-up registry-token plan.
-const RegistryUsername = "cubeship"
 
 func RegistryContainerOpts(cfg *config.Config) dockerx.ContainerOpts {
 	labels := traefik.Labels("registry", cfg.RegistryHost, registryPort)
@@ -59,11 +49,13 @@ func RegistryContainerOpts(cfg *config.Config) dockerx.ContainerOpts {
 		// actually configure notifications on this image.
 		Binds: []string{
 			cfg.DataDir + "/registry-config.yml:/etc/docker/registry/config.yml:ro",
-			// The htpasswd file the config.yml auth section points at.
-			// Written by WriteRegistryHtpasswd before the container starts —
-			// if it doesn't exist, Docker would create a *directory* here and
-			// the registry would refuse to start.
-			cfg.DataDir + "/registry-htpasswd:/etc/docker/registry/htpasswd:ro",
+			// The certificate the config.yml auth section's
+			// rootcertbundle points at, used to verify tokens the daemon
+			// signs. Written by WriteRegistryTokenCert before the
+			// container starts — if it doesn't exist, Docker would
+			// create a *directory* here and the registry would refuse to
+			// start.
+			cfg.DataDir + "/registry-token.crt:/etc/docker/registry/token.crt:ro",
 			// Without this, pushed images live only in the container's
 			// writable layer: recreating the registry container (a host
 			// reboot, a config change) destroys every image ever pushed,
@@ -74,23 +66,29 @@ func RegistryContainerOpts(cfg *config.Config) dockerx.ContainerOpts {
 }
 
 // RegistryConfigYAML returns the registry:2 config.yml this daemon
-// needs: the image's own default settings (storage, http, health), an
-// htpasswd auth section, plus a notifications.endpoint pointing at the
-// daemon's webhook. This replaces (not merges with) the image's
-// baked-in config, so it must carry everything the registry needs to
-// run, not just the notifications section.
+// needs: the image's own default settings (storage, http, health), a
+// token auth section pointing at the daemon's own /v2/token endpoint,
+// plus a notifications.endpoint pointing at the daemon's webhook. This
+// replaces (not merges with) the image's baked-in config, so it must
+// carry everything the registry needs to run, not just the
+// notifications section.
 //
 // The auth section matters: the registry is published both on
 // 127.0.0.1:5000 and, through Traefik, at registry.<domain> over TLS.
 // Without it, anyone on the internet could push an image the daemon
-// would then pull and run on the VPS.
+// would then pull and run on the VPS. Token auth (rather than a shared
+// htpasswd credential) is what lets each user push only to their own
+// org's namespace — see internal/api's registry token handler and
+// internal/regauth for the signing side.
 //
-// token is the daemon's system token (cfg.Token). It doubles as the
-// registry password (see RegistryUsername / WriteRegistryHtpasswd) and
-// as the shared secret on the notification endpoint's Authorization
-// header, so the deliberately-unauthenticated /hooks/registry route can
-// still tell a genuine push notification from a forged one.
-func RegistryConfigYAML(notifyURL, token string) string {
+// notifyToken is the daemon's system token (cfg.Token). It is the
+// shared secret on the notification endpoint's Authorization header, so
+// the deliberately-unauthenticated /hooks/registry route can still tell
+// a genuine push notification from a forged one — it has nothing to do
+// with registry push/pull authentication, which is entirely the token
+// realm's job now.
+func RegistryConfigYAML(cfg *config.Config, notifyURL, notifyToken string) string {
+	realm := "https://" + cfg.APIHost + "/v2/token"
 	return fmt.Sprintf(`version: 0.1
 log:
   fields:
@@ -101,9 +99,11 @@ storage:
   filesystem:
     rootdirectory: /var/lib/registry
 auth:
-  htpasswd:
-    realm: cubeship
-    path: /etc/docker/registry/htpasswd
+  token:
+    realm: %s
+    service: %s
+    issuer: %s
+    rootcertbundle: /etc/docker/registry/token.crt
 http:
   addr: :5000
   headers:
@@ -122,50 +122,36 @@ notifications:
       timeout: 5s
       threshold: 5
       backoff: 1s
-`, notifyURL, token)
+`, realm, regauth.TokenService, regauth.TokenIssuer, notifyURL, notifyToken)
 }
 
 // WriteRegistryConfig writes RegistryConfigYAML to the path
 // RegistryContainerOpts' bind mount expects, and creates the registry's
 // persistent storage directory. Call it before starting the registry
 // container.
-func WriteRegistryConfig(cfg *config.Config, notifyURL, token string) error {
+func WriteRegistryConfig(cfg *config.Config, notifyURL, notifyToken string) error {
 	// Docker would create a missing bind source itself, but only as
 	// root-owned; creating it here keeps ownership with the daemon.
 	if err := os.MkdirAll(cfg.DataDir+"/registry-data", 0o700); err != nil {
 		return fmt.Errorf("create registry data dir: %w", err)
 	}
 	path := cfg.DataDir + "/registry-config.yml"
-	if err := os.WriteFile(path, []byte(RegistryConfigYAML(notifyURL, token)), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(RegistryConfigYAML(cfg, notifyURL, notifyToken)), 0o600); err != nil {
 		return fmt.Errorf("write registry config: %w", err)
 	}
 	return nil
 }
 
-// RegistryHtpasswd returns an htpasswd line for RegistryUsername with the
-// given password. distribution's htpasswd backend only accepts bcrypt
-// hashes, so this is not interchangeable with an apr1/crypt entry.
-func RegistryHtpasswd(password string) (string, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		// bcrypt rejects passwords longer than 72 bytes; a
-		// CUBESHIP_TOKEN that long would otherwise silently break auth.
-		return "", fmt.Errorf("hash registry password: %w", err)
-	}
-	return RegistryUsername + ":" + string(hash) + "\n", nil
-}
-
-// WriteRegistryHtpasswd writes the registry's credentials file to the
-// path RegistryContainerOpts' bind mount expects. Call it before
-// starting the registry container.
-func WriteRegistryHtpasswd(cfg *config.Config, password string) error {
-	line, err := RegistryHtpasswd(password)
-	if err != nil {
-		return err
-	}
-	path := cfg.DataDir + "/registry-htpasswd"
-	if err := os.WriteFile(path, []byte(line), 0o600); err != nil {
-		return fmt.Errorf("write registry htpasswd: %w", err)
+// WriteRegistryTokenCert writes certPEM (the self-signed certificate
+// wrapping the daemon's registry-token signing key — see
+// regauth.SelfSignedCert) to the path RegistryContainerOpts' bind mount
+// expects. Call it before starting the registry container, and again
+// any time the signing key changes (it never does today, but a future
+// key-rotation feature would need this re-run).
+func WriteRegistryTokenCert(cfg *config.Config, certPEM []byte) error {
+	path := cfg.DataDir + "/registry-token.crt"
+	if err := os.WriteFile(path, certPEM, 0o600); err != nil {
+		return fmt.Errorf("write registry token cert: %w", err)
 	}
 	return nil
 }
