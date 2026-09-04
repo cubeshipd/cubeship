@@ -30,6 +30,10 @@ var (
 	ErrNotFound        = errors.New("no such installation")
 	ErrBadSignature    = errors.New("the webhook signature does not match")
 	ErrNoWebhookSecret = errors.New("no webhook secret is configured, so a webhook cannot be trusted")
+	// ErrNotGranted is GitHub's 404 for something the installation was
+	// not given. It is not "no such repository": saying so is the
+	// difference between a typo and a permission to widen.
+	ErrNotGranted = errors.New("the GitHub App was not granted access to that repository")
 )
 
 // Repository is a GitHub repository named the way both a URL and a

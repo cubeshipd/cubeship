@@ -20,6 +20,14 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"account":         openapi.String("The GitHub account it was installed on."),
 				"created_at":      openapi.String("RFC 3339."),
 			}, "id", "installation_id", "account", "created_at"),
+			"GitHubRepository": openapi.Object(map[string]*openapi.Schema{
+				"full_name":      openapi.String("owner/name, which is how GitHub names it and how a branch listing asks for it."),
+				"private":        openapi.Bool("Whether cloning it needs the installation's token."),
+				"default_branch": openapi.String("What it builds when an app names no ref."),
+			}, "full_name", "private", "default_branch"),
+			"GitHubBranch": openapi.Object(map[string]*openapi.Schema{
+				"name": openapi.String(""),
+			}, "name"),
 			"GitHubConnections": openapi.Object(map[string]*openapi.Schema{
 				"installations": openapi.Array(openapi.Ref("GitHubInstallation")),
 				"install_url":   openapi.String("Where to send someone to install the App on an account. Empty until the instance is registered as a GitHub App."),
@@ -58,6 +66,62 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,
+					},
+				},
+			},
+			"/settings/github/manifest": {
+				"post": {
+					OperationID: "registerGitHubAppFromManifest",
+					Summary:     "Register this instance as a GitHub App from a manifest",
+					Description: "The end of the flow that spares someone creating an App by hand: the dashboard sends them to GitHub with a manifest, GitHub creates the App and redirects back with a code, and this exchanges it for the App's id, slug, private key and webhook secret — all four written straight into the settings.\n\n" +
+						"The code is single-use and expires in an hour. Super-admin only: this is the instance's configuration, not an organization's.",
+					Tags: []string{"GitHub"},
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"code": openapi.String("What GitHub redirected back with."),
+					}, "code")),
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The instance's configuration, with the App now registered.", openapi.Ref("Settings")),
+						"400": openapi.TextResponse("No code was given, or GitHub refused it."),
+						"401": openapi.Unauthorized,
+						"403": openapi.TextResponse("You are not a super-admin."),
+					},
+				},
+			},
+			"/orgs/{orgSlug}/github/repositories": {
+				"get": {
+					OperationID: "listGitHubRepositories",
+					Summary:     "List the repositories this organization can build",
+					Description: "Exactly what its installations were granted, across all of them — someone who installed the App on three repositories sees three, not everything they own.\n\n" +
+						"This is what a dashboard offers instead of asking for a URL: picking from a list cannot mistype an owner, and cannot name a repository this instance has no way to clone.\n\n" +
+						"Organization admins only.",
+					Tags:       []string{"GitHub"},
+					Parameters: []openapi.Parameter{orgParam},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The repositories.", openapi.Array(openapi.Ref("GitHubRepository"))),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("This instance is not registered as a GitHub App."),
+					},
+				},
+			},
+			"/orgs/{orgSlug}/github/branches": {
+				"get": {
+					OperationID: "listGitHubBranches",
+					Summary:     "List a repository's branches",
+					Description: "For the same reason the repository listing exists: a branch is chosen, not spelled. Organization admins only.",
+					Tags:        []string{"GitHub"},
+					Parameters: []openapi.Parameter{
+						orgParam,
+						openapi.QueryParam("repo", "The repository, as owner/name."),
+					},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The branches.", openapi.Array(openapi.Ref("GitHubBranch"))),
+						"400": openapi.TextResponse("No repository was named."),
+						"401": openapi.Unauthorized,
+						"403": openapi.TextResponse("The App was not granted access to that repository."),
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("This organization has not connected that repository's account."),
 					},
 				},
 			},

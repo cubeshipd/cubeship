@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,31 +97,10 @@ func (s *Service) TokenForRepository(ctx context.Context, orgID int64, repoURL s
 		return "", false, err
 	}
 
-	if token, ok := s.tokens.get(installation.GitHubID, s.now()); ok {
-		return token, true, nil
-	}
-
-	values, err := s.settings.Load(ctx)
+	token, err := s.tokenFor(ctx, installation)
 	if err != nil {
 		return "", false, err
 	}
-	if !values.HasGitHub() {
-		return "", false, ErrNotConfigured
-	}
-	key, err := ParsePrivateKey(values.Get(settings.GitHubPrivateKey))
-	if err != nil {
-		return "", false, err
-	}
-	assertion, err := appJWT(values.Get(settings.GitHubAppID), key, s.now())
-	if err != nil {
-		return "", false, err
-	}
-
-	token, expires, err := mintToken(ctx, s.client, assertion, installation.GitHubID)
-	if err != nil {
-		return "", false, err
-	}
-	s.tokens.put(installation.GitHubID, token, expires)
 	return token, true, nil
 }
 
@@ -165,4 +145,129 @@ func (s *Service) InstallURL(ctx context.Context) string {
 		return ""
 	}
 	return "https://github.com/apps/" + slug + "/installations/new"
+}
+
+// Repositories lists what this organization's installations were
+// granted, across all of them.
+//
+// It is what the dashboard offers instead of a URL field: someone
+// picking from a list cannot mistype an owner, and cannot name a
+// repository this instance has no way to clone.
+func (s *Service) Repositories(ctx context.Context, caller *user.User, orgSlug string) ([]RepositoryRef, error) {
+	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
+	if err != nil {
+		return nil, err
+	}
+	installations, err := s.Repo().List(ctx, o.ID)
+	if err != nil {
+		return nil, err
+	}
+
+	var out []RepositoryRef
+	seen := map[string]bool{}
+	for _, installation := range installations {
+		token, err := s.tokenFor(ctx, installation)
+		if err != nil {
+			return nil, err
+		}
+		repos, err := listInstallationRepositories(ctx, s.client, token)
+		if err != nil {
+			return nil, err
+		}
+		// One organization can hold installations on several accounts,
+		// and a repository reachable through two of them is still one
+		// repository.
+		for _, r := range repos {
+			if !seen[r.FullName] {
+				seen[r.FullName] = true
+				out = append(out, r)
+			}
+		}
+	}
+	return out, nil
+}
+
+// Branches lists a repository's branches, for the same reason
+// Repositories exists: a branch is chosen, not spelled.
+func (s *Service) Branches(ctx context.Context, caller *user.User, orgSlug, fullName string) ([]Branch, error) {
+	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
+	if err != nil {
+		return nil, err
+	}
+	owner, _, found := strings.Cut(fullName, "/")
+	if !found || owner == "" {
+		return nil, fmt.Errorf("name the repository as owner/name")
+	}
+
+	installation, found, err := s.Repo().ForAccount(ctx, o.ID, owner)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, ErrNoInstallation
+	}
+	token, err := s.tokenFor(ctx, installation)
+	if err != nil {
+		return nil, err
+	}
+	return listBranches(ctx, s.client, token, fullName)
+}
+
+// tokenFor mints or reuses one installation's token. It is the part of
+// TokenForRepository that does not care which repository is involved.
+func (s *Service) tokenFor(ctx context.Context, installation *Installation) (string, error) {
+	if token, ok := s.tokens.get(installation.GitHubID, s.now()); ok {
+		return token, nil
+	}
+
+	values, err := s.settings.Load(ctx)
+	if err != nil {
+		return "", err
+	}
+	if !values.HasGitHub() {
+		return "", ErrNotConfigured
+	}
+	key, err := ParsePrivateKey(values.Get(settings.GitHubPrivateKey))
+	if err != nil {
+		return "", err
+	}
+	assertion, err := appJWT(values.Get(settings.GitHubAppID), key, s.now())
+	if err != nil {
+		return "", err
+	}
+
+	token, expires, err := mintToken(ctx, s.client, assertion, installation.GitHubID)
+	if err != nil {
+		return "", err
+	}
+	s.tokens.put(installation.GitHubID, token, expires)
+	return token, nil
+}
+
+// RegisterFromManifest turns the code GitHub redirects back with into
+// this instance's GitHub App.
+//
+// It writes the settings the manual path asks a person to paste, which
+// is the entire reason it exists: nobody should have to copy a private
+// key out of a browser to make a deploy work.
+func (s *Service) RegisterFromManifest(ctx context.Context, caller *user.User, code string) (settings.Values, error) {
+	// Settings are the VPS operator's, and this writes four of them.
+	// Doing the exchange first would spend the code before finding out.
+	if caller == nil || !caller.IsSuperAdmin {
+		return nil, settings.ErrSuperAdminOnly
+	}
+	if code == "" {
+		return nil, fmt.Errorf("no code to exchange")
+	}
+
+	app, err := convertManifest(ctx, s.client, code)
+	if err != nil {
+		return nil, err
+	}
+	return s.settings.Set(ctx, caller, map[string]string{
+		settings.GitHubAppID:         strconv.FormatInt(app.ID, 10),
+		settings.GitHubAppSlug:       app.Slug,
+		settings.GitHubPrivateKey:    app.PEM,
+		settings.GitHubWebhookSecret: app.WebhookSecret,
+	})
 }

@@ -158,3 +158,146 @@ func mintToken(ctx context.Context, client *http.Client, assertion string, insta
 	}
 	return body.Token, body.ExpiresAt, nil
 }
+
+// RepositoryRef is one repository an installation can reach, and a
+// branch of it. Both are what a person picks from rather than types.
+type RepositoryRef struct {
+	FullName string `json:"full_name"`
+	Private  bool   `json:"private"`
+	Default  string `json:"default_branch"`
+}
+
+// Branch is one branch of a repository.
+type Branch struct {
+	Name string `json:"name"`
+}
+
+// listInstallationRepositories asks GitHub what an installation was
+// granted. It is the whole of it: someone who installed the App on three
+// repositories should see three, not every repository they own.
+//
+// Paginated, because an organization with a hundred repositories is
+// ordinary and one page is thirty.
+func listInstallationRepositories(ctx context.Context, client *http.Client, token string) ([]RepositoryRef, error) {
+	var out []RepositoryRef
+
+	for page := 1; page <= maxPages; page++ {
+		url := fmt.Sprintf("%s/installation/repositories?per_page=100&page=%d", APIBase, page)
+		var body struct {
+			TotalCount   int             `json:"total_count"`
+			Repositories []RepositoryRef `json:"repositories"`
+		}
+		if err := getJSON(ctx, client, url, token, &body); err != nil {
+			return nil, err
+		}
+		out = append(out, body.Repositories...)
+		if len(body.Repositories) < 100 {
+			break
+		}
+	}
+	return out, nil
+}
+
+// listBranches asks GitHub for a repository's branches.
+func listBranches(ctx context.Context, client *http.Client, token, fullName string) ([]Branch, error) {
+	var out []Branch
+
+	for page := 1; page <= maxPages; page++ {
+		url := fmt.Sprintf("%s/repos/%s/branches?per_page=100&page=%d", APIBase, fullName, page)
+		var body []Branch
+		if err := getJSON(ctx, client, url, token, &body); err != nil {
+			return nil, err
+		}
+		out = append(out, body...)
+		if len(body) < 100 {
+			break
+		}
+	}
+	return out, nil
+}
+
+// maxPages bounds a listing. A repository with more branches than this
+// is one nobody is picking from a dropdown anyway, and an unbounded loop
+// against someone else's API is not something to leave in a deploy path.
+const maxPages = 10
+
+// getJSON is a read from GitHub with an installation token.
+func getJSON(ctx context.Context, client *http.Client, url, token string, into any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("ask GitHub: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		// 404 here is usually not "no such thing" but "this
+		// installation was not granted it", and saying so is the
+		// difference between a typo and a permission to widen.
+		if resp.StatusCode == http.StatusNotFound {
+			return ErrNotGranted
+		}
+		return fmt.Errorf("GitHub answered %s", resp.Status)
+	}
+	if err := json.NewDecoder(resp.Body).Decode(into); err != nil {
+		return fmt.Errorf("decode GitHub's answer: %w", err)
+	}
+	return nil
+}
+
+// ManifestApp is what GitHub hands back when a manifest is converted:
+// an App, already created, with its credentials.
+//
+// This is the whole point of the manifest flow. The alternative is
+// asking someone to create an App by hand and paste four values, one of
+// which is a private key.
+type ManifestApp struct {
+	ID            int64  `json:"id"`
+	Slug          string `json:"slug"`
+	PEM           string `json:"pem"`
+	WebhookSecret string `json:"webhook_secret"`
+}
+
+// convertManifest exchanges the code GitHub redirects back with for the
+// App it just created.
+//
+// The code is the credential — this call carries no other — and it is
+// single-use and short-lived, which is why it goes straight from the
+// browser to here and is spent immediately.
+func convertManifest(ctx context.Context, client *http.Client, code string) (*ManifestApp, error) {
+	url := fmt.Sprintf("%s/app-manifests/%s/conversions", APIBase, code)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("exchange the manifest code with GitHub: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		// The commonest cause is a code already spent or expired, and
+		// the answer to both is to start the flow again.
+		return nil, fmt.Errorf("GitHub refused the manifest code (%s); it is single-use and expires in an hour", resp.Status)
+	}
+
+	var app ManifestApp
+	if err := json.NewDecoder(resp.Body).Decode(&app); err != nil {
+		return nil, fmt.Errorf("decode GitHub's answer: %w", err)
+	}
+	if app.ID == 0 || app.PEM == "" {
+		return nil, fmt.Errorf("GitHub returned an app with no credentials")
+	}
+	return &app, nil
+}

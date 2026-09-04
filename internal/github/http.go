@@ -13,6 +13,7 @@ import (
 
 	"cubeship/internal/org"
 	"cubeship/internal/platform/httpx"
+	"cubeship/internal/settings"
 	"cubeship/internal/user"
 )
 
@@ -65,6 +66,11 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET /orgs/{orgSlug}/github", auth(http.HandlerFunc(h.list)))
 	r.Handle("POST /orgs/{orgSlug}/github", auth(http.HandlerFunc(h.connect)))
 	r.Handle("DELETE /orgs/{orgSlug}/github/{id}", auth(http.HandlerFunc(h.disconnect)))
+	r.Handle("GET /orgs/{orgSlug}/github/repositories", auth(http.HandlerFunc(h.repositories)))
+	r.Handle("GET /orgs/{orgSlug}/github/branches", auth(http.HandlerFunc(h.branches)))
+	// Instance configuration rather than an organization's: this is how
+	// the instance becomes a GitHub App at all.
+	r.Handle("POST /settings/github/manifest", auth(http.HandlerFunc(h.registerFromManifest)))
 }
 
 // WebhookRoutes mounts the one endpoint GitHub itself calls. It stays at
@@ -80,8 +86,12 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 	case errors.Is(err, org.ErrNotFound), errors.Is(err, ErrNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
-	case errors.Is(err, ErrNotConfigured):
+	case errors.Is(err, ErrNotConfigured), errors.Is(err, ErrNoInstallation):
 		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, ErrNotGranted):
+		http.Error(w, err.Error(), http.StatusForbidden)
+	case errors.Is(err, settings.ErrSuperAdminOnly):
+		http.Error(w, err.Error(), http.StatusForbidden)
 	case errors.Is(err, user.ErrUnauthenticated):
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	default:
@@ -102,6 +112,56 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		// instance is registered as one.
 		"install_url": h.svc.InstallURL(ctx),
 	})
+}
+
+// repositories is what the dashboard offers instead of a URL field.
+// Picking from a list cannot mistype an owner, and cannot name a
+// repository this instance has no way to clone.
+func (h *Handler) repositories(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	repos, err := h.svc.Repositories(ctx, user.FromContext(ctx), r.PathValue("orgSlug"))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, repos)
+}
+
+// branches lists one repository's branches, named as owner/name in the
+// query. Same reason: a branch is chosen, not spelled.
+func (h *Handler) branches(w http.ResponseWriter, r *http.Request) {
+	repo := r.URL.Query().Get("repo")
+	if repo == "" {
+		http.Error(w, "name the repository with ?repo=owner/name", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	branches, err := h.svc.Branches(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), repo)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, branches)
+}
+
+// registerFromManifest finishes the flow that spares someone creating
+// an App by hand: GitHub redirects back with a code, and this exchanges
+// it for the App it just made.
+func (h *Handler) registerFromManifest(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Code string `json:"code"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil || req.Code == "" {
+		http.Error(w, "code is required", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	values, err := h.svc.RegisterFromManifest(ctx, user.FromContext(ctx), req.Code)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, settings.ToResponse(values))
 }
 
 func (h *Handler) connect(w http.ResponseWriter, r *http.Request) {

@@ -33,6 +33,10 @@ type Response struct {
 	GitHubConnected bool `json:"github_connected"`
 }
 
+// ToResponse renders the settings for the API. Exported because the
+// GitHub module writes four of them and answers with the result.
+func ToResponse(v Values) Response { return toResponse(v) }
+
 func toResponse(v Values) Response {
 	r := Response{
 		Domain:     v.Get(Domain),
