@@ -36,14 +36,24 @@ func (s *Store) WithTx(ctx context.Context, fn func(*Tx) error) error {
 	if err != nil {
 		return fmt.Errorf("begin transaction: %w", err)
 	}
+	committed := false
+	defer func() {
+		// Covers both a returned error and fn panicking: either way,
+		// nothing partial should remain visible, and the connection must
+		// go back to the pool rather than leak.
+		if !committed {
+			tx.Rollback()
+		}
+	}()
+
 	if err := fn(&Tx{q: tx}); err != nil {
 		// The caller's error is what matters; a rollback failure on top
 		// of it would only obscure the cause.
-		tx.Rollback()
 		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
+	committed = true
 	return nil
 }
