@@ -12,13 +12,14 @@ CLI (`cubeship`) talks to the daemon's API from your machine.
 Apps live in an environment, inside a project, inside an organization.
 Everyone gets their own API key and a role per organization.
 
-An app gets its image one of three ways: pushed to Cubeship's own
+An app gets its image one of four ways: pushed to Cubeship's own
 registry, where the push *is* the deploy; pulled from a registry
-Cubeship does not run (Docker Hub, GitHub, DigitalOcean, ECR); or built
-here from a Dockerfile in a Git repository. Only the first deploys on
-its own — nothing tells Cubeship about a push somewhere else. The other
-two need no domain and no certificate, so they work the minute you have
-installed.
+Cubeship does not run (Docker Hub, GitHub, DigitalOcean, ECR); built
+here from a Dockerfile in a Git repository; or built from a repository
+with no Dockerfile at all, worked out from the code. Only the first
+deploys on its own — nothing tells Cubeship about a push or a commit
+somewhere else. The rest need no domain and no certificate, so they work
+the minute you have installed.
 
 This is the core deploy engine: no Git-based builds, no web UI, no
 multi-node.

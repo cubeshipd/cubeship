@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/moby/buildkit/client"
+	"github.com/tonistiigi/fsutil"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -101,30 +102,6 @@ func (b *Builder) Build(ctx context.Context, req Request, logs io.Writer) error 
 		dockerfile = "Dockerfile"
 	}
 
-	if b.EnsureRunning != nil {
-		if err := b.EnsureRunning(ctx); err != nil {
-			return fmt.Errorf("%w: %v", ErrUnavailable, err)
-		}
-	}
-
-	c, err := client.New(ctx, b.addr)
-	if err != nil {
-		return fmt.Errorf("%w: %v", ErrUnavailable, err)
-	}
-	defer c.Close()
-
-	// client.New does not dial, so an unreachable builder would
-	// otherwise surface as a solve failure buried in gRPC wording. This
-	// also waits: EnsureRunning may have just started the container, and
-	// buildkitd takes a moment to open its socket.
-	if err := waitReady(ctx, c); err != nil {
-		return fmt.Errorf("%w: %v", ErrUnavailable, err)
-	}
-
-	// The tarball BuildKit writes goes straight into the Engine, so the
-	// image is never held in memory or on disk in full.
-	pr, pw := io.Pipe()
-
 	frontendAttrs := map[string]string{"filename": dockerfile}
 	localDirs := map[string]string{}
 
@@ -152,13 +129,79 @@ func (b *Builder) Build(ctx context.Context, req Request, logs io.Writer) error 
 		frontendAttrs["label:"+k] = v
 	}
 
+	return b.solve(ctx, solveRequest{
+		image:     req.Image,
+		frontend:  "dockerfile.v0",
+		attrs:     frontendAttrs,
+		localDirs: localDirs,
+	}, logs)
+}
+
+// solveRequest is what the two build paths — a Dockerfile and a Railpack
+// plan — both come down to. They differ only in which frontend reads the
+// source and what it is told; everything after that is one code path.
+type solveRequest struct {
+	image     string
+	frontend  string
+	attrs     map[string]string
+	localDirs map[string]string
+}
+
+// localMounts turns directories on the daemon's filesystem into what
+// BuildKit streams to the builder. LocalDirs was the old spelling and is
+// gone from the client.
+func localMounts(dirs map[string]string) (map[string]fsutil.FS, error) {
+	out := make(map[string]fsutil.FS, len(dirs))
+	for name, dir := range dirs {
+		fs, err := fsutil.NewFS(dir)
+		if err != nil {
+			return nil, fmt.Errorf("read %s from %s: %w", name, dir, err)
+		}
+		out[name] = fs
+	}
+	return out, nil
+}
+
+func (b *Builder) solve(ctx context.Context, req solveRequest, logs io.Writer) error {
+	if req.image == "" {
+		return fmt.Errorf("build: the result has no name")
+	}
+	if b.EnsureRunning != nil {
+		if err := b.EnsureRunning(ctx); err != nil {
+			return fmt.Errorf("%w: %v", ErrUnavailable, err)
+		}
+	}
+
+	c, err := client.New(ctx, b.addr)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	defer c.Close()
+
+	// client.New does not dial, so an unreachable builder would
+	// otherwise surface as a solve failure buried in gRPC wording. This
+	// also waits: EnsureRunning may have just started the container, and
+	// buildkitd takes a moment to open its socket.
+	if err := waitReady(ctx, c); err != nil {
+		return fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+
+	// The tarball BuildKit writes goes straight into the Engine, so the
+	// image is never held in memory or on disk in full.
+	pr, pw := io.Pipe()
+
+	mounts, err := localMounts(req.localDirs)
+	if err != nil {
+		return err
+	}
+
 	opt := client.SolveOpt{
-		Frontend:      "dockerfile.v0",
-		FrontendAttrs: frontendAttrs,
-		LocalDirs:     localDirs,
+		Frontend:      req.frontend,
+		FrontendAttrs: req.attrs,
+		LocalMounts:   mounts,
 		Exports: []client.ExportEntry{{
 			Type:   client.ExporterDocker,
-			Attrs:  map[string]string{"name": req.Image},
+			Attrs:  map[string]string{"name": req.image},
 			Output: func(map[string]string) (io.WriteCloser, error) { return pw, nil },
 		}},
 	}

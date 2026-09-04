@@ -66,7 +66,30 @@ func buildkitd(t *testing.T) string {
 	return addr
 }
 
-const buildkitImage = "moby/buildkit:v0.17.2"
+const buildkitImage = "moby/buildkit:v0.32.2"
+
+// initRepo makes a directory into a Git repository with one commit on
+// main.
+func initRepo(t *testing.T, dir string) {
+	t.Helper()
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Fatal("this test needs git")
+	}
+	for _, args := range [][]string{
+		{"init", "--quiet", "--initial-branch=main"},
+		{"add", "."},
+		{"commit", "--quiet", "-m", "initial"},
+	} {
+		cmd := exec.Command("git", args...)
+		cmd.Dir = dir
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=cubeship", "GIT_AUTHOR_EMAIL=test@cubeship.invalid",
+			"GIT_COMMITTER_NAME=cubeship", "GIT_COMMITTER_EMAIL=test@cubeship.invalid")
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+}
 
 func freePort(t *testing.T) int {
 	t.Helper()
@@ -242,6 +265,15 @@ func TestAnUnreachableBuilderSaysSo(t *testing.T) {
 	}
 }
 
+// localRepoPath is a repository on disk, for a clone that does not go
+// over the network.
+func localRepoPath(t *testing.T, files map[string]string) string {
+	t.Helper()
+	work := source(t, files)
+	initRepo(t, work)
+	return work
+}
+
 // gitRepo makes a repository BuildKit can clone, served over Git's dumb
 // HTTP protocol — static files out of a bare repo, which needs no git
 // server, only `git update-server-info`.
@@ -255,20 +287,7 @@ func gitRepo(t *testing.T, files map[string]string) string {
 	}
 
 	work := source(t, files)
-	git := func(args ...string) {
-		t.Helper()
-		cmd := exec.Command("git", args...)
-		cmd.Dir = work
-		cmd.Env = append(os.Environ(),
-			"GIT_AUTHOR_NAME=cubeship", "GIT_AUTHOR_EMAIL=test@cubeship.invalid",
-			"GIT_COMMITTER_NAME=cubeship", "GIT_COMMITTER_EMAIL=test@cubeship.invalid")
-		if out, err := cmd.CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v\n%s", args, err, out)
-		}
-	}
-	git("init", "--quiet", "--initial-branch=main")
-	git("add", ".")
-	git("commit", "--quiet", "-m", "initial")
+	initRepo(t, work)
 
 	bare := filepath.Join(t.TempDir(), "repo.git")
 	if out, err := exec.Command("git", "clone", "--quiet", "--bare", work, bare).CombinedOutput(); err != nil {

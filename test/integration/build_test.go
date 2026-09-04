@@ -67,6 +67,38 @@ func buildFromARepository(t *testing.T, apiKey string) {
 	})
 }
 
+// Railpack, on the same daemon: no Dockerfile anywhere in the
+// repository, and Cubeship works the build out from the code.
+func buildWithRailpack(t *testing.T, apiKey string) {
+	repo := serveRepo(t, map[string]string{
+		"package.json": `{"name":"demo","version":"1.0.0","scripts":{"start":"node index.js"}}`,
+		"index.js":     `require("http").createServer((_,r)=>r.end("built by railpack")).listen(8080)`,
+	})
+	created := createApp(t, apiKey, map[string]string{
+		"name": "detected", "domain": "detected.localtest.me",
+		"org": "acme", "project": "web",
+		"source": "railpack", "repo": repo, "ref": "main",
+	})
+	id := deployApp(t, apiKey, created)
+
+	waitFor(t, 15*time.Minute, "the railpack build to finish", func() bool {
+		return deploymentStatus(t, apiKey, created, id) != "pending"
+	})
+	if status := deploymentStatus(t, apiKey, created, id); status != "succeeded" {
+		t.Fatalf("the build ended %q:\n%s", status, deploymentLogs(t, apiKey, created, id))
+	}
+
+	// It said what it recognized, which is the one thing a Railpack
+	// build's log has that a Dockerfile's does not.
+	if logs := deploymentLogs(t, apiKey, created, id); !strings.Contains(logs, "Detected") {
+		t.Errorf("the log does not say what was detected:\n%s", logs)
+	}
+
+	waitFor(t, 2*time.Minute, "the built app to be running", func() bool {
+		return appStatus(t, apiKey, created) == "running"
+	})
+}
+
 // A build is the one part of a deploy long enough that watching it is
 // the point, so its output has to reach the row while it is still
 // running rather than all at once at the end.

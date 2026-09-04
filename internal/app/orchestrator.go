@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"runtime/debug"
+	"strings"
 	"sync"
 	"time"
 
@@ -77,6 +78,7 @@ type CredentialLookup interface {
 // instance that has none.
 type ImageBuilder interface {
 	Build(ctx context.Context, req buildkit.Request, logs io.Writer) error
+	BuildPlanned(ctx context.Context, req buildkit.PlannedRequest, logs io.Writer) error
 }
 
 func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds CredentialLookup, builder ImageBuilder) *Orchestrator {
@@ -110,29 +112,81 @@ func (o *Orchestrator) registryCredentials(ctx context.Context, orgID int64, ima
 	return &dockerx.RegistryAuth{Username: c.Username, Password: c.Password}, nil
 }
 
-// buildFromRepository is what dockerfileSource calls. It returns the
+// buildFromRepository is what a building source calls. It returns the
 // name the built image was given in the Engine's store.
+//
+// The two ways of building differ in where the recipe comes from, and
+// that difference decides everything else. A Dockerfile is in the
+// repository, so BuildKit clones for itself and nothing touches the
+// daemon's disk. Railpack has to *read* the repository to work out how
+// to build it, and that reading happens here — so the daemon clones
+// first, plans, and hands BuildKit the result.
 func (o *Orchestrator) buildFromRepository(ctx context.Context, a *Scoped, ref string, logs io.Writer) (string, error) {
 	if o.builder == nil {
 		return "", ErrNoBuilder
 	}
 	image := BuildImageName(a, ref)
-	context := a.SourceRepo
+
+	if Source(a.Source) == SourceRailpack {
+		return image, o.buildWithRailpack(ctx, a, ref, image, logs)
+	}
+
+	target := a.SourceRepo
 	if ref != "" {
-		context += "#" + ref
+		target += "#" + ref
 	}
 	err := o.builder.Build(ctx, buildkit.Request{
-		ContextGit: context,
+		ContextGit: target,
 		Dockerfile: a.SourceDockerfile,
 		Image:      image,
-		Labels: map[string]string{
-			"cubeship.app": ReferenceOf(a).String(),
-		},
+		Labels:     map[string]string{"cubeship.app": ReferenceOf(a).String()},
 	}, logs)
 	if err != nil {
 		return "", err
 	}
 	return image, nil
+}
+
+// buildWithRailpack clones, plans and builds.
+//
+// The app's environment goes into the plan, not only into the container:
+// Railpack reads it for the versions and commands a project pins, so two
+// apps on the same repository with different NODE_VERSION are two
+// different builds.
+func (o *Orchestrator) buildWithRailpack(ctx context.Context, a *Scoped, ref, image string, logs io.Writer) error {
+	fmt.Fprintf(logs, "Fetching %s\n", a.SourceRepo)
+	dir, cleanupSource, err := buildkit.Clone(ctx, a.SourceRepo, ref)
+	if err != nil {
+		return err
+	}
+	defer cleanupSource()
+
+	env, err := o.inheritedEnv(ctx, &a.App)
+	if err != nil {
+		return fmt.Errorf("resolve inherited env: %w", err)
+	}
+
+	fmt.Fprintf(logs, "Working out how to build it\n")
+	plan, providers, err := buildkit.PlanRepository(dir, env)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(logs, "Detected %s\n", strings.Join(providers, ", "))
+
+	planDir, cleanupPlan, err := buildkit.WritePlan(plan)
+	if err != nil {
+		return err
+	}
+	defer cleanupPlan()
+
+	return o.builder.BuildPlanned(ctx, buildkit.PlannedRequest{
+		ContextDir: dir,
+		PlanDir:    planDir,
+		Image:      image,
+		// Mount caches are shared, so they are keyed per app: two apps
+		// sharing one would fight over it.
+		CacheKey: ReferenceOf(a).String(),
+	}, logs)
 }
 
 // lockApp returns the mutex guarding deploys of one app. Keyed by id

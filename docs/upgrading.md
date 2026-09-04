@@ -9,6 +9,20 @@ curl -sSL https://cubeship.dev/install.sh | sh
 Nothing under `CUBESHIP_DATA_DIR` is touched. The sections below are the
 changes worth knowing about, newest first.
 
+## From a release that could only build a Dockerfile
+
+Nothing to do. New: `source: "railpack"`, an app built from a repository
+with no Dockerfile — Railpack reads the code and works the build out.
+Like the Dockerfile source, it takes the admin role.
+
+Two things differ from a Dockerfile build. The daemon clones the
+repository itself, because working out the build means reading it; and
+the app's environment variables affect the build, not only the container,
+since that is where a project pins its language version.
+
+The first Railpack build on a box also pulls the Railpack frontend image,
+so it takes longer than the ones after it.
+
 ## From a release that could not build
 
 Nothing to do. Existing apps are unaffected.

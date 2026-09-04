@@ -18,6 +18,7 @@ func TestTheRoleEachSourceNeeds(t *testing.T) {
 		SourceRegistry:   org.RoleMember,
 		SourceExternal:   org.RoleMember,
 		SourceDockerfile: org.RoleAdmin,
+		SourceRailpack:   org.RoleAdmin,
 	} {
 		if got := RoleToDeploy(source); got != want {
 			t.Errorf("RoleToDeploy(%q) = %q, want %q", source, got, want)
@@ -80,6 +81,15 @@ func TestWhatEachSourceMayBeGiven(t *testing.T) {
 			Origin{Repo: "https://github.com/acme/api.git#main"}, ErrRepoNotSupported},
 		{"dockerfile refuses an image", SourceDockerfile,
 			Origin{Repo: "https://github.com/acme/api.git", Image: "nginx"}, ErrImageNotAllowed},
+
+		{"railpack needs a repository", SourceRailpack, Origin{}, ErrRepoRequired},
+		{"railpack takes one", SourceRailpack,
+			Origin{Repo: "https://github.com/acme/api.git", Ref: "main"}, nil},
+		// Railpack works the build out itself, so a path it would ignore
+		// is a setting someone meant to have an effect.
+		{"railpack refuses a Dockerfile path", SourceRailpack,
+			Origin{Repo: "https://github.com/acme/api.git", Dockerfile: "Dockerfile"},
+			ErrDockerfileNotAllowed},
 	}
 
 	for _, tt := range tests {

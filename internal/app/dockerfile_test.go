@@ -11,6 +11,13 @@ import (
 	"cubeship/internal/server/servertest"
 )
 
+func railpackApp(name string) map[string]string {
+	return map[string]string{
+		"name": name, "domain": name + ".example.com", "org": "acme", "project": "web",
+		"source": "railpack", "repo": "https://github.com/acme/api.git",
+	}
+}
+
 func dockerfileApp(name string) map[string]string {
 	return map[string]string{
 		"name": name, "domain": name + ".example.com", "org": "acme", "project": "web",
@@ -31,9 +38,11 @@ func TestOnlyAnAdminMayCreateOrDeployABuildingApp(t *testing.T) {
 		"source": "external", "image": "nginx",
 	}, memberKey), http.StatusCreated)
 
-	// But not one that builds.
+	// But not one that builds, by either route.
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps",
 		dockerfileApp("built"), memberKey), http.StatusForbidden)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps",
+		railpackApp("detected"), memberKey), http.StatusForbidden)
 
 	// An admin creates it, and the member still cannot deploy it.
 	var created struct {
@@ -127,5 +136,28 @@ func TestBuildingWithNoBuilderFailsTheDeployment(t *testing.T) {
 	}
 	if !strings.Contains(finished.Error, "builder") {
 		t.Errorf("the failure does not mention the builder: %q", finished.Error)
+	}
+}
+
+// Railpack works the build out from the code, so there is no Dockerfile
+// to name. A path it would ignore is a setting someone meant to have an
+// effect, and accepting it silently is worse than refusing it.
+func TestARailpackAppHasNoDockerfile(t *testing.T) {
+	f := servertest.New(t)
+
+	body := railpackApp("detected")
+	body["dockerfile"] = "Dockerfile"
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", body, f.AdminKey),
+		http.StatusBadRequest)
+
+	var created struct {
+		Source     string `json:"source"`
+		Repo       string `json:"repo"`
+		Dockerfile string `json:"dockerfile"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps",
+		railpackApp("detected"), f.AdminKey, &created), http.StatusCreated)
+	if created.Source != "railpack" || created.Repo == "" || created.Dockerfile != "" {
+		t.Errorf("created %+v", created)
 	}
 }

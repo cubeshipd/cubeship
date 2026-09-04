@@ -34,6 +34,11 @@ const (
 	// repository. Cubeship clones and builds it, so what runs is code
 	// this instance compiled rather than an artifact someone handed it.
 	SourceDockerfile Source = "dockerfile"
+
+	// SourceRailpack builds from a Git repository with no Dockerfile at
+	// all: Railpack reads the repository, works out what it is, and
+	// produces the build itself.
+	SourceRailpack Source = "railpack"
 )
 
 // DefaultSource is what an app gets when none is named.
@@ -45,7 +50,11 @@ const DefaultSource = SourceRegistry
 // it is not implemented: accepting a value the daemon cannot act on
 // would let someone create an app that can never deploy.
 func (s Source) Valid() bool {
-	return s == SourceRegistry || s == SourceExternal || s == SourceDockerfile
+	switch s {
+	case SourceRegistry, SourceExternal, SourceDockerfile, SourceRailpack:
+		return true
+	}
+	return false
 }
 
 // Builds reports whether deploying this source runs a build on the
@@ -57,7 +66,7 @@ func (s Source) Valid() bool {
 // a different role. No source builds yet; the ones that will are a
 // Dockerfile and a detected runtime.
 func (s Source) Builds() bool {
-	return s == SourceDockerfile
+	return s == SourceDockerfile || s == SourceRailpack
 }
 
 // RoleToDeploy is the role a caller needs to deploy this source.
@@ -72,7 +81,7 @@ func RoleToDeploy(s Source) org.Role {
 }
 
 // ErrUnknownSource reports a source this version cannot deploy.
-var ErrUnknownSource = errors.New(`source must be "registry", "external" or "dockerfile"`)
+var ErrUnknownSource = errors.New(`source must be "registry", "external", "dockerfile" or "railpack"`)
 
 // ErrRepoRequired reports a building app with nothing to build.
 var ErrRepoRequired = errors.New("a building app needs the Git repository it builds from")
@@ -80,6 +89,10 @@ var ErrRepoRequired = errors.New("a building app needs the Git repository it bui
 // ErrRepoNotAllowed reports a repository given for a source that does
 // not build.
 var ErrRepoNotAllowed = errors.New("only a building app names a repository")
+
+// ErrDockerfileNotAllowed reports a Dockerfile path given to a source
+// that does not read one.
+var ErrDockerfileNotAllowed = errors.New(`only a "dockerfile" app names a Dockerfile; Railpack works the build out itself`)
 
 // ErrRepoNotSupported reports a repository URL the builder cannot
 // fetch.
@@ -192,16 +205,19 @@ func (s externalSource) Resolve(ctx context.Context, a *Scoped, tag string, _ io
 	return Image{Ref: a.SourceImage + ":" + tag, Auth: auth}, nil
 }
 
-// dockerfileSource builds the app from a repository, and hands back an
+// repositorySource builds the app from a repository, and hands back an
 // image that is already local because building it is what created it.
-type dockerfileSource struct {
+// Which of the two ways it is built — a Dockerfile someone wrote, or a
+// plan Railpack worked out — is decided further down, where the source
+// is in hand.
+type repositorySource struct {
 	build func(ctx context.Context, a *Scoped, ref string, logs io.Writer) (string, error)
 }
 
 // Check confirms there is something to build. Whether the repository
 // exists, the ref resolves or the Dockerfile compiles are the build's
 // answers, and only a build can ask them.
-func (dockerfileSource) Check(_ context.Context, a *Scoped) error {
+func (repositorySource) Check(_ context.Context, a *Scoped) error {
 	if a.SourceRepo == "" {
 		return ErrRepoRequired
 	}
@@ -211,7 +227,7 @@ func (dockerfileSource) Check(_ context.Context, a *Scoped) error {
 // Resolve is the build. It runs inside the detached deploy, which is
 // what the Check/Resolve split is for: minutes of work with nobody
 // holding a connection open.
-func (s dockerfileSource) Resolve(ctx context.Context, a *Scoped, ref string, logs io.Writer) (Image, error) {
+func (s repositorySource) Resolve(ctx context.Context, a *Scoped, ref string, logs io.Writer) (Image, error) {
 	if a.SourceRepo == "" {
 		return Image{}, ErrRepoRequired
 	}
@@ -265,8 +281,8 @@ func (o *Orchestrator) sourceFor(a *Scoped) (ImageSource, error) {
 		return registrySource{registryHost: o.registryHost}, nil
 	case SourceExternal:
 		return externalSource{credentials: o.registryCredentials}, nil
-	case SourceDockerfile:
-		return dockerfileSource{build: o.buildFromRepository}, nil
+	case SourceDockerfile, SourceRailpack:
+		return repositorySource{build: o.buildFromRepository}, nil
 	default:
 		return nil, fmt.Errorf("%w: %q", ErrUnknownSource, a.Source)
 	}
@@ -322,6 +338,13 @@ func checkOrigin(source Source, o *Origin) error {
 		}
 	} else if o.Repo != "" || o.Ref != "" || o.Dockerfile != "" {
 		return ErrRepoNotAllowed
+	}
+
+	// Only a Dockerfile build has a Dockerfile. Railpack works out the
+	// build itself, and a path it would ignore is a setting someone
+	// meant to have an effect.
+	if source != SourceDockerfile && o.Dockerfile != "" {
+		return ErrDockerfileNotAllowed
 	}
 	return nil
 }

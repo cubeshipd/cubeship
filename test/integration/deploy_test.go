@@ -235,6 +235,9 @@ func TestDeployEndToEnd(t *testing.T) {
 	t.Run("builds an app from a repository", func(t *testing.T) {
 		buildFromARepository(t, adminKey)
 	})
+	t.Run("builds an app with no Dockerfile at all", func(t *testing.T) {
+		buildWithRailpack(t, adminKey)
+	})
 	t.Run("a build's output arrives while it runs", func(t *testing.T) {
 		buildLogsArriveWhileTheBuildRuns(t, adminKey)
 	})

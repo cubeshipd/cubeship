@@ -221,7 +221,7 @@ func WriteRegistryTokenCert(cfg *config.Config, certPEM []byte) error {
 // nothing else talks to it.
 const (
 	BuildKitContainerName = "cubeship-buildkit"
-	BuildKitImage         = "moby/buildkit:v0.17.2"
+	BuildKitImage         = "moby/buildkit:v0.32.2"
 )
 
 // BuildKitSocket is where the daemon reaches buildkitd: a unix socket

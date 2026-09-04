@@ -4,6 +4,7 @@ GO      ?= go
 BINDIR  ?= bin
 COVER   ?= coverage.out
 WEBDIR  ?= web
+PNPM    ?= pnpm
 WEBDIST ?= internal/web/dist
 RELEASEDIR ?= dist
 
@@ -34,14 +35,14 @@ daemon-linux: web ## Cross-compile the daemon for the VPS (linux/amd64 unless ov
 # serves the API and says the dashboard is missing.
 .PHONY: web
 web: ## Build the dashboard into the daemon's embedded assets
-	cd $(WEBDIR) && npm ci --no-audit --no-fund && npm run build
+	cd $(WEBDIR) && $(PNPM) install --frozen-lockfile && $(PNPM) run build
 	rm -rf $(WEBDIST)
 	cp -R $(WEBDIR)/out $(WEBDIST)
 	touch $(WEBDIST)/.gitkeep
 
 .PHONY: web-dev
-web-dev: ## Run the dashboard against a daemon on :9000, with hot reload
-	cd $(WEBDIR) && npm run dev
+web-dev: ## Run the dashboard against a daemon on :3000, with hot reload
+	cd $(WEBDIR) && $(PNPM) run dev
 
 .PHONY: install
 install: ## Install the CLI into GOBIN

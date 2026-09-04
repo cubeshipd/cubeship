@@ -59,7 +59,7 @@ func toResponse(a *Scoped, registryHost string) Response {
 	switch Source(a.Source) {
 	case SourceExternal:
 		r.Image = a.SourceImage
-	case SourceDockerfile:
+	case SourceDockerfile, SourceRailpack:
 		r.Repo, r.Ref, r.Dockerfile = a.SourceRepo, a.SourceRef, a.SourceDockerfile
 	default:
 		if registryHost != "" {
@@ -122,7 +122,7 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrUnknownSource), errors.Is(err, ErrImageRequired),
 		errors.Is(err, ErrImageNotAllowed), errors.Is(err, ErrImageCarriesTag),
 		errors.Is(err, ErrRepoRequired), errors.Is(err, ErrRepoNotAllowed),
-		errors.Is(err, ErrRepoNotSupported):
+		errors.Is(err, ErrRepoNotSupported), errors.Is(err, ErrDockerfileNotAllowed):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNoBuilder):
 		http.Error(w, err.Error(), http.StatusConflict)
