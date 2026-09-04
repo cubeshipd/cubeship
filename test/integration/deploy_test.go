@@ -118,15 +118,19 @@ func TestDeployEndToEnd(t *testing.T) {
 	ctx := context.Background()
 	client := apiclient.New("http://127.0.0.1:9000", testToken)
 
-	image, err := client.CreateApp(ctx, "myapp", "myapp.localtest.me")
+	if err := client.CreateOrg(ctx, "acme", "Acme Inc"); err != nil {
+		t.Fatalf("CreateOrg: %v", err)
+	}
+
+	image, err := client.CreateApp(ctx, "myapp", "myapp.localtest.me", "acme")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
-	if image != "registry.localtest.me/myapp" {
+	if image != "registry.localtest.me/acme/myapp" {
 		t.Fatalf("unexpected image: %q", image)
 	}
 
-	buildApp := exec.Command("docker", "build", "-t", "localhost:5000/myapp:latest", "./testapp")
+	buildApp := exec.Command("docker", "build", "-t", "localhost:5000/acme/myapp:latest", "./testapp")
 	if out, err := buildApp.CombinedOutput(); err != nil {
 		t.Fatalf("build fixture image: %v\n%s", err, out)
 	}
@@ -140,7 +144,7 @@ func TestDeployEndToEnd(t *testing.T) {
 	}
 	t.Cleanup(func() { exec.Command("docker", "logout", "localhost:5000").Run() })
 
-	push := exec.Command("docker", "push", "localhost:5000/myapp:latest")
+	push := exec.Command("docker", "push", "localhost:5000/acme/myapp:latest")
 	if out, err := push.CombinedOutput(); err != nil {
 		t.Fatalf("push fixture image: %v\n%s", err, out)
 	}
