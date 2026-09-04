@@ -1,0 +1,12 @@
+# Everything the build does not read. The Go and web sources are copied
+# explicitly; what is left here is output, caches and local state that
+# would only invalidate the layer cache.
+.git
+.air
+bin
+dist
+internal/web/dist
+web/node_modules
+web/.next
+web/out
+coverage.out

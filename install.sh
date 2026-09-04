@@ -4,10 +4,13 @@
 #
 #   curl -sSL https://cubeship.dev/install.sh | sh
 #
-# Installs Docker if it is missing, puts the cubeshipd binary in
-# /usr/local/bin, registers it with systemd and starts it. Running it
-# again upgrades an existing install in place; nothing under
-# CUBESHIP_DATA_DIR is touched.
+# Installs Docker if it is missing and runs Cubeship as a container.
+# Running it again upgrades in place; nothing under CUBESHIP_DATA_DIR is
+# touched.
+#
+# Everything Cubeship runs is a container, the daemon included: it is a
+# sibling of the registry, Traefik, BuildKit and every app, on one
+# network they share.
 #
 # Everything is inside main(), called on the last line, so a download cut
 # short cannot execute half an installer.
@@ -16,11 +19,11 @@ set -eu
 
 # Where releases are served from. Point these somewhere else to install a
 # build of your own.
-BASE_URL="${CUBESHIP_BASE_URL:-https://cubeship.dev}"
+IMAGE="${CUBESHIP_IMAGE:-ghcr.io/cubeship/cubeshipd}"
 VERSION="${CUBESHIP_VERSION:-latest}"
 
-BIN=/usr/local/bin/cubeshipd
-UNIT=/etc/systemd/system/cubeshipd.service
+CONTAINER=cubeship-daemon
+NETWORK=cubeship
 DATA_DIR="${CUBESHIP_DATA_DIR:-/var/lib/cubeship}"
 PORT=3000
 
@@ -28,20 +31,11 @@ say() { printf '  %s\n' "$*"; }
 die() { printf '\nerror: %s\n' "$*" >&2; exit 1; }
 
 require_root() {
-	[ "$(id -u)" = 0 ] || die "run this as root: the daemon needs the Docker socket and a systemd unit."
+	[ "$(id -u)" = 0 ] || die "run this as root: the daemon needs the Docker socket and a directory under /var/lib."
 }
 
 require_linux() {
-	[ "$(uname -s)" = Linux ] || die "Cubeship runs on Linux. Docker Desktop's VM does not bridge host networking, which Traefik needs."
-	command -v systemctl >/dev/null 2>&1 || die "no systemd on this host, so there is nothing to register the daemon with."
-}
-
-detect_arch() {
-	case "$(uname -m)" in
-		x86_64 | amd64) echo amd64 ;;
-		aarch64 | arm64) echo arm64 ;;
-		*) die "unsupported architecture $(uname -m). Cubeship ships amd64 and arm64." ;;
-	esac
+	[ "$(uname -s)" = Linux ] || die "Cubeship runs on Linux."
 }
 
 # The port has to be free before anything is installed: finding out after
@@ -70,74 +64,39 @@ ensure_docker() {
 	docker info >/dev/null 2>&1 || die "Docker is installed but not responding. Start it and run this again."
 }
 
-# fetch downloads to a file, failing loudly rather than leaving a
-# half-written binary behind.
-fetch() {
-	curl -fsSL "$1" -o "$2" || die "could not download $1"
-}
+# run_daemon pulls the image and starts the daemon as a container.
+#
+# The data directory is mounted at the SAME path inside as outside, and
+# that is not cosmetic: the daemon passes paths to Docker when it creates
+# Postgres, the registry and Traefik, and those are resolved by the
+# Engine on the host. A different path inside would make every one of
+# them bind a directory that does not exist.
+run_daemon() {
+	say "Pulling $IMAGE:$VERSION…"
+	docker pull "$IMAGE:$VERSION" >/dev/null || die "could not pull $IMAGE:$VERSION"
 
-install_daemon() {
-	arch="$1"
-	tmp=$(mktemp -d)
-	# shellcheck disable=SC2064 # expand tmp now: it is what we want removed.
-	trap "rm -rf '$tmp'" EXIT
-
-	name="cubeshipd-linux-$arch"
-	say "Downloading $name ($VERSION)…"
-	fetch "$BASE_URL/releases/$VERSION/$name" "$tmp/$name"
-	fetch "$BASE_URL/releases/$VERSION/checksums.txt" "$tmp/checksums.txt"
-
-	# A binary this script is about to run as root is worth checking. The
-	# checksum comes from the same host over the same TLS, so this
-	# catches corruption and truncation rather than a hostile mirror.
-	say "Verifying checksum…"
-	(cd "$tmp" && grep " $name\$" checksums.txt | sha256sum -c - >/dev/null) ||
-		die "checksum mismatch on $name. Nothing was installed."
-
-	install -m 0755 "$tmp/$name" "$BIN"
 	mkdir -p "$DATA_DIR"
 	chmod 0700 "$DATA_DIR"
-}
 
-write_unit() {
-	cat > "$UNIT" <<-UNITFILE
-		[Unit]
-		Description=Cubeship deploy daemon
-		# The daemon manages containers and cannot start before Docker is up.
-		After=network-online.target docker.service
-		Wants=network-online.target
-		Requires=docker.service
+	# The network has to exist before the daemon joins it; the daemon
+	# creates it for its own children, but cannot put itself on one that
+	# is not there yet.
+	docker network create "$NETWORK" >/dev/null 2>&1 || true
 
-		[Service]
-		Type=simple
-		ExecStart=$BIN
+	# An upgrade replaces the container. Its state is all in the data
+	# directory, so there is nothing in the container to keep.
+	docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 
-		# The domain and the Let's Encrypt contact address are NOT set here:
-		# the daemon starts without them, and they are configured afterwards
-		# from the dashboard.
-		#
-		# Persistent state: the Postgres data directory, the daemon's
-		# secrets, registry config and image storage, Traefik's acme.json,
-		# and the build cache.
-		Environment=CUBESHIP_DATA_DIR=$DATA_DIR
-
-		# The daemon talks to the Docker socket, so it runs as root.
-		User=root
-		Restart=always
-		RestartSec=5s
-
-		# NOTE: the daemon listens on 0.0.0.0:$PORT in plaintext. That is the
-		# only way in until a domain is set, after which everything is
-		# reachable over HTTPS at api.<domain> and this port should be
-		# closed at the host firewall.
-
-		[Install]
-		WantedBy=multi-user.target
-	UNITFILE
-
-	systemctl daemon-reload
-	systemctl enable cubeshipd >/dev/null 2>&1
-	systemctl restart cubeshipd
+	docker run -d \
+		--name "$CONTAINER" \
+		--network "$NETWORK" \
+		--restart unless-stopped \
+		-v /var/run/docker.sock:/var/run/docker.sock \
+		-v "$DATA_DIR:$DATA_DIR" \
+		-e CUBESHIP_DATA_DIR="$DATA_DIR" \
+		-p "$PORT:$PORT" \
+		"$IMAGE:$VERSION" >/dev/null ||
+		die "could not start $CONTAINER. See: docker logs $CONTAINER"
 }
 
 wait_for_health() {
@@ -149,7 +108,7 @@ wait_for_health() {
 		i=$((i + 1))
 		sleep 2
 	done
-	die "the daemon did not come up. See: journalctl -u cubeshipd -n 50"
+	die "the daemon did not come up. See: docker logs $CONTAINER"
 }
 
 # address is where to tell the operator to point their browser. It is the
@@ -165,15 +124,13 @@ main() {
 
 	require_root
 	require_linux
-	arch=$(detect_arch)
 
 	# Only guard the port on a first install: on an upgrade the thing
 	# holding it is the daemon being replaced.
-	[ -f "$UNIT" ] || check_port
+	docker inspect "$CONTAINER" >/dev/null 2>&1 || check_port
 
 	ensure_docker
-	install_daemon "$arch"
-	write_unit
+	run_daemon
 
 	say "Waiting for the daemon…"
 	wait_for_health
@@ -192,8 +149,8 @@ main() {
 		your domain from the dashboard afterwards, and close port $PORT at
 		the firewall once HTTPS is up.
 
-		  systemctl status cubeshipd
-		  journalctl -u cubeshipd -f
+		  docker ps
+		  docker logs -f $CONTAINER
 
 	DONE
 }

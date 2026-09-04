@@ -21,6 +21,11 @@ import (
 // newDeployFixture returns an orchestrator over a real database with one
 // app already registered, plus the pieces a test needs to vary its
 // environment.
+// testRegistry stands in for wherever the daemon pulls from. Which
+// address that is depends on how the daemon is deployed; nothing here
+// depends on which.
+const testRegistry = "127.0.0.1:5000"
+
 func newDeployFixture(t *testing.T, docker DockerAPI) (*Orchestrator, *database.DB, *App) {
 	t.Helper()
 	ctx := context.Background()
@@ -52,7 +57,7 @@ func newDeployFixture(t *testing.T, docker DockerAPI) (*Orchestrator, *database.
 	if err := cfg.SeedFromEnv(ctx, map[string]string{settings.Domain: "example.com"}); err != nil {
 		t.Fatalf("configure the domain: %v", err)
 	}
-	orch := NewOrchestrator(db, docker, cfg, extregistry.NewService(db, nil), nil, nil)
+	orch := NewOrchestrator(db, docker, cfg, extregistry.NewService(db, nil), nil, nil, testRegistry)
 	// The health check's real timing has nothing to test here, and
 	// sleeping through it would make every deploy test slow.
 	orch.HealthCheckInterval = 0

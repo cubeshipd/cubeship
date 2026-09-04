@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"strings"
 
 	"cubeship/internal/envvar"
 	"cubeship/internal/org"
@@ -15,14 +14,6 @@ import (
 	"cubeship/internal/slug"
 	"cubeship/internal/user"
 )
-
-// LocalRegistryHost is where the daemon pulls app images from. The
-// registry container publishes 127.0.0.1:5000 precisely so the daemon's
-// own pulls stay on loopback: pulling the public registry.<domain> name
-// would hairpin out to the VPS's public IP and require a valid ACME
-// certificate to already exist, which must never be a precondition for
-// deploying.
-const LocalRegistryHost = "127.0.0.1:5000"
 
 // Service holds the app use cases. Authorization is always the owning
 // organization's answer.
@@ -299,18 +290,6 @@ func (s *Service) Logs(ctx context.Context, caller *user.User, ref Reference, ta
 		return nil, err
 	}
 	return s.orch.Logs(ctx, a.ID, tail)
-}
-
-// LocalPullRef rewrites a public image reference
-// (registry.<domain>/<org-slug>/<app>) into the loopback-published
-// reference the daemon actually pulls. Only the repository part is kept;
-// the host is replaced. See LocalRegistryHost.
-func LocalPullRef(image, tag string) string {
-	repo := image
-	if i := strings.Index(image, "/"); i >= 0 {
-		repo = image[i+1:]
-	}
-	return LocalRegistryHost + "/" + repo + ":" + tag
 }
 
 // DeployOnPush starts a deploy for every app in an organization that

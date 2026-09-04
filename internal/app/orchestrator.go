@@ -45,6 +45,13 @@ type Orchestrator struct {
 	builder  ImageBuilder
 	git      GitTokens
 
+	// localRegistry is where the daemon pulls an app's own image from:
+	// the registry reached directly, never the public name. Pulling the
+	// public one would hairpin out to this host's own address and need a
+	// certificate to already exist, which must not be what a deploy
+	// waits on.
+	localRegistry string
+
 	// HealthCheckAttempts bounds how many observations waitHealthy takes
 	// before giving up; HealthCheckSuccesses is how many of them must be
 	// consecutively good for the container to count as healthy.
@@ -89,7 +96,7 @@ type GitTokens interface {
 	TokenForRepository(ctx context.Context, orgID int64, repoURL string) (string, bool, error)
 }
 
-func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds CredentialLookup, builder ImageBuilder, git GitTokens) *Orchestrator {
+func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds CredentialLookup, builder ImageBuilder, git GitTokens, localRegistry string) *Orchestrator {
 	return &Orchestrator{
 		db:                   db,
 		docker:               d,
@@ -100,6 +107,7 @@ func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds 
 		creds:                creds,
 		builder:              builder,
 		git:                  git,
+		localRegistry:        localRegistry,
 		HealthCheckAttempts:  10,
 		HealthCheckSuccesses: 3,
 		HealthCheckInterval:  500 * time.Millisecond,

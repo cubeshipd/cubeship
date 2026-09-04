@@ -38,11 +38,6 @@ var version = "dev"
 // that has to be the dashboard.
 const daemonPort = 3000
 
-// localRegistryHost is the loopback address the registry container
-// publishes, and the host the daemon's own image pulls target. It must
-// match internal/api's constant of the same name.
-const localRegistryHost = "127.0.0.1:5000"
-
 // listenAddr binds all interfaces on purpose, for two reasons: the
 // registry container reaches the webhook through host.docker.internal,
 // which resolves to the host's bridge-gateway address rather than
@@ -141,7 +136,7 @@ func ensureDatabase(ctx context.Context, cfg *config.Config, docker *dockerx.Cli
 	log.Printf("managed Postgres in container %s; its password (fingerprint %s) is stored in %s",
 		bootstrap.PostgresContainerName, config.TokenFingerprint(password), path)
 
-	dsn := bootstrap.PostgresDSN(password)
+	dsn := bootstrap.PostgresDSN(cfg, password)
 	if err := waitForDatabase(ctx, dsn, databaseReadyTimeout); err != nil {
 		return "", err
 	}
@@ -196,7 +191,7 @@ func applyInfrastructure(ctx context.Context, cfg *config.Config, docker *docker
 		// not the host's namespace, so it reaches the daemon via
 		// host.docker.internal rather than 127.0.0.1 (see ExtraHosts in
 		// RegistryContainerOpts).
-		notifyURL := fmt.Sprintf("http://host.docker.internal:%d/hooks/registry", daemonPort)
+		notifyURL := fmt.Sprintf("http://%s/hooks/registry", bootstrap.DaemonAddress(cfg, daemonPort))
 		if err := bootstrap.WriteRegistryConfig(cfg, apiHost, notifyURL, cfg.Token); err != nil {
 			return fmt.Errorf("write registry config: %w", err)
 		}
@@ -282,14 +277,15 @@ func run() error {
 	// it already holds the private key in-process, so it mints a
 	// pull-only token for exactly the repository being pulled, fresh
 	// every time (tokens expire in regauth.TokenTTL).
-	docker.SetRegistryTokenSigner(localRegistryHost, func(repository string) (string, error) {
+	localRegistry := bootstrap.LocalRegistryAddress(cfg)
+	docker.SetRegistryTokenSigner(localRegistry, func(repository string) (string, error) {
 		return regauth.IssueToken(registrySigningKey, regauth.TokenIssuer, regauth.TokenService, "cubeshipd",
 			[]regauth.AccessEntry{{Type: "repository", Name: repository, Actions: []string{"pull"}}})
 	})
 
 	ctx := context.Background()
 
-	if err := docker.EnsureNetwork(ctx, "cubeship"); err != nil {
+	if err := docker.EnsureNetwork(ctx, bootstrap.Network); err != nil {
 		return fmt.Errorf("ensure network: %w", err)
 	}
 
@@ -312,8 +308,9 @@ func run() error {
 	}
 
 	srv := server.New(db, docker, server.Options{
-		WebhookToken: cfg.Token,
-		Builder:      builder,
+		WebhookToken:  cfg.Token,
+		Builder:       builder,
+		LocalRegistry: localRegistry,
 	})
 
 	// An install upgrading from the release where the domain and contact

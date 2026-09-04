@@ -1,13 +1,14 @@
 #!/bin/sh
 #
-# Runs install.sh on a real Linux, against a release served from disk.
+# Runs install.sh on a real Linux.
 #
 # The installer is the first thing every user runs and nothing in the Go
 # suite can reach it, so it is exercised here: the whole of main(), with
-# Docker and systemd replaced by recording stubs and the daemon's health
-# check stood down — there is no daemon to be healthy in a container.
+# Docker replaced by a recording stub and the daemon's health check stood
+# down — there is no daemon to be healthy in a container running a fake
+# docker.
 #
-# Run it through `make test-install`, which builds the release it needs.
+# Run it through `make test-install`.
 
 set -eu
 
@@ -31,9 +32,18 @@ setup_stubs() {
 		#!/bin/sh
 		echo "systemctl $*" >> /tmp/systemctl.log
 	EOF
+	# `docker inspect` must fail the first time, so the installer treats
+	# it as a first install; after `docker run` it succeeds, which is how
+	# the upgrade path is exercised.
 	cat > /stub/docker <<-'EOF'
 		#!/bin/sh
 		echo "docker $*" >> /tmp/docker.log
+		case "$1" in
+		  inspect) [ -f /tmp/started ] || exit 1 ;;
+		  run)     touch /tmp/started ;;
+		  info)    exit 0 ;;
+		esac
+		exit 0
 	EOF
 	chmod +x /stub/systemctl /stub/docker
 	PATH="/stub:$PATH"
@@ -53,13 +63,6 @@ load_installer() {
 # installer's, and that is what the assertions below drive.
 run_tests() {
 	setup_stubs
-
-	# The release is mounted read-only; copy it where the test can
-	# corrupt a checksum later without touching what was built.
-	mkdir -p /work/releases
-	cp -R /dist/testing /work/releases/testing
-
-	export CUBESHIP_BASE_URL="file:///work"
 	export CUBESHIP_VERSION="testing"
 	load_installer
 
@@ -69,45 +72,36 @@ run_tests() {
 
 	printf '\ninstall.sh on %s\n\n' "$(uname -m)"
 
-	check "detects this architecture" "$(detect_arch)" "amd64"
-
 	# A full install, exactly as a first-time user gets it.
 	out=$(main 2>&1) || { printf '%s\n' "$out"; exit 1; }
 
-	check "installs the binary" "$([ -x /usr/local/bin/cubeshipd ] && echo yes)" "yes"
-	check "the installed binary runs" \
-		"$(/usr/local/bin/cubeshipd -version | cut -d' ' -f1)" "cubeshipd"
 	check "creates the data directory" "$(stat -c '%a' /var/lib/cubeship)" "700"
-	check "writes the unit" \
-		"$(grep -c 'ExecStart=/usr/local/bin/cubeshipd' /etc/systemd/system/cubeshipd.service)" "1"
-	check "the unit sets the data directory" \
-		"$(grep -c 'CUBESHIP_DATA_DIR=/var/lib/cubeship' /etc/systemd/system/cubeshipd.service)" "1"
-	check "enables the service" "$(grep -c 'systemctl enable cubeshipd' /tmp/systemctl.log)" "1"
-	check "starts the service" "$(grep -c 'systemctl restart cubeshipd' /tmp/systemctl.log)" "1"
+	check "pulls the image" "$(grep -c '^docker pull ' /tmp/docker.log)" "1"
+	check "creates the shared network" \
+		"$(grep -c '^docker network create cubeship' /tmp/docker.log)" "1"
+	check "runs the daemon" "$(grep -c 'docker run .*--name cubeship-daemon' /tmp/docker.log)" "1"
+	check "gives it the Docker socket" \
+		"$(grep -c 'var/run/docker.sock:/var/run/docker.sock' /tmp/docker.log)" "1"
+	check "publishes the port" "$(grep -c '\-p 3000:3000' /tmp/docker.log)" "1"
+	check "restarts it with the host" \
+		"$(grep -c '\-\-restart unless-stopped' /tmp/docker.log)" "1"
 	check "tells you where to open it" \
 		"$(printf '%s' "$out" | grep -c ':3000')" "1"
 
-	# Running it again is how an upgrade happens.
-	rm -f /tmp/systemctl.log
-	main >/dev/null 2>&1
-	check "re-running restarts rather than failing" \
-		"$(grep -c 'systemctl restart cubeshipd' /tmp/systemctl.log)" "1"
+	# The data directory has to be mounted at the same path inside as
+	# outside: the daemon hands these paths to the Engine for its
+	# siblings' binds, and the Engine resolves them on the host.
+	check "mounts the data directory at the same path" \
+		"$(grep -c '\-v /var/lib/cubeship:/var/lib/cubeship' /tmp/docker.log)" "1"
 
-	# A binary about to be run as root must not be installed when it does
-	# not match what was published.
-	rm -f /usr/local/bin/cubeshipd
-	sed 's/^./0/' /work/releases/testing/checksums.txt > /tmp/bad.txt
-	cp /tmp/bad.txt /work/releases/testing/checksums.txt
-	# In a subshell: the installer refuses by exiting, and this test is
-	# not finished yet.
-	if (install_daemon amd64) >/dev/null 2>&1; then
-		printf '  FAIL a corrupted download was installed anyway\n'
-		FAILURES=$((FAILURES + 1))
-	else
-		printf '  ok   refuses a checksum mismatch\n'
-	fi
-	check "and installs nothing when it refuses" \
-		"$([ -e /usr/local/bin/cubeshipd ] && echo installed || echo absent)" "absent"
+	# Running it again is how an upgrade happens: the container is
+	# replaced, and nothing under the data directory is touched.
+	rm -f /tmp/docker.log
+	main >/dev/null 2>&1
+	check "an upgrade replaces the container" \
+		"$(grep -c '^docker rm -f cubeship-daemon' /tmp/docker.log)" "1"
+	check "an upgrade does not touch the data directory" \
+		"$(stat -c '%a' /var/lib/cubeship)" "700"
 
 	printf '\n'
 	[ "$FAILURES" = 0 ] || { printf '%d failure(s)\n\n' "$FAILURES"; exit 1; }

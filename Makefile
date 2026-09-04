@@ -45,10 +45,25 @@ web: ## Build the dashboard into the daemon's embedded assets
 # so it survives a `make clean` and a fresh checkout.
 DEV_DATA_DIR ?= $(HOME)/.cubeship-dev
 
+# A dev daemon is pointed at the Postgres the tests already run, rather
+# than managing one of its own.
+#
+# Two reasons. It is one less container to wait for on every restart, and
+# — the reason it is not merely a preference — the managed one cannot
+# work on a Mac: its data directory is a host bind mount, and under
+# /Users the Docker Desktop share synthesizes ownership, so Postgres
+# refuses to start on a directory it does not own. On Linux, which is
+# where Cubeship runs, the managed container is fine and is what an
+# install uses.
+DEV_DATABASE_URL ?= postgres://cubeship:cubeship@127.0.0.1:$(PG_PORT)/cubeship_dev?sslmode=disable
+
 .PHONY: dev
-dev: ## Run the daemon with live reload, rebuilding on every Go change
+dev: db-up ## Run the daemon with live reload, rebuilding on every Go change
 	@mkdir -p $(DEV_DATA_DIR)
-	CUBESHIP_DATA_DIR=$(DEV_DATA_DIR) $(GO) tool air
+	@docker exec $(PG_CONTAINER) psql -U cubeship -d postgres -tc \
+		"SELECT 1 FROM pg_database WHERE datname = 'cubeship_dev'" | grep -q 1 || \
+		docker exec $(PG_CONTAINER) createdb -U cubeship cubeship_dev
+	CUBESHIP_DATA_DIR=$(DEV_DATA_DIR) CUBESHIP_DATABASE_URL="$(DEV_DATABASE_URL)" $(GO) tool air
 
 .PHONY: web-dev
 web-dev: ## Run the dashboard against a daemon on :3000, with hot reload
@@ -60,19 +75,21 @@ install: ## Install the CLI into GOBIN
 
 # Deliberately not `systemctl restart` on a host you haven't named: pass
 # HOST explicitly, every time.
-# One release, both architectures, with the checksums install.sh
-# verifies. VERSION names the directory it lands in, which is the path
-# install.sh fetches from.
+# The release is the image: it carries the daemon and the dashboard, and
+# install.sh pulls it. Nothing else has to be hosted anywhere.
 VERSION ?= dev
+IMAGE   ?= ghcr.io/cubeship/cubeshipd
+
+.PHONY: image
+image: ## Build the daemon's image, dashboard included
+	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE):$(VERSION) .
+
 .PHONY: release
-release: web ## Build a release into dist/$(VERSION) for both architectures
-	mkdir -p $(RELEASEDIR)/$(VERSION)
-	for arch in amd64 arm64; do \
-		GOOS=linux GOARCH=$$arch $(GO) build \
-			-ldflags "-X main.version=$(VERSION)" \
-			-o $(RELEASEDIR)/$(VERSION)/cubeshipd-linux-$$arch ./cmd/cubeshipd; \
-	done
-	cd $(RELEASEDIR)/$(VERSION) && shasum -a 256 cubeshipd-linux-* > checksums.txt
+release: ## Build and push the image for both architectures
+	docker buildx build --push \
+		--platform linux/amd64,linux/arm64 \
+		--build-arg VERSION=$(VERSION) \
+		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
 
 .PHONY: ship
 ship: daemon-linux ## Upload the daemon to a VPS and restart it (HOST=user@vps)
@@ -124,12 +141,9 @@ test: db-up ## Unit tests, race detector on (starts the test Postgres)
 # reach it. This runs it on a real Linux against a release built here.
 .PHONY: test-install
 test-install: ## Run install.sh end to end in a Linux container
-	@rm -rf $(RELEASEDIR)/testing
-	@$(MAKE) --no-print-directory release VERSION=testing
 	docker run --rm \
 		-v "$(CURDIR)/install.sh:/src/install.sh:ro" \
 		-v "$(CURDIR)/test/install/run.sh:/src/run.sh:ro" \
-		-v "$(CURDIR)/$(RELEASEDIR):/dist:ro" \
 		--platform linux/amd64 debian:bookworm-slim \
 		sh -c 'apt-get -qq update && apt-get -qq install -y curl > /dev/null && sh /src/run.sh'
 

@@ -33,11 +33,14 @@ On the server, as root:
 curl -sSL https://cubeship.dev/install.sh | sh
 ```
 
-It installs Docker if the box hasn't got it, verifies and installs the
-daemon, registers it with systemd, and tells you where to open it.
-Running it again upgrades in place. It is [one
-file](install.sh) — read it first if you'd rather not pipe a script into
-a shell, which is a reasonable thing to prefer.
+It installs Docker if the box hasn't got it, pulls the image and runs
+it, and tells you where to open it. Running it again upgrades in place.
+It is [one file](install.sh) — read it first if you'd rather not pipe a
+script into a shell, which is a reasonable thing to prefer.
+
+Everything Cubeship runs is a container, the daemon included: Postgres,
+the registry, Traefik, the image builder and every app are its siblings
+on one network.
 
 Nothing has to be configured for it to start. The domain and the Let's
 Encrypt contact address are set afterwards, from the dashboard — see
@@ -46,15 +49,16 @@ Encrypt contact address are set afterwards, from the dashboard — see
 ### Building it yourself
 
 ```sh
+make image          # the daemon's image, dashboard included
 make build          # bin/cubeship and bin/cubeshipd for this machine
-make release        # dist/<version>/, what install.sh serves
+make dev            # the daemon on this machine, reloading on change
 make help           # everything else
 ```
 
-Both build the dashboard first, so they need Node. `go build` on its own
-still works — you get a daemon that serves the API and says the dashboard
-is missing. Point the installer at your own build with
-`CUBESHIP_BASE_URL`.
+`make build` builds the dashboard first, so it needs Node; `make image`
+does it inside the build. `go build` on its own still works — you get a
+daemon that serves the API and says the dashboard is missing. Point the
+installer at your own image with `CUBESHIP_IMAGE`.
 
 What the environment still holds is defaulted in
 [`internal/platform/config`](internal/platform/config/config.go) — most

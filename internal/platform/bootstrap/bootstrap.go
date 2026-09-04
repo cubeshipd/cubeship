@@ -22,13 +22,25 @@ import (
 
 const registryPort = 5000
 
+// RegistryContainerName is the embedded registry, and the name the
+// daemon pulls from when both are containers.
+const RegistryContainerName = "cubeship-registry"
+
+// Network is the bridge every Cubeship container shares, the daemon's
+// own included when it runs as one. Container DNS on it is what lets
+// each part address the others by name.
+const Network = "cubeship"
+
+// DaemonContainerName is what the daemon is called when it runs as a
+// container, and so the name everything else reaches it by.
+const DaemonContainerName = "cubeship-daemon"
+
 // The daemon's own Postgres, when it isn't pointed at an external one
 // with CUBESHIP_DATABASE_URL.
 //
-// It is published on loopback rather than reached over the "cubeship"
-// bridge network because cubeshipd is a host process, not a container —
-// the same reason the registry publishes 127.0.0.1:5000. Nothing outside
-// this host can connect to it.
+// It is also published on loopback, which is what a daemon running on
+// the host connects to. Nothing outside this host can reach either way
+// in.
 const (
 	PostgresContainerName = "cubeship-postgres"
 	PostgresImage         = "postgres:16-alpine"
@@ -38,11 +50,43 @@ const (
 )
 
 // PostgresDSN is the connection string for the managed Postgres.
+//
+// Which address it is reached at depends on where the daemon runs: a
+// container talks to it by name over the shared network, a host process
+// over the loopback publication.
+//
 // sslmode=disable is correct here and only here: the connection never
-// leaves the loopback interface.
-func PostgresDSN(password string) string {
-	return fmt.Sprintf("postgres://%s:%s@127.0.0.1:%d/%s?sslmode=disable",
-		PostgresUser, url.QueryEscape(password), PostgresPort, PostgresDatabase)
+// leaves this host — one interface or one bridge, never a wire.
+func PostgresDSN(cfg *config.Config, password string) string {
+	host := "127.0.0.1"
+	if cfg.InContainer {
+		host = PostgresContainerName
+	}
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
+		PostgresUser, url.QueryEscape(password), host, PostgresPort, PostgresDatabase)
+}
+
+// DaemonAddress is where the daemon is reached from another container —
+// the registry posting a webhook, Traefik routing the API.
+func DaemonAddress(cfg *config.Config, port int) string {
+	if cfg.InContainer {
+		return fmt.Sprintf("%s:%d", DaemonContainerName, port)
+	}
+	// A host process is not on the bridge, so a container reaches it
+	// through the gateway rather than by name (see ExtraHosts on the
+	// containers that need it).
+	return fmt.Sprintf("host.docker.internal:%d", port)
+}
+
+// LocalRegistryAddress is where the daemon pulls an app's image from.
+// Never the public name: that would hairpin out to this host's own
+// address and need a certificate to already exist, which must not be
+// what a deploy waits on.
+func LocalRegistryAddress(cfg *config.Config) string {
+	if cfg.InContainer {
+		return fmt.Sprintf("%s:%d", RegistryContainerName, registryPort)
+	}
+	return fmt.Sprintf("127.0.0.1:%d", registryPort)
 }
 
 // PostgresContainerOpts describes the daemon's own database container.
@@ -82,7 +126,7 @@ func EnsurePostgresDataDir(cfg *config.Config) error {
 func RegistryContainerOpts(cfg *config.Config, registryHost string, tls bool) dockerx.ContainerOpts {
 	labels := traefik.Labels("registry", registryHost, registryPort, tls)
 	return dockerx.ContainerOpts{
-		Name:    "cubeship-registry",
+		Name:    RegistryContainerName,
 		Image:   "registry:2",
 		Labels:  labels,
 		Network: "cubeship",
@@ -316,18 +360,37 @@ func TraefikContainerOpts(cfg *config.Config, acmeEmail string) dockerx.Containe
 			cfg.DataDir + "/letsencrypt:/letsencrypt",
 			cfg.DataDir + "/traefik-dynamic:/etc/traefik/dynamic",
 		},
-		HostNetwork: true,
+		// The daemon may be on the host rather than on this network —
+		// `make dev` runs it that way — and then the API router points
+		// at the gateway rather than at a container name. Harmless when
+		// the daemon is a container: the name simply goes unused.
+		ExtraHosts: []string{"host.docker.internal:host-gateway"},
+		// On the shared network rather than the host's namespace, and
+		// publishing the two ports it actually needs.
+		//
+		// It used to take the host's namespace for one reason: to reach
+		// a daemon running on the host at 127.0.0.1. A daemon that is a
+		// container is reached by name instead, and host networking
+		// costs more than it buys — not least that it does not work at
+		// all on Docker Desktop, where the Engine runs in a VM.
+		Network: Network,
+		Ports:   []string{"80:80", "443:443"},
 	}
 }
 
 // APIRouterConfigYAML returns a Traefik file-provider dynamic
-// configuration that routes cfg.APIHost to the daemon's own HTTP API.
-// The daemon is a host process (not a container), so it can't be
-// discovered via the Docker provider like app containers and the
-// registry are — Traefik reaches it over the host-network loopback
-// instead. This is what makes the daemon API reachable over HTTPS
-// through Traefik, per the spec's architecture and global constraints.
-func APIRouterConfigYAML(apiHost string, daemonPort int) string {
+// configuration routing apiHost to the daemon's own API.
+//
+// The file provider rather than the Docker one, even now that the daemon
+// is a container: Traefik discovers containers by their labels, and a
+// container cannot label itself after it has started. The daemon writes
+// this instead, which also means the route exists before anything has to
+// go looking for it.
+//
+// daemonAddress is where Traefik reaches the daemon — its container name
+// on the shared network, or the host gateway when the daemon runs on the
+// host.
+func APIRouterConfigYAML(apiHost, daemonAddress string) string {
 	return fmt.Sprintf(`http:
   routers:
     cubeship-api:
@@ -341,20 +404,21 @@ func APIRouterConfigYAML(apiHost string, daemonPort int) string {
     cubeship-api:
       loadBalancer:
         servers:
-          - url: "http://127.0.0.1:%d"
-`, apiHost, daemonPort)
+          - url: "http://%s"
+`, apiHost, daemonAddress)
 }
 
 // WriteAPIRouterConfig writes APIRouterConfigYAML to the path Traefik's
 // file provider watches (see the Binds entry above). Call it before
 // starting Traefik, and again any time cfg changes.
 func WriteAPIRouterConfig(cfg *config.Config, apiHost string, daemonPort int) error {
+	daemonAddress := DaemonAddress(cfg, daemonPort)
 	dir := cfg.DataDir + "/traefik-dynamic"
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("create traefik dynamic config dir: %w", err)
 	}
 	path := dir + "/api.yml"
-	if err := os.WriteFile(path, []byte(APIRouterConfigYAML(apiHost, daemonPort)), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte(APIRouterConfigYAML(apiHost, daemonAddress)), 0o600); err != nil {
 		return fmt.Errorf("write traefik dynamic config: %w", err)
 	}
 	return nil

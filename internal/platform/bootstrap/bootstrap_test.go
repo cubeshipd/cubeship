@@ -144,12 +144,9 @@ func TestWriteRegistryTokenCertWritesFile(t *testing.T) {
 	}
 }
 
-func TestTraefikContainerOptsUsesHostNetwork(t *testing.T) {
+func TestTraefikContainerOpts(t *testing.T) {
 	opts := TraefikContainerOpts(testConfig(), "admin@example.com")
 
-	if !opts.HostNetwork {
-		t.Fatal("expected Traefik to run with host networking")
-	}
 	if len(opts.Binds) != 3 {
 		t.Fatalf("expected docker socket + acme storage + dynamic config binds, got %v", opts.Binds)
 	}
@@ -173,14 +170,14 @@ func TestTraefikContainerOptsUsesHostNetwork(t *testing.T) {
 	}
 }
 
-func TestAPIRouterConfigYAMLRoutesToDaemonPort(t *testing.T) {
-	yaml := APIRouterConfigYAML("api.example.com", 9000)
+func TestAPIRouterConfigYAMLRoutesToTheDaemon(t *testing.T) {
+	yaml := APIRouterConfigYAML("api.example.com", "cubeship-daemon:3000")
 
 	if !strings.Contains(yaml, "Host(`api.example.com`)") {
 		t.Fatalf("expected the API host rule, got:\n%s", yaml)
 	}
-	if !strings.Contains(yaml, "http://127.0.0.1:9000") {
-		t.Fatalf("expected the daemon's loopback address, got:\n%s", yaml)
+	if !strings.Contains(yaml, "http://cubeship-daemon:3000") {
+		t.Fatalf("expected the daemon's address, got:\n%s", yaml)
 	}
 	if !strings.Contains(yaml, "certResolver: letsencrypt") {
 		t.Fatalf("expected the letsencrypt cert resolver, got:\n%s", yaml)
@@ -373,7 +370,7 @@ func TestPostgresDSNEscapesThePassword(t *testing.T) {
 	// Generated passwords are hex, but an operator-supplied one need not
 	// be: a "/" or "@" in a raw password would be read as the end of the
 	// credentials and point the daemon at the wrong host.
-	dsn := PostgresDSN("p@ss/word")
+	dsn := PostgresDSN(testConfig(), "p@ss/word")
 	u, err := url.Parse(dsn)
 	if err != nil {
 		t.Fatalf("PostgresDSN produced an unparseable URL %q: %v", dsn, err)
@@ -563,5 +560,78 @@ func TestConfiguringTLSChangesTheTraefikContainer(t *testing.T) {
 
 	if without == with {
 		t.Fatal("configuring a contact address left the container unchanged, so TLS would never take effect")
+	}
+}
+
+// Where each part reaches the others depends on whether the daemon is a
+// container. Getting this backwards is not a compile error and not a
+// test failure anywhere else: it is a daemon that starts, looks healthy,
+// and cannot reach its own database.
+func TestAddressesFollowWhereTheDaemonRuns(t *testing.T) {
+	host := testConfig()
+	host.InContainer = false
+
+	contained := testConfig()
+	contained.InContainer = true
+
+	// The daemon's own reach into its infrastructure.
+	if got := PostgresDSN(host, "pw"); !strings.Contains(got, "@127.0.0.1:") {
+		t.Errorf("a host daemon connects to %q, want loopback", got)
+	}
+	if got := PostgresDSN(contained, "pw"); !strings.Contains(got, "@"+PostgresContainerName+":") {
+		t.Errorf("a contained daemon connects to %q, want the container name", got)
+	}
+	if got := LocalRegistryAddress(host); got != "127.0.0.1:5000" {
+		t.Errorf("a host daemon pulls from %q", got)
+	}
+	if got := LocalRegistryAddress(contained); got != RegistryContainerName+":5000" {
+		t.Errorf("a contained daemon pulls from %q", got)
+	}
+
+	// And the reach back: a container calling the daemon cannot use
+	// loopback, which is its own.
+	if got := DaemonAddress(host, 3000); got != "host.docker.internal:3000" {
+		t.Errorf("a container reaches a host daemon at %q", got)
+	}
+	if got := DaemonAddress(contained, 3000); got != DaemonContainerName+":3000" {
+		t.Errorf("a container reaches a contained daemon at %q", got)
+	}
+}
+
+// Traefik used to take the host's network namespace for one reason: to
+// reach a daemon at 127.0.0.1. It costs more than it buys — not least
+// that it does not work at all on Docker Desktop — and nothing needs it
+// now.
+func TestTraefikIsOnTheSharedNetwork(t *testing.T) {
+	opts := TraefikContainerOpts(testConfig(), "admin@example.com")
+
+	if opts.HostNetwork {
+		t.Error("Traefik is still on the host's network")
+	}
+	if opts.Network != Network {
+		t.Errorf("Traefik is on %q, want %q", opts.Network, Network)
+	}
+	// It still has to answer the world on the two ports that matter.
+	var published string
+	for _, p := range opts.Ports {
+		published += p + " "
+	}
+	for _, want := range []string{"80:80", "443:443"} {
+		if !strings.Contains(published, want) {
+			t.Errorf("Traefik does not publish %s (has %q)", want, published)
+		}
+	}
+
+	// A daemon on the host is reached through the gateway, and Traefik
+	// off the host's namespace cannot resolve that name without being
+	// told it. Nothing fails at startup when this is missing: the API
+	// simply stops being reachable through Traefik, which is not where
+	// anyone looks.
+	var hosts string
+	for _, h := range opts.ExtraHosts {
+		hosts += h + " "
+	}
+	if !strings.Contains(hosts, "host.docker.internal:host-gateway") {
+		t.Errorf("Traefik cannot resolve a daemon on the host (ExtraHosts: %q)", hosts)
 	}
 }

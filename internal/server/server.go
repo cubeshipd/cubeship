@@ -59,6 +59,11 @@ type Options struct {
 	// serves everything except a deploy of an app that builds, which
 	// refuses rather than panicking — which is what most tests want.
 	Builder app.ImageBuilder
+
+	// LocalRegistry is where the daemon pulls an app's own image from.
+	// It depends on whether the daemon is a container or a host process,
+	// which only the daemon knows.
+	LocalRegistry string
 }
 
 // New wires the modules together. The dependency order here is the real
@@ -72,7 +77,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	registries := extregistry.NewService(db, orgs)
 	gh := github.NewService(db, orgs, cfg)
 	apps := app.NewService(db, orgs, projects,
-		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gh), cfg)
+		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gh, opts.LocalRegistry), cfg)
 
 	srv := &Server{
 		Users:      users,

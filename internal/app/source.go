@@ -145,6 +145,10 @@ type registrySource struct {
 	// registryHost reports the public registry name, or "" while the
 	// instance has no domain.
 	registryHost func(ctx context.Context) string
+
+	// localRegistry is where the daemon itself pulls from, which is
+	// never the public name — see Resolve.
+	localRegistry string
 }
 
 func (s registrySource) Check(ctx context.Context, _ *Scoped) error {
@@ -168,7 +172,7 @@ func (s registrySource) Resolve(ctx context.Context, a *Scoped, tag string, _ io
 	}
 	// No Auth: the daemon reaches its own registry with a token it mints
 	// itself, which dockerx attaches by host.
-	return Image{Ref: LocalRegistryHost + "/" + ReferenceOf(a).String() + ":" + tag}, nil
+	return Image{Ref: s.localRegistry + "/" + ReferenceOf(a).String() + ":" + tag}, nil
 }
 
 // externalSource pulls an image somebody else's registry holds.
@@ -278,7 +282,7 @@ func sanitizeTag(ref string) string {
 func (o *Orchestrator) sourceFor(a *Scoped) (ImageSource, error) {
 	switch Source(a.Source) {
 	case SourceRegistry:
-		return registrySource{registryHost: o.registryHost}, nil
+		return registrySource{registryHost: o.registryHost, localRegistry: o.localRegistry}, nil
 	case SourceExternal:
 		return externalSource{credentials: o.registryCredentials}, nil
 	case SourceDockerfile, SourceRailpack:

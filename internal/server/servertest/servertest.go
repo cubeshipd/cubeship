@@ -35,6 +35,11 @@ import (
 // notifications with.
 const WebhookToken = "webhook-secret"
 
+// LocalRegistry stands in for wherever the daemon pulls an app's own
+// image from. Which address that is depends on whether the daemon is a
+// container or a host process, and no test here depends on which.
+const LocalRegistry = "127.0.0.1:5000"
+
 // Domain is the base domain the fixture configures, and the two names
 // derived from it. A real instance starts with no domain at all; the
 // fixture sets one because most tests are about what happens after it is
@@ -100,7 +105,7 @@ func NewEmpty(t testing.TB) *Fixture {
 	t.Helper()
 	db := dbtest.New(t)
 	return &Fixture{
-		Server: server.New(db, noDocker{}, server.Options{WebhookToken: WebhookToken}),
+		Server: server.New(db, noDocker{}, server.Options{WebhookToken: WebhookToken, LocalRegistry: LocalRegistry}),
 		DB:     db,
 	}
 }
@@ -124,7 +129,7 @@ func newFixture(t testing.TB, docker app.DockerAPI, domain string) *Fixture {
 	ctx := context.Background()
 	db := dbtest.New(t)
 
-	srv := server.New(db, docker, server.Options{WebhookToken: WebhookToken})
+	srv := server.New(db, docker, server.Options{WebhookToken: WebhookToken, LocalRegistry: LocalRegistry})
 	if domain != "" {
 		if err := srv.Settings.SeedFromEnv(ctx, map[string]string{settings.Domain: domain}); err != nil {
 			t.Fatalf("configure the fixture's domain: %v", err)

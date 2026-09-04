@@ -141,6 +141,18 @@ someone whose sidebar is pointing elsewhere — opening it moves the
 whole dashboard to that organization rather than showing one page out
 of frame.
 
+A project has a **settings screen** (`/projects/settings?ref=org/project`)
+rather than a delete button in its header: renaming it, describing it and
+destroying it are not the same kind of act, and the last one belongs at
+the bottom of a page you went to on purpose. `ConfirmDialog` guards every
+irreversible action by making you type the thing's own name — a second
+button is no obstacle to a misclick, and the dangerous case is precisely
+the one the daemon would happily carry out.
+
+A project's **slug is not editable**, and the screen says why: it is a
+path component of every registry reference under the project, so
+changing it would break every push already configured against it.
+
 ### The selected organization
 
 There is no organizations *page*. An organization is the frame every
@@ -206,23 +218,40 @@ and a visitor whose OS is light would otherwise get half of them.
 
 ## Installing
 
-`install.sh` is the product's front door and the only definition of how
-an instance is set up: it installs Docker if needed, verifies a checksum,
-drops the binary in `/usr/local/bin`, writes the systemd unit and starts
-it. There is no second copy of that unit in the repository to drift from
-it.
+`install.sh` is the product's front door: it installs Docker if needed,
+pulls the image and runs it. **The release is the image** — nothing else
+has to be hosted anywhere, and an upgrade is a pull.
 
-**The daemon is a host process, not a container**, and four things depend
-on that: Postgres is published on loopback, the registry publishes on
-loopback and reaches the webhook through `host.docker.internal`, and
-Traefik runs on the host network so it can route `api.<domain>` to
-`127.0.0.1:<daemonPort>`. Containerizing the daemon means rewriting all
-four.
+**The daemon is a container**, a sibling of Postgres, the registry,
+Traefik, BuildKit and every app on the `cubeship` network. Each finds the
+others by container name.
+
+**`config.InContainer` is what decides every address**, and it is set in
+the image rather than by whoever runs it. A daemon on the host is still
+supported — that is what `make dev` runs — and reaches the same things
+over loopback, with containers reaching back through
+`host.docker.internal`. `bootstrap.PostgresDSN`, `LocalRegistryAddress`
+and `DaemonAddress` are the three places that branch, and
+`TestAddressesFollowWhereTheDaemonRuns` pins both modes: getting this
+wrong is not a compile error and not a failure anywhere else, it is a
+daemon that starts, looks healthy and cannot reach its own database.
+
+**The data directory must be mounted at the same path inside and out.**
+The daemon hands paths to the Engine when it creates its siblings, and
+the Engine resolves them on the *host*. A different path inside would
+make every one of those binds point at a directory that does not exist.
+This is the one thing about running the daemon as a container that is
+easy to get wrong and silent when wrong.
+
+Traefik is no longer on the host's network namespace. It took it for one
+reason — reaching a daemon at `127.0.0.1` — and it costs more than it
+buys, not least that host networking does not work at all on Docker
+Desktop, where the Engine runs in a VM.
 
 `make test-install` runs the installer end to end in a Debian container
-against a release built by `make release`, with Docker and systemd
-replaced by recording stubs. It sources the script minus its last line —
-`main "$@"` — so the script itself carries no hook for the test.
+with Docker replaced by a recording stub. It sources the script minus its
+last line — `main "$@"` — so the script itself carries no hook for the
+test.
 
 ## The OpenAPI document
 

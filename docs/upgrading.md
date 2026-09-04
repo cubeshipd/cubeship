@@ -9,6 +9,30 @@ curl -sSL https://cubeship.dev/install.sh | sh
 Nothing under `CUBESHIP_DATA_DIR` is touched. The sections below are the
 changes worth knowing about, newest first.
 
+## From a release where the daemon was a systemd service
+
+The daemon is a container now, like everything else Cubeship runs. The
+installer handles the change, but it leaves the old install behind — it
+has no way to know a binary in `/usr/local/bin` was ever Cubeship's.
+After upgrading, once the dashboard answers:
+
+```sh
+systemctl disable --now cubeshipd
+rm /etc/systemd/system/cubeshipd.service /usr/local/bin/cubeshipd
+systemctl daemon-reload
+```
+
+Your data is untouched: it was always in `CUBESHIP_DATA_DIR`, which the
+container mounts at the same path.
+
+Two things change that you may have configured around:
+
+- **Traefik no longer uses the host's network.** It publishes :80 and
+  :443 instead. A firewall rule naming those ports still applies; one
+  written against the host namespace may not.
+- **There are no per-architecture binaries to host.** The release is the
+  image, so `CUBESHIP_BASE_URL` is gone and `CUBESHIP_IMAGE` replaces it.
+
 ## From a release with no GitHub integration
 
 Nothing to do, and nothing changes for an existing app.

@@ -30,6 +30,17 @@ type Config struct {
 	// (CUBESHIP_DATABASE_URL). When empty, the daemon brings up and owns
 	// a Postgres container of its own — see bootstrap.PostgresDSN.
 	DatabaseURL string
+
+	// InContainer says the daemon is itself a container on the
+	// "cubeship" network, which is how it ships. It changes every
+	// address the daemon uses to reach its own infrastructure, and every
+	// address that infrastructure is told to reach it back on: container
+	// names either way, rather than loopback and host.docker.internal.
+	//
+	// A daemon running on the host — which is what `make dev` does — is
+	// still supported, and is the reason this is a flag rather than an
+	// assumption.
+	InContainer bool
 }
 
 // ManagedDatabase reports whether the daemon is responsible for running
@@ -69,6 +80,8 @@ func Load() (*Config, error) {
 		DataDir:     dataDir,
 		TokenFile:   tokenFile,
 		DatabaseURL: os.Getenv("CUBESHIP_DATABASE_URL"),
+		// Set in the image, not by whoever runs it.
+		InContainer: os.Getenv("CUBESHIP_IN_CONTAINER") == "1",
 	}, nil
 }
 
