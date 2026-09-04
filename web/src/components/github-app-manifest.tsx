@@ -21,6 +21,7 @@ export function CreateGitHubApp({
   label = "Create the GitHub App",
   icon: Icon,
   note = true,
+  size,
 }: {
   instanceName?: string;
   icon?: ComponentType<{ className?: string }>;
@@ -30,6 +31,9 @@ export function CreateGitHubApp({
   returnTo?: string;
   label?: string;
   note?: boolean;
+  // Passed through, so this can sit in a table row as well as under a
+  // paragraph.
+  size?: "sm" | "xs";
 }) {
   function create() {
     // The origin the operator is looking at right now is the address
@@ -99,19 +103,25 @@ export function CreateGitHubApp({
     document.body.removeChild(form);
   }
 
+  const button = (
+    <Button type="button" size={size} onClick={create}>
+      {Icon && <Icon className="size-4 shrink-0" />}
+      {label}
+      <ExternalLinkIcon className="size-3.5" />
+    </Button>
+  );
+
+  // No wrapper without a note: a spacing div around a lone button is a
+  // block element where a row wanted an inline one.
+  if (!note) return button;
+
   return (
     <div className="space-y-3">
-      <Button type="button" onClick={create}>
-        {Icon && <Icon className="size-4 shrink-0" />}
-        {label}
-        <ExternalLinkIcon className="size-3.5" />
-      </Button>
-      {note && (
-        <p className="text-xs text-muted-foreground">
-          GitHub creates it from a manifest and sends the credentials back — no fields to fill in
-          and no private key to copy. It asks you to confirm the name first.
-        </p>
-      )}
+      {button}
+      <p className="text-xs text-muted-foreground">
+        GitHub creates it from a manifest and sends the credentials back — no fields to fill in and
+        no private key to copy. It asks you to confirm the name first.
+      </p>
     </div>
   );
 }

@@ -145,6 +145,11 @@ export type Settings = {
   domain: string;
   acme_email: string;
   registry_host?: string;
+  // Whether the registered App can be installed anywhere but the
+  // account that owns it. An App from before Cubeship asked for OAuth
+  // on install was also registered private, and neither can be changed
+  // after the fact — false means it has to be replaced, not fixed.
+  github_oauth_ready?: boolean;
   // What this instance's DNS records should point at. The browser
   // cannot work this out, so the daemon reports it.
   public_ip?: string;

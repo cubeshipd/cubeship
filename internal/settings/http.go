@@ -40,6 +40,13 @@ type Response struct {
 	// GitHubAppSlug names the App this instance acts as, which is what
 	// its install page is addressed by. Empty until one is registered.
 	GitHubAppSlug string `json:"github_app_slug,omitempty"`
+	// GitHubOAuthReady reports whether the registered App can be
+	// installed on anything but the account that owns it. An App from
+	// before Cubeship asked for OAuth on install was also registered
+	// private, and neither can be changed after the fact — so a false
+	// here means the App has to be replaced, not fixed.
+	GitHubOAuthReady bool `json:"github_oauth_ready"`
+
 	// GitHubConnected reports whether the App's credentials are present.
 	// The credentials themselves are never returned: an endpoint that
 	// handed a private key back would turn every read of the
@@ -69,6 +76,7 @@ func toResponse(v Values, reachedAt string) Response {
 	r.DNSProviderID = v.Get(DNSProviderID)
 	r.GitHubAppSlug = v.Get(GitHubAppSlug)
 	r.GitHubConnected = v.HasGitHub()
+	r.GitHubOAuthReady = v.HasGitHubOAuth()
 	return r
 }
 

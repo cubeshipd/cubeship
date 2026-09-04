@@ -23,16 +23,26 @@ import type { Settings } from "@/lib/api";
 export function ConnectGitHub({
   settings,
   instanceName,
+  size,
 }: {
   settings: Settings | undefined;
   instanceName: string;
+  size?: "sm" | "xs";
 }) {
   if (!settings) return null;
 
-  // Already an App: skip straight to installing it.
-  if (settings.github_connected && settings.github_app_slug) {
+  // An App that cannot reach an organization is not an App to install
+  // again. It was registered private — a private GitHub App only ever
+  // installs on the account that owns it — and neither that nor the
+  // missing OAuth can be changed after the fact. So the button makes a
+  // new one, which is the only thing that helps.
+  const usable = settings.github_oauth_ready ?? false;
+
+  // Already a usable App: skip straight to installing it.
+  if (settings.github_connected && settings.github_app_slug && usable) {
     return (
       <Button
+        size={size}
         nativeButton={false}
         render={
           <a
@@ -48,5 +58,7 @@ export function ConnectGitHub({
     );
   }
 
-  return <CreateGitHubApp instanceName={instanceName} label="Connect GitHub" note={false} />;
+  return (
+    <CreateGitHubApp instanceName={instanceName} label="Connect GitHub" note={false} size={size} />
+  );
 }

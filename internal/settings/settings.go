@@ -133,6 +133,19 @@ func (v Values) HasGitHub() bool {
 	return v.Get(GitHubAppID) != "" && v.Get(GitHubPrivateKey) != ""
 }
 
+// HasGitHubOAuth reports whether the App can be installed anywhere but
+// the account that owns it.
+//
+// The two go together, which is why one flag answers for both. An App
+// registered before Cubeship asked for OAuth on install was also
+// registered private, and a private GitHub App can only be installed on
+// its owner's account — so it can never reach an organization. There is
+// no way to change either from here: both are decided when the App is
+// created, so the answer to an old App is a new one.
+func (v Values) HasGitHubOAuth() bool {
+	return v.Get(GitHubClientID) != "" && v.Get(GitHubClientSecret) != ""
+}
+
 // HasDomain reports whether a registry and TLS-capable routing are
 // possible at all.
 func (v Values) HasDomain() bool { return v[Domain] != "" }

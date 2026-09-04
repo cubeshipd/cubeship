@@ -9,6 +9,7 @@ import { ErrorAlert } from "@/components/error-alert";
 import { GitHubAppCard } from "@/components/github-app-card";
 import { ConnectGitHub } from "@/components/github-connect";
 import { GitHubIcon } from "@/components/icons";
+import { Notice } from "@/components/notice";
 import { useOrg } from "@/components/org-context";
 import { PageHeader, SectionHeader } from "@/components/page-header";
 import { useSession } from "@/components/session-context";
@@ -75,7 +76,7 @@ export default function GitProviders() {
           },
         ];
 
-  const github = providers?.[0];
+  const _github = providers?.[0];
   const columns: Column<Provider>[] = [
     {
       id: "provider",
@@ -91,7 +92,7 @@ export default function GitProviders() {
     {
       id: "accounts",
       header: "Accounts",
-      width: 46,
+      width: 40,
       cell: (p) =>
         p.accounts.length > 0 ? (
           <span className="font-mono text-xs" title={p.accounts.join("\n")}>
@@ -110,10 +111,13 @@ export default function GitProviders() {
     {
       id: "actions",
       header: "",
-      width: 14,
+      width: 20,
       align: "right",
+      // Connecting acts on this provider, so it belongs on this
+      // provider's row — not in the page header, which is where the
+      // page's own actions go and where it read as "connect something".
       cell: (p) =>
-        p.connected && (
+        p.connected ? (
           <div className="flex items-center justify-end gap-2">
             {p.configureURL && (
               <Button
@@ -139,6 +143,14 @@ export default function GitProviders() {
               <Trash2Icon className="size-3.5" />
             </Button>
           </div>
+        ) : (
+          <div className="flex justify-end">
+            <ConnectGitHub
+              settings={settings.data}
+              instanceName={settings.data?.domain ?? ""}
+              size="sm"
+            />
+          </div>
         ),
     },
   ];
@@ -148,24 +160,6 @@ export default function GitProviders() {
       <PageHeader
         title="Git Providers"
         sub="Where this organization's code is read from. A connection lets Cubeship clone private repositories and deploy on a push to them."
-        actions={
-          org &&
-          github &&
-          (github.connected ? (
-            <Button
-              variant="outline"
-              nativeButton={false}
-              render={
-                <a href={github.configureURL} target="_blank" rel="noreferrer noopener">
-                  <ExternalLinkIcon />
-                  Configure on GitHub
-                </a>
-              }
-            />
-          ) : (
-            <ConnectGitHub settings={settings.data} instanceName={settings.data?.domain ?? ""} />
-          ))
-        }
       />
 
       <ErrorAlert error={connections.error ? message(connections.error) : null} />
@@ -177,6 +171,36 @@ export default function GitProviders() {
             from the switcher at the top of the sidebar.
           </CardContent>
         </Card>
+      )}
+
+      {/* An App registered before Cubeship asked for OAuth on install
+          was registered private too, and a private GitHub App installs
+          only on the account that owns it — which is why the install
+          page offers no organizations. Neither can be changed after the
+          fact, so the only thing that helps is a new App. */}
+      {org && settings.data?.github_connected && settings.data?.github_oauth_ready === false && (
+        <Notice tone="warning">
+          This instance&apos;s GitHub App was registered before Cubeship could install on
+          organizations, so GitHub only offers your personal account. It cannot be changed — an App
+          is public or private from the moment it is created — so connecting again below registers a
+          new one.
+          {settings.data.github_app_slug && (
+            <>
+              {" "}
+              Delete the old one from{" "}
+              <a
+                href={`https://github.com/settings/apps/${settings.data.github_app_slug}/advanced`}
+                target="_blank"
+                rel="noreferrer noopener"
+                className="text-foreground underline underline-offset-4"
+              >
+                its settings on GitHub
+              </a>{" "}
+              first, or the new one will need a different name — GitHub App names are unique across
+              all of GitHub.
+            </>
+          )}
+        </Notice>
       )}
 
       {org && (

@@ -20,7 +20,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"tls_enabled":          openapi.Bool("Whether certificates can be issued, which needs both a domain and a contact address. While false, apps are served over plain HTTP."),
 				"github_app_slug":      openapi.String("The GitHub App this instance acts as. Absent until one is registered."),
 				"github_connected":     openapi.Bool("Whether the GitHub App's credentials are present. The credentials themselves are never returned — an endpoint that handed a private key back would turn every read of this into a way out for it."),
-			}, "domain", "acme_email", "tls_enabled", "github_connected", "public_ip_configured"),
+				"github_oauth_ready":   openapi.Bool("Whether the registered App can be installed anywhere but the account that owns it. An App from before Cubeship asked for OAuth on install was also registered private, and a private GitHub App reaches only its owner's account — so false here means it has to be replaced, not fixed."),
+			}, "domain", "acme_email", "tls_enabled", "github_connected", "github_oauth_ready", "public_ip_configured"),
 		},
 		Paths: map[string]openapi.PathItem{
 			"/settings": {
