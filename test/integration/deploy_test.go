@@ -21,15 +21,18 @@
 // certificate has to exist for a deploy to happen. Only the final
 // HTTPS-through-Traefik assertion needs Linux.
 //
-// CONFIRMED on Docker Desktop for Mac (2026-09-03, after the fix wave that
-// added registry auth and moved pulls to loopback): the daemon starts, the
-// registry and Traefik bootstrap, `docker login` + `docker push` to
-// localhost:5000 succeed against the now-required htpasswd auth, the
-// registry's push notification fires the webhook, and the daemon pulls and
-// deploys the app successfully — the test gets all the way to and fails
-// only at the final "app reachable via Traefik" assertion, exactly the
-// --network host limitation described above and nothing earlier. Re-verify
-// this note if the deploy pipeline changes again.
+// CONFIRMED on Docker Desktop for Mac (2026-09-04, after the orgs/users/
+// API-key auth plan's fix wave separated the super-admin's API key from
+// the registry/webhook token): the daemon starts, bootstraps a super-admin
+// with its own key (no longer CUBESHIP_TOKEN), the registry and Traefik
+// bootstrap, org creation, org-scoped app creation, `docker login` +
+// `docker push` to localhost:5000/<org>/<app> succeed against the
+// htpasswd auth, the registry's push notification fires the webhook, and
+// the daemon pulls and deploys the app successfully — the test gets all
+// the way to and fails only at the final "app reachable via Traefik"
+// assertion, exactly the --network host limitation described above and
+// nothing earlier. Re-verify this note if the deploy pipeline or the
+// auth/credential model changes again.
 package integration
 
 import (
