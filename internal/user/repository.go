@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"cubeship/internal/platform/database"
 )
@@ -166,4 +167,108 @@ func (r *Repository) TouchAPIKeyLastUsed(ctx context.Context, keyHash string) er
 		return fmt.Errorf("touch api key: %w", err)
 	}
 	return nil
+}
+
+// --- passwords ---
+
+// SetPassword stores an already-hashed password. The hashing happens in
+// the service; a repository must never be handed a plaintext one.
+func (r *Repository) SetPassword(ctx context.Context, userID int64, hash string) error {
+	if _, err := r.q.ExecContext(ctx,
+		`UPDATE users SET password_hash = $1 WHERE id = $2`, hash, userID); err != nil {
+		return fmt.Errorf("set password: %w", err)
+	}
+	return nil
+}
+
+// PasswordHash returns the stored hash for a username, and whether the
+// account has one at all. An account created by an organization admin
+// has an API key immediately and a password only once it sets one.
+func (r *Repository) PasswordHash(ctx context.Context, username string) (*User, string, error) {
+	row := r.q.QueryRowContext(ctx,
+		`SELECT `+userColumns+`, COALESCE(password_hash, '') FROM users WHERE username = $1`, username)
+
+	var u User
+	var hash string
+	if err := row.Scan(&u.ID, &u.Username, &u.IsSuperAdmin, &u.CreatedAt, &hash); err != nil {
+		return nil, "", fmt.Errorf("get user %q: %w", username, err)
+	}
+	return &u, hash, nil
+}
+
+// HasPassword reports whether an account can sign in with one.
+func (r *Repository) HasPassword(ctx context.Context, userID int64) (bool, error) {
+	var has bool
+	if err := r.q.QueryRowContext(ctx,
+		`SELECT password_hash IS NOT NULL FROM users WHERE id = $1`, userID).Scan(&has); err != nil {
+		return false, fmt.Errorf("check password: %w", err)
+	}
+	return has, nil
+}
+
+// --- sessions ---
+
+const sessionColumns = `token_hash, user_id, created_at, expires_at, last_used_at`
+
+func (r *Repository) CreateSession(ctx context.Context, tokenHash string, userID int64, expiresAt time.Time) (*Session, error) {
+	row := r.q.QueryRowContext(ctx,
+		`INSERT INTO sessions (token_hash, user_id, expires_at) VALUES ($1, $2, $3) RETURNING `+sessionColumns,
+		tokenHash, userID, expiresAt)
+
+	var s Session
+	if err := row.Scan(&s.TokenHash, &s.UserID, &s.CreatedAt, &s.ExpiresAt, &s.LastUsedAt); err != nil {
+		return nil, fmt.Errorf("create session: %w", err)
+	}
+	return &s, nil
+}
+
+// UserBySession resolves a live session to whoever holds it. An expired
+// row resolves to nothing: the deletion pass is housekeeping, not the
+// thing that makes expiry take effect.
+func (r *Repository) UserBySession(ctx context.Context, tokenHash string) (*User, error) {
+	row := r.q.QueryRowContext(ctx, `
+		SELECT u.id, u.username, u.is_super_admin, u.created_at
+		FROM sessions s
+		JOIN users u ON u.id = s.user_id
+		WHERE s.token_hash = $1 AND s.expires_at > now()`, tokenHash)
+	u, err := scanUser(row)
+	if err != nil {
+		return nil, fmt.Errorf("get user by session: %w", err)
+	}
+	return u, nil
+}
+
+func (r *Repository) TouchSession(ctx context.Context, tokenHash string) error {
+	if _, err := r.q.ExecContext(ctx,
+		`UPDATE sessions SET last_used_at = now() WHERE token_hash = $1`, tokenHash); err != nil {
+		return fmt.Errorf("touch session: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) DeleteSession(ctx context.Context, tokenHash string) error {
+	if _, err := r.q.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = $1`, tokenHash); err != nil {
+		return fmt.Errorf("delete session: %w", err)
+	}
+	return nil
+}
+
+// DeleteOtherSessions ends every session a user holds except the one
+// given. Changing a password does this: whoever knew the old one should
+// not stay signed in.
+func (r *Repository) DeleteOtherSessions(ctx context.Context, userID int64, keepTokenHash string) error {
+	if _, err := r.q.ExecContext(ctx,
+		`DELETE FROM sessions WHERE user_id = $1 AND token_hash <> $2`, userID, keepTokenHash); err != nil {
+		return fmt.Errorf("delete other sessions: %w", err)
+	}
+	return nil
+}
+
+// DeleteExpiredSessions removes rows nobody can use any more.
+func (r *Repository) DeleteExpiredSessions(ctx context.Context) (int64, error) {
+	res, err := r.q.ExecContext(ctx, `DELETE FROM sessions WHERE expires_at <= now()`)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired sessions: %w", err)
+	}
+	return res.RowsAffected()
 }

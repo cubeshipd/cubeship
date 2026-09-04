@@ -115,10 +115,13 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"GET /openapi.json",
 		"GET /users/me/api-keys",
 		"GET /v2/token",
+		"POST /auth/login",
+		"POST /auth/logout",
 		"POST /hooks/registry",
 		"POST /mcp",
 		"POST /users/me/api-key/rotate",
 		"POST /users/me/api-keys",
+		"PUT /users/me/password",
 	}
 	if got := f.Server.InternalPatterns(); !slices.Equal(got, wantInternal) {
 		t.Errorf("the internal routes changed.\n got: %v\nwant: %v", got, wantInternal)

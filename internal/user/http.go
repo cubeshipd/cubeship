@@ -31,6 +31,11 @@ func NewHandler(svc *Service) *Handler {
 // MCP client — not something anyone integrates against — so those four
 // routes are internal.
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
+	// Signing in is the one route that cannot require being signed in.
+	r.HandleInternalFunc("POST /auth/login", h.login)
+	r.HandleInternal("POST /auth/logout", auth(http.HandlerFunc(h.logout)))
+	r.HandleInternal("PUT /users/me/password", auth(http.HandlerFunc(h.setPassword)))
+
 	r.Handle("GET /users/me", auth(http.HandlerFunc(h.whoAmI)))
 	r.HandleInternal("POST /users/me/api-key/rotate", auth(http.HandlerFunc(h.rotateAPIKey)))
 	r.HandleInternal("POST /users/me/api-keys", auth(http.HandlerFunc(h.createAPIKey)))
@@ -43,8 +48,9 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 type contextKey string
 
 const (
-	userContextKey   contextKey = "cubeship-user"
-	apiKeyHashCtxKey contextKey = "cubeship-api-key-hash"
+	userContextKey    contextKey = "cubeship-user"
+	apiKeyHashCtxKey  contextKey = "cubeship-api-key-hash"
+	sessionHashCtxKey contextKey = "cubeship-session-hash"
 )
 
 // FromContext returns the authenticated caller Middleware put in ctx.
@@ -63,25 +69,87 @@ func KeyHashFromContext(ctx context.Context) string {
 	return h
 }
 
-// Middleware authenticates a bearer API key and puts the caller in the
-// request context.
+// SessionHashFromContext returns the hash of the session this request
+// arrived on, or "" when it authenticated with an API key. Changing a
+// password uses it to end every session except this one.
+func SessionHashFromContext(ctx context.Context) string {
+	h, _ := ctx.Value(sessionHashCtxKey).(string)
+	return h
+}
+
+// Middleware authenticates a request and puts the caller in its context.
+//
+// Two credentials reach the same place. An API key is what a CLI or an
+// MCP client carries; a session cookie is what a browser carries. The
+// header is tried first because it is explicit — a request that sends
+// both meant the key.
 func (h *Handler) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		const prefix = "Bearer "
-		authHeader := r.Header.Get("Authorization")
-		if !strings.HasPrefix(authHeader, prefix) {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
+
+		if authHeader := r.Header.Get("Authorization"); strings.HasPrefix(authHeader, prefix) {
+			u, keyHash, err := h.svc.Authenticate(r.Context(), strings.TrimPrefix(authHeader, prefix))
+			if err != nil {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			ctx := context.WithValue(r.Context(), userContextKey, u)
+			ctx = context.WithValue(ctx, apiKeyHashCtxKey, keyHash)
+			next.ServeHTTP(w, r.WithContext(ctx))
 			return
 		}
-		u, keyHash, err := h.svc.Authenticate(r.Context(), strings.TrimPrefix(authHeader, prefix))
+
+		cookie, err := r.Cookie(SessionCookieName)
 		if err != nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		u, sessionHash, err := h.svc.AuthenticateSession(r.Context(), cookie.Value)
+		if err != nil {
+			// The cookie is stale. Clear it, so a browser holding an
+			// expired session stops sending it on every request.
+			http.SetCookie(w, h.sessionCookie(r, "", -1))
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
 		ctx := context.WithValue(r.Context(), userContextKey, u)
-		ctx = context.WithValue(ctx, apiKeyHashCtxKey, keyHash)
+		ctx = context.WithValue(ctx, sessionHashCtxKey, sessionHash)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// sessionCookie builds the cookie carrying a session token.
+//
+// HttpOnly keeps it out of reach of any script on the page. SameSite=Lax
+// is what stands in for CSRF tokens: a cross-site POST does not carry
+// the cookie, so a form on another site cannot act as the signed-in
+// user, while an ordinary top-level navigation still works.
+//
+// Secure follows the request rather than being hard-coded. A fresh
+// install is reached at http://<ip>:3000 with no certificate, and a
+// Secure cookie there would simply never be sent — the sign-in would
+// appear to succeed and nothing would stay signed in.
+func (h *Handler) sessionCookie(r *http.Request, token string, maxAge int) *http.Cookie {
+	return &http.Cookie{
+		Name:     SessionCookieName,
+		Value:    token,
+		Path:     "/",
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   overTLS(r),
+	}
+}
+
+// overTLS reports whether the client spoke HTTPS, honouring the
+// forwarded header Traefik sets — the daemon itself is always reached
+// over plain HTTP from behind it.
+func overTLS(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	forwarded := r.Header.Get("X-Forwarded-Proto")
+	return strings.EqualFold(strings.TrimSpace(strings.Split(forwarded, ",")[0]), "https")
 }
 
 // --- responses ---
@@ -111,6 +179,72 @@ func toAPIKeyResponses(keys []*APIKey, currentHash string) []APIKeyResponse {
 		})
 	}
 	return out
+}
+
+// --- signing in ---
+
+func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+
+	token, session, err := h.svc.Login(r.Context(), req.Username, req.Password)
+	if err != nil {
+		// Deliberately the same answer for an unknown username and a
+		// wrong password.
+		http.Error(w, ErrInvalidCredentials.Error(), http.StatusUnauthorized)
+		return
+	}
+
+	http.SetCookie(w, h.sessionCookie(r, token, int(SessionLifetime.Seconds())))
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"expires_at": session.ExpiresAt,
+	})
+}
+
+func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie(SessionCookieName); err == nil {
+		if err := h.svc.Logout(r.Context(), cookie.Value); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+	}
+	http.SetCookie(w, h.sessionCookie(r, "", -1))
+	w.WriteHeader(http.StatusOK)
+}
+
+// setPassword sets or changes the caller's own. An account that already
+// has a password must prove it knows it; one that has none is setting
+// its first, and the API key it authenticated with is the proof.
+func (h *Handler) setPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil || req.NewPassword == "" {
+		http.Error(w, "new_password is required", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	err := h.svc.SetPassword(ctx, FromContext(ctx), SessionHashFromContext(ctx), req.CurrentPassword, req.NewPassword)
+	switch {
+	case err == nil:
+		w.WriteHeader(http.StatusOK)
+	case errors.Is(err, ErrUnauthenticated):
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	case errors.Is(err, ErrInvalidCredentials):
+		http.Error(w, "the current password is wrong", http.StatusForbidden)
+	case errors.Is(err, ErrPasswordTooShort):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	default:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 // --- handlers ---

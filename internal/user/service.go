@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"time"
 
 	"cubeship/internal/platform/authkey"
 	"cubeship/internal/platform/database"
@@ -167,3 +168,126 @@ func (s *Service) CreateWithAPIKey(ctx context.Context, q database.Queryer, user
 // DB exposes the connection pool for a module that has to open a
 // transaction spanning users and its own tables.
 func (s *Service) DB() *database.DB { return s.db }
+
+// --- signing in ---
+
+// Login verifies a username and password and starts a session, returning
+// the token the browser carries and the session it belongs to.
+//
+// Every failure is ErrInvalidCredentials, and an unknown username still
+// pays for a hash verification: the response must not say — in its text
+// or in its timing — whether an account exists.
+func (s *Service) Login(ctx context.Context, username, password string) (string, *Session, error) {
+	u, hash, err := s.Repo().PasswordHash(ctx, username)
+	if err != nil {
+		// No such account. Verify against a fixed hash anyway so this
+		// costs what a real attempt costs.
+		VerifyPassword(dummyHash, password)
+		return "", nil, ErrInvalidCredentials
+	}
+	if hash == "" {
+		// The account exists but has no password — it was created with
+		// an API key and has never set one. Same answer.
+		VerifyPassword(dummyHash, password)
+		return "", nil, ErrInvalidCredentials
+	}
+	if !VerifyPassword(hash, password) {
+		return "", nil, ErrInvalidCredentials
+	}
+
+	token, err := authkey.Generate()
+	if err != nil {
+		return "", nil, err
+	}
+	session, err := s.Repo().CreateSession(ctx, authkey.Hash(token), u.ID, time.Now().Add(SessionLifetime))
+	if err != nil {
+		return "", nil, err
+	}
+	return token, session, nil
+}
+
+// Logout ends one session. A token that matches nothing is not an error:
+// the caller wanted to be signed out, and they are.
+func (s *Service) Logout(ctx context.Context, token string) error {
+	if token == "" {
+		return nil
+	}
+	return s.Repo().DeleteSession(ctx, authkey.Hash(token))
+}
+
+// AuthenticateSession resolves a session token to whoever holds it, and
+// records the session as used.
+func (s *Service) AuthenticateSession(ctx context.Context, token string) (*User, string, error) {
+	tokenHash := authkey.Hash(token)
+	u, err := s.Repo().UserBySession(ctx, tokenHash)
+	if err != nil {
+		return nil, "", ErrNoSession
+	}
+	// Best effort, like the API key's: a caller whose last_used_at could
+	// not be written is still signed in.
+	_ = s.Repo().TouchSession(ctx, tokenHash)
+	return u, tokenHash, nil
+}
+
+// SetPassword sets or changes the caller's own password.
+//
+// An account that already has one must prove it knows it — otherwise a
+// stolen session, or a borrowed terminal, would be enough to lock the
+// owner out. An account that has none is setting its first, and the API
+// key it authenticated with is the proof.
+//
+// Every other session the account holds ends: whoever knew the old
+// password should not stay signed in.
+func (s *Service) SetPassword(ctx context.Context, u *User, currentSessionHash, current, next string) error {
+	if u == nil {
+		return ErrUnauthenticated
+	}
+
+	_, existing, err := s.Repo().PasswordHash(ctx, u.Username)
+	if err != nil {
+		return err
+	}
+	if existing != "" && !VerifyPassword(existing, current) {
+		return ErrInvalidCredentials
+	}
+
+	hash, err := HashPassword(next)
+	if err != nil {
+		return err
+	}
+	return s.db.WithTx(ctx, func(tx database.Queryer) error {
+		repo := NewRepository(tx)
+		if err := repo.SetPassword(ctx, u.ID, hash); err != nil {
+			return err
+		}
+		return repo.DeleteOtherSessions(ctx, u.ID, currentSessionHash)
+	})
+}
+
+// CreateWithPassword creates a user who can sign in immediately, for the
+// first account on an instance and for one an organization admin invites
+// with a password already chosen.
+func (s *Service) CreateWithPassword(ctx context.Context, q database.Queryer, username, password string, isSuperAdmin bool) (*User, string, error) {
+	// Hash before inserting: a password too short to accept should not
+	// leave a user row behind.
+	hash, err := HashPassword(password)
+	if err != nil {
+		return nil, "", err
+	}
+
+	repo := NewRepository(q)
+	u, key, err := s.CreateWithAPIKey(ctx, q, username, isSuperAdmin)
+	if err != nil {
+		return nil, "", err
+	}
+	if err := repo.SetPassword(ctx, u.ID, hash); err != nil {
+		return nil, "", err
+	}
+	return u, key, nil
+}
+
+// PurgeExpiredSessions deletes rows nobody can use. Expiry already takes
+// effect at lookup; this only stops the table growing forever.
+func (s *Service) PurgeExpiredSessions(ctx context.Context) (int64, error) {
+	return s.Repo().DeleteExpiredSessions(ctx)
+}

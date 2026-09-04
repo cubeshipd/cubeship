@@ -13,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"testing"
 
@@ -167,10 +168,48 @@ func (f *Fixture) AddMember(t testing.TB, username string, role org.Role) (*user
 	return u, key
 }
 
+// Login signs in through the real endpoint and returns the session
+// cookie, for a test that wants to act as a browser rather than as a CLI.
+func (f *Fixture) Login(t testing.TB, username, password string) *http.Cookie {
+	t.Helper()
+
+	rec := f.Do(t, http.MethodPost, "/auth/login",
+		map[string]string{"username": username, "password": password}, "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("sign in as %q: %d %s", username, rec.Code, rec.Body.String())
+	}
+	for _, cookie := range rec.Result().Cookies() {
+		if cookie.Name == user.SessionCookieName {
+			return cookie
+		}
+	}
+	t.Fatalf("no %s cookie in the sign-in response", user.SessionCookieName)
+	return nil
+}
+
+// DoAs sends a request carrying a session cookie instead of an API key.
+func (f *Fixture) DoAs(t testing.TB, method, path string, body any, session *http.Cookie) *httptest.ResponseRecorder {
+	t.Helper()
+	req := f.request(t, method, path, body, "")
+	if session != nil {
+		req.AddCookie(session)
+	}
+	rec := httptest.NewRecorder()
+	f.Server.Router().ServeHTTP(rec, req)
+	return rec
+}
+
 // Do sends an authenticated request through the server's router and
 // returns the recorded response. body may be nil, a []byte, or any value
 // to be JSON-encoded.
 func (f *Fixture) Do(t testing.TB, method, path string, body any, apiKey string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	f.Server.Router().ServeHTTP(rec, f.request(t, method, path, body, apiKey))
+	return rec
+}
+
+func (f *Fixture) request(t testing.TB, method, path string, body any, apiKey string) *http.Request {
 	t.Helper()
 	var reader io.Reader
 	switch b := body.(type) {
@@ -190,10 +229,7 @@ func (f *Fixture) Do(t testing.TB, method, path string, body any, apiKey string)
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
 	req.Header.Set("Content-Type", "application/json")
-
-	rec := httptest.NewRecorder()
-	f.Server.Router().ServeHTTP(rec, req)
-	return rec
+	return req
 }
 
 // DoJSON is Do plus decoding a successful response body into out.

@@ -158,6 +158,35 @@ is unique only within its environment.
 validates every part as a slug, so a malformed reference can never reach
 a registry path or a router name.
 
+## Authentication
+
+Two credentials reach the same middleware. An **API key** is what a CLI
+or an MCP client carries in `Authorization: Bearer`; a **session cookie**
+is what a browser carries. The header is tried first, so a request
+sending both meant the key.
+
+Sessions are rows, not signed cookies, because they have to be revocable:
+logging out ends one, and changing a password ends every other one the
+account holds. Only the token's hash is stored, like an API key's.
+
+**Two hashes, and the difference is not cosmetic.** API keys and session
+tokens are 32 bytes of randomness, so `authkey.Hash` (SHA-256) is right —
+guessing them is hopeless whatever the hash costs. Passwords are chosen
+by people, so they go through Argon2id with the parameters recorded
+alongside each hash. Never hash a password with `authkey.Hash`.
+
+The session cookie's `Secure` flag follows the request rather than being
+hard-coded: a fresh install is reached at `http://<ip>:3000`, and a
+Secure cookie there is simply never sent back — the sign-in would appear
+to work and nothing would stay signed in. `SameSite=Lax` is what stands
+in for CSRF tokens.
+
+An account can exist with no password. One an organization admin creates
+gets an API key immediately and a password only when it sets one, which
+is why every sign-in failure — unknown username, wrong password, no
+password at all — is the same answer, and why an unknown username still
+pays for a hash verification.
+
 ## Instance settings
 
 The domain and the Let's Encrypt contact address are rows in `settings`,

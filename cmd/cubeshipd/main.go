@@ -262,6 +262,36 @@ func applyInfrastructure(ctx context.Context, cfg *config.Config, docker *docker
 	return nil
 }
 
+// sessionPurgeInterval is how often expired sessions are swept up.
+// Expiry already takes effect at lookup — a session past its date
+// resolves to nobody — so this is only housekeeping, and an hour is
+// often enough to stop the table growing without being work anyone
+// notices.
+const sessionPurgeInterval = time.Hour
+
+func purgeExpiredSessions(ctx context.Context, users *user.Service) {
+	ticker := time.NewTicker(sessionPurgeInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			n, err := users.PurgeExpiredSessions(ctx)
+			if err != nil {
+				// Nothing is broken for anyone: expired sessions are
+				// already rejected. Say so and try again next hour.
+				log.Printf("could not purge expired sessions: %v", err)
+				continue
+			}
+			if n > 0 {
+				log.Printf("purged %d expired session(s)", n)
+			}
+		}
+	}
+}
+
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -358,6 +388,8 @@ func run() error {
 	}
 
 	srv.SetRegistrySigningKey(registrySigningKey)
+
+	go purgeExpiredSessions(ctx, srv.Users)
 
 	log.Printf("cubeshipd listening on %s", listenAddr)
 	if !current.HasDomain() {

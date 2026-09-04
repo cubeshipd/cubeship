@@ -119,6 +119,26 @@ cubeship app env unset acme/web/myapp OLD_FLAG
 `cubeship --help` covers the rest: users and roles, extra environments,
 logs, manual redeploys, additional API keys.
 
+## Signing in
+
+The API takes two credentials. A key is what the CLI and MCP clients
+use; a session is what a browser uses.
+
+```sh
+curl -X POST https://api.example.com/auth/login \
+  -c cookies.txt -d '{"username":"admin","password":"..."}'
+```
+
+An account created by an organization admin has a key but no password
+until it sets one, and cannot sign in before then:
+
+```sh
+curl -X PUT https://api.example.com/users/me/password \
+  -H "Authorization: Bearer $KEY" -d '{"new_password":"..."}'
+```
+
+Changing a password ends every other session the account holds.
+
 ## API reference
 
 The daemon serves a browsable reference of every endpoint at
