@@ -33,13 +33,13 @@ The daemon is configured entirely through environment variables.
 | `CUBESHIP_DOMAIN` | yes | — | Base domain. The API is served at `api.<domain>` and the registry at `registry.<domain>`, both through Traefik over HTTPS. Both names must resolve to this host for certificates to issue. |
 | `CUBESHIP_ACME_EMAIL` | yes | — | Contact address Let's Encrypt registers for certificate expiry notices. |
 | `CUBESHIP_DATA_DIR` | no | `/var/lib/cubeship` | Everything persistent: the SQLite database, the daemon's tokens, the registry's config, credentials and image storage, and Traefik's `acme.json`. Back this up. |
-| `CUBESHIP_TOKEN` | no | generated | The daemon's **system** token: the registry password (username `cubeship`) and the shared secret the registry signs its push notifications with. It is not anybody's API key and grants no access to the daemon API. When unset, the daemon generates one on first start and stores it in `$CUBESHIP_DATA_DIR/token` (mode 0600), reusing it on every later start. |
+| `CUBESHIP_TOKEN` | no | generated | The daemon's **system** token: the shared secret the registry signs its push notifications with. It is not anybody's API key, grants no access to the daemon API, and is not a registry login credential — see [Organizations, users and roles](#organizations-users-and-roles) for how registry push/pull auth actually works. When unset, the daemon generates one on first start and stores it in `$CUBESHIP_DATA_DIR/token` (mode 0600), reusing it on every later start. |
 
 Neither secret is written to the log — the daemon logs a short
 fingerprint and the file path instead. To read them:
 
 ```sh
-sudo cat /var/lib/cubeship/token           # registry password / webhook secret
+sudo cat /var/lib/cubeship/token           # webhook secret only
 sudo cat /var/lib/cubeship/admin-api-key   # the super-admin's API key
 ```
 
@@ -116,17 +116,15 @@ On your machine, once per daemon:
 
 ```sh
 cubeship login https://api.example.com <your-api-key>
-cubeship registry login --password <daemon-token>
+cubeship registry login
 ```
 
-The registry credential is still instance-wide — one account
-(`cubeship`) whose password is the daemon's system token from
-`$CUBESHIP_DATA_DIR/token` — so anyone who pushes images needs that
-token as well as their own API key. It grants no access to the daemon
-API. Per-organization registry authorization is the next piece of work;
-until it lands, treat the daemon token as a shared push credential.
-With no `--password`, `cubeship registry login` sends your saved API
-key, which only works if that happens to be the daemon token.
+Registry push/pull is per-user, not a shared credential: `cubeship
+registry login` looks up your own username and logs `docker` in with
+your saved API key as the password. The registry only grants access to
+the organizations you're actually a member of — a valid login for one
+org's admin still gets rejected pushing to another org's namespace.
+Super-admins can push anywhere.
 
 Then per app:
 
@@ -179,8 +177,18 @@ Two things change for you on that first start:
 - `cubeship app create` now needs `--org`; use `--org default` for the
   organization your existing apps were adopted into, or create a new one.
 
-`cubeship registry login` is unchanged as long as you pass the daemon
-token as the password (see above).
+### Upgrading from a release with shared htpasswd registry auth
+
+If you're upgrading from a release where `cubeship registry login`
+took `--password <daemon-token>` and every push used one shared
+`cubeship` account, the registry itself needs to switch from that
+htpasswd credential to per-user token auth (see [Deploying an
+app](#deploying-an-app)). The registry container has to be recreated
+for its new config to take effect — the same `docker rm -f
+cubeship-registry` step already covered under [Upgrading the
+daemon](#upgrading-the-daemon) — and every user needs to run `cubeship
+registry login` again (no more `--password` flag; it now uses your own
+saved API key automatically).
 
 ## Tests
 
