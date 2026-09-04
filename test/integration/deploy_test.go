@@ -143,8 +143,11 @@ func TestDeployEndToEnd(t *testing.T) {
 	if err := client.CreateOrg(ctx, "acme", "Acme Inc"); err != nil {
 		t.Fatalf("CreateOrg: %v", err)
 	}
+	if _, err := client.CreateProject(ctx, "acme", "web", "Web"); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
 
-	image, err := client.CreateApp(ctx, "myapp", "myapp.localtest.me", "acme")
+	image, err := client.CreateApp(ctx, "myapp", "myapp.localtest.me", "acme", "web", "production")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}

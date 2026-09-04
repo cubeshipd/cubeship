@@ -10,8 +10,10 @@ waits for it to look healthy, and only then retires the old one, so a
 bad deploy never takes down a working app. A separate CLI (`cubeship`)
 talks to the daemon's HTTP API from your machine.
 
-Apps belong to organizations, and people get their own API keys with a
-role in each organization they belong to — see
+Apps live in an environment, inside a project, inside an organization —
+see [Projects, environments and env
+vars](#projects-environments-and-env-vars) — and people get their own API
+keys with a role in each organization they belong to — see
 [Organizations, users and roles](#organizations-users-and-roles).
 
 This repository is the core deploy engine: no Git-based builds, no web
@@ -110,6 +112,45 @@ cubeship user api-key rotate       # revoke your key, get a new one
 Slugs are what the registry paths are built from, so they must be
 lowercase letters, digits and dashes (`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`).
 
+## Projects, environments and env vars
+
+Every app lives inside an environment, which lives inside a project,
+which belongs to an organization:
+
+```
+organization → project → environment → app
+```
+
+A project is created with one environment, `production`, which can
+never be deleted. Create more environments (`staging`, `preview`, ...)
+as needed — each is an independent namespace for its apps, with its own
+domains and its own containers.
+
+Environment variables can be set at three levels, and each app inherits
+the levels above it:
+
+- **project** — shared by every environment (and every app) in the project
+- **environment** — shared by every app in that one environment
+- **app** — that app only
+
+A key set at a lower level overrides the same key set above it: an app's
+own value wins over its environment's, which wins over its project's.
+
+```sh
+# super-admin or org admin: create a project (comes with "production")
+cubeship project create "Web" --org acme --slug web
+cubeship environment create "Staging" --org acme --project web --slug staging
+
+# shared across the whole project, every environment, every app in it
+cubeship project env set web --org acme DATABASE_URL=postgres://shared
+
+# shared across every app in just this one environment
+cubeship environment env set production --org acme --project web LOG_LEVEL=info
+
+cubeship environment list --org acme --project web
+cubeship environment delete staging --org acme --project web   # refused if it has apps, or if it's "production"
+```
+
 ## Deploying an app
 
 On your machine, once per daemon:
@@ -129,14 +170,14 @@ Super-admins can push anywhere.
 Then per app:
 
 ```sh
-cubeship app create myapp --domain myapp.example.com --org acme
-# prints the push path, e.g. registry.example.com/acme/myapp
+cubeship app create myapp --domain myapp.example.com --org acme --project web
+# --env defaults to "production"; prints the push path, e.g. registry.example.com/acme/myapp
 
 docker build -t registry.example.com/acme/myapp:latest .
 docker push registry.example.com/acme/myapp:latest   # this deploys
 
 cubeship app logs myapp
-cubeship app env set myapp KEY=value
+cubeship app env set myapp KEY=value                 # this app only
 cubeship app deploy myapp --tag v2                   # manual redeploy
 ```
 
@@ -176,6 +217,16 @@ Two things change for you on that first start:
   `$CUBESHIP_DATA_DIR/admin-api-key`, which that same start creates.
 - `cubeship app create` now needs `--org`; use `--org default` for the
   organization your existing apps were adopted into, or create a new one.
+
+### Upgrading from a release without projects and environments
+
+The first start on an existing database migrates it: every app not
+already in a project is adopted into one created for its organization
+with the slug `default`, in that project's `production` environment.
+Nothing is redeployed and no image path changes. New apps need
+`--project` (see [Projects, environments and env
+vars](#projects-environments-and-env-vars)); use `--project default` for
+the project your existing apps were adopted into, or create a new one.
 
 ### Upgrading from a release with shared htpasswd registry auth
 
