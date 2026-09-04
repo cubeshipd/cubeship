@@ -14,11 +14,18 @@ import (
 	"cubeship/internal/store"
 )
 
+// testProjectSlug is the project newTestServer creates in "acme" for
+// every test, so a test that needs a project to create an app in can
+// reference this literal slug instead of plumbing the *store.Project
+// through every call site.
+const testProjectSlug = "default"
+
 // newTestServer returns a server backed by a fresh in-memory store, an
-// organization "acme", and an API key for a super-admin user — enough
-// for tests that don't care about role boundaries. Tests that DO care
-// about roles create their own additional users/memberships against
-// srv.store directly.
+// organization "acme" (with a "default" project — see testProjectSlug —
+// and its "production" environment), and an API key for a super-admin
+// user — enough for tests that don't care about role boundaries. Tests
+// that DO care about roles create their own additional users/memberships
+// against srv.store directly.
 func newTestServer(t *testing.T) (*Server, string, *store.Organization) {
 	t.Helper()
 	s, err := store.Open(":memory:")
@@ -31,6 +38,9 @@ func newTestServer(t *testing.T) (*Server, string, *store.Organization) {
 	org, err := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
+	}
+	if _, _, err := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, testProjectSlug, "Default"); err != nil {
+		t.Fatalf("CreateProjectWithDefaultEnvironment: %v", err)
 	}
 	user, err := s.CreateUser(ctx, "test-admin", true)
 	if err != nil {
@@ -91,7 +101,7 @@ func testAPIKeyForExistingUser(t *testing.T, s *store.Store, userID int64) strin
 
 func TestCreateAppReturnsImagePath(t *testing.T) {
 	srv, key, org := newTestServer(t)
-	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug})
+	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug, "project": testProjectSlug})
 	req := authedRequest(http.MethodPost, "/apps", body, key)
 	rec := httptest.NewRecorder()
 
@@ -124,7 +134,7 @@ func TestCreateAppMissingFields(t *testing.T) {
 
 func TestCreateAppUnknownOrg(t *testing.T) {
 	srv, key, _ := newTestServer(t)
-	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": "no-such-org"})
+	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": "no-such-org", "project": testProjectSlug})
 	req := authedRequest(http.MethodPost, "/apps", body, key)
 	rec := httptest.NewRecorder()
 
@@ -142,7 +152,7 @@ func TestCreateAppRequiresMembership(t *testing.T) {
 	outsiderKey, _ := authkey.Generate()
 	srv.store.CreateAPIKey(ctx, outsider.ID, authkey.Hash(outsiderKey))
 
-	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug})
+	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug, "project": testProjectSlug})
 	req := authedRequest(http.MethodPost, "/apps", body, outsiderKey)
 	rec := httptest.NewRecorder()
 
@@ -155,7 +165,7 @@ func TestCreateAppRequiresMembership(t *testing.T) {
 
 func TestCreateAppDuplicateName(t *testing.T) {
 	srv, key, org := newTestServer(t)
-	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug})
+	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug, "project": testProjectSlug})
 
 	rec1 := httptest.NewRecorder()
 	srv.Router().ServeHTTP(rec1, authedRequest(http.MethodPost, "/apps", body, key))
@@ -172,7 +182,7 @@ func TestCreateAppDuplicateName(t *testing.T) {
 
 func TestListAndGetApp(t *testing.T) {
 	srv, key, org := newTestServer(t)
-	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug})
+	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug, "project": testProjectSlug})
 	srv.Router().ServeHTTP(httptest.NewRecorder(), authedRequest(http.MethodPost, "/apps", body, key))
 
 	listRec := httptest.NewRecorder()
@@ -201,7 +211,7 @@ func TestListAndGetApp(t *testing.T) {
 
 func TestGetAppHidesAppsFromOtherOrgs(t *testing.T) {
 	srv, key, org := newTestServer(t)
-	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug})
+	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug, "project": testProjectSlug})
 	srv.Router().ServeHTTP(httptest.NewRecorder(), authedRequest(http.MethodPost, "/apps", body, key))
 
 	ctx := context.Background()

@@ -16,7 +16,8 @@ func TestManualDeployEndpoint(t *testing.T) {
 	t.Cleanup(func() { s.Close() })
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/acme/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/acme/myapp")
 	key := testAPIKeyFor(t, s, true)
 
 	docker := &webhookFakeDocker{running: true}
@@ -43,7 +44,8 @@ func TestManualDeployDefaultsToLatestTag(t *testing.T) {
 	t.Cleanup(func() { s.Close() })
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/acme/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/acme/myapp")
 	key := testAPIKeyFor(t, s, true)
 
 	docker := &webhookFakeDocker{running: true}
@@ -66,7 +68,8 @@ func TestSetEnvEndpoint(t *testing.T) {
 	t.Cleanup(func() { s.Close() })
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/acme/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/acme/myapp")
 	key := testAPIKeyFor(t, s, true)
 
 	srv := NewServer(s, deploy.New(s, &webhookFakeDocker{}), "webhook-secret", "registry.example.com")
@@ -106,7 +109,8 @@ func TestManualDeployHidesAppFromOtherOrgs(t *testing.T) {
 	t.Cleanup(func() { s.Close() })
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/acme/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/acme/myapp")
 	outsiderKey := testAPIKeyFor(t, s, false)
 
 	srv := NewServer(s, deploy.New(s, &webhookFakeDocker{}), "webhook-secret", "registry.example.com")

@@ -113,7 +113,8 @@ func TestRegistryWebhookTriggersDeployForMatchedApp(t *testing.T) {
 	srv, s := newWebhookTestServer(t, docker)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	rec := httptest.NewRecorder()
 	srv.Router().ServeHTTP(rec, webhookRequest(registryNotificationPayload))
@@ -159,7 +160,8 @@ func TestRegistryWebhookRejectsMissingToken(t *testing.T) {
 	docker := &webhookFakeDocker{running: true}
 	srv, s := newWebhookTestServer(t, docker)
 	org, _ := s.CreateOrganization(context.Background(), "acme", "Acme Inc")
-	s.CreateApp(context.Background(), org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(context.Background(), org.ID, "default", "Default")
+	s.CreateApp(context.Background(), org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	req := httptest.NewRequest(http.MethodPost, "/hooks/registry", bytes.NewReader([]byte(registryNotificationPayload)))
 	// deliberately no Authorization header, as a forged notification
@@ -180,7 +182,8 @@ func TestRegistryWebhookRejectsWrongToken(t *testing.T) {
 	docker := &webhookFakeDocker{running: true}
 	srv, s := newWebhookTestServer(t, docker)
 	org, _ := s.CreateOrganization(context.Background(), "acme", "Acme Inc")
-	s.CreateApp(context.Background(), org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(context.Background(), org.ID, "default", "Default")
+	s.CreateApp(context.Background(), org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	req := httptest.NewRequest(http.MethodPost, "/hooks/registry", bytes.NewReader([]byte(registryNotificationPayload)))
 	req.Header.Set("Authorization", "Bearer nope")
@@ -205,7 +208,8 @@ func TestRegistryWebhookAcksBeforeDeployFinishes(t *testing.T) {
 	srv, s := newWebhookTestServer(t, docker)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	reqCtx, cancelReq := context.WithCancel(context.Background())
 	req := webhookRequest(registryNotificationPayload).WithContext(reqCtx)
@@ -247,7 +251,8 @@ func TestRegistryWebhookConcurrentNotificationsDoNotRace(t *testing.T) {
 	}
 	t.Cleanup(func() { s.Close() })
 	org, _ := s.CreateOrganization(context.Background(), "acme", "Acme Inc")
-	s.CreateApp(context.Background(), org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(context.Background(), org.ID, "default", "Default")
+	s.CreateApp(context.Background(), org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	orch := deploy.New(s, docker)
 	orch.HealthCheckAttempts = 3

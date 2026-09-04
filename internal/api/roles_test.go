@@ -38,10 +38,18 @@ func newTwoOrgFixture(t *testing.T, docker *webhookFakeDocker) (*Server, twoOrgF
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
-	if _, err := s.CreateApp(ctx, acme.ID, "acmeapp", "acmeapp.example.com", "registry.example.com/acme/acmeapp"); err != nil {
+	acmeProject, acmeEnv, err := s.CreateProjectWithDefaultEnvironment(ctx, acme.ID, "default", "Default")
+	if err != nil {
+		t.Fatalf("CreateProjectWithDefaultEnvironment: %v", err)
+	}
+	globexProject, globexEnv, err := s.CreateProjectWithDefaultEnvironment(ctx, globex.ID, "default", "Default")
+	if err != nil {
+		t.Fatalf("CreateProjectWithDefaultEnvironment: %v", err)
+	}
+	if _, err := s.CreateApp(ctx, acme.ID, acmeProject.ID, acmeEnv.ID, "acmeapp", "acmeapp.example.com", "registry.example.com/acme/acmeapp"); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
-	if _, err := s.CreateApp(ctx, globex.ID, "globexapp", "globexapp.example.com", "registry.example.com/globex/globexapp"); err != nil {
+	if _, err := s.CreateApp(ctx, globex.ID, globexProject.ID, globexEnv.ID, "globexapp", "globexapp.example.com", "registry.example.com/globex/globexapp"); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 

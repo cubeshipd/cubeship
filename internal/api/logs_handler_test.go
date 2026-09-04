@@ -15,7 +15,8 @@ func TestGetLogsStreamsContainerOutput(t *testing.T) {
 	t.Cleanup(func() { s.Close() })
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/acme/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	app, _ := s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/acme/myapp")
 	s.UpdateAppContainer(ctx, app.ID, "container-1", "running")
 	key := testAPIKeyFor(t, s, true)
 
@@ -44,7 +45,8 @@ func TestGetLogsBeforeFirstDeploy(t *testing.T) {
 	t.Cleanup(func() { s.Close() })
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/acme/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/acme/myapp")
 	key := testAPIKeyFor(t, s, true)
 
 	srv := NewServer(s, deploy.New(s, &webhookFakeDocker{}), "webhook-secret", "registry.example.com")
