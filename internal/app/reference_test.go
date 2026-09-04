@@ -128,3 +128,74 @@ func TestReferenceIsTheRegistryPath(t *testing.T) {
 		t.Errorf("image is %q", got)
 	}
 }
+
+// Every app declares where its image comes from. Today there is one
+// answer, and the discriminator exists so adding another is a new case
+// rather than a new special case scattered through the deploy path.
+func TestAppsCarryTheirSource(t *testing.T) {
+	f := servertest.New(t)
+
+	var created struct {
+		Reference string `json:"reference"`
+		Source    string `json:"source"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
+		"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
+	}, f.AdminKey, &created), http.StatusCreated)
+
+	if created.Source != string(app.SourceRegistry) {
+		t.Errorf("source defaulted to %q, want %q", created.Source, app.SourceRegistry)
+	}
+
+	// Naming it explicitly is the same thing.
+	var explicit struct {
+		Source string `json:"source"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
+		"name": "other", "domain": "other.example.com", "org": "acme", "project": "web",
+		"source": "registry",
+	}, f.AdminKey, &explicit), http.StatusCreated)
+	if explicit.Source != "registry" {
+		t.Errorf("source is %q", explicit.Source)
+	}
+}
+
+// A source the daemon cannot act on must be refused at creation.
+// Accepting one would let someone create an app that can never deploy,
+// and only find out later.
+func TestUnsupportedSourceIsRefused(t *testing.T) {
+	f := servertest.New(t)
+
+	for _, source := range []string{"git", "external", "ftp", "REGISTRY"} {
+		rec := f.Do(t, http.MethodPost, "/apps", map[string]string{
+			"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
+			"source": source,
+		}, f.AdminKey)
+		servertest.RequireStatus(t, rec, http.StatusBadRequest)
+	}
+}
+
+// The source is asked whether a deploy is possible before one is
+// recorded, so a misconfiguration is a refusal the caller sees rather
+// than a deployment that fails on its own later.
+func TestDeployIsRefusedBeforeItStartsWhenTheSourceCannotProduceAnImage(t *testing.T) {
+	f := servertest.NewUnconfigured(t)
+
+	var created struct {
+		Reference string `json:"reference"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
+		"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
+	}, f.AdminKey, &created), http.StatusCreated)
+
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost,
+		"/apps/"+created.Reference+"/deploy", nil, f.AdminKey), http.StatusConflict)
+
+	// And nothing was recorded: a refused deploy is not a failed one.
+	var history []struct{ ID int64 }
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet,
+		"/apps/"+created.Reference+"/deployments", nil, f.AdminKey, &history), http.StatusOK)
+	if len(history) != 0 {
+		t.Fatalf("a refused deploy left %d deployment(s) behind", len(history))
+	}
+}

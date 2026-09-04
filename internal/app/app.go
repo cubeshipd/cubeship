@@ -28,6 +28,7 @@ type App struct {
 	EnvironmentID int64
 	Name          string
 	Domain        string
+	Source        string
 	ContainerID   string
 	Status        string
 	Env           envvar.Map

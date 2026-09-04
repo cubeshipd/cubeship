@@ -16,7 +16,7 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, org_id, project_id, environment_id, name, domain, container_id, status, env, created_at`
+const columns = `id, org_id, project_id, environment_id, name, domain, source, container_id, status, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -24,7 +24,7 @@ func scan(row scanner) (*App, error) {
 	var a App
 	var envJSON []byte
 	if err := row.Scan(&a.ID, &a.OrgID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Domain,
-		&a.ContainerID, &a.Status, &envJSON, &a.CreatedAt); err != nil {
+		&a.Source, &a.ContainerID, &a.Status, &envJSON, &a.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &a.Env); err != nil {
@@ -33,12 +33,12 @@ func scan(row scanner) (*App, error) {
 	return &a, nil
 }
 
-func (r *Repository) Create(ctx context.Context, orgID, projectID, environmentID int64, name, domain string) (*App, error) {
+func (r *Repository) Create(ctx context.Context, orgID, projectID, environmentID int64, name, domain string, source Source) (*App, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO apps (org_id, project_id, environment_id, name, domain)
-		 VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO apps (org_id, project_id, environment_id, name, domain, source)
+		 VALUES ($1, $2, $3, $4, $5, $6)
 		 RETURNING `+columns,
-		orgID, projectID, environmentID, name, domain)
+		orgID, projectID, environmentID, name, domain, string(source))
 	a, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("create app: %w", err)
@@ -153,6 +153,9 @@ func scanDeployment(row scanner) (*Deployment, error) {
 // StartDeployment records a deploy that is about to begin. The row is
 // what a caller polls afterwards, so it has to exist before any work
 // does — including before the response that hands back its id.
+//
+// imageRef is what was asked for, which for a source that builds is not
+// yet an image at all; SetDeploymentImage fills in what actually ran.
 func (r *Repository) StartDeployment(ctx context.Context, appID int64, imageRef string) (*Deployment, error) {
 	row := r.q.QueryRowContext(ctx,
 		`INSERT INTO deployments (app_id, image_ref, status) VALUES ($1, $2, $3) RETURNING `+deploymentColumns,
@@ -162,6 +165,16 @@ func (r *Repository) StartDeployment(ctx context.Context, appID int64, imageRef 
 		return nil, fmt.Errorf("start deployment: %w", err)
 	}
 	return d, nil
+}
+
+// SetDeploymentImage records the image a deploy resolved to, once the
+// source has produced one.
+func (r *Repository) SetDeploymentImage(ctx context.Context, id int64, imageRef string) error {
+	if _, err := r.q.ExecContext(ctx,
+		`UPDATE deployments SET image_ref = $1 WHERE id = $2`, imageRef, id); err != nil {
+		return fmt.Errorf("record deployment image: %w", err)
+	}
+	return nil
 }
 
 // FinishDeployment writes a deploy's outcome.
@@ -220,7 +233,7 @@ type Scoped struct {
 // matches scanScoped.
 const scopedQuery = `
 	SELECT a.id, a.org_id, a.project_id, a.environment_id, a.name, a.domain,
-	       a.container_id, a.status, a.env, a.created_at,
+	       a.source, a.container_id, a.status, a.env, a.created_at,
 	       o.slug, p.slug, e.slug
 	FROM apps a
 	JOIN organizations o ON o.id = a.org_id
@@ -231,7 +244,7 @@ func scanScoped(row scanner) (*Scoped, error) {
 	var s Scoped
 	var envJSON []byte
 	if err := row.Scan(&s.ID, &s.OrgID, &s.ProjectID, &s.EnvironmentID, &s.Name, &s.Domain,
-		&s.ContainerID, &s.Status, &envJSON, &s.CreatedAt,
+		&s.Source, &s.ContainerID, &s.Status, &envJSON, &s.CreatedAt,
 		&s.OrgSlug, &s.ProjectSlug, &s.EnvironmentSlug); err != nil {
 		return nil, err
 	}

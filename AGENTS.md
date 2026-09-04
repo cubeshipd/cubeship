@@ -199,6 +199,27 @@ HTTP reaches every app and the API without per-router labels. It does not
 interfere with certificates: ACME uses the TLS-ALPN challenge on :443,
 never the HTTP challenge on :80. Changing that would break the redirect.
 
+## Where an app's image comes from
+
+Every app carries a `source`. Today the only one is `registry` — an image
+pushed to Cubeship's own registry — and a value the daemon cannot act on
+is refused at creation, because accepting one would let someone create an
+app that can never deploy.
+
+The seam is `ImageSource`, in `internal/app/source.go`, and the split is
+the point:
+
+- **`Check`** is cheap and runs before a deployment row exists, so a
+  misconfiguration is a refusal the caller sees rather than a deployment
+  that fails minutes later with nobody watching.
+- **`Resolve`** produces the image, inside the detached deploy. A source
+  that builds will build there — nobody is holding a connection open for
+  it, and the deployment row is where the outcome goes.
+
+`Orchestrator.Start` takes a tag, not an image reference: which image a
+tag names is the source's answer. `deployments.image_ref` holds what was
+asked for until `Resolve` says what actually ran.
+
 ## Deploys are detached
 
 `Orchestrator.Start` records a `deployments` row, returns it, and does

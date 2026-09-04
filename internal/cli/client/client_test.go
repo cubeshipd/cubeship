@@ -49,7 +49,7 @@ func TestClientRoundTripsTheWholeHierarchy(t *testing.T) {
 		t.Fatalf("expected only production, got %v", envs)
 	}
 
-	created, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", "")
+	created, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", "", "")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -113,11 +113,11 @@ func TestErrorsCarryTheDaemonsMessage(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	if _, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", ""); err != nil {
+	if _, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", "", ""); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 
-	_, err := c.CreateApp(ctx, "myapp", "other.example.com", "acme", "web", "")
+	_, err := c.CreateApp(ctx, "myapp", "other.example.com", "acme", "web", "", "")
 	if err == nil {
 		t.Fatal("expected the duplicate name to be refused")
 	}
@@ -230,7 +230,7 @@ func TestLogsOnAnAppThatWasNeverDeployed(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	if _, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", ""); err != nil {
+	if _, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", "", ""); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 
@@ -261,7 +261,7 @@ func TestClientMergeEnvKeepsOtherVariables(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	if _, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", ""); err != nil {
+	if _, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", "", ""); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 
@@ -340,7 +340,7 @@ func TestClientDeployReturnsADeploymentToFollow(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	created, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", "")
+	created, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", "", "")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}

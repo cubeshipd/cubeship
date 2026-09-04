@@ -81,13 +81,14 @@ type createInput struct {
 	Environment string `json:"environment,omitempty" jsonschema:"environment slug (default \"production\")"`
 	Name        string `json:"name" jsonschema:"app name: lowercase letters, digits and dashes — becomes part of its registry image path"`
 	Domain      string `json:"domain" jsonschema:"domain the app will be served on"`
+	Source      string `json:"source,omitempty" jsonschema:"where the image comes from. Only \"registry\" — an image you push to Cubeship — is supported today, and it is the default."`
 }
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
 	if in.Domain == "" {
 		return nil, Response{}, fmt.Errorf("domain is required")
 	}
-	created, err := t.svc.Create(ctx, t.caller, in.Org, in.Project, in.Environment, in.Name, in.Domain)
+	created, err := t.svc.Create(ctx, t.caller, in.Org, in.Project, in.Environment, in.Name, in.Domain, Source(in.Source))
 	if err != nil {
 		return nil, Response{}, err
 	}

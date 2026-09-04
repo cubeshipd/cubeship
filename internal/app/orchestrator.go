@@ -83,6 +83,17 @@ func (o *Orchestrator) lockApp(appID int64) *sync.Mutex {
 	return mu.(*sync.Mutex)
 }
 
+// registryHost is the public registry name, or "" while the instance has
+// no domain. It is read per call because an operator configures the
+// domain from the dashboard, without a restart.
+func (o *Orchestrator) registryHost(ctx context.Context) string {
+	values, err := o.settings.Load(ctx)
+	if err != nil {
+		return ""
+	}
+	return settings.RegistryHostFor(values.Get(settings.Domain))
+}
+
 // Start accepts a deploy and returns immediately with the deployment
 // that records it. The work runs detached, on a context of its own.
 //
@@ -92,13 +103,24 @@ func (o *Orchestrator) lockApp(appID int64) *sync.Mutex {
 // halfway, sometimes after the new container was already running. The
 // caller now polls the returned deployment instead, and can stop
 // watching whenever it likes.
-func (o *Orchestrator) Start(ctx context.Context, appID int64, imageRef string) (*Deployment, error) {
-	// Resolve first, so asking to deploy something that isn't there is
-	// an error the caller sees rather than a background failure.
-	if _, err := o.apps.ByID(ctx, appID); err != nil {
+func (o *Orchestrator) Start(ctx context.Context, appID int64, tag string) (*Deployment, error) {
+	// Look up and check the source first, so asking to deploy something
+	// that isn't there — or an app whose source cannot produce an image
+	// at all — is an error the caller sees rather than a background
+	// failure they have to go looking for.
+	a, err := o.apps.ScopedByID(ctx, appID)
+	if err != nil {
 		return nil, ErrNotFound
 	}
-	deployment, err := o.apps.StartDeployment(ctx, appID, imageRef)
+	source, err := o.sourceFor(a)
+	if err != nil {
+		return nil, err
+	}
+	if err := source.Check(ctx, a); err != nil {
+		return nil, err
+	}
+
+	deployment, err := o.apps.StartDeployment(ctx, appID, tag)
 	if err != nil {
 		return nil, err
 	}
@@ -110,7 +132,7 @@ func (o *Orchestrator) Start(ctx context.Context, appID int64, imageRef string) 
 		// be gone, and that must not matter.
 		ctx, cancel := context.WithTimeout(context.Background(), DeployTimeout)
 		defer cancel()
-		o.run(ctx, appID, imageRef, deployment.ID)
+		o.run(ctx, appID, tag, deployment.ID)
 	}()
 	return deployment, nil
 }
@@ -121,7 +143,7 @@ func (o *Orchestrator) Start(ctx context.Context, appID int64, imageRef string) 
 // unrecovered panic here would take the whole daemon down, and with it
 // every app it is proxying — a far worse outcome than one failed deploy.
 // The panic is turned into the deployment's error so it is not lost.
-func (o *Orchestrator) run(ctx context.Context, appID int64, imageRef string, deploymentID int64) {
+func (o *Orchestrator) run(ctx context.Context, appID int64, tag string, deploymentID int64) {
 	status, errMsg := DeploymentSucceeded, ""
 
 	func() {
@@ -129,12 +151,12 @@ func (o *Orchestrator) run(ctx context.Context, appID int64, imageRef string, de
 			if r := recover(); r != nil {
 				status = DeploymentFailed
 				errMsg = fmt.Sprintf("the deploy panicked: %v", r)
-				log.Printf("deploy %s for app %d panicked: %v\n%s", imageRef, appID, r, debug.Stack())
+				log.Printf("deploy of app %d panicked: %v\n%s", appID, r, debug.Stack())
 			}
 		}()
-		if err := o.deploy(ctx, appID, imageRef); err != nil {
+		if err := o.deploy(ctx, appID, tag, deploymentID); err != nil {
 			status, errMsg = DeploymentFailed, err.Error()
-			log.Printf("deploy %s for app %d failed: %v", imageRef, appID, err)
+			log.Printf("deploy of app %d failed: %v", appID, err)
 		}
 	}()
 
@@ -180,7 +202,7 @@ func (o *Orchestrator) WaitFor(ctx context.Context, appID, deploymentID int64) (
 //
 // Deploys of the same app are serialized; deploys of different apps run
 // concurrently.
-func (o *Orchestrator) deploy(ctx context.Context, appID int64, imageRef string) error {
+func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, deploymentID int64) error {
 	mu := o.lockApp(appID)
 	mu.Lock()
 	defer mu.Unlock()
@@ -191,6 +213,21 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, imageRef string)
 	}
 	ref := ReferenceOf(a)
 	appName := ref.String()
+
+	// Asking the source for an image happens here, inside the detached
+	// deploy, because a source that builds does its building here — and
+	// nobody is holding a connection open waiting for it.
+	source, err := o.sourceFor(a)
+	if err != nil {
+		return err
+	}
+	imageRef, err := source.Resolve(ctx, a, tag)
+	if err != nil {
+		return fmt.Errorf("resolve image: %w", err)
+	}
+	if err := o.apps.SetDeploymentImage(ctx, deploymentID, imageRef); err != nil {
+		log.Printf("deploy %s: could not record the resolved image: %v", appName, err)
+	}
 
 	env, err := o.inheritedEnv(ctx, &a.App)
 	if err != nil {

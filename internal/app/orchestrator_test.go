@@ -42,7 +42,7 @@ func newDeployFixture(t *testing.T, docker DockerAPI) (*Orchestrator, *database.
 		t.Fatalf("create project: %v", err)
 	}
 
-	a, err := NewRepository(db).Create(ctx, o.ID, p.ID, env.ID, "myapp", "myapp.example.com")
+	a, err := NewRepository(db).Create(ctx, o.ID, p.ID, env.ID, "myapp", "myapp.example.com", SourceRegistry)
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -69,8 +69,8 @@ func TestDeployRetiresTheOldContainerOnlyAfterTheNewOneIsHealthy(t *testing.T) {
 		t.Fatalf("seed the previous container: %v", err)
 	}
 
-	if err := orch.deploy(ctx, a.ID, "127.0.0.1:5000/acme/myapp:v2"); err != nil {
-		t.Fatalf("Deploy: %v", err)
+	if d := runDeploy(t, orch, db, a.ID, "v2"); d.Status != DeploymentSucceeded {
+		t.Fatalf("deploy ended %q: %s", d.Status, d.Error)
 	}
 
 	_, started, stopped, removed := docker.snapshot()
@@ -106,7 +106,7 @@ func TestDeployKeepsTheOldContainerWhenTheNewOneNeverBecomesHealthy(t *testing.T
 		t.Fatalf("seed the previous container: %v", err)
 	}
 
-	if err := orch.deploy(ctx, a.ID, "127.0.0.1:5000/acme/myapp:bad"); err == nil {
+	if d := runDeploy(t, orch, db, a.ID, "bad"); d.Status != DeploymentFailed {
 		t.Fatal("expected the deploy to fail when the container never becomes healthy")
 	}
 
@@ -136,11 +136,11 @@ func TestDeployRequiresConsecutiveHealthyObservations(t *testing.T) {
 		runningSeq: []bool{true, false, true, false, true, false},
 		running:    false,
 	}
-	orch, _, a := newDeployFixture(t, docker)
+	orch, db, a := newDeployFixture(t, docker)
 	orch.HealthCheckAttempts = 6
 	orch.HealthCheckSuccesses = 3
 
-	if err := orch.deploy(context.Background(), a.ID, "127.0.0.1:5000/acme/myapp:flappy"); err == nil {
+	if d := runDeploy(t, orch, db, a.ID, "flappy"); d.Status != DeploymentFailed {
 		t.Fatal("expected a flapping container to fail the health check")
 	}
 }
@@ -166,8 +166,8 @@ func TestDeployAppliesInheritedEnvInPrecedenceOrder(t *testing.T) {
 		t.Fatalf("set app env: %v", err)
 	}
 
-	if err := orch.deploy(ctx, a.ID, "127.0.0.1:5000/acme/myapp:v1"); err != nil {
-		t.Fatalf("Deploy: %v", err)
+	if d := runDeploy(t, orch, db, a.ID, "v1"); d.Status != DeploymentSucceeded {
+		t.Fatalf("deploy ended %q: %s", d.Status, d.Error)
 	}
 
 	created, _, _, _ := docker.snapshot()
@@ -185,28 +185,54 @@ func TestDeployAppliesInheritedEnvInPrecedenceOrder(t *testing.T) {
 	}
 }
 
-// A cancelled deploy must stop waiting rather than sleep through every
-// remaining health-check attempt.
-func TestDeployStopsWaitingWhenTheContextIsCancelled(t *testing.T) {
+// waitHealthy has to honour the deploy's own deadline. Nothing else
+// stops a deploy whose container never comes up from holding its lock
+// for the full run of attempts.
+func TestDeployStopsWaitingWhenItsOwnContextEnds(t *testing.T) {
 	docker := &fakeDocker{nextCreateID: "new-container", running: false}
-	orch, _, a := newDeployFixture(t, docker)
+	orch, db, a := newDeployFixture(t, docker)
 	orch.HealthCheckAttempts = 100
 	orch.HealthCheckInterval = time.Hour
+
+	deployment, err := NewRepository(db).StartDeployment(context.Background(), a.ID, "v1")
+	if err != nil {
+		t.Fatalf("record the deployment: %v", err)
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- orch.deploy(ctx, a.ID, "127.0.0.1:5000/acme/myapp:v1") }()
+	go func() { done <- orch.deploy(ctx, a.ID, "v1", deployment.ID) }()
 
 	select {
 	case err := <-done:
 		if err == nil {
-			t.Fatal("expected a cancelled deploy to fail")
+			t.Fatal("expected a deploy with a dead context to fail")
 		}
 	case <-time.After(10 * time.Second):
-		t.Fatal("a cancelled deploy kept waiting on the health check")
+		t.Fatal("the deploy kept waiting on the health check past its own deadline")
 	}
+}
+
+// runDeploy starts a deploy and waits for it, returning the finished
+// deployment — the shape every caller sees now that deploys are
+// detached.
+func runDeploy(t *testing.T, orch *Orchestrator, db *database.DB, appID int64, tag string) *Deployment {
+	t.Helper()
+	ctx := context.Background()
+
+	deployment, err := orch.Start(ctx, appID, tag)
+	if err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	orch.Wait()
+
+	finished, err := NewRepository(db).DeploymentByID(ctx, appID, deployment.ID)
+	if err != nil {
+		t.Fatalf("read the deployment back: %v", err)
+	}
+	return finished
 }
 
 // The fix for a deploy dying with the request that asked for it: Start
@@ -218,7 +244,7 @@ func TestStartDetachesTheDeployFromItsCaller(t *testing.T) {
 	// A context that is already dead. If the deploy ran on it, nothing
 	// would happen at all.
 	dead, cancel := context.WithCancel(context.Background())
-	deployment, err := orch.Start(dead, a.ID, "127.0.0.1:5000/acme/web/production/myapp:v1")
+	deployment, err := orch.Start(dead, a.ID, "v1")
 	cancel()
 	if err != nil {
 		t.Fatalf("Start: %v", err)
@@ -252,7 +278,7 @@ func TestFailedDeployRecordsWhy(t *testing.T) {
 	docker := &fakeDocker{nextCreateID: "new-container", pullErr: errors.New("manifest unknown")}
 	orch, db, a := newDeployFixture(t, docker)
 
-	deployment, err := orch.Start(context.Background(), a.ID, "127.0.0.1:5000/acme/web/production/myapp:nope")
+	deployment, err := orch.Start(context.Background(), a.ID, "nope")
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -275,7 +301,7 @@ func TestFailedDeployRecordsWhy(t *testing.T) {
 func TestStartRejectsAnUnknownApp(t *testing.T) {
 	orch, _, _ := newDeployFixture(t, &fakeDocker{})
 
-	if _, err := orch.Start(context.Background(), 9999, "127.0.0.1:5000/nope:v1"); !errors.Is(err, ErrNotFound) {
+	if _, err := orch.Start(context.Background(), 9999, "v1"); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("Start on an unknown app returned %v, want ErrNotFound", err)
 	}
 }
@@ -288,7 +314,7 @@ func TestWaitForGivesUpOnItsContextNotOnTheDeploy(t *testing.T) {
 	// Slow the health check enough that the wait below times out first.
 	orch.HealthCheckInterval = 200 * time.Millisecond
 
-	deployment, err := orch.Start(context.Background(), a.ID, "127.0.0.1:5000/acme/web/production/myapp:v1")
+	deployment, err := orch.Start(context.Background(), a.ID, "v1")
 	if err != nil {
 		t.Fatalf("Start: %v", err)
 	}

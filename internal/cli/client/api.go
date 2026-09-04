@@ -36,8 +36,10 @@ type Environment struct {
 type App struct {
 	// Reference identifies the app — org/project/environment/name — and
 	// is also its registry repository path.
-	Reference   string `json:"reference"`
-	Name        string `json:"name"`
+	Reference string `json:"reference"`
+	Name      string `json:"name"`
+	// Source is where the app's image comes from.
+	Source      string `json:"source"`
 	Domain      string `json:"domain"`
 	Image       string `json:"image"`
 	Status      string `json:"status"`
@@ -202,10 +204,10 @@ func (c *Client) DeleteEnvironment(ctx context.Context, orgSlug, projectSlug, en
 
 // CreateApp registers an app and returns it, including the registry path
 // to push to. environment may be empty, which means "production".
-func (c *Client) CreateApp(ctx context.Context, name, domain, orgSlug, projectSlug, environment string) (App, error) {
+func (c *Client) CreateApp(ctx context.Context, name, domain, orgSlug, projectSlug, environment, source string) (App, error) {
 	return request[App](ctx, c, "create app", http.MethodPost, "/apps", map[string]string{
 		"name": name, "domain": domain, "org": orgSlug,
-		"project": projectSlug, "environment": environment,
+		"project": projectSlug, "environment": environment, "source": source,
 	}, http.StatusCreated, DefaultTimeout)
 }
 

@@ -36,7 +36,7 @@ func newAppCmd() *cobra.Command {
 			"same name can exist in production and staging at once.",
 	}
 
-	var domain, org, project, environment string
+	var domain, org, project, environment, source string
 	createCmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Register a new app and get its registry image path",
@@ -46,7 +46,7 @@ func newAppCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			created, err := c.CreateApp(context.Background(), args[0], domain, org, project, environment)
+			created, err := c.CreateApp(context.Background(), args[0], domain, org, project, environment, source)
 			if err != nil {
 				return err
 			}
@@ -61,6 +61,7 @@ func newAppCmd() *cobra.Command {
 	createCmd.Flags().StringVar(&project, "project", "", "project slug this app belongs to")
 	createCmd.MarkFlagRequired("project")
 	createCmd.Flags().StringVar(&environment, "env", "", `environment slug within the project (default "production")`)
+	createCmd.Flags().StringVar(&source, "source", "", `where the image comes from: "registry" (the default) means one you push to Cubeship`)
 
 	var tag string
 	var detach bool
@@ -171,7 +172,7 @@ func newAppCmd() *cobra.Command {
 			for _, row := range [][2]string{
 				{"App", a.Reference}, {"Organization", a.Org}, {"Project", a.Project},
 				{"Environment", a.Environment}, {"Domain", a.Domain},
-				{"Status", a.Status}, {"Push to", a.Image},
+				{"Source", a.Source}, {"Status", a.Status}, {"Push to", a.Image},
 			} {
 				fmt.Fprintf(w, "%s:\t%s\n", row[0], row[1])
 			}

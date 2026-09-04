@@ -118,7 +118,6 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	host := h.registryHost(r.Context())
 	for _, ev := range payload.Events {
 		if ev.Action != "push" || ev.Target.Tag == "" {
 			continue
@@ -134,11 +133,11 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue // no app owns this repository
 		}
-		image := host + "/" + ref.String()
-		// ...but the daemon pulls over loopback. Start returns as soon as
-		// the deploy is recorded; the registry's notification client
-		// gives up after 5s, and a real deploy takes far longer.
-		if _, err := h.apps.Orchestrator().Start(r.Context(), a.ID, app.LocalPullRef(image, ev.Target.Tag)); err != nil {
+		// Start returns as soon as the deploy is recorded; the registry's
+		// notification client gives up after 5s, and a real deploy takes
+		// far longer. Which image that tag resolves to is the app
+		// source's answer, not this handler's.
+		if _, err := h.apps.Orchestrator().Start(r.Context(), a.ID, ev.Target.Tag); err != nil {
 			log.Printf("registry webhook: could not start a deploy for %s: %v", a.Name, err)
 		}
 	}

@@ -45,10 +45,11 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"domain":      openapi.String("The domain Traefik routes to this app, over HTTPS."),
 				"image":       openapi.String("The registry path to push to. A push here deploys."),
 				"status":      {Type: "string", Enum: []string{"pending", "running", "down"}, Description: `"pending" until the first image is pushed.`},
+				"source":      {Type: "string", Enum: []string{"registry"}, Description: "Where this app's image comes from."},
 				"org":         openapi.String(""),
 				"project":     openapi.String(""),
 				"environment": openapi.String(""),
-			}, "reference", "name", "domain", "image", "status", "org", "project", "environment"),
+			}, "reference", "name", "domain", "status", "source", "org", "project", "environment"),
 		}),
 		Paths: map[string]openapi.PathItem{
 			"/apps": {
@@ -63,6 +64,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"org":         openapi.String("Organization slug."),
 						"project":     openapi.String("Project slug."),
 						"environment": openapi.String(`Environment slug. Defaults to "production".`),
+						"source":      {Type: "string", Enum: []string{"registry"}, Description: `Where the image comes from. Only "registry" — an image you push to Cubeship — is supported today, and it is the default.`},
 					}, "name", "domain", "org", "project")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse("The registered app, including its push path.", openapi.Ref("App")),
@@ -114,7 +116,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"post": {
 					OperationID: "deployApp",
 					Summary:     "Redeploy an app",
-					Description: "Deploys a tag already pushed to the app's registry path. The daemon pulls the image, starts a container, waits for it to look healthy, and only then retires the previous one — so a bad image never takes down a working app.\n\n**Returns immediately.** The deploy runs detached from this request, so hanging up does not stop it. Poll the returned deployment — `GET .../deployments/{id}?wait=true` holds the response open until it finishes — to find out how it went.",
+					Description: "Deploys a tag already pushed to the app's registry path. Which image that tag names is the app's source's answer; the daemon pulls it, starts a container, waits for it to look healthy, and only then retires the previous one — so a bad image never takes down a working app.\n\n**Returns immediately.** The deploy runs detached from this request, so hanging up does not stop it. Poll the returned deployment — `GET .../deployments/{id}?wait=true` holds the response open until it finishes — to find out how it went.",
 					Tags:        []string{"Apps"},
 					Parameters:  refParams,
 					RequestBody: &openapi.RequestBody{
@@ -127,6 +129,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"202": openapi.JSONResponse("The deploy was accepted and is running.", openapi.Ref("Deployment")),
 						"401": openapi.Unauthorized,
 						"404": openapi.NotFound,
+						"409": openapi.TextResponse("The app's source cannot produce an image — for an app pushed to Cubeship's registry, that means the instance has no domain configured yet."),
 					},
 				},
 			},

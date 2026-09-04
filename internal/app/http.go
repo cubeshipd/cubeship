@@ -31,8 +31,10 @@ type Response struct {
 	Domain    string `json:"domain"`
 	// Image is where a push to this app goes. Empty while the instance
 	// has no domain: there is nowhere to push yet.
-	Image       string `json:"image,omitempty"`
-	Status      string `json:"status"`
+	Image  string `json:"image,omitempty"`
+	Status string `json:"status"`
+	// Source is where this app's image comes from.
+	Source      string `json:"source"`
 	Org         string `json:"org"`
 	Project     string `json:"project"`
 	Environment string `json:"environment"`
@@ -44,7 +46,7 @@ type Response struct {
 func toResponse(a *Scoped, registryHost string) Response {
 	r := Response{
 		Reference: ReferenceOf(a).String(),
-		Name:      a.Name, Domain: a.Domain, Status: a.Status,
+		Name:      a.Name, Domain: a.Domain, Status: a.Status, Source: a.Source,
 		Org: a.OrgSlug, Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
 	}
 	if registryHost != "" {
@@ -103,6 +105,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	case errors.Is(err, ErrAlreadyExists):
 		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, ErrUnknownSource):
+		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNoRegistry):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrNoContainer):
@@ -121,6 +125,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		Org         string `json:"org"`
 		Project     string `json:"project"`
 		Environment string `json:"environment"`
+		Source      string `json:"source"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil ||
 		req.Name == "" || req.Domain == "" || req.Org == "" || req.Project == "" {
@@ -128,7 +133,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	created, err := h.svc.Create(r.Context(), user.FromContext(r.Context()),
-		req.Org, req.Project, req.Environment, req.Name, req.Domain)
+		req.Org, req.Project, req.Environment, req.Name, req.Domain, Source(req.Source))
 	if err != nil {
 		WriteError(w, err)
 		return

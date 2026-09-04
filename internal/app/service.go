@@ -90,9 +90,15 @@ func (s *Service) ResolveString(ctx context.Context, caller *user.User, ref stri
 
 // Create registers an app in a project's environment and returns it,
 // including the registry path a push should target.
-func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug, name, domain string) (*Scoped, error) {
+func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug, name, domain string, source Source) (*Scoped, error) {
 	if envSlug == "" {
 		envSlug = project.ProductionEnvSlug
+	}
+	if source == "" {
+		source = DefaultSource
+	}
+	if !source.Valid() {
+		return nil, ErrUnknownSource
 	}
 	// The name becomes a path component of the app's registry image
 	// reference (registry.<domain>/<org>/<name>), so it is checked before
@@ -114,7 +120,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 		return nil, project.ErrEnvironmentNotFound
 	}
 	ref := Reference{Org: o.Slug, Project: p.Slug, Environment: env.Slug, Name: name}
-	if _, err := s.Repo().Create(ctx, o.ID, p.ID, env.ID, name, domain); err != nil {
+	if _, err := s.Repo().Create(ctx, o.ID, p.ID, env.ID, name, domain, source); err != nil {
 		// The unique index is the authority, not a preceding lookup:
 		// two concurrent creates of the same name would both pass a
 		// check and the loser would surface as a 500.
@@ -225,11 +231,7 @@ func (s *Service) Deploy(ctx context.Context, caller *user.User, ref Reference, 
 	if err != nil {
 		return nil, nil, err
 	}
-	image := s.ImageFor(ctx, a)
-	if image == "" {
-		return nil, nil, ErrNoRegistry
-	}
-	deployment, err := s.orch.Start(ctx, a.ID, LocalPullRef(image, tag))
+	deployment, err := s.orch.Start(ctx, a.ID, tag)
 	if err != nil {
 		return nil, nil, err
 	}
