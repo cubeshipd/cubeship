@@ -58,7 +58,8 @@ is missing. Point the installer at your own build with
 What the environment still holds is defaulted in
 [`internal/platform/config`](internal/platform/config/config.go) — most
 importantly `CUBESHIP_DATA_DIR` (default `/var/lib/cubeship`), which
-holds the database, the images and Traefik's `acme.json`. **Back it up.**
+holds the database, the images, Traefik's `acme.json` and the build
+cache. **Back it up** — except the cache, which is only speed.
 The daemon needs the Docker socket, so it runs as root.
 
 State lives in Postgres. By default the daemon runs it for you, as a

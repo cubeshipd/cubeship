@@ -117,7 +117,8 @@ write_unit() {
 		# from the dashboard.
 		#
 		# Persistent state: the Postgres data directory, the daemon's
-		# secrets, registry config and image storage, Traefik's acme.json.
+		# secrets, registry config and image storage, Traefik's acme.json,
+		# and the build cache.
 		Environment=CUBESHIP_DATA_DIR=$DATA_DIR
 
 		# The daemon talks to the Docker socket, so it runs as root.

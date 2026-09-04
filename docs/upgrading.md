@@ -23,6 +23,11 @@ since that is where a project pins its language version.
 The first Railpack build on a box also pulls the Railpack frontend image,
 so it takes longer than the ones after it.
 
+Builds accumulate a cache under `CUBESHIP_DATA_DIR/buildkit`, and nothing
+prunes it. If that directory grows past what the disk can spare,
+`docker exec cubeship-buildkit buildctl prune` clears it — at the cost of
+the next build of every app being slow.
+
 ## From a release that could not build
 
 Nothing to do. Existing apps are unaffected.

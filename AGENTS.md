@@ -131,10 +131,33 @@ product rather than of a component library: `Shell`, `PageHeader`,
 — if two pages need the same thing to look the same, it belongs in
 `src/components/`.
 
-The palette lives once, in `globals.css`. The accent is violet because
-green, amber and red already mean *state* here — running, deploying,
-failed — and an accent inside that range competes with every status on
-screen. `StatusBadge` is the only place a state is turned into a colour.
+### The look
+
+Cyberpunk console: near-black surfaces with a blue cast, **every corner
+square** (`--radius` is `0px`, and the whole `--radius-*` scale is zeroed
+so the shadcn primitives square themselves rather than being overridden
+one `className` at a time), cyan as the interface accent and magenta as
+the brand's second light. Depth comes from 1px lines and glow, never
+from shadow. The only round things left are status dots, which read as
+indicator lamps.
+
+Cyan and magenta are both outside the range where green, amber and red
+already mean *state* — running, deploying, failed — so an accent never
+competes with a status on screen. `StatusBadge` is the only place a
+state is turned into a colour.
+
+Type is **Chakra Petch** for the interface and **JetBrains Mono** for
+anything you would type or compare — references, images, hosts,
+commands. Both are vendored as woff2 under `web/src/fonts` and loaded
+with `next/font/local`: `make web` already needs the network for
+`pnpm install`, and a second place a build can fail is one too many.
+
+Buttons, badges, field labels and table headers are uppercase with wide
+tracking. **That is applied in `globals.css` through the primitives'
+`data-slot` attributes**, not by editing `ui/` — which is what lets a
+re-run of `shadcn add` overwrite those files without taking the house
+style with it. The `hud-frame`, `bg-grid`, `bg-scanlines`, `text-glow`
+and `neon-edge` utilities live there too.
 
 The dashboard is dark and only dark: `<html>` carries `dark` rather than
 following the system, because the shadcn primitives carry `dark:` rules
@@ -476,6 +499,12 @@ with different environments are two different builds.
 
 Mount caches are keyed per app (`cache-key`), because two apps sharing
 one would fight over it.
+
+**Nothing prunes the build cache.** It lives in the data directory and
+grows with every build — the same shape as an app's images outliving the
+app, which also needs a garbage collection pass Cubeship does not run.
+`docker exec cubeship-buildkit buildctl prune` is the manual answer for
+now.
 
 ## What a build's output does
 
