@@ -71,7 +71,7 @@ import (
 
 // daemonURL is the plaintext address the daemon publishes for the
 // registry container's webhook; the test reaches it the same way.
-const daemonURL = "http://127.0.0.1:9000"
+const daemonURL = "http://127.0.0.1:3000"
 
 const testToken = "integration-test-token"
 

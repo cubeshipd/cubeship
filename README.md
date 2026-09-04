@@ -17,28 +17,34 @@ multi-node.
 
 ## Install
 
+On the server, as root:
+
+```sh
+curl -sSL https://cubeship.dev/install.sh | sh
+```
+
+It installs Docker if the box hasn't got it, verifies and installs the
+daemon, registers it with systemd, and tells you where to open it.
+Running it again upgrades in place. It is [one
+file](install.sh) — read it first if you'd rather not pipe a script into
+a shell, which is a reasonable thing to prefer.
+
+Nothing has to be configured for it to start. The domain and the Let's
+Encrypt contact address are set afterwards, from the dashboard — see
+[Configuring the instance](#configuring-the-instance).
+
+### Building it yourself
+
 ```sh
 make build          # bin/cubeship and bin/cubeshipd for this machine
-make daemon-linux   # cross-compile the daemon for the VPS
+make release        # dist/<version>/, what install.sh serves
 make help           # everything else
 ```
 
 Both build the dashboard first, so they need Node. `go build` on its own
 still works — you get a daemon that serves the API and says the dashboard
-is missing.
-
-On the server, install the binary and the unit file at
-[`deploy/cubeshipd.service`](deploy/cubeshipd.service):
-
-```sh
-sudo install -m 0755 bin/cubeshipd-linux-amd64 /usr/local/bin/cubeshipd
-sudo install -m 0644 deploy/cubeshipd.service /etc/systemd/system/
-sudo systemctl enable --now cubeshipd
-```
-
-Nothing has to be configured for it to start. The domain and the Let's
-Encrypt contact address are set afterwards, through the API — see
-[Configuring the instance](#configuring-the-instance).
+is missing. Point the installer at your own build with
+`CUBESHIP_BASE_URL`.
 
 What the environment still holds is defaulted in
 [`internal/platform/config`](internal/platform/config/config.go) — most
@@ -51,19 +57,19 @@ State lives in Postgres. By default the daemon runs it for you, as a
 data dir — nothing to install. Set `CUBESHIP_DATABASE_URL` to point at an
 existing server instead, and the daemon connects without managing it.
 
-**Port 9000 is plaintext.** The daemon binds it on all interfaces so the
+**Port 3000 is plaintext.** The daemon binds it on all interfaces so the
 registry container can reach the webhook, and it serves the dashboard and
 the API there too — bypassing Traefik's TLS. A fresh box has no domain
 and no certificate, so this is the only way in and it has to be
 reachable; a password and a session cookie cross it in the clear.
 
 Once a domain is set, everything is reachable over HTTPS at
-`api.<domain>` and 9000 has no remaining use from outside. Close it then,
+`api.<domain>` and 3000 has no remaining use from outside. Close it then,
 and open only 80 and 443.
 
 ## Claiming the instance
 
-Open `http://<ip>:9000` and create the account. A fresh instance has no
+Open `http://<ip>:3000` and create the account. A fresh instance has no
 account and no way to add one from outside, so this first page creates a
 super-admin, an organization and a project, signs you in, and closes
 setup for good — every account after it is added from inside.

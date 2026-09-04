@@ -7,3 +7,4 @@ coverage.out
 # what keeps the embed in internal/web legal without it.
 internal/web/dist/*
 !internal/web/dist/.gitkeep
+dist/

@@ -27,24 +27,31 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
-const version = "0.1.0-dev"
-const daemonPort = 9000
+// version is stamped at link time by `make release`; a build without
+// that says so rather than claiming a number nobody released.
+var version = "dev"
+
+// daemonPort is the front door. It is 3000 because on a fresh box that
+// is the whole product: no domain exists yet, so there is no HTTPS and
+// no api.<domain> — the installer tells you to open http://<ip>:3000 and
+// that has to be the dashboard.
+const daemonPort = 3000
 
 // localRegistryHost is the loopback address the registry container
 // publishes, and the host the daemon's own image pulls target. It must
 // match internal/api's constant of the same name.
 const localRegistryHost = "127.0.0.1:5000"
 
-// listenAddr binds all interfaces on purpose: the registry container
-// reaches the webhook through host.docker.internal, which resolves to
-// the host's bridge-gateway address, not loopback — binding 127.0.0.1
-// would cut that path.
+// listenAddr binds all interfaces on purpose, for two reasons: the
+// registry container reaches the webhook through host.docker.internal,
+// which resolves to the host's bridge-gateway address rather than
+// loopback, and an operator with no domain yet reaches the dashboard
+// here from their own machine.
 //
-// This port MUST NOT be exposed to the public internet by the host
-// firewall. The API is meant to be reached over HTTPS through Traefik
-// (api.<domain>); :9000 additionally serves the same API in plaintext.
-// See README.md.
-const listenAddr = ":9000"
+// It is plaintext. Once a domain exists everything is reachable over
+// HTTPS through Traefik at api.<domain>, and this port has no remaining
+// use from outside — close it at the host firewall then. See README.md.
+var listenAddr = fmt.Sprintf(":%d", daemonPort)
 
 func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")

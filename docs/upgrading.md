@@ -1,5 +1,21 @@
 # Upgrading an existing install
 
+Re-running the installer upgrades in place:
+
+```sh
+curl -sSL https://cubeship.dev/install.sh | sh
+```
+
+Nothing under `CUBESHIP_DATA_DIR` is touched. The sections below are the
+changes worth knowing about, newest first.
+
+## From a release that listened on 9000
+
+The daemon listens on **3000** now, because on a fresh box the dashboard
+is the whole product and that is the address the installer prints. The
+unit the installer writes has no port in it, so nothing to edit — but a
+firewall rule, a tunnel or a bookmark naming 9000 does.
+
 ## From a release with no dashboard
 
 The daemon now serves a dashboard at the root, and everything the API

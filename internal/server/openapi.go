@@ -80,7 +80,7 @@ func (s *Server) OpenAPI() openapi.Document {
 //
 // Listing the request's own origin first is what makes the reference
 // page's "try it" actually work: whatever address you opened the docs on
-// — api.example.com through Traefik, or 127.0.0.1:9000 over an SSH
+// — api.example.com through Traefik, or 127.0.0.1:3000 over an SSH
 // tunnel — is the address the requests go to, with no field to fill in.
 func (s *Server) servers(origin string) []openapi.Server {
 	var out []openapi.Server

@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
   // the daemon serves both.
   async rewrites() {
     if (!dev) return [];
-    return [{ source: "/api/:path*", destination: "http://127.0.0.1:9000/api/:path*" }];
+    return [{ source: "/api/:path*", destination: "http://127.0.0.1:3000/api/:path*" }];
   },
 };
 

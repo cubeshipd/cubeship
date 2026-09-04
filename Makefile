@@ -5,6 +5,7 @@ BINDIR  ?= bin
 COVER   ?= coverage.out
 WEBDIR  ?= web
 WEBDIST ?= internal/web/dist
+RELEASEDIR ?= dist
 
 # The daemon runs on the VPS, which is Linux; the CLI runs wherever you
 # are. `make daemon-linux` cross-compiles the former from the latter.
@@ -48,6 +49,20 @@ install: ## Install the CLI into GOBIN
 
 # Deliberately not `systemctl restart` on a host you haven't named: pass
 # HOST explicitly, every time.
+# One release, both architectures, with the checksums install.sh
+# verifies. VERSION names the directory it lands in, which is the path
+# install.sh fetches from.
+VERSION ?= dev
+.PHONY: release
+release: web ## Build a release into dist/$(VERSION) for both architectures
+	mkdir -p $(RELEASEDIR)/$(VERSION)
+	for arch in amd64 arm64; do \
+		GOOS=linux GOARCH=$$arch $(GO) build \
+			-ldflags "-X main.version=$(VERSION)" \
+			-o $(RELEASEDIR)/$(VERSION)/cubeshipd-linux-$$arch ./cmd/cubeshipd; \
+	done
+	cd $(RELEASEDIR)/$(VERSION) && shasum -a 256 cubeshipd-linux-* > checksums.txt
+
 .PHONY: ship
 ship: daemon-linux ## Upload the daemon to a VPS and restart it (HOST=user@vps)
 	@test -n "$(HOST)" || { echo "usage: make ship HOST=user@vps"; exit 1; }
@@ -58,7 +73,7 @@ ship: daemon-linux ## Upload the daemon to a VPS and restart it (HOST=user@vps)
 		&& sudo systemctl --no-pager status cubeshipd'
 
 .PHONY: check
-check: fmt-check vet test ## Everything that must pass before a commit
+check: fmt-check vet sh-check test ## Everything that must pass before a commit
 
 # Postgres has no in-memory mode, so the unit tests need a real server.
 # Each test gets its own schema in this one container (see
@@ -94,6 +109,19 @@ db-down: ## Stop and remove the test Postgres, discarding its data
 test: db-up ## Unit tests, race detector on (starts the test Postgres)
 	$(GO) test -race -count=1 ./...
 
+# The installer is the first thing every user runs, and no Go test can
+# reach it. This runs it on a real Linux against a release built here.
+.PHONY: test-install
+test-install: ## Run install.sh end to end in a Linux container
+	@rm -rf $(RELEASEDIR)/testing
+	@$(MAKE) --no-print-directory release VERSION=testing
+	docker run --rm \
+		-v "$(CURDIR)/install.sh:/src/install.sh:ro" \
+		-v "$(CURDIR)/test/install/run.sh:/src/run.sh:ro" \
+		-v "$(CURDIR)/$(RELEASEDIR):/dist:ro" \
+		--platform linux/amd64 debian:bookworm-slim \
+		sh -c 'apt-get -qq update && apt-get -qq install -y curl > /dev/null && sh /src/run.sh'
+
 .PHONY: test-integration
 test-integration: ## End-to-end test against a real Docker daemon (needs Linux)
 	$(GO) test -tags integration -count=1 -v -timeout 15m ./test/integration/...
@@ -105,6 +133,10 @@ cover: ## Unit test coverage, opened as HTML
 
 # The integration test sits behind a build tag, so a plain `go vet ./...`
 # never compiles it. Vet it explicitly or it rots.
+.PHONY: sh-check
+sh-check: ## Syntax-check the shell scripts
+	@for f in install.sh test/install/run.sh; do sh -n $$f || exit 1; done
+
 .PHONY: vet
 vet: ## go vet, including the build-tagged integration test
 	$(GO) vet ./...
@@ -125,6 +157,6 @@ tidy: ## Sync go.mod/go.sum with the imports
 
 .PHONY: clean
 clean: ## Remove build output
-	rm -rf $(BINDIR) $(COVER) $(WEBDIR)/out $(WEBDIR)/.next
+	rm -rf $(BINDIR) $(COVER) $(RELEASEDIR) $(WEBDIR)/out $(WEBDIR)/.next
 	rm -rf $(WEBDIST)
 	mkdir -p $(WEBDIST) && touch $(WEBDIST)/.gitkeep

@@ -106,9 +106,29 @@ produces a daemon that serves the API and tells you the dashboard is
 missing, rather than a blank 404 at the address the installer told you to
 open.
 
-`make web-dev` runs it on :3001 against a daemon on :9000, proxying
+`make web-dev` runs it on :3001 against a daemon on :3000, proxying
 `/api` — the proxy exists only in development, because in a build the
 daemon serves both.
+
+## Installing
+
+`install.sh` is the product's front door and the only definition of how
+an instance is set up: it installs Docker if needed, verifies a checksum,
+drops the binary in `/usr/local/bin`, writes the systemd unit and starts
+it. There is no second copy of that unit in the repository to drift from
+it.
+
+**The daemon is a host process, not a container**, and four things depend
+on that: Postgres is published on loopback, the registry publishes on
+loopback and reaches the webhook through `host.docker.internal`, and
+Traefik runs on the host network so it can route `api.<domain>` to
+`127.0.0.1:<daemonPort>`. Containerizing the daemon means rewriting all
+four.
+
+`make test-install` runs the installer end to end in a Debian container
+against a release built by `make release`, with Docker and systemd
+replaced by recording stubs. It sources the script minus its last line —
+`main "$@"` — so the script itself carries no hook for the test.
 
 ## The OpenAPI document
 
