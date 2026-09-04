@@ -161,7 +161,7 @@ func (h *Handler) registerFromManifest(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, settings.ToResponse(values))
+	httpx.WriteJSON(w, http.StatusOK, settings.ToResponse(values, settings.ReachedAt(r)))
 }
 
 func (h *Handler) connect(w http.ResponseWriter, r *http.Request) {

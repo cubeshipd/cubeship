@@ -49,9 +49,13 @@ type Response struct {
 
 // ToResponse renders the settings for the API. Exported because the
 // GitHub module writes four of them and answers with the result.
-func ToResponse(v Values) Response { return toResponse(v) }
+//
+// reachedAt is the address the request arrived at, which is where a
+// fresh install's public address comes from — see PublicAddressFor.
+// Pass settings.ReachedAt(r).
+func ToResponse(v Values, reachedAt string) Response { return toResponse(v, reachedAt) }
 
-func toResponse(v Values) Response {
+func toResponse(v Values, reachedAt string) Response {
 	r := Response{
 		Domain:     v.Get(Domain),
 		ACMEEmail:  v.Get(ACMEEmail),
@@ -60,7 +64,7 @@ func toResponse(v Values) Response {
 	if v.HasDomain() {
 		r.RegistryHost = RegistryHostFor(v.Get(Domain))
 	}
-	r.PublicIP = v.PublicAddressFor()
+	r.PublicIP = v.PublicAddressFor(reachedAt)
 	r.PublicIPConfigured = v.Get(PublicIP) != ""
 	r.DNSProviderID = v.Get(DNSProviderID)
 	r.GitHubAppSlug = v.Get(GitHubAppSlug)
@@ -98,7 +102,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, toResponse(values))
+	httpx.WriteJSON(w, http.StatusOK, toResponse(values, ReachedAt(r)))
 }
 
 // set applies the settings given and leaves the rest alone, the same way
@@ -156,5 +160,5 @@ func (h *Handler) set(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, toResponse(current))
+	httpx.WriteJSON(w, http.StatusOK, toResponse(current, ReachedAt(r)))
 }

@@ -2,27 +2,77 @@ package settings
 
 import (
 	"net"
+	"net/http"
 	"strings"
 )
 
-// PublicAddress is the address the instance's DNS records should point
-// at: the address on the interface this host reaches the internet
-// through.
+// PublicAddressFor is what this instance's DNS records should point at.
 //
-// It is worked out locally rather than asked of an external service.
-// Cubeship depends on nothing beyond Docker, and "what is my public IP"
-// is the one question where reaching out is easy to reach for — but a
-// VPS holds its public address on its own interface, so the answer is
-// already here.
+// Three answers, in order of how much they can be trusted.
 //
-// The UDP dial sends nothing. Connecting a datagram socket only makes
-// the kernel choose a route and bind a local address, which is exactly
-// the question being asked; the address it names is never contacted.
+// **What the operator typed** wins. They can see the machine.
 //
-// It is a suggestion, not a fact. A host behind NAT answers with its
-// private address, and that is why the setting can be overridden — an
-// operator who knows better types it, and what they typed wins.
-func PublicAddress() string {
+// **The address the request arrived at**, when it is an IP literal. On a
+// fresh install that is exactly right and free: the dashboard is reached
+// at `http://<ip>:3000` before there is any domain, so the address in
+// the URL bar is, by construction, an address that reaches this host
+// from where the operator is sitting. Once there is a domain it is a
+// name rather than an address, and this stops answering.
+//
+// **The interface**, last, and it is usually wrong: the daemon runs as a
+// container on a bridge network, so what it reads there is the
+// container's own 172.x address. It is kept because a daemon on the host
+// answers correctly, and something is better than an empty field.
+//
+// This is deliberately not asked of an outside service. Cubeship depends
+// on nothing beyond Docker, and "what is my address" is not worth being
+// the exception — especially for a product someone self-hosts to avoid
+// exactly that.
+func (v Values) PublicAddressFor(reachedAt string) string {
+	if configured := strings.TrimSpace(v.Get(PublicIP)); configured != "" {
+		return configured
+	}
+	if ip := ipOfHost(reachedAt); ip != "" {
+		return ip
+	}
+	return outboundAddress()
+}
+
+// ipOfHost reads a Host header for an IP literal, and answers "" for a
+// name. A name in that header is a name that already resolves somewhere,
+// which is not what a record about to be written needs.
+func ipOfHost(host string) string {
+	if host == "" {
+		return ""
+	}
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	host = strings.Trim(host, "[]")
+
+	ip := net.ParseIP(host)
+	if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+		return ""
+	}
+	return ip.String()
+}
+
+// ReachedAt reads the address a request arrived at, preferring what a
+// proxy recorded over what it rewrote.
+func ReachedAt(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-Host"); forwarded != "" {
+		return strings.TrimSpace(strings.Split(forwarded, ",")[0])
+	}
+	return r.Host
+}
+
+// outboundAddress is the address on the interface this host reaches the
+// internet through.
+//
+// The UDP dial sends nothing: connecting a datagram socket only makes
+// the kernel choose a route and bind a local address, which is the
+// question being asked. The address it names is never contacted.
+func outboundAddress() string {
 	conn, err := net.Dial("udp4", "192.0.2.1:9")
 	if err != nil {
 		return ""
@@ -34,13 +84,4 @@ func PublicAddress() string {
 		return ""
 	}
 	return addr.IP.String()
-}
-
-// PublicAddressFor returns what records should point at: the operator's
-// answer if they gave one, and this host's own otherwise.
-func (v Values) PublicAddressFor() string {
-	if configured := strings.TrimSpace(v.Get(PublicIP)); configured != "" {
-		return configured
-	}
-	return PublicAddress()
 }
