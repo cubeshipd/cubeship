@@ -45,6 +45,10 @@ func TestRegistryContainerOptsRoutesThroughTraefik(t *testing.T) {
 	if !found {
 		t.Fatalf("expected the notify URL in env, got %v", opts.Env)
 	}
+
+	if len(opts.ExtraHosts) != 1 || opts.ExtraHosts[0] != "host.docker.internal:host-gateway" {
+		t.Fatalf("expected host.docker.internal to resolve to the host gateway so the container can reach a notifyURL on the host, got %v", opts.ExtraHosts)
+	}
 }
 
 func TestTraefikContainerOptsUsesHostNetwork(t *testing.T) {

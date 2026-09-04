@@ -63,7 +63,11 @@ func run() error {
 	}
 	defer s.Close()
 
-	notifyURL := "http://127.0.0.1" + listenAddr + "/hooks/registry"
+	// The registry container that POSTs to this URL runs on the "cubeship"
+	// bridge network, not the host's network namespace, so it must reach
+	// the daemon via host.docker.internal rather than 127.0.0.1 (see the
+	// registry container's ExtraHosts in bootstrap.RegistryContainerOpts).
+	notifyURL := fmt.Sprintf("http://host.docker.internal:%d/hooks/registry", daemonPort)
 	if err := bootstrap.Ensure(ctx, docker, bootstrap.RegistryContainerOpts(cfg, notifyURL)); err != nil {
 		return fmt.Errorf("bootstrap registry: %w", err)
 	}

@@ -33,6 +33,13 @@ func RegistryContainerOpts(cfg *config.Config, notifyURL string) dockerx.Contain
 		// Task 20's integration test pushes without needing a real
 		// public domain for ACME.
 		Ports: []string{"127.0.0.1:5000:5000"},
+		// The registry container lives on the "cubeship" bridge network,
+		// not the host's network namespace, so "127.0.0.1" inside it is
+		// the container's own loopback, not the daemon's. host.docker.internal
+		// (with the "host-gateway" magic value, needed on Linux — Docker
+		// Desktop already provides it) resolves to the host, which is what
+		// notifyURL above must point through to actually reach cubeshipd.
+		ExtraHosts: []string{"host.docker.internal:host-gateway"},
 	}
 }
 

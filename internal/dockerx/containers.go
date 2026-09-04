@@ -29,6 +29,7 @@ type ContainerOpts struct {
 	Ports       []string
 	Network     string
 	HostNetwork bool
+	ExtraHosts  []string
 }
 
 func (c *Client) PullImage(ctx context.Context, ref string) error {
@@ -83,6 +84,7 @@ func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (strin
 			Binds:         opts.Binds,
 			PortBindings:  portBindings,
 			NetworkMode:   networkMode,
+			ExtraHosts:    opts.ExtraHosts,
 		},
 		networkingConfig, nil, opts.Name)
 	if err != nil {

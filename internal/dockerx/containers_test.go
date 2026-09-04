@@ -196,6 +196,24 @@ func TestCreateContainerForwardsPortsBindsCmdAndNetwork(t *testing.T) {
 	}
 }
 
+func TestCreateContainerForwardsExtraHosts(t *testing.T) {
+	fake := &fakeAPI{}
+	c := newWithAPI(fake)
+
+	_, err := c.CreateContainer(context.Background(), ContainerOpts{
+		Name:       "cubeship-registry",
+		Image:      "registry:2",
+		Network:    "cubeship",
+		ExtraHosts: []string{"host.docker.internal:host-gateway"},
+	})
+	if err != nil {
+		t.Fatalf("CreateContainer: %v", err)
+	}
+	if len(fake.createdHostConfig.ExtraHosts) != 1 || fake.createdHostConfig.ExtraHosts[0] != "host.docker.internal:host-gateway" {
+		t.Fatalf("expected ExtraHosts to be forwarded, got %v", fake.createdHostConfig.ExtraHosts)
+	}
+}
+
 func TestCreateContainerHostNetworkSkipsPortsAndNetwork(t *testing.T) {
 	fake := &fakeAPI{}
 	c := newWithAPI(fake)
