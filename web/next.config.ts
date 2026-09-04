@@ -19,6 +19,9 @@ const dev = process.env.NODE_ENV === "development";
 const nextConfig: NextConfig = {
   output: dev ? undefined : "standalone",
   devIndicators: false,
+  turbopack: {
+    root: dev ? process.cwd() : undefined,
+  },
 
   // The daemon is in front of this in every mode — it serves /api and
   // proxies everything else here — so this rewrite exists only for
