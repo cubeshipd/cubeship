@@ -3,6 +3,7 @@ package server
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"cubeship/internal/app"
 	"cubeship/internal/org"
@@ -51,11 +52,9 @@ func (s *Server) OpenAPI() openapi.Document {
 				"so a valid API key cannot be used to discover other tenants' organizations or app names. " +
 				"403 is reserved for a caller who does belong to the organization and merely lacks the role.",
 		},
-		Servers: []openapi.Server{
-			{URL: "https://api.{domain}", Description: "Your daemon, through Traefik."},
-		},
-		Tags:  merged.Tags,
-		Paths: merged.Paths,
+		Servers: s.servers(""),
+		Tags:    merged.Tags,
+		Paths:   merged.Paths,
 		Components: openapi.Components{
 			Schemas: merged.Schemas,
 			SecuritySchemes: map[string]*openapi.SecurityScheme{
@@ -147,12 +146,73 @@ func serverOwnedSpec() openapi.Spec {
 	}
 }
 
+// servers returns the base URLs the document offers, most specific
+// first. origin is the address the document is being fetched from, when
+// there is one.
+//
+// Listing the request's own origin first is what makes the reference
+// page's "try it" actually work: whatever address you opened the docs on
+// — api.example.com through Traefik, or 127.0.0.1:9000 over an SSH
+// tunnel — is the address the requests go to, with no field to fill in.
+func (s *Server) servers(origin string) []openapi.Server {
+	var out []openapi.Server
+	if origin != "" {
+		out = append(out, openapi.Server{URL: origin, Description: "This daemon, at the address you are reading these docs from."})
+	}
+	if canonical := s.canonicalURL(); canonical != "" && canonical != origin {
+		out = append(out, openapi.Server{URL: canonical, Description: "This daemon's public address, through Traefik."})
+	}
+	return out
+}
+
+// canonicalURL is the daemon's configured public address, or empty when
+// it was never configured (as in tests).
+func (s *Server) canonicalURL() string {
+	if s.apiHost == "" {
+		return ""
+	}
+	return "https://" + s.apiHost
+}
+
 // handleOpenAPI serves the document. It is generated on each request
-// rather than cached: it costs microseconds, and a cached copy is one
-// more thing that can go stale after a redeploy.
-func (s *Server) handleOpenAPI(w http.ResponseWriter, _ *http.Request) {
+// rather than cached: it costs microseconds, a cached copy is one more
+// thing that can go stale, and the server list depends on the request
+// anyway.
+func (s *Server) handleOpenAPI(w http.ResponseWriter, r *http.Request) {
+	doc := s.OpenAPI()
+	doc.Servers = s.servers(requestOrigin(r))
+
 	w.Header().Set("Content-Type", "application/json")
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	enc.Encode(s.OpenAPI())
+	enc.Encode(doc)
+}
+
+// requestOrigin reconstructs the scheme://host a request arrived on.
+//
+// The X-Forwarded-* headers are honoured because the daemon always sits
+// behind its own Traefik, which sets them; without that, a document
+// fetched through the proxy would advertise plain http. Trusting them is
+// safe here in a way it would not be for auth or redirects: the only
+// thing this value does is fill in a base URL for a page the browser
+// already loaded from that same address.
+func requestOrigin(r *http.Request) string {
+	if r.Host == "" {
+		return ""
+	}
+	scheme := "http"
+	if r.TLS != nil {
+		scheme = "https"
+	}
+	host := r.Host
+
+	if forwarded := r.Header.Get("X-Forwarded-Proto"); forwarded != "" {
+		// A chained proxy appends, giving "https, http" — the first entry
+		// is the one the client actually spoke.
+		scheme = strings.TrimSpace(strings.Split(forwarded, ",")[0])
+	}
+	if forwarded := r.Header.Get("X-Forwarded-Host"); forwarded != "" {
+		host = strings.TrimSpace(strings.Split(forwarded, ",")[0])
+	}
+	return scheme + "://" + host
 }

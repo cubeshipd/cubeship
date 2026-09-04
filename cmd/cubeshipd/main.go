@@ -279,6 +279,7 @@ func run() error {
 	srv := server.New(db, docker, server.Options{
 		WebhookToken: cfg.Token,
 		RegistryHost: cfg.RegistryHost,
+		APIHost:      cfg.APIHost,
 	})
 
 	if err := ensureSuperAdmin(ctx, srv.Users, cfg.DataDir); err != nil {

@@ -30,8 +30,11 @@ import (
 const WebhookToken = "webhook-secret"
 
 // RegistryHost is the public registry name test app image paths are
-// built from.
-const RegistryHost = "registry.example.com"
+// built from, and APIHost the daemon's own public name.
+const (
+	RegistryHost = "registry.example.com"
+	APIHost      = "api.example.com"
+)
 
 // Fixture is a running server plus the identities and scopes a test
 // needs to reach it.
@@ -71,6 +74,7 @@ func NewWithDocker(t testing.TB, docker app.DockerAPI) *Fixture {
 	srv := server.New(db, docker, server.Options{
 		WebhookToken: WebhookToken,
 		RegistryHost: RegistryHost,
+		APIHost:      APIHost,
 	})
 
 	admin, adminKey := CreateUser(t, db, "admin", true)

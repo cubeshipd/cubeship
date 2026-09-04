@@ -27,7 +27,8 @@ type Server struct {
 	Apps     *app.Service
 	Registry *registry.Handler
 
-	router *httpx.Router
+	apiHost string
+	router  *httpx.Router
 }
 
 // Options are what the daemon has to supply that the modules cannot
@@ -39,6 +40,10 @@ type Options struct {
 	// RegistryHost is the public registry name (registry.<domain>) that
 	// app image paths are built from.
 	RegistryHost string
+	// APIHost is the daemon's own public name (api.<domain>). It appears
+	// in the OpenAPI document as the canonical server, so the reference
+	// page targets a real address rather than a placeholder.
+	APIHost string
 }
 
 // New wires the modules together. The dependency order here is the real
@@ -56,6 +61,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Projects: projects,
 		Apps:     apps,
 		Registry: registry.NewHandler(users, orgs, apps, opts.WebhookToken, opts.RegistryHost),
+		apiHost:  opts.APIHost,
 		router:   httpx.NewRouter(),
 	}
 	srv.routes()
