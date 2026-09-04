@@ -87,6 +87,90 @@ func TestOpenMigratesPreOrganizationsDatabase(t *testing.T) {
 		t.Fatalf("expected the migrated app to belong to %q (id %d), got org_id %d",
 			DefaultOrgSlug, org.ID, apps[0].OrgID)
 	}
+
+	// Same reasoning one level down: an app left at project_id/
+	// environment_id 0 would fail resolving inherited env vars on deploy.
+	project, err := s.GetProjectBySlug(ctx, org.ID, DefaultProjectSlug)
+	if err != nil {
+		t.Fatalf("expected a %q project to be created for adopted apps: %v", DefaultProjectSlug, err)
+	}
+	if apps[0].ProjectID != project.ID {
+		t.Fatalf("expected the migrated app to belong to project %q (id %d), got project_id %d",
+			DefaultProjectSlug, project.ID, apps[0].ProjectID)
+	}
+	env, err := s.GetEnvironmentBySlug(ctx, project.ID, ProductionEnvSlug)
+	if err != nil {
+		t.Fatalf("expected a %q environment to be created for adopted apps: %v", ProductionEnvSlug, err)
+	}
+	if apps[0].EnvironmentID != env.ID {
+		t.Fatalf("expected the migrated app to belong to environment %q (id %d), got environment_id %d",
+			ProductionEnvSlug, env.ID, apps[0].EnvironmentID)
+	}
+}
+
+// A database from the organizations-but-no-projects era (apps.org_id
+// exists, apps.project_id/environment_id don't) hits the same "no such
+// column" crash one column later — this covers that upgrade path
+// directly, without going through the org_id migration too.
+func TestOpenMigratesDatabaseWithoutProjectsOrEnvironments(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "cubeship.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("sql.Open: %v", err)
+	}
+	if _, err := db.Exec(`
+		CREATE TABLE organizations (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			slug TEXT NOT NULL UNIQUE,
+			name TEXT NOT NULL,
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+		CREATE TABLE apps (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			org_id INTEGER NOT NULL REFERENCES organizations(id),
+			name TEXT NOT NULL UNIQUE,
+			domain TEXT NOT NULL,
+			image TEXT NOT NULL UNIQUE,
+			container_id TEXT NOT NULL DEFAULT '',
+			status TEXT NOT NULL DEFAULT 'pending',
+			env TEXT NOT NULL DEFAULT '{}',
+			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+		);
+		INSERT INTO organizations (slug, name) VALUES ('acme', 'Acme Inc');
+		INSERT INTO apps (org_id, name, domain, image) VALUES (1, 'oldapp', 'old.example.com', 'registry.example.com/oldapp');`); err != nil {
+		t.Fatalf("create pre-projects schema: %v", err)
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open on a pre-projects database: %v", err)
+	}
+	defer s.Close()
+
+	ctx := context.Background()
+	app, err := s.GetAppByName(ctx, "oldapp")
+	if err != nil {
+		t.Fatalf("GetAppByName after migration: %v", err)
+	}
+	org, err := s.GetOrganizationBySlug(ctx, "acme")
+	if err != nil {
+		t.Fatalf("GetOrganizationBySlug: %v", err)
+	}
+	project, err := s.GetProjectBySlug(ctx, org.ID, DefaultProjectSlug)
+	if err != nil {
+		t.Fatalf("expected a %q project to be created for the adopted app: %v", DefaultProjectSlug, err)
+	}
+	if app.ProjectID != project.ID {
+		t.Fatalf("expected the app to be adopted into project %d, got %d", project.ID, app.ProjectID)
+	}
+	env, err := s.GetEnvironmentBySlug(ctx, project.ID, ProductionEnvSlug)
+	if err != nil {
+		t.Fatalf("expected a %q environment to be created for the adopted app: %v", ProductionEnvSlug, err)
+	}
+	if app.EnvironmentID != env.ID {
+		t.Fatalf("expected the app to be adopted into environment %d, got %d", env.ID, app.EnvironmentID)
+	}
 }
 
 // apps.env was added the same no-op way one release earlier, so a

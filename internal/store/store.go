@@ -25,9 +25,31 @@ CREATE TABLE IF NOT EXISTS organizations (
 	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS projects (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	org_id INTEGER NOT NULL REFERENCES organizations(id),
+	slug TEXT NOT NULL,
+	name TEXT NOT NULL,
+	env TEXT NOT NULL DEFAULT '{}',
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE (org_id, slug)
+);
+
+CREATE TABLE IF NOT EXISTS environments (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	project_id INTEGER NOT NULL REFERENCES projects(id),
+	slug TEXT NOT NULL,
+	name TEXT NOT NULL,
+	env TEXT NOT NULL DEFAULT '{}',
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	UNIQUE (project_id, slug)
+);
+
 CREATE TABLE IF NOT EXISTS apps (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	org_id INTEGER NOT NULL REFERENCES organizations(id),
+	project_id INTEGER NOT NULL REFERENCES projects(id),
+	environment_id INTEGER NOT NULL REFERENCES environments(id),
 	name TEXT NOT NULL UNIQUE,
 	domain TEXT NOT NULL,
 	image TEXT NOT NULL UNIQUE,
@@ -74,6 +96,11 @@ CREATE TABLE IF NOT EXISTS api_keys (
 // migrate.
 const DefaultOrgSlug = "default"
 
+// DefaultProjectSlug is the project pre-existing apps are adopted into
+// when a database created before projects existed is upgraded. See
+// migrate.
+const DefaultProjectSlug = "default"
+
 func Open(path string) (*Store, error) {
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -106,7 +133,15 @@ func migrate(db *sql.DB) error {
 	if err != nil {
 		return err
 	}
-	if hasEnv && hasOrgID {
+	hasProjectID, err := hasColumn(db, "apps", "project_id")
+	if err != nil {
+		return err
+	}
+	hasEnvironmentID, err := hasColumn(db, "apps", "environment_id")
+	if err != nil {
+		return err
+	}
+	if hasEnv && hasOrgID && hasProjectID && hasEnvironmentID {
 		return nil
 	}
 
@@ -149,6 +184,26 @@ func migrate(db *sql.DB) error {
 		}
 	}
 
+	if !hasProjectID {
+		if _, err := tx.Exec(`ALTER TABLE apps ADD COLUMN project_id INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add apps.project_id: %w", err)
+		}
+	}
+	if !hasEnvironmentID {
+		if _, err := tx.Exec(`ALTER TABLE apps ADD COLUMN environment_id INTEGER NOT NULL DEFAULT 0`); err != nil {
+			return fmt.Errorf("add apps.environment_id: %w", err)
+		}
+	}
+	if !hasProjectID || !hasEnvironmentID {
+		// Same reasoning as the org_id backfill above, one level down:
+		// every app now needs an environment (and that environment's
+		// project) to live in, or every deploy that reads app.EnvironmentID
+		// to merge in inherited env vars fails outright.
+		if err := adoptOrphanedApps(tx); err != nil {
+			return err
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit migration: %w", err)
 	}
@@ -175,6 +230,77 @@ func ensureDefaultOrg(tx *sql.Tx) (int64, error) {
 		return 0, err
 	}
 	return id, nil
+}
+
+// adoptOrphanedApps gives every app left at project_id/environment_id = 0
+// by the ALTER TABLE statements above a home: one "default" project (and
+// its mandatory "production" environment) per organization that has such
+// apps. Grouping by org_id, rather than creating one global default,
+// keeps apps belonging to different organizations from ending up sharing
+// a project.
+func adoptOrphanedApps(tx *sql.Tx) error {
+	rows, err := tx.Query(`SELECT DISTINCT org_id FROM apps WHERE project_id = 0 OR environment_id = 0`)
+	if err != nil {
+		return fmt.Errorf("find orgs with unassigned apps: %w", err)
+	}
+	var orgIDs []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		orgIDs = append(orgIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	rows.Close()
+
+	for _, orgID := range orgIDs {
+		projectID, envID, err := ensureDefaultProjectEnvironment(tx, orgID)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.Exec(
+			`UPDATE apps SET project_id = ?, environment_id = ? WHERE org_id = ? AND (project_id = 0 OR environment_id = 0)`,
+			projectID, envID, orgID); err != nil {
+			return fmt.Errorf("adopt unassigned apps for org %d: %w", orgID, err)
+		}
+	}
+	return nil
+}
+
+// ensureDefaultProjectEnvironment returns the ids of org orgID's
+// DefaultProjectSlug project and its ProductionEnvSlug environment,
+// creating either that don't already exist.
+func ensureDefaultProjectEnvironment(tx *sql.Tx, orgID int64) (projectID, envID int64, err error) {
+	err = tx.QueryRow(`SELECT id FROM projects WHERE org_id = ? AND slug = ?`, orgID, DefaultProjectSlug).Scan(&projectID)
+	if errors.Is(err, sql.ErrNoRows) {
+		res, err := tx.Exec(`INSERT INTO projects (org_id, slug, name) VALUES (?, ?, ?)`, orgID, DefaultProjectSlug, "Default")
+		if err != nil {
+			return 0, 0, fmt.Errorf("create default project: %w", err)
+		}
+		if projectID, err = res.LastInsertId(); err != nil {
+			return 0, 0, err
+		}
+	} else if err != nil {
+		return 0, 0, fmt.Errorf("look up default project: %w", err)
+	}
+
+	err = tx.QueryRow(`SELECT id FROM environments WHERE project_id = ? AND slug = ?`, projectID, ProductionEnvSlug).Scan(&envID)
+	if errors.Is(err, sql.ErrNoRows) {
+		res, err := tx.Exec(`INSERT INTO environments (project_id, slug, name) VALUES (?, ?, ?)`, projectID, ProductionEnvSlug, "Production")
+		if err != nil {
+			return 0, 0, fmt.Errorf("create production environment: %w", err)
+		}
+		if envID, err = res.LastInsertId(); err != nil {
+			return 0, 0, err
+		}
+	} else if err != nil {
+		return 0, 0, fmt.Errorf("look up production environment: %w", err)
+	}
+	return projectID, envID, nil
 }
 
 // hasColumn reports whether table has a column of the given name.

@@ -14,7 +14,8 @@ func TestCreateAndGetApp(t *testing.T) {
 
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	created, err := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/acme/myapp")
+	project, env, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	created, err := s.CreateApp(ctx, org.ID, project.ID, env.ID, "myapp", "myapp.example.com", "registry.example.com/acme/myapp")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -23,6 +24,12 @@ func TestCreateAndGetApp(t *testing.T) {
 	}
 	if created.OrgID != org.ID {
 		t.Fatalf("expected OrgID %d, got %d", org.ID, created.OrgID)
+	}
+	if created.ProjectID != project.ID {
+		t.Fatalf("expected ProjectID %d, got %d", project.ID, created.ProjectID)
+	}
+	if created.EnvironmentID != env.ID {
+		t.Fatalf("expected EnvironmentID %d, got %d", env.ID, created.EnvironmentID)
 	}
 
 	got, err := s.GetAppByName(ctx, "myapp")
@@ -42,7 +49,8 @@ func TestGetAppByImage(t *testing.T) {
 	defer s.Close()
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	project, env, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	s.CreateApp(ctx, org.ID, project.ID, env.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	got, err := s.GetAppByImage(ctx, "registry.example.com/myapp")
 	if err != nil {
@@ -63,7 +71,8 @@ func TestUpdateAppContainer(t *testing.T) {
 	defer s.Close()
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	created, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	project, env, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	created, _ := s.CreateApp(ctx, org.ID, project.ID, env.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	if err := s.UpdateAppContainer(ctx, created.ID, "abc123", "running"); err != nil {
 		t.Fatalf("UpdateAppContainer: %v", err)
@@ -80,7 +89,8 @@ func TestSetAndGetAppEnv(t *testing.T) {
 	defer s.Close()
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	project, env, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	app, _ := s.CreateApp(ctx, org.ID, project.ID, env.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	if len(app.Env) != 0 {
 		t.Fatalf("expected empty env on creation, got %v", app.Env)
@@ -105,8 +115,10 @@ func TestListAppsIncludesOrgID(t *testing.T) {
 	ctx := context.Background()
 	orgA, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	orgB, _ := s.CreateOrganization(ctx, "globex", "Globex Corp")
-	appA, _ := s.CreateApp(ctx, orgA.ID, "appa", "appa.example.com", "registry.example.com/appa")
-	appB, _ := s.CreateApp(ctx, orgB.ID, "appb", "appb.example.com", "registry.example.com/appb")
+	projectA, envA, _ := s.CreateProjectWithDefaultEnvironment(ctx, orgA.ID, "default", "Default")
+	projectB, envB, _ := s.CreateProjectWithDefaultEnvironment(ctx, orgB.ID, "default", "Default")
+	appA, _ := s.CreateApp(ctx, orgA.ID, projectA.ID, envA.ID, "appa", "appa.example.com", "registry.example.com/appa")
+	appB, _ := s.CreateApp(ctx, orgB.ID, projectB.ID, envB.ID, "appb", "appb.example.com", "registry.example.com/appb")
 
 	apps, err := s.ListApps(ctx)
 	if err != nil {

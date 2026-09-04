@@ -10,7 +10,8 @@ func TestRecordAndListDeployments(t *testing.T) {
 	defer s.Close()
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
-	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
+	app, _ := s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	if err := s.RecordDeployment(ctx, app.ID, "registry.example.com/myapp:latest", "success", ""); err != nil {
 		t.Fatalf("RecordDeployment: %v", err)
