@@ -2,11 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"cubeship/internal/api"
 	"cubeship/internal/authkey"
@@ -50,12 +53,56 @@ func main() {
 	}
 }
 
+// adminKeyFileName is where the super-admin's API key is persisted,
+// under the data dir, mode 0600 — the same treatment the daemon token
+// gets in config.Load.
+const adminKeyFileName = "admin-api-key"
+
+// loadOrCreateAdminKey returns the super-admin's API key and the file it
+// lives in, generating and persisting one on first call.
+//
+// This is deliberately NOT cfg.Token. That token is an instance-wide
+// system credential: it is the registry's htpasswd password (so every
+// user who pushes an image needs it) and the registry webhook's shared
+// secret. Seeding the super-admin's API key from it would mean handing
+// anyone who has to `docker push` a credential that also creates orgs,
+// creates admins anywhere and reads every app's environment.
+func loadOrCreateAdminKey(dataDir string) (string, string, error) {
+	path := filepath.Join(dataDir, adminKeyFileName)
+	data, err := os.ReadFile(path)
+	if err == nil {
+		if key := strings.TrimSpace(string(data)); key != "" {
+			return key, path, nil
+		}
+		// An empty file (a truncated write from an earlier crash) is
+		// treated as no key at all and replaced below.
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", "", fmt.Errorf("read admin API key %s: %w", path, err)
+	}
+
+	key, err := authkey.Generate()
+	if err != nil {
+		return "", "", fmt.Errorf("generate admin API key: %w", err)
+	}
+	if err := os.MkdirAll(dataDir, 0o700); err != nil {
+		return "", "", fmt.Errorf("create data dir %s: %w", dataDir, err)
+	}
+	if err := os.WriteFile(path, []byte(key+"\n"), 0o600); err != nil {
+		return "", "", fmt.Errorf("write admin API key %s: %w", path, err)
+	}
+	return key, path, nil
+}
+
 // ensureSuperAdmin creates the instance's first user — a super-admin —
-// the first time the daemon boots against a fresh database, seeding
-// their API key from token (cfg.Token, the same persisted/generated
-// secret config.Load already manages). A database that already has any
-// users is left alone.
-func ensureSuperAdmin(ctx context.Context, s *store.Store, token string) error {
+// the first time the daemon boots against a fresh database, with its own
+// generated API key persisted under dataDir. A database that already has
+// any users is left alone.
+//
+// The user and their key are created in one transaction: a user that
+// exists with no key would take the username, block the bootstrap
+// (which only runs while there are no users at all) and leave the
+// instance with no way in.
+func ensureSuperAdmin(ctx context.Context, s *store.Store, dataDir string) error {
 	n, err := s.CountUsers(ctx)
 	if err != nil {
 		return err
@@ -63,14 +110,30 @@ func ensureSuperAdmin(ctx context.Context, s *store.Store, token string) error {
 	if n > 0 {
 		return nil
 	}
-	user, err := s.CreateUser(ctx, "admin", true)
+
+	key, path, err := loadOrCreateAdminKey(dataDir)
 	if err != nil {
 		return err
 	}
-	if _, err := s.CreateAPIKey(ctx, user.ID, authkey.Hash(token)); err != nil {
+
+	var username string
+	if err := s.WithTx(ctx, func(tx *store.Tx) error {
+		user, err := tx.CreateUser(ctx, "admin", true)
+		if err != nil {
+			return err
+		}
+		username = user.Username
+		_, err = tx.CreateAPIKey(ctx, user.ID, authkey.Hash(key))
+		return err
+	}); err != nil {
 		return err
 	}
-	log.Printf("cubeshipd: created super-admin user %q, API key seeded from the daemon token", user.Username)
+
+	// The key itself stays out of the log, like the daemon token: a
+	// fingerprint identifies it, and the file is where the operator
+	// reads it from.
+	log.Printf("cubeshipd: created super-admin user %q; its API key (fingerprint %s) is stored in %s",
+		username, config.TokenFingerprint(key), path)
 	return nil
 }
 
@@ -82,10 +145,12 @@ func run() error {
 	log.Printf("cubeshipd starting for domain %s", cfg.Domain)
 	// Never log the token itself — the daemon's logs are not a secret
 	// store. A fingerprint is enough to tell which token is in use.
+	// This is the instance-wide system credential (registry password +
+	// webhook secret), not anyone's API key; see loadOrCreateAdminKey.
 	if cfg.TokenFile != "" {
-		log.Printf("daemon API token (fingerprint %s) is stored in %s", config.TokenFingerprint(cfg.Token), cfg.TokenFile)
+		log.Printf("daemon registry token (fingerprint %s) is stored in %s", config.TokenFingerprint(cfg.Token), cfg.TokenFile)
 	} else {
-		log.Printf("daemon API token (fingerprint %s) taken from CUBESHIP_TOKEN", config.TokenFingerprint(cfg.Token))
+		log.Printf("daemon registry token (fingerprint %s) taken from CUBESHIP_TOKEN", config.TokenFingerprint(cfg.Token))
 	}
 
 	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
@@ -114,7 +179,7 @@ func run() error {
 	}
 	defer s.Close()
 
-	if err := ensureSuperAdmin(ctx, s, cfg.Token); err != nil {
+	if err := ensureSuperAdmin(ctx, s, cfg.DataDir); err != nil {
 		return fmt.Errorf("bootstrap super-admin: %w", err)
 	}
 

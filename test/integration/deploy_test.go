@@ -116,7 +116,11 @@ func TestDeployEndToEnd(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	client := apiclient.New("http://127.0.0.1:9000", testToken)
+	// CUBESHIP_TOKEN is the registry/webhook credential only; the
+	// super-admin's API key is generated on first boot and persisted
+	// under the data dir, so that is what talks to the daemon API.
+	adminKey := readAdminAPIKey(t, dataDir)
+	client := apiclient.New("http://127.0.0.1:9000", adminKey)
 
 	if err := client.CreateOrg(ctx, "acme", "Acme Inc"); err != nil {
 		t.Fatalf("CreateOrg: %v", err)
@@ -151,7 +155,7 @@ func TestDeployEndToEnd(t *testing.T) {
 
 	waitFor(t, 60*time.Second, "app deployed after push", func() bool {
 		req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:9000/apps/myapp", nil)
-		req.Header.Set("Authorization", "Bearer "+testToken)
+		req.Header.Set("Authorization", "Bearer "+adminKey)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return false
@@ -188,6 +192,23 @@ func TestDeployEndToEnd(t *testing.T) {
 	if string(body) != "hello from cubeship\n" {
 		t.Fatalf("unexpected response body from the deployed app: %q", body)
 	}
+}
+
+// readAdminAPIKey reads the super-admin API key the daemon writes to its
+// data dir on first boot (mode 0600), the credential the CLI would be
+// given with `cubeship login`.
+func readAdminAPIKey(t *testing.T, dataDir string) string {
+	t.Helper()
+	var key string
+	waitFor(t, 10*time.Second, "super-admin API key file", func() bool {
+		data, err := os.ReadFile(filepath.Join(dataDir, "admin-api-key"))
+		if err != nil {
+			return false
+		}
+		key = strings.TrimSpace(string(data))
+		return key != ""
+	})
+	return key
 }
 
 func jsonDecode(resp *http.Response, v any) error {

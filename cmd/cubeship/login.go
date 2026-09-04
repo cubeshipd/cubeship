@@ -36,10 +36,18 @@ func newRegistryCmd() *cobra.Command {
 		Use:   "registry",
 		Short: "Manage the Cubeship container registry",
 	}
-	registryCmd.AddCommand(&cobra.Command{
+	var password string
+	registryLoginCmd := &cobra.Command{
 		Use:   "login",
 		Short: "Run 'docker login' against the Cubeship registry",
-		Args:  cobra.NoArgs,
+		// The registry credential is still instance-wide (one htpasswd
+		// account), not per-user: its password is the daemon's system
+		// token from $CUBESHIP_DATA_DIR/token on the server, which is
+		// not the same thing as your API key. Per-org registry
+		// authorization arrives with the follow-up registry-token work;
+		// until then --password is how a user who isn't the operator
+		// logs in to push.
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			path, err := clicreds.DefaultPath()
 			if err != nil {
@@ -53,13 +61,19 @@ func newRegistryCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if password == "" {
+				password = creds.Token
+			}
 
 			dockerLogin := exec.Command("docker", "login", registryHost, "-u", "cubeship", "--password-stdin")
-			dockerLogin.Stdin = strings.NewReader(creds.Token)
+			dockerLogin.Stdin = strings.NewReader(password)
 			dockerLogin.Stdout = os.Stdout
 			dockerLogin.Stderr = os.Stderr
 			return dockerLogin.Run()
 		},
-	})
+	}
+	registryLoginCmd.Flags().StringVar(&password, "password", "",
+		"registry password (the daemon's token from $CUBESHIP_DATA_DIR/token); defaults to your saved API key")
+	registryCmd.AddCommand(registryLoginCmd)
 	return registryCmd
 }

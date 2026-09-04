@@ -12,7 +12,13 @@ import (
 )
 
 type Config struct {
-	Domain       string
+	Domain string
+	// Token is the instance-wide system credential: the embedded
+	// registry's htpasswd password (username bootstrap.RegistryUsername)
+	// and the shared secret on the registry's push-notification webhook.
+	// It is NOT a user's API key — users authenticate to the daemon API
+	// with per-user keys, and the super-admin's own key is generated
+	// separately (see cmd/cubeshipd's loadOrCreateAdminKey).
 	Token        string
 	DataDir      string
 	RegistryHost string
@@ -62,10 +68,10 @@ func Load() (*Config, error) {
 	}, nil
 }
 
-// loadOrCreateToken reads the persisted API token, generating and
+// loadOrCreateToken reads the persisted system token, generating and
 // storing one on first run. Persisting matters: a token regenerated on
-// every restart silently invalidates every saved CLI credential and
-// every registry login.
+// every restart silently invalidates every registry login and every
+// notification the registry has queued.
 func loadOrCreateToken(dataDir, path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err == nil {

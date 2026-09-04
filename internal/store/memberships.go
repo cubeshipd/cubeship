@@ -19,8 +19,8 @@ type OrgMembership struct {
 	Role    Role
 }
 
-func (s *Store) AddMembership(ctx context.Context, userID, orgID int64, role Role) error {
-	if _, err := s.db.ExecContext(ctx,
+func addMembership(ctx context.Context, q queryer, userID, orgID int64, role Role) error {
+	if _, err := q.ExecContext(ctx,
 		`INSERT INTO memberships (user_id, org_id, role) VALUES (?, ?, ?)`,
 		userID, orgID, string(role)); err != nil {
 		return fmt.Errorf("add membership: %w", err)
@@ -28,14 +28,33 @@ func (s *Store) AddMembership(ctx context.Context, userID, orgID int64, role Rol
 	return nil
 }
 
-func (s *Store) GetMembership(ctx context.Context, userID, orgID int64) (Role, error) {
+func (s *Store) AddMembership(ctx context.Context, userID, orgID int64, role Role) error {
+	return addMembership(ctx, s.db, userID, orgID, role)
+}
+
+// AddMembership is AddMembership inside t's transaction.
+func (t *Tx) AddMembership(ctx context.Context, userID, orgID int64, role Role) error {
+	return addMembership(ctx, t.q, userID, orgID, role)
+}
+
+func getMembership(ctx context.Context, q queryer, userID, orgID int64) (Role, error) {
 	var role string
-	err := s.db.QueryRowContext(ctx,
+	err := q.QueryRowContext(ctx,
 		`SELECT role FROM memberships WHERE user_id = ? AND org_id = ?`, userID, orgID).Scan(&role)
 	if err != nil {
 		return "", fmt.Errorf("get membership: %w", err)
 	}
 	return Role(role), nil
+}
+
+func (s *Store) GetMembership(ctx context.Context, userID, orgID int64) (Role, error) {
+	return getMembership(ctx, s.db, userID, orgID)
+}
+
+// GetMembership is GetMembership inside t's transaction. A user with no
+// membership in orgID comes back as an error wrapping ErrNotFound.
+func (t *Tx) GetMembership(ctx context.Context, userID, orgID int64) (Role, error) {
+	return getMembership(ctx, t.q, userID, orgID)
 }
 
 func (s *Store) ListMembershipsForUser(ctx context.Context, userID int64) ([]OrgMembership, error) {

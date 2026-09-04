@@ -20,8 +20,12 @@ const registryPort = 5000
 
 // RegistryUsername is the single account the embedded registry accepts.
 // `cubeship registry login` authenticates as this user with the daemon's
-// API token as the password, and the daemon itself uses the same
-// credentials to pull what was pushed.
+// system token (cfg.Token) as the password, and the daemon itself uses
+// the same credentials to pull what was pushed.
+//
+// The registry credential is instance-wide, not per-user: it is not
+// anyone's API key, and it grants no access to the daemon API. Per-org
+// registry authorization arrives with the follow-up registry-token plan.
 const RegistryUsername = "cubeship"
 
 func RegistryContainerOpts(cfg *config.Config) dockerx.ContainerOpts {
@@ -81,11 +85,11 @@ func RegistryContainerOpts(cfg *config.Config) dockerx.ContainerOpts {
 // Without it, anyone on the internet could push an image the daemon
 // would then pull and run on the VPS.
 //
-// token is the daemon's API token. It doubles as the registry password
-// (see RegistryUsername / WriteRegistryHtpasswd) and as the shared
-// secret on the notification endpoint's Authorization header, so the
-// deliberately-unauthenticated /hooks/registry route can still tell a
-// genuine push notification from a forged one.
+// token is the daemon's system token (cfg.Token). It doubles as the
+// registry password (see RegistryUsername / WriteRegistryHtpasswd) and
+// as the shared secret on the notification endpoint's Authorization
+// header, so the deliberately-unauthenticated /hooks/registry route can
+// still tell a genuine push notification from a forged one.
 func RegistryConfigYAML(notifyURL, token string) string {
 	return fmt.Sprintf(`version: 0.1
 log:
