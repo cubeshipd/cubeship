@@ -9,6 +9,7 @@ import (
 	"os"
 
 	"cubeship/internal/api"
+	"cubeship/internal/authkey"
 	"cubeship/internal/bootstrap"
 	"cubeship/internal/config"
 	"cubeship/internal/deploy"
@@ -47,6 +48,30 @@ func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// ensureSuperAdmin creates the instance's first user — a super-admin —
+// the first time the daemon boots against a fresh database, seeding
+// their API key from token (cfg.Token, the same persisted/generated
+// secret config.Load already manages). A database that already has any
+// users is left alone.
+func ensureSuperAdmin(ctx context.Context, s *store.Store, token string) error {
+	n, err := s.CountUsers(ctx)
+	if err != nil {
+		return err
+	}
+	if n > 0 {
+		return nil
+	}
+	user, err := s.CreateUser(ctx, "admin", true)
+	if err != nil {
+		return err
+	}
+	if _, err := s.CreateAPIKey(ctx, user.ID, authkey.Hash(token)); err != nil {
+		return err
+	}
+	log.Printf("cubeshipd: created super-admin user %q, API key seeded from the daemon token", user.Username)
+	return nil
 }
 
 func run() error {
@@ -88,6 +113,10 @@ func run() error {
 		return fmt.Errorf("open store: %w", err)
 	}
 	defer s.Close()
+
+	if err := ensureSuperAdmin(ctx, s, cfg.Token); err != nil {
+		return fmt.Errorf("bootstrap super-admin: %w", err)
+	}
 
 	// The registry container that POSTs to this URL runs on the "cubeship"
 	// bridge network, not the host's network namespace, so it must reach
