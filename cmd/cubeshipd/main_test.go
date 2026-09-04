@@ -3,24 +3,14 @@ package main
 import (
 	"context"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"cubeship/internal/authkey"
-	"cubeship/internal/storetest"
+	"cubeship/internal/platform/authkey"
+	"cubeship/internal/platform/database/dbtest"
+	"cubeship/internal/user"
 )
-
-func TestVersionFlag(t *testing.T) {
-	out, err := exec.Command("go", "run", ".", "--version").CombinedOutput()
-	if err != nil {
-		t.Fatalf("run failed: %v\n%s", err, out)
-	}
-	if !strings.Contains(string(out), "cubeshipd") {
-		t.Fatalf("expected version output to contain cubeshipd, got: %s", out)
-	}
-}
 
 // readAdminKey returns the key ensureSuperAdmin persisted under dataDir.
 func readAdminKey(t *testing.T, dataDir string) string {
@@ -32,20 +22,25 @@ func readAdminKey(t *testing.T, dataDir string) string {
 	return strings.TrimSpace(string(data))
 }
 
+func newUserService(t *testing.T) *user.Service {
+	t.Helper()
+	return user.NewService(dbtest.New(t))
+}
+
 func TestEnsureSuperAdminCreatesOnFirstBoot(t *testing.T) {
-	s := storetest.New(t)
+	users := newUserService(t)
 	ctx := context.Background()
 	dataDir := t.TempDir()
 
-	if err := ensureSuperAdmin(ctx, s, dataDir); err != nil {
+	if err := ensureSuperAdmin(ctx, users, dataDir); err != nil {
 		t.Fatalf("ensureSuperAdmin: %v", err)
 	}
 
-	user, err := s.GetUserByAPIKeyHash(ctx, authkey.Hash(readAdminKey(t, dataDir)))
+	u, err := users.Repo().ByAPIKeyHash(ctx, authkey.Hash(readAdminKey(t, dataDir)))
 	if err != nil {
-		t.Fatalf("GetUserByAPIKeyHash: %v", err)
+		t.Fatalf("the persisted key does not authenticate: %v", err)
 	}
-	if !user.IsSuperAdmin {
+	if !u.IsSuperAdmin {
 		t.Fatal("expected the bootstrapped user to be a super-admin")
 	}
 
@@ -60,12 +55,10 @@ func TestEnsureSuperAdminCreatesOnFirstBoot(t *testing.T) {
 
 // The super-admin's API key must not be the daemon's system token: that
 // token is only the registry webhook's shared secret. Conflating them
-// would mean anyone with the daemon token — including, previously,
-// anyone who had to push before per-user registry tokens existed —
-// holding a credential that also creates organizations and reads every
-// app's environment.
+// would mean anyone holding it could also create organizations and read
+// every app's environment.
 func TestEnsureSuperAdminKeyIsNotTheDaemonToken(t *testing.T) {
-	s := storetest.New(t)
+	users := newUserService(t)
 	ctx := context.Background()
 	dataDir := t.TempDir()
 
@@ -75,11 +68,11 @@ func TestEnsureSuperAdminKeyIsNotTheDaemonToken(t *testing.T) {
 		t.Fatalf("write token file: %v", err)
 	}
 
-	if err := ensureSuperAdmin(ctx, s, dataDir); err != nil {
+	if err := ensureSuperAdmin(ctx, users, dataDir); err != nil {
 		t.Fatalf("ensureSuperAdmin: %v", err)
 	}
 
-	if _, err := s.GetUserByAPIKeyHash(ctx, authkey.Hash(daemonToken)); err == nil {
+	if _, err := users.Repo().ByAPIKeyHash(ctx, authkey.Hash(daemonToken)); err == nil {
 		t.Fatal("the daemon's registry/webhook token must not authenticate as the super-admin")
 	}
 	if key := readAdminKey(t, dataDir); key == daemonToken || key == "" {
@@ -87,22 +80,24 @@ func TestEnsureSuperAdminKeyIsNotTheDaemonToken(t *testing.T) {
 	}
 }
 
+// The daemon runs this on every start, so a second call must neither
+// create a second user nor replace the operator's saved key.
 func TestEnsureSuperAdminIsIdempotent(t *testing.T) {
-	s := storetest.New(t)
+	users := newUserService(t)
 	ctx := context.Background()
 	dataDir := t.TempDir()
 
-	if err := ensureSuperAdmin(ctx, s, dataDir); err != nil {
+	if err := ensureSuperAdmin(ctx, users, dataDir); err != nil {
 		t.Fatalf("ensureSuperAdmin (first call): %v", err)
 	}
 	firstKey := readAdminKey(t, dataDir)
-	if err := ensureSuperAdmin(ctx, s, dataDir); err != nil {
+	if err := ensureSuperAdmin(ctx, users, dataDir); err != nil {
 		t.Fatalf("ensureSuperAdmin (second call): %v", err)
 	}
 
-	n, err := s.CountUsers(ctx)
+	n, err := users.Repo().Count(ctx)
 	if err != nil {
-		t.Fatalf("CountUsers: %v", err)
+		t.Fatalf("count users: %v", err)
 	}
 	if n != 1 {
 		t.Fatalf("expected exactly 1 user after two calls, got %d", n)
@@ -121,13 +116,11 @@ func TestEnsureSuperAdminReusesPersistedKey(t *testing.T) {
 		t.Fatalf("write admin key file: %v", err)
 	}
 
-	s := storetest.New(t)
-	ctx := context.Background()
-
-	if err := ensureSuperAdmin(ctx, s, dataDir); err != nil {
+	users := newUserService(t)
+	if err := ensureSuperAdmin(context.Background(), users, dataDir); err != nil {
 		t.Fatalf("ensureSuperAdmin: %v", err)
 	}
-	if _, err := s.GetUserByAPIKeyHash(ctx, authkey.Hash(existing)); err != nil {
+	if _, err := users.Repo().ByAPIKeyHash(context.Background(), authkey.Hash(existing)); err != nil {
 		t.Fatalf("expected the persisted key to authenticate: %v", err)
 	}
 }

@@ -1,8 +1,8 @@
 # Working on Cubeship
 
-Self-hosted PaaS for one VPS. Go, module `cubeship`, no external
-services beyond Docker. `README.md` is the operator's intro; this file is
-for whoever (or whatever) edits the code.
+Self-hosted PaaS for one VPS. Go, module `cubeship`, no external services
+beyond Docker. `README.md` is the operator's intro; this file is for
+whoever (or whatever) edits the code.
 
 ## Before you commit
 
@@ -23,74 +23,118 @@ Work happens on `master`, in the repository root. No worktrees.
 
 ## Layout
 
-| Package | Holds |
-| --- | --- |
-| `cmd/cubeshipd` | The daemon: config, bootstrap, HTTP server wiring |
-| `cmd/cubeship` | The CLI (cobra), one file per noun |
-| `internal/api` | HTTP handlers, authorization, the MCP server |
-| `internal/store` | SQLite schema, migration, all queries |
-| `internal/deploy` | The zero-downtime deploy orchestrator |
-| `internal/dockerx` | Thin wrapper over the Docker Engine API |
-| `internal/bootstrap` | Bringing up the registry and Traefik containers |
-| `internal/regauth` | Registry v2 JWT token auth (per-user push/pull) |
-| `internal/apiclient` | What the CLI talks to the daemon with |
+The code is organized by domain, not by technical layer. A module owns
+everything about one concept — its entity, its persistence, its use
+cases, and every surface it is reached through.
 
-## Store
+```
+internal/
+  user/         identities and the API keys they authenticate with
+  org/          organizations, memberships, and all authorization
+  project/      projects and the environments inside them
+  app/          apps, deployments, and the deploy orchestrator
+  registry/     who may docker push/pull, and the push webhook
+  server/       mounts every module on the HTTP mux and the MCP endpoint
+  platform/     infrastructure: database, dockerx, traefik, bootstrap,
+                config, authkey, regauth, httpx
+  envvar/ slug/ small shared vocabulary
+cmd/cubeshipd/  the daemon
+cmd/cubeship/   the CLI (cobra), one file per noun
+internal/apiclient, internal/clicreds — what the CLI talks to the daemon with
+```
+
+Every domain module has the same shape:
+
+| File | Holds |
+| --- | --- |
+| `<name>.go` | the entity, its constants and its domain errors |
+| `repository.go` | every SQL statement for its tables |
+| `service.go` | the use cases — the only place business rules live |
+| `http.go` | handlers, routes, and the domain-error → status mapping |
+| `mcp.go` | the MCP tools |
+
+**`http.go` and `mcp.go` are adapters and nothing else.** They parse
+input, call one service method, and render the result. A rule that lives
+in a handler is a rule the MCP surface doesn't have — that is exactly how
+the two drifted apart before this layout.
+
+Dependencies run one way: `user ← org ← project ← app`, with `registry`
+and `server` on top. `server` is the only package that knows every module
+exists.
+
+## Database
 
 Postgres through `pgx/v5/stdlib` over `database/sql`. Placeholders are
 `$1`, `$2`, …, and there is **no `LastInsertId`** — an insert that needs
 the new row returns it with `INSERT ... RETURNING <columns>`.
 
-Schema changes are numbered, append-only migrations in
-[`migrate.go`](internal/store/migrate.go): add an entry to `migrations`,
-never edit one that has shipped. Postgres has transactional DDL, so each
-one applies atomically alongside the row recording it, and `migrate` runs
-on every daemon start.
+Schema changes are [goose](https://github.com/pressly/goose) migrations
+in [`internal/platform/database/migrations`](internal/platform/database/migrations),
+embedded into the binary. Add a numbered file with `-- +goose Up` and
+`-- +goose Down`; never edit one that has shipped. Postgres has
+transactional DDL, so each applies atomically, and they run on every
+daemon start.
 
-Queries live as package-level functions over a `queryer` interface so
-`*Store` and `*Tx` share them; `WithTx` is the transaction primitive.
-Get* methods wrap `ErrNotFound`. Each table has a `<table>Columns`
-constant that its scan function reads in order — change one, change both.
+A `Repository` is a thin value over a `database.Queryer`, so the same code
+runs on the pool or inside a transaction:
 
-`env` columns are `JSONB`; write them through `marshalEnv` so a nil map
-becomes `{}` rather than JSON null.
+```go
+db.WithTx(ctx, func(tx database.Queryer) error {
+    users := user.NewRepository(tx)
+    orgs  := org.NewRepository(tx)
+    ...
+})
+```
+
+Each table has a `columns` constant its scan function reads in order —
+change one, change both. `env` columns are `JSONB`; go through
+`envvar.MarshalJSONB` so a nil map becomes `{}` rather than JSON null.
 
 The daemon runs its own `cubeship-postgres` container (see
 `bootstrap.PostgresContainerOpts`) unless `CUBESHIP_DATABASE_URL` points
 it at an existing server.
 
-## API and MCP
+## Authorization
 
-Handlers are grouped by resource (`apps_handlers.go`, `org_handlers.go`,
-...). Authorization goes through `authorizeOrg`/`authorizeApp` and their
-`*Request` wrappers; a resource the caller may not see returns **404, not
-403**, so the API never confirms that another org's app exists.
+One question, one answer: `org.Service.Authorize`. Everything else
+reaches it through `Resolve` on its own module's service.
 
-`/mcp` serves the same capabilities as the CLI over the Model Context
-Protocol, authenticated by the same bearer API key. It is **stateless on
-purpose** — the server is rebuilt per request so its tools close over
-that request's authenticated user, and no session can be reused across
-users. Logic shared between an HTTP handler and an MCP tool goes in an
-`*_actions.go` file so the two can never drift; a new CLI capability
-should land as a handler, an action, and a tool.
+The two refusals mean different things, and the difference is load-bearing:
+
+- **404** — the caller is not a member of the organization at all, or the
+  resource doesn't exist. Identical answers on purpose, so a valid API key
+  can't enumerate tenants or app names by guessing.
+- **403** — the caller IS a member but lacks the role. They already know
+  the resource exists; hiding it would only confuse them.
+
+`/mcp` is authenticated by the same bearer API key and **stateless on
+purpose** — the server is rebuilt per request so its tools close over that
+request's caller, and no session can be reused across users.
+
+Slugs — orgs, projects, environments, apps — go through `slug.Valid`,
+because they become path segments of a registry image reference and
+Docker rejects anything else.
 
 ## Tests
 
-Unit tests need a real Postgres — there is no in-memory mode. `make test`
+Unit tests need a real Postgres; there is no in-memory mode. `make test`
 starts one (`make db-up`, a container on port 5433) and
-[`storetest.New(t)`](internal/storetest/storetest.go) gives each test its
-own schema inside it, dropped on cleanup, so tests stay isolated and can
-run in parallel. Tests in package `store` itself can't import `storetest`
-(import cycle) and use the equivalent local `newTestStore`.
+[`dbtest.New(t)`](internal/platform/database/dbtest) gives each test its
+own schema inside it, dropped on cleanup — so tests stay isolated and can
+run in parallel against one server.
 
-A test with no database reachable **fails**, deliberately — skipping
-would let `make check` report success for tests that never ran.
+A test with no database reachable **fails**, deliberately: skipping would
+let `make check` report success for tests that never ran.
 
-Docker is faked everywhere else, so no test talks to a real daemon. The
-MCP tests run a real client against a real `httptest` server.
-`test/integration` needs a Linux Docker daemon (`--network host` doesn't
-reach the host on Docker Desktop) and sits behind `//go:build integration`.
+For anything above the repository,
+[`servertest.New(t)`](internal/server/servertest) builds a fully wired
+server and drives it through its real router. Use it from an external test
+package (`package app_test`) — that is what keeps it from being an import
+cycle.
 
-Slugs — orgs, projects, environments, apps — are kebab-case and validated
-against `slugPattern`, because they become path segments of a registry
-image reference.
+The suite is deliberately not exhaustive. It covers the things that are
+expensive to get wrong: the authorization matrix, deploy ordering and
+rollback, transaction rollback, registry scope grants, and MCP parity with
+HTTP. Docker is always faked. `test/integration` needs a Linux Docker
+daemon (`--network host` doesn't reach the host on Docker Desktop) and
+sits behind `//go:build integration`.

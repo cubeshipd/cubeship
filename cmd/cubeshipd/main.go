@@ -13,15 +13,15 @@ import (
 	"strings"
 	"time"
 
-	"cubeship/internal/api"
-	"cubeship/internal/authkey"
-	"cubeship/internal/bootstrap"
-	"cubeship/internal/config"
-	"cubeship/internal/deploy"
-	"cubeship/internal/dockerx"
-	"cubeship/internal/reconcile"
-	"cubeship/internal/regauth"
-	"cubeship/internal/store"
+	"cubeship/internal/app"
+	"cubeship/internal/platform/authkey"
+	"cubeship/internal/platform/bootstrap"
+	"cubeship/internal/platform/config"
+	"cubeship/internal/platform/database"
+	"cubeship/internal/platform/dockerx"
+	"cubeship/internal/platform/regauth"
+	"cubeship/internal/server"
+	"cubeship/internal/user"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -118,8 +118,8 @@ func loadOrCreateSecret(dataDir, name string) (string, string, error) {
 // exists with no key would take the username, block the bootstrap
 // (which only runs while there are no users at all) and leave the
 // instance with no way in.
-func ensureSuperAdmin(ctx context.Context, s *store.Store, dataDir string) error {
-	n, err := s.CountUsers(ctx)
+func ensureSuperAdmin(ctx context.Context, users *user.Service, dataDir string) error {
+	n, err := users.Repo().Count(ctx)
 	if err != nil {
 		return err
 	}
@@ -133,13 +133,14 @@ func ensureSuperAdmin(ctx context.Context, s *store.Store, dataDir string) error
 	}
 
 	var username string
-	if err := s.WithTx(ctx, func(tx *store.Tx) error {
-		user, err := tx.CreateUser(ctx, "admin", true)
+	if err := users.DB().WithTx(ctx, func(tx database.Queryer) error {
+		repo := user.NewRepository(tx)
+		created, err := repo.Create(ctx, "admin", true)
 		if err != nil {
 			return err
 		}
-		username = user.Username
-		_, err = tx.CreateAPIKey(ctx, user.ID, authkey.Hash(key), store.DefaultAPIKeyName)
+		username = created.Username
+		_, err = repo.CreateAPIKey(ctx, created.ID, authkey.Hash(key), user.DefaultAPIKeyName)
 		return err
 	}); err != nil {
 		return err
@@ -269,13 +270,18 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	s, err := store.Open(dsn)
+	db, err := database.Open(dsn)
 	if err != nil {
-		return fmt.Errorf("open store: %w", err)
+		return fmt.Errorf("open database: %w", err)
 	}
-	defer s.Close()
+	defer db.Close()
 
-	if err := ensureSuperAdmin(ctx, s, cfg.DataDir); err != nil {
+	srv := server.New(db, docker, server.Options{
+		WebhookToken: cfg.Token,
+		RegistryHost: cfg.RegistryHost,
+	})
+
+	if err := ensureSuperAdmin(ctx, srv.Users, cfg.DataDir); err != nil {
 		return fmt.Errorf("bootstrap super-admin: %w", err)
 	}
 
@@ -304,12 +310,10 @@ func run() error {
 		return fmt.Errorf("bootstrap traefik: %w", err)
 	}
 
-	if err := reconcile.Run(ctx, s, docker); err != nil {
+	if err := app.Reconcile(ctx, srv.Apps.Repo(), docker); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
 
-	orch := deploy.NewOrchestrator(s, docker)
-	srv := api.NewServer(s, orch, cfg.Token, cfg.RegistryHost)
 	srv.SetRegistrySigningKey(registrySigningKey)
 
 	log.Printf("cubeshipd listening on %s", listenAddr)

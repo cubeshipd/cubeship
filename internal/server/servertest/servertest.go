@@ -1,0 +1,183 @@
+// Package servertest builds a fully wired Cubeship server against a
+// throwaway database, for tests that exercise a module through its real
+// HTTP or MCP surface rather than through its service directly.
+//
+// A module's own tests import it from an external test package
+// (package app_test, say), which is what keeps this from being an import
+// cycle: servertest depends on server, which depends on every module.
+package servertest
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"io"
+	"net/http/httptest"
+	"testing"
+
+	"cubeship/internal/app"
+	"cubeship/internal/org"
+	"cubeship/internal/platform/authkey"
+	"cubeship/internal/platform/database"
+	"cubeship/internal/platform/database/dbtest"
+	"cubeship/internal/project"
+	"cubeship/internal/server"
+	"cubeship/internal/user"
+)
+
+// WebhookToken is the shared secret the test server accepts registry
+// notifications with.
+const WebhookToken = "webhook-secret"
+
+// RegistryHost is the public registry name test app image paths are
+// built from.
+const RegistryHost = "registry.example.com"
+
+// Fixture is a running server plus the identities and scopes a test
+// needs to reach it.
+type Fixture struct {
+	Server *server.Server
+	DB     *database.DB
+
+	// Admin is a super-admin, and AdminKey their API key. Use it to set
+	// up whatever a test needs; use OrgAdmin/Member to test authorization.
+	Admin    *user.User
+	AdminKey string
+
+	// Org, Project and Environment are a ready-made scope for apps:
+	// "acme" / "web" / "production".
+	Org         *org.Organization
+	Project     *project.Project
+	Environment *project.Environment
+}
+
+// New returns a server wired over an empty database, with a super-admin
+// and an "acme" organization holding a "web" project.
+//
+// docker may be nil for tests that never deploy; a nil client panics only
+// if something actually calls it, which no HTTP-level test does.
+func New(t testing.TB) *Fixture {
+	t.Helper()
+	return NewWithDocker(t, nil)
+}
+
+// NewWithDocker is New with a Docker client (usually a fake) wired into
+// the deploy orchestrator.
+func NewWithDocker(t testing.TB, docker app.DockerAPI) *Fixture {
+	t.Helper()
+	ctx := context.Background()
+	db := dbtest.New(t)
+
+	srv := server.New(db, docker, server.Options{
+		WebhookToken: WebhookToken,
+		RegistryHost: RegistryHost,
+	})
+
+	admin, adminKey := CreateUser(t, db, "admin", true)
+	o, err := srv.Orgs.Repo().Create(ctx, "acme", "Acme Inc")
+	if err != nil {
+		t.Fatalf("create organization: %v", err)
+	}
+	p, env, err := srv.Projects.Create(ctx, admin, o.Slug, "web", "Web")
+	if err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+
+	return &Fixture{
+		Server: srv, DB: db,
+		Admin: admin, AdminKey: adminKey,
+		Org: o, Project: p, Environment: env,
+	}
+}
+
+// CreateUser adds a user directly to the database and returns them with a
+// fresh API key. It bypasses the API on purpose: a test that needs a
+// second identity should not have to succeed at creating one first.
+func CreateUser(t testing.TB, db *database.DB, username string, superAdmin bool) (*user.User, string) {
+	t.Helper()
+	ctx := context.Background()
+	repo := user.NewRepository(db)
+
+	u, err := repo.Create(ctx, username, superAdmin)
+	if err != nil {
+		t.Fatalf("create user %q: %v", username, err)
+	}
+	key, err := authkey.Generate()
+	if err != nil {
+		t.Fatalf("generate api key: %v", err)
+	}
+	if _, err := repo.CreateAPIKey(ctx, u.ID, authkey.Hash(key), user.DefaultAPIKeyName); err != nil {
+		t.Fatalf("create api key for %q: %v", username, err)
+	}
+	return u, key
+}
+
+// AddMember creates a user with the given role in f.Org and returns
+// their API key.
+func (f *Fixture) AddMember(t testing.TB, username string, role org.Role) (*user.User, string) {
+	t.Helper()
+	u, key := CreateUser(t, f.DB, username, false)
+	if err := f.Server.Orgs.Repo().AddMembership(context.Background(), u.ID, f.Org.ID, role); err != nil {
+		t.Fatalf("add %q to the organization: %v", username, err)
+	}
+	return u, key
+}
+
+// Do sends an authenticated request through the server's router and
+// returns the recorded response. body may be nil, a []byte, or any value
+// to be JSON-encoded.
+func (f *Fixture) Do(t testing.TB, method, path string, body any, apiKey string) *httptest.ResponseRecorder {
+	t.Helper()
+	var reader io.Reader
+	switch b := body.(type) {
+	case nil:
+	case []byte:
+		reader = bytes.NewReader(b)
+	default:
+		encoded, err := json.Marshal(b)
+		if err != nil {
+			t.Fatalf("encode request body: %v", err)
+		}
+		reader = bytes.NewReader(encoded)
+	}
+
+	req := httptest.NewRequest(method, path, reader)
+	if apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	f.Server.Router().ServeHTTP(rec, req)
+	return rec
+}
+
+// DoJSON is Do plus decoding a successful response body into out.
+func (f *Fixture) DoJSON(t testing.TB, method, path string, body any, apiKey string, out any) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := f.Do(t, method, path, body, apiKey)
+	if out != nil && rec.Code < 300 {
+		if err := json.Unmarshal(rec.Body.Bytes(), out); err != nil {
+			t.Fatalf("decode %s %s response %q: %v", method, path, rec.Body.String(), err)
+		}
+	}
+	return rec
+}
+
+// RequireStatus fails the test unless rec carries the expected status,
+// reporting the body — which is where the server explains itself.
+func RequireStatus(t testing.TB, rec *httptest.ResponseRecorder, want int) {
+	t.Helper()
+	if rec.Code != want {
+		t.Fatalf("expected %d, got %d: %s", want, rec.Code, rec.Body.String())
+	}
+}
+
+// HTTPServer starts a real HTTP server in front of the fixture, for a
+// test that needs a client to dial it — the MCP client, notably.
+func (f *Fixture) HTTPServer(t testing.TB) *httptest.Server {
+	t.Helper()
+	ts := httptest.NewServer(f.Server.Router())
+	t.Cleanup(ts.Close)
+	return ts
+}
