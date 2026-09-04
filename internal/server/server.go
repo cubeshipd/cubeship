@@ -19,6 +19,7 @@ import (
 	"cubeship/internal/settings"
 	"cubeship/internal/setup"
 	"cubeship/internal/user"
+	"cubeship/internal/web"
 )
 
 // Server owns the module graph and the mux they are mounted on.
@@ -91,16 +92,17 @@ func (s *Server) Patterns() []string { return s.router.Patterns() }
 func (s *Server) InternalPatterns() []string { return s.router.InternalPatterns() }
 
 func (s *Server) routes() {
-	// None of these belong in the document: a liveness probe, the
-	// document itself, the page that renders it, and an endpoint that
-	// speaks JSON-RPC rather than REST.
-	s.router.HandleInternalFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	// None of these belong in the document, and none of them moves
+	// under the API prefix: a liveness probe an uptime check is pointed
+	// at, the document itself, the page that renders it, and an endpoint
+	// that speaks JSON-RPC rather than REST.
+	s.router.HandleRootFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
 	// Both are unauthenticated so a browser can render the reference
 	// without a key. See handleDocs.
-	s.router.HandleInternalFunc("GET "+OpenAPIPath, s.handleOpenAPI)
-	s.router.HandleInternalFunc("GET "+DocsPath, s.handleDocs)
+	s.router.HandleRootFunc("GET "+OpenAPIPath, s.handleOpenAPI)
+	s.router.HandleRootFunc("GET "+DocsPath, s.handleDocs)
 
 	// auth is handed to each module so every authenticated route is
 	// mounted the same way, and no module invents its own.
@@ -120,5 +122,21 @@ func (s *Server) routes() {
 	// auth, and a shared webhook secret), so they mount unwrapped.
 	s.Registry.Routes(s.router)
 
-	s.router.HandleInternal("POST /mcp", auth(s.mcpHandler()))
+	s.router.HandleRoot("POST /mcp", auth(s.mcpHandler()))
+
+	// A path under the prefix that matches no route is a wrong API call,
+	// not a dashboard route. Without this it would fall through to "GET
+	// /" below and answer 200 with HTML, which a client reads as a
+	// malformed response rather than as the 404 it is.
+	s.router.HandleRootFunc(httpx.APIPrefix+"/", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "no such endpoint", http.StatusNotFound)
+	})
+
+	// The dashboard takes the whole root: it is the fallback, matching
+	// only what nothing above it claimed. It is registered for every
+	// method rather than for GET, because "GET /" and "/api/" are
+	// ambiguous to the mux — one matches fewer methods, the other a
+	// narrower path — and it refuses to choose. The handler answers 405
+	// to anything but a read.
+	s.router.HandleRoot("/", web.Handler())
 }

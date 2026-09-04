@@ -22,8 +22,10 @@ type scopeContext = context.Context
 // Both are internal: `docker` and the registry container call them, no
 // API consumer ever does, so they stay out of the OpenAPI document.
 func (h *Handler) Routes(r *httpx.Router) {
-	r.HandleInternalFunc("GET /v2/token", h.issueToken)
-	r.HandleInternalFunc("POST /hooks/registry", h.webhook)
+	// Both stay at the root: these two addresses live in the registry
+	// container's own configuration, not in anyone's client.
+	r.HandleRootFunc("GET /v2/token", h.issueToken)
+	r.HandleRootFunc("POST /hooks/registry", h.webhook)
 }
 
 // WaitForDeploys blocks until every deploy the daemon started has

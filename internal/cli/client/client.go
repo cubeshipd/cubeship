@@ -18,6 +18,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"cubeship/internal/platform/httpx"
 	"time"
 )
 
@@ -113,7 +115,7 @@ func (c *Client) send(ctx context.Context, method, path string, body any) (*http
 		reader = bytes.NewReader(encoded)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+path, reader)
+	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+httpx.APIPrefix+path, reader)
 	if err != nil {
 		return nil, err
 	}

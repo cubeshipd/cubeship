@@ -23,6 +23,10 @@ make daemon-linux   # cross-compile the daemon for the VPS
 make help           # everything else
 ```
 
+Both build the dashboard first, so they need Node. `go build` on its own
+still works — you get a daemon that serves the API and says the dashboard
+is missing.
+
 On the server, install the binary and the unit file at
 [`deploy/cubeshipd.service`](deploy/cubeshipd.service):
 
@@ -47,39 +51,38 @@ State lives in Postgres. By default the daemon runs it for you, as a
 data dir — nothing to install. Set `CUBESHIP_DATABASE_URL` to point at an
 existing server instead, and the daemon connects without managing it.
 
-**Port 9000 must not be reachable from the public internet.** The daemon
-binds it on all interfaces so the registry container can reach the
-webhook, but that port serves the API in plaintext, bypassing Traefik's
-TLS. Open only 80 and 443.
+**Port 9000 is plaintext.** The daemon binds it on all interfaces so the
+registry container can reach the webhook, and it serves the dashboard and
+the API there too — bypassing Traefik's TLS. A fresh box has no domain
+and no certificate, so this is the only way in and it has to be
+reachable; a password and a session cookie cross it in the clear.
+
+Once a domain is set, everything is reachable over HTTPS at
+`api.<domain>` and 9000 has no remaining use from outside. Close it then,
+and open only 80 and 443.
 
 ## Claiming the instance
 
-A fresh instance has no account. The first request to `POST /setup`
-creates one — a super-admin, with an organization and a project to work
-in — and then setup is closed for good: there is no second account
-without an existing one adding it.
-
-```sh
-curl -X POST http://<ip>:9000/setup \
-  -d '{"username":"you","password":"<at least 12 characters>"}'
-```
+Open `http://<ip>:9000` and create the account. A fresh instance has no
+account and no way to add one from outside, so this first page creates a
+super-admin, an organization and a project, signs you in, and closes
+setup for good — every account after it is added from inside.
 
 **Until you do this, whoever reaches that port first owns the instance.**
 Claim it as soon as the daemon starts; it says so in its log while the
 window is open.
 
-The response signs you in with a session cookie, which is what a browser
-carries. For `cubeship login` and `docker login`, issue yourself an API
-key with `POST /users/me/api-keys`.
+You are signed in with a session cookie. For `cubeship login` and
+`docker login`, issue yourself an API key under Account.
 
 ## Configuring the instance
 
 Until a domain is set there is no registry to push to, and until a
 contact address is set there are no certificates, so apps are served over
-plain HTTP.
+plain HTTP. Both are under **Instance** in the dashboard, or:
 
 ```sh
-curl -X PUT https://api.example.com/settings \
+curl -X PUT https://api.example.com/api/settings \
   -H "Authorization: Bearer $KEY" \
   -d '{"domain":"example.com","acme_email":"admin@example.com"}'
 ```

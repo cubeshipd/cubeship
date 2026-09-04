@@ -1,4 +1,9 @@
 .worktrees/
 .superpowers/
 bin/
+node_modules/
 coverage.out
+# The dashboard's build output. `make web` puts it here; the .gitkeep is
+# what keeps the embed in internal/web legal without it.
+internal/web/dist/*
+!internal/web/dist/.gitkeep

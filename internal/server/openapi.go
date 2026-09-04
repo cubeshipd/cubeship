@@ -8,6 +8,7 @@ import (
 
 	"cubeship/internal/app"
 	"cubeship/internal/org"
+	"cubeship/internal/platform/httpx"
 	"cubeship/internal/platform/openapi"
 	"cubeship/internal/project"
 	"cubeship/internal/settings"
@@ -73,6 +74,10 @@ func (s *Server) OpenAPI() openapi.Document {
 // first. origin is the address the document is being fetched from, when
 // there is one.
 //
+// Every URL ends in the API prefix, which is why the paths themselves do
+// not carry it: the document describes /orgs, and the server says where
+// /orgs lives.
+//
 // Listing the request's own origin first is what makes the reference
 // page's "try it" actually work: whatever address you opened the docs on
 // — api.example.com through Traefik, or 127.0.0.1:9000 over an SSH
@@ -80,10 +85,10 @@ func (s *Server) OpenAPI() openapi.Document {
 func (s *Server) servers(origin string) []openapi.Server {
 	var out []openapi.Server
 	if origin != "" {
-		out = append(out, openapi.Server{URL: origin, Description: "This daemon, at the address you are reading these docs from."})
+		out = append(out, openapi.Server{URL: origin + httpx.APIPrefix, Description: "This daemon, at the address you are reading these docs from."})
 	}
 	if canonical := s.canonicalURL(); canonical != "" && canonical != origin {
-		out = append(out, openapi.Server{URL: canonical, Description: "This daemon's public address, through Traefik."})
+		out = append(out, openapi.Server{URL: canonical + httpx.APIPrefix, Description: "This daemon's public address, through Traefik."})
 	}
 	return out
 }

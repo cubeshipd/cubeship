@@ -23,6 +23,7 @@ import (
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/database/dbtest"
 	"cubeship/internal/platform/dockerx"
+	"cubeship/internal/platform/httpx"
 	"cubeship/internal/project"
 	"cubeship/internal/server"
 	"cubeship/internal/settings"
@@ -237,7 +238,10 @@ func (f *Fixture) request(t testing.TB, method, path string, body any, apiKey st
 		reader = bytes.NewReader(encoded)
 	}
 
-	req := httptest.NewRequest(method, path, reader)
+	// Tests name API routes the way the modules register them, without
+	// the prefix the router adds. One place applies it, so a test reads
+	// as the route it is exercising.
+	req := httptest.NewRequest(method, httpx.APIPrefix+path, reader)
 	if apiKey != "" {
 		req.Header.Set("Authorization", "Bearer "+apiKey)
 	}
@@ -246,6 +250,15 @@ func (f *Fixture) request(t testing.TB, method, path string, body any, apiKey st
 }
 
 // DoJSON is Do plus decoding a successful response body into out.
+// DoRoot drives a route that lives outside the API prefix — the docs,
+// the document, the dashboard.
+func (f *Fixture) DoRoot(t testing.TB, method, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	f.Server.Router().ServeHTTP(rec, httptest.NewRequest(method, path, nil))
+	return rec
+}
+
 func (f *Fixture) DoJSON(t testing.TB, method, path string, body any, apiKey string, out any) *httptest.ResponseRecorder {
 	t.Helper()
 	rec := f.Do(t, method, path, body, apiKey)

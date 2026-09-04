@@ -109,6 +109,8 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 
 	// The daemon still serves the rest; it just doesn't advertise it.
 	wantInternal := []string{
+		"/",
+		"/api/",
 		"DELETE /users/me/api-keys/{id}",
 		"GET /docs",
 		"GET /healthz",
@@ -219,7 +221,7 @@ func TestEverySchemaReferenceResolves(t *testing.T) {
 func TestDocsAndDocumentAreServedUnauthenticated(t *testing.T) {
 	f := servertest.New(t)
 
-	doc := f.Do(t, http.MethodGet, server.OpenAPIPath, nil, "")
+	doc := f.DoRoot(t, http.MethodGet, server.OpenAPIPath)
 	servertest.RequireStatus(t, doc, http.StatusOK)
 	if ct := doc.Header().Get("Content-Type"); ct != "application/json" {
 		t.Errorf("document Content-Type is %q, want application/json", ct)
@@ -232,7 +234,7 @@ func TestDocsAndDocumentAreServedUnauthenticated(t *testing.T) {
 		t.Errorf("document declares openapi %v, want 3.1.0", parsed["openapi"])
 	}
 
-	docs := f.Do(t, http.MethodGet, server.DocsPath, nil, "")
+	docs := f.DoRoot(t, http.MethodGet, server.DocsPath)
 	servertest.RequireStatus(t, docs, http.StatusOK)
 	body := docs.Body.String()
 	if !strings.Contains(body, `data-url="`+server.OpenAPIPath+`"`) {
@@ -313,17 +315,23 @@ func TestServedDocumentTargetsTheAddressItWasFetchedFrom(t *testing.T) {
 			if strings.ContainsAny(s.URL, "{}") {
 				t.Errorf("server URL %q still carries a placeholder", s.URL)
 			}
+			// The paths in the document are the ones the modules
+			// register; the prefix that says where they live is here.
+			if !strings.HasSuffix(s.URL, httpx.APIPrefix) {
+				t.Errorf("server URL %q does not end in %s, so every path in the document is wrong",
+					s.URL, httpx.APIPrefix)
+			}
 		}
 		return doc.Servers
 	}
 
 	t.Run("plain HTTP, as over an SSH tunnel", func(t *testing.T) {
 		servers := fetch(t, func(r *http.Request) { r.Host = "127.0.0.1:9000" })
-		if servers[0].URL != "http://127.0.0.1:9000" {
+		if servers[0].URL != "http://127.0.0.1:9000"+httpx.APIPrefix {
 			t.Errorf("first server is %q, want the address the request arrived on", servers[0].URL)
 		}
 		// The configured public address is still offered as an alternative.
-		if len(servers) != 2 || servers[1].URL != "https://"+servertest.APIHost {
+		if len(servers) != 2 || servers[1].URL != "https://"+servertest.APIHost+httpx.APIPrefix {
 			t.Errorf("expected the canonical address as a second option, got %v", servers)
 		}
 	})
@@ -333,8 +341,8 @@ func TestServedDocumentTargetsTheAddressItWasFetchedFrom(t *testing.T) {
 			r.Host = servertest.APIHost
 			r.Header.Set("X-Forwarded-Proto", "https")
 		})
-		if servers[0].URL != "https://"+servertest.APIHost {
-			t.Errorf("first server is %q, want https://%s", servers[0].URL, servertest.APIHost)
+		if servers[0].URL != "https://"+servertest.APIHost+httpx.APIPrefix {
+			t.Errorf("first server is %q, want https://%s%s", servers[0].URL, servertest.APIHost, httpx.APIPrefix)
 		}
 		// Origin and canonical coincide, so it is offered once, not twice.
 		if len(servers) != 1 {
@@ -347,7 +355,7 @@ func TestServedDocumentTargetsTheAddressItWasFetchedFrom(t *testing.T) {
 			r.Host = servertest.APIHost
 			r.Header.Set("X-Forwarded-Proto", "https, http")
 		})
-		if servers[0].URL != "https://"+servertest.APIHost {
+		if servers[0].URL != "https://"+servertest.APIHost+httpx.APIPrefix {
 			t.Errorf("first server is %q; only the client-facing scheme counts", servers[0].URL)
 		}
 	})

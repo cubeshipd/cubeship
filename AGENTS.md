@@ -34,12 +34,16 @@ internal/
   project/      projects and the environments inside them
   app/          apps, deployments, and the deploy orchestrator
   registry/     who may docker push/pull, and the push webhook
+  setup/        the first-run flow that claims an instance
+  settings/     the instance's domain and contact address
+  web/          serves the built dashboard out of the binary
   server/       mounts every module on the HTTP mux and the MCP endpoint
   platform/     infrastructure: database, dockerx, traefik, bootstrap,
                 config, authkey, regauth, httpx
   envvar/ slug/ small shared vocabulary
 cmd/cubeshipd/  the daemon
 cmd/cubeship/   the CLI (cobra), one file per noun
+web/            the dashboard: Next.js, static export, built by `make web`
 internal/apiclient, internal/clicreds — what the CLI talks to the daemon with
 ```
 
@@ -62,6 +66,49 @@ the two drifted apart before this layout.
 Dependencies run one way: `user ← org ← project ← app`, with `registry`
 and `server` on top. `server` is the only package that knows every module
 exists.
+
+## The API lives under /api, and the root is the dashboard
+
+`httpx.APIPrefix` is applied in one place — `Router.Handle` and
+`Router.HandleInternal` — so a module still registers `GET /orgs` and
+still reads that way.
+
+The split exists because the two collided head-on: `GET /setup` is the
+API's "does this instance need setting up", and it is also the page that
+answers it. A dashboard that cannot name its pages after the resources
+they show is broken by construction.
+
+`Router.HandleRoot` is the third method, for what is not the API and does
+not move: `/healthz`, `/openapi.json`, `/docs`, `/mcp`, the registry
+container's `/v2/token` and `/hooks/registry`, and `GET /` itself. Those
+addresses are typed by a person or written into another program's
+configuration.
+
+Recorded patterns stay unprefixed, so the OpenAPI document keeps
+describing `/orgs` and says where `/orgs` is by ending every server URL
+in the prefix. `servertest`'s `Do` prefixes for you; `DoRoot` does not.
+
+## The dashboard
+
+`web/` is a Next.js app with `output: "export"`, built by `make web`,
+copied into `internal/web/dist` and compiled into the daemon. An install
+is still one binary.
+
+**Static export means no `[dynamic]` segments.** There is no server to
+fall back on, so every route is a real static route and whatever
+identifies a resource travels in the query string —
+`/apps?ref=org/project/env/name`. The reference is four path components
+anyway, and carrying it as one value keeps it whole.
+
+The build output is not in the repository; `internal/web/dist/.gitkeep`
+is what keeps the embed legal without it. A `go build` with no `make web`
+produces a daemon that serves the API and tells you the dashboard is
+missing, rather than a blank 404 at the address the installer told you to
+open.
+
+`make web-dev` runs it on :3001 against a daemon on :9000, proxying
+`/api` — the proxy exists only in development, because in a build the
+daemon serves both.
 
 ## The OpenAPI document
 

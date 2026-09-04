@@ -1,5 +1,24 @@
 # Upgrading an existing install
 
+## From a release with no dashboard
+
+The daemon now serves a dashboard at the root, and everything the API
+answers moved under `/api`. If you call the API directly — a script, a
+CI job, anything holding a bearer token — its URLs gain that prefix:
+`https://api.example.com/api/apps`, not `.../apps`. `cubeship` and the
+MCP endpoint are unchanged; the CLI knows, and `/mcp` did not move.
+
+Six addresses stay at the root, because a person or another program has
+them written down: `/healthz`, `/openapi.json`, `/docs`, `/mcp`, and the
+registry container's `/v2/token` and `/hooks/registry`.
+
+The document at `/openapi.json` now offers server URLs ending in `/api`,
+so a client generated from it needs no edit beyond regenerating.
+
+Building from source needs Node for the dashboard — `make build` and
+`make daemon-linux` run it. A plain `go build` still produces a working
+daemon; it serves the API and reports the dashboard as missing.
+
 ## From a release that bootstrapped a super-admin on first boot
 
 Nothing to do on an install that already has accounts — bootstrap only

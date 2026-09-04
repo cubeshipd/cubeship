@@ -65,8 +65,13 @@ import (
 	"time"
 
 	"cubeship/internal/cli/client"
+	"cubeship/internal/platform/httpx"
 	"cubeship/internal/user"
 )
+
+// daemonURL is the plaintext address the daemon publishes for the
+// registry container's webhook; the test reaches it the same way.
+const daemonURL = "http://127.0.0.1:9000"
 
 const testToken = "integration-test-token"
 
@@ -116,7 +121,7 @@ func TestDeployEndToEnd(t *testing.T) {
 	})
 
 	waitFor(t, 30*time.Second, "daemon healthz", func() bool {
-		resp, err := http.Get("http://127.0.0.1:9000/healthz")
+		resp, err := http.Get(daemonURL + "/healthz")
 		if err != nil {
 			return false
 		}
@@ -140,7 +145,7 @@ func TestDeployEndToEnd(t *testing.T) {
 	// instance has no account at all: the first request anyone makes
 	// claims it, exactly as a browser would on the setup page.
 	adminKey := claimInstance(t, adminUsername, adminPassword)
-	client := client.New("http://127.0.0.1:9000", adminKey)
+	client := client.New(daemonURL, adminKey)
 
 	if _, err := client.CreateOrg(ctx, "acme", "Acme Inc"); err != nil {
 		t.Fatalf("CreateOrg: %v", err)
@@ -185,7 +190,7 @@ func TestDeployEndToEnd(t *testing.T) {
 	}
 
 	waitFor(t, 60*time.Second, "app deployed after push", func() bool {
-		req, _ := http.NewRequest(http.MethodGet, "http://127.0.0.1:9000/apps/myapp", nil)
+		req, _ := http.NewRequest(http.MethodGet, daemonURL+httpx.APIPrefix+"/apps/myapp", nil)
 		req.Header.Set("Authorization", "Bearer "+adminKey)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -244,7 +249,7 @@ func claimInstance(t *testing.T, username, password string) string {
 		if err != nil {
 			t.Fatal(err)
 		}
-		req, err := http.NewRequest(http.MethodPost, "http://127.0.0.1:9000"+path,
+		req, err := http.NewRequest(http.MethodPost, daemonURL+httpx.APIPrefix+path,
 			bytes.NewReader(encoded))
 		if err != nil {
 			t.Fatal(err)

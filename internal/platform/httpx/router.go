@@ -24,6 +24,20 @@ type Router struct {
 	internal []string
 }
 
+// APIPrefix is where everything a client calls lives, so the root is
+// free for the dashboard.
+//
+// Without it the two collide immediately: GET /setup is the API's "does
+// this instance need setting up", and it is also the page that answers
+// it. A dashboard that cannot name its pages after the resources they
+// show is broken by construction, and moving the API is the change that
+// only has to happen once.
+//
+// Patterns are recorded WITHOUT the prefix. It is one constant applied
+// in one place, so the OpenAPI document keeps describing /orgs and says
+// where /orgs is by ending its server URL in the prefix.
+const APIPrefix = "/api"
+
 func NewRouter() *Router {
 	return &Router{mux: http.NewServeMux()}
 }
@@ -33,7 +47,7 @@ func NewRouter() *Router {
 // a matching OpenAPI operation.
 func (r *Router) Handle(pattern string, h http.Handler) {
 	r.patterns = append(r.patterns, pattern)
-	r.mux.Handle(pattern, h)
+	r.mux.Handle(prefixed(pattern), h)
 }
 
 func (r *Router) HandleFunc(pattern string, h http.HandlerFunc) {
@@ -46,11 +60,37 @@ func (r *Router) HandleFunc(pattern string, h http.HandlerFunc) {
 // NOT have an OpenAPI operation.
 func (r *Router) HandleInternal(pattern string, h http.Handler) {
 	r.internal = append(r.internal, pattern)
-	r.mux.Handle(pattern, h)
+	r.mux.Handle(prefixed(pattern), h)
 }
 
 func (r *Router) HandleInternalFunc(pattern string, h http.HandlerFunc) {
 	r.HandleInternal(pattern, h)
+}
+
+// HandleRoot registers a route at the address it names, outside the API
+// prefix. It is for what is not the API: the dashboard, the liveness
+// probe, the OpenAPI document and the page that renders it, the MCP
+// endpoint, and the two URLs the registry container is configured with.
+// Those addresses are either typed by a person or written into another
+// program's configuration, so they do not move.
+//
+// Nothing registered here is documented.
+func (r *Router) HandleRoot(pattern string, h http.Handler) {
+	r.internal = append(r.internal, pattern)
+	r.mux.Handle(pattern, h)
+}
+
+func (r *Router) HandleRootFunc(pattern string, h http.HandlerFunc) {
+	r.HandleRoot(pattern, h)
+}
+
+// prefixed moves a pattern under the API prefix, keeping its method.
+func prefixed(pattern string) string {
+	method, path := SplitPattern(pattern)
+	if method == "" {
+		return APIPrefix + path
+	}
+	return method + " " + APIPrefix + path
 }
 
 // Patterns returns every documented route pattern, sorted.

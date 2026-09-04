@@ -3,6 +3,8 @@
 GO      ?= go
 BINDIR  ?= bin
 COVER   ?= coverage.out
+WEBDIR  ?= web
+WEBDIST ?= internal/web/dist
 
 # The daemon runs on the VPS, which is Linux; the CLI runs wherever you
 # are. `make daemon-linux` cross-compiles the former from the latter.
@@ -18,12 +20,27 @@ help: ## List targets
 		| awk 'BEGIN{FS=":.*## "}{printf "  %-18s %s\n", $$1, $$2}'
 
 .PHONY: build
-build: ## Build cubeship and cubeshipd for this machine into bin/
+build: web ## Build cubeship and cubeshipd for this machine into bin/
 	$(GO) build -o $(BINDIR)/ ./cmd/...
 
 .PHONY: daemon-linux
-daemon-linux: ## Cross-compile the daemon for the VPS (linux/amd64 unless overridden)
+daemon-linux: web ## Cross-compile the daemon for the VPS (linux/amd64 unless overridden)
 	GOOS=$(DAEMON_GOOS) GOARCH=$(DAEMON_GOARCH) $(GO) build -o $(DAEMON_BIN) ./cmd/cubeshipd
+
+# The dashboard is compiled into the daemon, so it has to exist before
+# the Go build runs. It is not in the repository: this target is the only
+# thing that puts it there, and `go build` alone yields a daemon that
+# serves the API and says the dashboard is missing.
+.PHONY: web
+web: ## Build the dashboard into the daemon's embedded assets
+	cd $(WEBDIR) && npm ci --no-audit --no-fund && npm run build
+	rm -rf $(WEBDIST)
+	cp -R $(WEBDIR)/out $(WEBDIST)
+	touch $(WEBDIST)/.gitkeep
+
+.PHONY: web-dev
+web-dev: ## Run the dashboard against a daemon on :9000, with hot reload
+	cd $(WEBDIR) && npm run dev
 
 .PHONY: install
 install: ## Install the CLI into GOBIN
@@ -108,4 +125,6 @@ tidy: ## Sync go.mod/go.sum with the imports
 
 .PHONY: clean
 clean: ## Remove build output
-	rm -rf $(BINDIR) $(COVER)
+	rm -rf $(BINDIR) $(COVER) $(WEBDIR)/out $(WEBDIR)/.next
+	rm -rf $(WEBDIST)
+	mkdir -p $(WEBDIST) && touch $(WEBDIST)/.gitkeep
