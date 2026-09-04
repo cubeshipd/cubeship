@@ -45,9 +45,14 @@ const LocalRegistry = "127.0.0.1:5000"
 // fixture sets one because most tests are about what happens after it is
 // configured.
 const (
-	Domain       = "example.com"
+	// The instance's own name, which is what an install is offered:
+	// a subdomain the operator hands over whole, with everything
+	// Cubeship serves living under it.
+	Domain       = "cubeship.example.com"
 	RegistryHost = "registry." + Domain
-	APIHost      = "api." + Domain
+	// The daemon answers at the domain itself. The dashboard and the API
+	// are one server at one address, so there is no second name.
+	APIHost = Domain
 )
 
 // Fixture is a running server plus the identities and scopes a test

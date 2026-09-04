@@ -127,6 +127,27 @@ settings that install is governed by), and linting and formatting are both **Bio
 `pnpm lint` checks, `pnpm format` writes. There is no ESLint and no
 Prettier.
 
+### Two layers, and the sidebar says so
+
+The sidebar is in sections, because its entries are not peers:
+
+- **Workspace** — projects, environments, apps. What you deploy.
+- **Platform** — registries, DNS providers, the instance's own domain
+  and credentials. What the instance is wired to. Nothing in it belongs
+  to a project, and almost none of it is touched twice: a registry is
+  connected once and deployed through for a year.
+- **You** — the account.
+
+Flat, those read as one list of peers, and "Registries" sat beside
+"Projects" as though choosing between them were a normal thing to do.
+A new module goes in whichever section it belongs to; if that is not
+obvious, it is worth deciding before writing it.
+
+The **URLs are unchanged** — `/registries`, `/dns`, `/settings` stay
+where they are. The layer is a fact about what a thing is, and moving
+every platform page under a `/platform` prefix would break links people
+already have for no gain the sidebar does not give.
+
 ### How the dashboard is navigated
 
 Four levels, and only the first is in the sidebar:

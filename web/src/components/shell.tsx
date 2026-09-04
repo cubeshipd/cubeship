@@ -27,28 +27,58 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { api, type Me } from "@/lib/api";
 
-// `owns` is the rest of the section: the pages you reach from this
-// entry that have no entry of their own. Projects is a section, not a
+// The two layers, and what separates them.
+//
+// **Workspace** is what you deploy: an organization's projects, the
+// environments in them, the apps in those. It is the work.
+//
+// **Platform** is what the instance is wired to — the registries it can
+// pull from, the DNS accounts it can write to, and the instance's own
+// domain and credentials. Nothing in it belongs to a project, and
+// almost none of it is touched twice: you connect a registry once and
+// then deploy through it for a year.
+//
+// Flat, those two read as one list of five peers, and "Registries" sat
+// beside "Projects" as though choosing between them were a normal thing
+// to do. They are not peers: one is where you work and the other is the
+// wiring behind it.
+//
+// `owns` is the rest of a section: the pages you reach from an entry
+// that have no entry of their own. Projects is a section rather than a
 // page — a project, an environment and an app all live under it, and
 // all four keep it lit. Adding a page under one is an edit here, not a
 // new special case in the component below.
-const nav = [
+const sections: { label?: string; items: NavItem[] }[] = [
   {
-    href: "/",
-    label: "Projects",
-    icon: FolderTreeIcon,
-    owns: ["/projects", "/environments", "/apps"],
+    items: [
+      {
+        href: "/",
+        label: "Projects",
+        icon: FolderTreeIcon,
+        owns: ["/projects", "/environments", "/apps"],
+      },
+    ],
   },
   {
-    href: "/registries",
-    label: "Registries",
-    icon: ContainerIcon,
-    owns: ["/registries"],
+    label: "Platform",
+    items: [
+      { href: "/registries", label: "Registries", icon: ContainerIcon, owns: ["/registries"] },
+      { href: "/dns", label: "DNS", icon: GlobeIcon, owns: ["/dns"] },
+      { href: "/settings", label: "Instance", icon: ServerCogIcon },
+    ],
   },
-  { href: "/dns", label: "DNS", icon: GlobeIcon, owns: ["/dns"] },
-  { href: "/settings", label: "Instance", icon: ServerCogIcon },
-  { href: "/account", label: "Account", icon: UserRoundIcon },
+  {
+    label: "You",
+    items: [{ href: "/account", label: "Account", icon: UserRoundIcon }],
+  },
 ];
+
+type NavItem = {
+  href: string;
+  label: string;
+  owns?: string[];
+  icon: typeof FolderTreeIcon;
+};
 
 // Shell is every signed-in page: it resolves who you are before
 // rendering, and sends you to sign in when the answer is nobody.
@@ -76,8 +106,19 @@ export function Shell({ children }: { children: ReactNode }) {
               </div>
 
               <div className="flex-1 p-2">
-                {nav.map((item) => (
-                  <NavLink key={item.href} {...item} />
+                {sections.map((section, i) => (
+                  <div key={section.label ?? "workspace"} className={i > 0 ? "mt-5" : undefined}>
+                    {/* A heading rather than a rule: a line says these
+                        are apart, a word says what the other side is. */}
+                    {section.label && (
+                      <p className="mb-1 px-3 text-[10px] font-semibold tracking-[0.18em] text-subtle-foreground uppercase">
+                        {section.label}
+                      </p>
+                    )}
+                    {section.items.map((item) => (
+                      <NavLink key={item.href} {...item} />
+                    ))}
+                  </div>
                 ))}
               </div>
 
@@ -96,17 +137,7 @@ export function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-function NavLink({
-  href,
-  label,
-  owns = [],
-  icon: Icon,
-}: {
-  href: string;
-  label: string;
-  owns?: string[];
-  icon: typeof FolderTreeIcon;
-}) {
+function NavLink({ href, label, owns = [], icon: Icon }: NavItem) {
   const pathname = usePathname();
   const active =
     pathname === href || owns.some((p) => pathname === p || pathname.startsWith(`${p}/`));

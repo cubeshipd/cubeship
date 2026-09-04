@@ -13,13 +13,45 @@ import "errors"
 // Keys. Every setting is optional: the daemon runs, in a reduced form,
 // with none of them set.
 const (
-	// Domain is the base domain, e.g. "example.com". The API is served
+	// Domain is the instance's own name — `cubeship.example.com` is what
+	// the setup flow offers, and the whole instance lives at it rather
+	// than beside it.
+	//
+	// A subdomain rather than the operator's apex, because it is what
+	// makes the DNS one decision instead of a growing list: an A record
+	// on the name and one wildcard under it cover the dashboard, the
+	// registry and everything Cubeship grows later, and the operator
+	// hands over one subdomain rather than a wildcard on the domain
+	// their mail runs on.
+	//
+	// Nothing enforces the shape. An apex works, and so does any name
+	// that resolves here — the default is a recommendation, not a rule.
+	//
+	// The API is served
 	// at api.<domain> and the registry at registry.<domain>.
 	//
 	// Without it there is no registry to push to: a remote `docker push`
 	// needs a public name, and the registry's token realm has to be an
 	// address the client can reach.
 	Domain = "domain"
+
+	// PublicIP overrides what this host believes its own address to be.
+	//
+	// Empty is the normal case: a VPS holds its public address on its
+	// own interface and the daemon reads it there. This exists for the
+	// host that does not — behind NAT, or with more than one address
+	// and the wrong one chosen — where the records Cubeship writes
+	// would otherwise point somewhere nothing answers.
+	PublicIP = "public_ip"
+
+	// DNSProviderID is which stored DNS credential writes this
+	// instance's own records, or empty for an operator who keeps their
+	// DNS somewhere Cubeship cannot reach.
+	//
+	// It is a setting rather than something chosen at each use, because
+	// the records it writes are the instance's own and there is one
+	// right answer for them at a time.
+	DNSProviderID = "dns_provider_id"
 
 	// ACMEEmail is the contact address Let's Encrypt registers.
 	//
@@ -60,6 +92,8 @@ var ErrSuperAdminOnly = errors.New("forbidden: only a super-admin can change ins
 var known = map[string]string{
 	Domain:              "Base domain. The API is served at api.<domain> and the registry at registry.<domain>; both must resolve to this host.",
 	ACMEEmail:           "Contact address for Let's Encrypt. Certificates are only issued once this is set.",
+	PublicIP:            "What this instance's DNS records should point at. Empty means the address on the interface this host reaches the internet through, which is right on a VPS and wrong behind NAT.",
+	DNSProviderID:       "Which stored DNS credential writes this instance's own records. Empty means the operator keeps their DNS elsewhere and writes them by hand.",
 	GitHubAppID:         "The numeric id of the GitHub App this instance acts as.",
 	GitHubAppSlug:       "The App's slug, which is what its install page is addressed by.",
 	GitHubPrivateKey:    "The App's private key, in PEM. Write-only.",
@@ -108,10 +142,11 @@ func RegistryHostFor(domain string) string {
 	return "registry." + domain
 }
 
-// APIHostFor is where the daemon's API is reached through Traefik.
-func APIHostFor(domain string) string {
-	if domain == "" {
-		return ""
-	}
-	return "api." + domain
-}
+// APIHostFor is where the daemon is reached through Traefik, which is
+// the domain itself.
+//
+// It used to be `api.<domain>`, from when the dashboard and the API were
+// two things at two addresses. They are one address — the daemon serves
+// /api and proxies the rest — so a second name for the same server was a
+// name that had to be explained.
+func APIHostFor(domain string) string { return domain }

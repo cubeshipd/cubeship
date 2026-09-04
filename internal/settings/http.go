@@ -23,6 +23,20 @@ type Response struct {
 	// exist. While it is false, apps are served over plain HTTP.
 	TLSEnabled bool `json:"tls_enabled"`
 
+	// PublicIP is what this instance's DNS records should point at —
+	// what the operator configured, or what the daemon reads off its own
+	// interface. A browser cannot work this out, which is why it is
+	// here: the screen that offers to write the records needs it.
+	PublicIP string `json:"public_ip,omitempty"`
+	// PublicIPConfigured says the address above was typed rather than
+	// detected, so a screen can offer to correct a detected one without
+	// implying the operator's answer was a guess.
+	PublicIPConfigured bool `json:"public_ip_configured"`
+
+	// DNSProviderID is the stored DNS credential that writes this
+	// instance's own records, or empty while its DNS is kept elsewhere.
+	DNSProviderID string `json:"dns_provider_id,omitempty"`
+
 	// GitHubAppSlug names the App this instance acts as, which is what
 	// its install page is addressed by. Empty until one is registered.
 	GitHubAppSlug string `json:"github_app_slug,omitempty"`
@@ -46,6 +60,9 @@ func toResponse(v Values) Response {
 	if v.HasDomain() {
 		r.RegistryHost = RegistryHostFor(v.Get(Domain))
 	}
+	r.PublicIP = v.PublicAddressFor()
+	r.PublicIPConfigured = v.Get(PublicIP) != ""
+	r.DNSProviderID = v.Get(DNSProviderID)
 	r.GitHubAppSlug = v.Get(GitHubAppSlug)
 	r.GitHubConnected = v.HasGitHub()
 	return r
@@ -89,8 +106,10 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 // saving one field must not clear another.
 func (h *Handler) set(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Domain    *string `json:"domain"`
-		ACMEEmail *string `json:"acme_email"`
+		Domain        *string `json:"domain"`
+		ACMEEmail     *string `json:"acme_email"`
+		PublicIP      *string `json:"public_ip"`
+		DNSProviderID *string `json:"dns_provider_id"`
 
 		// The GitHub App's registration. Write-only, and normally
 		// written once by the connect flow rather than typed.
@@ -107,6 +126,12 @@ func (h *Handler) set(w http.ResponseWriter, r *http.Request) {
 	values := map[string]string{}
 	if req.Domain != nil {
 		values[Domain] = *req.Domain
+	}
+	if req.PublicIP != nil {
+		values[PublicIP] = *req.PublicIP
+	}
+	if req.DNSProviderID != nil {
+		values[DNSProviderID] = *req.DNSProviderID
 	}
 	if req.ACMEEmail != nil {
 		values[ACMEEmail] = *req.ACMEEmail

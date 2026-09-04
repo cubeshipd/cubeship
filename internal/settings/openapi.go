@@ -11,13 +11,16 @@ func (h *Handler) OpenAPI() openapi.Spec {
 		}},
 		Schemas: map[string]*openapi.Schema{
 			"Settings": openapi.Object(map[string]*openapi.Schema{
-				"domain":           openapi.String("Base domain. The API is served at api.<domain> and the registry at registry.<domain>; both must resolve to this host. Empty until configured."),
-				"acme_email":       openapi.String("Contact address Let's Encrypt registers for expiry notices. Empty until configured."),
-				"registry_host":    openapi.String("Where a `docker push` goes. Absent while no domain is set — there is nowhere to push yet."),
-				"tls_enabled":      openapi.Bool("Whether certificates can be issued, which needs both a domain and a contact address. While false, apps are served over plain HTTP."),
-				"github_app_slug":  openapi.String("The GitHub App this instance acts as. Absent until one is registered."),
-				"github_connected": openapi.Bool("Whether the GitHub App's credentials are present. The credentials themselves are never returned — an endpoint that handed a private key back would turn every read of this into a way out for it."),
-			}, "domain", "acme_email", "tls_enabled", "github_connected"),
+				"domain":               openapi.String("The instance's own name, e.g. cubeship.example.com. The daemon is served at it and the registry at registry.<domain>; both must resolve to this host. A subdomain is what setup offers, because it makes the DNS one A record plus one wildcard rather than a growing list — but nothing enforces the shape. Empty until configured."),
+				"acme_email":           openapi.String("Contact address Let's Encrypt registers for expiry notices. Empty until configured."),
+				"public_ip":            openapi.String("What this instance's DNS records should point at — the operator's answer if they gave one, and otherwise the address on the interface this host reaches the internet through. A browser cannot work this out, which is why it is reported here."),
+				"public_ip_configured": openapi.Bool("Whether the address above was typed rather than detected."),
+				"dns_provider_id":      openapi.String("The stored DNS credential that writes this instance's own records. Empty while its DNS is kept somewhere Cubeship cannot reach."),
+				"registry_host":        openapi.String("Where a `docker push` goes. Absent while no domain is set — there is nowhere to push yet."),
+				"tls_enabled":          openapi.Bool("Whether certificates can be issued, which needs both a domain and a contact address. While false, apps are served over plain HTTP."),
+				"github_app_slug":      openapi.String("The GitHub App this instance acts as. Absent until one is registered."),
+				"github_connected":     openapi.Bool("Whether the GitHub App's credentials are present. The credentials themselves are never returned — an endpoint that handed a private key back would turn every read of this into a way out for it."),
+			}, "domain", "acme_email", "tls_enabled", "github_connected", "public_ip_configured"),
 		},
 		Paths: map[string]openapi.PathItem{
 			"/settings": {
@@ -40,8 +43,10 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"Super-admin only: this is the VPS's configuration, not an organization's.",
 					Tags: []string{"Instance"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"domain":                openapi.String("Base domain, e.g. example.com."),
+						"domain":                openapi.String("The instance's own name, e.g. cubeship.example.com."),
 						"acme_email":            openapi.String("Contact address for Let's Encrypt."),
+						"public_ip":             openapi.String("Override what this host believes its own address to be. Empty restores detection."),
+						"dns_provider_id":       openapi.String("Which stored DNS credential writes this instance's records. Empty means its DNS is kept elsewhere."),
 						"github_app_id":         openapi.String("The numeric id of the GitHub App this instance acts as."),
 						"github_app_slug":       openapi.String("The App's slug, which its install page is addressed by."),
 						"github_private_key":    openapi.String("The App's private key, in PEM. Write-only: it is never returned."),

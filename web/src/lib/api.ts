@@ -145,6 +145,12 @@ export type Settings = {
   domain: string;
   acme_email: string;
   registry_host?: string;
+  // What this instance's DNS records should point at. The browser
+  // cannot work this out, so the daemon reports it.
+  public_ip?: string;
+  public_ip_configured: boolean;
+  // The stored DNS credential that writes this instance's own records.
+  dns_provider_id?: string;
   tls_enabled: boolean;
   // The GitHub App this instance acts as. Its credentials are
   // write-only: the daemon reports whether they are there, never what

@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { GitHubAppCard } from "@/components/github-app-card";
+import { InstanceDNS } from "@/components/instance-dns";
 import { Notice } from "@/components/notice";
-import { PageHeader } from "@/components/page-header";
+import { PageHeader, SectionHeader } from "@/components/page-header";
 import { TextField } from "@/components/text-field";
 import { Card, CardContent } from "@/components/ui/card";
 import { ValueCard } from "@/components/value-card";
@@ -66,20 +67,25 @@ function Form() {
       {!current.tls_enabled && (
         <Notice tone="warning">
           No certificates yet. Both a domain and a contact address are needed, and{" "}
-          <code>api.{domain || "<domain>"}</code> and <code>registry.{domain || "<domain>"}</code>{" "}
-          must resolve to this host.
+          <code>{domain || "<domain>"}</code> and <code>*.{domain || "<domain>"}</code> must resolve
+          to this host — which the section below can arrange.
         </Notice>
       )}
+
+      <SectionHeader
+        title="Domain"
+        sub="The instance's own name. The dashboard and the API are served at it, the registry at registry.<domain>, and anything Cubeship grows later underneath — which is why a subdomain you hand over whole beats your apex."
+      />
 
       <Card className="mb-4">
         <CardContent>
           <form onSubmit={save} className="space-y-4">
             <TextField
               label="Domain"
-              hint="Apps and the API are served under it."
+              hint="A subdomain you give to Cubeship, e.g. cubeship.example.com. An apex works too — the recommendation is about how much DNS you have to keep touching, not about what is allowed."
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
-              placeholder="example.com"
+              placeholder="cubeship.example.com"
               spellCheck={false}
             />
             <TextField
@@ -105,7 +111,17 @@ function Form() {
         </CardContent>
       </Card>
 
-      {current.registry_host && <ValueCard label="Push images to" value={current.registry_host} />}
+      <SectionHeader
+        title="DNS"
+        sub="Two records point the whole instance here: the name itself, and a wildcard under it for the registry and whatever comes after. Cubeship can write them through a connected provider, or you can copy them into your own."
+      />
+      <InstanceDNS settings={current} onSaved={setCurrent} />
+
+      {current.registry_host && (
+        <div className="mt-4">
+          <ValueCard label="Push images to" value={current.registry_host} />
+        </div>
+      )}
 
       <GitHubAppCard settings={current} onSaved={setCurrent} />
     </>

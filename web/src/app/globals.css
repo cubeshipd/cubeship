@@ -219,16 +219,26 @@
 /* The switch, as a panel toggle rather than a pill.
  *
  * UNLAYERED, like the field rules above and for the same reason: the
- * primitive ships `rounded-full`, its own size and its own translate as
- * Tailwind utilities, and inside a layer none of this had any effect.
+ * primitive ships its shape and its size as Tailwind utilities, and
+ * inside a layer none of this has any effect.
  *
- * The thumb is positioned ABSOLUTELY, and that is the load-bearing
- * part. Two earlier attempts failed on the same fact: the switch root
- * renders one or two hidden `<input>`s as siblings of the thumb. A
- * transform had to agree with a width the primitive computes; flex
- * justification put the thumb at the end of a line the hidden input was
- * also on, so it never reached the edge. Out of flow, nothing can move
- * it but these rules.
+ * **The primitive's own `translate` does the moving, and these numbers
+ * are chosen to make its formula land flush.** Three earlier attempts
+ * tried to cancel it instead, and each failed differently: Tailwind v4
+ * emits `translate-x-*` as the standalone `translate` property rather
+ * than inside `transform`, so zeroing `transform` left it applying —
+ * and `translate` does not affect layout, so `offsetLeft` read as
+ * correct while the painted box sat 12px further right. Setting
+ * `translate: none` as well then got folded by the CSS optimiser into
+ * one `transform: translate3d(0,0,0)`, which resets neither.
+ *
+ * So: the thumb stays in flow, and it is sized so that the primitive's
+ * `calc(100% - 2px)` — 100% being the thumb's own width — is exactly
+ * the travel available. With a 36x18 track, a 1px border and 2px of
+ * padding, the room inside is 30x12; a thumb of 16 travels 14, and
+ * 16 + 14 = 30. Change any one of those and the other two have to
+ * follow. `overflow: hidden` is the guard for the day their constant
+ * changes.
  *
  * Off it is an empty socket with a 1px edge; on, the track lights and
  * the thumb takes the accent, so the lit half is the state rather than
@@ -237,12 +247,11 @@
  * lamps. */
 [data-slot="switch"] {
   position: relative;
+  overflow: hidden;
   border-radius: 0;
-  display: inline-block;
-  flex: none;
-  height: 1.125rem;
-  width: 2.25rem;
-  padding: 0;
+  height: 18px;
+  width: 36px;
+  padding: 2px;
   border-color: var(--border-strong);
   background-color: var(--background);
   transition:
@@ -258,26 +267,14 @@
 }
 
 [data-slot="switch-thumb"] {
-  position: absolute;
   border-radius: 0;
-  top: 2px;
-  bottom: 2px;
-  left: 2px;
-  right: auto;
-  width: calc(50% - 3px);
-  height: auto;
-  /* The primitive's own translate, neutralised: `left` and `right` are
-     what move this now, and both together moved it twice. */
-  transform: none;
+  width: 16px;
+  height: 12px;
   background-color: var(--border-strong);
-  transition:
-    left 120ms ease,
-    background-color 120ms ease;
+  transition: background-color 120ms ease;
 }
 
 [data-slot="switch"][data-checked] [data-slot="switch-thumb"] {
-  left: calc(50% + 1px);
-  transform: none;
   background-color: var(--primary);
   box-shadow: 0 0 8px -1px var(--primary);
 }
