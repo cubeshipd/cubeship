@@ -19,6 +19,8 @@ func main() {
 	root.AddCommand(newLoginCmd())
 	root.AddCommand(newRegistryCmd())
 	root.AddCommand(newAppCmd())
+	root.AddCommand(newOrgCmd())
+	root.AddCommand(newUserCmd())
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
