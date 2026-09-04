@@ -229,12 +229,38 @@ func contains(s, sub string) bool {
 	})()
 }
 
-// connect records an installation the way the connect endpoint does.
+// connect records an installation, the way an organization that has
+// finished the install flow holds one.
+//
+// It writes the row rather than going through the endpoint, because the
+// endpoint's job is now to verify the installation against GitHub — a
+// round trip these tests would have to fake in order to test something
+// else entirely. What the endpoint does is tested on its own, below.
 func connect(t *testing.T, f *servertest.Fixture, installationID int64, account string) {
 	t.Helper()
+	if _, err := github.NewRepository(f.DB).Upsert(t.Context(), f.Org.ID, installationID, account); err != nil {
+		t.Fatalf("record installation: %v", err)
+	}
+}
+
+// An installation id is a number the caller chose.
+//
+// The App is public — it has to be, or it could only ever be installed
+// on the account that owns it, and no organization could use it. So
+// anyone can install it and every id is somebody's real id. Without the
+// code GitHub redirects back with, connecting one would mint tokens for
+// a stranger's installation, which is read access to their private code.
+func TestConnectingAnInstallationNeedsProofItIsYours(t *testing.T) {
+	f := configured(t)
+
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs/acme/github",
-		map[string]any{"installation_id": installationID, "account": account},
-		f.AdminKey), http.StatusCreated)
+		map[string]any{"installation_id": 42}, f.AdminKey), http.StatusBadRequest)
+
+	// And naming an account does not stand in for it: the account is
+	// read from GitHub's answer, never from the request.
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs/acme/github",
+		map[string]any{"installation_id": 42, "account": "somebody-else"},
+		f.AdminKey), http.StatusBadRequest)
 }
 
 func createBuildingApp(t *testing.T, f *servertest.Fixture, name, repo, ref string) string {

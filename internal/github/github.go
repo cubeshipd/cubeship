@@ -34,6 +34,24 @@ var (
 	// not given. It is not "no such repository": saying so is the
 	// difference between a typo and a permission to widen.
 	ErrNotGranted = errors.New("the GitHub App was not granted access to that repository")
+
+	// ErrNoProof is a connect with no code to back it.
+	//
+	// An installation id is a number the caller chose. The App is public
+	// — it has to be, or it could only ever be installed on the account
+	// that owns it — so anyone can install it and any id is a real id
+	// somewhere. Without proof, connecting one would be a way to mint
+	// tokens for a stranger's installation, which is read access to
+	// their private code.
+	ErrNoProof = errors.New("connecting an installation needs the code GitHub redirects back with")
+
+	// ErrNotYours is an installation the person connecting it does not
+	// administer, according to GitHub.
+	ErrNotYours = errors.New("GitHub does not list that installation among the ones you can reach")
+
+	// ErrNoOAuth is an App registered before it asked for OAuth on
+	// install, so there is nothing to verify a connect with.
+	ErrNoOAuth = errors.New("this instance's GitHub App has no OAuth credentials; re-register it")
 )
 
 // Repository is a GitHub repository named the way both a URL and a

@@ -121,6 +121,8 @@ func (h *Handler) set(w http.ResponseWriter, r *http.Request) {
 		GitHubAppSlug       *string `json:"github_app_slug"`
 		GitHubPrivateKey    *string `json:"github_private_key"`
 		GitHubWebhookSecret *string `json:"github_webhook_secret"`
+		GitHubClientID      *string `json:"github_client_id"`
+		GitHubClientSecret  *string `json:"github_client_secret"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -145,6 +147,8 @@ func (h *Handler) set(w http.ResponseWriter, r *http.Request) {
 		GitHubAppSlug:       req.GitHubAppSlug,
 		GitHubPrivateKey:    req.GitHubPrivateKey,
 		GitHubWebhookSecret: req.GitHubWebhookSecret,
+		GitHubClientID:      req.GitHubClientID,
+		GitHubClientSecret:  req.GitHubClientSecret,
 	} {
 		if given != nil {
 			values[key] = *given

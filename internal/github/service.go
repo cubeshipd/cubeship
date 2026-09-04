@@ -47,15 +47,48 @@ const manageRole = org.RoleAdmin
 // Connect records that an organization has installed the App on a GitHub
 // account. The installation id comes back from GitHub when someone
 // finishes the install, and the account is which login it landed on.
-func (s *Service) Connect(ctx context.Context, caller *user.User, orgSlug string, installationID int64, account string) (*Installation, error) {
+func (s *Service) Connect(ctx context.Context, caller *user.User, orgSlug string, installationID int64, code string) (*Installation, error) {
 	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
 	if err != nil {
 		return nil, err
 	}
-	if installationID == 0 || account == "" {
-		return nil, fmt.Errorf("an installation needs an id and an account")
+	if installationID == 0 {
+		return nil, fmt.Errorf("an installation needs an id")
 	}
-	return s.Repo().Upsert(ctx, o.ID, installationID, account)
+	if code == "" {
+		return nil, ErrNoProof
+	}
+
+	values, err := s.settings.Load(ctx)
+	if err != nil {
+		return nil, err
+	}
+	clientID := values.Get(settings.GitHubClientID)
+	clientSecret := values.Get(settings.GitHubClientSecret)
+	if clientID == "" || clientSecret == "" {
+		return nil, ErrNoOAuth
+	}
+
+	// The code proves who is asking. Everything else about this request
+	// is a number the caller chose.
+	userToken, err := exchangeUserCode(ctx, s.client, clientID, clientSecret, code)
+	if err != nil {
+		return nil, err
+	}
+	reachable, err := listUserInstallations(ctx, s.client, userToken)
+	if err != nil {
+		return nil, err
+	}
+
+	// GitHub's answer is the account name too. Taking it from the caller
+	// would let one be stored that does not match the installation, and
+	// the account is what every repository lookup matches against.
+	for _, i := range reachable {
+		if i.ID == installationID {
+			return s.Repo().Upsert(ctx, o.ID, installationID, i.Account.Login)
+		}
+	}
+	return nil, ErrNotYours
 }
 
 func (s *Service) List(ctx context.Context, caller *user.User, orgSlug string) ([]*Installation, error) {
@@ -269,5 +302,7 @@ func (s *Service) RegisterFromManifest(ctx context.Context, caller *user.User, c
 		settings.GitHubAppSlug:       app.Slug,
 		settings.GitHubPrivateKey:    app.PEM,
 		settings.GitHubWebhookSecret: app.WebhookSecret,
+		settings.GitHubClientID:      app.ClientID,
+		settings.GitHubClientSecret:  app.ClientSecret,
 	})
 }

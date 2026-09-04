@@ -11,7 +11,9 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -263,6 +265,11 @@ type ManifestApp struct {
 	Slug          string `json:"slug"`
 	PEM           string `json:"pem"`
 	WebhookSecret string `json:"webhook_secret"`
+	// The OAuth half of the App, which is what proves who is connecting
+	// an installation rather than merely naming one. See
+	// exchangeUserCode.
+	ClientID     string `json:"client_id"`
+	ClientSecret string `json:"client_secret"`
 }
 
 // convertManifest exchanges the code GitHub redirects back with for the
@@ -300,4 +307,102 @@ func convertManifest(ctx context.Context, client *http.Client, code string) (*Ma
 		return nil, fmt.Errorf("GitHub returned an app with no credentials")
 	}
 	return &app, nil
+}
+
+// exchangeUserCode turns the code GitHub redirects back with, after
+// someone installs the App, into a token that acts as *that person*.
+//
+// This is the whole reason the App asks for OAuth on install. Without
+// it, connecting an installation is a caller naming a number: the
+// daemon had no way to tell an operator connecting their own
+// installation from one naming somebody else's, and minting tokens for
+// a stranger's installation is read access to their private code.
+//
+// The token is used once, immediately, to ask GitHub which
+// installations this person can reach. Nothing keeps it: it is a
+// credential for someone else's account, and the answer is what matters.
+func exchangeUserCode(ctx context.Context, client *http.Client, clientID, clientSecret, code string) (string, error) {
+	form := url.Values{
+		"client_id":     {clientID},
+		"client_secret": {clientSecret},
+		"code":          {code},
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		"https://github.com/login/oauth/access_token", strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("exchange the install code with GitHub: %w", err)
+	}
+	defer resp.Body.Close()
+
+	var answer struct {
+		AccessToken      string `json:"access_token"`
+		Error            string `json:"error"`
+		ErrorDescription string `json:"error_description"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&answer); err != nil {
+		return "", fmt.Errorf("decode GitHub's answer: %w", err)
+	}
+	// GitHub answers 200 with an error field for a spent or wrong code,
+	// so the status alone says nothing.
+	if answer.Error != "" {
+		reason := answer.ErrorDescription
+		if reason == "" {
+			reason = answer.Error
+		}
+		return "", fmt.Errorf("GitHub refused the install code: %s", reason)
+	}
+	if answer.AccessToken == "" {
+		return "", fmt.Errorf("GitHub returned no token for the install code")
+	}
+	return answer.AccessToken, nil
+}
+
+// userInstallation is one installation as the person who can reach it
+// sees it.
+type userInstallation struct {
+	ID      int64 `json:"id"`
+	Account struct {
+		Login string `json:"login"`
+	} `json:"account"`
+}
+
+// listUserInstallations asks GitHub which of this App's installations a
+// person can reach.
+//
+// It is the verification: GitHub answers with exactly the installations
+// that user administers, so an id that is not in the list is one they do
+// not own — whatever they typed. The account name comes from here too,
+// rather than from the caller, so what is stored is GitHub's answer.
+func listUserInstallations(ctx context.Context, client *http.Client, userToken string) ([]userInstallation, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, APIBase+"/user/installations?per_page=100", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+userToken)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("ask GitHub which installations you can reach: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub answered %s when asked for your installations", resp.Status)
+	}
+	var answer struct {
+		Installations []userInstallation `json:"installations"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&answer); err != nil {
+		return nil, fmt.Errorf("decode GitHub's answer: %w", err)
+	}
+	return answer.Installations, nil
 }

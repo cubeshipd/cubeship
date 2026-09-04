@@ -45,6 +45,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"domain":                openapi.String("The instance's own name, e.g. cubeship.example.com."),
 						"acme_email":            openapi.String("Contact address for Let's Encrypt."),
+						"github_client_id":      openapi.String("The App's OAuth client id. Written by the manifest flow; it is what proves who is connecting an installation."),
+						"github_client_secret":  openapi.String("The App's OAuth client secret. Write-only."),
 						"public_ip":             openapi.String("Override what this host believes its own address to be. Empty restores detection."),
 						"dns_provider_id":       openapi.String("Which stored DNS credential writes this instance's records. Empty means its DNS is kept elsewhere."),
 						"github_app_id":         openapi.String("The numeric id of the GitHub App this instance acts as."),

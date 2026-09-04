@@ -51,21 +51,24 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"post": {
 					OperationID: "connectGitHubAccount",
 					Summary:     "Record a GitHub App installation",
-					Description: "Called after someone finishes installing the App: GitHub sends them back with the installation's id, and this is what ties it to an organization.\n\n" +
+					Description: "Called after someone finishes installing the App: GitHub sends them back with the installation's id **and a code**, and this is what ties the installation to an organization.\n\n" +
+						"**The code is required, and it is what makes this safe.** The App is public — a private one can only be installed on the account that owns it, so no organization could use it — which means anyone can install it and every installation id is somebody's real id. The code comes from the OAuth round trip GitHub runs on install; the daemon spends it, asks GitHub which installations that person administers, and refuses any id that is not among them. Without that, connecting an installation would mint tokens for a stranger's installation, which is read access to their private code.\n\n" +
+						"The account is **not** taken from the request. It comes back from GitHub with the installation, because it is what every repository lookup matches against and a mismatched one would silently stop matching.\n\n" +
 						"Connecting an account decides what code this instance will build and run, so it takes the admin role — the same one building does.\n\n" +
 						"Recording an installation that is already recorded moves it to this organization rather than failing: reinstalling reuses an id, and moving one between organizations is a real thing to do.",
 					Tags:       []string{"GitHub"},
 					Parameters: []openapi.Parameter{orgParam},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"installation_id": openapi.Integer("GitHub's id for the installation."),
-						"account":         openapi.String("The account it was installed on, e.g. an organization login."),
-					}, "installation_id", "account")),
+						"code":            openapi.String("The OAuth code GitHub redirects back with after the install. Proof the installation is yours."),
+					}, "installation_id", "code")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse("The connection.", openapi.Ref("GitHubInstallation")),
-						"400": openapi.BadRequest,
+						"400": openapi.TextResponse("No installation id, or no code to prove it is yours."),
 						"401": openapi.Unauthorized,
-						"403": openapi.Forbidden,
+						"403": openapi.TextResponse("You lack the admin role, or GitHub does not list that installation among the ones you can reach."),
 						"404": openapi.NotFound,
+						"409": openapi.TextResponse("This instance's App has no OAuth credentials — it was registered before they were asked for. Re-register it."),
 					},
 				},
 			},

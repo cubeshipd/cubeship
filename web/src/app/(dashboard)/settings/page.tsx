@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
-import { GitHubAppCard } from "@/components/github-app-card";
 import { InstanceDomain } from "@/components/instance-domain";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
@@ -57,8 +56,6 @@ function Body() {
           <ValueCard label="Push images to" value={current.registry_host} />
         </div>
       )}
-
-      <GitHubAppCard settings={current} onSaved={setCurrent} />
     </>
   );
 }

@@ -88,8 +88,12 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, "not found", http.StatusNotFound)
 	case errors.Is(err, ErrNotConfigured), errors.Is(err, ErrNoInstallation):
 		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, ErrNotGranted):
+	case errors.Is(err, ErrNotGranted), errors.Is(err, ErrNotYours):
 		http.Error(w, err.Error(), http.StatusForbidden)
+	case errors.Is(err, ErrNoProof):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrNoOAuth):
+		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, settings.ErrSuperAdminOnly):
 		http.Error(w, err.Error(), http.StatusForbidden)
 	case errors.Is(err, user.ErrUnauthenticated):
@@ -166,8 +170,11 @@ func (h *Handler) registerFromManifest(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) connect(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		InstallationID int64  `json:"installation_id"`
-		Account        string `json:"account"`
+		InstallationID int64 `json:"installation_id"`
+		// The code GitHub redirects back with after an install. It is
+		// what says this installation is yours; the id alone says only
+		// that you can type.
+		Code string `json:"code"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -175,7 +182,7 @@ func (h *Handler) connect(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	created, err := h.svc.Connect(ctx, user.FromContext(ctx), r.PathValue("orgSlug"),
-		req.InstallationID, req.Account)
+		req.InstallationID, req.Code)
 	if err != nil {
 		WriteError(w, err)
 		return

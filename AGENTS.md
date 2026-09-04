@@ -132,8 +132,8 @@ Prettier.
 The sidebar is in sections, because its entries are not peers:
 
 - **Workspace** — projects, environments, apps. What you deploy.
-- **Platform** — registries, DNS providers, the instance's own domain
-  and credentials. What the instance is wired to. Nothing in it belongs
+- **Platform** — registries, Git providers, DNS providers, the
+  instance's own domain and credentials. What the instance is wired to. Nothing in it belongs
   to a project, and almost none of it is touched twice: a registry is
   connected once and deployed through for a year.
 - **You** — the account.
@@ -758,6 +758,23 @@ credentials are settings. Organizations install that App on their own
 GitHub accounts, and **an installation belongs to a Cubeship
 organization** — that is what stops one tenant deploying another's
 private code by naming its URL.
+
+**The App is public, and connecting an installation is verified.** The
+two go together. A private GitHub App can only be installed on the
+account that owns it, so an instance whose App was private could reach
+one person's repositories and no organization's — the install page
+offered no organizations at all. Public fixes that and costs the
+guarantee that came with it: anyone can install it, so an installation
+id is a number the caller chose and every id is somebody's real id.
+
+`request_oauth_on_install` is what pays for it. GitHub sends the
+installer back with a code as well as an id; `Connect` spends the code,
+asks GitHub which installations *that person* administers, and refuses
+an id outside the answer. The account is read from the same answer
+rather than from the request — it is what every repository lookup
+matches against, and a mismatched one would silently stop matching.
+Turning the OAuth off while leaving the App public would make
+connecting an installation a way to read a stranger's private code.
 
 **The installation, not the payload, decides whose push this is.** The
 signature already stops a forgery, but resolving the organization from

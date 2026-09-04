@@ -67,6 +67,16 @@ const (
 	// GitHubPrivateKey and GitHubWebhookSecret are credentials. Nothing
 	// reads them back out through the API — the settings endpoint
 	// reports whether they are set, never what they are.
+	// The App's OAuth half. It is what proves who is connecting an
+	// installation: GitHub answers "which installations can this person
+	// reach", and an id outside that answer is one they do not own.
+	//
+	// The secret is write-only, like the private key. The client id is
+	// not a secret — it appears in a URL the browser is sent to — but it
+	// is stored beside its half rather than derived.
+	GitHubClientID     = "github_client_id"
+	GitHubClientSecret = "github_client_secret"
+
 	GitHubAppID         = "github_app_id"
 	GitHubAppSlug       = "github_app_slug"
 	GitHubPrivateKey    = "github_private_key"
@@ -77,7 +87,8 @@ const (
 // writable and never readable: an endpoint that hands one back turns
 // every read of the configuration into a way out for it.
 func Secret(key string) bool {
-	return key == GitHubPrivateKey || key == GitHubWebhookSecret
+	return key == GitHubPrivateKey || key == GitHubWebhookSecret ||
+		key == GitHubClientSecret
 }
 
 // ErrUnknownKey is returned for a key this version does not define.
@@ -95,6 +106,8 @@ var known = map[string]string{
 	PublicIP:            "What this instance's DNS records should point at. Empty means the address on the interface this host reaches the internet through, which is right on a VPS and wrong behind NAT.",
 	DNSProviderID:       "Which stored DNS credential writes this instance's own records. Empty means the operator keeps their DNS elsewhere and writes them by hand.",
 	GitHubAppID:         "The numeric id of the GitHub App this instance acts as.",
+	GitHubClientID:      "The App's OAuth client id, which is what someone connecting an installation is sent to GitHub with.",
+	GitHubClientSecret:  "The App's OAuth client secret. Write-only.",
 	GitHubAppSlug:       "The App's slug, which is what its install page is addressed by.",
 	GitHubPrivateKey:    "The App's private key, in PEM. Write-only.",
 	GitHubWebhookSecret: "The secret GitHub signs its webhooks with. Write-only.",

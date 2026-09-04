@@ -49,9 +49,30 @@ export function CreateGitHubApp({
       hook_attributes: { url: `${origin}/hooks/github`, active: true },
       redirect_url: redirect,
       // Where GitHub sends someone after they install it on an account.
+      // With request_oauth_on_install it carries a `code` as well as the
+      // installation id, and that code is what proves whose installation
+      // it is — see the note on `public` below.
       setup_url: `${origin}/github/connected`,
+      callback_urls: [`${origin}/github/connected`],
       setup_on_update: true,
-      public: false,
+
+      // Public, and it has to be.
+      //
+      // A private GitHub App can only be installed on the account that
+      // owns it — so an App created from a personal account could only
+      // ever reach that person's own repositories, and the install page
+      // offered no organizations at all. Public is what makes "install
+      // this on our org" possible.
+      //
+      // The cost is that anyone can install it, so an installation id is
+      // no longer proof of anything. request_oauth_on_install is what
+      // pays for that: GitHub sends the installer back through OAuth,
+      // and the daemon asks GitHub which installations *that person*
+      // administers before storing one. Turning this off without turning
+      // off `public` would make connecting an installation a way to read
+      // a stranger's private code.
+      public: true,
+      request_oauth_on_install: true,
       // Exactly what a build needs: read the code, and be told when it
       // changes. Nothing here can write to a repository.
       default_permissions: { contents: "read", metadata: "read" },

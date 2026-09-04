@@ -30,6 +30,11 @@ function Landing() {
   const [account, setAccount] = useState("");
 
   const installationID = Number(params.get("installation_id") ?? 0);
+  // The App asks for OAuth on install, so GitHub sends this back beside
+  // the id. It is the whole difference between "an installation" and
+  // "your installation": the App is public, so anyone can install it and
+  // any id is somebody's real id.
+  const code = params.get("code") ?? "";
 
   useEffect(() => {
     if (!org) return;
@@ -38,14 +43,23 @@ function Landing() {
       setState("failed");
       return;
     }
+    if (!code) {
+      setError(
+        "GitHub sent you back without the code that proves this installation is yours. " +
+          "That happens when the App was registered before it asked for it — re-register this " +
+          "instance's App from the Instance page and install it again.",
+      );
+      setState("failed");
+      return;
+    }
 
-    // GitHub does not send the account it landed on, only the id. The
-    // daemon asks GitHub for the rest, so an empty account here is the
-    // App's own answer rather than something to guess at.
+    // The account is not sent: it comes back from the daemon, which
+    // takes it from GitHub's own answer rather than from anything in
+    // this URL.
     api
       .post<GitHubInstallation>(`/orgs/${org}/github`, {
         installation_id: installationID,
-        account: params.get("account") ?? "",
+        code,
       })
       .then((created) => {
         setAccount(created.account);
@@ -55,7 +69,7 @@ function Landing() {
         setError(message(e));
         setState("failed");
       });
-  }, [org, installationID, params]);
+  }, [org, installationID, code]);
 
   return (
     <>
