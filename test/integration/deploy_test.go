@@ -21,11 +21,15 @@
 // certificate has to exist for a deploy to happen. Only the final
 // HTTPS-through-Traefik assertion needs Linux.
 //
-// NOTE: the "everything up to the Traefik hop passes on Docker Desktop"
-// claim held before the registry required authentication and before the
-// daemon's pulls moved to loopback. Both changed in the fix wave that
-// added the docker login step below; how far this gets locally has not
-// been re-observed since, so treat it as expected rather than confirmed.
+// CONFIRMED on Docker Desktop for Mac (2026-09-03, after the fix wave that
+// added registry auth and moved pulls to loopback): the daemon starts, the
+// registry and Traefik bootstrap, `docker login` + `docker push` to
+// localhost:5000 succeed against the now-required htpasswd auth, the
+// registry's push notification fires the webhook, and the daemon pulls and
+// deploys the app successfully — the test gets all the way to and fails
+// only at the final "app reachable via Traefik" assertion, exactly the
+// --network host limitation described above and nothing earlier. Re-verify
+// this note if the deploy pipeline changes again.
 package integration
 
 import (
