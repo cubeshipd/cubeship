@@ -70,7 +70,6 @@ export function ConfirmDialog({
             {confirmWord && (
               <TextField
                 label={`Type ${confirmWord} to confirm`}
-                className="font-mono"
                 spellCheck={false}
                 autoFocus
                 value={typed}

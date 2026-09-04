@@ -32,7 +32,7 @@ func externalFixture(t *testing.T, image string) (*Orchestrator, *fakeDocker, *S
 		t.Fatal(err)
 	}
 	if _, err := NewRepository(db).Create(ctx, o.ID, p.ID, env.ID,
-		"myapp", "myapp.example.com", SourceExternal, Origin{Image: image}); err != nil {
+		"myapp", "", "myapp.example.com", SourceExternal, Origin{Image: image}); err != nil {
 		t.Fatal(err)
 	}
 	a, err := NewRepository(db).ScopedByReference(ctx, "acme", "web", "production", "myapp")

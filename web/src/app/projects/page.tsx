@@ -1,6 +1,6 @@
 "use client";
 
-import { PlusIcon, SettingsIcon, Trash2Icon } from "lucide-react";
+import { PlusIcon, SettingsIcon, SlidersHorizontalIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
@@ -10,7 +10,7 @@ import { ErrorAlert } from "@/components/error-alert";
 import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
 import { Shell } from "@/components/shell";
-import { TextField } from "@/components/text-field";
+import { TextAreaField, TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -56,6 +56,7 @@ function Detail() {
   const [envs, setEnvs] = useState<Environment[] | null>(null);
   const [apps, setApps] = useState<App[] | null>(null);
   const [adding, setAdding] = useState(false);
+  const [creatingApp, setCreatingApp] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Following a link into another organization moves the whole
@@ -120,15 +121,10 @@ function Detail() {
         }
         actions={
           <>
-            <Button
-              nativeButton={false}
-              render={
-                <Link href={`/apps/new?project=${project}&env=${env}`}>
-                  <PlusIcon />
-                  New app
-                </Link>
-              }
-            />
+            <Button onClick={() => setCreatingApp(true)}>
+              <PlusIcon />
+              New app
+            </Button>
             <Button
               variant="outline"
               nativeButton={false}
@@ -165,15 +161,17 @@ function Detail() {
           <PlusIcon />
         </Button>
 
-        {env && env !== DEFAULT_ENV && (
-          <DeleteEnvironment
-            path={path}
-            env={env}
-            onDeleted={() => {
-              goTo(DEFAULT_ENV);
-              reloadEnvs();
-            }}
-            onError={setError}
+        {env && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Settings for ${env}`}
+            nativeButton={false}
+            render={
+              <Link href={`/environments/settings?ref=${org}/${project}/${env}`}>
+                <SlidersHorizontalIcon />
+              </Link>
+            }
           />
         )}
       </div>
@@ -184,11 +182,9 @@ function Detail() {
             <span className="text-sm text-muted-foreground">
               Nothing deployed in <code className="text-foreground">{env}</code> yet.
             </span>
-            <Button
-              variant="outline"
-              nativeButton={false}
-              render={<Link href={`/apps/new?project=${project}&env=${env}`}>Create an app</Link>}
-            />
+            <Button variant="outline" onClick={() => setCreatingApp(true)}>
+              Create an app
+            </Button>
           </CardContent>
         </Card>
       )}
@@ -201,6 +197,15 @@ function Detail() {
         </div>
       )}
 
+      <NewAppDialog
+        org={org}
+        project={project}
+        environment={env}
+        open={creatingApp}
+        onOpenChange={setCreatingApp}
+        onCreated={(reference) => router.push(`/apps?ref=${reference}`)}
+      />
+
       <NewEnvironmentDialog
         path={path}
         open={adding}
@@ -211,37 +216,6 @@ function Detail() {
         }}
       />
     </>
-  );
-}
-
-function DeleteEnvironment({
-  path,
-  env,
-  onDeleted,
-  onError,
-}: {
-  path: string;
-  env: string;
-  onDeleted: () => void;
-  onError: (m: string) => void;
-}) {
-  return (
-    <Button
-      variant="ghost"
-      size="icon-sm"
-      aria-label={`Delete ${env}`}
-      className="text-muted-foreground hover:text-destructive"
-      onClick={async () => {
-        try {
-          await api.del(`${path}/environments/${env}`);
-          onDeleted();
-        } catch (e) {
-          onError(message(e));
-        }
-      }}
-    >
-      <Trash2Icon />
-    </Button>
   );
 }
 
@@ -265,7 +239,7 @@ function NewEnvironmentDialog({
     setBusy(true);
     setError(null);
     try {
-      await api.post(`${path}/environments`, { slug, name: slug });
+      await api.post(`${path}/environments`, { slug });
       onCreated(slug);
       setSlug("");
       onOpenChange(false);
@@ -291,12 +265,113 @@ function NewEnvironmentDialog({
             <ErrorAlert error={error} className="mb-0" />
             <TextField
               label="Slug"
-              className="font-mono"
+              hint="Lowercase letters, digits and dashes. Permanent."
               spellCheck={false}
               autoFocus
               value={slug}
               onChange={(e) => setSlug(sanitize(e.target.value))}
               placeholder="staging"
+            />
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <ActionButton type="submit" busy={busy} disabled={!slug}>
+              Create
+            </ActionButton>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// An app is created with a slug and a description, and nothing else.
+// What it runs and where it is served are decisions with consequences —
+// a build executes a repository on this host; a domain has to resolve
+// here — so they are made inside the app, with the reasons in front of
+// you, rather than guessed at in the moment you name it.
+function NewAppDialog({
+  org,
+  project,
+  environment,
+  open,
+  onOpenChange,
+  onCreated,
+}: {
+  org: string;
+  project: string;
+  environment: string;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onCreated: (reference: string) => void;
+}) {
+  const [slug, setSlug] = useState("");
+  const [description, setDescription] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await api.post<App>("/apps", {
+        org,
+        project,
+        environment,
+        name: slug,
+        description,
+      });
+      setSlug("");
+      setDescription("");
+      onOpenChange(false);
+      onCreated(created.reference);
+    } catch (err) {
+      setError(message(err));
+    }
+    setBusy(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <form onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>New app</DialogTitle>
+            <DialogDescription>
+              It is created with nothing configured. Set where it is served and where its image
+              comes from inside the app, and then deploy it.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-5">
+            <ErrorAlert error={error} className="mb-0" />
+            <TextField
+              label="Slug"
+              hint={
+                <>
+                  Permanent. The app will be{" "}
+                  <code className="text-muted-foreground">
+                    {org}/{project}/{environment}/{slug || "<slug>"}
+                  </code>
+                  .
+                </>
+              }
+              spellCheck={false}
+              autoFocus
+              value={slug}
+              onChange={(e) => setSlug(sanitize(e.target.value))}
+              placeholder="gateway"
+            />
+            <TextAreaField
+              label="Description"
+              hint="What this app is. Empty is fine."
+              rows={3}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
             />
           </div>
 

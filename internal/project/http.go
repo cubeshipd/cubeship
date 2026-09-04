@@ -20,8 +20,9 @@ type Response struct {
 
 // EnvironmentResponse is one environment, likewise shared.
 type EnvironmentResponse struct {
-	Slug string `json:"slug"`
-	Name string `json:"name"`
+	Slug        string `json:"slug"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
 }
 
 func toResponses(projects []*Project) []Response {
@@ -39,9 +40,13 @@ func toResponse(p *Project) Response {
 func toEnvironmentResponses(envs []*Environment) []EnvironmentResponse {
 	out := make([]EnvironmentResponse, 0, len(envs))
 	for _, e := range envs {
-		out = append(out, EnvironmentResponse{Slug: e.Slug, Name: e.Name})
+		out = append(out, toEnvironmentResponse(e))
 	}
 	return out
+}
+
+func toEnvironmentResponse(e *Environment) EnvironmentResponse {
+	return EnvironmentResponse{Slug: e.Slug, Name: e.Name, Description: e.Description}
 }
 
 type Handler struct {
@@ -63,6 +68,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.getEnvironmentEnv)))
 	r.Handle("PUT /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.setEnvironmentEnv)))
 	r.Handle("PATCH /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.mergeEnvironmentEnv)))
+	r.Handle("PATCH /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}", auth(http.HandlerFunc(h.updateEnvironment)))
 	r.Handle("DELETE /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}", auth(http.HandlerFunc(h.deleteEnvironment)))
 }
 
@@ -75,7 +81,7 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrAlreadyExists), errors.Is(err, ErrEnvironmentExists),
 		errors.Is(err, ErrEnvironmentHasApps), errors.Is(err, ErrHasApps):
 		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, ErrNameRequired):
+	case errors.Is(err, ErrNameRequired), errors.Is(err, ErrEnvironmentNameRequired):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrProductionUndeletable):
 		http.Error(w, err.Error(), http.StatusForbidden)
@@ -89,8 +95,8 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		Slug string `json:"slug"`
 		Name string `json:"name"`
 	}
-	if err := httpx.DecodeJSON(r, &req); err != nil || req.Slug == "" || req.Name == "" {
-		http.Error(w, "slug and name are required", http.StatusBadRequest)
+	if err := httpx.DecodeJSON(r, &req); err != nil || req.Slug == "" {
+		http.Error(w, "slug is required", http.StatusBadRequest)
 		return
 	}
 	p, env, err := h.svc.Create(r.Context(), user.FromContext(r.Context()), r.PathValue("orgSlug"), req.Slug, req.Name)
@@ -103,6 +109,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 
 // update is PATCH: a field left out of the body is left alone, which is
 // what lets the dashboard save one edit without sending the other back.
+// The slug is not a field — see Service.Update.
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        *string `json:"name"`
@@ -233,8 +240,8 @@ func (h *Handler) createEnvironment(w http.ResponseWriter, r *http.Request) {
 		Slug string `json:"slug"`
 		Name string `json:"name"`
 	}
-	if err := httpx.DecodeJSON(r, &req); err != nil || req.Slug == "" || req.Name == "" {
-		http.Error(w, "slug and name are required", http.StatusBadRequest)
+	if err := httpx.DecodeJSON(r, &req); err != nil || req.Slug == "" {
+		http.Error(w, "slug is required", http.StatusBadRequest)
 		return
 	}
 	env, err := h.svc.CreateEnvironment(r.Context(), user.FromContext(r.Context()),
@@ -243,7 +250,33 @@ func (h *Handler) createEnvironment(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusCreated, EnvironmentResponse{Slug: env.Slug, Name: env.Name})
+	httpx.WriteJSON(w, http.StatusCreated, toEnvironmentResponse(env))
+}
+
+// updateEnvironment is PATCH: a field left out of the body is left
+// alone. The slug is not among them — it is the third component of
+// every app reference in the environment.
+func (h *Handler) updateEnvironment(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Name        *string `json:"name"`
+		Description *string `json:"description"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if req.Name == nil && req.Description == nil {
+		http.Error(w, "give name, description, or both", http.StatusBadRequest)
+		return
+	}
+	env, err := h.svc.UpdateEnvironment(r.Context(), user.FromContext(r.Context()),
+		r.PathValue("orgSlug"), r.PathValue("projectSlug"), r.PathValue("envSlug"),
+		req.Name, req.Description)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toEnvironmentResponse(env))
 }
 
 func (h *Handler) listEnvironments(w http.ResponseWriter, r *http.Request) {

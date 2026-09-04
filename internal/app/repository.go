@@ -16,7 +16,7 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, org_id, project_id, environment_id, name, domain, source, source_image,
+const columns = `id, org_id, project_id, environment_id, name, description, domain, source, source_image,
 	source_repo, source_ref, source_dockerfile, container_id, status, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
@@ -24,7 +24,7 @@ type scanner interface{ Scan(dest ...any) error }
 func scan(row scanner) (*App, error) {
 	var a App
 	var envJSON []byte
-	if err := row.Scan(&a.ID, &a.OrgID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Domain,
+	if err := row.Scan(&a.ID, &a.OrgID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Description, &a.Domain,
 		&a.Source, &a.SourceImage, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
 		&a.ContainerID, &a.Status, &envJSON, &a.CreatedAt); err != nil {
 		return nil, err
@@ -33,6 +33,43 @@ func scan(row scanner) (*App, error) {
 		return nil, fmt.Errorf("decode env for app %q: %w", a.Name, err)
 	}
 	return &a, nil
+}
+
+// Update changes an app's configuration: what it is, where it is
+// served, and where its image comes from. A nil field is left alone, so
+// saving one section of the settings screen cannot blank another.
+//
+// The slug is not here. It is the last component of the app's registry
+// reference, and no slug in Cubeship changes once its resource exists.
+func (r *Repository) Update(ctx context.Context, appID int64, description, domain *string, source *Source, origin *Origin) (*App, error) {
+	var src *string
+	if source != nil {
+		s := string(*source)
+		src = &s
+	}
+	// The origin fields travel with the source: changing one without
+	// the other would leave an app naming an image its source ignores.
+	// Passing them as one nil means "leave all four".
+	var image, repo, ref, dockerfile *string
+	if origin != nil {
+		image, repo, ref, dockerfile = &origin.Image, &origin.Repo, &origin.Ref, &origin.Dockerfile
+	}
+	row := r.q.QueryRowContext(ctx,
+		`UPDATE apps SET
+		   description       = COALESCE($1, description),
+		   domain            = COALESCE($2, domain),
+		   source            = COALESCE($3, source),
+		   source_image      = COALESCE($4, source_image),
+		   source_repo       = COALESCE($5, source_repo),
+		   source_ref        = COALESCE($6, source_ref),
+		   source_dockerfile = COALESCE($7, source_dockerfile)
+		 WHERE id = $8 RETURNING `+columns,
+		description, domain, src, image, repo, ref, dockerfile, appID)
+	a, err := scan(row)
+	if err != nil {
+		return nil, fmt.Errorf("update app: %w", err)
+	}
+	return a, nil
 }
 
 // Origin is where an app's images come from, beyond the source that
@@ -45,13 +82,13 @@ type Origin struct {
 	Dockerfile string
 }
 
-func (r *Repository) Create(ctx context.Context, orgID, projectID, environmentID int64, name, domain string, source Source, origin Origin) (*App, error) {
+func (r *Repository) Create(ctx context.Context, orgID, projectID, environmentID int64, name, description, domain string, source Source, origin Origin) (*App, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO apps (org_id, project_id, environment_id, name, domain, source,
+		`INSERT INTO apps (org_id, project_id, environment_id, name, description, domain, source,
 		                   source_image, source_repo, source_ref, source_dockerfile)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		 RETURNING `+columns,
-		orgID, projectID, environmentID, name, domain, string(source),
+		orgID, projectID, environmentID, name, description, domain, string(source),
 		origin.Image, origin.Repo, origin.Ref, origin.Dockerfile)
 	a, err := scan(row)
 	if err != nil {
@@ -258,7 +295,7 @@ type Scoped struct {
 // scopedQuery selects an app with its containing slugs. The column order
 // matches scanScoped.
 const scopedQuery = `
-	SELECT a.id, a.org_id, a.project_id, a.environment_id, a.name, a.domain,
+	SELECT a.id, a.org_id, a.project_id, a.environment_id, a.name, a.description, a.domain,
 	       a.source, a.source_image, a.source_repo, a.source_ref, a.source_dockerfile,
 	       a.container_id, a.status, a.env, a.created_at,
 	       o.slug, p.slug, e.slug
@@ -270,7 +307,7 @@ const scopedQuery = `
 func scanScoped(row scanner) (*Scoped, error) {
 	var s Scoped
 	var envJSON []byte
-	if err := row.Scan(&s.ID, &s.OrgID, &s.ProjectID, &s.EnvironmentID, &s.Name, &s.Domain,
+	if err := row.Scan(&s.ID, &s.OrgID, &s.ProjectID, &s.EnvironmentID, &s.Name, &s.Description, &s.Domain,
 		&s.Source, &s.SourceImage, &s.SourceRepo, &s.SourceRef, &s.SourceDockerfile,
 		&s.ContainerID, &s.Status, &envJSON, &s.CreatedAt,
 		&s.OrgSlug, &s.ProjectSlug, &s.EnvironmentSlug); err != nil {

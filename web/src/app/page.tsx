@@ -22,7 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { type App, api, type Environment, type Project } from "@/lib/api";
 import { message } from "@/lib/errors";
-import { sanitize, toSlug } from "@/lib/slug";
+import { sanitize } from "@/lib/slug";
 
 // The first page anyone opens, so it is also the gate: an unclaimed
 // instance goes to setup before anything else renders.
@@ -171,10 +171,7 @@ function NewProjectDialog({
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
 }) {
-  const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
-  // The slug follows the name until someone edits it, and then stops.
-  const [slugEdited, setSlugEdited] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -183,10 +180,10 @@ function NewProjectDialog({
     setBusy(true);
     setError(null);
     try {
-      await api.post(`/orgs/${org}/projects`, { slug, name: name || slug });
-      setName("");
+      // No name: the daemon derives one from the slug, and it is edited
+      // afterwards in settings if the guess is wrong.
+      await api.post(`/orgs/${org}/projects`, { slug });
       setSlug("");
-      setSlugEdited(false);
       onCreated();
       onOpenChange(false);
     } catch (err) {
@@ -210,25 +207,12 @@ function NewProjectDialog({
           <div className="space-y-4 py-5">
             <ErrorAlert error={error} className="mb-0" />
             <TextField
-              label="Name"
-              autoFocus
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                if (!slugEdited) setSlug(toSlug(e.target.value));
-              }}
-              placeholder="Public API"
-            />
-            <TextField
               label="Slug"
-              hint="Lowercase letters, digits and dashes. Edit it and it stops following the name."
-              className="font-mono"
+              hint="Lowercase letters, digits and dashes. Permanent — a display name comes from it and can be changed later, this cannot."
               spellCheck={false}
+              autoFocus
               value={slug}
-              onChange={(e) => {
-                setSlugEdited(true);
-                setSlug(sanitize(e.target.value));
-              }}
+              onChange={(e) => setSlug(sanitize(e.target.value))}
               placeholder="public-api"
             />
           </div>

@@ -82,7 +82,7 @@ func (s *Service) ResolveString(ctx context.Context, caller *user.User, ref stri
 
 // Create registers an app in a project's environment and returns it,
 // including the registry path a push should target.
-func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug, name, domain string, source Source, origin Origin) (*Scoped, error) {
+func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug, name, description, domain string, source Source, origin Origin) (*Scoped, error) {
 	if envSlug == "" {
 		envSlug = project.ProductionEnvSlug
 	}
@@ -119,7 +119,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 		return nil, project.ErrEnvironmentNotFound
 	}
 	ref := Reference{Org: o.Slug, Project: p.Slug, Environment: env.Slug, Name: name}
-	if _, err := s.Repo().Create(ctx, o.ID, p.ID, env.ID, name, domain, source, origin); err != nil {
+	if _, err := s.Repo().Create(ctx, o.ID, p.ID, env.ID, name, description, domain, source, origin); err != nil {
 		// The unique index is the authority, not a preceding lookup:
 		// two concurrent creates of the same name would both pass a
 		// check and the loser would surface as a 500.
@@ -137,6 +137,50 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 //
 // Images already pushed stay in the registry. Reclaiming them needs a
 // registry garbage collection pass, which is a separate operation.
+// Update reconfigures an app: its description, the domain Traefik
+// serves it at, and where its image comes from.
+//
+// An app is created with almost none of that, so this is where it
+// becomes deployable. Changing the source to one that builds is the same
+// decision as creating one that builds — this instance will execute
+// whatever that repository contains — so it takes the same role, checked
+// against the source being moved to rather than the one being left.
+func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, description, domain *string, source *Source, origin *Origin) (*Scoped, error) {
+	a, err := s.Resolve(ctx, caller, ref, org.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+
+	// The source and its origin fields are one decision: checkOrigin
+	// judges them together, and an app that names an image its source
+	// ignores is exactly what it exists to refuse.
+	if source != nil || origin != nil {
+		next := Source(a.Source)
+		if source != nil {
+			next = *source
+		}
+		if !next.Valid() {
+			return nil, ErrUnknownSource
+		}
+		o := Origin{Image: a.SourceImage, Repo: a.SourceRepo, Ref: a.SourceRef, Dockerfile: a.SourceDockerfile}
+		if origin != nil {
+			o = *origin
+		}
+		if err := checkOrigin(next, &o); err != nil {
+			return nil, err
+		}
+		if _, err := s.orgs.Resolve(ctx, caller, ref.Org, RoleToDeploy(next)); err != nil {
+			return nil, err
+		}
+		source, origin = &next, &o
+	}
+
+	if _, err := s.Repo().Update(ctx, a.ID, description, domain, source, origin); err != nil {
+		return nil, err
+	}
+	return s.Resolve(ctx, caller, ref, org.RoleMember)
+}
+
 func (s *Service) Delete(ctx context.Context, caller *user.User, ref Reference) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, ref, org.RoleMember)
 	if err != nil {

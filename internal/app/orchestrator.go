@@ -262,6 +262,11 @@ func (o *Orchestrator) Start(ctx context.Context, appID int64, tag string) (*Dep
 	if err != nil {
 		return nil, ErrNotFound
 	}
+	// Traefik routes by host, so an app with no domain would come up
+	// answering nothing. It is the one thing an app is created without.
+	if a.Domain == "" {
+		return nil, ErrDomainRequired
+	}
 	source, err := o.sourceFor(a)
 	if err != nil {
 		return nil, err

@@ -48,7 +48,7 @@ func newDeployFixture(t *testing.T, docker DockerAPI) (*Orchestrator, *database.
 		t.Fatalf("create project: %v", err)
 	}
 
-	a, err := NewRepository(db).Create(ctx, o.ID, p.ID, env.ID, "myapp", "myapp.example.com", SourceRegistry, Origin{})
+	a, err := NewRepository(db).Create(ctx, o.ID, p.ID, env.ID, "myapp", "", "myapp.example.com", SourceRegistry, Origin{})
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

@@ -46,6 +46,8 @@ func (r *Repository) Create(ctx context.Context, orgID int64, slug, name string)
 // Update changes a project's editable fields. A nil argument leaves the
 // column alone, so PATCH with one field named cannot blank the other —
 // and it stays one statement rather than a read-modify-write.
+//
+// The slug is not among them, here or anywhere: see Service.Update.
 func (r *Repository) Update(ctx context.Context, projectID int64, name, description *string) (*Project, error) {
 	row := r.q.QueryRowContext(ctx,
 		`UPDATE projects SET name = COALESCE($1, name), description = COALESCE($2, description)

@@ -26,9 +26,10 @@ const DefaultLogTail = "500"
 type Response struct {
 	// Reference is the app's canonical identifier,
 	// org/project/environment/name — also its registry repository path.
-	Reference string `json:"reference"`
-	Name      string `json:"name"`
-	Domain    string `json:"domain"`
+	Reference   string `json:"reference"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Domain      string `json:"domain"`
 	// Image is the image this app is about, which depends on where it
 	// comes from: for a registry app, where a push should go — empty
 	// while the instance has no domain, because there is nowhere to push
@@ -53,7 +54,8 @@ type Response struct {
 func toResponse(a *Scoped, registryHost string) Response {
 	r := Response{
 		Reference: ReferenceOf(a).String(),
-		Name:      a.Name, Domain: a.Domain, Status: a.Status, Source: a.Source,
+		Name:      a.Name, Description: a.Description, Domain: a.Domain,
+		Status: a.Status, Source: a.Source,
 		Org: a.OrgSlug, Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
 	}
 	switch Source(a.Source) {
@@ -91,6 +93,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("POST /apps", auth(http.HandlerFunc(h.create)))
 	r.Handle("GET /apps", auth(http.HandlerFunc(h.list)))
 	r.Handle("GET "+appPath, auth(http.HandlerFunc(h.get)))
+	r.Handle("PATCH "+appPath, auth(http.HandlerFunc(h.update)))
 	r.Handle("DELETE "+appPath, auth(http.HandlerFunc(h.delete)))
 	r.Handle("POST "+appPath+"/deploy", auth(http.HandlerFunc(h.deploy)))
 	r.Handle("GET "+appPath+"/deployments", auth(http.HandlerFunc(h.deployments)))
@@ -124,6 +127,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		errors.Is(err, ErrRepoRequired), errors.Is(err, ErrRepoNotAllowed),
 		errors.Is(err, ErrRepoNotSupported), errors.Is(err, ErrDockerfileNotAllowed):
 		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrDomainRequired):
+		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrNoBuilder):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrNoRegistry):
@@ -140,6 +145,7 @@ func WriteError(w http.ResponseWriter, err error) {
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        string `json:"name"`
+		Description string `json:"description"`
 		Domain      string `json:"domain"`
 		Org         string `json:"org"`
 		Project     string `json:"project"`
@@ -152,19 +158,78 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		Ref        string `json:"ref"`
 		Dockerfile string `json:"dockerfile"`
 	}
+	// The domain is not required: an app is created empty and made
+	// deployable afterwards, in its own settings. Everything that says
+	// *where the app is* still is.
 	if err := httpx.DecodeJSON(r, &req); err != nil ||
-		req.Name == "" || req.Domain == "" || req.Org == "" || req.Project == "" {
-		http.Error(w, "name, domain, org and project are required", http.StatusBadRequest)
+		req.Name == "" || req.Org == "" || req.Project == "" {
+		http.Error(w, "name, org and project are required", http.StatusBadRequest)
 		return
 	}
 	created, err := h.svc.Create(r.Context(), user.FromContext(r.Context()),
-		req.Org, req.Project, req.Environment, req.Name, req.Domain, Source(req.Source),
+		req.Org, req.Project, req.Environment, req.Name, req.Description, req.Domain, Source(req.Source),
 		Origin{Image: req.Image, Repo: req.Repo, Ref: req.Ref, Dockerfile: req.Dockerfile})
 	if err != nil {
 		WriteError(w, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, toResponse(created, h.svc.RegistryHost(r.Context())))
+}
+
+// update is PATCH: a field left out of the body is left alone, so one
+// section of the settings screen can be saved without sending the rest.
+//
+// The source and its origin fields are one field group, not four
+// independent ones — naming a source without the settings it needs, or
+// settings the new source would ignore, is what the service refuses.
+func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Description *string `json:"description"`
+		Domain      *string `json:"domain"`
+		Source      *string `json:"source"`
+		Image       *string `json:"image"`
+		Repo        *string `json:"repo"`
+		Ref         *string `json:"ref"`
+		Dockerfile  *string `json:"dockerfile"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+
+	var source *Source
+	if req.Source != nil {
+		s := Source(*req.Source)
+		source = &s
+	}
+	var origin *Origin
+	if req.Image != nil || req.Repo != nil || req.Ref != nil || req.Dockerfile != nil {
+		origin = &Origin{
+			Image:      deref(req.Image),
+			Repo:       deref(req.Repo),
+			Ref:        deref(req.Ref),
+			Dockerfile: deref(req.Dockerfile),
+		}
+	}
+	if req.Description == nil && req.Domain == nil && source == nil && origin == nil {
+		http.Error(w, "nothing to change", http.StatusBadRequest)
+		return
+	}
+
+	updated, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), refFrom(r),
+		req.Description, req.Domain, source, origin)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toResponse(updated, h.svc.RegistryHost(r.Context())))
+}
+
+func deref(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {

@@ -76,8 +76,8 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		Slug string `json:"slug"`
 		Name string `json:"name"`
 	}
-	if err := httpx.DecodeJSON(r, &req); err != nil || req.Slug == "" || req.Name == "" {
-		http.Error(w, "slug and name are required", http.StatusBadRequest)
+	if err := httpx.DecodeJSON(r, &req); err != nil || req.Slug == "" {
+		http.Error(w, "slug is required", http.StatusBadRequest)
 		return
 	}
 	created, err := h.svc.Create(r.Context(), user.FromContext(r.Context()), req.Slug, req.Name)

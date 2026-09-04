@@ -27,8 +27,14 @@ type App struct {
 	ProjectID     int64
 	EnvironmentID int64
 	Name          string
-	Domain        string
-	Source        string
+	// Description is what this app is, in a sentence. It and the slug
+	// are all an app is created with.
+	Description string
+	// Domain is where Traefik serves it. Empty until someone configures
+	// it, which is also what makes the app undeployable — see
+	// ErrDomainRequired.
+	Domain string
+	Source string
 	// SourceImage is the image an external app pulls, without a tag.
 	// Empty for every other source.
 	SourceImage string
@@ -78,6 +84,8 @@ func (d *Deployment) Done() bool {
 // Statuses an app can be in. "pending" is the initial state of an app
 // that has never had an image pushed to it.
 const (
+	// StatusPending is a freshly created app: nothing has been deployed
+	// and, until it has a domain, nothing can be.
 	StatusPending = "pending"
 	StatusRunning = "running"
 	StatusDown    = "down"

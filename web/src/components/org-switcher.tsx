@@ -28,7 +28,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { api } from "@/lib/api";
 import { message } from "@/lib/errors";
-import { sanitize, toSlug } from "@/lib/slug";
+import { sanitize } from "@/lib/slug";
 
 // The organization is not a page — it is the frame everything else on
 // the screen is inside, so it lives at the top of the sidebar and is
@@ -129,12 +129,7 @@ function CreateDialog({
   onOpenChange: (v: boolean) => void;
   onCreated: (slug: string) => Promise<void>;
 }) {
-  const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
-  // The slug follows the name until someone edits it, and then stops:
-  // a slug you corrected must not be overwritten by the next keystroke
-  // in the field above it.
-  const [slugEdited, setSlugEdited] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -143,11 +138,11 @@ function CreateDialog({
     setBusy(true);
     setError(null);
     try {
-      await api.post("/orgs", { slug, name: name || slug });
+      // No name: the daemon derives one from the slug, and it is edited
+      // afterwards in settings if the guess is wrong.
+      await api.post("/orgs", { slug });
       await onCreated(slug);
-      setName("");
       setSlug("");
-      setSlugEdited(false);
       onOpenChange(false);
     } catch (err) {
       setError(message(err));
@@ -162,33 +157,20 @@ function CreateDialog({
           <DialogHeader>
             <DialogTitle>New organization</DialogTitle>
             <DialogDescription>
-              The slug is derived from the name, and becomes the first segment of every app
-              reference and registry path under it — so it cannot be changed later.
+              The slug becomes the first segment of every app reference and registry path under it,
+              so it can never change. Its display name is derived from it and is yours to edit.
             </DialogDescription>
           </DialogHeader>
 
           <div className="space-y-4 py-5">
             <ErrorAlert error={error} className="mb-0" />
             <TextField
-              label="Name"
-              autoFocus
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                if (!slugEdited) setSlug(toSlug(e.target.value));
-              }}
-              placeholder="Acme Industries"
-            />
-            <TextField
               label="Slug"
-              hint="Lowercase letters, digits and dashes. Edit it and it stops following the name."
-              className="font-mono"
+              hint="Lowercase letters, digits and dashes. Permanent — a display name comes from it and can be changed later, this cannot."
               spellCheck={false}
+              autoFocus
               value={slug}
-              onChange={(e) => {
-                setSlugEdited(true);
-                setSlug(sanitize(e.target.value));
-              }}
+              onChange={(e) => setSlug(sanitize(e.target.value))}
               placeholder="acme-industries"
             />
           </div>

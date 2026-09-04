@@ -60,7 +60,6 @@ export default function Setup() {
           autoFocus
           autoComplete="username"
           spellCheck={false}
-          className="font-mono"
         />
         <TextField
           label="Password"

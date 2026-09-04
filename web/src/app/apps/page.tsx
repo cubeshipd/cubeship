@@ -14,7 +14,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { ValueCard } from "@/components/value-card";
-import { type App, api, type Deployment, type EnvView } from "@/lib/api";
+import { type App, api, BUILDING_SOURCES, type Deployment, type EnvView } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // One app, identified by its reference in the query string. A static
@@ -99,43 +99,94 @@ function Detail() {
         }
       />
 
-      {app.source === "external" ? (
-        <ValueCard
-          label={
-            <>
-              Pulls from another registry. Nothing tells Cubeship when it is pushed to, so it
-              deploys when you ask — add a login under{" "}
-              <Link href="/registries" className="underline underline-offset-4">
-                Registries
-              </Link>{" "}
-              if it is private.
-            </>
-          }
-          value={app.image}
-        />
-      ) : app.image ? (
-        <ValueCard
-          label="Push an image here and it deploys"
-          value={`docker push ${app.image}:latest`}
-        />
-      ) : (
-        <Notice tone="warning">
-          There is nowhere to push yet — this instance has no domain. Set one under{" "}
-          <Link href="/settings" className="underline underline-offset-4">
-            Instance
-          </Link>
-          .
-        </Notice>
-      )}
+      <Origin app={app} />
 
-      <Deployments reference={reference} onDeployed={reload} />
+      <Deployments
+        reference={reference}
+        buildsFromRepo={BUILDING_SOURCES.includes(app.source)}
+        onDeployed={reload}
+      />
       <EnvVars reference={reference} />
       <Logs reference={reference} />
     </>
   );
 }
 
-function Deployments({ reference, onDeployed }: { reference: string; onDeployed: () => void }) {
+// Where this app's image comes from, and therefore what you do to
+// deploy it: push to it, name a tag, or point it at a commit.
+function Origin({ app }: { app: App }) {
+  if (app.source === "dockerfile" || app.source === "railpack") {
+    return (
+      <>
+        <ValueCard
+          label={
+            app.source === "dockerfile" ? "Built from the Dockerfile in" : "Built by Railpack from"
+          }
+          value={app.repo}
+        />
+        <div className="mb-4 grid gap-3 sm:grid-cols-2">
+          <ValueCard className="mb-0" label="Default branch or commit" value={app.ref || "—"} />
+          {app.source === "dockerfile" && (
+            <ValueCard className="mb-0" label="Dockerfile" value={app.dockerfile || "Dockerfile"} />
+          )}
+        </div>
+        <Notice>
+          Nothing tells Cubeship when the repository changes, so a deploy is something you ask for.
+          A deploy can name any branch or commit; this is what it falls back to.
+        </Notice>
+      </>
+    );
+  }
+
+  if (app.source === "external") {
+    return (
+      <ValueCard
+        label={
+          <>
+            Pulls from another registry. Nothing tells Cubeship when it is pushed to, so it deploys
+            when you ask — add a login under{" "}
+            <Link href="/registries" className="underline underline-offset-4">
+              Registries
+            </Link>{" "}
+            if it is private.
+          </>
+        }
+        value={app.image}
+      />
+    );
+  }
+
+  if (app.image) {
+    return (
+      <ValueCard
+        label="Push an image here and it deploys"
+        value={`docker push ${app.image}:latest`}
+      />
+    );
+  }
+
+  return (
+    <Notice tone="warning">
+      There is nowhere to push yet — this instance has no domain. Set one under{" "}
+      <Link href="/settings" className="underline underline-offset-4">
+        Instance
+      </Link>
+      .
+    </Notice>
+  );
+}
+
+function Deployments({
+  reference,
+  buildsFromRepo,
+  onDeployed,
+}: {
+  reference: string;
+  // A build takes a branch or a commit; an image takes a tag. Same
+  // field, same endpoint, two different things to type into it.
+  buildsFromRepo: boolean;
+  onDeployed: () => void;
+}) {
   const [list, setList] = useState<Deployment[] | null>(null);
   const [tag, setTag] = useState("");
   const [busy, setBusy] = useState(false);
@@ -184,9 +235,9 @@ function Deployments({ reference, onDeployed }: { reference: string; onDeployed:
             <Input
               value={tag}
               onChange={(e) => setTag(e.target.value)}
-              placeholder="latest"
-              aria-label="Tag to deploy"
-              className="w-32 font-mono text-xs"
+              placeholder={buildsFromRepo ? "main" : "latest"}
+              aria-label={buildsFromRepo ? "Branch or commit to deploy" : "Tag to deploy"}
+              className="w-32 text-xs"
             />
             <Button type="submit" variant="outline" disabled={busy}>
               Deploy
@@ -312,14 +363,14 @@ function EnvVars({ reference }: { reference: string }) {
           onChange={(e) => setKey(e.target.value)}
           placeholder="KEY"
           aria-label="Variable name"
-          className="w-56 font-mono text-xs"
+          className="w-56 text-xs"
         />
         <Input
           value={value}
           onChange={(e) => setValue(e.target.value)}
           placeholder="value"
           aria-label="Variable value"
-          className="flex-1 font-mono text-xs"
+          className="flex-1 text-xs"
         />
         <Button type="submit" variant="outline">
           Set

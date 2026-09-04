@@ -94,6 +94,28 @@ run_tests() {
 	check "mounts the data directory at the same path" \
 		"$(grep -c '\-v /var/lib/cubeship:/var/lib/cubeship' /tmp/docker.log)" "1"
 
+	# --local builds instead of pulling. Running your own code on a box
+	# is the normal case before anything is published, and the build has
+	# to happen from the checkout the script is in.
+	rm -f /tmp/docker.log
+	touch /src/Dockerfile
+	LOCAL=1
+	build_image
+	check "--local builds the image" "$(grep -c '^docker build ' /tmp/docker.log)" "1"
+	check "--local does not pull" "$(grep -c '^docker pull ' /tmp/docker.log)" "0"
+	check "--local builds from the checkout" "$(grep -c ' /src$' /tmp/docker.log)" "1"
+	LOCAL=0
+
+	# Piped from curl there is no checkout, and --local cannot serve
+	# that. Saying so beats a build that fails on a missing Dockerfile.
+	rm -f /src/Dockerfile
+	if (LOCAL=1; build_image) >/dev/null 2>&1; then
+		printf '  FAIL --local built with no repository present\n'
+		FAILURES=$((FAILURES + 1))
+	else
+		printf '  ok   --local refuses without a checkout\n'
+	fi
+
 	# Running it again is how an upgrade happens: the container is
 	# replaced, and nothing under the data directory is touched.
 	rm -f /tmp/docker.log

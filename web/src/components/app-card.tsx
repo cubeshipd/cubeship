@@ -1,6 +1,13 @@
 import Link from "next/link";
 import { StatusBadge } from "@/components/status-badge";
-import type { App } from "@/lib/api";
+import type { App, AppSource } from "@/lib/api";
+
+const ORIGIN: Record<AppSource, string> = {
+  registry: "cubeship registry",
+  external: "external image",
+  dockerfile: "github · dockerfile",
+  railpack: "github · railpack",
+};
 
 // One app in an environment's grid. The name is the part you scan for,
 // so it leads; the reference is on the app's own page.
@@ -24,9 +31,10 @@ export function AppCard({ app }: { app: App }) {
 
       <div className="border-t border-border px-4 py-2.5">
         <span className="font-mono text-[10px] tracking-[0.16em] text-subtle-foreground uppercase">
-          {/* Which one it is decides whether pushing deploys it, so it
-              is on the card rather than one level in. */}
-          {app.source === "external" ? "external image" : "cubeship registry"}
+          {/* What the app is made of decides what you do next — push to
+              it, or point a deploy at a commit — so it is on the card
+              rather than one level in. */}
+          {ORIGIN[app.source] ?? app.source}
         </span>
       </div>
     </Link>

@@ -38,8 +38,8 @@ func (t *Tools) Register(srv *mcp.Server) {
 }
 
 type createInput struct {
-	Slug string `json:"slug" jsonschema:"short identifier used in URLs and registry paths: lowercase letters, digits and dashes"`
-	Name string `json:"name" jsonschema:"human-readable organization name"`
+	Slug string `json:"slug" jsonschema:"short identifier used in URLs and registry paths: lowercase letters, digits and dashes. Permanent - it cannot be changed later"`
+	Name string `json:"name,omitempty" jsonschema:"optional display name; leave out and it is derived from the slug, and can be edited afterwards"`
 }
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {

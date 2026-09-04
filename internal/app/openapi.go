@@ -42,8 +42,9 @@ func (h *Handler) OpenAPI() openapi.Spec {
 
 			"App": openapi.Object(map[string]*openapi.Schema{
 				"reference":   openapi.String("The app's identifier, org/project/environment/name — also its registry repository path."),
-				"name":        openapi.String("Unique within its environment, not across the instance."),
-				"domain":      openapi.String("The domain Traefik routes to this app, over HTTPS."),
+				"name":        openapi.String("Unique within its environment, not across the instance. Permanent."),
+				"description": openapi.String("What this app is. Empty unless someone set it."),
+				"domain":      openapi.String("The domain Traefik routes to this app, over HTTPS. Empty until configured, and required before the app can deploy."),
 				"image":       openapi.String("For a registry app, the path to push to — a push there deploys. For an external app, the image it pulls."),
 				"status":      {Type: "string", Enum: []string{"pending", "running", "down"}, Description: `"pending" until the first image is pushed.`},
 				"source":      {Type: "string", Enum: []string{"registry", "external", "dockerfile", "railpack"}, Description: "Where this app's image comes from. \"registry\" is an image pushed to Cubeship, and the push is what deploys it; \"external\" is an image in a registry Cubeship does not run; \"dockerfile\" and \"railpack\" are built here from a Git repository, the first from a Dockerfile you wrote and the second worked out from the code. Only a push to Cubeship's own registry deploys on its own — the other two deploy when asked."},
@@ -53,7 +54,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"org":         openapi.String(""),
 				"project":     openapi.String(""),
 				"environment": openapi.String(""),
-			}, "reference", "name", "domain", "status", "source", "org", "project", "environment"),
+			}, "reference", "name", "description", "domain", "status", "source", "org", "project", "environment"),
 		}),
 		Paths: map[string]openapi.PathItem{
 			"/apps": {
@@ -63,8 +64,9 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Description: "Returns the registry path to push to. Nothing is deployed until an image lands there.\n\nThe name only has to be unique within its environment, so the same app can exist in `production` and `staging` at once — they get different registry paths and different containers.\n\nApp containers are expected to listen on port 8080. Requires the member role in the organization.",
 					Tags:        []string{"Apps"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"name":        openapi.String("Lowercase letters, digits and dashes — it becomes a path component of the registry image."),
-						"domain":      openapi.String("The domain to serve this app on. It must resolve to this host for a certificate to issue."),
+						"name":        openapi.String("Lowercase letters, digits and dashes — it becomes a path component of the registry image. Permanent."),
+						"description": openapi.String("What this app is. Optional."),
+						"domain":      openapi.String("Optional here. The domain to serve this app on; it must resolve to this host for a certificate to issue. An app can be created bare and configured with PATCH, but it cannot deploy without one."),
 						"org":         openapi.String("Organization slug."),
 						"project":     openapi.String("Project slug."),
 						"environment": openapi.String(`Environment slug. Defaults to "production".`),
@@ -73,7 +75,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"repo":        openapi.String(`Required for a building app, and refused for any other: the Git repository to build. An https://, http:// or git:// URL — ssh needs a key this instance does not have. Only https authenticates what comes back, and a build runs whatever comes back, so use it for anything reachable from the internet. Do not put a "#ref" on it; the ref is its own field.`),
 						"ref":         openapi.String(`For a building app: the branch, tag or commit to build. Defaults to the repository's default branch, and a deploy can name a different one.`),
 						"dockerfile":  openapi.String(`For a dockerfile app only: the recipe's path within the repository. Defaults to "Dockerfile" at the root. Refused for railpack, which works the build out itself.`),
-					}, "name", "domain", "org", "project")),
+					}, "name", "org", "project")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse("The registered app, including its push path.", openapi.Ref("App")),
 						"400": openapi.BadRequest,
@@ -95,6 +97,33 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				},
 			},
 			appPath: {
+				"patch": {
+					OperationID: "updateApp",
+					Summary:     "Reconfigure an app",
+					Description: "Changes the description, the domain, and where the image comes from. **A field you leave out is left as it was.**\n\nAn app is created with almost none of this, so this is what makes one deployable. The source and its settings are judged together: naming a source without what it needs, or settings the source would ignore, is refused the same way it is at creation. Moving an app to a source that builds requires the admin role, because it decides that this instance will execute whatever that repository contains. The app's name is not editable.",
+					Tags:        []string{"Apps"},
+					Parameters:  refParams,
+					RequestBody: &openapi.RequestBody{
+						Required:    true,
+						Description: "Any of the fields below. Omit one to leave it alone.",
+						Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
+							"description": openapi.String("May be empty."),
+							"domain":      openapi.String("Required before the app can deploy."),
+							"source":      {Type: "string", Enum: []string{"registry", "external", "dockerfile", "railpack"}, Description: "Send the settings the new source needs alongside it."},
+							"image":       openapi.String("For an external app: the image it pulls, without a tag."),
+							"repo":        openapi.String("For a building app: the https://, http:// or git:// repository to build."),
+							"ref":         openapi.String("For a building app: the branch, tag or commit to build."),
+							"dockerfile":  openapi.String("For a dockerfile app only: the recipe's path within the repository."),
+						})),
+					},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The app as it now stands.", openapi.Ref("App")),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+					},
+				},
 				"get": {
 					OperationID: "getApp",
 					Summary:     "Get one app",

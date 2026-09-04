@@ -55,7 +55,6 @@ export default function Login() {
           autoFocus
           autoComplete="username"
           spellCheck={false}
-          className="font-mono"
         />
         <TextField
           label="Password"

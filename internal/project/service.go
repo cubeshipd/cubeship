@@ -74,6 +74,9 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 	if !slug.Valid(projectSlug) {
 		return nil, nil, slug.ErrInvalid
 	}
+	if name == "" {
+		name = slug.Title(projectSlug)
+	}
 	var created *Project
 	var env *Environment
 	err = s.db.WithTx(ctx, func(tx database.Queryer) error {
@@ -82,7 +85,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 		if err != nil {
 			return err
 		}
-		env, err = NewEnvironmentRepository(tx).Create(ctx, created.ID, ProductionEnvSlug, "Production")
+		env, err = NewEnvironmentRepository(tx).Create(ctx, created.ID, ProductionEnvSlug, slug.Title(ProductionEnvSlug))
 		return err
 	})
 	if database.IsUniqueViolation(err) {
@@ -96,10 +99,17 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 	return created, env, nil
 }
 
-// Update changes a project's name or description. Neither is part of
-// its identity — the slug is, and it is the one thing that cannot
-// change, because it is a path component of every registry reference
-// under the project. A nil field is left as it was.
+// Update changes a project's name or description. A nil field is left
+// as it was.
+//
+// Not the slug. No slug in Cubeship is editable after the resource is
+// created — organization, project, environment or app — because every
+// one of them is a path component of an app's registry reference, which
+// is derived on read rather than stored. Renaming one would silently
+// move every app under it: pushes configured against the old path would
+// start failing and images already pushed would be stranded where
+// nothing looks for them again. The identifier is the one promise the
+// daemon makes to whatever is configured against it.
 func (s *Service) Update(ctx context.Context, caller *user.User, orgSlug, projectSlug string, name, description *string) (*Project, error) {
 	p, err := s.Resolve(ctx, caller, orgSlug, projectSlug, org.RoleAdmin)
 	if err != nil {
@@ -179,6 +189,9 @@ func (s *Service) CreateEnvironment(ctx context.Context, caller *user.User, orgS
 	if !slug.Valid(envSlug) {
 		return nil, slug.ErrInvalid
 	}
+	if name == "" {
+		name = slug.Title(envSlug)
+	}
 	env, err := s.EnvironmentRepo().Create(ctx, p.ID, envSlug, name)
 	if database.IsUniqueViolation(err) {
 		return nil, ErrEnvironmentExists
@@ -235,6 +248,22 @@ func (s *Service) MergeEnvironmentEnv(ctx context.Context, caller *user.User, or
 
 // DeleteEnvironment removes an environment, refusing to delete
 // production or one that still has apps in it.
+// UpdateEnvironment changes an environment's name or description. Not
+// its slug: unlike a project's, which the dashboard lets you rename
+// with a warning, an environment's slug is the third component of every
+// app reference under it and there is no equivalent screen for it yet.
+// A nil field is left as it was.
+func (s *Service) UpdateEnvironment(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug string, name, description *string) (*Environment, error) {
+	e, err := s.ResolveEnvironment(ctx, caller, orgSlug, projectSlug, envSlug, org.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	if name != nil && *name == "" {
+		return nil, ErrEnvironmentNameRequired
+	}
+	return s.EnvironmentRepo().Update(ctx, e.ID, name, description)
+}
+
 func (s *Service) DeleteEnvironment(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug string) (*Environment, error) {
 	e, err := s.ResolveEnvironment(ctx, caller, orgSlug, projectSlug, envSlug, org.RoleAdmin)
 	if err != nil {

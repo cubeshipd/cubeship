@@ -233,7 +233,6 @@ function Add({
             <TextField
               label="Registry"
               hint="docker.io for the Hub."
-              className="font-mono"
               spellCheck={false}
               value={host}
               onChange={(e) => setHost(e.target.value)}

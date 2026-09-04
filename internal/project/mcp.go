@@ -30,7 +30,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.list)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "update_project",
-		Description: "Rename a project or change its description. A field you leave out is left as it was. The slug cannot be changed — it is part of every registry reference under the project. Requires admin role in the organization.",
+		Description: "Rename a project or change its description. A field you leave out is left as it was. The slug cannot be changed — no slug in Cubeship can, once the resource exists, because it is a path component of every app's registry reference. Requires admin role in the organization.",
 	}, t.update)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_project",
@@ -61,6 +61,10 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Description: "Add, change or remove environment variables shared by every app in one environment. Only the keys you name are touched. Requires admin role in the organization.",
 	}, t.setEnvironmentEnv)
 	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "update_environment",
+		Description: "Rename an environment or change its description. A field you leave out is left as it was. The slug cannot be changed — it is part of every app reference in the environment. Requires admin role in the organization.",
+	}, t.updateEnvironment)
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_environment",
 		Description: `Delete an environment. Refused for the "production" environment, and refused if the environment still has apps in it. Requires admin role in the organization.`,
 	}, t.deleteEnvironment)
@@ -68,8 +72,8 @@ func (t *Tools) Register(srv *mcp.Server) {
 
 type createInput struct {
 	Org  string `json:"org" jsonschema:"organization slug"`
-	Slug string `json:"slug" jsonschema:"short identifier used in URLs: lowercase letters, digits and dashes"`
-	Name string `json:"name"`
+	Slug string `json:"slug" jsonschema:"short identifier used in URLs: lowercase letters, digits and dashes. Permanent - it cannot be changed later"`
+	Name string `json:"name,omitempty" jsonschema:"optional display name; leave out and it is derived from the slug, and can be edited afterwards"`
 }
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
@@ -152,8 +156,8 @@ func (t *Tools) setEnv(ctx context.Context, _ *mcp.CallToolRequest, in setEnvInp
 type createEnvironmentInput struct {
 	Org     string `json:"org" jsonschema:"organization slug"`
 	Project string `json:"project" jsonschema:"project slug"`
-	Slug    string `json:"slug" jsonschema:"short identifier used in URLs and as the environment name apps request"`
-	Name    string `json:"name"`
+	Slug    string `json:"slug" jsonschema:"short identifier used in URLs and as the environment name apps request. Permanent - it cannot be changed later"`
+	Name    string `json:"name,omitempty" jsonschema:"optional display name; leave out and it is derived from the slug, and can be edited afterwards"`
 }
 
 func (t *Tools) createEnvironment(ctx context.Context, _ *mcp.CallToolRequest, in createEnvironmentInput) (*mcp.CallToolResult, EnvironmentResponse, error) {
@@ -161,7 +165,7 @@ func (t *Tools) createEnvironment(ctx context.Context, _ *mcp.CallToolRequest, i
 	if err != nil {
 		return nil, EnvironmentResponse{}, err
 	}
-	return nil, EnvironmentResponse{Slug: env.Slug, Name: env.Name}, nil
+	return nil, toEnvironmentResponse(env), nil
 }
 
 type projectScopedInput struct {
@@ -208,6 +212,25 @@ type environmentScopedInput struct {
 	Org         string `json:"org" jsonschema:"organization slug"`
 	Project     string `json:"project" jsonschema:"project slug"`
 	Environment string `json:"environment" jsonschema:"environment slug"`
+}
+
+type updateEnvironmentInput struct {
+	Org         string  `json:"org" jsonschema:"organization slug"`
+	Project     string  `json:"project" jsonschema:"project slug"`
+	Environment string  `json:"environment" jsonschema:"environment slug"`
+	Name        *string `json:"name,omitempty" jsonschema:"the new name; leave out to keep the current one"`
+	Description *string `json:"description,omitempty" jsonschema:"what this stage is for; leave out to keep it, send empty to clear it"`
+}
+
+func (t *Tools) updateEnvironment(ctx context.Context, _ *mcp.CallToolRequest, in updateEnvironmentInput) (*mcp.CallToolResult, EnvironmentResponse, error) {
+	if in.Name == nil && in.Description == nil {
+		return nil, EnvironmentResponse{}, fmt.Errorf("give name, description, or both")
+	}
+	e, err := t.svc.UpdateEnvironment(ctx, t.caller, in.Org, in.Project, in.Environment, in.Name, in.Description)
+	if err != nil {
+		return nil, EnvironmentResponse{}, err
+	}
+	return nil, toEnvironmentResponse(e), nil
 }
 
 func (t *Tools) deleteEnvironment(ctx context.Context, _ *mcp.CallToolRequest, in environmentScopedInput) (*mcp.CallToolResult, user.ActionResult, error) {

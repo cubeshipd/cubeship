@@ -93,6 +93,9 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, name s
 	if !slug.Valid(orgSlug) {
 		return nil, slug.ErrInvalid
 	}
+	if name == "" {
+		name = slug.Title(orgSlug)
+	}
 	created, err := s.Repo().Create(ctx, orgSlug, name)
 	if database.IsUniqueViolation(err) {
 		// The unique index decides, not a preceding lookup — see

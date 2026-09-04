@@ -48,16 +48,31 @@ export type Project = {
   description: string;
   environments?: string[];
 };
-export type Environment = { slug: string; name: string };
+export type Environment = { slug: string; name: string; description: string };
+
+// registry and external run a published image; dockerfile and railpack
+// build one from a Git repository, which is why they need an admin.
+export type AppSource = "registry" | "external" | "dockerfile" | "railpack";
+
+export const BUILDING_SOURCES: AppSource[] = ["dockerfile", "railpack"];
 
 export type App = {
   reference: string;
   name: string;
+  description: string;
+  // Empty until someone configures it, and required before the app can
+  // deploy — which is what makes a freshly created app undeployable.
   domain: string;
   // For a registry app, where to push; for an external one, what it pulls.
   image?: string;
   status: string;
-  source: "registry" | "external";
+  // The daemon's four. The dashboard groups them into two: an app is
+  // built from a repository, or it runs an image someone published.
+  source: AppSource;
+  // Where a building app builds from. Absent for one that does not.
+  repo?: string;
+  ref?: string;
+  dockerfile?: string;
   org: string;
   project: string;
   environment: string;

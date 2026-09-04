@@ -141,17 +141,72 @@ someone whose sidebar is pointing elsewhere — opening it moves the
 whole dashboard to that organization rather than showing one page out
 of frame.
 
-A project has a **settings screen** (`/projects/settings?ref=org/project`)
+A project and an environment each have a **settings screen** (`/projects/settings?ref=org/project`)
 rather than a delete button in its header: renaming it, describing it and
 destroying it are not the same kind of act, and the last one belongs at
-the bottom of a page you went to on purpose. `ConfirmDialog` guards every
+the bottom of a page you went to on purpose. An environment's screen is
+the same three sections, reached from the tab row inside a project.
+`production` is the one row whose delete button is disabled rather than
+absent — the reason it cannot go is worth reading, and a missing button
+explains nothing. `ConfirmDialog` guards every
 irreversible action by making you type the thing's own name — a second
 button is no obstacle to a misclick, and the dangerous case is precisely
 the one the daemon would happily carry out.
 
-A project's **slug is not editable**, and the screen says why: it is a
-path component of every registry reference under the project, so
-changing it would break every push already configured against it.
+**Creating anything asks for a slug and nothing else.** A slug is a
+permanent machine-shaped identifier and a name is a label its owner
+changes freely, so asking for both at creation asked twice for the same
+idea and the answers drifted. `slug.Title` derives the display name —
+`public-api` becomes `Public Api` — and the settings screen is where it
+is corrected. The derivation lives in each module's service, not in the
+form, so the CLI and the MCP tools get it too; `name` is optional in
+every create body and every create tool.
+
+The guess is deliberately dumb: `api` becomes `Api`, not `API`. Anything
+cleverer would be a dictionary, and the display name is a field the
+owner can simply fix.
+
+An app has no display name at all — its name *is* its slug, and it is
+the last component of the app's reference — so its field is labelled
+Slug and there is nothing to derive.
+
+**No slug is editable after its resource exists** — organization,
+project, environment or app. Every one of them is a path component of an
+app's registry reference, and that reference is derived on read rather
+than stored, so renaming any of them would silently move every app
+underneath: pushes configured against the old path would start failing,
+and images already pushed would be stranded where nothing looks for them
+again and no garbage collection reclaims them. The identifier is the one
+promise the daemon makes to whatever is configured against it.
+
+A name and a description are editable; the slug is shown beside them,
+read-only, with that reason. `PATCH` accepts no `slug` field at any
+level, so the rule holds for the API and the MCP tools too — not just
+for the screen.
+
+### Two sources, not four
+
+The daemon has four: `registry`, `external`, `dockerfile`, `railpack`.
+The dashboard shows **two**, because there are only two things an app
+can be — something this instance builds, or something someone else
+already built — and the four are two answers to a second question:
+
+```
+GitHub          ─┬─ Railpack     railpack
+                 └─ Dockerfile   dockerfile
+Docker image    ─┬─ Cubeship's registry   registry
+                 └─ Another registry      external
+```
+
+Flattening them into one list of four put "how it is built" beside "what
+it is", and made the choice that decides whether a `docker push` deploys
+the app look like a peer of the choice between two build tools.
+
+The form mirrors the daemon's `checkOrigin` refusals inline — a tag on
+an external image, an `ssh://` repository, a `#ref` in the URL — so a
+mistake is a sentence under the field rather than a rejected submit. It
+is a courtesy, not the rule: the daemon still checks, and it is the one
+that decides.
 
 ### The selected organization
 
@@ -205,6 +260,19 @@ commands. Both are vendored as woff2 under `web/src/fonts` and loaded
 with `next/font/local`: `make web` already needs the network for
 `pnpm install`, and a second place a build can fail is one too many.
 
+**Everything a field looks like is decided in `globals.css` and nowhere
+else** — face, surface and focus, in one unlayered block. Every field is
+mono, because what goes in one here is read character by character.
+
+Unlayered is the load-bearing part. A Tailwind utility beats an `@layer
+components` rule whatever its specificity, and the shadcn primitives
+ship their own conflicting classes: `bg-transparent` and
+`dark:bg-input/30` on Input, `ring-3` on its focus state, neither on
+Textarea. Layered, the house style lost, and a text box and a text area
+in the same form came out different colours with different focus
+weights. The cost is deliberate: a per-usage `bg-*`, `font-*` or focus
+ring on a field no longer takes.
+
 Buttons, badges, field labels and table headers are uppercase with wide
 tracking. **That is applied in `globals.css` through the primitives'
 `data-slot` attributes**, not by editing `ui/` — which is what lets a
@@ -221,6 +289,12 @@ and a visitor whose OS is light would otherwise get half of them.
 `install.sh` is the product's front door: it installs Docker if needed,
 pulls the image and runs it. **The release is the image** — nothing else
 has to be hosted anywhere, and an upgrade is a pull.
+
+`--local` builds from the checkout the script is in instead of pulling,
+which is how you run unpublished code on a box: push, pull on the server,
+install. It refuses when there is no checkout beside it — piped from
+curl there is nothing to build, and saying so beats a build that fails on
+a missing Dockerfile.
 
 **The daemon is a container**, a sibling of Postgres, the registry,
 Traefik, BuildKit and every app on the `cubeship` network. Each finds the

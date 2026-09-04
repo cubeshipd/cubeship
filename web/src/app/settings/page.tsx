@@ -81,7 +81,6 @@ function Form() {
               onChange={(e) => setDomain(e.target.value)}
               placeholder="example.com"
               spellCheck={false}
-              className="font-mono"
             />
             <TextField
               label="Let's Encrypt contact address"

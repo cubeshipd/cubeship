@@ -24,8 +24,18 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { api, type Me } from "@/lib/api";
 
+// `owns` is the rest of the section: the pages you reach from this
+// entry that have no entry of their own. Projects is a section, not a
+// page — a project, an environment and an app all live under it, and
+// all four keep it lit. Adding a page under one is an edit here, not a
+// new special case in the component below.
 const nav = [
-  { href: "/", label: "Projects", icon: FolderTreeIcon },
+  {
+    href: "/",
+    label: "Projects",
+    icon: FolderTreeIcon,
+    owns: ["/projects", "/environments", "/apps"],
+  },
   { href: "/registries", label: "Registries", icon: ContainerIcon },
   { href: "/settings", label: "Instance", icon: ServerCogIcon },
   { href: "/account", label: "Account", icon: UserRoundIcon },
@@ -76,17 +86,17 @@ export function Shell({ children }: { children: ReactNode }) {
 function NavLink({
   href,
   label,
+  owns = [],
   icon: Icon,
 }: {
   href: string;
   label: string;
+  owns?: string[];
   icon: typeof FolderTreeIcon;
 }) {
   const pathname = usePathname();
-  // "/" is Apps, and /apps is a detail page under it, so both light it
-  // up. Everything else is its own section.
   const active =
-    href === "/" ? pathname === "/" || pathname.startsWith("/apps") : pathname === href;
+    pathname === href || owns.some((p) => pathname === p || pathname.startsWith(`${p}/`));
 
   return (
     <Link

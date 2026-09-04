@@ -18,12 +18,12 @@ func NewEnvironmentRepository(q database.Queryer) *EnvironmentRepository {
 	return &EnvironmentRepository{q: q}
 }
 
-const environmentColumns = `id, project_id, slug, name, env, created_at`
+const environmentColumns = `id, project_id, slug, name, description, env, created_at`
 
 func scanEnvironment(row scanner) (*Environment, error) {
 	var e Environment
 	var envJSON []byte
-	if err := row.Scan(&e.ID, &e.ProjectID, &e.Slug, &e.Name, &envJSON, &e.CreatedAt); err != nil {
+	if err := row.Scan(&e.ID, &e.ProjectID, &e.Slug, &e.Name, &e.Description, &envJSON, &e.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &e.Env); err != nil {
@@ -39,6 +39,22 @@ func (r *EnvironmentRepository) Create(ctx context.Context, projectID int64, slu
 	e, err := scanEnvironment(row)
 	if err != nil {
 		return nil, fmt.Errorf("create environment: %w", err)
+	}
+	return e, nil
+}
+
+// Update changes an environment's editable fields. A nil argument
+// leaves the column alone, so PATCH with one field named cannot blank
+// the other — and it stays one statement rather than a
+// read-modify-write.
+func (r *EnvironmentRepository) Update(ctx context.Context, environmentID int64, name, description *string) (*Environment, error) {
+	row := r.q.QueryRowContext(ctx,
+		`UPDATE environments SET name = COALESCE($1, name), description = COALESCE($2, description)
+		 WHERE id = $3 RETURNING `+environmentColumns,
+		name, description, environmentID)
+	e, err := scanEnvironment(row)
+	if err != nil {
+		return nil, fmt.Errorf("update environment: %w", err)
 	}
 	return e, nil
 }

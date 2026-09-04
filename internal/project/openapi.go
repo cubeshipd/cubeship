@@ -76,9 +76,10 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			}, "slug", "name", "description"),
 
 			"Environment": openapi.Object(map[string]*openapi.Schema{
-				"slug": openapi.String(""),
-				"name": openapi.String(""),
-			}, "slug", "name"),
+				"slug":        openapi.String(""),
+				"name":        openapi.String(""),
+				"description": openapi.String("What this stage of the project is for. Empty unless someone set it."),
+			}, "slug", "name", "description"),
 		}),
 		Paths: map[string]openapi.PathItem{
 			"/orgs/{orgSlug}/projects": {
@@ -90,8 +91,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Parameters:  []openapi.Parameter{orgParam},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"slug": openapi.String("Lowercase letters, digits and dashes."),
-						"name": openapi.String(""),
-					}, "slug", "name")),
+						"name": openapi.String("Optional. Left out, it is derived from the slug — `public-api` becomes `Public Api` — and can be edited afterwards."),
+					}, "slug")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse(`The project and its "production" environment.`, openapi.Ref("Project")),
 						"400": openapi.BadRequest,
@@ -117,7 +118,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"patch": {
 					OperationID: "updateProject",
 					Summary:     "Rename a project or describe it",
-					Description: "Changes the name, the description, or both. **A field you leave out is left as it was**, so one can be edited without sending the other back. The slug is not editable: it is a path component of every registry reference under the project. Requires the admin role.",
+					Description: "Changes the name, the description, or both. **A field you leave out is left as it was**, so one can be edited without sending the other back. Requires the admin role.\n\nThe slug is not editable, and no slug in Cubeship is once its resource exists: every one of them is a path component of an app's registry reference, which is derived on read rather than stored. Renaming one would move every app under it, breaking pushes configured against the old path and stranding images already pushed there.",
 					Tags:        []string{"Projects & environments"},
 					Parameters:  []openapi.Parameter{orgParam, projectParam},
 					RequestBody: &openapi.RequestBody{
@@ -204,8 +205,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Parameters:  []openapi.Parameter{orgParam, projectParam},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"slug": openapi.String("Lowercase letters, digits and dashes."),
-						"name": openapi.String(""),
-					}, "slug", "name")),
+						"name": openapi.String("Optional. Left out, it is derived from the slug — `public-api` becomes `Public Api` — and can be edited afterwards."),
+					}, "slug")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse("The new environment.", openapi.Ref("Environment")),
 						"400": openapi.BadRequest,
@@ -272,6 +273,28 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				},
 			},
 			"/orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}": {
+				"patch": {
+					OperationID: "updateEnvironment",
+					Summary:     "Rename an environment or describe it",
+					Description: "Changes the name, the description, or both. **A field you leave out is left as it was.** The slug is not editable here: it is the third component of every app reference in the environment. Requires the admin role.",
+					Tags:        []string{"Projects & environments"},
+					Parameters:  []openapi.Parameter{orgParam, projectParam, envParam},
+					RequestBody: &openapi.RequestBody{
+						Required:    true,
+						Description: "Name, description, or both. Omit a field to leave it alone; send an empty description to clear it.",
+						Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
+							"name":        openapi.String("Cannot be empty."),
+							"description": openapi.String("May be empty."),
+						})),
+					},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The environment as it now stands.", openapi.Ref("Environment")),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+					},
+				},
 				"delete": {
 					OperationID: "deleteEnvironment",
 					Summary:     "Delete an environment",

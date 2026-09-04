@@ -33,6 +33,15 @@ On the server, as root:
 curl -sSL https://cubeship.dev/install.sh | sh
 ```
 
+To run your own code instead, put the repository on the server and build
+there — the build happens inside Docker, so the server needs no Go and no
+Node:
+
+```sh
+git clone <your fork> cubeship && cd cubeship
+sudo ./install.sh --local
+```
+
 It installs Docker if the box hasn't got it, pulls the image and runs
 it, and tells you where to open it. Running it again upgrades in place.
 It is [one file](install.sh) — read it first if you'd rather not pipe a

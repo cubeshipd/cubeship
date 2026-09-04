@@ -21,8 +21,12 @@ type Environment struct {
 	ProjectID int64
 	Slug      string
 	Name      string
-	Env       envvar.Map
-	CreatedAt time.Time
+	// Description is what this stage of the project's lifecycle is for.
+	// The slug cannot say it — it is a path component — and the name
+	// barely can.
+	Description string
+	Env         envvar.Map
+	CreatedAt   time.Time
 }
 
 // ProductionEnvSlug is the environment every project is created with. It
@@ -37,6 +41,11 @@ var (
 
 	// ErrEnvironmentExists reports a slug already used in this project.
 	ErrEnvironmentExists = errors.New("environment already exists")
+
+	// ErrEnvironmentNameRequired refuses an update that would leave an
+	// environment with nothing to call it. Clearing the description is
+	// fine; clearing the name is not.
+	ErrEnvironmentNameRequired = errors.New("name cannot be empty")
 
 	// ErrProductionUndeletable guards the one environment every project
 	// must keep.
