@@ -39,8 +39,13 @@ func (c *Client) do(ctx context.Context, method, path string, body any) (*http.R
 	return c.http.Do(req)
 }
 
-func (c *Client) CreateApp(ctx context.Context, name, domain, org string) (string, error) {
-	resp, err := c.do(ctx, http.MethodPost, "/apps", map[string]string{"name": name, "domain": domain, "org": org})
+// CreateApp registers a new app in org's project (environment defaults
+// to the project's "production" environment when empty) and returns its
+// registry push path.
+func (c *Client) CreateApp(ctx context.Context, name, domain, org, project, environment string) (string, error) {
+	resp, err := c.do(ctx, http.MethodPost, "/apps", map[string]string{
+		"name": name, "domain": domain, "org": org, "project": project, "environment": environment,
+	})
 	if err != nil {
 		return "", err
 	}
@@ -124,6 +129,117 @@ func (c *Client) ListOrgs(ctx context.Context) ([]Org, error) {
 		return nil, err
 	}
 	return out, nil
+}
+
+type Project struct {
+	Slug         string   `json:"slug"`
+	Name         string   `json:"name"`
+	Environments []string `json:"environments,omitempty"`
+}
+
+func (c *Client) CreateProject(ctx context.Context, org, slug, name string) (Project, error) {
+	resp, err := c.do(ctx, http.MethodPost, "/orgs/"+org+"/projects", map[string]string{"slug": slug, "name": name})
+	if err != nil {
+		return Project{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return Project{}, fmt.Errorf("create project: unexpected status %d", resp.StatusCode)
+	}
+	var out Project
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return Project{}, err
+	}
+	return out, nil
+}
+
+func (c *Client) ListProjects(ctx context.Context, org string) ([]Project, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/orgs/"+org+"/projects", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list projects: unexpected status %d", resp.StatusCode)
+	}
+	var out []Project
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *Client) SetProjectEnv(ctx context.Context, org, project string, vars map[string]string) error {
+	resp, err := c.do(ctx, http.MethodPut, "/orgs/"+org+"/projects/"+project+"/env", map[string]map[string]string{"vars": vars})
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("set project env: unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+type Environment struct {
+	Slug string `json:"slug"`
+	Name string `json:"name"`
+}
+
+func (c *Client) CreateEnvironment(ctx context.Context, org, project, slug, name string) (Environment, error) {
+	resp, err := c.do(ctx, http.MethodPost, "/orgs/"+org+"/projects/"+project+"/environments", map[string]string{"slug": slug, "name": name})
+	if err != nil {
+		return Environment{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		return Environment{}, fmt.Errorf("create environment: unexpected status %d", resp.StatusCode)
+	}
+	var out Environment
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return Environment{}, err
+	}
+	return out, nil
+}
+
+func (c *Client) ListEnvironments(ctx context.Context, org, project string) ([]Environment, error) {
+	resp, err := c.do(ctx, http.MethodGet, "/orgs/"+org+"/projects/"+project+"/environments", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("list environments: unexpected status %d", resp.StatusCode)
+	}
+	var out []Environment
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *Client) SetEnvironmentEnv(ctx context.Context, org, project, environment string, vars map[string]string) error {
+	resp, err := c.do(ctx, http.MethodPut, "/orgs/"+org+"/projects/"+project+"/environments/"+environment+"/env", map[string]map[string]string{"vars": vars})
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("set environment env: unexpected status %d", resp.StatusCode)
+	}
+	return nil
+}
+
+func (c *Client) DeleteEnvironment(ctx context.Context, org, project, environment string) error {
+	resp, err := c.do(ctx, http.MethodDelete, "/orgs/"+org+"/projects/"+project+"/environments/"+environment, nil)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("delete environment: unexpected status %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // CreateOrgUser adds a user to an organization. The returned API key is

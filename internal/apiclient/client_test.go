@@ -19,7 +19,7 @@ func TestCreateAppSendsAuthAndReturnsImage(t *testing.T) {
 		}
 		var body map[string]string
 		json.NewDecoder(r.Body).Decode(&body)
-		if body["name"] != "myapp" || body["domain"] != "myapp.example.com" || body["org"] != "acme" {
+		if body["name"] != "myapp" || body["domain"] != "myapp.example.com" || body["org"] != "acme" || body["project"] != "web" || body["environment"] != "production" {
 			t.Errorf("unexpected body: %v", body)
 		}
 		w.WriteHeader(http.StatusCreated)
@@ -28,7 +28,7 @@ func TestCreateAppSendsAuthAndReturnsImage(t *testing.T) {
 	defer srv.Close()
 
 	c := New(srv.URL, "secret-token")
-	image, err := c.CreateApp(context.Background(), "myapp", "myapp.example.com", "acme")
+	image, err := c.CreateApp(context.Background(), "myapp", "myapp.example.com", "acme", "web", "production")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -203,5 +203,133 @@ func TestWhoAmI(t *testing.T) {
 	}
 	if username != "lucas" {
 		t.Fatalf("expected lucas, got %q", username)
+	}
+}
+
+func TestCreateProject(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/orgs/acme/projects" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		var body map[string]string
+		json.NewDecoder(r.Body).Decode(&body)
+		if body["slug"] != "web" || body["name"] != "Web" {
+			t.Errorf("unexpected body: %v", body)
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]any{"slug": "web", "name": "Web", "environments": []string{"production"}})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	p, err := c.CreateProject(context.Background(), "acme", "web", "Web")
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if p.Slug != "web" || len(p.Environments) != 1 || p.Environments[0] != "production" {
+		t.Fatalf("unexpected project: %+v", p)
+	}
+}
+
+func TestListProjects(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/orgs/acme/projects" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		json.NewEncoder(w).Encode([]map[string]string{{"slug": "web", "name": "Web"}})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	projects, err := c.ListProjects(context.Background(), "acme")
+	if err != nil {
+		t.Fatalf("ListProjects: %v", err)
+	}
+	if len(projects) != 1 || projects[0].Slug != "web" {
+		t.Fatalf("unexpected projects: %+v", projects)
+	}
+}
+
+func TestSetProjectEnv(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/orgs/acme/projects/web/env" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	if err := c.SetProjectEnv(context.Background(), "acme", "web", map[string]string{"DATABASE_URL": "postgres://shared"}); err != nil {
+		t.Fatalf("SetProjectEnv: %v", err)
+	}
+}
+
+func TestCreateEnvironment(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/orgs/acme/projects/web/environments" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(map[string]string{"slug": "staging", "name": "Staging"})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	e, err := c.CreateEnvironment(context.Background(), "acme", "web", "staging", "Staging")
+	if err != nil {
+		t.Fatalf("CreateEnvironment: %v", err)
+	}
+	if e.Slug != "staging" {
+		t.Fatalf("unexpected environment: %+v", e)
+	}
+}
+
+func TestListEnvironments(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/orgs/acme/projects/web/environments" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		json.NewEncoder(w).Encode([]map[string]string{{"slug": "production", "name": "Production"}})
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	envs, err := c.ListEnvironments(context.Background(), "acme", "web")
+	if err != nil {
+		t.Fatalf("ListEnvironments: %v", err)
+	}
+	if len(envs) != 1 || envs[0].Slug != "production" {
+		t.Fatalf("unexpected environments: %+v", envs)
+	}
+}
+
+func TestSetEnvironmentEnv(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPut || r.URL.Path != "/orgs/acme/projects/web/environments/staging/env" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	if err := c.SetEnvironmentEnv(context.Background(), "acme", "web", "staging", map[string]string{"LOG_LEVEL": "debug"}); err != nil {
+		t.Fatalf("SetEnvironmentEnv: %v", err)
+	}
+}
+
+func TestDeleteEnvironment(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete || r.URL.Path != "/orgs/acme/projects/web/environments/staging" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer srv.Close()
+
+	c := New(srv.URL, "secret-token")
+	if err := c.DeleteEnvironment(context.Background(), "acme", "web", "staging"); err != nil {
+		t.Fatalf("DeleteEnvironment: %v", err)
 	}
 }

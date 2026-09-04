@@ -20,6 +20,8 @@ func main() {
 	root.AddCommand(newRegistryCmd())
 	root.AddCommand(newAppCmd())
 	root.AddCommand(newOrgCmd())
+	root.AddCommand(newProjectCmd())
+	root.AddCommand(newEnvironmentCmd())
 	root.AddCommand(newUserCmd())
 
 	if err := root.Execute(); err != nil {

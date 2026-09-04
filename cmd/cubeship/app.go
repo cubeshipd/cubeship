@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"cubeship/internal/apiclient"
 	"cubeship/internal/clicreds"
@@ -28,7 +27,7 @@ func newAPIClient() (*apiclient.Client, error) {
 func newAppCmd() *cobra.Command {
 	appCmd := &cobra.Command{Use: "app", Short: "Manage Cubeship apps"}
 
-	var domain, org string
+	var domain, org, project, environment string
 	createCmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Register a new app and get its registry image path",
@@ -38,7 +37,7 @@ func newAppCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			image, err := c.CreateApp(context.Background(), args[0], domain, org)
+			image, err := c.CreateApp(context.Background(), args[0], domain, org, project, environment)
 			if err != nil {
 				return err
 			}
@@ -50,6 +49,9 @@ func newAppCmd() *cobra.Command {
 	createCmd.MarkFlagRequired("domain")
 	createCmd.Flags().StringVar(&org, "org", "", "organization slug that will own this app")
 	createCmd.MarkFlagRequired("org")
+	createCmd.Flags().StringVar(&project, "project", "", "project slug this app belongs to")
+	createCmd.MarkFlagRequired("project")
+	createCmd.Flags().StringVar(&environment, "env", "", `environment slug within the project (default "production")`)
 
 	var tag string
 	deployCmd := &cobra.Command{
@@ -95,13 +97,9 @@ func newAppCmd() *cobra.Command {
 		Short: "Set environment variables for an app",
 		Args:  cobra.MinimumNArgs(2),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			vars := map[string]string{}
-			for _, kv := range args[1:] {
-				parts := strings.SplitN(kv, "=", 2)
-				if len(parts) != 2 {
-					return fmt.Errorf("invalid KEY=VALUE pair: %q", kv)
-				}
-				vars[parts[0]] = parts[1]
+			vars, err := parseEnvPairs(args[1:])
+			if err != nil {
+				return err
 			}
 			c, err := newAPIClient()
 			if err != nil {
