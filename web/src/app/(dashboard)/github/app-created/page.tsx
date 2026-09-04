@@ -43,6 +43,17 @@ function Exchange() {
       .then((s) => {
         setSlug(s.github_app_slug ?? "");
         setState("done");
+
+        // Straight on to installing it. Registering the App is
+        // machinery — nobody sets out to create a GitHub App, they set
+        // out to connect their code — so this is the middle of one
+        // flow rather than the end of a step. Landing back on the
+        // dashboard here would make someone press a second button to
+        // finish what they already asked for.
+        if (s.github_app_slug) {
+          window.location.replace(`https://github.com/apps/${s.github_app_slug}/installations/new`);
+          return;
+        }
         if (returnTo.startsWith("/")) {
           // Only a path from this dashboard: a full URL here would be
           // an open redirect wearing a query parameter.

@@ -65,7 +65,7 @@ const sections: { label?: string; items: NavItem[] }[] = [
     items: [
       { href: "/registries", label: "Registries", icon: ContainerIcon, owns: ["/registries"] },
       { href: "/git", label: "Git Providers", icon: GitBranchIcon, owns: ["/git"] },
-      { href: "/dns", label: "DNS", icon: GlobeIcon, owns: ["/dns"] },
+      { href: "/dns", label: "DNS Providers", icon: GlobeIcon, owns: ["/dns"] },
       { href: "/settings", label: "Instance", icon: ServerCogIcon },
     ],
   },

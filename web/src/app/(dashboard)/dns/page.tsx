@@ -92,7 +92,7 @@ export default function DNSProviders() {
   return (
     <>
       <PageHeader
-        title="DNS"
+        title="DNS Providers"
         sub={
           org ? (
             <>

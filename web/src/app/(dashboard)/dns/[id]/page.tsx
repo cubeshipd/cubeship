@@ -72,7 +72,7 @@ export default function DNSZones({ params }: { params: Promise<{ id: string }> }
         className="mb-4 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
       >
         <ChevronLeftIcon className="size-3.5" />
-        DNS
+        DNS Providers
       </Link>
 
       <PageHeader
