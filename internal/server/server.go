@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"cubeship/internal/app"
+	"cubeship/internal/extregistry"
 	"cubeship/internal/org"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/httpx"
@@ -24,13 +25,14 @@ import (
 
 // Server owns the module graph and the mux they are mounted on.
 type Server struct {
-	Users    *user.Service
-	Orgs     *org.Service
-	Projects *project.Service
-	Apps     *app.Service
-	Settings *settings.Service
-	Setup    *setup.Service
-	Registry *registry.Handler
+	Users      *user.Service
+	Orgs       *org.Service
+	Projects   *project.Service
+	Apps       *app.Service
+	Settings   *settings.Service
+	Setup      *setup.Service
+	Registries *extregistry.Service
+	Registry   *registry.Handler
 
 	router *httpx.Router
 }
@@ -56,17 +58,19 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	orgs := org.NewService(db, users)
 	projects := project.NewService(db, orgs)
 	cfg := settings.NewService(db)
-	apps := app.NewService(db, orgs, projects, app.NewOrchestrator(db, docker, cfg), cfg)
+	registries := extregistry.NewService(db, orgs)
+	apps := app.NewService(db, orgs, projects, app.NewOrchestrator(db, docker, cfg, registries), cfg)
 
 	srv := &Server{
-		Users:    users,
-		Orgs:     orgs,
-		Projects: projects,
-		Apps:     apps,
-		Settings: cfg,
-		Setup:    setup.NewService(db, users),
-		Registry: registry.NewHandler(users, orgs, apps, cfg, opts.WebhookToken),
-		router:   httpx.NewRouter(),
+		Users:      users,
+		Orgs:       orgs,
+		Projects:   projects,
+		Apps:       apps,
+		Settings:   cfg,
+		Setup:      setup.NewService(db, users),
+		Registries: registries,
+		Registry:   registry.NewHandler(users, orgs, apps, cfg, opts.WebhookToken),
+		router:     httpx.NewRouter(),
 	}
 	srv.routes()
 	return srv
@@ -116,6 +120,7 @@ func (s *Server) routes() {
 	org.NewHandler(s.Orgs).Routes(s.router, auth)
 	project.NewHandler(s.Projects).Routes(s.router, auth)
 	settings.NewHandler(s.Settings).Routes(s.router, auth)
+	extregistry.NewHandler(s.Registries).Routes(s.router, auth)
 	app.NewHandler(s.Apps).Routes(s.router, auth)
 
 	// The registry's own two endpoints authenticate differently (Basic

@@ -49,12 +49,22 @@ export type App = {
   reference: string;
   name: string;
   domain: string;
+  // For a registry app, where to push; for an external one, what it pulls.
   image?: string;
   status: string;
-  source: string;
+  source: "registry" | "external";
   org: string;
   project: string;
   environment: string;
+};
+
+export type RegistryCredential = {
+  id: number;
+  name: string;
+  host: string;
+  username: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type Deployment = {

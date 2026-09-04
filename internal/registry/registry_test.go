@@ -134,3 +134,34 @@ func TestWebhookAcceptsTheDaemonsOwnToken(t *testing.T) {
 	}
 	f.Server.Registry.WaitForDeploys()
 }
+
+// A push under an external app's name must not deploy it. The registry
+// still accepts the push — the repository path exists either way — but
+// what that app runs comes from somewhere else, and deploying it because
+// something landed here would run a version nobody asked for.
+func TestAPushDoesNotDeployAnExternalApp(t *testing.T) {
+	f := servertest.New(t)
+
+	var created struct {
+		Reference string `json:"reference"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
+		"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
+		"source": "external", "image": "ghcr.io/acme/api",
+	}, f.AdminKey, &created), http.StatusCreated)
+
+	req := httptestPost(t, "/hooks/registry",
+		`{"events":[{"action":"push","target":{"repository":"`+created.Reference+`","tag":"latest"}}]}`)
+	req.Header.Set("Authorization", "Bearer "+servertest.WebhookToken)
+	rec := newRecorder()
+	f.Server.Router().ServeHTTP(rec, req)
+	servertest.RequireStatus(t, rec, http.StatusOK)
+	f.Server.Registry.WaitForDeploys()
+
+	var history []struct{ ID int64 }
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet,
+		"/apps/"+created.Reference+"/deployments", nil, f.AdminKey, &history), http.StatusOK)
+	if len(history) != 0 {
+		t.Fatalf("a push started %d deploy(s) for an external app", len(history))
+	}
+}

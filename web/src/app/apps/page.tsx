@@ -60,7 +60,16 @@ function Detail() {
         </Button>
       </header>
 
-      {app.image ? (
+      {app.source === "external" ? (
+        <Card>
+          <div className="text-xs text-muted">
+            Pulls from another registry. Nothing tells Cubeship when it is pushed to, so it deploys
+            when you ask — add a login under <Link href="/registries">Registries</Link> if it is
+            private.
+          </div>
+          <div className="mt-1 font-mono text-sm break-all">{app.image}</div>
+        </Card>
+      ) : app.image ? (
         <Card>
           <div className="text-xs text-muted">Push an image here and it deploys</div>
           <div className="mt-1 font-mono text-sm break-all">docker push {app.image}:latest</div>
@@ -81,6 +90,7 @@ function Detail() {
 
 function Deployments({ reference, onDeployed }: { reference: string; onDeployed: () => void }) {
   const [list, setList] = useState<Deployment[] | null>(null);
+  const [tag, setTag] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -105,22 +115,32 @@ function Deployments({ reference, onDeployed }: { reference: string; onDeployed:
     <>
       <div className="mt-7 mb-2.5 flex items-center justify-between">
         <h2 className="text-[15px] font-medium">Deployments</h2>
-        <Button
-          disabled={busy}
-          onClick={async () => {
+        <form
+          className="flex items-center gap-2"
+          onSubmit={async (e) => {
+            e.preventDefault();
             setBusy(true);
             setError(null);
             try {
-              await api.post(`/apps/${reference}/deploy`);
+              await api.post(`/apps/${reference}/deploy`, { tag: tag.trim() });
               reload();
-            } catch (e) {
-              setError(message(e));
+            } catch (err) {
+              setError(message(err));
             }
             setBusy(false);
           }}
         >
-          Redeploy latest
-        </Button>
+          <input
+            className={`${inputClass} w-32 py-1.5`}
+            value={tag}
+            onChange={(e) => setTag(e.target.value)}
+            placeholder="latest"
+            aria-label="Tag to deploy"
+          />
+          <Button type="submit" disabled={busy}>
+            Deploy
+          </Button>
+        </form>
       </div>
       <ErrorNote error={error} />
       <Card className="p-0">

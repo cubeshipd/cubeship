@@ -317,7 +317,7 @@ func TestPullImageReturnsStreamedError(t *testing.T) {
 `}
 	c := newWithAPI(fake)
 
-	err := c.PullImage(context.Background(), "127.0.0.1:5000/myapp:nope")
+	err := c.PullImage(context.Background(), "127.0.0.1:5000/myapp:nope", nil)
 	if err == nil {
 		t.Fatal("expected an in-stream pull error to be returned")
 	}
@@ -330,7 +330,7 @@ func TestPullImageReturnsDeprecatedErrorField(t *testing.T) {
 	fake := &fakeAPI{pullStream: `{"error":"unauthorized: authentication required"}` + "\n"}
 	c := newWithAPI(fake)
 
-	err := c.PullImage(context.Background(), "127.0.0.1:5000/myapp:latest")
+	err := c.PullImage(context.Background(), "127.0.0.1:5000/myapp:latest", nil)
 	if err == nil {
 		t.Fatal("expected an error for a stream carrying only the deprecated error field")
 	}
@@ -346,7 +346,7 @@ func TestPullImageSucceedsOnCleanStream(t *testing.T) {
 `}
 	c := newWithAPI(fake)
 
-	if err := c.PullImage(context.Background(), "127.0.0.1:5000/myapp:latest"); err != nil {
+	if err := c.PullImage(context.Background(), "127.0.0.1:5000/myapp:latest", nil); err != nil {
 		t.Fatalf("PullImage: %v", err)
 	}
 }
@@ -360,7 +360,7 @@ func TestPullImageAttachesRegistryAuthForMatchingHost(t *testing.T) {
 		return "signed-jwt", nil
 	})
 
-	if err := c.PullImage(context.Background(), "127.0.0.1:5000/acme/myapp:latest"); err != nil {
+	if err := c.PullImage(context.Background(), "127.0.0.1:5000/acme/myapp:latest", nil); err != nil {
 		t.Fatalf("PullImage: %v", err)
 	}
 	if signedFor != "acme/myapp" {
@@ -385,7 +385,7 @@ func TestPullImagePropagatesSignerError(t *testing.T) {
 		return "", fmt.Errorf("signing key unavailable")
 	})
 
-	err := c.PullImage(context.Background(), "127.0.0.1:5000/acme/myapp:latest")
+	err := c.PullImage(context.Background(), "127.0.0.1:5000/acme/myapp:latest", nil)
 	if err == nil {
 		t.Fatal("expected an error when the signer fails")
 	}
@@ -400,14 +400,14 @@ func TestPullImageSendsNoAuthForOtherHosts(t *testing.T) {
 
 	// Bootstrap images come from Docker Hub and must not carry the
 	// local registry's credentials.
-	if err := c.PullImage(context.Background(), "registry:2"); err != nil {
+	if err := c.PullImage(context.Background(), "registry:2", nil); err != nil {
 		t.Fatalf("PullImage: %v", err)
 	}
 	if fake.pulledAuth != "" {
 		t.Fatalf("expected no auth for a Docker Hub image, got %q", fake.pulledAuth)
 	}
 
-	if err := c.PullImage(context.Background(), "registry.example.com/myapp:latest"); err != nil {
+	if err := c.PullImage(context.Background(), "registry.example.com/myapp:latest", nil); err != nil {
 		t.Fatalf("PullImage: %v", err)
 	}
 	if fake.pulledAuth != "" {

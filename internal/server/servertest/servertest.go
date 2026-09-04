@@ -79,7 +79,7 @@ type noDocker struct{}
 
 var errNoDocker = errors.New("this test has no Docker configured")
 
-func (noDocker) PullImage(context.Context, string) error { return errNoDocker }
+func (noDocker) PullImage(context.Context, string, *dockerx.RegistryAuth) error { return errNoDocker }
 func (noDocker) CreateContainer(context.Context, dockerx.ContainerOpts) (string, error) {
 	return "", errNoDocker
 }

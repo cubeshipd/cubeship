@@ -303,7 +303,7 @@ func WriteAPIRouterConfig(cfg *config.Config, apiHost string, daemonPort int) er
 
 // dockerAPI is the subset of dockerx.Client this package needs.
 type dockerAPI interface {
-	PullImage(ctx context.Context, ref string) error
+	PullImage(ctx context.Context, ref string, creds *dockerx.RegistryAuth) error
 	CreateContainer(ctx context.Context, opts dockerx.ContainerOpts) (string, error)
 	StartContainer(ctx context.Context, id string) error
 	StopContainer(ctx context.Context, id string) error
@@ -411,7 +411,8 @@ func Ensure(ctx context.Context, docker dockerAPI, opts dockerx.ContainerOpts) e
 		return fmt.Errorf("inspect %s: %w", opts.Name, err)
 	}
 
-	if err := docker.PullImage(ctx, opts.Image); err != nil {
+	// Infrastructure images come from Docker Hub anonymously.
+	if err := docker.PullImage(ctx, opts.Image, nil); err != nil {
 		return fmt.Errorf("pull %s: %w", opts.Image, err)
 	}
 

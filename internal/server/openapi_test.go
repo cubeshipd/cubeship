@@ -76,6 +76,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"DELETE /orgs/{orgSlug}",
 		"DELETE /orgs/{orgSlug}/projects/{projectSlug}",
 		"DELETE /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}",
+		"DELETE /orgs/{orgSlug}/registries/{id}",
 		"GET /apps",
 		"GET /apps/{org}/{project}/{env}/{name}",
 		"GET /apps/{org}/{project}/{env}/{name}/deployments",
@@ -87,6 +88,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"GET /orgs/{orgSlug}/projects/{projectSlug}/env",
 		"GET /orgs/{orgSlug}/projects/{projectSlug}/environments",
 		"GET /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env",
+		"GET /orgs/{orgSlug}/registries",
 		"GET /settings",
 		"GET /users/me",
 		"PATCH /apps/{org}/{project}/{env}/{name}/env",
@@ -97,10 +99,12 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"POST /orgs",
 		"POST /orgs/{orgSlug}/projects",
 		"POST /orgs/{orgSlug}/projects/{projectSlug}/environments",
+		"POST /orgs/{orgSlug}/registries",
 		"POST /orgs/{orgSlug}/users",
 		"PUT /apps/{org}/{project}/{env}/{name}/env",
 		"PUT /orgs/{orgSlug}/projects/{projectSlug}/env",
 		"PUT /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env",
+		"PUT /orgs/{orgSlug}/registries/{id}",
 		"PUT /settings",
 	}
 	if got := f.Server.Patterns(); !slices.Equal(got, want) {

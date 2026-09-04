@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"cubeship/internal/app"
+	"cubeship/internal/extregistry"
 	"cubeship/internal/org"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/platform/openapi"
@@ -38,6 +39,7 @@ func (s *Server) OpenAPI() openapi.Document {
 		org.NewHandler(s.Orgs).OpenAPI(),
 		project.NewHandler(s.Projects).OpenAPI(),
 		app.NewHandler(s.Apps).OpenAPI(),
+		extregistry.NewHandler(s.Registries).OpenAPI(),
 		settings.NewHandler(s.Settings).OpenAPI(),
 	)
 

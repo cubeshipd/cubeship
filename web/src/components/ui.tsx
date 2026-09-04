@@ -102,6 +102,7 @@ export function Shell({ children }: { children: ReactNode }) {
         <div className="mb-6 px-2.5 font-semibold">Cubeship</div>
         <NavLink href="/">Apps</NavLink>
         <NavLink href="/organizations">Organizations</NavLink>
+        <NavLink href="/registries">Registries</NavLink>
         <NavLink href="/settings">Instance</NavLink>
         <NavLink href="/account">Account</NavLink>
         <div className="mt-6 border-t border-line px-2.5 pt-4 text-xs text-muted">

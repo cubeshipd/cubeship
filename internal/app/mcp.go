@@ -81,14 +81,16 @@ type createInput struct {
 	Environment string `json:"environment,omitempty" jsonschema:"environment slug (default \"production\")"`
 	Name        string `json:"name" jsonschema:"app name: lowercase letters, digits and dashes — becomes part of its registry image path"`
 	Domain      string `json:"domain" jsonschema:"domain the app will be served on"`
-	Source      string `json:"source,omitempty" jsonschema:"where the image comes from. Only \"registry\" — an image you push to Cubeship — is supported today, and it is the default."`
+	Source      string `json:"source,omitempty" jsonschema:"where the image comes from: \"registry\" (the default) for an image you push to Cubeship, or \"external\" for one in a registry Cubeship does not run."`
+	Image       string `json:"image,omitempty" jsonschema:"for an external app, the image it pulls, without a tag — e.g. \"registry.digitalocean.com/acme/api\". Leave empty for a registry app."`
 }
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
 	if in.Domain == "" {
 		return nil, Response{}, fmt.Errorf("domain is required")
 	}
-	created, err := t.svc.Create(ctx, t.caller, in.Org, in.Project, in.Environment, in.Name, in.Domain, Source(in.Source))
+	created, err := t.svc.Create(ctx, t.caller, in.Org, in.Project, in.Environment,
+		in.Name, in.Domain, Source(in.Source), in.Image)
 	if err != nil {
 		return nil, Response{}, err
 	}

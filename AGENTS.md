@@ -34,6 +34,7 @@ internal/
   project/      projects and the environments inside them
   app/          apps, deployments, and the deploy orchestrator
   registry/     who may docker push/pull, and the push webhook
+  extregistry/  logins for registries Cubeship does not run
   setup/        the first-run flow that claims an instance
   settings/     the instance's domain and contact address
   web/          serves the built dashboard out of the binary
@@ -320,10 +321,28 @@ never the HTTP challenge on :80. Changing that would break the redirect.
 
 ## Where an app's image comes from
 
-Every app carries a `source`. Today the only one is `registry` — an image
-pushed to Cubeship's own registry — and a value the daemon cannot act on
-is refused at creation, because accepting one would let someone create an
-app that can never deploy.
+Every app carries a `source`, and a value the daemon cannot act on is
+refused at creation — accepting one would let someone create an app that
+can never deploy.
+
+- **`registry`** — pushed to Cubeship's own registry. The push is what
+  deploys it. Needs a domain before there is anywhere to push.
+- **`external`** — an image in a registry Cubeship does not run. Nothing
+  notifies Cubeship when one of those is pushed to, so **there is no
+  autodeploy**: a deploy is something you ask for. It needs nothing
+  configured, which makes it the one thing an instance can run the minute
+  it is installed.
+
+An external app stores `source_image`, the reference minus the tag,
+because it has nothing to derive one from. The tag is the deploy's
+argument, so an image given with one is refused: an app pinned to a tag
+could never be told to run another. A registry app naming an image is
+refused too, rather than silently ignored.
+
+A push under an external app's name does not deploy it — the webhook
+checks the source. Our registry will accept the push, since the
+repository path exists either way, but running an image because something
+unrelated landed under that name would deploy a version nobody asked for.
 
 The seam is `ImageSource`, in `internal/app/source.go`, and the split is
 the point:
@@ -338,6 +357,37 @@ the point:
 `Orchestrator.Start` takes a tag, not an image reference: which image a
 tag names is the source's answer. `deployments.image_ref` holds what was
 asked for until `Resolve` says what actually ran.
+
+## Pulling from someone else's registry
+
+`internal/extregistry` holds the logins. They belong to the
+**organization**, not the app: one DigitalOcean or ECR login covers every
+image in it, and rotating a password should be one edit rather than one
+per app. One per host per organization, or "which one does this pull
+use" has no answer.
+
+Matching is by host, and the two sides have to agree about spelling —
+`NormalizeHost` reduces what someone types, `HostOf` reads what an image
+reference carries, and both land on `index.docker.io` for a reference
+with no registry in it at all.
+
+**Passwords are stored as given and never returned.** A hash cannot be
+sent to a registry, so it is stored plainly; an endpoint that handed it
+back would turn every read of the list into a way out for it. Rotation
+replaces the login and keeps the host — re-pointing in place would
+silently send an app's pulls somewhere else.
+
+A missing credential is not an error. Public images need none, and
+letting the registry be the one to refuse is what keeps a deploy that
+would have worked from being blocked on a guess.
+
+`ImageSource.Resolve` returns an `app.Image` — a reference and the
+credentials for it — because that is one answer. Resolving the reference
+is what determines which registry is involved, and so which login
+applies.
+
+There are no MCP tools for any of this, deliberately: creating a
+credential means a registry password passing through a model's context.
 
 ## Deploys are detached
 

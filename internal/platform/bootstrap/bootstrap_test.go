@@ -232,7 +232,7 @@ func newFakeDocker() *fakeDocker {
 	return &fakeDocker{inspectErr: dockerx.ErrContainerNotFound}
 }
 
-func (f *fakeDocker) PullImage(ctx context.Context, ref string) error {
+func (f *fakeDocker) PullImage(ctx context.Context, ref string, _ *dockerx.RegistryAuth) error {
 	f.pulledRef = ref
 	return nil
 }

@@ -135,6 +135,13 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue // no app owns this repository
 		}
+		// A push is only a deploy trigger for an app that deploys what
+		// was pushed. An external app runs an image from somewhere else
+		// entirely; deploying it because our registry received something
+		// under its name would run a version nobody asked for.
+		if app.Source(a.Source) != app.SourceRegistry {
+			continue
+		}
 		// Start returns as soon as the deploy is recorded; the registry's
 		// notification client gives up after 5s, and a real deploy takes
 		// far longer. Which image that tag resolves to is the app

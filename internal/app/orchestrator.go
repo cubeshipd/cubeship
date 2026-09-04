@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"cubeship/internal/envvar"
+	"cubeship/internal/extregistry"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/platform/traefik"
@@ -20,7 +21,7 @@ import (
 // DockerAPI is the subset of dockerx.Client the deploy engine needs.
 // *dockerx.Client satisfies it structurally, and a test supplies a fake.
 type DockerAPI interface {
-	PullImage(ctx context.Context, ref string) error
+	PullImage(ctx context.Context, ref string, creds *dockerx.RegistryAuth) error
 	CreateContainer(ctx context.Context, opts dockerx.ContainerOpts) (string, error)
 	StartContainer(ctx context.Context, id string) error
 	StopContainer(ctx context.Context, id string) error
@@ -38,6 +39,7 @@ type Orchestrator struct {
 	proj     *project.Repository
 	envs     *project.EnvironmentRepository
 	settings *settings.Service
+	creds    CredentialLookup
 
 	// HealthCheckAttempts bounds how many observations waitHealthy takes
 	// before giving up; HealthCheckSuccesses is how many of them must be
@@ -62,7 +64,13 @@ type Orchestrator struct {
 // a wedged deploy running forever.
 const DeployTimeout = 10 * time.Minute
 
-func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service) *Orchestrator {
+// CredentialLookup answers what login an organization holds for the
+// registry an image lives in. Only an external app ever needs one.
+type CredentialLookup interface {
+	ForImage(ctx context.Context, orgID int64, image string) (*extregistry.Credential, bool, error)
+}
+
+func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds CredentialLookup) *Orchestrator {
 	return &Orchestrator{
 		db:                   db,
 		docker:               d,
@@ -70,10 +78,26 @@ func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service) *Orche
 		proj:                 project.NewRepository(db),
 		envs:                 project.NewEnvironmentRepository(db),
 		settings:             cfg,
+		creds:                creds,
 		HealthCheckAttempts:  10,
 		HealthCheckSuccesses: 3,
 		HealthCheckInterval:  500 * time.Millisecond,
 	}
+}
+
+// registryCredentials is what externalSource asks for the login to pull
+// an image with. Nothing found means a public image, which is not an
+// error: the registry itself is what refuses an anonymous pull it should
+// not have served.
+func (o *Orchestrator) registryCredentials(ctx context.Context, orgID int64, image string) (*dockerx.RegistryAuth, error) {
+	if o.creds == nil {
+		return nil, nil
+	}
+	c, found, err := o.creds.ForImage(ctx, orgID, image)
+	if err != nil || !found {
+		return nil, err
+	}
+	return &dockerx.RegistryAuth{Username: c.Username, Password: c.Password}, nil
 }
 
 // lockApp returns the mutex guarding deploys of one app. Keyed by id
@@ -221,11 +245,11 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	if err != nil {
 		return err
 	}
-	imageRef, err := source.Resolve(ctx, a, tag)
+	image, err := source.Resolve(ctx, a, tag)
 	if err != nil {
 		return fmt.Errorf("resolve image: %w", err)
 	}
-	if err := o.apps.SetDeploymentImage(ctx, deploymentID, imageRef); err != nil {
+	if err := o.apps.SetDeploymentImage(ctx, deploymentID, image.Ref); err != nil {
 		log.Printf("deploy %s: could not record the resolved image: %v", appName, err)
 	}
 
@@ -234,7 +258,7 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 		return fmt.Errorf("resolve inherited env: %w", err)
 	}
 
-	if err := o.docker.PullImage(ctx, imageRef); err != nil {
+	if err := o.docker.PullImage(ctx, image.Ref, image.Auth); err != nil {
 		return fmt.Errorf("pull image: %w", err)
 	}
 
@@ -251,7 +275,7 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	newName := fmt.Sprintf("%s-%d", base, time.Now().UnixNano())
 	newID, err := o.docker.CreateContainer(ctx, dockerx.ContainerOpts{
 		Name:    newName,
-		Image:   imageRef,
+		Image:   image.Ref,
 		Labels:  traefik.Labels(base, a.Domain, Port, values.HasTLS()),
 		Env:     envvar.Slice(env),
 		Network: Network,

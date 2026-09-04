@@ -166,7 +166,7 @@ func TestAppsCarryTheirSource(t *testing.T) {
 func TestUnsupportedSourceIsRefused(t *testing.T) {
 	f := servertest.New(t)
 
-	for _, source := range []string{"git", "external", "ftp", "REGISTRY"} {
+	for _, source := range []string{"git", "build", "ftp", "REGISTRY", "EXTERNAL"} {
 		rec := f.Do(t, http.MethodPost, "/apps", map[string]string{
 			"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
 			"source": source,
@@ -198,4 +198,77 @@ func TestDeployIsRefusedBeforeItStartsWhenTheSourceCannotProduceAnImage(t *testi
 	if len(history) != 0 {
 		t.Fatalf("a refused deploy left %d deployment(s) behind", len(history))
 	}
+}
+
+// An external app is defined by the image it pulls, and an app that can
+// never deploy must not be creatable. Both halves of that are refused at
+// creation rather than discovered at deploy time.
+func TestAnExternalAppNeedsAnImageAndNothingElseMayHaveOne(t *testing.T) {
+	f := servertest.New(t)
+
+	create := func(body map[string]string) int {
+		return f.Do(t, http.MethodPost, "/apps", body, f.AdminKey).Code
+	}
+	base := map[string]string{"domain": "x.example.com", "org": "acme", "project": "web"}
+	with := func(extra map[string]string) map[string]string {
+		out := map[string]string{}
+		for k, v := range base {
+			out[k] = v
+		}
+		for k, v := range extra {
+			out[k] = v
+		}
+		return out
+	}
+
+	if got := create(with(map[string]string{"name": "no-image", "source": "external"})); got != http.StatusBadRequest {
+		t.Errorf("an external app with no image was answered %d, want 400", got)
+	}
+	// The tag is what a deploy chooses; an app pinned to one could never
+	// be told to run another.
+	if got := create(with(map[string]string{
+		"name": "tagged", "source": "external", "image": "ghcr.io/acme/api:v1",
+	})); got != http.StatusBadRequest {
+		t.Errorf("an image with a tag was answered %d, want 400", got)
+	}
+	// A registry app derives its image; naming one would be silently
+	// ignored, which is worse than a refusal.
+	if got := create(with(map[string]string{
+		"name": "confused", "source": "registry", "image": "ghcr.io/acme/api",
+	})); got != http.StatusBadRequest {
+		t.Errorf("a registry app naming an image was answered %d, want 400", got)
+	}
+
+	// And the shape that is right.
+	var ok struct {
+		Source string `json:"source"`
+		Image  string `json:"image"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", with(map[string]string{
+		"name": "external-app", "source": "external", "image": "ghcr.io/acme/api",
+	}), f.AdminKey, &ok), http.StatusCreated)
+	if ok.Source != "external" || ok.Image != "ghcr.io/acme/api" {
+		t.Errorf("created %+v", ok)
+	}
+}
+
+// An external app deploys with no domain configured — the embedded
+// registry needs one before anything can be pushed, and this path needs
+// nothing at all. That is what makes an instance useful immediately
+// after installing.
+func TestAnExternalAppCanDeployBeforeAnyDomainExists(t *testing.T) {
+	f := servertest.NewUnconfigured(t)
+
+	var created struct {
+		Reference string `json:"reference"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
+		"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
+		"source": "external", "image": "ghcr.io/acme/api",
+	}, f.AdminKey, &created), http.StatusCreated)
+
+	// Accepted, where a registry app is refused for having nowhere to
+	// pull from.
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost,
+		"/apps/"+created.Reference+"/deploy", nil, f.AdminKey), http.StatusAccepted)
 }

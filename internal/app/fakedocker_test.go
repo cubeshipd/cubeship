@@ -17,6 +17,9 @@ type fakeDocker struct {
 
 	nextCreateID string
 	running      bool
+	// pullCreds is what the last pull authenticated with, so a test can
+	// assert an external app reached its registry with a login.
+	pullCreds *dockerx.RegistryAuth
 	// runningSeq, when non-empty, is consumed one entry per IsRunning
 	// call (falling back to `running` once exhausted), so a test can
 	// script a flapping container.
@@ -35,9 +38,10 @@ type fakeDocker struct {
 	removeErr error
 }
 
-func (f *fakeDocker) PullImage(_ context.Context, ref string) error {
+func (f *fakeDocker) PullImage(_ context.Context, ref string, creds *dockerx.RegistryAuth) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.pullCreds = creds
 	if f.pullErr != nil {
 		return f.pullErr
 	}
@@ -95,6 +99,21 @@ func (f *fakeDocker) IsRunning(_ context.Context, _ string) (bool, error) {
 
 func (f *fakeDocker) Logs(_ context.Context, _, _ string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(f.logOutput)), nil
+}
+
+// PulledRefs is what was pulled, in order.
+func (f *fakeDocker) PulledRefs() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.pulledRefs...)
+}
+
+// PullCreds is what the last pull authenticated with, or nil if it was
+// anonymous.
+func (f *fakeDocker) PullCreds() *dockerx.RegistryAuth {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.pullCreds
 }
 
 func (f *fakeDocker) snapshot() (created []dockerx.ContainerOpts, started, stopped, removed []string) {

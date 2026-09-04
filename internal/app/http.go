@@ -29,8 +29,10 @@ type Response struct {
 	Reference string `json:"reference"`
 	Name      string `json:"name"`
 	Domain    string `json:"domain"`
-	// Image is where a push to this app goes. Empty while the instance
-	// has no domain: there is nowhere to push yet.
+	// Image is the image this app is about, which depends on where it
+	// comes from: for a registry app, where a push should go — empty
+	// while the instance has no domain, because there is nowhere to push
+	// yet — and for an external app, what it pulls.
 	Image  string `json:"image,omitempty"`
 	Status string `json:"status"`
 	// Source is where this app's image comes from.
@@ -49,8 +51,13 @@ func toResponse(a *Scoped, registryHost string) Response {
 		Name:      a.Name, Domain: a.Domain, Status: a.Status, Source: a.Source,
 		Org: a.OrgSlug, Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
 	}
-	if registryHost != "" {
-		r.Image = ReferenceOf(a).ImageFor(registryHost)
+	switch Source(a.Source) {
+	case SourceExternal:
+		r.Image = a.SourceImage
+	default:
+		if registryHost != "" {
+			r.Image = ReferenceOf(a).ImageFor(registryHost)
+		}
 	}
 	return r
 }
@@ -105,7 +112,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	case errors.Is(err, ErrAlreadyExists):
 		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, ErrUnknownSource):
+	case errors.Is(err, ErrUnknownSource), errors.Is(err, ErrImageRequired),
+		errors.Is(err, ErrImageNotAllowed), errors.Is(err, ErrImageCarriesTag):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNoRegistry):
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -126,6 +134,8 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		Project     string `json:"project"`
 		Environment string `json:"environment"`
 		Source      string `json:"source"`
+		// Image is where an external app pulls from, without a tag.
+		Image string `json:"image"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil ||
 		req.Name == "" || req.Domain == "" || req.Org == "" || req.Project == "" {
@@ -133,7 +143,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	created, err := h.svc.Create(r.Context(), user.FromContext(r.Context()),
-		req.Org, req.Project, req.Environment, req.Name, req.Domain, Source(req.Source))
+		req.Org, req.Project, req.Environment, req.Name, req.Domain, Source(req.Source), req.Image)
 	if err != nil {
 		WriteError(w, err)
 		return

@@ -17,10 +17,10 @@ import (
 // App is one deployable service: a name, the domain Traefik routes to
 // it, and whichever container is currently serving it.
 //
-// Where its image comes from is not stored here. For an app pushed to the
-// embedded registry the path is derived from its reference, so an app
-// created before the instance had a domain gets a correct push path the
-// moment one is configured.
+// An app on the embedded registry stores no image: the path is derived
+// from its reference, so an app created before the instance had a domain
+// gets a correct push path the moment one is configured. An external app
+// has nothing to derive from, so SourceImage is where it pulls.
 type App struct {
 	ID            int64
 	OrgID         int64
@@ -29,10 +29,13 @@ type App struct {
 	Name          string
 	Domain        string
 	Source        string
-	ContainerID   string
-	Status        string
-	Env           envvar.Map
-	CreatedAt     time.Time
+	// SourceImage is the image an external app pulls, without a tag.
+	// Empty for every other source.
+	SourceImage string
+	ContainerID string
+	Status      string
+	Env         envvar.Map
+	CreatedAt   time.Time
 }
 
 // Deployment is one attempt to run a new image for an app. It is created

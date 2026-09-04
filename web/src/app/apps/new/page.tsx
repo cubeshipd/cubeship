@@ -25,6 +25,8 @@ function Form() {
   const [environment, setEnvironment] = useState("");
   const [name, setName] = useState("");
   const [domain, setDomain] = useState("");
+  const [source, setSource] = useState<"registry" | "external">("registry");
+  const [image, setImage] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,7 +58,17 @@ function Form() {
     setBusy(true);
     setError(null);
     try {
-      const created = await api.post<App>("/apps", { name, domain, org, project, environment });
+      const created = await api.post<App>("/apps", {
+        name,
+        domain,
+        org,
+        project,
+        environment,
+        source,
+        // Only an external app names one; sending an empty string for a
+        // registry app is the same as not naming one.
+        image: source === "external" ? image.trim() : "",
+      });
       router.push(`/apps?ref=${created.reference}`);
     } catch (err) {
       setError(message(err));
@@ -113,6 +125,31 @@ function Form() {
             placeholder="app.example.com"
           />
         </Field>
+
+        <Field label="Where the image comes from">
+          <select
+            className={inputClass}
+            value={source}
+            onChange={(e) => setSource(e.target.value as "registry" | "external")}
+          >
+            <option value="registry">Cubeship&apos;s registry — pushing deploys it</option>
+            <option value="external">Another registry — you deploy when you want to</option>
+          </select>
+        </Field>
+
+        {source === "external" && (
+          <Field
+            label="Image"
+            hint="Without a tag — the tag is chosen each deploy. A private registry needs a login under Registries."
+          >
+            <input
+              className={inputClass}
+              value={image}
+              onChange={(e) => setImage(e.target.value)}
+              placeholder="registry.digitalocean.com/acme/api"
+            />
+          </Field>
+        )}
 
         <Button type="submit" variant="primary" disabled={busy || !org || !project}>
           {busy ? "Creating…" : "Create app"}

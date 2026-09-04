@@ -9,6 +9,16 @@ curl -sSL https://cubeship.dev/install.sh | sh
 Nothing under `CUBESHIP_DATA_DIR` is touched. The sections below are the
 changes worth knowing about, newest first.
 
+## From a release with only the embedded registry
+
+Nothing to do. Every existing app keeps `source: "registry"` and behaves
+exactly as before.
+
+What is new is `source: "external"`, an app that pulls from a registry
+Cubeship does not run. Those have no autodeploy — nothing notifies
+Cubeship about a push to somebody else's registry — and a private one
+needs a login, added per organization under Registries.
+
 ## From a release that listened on 9000
 
 The daemon listens on **3000** now, because on a fresh box the dashboard

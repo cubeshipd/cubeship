@@ -41,9 +41,24 @@ type ContainerOpts struct {
 	ExtraHosts  []string
 }
 
-func (c *Client) PullImage(ctx context.Context, ref string) error {
+// RegistryAuth is a username and password for a registry Cubeship does
+// not run. Cubeship's own registry is reached with a minted token
+// instead — see authForRef — so a caller passes nil for it.
+type RegistryAuth struct {
+	Username string
+	Password string
+}
+
+// PullImage fetches ref, authenticating with creds when they are given
+// and with a minted token when the host is one the daemon signs for.
+//
+// Explicit credentials win. An operator who added a login for a host has
+// said what to use there, and silently preferring anything else would
+// make a failed pull impossible to explain.
+func (c *Client) PullImage(ctx context.Context, ref string, creds *RegistryAuth) error {
 	opts := types.ImagePullOptions{}
-	auth, ok, err := c.authForRef(ref)
+
+	auth, ok, err := c.authFor(ref, creds)
 	if err != nil {
 		return fmt.Errorf("sign registry auth for %q: %w", ref, err)
 	}
@@ -92,6 +107,31 @@ func (c *Client) PullImage(ctx context.Context, ref string) error {
 // scoped to exactly the repository being pulled (everything between the
 // host and the last ":"), matching the least-privilege scope the
 // signer's registry token endpoint would grant anyway.
+// authFor picks the credentials for a pull: the ones given, or a minted
+// token for a host the daemon signs for, or none at all.
+func (c *Client) authFor(ref string, creds *RegistryAuth) (registry.AuthConfig, bool, error) {
+	if creds != nil {
+		return registry.AuthConfig{
+			Username:      creds.Username,
+			Password:      creds.Password,
+			ServerAddress: registryHostOf(ref),
+		}, true, nil
+	}
+	return c.authForRef(ref)
+}
+
+// registryHostOf is the address a reference's credentials are for. A
+// reference whose first segment does not look like an address is a
+// Docker Hub repository, and the Hub's own name is what the Engine
+// expects there.
+func registryHostOf(ref string) string {
+	first, _, found := strings.Cut(ref, "/")
+	if !found || (!strings.ContainsAny(first, ".:") && first != "localhost") {
+		return "https://index.docker.io/v1/"
+	}
+	return first
+}
+
 func (c *Client) authForRef(ref string) (registry.AuthConfig, bool, error) {
 	if len(c.registryTokenSigners) == 0 {
 		return registry.AuthConfig{}, false, nil
