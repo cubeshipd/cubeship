@@ -9,7 +9,8 @@ func TestRecordAndListDeployments(t *testing.T) {
 	s, _ := Open(":memory:")
 	defer s.Close()
 	ctx := context.Background()
-	app, _ := s.CreateApp(ctx, "myapp", "myapp.example.com", "registry.example.com/myapp")
+	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	app, _ := s.CreateApp(ctx, org.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")
 
 	if err := s.RecordDeployment(ctx, app.ID, "registry.example.com/myapp:latest", "success", ""); err != nil {
 		t.Fatalf("RecordDeployment: %v", err)

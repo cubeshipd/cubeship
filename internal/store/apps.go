@@ -9,6 +9,7 @@ import (
 
 type App struct {
 	ID          int64
+	OrgID       int64
 	Name        string
 	Domain      string
 	Image       string
@@ -18,10 +19,10 @@ type App struct {
 	CreatedAt   time.Time
 }
 
-func (s *Store) CreateApp(ctx context.Context, name, domain, image string) (*App, error) {
+func (s *Store) CreateApp(ctx context.Context, orgID int64, name, domain, image string) (*App, error) {
 	if _, err := s.db.ExecContext(ctx,
-		`INSERT INTO apps (name, domain, image) VALUES (?, ?, ?)`,
-		name, domain, image); err != nil {
+		`INSERT INTO apps (org_id, name, domain, image) VALUES (?, ?, ?, ?)`,
+		orgID, name, domain, image); err != nil {
 		return nil, fmt.Errorf("create app: %w", err)
 	}
 	return s.GetAppByName(ctx, name)
@@ -32,7 +33,7 @@ func (s *Store) scanApp(row interface {
 }) (*App, error) {
 	var a App
 	var envJSON string
-	if err := row.Scan(&a.ID, &a.Name, &a.Domain, &a.Image, &a.ContainerID, &a.Status, &envJSON, &a.CreatedAt); err != nil {
+	if err := row.Scan(&a.ID, &a.OrgID, &a.Name, &a.Domain, &a.Image, &a.ContainerID, &a.Status, &envJSON, &a.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal([]byte(envJSON), &a.Env); err != nil {
@@ -43,7 +44,7 @@ func (s *Store) scanApp(row interface {
 
 func (s *Store) GetAppByName(ctx context.Context, name string) (*App, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, domain, image, container_id, status, env, created_at FROM apps WHERE name = ?`, name)
+		`SELECT id, org_id, name, domain, image, container_id, status, env, created_at FROM apps WHERE name = ?`, name)
 	a, err := s.scanApp(row)
 	if err != nil {
 		return nil, fmt.Errorf("get app %q: %w", name, err)
@@ -53,7 +54,7 @@ func (s *Store) GetAppByName(ctx context.Context, name string) (*App, error) {
 
 func (s *Store) GetAppByImage(ctx context.Context, image string) (*App, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, domain, image, container_id, status, env, created_at FROM apps WHERE image = ?`, image)
+		`SELECT id, org_id, name, domain, image, container_id, status, env, created_at FROM apps WHERE image = ?`, image)
 	a, err := s.scanApp(row)
 	if err != nil {
 		return nil, fmt.Errorf("get app by image %q: %w", image, err)
@@ -63,7 +64,7 @@ func (s *Store) GetAppByImage(ctx context.Context, image string) (*App, error) {
 
 func (s *Store) ListApps(ctx context.Context) ([]*App, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, domain, image, container_id, status, env, created_at FROM apps ORDER BY id`)
+		`SELECT id, org_id, name, domain, image, container_id, status, env, created_at FROM apps ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
