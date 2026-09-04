@@ -119,3 +119,31 @@ func (r *Repository) ListMembershipsForUser(ctx context.Context, userID int64) (
 	}
 	return out, rows.Err()
 }
+
+// CountProjects reports how many projects an organization holds.
+//
+// It reads the projects table from this package because the rule it
+// serves is the organization's invariant — an organization cannot be
+// deleted out from under its projects — and internal/project already
+// depends on this one, so the dependency cannot run the other way.
+func (r *Repository) CountProjects(ctx context.Context, orgID int64) (int, error) {
+	var n int
+	if err := r.q.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM projects WHERE org_id = $1`, orgID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count projects in organization: %w", err)
+	}
+	return n, nil
+}
+
+// Delete removes an organization and every membership in it. The users
+// themselves stay: they may belong to other organizations, and their API
+// keys are their own.
+func (r *Repository) Delete(ctx context.Context, orgID int64) error {
+	if _, err := r.q.ExecContext(ctx, `DELETE FROM memberships WHERE org_id = $1`, orgID); err != nil {
+		return fmt.Errorf("delete memberships: %w", err)
+	}
+	if _, err := r.q.ExecContext(ctx, `DELETE FROM organizations WHERE id = $1`, orgID); err != nil {
+		return fmt.Errorf("delete organization: %w", err)
+	}
+	return nil
+}

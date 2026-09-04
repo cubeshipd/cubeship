@@ -1,5 +1,28 @@
 # Upgrading an existing install
 
+## From a release where app names were unique instance-wide
+
+An app's name used to be unique across the whole Cubeship, which made
+environments useless as namespaces: the same app could not live in both
+`production` and `staging`, and two organizations could not both have an
+`api`. A name is now unique only within its environment.
+
+That changes two things you use directly:
+
+- **An app is named by its reference**, `<org>/<project>/<environment>/<app>`
+  — `cubeship app get acme/web/production/myapp`. Three parts means the
+  `production` environment, so `acme/web/myapp` works too. The HTTP API
+  moved from `/apps/{name}` to `/apps/{org}/{project}/{env}/{name}`, and
+  the MCP tools take `app` instead of `name`.
+- **The registry path gained the same scope**:
+  `registry.<domain>/<org>/<project>/<environment>/<app>`. The first
+  start rewrites the stored path for every existing app, so the push
+  webhook keeps matching — but images you already pushed stay at the old
+  path. Push once to the new one, which `cubeship app get` prints, and
+  the deploy runs as usual.
+
+Nothing is redeployed, and running containers are untouched.
+
 ## From a release that stored its data in SQLite
 
 **There is no automatic migration, and the old data is not read.** The

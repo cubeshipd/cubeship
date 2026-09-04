@@ -48,6 +48,7 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.Handle("POST /orgs/{orgSlug}/projects", auth(http.HandlerFunc(h.create)))
 	r.Handle("GET /orgs/{orgSlug}/projects", auth(http.HandlerFunc(h.list)))
+	r.Handle("DELETE /orgs/{orgSlug}/projects/{projectSlug}", auth(http.HandlerFunc(h.delete)))
 	r.Handle("GET /orgs/{orgSlug}/projects/{projectSlug}/env", auth(http.HandlerFunc(h.getEnv)))
 	r.Handle("PUT /orgs/{orgSlug}/projects/{projectSlug}/env", auth(http.HandlerFunc(h.setEnv)))
 	r.Handle("PATCH /orgs/{orgSlug}/projects/{projectSlug}/env", auth(http.HandlerFunc(h.mergeEnv)))
@@ -65,7 +66,8 @@ func WriteError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound), errors.Is(err, ErrEnvironmentNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
-	case errors.Is(err, ErrAlreadyExists), errors.Is(err, ErrEnvironmentExists), errors.Is(err, ErrEnvironmentHasApps):
+	case errors.Is(err, ErrAlreadyExists), errors.Is(err, ErrEnvironmentExists),
+		errors.Is(err, ErrEnvironmentHasApps), errors.Is(err, ErrHasApps):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrProductionUndeletable):
 		http.Error(w, err.Error(), http.StatusForbidden)
@@ -118,6 +120,17 @@ type EnvResponse struct {
 type MergeEnvRequest struct {
 	Set   envvar.Map `json:"set"`
 	Unset []string   `json:"unset"`
+}
+
+// delete removes a project and its environments, refusing while any app
+// remains.
+func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.svc.Delete(r.Context(), user.FromContext(r.Context()),
+		r.PathValue("orgSlug"), r.PathValue("projectSlug")); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *Handler) getEnv(w http.ResponseWriter, r *http.Request) {

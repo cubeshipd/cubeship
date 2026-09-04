@@ -46,7 +46,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.list)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_app",
-		Description: "Get one app by name: its domain, registry image, status, and which organization/project/environment it lives in.",
+		Description: "Get one app by reference: its domain, registry push path, status, and which organization/project/environment it lives in.",
 	}, t.get)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "deploy_app",
@@ -60,6 +60,10 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Name:        "set_app_env",
 		Description: "Add, change or remove an app's own environment variables. Only the keys you name are touched — variables you don't mention are left alone. These are layered on top of (and override) the app's environment's and project's variables. Requires member role in the organization.",
 	}, t.setEnv)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "delete_app",
+		Description: "Delete an app and stop the container serving it. Images already pushed stay in the registry. This cannot be undone. Requires member role in the organization.",
+	}, t.delete)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_app_logs",
 		Description: "Get an app's recent container log output (stdout and stderr combined).",
@@ -94,11 +98,11 @@ func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*
 }
 
 type nameInput struct {
-	Name string `json:"name" jsonschema:"app name"`
+	App string `json:"app" jsonschema:"app reference: org/project/environment/app, or org/project/app for production"`
 }
 
 func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, Response, error) {
-	a, err := t.svc.Resolve(ctx, t.caller, in.Name, orgRoleMember)
+	a, err := t.svc.ResolveString(ctx, t.caller, in.App, orgRoleMember)
 	if err != nil {
 		return nil, Response{}, err
 	}
@@ -106,8 +110,8 @@ func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (
 }
 
 type deployInput struct {
-	Name string `json:"name" jsonschema:"app name"`
-	Tag  string `json:"tag,omitempty" jsonschema:"image tag already pushed to the app's registry path (default \"latest\")"`
+	App string `json:"app" jsonschema:"app reference: org/project/environment/app, or org/project/app for production"`
+	Tag string `json:"tag,omitempty" jsonschema:"image tag already pushed to the app's registry path (default \"latest\")"`
 }
 
 func (t *Tools) deploy(ctx context.Context, _ *mcp.CallToolRequest, in deployInput) (*mcp.CallToolResult, user.ActionResult, error) {
@@ -115,11 +119,26 @@ func (t *Tools) deploy(ctx context.Context, _ *mcp.CallToolRequest, in deployInp
 	if tag == "" {
 		tag = "latest"
 	}
-	a, err := t.svc.Deploy(ctx, t.caller, in.Name, tag)
+	ref, err := ParseReference(in.App)
+	if err != nil {
+		return nil, user.ActionResult{}, err
+	}
+	a, err := t.svc.Deploy(ctx, t.caller, ref, tag)
 	if err != nil {
 		return nil, user.ActionResult{}, err
 	}
 	return nil, user.ActionResult{Message: fmt.Sprintf("deployed %s from tag %s", a.Name, tag)}, nil
+}
+
+func (t *Tools) delete(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, user.ActionResult, error) {
+	ref, err := ParseReference(in.App)
+	if err != nil {
+		return nil, user.ActionResult{}, err
+	}
+	if _, err := t.svc.Delete(ctx, t.caller, ref); err != nil {
+		return nil, user.ActionResult{}, err
+	}
+	return nil, user.ActionResult{Message: fmt.Sprintf("deleted app %s", ref)}, nil
 }
 
 type envOutput struct {
@@ -128,7 +147,11 @@ type envOutput struct {
 }
 
 func (t *Tools) getEnv(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, envOutput, error) {
-	own, effective, err := t.svc.Env(ctx, t.caller, in.Name)
+	ref, err := ParseReference(in.App)
+	if err != nil {
+		return nil, envOutput{}, err
+	}
+	own, effective, err := t.svc.Env(ctx, t.caller, ref)
 	if err != nil {
 		return nil, envOutput{}, err
 	}
@@ -136,7 +159,7 @@ func (t *Tools) getEnv(ctx context.Context, _ *mcp.CallToolRequest, in nameInput
 }
 
 type setEnvInput struct {
-	Name  string     `json:"name" jsonschema:"app name"`
+	App   string     `json:"app" jsonschema:"app reference: org/project/environment/app, or org/project/app for production"`
 	Set   envvar.Map `json:"set,omitempty" jsonschema:"variables to add or overwrite"`
 	Unset []string   `json:"unset,omitempty" jsonschema:"names of variables to remove"`
 }
@@ -148,7 +171,11 @@ func (t *Tools) setEnv(ctx context.Context, _ *mcp.CallToolRequest, in setEnvInp
 	if len(in.Set) == 0 && len(in.Unset) == 0 {
 		return nil, user.ActionResult{}, fmt.Errorf("give set, unset, or both")
 	}
-	a, err := t.svc.MergeEnv(ctx, t.caller, in.Name, in.Set, in.Unset)
+	ref, err := ParseReference(in.App)
+	if err != nil {
+		return nil, user.ActionResult{}, err
+	}
+	a, err := t.svc.MergeEnv(ctx, t.caller, ref, in.Set, in.Unset)
 	if err != nil {
 		return nil, user.ActionResult{}, err
 	}
@@ -156,7 +183,7 @@ func (t *Tools) setEnv(ctx context.Context, _ *mcp.CallToolRequest, in setEnvInp
 }
 
 type logsInput struct {
-	Name string `json:"name" jsonschema:"app name"`
+	App  string `json:"app" jsonschema:"app reference: org/project/environment/app, or org/project/app for production"`
 	Tail string `json:"tail,omitempty" jsonschema:"number of trailing lines to return, e.g. \"500\", or \"all\" for the full log (default \"200\")"`
 }
 
@@ -165,7 +192,11 @@ func (t *Tools) logs(ctx context.Context, _ *mcp.CallToolRequest, in logsInput) 
 	if tail == "" {
 		tail = mcpDefaultLogTail
 	}
-	rc, err := t.svc.Logs(ctx, t.caller, in.Name, tail)
+	ref, err := ParseReference(in.App)
+	if err != nil {
+		return nil, nil, err
+	}
+	rc, err := t.svc.Logs(ctx, t.caller, ref, tail)
 	if err != nil {
 		return nil, nil, err
 	}

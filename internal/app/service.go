@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 
@@ -41,11 +42,11 @@ func (s *Service) Repo() *Repository { return NewRepository(s.db) }
 // deploys without a caller to authorize.
 func (s *Service) Orchestrator() *Orchestrator { return s.orch }
 
-// Resolve looks up an app by name and requires minRole in its owning
-// organization, folding "doesn't exist" and "not authorized" into the
-// same error so a response never reveals that a given app name is taken.
-func (s *Service) Resolve(ctx context.Context, caller *user.User, name string, minRole org.Role) (*Scoped, error) {
-	a, err := s.Repo().ScopedByName(ctx, name)
+// Resolve looks up an app by reference and requires minRole in its
+// owning organization, folding "doesn't exist" and "not authorized" into
+// the same error so a response never reveals that a given app exists.
+func (s *Service) Resolve(ctx context.Context, caller *user.User, ref Reference, minRole org.Role) (*Scoped, error) {
+	a, err := s.Repo().ScopedByReference(ctx, ref.Org, ref.Project, ref.Environment, ref.Name)
 	if err != nil {
 		return nil, ErrNotFound
 	}
@@ -53,6 +54,15 @@ func (s *Service) Resolve(ctx context.Context, caller *user.User, name string, m
 		return nil, ErrNotFound
 	}
 	return a, nil
+}
+
+// ResolveString is Resolve for a reference that still has to be parsed.
+func (s *Service) ResolveString(ctx context.Context, caller *user.User, ref string, minRole org.Role) (*Scoped, error) {
+	parsed, err := ParseReference(ref)
+	if err != nil {
+		return nil, err
+	}
+	return s.Resolve(ctx, caller, parsed, minRole)
 }
 
 // Create registers an app in a project's environment and returns it,
@@ -80,7 +90,8 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 	if err != nil {
 		return nil, project.ErrEnvironmentNotFound
 	}
-	image := s.registryHost + "/" + o.Slug + "/" + name
+	ref := Reference{Org: o.Slug, Project: p.Slug, Environment: env.Slug, Name: name}
+	image := ref.ImageFor(s.registryHost)
 	if _, err := s.Repo().Create(ctx, o.ID, p.ID, env.ID, name, domain, image); err != nil {
 		// The unique index is the authority, not a preceding lookup:
 		// two concurrent creates of the same name would both pass a
@@ -90,7 +101,24 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 		}
 		return nil, err
 	}
-	return s.Repo().ScopedByName(ctx, name)
+	return s.Repo().ScopedByReference(ctx, ref.Org, ref.Project, ref.Environment, ref.Name)
+}
+
+// Delete removes an app: its container first, then its rows. The order
+// matters — a row deleted while the container runs leaves something
+// serving traffic that nothing knows how to stop.
+//
+// Images already pushed stay in the registry. Reclaiming them needs a
+// registry garbage collection pass, which is a separate operation.
+func (s *Service) Delete(ctx context.Context, caller *user.User, ref Reference) (*Scoped, error) {
+	a, err := s.Resolve(ctx, caller, ref, org.RoleMember)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.orch.Retire(ctx, a.ID); err != nil {
+		return nil, fmt.Errorf("stop the app's container: %w", err)
+	}
+	return a, s.Repo().Delete(ctx, a.ID)
 }
 
 // List returns every app caller can see. The organization filter is
@@ -121,8 +149,8 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Scoped, error
 //
 // Without this there is no way to see what an app is configured with —
 // which is what made replacing the whole map so easy to do by accident.
-func (s *Service) Env(ctx context.Context, caller *user.User, name string) (envvar.Map, []envvar.Resolved, error) {
-	a, err := s.Resolve(ctx, caller, name, org.RoleMember)
+func (s *Service) Env(ctx context.Context, caller *user.User, ref Reference) (envvar.Map, []envvar.Resolved, error) {
+	a, err := s.Resolve(ctx, caller, ref, org.RoleMember)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -145,8 +173,8 @@ func (s *Service) Env(ctx context.Context, caller *user.User, name string) (envv
 // SetEnv replaces the app's own variables, deleting any key not present.
 // They are layered on top of (and override) its environment's and
 // project's.
-func (s *Service) SetEnv(ctx context.Context, caller *user.User, name string, env envvar.Map) (*Scoped, error) {
-	a, err := s.Resolve(ctx, caller, name, org.RoleMember)
+func (s *Service) SetEnv(ctx context.Context, caller *user.User, ref Reference, env envvar.Map) (*Scoped, error) {
+	a, err := s.Resolve(ctx, caller, ref, org.RoleMember)
 	if err != nil {
 		return nil, err
 	}
@@ -155,8 +183,8 @@ func (s *Service) SetEnv(ctx context.Context, caller *user.User, name string, en
 
 // MergeEnv adds or overwrites the given variables and removes the unset
 // ones, leaving every other key untouched.
-func (s *Service) MergeEnv(ctx context.Context, caller *user.User, name string, set envvar.Map, unset []string) (*Scoped, error) {
-	a, err := s.Resolve(ctx, caller, name, org.RoleMember)
+func (s *Service) MergeEnv(ctx context.Context, caller *user.User, ref Reference, set envvar.Map, unset []string) (*Scoped, error) {
+	a, err := s.Resolve(ctx, caller, ref, org.RoleMember)
 	if err != nil {
 		return nil, err
 	}
@@ -164,25 +192,25 @@ func (s *Service) MergeEnv(ctx context.Context, caller *user.User, name string, 
 }
 
 // Deploy redeploys an app from a tag already pushed to its registry path.
-func (s *Service) Deploy(ctx context.Context, caller *user.User, name, tag string) (*Scoped, error) {
+func (s *Service) Deploy(ctx context.Context, caller *user.User, ref Reference, tag string) (*Scoped, error) {
 	if tag == "" {
 		tag = "latest"
 	}
-	a, err := s.Resolve(ctx, caller, name, org.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, org.RoleMember)
 	if err != nil {
 		return nil, err
 	}
-	return a, s.orch.Deploy(ctx, a.Name, LocalPullRef(a.Image, tag))
+	return a, s.orch.Deploy(ctx, a.ID, LocalPullRef(a.Image, tag))
 }
 
 // Logs returns an app's container output. tail limits it to that many
 // trailing lines; an empty tail returns the whole log.
-func (s *Service) Logs(ctx context.Context, caller *user.User, name, tail string) (io.ReadCloser, error) {
-	a, err := s.Resolve(ctx, caller, name, org.RoleMember)
+func (s *Service) Logs(ctx context.Context, caller *user.User, ref Reference, tail string) (io.ReadCloser, error) {
+	a, err := s.Resolve(ctx, caller, ref, org.RoleMember)
 	if err != nil {
 		return nil, err
 	}
-	return s.orch.Logs(ctx, a.Name, tail)
+	return s.orch.Logs(ctx, a.ID, tail)
 }
 
 // LocalPullRef rewrites a public image reference

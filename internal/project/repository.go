@@ -104,3 +104,30 @@ func (r *Repository) MergeEnv(ctx context.Context, projectID int64, set envvar.M
 	}
 	return database.MergeJSONBMap(ctx, r.q, "projects", "env", projectID, setJSON, unset)
 }
+
+// CountApps reports how many apps live anywhere in a project.
+//
+// Like EnvironmentRepository.CountApps, this reads the apps table from
+// the project module because the rule it serves is the project's
+// invariant — a project cannot be deleted out from under its apps — and
+// internal/app already depends on this package.
+func (r *Repository) CountApps(ctx context.Context, projectID int64) (int, error) {
+	var n int
+	if err := r.q.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM apps WHERE project_id = $1`, projectID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count apps in project: %w", err)
+	}
+	return n, nil
+}
+
+// Delete removes a project and the environments inside it. The caller
+// must have established that no apps remain.
+func (r *Repository) Delete(ctx context.Context, projectID int64) error {
+	if _, err := r.q.ExecContext(ctx, `DELETE FROM environments WHERE project_id = $1`, projectID); err != nil {
+		return fmt.Errorf("delete environments: %w", err)
+	}
+	if _, err := r.q.ExecContext(ctx, `DELETE FROM projects WHERE id = $1`, projectID); err != nil {
+		return fmt.Errorf("delete project: %w", err)
+	}
+	return nil
+}

@@ -57,6 +57,34 @@ func newProjectCmd() *cobra.Command {
 	listCmd.Flags().StringVar(&listOrg, "org", "", "organization slug")
 	listCmd.MarkFlagRequired("org")
 
-	projectCmd.AddCommand(createCmd, listCmd, projectEnvCommands())
+	var deleteOrg string
+	var deleteConfirmed bool
+	deleteCmd := &cobra.Command{
+		Use:   "delete <project-slug>",
+		Short: "Delete a project and the environments in it",
+		Long: "Delete a project and every environment inside it.\n\n" +
+			"Refused while any app still lives in the project — delete those\n" +
+			"first, since removing an app means stopping its container.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !deleteConfirmed {
+				return fmt.Errorf("this deletes %s and its environments for good; pass --yes to confirm", args[0])
+			}
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			if err := c.DeleteProject(context.Background(), deleteOrg, args[0]); err != nil {
+				return err
+			}
+			fmt.Printf("Deleted project %s\n", args[0])
+			return nil
+		},
+	}
+	deleteCmd.Flags().StringVar(&deleteOrg, "org", "", "organization slug")
+	deleteCmd.MarkFlagRequired("org")
+	deleteCmd.Flags().BoolVar(&deleteConfirmed, "yes", false, "confirm that the project should be deleted")
+
+	projectCmd.AddCommand(createCmd, listCmd, deleteCmd, projectEnvCommands())
 	return projectCmd
 }

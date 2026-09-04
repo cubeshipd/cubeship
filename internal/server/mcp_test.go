@@ -173,6 +173,7 @@ func TestMCPCreateAppRoundTrip(t *testing.T) {
 	session := connectMCP(t, f, memberKey)
 
 	created, result := callTool[struct {
+		Reference   string `json:"reference"`
 		Name        string `json:"name"`
 		Image       string `json:"image"`
 		Org         string `json:"org"`
@@ -185,20 +186,37 @@ func TestMCPCreateAppRoundTrip(t *testing.T) {
 		t.Fatalf("create_app failed: %s", toolErrorText(result))
 	}
 
-	if created.Image != servertest.RegistryHost+"/acme/myapp" {
-		t.Errorf("push path is %q, want %s/acme/myapp", created.Image, servertest.RegistryHost)
+	// The reference is the registry path minus the host — that identity
+	// is the point of scoping names to their environment.
+	if created.Reference != "acme/web/production/myapp" {
+		t.Errorf("reference is %q, want acme/web/production/myapp", created.Reference)
 	}
-	if created.Org != "acme" || created.Project != "web" || created.Environment != "production" {
-		t.Errorf("app landed in %s/%s/%s, want acme/web/production",
-			created.Org, created.Project, created.Environment)
+	if created.Image != servertest.RegistryHost+"/"+created.Reference {
+		t.Errorf("push path is %q, want %s/%s", created.Image, servertest.RegistryHost, created.Reference)
 	}
 
-	// And the same app is visible over HTTP.
+	// And the same app is visible over HTTP, at the same reference.
 	var viaHTTP struct {
-		Name string `json:"name"`
+		Reference string `json:"reference"`
 	}
-	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/apps/myapp", nil, memberKey, &viaHTTP), http.StatusOK)
-	if viaHTTP.Name != "myapp" {
-		t.Errorf("HTTP sees %q, MCP created %q", viaHTTP.Name, created.Name)
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet,
+		"/apps/"+created.Reference, nil, memberKey, &viaHTTP), http.StatusOK)
+	if viaHTTP.Reference != created.Reference {
+		t.Errorf("HTTP sees %q, MCP created %q", viaHTTP.Reference, created.Reference)
+	}
+
+	// The three-part shorthand names the production environment.
+	var shorthand struct {
+		Reference string `json:"reference"`
+	}
+	got, result := callTool[struct {
+		Reference string `json:"reference"`
+	}](t, session, "get_app", map[string]any{"app": "acme/web/myapp"})
+	if result.IsError {
+		t.Fatalf("get_app with the shorthand failed: %s", toolErrorText(result))
+	}
+	shorthand = got
+	if shorthand.Reference != created.Reference {
+		t.Errorf("the shorthand resolved to %q, want %q", shorthand.Reference, created.Reference)
 	}
 }

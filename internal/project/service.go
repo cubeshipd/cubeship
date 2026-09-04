@@ -135,6 +135,26 @@ func (s *Service) MergeEnv(ctx context.Context, caller *user.User, orgSlug, proj
 	return p, s.Repo().MergeEnv(ctx, p.ID, set, unset)
 }
 
+// Delete removes a project and its environments. It is refused while any
+// app still lives in it: deleting those means stopping containers, which
+// is the app module's job and the operator's decision, one app at a time.
+func (s *Service) Delete(ctx context.Context, caller *user.User, orgSlug, projectSlug string) (*Project, error) {
+	p, err := s.Resolve(ctx, caller, orgSlug, projectSlug, org.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	count, err := s.Repo().CountApps(ctx, p.ID)
+	if err != nil {
+		return nil, err
+	}
+	if count > 0 {
+		return nil, ErrHasApps
+	}
+	return p, s.db.WithTx(ctx, func(tx database.Queryer) error {
+		return NewRepository(tx).Delete(ctx, p.ID)
+	})
+}
+
 // CreateEnvironment adds an environment to an existing project.
 func (s *Service) CreateEnvironment(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug, name string) (*Environment, error) {
 	p, err := s.Resolve(ctx, caller, orgSlug, projectSlug, org.RoleAdmin)

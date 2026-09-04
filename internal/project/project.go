@@ -31,4 +31,7 @@ var (
 
 	// ErrAlreadyExists reports a slug already used in this organization.
 	ErrAlreadyExists = errors.New("project already exists")
+
+	// ErrHasApps refuses a delete that would orphan apps.
+	ErrHasApps = errors.New("project still has apps in it")
 )

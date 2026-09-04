@@ -58,14 +58,17 @@ func TestClientRoundTripsTheWholeHierarchy(t *testing.T) {
 		created.Project != "web" || created.Environment != "production" {
 		t.Errorf("app came back as %+v", created)
 	}
-	if created.Image != servertest.RegistryHost+"/acme/myapp" {
-		t.Errorf("push path is %q, want %s/acme/myapp", created.Image, servertest.RegistryHost)
+	if created.Reference != "acme/web/production/myapp" {
+		t.Errorf("reference is %q, want acme/web/production/myapp", created.Reference)
+	}
+	if created.Image != servertest.RegistryHost+"/"+created.Reference {
+		t.Errorf("push path is %q, want %s/%s", created.Image, servertest.RegistryHost, created.Reference)
 	}
 	if created.Status == "" || created.Domain == "" {
 		t.Errorf("status or domain is empty: %+v", created)
 	}
 
-	got, err := c.GetApp(ctx, "myapp")
+	got, err := c.GetApp(ctx, created.Reference)
 	if err != nil {
 		t.Fatalf("GetApp: %v", err)
 	}
@@ -81,7 +84,7 @@ func TestClientRoundTripsTheWholeHierarchy(t *testing.T) {
 		t.Errorf("ListApps returned %v", apps)
 	}
 
-	if err := c.SetAppEnv(ctx, "myapp", map[string]string{"KEY": "value"}); err != nil {
+	if err := c.SetAppEnv(ctx, created.Reference, map[string]string{"KEY": "value"}); err != nil {
 		t.Fatalf("SetAppEnv: %v", err)
 	}
 	if err := c.SetProjectEnv(ctx, "acme", "web", map[string]string{"SHARED": "1"}); err != nil {
@@ -137,7 +140,7 @@ func TestErrorsCarryTheDaemonsMessage(t *testing.T) {
 func TestUnknownAppIsNotFound(t *testing.T) {
 	c, _ := connect(t)
 
-	_, err := c.GetApp(context.Background(), "no-such-app")
+	_, err := c.GetApp(context.Background(), "acme/web/production/no-such-app")
 	if got := client.Status(err); got != http.StatusNotFound {
 		t.Fatalf("Status(err) is %d, want 404 (err: %v)", got, err)
 	}
@@ -148,10 +151,10 @@ func TestUnknownAppIsNotFound(t *testing.T) {
 func TestPathSegmentsAreEscaped(t *testing.T) {
 	c, _ := connect(t)
 
-	// Unescaped, "../../orgs" would climb out of /apps/ entirely.
-	_, err := c.GetApp(context.Background(), "../../orgs")
+	// Unescaped, ".." would climb out of the app's path entirely.
+	_, err := c.GetApp(context.Background(), "acme/web/production/../../../orgs")
 	if err == nil {
-		t.Fatal("a traversal in the app name was accepted")
+		t.Fatal("a traversal in the app reference was accepted")
 	}
 	if got := client.Status(err); got != http.StatusNotFound && got != http.StatusBadRequest {
 		t.Errorf("Status(err) is %d; the request should not have reached another route", got)
@@ -231,7 +234,7 @@ func TestLogsOnAnAppThatWasNeverDeployed(t *testing.T) {
 		t.Fatalf("CreateApp: %v", err)
 	}
 
-	rc, err := c.Logs(ctx, "myapp", "100")
+	rc, err := c.Logs(ctx, "acme/web/production/myapp", "100")
 	if err == nil {
 		io.Copy(io.Discard, rc)
 		rc.Close()
@@ -262,14 +265,15 @@ func TestClientMergeEnvKeepsOtherVariables(t *testing.T) {
 		t.Fatalf("CreateApp: %v", err)
 	}
 
-	if err := c.MergeAppEnv(ctx, "myapp", map[string]string{"A": "1", "B": "2"}, nil); err != nil {
+	const ref = "acme/web/production/myapp"
+	if err := c.MergeAppEnv(ctx, ref, map[string]string{"A": "1", "B": "2"}, nil); err != nil {
 		t.Fatalf("MergeAppEnv: %v", err)
 	}
-	if err := c.MergeAppEnv(ctx, "myapp", map[string]string{"C": "3"}, []string{"B"}); err != nil {
+	if err := c.MergeAppEnv(ctx, ref, map[string]string{"C": "3"}, []string{"B"}); err != nil {
 		t.Fatalf("MergeAppEnv: %v", err)
 	}
 
-	got, err := c.AppEnv(ctx, "myapp")
+	got, err := c.AppEnv(ctx, ref)
 	if err != nil {
 		t.Fatalf("AppEnv: %v", err)
 	}

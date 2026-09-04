@@ -63,9 +63,10 @@ func NewOrchestrator(db *database.DB, d DockerAPI) *Orchestrator {
 	}
 }
 
-// lockApp returns the mutex guarding deploys of the named app.
-func (o *Orchestrator) lockApp(appName string) *sync.Mutex {
-	mu, _ := o.appLocks.LoadOrStore(appName, &sync.Mutex{})
+// lockApp returns the mutex guarding deploys of one app. Keyed by id
+// rather than name, since a name is only unique within its environment.
+func (o *Orchestrator) lockApp(appID int64) *sync.Mutex {
+	mu, _ := o.appLocks.LoadOrStore(appID, &sync.Mutex{})
 	return mu.(*sync.Mutex)
 }
 
@@ -81,17 +82,19 @@ func (o *Orchestrator) lockApp(appName string) *sync.Mutex {
 //
 // Deploys of the same app are serialized; deploys of different apps run
 // concurrently.
-func (o *Orchestrator) Deploy(ctx context.Context, appName, imageRef string) error {
-	mu := o.lockApp(appName)
+func (o *Orchestrator) Deploy(ctx context.Context, appID int64, imageRef string) error {
+	mu := o.lockApp(appID)
 	mu.Lock()
 	defer mu.Unlock()
 
-	a, err := o.apps.ByName(ctx, appName)
+	a, err := o.apps.ScopedByID(ctx, appID)
 	if err != nil {
-		return fmt.Errorf("%w: %s", ErrNotFound, appName)
+		return ErrNotFound
 	}
+	ref := ReferenceOf(a)
+	appName := ref.String()
 
-	env, err := o.inheritedEnv(ctx, a)
+	env, err := o.inheritedEnv(ctx, &a.App)
 	if err != nil {
 		return fmt.Errorf("resolve inherited env: %w", err)
 	}
@@ -101,11 +104,12 @@ func (o *Orchestrator) Deploy(ctx context.Context, appName, imageRef string) err
 		return fmt.Errorf("pull image: %w", err)
 	}
 
-	newName := fmt.Sprintf("cubeship-%s-%d", appName, time.Now().UnixNano())
+	base := resourceName(ref)
+	newName := fmt.Sprintf("%s-%d", base, time.Now().UnixNano())
 	newID, err := o.docker.CreateContainer(ctx, dockerx.ContainerOpts{
 		Name:    newName,
 		Image:   imageRef,
-		Labels:  traefik.Labels(appName, a.Domain, Port),
+		Labels:  traefik.Labels(base, a.Domain, Port),
 		Env:     envvar.Slice(env),
 		Network: Network,
 	})
@@ -166,17 +170,41 @@ func (o *Orchestrator) removeContainer(ctx context.Context, id, why string) {
 	}
 }
 
-// Logs returns appName's container log. tail limits it to that many
+// Logs returns the app's container log. tail limits it to that many
 // trailing lines; an empty tail returns the whole log.
-func (o *Orchestrator) Logs(ctx context.Context, appName, tail string) (io.ReadCloser, error) {
-	a, err := o.apps.ByName(ctx, appName)
+func (o *Orchestrator) Logs(ctx context.Context, appID int64, tail string) (io.ReadCloser, error) {
+	a, err := o.apps.ByID(ctx, appID)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %s", ErrNotFound, appName)
+		return nil, ErrNotFound
 	}
 	if a.ContainerID == "" {
 		return nil, ErrNoContainer
 	}
 	return o.docker.Logs(ctx, a.ContainerID, tail)
+}
+
+// Retire stops and removes an app's container, if it has one. It is what
+// deleting an app calls before the row goes: a container left running
+// with no row would serve traffic that nothing knows how to stop.
+func (o *Orchestrator) Retire(ctx context.Context, appID int64) error {
+	mu := o.lockApp(appID)
+	mu.Lock()
+	defer mu.Unlock()
+
+	a, err := o.apps.ByID(ctx, appID)
+	if err != nil {
+		return ErrNotFound
+	}
+	if a.ContainerID == "" {
+		return nil
+	}
+	if err := o.docker.StopContainer(ctx, a.ContainerID); err != nil {
+		log.Printf("retiring app %d: could not stop container %s: %v", appID, a.ContainerID, err)
+	}
+	// Unlike the log-and-continue cases in Deploy, this one is returned:
+	// the caller is about to delete the row, and doing that while the
+	// container survives is exactly the state to avoid.
+	return o.docker.RemoveContainer(ctx, a.ContainerID)
 }
 
 // waitHealthy reports whether a freshly started container looks healthy.

@@ -14,7 +14,15 @@ func mergeSchemas(a, b map[string]*openapi.Schema) map[string]*openapi.Schema {
 }
 
 func (h *Handler) OpenAPI() openapi.Spec {
-	nameParam := openapi.PathParam("name", "The app's name.")
+	// An app is addressed by all four parts of its reference, because a
+	// name is only unique within its environment.
+	refParams := []openapi.Parameter{
+		openapi.PathParam("org", "The organization's slug."),
+		openapi.PathParam("project", "The project's slug."),
+		openapi.PathParam("env", "The environment's slug."),
+		openapi.PathParam("name", "The app's name, unique within that environment."),
+	}
+	const appPath = "/apps/{org}/{project}/{env}/{name}"
 
 	return openapi.Spec{
 		Tags: []openapi.Tag{{
@@ -23,21 +31,22 @@ func (h *Handler) OpenAPI() openapi.Spec {
 		}},
 		Schemas: mergeSchemas(project.EnvSchemas(), map[string]*openapi.Schema{
 			"App": openapi.Object(map[string]*openapi.Schema{
-				"name":        openapi.String(""),
+				"reference":   openapi.String("The app's identifier, org/project/environment/name — also its registry repository path."),
+				"name":        openapi.String("Unique within its environment, not across the instance."),
 				"domain":      openapi.String("The domain Traefik routes to this app, over HTTPS."),
 				"image":       openapi.String("The registry path to push to. A push here deploys."),
 				"status":      {Type: "string", Enum: []string{"pending", "running", "down"}, Description: `"pending" until the first image is pushed.`},
 				"org":         openapi.String(""),
 				"project":     openapi.String(""),
 				"environment": openapi.String(""),
-			}, "name", "domain", "image", "status", "org", "project", "environment"),
+			}, "reference", "name", "domain", "image", "status", "org", "project", "environment"),
 		}),
 		Paths: map[string]openapi.PathItem{
 			"/apps": {
 				"post": {
 					OperationID: "createApp",
 					Summary:     "Register an app",
-					Description: "Returns the registry path to push to. Nothing is deployed until an image lands there.\n\nApp containers are expected to listen on port 8080. Requires the member role in the organization.\n\nNote that app names are currently unique across the whole instance, not per environment.",
+					Description: "Returns the registry path to push to. Nothing is deployed until an image lands there.\n\nThe name only has to be unique within its environment, so the same app can exist in `production` and `staging` at once — they get different registry paths and different containers.\n\nApp containers are expected to listen on port 8080. Requires the member role in the organization.",
 					Tags:        []string{"Apps"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"name":        openapi.String("Lowercase letters, digits and dashes — it becomes a path component of the registry image."),
@@ -66,26 +75,39 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/apps/{name}": {
+			appPath: {
 				"get": {
 					OperationID: "getApp",
 					Summary:     "Get one app",
 					Tags:        []string{"Apps"},
-					Parameters:  []openapi.Parameter{nameParam},
+					Parameters:  refParams,
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The app.", openapi.Ref("App")),
 						"401": openapi.Unauthorized,
 						"404": openapi.NotFound,
 					},
 				},
+				"delete": {
+					OperationID: "deleteApp",
+					Summary:     "Delete an app",
+					Description: "Stops and removes the container serving the app, then deletes it. **This cannot be undone.**\n\nImages already pushed stay in the registry; reclaiming that disk needs a registry garbage collection pass, which is a separate operation. Requires the member role.",
+					Tags:        []string{"Apps"},
+					Parameters:  refParams,
+					Responses: openapi.Responses{
+						"200": openapi.Empty("The app is gone and its container is stopped."),
+						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
+						"500": openapi.TextResponse("The container could not be stopped, so the app was left in place rather than orphaning it."),
+					},
+				},
 			},
-			"/apps/{name}/deploy": {
+			appPath + "/deploy": {
 				"post": {
 					OperationID: "deployApp",
 					Summary:     "Redeploy an app",
 					Description: "Deploys a tag already pushed to the app's registry path. The daemon pulls the image, starts a container, waits for it to look healthy, and only then retires the previous one — so a bad image never takes down a working app.\n\n**This request blocks for the whole deploy**, which includes several seconds of health checks. Use a client timeout of at least a few minutes.",
 					Tags:        []string{"Apps"},
-					Parameters:  []openapi.Parameter{nameParam},
+					Parameters:  refParams,
 					RequestBody: &openapi.RequestBody{
 						Description: `Optional. Omit the body entirely to deploy "latest".`,
 						Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
@@ -101,13 +123,13 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/apps/{name}/env": {
+			appPath + "/env": {
 				"get": {
 					OperationID: "getAppEnv",
 					Summary:     "Read an app's environment variables",
 					Description: "`vars` is what the app itself sets. `effective` is what its container actually runs with — the project's variables, overridden by the environment's, overridden by the app's — with each value labelled by the level that won it.\n\nRead this before changing anything: it is the only way to see what an app is configured with.",
 					Tags:        []string{"Apps"},
-					Parameters:  []openapi.Parameter{nameParam},
+					Parameters:  refParams,
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The app's own and effective variables.", openapi.Ref("EnvVars")),
 						"401": openapi.Unauthorized,
@@ -119,7 +141,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Add, change or remove some of an app's variables",
 					Description: "The safe way to change configuration: only the keys you name are touched, so you cannot delete a variable by forgetting to mention it. Requires the member role.",
 					Tags:        []string{"Apps"},
-					Parameters:  []openapi.Parameter{nameParam},
+					Parameters:  refParams,
 					RequestBody: &openapi.RequestBody{
 						Required:    true,
 						Description: "Adds or overwrites the variables in `set` and removes those named in `unset`. Every other app-level variable is left exactly as it was.",
@@ -137,7 +159,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Set an app's environment variables",
 					Description: "These are layered on top of, and override, the app's environment's and project's variables. Requires the member role.",
 					Tags:        []string{"Apps"},
-					Parameters:  []openapi.Parameter{nameParam},
+					Parameters:  refParams,
 					RequestBody: &openapi.RequestBody{
 						Required:    true,
 						Description: "**Replaces** the full set of app-level variables: any key you omit is deleted. Use PATCH to change some without disturbing the rest.",
@@ -153,16 +175,15 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/apps/{name}/logs": {
+			appPath + "/logs": {
 				"get": {
 					OperationID: "getAppLogs",
 					Summary:     "Read an app's container logs",
 					Description: "Stdout and stderr, already demultiplexed out of Docker's frame format. Returns the last " + DefaultLogTail + " lines unless `tail` says otherwise.",
 					Tags:        []string{"Apps"},
-					Parameters: []openapi.Parameter{
-						nameParam,
+					Parameters: append(refParams,
 						openapi.QueryParam("tail", `Number of trailing lines, e.g. "1000", or "all" for the entire log. Defaults to `+DefaultLogTail+"."),
-					},
+					),
 					Responses: openapi.Responses{
 						"200": {
 							Description: "The log output.",

@@ -136,20 +136,20 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) {
 			continue // no app tracks this repository
 		}
 		// ...but the daemon pulls over loopback.
-		h.deployInBackground(a.Name, app.LocalPullRef(image, ev.Target.Tag))
+		h.deployInBackground(a.ID, a.Name, app.LocalPullRef(image, ev.Target.Tag))
 	}
 	w.WriteHeader(http.StatusOK)
 }
 
 // deployInBackground runs a deploy detached from the request that
 // triggered it, so the caller's timeout can't cancel it.
-func (h *Handler) deployInBackground(appName, pullRef string) {
+func (h *Handler) deployInBackground(appID int64, appName, pullRef string) {
 	h.deployWG.Add(1)
 	go func() {
 		defer h.deployWG.Done()
 		ctx, cancel := context.WithTimeout(context.Background(), webhookDeployTimeout)
 		defer cancel()
-		if err := h.apps.Orchestrator().Deploy(ctx, appName, pullRef); err != nil {
+		if err := h.apps.Orchestrator().Deploy(ctx, appID, pullRef); err != nil {
 			log.Printf("registry webhook: deploy failed for %s: %v", appName, err)
 		}
 	}()

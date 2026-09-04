@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 )
 
@@ -33,6 +34,9 @@ type Environment struct {
 }
 
 type App struct {
+	// Reference identifies the app — org/project/environment/name — and
+	// is also its registry repository path.
+	Reference   string `json:"reference"`
 	Name        string `json:"name"`
 	Domain      string `json:"domain"`
 	Image       string `json:"image"`
@@ -209,45 +213,77 @@ func (c *Client) ListApps(ctx context.Context) ([]App, error) {
 	return request[[]App](ctx, c, "list apps", http.MethodGet, "/apps", nil, http.StatusOK, DefaultTimeout)
 }
 
-func (c *Client) GetApp(ctx context.Context, name string) (App, error) {
-	return request[App](ctx, c, "get app", http.MethodGet, "/apps/"+segment(name), nil, http.StatusOK, DefaultTimeout)
+func (c *Client) GetApp(ctx context.Context, ref string) (App, error) {
+	return request[App](ctx, c, "get app", http.MethodGet, appPath(ref), nil, http.StatusOK, DefaultTimeout)
+}
+
+// DeleteApp removes an app and stops the container serving it. Images
+// already pushed stay in the registry.
+func (c *Client) DeleteApp(ctx context.Context, ref string) error {
+	_, err := request[noContent](ctx, c, "delete app", http.MethodDelete,
+		appPath(ref), nil, http.StatusOK, DeployTimeout)
+	return err
+}
+
+func (c *Client) DeleteProject(ctx context.Context, orgSlug, projectSlug string) error {
+	_, err := request[noContent](ctx, c, "delete project", http.MethodDelete,
+		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug), nil, http.StatusOK, DefaultTimeout)
+	return err
+}
+
+func (c *Client) DeleteOrg(ctx context.Context, orgSlug string) error {
+	_, err := request[noContent](ctx, c, "delete organization", http.MethodDelete,
+		"/orgs/"+segment(orgSlug), nil, http.StatusOK, DefaultTimeout)
+	return err
+}
+
+// appPath turns an app reference into its URL. Each part is escaped
+// separately, so the four segments stay four segments whatever they
+// contain.
+func appPath(ref string) string {
+	parts := strings.Split(strings.Trim(ref, "/"), "/")
+	escaped := make([]string, len(parts))
+	for i, p := range parts {
+		escaped[i] = segment(p)
+	}
+	return "/apps/" + strings.Join(escaped, "/")
 }
 
 // Deploy redeploys an app and blocks until the new container is healthy
 // and the old one retired, which is why it gets DeployTimeout.
-func (c *Client) Deploy(ctx context.Context, name, tag string) error {
+func (c *Client) Deploy(ctx context.Context, ref, tag string) error {
 	_, err := request[noContent](ctx, c, "deploy", http.MethodPost,
-		"/apps/"+segment(name)+"/deploy", map[string]string{"tag": tag}, http.StatusOK, DeployTimeout)
+		appPath(ref)+"/deploy", map[string]string{"tag": tag}, http.StatusOK, DeployTimeout)
 	return err
 }
 
-func (c *Client) AppEnv(ctx context.Context, name string) (EnvVars, error) {
+func (c *Client) AppEnv(ctx context.Context, ref string) (EnvVars, error) {
 	return request[EnvVars](ctx, c, "read app env", http.MethodGet,
-		"/apps/"+segment(name)+"/env", nil, http.StatusOK, DefaultTimeout)
+		appPath(ref)+"/env", nil, http.StatusOK, DefaultTimeout)
 }
 
 // MergeAppEnv adds or overwrites set and removes unset, leaving every
 // other variable alone.
-func (c *Client) MergeAppEnv(ctx context.Context, name string, set map[string]string, unset []string) error {
+func (c *Client) MergeAppEnv(ctx context.Context, ref string, set map[string]string, unset []string) error {
 	_, err := request[noContent](ctx, c, "update app env", http.MethodPatch,
-		"/apps/"+segment(name)+"/env", mergeEnv{Set: set, Unset: unset}, http.StatusOK, DefaultTimeout)
+		appPath(ref)+"/env", mergeEnv{Set: set, Unset: unset}, http.StatusOK, DefaultTimeout)
 	return err
 }
 
 // SetAppEnv replaces every app-level variable.
-func (c *Client) SetAppEnv(ctx context.Context, name string, vars map[string]string) error {
+func (c *Client) SetAppEnv(ctx context.Context, ref string, vars map[string]string) error {
 	_, err := request[noContent](ctx, c, "set app env", http.MethodPut,
-		"/apps/"+segment(name)+"/env", envVars{Vars: vars}, http.StatusOK, DefaultTimeout)
+		appPath(ref)+"/env", envVars{Vars: vars}, http.StatusOK, DefaultTimeout)
 	return err
 }
 
 // Logs streams an app's container output. tail limits it to that many
 // trailing lines; empty means the daemon's default. The caller closes
 // the reader.
-func (c *Client) Logs(ctx context.Context, name, tail string) (io.ReadCloser, error) {
+func (c *Client) Logs(ctx context.Context, ref, tail string) (io.ReadCloser, error) {
 	const op = "read logs"
 
-	path := "/apps/" + segment(name) + "/logs"
+	path := appPath(ref) + "/logs"
 	if tail != "" {
 		path += "?" + url.Values{"tail": {tail}}.Encode()
 	}

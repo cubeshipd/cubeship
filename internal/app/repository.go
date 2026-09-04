@@ -46,13 +46,39 @@ func (r *Repository) Create(ctx context.Context, orgID, projectID, environmentID
 	return a, nil
 }
 
-func (r *Repository) ByName(ctx context.Context, name string) (*App, error) {
-	row := r.q.QueryRowContext(ctx, `SELECT `+columns+` FROM apps WHERE name = $1`, name)
+// ByEnvironmentAndName is the only way to look one app up by name: a
+// name is unique within its environment and nowhere wider.
+func (r *Repository) ByEnvironmentAndName(ctx context.Context, environmentID int64, name string) (*App, error) {
+	row := r.q.QueryRowContext(ctx,
+		`SELECT `+columns+` FROM apps WHERE environment_id = $1 AND name = $2`, environmentID, name)
 	a, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("get app %q: %w", name, err)
 	}
 	return a, nil
+}
+
+func (r *Repository) ByID(ctx context.Context, id int64) (*App, error) {
+	row := r.q.QueryRowContext(ctx, `SELECT `+columns+` FROM apps WHERE id = $1`, id)
+	a, err := scan(row)
+	if err != nil {
+		return nil, fmt.Errorf("get app %d: %w", id, err)
+	}
+	return a, nil
+}
+
+// Delete removes an app and the deployment history that points at it.
+// The caller is responsible for the container first — a row deleted
+// while its container runs leaves something serving traffic that nothing
+// knows how to stop.
+func (r *Repository) Delete(ctx context.Context, appID int64) error {
+	if _, err := r.q.ExecContext(ctx, `DELETE FROM deployments WHERE app_id = $1`, appID); err != nil {
+		return fmt.Errorf("delete deployments: %w", err)
+	}
+	if _, err := r.q.ExecContext(ctx, `DELETE FROM apps WHERE id = $1`, appID); err != nil {
+		return fmt.Errorf("delete app: %w", err)
+	}
+	return nil
 }
 
 // ByImage resolves the app a registry push notification refers to.
@@ -188,13 +214,37 @@ func scanScoped(row scanner) (*Scoped, error) {
 	return &s, nil
 }
 
-func (r *Repository) ScopedByName(ctx context.Context, name string) (*Scoped, error) {
-	row := r.q.QueryRowContext(ctx, scopedQuery+` WHERE a.name = $1`, name)
+// ScopedByReference resolves the four-part reference that identifies an
+// app, in one query.
+func (r *Repository) ScopedByReference(ctx context.Context, org, proj, env, name string) (*Scoped, error) {
+	row := r.q.QueryRowContext(ctx,
+		scopedQuery+` WHERE o.slug = $1 AND p.slug = $2 AND e.slug = $3 AND a.name = $4`,
+		org, proj, env, name)
 	s, err := scanScoped(row)
 	if err != nil {
-		return nil, fmt.Errorf("get app %q: %w", name, err)
+		return nil, fmt.Errorf("get app %s/%s/%s/%s: %w", org, proj, env, name, err)
 	}
 	return s, nil
+}
+
+func (r *Repository) ScopedByID(ctx context.Context, id int64) (*Scoped, error) {
+	row := r.q.QueryRowContext(ctx, scopedQuery+` WHERE a.id = $1`, id)
+	s, err := scanScoped(row)
+	if err != nil {
+		return nil, fmt.Errorf("get app %d: %w", id, err)
+	}
+	return s, nil
+}
+
+// CountInProject reports how many apps live anywhere in a project.
+// Deleting a project is refused while any remain.
+func (r *Repository) CountInProject(ctx context.Context, projectID int64) (int, error) {
+	var n int
+	if err := r.q.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM apps WHERE project_id = $1`, projectID).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count apps in project: %w", err)
+	}
+	return n, nil
 }
 
 // ListScopedForOrgs returns the apps owned by any of orgIDs, each with

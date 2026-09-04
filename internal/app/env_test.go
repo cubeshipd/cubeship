@@ -25,10 +25,14 @@ func createApp(t *testing.T, f *servertest.Fixture, key, name string) {
 	}, key), http.StatusCreated)
 }
 
+// appRef is where the fixture's apps live: every one created by
+// createApp lands in acme/web/production.
+func appRef(name string) string { return "/apps/acme/web/production/" + name }
+
 func appEnv(t *testing.T, f *servertest.Fixture, key, name string) envResponse {
 	t.Helper()
 	var got envResponse
-	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/apps/"+name+"/env", nil, key, &got), http.StatusOK)
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, appRef(name)+"/env", nil, key, &got), http.StatusOK)
 	return got
 }
 
@@ -39,9 +43,9 @@ func TestMergingEnvKeepsVariablesYouDidNotMention(t *testing.T) {
 	_, key := f.AddMember(t, "member", org.RoleMember)
 	createApp(t, f, key, "myapp")
 
-	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/apps/myapp/env",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, appRef("myapp")+"/env",
 		map[string]any{"set": map[string]string{"A": "1", "B": "2"}}, key), http.StatusOK)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/apps/myapp/env",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, appRef("myapp")+"/env",
 		map[string]any{"set": map[string]string{"C": "3"}}, key), http.StatusOK)
 
 	got := appEnv(t, f, key, "myapp")
@@ -57,9 +61,9 @@ func TestMergingEnvOverwritesAndUnsets(t *testing.T) {
 	_, key := f.AddMember(t, "member", org.RoleMember)
 	createApp(t, f, key, "myapp")
 
-	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/apps/myapp/env",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, appRef("myapp")+"/env",
 		map[string]any{"set": map[string]string{"A": "1", "B": "2", "C": "3"}}, key), http.StatusOK)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/apps/myapp/env",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, appRef("myapp")+"/env",
 		map[string]any{"set": map[string]string{"A": "changed"}, "unset": []string{"B"}}, key), http.StatusOK)
 
 	got := appEnv(t, f, key, "myapp")
@@ -82,9 +86,9 @@ func TestPuttingEnvStillReplacesEverything(t *testing.T) {
 	_, key := f.AddMember(t, "member", org.RoleMember)
 	createApp(t, f, key, "myapp")
 
-	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/apps/myapp/env",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, appRef("myapp")+"/env",
 		map[string]any{"set": map[string]string{"A": "1", "B": "2"}}, key), http.StatusOK)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPut, "/apps/myapp/env",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPut, appRef("myapp")+"/env",
 		map[string]any{"vars": map[string]string{"C": "3"}}, key), http.StatusOK)
 
 	got := appEnv(t, f, key, "myapp")
@@ -107,7 +111,7 @@ func TestReadingAppEnvShowsWhereEachValueCameFrom(t *testing.T) {
 	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/orgs/acme/projects/web/environments/production/env",
 		map[string]any{"set": map[string]string{"SHARED": "from-environment", "ONLY_ENV": "e"}},
 		f.AdminKey), http.StatusOK)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/apps/myapp/env",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, appRef("myapp")+"/env",
 		map[string]any{"set": map[string]string{"SHARED": "from-app", "ONLY_APP": "a"}},
 		memberKey), http.StatusOK)
 
@@ -154,7 +158,7 @@ func TestConcurrentMergesDoNotLoseKeys(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			name := string(rune('A' + i))
-			f.Do(t, http.MethodPatch, "/apps/myapp/env",
+			f.Do(t, http.MethodPatch, appRef("myapp")+"/env",
 				map[string]any{"set": map[string]string{name: "set"}}, key)
 		}()
 	}
@@ -172,10 +176,10 @@ func TestReadingEnvRequiresAccessToTheApp(t *testing.T) {
 	_, outsiderKey := servertest.CreateUser(t, f.DB, "outsider", false)
 	createApp(t, f, memberKey, "myapp")
 
-	if rec := f.Do(t, http.MethodGet, "/apps/myapp/env", nil, outsiderKey); rec.Code != http.StatusNotFound {
+	if rec := f.Do(t, http.MethodGet, appRef("myapp")+"/env", nil, outsiderKey); rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 so the app's existence stays hidden, got %d", rec.Code)
 	}
-	if rec := f.Do(t, http.MethodPatch, "/apps/myapp/env",
+	if rec := f.Do(t, http.MethodPatch, appRef("myapp")+"/env",
 		map[string]any{"set": map[string]string{"A": "1"}}, outsiderKey); rec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", rec.Code)
 	}

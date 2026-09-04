@@ -50,6 +50,32 @@ func newOrgCmd() *cobra.Command {
 		},
 	}
 
+	var deleteConfirmed bool
+	deleteCmd := &cobra.Command{
+		Use:   "delete <slug>",
+		Short: "Delete an organization",
+		Long: "Delete an organization and its memberships.\n\n" +
+			"The users themselves stay — they may belong to other\n" +
+			"organizations. Refused while any project remains. Super-admin only.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !deleteConfirmed {
+				return fmt.Errorf("this deletes %s for good; pass --yes to confirm", args[0])
+			}
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			if err := c.DeleteOrg(context.Background(), args[0]); err != nil {
+				return err
+			}
+			fmt.Printf("Deleted organization %s\n", args[0])
+			return nil
+		},
+	}
+	deleteCmd.Flags().BoolVar(&deleteConfirmed, "yes", false, "confirm that the organization should be deleted")
+	orgCmd.AddCommand(deleteCmd)
+
 	orgCmd.AddCommand(createCmd, listCmd)
 	return orgCmd
 }

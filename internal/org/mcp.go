@@ -2,6 +2,7 @@ package org
 
 import (
 	"context"
+	"fmt"
 
 	"cubeship/internal/user"
 
@@ -27,6 +28,10 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Description: "List organizations you belong to (or every organization, if you're a super-admin).",
 	}, t.list)
 	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "delete_org",
+		Description: "Delete an organization and its memberships. Refused while any project remains — delete those first. Super-admin only, and cannot be undone.",
+	}, t.delete)
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "create_org_user",
 		Description: "Add a user to an organization, creating them if they're new. Requires admin role in the organization.",
 	}, t.createUser)
@@ -51,6 +56,18 @@ func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*
 		return nil, nil, err
 	}
 	return nil, toResponses(orgs), nil
+}
+
+type orgScopedInput struct {
+	Org string `json:"org" jsonschema:"organization slug"`
+}
+
+func (t *Tools) delete(ctx context.Context, _ *mcp.CallToolRequest, in orgScopedInput) (*mcp.CallToolResult, user.ActionResult, error) {
+	o, err := t.svc.Delete(ctx, t.caller, in.Org)
+	if err != nil {
+		return nil, user.ActionResult{}, err
+	}
+	return nil, user.ActionResult{Message: fmt.Sprintf("deleted organization %s", o.Slug)}, nil
 }
 
 type createUserInput struct {

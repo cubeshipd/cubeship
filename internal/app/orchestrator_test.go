@@ -63,7 +63,7 @@ func TestDeployRetiresTheOldContainerOnlyAfterTheNewOneIsHealthy(t *testing.T) {
 		t.Fatalf("seed the previous container: %v", err)
 	}
 
-	if err := orch.Deploy(ctx, a.Name, "127.0.0.1:5000/acme/myapp:v2"); err != nil {
+	if err := orch.Deploy(ctx, a.ID, "127.0.0.1:5000/acme/myapp:v2"); err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
 
@@ -78,7 +78,7 @@ func TestDeployRetiresTheOldContainerOnlyAfterTheNewOneIsHealthy(t *testing.T) {
 		t.Error("the new container was removed by its own successful deploy")
 	}
 
-	updated, err := NewRepository(db).ByName(ctx, a.Name)
+	updated, err := NewRepository(db).ByID(ctx, a.ID)
 	if err != nil {
 		t.Fatalf("reload app: %v", err)
 	}
@@ -100,7 +100,7 @@ func TestDeployKeepsTheOldContainerWhenTheNewOneNeverBecomesHealthy(t *testing.T
 		t.Fatalf("seed the previous container: %v", err)
 	}
 
-	if err := orch.Deploy(ctx, a.Name, "127.0.0.1:5000/acme/myapp:bad"); err == nil {
+	if err := orch.Deploy(ctx, a.ID, "127.0.0.1:5000/acme/myapp:bad"); err == nil {
 		t.Fatal("expected the deploy to fail when the container never becomes healthy")
 	}
 
@@ -112,7 +112,7 @@ func TestDeployKeepsTheOldContainerWhenTheNewOneNeverBecomesHealthy(t *testing.T
 		t.Errorf("a failed deploy retired the working container: stopped %v, removed %v", stopped, removed)
 	}
 
-	unchanged, err := NewRepository(db).ByName(ctx, a.Name)
+	unchanged, err := NewRepository(db).ByID(ctx, a.ID)
 	if err != nil {
 		t.Fatalf("reload app: %v", err)
 	}
@@ -134,7 +134,7 @@ func TestDeployRequiresConsecutiveHealthyObservations(t *testing.T) {
 	orch.HealthCheckAttempts = 6
 	orch.HealthCheckSuccesses = 3
 
-	if err := orch.Deploy(context.Background(), a.Name, "127.0.0.1:5000/acme/myapp:flappy"); err == nil {
+	if err := orch.Deploy(context.Background(), a.ID, "127.0.0.1:5000/acme/myapp:flappy"); err == nil {
 		t.Fatal("expected a flapping container to fail the health check")
 	}
 }
@@ -160,7 +160,7 @@ func TestDeployAppliesInheritedEnvInPrecedenceOrder(t *testing.T) {
 		t.Fatalf("set app env: %v", err)
 	}
 
-	if err := orch.Deploy(ctx, a.Name, "127.0.0.1:5000/acme/myapp:v1"); err != nil {
+	if err := orch.Deploy(ctx, a.ID, "127.0.0.1:5000/acme/myapp:v1"); err != nil {
 		t.Fatalf("Deploy: %v", err)
 	}
 
@@ -191,7 +191,7 @@ func TestDeployStopsWaitingWhenTheContextIsCancelled(t *testing.T) {
 	cancel()
 
 	done := make(chan error, 1)
-	go func() { done <- orch.Deploy(ctx, a.Name, "127.0.0.1:5000/acme/myapp:v1") }()
+	go func() { done <- orch.Deploy(ctx, a.ID, "127.0.0.1:5000/acme/myapp:v1") }()
 
 	select {
 	case err := <-done:

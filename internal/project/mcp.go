@@ -29,6 +29,10 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Description: "List the projects in an organization.",
 	}, t.list)
 	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "delete_project",
+		Description: "Delete a project and the environments inside it. Refused while any app still lives in the project — delete those first. Requires admin role in the organization.",
+	}, t.delete)
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_project_env",
 		Description: "Read the environment variables set on a project. Every environment and every app below inherits them.",
 	}, t.getEnv)
@@ -95,6 +99,14 @@ func (t *Tools) getEnv(ctx context.Context, _ *mcp.CallToolRequest, in projectSc
 		return nil, envOutput{}, err
 	}
 	return nil, envOutput{Vars: vars}, nil
+}
+
+func (t *Tools) delete(ctx context.Context, _ *mcp.CallToolRequest, in projectScopedInput) (*mcp.CallToolResult, user.ActionResult, error) {
+	p, err := t.svc.Delete(ctx, t.caller, in.Org, in.Project)
+	if err != nil {
+		return nil, user.ActionResult{}, err
+	}
+	return nil, user.ActionResult{Message: fmt.Sprintf("deleted project %s", p.Slug)}, nil
 }
 
 type setEnvInput struct {

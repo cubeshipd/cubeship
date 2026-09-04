@@ -80,10 +80,11 @@ func TestOutsiderCannotLearnThatAnAppExists(t *testing.T) {
 		path   string
 		body   any
 	}{
-		{"get", http.MethodGet, "/apps/secret-app", nil},
-		{"logs", http.MethodGet, "/apps/secret-app/logs", nil},
-		{"set env", http.MethodPut, "/apps/secret-app/env", map[string]any{"vars": map[string]string{"A": "1"}}},
-		{"deploy", http.MethodPost, "/apps/secret-app/deploy", map[string]string{"tag": "latest"}},
+		{"get", http.MethodGet, "/apps/acme/web/production/secret-app", nil},
+		{"logs", http.MethodGet, "/apps/acme/web/production/secret-app/logs", nil},
+		{"set env", http.MethodPut, "/apps/acme/web/production/secret-app/env", map[string]any{"vars": map[string]string{"A": "1"}}},
+		{"deploy", http.MethodPost, "/apps/acme/web/production/secret-app/deploy", map[string]string{"tag": "latest"}},
+		{"delete", http.MethodDelete, "/apps/acme/web/production/secret-app", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rec := f.Do(t, tc.method, tc.path, tc.body, outsiderKey)

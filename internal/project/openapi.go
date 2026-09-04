@@ -112,6 +112,22 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
+			"/orgs/{orgSlug}/projects/{projectSlug}": {
+				"delete": {
+					OperationID: "deleteProject",
+					Summary:     "Delete a project",
+					Description: "Removes the project and every environment in it. **Refused while any app still lives in the project** — delete those first, since removing an app means stopping its container. Requires the admin role.",
+					Tags:        []string{"Projects & environments"},
+					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					Responses: openapi.Responses{
+						"200": openapi.Empty("The project and its environments are gone."),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("The project still has apps in it."),
+					},
+				},
+			},
 			"/orgs/{orgSlug}/projects/{projectSlug}/env": {
 				"get": {
 					OperationID: "getProjectEnv",

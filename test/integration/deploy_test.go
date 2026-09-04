@@ -27,7 +27,7 @@
 // bootstraps a super-admin with its own key (separate from
 // CUBESHIP_TOKEN), the registry and Traefik bootstrap, org creation,
 // org-scoped app creation, `docker login` + `docker push` to
-// localhost:5000/<org>/<app> succeed, the registry's push notification
+// localhost:5000/<org>/<project>/<env>/<app> succeed, the registry's push notification
 // fires the webhook, and the daemon pulls and deploys the app
 // successfully — the test got all the way to and failed only at the
 // final "app reachable via Traefik" assertion, exactly the --network
@@ -151,11 +151,16 @@ func TestDeployEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
-	if created.Image != "registry.localtest.me/acme/myapp" {
+	// The push path is the app's reference with the registry host in
+	// front — org, project, environment, name.
+	if created.Reference != "acme/web/production/myapp" {
+		t.Fatalf("unexpected reference: %q", created.Reference)
+	}
+	if created.Image != "registry.localtest.me/"+created.Reference {
 		t.Fatalf("unexpected image: %q", created.Image)
 	}
 
-	buildApp := exec.Command("docker", "build", "-t", "localhost:5000/acme/myapp:latest", "./testapp")
+	buildApp := exec.Command("docker", "build", "-t", "localhost:5000/acme/web/production/myapp:latest", "./testapp")
 	if out, err := buildApp.CombinedOutput(); err != nil {
 		t.Fatalf("build fixture image: %v\n%s", err, out)
 	}
@@ -172,7 +177,7 @@ func TestDeployEndToEnd(t *testing.T) {
 	}
 	t.Cleanup(func() { exec.Command("docker", "logout", "localhost:5000").Run() })
 
-	push := exec.Command("docker", "push", "localhost:5000/acme/myapp:latest")
+	push := exec.Command("docker", "push", "localhost:5000/acme/web/production/myapp:latest")
 	if out, err := push.CombinedOutput(); err != nil {
 		t.Fatalf("push fixture image: %v\n%s", err, out)
 	}

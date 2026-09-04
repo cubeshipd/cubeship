@@ -102,6 +102,30 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, name s
 	return created, err
 }
 
+// Delete removes an organization and its memberships. Super-admin only,
+// like creating one, and refused while any project remains: an
+// organization is a tenant boundary, and removing it out from under live
+// projects would strand every app inside them.
+func (s *Service) Delete(ctx context.Context, caller *user.User, orgSlug string) (*Organization, error) {
+	if caller == nil || !caller.IsSuperAdmin {
+		return nil, ErrSuperAdminOnly
+	}
+	o, err := s.Repo().BySlug(ctx, orgSlug)
+	if err != nil {
+		return nil, ErrNotFound
+	}
+	count, err := s.Repo().CountProjects(ctx, o.ID)
+	if err != nil {
+		return nil, err
+	}
+	if count > 0 {
+		return nil, ErrHasProjects
+	}
+	return o, s.db.WithTx(ctx, func(tx database.Queryer) error {
+		return NewRepository(tx).Delete(ctx, o.ID)
+	})
+}
+
 // List returns the organizations caller can see: all of them for a
 // super-admin, and otherwise the ones they belong to.
 func (s *Service) List(ctx context.Context, caller *user.User) ([]*Organization, error) {

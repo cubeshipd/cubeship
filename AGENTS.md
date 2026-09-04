@@ -147,6 +147,27 @@ Slugs — orgs, projects, environments, apps — go through `slug.Valid`,
 because they become path segments of a registry image reference and
 Docker rejects anything else.
 
+## App identity
+
+An app is named by a `app.Reference`: `<org>/<project>/<environment>/<app>`,
+which is also its registry repository path and the basis of its
+container and Traefik router names. A bare name identifies nothing — it
+is unique only within its environment.
+
+`ParseReference` accepts three parts as shorthand for `production`, and
+validates every part as a slug, so a malformed reference can never reach
+a registry path or a router name.
+
+## Deleting
+
+Each level refuses while the one below it is occupied: an app can always
+go (its container is stopped first), a project only once it holds no
+apps, an organization only once it holds no projects. Nothing cascades
+into stopping containers behind your back.
+
+Deleting an app leaves its images in the registry — reclaiming that disk
+needs a registry garbage collection pass, which Cubeship does not run.
+
 ## Environment variables
 
 Set at three levels, and an app inherits all of them: project, then

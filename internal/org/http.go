@@ -44,6 +44,7 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.Handle("POST /orgs", auth(http.HandlerFunc(h.create)))
 	r.Handle("GET /orgs", auth(http.HandlerFunc(h.list)))
+	r.Handle("DELETE /orgs/{orgSlug}", auth(http.HandlerFunc(h.delete)))
 	r.Handle("POST /orgs/{orgSlug}/users", auth(http.HandlerFunc(h.createUser)))
 }
 
@@ -56,7 +57,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	case errors.Is(err, ErrForbidden), errors.Is(err, ErrSuperAdminOnly):
 		http.Error(w, err.Error(), http.StatusForbidden)
-	case errors.Is(err, ErrAlreadyExists), errors.Is(err, ErrAlreadyMember), errors.Is(err, ErrUsernameTaken):
+	case errors.Is(err, ErrAlreadyExists), errors.Is(err, ErrAlreadyMember),
+		errors.Is(err, ErrUsernameTaken), errors.Is(err, ErrHasProjects):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrInvalidRole):
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -93,6 +95,15 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, toResponses(orgs))
+}
+
+// delete removes an organization, refusing while any project remains.
+func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.svc.Delete(r.Context(), user.FromContext(r.Context()), r.PathValue("orgSlug")); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *Handler) createUser(w http.ResponseWriter, r *http.Request) {

@@ -21,6 +21,9 @@ const DefaultLogTail = "500"
 
 // Response is one app as both the API and the MCP tools report it.
 type Response struct {
+	// Reference is the app's canonical identifier,
+	// org/project/environment/name — also its registry repository path.
+	Reference   string `json:"reference"`
 	Name        string `json:"name"`
 	Domain      string `json:"domain"`
 	Image       string `json:"image"`
@@ -32,7 +35,8 @@ type Response struct {
 
 func toResponse(a *Scoped) Response {
 	return Response{
-		Name: a.Name, Domain: a.Domain, Image: a.Image, Status: a.Status,
+		Reference: ReferenceOf(a).String(),
+		Name:      a.Name, Domain: a.Domain, Image: a.Image, Status: a.Status,
 		Org: a.OrgSlug, Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
 	}
 }
@@ -51,15 +55,30 @@ type Handler struct {
 
 func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
+// An app is addressed by its four-part reference, because a name is only
+// unique within its environment.
+const appPath = "/apps/{org}/{project}/{env}/{name}"
+
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.Handle("POST /apps", auth(http.HandlerFunc(h.create)))
 	r.Handle("GET /apps", auth(http.HandlerFunc(h.list)))
-	r.Handle("GET /apps/{name}", auth(http.HandlerFunc(h.get)))
-	r.Handle("POST /apps/{name}/deploy", auth(http.HandlerFunc(h.deploy)))
-	r.Handle("GET /apps/{name}/env", auth(http.HandlerFunc(h.getEnv)))
-	r.Handle("PUT /apps/{name}/env", auth(http.HandlerFunc(h.setEnv)))
-	r.Handle("PATCH /apps/{name}/env", auth(http.HandlerFunc(h.mergeEnv)))
-	r.Handle("GET /apps/{name}/logs", auth(http.HandlerFunc(h.logs)))
+	r.Handle("GET "+appPath, auth(http.HandlerFunc(h.get)))
+	r.Handle("DELETE "+appPath, auth(http.HandlerFunc(h.delete)))
+	r.Handle("POST "+appPath+"/deploy", auth(http.HandlerFunc(h.deploy)))
+	r.Handle("GET "+appPath+"/env", auth(http.HandlerFunc(h.getEnv)))
+	r.Handle("PUT "+appPath+"/env", auth(http.HandlerFunc(h.setEnv)))
+	r.Handle("PATCH "+appPath+"/env", auth(http.HandlerFunc(h.mergeEnv)))
+	r.Handle("GET "+appPath+"/logs", auth(http.HandlerFunc(h.logs)))
+}
+
+// refFrom builds the app reference from the request path.
+func refFrom(r *http.Request) Reference {
+	return Reference{
+		Org:         r.PathValue("org"),
+		Project:     r.PathValue("project"),
+		Environment: r.PathValue("env"),
+		Name:        r.PathValue("name"),
+	}
 }
 
 // WriteError maps this module's domain errors onto status codes, falling
@@ -109,12 +128,22 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
-	a, err := h.svc.Resolve(r.Context(), user.FromContext(r.Context()), r.PathValue("name"), orgRoleMember)
+	a, err := h.svc.Resolve(r.Context(), user.FromContext(r.Context()), refFrom(r), orgRoleMember)
 	if err != nil {
 		WriteError(w, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, toResponse(a))
+}
+
+// delete removes an app and the container serving it. Requires the
+// member role — the same level that can deploy it.
+func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
+	if _, err := h.svc.Delete(r.Context(), user.FromContext(r.Context()), refFrom(r)); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusOK)
 }
 
 func (h *Handler) deploy(w http.ResponseWriter, r *http.Request) {
@@ -124,7 +153,7 @@ func (h *Handler) deploy(w http.ResponseWriter, r *http.Request) {
 	// An empty or absent body is fine; Tag stays "" and defaults later.
 	_ = httpx.DecodeJSON(r, &req)
 
-	if _, err := h.svc.Deploy(r.Context(), user.FromContext(r.Context()), r.PathValue("name"), req.Tag); err != nil {
+	if _, err := h.svc.Deploy(r.Context(), user.FromContext(r.Context()), refFrom(r), req.Tag); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			WriteError(w, err)
 			return
@@ -146,7 +175,7 @@ type EnvResponse struct {
 }
 
 func (h *Handler) getEnv(w http.ResponseWriter, r *http.Request) {
-	own, effective, err := h.svc.Env(r.Context(), user.FromContext(r.Context()), r.PathValue("name"))
+	own, effective, err := h.svc.Env(r.Context(), user.FromContext(r.Context()), refFrom(r))
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -169,7 +198,7 @@ func (h *Handler) mergeEnv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.svc.MergeEnv(r.Context(), user.FromContext(r.Context()),
-		r.PathValue("name"), req.Set, req.Unset); err != nil {
+		refFrom(r), req.Set, req.Unset); err != nil {
 		WriteError(w, err)
 		return
 	}
@@ -184,7 +213,7 @@ func (h *Handler) setEnv(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
-	if _, err := h.svc.SetEnv(r.Context(), user.FromContext(r.Context()), r.PathValue("name"), req.Vars); err != nil {
+	if _, err := h.svc.SetEnv(r.Context(), user.FromContext(r.Context()), refFrom(r), req.Vars); err != nil {
 		WriteError(w, err)
 		return
 	}
@@ -197,7 +226,7 @@ func (h *Handler) logs(w http.ResponseWriter, r *http.Request) {
 		tail = DefaultLogTail
 	}
 
-	rc, err := h.svc.Logs(r.Context(), user.FromContext(r.Context()), r.PathValue("name"), tail)
+	rc, err := h.svc.Logs(r.Context(), user.FromContext(r.Context()), refFrom(r), tail)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -211,6 +240,6 @@ func (h *Handler) logs(w http.ResponseWriter, r *http.Request) {
 	// the log lines — demultiplex it first.
 	if _, err := stdcopy.StdCopy(w, w, rc); err != nil {
 		// The status line is already sent; all we can do is record it.
-		log.Printf("logs for app %s: %v", r.PathValue("name"), err)
+		log.Printf("logs for app %s: %v", refFrom(r), err)
 	}
 }

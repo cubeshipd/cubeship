@@ -70,4 +70,7 @@ var (
 	// ErrUsernameTaken reports that the username was claimed by a
 	// concurrent request while this one was working.
 	ErrUsernameTaken = errors.New("that username was just taken; try again")
+
+	// ErrHasProjects refuses a delete that would orphan projects.
+	ErrHasProjects = errors.New("organization still has projects in it")
 )

@@ -26,7 +26,15 @@ func newAPIClient() (*client.Client, error) {
 }
 
 func newAppCmd() *cobra.Command {
-	appCmd := &cobra.Command{Use: "app", Short: "Manage Cubeship apps"}
+	appCmd := &cobra.Command{
+		Use:   "app",
+		Short: "Manage Cubeship apps",
+		Long: "Manage Cubeship apps.\n\n" +
+			"An app is named by its reference: org/project/environment/app.\n" +
+			"Three parts — org/project/app — means the production environment.\n" +
+			"App names only have to be unique inside their environment, so the\n" +
+			"same name can exist in production and staging at once.",
+	}
 
 	var domain, org, project, environment string
 	createCmd := &cobra.Command{
@@ -42,8 +50,7 @@ func newAppCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Created %s in %s/%s/%s. Push to: %s\n",
-				created.Name, created.Org, created.Project, created.Environment, created.Image)
+			fmt.Printf("Created %s. Push to: %s\n", created.Reference, created.Image)
 			return nil
 		},
 	}
@@ -57,7 +64,7 @@ func newAppCmd() *cobra.Command {
 
 	var tag string
 	deployCmd := &cobra.Command{
-		Use:   "deploy <name>",
+		Use:   "deploy <app>",
 		Short: "Manually redeploy an app from the given (or latest) image tag",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -88,17 +95,16 @@ func newAppCmd() *cobra.Command {
 				return err
 			}
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "NAME\tORG\tPROJECT\tENV\tSTATUS\tDOMAIN")
+			fmt.Fprintln(w, "APP\tSTATUS\tDOMAIN")
 			for _, a := range apps {
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
-					a.Name, a.Org, a.Project, a.Environment, a.Status, a.Domain)
+				fmt.Fprintf(w, "%s\t%s\t%s\n", a.Reference, a.Status, a.Domain)
 			}
 			return w.Flush()
 		},
 	}
 
 	getCmd := &cobra.Command{
-		Use:   "get <name>",
+		Use:   "get <app>",
 		Short: "Show one app, including its registry push path",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -112,7 +118,7 @@ func newAppCmd() *cobra.Command {
 			}
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			for _, row := range [][2]string{
-				{"Name", a.Name}, {"Organization", a.Org}, {"Project", a.Project},
+				{"App", a.Reference}, {"Organization", a.Org}, {"Project", a.Project},
 				{"Environment", a.Environment}, {"Domain", a.Domain},
 				{"Status", a.Status}, {"Push to", a.Image},
 			} {
@@ -124,7 +130,7 @@ func newAppCmd() *cobra.Command {
 
 	var tail string
 	logsCmd := &cobra.Command{
-		Use:   "logs <name>",
+		Use:   "logs <app>",
 		Short: "Print an app's recent container logs",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -143,6 +149,31 @@ func newAppCmd() *cobra.Command {
 	}
 	logsCmd.Flags().StringVar(&tail, "tail", "", `number of trailing lines, or "all" (default: the daemon's own limit)`)
 
-	appCmd.AddCommand(createCmd, listCmd, getCmd, deployCmd, logsCmd, appEnvCommands())
+	var deleteConfirmed bool
+	deleteCmd := &cobra.Command{
+		Use:   "delete <app>",
+		Short: "Delete an app and stop the container serving it",
+		Long: "Delete an app.\n\n" +
+			"The container serving it is stopped and removed first. Images you\n" +
+			"already pushed stay in the registry. This cannot be undone.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !deleteConfirmed {
+				return fmt.Errorf("this stops %s and deletes it for good; pass --yes to confirm", args[0])
+			}
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			if err := c.DeleteApp(context.Background(), args[0]); err != nil {
+				return err
+			}
+			fmt.Printf("Deleted %s\n", args[0])
+			return nil
+		},
+	}
+	deleteCmd.Flags().BoolVar(&deleteConfirmed, "yes", false, "confirm that the app should be deleted")
+
+	appCmd.AddCommand(createCmd, listCmd, getCmd, deployCmd, deleteCmd, logsCmd, appEnvCommands())
 	return appCmd
 }

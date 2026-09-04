@@ -65,10 +65,23 @@ cubeship registry login          # logs docker in as you, with your own key
 cubeship org create "Acme" --slug acme
 cubeship project create "Web" --org acme --slug web   # comes with a "production" environment
 cubeship app create myapp --domain myapp.example.com --org acme --project web
+# prints the push path: registry.example.com/acme/web/production/myapp
 
-docker build -t registry.example.com/acme/myapp:latest .
-docker push registry.example.com/acme/myapp:latest    # this deploys
+docker build -t registry.example.com/acme/web/production/myapp:latest .
+docker push registry.example.com/acme/web/production/myapp:latest   # this deploys
 ```
+
+An app is named by its reference — `<org>/<project>/<environment>/<app>`,
+which is also its registry path. Three parts means `production`:
+
+```sh
+cubeship app list
+cubeship app get acme/web/myapp
+cubeship app logs acme/web/staging/myapp
+```
+
+Names only have to be unique within their environment, so the same app
+can run in `production` and `staging` at once.
 
 App containers must listen on port **8080**.
 
@@ -77,9 +90,9 @@ app, and an app inherits all three — its own value winning, then its
 environment's, then its project's:
 
 ```sh
-cubeship app env set myapp DATABASE_URL=postgres://...   # adds; leaves the rest alone
-cubeship app env list myapp                              # every value, and which level set it
-cubeship app env unset myapp OLD_FLAG
+cubeship app env set acme/web/myapp DATABASE_URL=postgres://...  # adds; leaves the rest alone
+cubeship app env list acme/web/myapp        # every value, and which level set it
+cubeship app env unset acme/web/myapp OLD_FLAG
 ```
 
 `cubeship --help` covers the rest: users and roles, extra environments,
