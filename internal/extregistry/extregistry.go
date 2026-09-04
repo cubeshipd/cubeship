@@ -12,17 +12,60 @@ import (
 	"time"
 )
 
+// Provider is which registry a credential is for. It decides what is
+// asked of whoever adds one, and how the daemon authenticates with it.
+type Provider string
+
+const (
+	// ProviderGeneric is any registry that takes a username and a
+	// password: Docker Hub, GitHub, Gitea, a Harbor someone runs.
+	ProviderGeneric Provider = "generic"
+
+	// ProviderDigitalOcean is DigitalOcean's container registry. It is a
+	// generic registry underneath — an email and an API token — but the
+	// host is fixed and the registry's name is a path segment, so
+	// asking for those two separately beats asking for a URL.
+	ProviderDigitalOcean Provider = "digitalocean"
+
+	// ProviderAWS is Elastic Container Registry, and it is the one that
+	// is not a password at all: what is stored is an access key, and the
+	// token Docker logs in with is fetched from AWS and lasts hours.
+	ProviderAWS Provider = "aws"
+)
+
+func (p Provider) Valid() bool {
+	switch p {
+	case ProviderGeneric, ProviderDigitalOcean, ProviderAWS:
+		return true
+	}
+	return false
+}
+
+// DigitalOceanHost is where every DigitalOcean registry lives. The part
+// that differs between accounts is the first path segment, not the host.
+const DigitalOceanHost = "registry.digitalocean.com"
+
 // Credential is one login, held by an organization and reusable by every
 // app in it that pulls from that host.
 //
-// The password is stored as given, not hashed: a hash cannot be sent to
-// a registry. Only a super-admin or an organization admin can read one
-// back, and the read endpoints never return it at all.
+// The secret is stored as given, not hashed: a hash cannot be sent to a
+// registry, nor signed with. Nothing reads it back out through the API.
 type Credential struct {
-	ID        int64
-	OrgID     int64
-	Name      string
-	Host      string
+	ID       int64
+	OrgID    int64
+	Provider Provider
+	// Host is the registry, and the identity: one per host per
+	// organization.
+	Host string
+	// Namespace is the path segment between the host and the image
+	// where the provider has one — DigitalOcean's registry name. Not
+	// part of matching, which is by host.
+	Namespace string
+	// Region is AWS's. An ECR host carries the account id and the
+	// region; the account id is discovered, the region is asked for.
+	Region string
+	// Username and Password mean different things per provider: a login
+	// for a generic registry, an access key id and secret for AWS.
 	Username  string
 	Password  string
 	CreatedAt time.Time
@@ -30,13 +73,14 @@ type Credential struct {
 }
 
 var (
-	ErrNameRequired     = errors.New("name is required")
-	ErrHostRequired     = errors.New("host is required")
-	ErrUsernameRequired = errors.New("username is required")
-	ErrPasswordRequired = errors.New("password is required")
-	ErrHostTaken        = errors.New("this organization already has a credential for that registry")
-	ErrNameTaken        = errors.New("this organization already has a credential with that name")
-	ErrNotFound         = errors.New("no such registry credential")
+	ErrUnknownProvider   = errors.New(`provider must be "generic", "digitalocean" or "aws"`)
+	ErrHostRequired      = errors.New("host is required")
+	ErrUsernameRequired  = errors.New("username is required")
+	ErrPasswordRequired  = errors.New("password is required")
+	ErrNamespaceRequired = errors.New("the registry name is required — it is what follows registry.digitalocean.com/ in an image path")
+	ErrRegionRequired    = errors.New("an AWS region is required: an ECR registry lives in one, and it cannot be guessed")
+	ErrHostTaken         = errors.New("this organization already has a credential for that registry")
+	ErrNotFound          = errors.New("no such registry credential")
 )
 
 // NormalizeHost reduces what someone types to the host an image

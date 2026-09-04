@@ -14,10 +14,12 @@ import (
 const orgPath = "/orgs/acme/registries"
 
 type credential struct {
-	ID       int64  `json:"id"`
-	Name     string `json:"name"`
-	Host     string `json:"host"`
-	Username string `json:"username"`
+	ID        int64  `json:"id"`
+	Provider  string `json:"provider"`
+	Host      string `json:"host"`
+	Namespace string `json:"namespace"`
+	Region    string `json:"region"`
+	Username  string `json:"username"`
 }
 
 // A password is stored so it can be sent to a registry, which means an
@@ -28,7 +30,7 @@ func TestThePasswordIsNeverReturned(t *testing.T) {
 
 	const secret = "dop_v1_verysecrettoken"
 	rec := f.Do(t, http.MethodPost, orgPath, map[string]string{
-		"name": "DigitalOcean", "host": "registry.digitalocean.com",
+		"provider": "digitalocean", "namespace": "acme",
 		"username": "someone@example.com", "password": secret,
 	}, f.AdminKey)
 	servertest.RequireStatus(t, rec, http.StatusCreated)
@@ -49,23 +51,20 @@ func TestOneCredentialPerRegistry(t *testing.T) {
 	f := servertest.New(t)
 
 	body := map[string]string{
-		"name": "DO", "host": "registry.digitalocean.com", "username": "a", "password": "b",
+		"provider": "generic", "host": "ghcr.io", "username": "a", "password": "b",
 	}
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, orgPath, body, f.AdminKey), http.StatusCreated)
 
-	// Same host under a different name is still the same registry.
-	body["name"] = "DO again"
+	// The registry is the identity, so the same one twice is a conflict
+	// however it is spelled.
+	body["host"] = "https://ghcr.io/"
 	rec := f.Do(t, http.MethodPost, orgPath, body, f.AdminKey)
 	servertest.RequireStatus(t, rec, http.StatusConflict)
-	if !strings.Contains(rec.Body.String(), "registry") {
-		t.Errorf("the conflict does not say which collision it was: %q", rec.Body.String())
-	}
 
-	// And the same name for a different registry is the other conflict.
-	rec = f.Do(t, http.MethodPost, orgPath, map[string]string{
-		"name": "DO", "host": "ghcr.io", "username": "a", "password": "b",
-	}, f.AdminKey)
-	servertest.RequireStatus(t, rec, http.StatusConflict)
+	// A different registry is not.
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, orgPath, map[string]string{
+		"provider": "generic", "host": "quay.io", "username": "a", "password": "b",
+	}, f.AdminKey), http.StatusCreated)
 }
 
 // What someone types and what an image reference carries are rarely
@@ -120,7 +119,9 @@ func TestOnlyAdminsManageCredentials(t *testing.T) {
 		body   any
 	}{
 		{http.MethodGet, nil},
-		{http.MethodPost, map[string]string{"name": "x", "host": "ghcr.io", "username": "a", "password": "b"}},
+		{http.MethodPost, map[string]string{
+			"provider": "generic", "host": "ghcr.io", "username": "a", "password": "b",
+		}},
 	} {
 		rec := f.Do(t, call.method, orgPath, call.body, memberKey)
 		servertest.RequireStatus(t, rec, http.StatusForbidden)
@@ -135,7 +136,7 @@ func TestRotationKeepsTheHost(t *testing.T) {
 
 	var created credential
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, orgPath, map[string]string{
-		"name": "GitHub", "host": "ghcr.io", "username": "old", "password": "old-token",
+		"provider": "generic", "host": "ghcr.io", "username": "old", "password": "old-token",
 	}, f.AdminKey, &created), http.StatusCreated)
 
 	var updated credential
@@ -159,4 +160,57 @@ func TestAnOutsiderSeesNothing(t *testing.T) {
 	_, outsiderKey := servertest.CreateUser(t, f.DB, "outsider", false)
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodGet, orgPath, nil, outsiderKey), http.StatusNotFound)
+}
+
+// DigitalOcean's host never varies — what differs between accounts is
+// the first path segment. Asking for a URL would be asking someone to
+// retype a constant and get the rest wrong.
+func TestDigitalOceanIsAskedForItsNameAndNotItsURL(t *testing.T) {
+	f := servertest.New(t)
+
+	var created credential
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, orgPath, map[string]string{
+		"provider": "digitalocean", "namespace": "acme",
+		"username": "someone@example.com", "password": "dop_v1_token",
+	}, f.AdminKey, &created), http.StatusCreated)
+
+	if created.Host != extregistry.DigitalOceanHost {
+		t.Errorf("host is %q, want the fixed DigitalOcean one", created.Host)
+	}
+	if created.Namespace != "acme" {
+		t.Errorf("namespace is %q", created.Namespace)
+	}
+
+	// And it is required: without it there is no image path to build.
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, orgPath, map[string]string{
+		"provider": "digitalocean", "username": "a", "password": "b",
+	}, f.AdminKey), http.StatusBadRequest)
+}
+
+// An ECR registry lives in a region and its host carries an account id.
+// The account id is discovered; the region cannot be, so it is refused
+// rather than guessed.
+func TestAWSNeedsARegion(t *testing.T) {
+	f := servertest.New(t)
+
+	rec := f.Do(t, http.MethodPost, orgPath, map[string]string{
+		"provider": "aws", "username": "AKIAEXAMPLE", "password": "secret",
+	}, f.AdminKey)
+	servertest.RequireStatus(t, rec, http.StatusBadRequest)
+	if !strings.Contains(rec.Body.String(), "region") {
+		t.Errorf("the refusal does not name what is missing: %q", rec.Body.String())
+	}
+}
+
+// A provider the daemon cannot act on is refused at creation, the same
+// way an app's source is: accepting one would store a credential no pull
+// could ever use.
+func TestAnUnknownProviderIsRefused(t *testing.T) {
+	f := servertest.New(t)
+
+	for _, provider := range []string{"", "gcp", "GENERIC", "azure"} {
+		servertest.RequireStatus(t, f.Do(t, http.MethodPost, orgPath, map[string]string{
+			"provider": provider, "host": "example.com", "username": "a", "password": "b",
+		}, f.AdminKey), http.StatusBadRequest)
+	}
 }

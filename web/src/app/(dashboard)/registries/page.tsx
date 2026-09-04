@@ -1,55 +1,112 @@
 "use client";
 
+import { BoxIcon, PlusIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
+import type { ComponentType } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
+import { AWSIcon, DigitalOceanIcon } from "@/components/icons";
 import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
+import { SearchableSelect } from "@/components/searchable-select";
+import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
-import { api, type RegistryCredential } from "@/lib/api";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  api,
+  type RegistryCredential,
+  type RegistryProvider,
+  type RegistryStatus,
+  type Settings,
+} from "@/lib/api";
 import { message } from "@/lib/errors";
+
+// What each provider is asked for, and why it is not a URL.
+//
+// The registry a credential is for is its identity, so nothing here has
+// a display name: two names for one host is a second thing to keep in
+// step for nothing.
+const PROVIDERS: Record<
+  RegistryProvider,
+  { label: string; hint: string; icon: ComponentType<{ className?: string }> }
+> = {
+  digitalocean: {
+    label: "DigitalOcean",
+    icon: DigitalOceanIcon,
+    hint: "The host never varies — what differs is the registry's name, which is the first path segment of an image.",
+  },
+  aws: {
+    label: "AWS ECR",
+    icon: AWSIcon,
+    hint: "The registry's address carries your account id and is discovered. What is stored is the access key; the token Docker logs in with is fetched from it at each pull.",
+  },
+  generic: {
+    label: "Other registry",
+    icon: BoxIcon,
+    hint: "Anything that takes a username and a password: Docker Hub, GitHub, a Harbor you run.",
+  },
+};
 
 // Logins for registries Cubeship does not run. Cubeship's own registry
 // needs none of this — it authenticates each user with their API key.
+//
+// A table rather than cards: a login has four short facts and no shape
+// of its own, and what someone comes here to do is scan a list for one
+// of them.
 export default function Registries() {
-  return (
-    <>
-      <PageHeader
-        title="Registries"
-        sub="Logins for registries Cubeship does not run, held by the selected organization. An app with an external image pulls through whichever of these matches its registry."
-      />
-      <Body />
-    </>
-  );
-}
-
-function Body() {
   const { org, loaded } = useOrg();
-
-  if (loaded && !org) {
-    return (
-      <Card>
-        <CardContent className="py-2 text-sm text-muted-foreground">
-          No organization selected. A login belongs to one — pick or create an organization from the
-          switcher at the top of the sidebar.
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return org ? <List org={org} /> : null;
-}
-
-function List({ org }: { org: string }) {
   const [creds, setCreds] = useState<RegistryCredential[] | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [rotating, setRotating] = useState<number | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [statuses, setStatuses] = useState<Record<number, RegistryStatus>>({});
+  const router = useRouter();
 
-  const path = `/orgs/${org}/registries`;
+  // Where a row goes. A login the registry has stopped accepting has
+  // nothing to browse — asking for its catalogue would just fail again —
+  // so it goes to the one screen that can fix it.
+  const open = useCallback(
+    (c: RegistryCredential) => {
+      if (statuses[c.id]?.state === "unauthorized") {
+        router.push(`/registries/settings?id=${c.id}&host=${encodeURIComponent(c.host)}`);
+        return;
+      }
+      router.push(`/registries/detail?id=${c.id}&host=${encodeURIComponent(c.host)}`);
+    },
+    [router, statuses],
+  );
+
+  useEffect(() => {
+    api
+      .get<Settings>("/settings")
+      .then(setSettings)
+      .catch(() => setSettings(null));
+  }, []);
+
+  const path = org ? `/orgs/${org}/registries` : "";
   const reload = useCallback(() => {
+    if (!path) {
+      setCreds(null);
+      return;
+    }
     api
       .get<RegistryCredential[]>(path)
       .then(setCreds)
@@ -57,204 +114,276 @@ function List({ org }: { org: string }) {
   }, [path]);
   useEffect(reload, [reload]);
 
+  // One probe per row, in parallel, after the list is on screen. Each is
+  // a live round trip to someone else's registry, so waiting for all of
+  // them before drawing anything would make the page as slow as the
+  // slowest registry in it.
+  useEffect(() => {
+    if (!org || !creds) return;
+    for (const c of creds) {
+      api
+        .get<RegistryStatus>(`/orgs/${org}/registries/${c.id}/status`)
+        .then((s) => setStatuses((prev) => ({ ...prev, [c.id]: s })))
+        .catch((e) =>
+          setStatuses((prev) => ({
+            ...prev,
+            [c.id]: { state: "unreachable", detail: message(e) },
+          })),
+        );
+    }
+  }, [org, creds]);
+
   return (
     <>
+      <PageHeader
+        title="Registries"
+        sub={
+          org ? (
+            <>
+              Logins <code className="text-foreground">{org}</code> holds for registries Cubeship
+              does not run. An app with an external image pulls through whichever of these matches
+              its registry.
+            </>
+          ) : (
+            "Logins for registries Cubeship does not run."
+          )
+        }
+        actions={
+          org && (
+            <Button onClick={() => setAdding(true)}>
+              <PlusIcon />
+              New registry
+            </Button>
+          )
+        }
+      />
+
       <ErrorAlert error={error} />
 
-      <Card className="mb-4 py-0">
-        <Table>
-          <TableBody>
-            {creds?.map((c) => (
-              <TableRow key={c.id}>
-                <TableCell className="px-4 py-2.5">{c.name}</TableCell>
-                <TableCell className="px-4 py-2.5 font-mono text-xs text-muted-foreground">
-                  {c.host}
-                </TableCell>
-                <TableCell className="px-4 py-2.5 text-xs text-muted-foreground">
-                  {c.username}
-                </TableCell>
-                <TableCell className="px-4 py-2.5 text-right">
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    className="text-muted-foreground"
-                    onClick={() => setRotating(c.id)}
-                  >
-                    Replace login
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    className="ml-1 text-muted-foreground hover:text-destructive"
-                    onClick={async () => {
-                      try {
-                        await api.del(`${path}/${c.id}`);
-                        reload();
-                      } catch (e) {
-                        setError(message(e));
-                      }
-                    }}
-                  >
-                    Delete
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-            {creds?.length === 0 && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell className="px-4 py-3 text-sm text-muted-foreground">
-                  No logins. Public images need none — add one when a registry refuses an anonymous
-                  pull.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </Card>
-
-      {rotating !== null && (
-        <Rotate
-          path={`${path}/${rotating}`}
-          onDone={() => {
-            setRotating(null);
-            reload();
-          }}
-          onError={setError}
-        />
+      {loaded && !org && (
+        <Card>
+          <CardContent className="py-2 text-sm text-muted-foreground">
+            No organization selected. A login belongs to one — pick or create an organization from
+            the switcher at the top of the sidebar.
+          </CardContent>
+        </Card>
       )}
 
-      <Add path={path} onCreated={reload} onError={setError} />
+      {org && (
+        <Card className="py-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="px-4">Registry</TableHead>
+                <TableHead className="px-4">Provider</TableHead>
+                <TableHead className="px-4">Region</TableHead>
+                <TableHead className="px-4">Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {/* Cubeship's own, always, and always first. It is not a
+                  credential — each user authenticates with their own API
+                  key — so there is nothing here to add or replace. */}
+              <TableRow
+                className="cursor-pointer"
+                onClick={() => router.push("/registries/detail")}
+              >
+                <TableCell className="px-4 py-2.5 font-mono text-xs">
+                  {settings?.registry_host ?? "not reachable until a domain is set"}
+                </TableCell>
+                <TableCell className="px-4 py-2.5">
+                  <span className="inline-flex items-center gap-2 text-sm">
+                    <BoxIcon className="size-4 shrink-0 text-primary" />
+                    Cubeship
+                  </span>
+                </TableCell>
+                <TableCell className="px-4 py-2.5 text-xs text-muted-foreground">—</TableCell>
+                <TableCell className="px-4 py-2.5">
+                  <StatusBadge value="running" />
+                </TableCell>
+              </TableRow>
+
+              {creds?.length === 0 && (
+                <TableRow className="hover:bg-transparent">
+                  <TableCell colSpan={4} className="px-4 py-3 text-sm text-muted-foreground">
+                    No other registries. Public images need none — add one when a registry refuses
+                    an anonymous pull.
+                  </TableCell>
+                </TableRow>
+              )}
+
+              {creds?.map((c) => (
+                <TableRow key={c.id} className="cursor-pointer" onClick={() => open(c)}>
+                  <TableCell className="px-4 py-2.5 font-mono text-xs">
+                    {c.host}
+                    {c.namespace && <span className="text-muted-foreground">/{c.namespace}</span>}
+                  </TableCell>
+                  <TableCell className="px-4 py-2.5 text-sm">
+                    <span className="inline-flex items-center gap-2">
+                      {(() => {
+                        const Icon = PROVIDERS[c.provider]?.icon ?? BoxIcon;
+                        return <Icon className="size-4 shrink-0" />;
+                      })()}
+                      {PROVIDERS[c.provider]?.label ?? c.provider}
+                    </span>
+                  </TableCell>
+                  <TableCell className="px-4 py-2.5 font-mono text-xs text-muted-foreground">
+                    {c.region || "—"}
+                  </TableCell>
+                  <TableCell className="px-4 py-2.5">
+                    <StatusBadge value={statuses[c.id]?.state ?? "checking"} />
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      )}
+
+      {org && (
+        <NewRegistryDialog path={path} open={adding} onOpenChange={setAdding} onCreated={reload} />
+      )}
     </>
   );
 }
 
-function Rotate({
+function NewRegistryDialog({
   path,
-  onDone,
-  onError,
-}: {
-  path: string;
-  onDone: () => void;
-  onError: (m: string) => void;
-}) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  return (
-    <Card className="mb-4 ring-primary/40">
-      <CardContent>
-        <p className="mb-4 text-xs text-muted-foreground">
-          The registry stays the same. To point at a different one, delete this and add another —
-          changing it in place would silently send an app&apos;s pulls somewhere else.
-        </p>
-        <form
-          className="flex items-end gap-2"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            try {
-              await api.put(path, { username, password });
-              onDone();
-            } catch (err) {
-              onError(message(err));
-            }
-            setBusy(false);
-          }}
-        >
-          <TextField
-            label="Username"
-            fieldClassName="flex-1"
-            className="h-8"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-          <TextField
-            label="Password or token"
-            fieldClassName="flex-1"
-            className="h-8"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-          />
-          <ActionButton type="submit" busy={busy} variant="outline">
-            Replace
-          </ActionButton>
-        </form>
-      </CardContent>
-    </Card>
-  );
-}
-
-function Add({
-  path,
+  open,
+  onOpenChange,
   onCreated,
-  onError,
 }: {
   path: string;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
   onCreated: () => void;
-  onError: (m: string) => void;
 }) {
-  const [name, setName] = useState("");
+  const [provider, setProvider] = useState<RegistryProvider>("digitalocean");
   const [host, setHost] = useState("");
+  const [namespace, setNamespace] = useState("");
+  const [region, setRegion] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Only what this provider asks for is sent. The daemon fills in the
+  // rest — DigitalOcean's host is fixed, and AWS's is discovered by the
+  // same call that proves the key works.
+  const complete =
+    username &&
+    password &&
+    (provider === "generic" ? host : provider === "digitalocean" ? namespace : region);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post(path, { provider, host, namespace, region, username, password });
+      setHost("");
+      setNamespace("");
+      setRegion("");
+      setUsername("");
+      setPassword("");
+      onCreated();
+      onOpenChange(false);
+    } catch (err) {
+      setError(message(err));
+    }
+    setBusy(false);
+  }
 
   return (
-    <Card>
-      <CardContent>
-        <form
-          className="space-y-4"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            try {
-              await api.post(path, { name, host, username, password });
-              setName("");
-              setHost("");
-              setUsername("");
-              setPassword("");
-              onCreated();
-            } catch (err) {
-              onError(message(err));
-            }
-            setBusy(false);
-          }}
-        >
-          <div className="grid gap-4 sm:grid-cols-2">
-            <TextField
-              label="Name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="DigitalOcean"
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <form onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>New registry</DialogTitle>
+            <DialogDescription>{PROVIDERS[provider].hint}</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-5">
+            <ErrorAlert error={error} className="mb-0" />
+
+            <SearchableSelect
+              label="Provider"
+              choices={(Object.keys(PROVIDERS) as RegistryProvider[]).map((id) => ({
+                value: id,
+                label: PROVIDERS[id].label,
+                icon: PROVIDERS[id].icon,
+              }))}
+              value={provider}
+              onChange={(v) => setProvider(v as RegistryProvider)}
             />
-            <TextField
-              label="Registry"
-              hint="docker.io for the Hub."
-              spellCheck={false}
-              value={host}
-              onChange={(e) => setHost(e.target.value)}
-              placeholder="registry.digitalocean.com"
-            />
-            <TextField
-              label="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-            <TextField
-              label="Password or token"
-              hint="An access token wherever the registry offers one."
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
+
+            {provider === "generic" && (
+              <TextField
+                label="Registry"
+                hint="docker.io for the Hub."
+                spellCheck={false}
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                placeholder="ghcr.io"
+              />
+            )}
+
+            {provider === "digitalocean" && (
+              <TextField
+                label="Registry name"
+                hint="What follows registry.digitalocean.com/ in an image path."
+                spellCheck={false}
+                value={namespace}
+                onChange={(e) => setNamespace(e.target.value)}
+                placeholder="acme"
+              />
+            )}
+
+            {provider === "aws" && (
+              <TextField
+                label="Region"
+                hint="Where the ECR registry lives. The account id is discovered."
+                spellCheck={false}
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
+                placeholder="us-east-1"
+              />
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <TextField
+                label={provider === "aws" ? "Access key ID" : "Username"}
+                hint={provider === "digitalocean" ? "Your DigitalOcean account email." : undefined}
+                spellCheck={false}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+              <TextField
+                label={provider === "aws" ? "Secret access key" : "Password or token"}
+                hint={
+                  provider === "digitalocean"
+                    ? "An API key with registry scope."
+                    : provider === "generic"
+                      ? "An access token wherever the registry offers one."
+                      : undefined
+                }
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
           </div>
-          <ActionButton type="submit" busy={busy} variant="outline">
-            Add registry
-          </ActionButton>
+
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <ActionButton type="submit" busy={busy} disabled={!complete}>
+              {provider === "aws" && busy ? "Checking with AWS" : "Add"}
+            </ActionButton>
+          </DialogFooter>
         </form>
-      </CardContent>
-    </Card>
+      </DialogContent>
+    </Dialog>
   );
 }

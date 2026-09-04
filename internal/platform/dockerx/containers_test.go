@@ -91,6 +91,22 @@ func (f *fakeAPI) ContainerRemove(ctx context.Context, id string, options contai
 	return nil
 }
 
+// The exec trio is here so the fake satisfies the interface. Nothing in
+// this package's tests runs a command in a container — what does is a
+// registry garbage collection, which needs a real registry to have
+// written blobs for it to walk.
+func (f *fakeAPI) ContainerExecCreate(context.Context, string, container.ExecOptions) (types.IDResponse, error) {
+	return types.IDResponse{ID: "exec-1"}, nil
+}
+
+func (f *fakeAPI) ContainerExecAttach(context.Context, string, container.ExecAttachOptions) (types.HijackedResponse, error) {
+	return types.HijackedResponse{}, errors.New("this fake does not run commands")
+}
+
+func (f *fakeAPI) ContainerExecInspect(context.Context, string) (container.ExecInspect, error) {
+	return container.ExecInspect{}, nil
+}
+
 func (f *fakeAPI) ContainerLogs(ctx context.Context, id string, options container.LogsOptions) (io.ReadCloser, error) {
 	f.loggedID = id
 	f.loggedOptions = options

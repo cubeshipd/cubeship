@@ -184,22 +184,27 @@ func waitForDatabase(ctx context.Context, dsn string, timeout time.Duration) err
 // settings have changed, so calling this again after a settings change is
 // all it takes to apply one.
 func applyInfrastructure(ctx context.Context, cfg *config.Config, docker *dockerx.Client, values settings.Values) error {
-	if values.HasDomain() {
-		apiHost := settings.APIHostFor(values.Get(settings.Domain))
+	// The registry always runs. It is part of what Cubeship is, not
+	// something a domain switches on: the daemon pulls an app's own
+	// image from it, and a push from this host reaches it on loopback.
+	// What a domain adds is a name the rest of the world can push to.
+	apiHost := settings.APIHostFor(values.Get(settings.Domain))
+	registryHost := settings.RegistryHostFor(values.Get(settings.Domain))
 
-		// The registry container runs on the "cubeship" bridge network,
-		// not the host's namespace, so it reaches the daemon via
-		// host.docker.internal rather than 127.0.0.1 (see ExtraHosts in
-		// RegistryContainerOpts).
-		notifyURL := fmt.Sprintf("http://%s/hooks/registry", bootstrap.DaemonAddress(cfg, daemonPort))
-		if err := bootstrap.WriteRegistryConfig(cfg, apiHost, notifyURL, cfg.Token); err != nil {
-			return fmt.Errorf("write registry config: %w", err)
-		}
-		registryHost := settings.RegistryHostFor(values.Get(settings.Domain))
-		if err := bootstrap.Ensure(ctx, docker,
-			bootstrap.RegistryContainerOpts(cfg, registryHost, values.HasTLS())); err != nil {
-			return fmt.Errorf("bootstrap registry: %w", err)
-		}
+	// The registry container runs on the "cubeship" bridge network, so
+	// it reaches the daemon by the address DaemonAddress gives — a
+	// container name, or the host gateway when the daemon is a host
+	// process.
+	notifyURL := fmt.Sprintf("http://%s/hooks/registry", bootstrap.DaemonAddress(cfg, daemonPort))
+	if err := bootstrap.WriteRegistryConfig(cfg, apiHost, notifyURL, cfg.Token); err != nil {
+		return fmt.Errorf("write registry config: %w", err)
+	}
+	if err := bootstrap.Ensure(ctx, docker,
+		bootstrap.RegistryContainerOpts(cfg, registryHost, values.HasTLS())); err != nil {
+		return fmt.Errorf("bootstrap registry: %w", err)
+	}
+
+	if values.HasDomain() {
 		if err := bootstrap.WriteAPIRouterConfig(cfg, apiHost, daemonPort); err != nil {
 			return fmt.Errorf("write traefik API router config: %w", err)
 		}
@@ -364,7 +369,7 @@ func run() error {
 
 	log.Printf("cubeshipd listening on %s", listenAddr)
 	if !current.HasDomain() {
-		log.Printf("no domain configured yet: apps can be created, but there is no registry to push to until one is set")
+		log.Printf("no domain configured yet: the registry is running but only reachable from this host, and apps are served over plain HTTP")
 	}
 	return http.ListenAndServe(listenAddr, srv.Router())
 }

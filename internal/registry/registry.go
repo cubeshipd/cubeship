@@ -14,6 +14,7 @@ import (
 
 	"cubeship/internal/app"
 	"cubeship/internal/org"
+	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/platform/regauth"
 	"cubeship/internal/settings"
 	"cubeship/internal/user"
@@ -34,15 +35,42 @@ type Handler struct {
 	// domain and therefore changes without a restart.
 	settings *settings.Service
 
+	// localRegistry is where the daemon reads the registry's own API,
+	// which is the address it pulls from — never the public name.
+	localRegistry string
+
+	// maintenance runs commands inside the registry container, which is
+	// where garbage collection lives — it is a subcommand of the
+	// registry binary, not an API. nil when the daemon has no Engine,
+	// and the endpoint refuses rather than pretending.
+	maintenance Maintainer
+
 	// signingKey signs the access tokens the token endpoint issues. nil
 	// until SetSigningKey is called; the endpoint 503s until then rather
 	// than issuing unsigned tokens.
 	signingKey *rsa.PrivateKey
 }
 
-func NewHandler(users *user.Service, orgs *org.Service, apps *app.Service, cfg *settings.Service, webhookToken string) *Handler {
-	return &Handler{users: users, orgs: orgs, apps: apps, settings: cfg, webhookToken: webhookToken}
+// Maintainer is what runs a command inside the registry container, and
+// what stops and starts it around one. *dockerx.Client satisfies it.
+type Maintainer interface {
+	InspectContainerByName(ctx context.Context, name string) (dockerx.ContainerInfo, error)
+	Exec(ctx context.Context, containerID string, cmd []string) (string, int, error)
+	StopContainer(ctx context.Context, id string) error
+	StartContainer(ctx context.Context, id string) error
 }
+
+func NewHandler(users *user.Service, orgs *org.Service, apps *app.Service, cfg *settings.Service, webhookToken, localRegistry string) *Handler {
+	return &Handler{
+		users: users, orgs: orgs, apps: apps, settings: cfg,
+		webhookToken: webhookToken, localRegistry: localRegistry,
+	}
+}
+
+// SetMaintainer wires in what can run a garbage collection. Must be
+// called before the daemon accepts requests; not safe to call
+// concurrently with serving.
+func (h *Handler) SetMaintainer(m Maintainer) { h.maintenance = m }
 
 // registryHost is the public registry name, or "" while the instance has
 // no domain — in which case there is no registry running to notify us.

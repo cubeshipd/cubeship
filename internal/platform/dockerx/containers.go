@@ -341,3 +341,47 @@ func (c *Client) IsRunning(ctx context.Context, id string) (bool, error) {
 	}
 	return info.State != nil && info.State.Running, nil
 }
+
+// Exec runs a command inside a running container and returns everything
+// it wrote, plus its exit status.
+//
+// The output is not demultiplexed into stdout and stderr: what calls
+// this wants the transcript of a maintenance command, and a program that
+// splits its progress across both streams is best read in the order it
+// wrote them. `Tty: true` is what makes the Engine hand back one stream
+// rather than the framed protocol.
+func (c *Client) Exec(ctx context.Context, containerID string, cmd []string) (output string, exitCode int, err error) {
+	created, err := c.api.ContainerExecCreate(ctx, containerID, container.ExecOptions{
+		Cmd:          cmd,
+		AttachStdout: true,
+		AttachStderr: true,
+		Tty:          true,
+	})
+	if err != nil {
+		return "", 0, fmt.Errorf("create exec: %w", err)
+	}
+
+	attached, err := c.api.ContainerExecAttach(ctx, created.ID, container.ExecAttachOptions{Tty: true})
+	if err != nil {
+		return "", 0, fmt.Errorf("attach exec: %w", err)
+	}
+	defer attached.Close()
+
+	// Read to EOF first: the command has not finished until its output
+	// stream closes, and inspecting before then reports it still running.
+	var buf strings.Builder
+	if _, err := io.Copy(&buf, io.LimitReader(attached.Reader, maxExecOutput)); err != nil {
+		return buf.String(), 0, fmt.Errorf("read exec output: %w", err)
+	}
+
+	inspected, err := c.api.ContainerExecInspect(ctx, created.ID)
+	if err != nil {
+		return buf.String(), 0, fmt.Errorf("inspect exec: %w", err)
+	}
+	return buf.String(), inspected.ExitCode, nil
+}
+
+// maxExecOutput caps what an exec can hand back. A garbage collection
+// pass names every blob it walks, and on a busy registry that is more
+// than anything reading it needs.
+const maxExecOutput = 1 << 20

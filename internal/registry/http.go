@@ -3,12 +3,15 @@ package registry
 import (
 	"context"
 	"crypto/subtle"
+	"errors"
 	"log"
 	"net/http"
 
 	"cubeship/internal/app"
+	"cubeship/internal/org"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/platform/regauth"
+	"cubeship/internal/user"
 )
 
 // scopeContext is context.Context; named so authorizeScope's signature
@@ -21,6 +24,89 @@ type scopeContext = context.Context
 //
 // Both are internal: `docker` and the registry container call them, no
 // API consumer ever does, so they stay out of the OpenAPI document.
+// CatalogueRoutes are the documented ones: what this organization has
+// pushed to Cubeship's own registry. They are separate from Routes
+// because those two are the registry container's and Docker's, and
+// authenticate differently.
+func (h *Handler) CatalogueRoutes(r *httpx.Router, auth func(http.Handler) http.Handler) {
+	r.Handle("GET /orgs/{orgSlug}/registry/repositories", auth(http.HandlerFunc(h.repositories)))
+	r.Handle("GET /orgs/{orgSlug}/registry/images", auth(http.HandlerFunc(h.images)))
+	r.Handle("DELETE /orgs/{orgSlug}/registry/images", auth(http.HandlerFunc(h.deleteImage)))
+	r.Handle("DELETE /orgs/{orgSlug}/registry/repositories", auth(http.HandlerFunc(h.deleteRepository)))
+	r.Handle("POST /orgs/{orgSlug}/registry/garbage-collect", auth(http.HandlerFunc(h.garbageCollect)))
+}
+
+func (h *Handler) deleteImage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := h.DeleteImage(ctx, user.FromContext(ctx), r.PathValue("orgSlug"),
+		r.URL.Query().Get("repository"), r.URL.Query().Get("tag")); err != nil {
+		writeCatalogueError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) deleteRepository(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := h.DeleteRepository(ctx, user.FromContext(ctx), r.PathValue("orgSlug"),
+		r.URL.Query().Get("repository")); err != nil {
+		writeCatalogueError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// A collection stops the registry for as long as it takes to walk the
+// storage, so it holds the connection: whoever asked for it is the
+// person who needs to know when pushes work again.
+func (h *Handler) garbageCollect(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	result, err := h.GarbageCollect(ctx, user.FromContext(ctx), r.PathValue("orgSlug"))
+	if err != nil {
+		writeCatalogueError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result)
+}
+
+func (h *Handler) repositories(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	repos, err := h.Repositories(ctx, user.FromContext(ctx), r.PathValue("orgSlug"))
+	if err != nil {
+		writeCatalogueError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, repos)
+}
+
+func (h *Handler) images(w http.ResponseWriter, r *http.Request) {
+	repository := r.URL.Query().Get("repository")
+	if repository == "" {
+		http.Error(w, "name the repository with ?repository=", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	images, err := h.Images(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), repository)
+	if err != nil {
+		writeCatalogueError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, images)
+}
+
+func writeCatalogueError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, org.ErrForbidden):
+		http.Error(w, "forbidden", http.StatusForbidden)
+	case errors.Is(err, org.ErrNotFound):
+		http.Error(w, "not found", http.StatusNotFound)
+	case errors.Is(err, ErrNoRegistry), errors.Is(err, ErrNoMaintenance):
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+	default:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
 func (h *Handler) Routes(r *httpx.Router) {
 	// Both stay at the root: these two addresses live in the registry
 	// container's own configuration, not in anyone's client.

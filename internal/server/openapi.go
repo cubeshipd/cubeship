@@ -42,6 +42,7 @@ func (s *Server) OpenAPI() openapi.Document {
 		app.NewHandler(s.Apps).OpenAPI(),
 		extregistry.NewHandler(s.Registries).OpenAPI(),
 		github.NewHandler(s.GitHub, s.Apps).OpenAPI(),
+		s.Registry.OpenAPI(),
 		settings.NewHandler(s.Settings).OpenAPI(),
 	)
 

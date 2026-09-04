@@ -90,7 +90,9 @@ func TestAPrivateImagePullsWithTheOrgsCredential(t *testing.T) {
 	orch, docker, a, creds := externalFixture(t, "ghcr.io/acme/api")
 	ctx := context.Background()
 
-	if _, err := creds.Create(ctx, a.OrgID, "GitHub", "ghcr.io", "acme-bot", "ghp_token"); err != nil {
+	if _, err := creds.Create(ctx, a.OrgID, extregistry.Credential{
+		Provider: extregistry.ProviderGeneric, Host: "ghcr.io", Username: "acme-bot", Password: "ghp_token",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := orch.Start(ctx, a.ID, ""); err != nil {
@@ -113,7 +115,9 @@ func TestACredentialForAnotherRegistryIsNotUsed(t *testing.T) {
 	orch, docker, a, creds := externalFixture(t, "ghcr.io/acme/api")
 	ctx := context.Background()
 
-	if _, err := creds.Create(ctx, a.OrgID, "DO", "registry.digitalocean.com", "someone", "dop_token"); err != nil {
+	if _, err := creds.Create(ctx, a.OrgID, extregistry.Credential{
+		Provider: extregistry.ProviderGeneric, Host: "registry.digitalocean.com", Username: "someone", Password: "dop_token",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := orch.Start(ctx, a.ID, ""); err != nil {

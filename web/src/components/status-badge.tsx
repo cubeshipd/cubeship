@@ -13,6 +13,22 @@ const tones: Record<string, Tone> = {
   building: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
   pending: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
   failed: { dot: "bg-destructive", text: "text-destructive", edge: "border-destructive/40" },
+  // A registry's three answers. Unauthorized is red rather than amber
+  // because it is the one somebody has to act on: nothing recovers a
+  // revoked key on its own, and the next deploy that pulls will fail.
+  available: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
+  unauthorized: {
+    dot: "bg-destructive",
+    text: "text-destructive",
+    edge: "border-destructive/40",
+  },
+  unreachable: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40" },
+  checking: {
+    dot: "bg-subtle-foreground",
+    text: "text-muted-foreground",
+    edge: "border-border-strong",
+    pulse: true,
+  },
   stopped: {
     dot: "bg-subtle-foreground",
     text: "text-muted-foreground",

@@ -88,9 +88,16 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Setup:      setup.NewService(db, users),
 		Registries: registries,
 		GitHub:     gh,
-		Registry:   registry.NewHandler(users, orgs, apps, cfg, opts.WebhookToken),
+		Registry:   registry.NewHandler(users, orgs, apps, cfg, opts.WebhookToken, opts.LocalRegistry),
 		router:     httpx.NewRouter(),
 	}
+	// Garbage collection runs a command inside the registry container,
+	// which needs the Engine rather than the deploy interface. A fake in
+	// a test is not one, and the endpoint refuses rather than pretending.
+	if m, ok := docker.(registry.Maintainer); ok {
+		srv.Registry.SetMaintainer(m)
+	}
+
 	srv.routes()
 	return srv
 }
@@ -152,6 +159,7 @@ func (s *Server) routes() {
 	// auth, and a shared webhook secret), so they mount unwrapped. So
 	// does GitHub's, which is signed rather than bearing a key.
 	s.Registry.Routes(s.router)
+	s.Registry.CatalogueRoutes(s.router, auth)
 	s.githubHandler.WebhookRoutes(s.router)
 
 	s.router.HandleRoot("POST /mcp", auth(s.mcpHandler()))

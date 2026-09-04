@@ -79,6 +79,10 @@ const DeployTimeout = 10 * time.Minute
 // registry an image lives in. Only an external app ever needs one.
 type CredentialLookup interface {
 	ForImage(ctx context.Context, orgID int64, image string) (*extregistry.Credential, bool, error)
+	// LoginFor is what the pull actually authenticates with. For most
+	// registries it is what was stored; for AWS the stored value is an
+	// access key and the login is fetched from it.
+	LoginFor(ctx context.Context, c *extregistry.Credential) (username, password string, err error)
 }
 
 // ImageBuilder turns a repository into an image in the Engine's store.
@@ -126,7 +130,11 @@ func (o *Orchestrator) registryCredentials(ctx context.Context, orgID int64, ima
 	if err != nil || !found {
 		return nil, err
 	}
-	return &dockerx.RegistryAuth{Username: c.Username, Password: c.Password}, nil
+	username, password, err := o.creds.LoginFor(ctx, c)
+	if err != nil {
+		return nil, err
+	}
+	return &dockerx.RegistryAuth{Username: username, Password: password}, nil
 }
 
 // buildFromRepository is what a building source calls. It returns the

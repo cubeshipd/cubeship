@@ -635,3 +635,55 @@ func TestTraefikIsOnTheSharedNetwork(t *testing.T) {
 		t.Errorf("Traefik cannot resolve a daemon on the host (ExtraHosts: %q)", hosts)
 	}
 }
+
+// The registry is part of what Cubeship is, not something a domain
+// switches on: the daemon pulls an app's own image from it, and a push
+// from this host reaches it on loopback. A domain adds a name the rest
+// of the world can push to, and nothing else.
+func TestTheRegistryRunsWithoutADomain(t *testing.T) {
+	cfg := testConfig()
+
+	opts := RegistryContainerOpts(cfg, "", false)
+	if opts.Name != RegistryContainerName || opts.Image == "" {
+		t.Fatalf("no registry container without a domain: %+v", opts)
+	}
+	// A Traefik rule with an empty host matches nothing and is worth
+	// less than not existing.
+	for key := range opts.Labels {
+		if strings.HasPrefix(key, "traefik.") {
+			t.Errorf("a router was configured with no host to route: %v", opts.Labels)
+			break
+		}
+	}
+	// It is still reachable from this host, which is what a local push
+	// and the daemon's own pulls use.
+	var published string
+	for _, p := range opts.Ports {
+		published += p + " "
+	}
+	if !strings.Contains(published, "5000") {
+		t.Errorf("the registry publishes %q, with nothing on 5000", published)
+	}
+
+	// With a domain it gains the router.
+	withDomain := RegistryContainerOpts(cfg, "registry.example.com", true)
+	if len(withDomain.Labels) == 0 {
+		t.Error("a registry with a domain has no Traefik labels")
+	}
+}
+
+// A client is told where to fetch a token. Without a domain there is no
+// public name to send it to, and the only address that works is this
+// host's own — enough for a push from here, which is the case that
+// exists before a domain.
+func TestTheTokenRealmFallsBackToThisHost(t *testing.T) {
+	withDomain := RegistryConfigYAML("api.example.com", "http://daemon/hooks", "tok3n")
+	if !strings.Contains(withDomain, "realm: https://api.example.com/v2/token") {
+		t.Errorf("the realm is not the public API:\n%s", withDomain)
+	}
+
+	without := RegistryConfigYAML("", "http://daemon/hooks", "tok3n")
+	if !strings.Contains(without, "realm: http://127.0.0.1:3000/v2/token") {
+		t.Errorf("the realm has no working fallback:\n%s", without)
+	}
+}

@@ -18,24 +18,24 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, org_id, name, host, username, password, created_at, updated_at`
+const columns = `id, org_id, provider, host, namespace, region, username, password, created_at, updated_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
 func scan(row scanner) (*Credential, error) {
 	var c Credential
-	if err := row.Scan(&c.ID, &c.OrgID, &c.Name, &c.Host, &c.Username, &c.Password,
-		&c.CreatedAt, &c.UpdatedAt); err != nil {
+	if err := row.Scan(&c.ID, &c.OrgID, &c.Provider, &c.Host, &c.Namespace, &c.Region,
+		&c.Username, &c.Password, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &c, nil
 }
 
-func (r *Repository) Create(ctx context.Context, orgID int64, name, host, username, password string) (*Credential, error) {
+func (r *Repository) Create(ctx context.Context, orgID int64, in Credential) (*Credential, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO external_registries (org_id, name, host, username, password)
-		 VALUES ($1, $2, $3, $4, $5) RETURNING `+columns,
-		orgID, name, host, username, password)
+		`INSERT INTO external_registries (org_id, provider, host, namespace, region, username, password)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING `+columns,
+		orgID, string(in.Provider), in.Host, in.Namespace, in.Region, in.Username, in.Password)
 	c, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("create registry credential: %w", err)
@@ -57,7 +57,7 @@ func (r *Repository) Update(ctx context.Context, id, orgID int64, username, pass
 
 func (r *Repository) List(ctx context.Context, orgID int64) ([]*Credential, error) {
 	rows, err := r.q.QueryContext(ctx,
-		`SELECT `+columns+` FROM external_registries WHERE org_id = $1 ORDER BY name`, orgID)
+		`SELECT `+columns+` FROM external_registries WHERE org_id = $1 ORDER BY host`, orgID)
 	if err != nil {
 		return nil, err
 	}

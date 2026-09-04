@@ -78,13 +78,27 @@ export type App = {
   environment: string;
 };
 
+export type RegistryProvider = "generic" | "digitalocean" | "aws";
+
 export type RegistryCredential = {
   id: number;
-  name: string;
+  provider: RegistryProvider;
   host: string;
+  // The path segment between the host and the image, where the provider
+  // has one — DigitalOcean's registry name.
+  namespace?: string;
+  region?: string;
   username: string;
   created_at: string;
   updated_at: string;
+};
+
+// What a live probe of a registry found. `unauthorized` is fixed by
+// storing a new login, which is what the registry's settings screen is
+// for; `unreachable` is someone else's registry being down.
+export type RegistryStatus = {
+  state: "available" | "unauthorized" | "unreachable";
+  detail?: string;
 };
 
 export type Deployment = {
@@ -140,6 +154,27 @@ export function ownerOf(repo: string): string | null {
   const match = repo.trim().match(/^https?:\/\/(?:www\.)?github\.com\/([^/\s]+)\/([^/\s]+)/i);
   return match ? match[1] : null;
 }
+
+// One repository in a registry, and one tag in it. The same shape
+// whichever registry answered — Cubeship's own or somebody else's —
+// because what the dashboard shows is the same either way.
+export type RegistryRepository = { name: string };
+
+export type RegistryImage = {
+  tag: string;
+  digest?: string;
+  size?: number;
+  pushed_at?: string;
+};
+
+export type RegistryUsage = {
+  total_bytes: number;
+  // Always true: layers are shared between images, so two tags built
+  // from one base count that base twice. An upper bound on what is
+  // stored, not what is billed.
+  counts_shared_layers: boolean;
+  repositories: { name: string; bytes: number; images: number }[];
+};
 
 export type ApiKey = {
   id: number;

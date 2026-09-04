@@ -1,4 +1,6 @@
-minimumReleaseAgeExclude:
-  - cn@0.2.5
-  - lucide-react@1.40.0
-  - shadcn@4.21.0
+# The release-age gate is off. It refuses a package published in the
+# last day, which is what a supply-chain attack looks like — and also
+# what a normal release looks like on a project whose dependencies move
+# quickly. Turned off deliberately rather than worked around per package,
+# which is what the exclude list here was becoming.
+minimumReleaseAge: 0

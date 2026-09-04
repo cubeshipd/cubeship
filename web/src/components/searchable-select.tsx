@@ -1,15 +1,21 @@
 "use client";
 
 import { cn } from "cn";
-import { CheckIcon, ChevronDownIcon, SearchIcon } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
-import { Input } from "@/components/ui/input";
+import { CheckIcon, ChevronDownIcon } from "lucide-react";
+import { type ComponentType, useMemo, useRef, useState } from "react";
+import { SearchBar } from "@/components/search-bar";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+
+// Below this many options the list is something you scan, and a search
+// field is furniture: a bordered box with its own focus ring, inside a
+// popup that is already one, around three items.
+const SEARCH_FROM = 8;
 
 export type Choice = {
   value: string;
   label: string;
+  icon?: ComponentType<{ className?: string }>;
   // hint sits to the right of the label: a default branch, a "private"
   // marker — something that distinguishes two similarly named things.
   hint?: string;
@@ -47,6 +53,8 @@ export function SearchableSelect({
   const [query, setQuery] = useState("");
   const search = useRef<HTMLInputElement>(null);
 
+  const searchable = choices.length >= SEARCH_FROM;
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     if (!q) return choices;
@@ -68,7 +76,7 @@ export function SearchableSelect({
             setQuery("");
             // The field is why this exists; landing anywhere else means
             // typing does nothing.
-            requestAnimationFrame(() => search.current?.focus());
+            if (searchable) requestAnimationFrame(() => search.current?.focus());
           }
         }}
       >
@@ -83,30 +91,31 @@ export function SearchableSelect({
                 "disabled:cursor-not-allowed disabled:opacity-50",
               )}
             >
-              <span className={cn("truncate", !selected && "text-muted-foreground")}>
-                {busy ? "Loading…" : (selected?.label ?? placeholder)}
+              <span className="flex min-w-0 items-center gap-2">
+                {selected?.icon && <selected.icon className="size-4 shrink-0" />}
+                <span className={cn("truncate", !selected && "text-muted-foreground")}>
+                  {busy ? "Loading…" : (selected?.label ?? placeholder)}
+                </span>
               </span>
               <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" />
             </button>
           }
         />
         <PopoverContent align="start" className="w-(--anchor-width) p-0">
-          <div className="flex items-center gap-2 border-b border-border px-3">
-            <SearchIcon className="size-3.5 shrink-0 text-muted-foreground" />
-            <Input
-              ref={search}
+          {searchable && (
+            <SearchBar
+              inputRef={search}
               value={query}
-              onChange={(e) => setQuery(e.target.value)}
+              onChange={setQuery}
               placeholder="Search"
-              spellCheck={false}
-              className="h-9 border-0 bg-transparent px-0 focus-visible:border-0"
+              className="border-0 border-b focus-within:ring-0"
             />
-          </div>
+          )}
 
           <div className="max-h-64 overflow-y-auto p-1">
             {filtered.length === 0 && (
               <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-                {choices.length === 0 ? empty : `Nothing matches “${query}”.`}
+                {choices.length === 0 ? empty : `Nothing matches "${query}".`}
               </p>
             )}
             {filtered.map((choice) => (
@@ -123,16 +132,20 @@ export function SearchableSelect({
                   choice.value === value && "bg-secondary",
                 )}
               >
+                {choice.icon && <choice.icon className="size-4 shrink-0" />}
+                <span className="min-w-0 flex-1 truncate font-mono text-xs">{choice.label}</span>
+                {choice.hint && (
+                  <span className="shrink-0 text-[11px] text-muted-foreground">{choice.hint}</span>
+                )}
+                {/* At the end, so the marks line up with each other and
+                    the labels line up with each other. Leading it put a
+                    gap in front of every row that was not selected. */}
                 <CheckIcon
                   className={cn(
                     "size-3.5 shrink-0",
                     choice.value === value ? "text-primary" : "invisible",
                   )}
                 />
-                <span className="min-w-0 flex-1 truncate font-mono text-xs">{choice.label}</span>
-                {choice.hint && (
-                  <span className="shrink-0 text-[11px] text-muted-foreground">{choice.hint}</span>
-                )}
               </button>
             ))}
           </div>

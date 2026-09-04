@@ -35,6 +35,12 @@ const Network = "cubeship"
 // container, and so the name everything else reaches it by.
 const DaemonContainerName = "cubeship-daemon"
 
+// localDaemonPort is the port the daemon answers on. It is duplicated
+// from cmd/cubeshipd rather than imported, because a package the daemon
+// depends on cannot depend back on it — and it appears here only in a
+// fallback address for a registry with no domain.
+const localDaemonPort = 3000
+
 // The daemon's own Postgres, when it isn't pointed at an external one
 // with CUBESHIP_DATABASE_URL.
 //
@@ -124,7 +130,15 @@ func EnsurePostgresDataDir(cfg *config.Config) error {
 // has a domain, which is why the daemon does not start this container
 // before then.
 func RegistryContainerOpts(cfg *config.Config, registryHost string, tls bool) dockerx.ContainerOpts {
-	labels := traefik.Labels("registry", registryHost, registryPort, tls)
+	// No domain, no router: a Traefik rule with an empty host matches
+	// nothing and is worth less than not existing. The registry still
+	// runs — the daemon pulls from it directly, and a push from this
+	// host reaches it on loopback — it is only unreachable from
+	// elsewhere until there is a name for it.
+	var labels map[string]string
+	if registryHost != "" {
+		labels = traefik.Labels("registry", registryHost, registryPort, tls)
+	}
 	return dockerx.ContainerOpts{
 		Name:    RegistryContainerName,
 		Image:   "registry:2",
@@ -193,7 +207,14 @@ func RegistryContainerOpts(cfg *config.Config, registryHost string, tls bool) do
 // with registry push/pull authentication, which is entirely the token
 // realm's job now.
 func RegistryConfigYAML(apiHost, notifyURL, notifyToken string) string {
+	// Where a client is told to go for a token. With a domain it is the
+	// public API; without one there is no public name yet, and the only
+	// address that works is this host's own — which is enough for a push
+	// from here, and is what the integration test uses.
 	realm := "https://" + apiHost + "/v2/token"
+	if apiHost == "" {
+		realm = fmt.Sprintf("http://127.0.0.1:%d/v2/token", localDaemonPort)
+	}
 	return fmt.Sprintf(`version: 0.1
 log:
   fields:
@@ -203,6 +224,8 @@ storage:
     blobdescriptor: inmemory
   filesystem:
     rootdirectory: /var/lib/registry
+  delete:
+    enabled: true
 auth:
   token:
     realm: %s
