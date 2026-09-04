@@ -51,6 +51,14 @@ CREATE TABLE IF NOT EXISTS memberships (
 	role TEXT NOT NULL,
 	PRIMARY KEY (user_id, org_id)
 );
+
+CREATE TABLE IF NOT EXISTS api_keys (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	user_id INTEGER NOT NULL REFERENCES users(id),
+	key_hash TEXT NOT NULL UNIQUE,
+	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+	last_used_at DATETIME
+);
 `
 
 func Open(path string) (*Store, error) {
