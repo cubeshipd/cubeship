@@ -1,19 +1,27 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
+
+	"github.com/spf13/cobra"
 )
 
 const version = "0.1.0-dev"
 
 func main() {
-	showVersion := flag.Bool("version", false, "print version and exit")
-	flag.Parse()
-	if *showVersion {
-		fmt.Printf("cubeship %s\n", version)
-		os.Exit(0)
+	root := &cobra.Command{
+		Use:     "cubeship",
+		Short:   "CLI for the Cubeship self-hosted deploy engine",
+		Version: version,
 	}
-	fmt.Println("cubeship: no command implemented yet")
+
+	root.AddCommand(newLoginCmd())
+	root.AddCommand(newRegistryCmd())
+	root.AddCommand(newAppCmd())
+
+	if err := root.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
 }
