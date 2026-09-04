@@ -51,6 +51,13 @@ Everything Cubeship runs is a container, the daemon included: Postgres,
 the registry, Traefik, the image builder and every app are its siblings
 on one network.
 
+To remove it:
+
+```sh
+sudo ./uninstall.sh            # the containers; the instance is kept
+sudo ./uninstall.sh --purge    # and the data, permanently
+```
+
 Nothing has to be configured for it to start. The domain and the Let's
 Encrypt contact address are set afterwards, from the dashboard — see
 [Configuring the instance](#configuring-the-instance).

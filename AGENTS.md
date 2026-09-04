@@ -309,6 +309,20 @@ and a visitor whose OS is light would otherwise get half of them.
 pulls the image and runs it. **The release is the image** — nothing else
 has to be hosted anywhere, and an upgrade is a pull.
 
+`uninstall.sh` is its counterpart, and the default is **not** the
+destructive one: it removes the containers and leaves the data
+directory, because someone removing the software is not thereby asking
+to lose their database — installing again brings the same instance back.
+`--purge` is the other thing. It lists what goes before it asks, and the
+answer is the word "delete": a second button is no obstacle to a
+misclick. With no terminal to ask on — which is what piping into a shell
+means — it refuses rather than proceeding on silence, unless `--yes`
+says otherwise.
+
+`make test-uninstall` runs it on a Linux with Docker stubbed, including
+the confirmation under a real pseudo-terminal. A destructive script that
+is wrong is the worst kind.
+
 `--local` builds from the checkout the script is in instead of pulling,
 which is how you run unpublished code on a box: push, pull on the server,
 install. It refuses when there is no checkout beside it — piped from

@@ -147,6 +147,16 @@ test-install: ## Run install.sh end to end in a Linux container
 		--platform linux/amd64 debian:bookworm-slim \
 		sh -c 'apt-get -qq update && apt-get -qq install -y curl > /dev/null && sh /src/run.sh'
 
+# uninstall.sh deletes things. A destructive script that is wrong is the
+# worst kind, so it is run for real, on a Linux, with Docker stubbed.
+.PHONY: test-uninstall
+test-uninstall: ## Run uninstall.sh end to end in a Linux container
+	docker run --rm \
+		-v "$(CURDIR)/uninstall.sh:/src/uninstall.sh:ro" \
+		-v "$(CURDIR)/test/install/uninstall.sh:/src/run.sh:ro" \
+		--platform linux/amd64 debian:bookworm-slim \
+		sh /src/run.sh
+
 .PHONY: test-integration
 test-integration: ## End-to-end test against a real Docker daemon (needs Linux)
 	$(GO) test -tags integration -count=1 -v -timeout 15m ./test/integration/...
@@ -160,7 +170,9 @@ cover: ## Unit test coverage, opened as HTML
 # never compiles it. Vet it explicitly or it rots.
 .PHONY: sh-check
 sh-check: ## Syntax-check the shell scripts
-	@for f in install.sh test/install/run.sh; do sh -n $$f || exit 1; done
+	@for f in install.sh uninstall.sh test/install/run.sh test/install/uninstall.sh; do \
+		sh -n $$f || exit 1; \
+	done
 
 .PHONY: vet
 vet: ## go vet, including the build-tagged integration test
