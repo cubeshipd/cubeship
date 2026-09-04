@@ -14,11 +14,13 @@ ExecStart=/usr/local/bin/cubeshipd
 Environment=CUBESHIP_DOMAIN=example.com
 # Contact address Let's Encrypt registers for expiry notices.
 Environment=CUBESHIP_ACME_EMAIL=admin@example.com
-# Persistent state: SQLite database, API token, registry config and
-# image storage, Traefik acme.json.
+# Persistent state: SQLite database, the daemon's tokens (including the
+# super-admin's API key in admin-api-key), registry config and image
+# storage, Traefik acme.json.
 Environment=CUBESHIP_DATA_DIR=/var/lib/cubeship
-# Optional. Leave unset to have the daemon generate a token on first
-# start and persist it to $CUBESHIP_DATA_DIR/token (0600).
+# Optional. The registry password and webhook secret, not an API key.
+# Leave unset to have the daemon generate one on first start and persist
+# it to $CUBESHIP_DATA_DIR/token (0600).
 #Environment=CUBESHIP_TOKEN=
 
 # The daemon talks to the Docker socket, so it runs as root.
