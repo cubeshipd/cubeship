@@ -45,14 +45,14 @@ type Handler struct {
 
 func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
-func (h *Handler) Routes(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
-	mux.Handle("POST /orgs/{orgSlug}/projects", auth(http.HandlerFunc(h.create)))
-	mux.Handle("GET /orgs/{orgSlug}/projects", auth(http.HandlerFunc(h.list)))
-	mux.Handle("PUT /orgs/{orgSlug}/projects/{projectSlug}/env", auth(http.HandlerFunc(h.setEnv)))
-	mux.Handle("POST /orgs/{orgSlug}/projects/{projectSlug}/environments", auth(http.HandlerFunc(h.createEnvironment)))
-	mux.Handle("GET /orgs/{orgSlug}/projects/{projectSlug}/environments", auth(http.HandlerFunc(h.listEnvironments)))
-	mux.Handle("PUT /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.setEnvironmentEnv)))
-	mux.Handle("DELETE /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}", auth(http.HandlerFunc(h.deleteEnvironment)))
+func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
+	r.Handle("POST /orgs/{orgSlug}/projects", auth(http.HandlerFunc(h.create)))
+	r.Handle("GET /orgs/{orgSlug}/projects", auth(http.HandlerFunc(h.list)))
+	r.Handle("PUT /orgs/{orgSlug}/projects/{projectSlug}/env", auth(http.HandlerFunc(h.setEnv)))
+	r.Handle("POST /orgs/{orgSlug}/projects/{projectSlug}/environments", auth(http.HandlerFunc(h.createEnvironment)))
+	r.Handle("GET /orgs/{orgSlug}/projects/{projectSlug}/environments", auth(http.HandlerFunc(h.listEnvironments)))
+	r.Handle("PUT /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.setEnvironmentEnv)))
+	r.Handle("DELETE /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}", auth(http.HandlerFunc(h.deleteEnvironment)))
 }
 
 // WriteError maps this module's domain errors onto status codes, falling

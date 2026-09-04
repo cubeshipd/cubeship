@@ -52,6 +52,7 @@ Every domain module has the same shape:
 | `service.go` | the use cases — the only place business rules live |
 | `http.go` | handlers, routes, and the domain-error → status mapping |
 | `mcp.go` | the MCP tools |
+| `openapi.go` | the OpenAPI operations for the routes in `http.go` |
 
 **`http.go` and `mcp.go` are adapters and nothing else.** They parse
 input, call one service method, and render the result. A rule that lives
@@ -61,6 +62,25 @@ the two drifted apart before this layout.
 Dependencies run one way: `user ← org ← project ← app`, with `registry`
 and `server` on top. `server` is the only package that knows every module
 exists.
+
+## The OpenAPI document
+
+Served at `/openapi.json`, with a Scalar reference at `/docs`. Both are
+unauthenticated, because Scalar fetches the document from the browser
+with no credentials to offer.
+
+It is hand-written, module by module, in each `openapi.go` — not
+generated from annotations. What keeps it honest is a test rather than a
+generator: routes are registered through `httpx.Router`, which records
+its patterns, and `TestOpenAPIDescribesEveryRouteAndNoOthers` fails if a
+route has no operation or an operation has no route. **Adding an endpoint
+without documenting it breaks the build.** Every operation also needs a
+unique `operationId`, a summary, a tag, and its path parameters declared.
+
+Error responses are `text/plain`, because that is what `http.Error`
+writes. `openapi.Unauthorized`, `.Forbidden`, `.NotFound` and
+`.BadRequest` carry the shared wording — including why 404 and 403 mean
+different things.
 
 ## Database
 

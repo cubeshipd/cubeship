@@ -41,10 +41,10 @@ type Handler struct {
 
 func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
-func (h *Handler) Routes(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
-	mux.Handle("POST /orgs", auth(http.HandlerFunc(h.create)))
-	mux.Handle("GET /orgs", auth(http.HandlerFunc(h.list)))
-	mux.Handle("POST /orgs/{orgSlug}/users", auth(http.HandlerFunc(h.createUser)))
+func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
+	r.Handle("POST /orgs", auth(http.HandlerFunc(h.create)))
+	r.Handle("GET /orgs", auth(http.HandlerFunc(h.list)))
+	r.Handle("POST /orgs/{orgSlug}/users", auth(http.HandlerFunc(h.createUser)))
 }
 
 // WriteError maps this module's domain errors onto status codes. Other

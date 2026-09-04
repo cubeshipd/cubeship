@@ -25,12 +25,12 @@ func NewHandler(svc *Service) *Handler {
 // Routes registers this module's endpoints on mux. auth wraps a handler
 // in authentication; the server supplies it so every module is mounted
 // the same way.
-func (h *Handler) Routes(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
-	mux.Handle("GET /users/me", auth(http.HandlerFunc(h.whoAmI)))
-	mux.Handle("POST /users/me/api-key/rotate", auth(http.HandlerFunc(h.rotateAPIKey)))
-	mux.Handle("POST /users/me/api-keys", auth(http.HandlerFunc(h.createAPIKey)))
-	mux.Handle("GET /users/me/api-keys", auth(http.HandlerFunc(h.listAPIKeys)))
-	mux.Handle("DELETE /users/me/api-keys/{id}", auth(http.HandlerFunc(h.revokeAPIKey)))
+func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
+	r.Handle("GET /users/me", auth(http.HandlerFunc(h.whoAmI)))
+	r.Handle("POST /users/me/api-key/rotate", auth(http.HandlerFunc(h.rotateAPIKey)))
+	r.Handle("POST /users/me/api-keys", auth(http.HandlerFunc(h.createAPIKey)))
+	r.Handle("GET /users/me/api-keys", auth(http.HandlerFunc(h.listAPIKeys)))
+	r.Handle("DELETE /users/me/api-keys/{id}", auth(http.HandlerFunc(h.revokeAPIKey)))
 }
 
 // --- authentication ---

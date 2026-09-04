@@ -51,13 +51,13 @@ type Handler struct {
 
 func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
-func (h *Handler) Routes(mux *http.ServeMux, auth func(http.Handler) http.Handler) {
-	mux.Handle("POST /apps", auth(http.HandlerFunc(h.create)))
-	mux.Handle("GET /apps", auth(http.HandlerFunc(h.list)))
-	mux.Handle("GET /apps/{name}", auth(http.HandlerFunc(h.get)))
-	mux.Handle("POST /apps/{name}/deploy", auth(http.HandlerFunc(h.deploy)))
-	mux.Handle("PUT /apps/{name}/env", auth(http.HandlerFunc(h.setEnv)))
-	mux.Handle("GET /apps/{name}/logs", auth(http.HandlerFunc(h.logs)))
+func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
+	r.Handle("POST /apps", auth(http.HandlerFunc(h.create)))
+	r.Handle("GET /apps", auth(http.HandlerFunc(h.list)))
+	r.Handle("GET /apps/{name}", auth(http.HandlerFunc(h.get)))
+	r.Handle("POST /apps/{name}/deploy", auth(http.HandlerFunc(h.deploy)))
+	r.Handle("PUT /apps/{name}/env", auth(http.HandlerFunc(h.setEnv)))
+	r.Handle("GET /apps/{name}/logs", auth(http.HandlerFunc(h.logs)))
 }
 
 // WriteError maps this module's domain errors onto status codes, falling

@@ -13,6 +13,7 @@ import (
 	"cubeship/internal/app"
 	"cubeship/internal/org"
 	"cubeship/internal/platform/database"
+	"cubeship/internal/platform/httpx"
 	"cubeship/internal/project"
 	"cubeship/internal/registry"
 	"cubeship/internal/user"
@@ -26,7 +27,7 @@ type Server struct {
 	Apps     *app.Service
 	Registry *registry.Handler
 
-	mux *http.ServeMux
+	router *httpx.Router
 }
 
 // Options are what the daemon has to supply that the modules cannot
@@ -55,7 +56,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Projects: projects,
 		Apps:     apps,
 		Registry: registry.NewHandler(users, orgs, apps, opts.WebhookToken, opts.RegistryHost),
-		mux:      http.NewServeMux(),
+		router:   httpx.NewRouter(),
 	}
 	srv.routes()
 	return srv
@@ -68,26 +69,36 @@ func (s *Server) SetRegistrySigningKey(key *rsa.PrivateKey) {
 }
 
 // Router returns the daemon's HTTP handler.
-func (s *Server) Router() http.Handler { return s.mux }
+func (s *Server) Router() http.Handler { return s.router }
+
+// Patterns returns every route pattern registered on the server. The
+// OpenAPI parity test uses it to prove the document describes exactly
+// what the daemon serves.
+func (s *Server) Patterns() []string { return s.router.Patterns() }
 
 func (s *Server) routes() {
-	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	s.router.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
+
+	// Both are unauthenticated so a browser can render the reference
+	// without a key. See handleDocs.
+	s.router.HandleFunc("GET "+OpenAPIPath, s.handleOpenAPI)
+	s.router.HandleFunc("GET "+DocsPath, s.handleDocs)
 
 	// auth is handed to each module so every authenticated route is
 	// mounted the same way, and no module invents its own.
 	userHandler := user.NewHandler(s.Users)
 	auth := userHandler.Middleware
 
-	userHandler.Routes(s.mux, auth)
-	org.NewHandler(s.Orgs).Routes(s.mux, auth)
-	project.NewHandler(s.Projects).Routes(s.mux, auth)
-	app.NewHandler(s.Apps).Routes(s.mux, auth)
+	userHandler.Routes(s.router, auth)
+	org.NewHandler(s.Orgs).Routes(s.router, auth)
+	project.NewHandler(s.Projects).Routes(s.router, auth)
+	app.NewHandler(s.Apps).Routes(s.router, auth)
 
 	// The registry's own two endpoints authenticate differently (Basic
 	// auth, and a shared webhook secret), so they mount unwrapped.
-	s.Registry.Routes(s.mux)
+	s.Registry.Routes(s.router)
 
-	s.mux.Handle("/mcp", auth(s.mcpHandler()))
+	s.router.Handle("POST /mcp", auth(s.mcpHandler()))
 }

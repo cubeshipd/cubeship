@@ -75,6 +75,14 @@ rest: users and roles, extra environments, env vars (set per project, per
 environment or per app, each level inheriting the ones above), logs,
 manual redeploys, additional API keys.
 
+## API reference
+
+The daemon serves a browsable reference of every endpoint at
+`https://api.<domain>/docs`, rendered from the OpenAPI document at
+`/openapi.json`. Both are unauthenticated — they describe the shape of the
+API, never any data — so block them at the proxy if you'd rather not
+advertise what runs here.
+
 ## MCP
 
 The daemon serves an [MCP](https://modelcontextprotocol.io) endpoint at

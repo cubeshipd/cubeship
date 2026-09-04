@@ -1,0 +1,138 @@
+package app
+
+import "cubeship/internal/platform/openapi"
+
+func (h *Handler) OpenAPI() openapi.Spec {
+	nameParam := openapi.PathParam("name", "The app's name.")
+
+	return openapi.Spec{
+		Tags: []openapi.Tag{{
+			Name:        "Apps",
+			Description: "A deployable service. Pushing a tag to an app's registry path is what deploys it; these endpoints register apps, configure them, and redeploy on demand.",
+		}},
+		Schemas: map[string]*openapi.Schema{
+			"App": openapi.Object(map[string]*openapi.Schema{
+				"name":        openapi.String(""),
+				"domain":      openapi.String("The domain Traefik routes to this app, over HTTPS."),
+				"image":       openapi.String("The registry path to push to. A push here deploys."),
+				"status":      {Type: "string", Enum: []string{"pending", "running", "down"}, Description: `"pending" until the first image is pushed.`},
+				"org":         openapi.String(""),
+				"project":     openapi.String(""),
+				"environment": openapi.String(""),
+			}, "name", "domain", "image", "status", "org", "project", "environment"),
+		},
+		Paths: map[string]openapi.PathItem{
+			"/apps": {
+				"post": {
+					OperationID: "createApp",
+					Summary:     "Register an app",
+					Description: "Returns the registry path to push to. Nothing is deployed until an image lands there.\n\nApp containers are expected to listen on port 8080. Requires the member role in the organization.\n\nNote that app names are currently unique across the whole instance, not per environment.",
+					Tags:        []string{"Apps"},
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"name":        openapi.String("Lowercase letters, digits and dashes — it becomes a path component of the registry image."),
+						"domain":      openapi.String("The domain to serve this app on. It must resolve to this host for a certificate to issue."),
+						"org":         openapi.String("Organization slug."),
+						"project":     openapi.String("Project slug."),
+						"environment": openapi.String(`Environment slug. Defaults to "production".`),
+					}, "name", "domain", "org", "project")),
+					Responses: openapi.Responses{
+						"201": openapi.JSONResponse("The registered app, including its push path.", openapi.Ref("App")),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.TextResponse("The organization, project or environment does not exist, or is not yours."),
+						"409": openapi.TextResponse("An app with that name already exists."),
+					},
+				},
+				"get": {
+					OperationID: "listApps",
+					Summary:     "List apps",
+					Description: "Every app in every organization you belong to — or all of them, if you are a super-admin.",
+					Tags:        []string{"Apps"},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("Apps you can see.", openapi.Array(openapi.Ref("App"))),
+						"401": openapi.Unauthorized,
+					},
+				},
+			},
+			"/apps/{name}": {
+				"get": {
+					OperationID: "getApp",
+					Summary:     "Get one app",
+					Tags:        []string{"Apps"},
+					Parameters:  []openapi.Parameter{nameParam},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The app.", openapi.Ref("App")),
+						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
+					},
+				},
+			},
+			"/apps/{name}/deploy": {
+				"post": {
+					OperationID: "deployApp",
+					Summary:     "Redeploy an app",
+					Description: "Deploys a tag already pushed to the app's registry path. The daemon pulls the image, starts a container, waits for it to look healthy, and only then retires the previous one — so a bad image never takes down a working app.\n\n**This request blocks for the whole deploy**, which includes several seconds of health checks. Use a client timeout of at least a few minutes.",
+					Tags:        []string{"Apps"},
+					Parameters:  []openapi.Parameter{nameParam},
+					RequestBody: &openapi.RequestBody{
+						Description: `Optional. Omit the body entirely to deploy "latest".`,
+						Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
+							"tag": openapi.String(`Image tag to deploy. Defaults to "latest".`),
+						})),
+					},
+					Responses: openapi.Responses{
+						"200": openapi.Empty("The new container is running and the old one is retired."),
+						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
+						"502": openapi.JSONResponse("The deploy failed — the image could not be pulled, or the container never became healthy. The app is untouched.",
+							openapi.Object(map[string]*openapi.Schema{"error": openapi.String("What went wrong.")}, "error")),
+					},
+				},
+			},
+			"/apps/{name}/env": {
+				"put": {
+					OperationID: "setAppEnv",
+					Summary:     "Set an app's environment variables",
+					Description: "These are layered on top of, and override, the app's environment's and project's variables. Requires the member role.",
+					Tags:        []string{"Apps"},
+					Parameters:  []openapi.Parameter{nameParam},
+					RequestBody: &openapi.RequestBody{
+						Required:    true,
+						Description: "Replaces the full set of app-level variables. Keys you omit are removed.",
+						Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
+							"vars": openapi.StringMap("The complete set of app-level variables."),
+						}, "vars")),
+					},
+					Responses: openapi.Responses{
+						"200": openapi.Empty("The variables are stored. The running container picks them up on its next deploy."),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
+					},
+				},
+			},
+			"/apps/{name}/logs": {
+				"get": {
+					OperationID: "getAppLogs",
+					Summary:     "Read an app's container logs",
+					Description: "Stdout and stderr, already demultiplexed out of Docker's frame format. Returns the last " + DefaultLogTail + " lines unless `tail` says otherwise.",
+					Tags:        []string{"Apps"},
+					Parameters: []openapi.Parameter{
+						nameParam,
+						openapi.QueryParam("tail", `Number of trailing lines, e.g. "1000", or "all" for the entire log. Defaults to `+DefaultLogTail+"."),
+					},
+					Responses: openapi.Responses{
+						"200": {
+							Description: "The log output.",
+							Content:     map[string]openapi.MediaType{"text/plain": {Schema: openapi.String("")}},
+						},
+						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("The app has no container yet — nothing has been pushed to it."),
+					},
+				},
+			},
+		},
+	}
+}
