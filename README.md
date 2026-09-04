@@ -52,10 +52,25 @@ binds it on all interfaces so the registry container can reach the
 webhook, but that port serves the API in plaintext, bypassing Traefik's
 TLS. Open only 80 and 443.
 
-The first boot against an empty database creates a super-admin and writes
-its API key to `$CUBESHIP_DATA_DIR/admin-api-key`, mode 0600. That is the
-credential `cubeship login` takes — nothing is printed to the log but a
-fingerprint.
+## Claiming the instance
+
+A fresh instance has no account. The first request to `POST /setup`
+creates one — a super-admin, with an organization and a project to work
+in — and then setup is closed for good: there is no second account
+without an existing one adding it.
+
+```sh
+curl -X POST http://<ip>:9000/setup \
+  -d '{"username":"you","password":"<at least 12 characters>"}'
+```
+
+**Until you do this, whoever reaches that port first owns the instance.**
+Claim it as soon as the daemon starts; it says so in its log while the
+window is open.
+
+The response signs you in with a session cookie, which is what a browser
+carries. For `cubeship login` and `docker login`, issue yourself an API
+key with `POST /users/me/api-keys`.
 
 ## Configuring the instance
 

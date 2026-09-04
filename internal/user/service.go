@@ -195,6 +195,13 @@ func (s *Service) Login(ctx context.Context, username, password string) (string,
 		return "", nil, ErrInvalidCredentials
 	}
 
+	return s.StartSession(ctx, u)
+}
+
+// StartSession issues a session for an account whose identity is already
+// established. Login calls it after verifying a password; setup calls it
+// for the account it just created from one.
+func (s *Service) StartSession(ctx context.Context, u *User) (string, *Session, error) {
 	token, err := authkey.Generate()
 	if err != nil {
 		return "", nil, err
@@ -264,26 +271,29 @@ func (s *Service) SetPassword(ctx context.Context, u *User, currentSessionHash, 
 	})
 }
 
-// CreateWithPassword creates a user who can sign in immediately, for the
-// first account on an instance and for one an organization admin invites
-// with a password already chosen.
-func (s *Service) CreateWithPassword(ctx context.Context, q database.Queryer, username, password string, isSuperAdmin bool) (*User, string, error) {
+// CreateWithPassword creates a user who can sign in immediately.
+//
+// No API key is issued: this account's way in is its password, and a key
+// nobody is ever shown would be a live credential lying around for
+// nothing. Keys are self-service, created when someone actually wants
+// one.
+func (s *Service) CreateWithPassword(ctx context.Context, q database.Queryer, username, password string, isSuperAdmin bool) (*User, error) {
 	// Hash before inserting: a password too short to accept should not
 	// leave a user row behind.
 	hash, err := HashPassword(password)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
 	repo := NewRepository(q)
-	u, key, err := s.CreateWithAPIKey(ctx, q, username, isSuperAdmin)
+	u, err := repo.Create(ctx, username, isSuperAdmin)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	if err := repo.SetPassword(ctx, u.ID, hash); err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	return u, key, nil
+	return u, nil
 }
 
 // PurgeExpiredSessions deletes rows nobody can use. Expiry already takes

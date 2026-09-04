@@ -187,6 +187,29 @@ is why every sign-in failure — unknown username, wrong password, no
 password at all — is the same answer, and why an unknown username still
 pays for a hash verification.
 
+## Claiming an instance
+
+`internal/setup` is the first-run flow, and it exists because the daemon
+now starts with no account at all — bootstrap creating a super-admin from
+the environment is gone. `POST /setup` creates the account, an
+organization and a project, signs the caller in, and closes setup
+permanently: `Needed` is "are there zero users", so the *first* account is
+the only one setup ever makes.
+
+That check and the insert are one transaction behind
+`pg_advisory_xact_lock`, because two people opening the page at once must
+not both succeed and the username's unique index would not stop them —
+they may well pick different names. The loser gets `ErrAlreadySetUp`
+(409).
+
+Everything the account needs is created in that same transaction. A user
+row with no organization would be unrecoverable: setup refuses to run
+again, and the account it made has nowhere to work.
+
+The account gets a **password and no API key** — its way in is the
+session setup starts. A key nobody is ever shown would be a live
+credential lying around for nothing; keys are self-service.
+
 ## Instance settings
 
 The domain and the Let's Encrypt contact address are rows in `settings`,

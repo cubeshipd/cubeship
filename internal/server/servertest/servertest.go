@@ -92,6 +92,17 @@ func (noDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {
 	return nil, errNoDocker
 }
 
+// NewEmpty is a server with no account at all — the state an instance is
+// in between installing and someone claiming it.
+func NewEmpty(t testing.TB) *Fixture {
+	t.Helper()
+	db := dbtest.New(t)
+	return &Fixture{
+		Server: server.New(db, noDocker{}, server.Options{WebhookToken: WebhookToken}),
+		DB:     db,
+	}
+}
+
 // NewUnconfigured is New without a domain — the state a fresh install is
 // in, before anyone has been to the settings page.
 func NewUnconfigured(t testing.TB) *Fixture {
@@ -136,8 +147,10 @@ func newFixture(t testing.TB, docker app.DockerAPI, domain string) *Fixture {
 }
 
 // CreateUser adds a user directly to the database and returns them with a
-// fresh API key. It bypasses the API on purpose: a test that needs a
-// second identity should not have to succeed at creating one first.
+// fresh API key. It bypasses the API on purpose: a test that needs an
+// identity should not have to succeed at creating one first, and on a
+// real instance the only account creation that needs no account is
+// setup, which most tests are not about.
 func CreateUser(t testing.TB, db *database.DB, username string, superAdmin bool) (*user.User, string) {
 	t.Helper()
 	ctx := context.Background()

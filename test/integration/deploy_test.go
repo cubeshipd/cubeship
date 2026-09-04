@@ -24,8 +24,8 @@
 // LAST CONFIRMED on Docker Desktop for Mac (2026-09-04, before the
 // registry moved from a shared htpasswd credential to per-user Docker
 // Registry v2 token auth — see internal/regauth): the daemon starts,
-// bootstraps a super-admin with its own key (separate from
-// CUBESHIP_TOKEN), the registry and Traefik bootstrap, org creation,
+// POST /setup claims the instance and issues an API key, the registry
+// and Traefik bootstrap, org creation,
 // org-scoped app creation, `docker login` + `docker push` to
 // localhost:5000/<org>/<project>/<env>/<app> succeed, the registry's push notification
 // fires the webhook, and the daemon pulls and deploys the app
@@ -52,6 +52,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -64,6 +65,7 @@ import (
 	"time"
 
 	"cubeship/internal/cli/client"
+	"cubeship/internal/user"
 )
 
 const testToken = "integration-test-token"
@@ -134,10 +136,10 @@ func TestDeployEndToEnd(t *testing.T) {
 	})
 
 	ctx := context.Background()
-	// CUBESHIP_TOKEN is the registry/webhook credential only; the
-	// super-admin's API key is generated on first boot and persisted
-	// under the data dir, so that is what talks to the daemon API.
-	adminKey := readAdminAPIKey(t, dataDir)
+	// CUBESHIP_TOKEN is the registry/webhook credential only. A fresh
+	// instance has no account at all: the first request anyone makes
+	// claims it, exactly as a browser would on the setup page.
+	adminKey := claimInstance(t, adminUsername, adminPassword)
 	client := client.New("http://127.0.0.1:9000", adminKey)
 
 	if _, err := client.CreateOrg(ctx, "acme", "Acme Inc"); err != nil {
@@ -166,11 +168,11 @@ func TestDeployEndToEnd(t *testing.T) {
 	}
 
 	// The registry rejects anonymous pushes and grants access per the
-	// pushing user's org membership — the super-admin ("admin", the
-	// hardcoded bootstrap username) is authorized everywhere, same as
-	// `cubeship registry login` would do for any real user with their
-	// own username and API key.
-	login := exec.Command("docker", "login", "localhost:5000", "-u", "admin", "--password-stdin")
+	// pushing user's org membership — the super-admin, who claimed this
+	// instance, is authorized everywhere. This is what
+	// `cubeship registry login` does for any real user with their own
+	// username and API key.
+	login := exec.Command("docker", "login", "localhost:5000", "-u", adminUsername, "--password-stdin")
 	login.Stdin = strings.NewReader(adminKey)
 	if out, err := login.CombinedOutput(); err != nil {
 		t.Fatalf("docker login to the local registry: %v\n%s", err, out)
@@ -223,21 +225,70 @@ func TestDeployEndToEnd(t *testing.T) {
 	}
 }
 
-// readAdminAPIKey reads the super-admin API key the daemon writes to its
-// data dir on first boot (mode 0600), the credential the CLI would be
-// given with `cubeship login`.
-func readAdminAPIKey(t *testing.T, dataDir string) string {
+const (
+	adminUsername = "admin"
+	adminPassword = "integration-test-password"
+)
+
+// claimInstance walks the first-run flow: POST /setup creates the only
+// account this instance will ever hand out, and signs the caller in. The
+// session that comes back then issues the API key everything else here
+// authenticates with — a browser can hold a cookie, `docker login` and
+// the CLI cannot.
+func claimInstance(t *testing.T, username, password string) string {
 	t.Helper()
-	var key string
-	waitFor(t, 10*time.Second, "super-admin API key file", func() bool {
-		data, err := os.ReadFile(filepath.Join(dataDir, "admin-api-key"))
+
+	post := func(path string, body any, cookie *http.Cookie) *http.Response {
+		t.Helper()
+		encoded, err := json.Marshal(body)
 		if err != nil {
-			return false
+			t.Fatal(err)
 		}
-		key = strings.TrimSpace(string(data))
-		return key != ""
-	})
-	return key
+		req, err := http.NewRequest(http.MethodPost, "http://127.0.0.1:9000"+path,
+			bytes.NewReader(encoded))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if cookie != nil {
+			req.AddCookie(cookie)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST %s: %v", path, err)
+		}
+		return resp
+	}
+
+	resp := post("/setup", map[string]string{"username": username, "password": password}, nil)
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /setup: %s", resp.Status)
+	}
+
+	var session *http.Cookie
+	for _, c := range resp.Cookies() {
+		if c.Name == user.SessionCookieName {
+			session = c
+		}
+	}
+	if session == nil {
+		t.Fatal("setup did not return a session cookie")
+	}
+
+	keyResp := post("/users/me/api-keys", map[string]string{"name": "integration"}, session)
+	defer keyResp.Body.Close()
+	if keyResp.StatusCode != http.StatusCreated {
+		t.Fatalf("POST /users/me/api-keys: %s", keyResp.Status)
+	}
+	var created struct {
+		Key string `json:"key"`
+	}
+	jsonDecodeOrFatal(t, keyResp, &created)
+	if created.Key == "" {
+		t.Fatal("no api key in the response")
+	}
+	return created.Key
 }
 
 func jsonDecode(resp *http.Response, v any) error {

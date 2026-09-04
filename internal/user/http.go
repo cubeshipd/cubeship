@@ -183,6 +183,21 @@ func toAPIKeyResponses(keys []*APIKey, currentHash string) []APIKeyResponse {
 
 // --- signing in ---
 
+// StartSession signs a user in without a password, and sets the cookie.
+//
+// It exists for setup, which has just created the account from a
+// password it verified itself: sending someone to a sign-in form to
+// retype what they typed a second ago would be silly. Nothing else
+// should use it — every other way in proves something first.
+func (h *Handler) StartSession(w http.ResponseWriter, r *http.Request, u *User) error {
+	token, session, err := h.svc.StartSession(r.Context(), u)
+	if err != nil {
+		return err
+	}
+	http.SetCookie(w, h.sessionCookie(r, token, int(time.Until(session.ExpiresAt).Seconds())))
+	return nil
+}
+
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`

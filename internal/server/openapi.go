@@ -61,7 +61,7 @@ func (s *Server) OpenAPI() openapi.Document {
 				BearerScheme: {
 					Type:        "http",
 					Scheme:      "bearer",
-					Description: "Your Cubeship API key. The super-admin's first key is written to $CUBESHIP_DATA_DIR/admin-api-key on first boot.",
+					Description: "Your Cubeship API key, issued to you from POST /users/me/api-keys.",
 				},
 			},
 		},

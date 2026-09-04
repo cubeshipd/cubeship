@@ -59,22 +59,14 @@ func main() {
 	}
 }
 
-// Secrets the daemon generates for itself on first start, each persisted
+// Secrets the daemon generates for itself on first start, persisted
 // under the data dir at mode 0600 — the same treatment the daemon token
 // gets in config.Load.
+//
+// The super-admin's API key used to be one of these. It no longer exists:
+// the first account arrives through setup, in a browser, and its way in
+// is a password.
 const (
-	// adminKeyFileName holds the super-admin's API key.
-	//
-	// This is deliberately NOT cfg.Token. That token is an instance-wide
-	// system credential: the registry webhook's shared secret. Registry
-	// push/pull now goes through per-user tokens (internal/regauth), so
-	// there's no longer any reason cfg.Token would need to double as
-	// anyone's API key — but the separation predates that and stays
-	// correct regardless: seeding the super-admin's API key from a
-	// system-wide secret would mean anyone who obtained it could create
-	// orgs, create admins anywhere, and read every app's environment.
-	adminKeyFileName = "admin-api-key"
-
 	// pgPasswordFileName holds the managed Postgres' password. It is
 	// generated once and reused: Postgres only reads POSTGRES_PASSWORD
 	// when it initializes an empty data directory, so a password
@@ -108,51 +100,6 @@ func loadOrCreateSecret(dataDir, name string) (string, string, error) {
 		return "", "", fmt.Errorf("write %s: %w", path, err)
 	}
 	return secret, path, nil
-}
-
-// ensureSuperAdmin creates the instance's first user — a super-admin —
-// the first time the daemon boots against a fresh database, with its own
-// generated API key persisted under dataDir. A database that already has
-// any users is left alone.
-//
-// The user and their key are created in one transaction: a user that
-// exists with no key would take the username, block the bootstrap
-// (which only runs while there are no users at all) and leave the
-// instance with no way in.
-func ensureSuperAdmin(ctx context.Context, users *user.Service, dataDir string) error {
-	n, err := users.Repo().Count(ctx)
-	if err != nil {
-		return err
-	}
-	if n > 0 {
-		return nil
-	}
-
-	key, path, err := loadOrCreateSecret(dataDir, adminKeyFileName)
-	if err != nil {
-		return err
-	}
-
-	var username string
-	if err := users.DB().WithTx(ctx, func(tx database.Queryer) error {
-		repo := user.NewRepository(tx)
-		created, err := repo.Create(ctx, "admin", true)
-		if err != nil {
-			return err
-		}
-		username = created.Username
-		_, err = repo.CreateAPIKey(ctx, created.ID, authkey.Hash(key), user.DefaultAPIKeyName)
-		return err
-	}); err != nil {
-		return err
-	}
-
-	// The key itself stays out of the log, like the daemon token: a
-	// fingerprint identifies it, and the file is where the operator
-	// reads it from.
-	log.Printf("cubeshipd: created super-admin user %q; its API key (fingerprint %s) is stored in %s",
-		username, config.TokenFingerprint(key), path)
-	return nil
 }
 
 // databaseReadyTimeout bounds how long the daemon waits for a
@@ -356,10 +303,6 @@ func run() error {
 		return fmt.Errorf("carry the old environment into settings: %w", err)
 	}
 
-	if err := ensureSuperAdmin(ctx, srv.Users, cfg.DataDir); err != nil {
-		return fmt.Errorf("bootstrap super-admin: %w", err)
-	}
-
 	registryCert, err := regauth.SelfSignedCert(registrySigningKey, "cubeship")
 	if err != nil {
 		return fmt.Errorf("create registry token certificate: %w", err)
@@ -390,6 +333,18 @@ func run() error {
 	srv.SetRegistrySigningKey(registrySigningKey)
 
 	go purgeExpiredSessions(ctx, srv.Users)
+
+	needsSetup, err := srv.Setup.Needed(ctx)
+	if err != nil {
+		return fmt.Errorf("check whether this instance is set up: %w", err)
+	}
+	if needsSetup {
+		// Anyone who can reach this port before setup runs can claim the
+		// instance, so say it plainly rather than leaving it to be
+		// discovered.
+		log.Printf("this instance has no account yet: open it and create one. " +
+			"Until you do, anyone who can reach this port can claim it.")
+	}
 
 	log.Printf("cubeshipd listening on %s", listenAddr)
 	if !current.HasDomain() {

@@ -1,5 +1,28 @@
 # Upgrading an existing install
 
+## From a release that bootstrapped a super-admin on first boot
+
+Nothing to do on an install that already has accounts — bootstrap only
+ever ran against an empty database, and this release simply stops it
+from running at all. `$CUBESHIP_DATA_DIR/admin-api-key` is no longer
+written or read; the key it holds still works, since it is a row in the
+database like any other, but nothing recreates it if you delete the file.
+
+A new install now starts with no account and claims itself through
+`POST /setup`: the first request creates a super-admin, an organization
+and a project, and closes setup permanently. The daemon logs a warning on
+every start until that happens, because until it does, anyone who can
+reach the port can claim the instance.
+
+Two things follow from setup creating the account instead of bootstrap:
+
+- The username is yours to choose. It was hardcoded to `admin`, which is
+  also the `docker login` username — so a registry login on a new install
+  uses whatever name you picked.
+- The account is created with a **password**, and no API key. Setup signs
+  you in with a session cookie; issue a key from `POST /users/me/api-keys`
+  when you want one for the CLI or for `docker login`.
+
 ## From a release that required CUBESHIP_DOMAIN and CUBESHIP_ACME_EMAIL
 
 Nothing to do, but worth knowing what changed. The daemon now starts
@@ -76,9 +99,9 @@ before a push to it deploys anything.
 
 Two things change for you on that first start:
 
-- A new super-admin key is written to
-  `$CUBESHIP_DATA_DIR/admin-api-key`. Every previously issued API key is
-  gone with the old database — everyone logs in again.
+- Every previously issued API key is gone with the old database. The
+  empty database makes the instance a fresh one, so it is claimed through
+  `POST /setup` like a new install, and everyone else is added again.
 - The data dir gains `postgres/` (the database) and `postgres-password`.
   Back up the whole directory, as before; `postgres/` is now the part
   that matters most.
@@ -115,8 +138,7 @@ only apps created from then on get the org-prefixed path
 Two things change for you:
 
 - The API no longer accepts `CUBESHIP_TOKEN` as a bearer token. Log in
-  again with the super-admin key from `$CUBESHIP_DATA_DIR/admin-api-key`,
-  which that same start creates.
+  again with the super-admin's own API key.
 - `cubeship app create` now needs `--org`.
 
 ## From a release without projects and environments

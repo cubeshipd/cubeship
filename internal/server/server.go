@@ -17,6 +17,7 @@ import (
 	"cubeship/internal/project"
 	"cubeship/internal/registry"
 	"cubeship/internal/settings"
+	"cubeship/internal/setup"
 	"cubeship/internal/user"
 )
 
@@ -27,6 +28,7 @@ type Server struct {
 	Projects *project.Service
 	Apps     *app.Service
 	Settings *settings.Service
+	Setup    *setup.Service
 	Registry *registry.Handler
 
 	router *httpx.Router
@@ -61,6 +63,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Projects: projects,
 		Apps:     apps,
 		Settings: cfg,
+		Setup:    setup.NewService(db, users),
 		Registry: registry.NewHandler(users, orgs, apps, cfg, opts.WebhookToken),
 		router:   httpx.NewRouter(),
 	}
@@ -105,6 +108,9 @@ func (s *Server) routes() {
 	auth := userHandler.Middleware
 
 	userHandler.Routes(s.router, auth)
+	// Setup is the one surface that cannot require being signed in:
+	// before it runs there is nobody to be.
+	setup.NewHandler(s.Setup, userHandler.StartSession).Routes(s.router)
 	org.NewHandler(s.Orgs).Routes(s.router, auth)
 	project.NewHandler(s.Projects).Routes(s.router, auth)
 	settings.NewHandler(s.Settings).Routes(s.router, auth)

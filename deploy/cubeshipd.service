@@ -13,10 +13,8 @@ ExecStart=/usr/local/bin/cubeshipd
 # daemon starts without them and they are configured afterwards, through
 # PUT /settings. See the README.
 #
-# Persistent state: the Postgres data directory, the daemon's secrets
-# (including the
-# super-admin's API key in admin-api-key), registry config and image
-# storage, Traefik acme.json.
+# Persistent state: the Postgres data directory, the daemon's secrets,
+# registry config and image storage, Traefik acme.json.
 Environment=CUBESHIP_DATA_DIR=/var/lib/cubeship
 # Optional. The registry webhook's shared secret only — not an API key
 # and not a registry login credential (registry push/pull is per-user
