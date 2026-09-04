@@ -82,15 +82,22 @@ func (s *Server) Router() http.Handler { return s.router }
 // what the daemon serves.
 func (s *Server) Patterns() []string { return s.router.Patterns() }
 
+// InternalPatterns returns the routes deliberately kept out of the
+// OpenAPI document — infrastructure and CLI-only plumbing. The same test
+// asserts none of them is documented.
+func (s *Server) InternalPatterns() []string { return s.router.InternalPatterns() }
+
 func (s *Server) routes() {
-	s.router.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+	// None of these belong in the document: a liveness probe, the
+	// document itself, the page that renders it, and an endpoint that
+	// speaks JSON-RPC rather than REST.
+	s.router.HandleInternalFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	})
-
 	// Both are unauthenticated so a browser can render the reference
 	// without a key. See handleDocs.
-	s.router.HandleFunc("GET "+OpenAPIPath, s.handleOpenAPI)
-	s.router.HandleFunc("GET "+DocsPath, s.handleDocs)
+	s.router.HandleInternalFunc("GET "+OpenAPIPath, s.handleOpenAPI)
+	s.router.HandleInternalFunc("GET "+DocsPath, s.handleDocs)
 
 	// auth is handed to each module so every authenticated route is
 	// mounted the same way, and no module invents its own.
@@ -106,5 +113,5 @@ func (s *Server) routes() {
 	// auth, and a shared webhook secret), so they mount unwrapped.
 	s.Registry.Routes(s.router)
 
-	s.router.Handle("POST /mcp", auth(s.mcpHandler()))
+	s.router.HandleInternal("POST /mcp", auth(s.mcpHandler()))
 }

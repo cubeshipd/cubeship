@@ -69,13 +69,25 @@ Served at `/openapi.json`, with a Scalar reference at `/docs`. Both are
 unauthenticated, because Scalar fetches the document from the browser
 with no credentials to offer.
 
+**The document is the product's API, not an inventory of routes.** It
+describes what someone integrating against Cubeship would call:
+organizations, projects, environments, apps. It leaves out the daemon's
+own machinery (`/healthz`, `/openapi.json`, `/docs`, `/mcp`), the
+registry's two endpoints (`docker` and the registry container call
+those, nobody else), and API-key self-service, which you do once from the
+CLI.
+
+That exclusion is declared, never implied. `httpx.Router` has two
+registration methods: `Handle` for a documented route, and
+`HandleInternal` for one deliberately left out. A documented route with
+no operation, an operation with no route, and an internal route that
+*is* documented all fail a test — so the trimming cannot decay into
+forgetting. `TestDocumentedSurfaceIsTheProductAPI` pins both lists, so
+moving an endpoint between them is an edit someone made on purpose.
+
 It is hand-written, module by module, in each `openapi.go` — not
-generated from annotations. What keeps it honest is a test rather than a
-generator: routes are registered through `httpx.Router`, which records
-its patterns, and `TestOpenAPIDescribesEveryRouteAndNoOthers` fails if a
-route has no operation or an operation has no route. **Adding an endpoint
-without documenting it breaks the build.** Every operation also needs a
-unique `operationId`, a summary, a tag, and its path parameters declared.
+generated from annotations. Every operation needs a unique
+`operationId`, a summary, a tag, and its path parameters declared.
 
 Error responses are `text/plain`, because that is what `http.Error`
 writes. `openapi.Unauthorized`, `.Forbidden`, `.NotFound` and

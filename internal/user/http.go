@@ -22,15 +22,20 @@ func NewHandler(svc *Service) *Handler {
 	return &Handler{svc: svc}
 }
 
-// Routes registers this module's endpoints on mux. auth wraps a handler
-// in authentication; the server supplies it so every module is mounted
-// the same way.
+// Routes registers this module's endpoints. auth wraps a handler in
+// authentication; the server supplies it so every module is mounted the
+// same way.
+//
+// Only the identity lookup is part of the documented API. Managing your
+// own keys is self-service plumbing you do once, through the CLI or an
+// MCP client — not something anyone integrates against — so those four
+// routes are internal.
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.Handle("GET /users/me", auth(http.HandlerFunc(h.whoAmI)))
-	r.Handle("POST /users/me/api-key/rotate", auth(http.HandlerFunc(h.rotateAPIKey)))
-	r.Handle("POST /users/me/api-keys", auth(http.HandlerFunc(h.createAPIKey)))
-	r.Handle("GET /users/me/api-keys", auth(http.HandlerFunc(h.listAPIKeys)))
-	r.Handle("DELETE /users/me/api-keys/{id}", auth(http.HandlerFunc(h.revokeAPIKey)))
+	r.HandleInternal("POST /users/me/api-key/rotate", auth(http.HandlerFunc(h.rotateAPIKey)))
+	r.HandleInternal("POST /users/me/api-keys", auth(http.HandlerFunc(h.createAPIKey)))
+	r.HandleInternal("GET /users/me/api-keys", auth(http.HandlerFunc(h.listAPIKeys)))
+	r.HandleInternal("DELETE /users/me/api-keys/{id}", auth(http.HandlerFunc(h.revokeAPIKey)))
 }
 
 // --- authentication ---

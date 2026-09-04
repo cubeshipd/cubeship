@@ -50,6 +50,68 @@ func TestOpenAPIDescribesEveryRouteAndNoOthers(t *testing.T) {
 	}
 }
 
+// A route registered as internal must stay out of the document. Without
+// this, "document everything" and "document only what a consumer calls"
+// would quietly become "document whatever happens to be there".
+func TestInternalRoutesAreNotDocumented(t *testing.T) {
+	f := servertest.New(t)
+	doc := f.Server.OpenAPI()
+
+	for _, pattern := range f.Server.InternalPatterns() {
+		method, path := httpx.SplitPattern(pattern)
+		if op, ok := doc.Paths[path][strings.ToLower(method)]; ok {
+			t.Errorf("%s is registered as internal but documented as %q", pattern, op.OperationID)
+		}
+	}
+}
+
+// The document is the product's surface, not an inventory of routes.
+// Pinning the list here means removing something from it — or slipping
+// something machine-facing back in — is a deliberate edit.
+func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
+	f := servertest.New(t)
+
+	want := []string{
+		"DELETE /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}",
+		"GET /apps",
+		"GET /apps/{name}",
+		"GET /apps/{name}/logs",
+		"GET /orgs",
+		"GET /orgs/{orgSlug}/projects",
+		"GET /orgs/{orgSlug}/projects/{projectSlug}/environments",
+		"GET /users/me",
+		"POST /apps",
+		"POST /apps/{name}/deploy",
+		"POST /orgs",
+		"POST /orgs/{orgSlug}/projects",
+		"POST /orgs/{orgSlug}/projects/{projectSlug}/environments",
+		"POST /orgs/{orgSlug}/users",
+		"PUT /apps/{name}/env",
+		"PUT /orgs/{orgSlug}/projects/{projectSlug}/env",
+		"PUT /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env",
+	}
+	if got := f.Server.Patterns(); !slices.Equal(got, want) {
+		t.Errorf("the documented API changed.\n got: %v\nwant: %v", got, want)
+	}
+
+	// The daemon still serves the rest; it just doesn't advertise it.
+	wantInternal := []string{
+		"DELETE /users/me/api-keys/{id}",
+		"GET /docs",
+		"GET /healthz",
+		"GET /openapi.json",
+		"GET /users/me/api-keys",
+		"GET /v2/token",
+		"POST /hooks/registry",
+		"POST /mcp",
+		"POST /users/me/api-key/rotate",
+		"POST /users/me/api-keys",
+	}
+	if got := f.Server.InternalPatterns(); !slices.Equal(got, wantInternal) {
+		t.Errorf("the internal routes changed.\n got: %v\nwant: %v", got, wantInternal)
+	}
+}
+
 // Every operation needs the parts that make a reference usable: an id to
 // generate clients from, a summary to list it by, and at least one
 // response.

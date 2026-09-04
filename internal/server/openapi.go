@@ -9,7 +9,6 @@ import (
 	"cubeship/internal/org"
 	"cubeship/internal/platform/openapi"
 	"cubeship/internal/project"
-	"cubeship/internal/registry"
 	"cubeship/internal/user"
 )
 
@@ -36,8 +35,6 @@ func (s *Server) OpenAPI() openapi.Document {
 		org.NewHandler(s.Orgs).OpenAPI(),
 		project.NewHandler(s.Projects).OpenAPI(),
 		app.NewHandler(s.Apps).OpenAPI(),
-		s.Registry.OpenAPI(),
-		serverOwnedSpec(),
 	)
 
 	return openapi.Document{
@@ -63,86 +60,9 @@ func (s *Server) OpenAPI() openapi.Document {
 					Scheme:      "bearer",
 					Description: "Your Cubeship API key. The super-admin's first key is written to $CUBESHIP_DATA_DIR/admin-api-key on first boot.",
 				},
-				registry.BasicAuthScheme: {
-					Type:        "http",
-					Scheme:      "basic",
-					Description: "Your username and API key, as Docker sends them to the registry's token realm.",
-				},
-				registry.WebhookTokenScheme: {
-					Type:        "http",
-					Scheme:      "bearer",
-					Description: "The daemon's own system token, sent by the registry container. Not a user credential.",
-				},
 			},
 		},
 		Security: []openapi.SecurityRequirement{{BearerScheme: {}}},
-	}
-}
-
-// serverOwnedSpec covers the handful of routes the server mounts itself
-// rather than delegating to a module.
-func serverOwnedSpec() openapi.Spec {
-	return openapi.Spec{
-		Tags: []openapi.Tag{{
-			Name:        "Daemon",
-			Description: "The daemon's own endpoints: liveness, this document, and the MCP surface.",
-		}},
-		Paths: map[string]openapi.PathItem{
-			"/healthz": {
-				"get": {
-					OperationID: "healthz",
-					Summary:     "Liveness check",
-					Description: "Always 200 while the daemon is serving. Needs no credentials, so it is safe for an uptime monitor.",
-					Tags:        []string{"Daemon"},
-					Security:    openapi.Public(),
-					Responses:   openapi.Responses{"200": openapi.Empty("The daemon is up.")},
-				},
-			},
-			OpenAPIPath: {
-				"get": {
-					OperationID: "openapiDocument",
-					Summary:     "This document",
-					Description: "Served without authentication so the reference page can load it from a browser. It describes shapes, never data.",
-					Tags:        []string{"Daemon"},
-					Security:    openapi.Public(),
-					Responses: openapi.Responses{
-						"200": openapi.JSONResponse("The OpenAPI document.", &openapi.Schema{Type: "object"}),
-					},
-				},
-			},
-			DocsPath: {
-				"get": {
-					OperationID: "apiReference",
-					Summary:     "API reference",
-					Description: "A browsable reference rendered from this document.",
-					Tags:        []string{"Daemon"},
-					Security:    openapi.Public(),
-					Responses: openapi.Responses{
-						"200": {
-							Description: "The reference page.",
-							Content:     map[string]openapi.MediaType{"text/html": {Schema: openapi.String("")}},
-						},
-					},
-				},
-			},
-			"/mcp": {
-				"post": {
-					OperationID: "mcp",
-					Summary:     "Model Context Protocol endpoint",
-					Description: "Everything the CLI can do, exposed as MCP tools over the streamable-HTTP transport, authorized exactly like the equivalent request above.\n\nThis is JSON-RPC, not REST, so the request and response shapes are the MCP protocol's rather than anything described here — point an MCP client at it instead of calling it by hand. Give the client an API key of its own (POST /users/me/api-keys); rotating your terminal's key then never breaks it.",
-					Tags:        []string{"Daemon"},
-					RequestBody: &openapi.RequestBody{
-						Required:    true,
-						Description: "A JSON-RPC message, as defined by the Model Context Protocol.",
-						Content:     openapi.JSON(&openapi.Schema{Type: "object"}),
-					},
-					Responses: openapi.Responses{
-						"200": openapi.JSONResponse("A JSON-RPC response, or an SSE stream.", &openapi.Schema{Type: "object"}),
-						"401": openapi.Unauthorized,
-					},
-				},
-			},
-		},
 	}
 }
 

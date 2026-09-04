@@ -24,9 +24,12 @@ const webhookDeployTimeout = 10 * time.Minute
 // Routes registers the two endpoints the registry container itself calls.
 // Neither sits behind the API's bearer-key middleware — the registry is
 // not an API client — but neither is open; see each handler.
+//
+// Both are internal: `docker` and the registry container call them, no
+// API consumer ever does, so they stay out of the OpenAPI document.
 func (h *Handler) Routes(r *httpx.Router) {
-	r.HandleFunc("GET /v2/token", h.issueToken)
-	r.HandleFunc("POST /hooks/registry", h.webhook)
+	r.HandleInternalFunc("GET /v2/token", h.issueToken)
+	r.HandleInternalFunc("POST /hooks/registry", h.webhook)
 }
 
 // WaitForDeploys blocks until every webhook-triggered deploy has
