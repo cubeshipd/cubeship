@@ -28,9 +28,20 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name   string `json:"name"`
 		Domain string `json:"domain"`
+		Org    string `json:"org"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.Domain == "" {
-		http.Error(w, "name and domain are required", http.StatusBadRequest)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Name == "" || req.Domain == "" || req.Org == "" {
+		http.Error(w, "name, domain and org are required", http.StatusBadRequest)
+		return
+	}
+
+	org, err := s.store.GetOrganizationBySlug(r.Context(), req.Org)
+	if err != nil {
+		http.Error(w, "organization not found", http.StatusNotFound)
+		return
+	}
+	if !s.authorizeOrg(r, org.ID, store.RoleMember) {
+		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
 
@@ -39,8 +50,8 @@ func (s *Server) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	image := s.registryHost + "/" + req.Name
-	app, err := s.store.CreateApp(r.Context(), req.Name, req.Domain, image)
+	image := s.registryHost + "/" + req.Org + "/" + req.Name
+	app, err := s.store.CreateApp(r.Context(), org.ID, req.Name, req.Domain, image)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -56,6 +67,9 @@ func (s *Server) handleListApps(w http.ResponseWriter, r *http.Request) {
 	}
 	resp := make([]appResponse, 0, len(apps))
 	for _, a := range apps {
+		if !s.authorizeApp(r, a, store.RoleMember) {
+			continue
+		}
 		resp = append(resp, toAppResponse(a))
 	}
 	writeJSON(w, http.StatusOK, resp)
@@ -65,6 +79,10 @@ func (s *Server) handleGetApp(w http.ResponseWriter, r *http.Request) {
 	name := r.PathValue("name")
 	app, err := s.store.GetAppByName(r.Context(), name)
 	if err != nil {
+		http.Error(w, "app not found", http.StatusNotFound)
+		return
+	}
+	if !s.authorizeApp(r, app, store.RoleMember) {
 		http.Error(w, "app not found", http.StatusNotFound)
 		return
 	}

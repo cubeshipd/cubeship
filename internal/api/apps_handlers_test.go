@@ -2,35 +2,60 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
+	"cubeship/internal/authkey"
 	"cubeship/internal/store"
 )
 
-func newTestServer(t *testing.T) *Server {
+// newTestServer returns a server backed by a fresh in-memory store, an
+// organization "acme", and an API key for a super-admin user — enough
+// for tests that don't care about role boundaries. Tests that DO care
+// about roles create their own additional users/memberships against
+// srv.store directly.
+func newTestServer(t *testing.T) (*Server, string, *store.Organization) {
 	t.Helper()
 	s, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("store.Open: %v", err)
 	}
 	t.Cleanup(func() { s.Close() })
-	return NewServer(s, nil, "secret-token", "registry.example.com")
+
+	ctx := context.Background()
+	org, err := s.CreateOrganization(ctx, "acme", "Acme Inc")
+	if err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	user, err := s.CreateUser(ctx, "test-admin", true)
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	key, err := authkey.Generate()
+	if err != nil {
+		t.Fatalf("authkey.Generate: %v", err)
+	}
+	if _, err := s.CreateAPIKey(ctx, user.ID, authkey.Hash(key)); err != nil {
+		t.Fatalf("CreateAPIKey: %v", err)
+	}
+
+	return NewServer(s, nil, "webhook-secret", "registry.example.com"), key, org
 }
 
-func authedRequest(method, path string, body []byte) *http.Request {
+func authedRequest(method, path string, body []byte, apiKey string) *http.Request {
 	req := httptest.NewRequest(method, path, bytes.NewReader(body))
-	req.Header.Set("Authorization", "Bearer secret-token")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	return req
 }
 
 func TestCreateAppReturnsImagePath(t *testing.T) {
-	srv := newTestServer(t)
-	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com"})
-	req := authedRequest(http.MethodPost, "/apps", body)
+	srv, key, org := newTestServer(t)
+	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug})
+	req := authedRequest(http.MethodPost, "/apps", body, key)
 	rec := httptest.NewRecorder()
 
 	srv.Router().ServeHTTP(rec, req)
@@ -42,15 +67,15 @@ func TestCreateAppReturnsImagePath(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if got["image"] != "registry.example.com/myapp" {
-		t.Fatalf("expected image registry.example.com/myapp, got %q", got["image"])
+	if got["image"] != "registry.example.com/acme/myapp" {
+		t.Fatalf("expected image registry.example.com/acme/myapp, got %q", got["image"])
 	}
 }
 
 func TestCreateAppMissingFields(t *testing.T) {
-	srv := newTestServer(t)
-	body, _ := json.Marshal(map[string]string{"name": "myapp"})
-	req := authedRequest(http.MethodPost, "/apps", body)
+	srv, key, org := newTestServer(t)
+	body, _ := json.Marshal(map[string]string{"name": "myapp", "org": org.Slug})
+	req := authedRequest(http.MethodPost, "/apps", body, key)
 	rec := httptest.NewRecorder()
 
 	srv.Router().ServeHTTP(rec, req)
@@ -60,30 +85,61 @@ func TestCreateAppMissingFields(t *testing.T) {
 	}
 }
 
+func TestCreateAppUnknownOrg(t *testing.T) {
+	srv, key, _ := newTestServer(t)
+	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": "no-such-org"})
+	req := authedRequest(http.MethodPost, "/apps", body, key)
+	rec := httptest.NewRecorder()
+
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404, got %d", rec.Code)
+	}
+}
+
+func TestCreateAppRequiresMembership(t *testing.T) {
+	srv, _, org := newTestServer(t)
+	ctx := context.Background()
+	outsider, _ := srv.store.CreateUser(ctx, "outsider", false)
+	outsiderKey, _ := authkey.Generate()
+	srv.store.CreateAPIKey(ctx, outsider.ID, authkey.Hash(outsiderKey))
+
+	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug})
+	req := authedRequest(http.MethodPost, "/apps", body, outsiderKey)
+	rec := httptest.NewRecorder()
+
+	srv.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d", rec.Code)
+	}
+}
+
 func TestCreateAppDuplicateName(t *testing.T) {
-	srv := newTestServer(t)
-	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com"})
+	srv, key, org := newTestServer(t)
+	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug})
 
 	rec1 := httptest.NewRecorder()
-	srv.Router().ServeHTTP(rec1, authedRequest(http.MethodPost, "/apps", body))
+	srv.Router().ServeHTTP(rec1, authedRequest(http.MethodPost, "/apps", body, key))
 	if rec1.Code != http.StatusCreated {
 		t.Fatalf("first create: expected 201, got %d", rec1.Code)
 	}
 
 	rec2 := httptest.NewRecorder()
-	srv.Router().ServeHTTP(rec2, authedRequest(http.MethodPost, "/apps", body))
+	srv.Router().ServeHTTP(rec2, authedRequest(http.MethodPost, "/apps", body, key))
 	if rec2.Code != http.StatusConflict {
 		t.Fatalf("second create: expected 409, got %d", rec2.Code)
 	}
 }
 
 func TestListAndGetApp(t *testing.T) {
-	srv := newTestServer(t)
-	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com"})
-	srv.Router().ServeHTTP(httptest.NewRecorder(), authedRequest(http.MethodPost, "/apps", body))
+	srv, key, org := newTestServer(t)
+	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug})
+	srv.Router().ServeHTTP(httptest.NewRecorder(), authedRequest(http.MethodPost, "/apps", body, key))
 
 	listRec := httptest.NewRecorder()
-	srv.Router().ServeHTTP(listRec, authedRequest(http.MethodGet, "/apps", nil))
+	srv.Router().ServeHTTP(listRec, authedRequest(http.MethodGet, "/apps", nil, key))
 	if listRec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", listRec.Code)
 	}
@@ -94,14 +150,31 @@ func TestListAndGetApp(t *testing.T) {
 	}
 
 	getRec := httptest.NewRecorder()
-	srv.Router().ServeHTTP(getRec, authedRequest(http.MethodGet, "/apps/myapp", nil))
+	srv.Router().ServeHTTP(getRec, authedRequest(http.MethodGet, "/apps/myapp", nil, key))
 	if getRec.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", getRec.Code)
 	}
 
 	missRec := httptest.NewRecorder()
-	srv.Router().ServeHTTP(missRec, authedRequest(http.MethodGet, "/apps/nope", nil))
+	srv.Router().ServeHTTP(missRec, authedRequest(http.MethodGet, "/apps/nope", nil, key))
 	if missRec.Code != http.StatusNotFound {
 		t.Fatalf("expected 404, got %d", missRec.Code)
+	}
+}
+
+func TestGetAppHidesAppsFromOtherOrgs(t *testing.T) {
+	srv, key, org := newTestServer(t)
+	body, _ := json.Marshal(map[string]string{"name": "myapp", "domain": "myapp.example.com", "org": org.Slug})
+	srv.Router().ServeHTTP(httptest.NewRecorder(), authedRequest(http.MethodPost, "/apps", body, key))
+
+	ctx := context.Background()
+	outsider, _ := srv.store.CreateUser(ctx, "outsider", false)
+	outsiderKey, _ := authkey.Generate()
+	srv.store.CreateAPIKey(ctx, outsider.ID, authkey.Hash(outsiderKey))
+
+	rec := httptest.NewRecorder()
+	srv.Router().ServeHTTP(rec, authedRequest(http.MethodGet, "/apps/myapp", nil, outsiderKey))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 (don't reveal the app exists to an outsider), got %d", rec.Code)
 	}
 }
