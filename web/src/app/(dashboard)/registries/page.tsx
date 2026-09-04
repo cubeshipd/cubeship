@@ -5,7 +5,6 @@ import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
-import { Shell } from "@/components/shell";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -17,13 +16,13 @@ import { message } from "@/lib/errors";
 // needs none of this — it authenticates each user with their API key.
 export default function Registries() {
   return (
-    <Shell>
+    <>
       <PageHeader
         title="Registries"
         sub="Logins for registries Cubeship does not run, held by the selected organization. An app with an external image pulls through whichever of these matches its registry."
       />
       <Body />
-    </Shell>
+    </>
   );
 }
 

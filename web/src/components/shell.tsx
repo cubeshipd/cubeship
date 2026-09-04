@@ -13,6 +13,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 import { OrgProvider } from "@/components/org-context";
 import { OrgSwitcher } from "@/components/org-switcher";
+import { SessionProvider } from "@/components/session-context";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -57,29 +58,31 @@ export function Shell({ children }: { children: ReactNode }) {
   if (!me) return null;
 
   return (
-    <OrgProvider>
-      <div className="flex min-h-screen bg-background">
-        <nav className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-border bg-card">
-          <div className="border-b border-border">
-            <OrgSwitcher />
-          </div>
+    <SessionProvider me={me}>
+      <OrgProvider>
+        <div className="flex min-h-screen bg-background">
+          <nav className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-border bg-card">
+            <div className="border-b border-border">
+              <OrgSwitcher />
+            </div>
 
-          <div className="flex-1 p-2">
-            {nav.map((item) => (
-              <NavLink key={item.href} {...item} />
-            ))}
-          </div>
+            <div className="flex-1 p-2">
+              {nav.map((item) => (
+                <NavLink key={item.href} {...item} />
+              ))}
+            </div>
 
-          <div className="border-t border-border p-2">
-            <UserMenu me={me} />
-          </div>
-        </nav>
+            <div className="border-t border-border p-2">
+              <UserMenu me={me} />
+            </div>
+          </nav>
 
-        <main className="min-w-0 flex-1">
-          <div className="mx-auto max-w-5xl px-8 py-8">{children}</div>
-        </main>
-      </div>
-    </OrgProvider>
+          <main className="min-w-0 flex-1">
+            <div className="mx-auto max-w-5xl px-8 py-8">{children}</div>
+          </main>
+        </div>
+      </OrgProvider>
+    </SessionProvider>
   );
 }
 

@@ -9,7 +9,6 @@ import { AppCard } from "@/components/app-card";
 import { ErrorAlert } from "@/components/error-alert";
 import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
-import { Shell } from "@/components/shell";
 import { SlugField } from "@/components/slug-field";
 import { TextAreaField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -32,11 +31,9 @@ import { message } from "@/lib/errors";
 // sidebar is pointing at another organization.
 export default function ProjectPage() {
   return (
-    <Shell>
-      <Suspense>
-        <Detail />
-      </Suspense>
-    </Shell>
+    <Suspense>
+      <Detail />
+    </Suspense>
   );
 }
 

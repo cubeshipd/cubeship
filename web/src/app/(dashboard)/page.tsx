@@ -1,14 +1,12 @@
 "use client";
 
 import { PlusIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
 import { ProjectCard } from "@/components/project-card";
-import { Shell } from "@/components/shell";
 import { SlugField } from "@/components/slug-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -23,25 +21,12 @@ import {
 import { type App, api, type Environment, type Project } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-// The first page anyone opens, so it is also the gate: an unclaimed
-// instance goes to setup before anything else renders.
+// An unclaimed instance is not this page's problem: the shell above
+// sends anyone it cannot identify to sign in, and sign-in is where an
+// instance with no account at all redirects to setup. Checking here as
+// well only added a blank frame to every visit.
 export default function Home() {
-  const router = useRouter();
-  const [checked, setChecked] = useState(false);
-
-  useEffect(() => {
-    api
-      .get<{ needed: boolean }>("/setup")
-      .then((s) => (s.needed ? router.replace("/setup") : setChecked(true)))
-      .catch(() => setChecked(true));
-  }, [router]);
-
-  if (!checked) return null;
-  return (
-    <Shell>
-      <Projects />
-    </Shell>
-  );
+  return <Projects />;
 }
 
 // The projects in the selected organization, as cards. Apps are not

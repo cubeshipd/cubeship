@@ -8,10 +8,10 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
+import { GitHubSource } from "@/components/github-source";
 import { Notice } from "@/components/notice";
 import { OptionCards } from "@/components/option-cards";
 import { PageHeader, SectionHeader } from "@/components/page-header";
-import { Shell } from "@/components/shell";
 import { TextAreaField, TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -32,11 +32,9 @@ const SOURCE: Record<Origin, Record<string, AppSource>> = {
 
 export default function AppSettingsPage() {
   return (
-    <Shell>
-      <Suspense>
-        <Settings />
-      </Suspense>
-    </Shell>
+    <Suspense>
+      <Settings />
+    </Suspense>
   );
 }
 
@@ -290,7 +288,7 @@ function SourceSection(props: SectionProps) {
               options={[
                 {
                   value: "github",
-                  title: "GitHub",
+                  title: "Git provider",
                   body: "Cubeship clones the repository and builds it here, so what runs is code this instance compiled.",
                 },
                 {
@@ -303,6 +301,24 @@ function SourceSection(props: SectionProps) {
 
             {origin === "github" ? (
               <div className="space-y-5 border-l-2 border-primary/40 pl-4">
+                <GitHubSource
+                  org={app.org}
+                  repo={repo}
+                  gitRef={gitRef}
+                  onRepo={(url, defaultBranch) => {
+                    setRepo(url);
+                    // A repository's default branch is the right answer
+                    // until someone says otherwise, and choosing a new
+                    // repository makes the old branch meaningless.
+                    setGitRef(defaultBranch);
+                    touch();
+                  }}
+                  onRef={(v) => {
+                    setGitRef(v);
+                    touch();
+                  }}
+                />
+
                 <OptionCards
                   label="How it is built"
                   value={buildWith}
@@ -324,30 +340,6 @@ function SourceSection(props: SectionProps) {
                   ]}
                 />
 
-                <TextField
-                  label="Repository"
-                  hint="An https://, http:// or git:// URL. SSH needs a key this instance does not have."
-                  spellCheck={false}
-                  value={repo}
-                  onChange={(e) => {
-                    setRepo(e.target.value);
-                    touch();
-                  }}
-                  placeholder="https://github.com/acme/api"
-                />
-
-                <TextField
-                  label="Branch or commit"
-                  hint="Optional. A deploy can name another, and this is what it falls back to."
-                  spellCheck={false}
-                  value={gitRef}
-                  onChange={(e) => {
-                    setGitRef(e.target.value);
-                    touch();
-                  }}
-                  placeholder="main"
-                />
-
                 {buildWith === "dockerfile" && (
                   <TextField
                     label="Dockerfile path"
@@ -361,12 +353,6 @@ function SourceSection(props: SectionProps) {
                     placeholder="Dockerfile"
                   />
                 )}
-
-                <Notice tone="warning" className="mb-0">
-                  A build runs whatever the repository contains, on this host, with the
-                  builder&apos;s privileges — so moving an app to a source that builds is an
-                  admin&apos;s decision, not a member&apos;s.
-                </Notice>
               </div>
             ) : (
               <div className="space-y-5 border-l-2 border-primary/40 pl-4">

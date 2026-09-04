@@ -9,7 +9,6 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
 import { PageHeader, SectionHeader } from "@/components/page-header";
-import { Shell } from "@/components/shell";
 import { TextAreaField, TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,11 +18,9 @@ import { message } from "@/lib/errors";
 
 export default function ProjectSettingsPage() {
   return (
-    <Shell>
-      <Suspense>
-        <Settings />
-      </Suspense>
-    </Shell>
+    <Suspense>
+      <Settings />
+    </Suspense>
   );
 }
 

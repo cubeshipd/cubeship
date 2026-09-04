@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { PageHeader, SectionHeader } from "@/components/page-header";
-import { Shell } from "@/components/shell";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,14 +14,14 @@ import { message } from "@/lib/errors";
 
 export default function Account() {
   return (
-    <Shell>
+    <>
       <PageHeader
         title="Account"
         sub="Your password, and the API keys that authenticate the CLI and docker."
       />
       <Keys />
       <Password />
-    </Shell>
+    </>
   );
 }
 

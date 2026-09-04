@@ -7,7 +7,6 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
-import { Shell } from "@/components/shell";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -22,11 +21,9 @@ import { message } from "@/lib/errors";
 // components anyway — carrying it as one value keeps it whole.
 export default function AppPage() {
   return (
-    <Shell>
-      <Suspense>
-        <Detail />
-      </Suspense>
-    </Shell>
+    <Suspense>
+      <Detail />
+    </Suspense>
   );
 }
 

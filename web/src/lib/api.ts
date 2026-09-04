@@ -100,7 +100,46 @@ export type Settings = {
   acme_email: string;
   registry_host?: string;
   tls_enabled: boolean;
+  // The GitHub App this instance acts as. Its credentials are
+  // write-only: the daemon reports whether they are there, never what
+  // they are.
+  github_app_slug?: string;
+  github_connected: boolean;
 };
+
+// GitHubInstallation is one GitHub account an organization has
+// connected. The installation is what lets Cubeship clone that
+// account's private repositories, and what makes a push to one deploy
+// the apps built from it.
+export type GitHubInstallation = {
+  id: number;
+  installation_id: number;
+  account: string;
+  created_at: string;
+};
+
+export type GitHubRepository = {
+  full_name: string;
+  private: boolean;
+  default_branch: string;
+};
+
+export type GitHubBranch = { name: string };
+
+export type GitHubConnections = {
+  installations: GitHubInstallation[];
+  // Where to send someone to install the App. Empty until the instance
+  // is registered as one.
+  install_url: string;
+};
+
+// ownerOf reads the GitHub account a repository URL belongs to, which is
+// what an installation is matched on. Anything not on GitHub — or not a
+// repository — is null, and none of this applies to it.
+export function ownerOf(repo: string): string | null {
+  const match = repo.trim().match(/^https?:\/\/(?:www\.)?github\.com\/([^/\s]+)\/([^/\s]+)/i);
+  return match ? match[1] : null;
+}
 
 export type ApiKey = {
   id: number;

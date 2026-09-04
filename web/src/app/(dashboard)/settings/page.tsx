@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
+import { GitHubAppCard } from "@/components/github-app-card";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
-import { Shell } from "@/components/shell";
 import { TextField } from "@/components/text-field";
 import { Card, CardContent } from "@/components/ui/card";
 import { ValueCard } from "@/components/value-card";
@@ -14,13 +14,13 @@ import { message } from "@/lib/errors";
 
 export default function Instance() {
   return (
-    <Shell>
+    <>
       <PageHeader
         title="Instance"
         sub="Set these once the box has a domain pointing at it. Until then apps are served over plain HTTP and there is nowhere to push."
       />
       <Form />
-    </Shell>
+    </>
   );
 }
 
@@ -106,6 +106,8 @@ function Form() {
       </Card>
 
       {current.registry_host && <ValueCard label="Push images to" value={current.registry_host} />}
+
+      <GitHubAppCard settings={current} onSaved={setCurrent} />
     </>
   );
 }
