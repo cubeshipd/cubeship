@@ -33,13 +33,22 @@
 // final "app reachable via Traefik" assertion, exactly the --network
 // host limitation described above and nothing earlier.
 //
-// NOT YET RE-CONFIRMED since the token-auth switch. The login step now
-// authenticates as the super-admin's real username ("admin") against
-// the registry's token realm (GET /v2/token) instead of a fixed
-// htpasswd account — that path is covered by unit tests
-// (internal/api/token_handler_test.go) but not by a live run against
-// real Docker yet. Re-verify this note (and update it) the next time
-// this test is run live.
+// RE-CONFIRMED FAILS EARLIER on Docker Desktop for Mac since the
+// token-auth switch, for the same underlying reason as the final-step
+// limitation above. The registry's config.yml points its token realm at
+// https://api.<domain>/v2/token — reached through Traefik on :443, same
+// as the app-reachability assertion — so on Docker Desktop, `docker
+// login` itself now fails before it can even fetch a token, well before
+// the push/webhook/deploy steps this test exercises. On a real Linux
+// VPS (Traefik's --network host actually bridging, as intended) this
+// realm is correct and necessary: a real remote push from someone's own
+// machine has no other way to reach the daemon's token endpoint.
+//
+// The authorization logic itself (which org membership grants access to
+// which repository scope) is fully covered by real JWT-verifying unit
+// tests in internal/api/token_handler_test.go — this integration test
+// currently cannot exercise anything past `docker login` on this
+// platform. Re-verify on a real Linux host if this note needs updating.
 package integration
 
 import (
