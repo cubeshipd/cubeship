@@ -22,17 +22,25 @@ type APIKey struct {
 	LastUsedAt *time.Time
 }
 
+const apiKeyColumns = `id, user_id, key_hash, name, created_at, last_used_at`
+
+func scanAPIKey(row interface{ Scan(dest ...any) error }) (*APIKey, error) {
+	var k APIKey
+	if err := row.Scan(&k.ID, &k.UserID, &k.KeyHash, &k.Name, &k.CreatedAt, &k.LastUsedAt); err != nil {
+		return nil, err
+	}
+	return &k, nil
+}
+
 func createAPIKey(ctx context.Context, q queryer, userID int64, keyHash, name string) (*APIKey, error) {
-	res, err := q.ExecContext(ctx,
-		`INSERT INTO api_keys (user_id, key_hash, name) VALUES (?, ?, ?)`, userID, keyHash, name)
+	row := q.QueryRowContext(ctx,
+		`INSERT INTO api_keys (user_id, key_hash, name) VALUES ($1, $2, $3) RETURNING `+apiKeyColumns,
+		userID, keyHash, name)
+	k, err := scanAPIKey(row)
 	if err != nil {
 		return nil, fmt.Errorf("create api key: %w", err)
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return nil, err
-	}
-	return &APIKey{ID: id, UserID: userID, KeyHash: keyHash, Name: name}, nil
+	return k, nil
 }
 
 func (s *Store) CreateAPIKey(ctx context.Context, userID int64, keyHash, name string) (*APIKey, error) {
@@ -49,7 +57,7 @@ func (s *Store) GetUserByAPIKeyHash(ctx context.Context, keyHash string) (*User,
 		SELECT u.id, u.username, u.is_super_admin, u.created_at
 		FROM api_keys k
 		JOIN users u ON u.id = k.user_id
-		WHERE k.key_hash = ?`, keyHash)
+		WHERE k.key_hash = $1`, keyHash)
 	u, err := scanUser(row)
 	if err != nil {
 		return nil, fmt.Errorf("get user by api key: %w", err)
@@ -57,19 +65,8 @@ func (s *Store) GetUserByAPIKeyHash(ctx context.Context, keyHash string) (*User,
 	return u, nil
 }
 
-func scanAPIKey(row interface {
-	Scan(dest ...any) error
-}) (*APIKey, error) {
-	var k APIKey
-	if err := row.Scan(&k.ID, &k.UserID, &k.KeyHash, &k.Name, &k.CreatedAt, &k.LastUsedAt); err != nil {
-		return nil, err
-	}
-	return &k, nil
-}
-
 func (s *Store) GetAPIKeyByHash(ctx context.Context, keyHash string) (*APIKey, error) {
-	row := s.db.QueryRowContext(ctx,
-		`SELECT id, user_id, key_hash, name, created_at, last_used_at FROM api_keys WHERE key_hash = ?`, keyHash)
+	row := s.db.QueryRowContext(ctx, `SELECT `+apiKeyColumns+` FROM api_keys WHERE key_hash = $1`, keyHash)
 	k, err := scanAPIKey(row)
 	if err != nil {
 		return nil, fmt.Errorf("get api key: %w", err)
@@ -79,7 +76,7 @@ func (s *Store) GetAPIKeyByHash(ctx context.Context, keyHash string) (*APIKey, e
 
 func (s *Store) ListAPIKeysForUser(ctx context.Context, userID int64) ([]*APIKey, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, user_id, key_hash, name, created_at, last_used_at FROM api_keys WHERE user_id = ? ORDER BY id`, userID)
+		`SELECT `+apiKeyColumns+` FROM api_keys WHERE user_id = $1 ORDER BY id`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -97,7 +94,7 @@ func (s *Store) ListAPIKeysForUser(ctx context.Context, userID int64) ([]*APIKey
 }
 
 func revokeAPIKeyByHash(ctx context.Context, q queryer, keyHash string) error {
-	if _, err := q.ExecContext(ctx, `DELETE FROM api_keys WHERE key_hash = ?`, keyHash); err != nil {
+	if _, err := q.ExecContext(ctx, `DELETE FROM api_keys WHERE key_hash = $1`, keyHash); err != nil {
 		return fmt.Errorf("revoke api key: %w", err)
 	}
 	return nil
@@ -120,7 +117,7 @@ func (t *Tx) RevokeAPIKeyByHash(ctx context.Context, keyHash string) error {
 // one user can never revoke another user's key by guessing an id. Returns
 // ErrNotFound if id doesn't exist or doesn't belong to userID.
 func (s *Store) RevokeAPIKeyByID(ctx context.Context, id, userID int64) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM api_keys WHERE id = ? AND user_id = ?`, id, userID)
+	res, err := s.db.ExecContext(ctx, `DELETE FROM api_keys WHERE id = $1 AND user_id = $2`, id, userID)
 	if err != nil {
 		return fmt.Errorf("revoke api key: %w", err)
 	}
@@ -136,7 +133,7 @@ func (s *Store) RevokeAPIKeyByID(ctx context.Context, id, userID int64) error {
 
 func (s *Store) TouchAPIKeyLastUsed(ctx context.Context, keyHash string) error {
 	if _, err := s.db.ExecContext(ctx,
-		`UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE key_hash = ?`, keyHash); err != nil {
+		`UPDATE api_keys SET last_used_at = now() WHERE key_hash = $1`, keyHash); err != nil {
 		return fmt.Errorf("touch api key: %w", err)
 	}
 	return nil

@@ -6,8 +6,7 @@ import (
 )
 
 func TestCreateAndListEnvironments(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	project, _, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "web", "Web")
@@ -27,8 +26,7 @@ func TestCreateAndListEnvironments(t *testing.T) {
 }
 
 func TestSetAndGetEnvironmentEnv(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	_, env, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "web", "Web")
@@ -47,8 +45,7 @@ func TestSetAndGetEnvironmentEnv(t *testing.T) {
 }
 
 func TestCountAppsInEnvironment(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	project, env, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "web", "Web")
@@ -73,8 +70,7 @@ func TestCountAppsInEnvironment(t *testing.T) {
 }
 
 func TestDeleteEnvironment(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	project, _, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "web", "Web")

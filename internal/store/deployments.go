@@ -17,7 +17,7 @@ type Deployment struct {
 
 func (s *Store) RecordDeployment(ctx context.Context, appID int64, imageRef, status, errMsg string) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO deployments (app_id, image_ref, status, error) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO deployments (app_id, image_ref, status, error) VALUES ($1, $2, $3, $4)`,
 		appID, imageRef, status, errMsg)
 	if err != nil {
 		return fmt.Errorf("record deployment: %w", err)
@@ -27,7 +27,7 @@ func (s *Store) RecordDeployment(ctx context.Context, appID int64, imageRef, sta
 
 func (s *Store) ListDeployments(ctx context.Context, appID int64) ([]*Deployment, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, app_id, image_ref, status, error, created_at FROM deployments WHERE app_id = ? ORDER BY id`,
+		`SELECT id, app_id, image_ref, status, error, created_at FROM deployments WHERE app_id = $1 ORDER BY id`,
 		appID)
 	if err != nil {
 		return nil, err

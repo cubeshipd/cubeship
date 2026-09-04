@@ -7,11 +7,11 @@ import (
 	"testing"
 
 	"cubeship/internal/store"
+	"cubeship/internal/storetest"
 )
 
 func TestAuthorizeOrgSuperAdminAlwaysPasses(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	defer s.Close()
+	s := storetest.New(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	admin, _ := s.CreateUser(ctx, "root", true)
@@ -26,8 +26,7 @@ func TestAuthorizeOrgSuperAdminAlwaysPasses(t *testing.T) {
 }
 
 func TestAuthorizeOrgMemberPassesMemberButFailsAdmin(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	defer s.Close()
+	s := storetest.New(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	user, _ := s.CreateUser(ctx, "employee1", false)
@@ -46,8 +45,7 @@ func TestAuthorizeOrgMemberPassesMemberButFailsAdmin(t *testing.T) {
 }
 
 func TestAuthorizeOrgNoMembershipFails(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	defer s.Close()
+	s := storetest.New(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	user, _ := s.CreateUser(ctx, "outsider", false)

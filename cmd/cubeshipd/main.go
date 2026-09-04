@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"flag"
 	"fmt"
@@ -10,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"cubeship/internal/api"
 	"cubeship/internal/authkey"
@@ -20,6 +22,8 @@ import (
 	"cubeship/internal/reconcile"
 	"cubeship/internal/regauth"
 	"cubeship/internal/store"
+
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 const version = "0.1.0-dev"
@@ -54,46 +58,55 @@ func main() {
 	}
 }
 
-// adminKeyFileName is where the super-admin's API key is persisted,
-// under the data dir, mode 0600 — the same treatment the daemon token
+// Secrets the daemon generates for itself on first start, each persisted
+// under the data dir at mode 0600 — the same treatment the daemon token
 // gets in config.Load.
-const adminKeyFileName = "admin-api-key"
+const (
+	// adminKeyFileName holds the super-admin's API key.
+	//
+	// This is deliberately NOT cfg.Token. That token is an instance-wide
+	// system credential: the registry webhook's shared secret. Registry
+	// push/pull now goes through per-user tokens (internal/regauth), so
+	// there's no longer any reason cfg.Token would need to double as
+	// anyone's API key — but the separation predates that and stays
+	// correct regardless: seeding the super-admin's API key from a
+	// system-wide secret would mean anyone who obtained it could create
+	// orgs, create admins anywhere, and read every app's environment.
+	adminKeyFileName = "admin-api-key"
 
-// loadOrCreateAdminKey returns the super-admin's API key and the file it
-// lives in, generating and persisting one on first call.
-//
-// This is deliberately NOT cfg.Token. That token is an instance-wide
-// system credential: the registry webhook's shared secret. Registry
-// push/pull now goes through per-user tokens (internal/regauth), so
-// there's no longer any reason cfg.Token would need to double as
-// anyone's API key — but the separation predates that and stays
-// correct regardless: seeding the super-admin's API key from a
-// system-wide secret would mean anyone who obtained it could create
-// orgs, create admins anywhere, and read every app's environment.
-func loadOrCreateAdminKey(dataDir string) (string, string, error) {
-	path := filepath.Join(dataDir, adminKeyFileName)
+	// pgPasswordFileName holds the managed Postgres' password. It is
+	// generated once and reused: Postgres only reads POSTGRES_PASSWORD
+	// when it initializes an empty data directory, so a password
+	// regenerated on restart would simply stop matching the database.
+	pgPasswordFileName = "postgres-password"
+)
+
+// loadOrCreateSecret returns the secret stored in dataDir/name and the
+// file it lives in, generating and persisting one on first call.
+func loadOrCreateSecret(dataDir, name string) (string, string, error) {
+	path := filepath.Join(dataDir, name)
 	data, err := os.ReadFile(path)
 	if err == nil {
-		if key := strings.TrimSpace(string(data)); key != "" {
-			return key, path, nil
+		if secret := strings.TrimSpace(string(data)); secret != "" {
+			return secret, path, nil
 		}
 		// An empty file (a truncated write from an earlier crash) is
-		// treated as no key at all and replaced below.
+		// treated as no secret at all and replaced below.
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", "", fmt.Errorf("read admin API key %s: %w", path, err)
+		return "", "", fmt.Errorf("read %s: %w", path, err)
 	}
 
-	key, err := authkey.Generate()
+	secret, err := authkey.Generate()
 	if err != nil {
-		return "", "", fmt.Errorf("generate admin API key: %w", err)
+		return "", "", fmt.Errorf("generate %s: %w", name, err)
 	}
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return "", "", fmt.Errorf("create data dir %s: %w", dataDir, err)
 	}
-	if err := os.WriteFile(path, []byte(key+"\n"), 0o600); err != nil {
-		return "", "", fmt.Errorf("write admin API key %s: %w", path, err)
+	if err := os.WriteFile(path, []byte(secret+"\n"), 0o600); err != nil {
+		return "", "", fmt.Errorf("write %s: %w", path, err)
 	}
-	return key, path, nil
+	return secret, path, nil
 }
 
 // ensureSuperAdmin creates the instance's first user — a super-admin —
@@ -114,7 +127,7 @@ func ensureSuperAdmin(ctx context.Context, s *store.Store, dataDir string) error
 		return nil
 	}
 
-	key, path, err := loadOrCreateAdminKey(dataDir)
+	key, path, err := loadOrCreateSecret(dataDir, adminKeyFileName)
 	if err != nil {
 		return err
 	}
@@ -140,6 +153,72 @@ func ensureSuperAdmin(ctx context.Context, s *store.Store, dataDir string) error
 	return nil
 }
 
+// databaseReadyTimeout bounds how long the daemon waits for a
+// just-started Postgres to accept connections. A container initializing
+// an empty data directory runs initdb first, which on a small VPS is
+// comfortably slower than the store's own connect timeout.
+const databaseReadyTimeout = 2 * time.Minute
+
+// ensureDatabase returns the DSN the store should open, bringing up the
+// daemon's own Postgres container first when no external database was
+// configured.
+//
+// An external CUBESHIP_DATABASE_URL is used as-is and never managed: the
+// operator owns that server's lifecycle, its backups and its version.
+func ensureDatabase(ctx context.Context, cfg *config.Config, docker *dockerx.Client) (string, error) {
+	if !cfg.ManagedDatabase() {
+		log.Printf("using the Postgres at CUBESHIP_DATABASE_URL; this daemon does not manage it")
+		return cfg.DatabaseURL, nil
+	}
+
+	password, path, err := loadOrCreateSecret(cfg.DataDir, pgPasswordFileName)
+	if err != nil {
+		return "", err
+	}
+	if err := bootstrap.EnsurePostgresDataDir(cfg); err != nil {
+		return "", err
+	}
+	if err := bootstrap.Ensure(ctx, docker, bootstrap.PostgresContainerOpts(cfg, password)); err != nil {
+		return "", fmt.Errorf("bootstrap postgres: %w", err)
+	}
+	log.Printf("managed Postgres in container %s; its password (fingerprint %s) is stored in %s",
+		bootstrap.PostgresContainerName, config.TokenFingerprint(password), path)
+
+	dsn := bootstrap.PostgresDSN(password)
+	if err := waitForDatabase(ctx, dsn, databaseReadyTimeout); err != nil {
+		return "", err
+	}
+	return dsn, nil
+}
+
+// waitForDatabase blocks until the database accepts a connection. A
+// container that has just been created is not ready the instant Docker
+// reports it running — Postgres still has to initialize and start
+// listening — so connecting immediately would fail on every first boot.
+func waitForDatabase(ctx context.Context, dsn string, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for time.Now().Before(deadline) {
+		db, err := sql.Open("pgx", dsn)
+		if err != nil {
+			return fmt.Errorf("open database: %w", err)
+		}
+		pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		lastErr = db.PingContext(pingCtx)
+		cancel()
+		db.Close()
+		if lastErr == nil {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+	return fmt.Errorf("database did not become ready within %s: %w", timeout, lastErr)
+}
+
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -151,7 +230,7 @@ func run() error {
 	// This is the instance-wide system credential for the registry's
 	// push-notification webhook, not anyone's API key or a registry
 	// login credential (registry push/pull now goes through per-user
-	// tokens; see loadOrCreateAdminKey and internal/regauth).
+	// tokens; see adminKeyFileName and internal/regauth).
 	if cfg.TokenFile != "" {
 		log.Printf("daemon webhook token (fingerprint %s) is stored in %s", config.TokenFingerprint(cfg.Token), cfg.TokenFile)
 	} else {
@@ -186,7 +265,11 @@ func run() error {
 		return fmt.Errorf("ensure network: %w", err)
 	}
 
-	s, err := store.Open(cfg.DataDir + "/cubeship.db")
+	dsn, err := ensureDatabase(ctx, cfg, docker)
+	if err != nil {
+		return err
+	}
+	s, err := store.Open(dsn)
 	if err != nil {
 		return fmt.Errorf("open store: %w", err)
 	}

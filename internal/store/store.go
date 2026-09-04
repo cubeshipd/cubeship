@@ -1,11 +1,15 @@
 package store
 
 import (
+	"context"
 	"database/sql"
-	"errors"
 	"fmt"
+	"net/url"
+	"regexp"
+	"strings"
+	"time"
 
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 type Store struct {
@@ -17,329 +21,122 @@ type Store struct {
 // importing database/sql themselves.
 var ErrNotFound = sql.ErrNoRows
 
-const schema = `
-CREATE TABLE IF NOT EXISTS organizations (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	slug TEXT NOT NULL UNIQUE,
-	name TEXT NOT NULL,
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+// Connection pool limits. The daemon serves one VPS, so a large pool buys
+// nothing and a Postgres running alongside it in a container has a modest
+// max_connections; the lifetime bound keeps a pooled connection from
+// outliving a database restart.
+const (
+	maxOpenConns    = 16
+	maxIdleConns    = 8
+	connMaxLifetime = time.Hour
+)
 
-CREATE TABLE IF NOT EXISTS projects (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	org_id INTEGER NOT NULL REFERENCES organizations(id),
-	slug TEXT NOT NULL,
-	name TEXT NOT NULL,
-	env TEXT NOT NULL DEFAULT '{}',
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	UNIQUE (org_id, slug)
-);
+// Open connects to the Postgres database at dsn and brings its schema up
+// to date. dsn is a libpq URL or key/value string, e.g.
+// "postgres://cubeship:secret@127.0.0.1:5432/cubeship?sslmode=disable".
+//
+// The connection is verified before returning: database/sql connects
+// lazily, so without a ping a daemon with an unreachable database starts
+// happily and fails every request instead of refusing to boot.
+func Open(dsn string) (*Store, error) {
+	return OpenSchema(dsn, "")
+}
 
-CREATE TABLE IF NOT EXISTS environments (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	project_id INTEGER NOT NULL REFERENCES projects(id),
-	slug TEXT NOT NULL,
-	name TEXT NOT NULL,
-	env TEXT NOT NULL DEFAULT '{}',
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	UNIQUE (project_id, slug)
-);
+// OpenSchema is Open confined to one Postgres schema, which it creates if
+// it doesn't exist. It exists so several independent Cubeship databases
+// can share one Postgres server — which is how the tests get an isolated
+// database each without paying for a server per test.
+//
+// An empty schema means "whatever the connection's default search_path
+// says", i.e. public.
+func OpenSchema(dsn, schema string) (*Store, error) {
+	if schema != "" && !schemaNamePattern.MatchString(schema) {
+		return nil, fmt.Errorf("invalid schema name %q", schema)
+	}
 
-CREATE TABLE IF NOT EXISTS apps (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	org_id INTEGER NOT NULL REFERENCES organizations(id),
-	project_id INTEGER NOT NULL REFERENCES projects(id),
-	environment_id INTEGER NOT NULL REFERENCES environments(id),
-	name TEXT NOT NULL UNIQUE,
-	domain TEXT NOT NULL,
-	image TEXT NOT NULL UNIQUE,
-	container_id TEXT NOT NULL DEFAULT '',
-	status TEXT NOT NULL DEFAULT 'pending',
-	env TEXT NOT NULL DEFAULT '{}',
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS deployments (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	app_id INTEGER NOT NULL REFERENCES apps(id),
-	image_ref TEXT NOT NULL,
-	status TEXT NOT NULL,
-	error TEXT NOT NULL DEFAULT '',
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS users (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	username TEXT NOT NULL UNIQUE,
-	is_super_admin INTEGER NOT NULL DEFAULT 0,
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS memberships (
-	user_id INTEGER NOT NULL REFERENCES users(id),
-	org_id INTEGER NOT NULL REFERENCES organizations(id),
-	role TEXT NOT NULL,
-	PRIMARY KEY (user_id, org_id)
-);
-
-CREATE TABLE IF NOT EXISTS api_keys (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	user_id INTEGER NOT NULL REFERENCES users(id),
-	key_hash TEXT NOT NULL UNIQUE,
-	name TEXT NOT NULL DEFAULT '',
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-	last_used_at DATETIME
-);
-`
-
-// DefaultOrgSlug is the organization pre-existing apps are adopted into
-// when a database created before organizations existed is upgraded. See
-// migrate.
-const DefaultOrgSlug = "default"
-
-// DefaultProjectSlug is the project pre-existing apps are adopted into
-// when a database created before projects existed is upgraded. See
-// migrate.
-const DefaultProjectSlug = "default"
-
-func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	connStr, err := DSNWithSchema(dsn, schema)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := db.Exec(schema); err != nil {
-		db.Close()
-		return nil, err
+	db, err := sql.Open("pgx", connStr)
+	if err != nil {
+		return nil, fmt.Errorf("open database: %w", err)
 	}
-	if err := migrate(db); err != nil {
+	db.SetMaxOpenConns(maxOpenConns)
+	db.SetMaxIdleConns(maxIdleConns)
+	db.SetConnMaxLifetime(connMaxLifetime)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := db.PingContext(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("connect to database: %w", err)
+	}
+
+	if schema != "" {
+		// CREATE SCHEMA needs no search_path of its own, so this works
+		// even though every later statement resolves through one that
+		// doesn't exist yet.
+		if _, err := db.ExecContext(ctx, `CREATE SCHEMA IF NOT EXISTS `+quoteIdent(schema)); err != nil {
+			db.Close()
+			return nil, fmt.Errorf("create schema %s: %w", schema, err)
+		}
+	}
+
+	if err := migrate(ctx, db); err != nil {
 		db.Close()
 		return nil, err
 	}
 	return &Store{db: db}, nil
 }
 
-// migrate brings an older database up to the current schema. The
-// statements above are all CREATE TABLE IF NOT EXISTS, which is a no-op
-// against a table that already exists — so a column added to the apps
-// table never appears on an upgraded database unless it is added here
-// explicitly. Without this, a daemon upgraded from an older release
-// starts, then fails every apps query with "no such column: org_id"
-// (or, from further back, "no such column: env").
-func migrate(db *sql.DB) error {
-	hasEnv, err := hasColumn(db, "apps", "env")
-	if err != nil {
-		return err
-	}
-	hasOrgID, err := hasColumn(db, "apps", "org_id")
-	if err != nil {
-		return err
-	}
-	hasProjectID, err := hasColumn(db, "apps", "project_id")
-	if err != nil {
-		return err
-	}
-	hasEnvironmentID, err := hasColumn(db, "apps", "environment_id")
-	if err != nil {
-		return err
-	}
-	hasAPIKeyName, err := hasColumn(db, "api_keys", "name")
-	if err != nil {
-		return err
-	}
-	if hasEnv && hasOrgID && hasProjectID && hasEnvironmentID && hasAPIKeyName {
-		return nil
-	}
+// schemaNamePattern is what OpenSchema accepts. Schema names cannot be
+// passed as bound parameters — they are identifiers, not values — so the
+// only safe way to interpolate one is to reject anything that isn't a
+// plain lowercase identifier first.
+var schemaNamePattern = regexp.MustCompile(`^[a-z_][a-z0-9_]*$`)
 
-	tx, err := db.Begin()
-	if err != nil {
-		return fmt.Errorf("begin migration: %w", err)
-	}
-	defer tx.Rollback()
+// quoteIdent wraps a SQL identifier in double quotes. Only ever called
+// with a string schemaNamePattern already accepted.
+func quoteIdent(name string) string {
+	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
 
-	if !hasEnv {
-		if _, err := tx.Exec(`ALTER TABLE apps ADD COLUMN env TEXT NOT NULL DEFAULT '{}'`); err != nil {
-			return fmt.Errorf("add apps.env: %w", err)
-		}
+// DSNWithSchema returns dsn with search_path forced to schema. Postgres
+// takes search_path as a connection runtime parameter, which is the only
+// pool-safe way to set it: a "SET search_path" statement would apply to
+// whichever pooled connection happened to run it and to no other.
+//
+// It is exported so a caller that needs its own connection into a Store's
+// schema — a test injecting a database fault, say — can build the same
+// connection string this package would.
+func DSNWithSchema(dsn, schema string) (string, error) {
+	if schema == "" {
+		return dsn, nil
 	}
+	u, err := url.Parse(dsn)
+	if err != nil || u.Scheme == "" {
+		// Not a URL — a key/value DSN ("host=... dbname=..."), where
+		// parameters are appended as space-separated pairs.
+		return dsn + " search_path=" + schema, nil
+	}
+	q := u.Query()
+	q.Set("search_path", schema)
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
 
-	if !hasOrgID {
-		// DEFAULT 0 is what makes this possible at all: SQLite requires
-		// a non-null default to add a NOT NULL column to a table with
-		// rows. The rows it leaves behind (org_id = 0, no such
-		// organization) are adopted below.
-		if _, err := tx.Exec(`ALTER TABLE apps ADD COLUMN org_id INTEGER NOT NULL DEFAULT 0`); err != nil {
-			return fmt.Errorf("add apps.org_id: %w", err)
-		}
-
-		var orphaned int
-		if err := tx.QueryRow(`SELECT COUNT(*) FROM apps WHERE org_id = 0`).Scan(&orphaned); err != nil {
-			return fmt.Errorf("count unowned apps: %w", err)
-		}
-		if orphaned > 0 {
-			// Existing apps must end up owned by a real organization, or
-			// every authorization check against them fails and their
-			// owner can no longer see them.
-			orgID, err := ensureDefaultOrg(tx)
-			if err != nil {
-				return err
-			}
-			if _, err := tx.Exec(`UPDATE apps SET org_id = ? WHERE org_id = 0`, orgID); err != nil {
-				return fmt.Errorf("adopt unowned apps: %w", err)
-			}
-		}
+// DropSchema removes a schema and everything in it. Only meaningful for
+// a Store opened with OpenSchema; it is how a test tears its own
+// database down.
+func (s *Store) DropSchema(ctx context.Context, schema string) error {
+	if !schemaNamePattern.MatchString(schema) {
+		return fmt.Errorf("invalid schema name %q", schema)
 	}
-
-	if !hasProjectID {
-		if _, err := tx.Exec(`ALTER TABLE apps ADD COLUMN project_id INTEGER NOT NULL DEFAULT 0`); err != nil {
-			return fmt.Errorf("add apps.project_id: %w", err)
-		}
-	}
-	if !hasEnvironmentID {
-		if _, err := tx.Exec(`ALTER TABLE apps ADD COLUMN environment_id INTEGER NOT NULL DEFAULT 0`); err != nil {
-			return fmt.Errorf("add apps.environment_id: %w", err)
-		}
-	}
-	if !hasProjectID || !hasEnvironmentID {
-		// Same reasoning as the org_id backfill above, one level down:
-		// every app now needs an environment (and that environment's
-		// project) to live in, or every deploy that reads app.EnvironmentID
-		// to merge in inherited env vars fails outright.
-		if err := adoptOrphanedApps(tx); err != nil {
-			return err
-		}
-	}
-
-	if !hasAPIKeyName {
-		// Every existing key becomes DefaultAPIKeyName rather than empty:
-		// an empty name is indistinguishable from "never named", which
-		// would make ListAPIKeysForUser's output confusing for keys that
-		// predate named keys entirely. SQLite's ALTER TABLE requires the
-		// DEFAULT to be a constant, not a bound parameter, so this is
-		// built with Sprintf instead of Exec's usual placeholders — safe
-		// here because DefaultAPIKeyName is a fixed Go constant, never
-		// user input.
-		stmt := fmt.Sprintf(`ALTER TABLE api_keys ADD COLUMN name TEXT NOT NULL DEFAULT '%s'`, DefaultAPIKeyName)
-		if _, err := tx.Exec(stmt); err != nil {
-			return fmt.Errorf("add api_keys.name: %w", err)
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit migration: %w", err)
+	if _, err := s.db.ExecContext(ctx, `DROP SCHEMA IF EXISTS `+quoteIdent(schema)+` CASCADE`); err != nil {
+		return fmt.Errorf("drop schema %s: %w", schema, err)
 	}
 	return nil
-}
-
-// ensureDefaultOrg returns the id of the DefaultOrgSlug organization,
-// creating it if this is the first upgrade.
-func ensureDefaultOrg(tx *sql.Tx) (int64, error) {
-	var id int64
-	err := tx.QueryRow(`SELECT id FROM organizations WHERE slug = ?`, DefaultOrgSlug).Scan(&id)
-	if err == nil {
-		return id, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return 0, fmt.Errorf("look up default organization: %w", err)
-	}
-	res, err := tx.Exec(`INSERT INTO organizations (slug, name) VALUES (?, ?)`, DefaultOrgSlug, "Default")
-	if err != nil {
-		return 0, fmt.Errorf("create default organization: %w", err)
-	}
-	id, err = res.LastInsertId()
-	if err != nil {
-		return 0, err
-	}
-	return id, nil
-}
-
-// adoptOrphanedApps gives every app left at project_id/environment_id = 0
-// by the ALTER TABLE statements above a home: one "default" project (and
-// its mandatory "production" environment) per organization that has such
-// apps. Grouping by org_id, rather than creating one global default,
-// keeps apps belonging to different organizations from ending up sharing
-// a project.
-func adoptOrphanedApps(tx *sql.Tx) error {
-	rows, err := tx.Query(`SELECT DISTINCT org_id FROM apps WHERE project_id = 0 OR environment_id = 0`)
-	if err != nil {
-		return fmt.Errorf("find orgs with unassigned apps: %w", err)
-	}
-	var orgIDs []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		orgIDs = append(orgIDs, id)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	rows.Close()
-
-	for _, orgID := range orgIDs {
-		projectID, envID, err := ensureDefaultProjectEnvironment(tx, orgID)
-		if err != nil {
-			return err
-		}
-		if _, err := tx.Exec(
-			`UPDATE apps SET project_id = ?, environment_id = ? WHERE org_id = ? AND (project_id = 0 OR environment_id = 0)`,
-			projectID, envID, orgID); err != nil {
-			return fmt.Errorf("adopt unassigned apps for org %d: %w", orgID, err)
-		}
-	}
-	return nil
-}
-
-// ensureDefaultProjectEnvironment returns the ids of org orgID's
-// DefaultProjectSlug project and its ProductionEnvSlug environment,
-// creating either that don't already exist.
-func ensureDefaultProjectEnvironment(tx *sql.Tx, orgID int64) (projectID, envID int64, err error) {
-	err = tx.QueryRow(`SELECT id FROM projects WHERE org_id = ? AND slug = ?`, orgID, DefaultProjectSlug).Scan(&projectID)
-	if errors.Is(err, sql.ErrNoRows) {
-		res, err := tx.Exec(`INSERT INTO projects (org_id, slug, name) VALUES (?, ?, ?)`, orgID, DefaultProjectSlug, "Default")
-		if err != nil {
-			return 0, 0, fmt.Errorf("create default project: %w", err)
-		}
-		if projectID, err = res.LastInsertId(); err != nil {
-			return 0, 0, err
-		}
-	} else if err != nil {
-		return 0, 0, fmt.Errorf("look up default project: %w", err)
-	}
-
-	err = tx.QueryRow(`SELECT id FROM environments WHERE project_id = ? AND slug = ?`, projectID, ProductionEnvSlug).Scan(&envID)
-	if errors.Is(err, sql.ErrNoRows) {
-		res, err := tx.Exec(`INSERT INTO environments (project_id, slug, name) VALUES (?, ?, ?)`, projectID, ProductionEnvSlug, "Production")
-		if err != nil {
-			return 0, 0, fmt.Errorf("create production environment: %w", err)
-		}
-		if envID, err = res.LastInsertId(); err != nil {
-			return 0, 0, err
-		}
-	} else if err != nil {
-		return 0, 0, fmt.Errorf("look up production environment: %w", err)
-	}
-	return projectID, envID, nil
-}
-
-// hasColumn reports whether table has a column of the given name.
-func hasColumn(db *sql.DB, table, column string) (bool, error) {
-	rows, err := db.Query(`SELECT name FROM pragma_table_info(?)`, table)
-	if err != nil {
-		return false, fmt.Errorf("inspect table %s: %w", table, err)
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return false, err
-		}
-		if name == column {
-			return true, nil
-		}
-	}
-	return false, rows.Err()
 }
 
 func (s *Store) Close() error {

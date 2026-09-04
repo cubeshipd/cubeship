@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -15,6 +14,7 @@ import (
 	"cubeship/internal/deploy"
 	"cubeship/internal/dockerx"
 	"cubeship/internal/store"
+	"cubeship/internal/storetest"
 )
 
 type webhookFakeDocker struct {
@@ -96,11 +96,7 @@ func webhookRequest(body string) *http.Request {
 // the background deploy goroutine and the test read it concurrently.
 func newWebhookTestServer(t *testing.T, docker *webhookFakeDocker) (*Server, *store.Store) {
 	t.Helper()
-	s, err := store.Open(filepath.Join(t.TempDir(), "cubeship.db"))
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 
 	orch := deploy.New(s, docker)
 	orch.HealthCheckAttempts = 3
@@ -245,11 +241,7 @@ func TestRegistryWebhookAcksBeforeDeployFinishes(t *testing.T) {
 // per-app lock must keep those deploys from racing.
 func TestRegistryWebhookConcurrentNotificationsDoNotRace(t *testing.T) {
 	docker := &countingWebhookDocker{}
-	s, err := store.Open(filepath.Join(t.TempDir(), "cubeship.db"))
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 	org, _ := s.CreateOrganization(context.Background(), "acme", "Acme Inc")
 	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(context.Background(), org.ID, "default", "Default")
 	s.CreateApp(context.Background(), org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")

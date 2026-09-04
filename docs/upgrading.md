@@ -1,11 +1,37 @@
 # Upgrading an existing install
 
+## From a release that stored its data in SQLite
+
+**There is no automatic migration, and the old data is not read.** The
+daemon now keeps everything in Postgres; on the first start it brings up
+a `cubeship-postgres` container, creates an empty schema in it, and
+bootstraps a new super-admin. The old `cubeship.db` is left untouched
+under the data dir and simply ignored.
+
+For an instance with real data in it, that means recreating your
+organizations, projects, users and apps by hand — there are no automated
+steps to give you. Pushed images survive (they live in
+`registry-data`, not in the database), but an app has to exist again
+before a push to it deploys anything.
+
+Two things change for you on that first start:
+
+- A new super-admin key is written to
+  `$CUBESHIP_DATA_DIR/admin-api-key`. Every previously issued API key is
+  gone with the old database — everyone logs in again.
+- The data dir gains `postgres/` (the database) and `postgres-password`.
+  Back up the whole directory, as before; `postgres/` is now the part
+  that matters most.
+
+To point the daemon at a Postgres you already run instead of the managed
+container, set `CUBESHIP_DATABASE_URL` before starting it.
+
 ## Any upgrade
 
-`cubeshipd` leaves an already-running `cubeship-registry` or
-`cubeship-traefik` container alone, and starts it if it exists but is
-stopped. A release that changes how those containers are configured
-therefore needs the old container removed once, by hand:
+`cubeshipd` leaves an already-running `cubeship-registry`,
+`cubeship-traefik` or `cubeship-postgres` container alone, and starts it
+if it exists but is stopped. A release that changes how those containers
+are configured therefore needs the old container removed once, by hand:
 
 ```sh
 sudo systemctl stop cubeshipd

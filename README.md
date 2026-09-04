@@ -41,6 +41,11 @@ certificates to issue. The rest is optional and defaulted in
 database, the images and Traefik's `acme.json`. **Back it up.** The
 daemon needs the Docker socket, so it runs as root.
 
+State lives in Postgres. By default the daemon runs it for you, as a
+`cubeship-postgres` container bound to loopback with its data under the
+data dir — nothing to install. Set `CUBESHIP_DATABASE_URL` to point at an
+existing server instead, and the daemon connects without managing it.
+
 **Port 9000 must not be reachable from the public internet.** The daemon
 binds it on all interfaces so the registry container can reach the
 webhook, but that port serves the API in plaintext, bypassing Traefik's
@@ -93,6 +98,9 @@ to touch.
 make check              # gofmt, go vet, unit tests under -race
 make test-integration   # brings up a real daemon, registry and Traefik; needs Linux
 ```
+
+The unit tests need a Postgres; `make test` starts one in a container
+(`make db-up`, port 5433) and gives each test its own schema in it.
 
 See [AGENTS.md](AGENTS.md) for the conventions, and
 [docs/upgrading.md](docs/upgrading.md) when moving an existing install

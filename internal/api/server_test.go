@@ -8,6 +8,7 @@ import (
 
 	"cubeship/internal/authkey"
 	"cubeship/internal/store"
+	"cubeship/internal/storetest"
 )
 
 func TestHealthzIsUnauthenticated(t *testing.T) {
@@ -24,11 +25,7 @@ func TestHealthzIsUnauthenticated(t *testing.T) {
 
 func newAuthMiddlewareTestServer(t *testing.T) (*Server, string) {
 	t.Helper()
-	st, err := store.Open(":memory:")
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { st.Close() })
+	st := storetest.New(t)
 
 	ctx := context.Background()
 	user, err := st.CreateUser(ctx, "test-user", false)

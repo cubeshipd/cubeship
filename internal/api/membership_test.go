@@ -6,47 +6,40 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"cubeship/internal/store"
-
-	_ "modernc.org/sqlite"
+	"cubeship/internal/storetest"
 )
 
-// newFileTestServer is newTestServer over a file-backed store, so a test
-// can reach the same database on a second connection (see
-// breakAPIKeyInserts). It returns the server, a super-admin key, the
-// "acme" organization and the database path.
-func newFileTestServer(t *testing.T) (*Server, string, *store.Organization, string) {
+// newFaultInjectableTestServer is newTestServer plus a raw connection
+// into the same database, so a test can break the schema underneath the
+// server (see breakAPIKeyInserts). It returns the server, a super-admin
+// key, the "acme" organization and that connection.
+func newFaultInjectableTestServer(t *testing.T) (*Server, string, *store.Organization, *sql.DB) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "cubeship.db")
-	s, err := store.Open(path)
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { s.Close() })
+	s, db := storetest.NewWithRawDB(t)
 
 	org, err := s.CreateOrganization(context.Background(), "acme", "Acme Inc")
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 	key := testAPIKeyFor(t, s, true)
-	return NewServer(s, nil, "webhook-secret", "registry.example.com"), key, org, path
+	return NewServer(s, nil, "webhook-secret", "registry.example.com"), key, org, db
 }
 
 // breakAPIKeyInserts makes every future INSERT into api_keys fail, to
 // stand in for a database error striking partway through a multi-step
 // write. Reads keep working, so the caller can still authenticate.
-func breakAPIKeyInserts(t *testing.T, dbPath string) {
+func breakAPIKeyInserts(t *testing.T, db *sql.DB) {
 	t.Helper()
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatalf("sql.Open: %v", err)
-	}
-	defer db.Close()
-	if _, err := db.Exec(`CREATE TRIGGER no_new_keys BEFORE INSERT ON api_keys
-		BEGIN SELECT RAISE(ABORT, 'api_keys is unavailable'); END`); err != nil {
+	if _, err := db.Exec(`
+		CREATE FUNCTION no_new_keys() RETURNS trigger AS $$
+		BEGIN RAISE EXCEPTION 'api_keys is unavailable'; END;
+		$$ LANGUAGE plpgsql;
+
+		CREATE TRIGGER no_new_keys BEFORE INSERT ON api_keys
+		FOR EACH ROW EXECUTE FUNCTION no_new_keys();`); err != nil {
 		t.Fatalf("create trigger: %v", err)
 	}
 }
@@ -128,8 +121,8 @@ func TestCreateOrgUserAlreadyMemberConflicts(t *testing.T) {
 // A failure after the user row is inserted used to leave an orphaned
 // user: no membership, no key, and a username permanently taken.
 func TestCreateOrgUserRollsBackOnFailure(t *testing.T) {
-	srv, adminKey, org, dbPath := newFileTestServer(t)
-	breakAPIKeyInserts(t, dbPath)
+	srv, adminKey, org, db := newFaultInjectableTestServer(t)
+	breakAPIKeyInserts(t, db)
 
 	rec := createOrgUser(t, srv, org.Slug, "employee1", "member", adminKey)
 	if rec.Code != http.StatusInternalServerError {
@@ -144,8 +137,8 @@ func TestCreateOrgUserRollsBackOnFailure(t *testing.T) {
 // Rotation revokes before it issues; a failure in between used to lock
 // the user out for good.
 func TestRotateAPIKeyKeepsOldKeyWorkingWhenReissueFails(t *testing.T) {
-	srv, adminKey, _, dbPath := newFileTestServer(t)
-	breakAPIKeyInserts(t, dbPath)
+	srv, adminKey, _, db := newFaultInjectableTestServer(t)
+	breakAPIKeyInserts(t, db)
 
 	rec := httptest.NewRecorder()
 	srv.Router().ServeHTTP(rec, authedRequest(http.MethodPost, "/users/me/api-key/rotate", nil, adminKey))

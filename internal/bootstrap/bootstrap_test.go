@@ -3,7 +3,10 @@ package bootstrap
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -343,5 +346,44 @@ func TestEnsureReturnsInspectErrors(t *testing.T) {
 	}
 	if docker.createdName != "" {
 		t.Fatalf("expected no create attempt after an inspect failure, got %q", docker.createdName)
+	}
+}
+
+func TestPostgresDSNEscapesThePassword(t *testing.T) {
+	// Generated passwords are hex, but an operator-supplied one need not
+	// be: a "/" or "@" in a raw password would be read as the end of the
+	// credentials and point the daemon at the wrong host.
+	dsn := PostgresDSN("p@ss/word")
+	u, err := url.Parse(dsn)
+	if err != nil {
+		t.Fatalf("PostgresDSN produced an unparseable URL %q: %v", dsn, err)
+	}
+	if u.Host != fmt.Sprintf("127.0.0.1:%d", PostgresPort) {
+		t.Errorf("host is %q, want 127.0.0.1:%d", u.Host, PostgresPort)
+	}
+	pw, _ := u.User.Password()
+	if pw != "p@ss/word" {
+		t.Errorf("password round-tripped as %q, want %q", pw, "p@ss/word")
+	}
+}
+
+// The database must outlive its container: without a host bind mount,
+// recreating cubeship-postgres would destroy every app, user and key.
+func TestPostgresContainerPersistsItsDataOnTheHost(t *testing.T) {
+	cfg := &config.Config{DataDir: "/var/lib/cubeship"}
+	opts := PostgresContainerOpts(cfg, "secret")
+
+	wantBind := "/var/lib/cubeship/postgres:/var/lib/postgresql/data"
+	if !slices.Contains(opts.Binds, wantBind) {
+		t.Errorf("binds %v do not include %q", opts.Binds, wantBind)
+	}
+	// Loopback only: the daemon is a host process, but nothing off this
+	// machine should reach the database.
+	wantPort := fmt.Sprintf("127.0.0.1:%d:5432", PostgresPort)
+	if !slices.Contains(opts.Ports, wantPort) {
+		t.Errorf("ports %v do not include %q", opts.Ports, wantPort)
+	}
+	if !slices.Contains(opts.Env, "POSTGRES_PASSWORD=secret") {
+		t.Errorf("env %v does not carry the password", opts.Env)
 	}
 }

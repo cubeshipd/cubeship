@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -13,6 +12,7 @@ import (
 
 	"cubeship/internal/dockerx"
 	"cubeship/internal/store"
+	"cubeship/internal/storetest"
 )
 
 type fakeDocker struct {
@@ -86,11 +86,7 @@ func (f *fakeDocker) Logs(ctx context.Context, id, tail string) (io.ReadCloser, 
 
 func newTestOrchestrator(t *testing.T, docker *fakeDocker) (*Orchestrator, *store.Store) {
 	t.Helper()
-	s, err := store.Open(":memory:")
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 
 	o := New(s, docker)
 	// Keep the real HealthCheckSuccesses (3): a container must be
@@ -583,11 +579,7 @@ func TestConcurrentDeploysOfSameAppAreSerialized(t *testing.T) {
 	docker := &serialConcurrencyDocker{}
 	// A file-backed DB, not ":memory:": database/sql pools connections
 	// and each ":memory:" connection would open its own database.
-	s, err := store.Open(filepath.Join(t.TempDir(), "cubeship.db"))
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 
 	o := New(s, docker)
 	o.HealthCheckAttempts = 3
@@ -635,11 +627,7 @@ func TestConcurrentDeploysOfDifferentAppsRunInParallel(t *testing.T) {
 	docker := &serialConcurrencyDocker{}
 	// A file-backed DB, not ":memory:": database/sql pools connections
 	// and each ":memory:" connection would open its own database.
-	s, err := store.Open(filepath.Join(t.TempDir(), "cubeship.db"))
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 
 	o := New(s, docker)
 	o.HealthCheckAttempts = 3

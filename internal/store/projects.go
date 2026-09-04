@@ -16,12 +16,17 @@ type Project struct {
 	CreatedAt time.Time
 }
 
+const projectColumns = `id, org_id, slug, name, env, created_at`
+
 func createProject(ctx context.Context, q queryer, orgID int64, slug, name string) (*Project, error) {
-	if _, err := q.ExecContext(ctx,
-		`INSERT INTO projects (org_id, slug, name) VALUES (?, ?, ?)`, orgID, slug, name); err != nil {
+	row := q.QueryRowContext(ctx,
+		`INSERT INTO projects (org_id, slug, name) VALUES ($1, $2, $3) RETURNING `+projectColumns,
+		orgID, slug, name)
+	p, err := scanProject(row)
+	if err != nil {
 		return nil, fmt.Errorf("create project: %w", err)
 	}
-	return getProjectBySlug(ctx, q, orgID, slug)
+	return p, nil
 }
 
 func (s *Store) CreateProject(ctx context.Context, orgID int64, slug, name string) (*Project, error) {
@@ -55,15 +60,13 @@ func (s *Store) CreateProjectWithDefaultEnvironment(ctx context.Context, orgID i
 	return project, env, nil
 }
 
-func scanProject(row interface {
-	Scan(dest ...any) error
-}) (*Project, error) {
+func scanProject(row interface{ Scan(dest ...any) error }) (*Project, error) {
 	var p Project
-	var envJSON string
+	var envJSON []byte
 	if err := row.Scan(&p.ID, &p.OrgID, &p.Slug, &p.Name, &envJSON, &p.CreatedAt); err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal([]byte(envJSON), &p.Env); err != nil {
+	if err := json.Unmarshal(envJSON, &p.Env); err != nil {
 		return nil, fmt.Errorf("decode env for project %q: %w", p.Slug, err)
 	}
 	return &p, nil
@@ -71,7 +74,7 @@ func scanProject(row interface {
 
 func getProjectBySlug(ctx context.Context, q queryer, orgID int64, slug string) (*Project, error) {
 	row := q.QueryRowContext(ctx,
-		`SELECT id, org_id, slug, name, env, created_at FROM projects WHERE org_id = ? AND slug = ?`, orgID, slug)
+		`SELECT `+projectColumns+` FROM projects WHERE org_id = $1 AND slug = $2`, orgID, slug)
 	p, err := scanProject(row)
 	if err != nil {
 		return nil, fmt.Errorf("get project %q: %w", slug, err)
@@ -84,8 +87,7 @@ func (s *Store) GetProjectBySlug(ctx context.Context, orgID int64, slug string) 
 }
 
 func (s *Store) GetProjectByID(ctx context.Context, id int64) (*Project, error) {
-	row := s.db.QueryRowContext(ctx,
-		`SELECT id, org_id, slug, name, env, created_at FROM projects WHERE id = ?`, id)
+	row := s.db.QueryRowContext(ctx, `SELECT `+projectColumns+` FROM projects WHERE id = $1`, id)
 	p, err := scanProject(row)
 	if err != nil {
 		return nil, fmt.Errorf("get project %d: %w", id, err)
@@ -95,7 +97,7 @@ func (s *Store) GetProjectByID(ctx context.Context, id int64) (*Project, error) 
 
 func (s *Store) ListProjectsForOrg(ctx context.Context, orgID int64) ([]*Project, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, org_id, slug, name, env, created_at FROM projects WHERE org_id = ? ORDER BY id`, orgID)
+		`SELECT `+projectColumns+` FROM projects WHERE org_id = $1 ORDER BY id`, orgID)
 	if err != nil {
 		return nil, err
 	}
@@ -113,11 +115,11 @@ func (s *Store) ListProjectsForOrg(ctx context.Context, orgID int64) ([]*Project
 }
 
 func (s *Store) SetProjectEnv(ctx context.Context, projectID int64, env map[string]string) error {
-	envJSON, err := json.Marshal(env)
+	envJSON, err := marshalEnv(env)
 	if err != nil {
-		return fmt.Errorf("encode env: %w", err)
+		return err
 	}
-	if _, err := s.db.ExecContext(ctx, `UPDATE projects SET env = ? WHERE id = ?`, string(envJSON), projectID); err != nil {
+	if _, err := s.db.ExecContext(ctx, `UPDATE projects SET env = $1::jsonb WHERE id = $2`, envJSON, projectID); err != nil {
 		return fmt.Errorf("set project env: %w", err)
 	}
 	return nil

@@ -2,326 +2,121 @@ package store
 
 import (
 	"context"
-	"database/sql"
-	"path/filepath"
 	"testing"
 )
 
-// legacySchema is the apps/deployments schema as it shipped before
-// organizations existed: no apps.org_id, and no org/user tables at all.
-const legacySchema = `
-CREATE TABLE apps (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	name TEXT NOT NULL UNIQUE,
-	domain TEXT NOT NULL,
-	image TEXT NOT NULL UNIQUE,
-	container_id TEXT NOT NULL DEFAULT '',
-	status TEXT NOT NULL DEFAULT 'pending',
-	env TEXT NOT NULL DEFAULT '{}',
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
+// TestMigrateIsIdempotent is the property every deploy depends on: the
+// daemon runs migrate on every single start, so a second start against an
+// already-migrated database must be a no-op rather than an error (or, far
+// worse, a re-application).
+func TestMigrateIsIdempotent(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
 
-CREATE TABLE deployments (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	app_id INTEGER NOT NULL REFERENCES apps(id),
-	image_ref TEXT NOT NULL,
-	status TEXT NOT NULL,
-	error TEXT NOT NULL DEFAULT '',
-	created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-`
+	// newTestStore already migrated once. Do it again on the same schema.
+	if err := migrate(ctx, s.db); err != nil {
+		t.Fatalf("second migrate: %v", err)
+	}
 
-// writeLegacyDB creates a database in the pre-organizations shape with
-// one already-deployed app in it, as an upgrading operator would have.
-func writeLegacyDB(t *testing.T, apps ...string) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "cubeship.db")
-	db, err := sql.Open("sqlite", path)
+	var n int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&n); err != nil {
+		t.Fatalf("count applied migrations: %v", err)
+	}
+	if n != len(migrations) {
+		t.Errorf("schema_migrations has %d rows after migrating twice, want %d", n, len(migrations))
+	}
+}
+
+func TestMigrateRecordsEveryVersion(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	rows, err := s.db.QueryContext(ctx, `SELECT version FROM schema_migrations ORDER BY version`)
 	if err != nil {
-		t.Fatalf("sql.Open: %v", err)
+		t.Fatalf("read schema_migrations: %v", err)
 	}
-	defer db.Close()
-	if _, err := db.Exec(legacySchema); err != nil {
-		t.Fatalf("create legacy schema: %v", err)
+	defer rows.Close()
+
+	var got []int
+	for rows.Next() {
+		var v int
+		if err := rows.Scan(&v); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, v)
 	}
-	for _, name := range apps {
-		if _, err := db.Exec(
-			`INSERT INTO apps (name, domain, image, container_id, status) VALUES (?, ?, ?, ?, ?)`,
-			name, name+".example.com", "registry.example.com/"+name, "container-1", "running"); err != nil {
-			t.Fatalf("insert legacy app: %v", err)
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+
+	if len(got) != len(migrations) {
+		t.Fatalf("applied %d migrations, declared %d", len(got), len(migrations))
+	}
+	for i, m := range migrations {
+		if got[i] != m.version {
+			t.Errorf("migration %d: recorded version %d, want %d", i, got[i], m.version)
 		}
 	}
-	return path
 }
 
-// Opening a pre-organizations database used to succeed and then fail on
-// the first apps query with "no such column: org_id", crash-looping the
-// daemon under systemd.
-func TestOpenMigratesPreOrganizationsDatabase(t *testing.T) {
-	path := writeLegacyDB(t, "legacyapp")
-
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open on a legacy database: %v", err)
+// TestMigrationVersionsAreOrderedAndGapless guards the list itself: a
+// duplicate or out-of-order version would make migrate skip a step on
+// some databases and not others, depending on which had run before.
+func TestMigrationVersionsAreOrderedAndGapless(t *testing.T) {
+	for i, m := range migrations {
+		if want := i + 1; m.version != want {
+			t.Errorf("migrations[%d] has version %d, want %d", i, m.version, want)
+		}
+		if m.name == "" {
+			t.Errorf("migrations[%d] (version %d) has no name", i, m.version)
+		}
 	}
-	defer s.Close()
+}
 
+// TestSchemaIsUsableAfterMigrate walks one row through the whole
+// hierarchy, which is the cheapest way to catch a column the schema
+// declares differently from what the queries expect.
+func TestSchemaIsUsableAfterMigrate(t *testing.T) {
+	s := newTestStore(t)
 	ctx := context.Background()
-	apps, err := s.ListApps(ctx)
-	if err != nil {
-		t.Fatalf("ListApps after migration: %v", err)
-	}
-	if len(apps) != 1 {
-		t.Fatalf("expected the pre-existing app to survive the migration, got %d apps", len(apps))
-	}
-	if apps[0].Name != "legacyapp" || apps[0].Status != "running" {
-		t.Fatalf("expected the app's own data to be untouched, got %+v", apps[0])
-	}
 
-	// An app owned by org_id 0 would fail every authorization check.
-	org, err := s.GetOrganizationBySlug(ctx, DefaultOrgSlug)
+	org, err := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	if err != nil {
-		t.Fatalf("expected a %q organization to be created for adopted apps: %v", DefaultOrgSlug, err)
+		t.Fatalf("create organization: %v", err)
 	}
-	if apps[0].OrgID != org.ID {
-		t.Fatalf("expected the migrated app to belong to %q (id %d), got org_id %d",
-			DefaultOrgSlug, org.ID, apps[0].OrgID)
-	}
-
-	// Same reasoning one level down: an app left at project_id/
-	// environment_id 0 would fail resolving inherited env vars on deploy.
-	project, err := s.GetProjectBySlug(ctx, org.ID, DefaultProjectSlug)
+	project, env, err := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "web", "Web")
 	if err != nil {
-		t.Fatalf("expected a %q project to be created for adopted apps: %v", DefaultProjectSlug, err)
+		t.Fatalf("create project: %v", err)
 	}
-	if apps[0].ProjectID != project.ID {
-		t.Fatalf("expected the migrated app to belong to project %q (id %d), got project_id %d",
-			DefaultProjectSlug, project.ID, apps[0].ProjectID)
+	if env.Slug != ProductionEnvSlug {
+		t.Errorf("default environment is %q, want %q", env.Slug, ProductionEnvSlug)
 	}
-	env, err := s.GetEnvironmentBySlug(ctx, project.ID, ProductionEnvSlug)
+	app, err := s.CreateApp(ctx, org.ID, project.ID, env.ID, "myapp", "myapp.example.com", "registry.example.com/acme/myapp")
 	if err != nil {
-		t.Fatalf("expected a %q environment to be created for adopted apps: %v", ProductionEnvSlug, err)
+		t.Fatalf("create app: %v", err)
 	}
-	if apps[0].EnvironmentID != env.ID {
-		t.Fatalf("expected the migrated app to belong to environment %q (id %d), got environment_id %d",
-			ProductionEnvSlug, env.ID, apps[0].EnvironmentID)
-	}
-}
-
-// A database from the organizations-but-no-projects era (apps.org_id
-// exists, apps.project_id/environment_id don't) hits the same "no such
-// column" crash one column later — this covers that upgrade path
-// directly, without going through the org_id migration too.
-func TestOpenMigratesDatabaseWithoutProjectsOrEnvironments(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cubeship.db")
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatalf("sql.Open: %v", err)
-	}
-	if _, err := db.Exec(`
-		CREATE TABLE organizations (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			slug TEXT NOT NULL UNIQUE,
-			name TEXT NOT NULL,
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE TABLE apps (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			org_id INTEGER NOT NULL REFERENCES organizations(id),
-			name TEXT NOT NULL UNIQUE,
-			domain TEXT NOT NULL,
-			image TEXT NOT NULL UNIQUE,
-			container_id TEXT NOT NULL DEFAULT '',
-			status TEXT NOT NULL DEFAULT 'pending',
-			env TEXT NOT NULL DEFAULT '{}',
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);
-		INSERT INTO organizations (slug, name) VALUES ('acme', 'Acme Inc');
-		INSERT INTO apps (org_id, name, domain, image) VALUES (1, 'oldapp', 'old.example.com', 'registry.example.com/oldapp');`); err != nil {
-		t.Fatalf("create pre-projects schema: %v", err)
-	}
-	db.Close()
-
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open on a pre-projects database: %v", err)
-	}
-	defer s.Close()
-
-	ctx := context.Background()
-	app, err := s.GetAppByName(ctx, "oldapp")
-	if err != nil {
-		t.Fatalf("GetAppByName after migration: %v", err)
-	}
-	org, err := s.GetOrganizationBySlug(ctx, "acme")
-	if err != nil {
-		t.Fatalf("GetOrganizationBySlug: %v", err)
-	}
-	project, err := s.GetProjectBySlug(ctx, org.ID, DefaultProjectSlug)
-	if err != nil {
-		t.Fatalf("expected a %q project to be created for the adopted app: %v", DefaultProjectSlug, err)
-	}
-	if app.ProjectID != project.ID {
-		t.Fatalf("expected the app to be adopted into project %d, got %d", project.ID, app.ProjectID)
-	}
-	env, err := s.GetEnvironmentBySlug(ctx, project.ID, ProductionEnvSlug)
-	if err != nil {
-		t.Fatalf("expected a %q environment to be created for the adopted app: %v", ProductionEnvSlug, err)
-	}
-	if app.EnvironmentID != env.ID {
-		t.Fatalf("expected the app to be adopted into environment %d, got %d", env.ID, app.EnvironmentID)
-	}
-}
-
-// apps.env was added the same no-op way one release earlier, so a
-// database from before it has the identical problem.
-func TestOpenMigratesDatabaseWithoutAppsEnv(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cubeship.db")
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatalf("sql.Open: %v", err)
-	}
-	if _, err := db.Exec(`
-		CREATE TABLE apps (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			name TEXT NOT NULL UNIQUE,
-			domain TEXT NOT NULL,
-			image TEXT NOT NULL UNIQUE,
-			container_id TEXT NOT NULL DEFAULT '',
-			status TEXT NOT NULL DEFAULT 'pending',
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);
-		INSERT INTO apps (name, domain, image) VALUES ('oldapp', 'old.example.com', 'registry.example.com/oldapp');`); err != nil {
-		t.Fatalf("create pre-env schema: %v", err)
-	}
-	db.Close()
-
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open on a pre-env database: %v", err)
-	}
-	defer s.Close()
-
-	app, err := s.GetAppByName(context.Background(), "oldapp")
-	if err != nil {
-		t.Fatalf("GetAppByName after migration: %v", err)
+	if app.Status != "pending" {
+		t.Errorf("new app status is %q, want %q", app.Status, "pending")
 	}
 	if len(app.Env) != 0 {
-		t.Fatalf("expected an empty env map for a migrated app, got %v", app.Env)
+		t.Errorf("new app env is %v, want empty", app.Env)
 	}
-	if app.OrgID == 0 {
-		t.Fatal("expected the migrated app to be adopted into an organization")
-	}
-}
-
-func TestMigrationIsIdempotent(t *testing.T) {
-	path := writeLegacyDB(t, "legacyapp")
-
-	first, err := Open(path)
-	if err != nil {
-		t.Fatalf("first Open: %v", err)
-	}
-	first.Close()
-
-	second, err := Open(path)
-	if err != nil {
-		t.Fatalf("second Open: %v", err)
-	}
-	defer second.Close()
-
-	ctx := context.Background()
-	if _, err := second.ListApps(ctx); err != nil {
-		t.Fatalf("ListApps after reopening: %v", err)
-	}
-	orgs, err := second.ListOrganizations(ctx)
-	if err != nil {
-		t.Fatalf("ListOrganizations: %v", err)
-	}
-	if len(orgs) != 1 {
-		t.Fatalf("expected the second Open to reuse the default org, got %d organizations", len(orgs))
+	if app.CreatedAt.IsZero() {
+		t.Error("new app has a zero created_at")
 	}
 }
 
-// A database that already has apps.org_id (a legacy one with no apps in
-// it, or a fresh install) must not gain a stray "default" organization.
-func TestMigrationCreatesNoDefaultOrgWithoutOrphanedApps(t *testing.T) {
-	empty, err := Open(writeLegacyDB(t))
-	if err != nil {
-		t.Fatalf("Open on an empty legacy database: %v", err)
-	}
-	defer empty.Close()
-
-	fresh, err := Open(filepath.Join(t.TempDir(), "fresh.db"))
-	if err != nil {
-		t.Fatalf("Open on a fresh database: %v", err)
-	}
-	defer fresh.Close()
-
+// TestOpenSchemaIsolatesDatabases is the property the test helper rests
+// on: two schemas in the same Postgres must not see each other's rows.
+func TestOpenSchemaIsolatesDatabases(t *testing.T) {
 	ctx := context.Background()
-	for name, s := range map[string]*Store{"upgraded-empty": empty, "fresh": fresh} {
-		orgs, err := s.ListOrganizations(ctx)
-		if err != nil {
-			t.Fatalf("%s: ListOrganizations: %v", name, err)
-		}
-		if len(orgs) != 0 {
-			t.Fatalf("%s: expected no organizations, got %v", name, orgs)
-		}
-	}
-}
+	a := newTestStore(t)
+	b := newTestStore(t)
 
-// A database from before api_keys.name existed hits the same "no such
-// column" crash as every other column added by migrate — this covers
-// api_keys specifically, including that a pre-existing key survives with
-// a real name rather than an empty one (which would be indistinguishable
-// from "never named" once ListAPIKeysForUser exists).
-func TestOpenMigratesDatabaseWithoutAPIKeyName(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "cubeship.db")
-	db, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatalf("sql.Open: %v", err)
+	if _, err := a.CreateOrganization(ctx, "acme", "Acme Inc"); err != nil {
+		t.Fatalf("create organization in a: %v", err)
 	}
-	if _, err := db.Exec(`
-		CREATE TABLE users (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			username TEXT NOT NULL UNIQUE,
-			is_super_admin INTEGER NOT NULL DEFAULT 0,
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
-		);
-		CREATE TABLE api_keys (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			user_id INTEGER NOT NULL REFERENCES users(id),
-			key_hash TEXT NOT NULL UNIQUE,
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			last_used_at DATETIME
-		);
-		INSERT INTO users (username, is_super_admin) VALUES ('admin', 1);
-		INSERT INTO api_keys (user_id, key_hash) VALUES (1, 'old-key-hash');`); err != nil {
-		t.Fatalf("create pre-name schema: %v", err)
-	}
-	db.Close()
-
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("Open on a pre-name database: %v", err)
-	}
-	defer s.Close()
-
-	ctx := context.Background()
-	key, err := s.GetAPIKeyByHash(ctx, "old-key-hash")
-	if err != nil {
-		t.Fatalf("GetAPIKeyByHash after migration: %v", err)
-	}
-	if key.Name != DefaultAPIKeyName {
-		t.Fatalf("expected the pre-existing key to be named %q, got %q", DefaultAPIKeyName, key.Name)
-	}
-
-	// The old key still authenticates — migration must not have touched
-	// its hash or its ability to resolve to the user.
-	user, err := s.GetUserByAPIKeyHash(ctx, "old-key-hash")
-	if err != nil {
-		t.Fatalf("GetUserByAPIKeyHash after migration: %v", err)
-	}
-	if user.Username != "admin" {
-		t.Fatalf("expected the key to still resolve to admin, got %q", user.Username)
+	if _, err := b.GetOrganizationBySlug(ctx, "acme"); err == nil {
+		t.Error("schema b sees an organization created in schema a")
 	}
 }

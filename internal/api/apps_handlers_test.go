@@ -12,6 +12,7 @@ import (
 
 	"cubeship/internal/authkey"
 	"cubeship/internal/store"
+	"cubeship/internal/storetest"
 )
 
 // testProjectSlug is the project newTestServer creates in "acme" for
@@ -28,11 +29,7 @@ const testProjectSlug = "default"
 // against srv.store directly.
 func newTestServer(t *testing.T) (*Server, string, *store.Organization) {
 	t.Helper()
-	s, err := store.Open(":memory:")
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 
 	ctx := context.Background()
 	org, err := s.CreateOrganization(ctx, "acme", "Acme Inc")

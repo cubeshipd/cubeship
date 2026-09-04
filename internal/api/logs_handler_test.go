@@ -7,12 +7,11 @@ import (
 	"testing"
 
 	"cubeship/internal/deploy"
-	"cubeship/internal/store"
+	"cubeship/internal/storetest"
 )
 
 func TestGetLogsStreamsContainerOutput(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
@@ -41,8 +40,7 @@ func TestGetLogsStreamsContainerOutput(t *testing.T) {
 }
 
 func TestGetLogsBeforeFirstDeploy(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")

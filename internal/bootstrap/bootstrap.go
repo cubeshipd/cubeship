@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"strings"
 
@@ -17,6 +18,59 @@ import (
 )
 
 const registryPort = 5000
+
+// The daemon's own Postgres, when it isn't pointed at an external one
+// with CUBESHIP_DATABASE_URL.
+//
+// It is published on loopback rather than reached over the "cubeship"
+// bridge network because cubeshipd is a host process, not a container —
+// the same reason the registry publishes 127.0.0.1:5000. Nothing outside
+// this host can connect to it.
+const (
+	PostgresContainerName = "cubeship-postgres"
+	PostgresImage         = "postgres:16-alpine"
+	PostgresPort          = 5432
+	PostgresUser          = "cubeship"
+	PostgresDatabase      = "cubeship"
+)
+
+// PostgresDSN is the connection string for the managed Postgres.
+// sslmode=disable is correct here and only here: the connection never
+// leaves the loopback interface.
+func PostgresDSN(password string) string {
+	return fmt.Sprintf("postgres://%s:%s@127.0.0.1:%d/%s?sslmode=disable",
+		PostgresUser, url.QueryEscape(password), PostgresPort, PostgresDatabase)
+}
+
+// PostgresContainerOpts describes the daemon's own database container.
+//
+// The data directory is a bind mount on the host, so recreating the
+// container — a version bump, a config change — keeps every row. Losing
+// it would mean losing every app, user and API key on the instance.
+func PostgresContainerOpts(cfg *config.Config, password string) dockerx.ContainerOpts {
+	return dockerx.ContainerOpts{
+		Name:  PostgresContainerName,
+		Image: PostgresImage,
+		Env: []string{
+			"POSTGRES_USER=" + PostgresUser,
+			"POSTGRES_PASSWORD=" + password,
+			"POSTGRES_DB=" + PostgresDatabase,
+		},
+		Ports:   []string{fmt.Sprintf("127.0.0.1:%d:5432", PostgresPort)},
+		Binds:   []string{cfg.DataDir + "/postgres:/var/lib/postgresql/data"},
+		Network: "cubeship",
+	}
+}
+
+// EnsurePostgresDataDir creates the bind-mount source before the
+// container starts. Docker would create it too, but root-owned; creating
+// it here keeps ownership with the daemon.
+func EnsurePostgresDataDir(cfg *config.Config) error {
+	if err := os.MkdirAll(cfg.DataDir+"/postgres", 0o700); err != nil {
+		return fmt.Errorf("create postgres data dir: %w", err)
+	}
+	return nil
+}
 
 func RegistryContainerOpts(cfg *config.Config) dockerx.ContainerOpts {
 	labels := traefik.Labels("registry", cfg.RegistryHost, registryPort)

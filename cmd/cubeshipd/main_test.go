@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"cubeship/internal/authkey"
-	"cubeship/internal/store"
+	"cubeship/internal/storetest"
 )
 
 func TestVersionFlag(t *testing.T) {
@@ -33,11 +33,7 @@ func readAdminKey(t *testing.T, dataDir string) string {
 }
 
 func TestEnsureSuperAdminCreatesOnFirstBoot(t *testing.T) {
-	s, err := store.Open(":memory:")
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	defer s.Close()
+	s := storetest.New(t)
 	ctx := context.Background()
 	dataDir := t.TempDir()
 
@@ -69,11 +65,7 @@ func TestEnsureSuperAdminCreatesOnFirstBoot(t *testing.T) {
 // holding a credential that also creates organizations and reads every
 // app's environment.
 func TestEnsureSuperAdminKeyIsNotTheDaemonToken(t *testing.T) {
-	s, err := store.Open(":memory:")
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	defer s.Close()
+	s := storetest.New(t)
 	ctx := context.Background()
 	dataDir := t.TempDir()
 
@@ -96,11 +88,7 @@ func TestEnsureSuperAdminKeyIsNotTheDaemonToken(t *testing.T) {
 }
 
 func TestEnsureSuperAdminIsIdempotent(t *testing.T) {
-	s, err := store.Open(":memory:")
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	defer s.Close()
+	s := storetest.New(t)
 	ctx := context.Background()
 	dataDir := t.TempDir()
 
@@ -133,11 +121,7 @@ func TestEnsureSuperAdminReusesPersistedKey(t *testing.T) {
 		t.Fatalf("write admin key file: %v", err)
 	}
 
-	s, err := store.Open(":memory:")
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	defer s.Close()
+	s := storetest.New(t)
 	ctx := context.Background()
 
 	if err := ensureSuperAdmin(ctx, s, dataDir); err != nil {

@@ -21,12 +21,17 @@ type Environment struct {
 	CreatedAt time.Time
 }
 
+const environmentColumns = `id, project_id, slug, name, env, created_at`
+
 func createEnvironment(ctx context.Context, q queryer, projectID int64, slug, name string) (*Environment, error) {
-	if _, err := q.ExecContext(ctx,
-		`INSERT INTO environments (project_id, slug, name) VALUES (?, ?, ?)`, projectID, slug, name); err != nil {
+	row := q.QueryRowContext(ctx,
+		`INSERT INTO environments (project_id, slug, name) VALUES ($1, $2, $3) RETURNING `+environmentColumns,
+		projectID, slug, name)
+	e, err := scanEnvironment(row)
+	if err != nil {
 		return nil, fmt.Errorf("create environment: %w", err)
 	}
-	return getEnvironmentBySlug(ctx, q, projectID, slug)
+	return e, nil
 }
 
 func (s *Store) CreateEnvironment(ctx context.Context, projectID int64, slug, name string) (*Environment, error) {
@@ -38,15 +43,13 @@ func (t *Tx) CreateEnvironment(ctx context.Context, projectID int64, slug, name 
 	return createEnvironment(ctx, t.q, projectID, slug, name)
 }
 
-func scanEnvironment(row interface {
-	Scan(dest ...any) error
-}) (*Environment, error) {
+func scanEnvironment(row interface{ Scan(dest ...any) error }) (*Environment, error) {
 	var e Environment
-	var envJSON string
+	var envJSON []byte
 	if err := row.Scan(&e.ID, &e.ProjectID, &e.Slug, &e.Name, &envJSON, &e.CreatedAt); err != nil {
 		return nil, err
 	}
-	if err := json.Unmarshal([]byte(envJSON), &e.Env); err != nil {
+	if err := json.Unmarshal(envJSON, &e.Env); err != nil {
 		return nil, fmt.Errorf("decode env for environment %q: %w", e.Slug, err)
 	}
 	return &e, nil
@@ -54,7 +57,7 @@ func scanEnvironment(row interface {
 
 func getEnvironmentBySlug(ctx context.Context, q queryer, projectID int64, slug string) (*Environment, error) {
 	row := q.QueryRowContext(ctx,
-		`SELECT id, project_id, slug, name, env, created_at FROM environments WHERE project_id = ? AND slug = ?`, projectID, slug)
+		`SELECT `+environmentColumns+` FROM environments WHERE project_id = $1 AND slug = $2`, projectID, slug)
 	e, err := scanEnvironment(row)
 	if err != nil {
 		return nil, fmt.Errorf("get environment %q: %w", slug, err)
@@ -67,8 +70,7 @@ func (s *Store) GetEnvironmentBySlug(ctx context.Context, projectID int64, slug 
 }
 
 func (s *Store) GetEnvironmentByID(ctx context.Context, id int64) (*Environment, error) {
-	row := s.db.QueryRowContext(ctx,
-		`SELECT id, project_id, slug, name, env, created_at FROM environments WHERE id = ?`, id)
+	row := s.db.QueryRowContext(ctx, `SELECT `+environmentColumns+` FROM environments WHERE id = $1`, id)
 	e, err := scanEnvironment(row)
 	if err != nil {
 		return nil, fmt.Errorf("get environment %d: %w", id, err)
@@ -78,7 +80,7 @@ func (s *Store) GetEnvironmentByID(ctx context.Context, id int64) (*Environment,
 
 func (s *Store) ListEnvironmentsForProject(ctx context.Context, projectID int64) ([]*Environment, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, project_id, slug, name, env, created_at FROM environments WHERE project_id = ? ORDER BY id`, projectID)
+		`SELECT `+environmentColumns+` FROM environments WHERE project_id = $1 ORDER BY id`, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -96,11 +98,11 @@ func (s *Store) ListEnvironmentsForProject(ctx context.Context, projectID int64)
 }
 
 func (s *Store) SetEnvironmentEnv(ctx context.Context, environmentID int64, env map[string]string) error {
-	envJSON, err := json.Marshal(env)
+	envJSON, err := marshalEnv(env)
 	if err != nil {
-		return fmt.Errorf("encode env: %w", err)
+		return err
 	}
-	if _, err := s.db.ExecContext(ctx, `UPDATE environments SET env = ? WHERE id = ?`, string(envJSON), environmentID); err != nil {
+	if _, err := s.db.ExecContext(ctx, `UPDATE environments SET env = $1::jsonb WHERE id = $2`, envJSON, environmentID); err != nil {
 		return fmt.Errorf("set environment env: %w", err)
 	}
 	return nil
@@ -111,14 +113,14 @@ func (s *Store) SetEnvironmentEnv(ctx context.Context, environmentID int64, env 
 // environment that would orphan apps.
 func (s *Store) CountAppsInEnvironment(ctx context.Context, environmentID int64) (int, error) {
 	var n int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM apps WHERE environment_id = ?`, environmentID).Scan(&n); err != nil {
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM apps WHERE environment_id = $1`, environmentID).Scan(&n); err != nil {
 		return 0, fmt.Errorf("count apps in environment: %w", err)
 	}
 	return n, nil
 }
 
 func (s *Store) DeleteEnvironment(ctx context.Context, environmentID int64) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM environments WHERE id = ?`, environmentID); err != nil {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM environments WHERE id = $1`, environmentID); err != nil {
 		return fmt.Errorf("delete environment: %w", err)
 	}
 	return nil

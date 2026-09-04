@@ -13,12 +13,17 @@ type User struct {
 	CreatedAt    time.Time
 }
 
+const userColumns = `id, username, is_super_admin, created_at`
+
 func createUser(ctx context.Context, q queryer, username string, isSuperAdmin bool) (*User, error) {
-	if _, err := q.ExecContext(ctx,
-		`INSERT INTO users (username, is_super_admin) VALUES (?, ?)`, username, isSuperAdmin); err != nil {
+	row := q.QueryRowContext(ctx,
+		`INSERT INTO users (username, is_super_admin) VALUES ($1, $2) RETURNING `+userColumns,
+		username, isSuperAdmin)
+	u, err := scanUser(row)
+	if err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
 	}
-	return getUserByUsername(ctx, q, username)
+	return u, nil
 }
 
 func (s *Store) CreateUser(ctx context.Context, username string, isSuperAdmin bool) (*User, error) {
@@ -39,8 +44,7 @@ func scanUser(row interface{ Scan(dest ...any) error }) (*User, error) {
 }
 
 func getUserByUsername(ctx context.Context, q queryer, username string) (*User, error) {
-	row := q.QueryRowContext(ctx,
-		`SELECT id, username, is_super_admin, created_at FROM users WHERE username = ?`, username)
+	row := q.QueryRowContext(ctx, `SELECT `+userColumns+` FROM users WHERE username = $1`, username)
 	u, err := scanUser(row)
 	if err != nil {
 		return nil, fmt.Errorf("get user %q: %w", username, err)
@@ -59,8 +63,7 @@ func (t *Tx) GetUserByUsername(ctx context.Context, username string) (*User, err
 }
 
 func (s *Store) GetUserByID(ctx context.Context, id int64) (*User, error) {
-	row := s.db.QueryRowContext(ctx,
-		`SELECT id, username, is_super_admin, created_at FROM users WHERE id = ?`, id)
+	row := s.db.QueryRowContext(ctx, `SELECT `+userColumns+` FROM users WHERE id = $1`, id)
 	u, err := scanUser(row)
 	if err != nil {
 		return nil, fmt.Errorf("get user %d: %w", id, err)

@@ -6,8 +6,7 @@ import (
 )
 
 func TestCreateAndGetUser(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 
 	created, err := s.CreateUser(ctx, "lucas", true)
@@ -32,8 +31,7 @@ func TestCreateAndGetUser(t *testing.T) {
 }
 
 func TestCountUsers(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 
 	n, err := s.CountUsers(ctx)

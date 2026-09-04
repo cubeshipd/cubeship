@@ -8,12 +8,11 @@ import (
 	"testing"
 
 	"cubeship/internal/deploy"
-	"cubeship/internal/store"
+	"cubeship/internal/storetest"
 )
 
 func TestManualDeployEndpoint(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
@@ -40,8 +39,7 @@ func TestManualDeployEndpoint(t *testing.T) {
 }
 
 func TestManualDeployDefaultsToLatestTag(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
@@ -64,8 +62,7 @@ func TestManualDeployDefaultsToLatestTag(t *testing.T) {
 }
 
 func TestSetEnvEndpoint(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
@@ -90,8 +87,7 @@ func TestSetEnvEndpoint(t *testing.T) {
 }
 
 func TestManualDeployUnknownApp(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 	key := testAPIKeyFor(t, s, true)
 	srv := NewServer(s, deploy.New(s, &webhookFakeDocker{}), "webhook-secret", "registry.example.com")
 
@@ -105,8 +101,7 @@ func TestManualDeployUnknownApp(t *testing.T) {
 }
 
 func TestManualDeployHidesAppFromOtherOrgs(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")

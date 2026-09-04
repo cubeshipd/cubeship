@@ -8,11 +8,11 @@ import (
 	"testing"
 
 	"cubeship/internal/store"
+	"cubeship/internal/storetest"
 )
 
 func TestCreateOrgRequiresSuperAdmin(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 	srv := NewServer(s, nil, "webhook-secret", "registry.example.com")
 	nonAdminKey := testAPIKeyFor(t, s, false)
 
@@ -27,8 +27,7 @@ func TestCreateOrgRequiresSuperAdmin(t *testing.T) {
 }
 
 func TestCreateOrgAsSuperAdmin(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 	srv := NewServer(s, nil, "webhook-secret", "registry.example.com")
 	adminKey := testAPIKeyFor(t, s, true)
 
@@ -51,8 +50,7 @@ func TestCreateOrgAsSuperAdmin(t *testing.T) {
 // pushes (registry.<domain>/<slug>/<app>), so a slug Docker would reject
 // has to be rejected here instead of at `docker push` time.
 func TestCreateOrgRejectsInvalidSlugs(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 	srv := NewServer(s, nil, "webhook-secret", "registry.example.com")
 	adminKey := testAPIKeyFor(t, s, true)
 
@@ -81,8 +79,7 @@ func TestCreateOrgRejectsInvalidSlugs(t *testing.T) {
 // A duplicate slug used to surface the raw SQLite constraint error as a
 // 500.
 func TestCreateOrgDuplicateSlugConflicts(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 	srv := NewServer(s, nil, "webhook-secret", "registry.example.com")
 	adminKey := testAPIKeyFor(t, s, true)
 
@@ -101,8 +98,7 @@ func TestCreateOrgDuplicateSlugConflicts(t *testing.T) {
 }
 
 func TestListOrgsSuperAdminSeesAll(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 	ctx := context.Background()
 	s.CreateOrganization(ctx, "acme", "Acme Inc")
 	s.CreateOrganization(ctx, "globex", "Globex Corp")
@@ -121,8 +117,7 @@ func TestListOrgsSuperAdminSeesAll(t *testing.T) {
 }
 
 func TestListOrgsMemberSeesOnlyTheirOwn(t *testing.T) {
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 	ctx := context.Background()
 	acme, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	s.CreateOrganization(ctx, "globex", "Globex Corp")

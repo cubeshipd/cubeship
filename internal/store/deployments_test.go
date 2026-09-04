@@ -6,8 +6,7 @@ import (
 )
 
 func TestRecordAndListDeployments(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")

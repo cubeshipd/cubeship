@@ -6,8 +6,7 @@ import (
 )
 
 func TestCreateProjectWithDefaultEnvironment(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 
@@ -35,8 +34,7 @@ func TestCreateProjectWithDefaultEnvironment(t *testing.T) {
 }
 
 func TestListProjectsForOrg(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	orgA, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	orgB, _ := s.CreateOrganization(ctx, "globex", "Globex Corp")
@@ -54,8 +52,7 @@ func TestListProjectsForOrg(t *testing.T) {
 }
 
 func TestSetAndGetProjectEnv(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	project, _, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "web", "Web")
@@ -80,8 +77,7 @@ func TestSetAndGetProjectEnv(t *testing.T) {
 // A project slug is only unique within its own organization: two
 // different orgs can each have their own "web" project.
 func TestProjectSlugUniqueWithinOrgOnly(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	orgA, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	orgB, _ := s.CreateOrganization(ctx, "globex", "Globex Corp")

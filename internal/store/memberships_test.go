@@ -6,8 +6,7 @@ import (
 )
 
 func TestAddAndGetMembership(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	user, _ := s.CreateUser(ctx, "lucas", false)
@@ -26,8 +25,7 @@ func TestAddAndGetMembership(t *testing.T) {
 }
 
 func TestGetMembershipNotFound(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	user, _ := s.CreateUser(ctx, "lucas", false)
@@ -38,8 +36,7 @@ func TestGetMembershipNotFound(t *testing.T) {
 }
 
 func TestListMembershipsForUser(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	acme, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	globex, _ := s.CreateOrganization(ctx, "globex", "Globex Corp")

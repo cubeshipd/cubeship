@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"cubeship/internal/store"
+	"cubeship/internal/storetest"
 )
 
 type fakeDocker struct {
@@ -21,8 +21,7 @@ func (f *fakeDocker) IsRunning(ctx context.Context, id string) (bool, error) {
 
 func TestReconcileMarksMissingContainerDown(t *testing.T) {
 	ctx := context.Background()
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
@@ -46,8 +45,7 @@ func TestReconcileMarksMissingContainerDown(t *testing.T) {
 
 func TestReconcileConfirmsRunningContainer(t *testing.T) {
 	ctx := context.Background()
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
@@ -68,8 +66,7 @@ func TestReconcileConfirmsRunningContainer(t *testing.T) {
 
 func TestReconcileSkipsAppsNeverDeployed(t *testing.T) {
 	ctx := context.Background()
-	s, _ := store.Open(":memory:")
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	orgProject, orgEnv, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
 	s.CreateApp(ctx, org.ID, orgProject.ID, orgEnv.ID, "myapp", "myapp.example.com", "registry.example.com/myapp")

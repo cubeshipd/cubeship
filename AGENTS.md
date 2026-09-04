@@ -37,20 +37,27 @@ Work happens on `master`, in the repository root. No worktrees.
 
 ## Store
 
-SQLite through `modernc.org/sqlite` — pure Go, no cgo, and **no
-`PRAGMA foreign_keys`**: the `REFERENCES` clauses in the schema document
-intent, they are not enforced.
+Postgres through `pgx/v5/stdlib` over `database/sql`. Placeholders are
+`$1`, `$2`, …, and there is **no `LastInsertId`** — an insert that needs
+the new row returns it with `INSERT ... RETURNING <columns>`.
 
-`store.Open` runs the schema and then migrates idempotently: `hasColumn`,
-then `ALTER TABLE ... ADD COLUMN ... NOT NULL DEFAULT <literal>`, then
-backfill. Two SQLite rules bite here — a DDL default must be a literal
-constant (bound `?` parameters are rejected), and string literals take
-single quotes (double quotes mean an identifier). Every migration must
-survive running twice.
+Schema changes are numbered, append-only migrations in
+[`migrate.go`](internal/store/migrate.go): add an entry to `migrations`,
+never edit one that has shipped. Postgres has transactional DDL, so each
+one applies atomically alongside the row recording it, and `migrate` runs
+on every daemon start.
 
 Queries live as package-level functions over a `queryer` interface so
 `*Store` and `*Tx` share them; `WithTx` is the transaction primitive.
-Get* methods wrap `ErrNotFound`.
+Get* methods wrap `ErrNotFound`. Each table has a `<table>Columns`
+constant that its scan function reads in order — change one, change both.
+
+`env` columns are `JSONB`; write them through `marshalEnv` so a nil map
+becomes `{}` rather than JSON null.
+
+The daemon runs its own `cubeship-postgres` container (see
+`bootstrap.PostgresContainerOpts`) unless `CUBESHIP_DATABASE_URL` points
+it at an existing server.
 
 ## API and MCP
 
@@ -69,11 +76,20 @@ should land as a handler, an action, and a tool.
 
 ## Tests
 
-Unit tests use a real SQLite database in `t.TempDir()` and a fake Docker
-client — no daemon, no network. The MCP tests run a real client against a
-real `httptest` server. `test/integration` needs a Linux Docker daemon
-(`--network host` doesn't reach the host on Docker Desktop) and sits
-behind `//go:build integration`.
+Unit tests need a real Postgres — there is no in-memory mode. `make test`
+starts one (`make db-up`, a container on port 5433) and
+[`storetest.New(t)`](internal/storetest/storetest.go) gives each test its
+own schema inside it, dropped on cleanup, so tests stay isolated and can
+run in parallel. Tests in package `store` itself can't import `storetest`
+(import cycle) and use the equivalent local `newTestStore`.
+
+A test with no database reachable **fails**, deliberately — skipping
+would let `make check` report success for tests that never ran.
+
+Docker is faked everywhere else, so no test talks to a real daemon. The
+MCP tests run a real client against a real `httptest` server.
+`test/integration` needs a Linux Docker daemon (`--network host` doesn't
+reach the host on Docker Desktop) and sits behind `//go:build integration`.
 
 Slugs — orgs, projects, environments, apps — are kebab-case and validated
 against `slugPattern`, because they become path segments of a registry

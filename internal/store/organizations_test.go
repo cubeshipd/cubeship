@@ -6,11 +6,7 @@ import (
 )
 
 func TestCreateAndGetOrganization(t *testing.T) {
-	s, err := Open(":memory:")
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 
 	created, err := s.CreateOrganization(ctx, "acme", "Acme Inc")
@@ -31,16 +27,14 @@ func TestCreateAndGetOrganization(t *testing.T) {
 }
 
 func TestGetOrganizationBySlugNotFound(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	if _, err := s.GetOrganizationBySlug(context.Background(), "nope"); err == nil {
 		t.Fatal("expected an error for an unknown slug")
 	}
 }
 
 func TestListOrganizations(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	s.CreateOrganization(ctx, "acme", "Acme Inc")
 	s.CreateOrganization(ctx, "globex", "Globex Corp")

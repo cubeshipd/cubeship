@@ -21,7 +21,7 @@ type OrgMembership struct {
 
 func addMembership(ctx context.Context, q queryer, userID, orgID int64, role Role) error {
 	if _, err := q.ExecContext(ctx,
-		`INSERT INTO memberships (user_id, org_id, role) VALUES (?, ?, ?)`,
+		`INSERT INTO memberships (user_id, org_id, role) VALUES ($1, $2, $3)`,
 		userID, orgID, string(role)); err != nil {
 		return fmt.Errorf("add membership: %w", err)
 	}
@@ -40,7 +40,7 @@ func (t *Tx) AddMembership(ctx context.Context, userID, orgID int64, role Role) 
 func getMembership(ctx context.Context, q queryer, userID, orgID int64) (Role, error) {
 	var role string
 	err := q.QueryRowContext(ctx,
-		`SELECT role FROM memberships WHERE user_id = ? AND org_id = ?`, userID, orgID).Scan(&role)
+		`SELECT role FROM memberships WHERE user_id = $1 AND org_id = $2`, userID, orgID).Scan(&role)
 	if err != nil {
 		return "", fmt.Errorf("get membership: %w", err)
 	}
@@ -62,7 +62,7 @@ func (s *Store) ListMembershipsForUser(ctx context.Context, userID int64) ([]Org
 		SELECT m.org_id, o.slug, o.name, m.role
 		FROM memberships m
 		JOIN organizations o ON o.id = m.org_id
-		WHERE m.user_id = ?
+		WHERE m.user_id = $1
 		ORDER BY o.slug`, userID)
 	if err != nil {
 		return nil, err

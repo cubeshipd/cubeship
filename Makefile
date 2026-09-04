@@ -43,8 +43,38 @@ ship: daemon-linux ## Upload the daemon to a VPS and restart it (HOST=user@vps)
 .PHONY: check
 check: fmt-check vet test ## Everything that must pass before a commit
 
+# Postgres has no in-memory mode, so the unit tests need a real server.
+# Each test gets its own schema in this one container (see
+# internal/storetest), which is why one shared instance is enough.
+# Port 5433, not 5432, so it never collides with a Postgres you already
+# run.
+PG_CONTAINER ?= cubeship-test-db
+PG_PORT      ?= 5433
+PG_IMAGE     ?= postgres:16-alpine
+
+.PHONY: db-up
+db-up: ## Start the Postgres the tests run against (idempotent)
+	@if [ -n "$$(docker ps -q -f name=^/$(PG_CONTAINER)$$)" ]; then exit 0; fi; \
+	if [ -n "$$(docker ps -aq -f name=^/$(PG_CONTAINER)$$)" ]; then \
+		docker start $(PG_CONTAINER) >/dev/null; \
+	else \
+		docker run -d --name $(PG_CONTAINER) \
+			-e POSTGRES_USER=cubeship -e POSTGRES_PASSWORD=cubeship -e POSTGRES_DB=cubeship_test \
+			-p 127.0.0.1:$(PG_PORT):5432 $(PG_IMAGE) >/dev/null; \
+	fi; \
+	printf 'waiting for postgres'; \
+	for i in $$(seq 1 30); do \
+		if docker exec $(PG_CONTAINER) pg_isready -U cubeship -q 2>/dev/null; then echo " ready"; exit 0; fi; \
+		printf '.'; sleep 1; \
+	done; \
+	echo; echo "postgres did not become ready; try: docker logs $(PG_CONTAINER)"; exit 1
+
+.PHONY: db-down
+db-down: ## Stop and remove the test Postgres, discarding its data
+	-docker rm -f $(PG_CONTAINER)
+
 .PHONY: test
-test: ## Unit tests, race detector on, no Docker needed
+test: db-up ## Unit tests, race detector on (starts the test Postgres)
 	$(GO) test -race -count=1 ./...
 
 .PHONY: test-integration

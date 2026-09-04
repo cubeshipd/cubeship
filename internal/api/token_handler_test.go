@@ -9,17 +9,14 @@ import (
 
 	"cubeship/internal/regauth"
 	"cubeship/internal/store"
+	"cubeship/internal/storetest"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
 func newTokenTestServer(t *testing.T) (*Server, string) {
 	t.Helper()
-	s, err := store.Open(":memory:")
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 
 	srv := NewServer(s, nil, "webhook-secret", "registry.example.com")
 	key, err := regauth.LoadOrCreateKeyPair(t.TempDir())

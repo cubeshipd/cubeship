@@ -6,11 +6,7 @@ import (
 )
 
 func TestCreateAndGetApp(t *testing.T) {
-	s, err := Open(":memory:")
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer s.Close()
+	s := newTestStore(t)
 
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
@@ -45,8 +41,7 @@ func TestCreateAndGetApp(t *testing.T) {
 }
 
 func TestGetAppByImage(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	project, env, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
@@ -67,8 +62,7 @@ func TestGetAppByImage(t *testing.T) {
 }
 
 func TestUpdateAppContainer(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	project, env, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
@@ -85,8 +79,7 @@ func TestUpdateAppContainer(t *testing.T) {
 }
 
 func TestSetAndGetAppEnv(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	project, env, _ := s.CreateProjectWithDefaultEnvironment(ctx, org.ID, "default", "Default")
@@ -110,8 +103,7 @@ func TestSetAndGetAppEnv(t *testing.T) {
 }
 
 func TestListAppsIncludesOrgID(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	orgA, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	orgB, _ := s.CreateOrganization(ctx, "globex", "Globex Corp")

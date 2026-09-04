@@ -7,15 +7,11 @@ import (
 )
 
 func TestWithTxCommitsOnSuccess(t *testing.T) {
-	s, err := Open(":memory:")
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 
-	err = s.WithTx(ctx, func(tx *Tx) error {
+	err := s.WithTx(ctx, func(tx *Tx) error {
 		user, err := tx.CreateUser(ctx, "employee1", false)
 		if err != nil {
 			return err
@@ -46,16 +42,12 @@ func TestWithTxCommitsOnSuccess(t *testing.T) {
 // behind: no membership, no key, and a username permanently taken with no
 // way to recover through the API.
 func TestWithTxRollsBackPartialWork(t *testing.T) {
-	s, err := Open(":memory:")
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 	boom := errors.New("boom")
 
-	err = s.WithTx(ctx, func(tx *Tx) error {
+	err := s.WithTx(ctx, func(tx *Tx) error {
 		user, err := tx.CreateUser(ctx, "employee1", false)
 		if err != nil {
 			return err
@@ -85,15 +77,11 @@ func TestWithTxRollsBackPartialWork(t *testing.T) {
 // The transaction must see its own uncommitted rows — a create-then-read
 // sequence inside one WithTx is exactly what user creation does.
 func TestTxSeesItsOwnUncommittedWrites(t *testing.T) {
-	s, err := Open(":memory:")
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	org, _ := s.CreateOrganization(ctx, "acme", "Acme Inc")
 
-	err = s.WithTx(ctx, func(tx *Tx) error {
+	err := s.WithTx(ctx, func(tx *Tx) error {
 		user, err := tx.CreateUser(ctx, "employee1", false)
 		if err != nil {
 			return err
@@ -119,14 +107,10 @@ func TestTxSeesItsOwnUncommittedWrites(t *testing.T) {
 }
 
 func TestTxGetUserByUsernameReportsNotFound(t *testing.T) {
-	s, err := Open(":memory:")
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 
-	err = s.WithTx(ctx, func(tx *Tx) error {
+	err := s.WithTx(ctx, func(tx *Tx) error {
 		_, err := tx.GetUserByUsername(ctx, "nobody")
 		if !errors.Is(err, ErrNotFound) {
 			t.Fatalf("expected ErrNotFound for an unknown username, got %v", err)

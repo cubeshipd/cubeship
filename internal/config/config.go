@@ -1,7 +1,6 @@
 package config
 
 import (
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -9,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"cubeship/internal/authkey"
 )
 
 type Config struct {
@@ -18,7 +19,7 @@ type Config struct {
 	// key and NOT a registry login credential — registry push/pull now
 	// goes through per-user tokens (see internal/regauth), and the
 	// super-admin's own API key is generated separately (see
-	// cmd/cubeshipd's loadOrCreateAdminKey).
+	// cmd/cubeshipd's adminKeyFileName).
 	Token        string
 	DataDir      string
 	RegistryHost string
@@ -28,6 +29,18 @@ type Config struct {
 	// TokenFile is where a generated token is persisted. Empty when the
 	// token came from CUBESHIP_TOKEN.
 	TokenFile string
+
+	// DatabaseURL is an externally provided Postgres connection string
+	// (CUBESHIP_DATABASE_URL). When empty, the daemon brings up and owns
+	// a Postgres container of its own — see bootstrap.PostgresDSN.
+	DatabaseURL string
+}
+
+// ManagedDatabase reports whether the daemon is responsible for running
+// the Postgres it connects to, rather than being pointed at one that
+// already exists.
+func (c *Config) ManagedDatabase() bool {
+	return c.DatabaseURL == ""
 }
 
 func Load() (*Config, error) {
@@ -65,6 +78,7 @@ func Load() (*Config, error) {
 		APIHost:      "api." + domain,
 		AcmeEmail:    acmeEmail,
 		TokenFile:    tokenFile,
+		DatabaseURL:  os.Getenv("CUBESHIP_DATABASE_URL"),
 	}, nil
 }
 
@@ -84,7 +98,7 @@ func loadOrCreateToken(dataDir, path string) (string, error) {
 		return "", fmt.Errorf("read token file %s: %w", path, err)
 	}
 
-	token, err := generateToken()
+	token, err := authkey.Generate()
 	if err != nil {
 		return "", fmt.Errorf("generate token: %w", err)
 	}
@@ -95,14 +109,6 @@ func loadOrCreateToken(dataDir, path string) (string, error) {
 		return "", fmt.Errorf("write token file %s: %w", path, err)
 	}
 	return token, nil
-}
-
-func generateToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(b), nil
 }
 
 // TokenFingerprint is a short, non-secret identifier for a token, safe

@@ -9,6 +9,7 @@ import (
 
 	"cubeship/internal/deploy"
 	"cubeship/internal/store"
+	"cubeship/internal/storetest"
 )
 
 // twoOrgFixture is the multi-tenant shape the authorization rules exist
@@ -23,11 +24,7 @@ type twoOrgFixture struct {
 
 func newTwoOrgFixture(t *testing.T, docker *webhookFakeDocker) (*Server, twoOrgFixture) {
 	t.Helper()
-	s, err := store.Open(":memory:")
-	if err != nil {
-		t.Fatalf("store.Open: %v", err)
-	}
-	t.Cleanup(func() { s.Close() })
+	s := storetest.New(t)
 
 	ctx := context.Background()
 	acme, err := s.CreateOrganization(ctx, "acme", "Acme Inc")

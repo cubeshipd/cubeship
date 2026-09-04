@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestCreateAPIKeyAndLookupByHash(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	user, _ := s.CreateUser(ctx, "lucas", true)
 
@@ -26,16 +26,14 @@ func TestCreateAPIKeyAndLookupByHash(t *testing.T) {
 }
 
 func TestGetUserByAPIKeyHashUnknown(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	if _, err := s.GetUserByAPIKeyHash(context.Background(), "no-such-hash"); err == nil {
 		t.Fatal("expected an error for an unknown key hash")
 	}
 }
 
 func TestGetAPIKeyByHash(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	user, _ := s.CreateUser(ctx, "lucas", true)
 	s.CreateAPIKey(ctx, user.ID, "a-hash", "mcp")
@@ -50,8 +48,7 @@ func TestGetAPIKeyByHash(t *testing.T) {
 }
 
 func TestListAPIKeysForUser(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	user, _ := s.CreateUser(ctx, "lucas", true)
 	other, _ := s.CreateUser(ctx, "other", false)
@@ -76,8 +73,7 @@ func TestListAPIKeysForUser(t *testing.T) {
 }
 
 func TestRevokeAPIKeyByHashLeavesOtherKeysAlone(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	user, _ := s.CreateUser(ctx, "lucas", true)
 	s.CreateAPIKey(ctx, user.ID, "old-hash", "default")
@@ -95,8 +91,7 @@ func TestRevokeAPIKeyByHashLeavesOtherKeysAlone(t *testing.T) {
 }
 
 func TestRevokeAPIKeyByID(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	user, _ := s.CreateUser(ctx, "lucas", true)
 	key, _ := s.CreateAPIKey(ctx, user.ID, "hash-1", "default")
@@ -112,8 +107,7 @@ func TestRevokeAPIKeyByID(t *testing.T) {
 // A user must never be able to revoke another user's key by guessing its
 // id — RevokeAPIKeyByID is scoped to the caller's own userID.
 func TestRevokeAPIKeyByIDRefusesAnotherUsersKey(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	owner, _ := s.CreateUser(ctx, "owner", false)
 	attacker, _ := s.CreateUser(ctx, "attacker", false)
@@ -128,8 +122,7 @@ func TestRevokeAPIKeyByIDRefusesAnotherUsersKey(t *testing.T) {
 }
 
 func TestTouchAPIKeyLastUsed(t *testing.T) {
-	s, _ := Open(":memory:")
-	defer s.Close()
+	s := newTestStore(t)
 	ctx := context.Background()
 	user, _ := s.CreateUser(ctx, "lucas", true)
 	s.CreateAPIKey(ctx, user.ID, "a-hash", "default")
@@ -138,8 +131,10 @@ func TestTouchAPIKeyLastUsed(t *testing.T) {
 		t.Fatalf("TouchAPIKeyLastUsed: %v", err)
 	}
 
-	var lastUsed *string
-	s.db.QueryRow(`SELECT last_used_at FROM api_keys WHERE key_hash = ?`, "a-hash").Scan(&lastUsed)
+	var lastUsed *time.Time
+	if err := s.db.QueryRow(`SELECT last_used_at FROM api_keys WHERE key_hash = $1`, "a-hash").Scan(&lastUsed); err != nil {
+		t.Fatalf("read last_used_at: %v", err)
+	}
 	if lastUsed == nil {
 		t.Fatal("expected last_used_at to be set")
 	}
