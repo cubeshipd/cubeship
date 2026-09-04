@@ -172,14 +172,23 @@ someone whose sidebar is pointing elsewhere — opening it moves the
 whole dashboard to that organization rather than showing one page out
 of frame, and whatever replaces it has to keep that true.
 
-DNS is the shape the rest is moving to:
+DNS and registries are the shape the rest is moving to:
 
 ```
-/dns                        the credentials
-/dns/[id]                   one credential's zones
-/dns/[id]/settings          its label, its secret, deleting it
-/dns/[id]/zones/[zone]      a zone's records, by domain name
+/dns                            the credentials
+/dns/[id]                       one credential's zones
+/dns/[id]/settings              its label, its secret, deleting it
+/dns/[id]/zones/[zone]          a zone's records, by domain name
+
+/registries                     the logins, Cubeship's own first
+/registries/[id]                what one holds
+/registries/[id]/settings       its login, deleting it
 ```
+
+`cubeship` is the reserved id for the registry this instance runs.
+Every other id is a stored credential's, which is a number, so the two
+cannot collide — and a link to Cubeship's own registry is a name rather
+than a blank.
 
 A zone is addressed by its **name**, not by the provider's id for it: a
 name is what someone recognises in a link they were sent, and it is

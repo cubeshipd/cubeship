@@ -2,8 +2,8 @@
 
 import { BoxIcon, ChevronLeftIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
@@ -30,20 +30,10 @@ import { message } from "@/lib/errors";
 // This is also where a registry that has stopped accepting its login
 // lands when you click it, because re-authenticating is the only thing
 // there is to do with one.
-export default function RegistrySettings() {
-  return (
-    <Suspense>
-      <Settings />
-    </Suspense>
-  );
-}
-
-function Settings() {
-  const params = useSearchParams();
+export default function RegistrySettings({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const router = useRouter();
   const { org } = useOrg();
-  const id = params.get("id") ?? "";
-  const host = params.get("host") ?? "";
 
   const [credential, setCredential] = useState<RegistryCredential | null>(null);
   const [status, setStatus] = useState<RegistryStatus | null>(null);
@@ -132,15 +122,15 @@ function Settings() {
           from that one, and a settings screen that returns you two
           levels up loses your place. */}
       <Link
-        href={`/registries/detail?id=${id}&host=${encodeURIComponent(host)}`}
+        href={`/registries/${id}`}
         className="mb-4 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
       >
         <ChevronLeftIcon className="size-3.5" />
-        {host || "Registry"}
+        {credential?.host ?? "Registry"}
       </Link>
 
       <PageHeader
-        title={host || credential?.host || "Registry"}
+        title={credential?.host || "Registry"}
         literal
         icon={<Icon className="size-5 shrink-0 text-muted-foreground" />}
         sub="What this organization logs in to this registry with."
@@ -260,8 +250,8 @@ function Settings() {
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
-        title={`Delete the login for ${host || credential?.host || "this registry"}?`}
-        confirmWord={host || credential?.host}
+        title={`Delete the login for ${credential?.host || "this registry"}?`}
+        confirmWord={credential?.host}
         description="Nothing in the registry is touched. What goes is this instance's ability to pull from it."
         onConfirm={async () => {
           await api.del(`/orgs/${org}/registries/${id}`);

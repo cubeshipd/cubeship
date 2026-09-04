@@ -86,11 +86,8 @@ export default function Registries() {
   // so it goes to the one screen that can fix it.
   const open = useCallback(
     (c: RegistryCredential) => {
-      if (statuses[c.id]?.state === "unauthorized") {
-        router.push(`/registries/settings?id=${c.id}&host=${encodeURIComponent(c.host)}`);
-        return;
-      }
-      router.push(`/registries/detail?id=${c.id}&host=${encodeURIComponent(c.host)}`);
+      const unauthorized = statuses[c.id]?.state === "unauthorized";
+      router.push(unauthorized ? `/registries/${c.id}/settings` : `/registries/${c.id}`);
     },
     [router, statuses],
   );
@@ -187,7 +184,7 @@ export default function Registries() {
                   key — so there is nothing here to add or replace. */}
               <TableRow
                 className="cursor-pointer select-none"
-                onClick={() => router.push("/registries/detail")}
+                onClick={() => router.push("/registries/cubeship")}
               >
                 <TableCell className="px-4 py-2.5 font-mono text-xs">
                   {settings?.registry_host ?? "not reachable until a domain is set"}

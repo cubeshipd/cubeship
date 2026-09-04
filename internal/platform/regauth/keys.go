@@ -66,11 +66,26 @@ func LoadOrCreateKeyPair(dataDir string) (*rsa.PrivateKey, error) {
 // bootstrap.WriteRegistryTokenCert writes) if the underlying key ever
 // changes.
 func SelfSignedCert(key *rsa.PrivateKey, commonName string) ([]byte, []byte, error) {
+	// Fixed dates, so the same key always produces the same certificate.
+	//
+	// This is the load-bearing part of the whole file. The registry
+	// reads its trust root once, when its container starts, and it
+	// accepts only that exact certificate — a second one over the same
+	// key does not chain to it and every token signed with it is
+	// refused. A `time.Now()` here meant a new certificate on every
+	// daemon start, so the registry began answering 401 to a daemon
+	// holding the very key it trusts, and stayed that way until someone
+	// restarted the registry too.
+	//
+	// The window is a century because it is not a control here: this
+	// certificate exists to carry one public key between two processes
+	// on one box, and what protects that is the key, which lives in a
+	// 0600 file in the data directory.
 	template := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject:      pkix.Name{CommonName: commonName},
-		NotBefore:    time.Now().Add(-time.Hour),
-		NotAfter:     time.Now().AddDate(10, 0, 0),
+		NotBefore:    time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC),
+		NotAfter:     time.Date(2120, time.January, 1, 0, 0, 0, 0, time.UTC),
 		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)

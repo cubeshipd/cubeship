@@ -2,8 +2,7 @@
 
 import { BoxIcon, ChevronLeftIcon, ChevronRightIcon, SettingsIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyButton } from "@/components/copy-button";
 import { ErrorAlert } from "@/components/error-alert";
@@ -26,6 +25,7 @@ import {
 } from "@/components/ui/table";
 import {
   api,
+  type RegistryCredential,
   type RegistryImage,
   type RegistryRepository,
   type RegistryUsage,
@@ -39,21 +39,27 @@ import { message } from "@/lib/errors";
 // own has no credential — a push authenticates with the pusher's API key
 // — so it is addressed as the organization's registry rather than by an
 // id. Everything below the fetch is the same either way.
-export default function RegistryDetail() {
-  return (
-    <Suspense>
-      <Detail />
-    </Suspense>
-  );
-}
-
-function Detail() {
-  const params = useSearchParams();
-  const _router = useRouter();
+export default function RegistryDetail({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   const { org } = useOrg();
-  const id = params.get("id") ?? "";
-  const host = params.get("host") ?? "";
-  const own = id === "" || id === "cubeship";
+  // "cubeship" is the reserved name for the one registry this instance
+  // runs. Every other id is a stored credential's, which is a number, so
+  // the two can never collide.
+  const own = id === "cubeship";
+
+  // The host and the provider used to travel in the query string beside
+  // the id. They come from the credential now: an id is enough to say
+  // which registry this is, and a link that had to carry three values to
+  // render a heading was a link nobody could type.
+  const [credential, setCredential] = useState<RegistryCredential | null>(null);
+  useEffect(() => {
+    if (own || !org) return;
+    api
+      .get<RegistryCredential[]>(`/orgs/${org}/registries`)
+      .then((list) => setCredential(list.find((c) => String(c.id) === id) ?? null))
+      .catch(() => setCredential(null));
+  }, [org, own, id]);
+  const host = credential?.host ?? "";
 
   const [repos, setRepos] = useState<RegistryRepository[] | null>(null);
   // A set, not one name: comparing two repositories means having both
@@ -132,7 +138,7 @@ function Detail() {
 
   // The mark belongs to the provider, and the detail page knows which
   // one only from what the listing passed it.
-  const provider = params.get("provider") ?? "";
+  const provider = credential?.provider ?? "";
   const Icon =
     provider === "aws" ? AWSIcon : provider === "digitalocean" ? DigitalOceanIcon : BoxIcon;
 
@@ -308,7 +314,7 @@ function Detail() {
               variant="outline"
               nativeButton={false}
               render={
-                <Link href={`/registries/settings?id=${id}&host=${encodeURIComponent(host)}`}>
+                <Link href={`/registries/${id}/settings`}>
                   <SettingsIcon />
                   Settings
                 </Link>

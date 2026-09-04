@@ -1,6 +1,7 @@
 package regauth
 
 import (
+	"bytes"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
@@ -153,5 +154,36 @@ func TestIssuedTokensAreShapedTheWayTheRegistryReadsThem(t *testing.T) {
 	}
 	if chain[0] != base64.StdEncoding.EncodeToString(certDER) {
 		t.Error("x5c does not carry the certificate the registry was given as its trust root")
+	}
+}
+
+// The same key must always produce the same certificate.
+//
+// The registry reads its trust root once, when its container starts, and
+// it accepts only that exact certificate — one regenerated over the same
+// key does not chain to it. A certificate that varied meant the registry
+// answered 401 to a daemon holding the very key it trusts, from the
+// first daemon restart until someone restarted the registry too. That
+// looked like a broken install and was a clock.
+func TestTheCertificateIsTheSameEveryTimeForOneKey(t *testing.T) {
+	key, err := LoadOrCreateKeyPair(t.TempDir())
+	if err != nil {
+		t.Fatalf("LoadOrCreateKeyPair: %v", err)
+	}
+
+	firstPEM, firstDER, err := SelfSignedCert(key, "cubeship")
+	if err != nil {
+		t.Fatalf("SelfSignedCert: %v", err)
+	}
+	secondPEM, secondDER, err := SelfSignedCert(key, "cubeship")
+	if err != nil {
+		t.Fatalf("SelfSignedCert: %v", err)
+	}
+
+	if !bytes.Equal(firstDER, secondDER) {
+		t.Error("two certificates over one key differ, so a daemon restart invalidates every token the registry will accept")
+	}
+	if !bytes.Equal(firstPEM, secondPEM) {
+		t.Error("the PEM differs between calls, so the trust root on disk churns on every start")
 	}
 }
