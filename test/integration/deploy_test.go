@@ -116,8 +116,14 @@ func TestDeployEndToEnd(t *testing.T) {
 	t.Cleanup(func() {
 		daemon.Process.Kill()
 		daemon.Wait()
-		exec.Command("docker", "rm", "-f", "cubeship-registry", "cubeship-traefik").Run()
+		exec.Command("docker", "rm", "-f", "cubeship-registry", "cubeship-traefik",
+			"cubeship-postgres", "cubeship-frontend", "cubeship-buildkit").Run()
 		exec.Command("sh", "-c", "docker rm -f $(docker ps -aq --filter name=cubeship-myapp-)").Run()
+		// Postgres wrote its data directory as its own user, which the
+		// TempDir cleanup cannot remove — and a cleanup that fails fails
+		// the test. Its image is already here, so it does the chmod.
+		exec.Command("docker", "run", "--rm", "-v", dataDir+":/d", "--entrypoint", "chmod",
+			"postgres:16-alpine", "-R", "a+rwX", "/d").Run()
 	})
 
 	waitFor(t, 30*time.Second, "daemon healthz", func() bool {
@@ -301,7 +307,7 @@ func claimInstance(t *testing.T, username, password string) string {
 		t.Fatalf("POST /users/me/api-keys: %s", keyResp.Status)
 	}
 	var created struct {
-		Key string `json:"key"`
+		Key string `json:"api_key"`
 	}
 	jsonDecodeOrFatal(t, keyResp, &created)
 	if created.Key == "" {

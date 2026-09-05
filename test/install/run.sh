@@ -83,7 +83,7 @@ run_tests() {
 	out=$(main 2>&1) || { printf '%s\n' "$out"; exit 1; }
 
 	check "creates the data directory" "$(stat -c '%a' /var/lib/cubeship)" "700"
-	check "pulls the image" "$(grep -c '^docker pull ' /tmp/docker.log)" "1"
+	check "pulls both images" "$(grep -c '^docker pull ' /tmp/docker.log)" "2"
 	check "creates the shared network" \
 		"$(grep -c '^docker network create cubeship' /tmp/docker.log)" "1"
 	check "runs the daemon" "$(grep -c 'docker run .*--name cubeship-daemon' /tmp/docker.log)" "1"
@@ -129,16 +129,16 @@ run_tests() {
 	rm -f /tmp/docker.log
 	touch /src/Dockerfile
 	LOCAL=1
-	build_image
-	check "--local builds the image" "$(grep -c '^docker build ' /tmp/docker.log)" "1"
+	build_images
+	check "--local builds both images" "$(grep -c '^docker build ' /tmp/docker.log)" "2"
 	check "--local does not pull" "$(grep -c '^docker pull ' /tmp/docker.log)" "0"
-	check "--local builds from the checkout" "$(grep -c ' /src$' /tmp/docker.log)" "1"
+	check "--local builds from the checkout" "$(grep -c ' /src$' /tmp/docker.log)" "2"
 	LOCAL=0
 
 	# Piped from curl there is no checkout, and --local cannot serve
 	# that. Saying so beats a build that fails on a missing Dockerfile.
 	rm -f /src/Dockerfile
-	if (LOCAL=1; build_image) >/dev/null 2>&1; then
+	if (LOCAL=1; build_images) >/dev/null 2>&1; then
 		printf '  FAIL --local built with no repository present\n'
 		FAILURES=$((FAILURES + 1))
 	else
