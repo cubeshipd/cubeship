@@ -346,6 +346,12 @@ func (s *Service) Deploy(ctx context.Context, caller *user.User, ref Reference, 
 	return a, deployment, nil
 }
 
+// WaitForDeploys blocks until every deploy the orchestrator has running
+// has finished. For tests: a deploy started by a webhook outlives the
+// request that started it, and a test that drops its schema while one
+// is still writing deadlocks in Postgres.
+func (s *Service) WaitForDeploys() { s.orch.Wait() }
+
 // WaitForDeployment blocks until a deployment finishes or ctx is done.
 // Abandoning the wait does not abandon the deploy.
 func (s *Service) WaitForDeployment(ctx context.Context, caller *user.User, ref Reference, deploymentID int64) (*Deployment, error) {

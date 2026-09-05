@@ -123,17 +123,17 @@ func TestDeployEndToEnd(t *testing.T) {
 			}
 			out, _ := exec.Command("sh", "-c", "docker ps -a --filter name=cubeship- --format '{{.Names}}\t{{.Status}}\t{{.Image}}'").CombinedOutput()
 			t.Logf("---- docker ps -a ----\n%s", out)
-			out, _ = exec.Command("sh", "-c", "docker logs --tail 20 $(docker ps -aq --filter name=cubeship-myapp-) 2>&1").CombinedOutput()
+			out, _ = exec.Command("sh", "-c", "docker logs --tail 20 $(docker ps -aq --filter name=cubeship-web-production-myapp-) 2>&1").CombinedOutput()
 			t.Logf("---- app container logs ----\n%s", out)
 			out, _ = exec.Command("curl", "-s", "-H", "Authorization: Bearer "+adminKey,
-				daemonURL+httpx.APIPrefix+"/apps/myapp/deployments").CombinedOutput()
+				daemonURL+httpx.APIPrefix+"/apps/web/production/myapp/deployments").CombinedOutput()
 			t.Logf("---- deployments ----\n%s", out)
 		}
 		daemon.Process.Kill()
 		daemon.Wait()
 		exec.Command("docker", "rm", "-f", "cubeship-registry", "cubeship-traefik",
 			"cubeship-postgres", "cubeship-frontend", "cubeship-buildkit").Run()
-		exec.Command("sh", "-c", "docker rm -f $(docker ps -aq --filter name=cubeship-myapp-)").Run()
+		exec.Command("sh", "-c", "docker rm -f $(docker ps -aq --filter name=cubeship-web-production-myapp-)").Run()
 		// Postgres wrote its data directory as its own user, which the
 		// TempDir cleanup cannot remove — and a cleanup that fails fails
 		// the test. Its image is already here, so it does the chmod.
@@ -212,7 +212,7 @@ func TestDeployEndToEnd(t *testing.T) {
 	}
 
 	waitFor(t, 60*time.Second, "app deployed after push", func() bool {
-		req, _ := http.NewRequest(http.MethodGet, daemonURL+httpx.APIPrefix+"/apps/myapp", nil)
+		req, _ := http.NewRequest(http.MethodGet, daemonURL+httpx.APIPrefix+"/apps/web/production/myapp", nil)
 		req.Header.Set("Authorization", "Bearer "+adminKey)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
