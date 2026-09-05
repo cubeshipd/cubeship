@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/cgi"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -156,13 +157,25 @@ func serveRepo(t *testing.T, files map[string]string) string {
 	git(work, "clone", "--quiet", "--bare", work, bare)
 	git(bare, "--git-dir", bare, "update-server-info")
 
+	// Served over git's smart protocol: BuildKit's git would cope with a
+	// plain file server, but the daemon clones with go-git for a
+	// Railpack build, and go-git speaks smart HTTP only.
+	backend := filepath.Join(strings.TrimSpace(gitExecPath(t)), "git-http-backend")
+	if _, err := os.Stat(backend); err != nil {
+		t.Fatalf("git-http-backend is not installed: %v", err)
+	}
+	handler := &cgi.Handler{
+		Path: backend,
+		Env:  []string{"GIT_PROJECT_ROOT=" + serveDir, "GIT_HTTP_EXPORT_ALL=1"},
+	}
+
 	// The builder is a container reaching back to this process, and a
 	// Railpack build clones in the daemon: see hostAddress.
 	l, err := net.Listen("tcp", "0.0.0.0:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := httptest.NewUnstartedServer(http.FileServer(http.Dir(serveDir)))
+	srv := httptest.NewUnstartedServer(handler)
 	srv.Listener = l
 	srv.Start()
 	t.Cleanup(srv.Close)
@@ -270,4 +283,13 @@ func appStatus(t *testing.T, apiKey, reference string) string {
 	}
 	jsonDecodeOrFatal(t, resp, &a)
 	return a.Status
+}
+
+func gitExecPath(t *testing.T) string {
+	t.Helper()
+	out, err := exec.Command("git", "--exec-path").Output()
+	if err != nil {
+		t.Fatalf("git --exec-path: %v", err)
+	}
+	return string(out)
 }

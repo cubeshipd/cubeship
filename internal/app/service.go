@@ -325,10 +325,11 @@ func (s *Service) MergeEnv(ctx context.Context, caller *user.User, ref Reference
 // registry path, and returns the deployment recording it. The work runs
 // detached — see Orchestrator.Start — so the caller can stop waiting
 // without stopping the deploy.
+//
+// An empty tag is the source's to fill in: "latest" for an image, the
+// stored ref for a source that builds. Defaulting it here turned every
+// build with no tag asked for into a build of a branch called latest.
 func (s *Service) Deploy(ctx context.Context, caller *user.User, ref Reference, tag string) (*Scoped, *Deployment, error) {
-	if tag == "" {
-		tag = "latest"
-	}
 	// Resolved as a member first, so someone outside the organization
 	// gets the same 404 an unknown app gets rather than learning it
 	// exists. The source's own requirement is checked after.
