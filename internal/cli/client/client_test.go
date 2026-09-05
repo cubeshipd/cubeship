@@ -10,6 +10,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -49,7 +50,7 @@ func TestClientRoundTripsTheWholeHierarchy(t *testing.T) {
 		t.Fatalf("expected only production, got %v", envs)
 	}
 
-	created, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", "", "")
+	created, err := c.CreateApp(ctx, "myapp", "acme", "web", "", "")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -64,15 +65,29 @@ func TestClientRoundTripsTheWholeHierarchy(t *testing.T) {
 	if created.Image != servertest.RegistryHost+"/"+created.Reference {
 		t.Errorf("push path is %q, want %s/%s", created.Image, servertest.RegistryHost, created.Reference)
 	}
-	if created.Status == "" || created.Domain == "" {
-		t.Errorf("status or domain is empty: %+v", created)
+	if created.Status == "" {
+		t.Errorf("status is empty: %+v", created)
 	}
+	// An app is created with no names at all. It gets them one at a
+	// time, each naming its own port.
+	if len(created.Domains) != 0 {
+		t.Errorf("a new app already answers at something: %+v", created.Domains)
+	}
+	withDomain, err := c.AddAppDomain(ctx, created.Reference, "myapp.example.com", 0)
+	if err != nil {
+		t.Fatalf("AddAppDomain: %v", err)
+	}
+	if len(withDomain.Domains) != 1 || withDomain.Domains[0].Host != "myapp.example.com" {
+		t.Fatalf("the domain did not stick: %+v", withDomain.Domains)
+	}
+	created = withDomain
 
 	got, err := c.GetApp(ctx, created.Reference)
 	if err != nil {
 		t.Fatalf("GetApp: %v", err)
 	}
-	if got != created {
+	// reflect.DeepEqual, because an App now carries a slice.
+	if !reflect.DeepEqual(got, created) {
 		t.Errorf("GetApp returned %+v, CreateApp returned %+v", got, created)
 	}
 
@@ -80,7 +95,7 @@ func TestClientRoundTripsTheWholeHierarchy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListApps: %v", err)
 	}
-	if len(apps) != 1 || apps[0] != created {
+	if len(apps) != 1 || !reflect.DeepEqual(apps[0], created) {
 		t.Errorf("ListApps returned %v", apps)
 	}
 
@@ -91,7 +106,7 @@ func TestClientRoundTripsTheWholeHierarchy(t *testing.T) {
 		t.Fatalf("SetProjectEnv: %v", err)
 	}
 
-	env, err := c.CreateEnvironment(ctx, "acme", "web", "staging", "Staging")
+	env, err := c.CreateEnvironment(ctx, "acme", "web", "staging")
 	if err != nil {
 		t.Fatalf("CreateEnvironment: %v", err)
 	}
@@ -113,11 +128,11 @@ func TestErrorsCarryTheDaemonsMessage(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	if _, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", "", ""); err != nil {
+	if _, err := c.CreateApp(ctx, "myapp", "acme", "web", "", ""); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 
-	_, err := c.CreateApp(ctx, "myapp", "other.example.com", "acme", "web", "", "")
+	_, err := c.CreateApp(ctx, "myapp", "acme", "web", "", "")
 	if err == nil {
 		t.Fatal("expected the duplicate name to be refused")
 	}
@@ -230,7 +245,7 @@ func TestLogsOnAnAppThatWasNeverDeployed(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	if _, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", "", ""); err != nil {
+	if _, err := c.CreateApp(ctx, "myapp", "acme", "web", "", ""); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 
@@ -261,7 +276,7 @@ func TestClientMergeEnvKeepsOtherVariables(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	if _, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", "", ""); err != nil {
+	if _, err := c.CreateApp(ctx, "myapp", "acme", "web", "", ""); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 
@@ -340,9 +355,14 @@ func TestClientDeployReturnsADeploymentToFollow(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	created, err := c.CreateApp(ctx, "myapp", "myapp.example.com", "acme", "web", "", "")
+	created, err := c.CreateApp(ctx, "myapp", "acme", "web", "", "")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
+	}
+
+	// Traefik routes by host, so an app with no name cannot deploy.
+	if _, err := c.AddAppDomain(ctx, created.Reference, "myapp.example.com", 0); err != nil {
+		t.Fatalf("AddAppDomain: %v", err)
 	}
 
 	deployment, err := c.Deploy(ctx, created.Reference, "v1")

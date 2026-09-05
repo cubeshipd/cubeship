@@ -123,9 +123,14 @@ export function GitHubSource({
     );
   }
 
+  // The mark travels with the repository, not with the list. Today
+  // every row here is GitHub's, but this list is what a second provider
+  // would land in — and a list of names from two places, unmarked, is a
+  // list where you cannot tell which `acme/api` you are picking.
   const repoChoices: Choice[] = (repos ?? []).map((r) => ({
     value: r.full_name,
     label: r.full_name,
+    icon: GitHubIcon,
     hint: r.private ? "private" : undefined,
   }));
 
@@ -138,30 +143,36 @@ export function GitHubSource({
     <div className="space-y-4">
       <ErrorAlert error={error} />
 
-      <SearchableSelect
-        label="Repository"
-        hint="What the App was granted. Install it on more from GitHub if one is missing."
-        placeholder="Choose a repository"
-        empty="The App is connected but was granted no repositories."
-        busy={loading}
-        choices={repoChoices}
-        value={fullName}
-        onChange={(picked) => {
-          const chosen = repos?.find((r) => r.full_name === picked);
-          onRepo(`https://github.com/${picked}`, chosen?.default_branch ?? "");
-        }}
-      />
+      {/* Side by side, because they are one decision: a branch only
+          means anything inside a repository, and stacked they read as
+          two independent questions with the answer to the second
+          waiting on the first. */}
+      <div className="grid grid-cols-2 items-start gap-4">
+        <SearchableSelect
+          label="Repository"
+          hint="What the App was granted. Install it on more from GitHub if one is missing."
+          placeholder="Choose a repository"
+          empty="The App is connected but was granted no repositories."
+          busy={loading}
+          choices={repoChoices}
+          value={fullName}
+          onChange={(picked) => {
+            const chosen = repos?.find((r) => r.full_name === picked);
+            onRepo(`https://github.com/${picked}`, chosen?.default_branch ?? "");
+          }}
+        />
 
-      <SearchableSelect
-        label="Branch"
-        hint="What a deploy builds when it names nothing else. Leave it and a push to any branch deploys."
-        placeholder={fullName ? "Choose a branch" : "Choose a repository first"}
-        empty="No branches — or the App cannot read this repository."
-        disabled={!fullName}
-        choices={branchChoices}
-        value={gitRef}
-        onChange={onRef}
-      />
+        <SearchableSelect
+          label="Branch"
+          hint="What a deploy builds when it names nothing else. Leave it and a push to any branch deploys."
+          placeholder={fullName ? "Choose a branch" : "Choose a repository first"}
+          empty="No branches — or the App cannot read this repository."
+          disabled={!fullName}
+          choices={branchChoices}
+          value={gitRef}
+          onChange={onRef}
+        />
+      </div>
     </div>
   );
 }

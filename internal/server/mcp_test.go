@@ -180,8 +180,7 @@ func TestMCPCreateAppRoundTrip(t *testing.T) {
 		Project     string `json:"project"`
 		Environment string `json:"environment"`
 	}](t, session, "create_app", map[string]any{
-		"org": "acme", "project": "web", "name": "myapp", "domain": "myapp.example.com",
-	})
+		"org": "acme", "project": "web", "name": "myapp"})
 	if result.IsError {
 		t.Fatalf("create_app failed: %s", toolErrorText(result))
 	}

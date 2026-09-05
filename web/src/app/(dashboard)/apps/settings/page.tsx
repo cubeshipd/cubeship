@@ -5,11 +5,11 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
+import { AppNetwork } from "@/components/app-network";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
 import { GitHubSource } from "@/components/github-source";
-import { Notice } from "@/components/notice";
 import { OptionCards } from "@/components/option-cards";
 import { PageHeader, SectionHeader } from "@/components/page-header";
 import { TextAreaField, TextField } from "@/components/text-field";
@@ -87,7 +87,7 @@ function Settings() {
       <ErrorAlert error={error} />
 
       <General app={app} onSaved={setApp} onError={setError} />
-      <Serving app={app} onSaved={setApp} onError={setError} />
+      <AppNetwork app={app} onSaved={setApp} />
       <SourceSection app={app} onSaved={setApp} onError={setError} />
 
       <DangerZone>
@@ -186,49 +186,6 @@ function General(props: SectionProps) {
               </p>
             </div>
 
-            <SaveRow busy={busy} saved={saved} dirty={dirty} />
-          </form>
-        </CardContent>
-      </Card>
-    </>
-  );
-}
-
-function Serving(props: SectionProps) {
-  const { app } = props;
-  const { busy, saved, setSaved, save } = usePatch(props);
-  const [domain, setDomain] = useState(app.domain ?? "");
-  const dirty = domain !== (app.domain ?? "");
-
-  return (
-    <>
-      <SectionHeader title="Serving" />
-      <Card>
-        <CardContent>
-          {!app.domain && (
-            <Notice tone="warning">
-              This app has no domain, so it cannot deploy. Traefik routes by host — without one
-              there is nothing to route.
-            </Notice>
-          )}
-          <form
-            className="space-y-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              save({ domain });
-            }}
-          >
-            <TextField
-              label="Domain"
-              hint="It has to resolve to this host before a certificate can issue. Apps already running keep the routing they were deployed with — redeploy to pick this up."
-              spellCheck={false}
-              value={domain}
-              onChange={(e) => {
-                setDomain(e.target.value);
-                setSaved(false);
-              }}
-              placeholder="app.example.com"
-            />
             <SaveRow busy={busy} saved={saved} dirty={dirty} />
           </form>
         </CardContent>

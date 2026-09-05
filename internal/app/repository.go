@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"strings"
 
 	"cubeship/internal/envvar"
 	"cubeship/internal/platform/database"
@@ -16,7 +18,7 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, org_id, project_id, environment_id, name, description, domain, source, source_image,
+const columns = `id, org_id, project_id, environment_id, name, description, source, source_image,
 	source_repo, source_ref, source_dockerfile, container_id, status, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
@@ -24,7 +26,7 @@ type scanner interface{ Scan(dest ...any) error }
 func scan(row scanner) (*App, error) {
 	var a App
 	var envJSON []byte
-	if err := row.Scan(&a.ID, &a.OrgID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Description, &a.Domain,
+	if err := row.Scan(&a.ID, &a.OrgID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Description,
 		&a.Source, &a.SourceImage, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
 		&a.ContainerID, &a.Status, &envJSON, &a.CreatedAt); err != nil {
 		return nil, err
@@ -41,7 +43,7 @@ func scan(row scanner) (*App, error) {
 //
 // The slug is not here. It is the last component of the app's registry
 // reference, and no slug in Cubeship changes once its resource exists.
-func (r *Repository) Update(ctx context.Context, appID int64, description, domain *string, source *Source, origin *Origin) (*App, error) {
+func (r *Repository) Update(ctx context.Context, appID int64, description *string, source *Source, origin *Origin) (*App, error) {
 	var src *string
 	if source != nil {
 		s := string(*source)
@@ -57,14 +59,13 @@ func (r *Repository) Update(ctx context.Context, appID int64, description, domai
 	row := r.q.QueryRowContext(ctx,
 		`UPDATE apps SET
 		   description       = COALESCE($1, description),
-		   domain            = COALESCE($2, domain),
-		   source            = COALESCE($3, source),
-		   source_image      = COALESCE($4, source_image),
-		   source_repo       = COALESCE($5, source_repo),
-		   source_ref        = COALESCE($6, source_ref),
-		   source_dockerfile = COALESCE($7, source_dockerfile)
-		 WHERE id = $8 RETURNING `+columns,
-		description, domain, src, image, repo, ref, dockerfile, appID)
+		   source            = COALESCE($2, source),
+		   source_image      = COALESCE($3, source_image),
+		   source_repo       = COALESCE($4, source_repo),
+		   source_ref        = COALESCE($5, source_ref),
+		   source_dockerfile = COALESCE($6, source_dockerfile)
+		 WHERE id = $7 RETURNING `+columns,
+		description, src, image, repo, ref, dockerfile, appID)
 	a, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("update app: %w", err)
@@ -82,13 +83,13 @@ type Origin struct {
 	Dockerfile string
 }
 
-func (r *Repository) Create(ctx context.Context, orgID, projectID, environmentID int64, name, description, domain string, source Source, origin Origin) (*App, error) {
+func (r *Repository) Create(ctx context.Context, orgID, projectID, environmentID int64, name, description string, source Source, origin Origin) (*App, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO apps (org_id, project_id, environment_id, name, description, domain, source,
+		`INSERT INTO apps (org_id, project_id, environment_id, name, description, source,
 		                   source_image, source_repo, source_ref, source_dockerfile)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		 RETURNING `+columns,
-		orgID, projectID, environmentID, name, description, domain, string(source),
+		orgID, projectID, environmentID, name, description, string(source),
 		origin.Image, origin.Repo, origin.Ref, origin.Dockerfile)
 	a, err := scan(row)
 	if err != nil {
@@ -295,7 +296,7 @@ type Scoped struct {
 // scopedQuery selects an app with its containing slugs. The column order
 // matches scanScoped.
 const scopedQuery = `
-	SELECT a.id, a.org_id, a.project_id, a.environment_id, a.name, a.description, a.domain,
+	SELECT a.id, a.org_id, a.project_id, a.environment_id, a.name, a.description,
 	       a.source, a.source_image, a.source_repo, a.source_ref, a.source_dockerfile,
 	       a.container_id, a.status, a.env, a.created_at,
 	       o.slug, p.slug, e.slug
@@ -307,7 +308,7 @@ const scopedQuery = `
 func scanScoped(row scanner) (*Scoped, error) {
 	var s Scoped
 	var envJSON []byte
-	if err := row.Scan(&s.ID, &s.OrgID, &s.ProjectID, &s.EnvironmentID, &s.Name, &s.Description, &s.Domain,
+	if err := row.Scan(&s.ID, &s.OrgID, &s.ProjectID, &s.EnvironmentID, &s.Name, &s.Description,
 		&s.Source, &s.SourceImage, &s.SourceRepo, &s.SourceRef, &s.SourceDockerfile,
 		&s.ContainerID, &s.Status, &envJSON, &s.CreatedAt,
 		&s.OrgSlug, &s.ProjectSlug, &s.EnvironmentSlug); err != nil {
@@ -362,6 +363,12 @@ func (r *Repository) ScopedByReference(ctx context.Context, org, proj, env, name
 	if err != nil {
 		return nil, fmt.Errorf("get app %s/%s/%s/%s: %w", org, proj, env, name, err)
 	}
+	// Loaded here rather than by whoever asked. An app with no domains
+	// cannot deploy at all, so every reader of a single app needs them —
+	// and one that forgot would get an app that looks unroutable.
+	if s.Domains, err = r.Domains(ctx, s.ID); err != nil {
+		return nil, err
+	}
 	return s, nil
 }
 
@@ -370,6 +377,9 @@ func (r *Repository) ScopedByID(ctx context.Context, id int64) (*Scoped, error) 
 	s, err := scanScoped(row)
 	if err != nil {
 		return nil, fmt.Errorf("get app %d: %w", id, err)
+	}
+	if s.Domains, err = r.Domains(ctx, s.ID); err != nil {
+		return nil, err
 	}
 	return s, nil
 }
@@ -417,4 +427,108 @@ func (r *Repository) listScoped(ctx context.Context, query string, args ...any) 
 		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+// Domains reads every name an app is served at.
+//
+// A separate read rather than a join: an app's row is fetched in
+// listings where the domains are not looked at, and a join would turn
+// one row per app into one per domain for every one of them.
+func (r *Repository) Domains(ctx context.Context, appID int64) ([]Domain, error) {
+	rows, err := r.q.QueryContext(ctx,
+		`SELECT id, host, port FROM app_domains WHERE app_id = $1 ORDER BY id`, appID)
+	if err != nil {
+		return nil, fmt.Errorf("list app domains: %w", err)
+	}
+	defer rows.Close()
+
+	out := []Domain{}
+	for rows.Next() {
+		var d Domain
+		if err := rows.Scan(&d.ID, &d.Host, &d.Port); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// DomainsFor reads the domains of several apps at once, keyed by app.
+//
+// A listing shows what each app answers at, and asking per app would be
+// one query per row.
+func (r *Repository) DomainsFor(ctx context.Context, appIDs []int64) (map[int64][]Domain, error) {
+	out := map[int64][]Domain{}
+	if len(appIDs) == 0 {
+		return out, nil
+	}
+	// Placeholders rather than ANY($1): passing a slice through
+	// database/sql depends on the driver marshalling it, and the rest of
+	// this package never asks that of it.
+	holders := make([]string, len(appIDs))
+	args := make([]any, len(appIDs))
+	for i, id := range appIDs {
+		holders[i] = fmt.Sprintf("$%d", i+1)
+		args[i] = id
+	}
+	rows, err := r.q.QueryContext(ctx,
+		`SELECT app_id, id, host, port FROM app_domains
+		 WHERE app_id IN (`+strings.Join(holders, ", ")+`) ORDER BY id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list app domains: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var appID int64
+		var d Domain
+		if err := rows.Scan(&appID, &d.ID, &d.Host, &d.Port); err != nil {
+			return nil, err
+		}
+		out[appID] = append(out[appID], d)
+	}
+	return out, rows.Err()
+}
+
+// AddDomain gives an app a name to answer at.
+func (r *Repository) AddDomain(ctx context.Context, appID int64, host string, port int) (*Domain, error) {
+	var d Domain
+	err := r.q.QueryRowContext(ctx,
+		`INSERT INTO app_domains (app_id, host, port) VALUES ($1, $2, $3) RETURNING id, host, port`,
+		appID, host, port).Scan(&d.ID, &d.Host, &d.Port)
+	if err != nil {
+		return nil, fmt.Errorf("add app domain: %w", err)
+	}
+	return &d, nil
+}
+
+// SetDomainPort changes what one name reaches.
+func (r *Repository) SetDomainPort(ctx context.Context, appID, domainID int64, port int) error {
+	result, err := r.q.ExecContext(ctx,
+		`UPDATE app_domains SET port = $1 WHERE id = $2 AND app_id = $3`, port, domainID, appID)
+	if err != nil {
+		return fmt.Errorf("set app domain port: %w", err)
+	}
+	return affected(result)
+}
+
+// RemoveDomain takes a name off an app.
+func (r *Repository) RemoveDomain(ctx context.Context, appID, domainID int64) error {
+	result, err := r.q.ExecContext(ctx,
+		`DELETE FROM app_domains WHERE id = $1 AND app_id = $2`, domainID, appID)
+	if err != nil {
+		return fmt.Errorf("remove app domain: %w", err)
+	}
+	return affected(result)
+}
+
+func affected(result sql.Result) error {
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return database.ErrNotFound
+	}
+	return nil
 }

@@ -29,7 +29,9 @@ type Response struct {
 	Reference   string `json:"reference"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Domain      string `json:"domain"`
+	// Domains are every name this app answers at, each with the port
+	// behind it.
+	Domains []DomainResponse `json:"domains"`
 	// Image is the image this app is about, which depends on where it
 	// comes from: for a registry app, where a push should go — empty
 	// while the instance has no domain, because there is nowhere to push
@@ -54,7 +56,7 @@ type Response struct {
 func toResponse(a *Scoped, registryHost string) Response {
 	r := Response{
 		Reference: ReferenceOf(a).String(),
-		Name:      a.Name, Description: a.Description, Domain: a.Domain,
+		Name:      a.Name, Description: a.Description, Domains: toDomains(a.Domains),
 		Status: a.Status, Source: a.Source,
 		Org: a.OrgSlug, Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
 	}
@@ -98,6 +100,9 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("POST "+appPath+"/deploy", auth(http.HandlerFunc(h.deploy)))
 	r.Handle("GET "+appPath+"/deployments", auth(http.HandlerFunc(h.deployments)))
 	r.Handle("GET "+appPath+"/deployments/{id}", auth(http.HandlerFunc(h.deployment)))
+	r.Handle("POST "+appPath+"/domains", auth(http.HandlerFunc(h.addDomain)))
+	r.Handle("PATCH "+appPath+"/domains/{domainID}", auth(http.HandlerFunc(h.setDomainPort)))
+	r.Handle("DELETE "+appPath+"/domains/{domainID}", auth(http.HandlerFunc(h.removeDomain)))
 	r.Handle("GET "+appPath+"/env", auth(http.HandlerFunc(h.getEnv)))
 	r.Handle("PUT "+appPath+"/env", auth(http.HandlerFunc(h.setEnv)))
 	r.Handle("PATCH "+appPath+"/env", auth(http.HandlerFunc(h.mergeEnv)))
@@ -146,7 +151,6 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
-		Domain      string `json:"domain"`
 		Org         string `json:"org"`
 		Project     string `json:"project"`
 		Environment string `json:"environment"`
@@ -167,7 +171,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	created, err := h.svc.Create(r.Context(), user.FromContext(r.Context()),
-		req.Org, req.Project, req.Environment, req.Name, req.Description, req.Domain, Source(req.Source),
+		req.Org, req.Project, req.Environment, req.Name, req.Description, Source(req.Source),
 		Origin{Image: req.Image, Repo: req.Repo, Ref: req.Ref, Dockerfile: req.Dockerfile})
 	if err != nil {
 		WriteError(w, err)
@@ -185,7 +189,6 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Description *string `json:"description"`
-		Domain      *string `json:"domain"`
 		Source      *string `json:"source"`
 		Image       *string `json:"image"`
 		Repo        *string `json:"repo"`
@@ -211,13 +214,13 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 			Dockerfile: deref(req.Dockerfile),
 		}
 	}
-	if req.Description == nil && req.Domain == nil && source == nil && origin == nil {
+	if req.Description == nil && source == nil && origin == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
 
 	updated, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), refFrom(r),
-		req.Description, req.Domain, source, origin)
+		req.Description, source, origin)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -416,4 +419,89 @@ func (h *Handler) logs(w http.ResponseWriter, r *http.Request) {
 		// The status line is already sent; all we can do is record it.
 		log.Printf("logs for app %s: %v", refFrom(r), err)
 	}
+}
+
+// DomainResponse is one name an app answers at.
+type DomainResponse struct {
+	ID   int64  `json:"id"`
+	Host string `json:"host"`
+	// Port is what this name reaches, or 0 for "read it from the
+	// image". Zero is the normal answer.
+	Port int `json:"port"`
+}
+
+func toDomains(domains []Domain) []DomainResponse {
+	out := make([]DomainResponse, 0, len(domains))
+	for _, d := range domains {
+		out = append(out, DomainResponse{ID: d.ID, Host: d.Host, Port: d.Port})
+	}
+	return out
+}
+
+func (h *Handler) addDomain(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Host string `json:"host"`
+		// Omitted or 0 means "read it from the image", which is the
+		// normal answer and the only one available before an app that
+		// builds has been built.
+		Port int `json:"port"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	updated, err := h.svc.AddDomain(ctx, user.FromContext(ctx), refFrom(r), req.Host, req.Port)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, toResponse(updated, h.svc.RegistryHost(ctx)))
+}
+
+func (h *Handler) setDomainPort(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Port int `json:"port"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	id, ok := domainIDFrom(w, r)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	updated, err := h.svc.SetDomainPort(ctx, user.FromContext(ctx), refFrom(r), id, req.Port)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toResponse(updated, h.svc.RegistryHost(ctx)))
+}
+
+func (h *Handler) removeDomain(w http.ResponseWriter, r *http.Request) {
+	id, ok := domainIDFrom(w, r)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	updated, err := h.svc.RemoveDomain(ctx, user.FromContext(ctx), refFrom(r), id)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toResponse(updated, h.svc.RegistryHost(ctx)))
+}
+
+// domainIDFrom reads the domain's id, answering 404 for anything that is
+// not one: a path segment that is not a number names nothing, and that
+// is the same answer as naming something that does not exist.
+func domainIDFrom(w http.ResponseWriter, r *http.Request) (int64, bool) {
+	id, err := strconv.ParseInt(r.PathValue("domainID"), 10, 64)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return 0, false
+	}
+	return id, true
 }

@@ -10,9 +10,9 @@ import (
 func newEnvironmentCmd() *cobra.Command {
 	environmentCmd := &cobra.Command{Use: "environment", Short: "Manage environments within a project"}
 
-	var org, project, slug string
+	var org, project string
 	createCmd := &cobra.Command{
-		Use:   "create <name>",
+		Use:   "create <slug>",
 		Short: "Create a new environment within a project",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -20,11 +20,11 @@ func newEnvironmentCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			e, err := c.CreateEnvironment(context.Background(), org, project, slug, args[0])
+			e, err := c.CreateEnvironment(context.Background(), org, project, args[0])
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Created environment %q (slug: %s) in project %s\n", args[0], e.Slug, project)
+			fmt.Printf("Created environment %s in project %s\n", e.Slug, project)
 			return nil
 		},
 	}
@@ -32,8 +32,6 @@ func newEnvironmentCmd() *cobra.Command {
 	createCmd.MarkFlagRequired("org")
 	createCmd.Flags().StringVar(&project, "project", "", "project slug")
 	createCmd.MarkFlagRequired("project")
-	createCmd.Flags().StringVar(&slug, "slug", "", "short identifier used in URLs and as the environment name apps request")
-	createCmd.MarkFlagRequired("slug")
 
 	var listOrg, listProject string
 	listCmd := &cobra.Command{
@@ -50,7 +48,7 @@ func newEnvironmentCmd() *cobra.Command {
 				return err
 			}
 			for _, e := range envs {
-				fmt.Printf("%s\t%s\n", e.Slug, e.Name)
+				fmt.Println(e.Slug)
 			}
 			return nil
 		},

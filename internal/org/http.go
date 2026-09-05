@@ -13,13 +13,12 @@ import (
 // MCP tools, so both surfaces describe an organization identically.
 type Response struct {
 	Slug string `json:"slug"`
-	Name string `json:"name"`
 }
 
 func toResponses(orgs []*Organization) []Response {
 	out := make([]Response, 0, len(orgs))
 	for _, o := range orgs {
-		out = append(out, Response{Slug: o.Slug, Name: o.Name})
+		out = append(out, Response{Slug: o.Slug})
 	}
 	return out
 }
@@ -74,18 +73,17 @@ func WriteError(w http.ResponseWriter, err error) {
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Slug string `json:"slug"`
-		Name string `json:"name"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil || req.Slug == "" {
 		http.Error(w, "slug is required", http.StatusBadRequest)
 		return
 	}
-	created, err := h.svc.Create(r.Context(), user.FromContext(r.Context()), req.Slug, req.Name)
+	created, err := h.svc.Create(r.Context(), user.FromContext(r.Context()), req.Slug)
 	if err != nil {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusCreated, Response{Slug: created.Slug, Name: created.Name})
+	httpx.WriteJSON(w, http.StatusCreated, Response{Slug: created.Slug})
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {

@@ -45,10 +45,10 @@ func TestOrgRoutesEnforceRoles(t *testing.T) {
 			map[string]string{"slug": "nope", "name": "Nope"}, memberKey, http.StatusForbidden},
 
 		{"member creates an app", http.MethodPost, "/apps",
-			map[string]string{"name": "web-app", "domain": "web.example.com", "org": "acme", "project": "web"},
+			map[string]string{"name": "web-app", "org": "acme", "project": "web"},
 			memberKey, http.StatusCreated},
 		{"outsider cannot create an app", http.MethodPost, "/apps",
-			map[string]string{"name": "sneaky", "domain": "s.example.com", "org": "acme", "project": "web"},
+			map[string]string{"name": "sneaky", "org": "acme", "project": "web"},
 			outsiderKey, http.StatusNotFound},
 
 		{"unauthenticated is rejected", http.MethodGet, "/orgs", nil, "", http.StatusUnauthorized},
@@ -71,7 +71,7 @@ func TestOutsiderCannotLearnThatAnAppExists(t *testing.T) {
 	_, outsiderKey := servertest.CreateUser(t, f.DB, "outsider", false)
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", map[string]string{
-		"name": "secret-app", "domain": "secret.example.com", "org": "acme", "project": "web",
+		"name": "secret-app", "org": "acme", "project": "web",
 	}, memberKey), http.StatusCreated)
 
 	for _, tc := range []struct {
@@ -103,7 +103,7 @@ func TestListAppsIsScopedToTheCallersOrganizations(t *testing.T) {
 	_, memberKey := f.AddMember(t, "member", org.RoleMember)
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", map[string]string{
-		"name": "acme-app", "domain": "acme.example.com", "org": "acme", "project": "web",
+		"name": "acme-app", "org": "acme", "project": "web",
 	}, memberKey), http.StatusCreated)
 
 	// A second organization, with its own app, that "member" has no part in.
@@ -112,7 +112,7 @@ func TestListAppsIsScopedToTheCallersOrganizations(t *testing.T) {
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs/globex/projects",
 		map[string]string{"slug": "web", "name": "Web"}, f.AdminKey), http.StatusCreated)
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", map[string]string{
-		"name": "globex-app", "domain": "globex.example.com", "org": "globex", "project": "web",
+		"name": "globex-app", "org": "globex", "project": "web",
 	}, f.AdminKey), http.StatusCreated)
 
 	var mine []struct {

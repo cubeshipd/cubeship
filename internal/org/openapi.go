@@ -11,8 +11,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 		Schemas: map[string]*openapi.Schema{
 			"Organization": openapi.Object(map[string]*openapi.Schema{
 				"slug": openapi.String("Becomes a path component of every registry image this organization's apps push to."),
-				"name": openapi.String("Human-readable name."),
-			}, "slug", "name"),
+			}, "slug"),
 
 			"NewOrgUser": openapi.Object(map[string]*openapi.Schema{
 				"username": openapi.String(""),
@@ -30,7 +29,6 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Tags:        []string{"Organizations"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"slug": openapi.String("Lowercase letters, digits and dashes."),
-						"name": openapi.String("Optional. Left out, it is derived from the slug — `public-api` becomes `Public Api` — and can be edited afterwards."),
 					}, "slug")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse("The new organization.", openapi.Ref("Organization")),

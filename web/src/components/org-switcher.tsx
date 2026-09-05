@@ -137,8 +137,8 @@ function CreateDialog({
     setBusy(true);
     setError(null);
     try {
-      // No name: the daemon derives one from the slug, and it is edited
-      // afterwards in settings if the guess is wrong.
+      // A slug and nothing else. An organization has no display name —
+      // its slug is its name, the rule an app has always followed.
       await api.post("/orgs", { slug });
       await onCreated(slug);
       setSlug("");

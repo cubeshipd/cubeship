@@ -76,7 +76,7 @@ func TestTokenRefusesAnotherOrganizationsNamespace(t *testing.T) {
 	f := newSignedFixture(t)
 	_, memberKey := f.AddMember(t, "member", org.RoleMember)
 
-	if _, err := f.Server.Orgs.Repo().Create(t.Context(), "globex", "Globex"); err != nil {
+	if _, err := f.Server.Orgs.Repo().Create(t.Context(), "globex"); err != nil {
 		t.Fatalf("create the other organization: %v", err)
 	}
 
@@ -148,7 +148,7 @@ func TestAPushDoesNotDeployAnExternalApp(t *testing.T) {
 		Reference string `json:"reference"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
+		"name": "myapp", "org": "acme", "project": "web",
 		"source": "external", "image": "ghcr.io/acme/api",
 	}, f.AdminKey, &created), http.StatusCreated)
 

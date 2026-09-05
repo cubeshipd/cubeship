@@ -36,7 +36,8 @@ func (d *stubDocker) RemoveContainer(_ context.Context, id string) error {
 	d.removed = append(d.removed, id)
 	return nil
 }
-func (d *stubDocker) IsRunning(context.Context, string) (bool, error) { return d.running, nil }
+func (d *stubDocker) IsRunning(context.Context, string) (bool, error)     { return d.running, nil }
+func (d *stubDocker) ExposedPorts(context.Context, string) ([]int, error) { return nil, nil }
 func (d *stubDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
 }
@@ -50,8 +51,11 @@ func TestDeletingAnAppStopsItsContainerFirst(t *testing.T) {
 		Reference string `json:"reference"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
+		"name": "myapp", "org": "acme", "project": "web",
 	}, key, &created), http.StatusCreated)
+	// Admin, like every other routing change: a member can deploy an
+	// app but not decide where it is served.
+	servertest.AddDomain(t, f, f.AdminKey, created.Reference, "myapp.example.com")
 
 	// Give it a container by deploying once. The deploy is accepted
 	// immediately and runs detached, so wait for it before deleting.

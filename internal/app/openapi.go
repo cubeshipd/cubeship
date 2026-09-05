@@ -44,7 +44,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"reference":   openapi.String("The app's identifier, org/project/environment/name — also its registry repository path."),
 				"name":        openapi.String("Unique within its environment, not across the instance. Permanent."),
 				"description": openapi.String("What this app is. Empty unless someone set it."),
-				"domain":      openapi.String("The domain Traefik routes to this app, over HTTPS. Empty until configured, and required before the app can deploy."),
+				"domains":     openapi.Array(openapi.Ref("AppDomain")),
 				"image":       openapi.String("For a registry app, the path to push to — a push there deploys. For an external app, the image it pulls."),
 				"status":      {Type: "string", Enum: []string{"pending", "running", "down"}, Description: `"pending" until the first image is pushed.`},
 				"source":      {Type: "string", Enum: []string{"registry", "external", "dockerfile", "railpack"}, Description: "Where this app's image comes from. \"registry\" is an image pushed to Cubeship, and the push is what deploys it; \"external\" is an image in a registry Cubeship does not run; \"dockerfile\" and \"railpack\" are built here from a Git repository, the first from a Dockerfile you wrote and the second worked out from the code. Only a push to Cubeship's own registry deploys on its own — the other two deploy when asked."},
@@ -54,7 +54,12 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"org":         openapi.String(""),
 				"project":     openapi.String(""),
 				"environment": openapi.String(""),
-			}, "reference", "name", "description", "domain", "status", "source", "org", "project", "environment"),
+			}, "reference", "name", "description", "domains", "status", "source", "org", "project", "environment"),
+			"AppDomain": openapi.Object(map[string]*openapi.Schema{
+				"id":   openapi.Integer("Identifies this domain on this app, for changing or removing it."),
+				"host": openapi.String("The name Traefik routes to this app, over HTTPS. Lowercase, without a trailing dot — which is how a browser sends one and how Traefik matches it."),
+				"port": openapi.Integer("What this name reaches inside the container, or 0 for \"read it from the image\". Zero is the normal answer: EXPOSE ends up in an image's config, so an image that says what it listens on is answering a question nobody should have to look up. A number is you overruling it, which is what an image exposing several ports — or none, or one that has not been built yet — needs."),
+			}, "id", "host", "port"),
 		}),
 		Paths: map[string]openapi.PathItem{
 			"/apps": {
@@ -66,7 +71,6 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"name":        openapi.String("Lowercase letters, digits and dashes — it becomes a path component of the registry image. Permanent."),
 						"description": openapi.String("What this app is. Optional."),
-						"domain":      openapi.String("Optional here. The domain to serve this app on; it must resolve to this host for a certificate to issue. An app can be created bare and configured with PATCH, but it cannot deploy without one."),
 						"org":         openapi.String("Organization slug."),
 						"project":     openapi.String("Project slug."),
 						"environment": openapi.String(`Environment slug. Defaults to "production".`),
@@ -108,7 +112,6 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						Description: "Any of the fields below. Omit one to leave it alone.",
 						Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
 							"description": openapi.String("May be empty."),
-							"domain":      openapi.String("Required before the app can deploy."),
 							"source":      {Type: "string", Enum: []string{"registry", "external", "dockerfile", "railpack"}, Description: "Send the settings the new source needs alongside it."},
 							"image":       openapi.String("For an external app: the image it pulls, without a tag."),
 							"repo":        openapi.String("For a building app: the https://, http:// or git:// repository to build."),
@@ -271,6 +274,62 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"401": openapi.Unauthorized,
 						"404": openapi.NotFound,
 						"409": openapi.TextResponse("The app has no container yet — nothing has been pushed to it."),
+					},
+				},
+			},
+			"/apps/{org}/{project}/{env}/{name}/domains": {
+				"post": {
+					OperationID: "addAppDomain",
+					Summary:     "Give an app a name to answer at",
+					Description: "An app can answer at several, and each names its own port — one image can expose more than one, and `api.example.com` and `admin.example.com` on one container are two of them.\n\n" +
+						"`port` is optional and normally omitted: 0 means read it from the image, which is where EXPOSE ends up. Give a number when the image exposes several, exposes none, or has not been built yet.\n\n" +
+						"A name is unique across the instance, not per app: Traefik routes by host and nothing else, so two apps claiming one name would give it two answers.\n\n" +
+						"**The container keeps the labels it was created with**, so a new name is not served until the app is redeployed. Organization admins only — where an app is served is a routing decision, the same weight as changing its source.",
+					Tags:       []string{"Apps"},
+					Parameters: refParams,
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"host": openapi.String("The name to serve this app at. It has to resolve to this host before a certificate can issue."),
+						"port": openapi.Integer("What it reaches inside the container. Omit to read it from the image."),
+					}, "host")),
+					Responses: openapi.Responses{
+						"201": openapi.JSONResponse("The app, with the name added.", openapi.Ref("App")),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("Another app is already served at that name."),
+					},
+				},
+			},
+			"/apps/{org}/{project}/{env}/{name}/domains/{domainID}": {
+				"patch": {
+					OperationID: "setAppDomainPort",
+					Summary:     "Change what one of an app's names reaches",
+					Description: "0 puts it back to reading the port from the image. Takes effect on the next deploy — a container keeps the labels it was created with.",
+					Tags:        []string{"Apps"},
+					Parameters:  append(refParams, openapi.PathParam("domainID", "The domain's id, from the app.")),
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"port": openapi.Integer("The port inside the container, or 0 to read it from the image."),
+					}, "port")),
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The app, with the port changed.", openapi.Ref("App")),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+					},
+				},
+				"delete": {
+					OperationID: "removeAppDomain",
+					Summary:     "Take a name off an app",
+					Description: "The container keeps the labels it was created with, so the name goes on being served until the app is redeployed. Organization admins only.",
+					Tags:        []string{"Apps"},
+					Parameters:  append(refParams, openapi.PathParam("domainID", "The domain's id, from the app.")),
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The app, with the name removed.", openapi.Ref("App")),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
 					},
 				},
 			},

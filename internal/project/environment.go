@@ -16,14 +16,15 @@ import (
 // and deleting the last one is forbidden. Splitting them would mean two
 // packages that can only ever be used together, plus an import cycle to
 // work around.
+// An environment has no display name either. Its slug is its name, for
+// the same reason a project's and an app's are.
 type Environment struct {
 	ID        int64
 	ProjectID int64
 	Slug      string
-	Name      string
 	// Description is what this stage of the project's lifecycle is for.
-	// The slug cannot say it — it is a path component — and the name
-	// barely can.
+	// The slug cannot say it — it is a path component — so this is where
+	// anything beyond the name goes.
 	Description string
 	Env         envvar.Map
 	CreatedAt   time.Time
@@ -41,11 +42,6 @@ var (
 
 	// ErrEnvironmentExists reports a slug already used in this project.
 	ErrEnvironmentExists = errors.New("environment already exists")
-
-	// ErrEnvironmentNameRequired refuses an update that would leave an
-	// environment with nothing to call it. Clearing the description is
-	// fine; clearing the name is not.
-	ErrEnvironmentNameRequired = errors.New("name cannot be empty")
 
 	// ErrProductionUndeletable guards the one environment every project
 	// must keep.

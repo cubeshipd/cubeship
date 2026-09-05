@@ -11,10 +11,15 @@ import (
 
 // Organization is a tenant on this instance. Its slug becomes a path
 // component of every registry image its apps push to.
+// An organization has no display name. Its slug is its name — the same
+// rule an app has always followed, and for the same reason: the slug is
+// a path component of every registry reference underneath it, so it is
+// the one identifier that cannot change and the one everybody reads.
+// A second, editable name was a second idea for one thing, asked for at
+// creation and drifting apart afterwards.
 type Organization struct {
 	ID        int64
 	Slug      string
-	Name      string
 	CreatedAt time.Time
 }
 
@@ -39,7 +44,6 @@ func (r Role) Valid() bool {
 type Membership struct {
 	OrgID   int64
 	OrgSlug string
-	OrgName string
 	Role    Role
 }
 

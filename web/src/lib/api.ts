@@ -41,14 +41,17 @@ export const api = {
 
 export type SetupStatus = { needed: boolean };
 export type Me = { username: string; is_super_admin: boolean };
-export type Org = { slug: string; name: string };
+// None of these has a display name. The slug is the name — the rule an
+// app has always followed, now everywhere: a slug is a path component of
+// every registry reference underneath it, so it is the identifier that
+// cannot change and the one everybody reads.
+export type Org = { slug: string };
 export type Project = {
   slug: string;
-  name: string;
   description: string;
   environments?: string[];
 };
-export type Environment = { slug: string; name: string; description: string };
+export type Environment = { slug: string; description: string };
 
 // registry and external run a published image; dockerfile and railpack
 // build one from a Git repository, which is why they need an admin.
@@ -56,13 +59,35 @@ export type AppSource = "registry" | "external" | "dockerfile" | "railpack";
 
 export const BUILDING_SOURCES: AppSource[] = ["dockerfile", "railpack"];
 
+// One name an app is served at.
+//
+// The pair is the unit: an image can expose several ports, so "which
+// port does this app listen on" stops having one answer as soon as the
+// app has more than one name.
+export type AppDomain = {
+  id: number;
+  host: string;
+  // What this name reaches inside the container, or 0 for "read it from
+  // the image" — which is the normal answer.
+  port: number;
+};
+
+// hostsOf renders every name an app answers at, for the places that have
+// room for one line. "no domain" rather than an empty string, because an
+// app with none cannot deploy and that is worth reading as a state.
+export function hostsOf(app: { domains: AppDomain[] }): string {
+  if (app.domains.length === 0) return "no domain";
+  return app.domains.map((d) => d.host).join(", ");
+}
+
 export type App = {
   reference: string;
   name: string;
   description: string;
-  // Empty until someone configures it, and required before the app can
-  // deploy — which is what makes a freshly created app undeployable.
-  domain: string;
+  // Every name this app answers at, each with the port behind it. Empty
+  // until one is added, and an app with none cannot deploy — which is
+  // what makes a freshly created app undeployable.
+  domains: AppDomain[];
   // For a registry app, where to push; for an external one, what it pulls.
   image?: string;
   status: string;

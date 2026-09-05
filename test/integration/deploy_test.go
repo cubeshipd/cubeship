@@ -154,9 +154,13 @@ func TestDeployEndToEnd(t *testing.T) {
 		t.Fatalf("CreateProject: %v", err)
 	}
 
-	created, err := client.CreateApp(ctx, "myapp", "myapp.localtest.me", "acme", "web", "production", "")
+	created, err := client.CreateApp(ctx, "myapp", "acme", "web", "production", "")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
+	}
+	// A name to answer at, with its port read from the image.
+	if _, err := client.AddAppDomain(ctx, created.Reference, "myapp.localtest.me", 0); err != nil {
+		t.Fatalf("AddAppDomain: %v", err)
 	}
 	// The push path is the app's reference with the registry host in
 	// front — org, project, environment, name.

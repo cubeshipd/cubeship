@@ -66,7 +66,7 @@ func (s *Service) ResolveEnvironment(ctx context.Context, caller *user.User, org
 // atomically: a project with no environment has nowhere for an app to be
 // created, and a production environment without its project would be
 // unreachable through the API.
-func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projectSlug, name string) (*Project, *Environment, error) {
+func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projectSlug string) (*Project, *Environment, error) {
 	o, err := s.orgs.Resolve(ctx, caller, orgSlug, org.RoleAdmin)
 	if err != nil {
 		return nil, nil, err
@@ -74,18 +74,15 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 	if !slug.Valid(projectSlug) {
 		return nil, nil, slug.ErrInvalid
 	}
-	if name == "" {
-		name = slug.Title(projectSlug)
-	}
 	var created *Project
 	var env *Environment
 	err = s.db.WithTx(ctx, func(tx database.Queryer) error {
 		var err error
-		created, err = NewRepository(tx).Create(ctx, o.ID, projectSlug, name)
+		created, err = NewRepository(tx).Create(ctx, o.ID, projectSlug)
 		if err != nil {
 			return err
 		}
-		env, err = NewEnvironmentRepository(tx).Create(ctx, created.ID, ProductionEnvSlug, slug.Title(ProductionEnvSlug))
+		env, err = NewEnvironmentRepository(tx).Create(ctx, created.ID, ProductionEnvSlug)
 		return err
 	})
 	if database.IsUniqueViolation(err) {
@@ -99,7 +96,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 	return created, env, nil
 }
 
-// Update changes a project's name or description. A nil field is left
+// Update changes a project's description. A nil field is left
 // as it was.
 //
 // Not the slug. No slug in Cubeship is editable after the resource is
@@ -110,15 +107,12 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 // start failing and images already pushed would be stranded where
 // nothing looks for them again. The identifier is the one promise the
 // daemon makes to whatever is configured against it.
-func (s *Service) Update(ctx context.Context, caller *user.User, orgSlug, projectSlug string, name, description *string) (*Project, error) {
+func (s *Service) Update(ctx context.Context, caller *user.User, orgSlug, projectSlug string, description *string) (*Project, error) {
 	p, err := s.Resolve(ctx, caller, orgSlug, projectSlug, org.RoleAdmin)
 	if err != nil {
 		return nil, err
 	}
-	if name != nil && *name == "" {
-		return nil, ErrNameRequired
-	}
-	return s.Repo().Update(ctx, p.ID, name, description)
+	return s.Repo().Update(ctx, p.ID, description)
 }
 
 func (s *Service) List(ctx context.Context, caller *user.User, orgSlug string) ([]*Project, error) {
@@ -181,7 +175,7 @@ func (s *Service) Delete(ctx context.Context, caller *user.User, orgSlug, projec
 }
 
 // CreateEnvironment adds an environment to an existing project.
-func (s *Service) CreateEnvironment(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug, name string) (*Environment, error) {
+func (s *Service) CreateEnvironment(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug string) (*Environment, error) {
 	p, err := s.Resolve(ctx, caller, orgSlug, projectSlug, org.RoleAdmin)
 	if err != nil {
 		return nil, err
@@ -189,10 +183,7 @@ func (s *Service) CreateEnvironment(ctx context.Context, caller *user.User, orgS
 	if !slug.Valid(envSlug) {
 		return nil, slug.ErrInvalid
 	}
-	if name == "" {
-		name = slug.Title(envSlug)
-	}
-	env, err := s.EnvironmentRepo().Create(ctx, p.ID, envSlug, name)
+	env, err := s.EnvironmentRepo().Create(ctx, p.ID, envSlug)
 	if database.IsUniqueViolation(err) {
 		return nil, ErrEnvironmentExists
 	}
@@ -248,20 +239,17 @@ func (s *Service) MergeEnvironmentEnv(ctx context.Context, caller *user.User, or
 
 // DeleteEnvironment removes an environment, refusing to delete
 // production or one that still has apps in it.
-// UpdateEnvironment changes an environment's name or description. Not
+// UpdateEnvironment changes an environment's description. Not
 // its slug: unlike a project's, which the dashboard lets you rename
 // with a warning, an environment's slug is the third component of every
 // app reference under it and there is no equivalent screen for it yet.
 // A nil field is left as it was.
-func (s *Service) UpdateEnvironment(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug string, name, description *string) (*Environment, error) {
+func (s *Service) UpdateEnvironment(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug string, description *string) (*Environment, error) {
 	e, err := s.ResolveEnvironment(ctx, caller, orgSlug, projectSlug, envSlug, org.RoleAdmin)
 	if err != nil {
 		return nil, err
 	}
-	if name != nil && *name == "" {
-		return nil, ErrEnvironmentNameRequired
-	}
-	return s.EnvironmentRepo().Update(ctx, e.ID, name, description)
+	return s.EnvironmentRepo().Update(ctx, e.ID, description)
 }
 
 func (s *Service) DeleteEnvironment(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug string) (*Environment, error) {

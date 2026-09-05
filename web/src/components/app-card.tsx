@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { StatusBadge } from "@/components/status-badge";
-import type { App, AppSource } from "@/lib/api";
+import { type App, type AppSource, hostsOf } from "@/lib/api";
 
 const ORIGIN: Record<AppSource, string> = {
   registry: "cubeship registry",
@@ -24,9 +24,7 @@ export function AppCard({ app }: { app: App }) {
           </h3>
           <StatusBadge value={app.status} />
         </div>
-        <p className="mt-2 truncate font-mono text-[11px] text-muted-foreground">
-          {app.domain || "no domain"}
-        </p>
+        <p className="mt-2 truncate font-mono text-[11px] text-muted-foreground">{hostsOf(app)}</p>
       </div>
 
       <div className="border-t border-border px-4 py-2.5">

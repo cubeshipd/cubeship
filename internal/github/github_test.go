@@ -269,9 +269,12 @@ func createBuildingApp(t *testing.T, f *servertest.Fixture, name, repo, ref stri
 		Reference string `json:"reference"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": name, "domain": name + ".example.com", "org": "acme", "project": "web",
+		"name": name, "org": "acme", "project": "web",
 		"source": "dockerfile", "repo": repo, "ref": ref,
 	}, f.AdminKey, &created), http.StatusCreated)
+	// A name to answer at. A push deploys an app, and an app with no
+	// domain cannot deploy at all.
+	servertest.AddDomain(t, f, f.AdminKey, created.Reference, name+".example.com")
 	return created.Reference
 }
 
@@ -392,7 +395,7 @@ func TestAPushOnlyDeploysTheConnectedOrganizationsApps(t *testing.T) {
 		Reference string `json:"reference"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "api", "domain": "globex-api.example.com", "org": "globex", "project": "web",
+		"name": "api", "org": "globex", "project": "web",
 		"source": "dockerfile", "repo": "https://github.com/acme/api.git", "ref": "main",
 	}, f.AdminKey, &theirs), http.StatusCreated)
 

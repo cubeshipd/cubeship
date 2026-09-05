@@ -39,18 +39,23 @@ func newDeployFixture(t *testing.T, docker DockerAPI) (*Orchestrator, *database.
 	if err != nil {
 		t.Fatalf("create admin: %v", err)
 	}
-	o, err := orgs.Repo().Create(ctx, "acme", "Acme Inc")
+	o, err := orgs.Repo().Create(ctx, "acme")
 	if err != nil {
 		t.Fatalf("create org: %v", err)
 	}
-	p, env, err := projects.Create(ctx, admin, o.Slug, "web", "Web")
+	p, env, err := projects.Create(ctx, admin, o.Slug, "web")
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 
-	a, err := NewRepository(db).Create(ctx, o.ID, p.ID, env.ID, "myapp", "", "myapp.example.com", SourceRegistry, Origin{})
+	a, err := NewRepository(db).Create(ctx, o.ID, p.ID, env.ID, "myapp", "", SourceRegistry, Origin{})
 	if err != nil {
 		t.Fatalf("create app: %v", err)
+	}
+	// Traefik routes by host, so an app with no name to answer at
+	// cannot deploy — every deploy test needs one.
+	if _, err := NewRepository(db).AddDomain(ctx, a.ID, "myapp.example.com", 0); err != nil {
+		t.Fatalf("add domain: %v", err)
 	}
 
 	cfg := settings.NewService(db)

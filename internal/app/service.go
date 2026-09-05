@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -68,6 +69,13 @@ func (s *Service) Resolve(ctx context.Context, caller *user.User, ref Reference,
 	if !s.orgs.Authorize(ctx, caller, a.OrgID, minRole) {
 		return nil, ErrNotFound
 	}
+	// Loaded here rather than joined, so every caller that resolves an
+	// app has its domains without any of them remembering to ask.
+	domains, err := s.Repo().Domains(ctx, a.ID)
+	if err != nil {
+		return nil, err
+	}
+	a.Domains = domains
 	return a, nil
 }
 
@@ -82,7 +90,7 @@ func (s *Service) ResolveString(ctx context.Context, caller *user.User, ref stri
 
 // Create registers an app in a project's environment and returns it,
 // including the registry path a push should target.
-func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug, name, description, domain string, source Source, origin Origin) (*Scoped, error) {
+func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug, name, description string, source Source, origin Origin) (*Scoped, error) {
 	if envSlug == "" {
 		envSlug = project.ProductionEnvSlug
 	}
@@ -119,7 +127,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 		return nil, project.ErrEnvironmentNotFound
 	}
 	ref := Reference{Org: o.Slug, Project: p.Slug, Environment: env.Slug, Name: name}
-	if _, err := s.Repo().Create(ctx, o.ID, p.ID, env.ID, name, description, domain, source, origin); err != nil {
+	if _, err := s.Repo().Create(ctx, o.ID, p.ID, env.ID, name, description, source, origin); err != nil {
 		// The unique index is the authority, not a preceding lookup:
 		// two concurrent creates of the same name would both pass a
 		// check and the loser would surface as a 500.
@@ -145,7 +153,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 // decision as creating one that builds — this instance will execute
 // whatever that repository contains — so it takes the same role, checked
 // against the source being moved to rather than the one being left.
-func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, description, domain *string, source *Source, origin *Origin) (*Scoped, error) {
+func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, description *string, source *Source, origin *Origin) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, ref, org.RoleAdmin)
 	if err != nil {
 		return nil, err
@@ -175,7 +183,7 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 		source, origin = &next, &o
 	}
 
-	if _, err := s.Repo().Update(ctx, a.ID, description, domain, source, origin); err != nil {
+	if _, err := s.Repo().Update(ctx, a.ID, description, source, origin); err != nil {
 		return nil, err
 	}
 	return s.Resolve(ctx, caller, ref, org.RoleMember)
@@ -200,7 +208,11 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Scoped, error
 		return nil, user.ErrUnauthenticated
 	}
 	if caller.IsSuperAdmin {
-		return s.Repo().ListScoped(ctx)
+		apps, err := s.Repo().ListScoped(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return s.withDomains(ctx, apps)
 	}
 	memberships, err := s.orgs.Repo().ListMembershipsForUser(ctx, caller.ID)
 	if err != nil {
@@ -210,7 +222,28 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Scoped, error
 	for _, m := range memberships {
 		orgIDs = append(orgIDs, m.OrgID)
 	}
-	return s.Repo().ListScopedForOrgs(ctx, orgIDs)
+	apps, err := s.Repo().ListScopedForOrgs(ctx, orgIDs)
+	if err != nil {
+		return nil, err
+	}
+	return s.withDomains(ctx, apps)
+}
+
+// withDomains fills in what each app answers at, in one query rather
+// than one per app.
+func (s *Service) withDomains(ctx context.Context, apps []*Scoped) ([]*Scoped, error) {
+	ids := make([]int64, 0, len(apps))
+	for _, a := range apps {
+		ids = append(ids, a.ID)
+	}
+	byApp, err := s.Repo().DomainsFor(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	for _, a := range apps {
+		a.Domains = byApp[a.ID]
+	}
+	return apps, nil
 }
 
 // Env returns the app's own variables plus the effective environment its
@@ -366,4 +399,76 @@ func (s *Service) DeployOnPush(ctx context.Context, orgID int64, fullName, branc
 		started++
 	}
 	return started, nil
+}
+
+// AddDomain gives an app another name to answer at.
+//
+// The host is normalised the way a browser sends one — lowercase, no
+// trailing dot — because that is what Traefik matches against, and a
+// name stored differently is a name that never matches.
+//
+// Port 0 means "read it from the image", which is the normal answer and
+// the only one available before an app that builds has been built.
+func (s *Service) AddDomain(ctx context.Context, caller *user.User, ref Reference, host string, port int) (*Scoped, error) {
+	a, err := s.Resolve(ctx, caller, ref, org.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+
+	host = NormalizeHost(host)
+	if host == "" {
+		return nil, ErrDomainRequired
+	}
+	if port < 0 || port > 65535 {
+		return nil, ErrBadPort
+	}
+
+	if _, err := s.Repo().AddDomain(ctx, a.ID, host, port); err != nil {
+		// The unique index is the authority. Two apps answering at one
+		// name would give Traefik two answers, and which it picked
+		// would be a detail of label ordering.
+		if database.IsUniqueViolation(err) {
+			return nil, ErrDomainTaken
+		}
+		return nil, err
+	}
+	return s.Resolve(ctx, caller, ref, org.RoleAdmin)
+}
+
+// SetDomainPort changes what one of an app's names reaches.
+func (s *Service) SetDomainPort(ctx context.Context, caller *user.User, ref Reference, domainID int64, port int) (*Scoped, error) {
+	a, err := s.Resolve(ctx, caller, ref, org.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	if port < 0 || port > 65535 {
+		return nil, ErrBadPort
+	}
+	if err := s.Repo().SetDomainPort(ctx, a.ID, domainID, port); err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, ErrDomainNotFound
+		}
+		return nil, err
+	}
+	return s.Resolve(ctx, caller, ref, org.RoleAdmin)
+}
+
+// RemoveDomain takes a name off an app.
+//
+// The container keeps the labels it was created with, so the name goes
+// on being served until the app is redeployed. That is the same rule
+// every other routing change follows, and it is why this does not stop
+// anything by itself.
+func (s *Service) RemoveDomain(ctx context.Context, caller *user.User, ref Reference, domainID int64) (*Scoped, error) {
+	a, err := s.Resolve(ctx, caller, ref, org.RoleAdmin)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.Repo().RemoveDomain(ctx, a.ID, domainID); err != nil {
+		if errors.Is(err, database.ErrNotFound) {
+			return nil, ErrDomainNotFound
+		}
+		return nil, err
+	}
+	return s.Resolve(ctx, caller, ref, org.RoleAdmin)
 }

@@ -209,22 +209,21 @@ irreversible action by making you type the thing's own name — a second
 button is no obstacle to a misclick, and the dangerous case is precisely
 the one the daemon would happily carry out.
 
-**Creating anything asks for a slug and nothing else.** A slug is a
-permanent machine-shaped identifier and a name is a label its owner
-changes freely, so asking for both at creation asked twice for the same
-idea and the answers drifted. `slug.Title` derives the display name —
-`public-api` becomes `Public Api` — and the settings screen is where it
-is corrected. The derivation lives in each module's service, not in the
-form, so the CLI and the MCP tools get it too; `name` is optional in
-every create body and every create tool.
+**Nothing has a display name. A slug is a name.** Creating anything asks
+for a slug and nothing else, and that is all there is afterwards.
 
-The guess is deliberately dumb: `api` becomes `Api`, not `API`. Anything
-cleverer would be a dictionary, and the display name is a field the
-owner can simply fix.
+An app was always this way — its name *is* its slug, the last component
+of its reference — and organizations, projects and environments having a
+second, editable name made the rule an exception rather than the rule:
+two ideas for one thing, asked for at creation, drifting apart after.
 
-An app has no display name at all — its name *is* its slug, and it is
-the last component of the app's reference — so its field is labelled
-Slug and there is nothing to derive.
+The derivation is what settled it. `slug.Title` turned `public-api` into
+`Public Api`, deliberately dumb because anything cleverer would be a
+dictionary — so the name was, almost always, the slug spelled worse.
+
+What survives is the **description**, which says something a name never
+could. `name` is gone from every create body, every PATCH, every MCP
+tool and the CLI, where the positional argument is now the slug.
 
 **No slug is editable after its resource exists** — organization,
 project, environment or app. Every one of them is a path component of an
@@ -614,6 +613,40 @@ Traefik redirects the whole `web` entrypoint to `websecure`, so plain
 HTTP reaches every app and the API without per-router labels. It does not
 interfere with certificates: ACME uses the TLS-ALPN challenge on :443,
 never the HTTP challenge on :80. Changing that would break the redirect.
+
+## Where an app answers, and on which port
+
+An app is served at any number of names, and **each name carries its own
+port**: `app_domains` is `(host, port)`, not a domain column on the app.
+
+The pair is the unit because "which port does this app listen on" stops
+having one answer as soon as the app has more than one name. An image
+can expose several, and `api.example.com` and `admin.example.com` on one
+container are two of them.
+
+That is also why Traefik gets **one router and one service per domain**
+rather than a single `Host(a) || Host(b)` rule. A router has one
+service, so every name behind one rule would reach the same port.
+
+`host` is unique across the instance, not per app. Traefik routes by
+host and nothing else; two apps claiming one name would give it two
+answers, and which it picked would be a detail of label ordering.
+
+**Port 0 means "read it from the image"**, and is the normal answer.
+`EXPOSE` ends up in an image's config, so `dockerx.ExposedPorts` reads
+it where it already is — the Dockerfile is not always around, and never
+is for an image someone else built. An image exposing nothing has no
+answer and one exposing several has no *single* answer, so both fall
+back to `DefaultPort`; a number on the domain is an operator overruling
+that.
+
+The image is inspected inside the deploy, after `Resolve`, because that
+is the first moment it certainly exists: an app that builds has no image
+until its first build. Nothing can detect a port when the app is
+configured, which is why the field is always offered.
+
+A container keeps the labels it was created with, so adding or removing
+a name changes nothing until the app is redeployed.
 
 ## Where an app's image comes from
 

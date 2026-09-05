@@ -9,13 +9,11 @@ package setup
 
 import "errors"
 
-// The names the first organization and project are given. They exist so
-// the dashboard has somewhere to put an app immediately, and are renamed
-// or replaced like any other.
+// The first organization and project. They exist so the dashboard has
+// somewhere to put an app immediately, and are replaced like any other —
+// a slug never changes, so the way to a different name is a new one.
 const (
-	OrgName     = "My Organization"
 	OrgSlug     = "my-organization"
-	ProjectName = "Default"
 	ProjectSlug = "default"
 )
 

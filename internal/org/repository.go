@@ -16,21 +16,21 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const orgColumns = `id, slug, name, created_at`
+const orgColumns = `id, slug, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
 func scanOrg(row scanner) (*Organization, error) {
 	var o Organization
-	if err := row.Scan(&o.ID, &o.Slug, &o.Name, &o.CreatedAt); err != nil {
+	if err := row.Scan(&o.ID, &o.Slug, &o.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &o, nil
 }
 
-func (r *Repository) Create(ctx context.Context, slug, name string) (*Organization, error) {
+func (r *Repository) Create(ctx context.Context, slug string) (*Organization, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO organizations (slug, name) VALUES ($1, $2) RETURNING `+orgColumns, slug, name)
+		`INSERT INTO organizations (slug) VALUES ($1) RETURNING `+orgColumns, slug)
 	o, err := scanOrg(row)
 	if err != nil {
 		return nil, fmt.Errorf("create organization: %w", err)
@@ -97,7 +97,7 @@ func (r *Repository) MembershipRole(ctx context.Context, userID, orgID int64) (R
 
 func (r *Repository) ListMembershipsForUser(ctx context.Context, userID int64) ([]Membership, error) {
 	rows, err := r.q.QueryContext(ctx, `
-		SELECT m.org_id, o.slug, o.name, m.role
+		SELECT m.org_id, o.slug, m.role
 		FROM memberships m
 		JOIN organizations o ON o.id = m.org_id
 		WHERE m.user_id = $1
@@ -111,7 +111,7 @@ func (r *Repository) ListMembershipsForUser(ctx context.Context, userID int64) (
 	for rows.Next() {
 		var m Membership
 		var role string
-		if err := rows.Scan(&m.OrgID, &m.OrgSlug, &m.OrgName, &role); err != nil {
+		if err := rows.Scan(&m.OrgID, &m.OrgSlug, &role); err != nil {
 			return nil, err
 		}
 		m.Role = Role(role)

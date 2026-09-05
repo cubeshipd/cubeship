@@ -19,20 +19,26 @@ func externalFixture(t *testing.T, image string) (*Orchestrator, *fakeDocker, *S
 	db := dbtest.New(t)
 
 	orgs := org.NewRepository(db)
-	o, err := orgs.Create(ctx, "acme", "Acme")
+	o, err := orgs.Create(ctx, "acme")
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := project.NewRepository(db).Create(ctx, o.ID, "web", "Web")
+	p, err := project.NewRepository(db).Create(ctx, o.ID, "web")
 	if err != nil {
 		t.Fatal(err)
 	}
-	env, err := project.NewEnvironmentRepository(db).Create(ctx, p.ID, "production", "Production")
+	env, err := project.NewEnvironmentRepository(db).Create(ctx, p.ID, "production")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := NewRepository(db).Create(ctx, o.ID, p.ID, env.ID,
-		"myapp", "", "myapp.example.com", SourceExternal, Origin{Image: image}); err != nil {
+	created, err := NewRepository(db).Create(ctx, o.ID, p.ID, env.ID,
+		"myapp", "", SourceExternal, Origin{Image: image})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A name to answer at. Traefik routes by host, so an app without one
+	// cannot deploy at all.
+	if _, err := NewRepository(db).AddDomain(ctx, created.ID, "myapp.example.com", 0); err != nil {
 		t.Fatal(err)
 	}
 	a, err := NewRepository(db).ScopedByReference(ctx, "acme", "web", "production", "myapp")

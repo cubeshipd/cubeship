@@ -86,17 +86,14 @@ func (s *Service) Resolve(ctx context.Context, caller *user.User, orgSlug string
 // Create registers a new organization. Only a super-admin may: an
 // organization is a tenant boundary, and handing that out would let any
 // user mint namespaces the operator never approved.
-func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, name string) (*Organization, error) {
+func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug string) (*Organization, error) {
 	if caller == nil || !caller.IsSuperAdmin {
 		return nil, ErrSuperAdminOnly
 	}
 	if !slug.Valid(orgSlug) {
 		return nil, slug.ErrInvalid
 	}
-	if name == "" {
-		name = slug.Title(orgSlug)
-	}
-	created, err := s.Repo().Create(ctx, orgSlug, name)
+	created, err := s.Repo().Create(ctx, orgSlug)
 	if database.IsUniqueViolation(err) {
 		// The unique index decides, not a preceding lookup — see
 		// database.IsUniqueViolation.
@@ -144,7 +141,7 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Organization,
 	}
 	out := make([]*Organization, 0, len(memberships))
 	for _, m := range memberships {
-		out = append(out, &Organization{ID: m.OrgID, Slug: m.OrgSlug, Name: m.OrgName})
+		out = append(out, &Organization{ID: m.OrgID, Slug: m.OrgSlug})
 	}
 	return out, nil
 }

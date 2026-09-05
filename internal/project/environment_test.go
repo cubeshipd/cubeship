@@ -32,8 +32,7 @@ func TestEnvironmentWithAppsCannotBeDeleted(t *testing.T) {
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs/acme/projects/web/environments",
 		map[string]string{"slug": "staging", "name": "Staging"}, f.AdminKey), http.StatusCreated)
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", map[string]string{
-		"name": "staging-app", "domain": "staging.example.com",
-		"org": "acme", "project": "web", "environment": "staging",
+		"name": "staging-app", "org": "acme", "project": "web", "environment": "staging",
 	}, f.AdminKey), http.StatusCreated)
 
 	rec := f.Do(t, http.MethodDelete, "/orgs/acme/projects/web/environments/staging", nil, f.AdminKey)
@@ -85,7 +84,7 @@ func TestSlugsAreRejectedWhenTheyWouldBreakARegistryPath(t *testing.T) {
 	for _, name := range bad {
 		t.Run("app "+name, func(t *testing.T) {
 			rec := f.Do(t, http.MethodPost, "/apps", map[string]string{
-				"name": name, "domain": "x.example.com", "org": "acme", "project": "web",
+				"name": name, "org": "acme", "project": "web",
 			}, f.AdminKey)
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("app name %q was accepted (%d): %s", name, rec.Code, rec.Body.String())

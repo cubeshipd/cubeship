@@ -11,9 +11,9 @@ import (
 func newProjectCmd() *cobra.Command {
 	projectCmd := &cobra.Command{Use: "project", Short: "Manage Cubeship projects"}
 
-	var org, slug string
+	var org string
 	createCmd := &cobra.Command{
-		Use:   "create <name>",
+		Use:   "create <slug>",
 		Short: `Create a new project (comes with a "production" environment)`,
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -21,18 +21,16 @@ func newProjectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			p, err := c.CreateProject(context.Background(), org, slug, args[0])
+			p, err := c.CreateProject(context.Background(), org, args[0])
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Created project %q (slug: %s) with environment(s): %s\n", args[0], p.Slug, strings.Join(p.Environments, ", "))
+			fmt.Printf("Created project %s with environment(s): %s\n", p.Slug, strings.Join(p.Environments, ", "))
 			return nil
 		},
 	}
 	createCmd.Flags().StringVar(&org, "org", "", "organization slug the project belongs to")
 	createCmd.MarkFlagRequired("org")
-	createCmd.Flags().StringVar(&slug, "slug", "", "short identifier used in URLs")
-	createCmd.MarkFlagRequired("slug")
 
 	var listOrg string
 	listCmd := &cobra.Command{
@@ -49,7 +47,7 @@ func newProjectCmd() *cobra.Command {
 				return err
 			}
 			for _, p := range projects {
-				fmt.Printf("%s\t%s\n", p.Slug, p.Name)
+				fmt.Println(p.Slug)
 			}
 			return nil
 		},

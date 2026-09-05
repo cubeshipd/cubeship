@@ -21,7 +21,7 @@ type envResponse struct {
 func createApp(t *testing.T, f *servertest.Fixture, key, name string) {
 	t.Helper()
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", map[string]string{
-		"name": name, "domain": name + ".example.com", "org": "acme", "project": "web",
+		"name": name, "org": "acme", "project": "web",
 	}, key), http.StatusCreated)
 }
 
@@ -200,7 +200,7 @@ func TestConcurrentCreatesOfTheSameNameConflictCleanly(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			codes[i] = f.Do(t, http.MethodPost, "/apps", map[string]string{
-				"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
+				"name": "myapp", "org": "acme", "project": "web",
 			}, key).Code
 		}()
 	}

@@ -9,7 +9,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
 import { PageHeader, SectionHeader } from "@/components/page-header";
-import { TextAreaField, TextField } from "@/components/text-field";
+import { TextAreaField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
@@ -36,7 +36,6 @@ function Settings() {
   const [org, project, env] = ref.split("/");
 
   const [current, setCurrent] = useState<Environment | null>(null);
-  const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
@@ -56,7 +55,6 @@ function Settings() {
         const found = list.find((e) => e.slug === env);
         if (!found) throw new Error("environment not found");
         setCurrent(found);
-        setName(found.name);
         setDescription(found.description ?? "");
       })
       .catch((e) => setError(message(e)));
@@ -75,7 +73,7 @@ function Settings() {
   }
 
   const isProduction = env === PRODUCTION;
-  const dirty = !!current && (name !== current.name || description !== (current.description ?? ""));
+  const dirty = !!current && description !== (current.description ?? "");
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -83,7 +81,7 @@ function Settings() {
     setError(null);
     setSaved(false);
     try {
-      setCurrent(await api.patch<Environment>(path, { name, description }));
+      setCurrent(await api.patch<Environment>(path, { description }));
       setSaved(true);
     } catch (err) {
       setError(message(err));
@@ -112,13 +110,6 @@ function Settings() {
       <Card>
         <CardContent>
           <form onSubmit={save} className="space-y-4">
-            <TextField
-              label="Display name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              disabled={!current}
-            />
-
             <TextAreaField
               label="Description"
               hint="What runs here, and who it is for. Empty is fine."
@@ -140,7 +131,7 @@ function Settings() {
             </div>
 
             <div className="flex items-center gap-3">
-              <ActionButton type="submit" busy={busy} disabled={!dirty || !name}>
+              <ActionButton type="submit" busy={busy} disabled={!dirty}>
                 Save
               </ActionButton>
               {saved && !dirty && <span className="text-xs text-muted-foreground">Saved.</span>}

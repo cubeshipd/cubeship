@@ -67,7 +67,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.deployments)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "update_app",
-		Description: "Reconfigure an app: its description, the domain it is served on, and where its image comes from. A field you leave out is left as it was. The source and its settings travel together — naming a source without what it needs, or settings the source would ignore, is refused. Moving an app to a source that builds requires the admin role. The app's name cannot be changed.",
+		Description: "Reconfigure an app: its description and where its image comes from. Its domains are added and removed one at a time — an app can answer at several, each with its own port — so they are not here. A field you leave out is left as it was. The source and its settings travel together — naming a source without what it needs, or settings the source would ignore, is refused. Moving an app to a source that builds requires the admin role. The app's name cannot be changed.",
 	}, t.update)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_app",
@@ -85,7 +85,6 @@ type createInput struct {
 	Environment string `json:"environment,omitempty" jsonschema:"environment slug (default \"production\")"`
 	Name        string `json:"name" jsonschema:"app name: lowercase letters, digits and dashes — becomes part of its registry image path. Permanent"`
 	Description string `json:"description,omitempty" jsonschema:"what this app is, in a sentence"`
-	Domain      string `json:"domain,omitempty" jsonschema:"domain the app will be served on. Optional here — an app can be created bare and configured with update_app — but required before it can deploy"`
 	Source      string `json:"source,omitempty" jsonschema:"where the image comes from: \"registry\" (the default) for an image you push to Cubeship, \"external\" for one in a registry Cubeship does not run, \"dockerfile\" to build a Dockerfile from a Git repository, or \"railpack\" to build from a Git repository with no Dockerfile. Building requires the admin role."`
 	Image       string `json:"image,omitempty" jsonschema:"for an external app, the image it pulls, without a tag — e.g. \"registry.digitalocean.com/acme/api\". Leave empty otherwise."`
 	Repo        string `json:"repo,omitempty" jsonschema:"for a building app, the https:// Git repository to build from. Leave empty otherwise."`
@@ -95,7 +94,7 @@ type createInput struct {
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
 	created, err := t.svc.Create(ctx, t.caller, in.Org, in.Project, in.Environment,
-		in.Name, in.Description, in.Domain, Source(in.Source),
+		in.Name, in.Description, Source(in.Source),
 		Origin{Image: in.Image, Repo: in.Repo, Ref: in.Ref, Dockerfile: in.Dockerfile})
 	if err != nil {
 		return nil, Response{}, err
@@ -106,7 +105,6 @@ func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInp
 type updateInput struct {
 	Reference   string  `json:"reference" jsonschema:"the app's reference: org/project/environment/name"`
 	Description *string `json:"description,omitempty" jsonschema:"what this app is; leave out to keep it, send empty to clear it"`
-	Domain      *string `json:"domain,omitempty" jsonschema:"the domain it is served on; required before the app can deploy"`
 	Source      *string `json:"source,omitempty" jsonschema:"registry, external, dockerfile or railpack. Send the settings the new source needs alongside it"`
 	Image       *string `json:"image,omitempty" jsonschema:"for an external app, the image it pulls, without a tag"`
 	Repo        *string `json:"repo,omitempty" jsonschema:"for a building app, the https:// Git repository to build from"`
@@ -133,10 +131,10 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 			Dockerfile: deref(in.Dockerfile),
 		}
 	}
-	if in.Description == nil && in.Domain == nil && source == nil && origin == nil {
+	if in.Description == nil && source == nil && origin == nil {
 		return nil, Response{}, fmt.Errorf("nothing to change")
 	}
-	updated, err := t.svc.Update(ctx, t.caller, ref, in.Description, in.Domain, source, origin)
+	updated, err := t.svc.Update(ctx, t.caller, ref, in.Description, source, origin)
 	if err != nil {
 		return nil, Response{}, err
 	}

@@ -13,7 +13,6 @@ import (
 // Response is one project as both the API and the MCP tools report it.
 type Response struct {
 	Slug         string   `json:"slug"`
-	Name         string   `json:"name"`
 	Description  string   `json:"description"`
 	Environments []string `json:"environments,omitempty"`
 }
@@ -21,7 +20,6 @@ type Response struct {
 // EnvironmentResponse is one environment, likewise shared.
 type EnvironmentResponse struct {
 	Slug        string `json:"slug"`
-	Name        string `json:"name"`
 	Description string `json:"description"`
 }
 
@@ -34,7 +32,7 @@ func toResponses(projects []*Project) []Response {
 }
 
 func toResponse(p *Project) Response {
-	return Response{Slug: p.Slug, Name: p.Name, Description: p.Description}
+	return Response{Slug: p.Slug, Description: p.Description}
 }
 
 func toEnvironmentResponses(envs []*Environment) []EnvironmentResponse {
@@ -46,7 +44,7 @@ func toEnvironmentResponses(envs []*Environment) []EnvironmentResponse {
 }
 
 func toEnvironmentResponse(e *Environment) EnvironmentResponse {
-	return EnvironmentResponse{Slug: e.Slug, Name: e.Name, Description: e.Description}
+	return EnvironmentResponse{Slug: e.Slug, Description: e.Description}
 }
 
 type Handler struct {
@@ -81,8 +79,6 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrAlreadyExists), errors.Is(err, ErrEnvironmentExists),
 		errors.Is(err, ErrEnvironmentHasApps), errors.Is(err, ErrHasApps):
 		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, ErrNameRequired), errors.Is(err, ErrEnvironmentNameRequired):
-		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrProductionUndeletable):
 		http.Error(w, err.Error(), http.StatusForbidden)
 	default:
@@ -93,18 +89,17 @@ func WriteError(w http.ResponseWriter, err error) {
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Slug string `json:"slug"`
-		Name string `json:"name"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil || req.Slug == "" {
 		http.Error(w, "slug is required", http.StatusBadRequest)
 		return
 	}
-	p, env, err := h.svc.Create(r.Context(), user.FromContext(r.Context()), r.PathValue("orgSlug"), req.Slug, req.Name)
+	p, env, err := h.svc.Create(r.Context(), user.FromContext(r.Context()), r.PathValue("orgSlug"), req.Slug)
 	if err != nil {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusCreated, Response{Slug: p.Slug, Name: p.Name, Description: p.Description, Environments: []string{env.Slug}})
+	httpx.WriteJSON(w, http.StatusCreated, Response{Slug: p.Slug, Description: p.Description, Environments: []string{env.Slug}})
 }
 
 // update is PATCH: a field left out of the body is left alone, which is
@@ -112,19 +107,18 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 // The slug is not a field — see Service.Update.
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name        *string `json:"name"`
 		Description *string `json:"description"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
-	if req.Name == nil && req.Description == nil {
-		http.Error(w, "give name, description, or both", http.StatusBadRequest)
+	if req.Description == nil {
+		http.Error(w, "give a description", http.StatusBadRequest)
 		return
 	}
 	p, err := h.svc.Update(r.Context(), user.FromContext(r.Context()),
-		r.PathValue("orgSlug"), r.PathValue("projectSlug"), req.Name, req.Description)
+		r.PathValue("orgSlug"), r.PathValue("projectSlug"), req.Description)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -238,14 +232,13 @@ func (h *Handler) setEnv(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) createEnvironment(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Slug string `json:"slug"`
-		Name string `json:"name"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil || req.Slug == "" {
 		http.Error(w, "slug is required", http.StatusBadRequest)
 		return
 	}
 	env, err := h.svc.CreateEnvironment(r.Context(), user.FromContext(r.Context()),
-		r.PathValue("orgSlug"), r.PathValue("projectSlug"), req.Slug, req.Name)
+		r.PathValue("orgSlug"), r.PathValue("projectSlug"), req.Slug)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -258,20 +251,19 @@ func (h *Handler) createEnvironment(w http.ResponseWriter, r *http.Request) {
 // every app reference in the environment.
 func (h *Handler) updateEnvironment(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name        *string `json:"name"`
 		Description *string `json:"description"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
-	if req.Name == nil && req.Description == nil {
-		http.Error(w, "give name, description, or both", http.StatusBadRequest)
+	if req.Description == nil {
+		http.Error(w, "give a description", http.StatusBadRequest)
 		return
 	}
 	env, err := h.svc.UpdateEnvironment(r.Context(), user.FromContext(r.Context()),
 		r.PathValue("orgSlug"), r.PathValue("projectSlug"), r.PathValue("envSlug"),
-		req.Name, req.Description)
+		req.Description)
 	if err != nil {
 		WriteError(w, err)
 		return

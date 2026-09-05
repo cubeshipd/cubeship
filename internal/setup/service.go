@@ -88,7 +88,7 @@ func (s *Service) Claim(ctx context.Context, username, password string) (*Result
 		result.User = created
 
 		orgs := org.NewRepository(tx)
-		o, err := orgs.Create(ctx, OrgSlug, OrgName)
+		o, err := orgs.Create(ctx, OrgSlug)
 		if err != nil {
 			return err
 		}
@@ -102,14 +102,14 @@ func (s *Service) Claim(ctx context.Context, username, password string) (*Result
 			return err
 		}
 
-		p, err := project.NewRepository(tx).Create(ctx, o.ID, ProjectSlug, ProjectName)
+		p, err := project.NewRepository(tx).Create(ctx, o.ID, ProjectSlug)
 		if err != nil {
 			return err
 		}
 		result.Project = p
 
 		// A project without an environment has nowhere for an app to go.
-		_, err = project.NewEnvironmentRepository(tx).Create(ctx, p.ID, project.ProductionEnvSlug, "Production")
+		_, err = project.NewEnvironmentRepository(tx).Create(ctx, p.ID, project.ProductionEnvSlug)
 		return err
 	})
 	if err != nil {

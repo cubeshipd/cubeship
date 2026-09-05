@@ -70,16 +70,14 @@ func (h *Handler) OpenAPI() openapi.Spec {
 		Schemas: mergeSchemas(EnvSchemas(), map[string]*openapi.Schema{
 			"Project": openapi.Object(map[string]*openapi.Schema{
 				"slug":         openapi.String(""),
-				"name":         openapi.String(""),
 				"description":  openapi.String("What the project is for. Empty unless someone set it."),
 				"environments": openapi.Array(openapi.String("Environment slug. Only returned when the project is created.")),
-			}, "slug", "name", "description"),
+			}, "slug", "description"),
 
 			"Environment": openapi.Object(map[string]*openapi.Schema{
 				"slug":        openapi.String(""),
-				"name":        openapi.String(""),
 				"description": openapi.String("What this stage of the project is for. Empty unless someone set it."),
-			}, "slug", "name", "description"),
+			}, "slug", "description"),
 		}),
 		Paths: map[string]openapi.PathItem{
 			"/orgs/{orgSlug}/projects": {
@@ -91,7 +89,6 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Parameters:  []openapi.Parameter{orgParam},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"slug": openapi.String("Lowercase letters, digits and dashes."),
-						"name": openapi.String("Optional. Left out, it is derived from the slug — `public-api` becomes `Public Api` — and can be edited afterwards."),
 					}, "slug")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse(`The project and its "production" environment.`, openapi.Ref("Project")),
@@ -125,7 +122,6 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						Required:    true,
 						Description: "Name, description, or both. Omit a field to leave it alone; send an empty description to clear it.",
 						Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
-							"name":        openapi.String("Cannot be empty."),
 							"description": openapi.String("May be empty."),
 						})),
 					},
@@ -205,7 +201,6 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Parameters:  []openapi.Parameter{orgParam, projectParam},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"slug": openapi.String("Lowercase letters, digits and dashes."),
-						"name": openapi.String("Optional. Left out, it is derived from the slug — `public-api` becomes `Public Api` — and can be edited afterwards."),
 					}, "slug")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse("The new environment.", openapi.Ref("Environment")),
@@ -283,7 +278,6 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						Required:    true,
 						Description: "Name, description, or both. Omit a field to leave it alone; send an empty description to clear it.",
 						Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
-							"name":        openapi.String("Cannot be empty."),
 							"description": openapi.String("May be empty."),
 						})),
 					},

@@ -13,7 +13,7 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { ValueCard } from "@/components/value-card";
-import { type App, api, BUILDING_SOURCES, type Deployment, type EnvView } from "@/lib/api";
+import { type App, api, BUILDING_SOURCES, type Deployment, type EnvView, hostsOf } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // One app, identified by its reference in the query string. A static
@@ -73,7 +73,7 @@ function Detail() {
         title={<span className="font-mono text-lg tracking-normal normal-case">{app.name}</span>}
         sub={
           <span className="flex items-center gap-2">
-            {app.domain || "no domain"}
+            {hostsOf(app)}
             <StatusBadge value={app.status} />
           </span>
         }
@@ -91,7 +91,7 @@ function Detail() {
         }
       />
 
-      {!app.domain && (
+      {app.domains.length === 0 && (
         <Notice tone="warning">
           Nothing is configured yet, so this app cannot deploy. Give it a domain and say where its
           image comes from in{" "}
@@ -107,7 +107,7 @@ function Detail() {
       <Deployments
         reference={reference}
         buildsFromRepo={BUILDING_SOURCES.includes(app.source)}
-        canDeploy={!!app.domain}
+        canDeploy={app.domains.length > 0}
         onDeployed={reload}
       />
       <EnvVars reference={reference} />

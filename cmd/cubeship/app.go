@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"text/tabwriter"
 
 	"cubeship/internal/cli/client"
@@ -37,6 +38,7 @@ func newAppCmd() *cobra.Command {
 	}
 
 	var domain, org, project, environment, source string
+	var port int
 	createCmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Register a new app and get its registry image path",
@@ -46,16 +48,25 @@ func newAppCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			created, err := c.CreateApp(context.Background(), args[0], domain, org, project, environment, source)
+			ctx := context.Background()
+			created, err := c.CreateApp(ctx, args[0], org, project, environment, source)
 			if err != nil {
 				return err
+			}
+			// The domain is a separate call because an app can have
+			// several, each naming its own port. Given here it is the
+			// first one, which is what most apps ever have.
+			if domain != "" {
+				if _, err := c.AddAppDomain(ctx, created.Reference, domain, port); err != nil {
+					return fmt.Errorf("the app was created but %s could not be added to it: %w", domain, err)
+				}
 			}
 			fmt.Printf("Created %s. Push to: %s\n", created.Reference, created.Image)
 			return nil
 		},
 	}
-	createCmd.Flags().StringVar(&domain, "domain", "", "domain the app will be served on")
-	createCmd.MarkFlagRequired("domain")
+	createCmd.Flags().StringVar(&domain, "domain", "", "a domain to serve the app on; add more with `app domain add`")
+	createCmd.Flags().IntVar(&port, "port", 0, "what that domain reaches inside the container; 0 reads it from the image")
 	createCmd.Flags().StringVar(&org, "org", "", "organization slug that will own this app")
 	createCmd.MarkFlagRequired("org")
 	createCmd.Flags().StringVar(&project, "project", "", "project slug this app belongs to")
@@ -149,7 +160,7 @@ func newAppCmd() *cobra.Command {
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "APP\tSTATUS\tDOMAIN")
 			for _, a := range apps {
-				fmt.Fprintf(w, "%s\t%s\t%s\n", a.Reference, a.Status, a.Domain)
+				fmt.Fprintf(w, "%s\t%s\t%s\n", a.Reference, a.Status, hostsOf(a))
 			}
 			return w.Flush()
 		},
@@ -171,7 +182,7 @@ func newAppCmd() *cobra.Command {
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			for _, row := range [][2]string{
 				{"App", a.Reference}, {"Organization", a.Org}, {"Project", a.Project},
-				{"Environment", a.Environment}, {"Domain", a.Domain},
+				{"Environment", a.Environment}, {"Domains", hostsOf(a)},
 				{"Source", a.Source}, {"Status", a.Status}, {"Push to", a.Image},
 			} {
 				fmt.Fprintf(w, "%s:\t%s\n", row[0], row[1])
@@ -228,4 +239,18 @@ func newAppCmd() *cobra.Command {
 
 	appCmd.AddCommand(createCmd, listCmd, getCmd, deployCmd, deploymentsCmd, deleteCmd, logsCmd, appEnvCommands())
 	return appCmd
+}
+
+// hostsOf renders every name an app answers at, for a column that has
+// room for one line. An app with several is common now: one image can
+// expose more than one port, and each name says which it reaches.
+func hostsOf(a client.App) string {
+	if len(a.Domains) == 0 {
+		return ""
+	}
+	hosts := make([]string, 0, len(a.Domains))
+	for _, d := range a.Domains {
+		hosts = append(hosts, d.Host)
+	}
+	return strings.Join(hosts, ", ")
 }

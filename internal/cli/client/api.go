@@ -19,18 +19,15 @@ func errorsAs(err error, target any) bool { return errors.As(err, target) }
 
 type Org struct {
 	Slug string `json:"slug"`
-	Name string `json:"name"`
 }
 
 type Project struct {
 	Slug         string   `json:"slug"`
-	Name         string   `json:"name"`
 	Environments []string `json:"environments,omitempty"`
 }
 
 type Environment struct {
 	Slug string `json:"slug"`
-	Name string `json:"name"`
 }
 
 type App struct {
@@ -39,13 +36,25 @@ type App struct {
 	Reference string `json:"reference"`
 	Name      string `json:"name"`
 	// Source is where the app's image comes from.
-	Source      string `json:"source"`
-	Domain      string `json:"domain"`
-	Image       string `json:"image"`
-	Status      string `json:"status"`
-	Org         string `json:"org"`
-	Project     string `json:"project"`
-	Environment string `json:"environment"`
+	Source string `json:"source"`
+	// Domains are every name the app answers at, each with the port
+	// behind it. An app can have several — one image can expose more
+	// than one port, and each name says which it reaches.
+	Domains     []Domain `json:"domains"`
+	Image       string   `json:"image"`
+	Status      string   `json:"status"`
+	Org         string   `json:"org"`
+	Project     string   `json:"project"`
+	Environment string   `json:"environment"`
+}
+
+// Domain is one name an app is served at.
+type Domain struct {
+	ID   int64  `json:"id"`
+	Host string `json:"host"`
+	// Port is what this name reaches, or 0 for "read it from the
+	// image".
+	Port int `json:"port"`
 }
 
 // APIKey is one of the caller's keys. The key value itself is only ever
@@ -80,9 +89,9 @@ func (c *Client) WhoAmI(ctx context.Context) (string, error) {
 
 // --- organizations ---
 
-func (c *Client) CreateOrg(ctx context.Context, slug, name string) (Org, error) {
+func (c *Client) CreateOrg(ctx context.Context, slug string) (Org, error) {
 	return request[Org](ctx, c, "create organization", http.MethodPost, "/orgs",
-		map[string]string{"slug": slug, "name": name}, http.StatusCreated, DefaultTimeout)
+		map[string]string{"slug": slug}, http.StatusCreated, DefaultTimeout)
 }
 
 func (c *Client) ListOrgs(ctx context.Context) ([]Org, error) {
@@ -102,10 +111,10 @@ func (c *Client) CreateOrgUser(ctx context.Context, orgSlug, username, role stri
 
 // --- projects and environments ---
 
-func (c *Client) CreateProject(ctx context.Context, orgSlug, slug, name string) (Project, error) {
+func (c *Client) CreateProject(ctx context.Context, orgSlug, slug string) (Project, error) {
 	return request[Project](ctx, c, "create project", http.MethodPost,
 		"/orgs/"+segment(orgSlug)+"/projects",
-		map[string]string{"slug": slug, "name": name}, http.StatusCreated, DefaultTimeout)
+		map[string]string{"slug": slug}, http.StatusCreated, DefaultTimeout)
 }
 
 func (c *Client) ListProjects(ctx context.Context, orgSlug string) ([]Project, error) {
@@ -158,10 +167,10 @@ func (c *Client) SetProjectEnv(ctx context.Context, orgSlug, projectSlug string,
 	return err
 }
 
-func (c *Client) CreateEnvironment(ctx context.Context, orgSlug, projectSlug, slug, name string) (Environment, error) {
+func (c *Client) CreateEnvironment(ctx context.Context, orgSlug, projectSlug, slug string) (Environment, error) {
 	return request[Environment](ctx, c, "create environment", http.MethodPost,
 		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/environments",
-		map[string]string{"slug": slug, "name": name}, http.StatusCreated, DefaultTimeout)
+		map[string]string{"slug": slug}, http.StatusCreated, DefaultTimeout)
 }
 
 func (c *Client) ListEnvironments(ctx context.Context, orgSlug, projectSlug string) ([]Environment, error) {
@@ -204,11 +213,27 @@ func (c *Client) DeleteEnvironment(ctx context.Context, orgSlug, projectSlug, en
 
 // CreateApp registers an app and returns it, including the registry path
 // to push to. environment may be empty, which means "production".
-func (c *Client) CreateApp(ctx context.Context, name, domain, orgSlug, projectSlug, environment, source string) (App, error) {
+func (c *Client) CreateApp(ctx context.Context, name, orgSlug, projectSlug, environment, source string) (App, error) {
 	return request[App](ctx, c, "create app", http.MethodPost, "/apps", map[string]string{
-		"name": name, "domain": domain, "org": orgSlug,
+		"name": name, "org": orgSlug,
 		"project": projectSlug, "environment": environment, "source": source,
 	}, http.StatusCreated, DefaultTimeout)
+}
+
+// AddAppDomain gives an app a name to answer at.
+//
+// port is what it reaches inside the container, or 0 to read it from the
+// image — which is the normal answer, and the only one available before
+// an app that builds has been built.
+func (c *Client) AddAppDomain(ctx context.Context, ref, host string, port int) (App, error) {
+	return request[App](ctx, c, "add app domain", http.MethodPost, appPath(ref)+"/domains",
+		map[string]any{"host": host, "port": port}, http.StatusCreated, DefaultTimeout)
+}
+
+// RemoveAppDomain takes a name off an app.
+func (c *Client) RemoveAppDomain(ctx context.Context, ref string, domainID int64) (App, error) {
+	return request[App](ctx, c, "remove app domain", http.MethodDelete,
+		fmt.Sprintf("%s/domains/%d", appPath(ref), domainID), nil, http.StatusOK, DefaultTimeout)
 }
 
 func (c *Client) ListApps(ctx context.Context) ([]App, error) {

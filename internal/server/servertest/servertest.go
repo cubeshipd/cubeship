@@ -100,6 +100,10 @@ func (noDocker) RemoveContainer(context.Context, string) error { return errNoDoc
 func (noDocker) IsRunning(context.Context, string) (bool, error) {
 	return false, errNoDocker
 }
+
+func (noDocker) ExposedPorts(context.Context, string) ([]int, error) {
+	return nil, errNoDocker
+}
 func (noDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {
 	return nil, errNoDocker
 }
@@ -142,11 +146,11 @@ func newFixture(t testing.TB, docker app.DockerAPI, domain string) *Fixture {
 	}
 
 	admin, adminKey := CreateUser(t, db, "admin", true)
-	o, err := srv.Orgs.Repo().Create(ctx, "acme", "Acme Inc")
+	o, err := srv.Orgs.Repo().Create(ctx, "acme")
 	if err != nil {
 		t.Fatalf("create organization: %v", err)
 	}
-	p, env, err := srv.Projects.Create(ctx, admin, o.Slug, "web", "Web")
+	p, env, err := srv.Projects.Create(ctx, admin, o.Slug, "web")
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -315,4 +319,15 @@ func (f *Fixture) HTTPServer(t testing.TB) *httptest.Server {
 	ts := httptest.NewServer(f.Server.Router())
 	t.Cleanup(ts.Close)
 	return ts
+}
+
+// AddDomain gives an app a name to answer at.
+//
+// Traefik routes by host, so an app with none cannot deploy — which
+// makes this a step every deploy test needs. Port 0 means "read it from
+// the image", which is what an app in a test has.
+func AddDomain(t testing.TB, f *Fixture, key, ref, host string) {
+	t.Helper()
+	RequireStatus(t, f.Do(t, http.MethodPost, "/apps/"+ref+"/domains",
+		map[string]any{"host": host}, key), http.StatusCreated)
 }

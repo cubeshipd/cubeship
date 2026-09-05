@@ -29,6 +29,7 @@ type DockerAPI interface {
 	StopContainer(ctx context.Context, id string) error
 	RemoveContainer(ctx context.Context, id string) error
 	IsRunning(ctx context.Context, id string) (bool, error)
+	ExposedPorts(ctx context.Context, ref string) ([]int, error)
 	Logs(ctx context.Context, id, tail string) (io.ReadCloser, error)
 }
 
@@ -272,7 +273,7 @@ func (o *Orchestrator) Start(ctx context.Context, appID int64, tag string) (*Dep
 	}
 	// Traefik routes by host, so an app with no domain would come up
 	// answering nothing. It is the one thing an app is created without.
-	if a.Domain == "" {
+	if len(a.Domains) == 0 {
 		return nil, ErrDomainRequired
 	}
 	source, err := o.sourceFor(a)
@@ -427,7 +428,7 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	newID, err := o.docker.CreateContainer(ctx, dockerx.ContainerOpts{
 		Name:    newName,
 		Image:   image.Ref,
-		Labels:  traefik.Labels(base, a.Domain, Port, values.HasTLS()),
+		Labels:  traefik.Labels(base, o.routing(ctx, a.Domains, image.Ref), values.HasTLS()),
 		Env:     envvar.Slice(env),
 		Network: Network,
 	})
@@ -568,4 +569,46 @@ func (o *Orchestrator) inheritedEnv(ctx context.Context, a *App) (envvar.Map, er
 		return nil, fmt.Errorf("get environment: %w", err)
 	}
 	return envvar.Merge(p.Env, e.Env, a.Env), nil
+}
+
+// routing turns an app's domains into what Traefik is told, filling in
+// the port for any that did not name one.
+//
+// What the operator set wins. Otherwise the image is asked: EXPOSE ends
+// up in an image's config, so an image that says what it listens on is
+// answering a question nobody should have to look up. An image that
+// exposes nothing has no answer, and one that exposes several has no
+// *single* answer — guessing between them would serve the wrong thing
+// quietly — so both fall back to the default.
+//
+// The image is inspected here, after Resolve, because that is the first
+// moment it certainly exists: an app that builds has none at all until
+// its first build, which is why this cannot happen when the app is
+// configured.
+func (o *Orchestrator) routing(ctx context.Context, domains []Domain, imageRef string) []traefik.Domain {
+	// Asked once, however many domains there are: they are all one
+	// container running one image.
+	detected := 0
+	for _, d := range domains {
+		if d.Port == 0 {
+			ports, err := o.docker.ExposedPorts(ctx, imageRef)
+			if err == nil && len(ports) == 1 {
+				detected = ports[0]
+			}
+			break
+		}
+	}
+
+	out := make([]traefik.Domain, 0, len(domains))
+	for _, d := range domains {
+		port := d.Port
+		if port == 0 {
+			port = detected
+		}
+		if port == 0 {
+			port = DefaultPort
+		}
+		out = append(out, traefik.Domain{Host: d.Host, Port: port})
+	}
+	return out
 }

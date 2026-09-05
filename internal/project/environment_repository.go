@@ -18,12 +18,12 @@ func NewEnvironmentRepository(q database.Queryer) *EnvironmentRepository {
 	return &EnvironmentRepository{q: q}
 }
 
-const environmentColumns = `id, project_id, slug, name, description, env, created_at`
+const environmentColumns = `id, project_id, slug, description, env, created_at`
 
 func scanEnvironment(row scanner) (*Environment, error) {
 	var e Environment
 	var envJSON []byte
-	if err := row.Scan(&e.ID, &e.ProjectID, &e.Slug, &e.Name, &e.Description, &envJSON, &e.CreatedAt); err != nil {
+	if err := row.Scan(&e.ID, &e.ProjectID, &e.Slug, &e.Description, &envJSON, &e.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &e.Env); err != nil {
@@ -32,10 +32,10 @@ func scanEnvironment(row scanner) (*Environment, error) {
 	return &e, nil
 }
 
-func (r *EnvironmentRepository) Create(ctx context.Context, projectID int64, slug, name string) (*Environment, error) {
+func (r *EnvironmentRepository) Create(ctx context.Context, projectID int64, slug string) (*Environment, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO environments (project_id, slug, name) VALUES ($1, $2, $3) RETURNING `+environmentColumns,
-		projectID, slug, name)
+		`INSERT INTO environments (project_id, slug) VALUES ($1, $2) RETURNING `+environmentColumns,
+		projectID, slug)
 	e, err := scanEnvironment(row)
 	if err != nil {
 		return nil, fmt.Errorf("create environment: %w", err)
@@ -47,11 +47,11 @@ func (r *EnvironmentRepository) Create(ctx context.Context, projectID int64, slu
 // leaves the column alone, so PATCH with one field named cannot blank
 // the other — and it stays one statement rather than a
 // read-modify-write.
-func (r *EnvironmentRepository) Update(ctx context.Context, environmentID int64, name, description *string) (*Environment, error) {
+func (r *EnvironmentRepository) Update(ctx context.Context, environmentID int64, description *string) (*Environment, error) {
 	row := r.q.QueryRowContext(ctx,
-		`UPDATE environments SET name = COALESCE($1, name), description = COALESCE($2, description)
-		 WHERE id = $3 RETURNING `+environmentColumns,
-		name, description, environmentID)
+		`UPDATE environments SET description = COALESCE($1, description)
+		 WHERE id = $2 RETURNING `+environmentColumns,
+		description, environmentID)
 	e, err := scanEnvironment(row)
 	if err != nil {
 		return nil, fmt.Errorf("update environment: %w", err)

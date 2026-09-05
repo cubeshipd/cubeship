@@ -17,6 +17,7 @@ type fakeDocker struct {
 
 	nextCreateID string
 	running      bool
+	exposedPorts []int
 	// pullCreds is what the last pull authenticated with, so a test can
 	// assert an external app reached its registry with a login.
 	pullCreds *dockerx.RegistryAuth
@@ -84,6 +85,14 @@ func (f *fakeDocker) RemoveContainer(_ context.Context, id string) error {
 	}
 	f.removedIDs = append(f.removedIDs, id)
 	return nil
+}
+
+// exposedPorts is what an image says it listens on. Nil — the zero
+// value — is an image that says nothing, which is what most tests want.
+func (f *fakeDocker) ExposedPorts(_ context.Context, _ string) ([]int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.exposedPorts, nil
 }
 
 func (f *fakeDocker) IsRunning(_ context.Context, _ string) (bool, error) {

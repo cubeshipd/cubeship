@@ -26,8 +26,7 @@ func TestSameNameCanExistInTwoEnvironments(t *testing.T) {
 		t.Helper()
 		var got appResponse
 		servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-			"name": "api", "domain": env + "-api.example.com",
-			"org": "acme", "project": "web", "environment": env,
+			"name": "api", "org": "acme", "project": "web", "environment": env,
 		}, key, &got), http.StatusCreated)
 		return got
 	}
@@ -56,7 +55,7 @@ func TestSameNameCanExistInTwoOrganizations(t *testing.T) {
 
 	for _, o := range []string{"acme", "globex"} {
 		servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", map[string]string{
-			"name": "api", "domain": o + "-api.example.com", "org": o, "project": "web",
+			"name": "api", "org": o, "project": "web",
 		}, f.AdminKey), http.StatusCreated)
 	}
 }
@@ -68,7 +67,7 @@ func TestSameNameTwiceInOneEnvironmentConflicts(t *testing.T) {
 	_, key := f.AddMember(t, "member", org.RoleMember)
 
 	body := map[string]string{
-		"name": "api", "domain": "api.example.com", "org": "acme", "project": "web",
+		"name": "api", "org": "acme", "project": "web",
 	}
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", body, key), http.StatusCreated)
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", body, key), http.StatusConflict)
@@ -140,7 +139,7 @@ func TestAppsCarryTheirSource(t *testing.T) {
 		Source    string `json:"source"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
+		"name": "myapp", "org": "acme", "project": "web",
 	}, f.AdminKey, &created), http.StatusCreated)
 
 	if created.Source != string(app.SourceRegistry) {
@@ -152,7 +151,7 @@ func TestAppsCarryTheirSource(t *testing.T) {
 		Source string `json:"source"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "other", "domain": "other.example.com", "org": "acme", "project": "web",
+		"name": "other", "org": "acme", "project": "web",
 		"source": "registry",
 	}, f.AdminKey, &explicit), http.StatusCreated)
 	if explicit.Source != "registry" {
@@ -168,7 +167,7 @@ func TestUnsupportedSourceIsRefused(t *testing.T) {
 
 	for _, source := range []string{"git", "build", "ftp", "REGISTRY", "EXTERNAL"} {
 		rec := f.Do(t, http.MethodPost, "/apps", map[string]string{
-			"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
+			"name": "myapp", "org": "acme", "project": "web",
 			"source": source,
 		}, f.AdminKey)
 		servertest.RequireStatus(t, rec, http.StatusBadRequest)
@@ -185,7 +184,7 @@ func TestDeployIsRefusedBeforeItStartsWhenTheSourceCannotProduceAnImage(t *testi
 		Reference string `json:"reference"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
+		"name": "myapp", "org": "acme", "project": "web",
 	}, f.AdminKey, &created), http.StatusCreated)
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost,
@@ -209,7 +208,7 @@ func TestAnExternalAppNeedsAnImageAndNothingElseMayHaveOne(t *testing.T) {
 	create := func(body map[string]string) int {
 		return f.Do(t, http.MethodPost, "/apps", body, f.AdminKey).Code
 	}
-	base := map[string]string{"domain": "x.example.com", "org": "acme", "project": "web"}
+	base := map[string]string{"org": "acme", "project": "web"}
 	with := func(extra map[string]string) map[string]string {
 		out := map[string]string{}
 		for k, v := range base {
@@ -263,9 +262,10 @@ func TestAnExternalAppCanDeployBeforeAnyDomainExists(t *testing.T) {
 		Reference string `json:"reference"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
+		"name": "myapp", "org": "acme", "project": "web",
 		"source": "external", "image": "ghcr.io/acme/api",
 	}, f.AdminKey, &created), http.StatusCreated)
+	servertest.AddDomain(t, f, f.AdminKey, created.Reference, "myapp.example.com")
 
 	// Accepted, where a registry app is refused for having nowhere to
 	// pull from.

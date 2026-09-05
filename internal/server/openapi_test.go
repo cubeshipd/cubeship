@@ -73,6 +73,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 
 	want := []string{
 		"DELETE /apps/{org}/{project}/{env}/{name}",
+		"DELETE /apps/{org}/{project}/{env}/{name}/domains/{domainID}",
 		"DELETE /orgs/{orgSlug}",
 		"DELETE /orgs/{orgSlug}/dns/{id}",
 		"DELETE /orgs/{orgSlug}/dns/{id}/records",
@@ -112,6 +113,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"GET /settings",
 		"GET /users/me",
 		"PATCH /apps/{org}/{project}/{env}/{name}",
+		"PATCH /apps/{org}/{project}/{env}/{name}/domains/{domainID}",
 		"PATCH /apps/{org}/{project}/{env}/{name}/env",
 		"PATCH /orgs/{orgSlug}/dns/{id}",
 		"PATCH /orgs/{orgSlug}/projects/{projectSlug}",
@@ -120,6 +122,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"PATCH /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env",
 		"POST /apps",
 		"POST /apps/{org}/{project}/{env}/{name}/deploy",
+		"POST /apps/{org}/{project}/{env}/{name}/domains",
 		"POST /orgs",
 		"POST /orgs/{orgSlug}/dns",
 		"POST /orgs/{orgSlug}/github",

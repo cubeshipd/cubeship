@@ -10,9 +10,8 @@ import (
 func newOrgCmd() *cobra.Command {
 	orgCmd := &cobra.Command{Use: "org", Short: "Manage Cubeship organizations"}
 
-	var slug string
 	createCmd := &cobra.Command{
-		Use:   "create <name>",
+		Use:   "create <slug>",
 		Short: "Create a new organization (super-admin only)",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -20,15 +19,13 @@ func newOrgCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := c.CreateOrg(context.Background(), slug, args[0]); err != nil {
+			if _, err := c.CreateOrg(context.Background(), args[0]); err != nil {
 				return err
 			}
-			fmt.Printf("Created organization %q (slug: %s)\n", args[0], slug)
+			fmt.Printf("Created organization %s\n", args[0])
 			return nil
 		},
 	}
-	createCmd.Flags().StringVar(&slug, "slug", "", "short identifier used in URLs and registry paths")
-	createCmd.MarkFlagRequired("slug")
 
 	listCmd := &cobra.Command{
 		Use:   "list",
@@ -44,7 +41,7 @@ func newOrgCmd() *cobra.Command {
 				return err
 			}
 			for _, o := range orgs {
-				fmt.Printf("%s\t%s\n", o.Slug, o.Name)
+				fmt.Println(o.Slug)
 			}
 			return nil
 		},

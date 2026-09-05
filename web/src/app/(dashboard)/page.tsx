@@ -128,7 +128,6 @@ function Projects() {
               key={p.slug}
               org={org}
               slug={p.slug}
-              name={p.name}
               description={p.description}
               environments={envs[p.slug] ?? p.environments ?? []}
               apps={apps.filter((a) => a.org === org && a.project === p.slug)}

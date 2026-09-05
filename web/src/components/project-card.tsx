@@ -9,14 +9,12 @@ import type { App } from "@/lib/api";
 export function ProjectCard({
   org,
   slug,
-  name,
   description,
   environments,
   apps,
 }: {
   org: string;
   slug: string;
-  name: string;
   description?: string;
   environments: string[];
   apps: App[];
@@ -34,12 +32,10 @@ export function ProjectCard({
       <div className="flex-1 p-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="truncate text-sm font-semibold tracking-[0.1em] uppercase group-hover:text-primary">
-              {name}
+            <h3 className="truncate font-mono text-sm font-semibold group-hover:text-primary">
+              {slug}
             </h3>
-            <p className="mt-1 truncate font-mono text-[11px] text-muted-foreground">
-              {org}/{slug}
-            </p>
+            <p className="mt-1 truncate font-mono text-[11px] text-subtle-foreground">{org}</p>
             {description && (
               <p className="mt-2.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                 {description}

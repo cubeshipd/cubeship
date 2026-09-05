@@ -9,6 +9,7 @@ package app
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"cubeship/internal/envvar"
@@ -30,10 +31,11 @@ type App struct {
 	// Description is what this app is, in a sentence. It and the slug
 	// are all an app is created with.
 	Description string
-	// Domain is where Traefik serves it. Empty until someone configures
-	// it, which is also what makes the app undeployable — see
-	// ErrDomainRequired.
-	Domain string
+	// Domains are every name Traefik serves this app at, each with the
+	// port behind it. Empty until one is configured, which is also what
+	// makes the app undeployable — see ErrDomainRequired.
+	Domains []Domain
+
 	Source string
 	// SourceImage is the image an external app pulls, without a tag.
 	// Empty for every other source.
@@ -91,9 +93,13 @@ const (
 	StatusDown    = "down"
 )
 
-// Port is the port every app container is expected to listen on. A
-// per-app configurable port is not supported.
-const Port = 8080
+// DefaultPort is what an app is served on when nothing else says: the
+// image exposes nothing, exposes more than one thing, or has not been
+// built yet.
+//
+// It used to be the only answer, and Cubeship refused anything that
+// disagreed with it. Now it is the last one.
+const DefaultPort = 8080
 
 // Network is the Docker network app containers must join. Traefik
 // resolves a container's backend IP on this network specifically (see the
@@ -101,7 +107,25 @@ const Port = 8080
 // bridge is invisible to the proxy and its domain serves 503.
 const Network = "cubeship"
 
+// NormalizeHost renders a name the way a browser sends one and Traefik
+// matches it: lowercase, without a trailing dot. A name stored any other
+// way is a name that never matches.
+func NormalizeHost(host string) string {
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+}
+
 var (
+	// ErrDomainTaken is a name another app already answers at. Traefik
+	// routes by host and nothing else, so two apps claiming one name
+	// would give it two answers.
+	ErrDomainTaken = errors.New("another app is already served at that name")
+
+	// ErrDomainNotFound is a domain id that is not this app's.
+	ErrDomainNotFound = errors.New("no such domain on this app")
+
+	// ErrBadPort is a port outside what a port can be.
+	ErrBadPort = errors.New("a port is between 1 and 65535, or 0 to read it from the image")
+
 	// ErrNotFound covers both "no such app" and "not yours to see", so a
 	// response never confirms that another organization's app exists.
 	ErrNotFound = errors.New("app not found")
@@ -125,3 +149,31 @@ var (
 	// without a builder fails loudly rather than at a nil pointer.
 	ErrNoBuilder = errors.New("this daemon has no image builder")
 )
+
+// Domain is one name an app is served at, and the port behind it.
+//
+// The pair is the unit, and it has to be: a container can expose several
+// ports, so "which port does this app listen on" stops having one answer
+// as soon as the app has more than one name. api.example.com and
+// admin.example.com on one image are two ports on one container.
+type Domain struct {
+	ID   int64
+	Host string
+	// Port is what this name reaches, or 0 for "read it from the image".
+	//
+	// Zero is the normal answer. An image says what it listens on —
+	// EXPOSE is written into its config — and reading it there beats
+	// asking someone to know it. A number is an operator overruling the
+	// image, which is what an image exposing several ports, or none,
+	// needs, and what an app with no image yet has to fall back on.
+	Port int
+}
+
+// Hosts is every name this app answers at.
+func (a *App) Hosts() []string {
+	out := make([]string, 0, len(a.Domains))
+	for _, d := range a.Domains {
+		out = append(out, d.Host)
+	}
+	return out
+}

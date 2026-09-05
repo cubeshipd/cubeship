@@ -6,8 +6,6 @@ package slug
 import (
 	"errors"
 	"regexp"
-	"strings"
-	"unicode"
 )
 
 // pattern is kebab-case with no accents or other special characters.
@@ -28,28 +26,4 @@ var ErrInvalid = errors.New("must be lowercase letters, digits and dashes, start
 // Valid reports whether s is an acceptable slug.
 func Valid(s string) bool {
 	return pattern.MatchString(s)
-}
-
-// Title turns a slug into the display name a resource starts life with:
-// "public-api" becomes "Public Api".
-//
-// It exists because the slug is the only thing anyone is asked for. A
-// slug is a permanent, machine-shaped identifier and a name is a label
-// someone changes freely, so asking for both at creation asked twice
-// for the same idea — and the answers drifted. The daemon derives one
-// and lets it be edited afterwards.
-//
-// The result is a guess, and deliberately a dumb one: "api" becomes
-// "Api", not "API". Anything cleverer would be a dictionary, and the
-// display name is a field the owner can simply correct.
-func Title(s string) string {
-	parts := strings.Split(s, "-")
-	for i, p := range parts {
-		if p == "" {
-			continue
-		}
-		r := []rune(p)
-		parts[i] = string(unicode.ToUpper(r[0])) + string(r[1:])
-	}
-	return strings.Join(parts, " ")
 }

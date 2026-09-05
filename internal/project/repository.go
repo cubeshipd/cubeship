@@ -16,14 +16,14 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, org_id, slug, name, description, env, created_at`
+const columns = `id, org_id, slug, description, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
 func scan(row scanner) (*Project, error) {
 	var p Project
 	var envJSON []byte
-	if err := row.Scan(&p.ID, &p.OrgID, &p.Slug, &p.Name, &p.Description, &envJSON, &p.CreatedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.OrgID, &p.Slug, &p.Description, &envJSON, &p.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &p.Env); err != nil {
@@ -32,10 +32,10 @@ func scan(row scanner) (*Project, error) {
 	return &p, nil
 }
 
-func (r *Repository) Create(ctx context.Context, orgID int64, slug, name string) (*Project, error) {
+func (r *Repository) Create(ctx context.Context, orgID int64, slug string) (*Project, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO projects (org_id, slug, name) VALUES ($1, $2, $3) RETURNING `+columns,
-		orgID, slug, name)
+		`INSERT INTO projects (org_id, slug) VALUES ($1, $2) RETURNING `+columns,
+		orgID, slug)
 	p, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("create project: %w", err)
@@ -48,11 +48,11 @@ func (r *Repository) Create(ctx context.Context, orgID int64, slug, name string)
 // and it stays one statement rather than a read-modify-write.
 //
 // The slug is not among them, here or anywhere: see Service.Update.
-func (r *Repository) Update(ctx context.Context, projectID int64, name, description *string) (*Project, error) {
+func (r *Repository) Update(ctx context.Context, projectID int64, description *string) (*Project, error) {
 	row := r.q.QueryRowContext(ctx,
-		`UPDATE projects SET name = COALESCE($1, name), description = COALESCE($2, description)
-		 WHERE id = $3 RETURNING `+columns,
-		name, description, projectID)
+		`UPDATE projects SET description = COALESCE($1, description)
+		 WHERE id = $2 RETURNING `+columns,
+		description, projectID)
 	p, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("update project: %w", err)

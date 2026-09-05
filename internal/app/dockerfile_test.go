@@ -13,14 +13,14 @@ import (
 
 func railpackApp(name string) map[string]string {
 	return map[string]string{
-		"name": name, "domain": name + ".example.com", "org": "acme", "project": "web",
+		"name": name, "org": "acme", "project": "web",
 		"source": "railpack", "repo": "https://github.com/acme/api.git",
 	}
 }
 
 func dockerfileApp(name string) map[string]string {
 	return map[string]string{
-		"name": name, "domain": name + ".example.com", "org": "acme", "project": "web",
+		"name": name, "org": "acme", "project": "web",
 		"source": "dockerfile", "repo": "https://github.com/acme/api.git",
 	}
 }
@@ -34,7 +34,7 @@ func TestOnlyAnAdminMayCreateOrDeployABuildingApp(t *testing.T) {
 
 	// A member may create an app that only runs published images.
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", map[string]string{
-		"name": "published", "domain": "published.example.com", "org": "acme", "project": "web",
+		"name": "published", "org": "acme", "project": "web",
 		"source": "external", "image": "nginx",
 	}, memberKey), http.StatusCreated)
 
@@ -112,6 +112,7 @@ func TestBuildingWithNoBuilderFailsTheDeployment(t *testing.T) {
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps",
 		dockerfileApp("built"), f.AdminKey, &created), http.StatusCreated)
+	servertest.AddDomain(t, f, f.AdminKey, created.Reference, "built.example.com")
 
 	// Accepted — a build's outcome lives in its row, not in the response
 	// to the request that asked for it.

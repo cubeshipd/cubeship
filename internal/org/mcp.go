@@ -39,15 +39,14 @@ func (t *Tools) Register(srv *mcp.Server) {
 
 type createInput struct {
 	Slug string `json:"slug" jsonschema:"short identifier used in URLs and registry paths: lowercase letters, digits and dashes. Permanent - it cannot be changed later"`
-	Name string `json:"name,omitempty" jsonschema:"optional display name; leave out and it is derived from the slug, and can be edited afterwards"`
 }
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
-	created, err := t.svc.Create(ctx, t.caller, in.Slug, in.Name)
+	created, err := t.svc.Create(ctx, t.caller, in.Slug)
 	if err != nil {
 		return nil, Response{}, err
 	}
-	return nil, Response{Slug: created.Slug, Name: created.Name}, nil
+	return nil, Response{Slug: created.Slug}, nil
 }
 
 func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, []Response, error) {
