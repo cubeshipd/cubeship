@@ -114,6 +114,17 @@ func TestDeployEndToEnd(t *testing.T) {
 		t.Fatalf("start daemon: %v", err)
 	}
 	t.Cleanup(func() {
+		// What the daemon's own log cannot say: how the proxy and the
+		// registry saw the requests that failed.
+		if t.Failed() {
+			for _, name := range []string{"cubeship-traefik", "cubeship-registry"} {
+				out, _ := exec.Command("docker", "logs", "--tail", "60", name).CombinedOutput()
+				t.Logf("---- docker logs %s ----\n%s", name, out)
+			}
+			out, _ := exec.Command("curl", "-sk", "-o", "/dev/null", "-w", "%{http_code} %{redirect_url}",
+				"https://localtest.me/v2/token").CombinedOutput()
+			t.Logf("---- curl https://localtest.me/v2/token: %s", out)
+		}
 		daemon.Process.Kill()
 		daemon.Wait()
 		exec.Command("docker", "rm", "-f", "cubeship-registry", "cubeship-traefik",

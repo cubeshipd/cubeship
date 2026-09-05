@@ -306,11 +306,19 @@ func gitRepo(t *testing.T, files map[string]string) string {
 		t.Fatalf("update-server-info: %v\n%s", err, out)
 	}
 
-	srv := httptest.NewServer(http.FileServer(http.Dir(filepath.Dir(bare))))
+	// The builder is a container, so it reaches this server by the
+	// host's gateway rather than by the loopback the test sees — which
+	// on Linux is a different interface, so the server must listen on
+	// all of them. httptest's default is loopback only.
+	l, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewUnstartedServer(http.FileServer(http.Dir(filepath.Dir(bare))))
+	srv.Listener = l
+	srv.Start()
 	t.Cleanup(srv.Close)
 
-	// The builder is a container, so it reaches this server by the
-	// host's gateway rather than by the loopback the test sees.
 	_, port, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
 	if err != nil {
 		t.Fatal(err)
