@@ -126,7 +126,10 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 
 // WaitForGitHubDeploys blocks until every deploy a GitHub webhook
 // started has finished. For tests.
-func (s *Server) WaitForGitHubDeploys() { s.githubHandler.WaitForDeploys() }
+func (s *Server) WaitForGitHubDeploys() {
+	s.githubHandler.WaitForDeploys()
+	s.Apps.WaitForDeploys()
+}
 
 // SetRegistrySigningKey wires the daemon's registry-token signing key
 // into the registry module. Must be called before serving.

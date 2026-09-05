@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/http/cgi"
 	"net/http/httptest"
 	"os"
 	"os/exec"
@@ -156,15 +157,34 @@ func serveRepo(t *testing.T, files map[string]string) string {
 	git(work, "clone", "--quiet", "--bare", work, bare)
 	git(bare, "--git-dir", bare, "update-server-info")
 
-	srv := httptest.NewServer(http.FileServer(http.Dir(serveDir)))
+	// Served over git's smart protocol: BuildKit's git would cope with a
+	// plain file server, but the daemon clones with go-git for a
+	// Railpack build, and go-git speaks smart HTTP only.
+	backend := filepath.Join(strings.TrimSpace(gitExecPath(t)), "git-http-backend")
+	if _, err := os.Stat(backend); err != nil {
+		t.Fatalf("git-http-backend is not installed: %v", err)
+	}
+	handler := &cgi.Handler{
+		Path: backend,
+		Env:  []string{"GIT_PROJECT_ROOT=" + serveDir, "GIT_HTTP_EXPORT_ALL=1"},
+	}
+
+	// The builder is a container reaching back to this process, and a
+	// Railpack build clones in the daemon: see hostAddress.
+	l, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewUnstartedServer(handler)
+	srv.Listener = l
+	srv.Start()
 	t.Cleanup(srv.Close)
 
-	// The builder is a container reaching back to this process.
 	_, port, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return "http://host.docker.internal:" + port + "/repo.git"
+	return "http://" + hostAddress(t) + ":" + port + "/repo.git"
 }
 
 func apiRequest(t *testing.T, method, path, apiKey string, body string) *http.Response {
@@ -182,11 +202,17 @@ func apiRequest(t *testing.T, method, path, apiKey string, body string) *http.Re
 	return resp
 }
 
+// createApp creates an app and, when fields names a "domain", adds it
+// afterwards: an app is created empty and a domain is its own resource,
+// and without one a deploy is refused.
 func createApp(t *testing.T, apiKey string, fields map[string]string) string {
 	t.Helper()
+	domain := fields["domain"]
 	var parts []string
 	for k, v := range fields {
-		parts = append(parts, fmt.Sprintf("%q:%q", k, v))
+		if k != "domain" {
+			parts = append(parts, fmt.Sprintf("%q:%q", k, v))
+		}
 	}
 	resp := apiRequest(t, http.MethodPost, "/apps", apiKey, "{"+strings.Join(parts, ",")+"}")
 	defer resp.Body.Close()
@@ -197,6 +223,15 @@ func createApp(t *testing.T, apiKey string, fields map[string]string) string {
 		Reference string `json:"reference"`
 	}
 	jsonDecodeOrFatal(t, resp, &created)
+
+	if domain != "" {
+		resp := apiRequest(t, http.MethodPost, "/apps/"+created.Reference+"/domains", apiKey,
+			fmt.Sprintf(`{"host":%q}`, domain))
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+			t.Fatalf("add domain: %s", resp.Status)
+		}
+	}
 	return created.Reference
 }
 
@@ -248,4 +283,13 @@ func appStatus(t *testing.T, apiKey, reference string) string {
 	}
 	jsonDecodeOrFatal(t, resp, &a)
 	return a.Status
+}
+
+func gitExecPath(t *testing.T) string {
+	t.Helper()
+	out, err := exec.Command("git", "--exec-path").Output()
+	if err != nil {
+		t.Fatalf("git --exec-path: %v", err)
+	}
+	return string(out)
 }

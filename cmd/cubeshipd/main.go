@@ -212,7 +212,7 @@ func applyInfrastructure(ctx context.Context, cfg *config.Config, docker *docker
 	}
 
 	if err := bootstrap.Ensure(ctx, docker,
-		bootstrap.TraefikContainerOpts(cfg, values.Get(settings.ACMEEmail))); err != nil {
+		bootstrap.TraefikContainerOpts(cfg, values.HasTLS(), values.Get(settings.ACMEEmail))); err != nil {
 		return fmt.Errorf("bootstrap traefik: %w", err)
 	}
 

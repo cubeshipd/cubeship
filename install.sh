@@ -43,6 +43,14 @@ DATA_DIR="${CUBESHIP_DATA_DIR:-/var/lib/cubeship}"
 SETUP_TOKEN_FILE="setup-token"
 PORT=3000
 
+# DOMAIN is where the instance answers over HTTPS. Left empty, one is
+# made from the box's public address under sslip.io — a wildcard DNS
+# service that resolves <a-b-c-d>.sslip.io to a.b.c.d — so a fresh
+# install has a name and a certificate before anyone owns a domain.
+# ACME_EMAIL is the contact Let's Encrypt registers, and is optional.
+DOMAIN="${CUBESHIP_DOMAIN:-}"
+ACME_EMAIL="${CUBESHIP_ACME_EMAIL:-}"
+
 say() { printf '  %s\n' "$*"; }
 die() { printf '\nerror: %s\n' "$*" >&2; exit 1; }
 
@@ -56,17 +64,21 @@ require_linux() {
 
 usage() {
 	cat <<-USAGE
-		Usage: install.sh [--local]
+		Usage: install.sh [--local] [--domain <name>]
 
 		  --local   Build the image from the checkout this script is in,
 		            instead of pulling a published one. Requires the
 		            repository; the build itself runs inside Docker.
+		  --domain  Where the instance answers. Must resolve to this box.
+		            Without it, <public-ip>.sslip.io is used, which does.
 
 		Environment:
 		  CUBESHIP_IMAGE      daemon image to pull (default $IMAGE)
 		  CUBESHIP_WEB_IMAGE  dashboard image to pull (default $WEB_IMAGE)
 		  CUBESHIP_VERSION    tag to pull (default $VERSION)
 		  CUBESHIP_DATA_DIR   where the instance keeps its state (default $DATA_DIR)
+		  CUBESHIP_DOMAIN     same as --domain
+		  CUBESHIP_ACME_EMAIL contact address for Let's Encrypt (optional)
 	USAGE
 }
 
@@ -74,6 +86,8 @@ parse_args() {
 	while [ $# -gt 0 ]; do
 		case "$1" in
 			--local) LOCAL=1 ;;
+			--domain) shift; [ $# -gt 0 ] || die "--domain needs a name"; DOMAIN="$1" ;;
+			--domain=*) DOMAIN="${1#--domain=}" ;;
 			-h | --help) usage; exit 0 ;;
 			*) usage >&2; die "unknown option: $1" ;;
 		esac
@@ -184,29 +198,95 @@ run_daemon() {
 		-v "$DATA_DIR:$DATA_DIR" \
 		-e CUBESHIP_DATA_DIR="$DATA_DIR" \
 		-e CUBESHIP_WEB_IMAGE="$WEB_IMAGE:$VERSION" \
+		-e CUBESHIP_DOMAIN="$DOMAIN" \
+		-e CUBESHIP_ACME_EMAIL="$ACME_EMAIL" \
 		-p "$PORT:$PORT" \
 		"$IMAGE:$VERSION" >/dev/null ||
 		die "could not start $CONTAINER. See: docker logs $CONTAINER"
 }
 
+# The daemon only listens once its siblings are up, and on a first
+# install that is four images to pull — minutes on a slow box, with
+# nothing to show for it. So its log is streamed here while we wait:
+# the `bootstrap:` lines say which image is being pulled and which
+# container just started, and that is exactly what the wait is.
 wait_for_health() {
+	progress=$(mktemp)
+	docker logs -f "$CONTAINER" >"$progress" 2>&1 &
+	logs=$!
+	shown=0
+
 	i=0
-	while [ "$i" -lt 60 ]; do
+	while [ "$i" -lt 300 ]; do
+		report_progress
 		if curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; then
+			report_progress
+			kill "$logs" 2>/dev/null
+			rm -f "$progress"
 			return 0
 		fi
 		i=$((i + 1))
 		sleep 2
 	done
+	kill "$logs" 2>/dev/null
+	rm -f "$progress"
 	die "the daemon did not come up. See: docker logs $CONTAINER"
 }
 
-# address is where to tell the operator to point their browser. It is the
-# host's own routable address, not a public one looked up over the
-# network — an installer should not phone anywhere.
+# report_progress prints the daemon's `bootstrap:` lines that arrived
+# since the last call. The log is a file rather than a pipe so that the
+# one process to stop afterwards is `docker logs` itself — a pipeline in
+# the background would outlive the script and keep writing to the
+# terminal after it.
+report_progress() {
+	total=$(wc -l <"$progress" | tr -d ' ')
+	[ "$total" -gt "$shown" ] || return 0
+	sed -n "$((shown + 1)),${total}p" "$progress" | sed -n 's/.*bootstrap: /    /p'
+	shown=$total
+}
+
+banner() {
+	cat <<-'ART'
+
+		   ██████╗██╗   ██╗██████╗ ███████╗███████╗██╗  ██╗██╗██████╗
+		  ██╔════╝██║   ██║██╔══██╗██╔════╝██╔════╝██║  ██║██║██╔══██╗
+		  ██║     ██║   ██║██████╔╝█████╗  ███████╗███████║██║██████╔╝
+		  ██║     ██║   ██║██╔══██╗██╔══╝  ╚════██║██╔══██║██║██╔═══╝
+		  ╚██████╗╚██████╔╝██████╔╝███████╗███████║██║  ██║██║██║
+		   ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝╚═╝╚═╝
+	ART
+}
+
+# address is the host's own routable address, the fallback for telling
+# the operator where to open when no domain could be made.
 address() {
 	ip route get 1.1.1.1 2>/dev/null | awk '{for (i=1;i<NF;i++) if ($i=="src") {print $(i+1); exit}}' ||
 		hostname -I 2>/dev/null | awk '{print $1}'
+}
+
+# public_ip asks the outside world, because that is the only place the
+# answer is: behind a cloud NAT the routable address is private. Three
+# services, the first that answers with an IPv4 wins; none answering is
+# not an error, it is an install with no domain.
+public_ip() {
+	for url in https://api.ipify.org https://ifconfig.me/ip https://icanhazip.com; do
+		ip=$(curl -fsS --max-time 5 "$url" 2>/dev/null | tr -d '[:space:]')
+		case "$ip" in
+			*[!0-9.]* | "") continue ;;
+		esac
+		echo "$ip"
+		return 0
+	done
+	return 1
+}
+
+# default_domain fills DOMAIN when nothing was given, or says why it
+# could not.
+default_domain() {
+	[ -z "$DOMAIN" ] || return 0
+	ip=$(public_ip) || return 0
+	DOMAIN="$(printf '%s' "$ip" | tr . -).sslip.io"
+	say "No domain given; using $DOMAIN"
 }
 
 main() {
@@ -221,6 +301,7 @@ main() {
 	docker inspect "$CONTAINER" >/dev/null 2>&1 || check_port
 
 	ensure_docker
+	default_domain
 	run_daemon
 
 	say "Waiting for the daemon…"
@@ -229,13 +310,32 @@ main() {
 	host=$(address)
 	[ -n "$host" ] || host="<this host's address>"
 
-	cat <<-DONE
+	banner
+	if [ -n "$DOMAIN" ]; then
+		cat <<-DONE
 
-		Cubeship is running.
+			Cubeship is running.
 
-		  Open  http://$host:$PORT
+			  Open  https://$DOMAIN
 
-	DONE
+			Ports 80 and 443 must be open; the certificate is issued on the
+			first visit, which can take a minute. Until then, or if $DOMAIN
+			does not reach this box, http://$host:$PORT is the way in.
+
+		DONE
+	else
+		cat <<-DONE
+
+			Cubeship is running.
+
+			  Open  http://$host:$PORT
+
+			No public address could be found, so there is no domain yet. Set
+			one from the dashboard, and close port $PORT at the firewall once
+			HTTPS is up.
+
+		DONE
+	fi
 
 	# The setup token is what keeps whoever reaches the port first from
 	# claiming the machine: the daemon writes it where only root can read
@@ -255,8 +355,6 @@ main() {
 	fi
 
 	cat <<-DONE
-		Set your domain from the dashboard afterwards, and close port $PORT at
-		the firewall once HTTPS is up.
 
 		  docker ps
 		  docker logs -f $CONTAINER

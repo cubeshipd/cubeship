@@ -45,7 +45,14 @@ setup_stubs() {
 		esac
 		exit 0
 	EOF
-	chmod +x /stub/systemctl /stub/docker
+	# curl stands in for the public-address lookup: the container this
+	# runs in may have no network, and the test wants a known answer.
+	cat > /stub/curl <<-'EOF'
+		#!/bin/sh
+		echo "curl $*" >> /tmp/curl.log
+		echo "203.0.113.7"
+	EOF
+	chmod +x /stub/systemctl /stub/docker /stub/curl
 	PATH="/stub:$PATH"
 	export PATH
 }
@@ -86,8 +93,30 @@ run_tests() {
 	check "publishes the port" "$(grep -c '\-p 3000:3000' /tmp/docker.log)" "1"
 	check "restarts it with the host" \
 		"$(grep -c '\-\-restart unless-stopped' /tmp/docker.log)" "1"
+	check "ends with the name in lights" "$(printf '%s' "$out" | grep -c '██████╗██╗')" "1"
 	check "tells you where to open it" \
+		"$(printf '%s' "$out" | grep -c 'https://203-0-113-7.sslip.io')" "1"
+	check "makes a domain from the public address" \
+		"$(grep -c 'CUBESHIP_DOMAIN=203-0-113-7.sslip.io' /tmp/docker.log)" "1"
+	check "keeps the port as the way in until the certificate is up" \
 		"$(printf '%s' "$out" | grep -c ':3000')" "1"
+
+	# A domain given wins over the one made up, and is passed as is.
+	rm -f /tmp/docker.log
+	DOMAIN=cube.example.com main >/dev/null 2>&1
+	check "--domain is passed through" \
+		"$(grep -c 'CUBESHIP_DOMAIN=cube.example.com' /tmp/docker.log)" "1"
+	DOMAIN=""
+
+	# A lookup that fails is an install with no domain, not a failed one.
+	rm -f /tmp/docker.log
+	printf '#!/bin/sh\nexit 22\n' > /stub/curl
+	out=$(main 2>&1) || { printf '%s\n' "$out"; exit 1; }
+	check "no public address means no domain" \
+		"$(grep -c 'CUBESHIP_DOMAIN= ' /tmp/docker.log)" "1"
+	check "and says where to open instead" \
+		"$(printf '%s' "$out" | grep -c 'http://.*:3000')" "1"
+	printf '#!/bin/sh\necho 203.0.113.7\n' > /stub/curl
 
 	# The data directory has to be mounted at the same path inside as
 	# outside: the daemon hands these paths to the Engine for its
