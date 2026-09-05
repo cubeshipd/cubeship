@@ -104,7 +104,6 @@ func TestDeployEndToEnd(t *testing.T) {
 	daemon := exec.Command(daemonBin)
 	daemon.Env = append(os.Environ(),
 		"CUBESHIP_DOMAIN=localtest.me",
-		"CUBESHIP_ACME_EMAIL=test@example.com",
 		"CUBESHIP_TOKEN="+testToken,
 		"CUBESHIP_DATA_DIR="+dataDir,
 	)
