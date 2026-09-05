@@ -2,8 +2,7 @@
 
 import { ChevronLeftIcon, RefreshCwIcon, SettingsIcon } from "lucide-react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
@@ -16,19 +15,20 @@ import { ValueCard } from "@/components/value-card";
 import { type App, api, BUILDING_SOURCES, type Deployment, type EnvView, hostsOf } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-// One app, identified by its reference in the query string. A static
-// export has no dynamic segments, and the reference is four path
-// components anyway — carrying it as one value keeps it whole.
-export default function AppPage() {
-  return (
-    <Suspense>
-      <Detail />
-    </Suspense>
-  );
+// One app, under the environment it lives in — which is the only place
+// it means anything. `gateway` is unique in acme/api/production and
+// nowhere else, so the URL is the reference and the reference is the
+// URL.
+export default function AppPage({
+  params,
+}: {
+  params: Promise<{ org: string; project: string; env: string; app: string }>;
+}) {
+  const { org, project, env, app } = use(params);
+  return <Detail reference={`${org}/${project}/${env}/${app}`} />;
 }
 
-function Detail() {
-  const reference = useSearchParams().get("ref") ?? "";
+function Detail({ reference }: { reference: string }) {
   const [app, setApp] = useState<App | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,7 +57,7 @@ function Detail() {
   if (!app) return null;
 
   // Where this app came from.
-  const environment = `/projects?ref=${app.org}/${app.project}&env=${app.environment}`;
+  const environment = `/projects/${app.org}/${app.project}/${app.environment}`;
 
   return (
     <>
@@ -82,7 +82,7 @@ function Detail() {
             variant="outline"
             nativeButton={false}
             render={
-              <Link href={`/apps/settings?ref=${reference}`}>
+              <Link href={`/projects/${reference}/settings`}>
                 <SettingsIcon />
                 Settings
               </Link>
@@ -95,7 +95,7 @@ function Detail() {
         <Notice tone="warning">
           Nothing is configured yet, so this app cannot deploy. Give it a domain and say where its
           image comes from in{" "}
-          <Link href={`/apps/settings?ref=${reference}`} className="underline underline-offset-4">
+          <Link href={`/projects/${reference}/settings`} className="underline underline-offset-4">
             settings
           </Link>
           .

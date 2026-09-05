@@ -23,7 +23,29 @@ var pattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]*[a-z0-9])?$`)
 // is written for the person who typed the slug.
 var ErrInvalid = errors.New("must be lowercase letters, digits and dashes, starting and ending with a letter or digit")
 
+// ErrReserved is the other reason Valid says no: a slug of the right
+// shape that the dashboard needs as a path segment.
+var ErrReserved = errors.New(`"settings" is reserved: it is a page in the dashboard at the same address a resource of that name would have`)
+
+// reserved are the words the dashboard uses as path segments beside a
+// slug of the same shape.
+//
+// An app is addressed at /projects/<org>/<project>/<env>/<app>, and its
+// settings at that path plus /settings. Next.js resolves a static
+// segment before a dynamic one, so an app or environment actually called
+// "settings" would be a resource nothing could open — the settings
+// screen would answer for it instead, silently and forever.
+//
+// Refusing the name at creation is the only place this can be caught
+// where the person who typed it is still there to type another.
+var reserved = map[string]bool{"settings": true}
+
 // Valid reports whether s is an acceptable slug.
 func Valid(s string) bool {
-	return pattern.MatchString(s)
+	return pattern.MatchString(s) && !reserved[s]
 }
+
+// Reserved reports whether s is refused for being a word the dashboard
+// needs. Callers use it to say *why* rather than repeating the shape
+// rule at someone whose slug was the right shape.
+func Reserved(s string) bool { return reserved[s] }

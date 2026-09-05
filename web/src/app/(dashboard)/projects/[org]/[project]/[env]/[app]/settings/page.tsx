@@ -2,8 +2,8 @@
 
 import { ChevronLeftIcon } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { AppNetwork } from "@/components/app-network";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -30,17 +30,17 @@ const SOURCE: Record<Origin, Record<string, AppSource>> = {
   image: { cubeship: "registry", external: "external" },
 };
 
-export default function AppSettingsPage() {
-  return (
-    <Suspense>
-      <Settings />
-    </Suspense>
-  );
+export default function AppSettingsPage({
+  params,
+}: {
+  params: Promise<{ org: string; project: string; env: string; app: string }>;
+}) {
+  const { org, project, env, app } = use(params);
+  return <Settings reference={`${org}/${project}/${env}/${app}`} />;
 }
 
-function Settings() {
+function Settings({ reference }: { reference: string }) {
   const router = useRouter();
-  const reference = useSearchParams().get("ref") ?? "";
   const [app, setApp] = useState<App | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -72,7 +72,7 @@ function Settings() {
   return (
     <>
       <Link
-        href={`/apps?ref=${reference}`}
+        href={`/projects/${reference}`}
         className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
       >
         <ChevronLeftIcon className="size-3.5" />
@@ -111,7 +111,7 @@ function Settings() {
         confirmLabel="Delete app"
         onConfirm={async () => {
           await api.del(path);
-          router.push(`/projects?ref=${app.org}/${app.project}&env=${app.environment}`);
+          router.push(`/projects/${app.org}/${app.project}/${app.environment}`);
         }}
       />
     </>

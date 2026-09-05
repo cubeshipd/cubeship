@@ -71,6 +71,9 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 	if err != nil {
 		return nil, nil, err
 	}
+	if slug.Reserved(projectSlug) {
+		return nil, nil, slug.ErrReserved
+	}
 	if !slug.Valid(projectSlug) {
 		return nil, nil, slug.ErrInvalid
 	}
@@ -179,6 +182,9 @@ func (s *Service) CreateEnvironment(ctx context.Context, caller *user.User, orgS
 	p, err := s.Resolve(ctx, caller, orgSlug, projectSlug, org.RoleAdmin)
 	if err != nil {
 		return nil, err
+	}
+	if slug.Reserved(envSlug) {
+		return nil, slug.ErrReserved
 	}
 	if !slug.Valid(envSlug) {
 		return nil, slug.ErrInvalid

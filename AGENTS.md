@@ -109,7 +109,7 @@ binary at the cost of every route being static — no `[dynamic]`
 segments, so whatever identified a resource travelled in the query
 string. Four levels deep that stopped being a constraint worth paying,
 and the product was bending around a build flag. **Write real dynamic
-segments.** The `?ref=` pages predate this and are being converted.
+segments.** Nothing carries an identity in the query string any more.
 
 `internal/web` is the proxy, and the one thing it does beyond proxying
 is explain itself: a dashboard container that is not up answers 502 with
@@ -154,10 +154,31 @@ Four levels, and only the first is in the sidebar:
 
 ```
 organization   the switcher at the top of the sidebar
-  project      /                       the grid of cards you land on
-    environment  /projects?ref=org/project&env=…   tabs inside a project
-      app        /apps?ref=org/project/env/app
+  project      /                                        the grid you land on
+    environment  /projects/<org>/<project>/<env>        tabs inside a project
+      app        /projects/<org>/<project>/<env>/<app>
 ```
+
+The URL **is** the app's reference, and the project's and the
+environment's are its prefixes. Everything lives under `/projects`
+because an app only means something inside an environment — a top-level
+`/apps` would be a section for something that has no meaning on its own.
+`/projects/<org>/<project>` redirects to `production` rather than being
+a screen of its own, so there is one page for "a project's apps" instead
+of two that have to stay identical.
+
+The **organization is in the path** here and nowhere else. It is not in
+the sidebar's URLs — an organization is the frame, not a thing you
+navigate to — but a link into one has to work for someone whose sidebar
+is pointing elsewhere, and opening one moves the whole dashboard there
+rather than showing a page out of frame.
+
+`settings` is refused as a slug for any of them (`slug.Reserved`).
+Next.js resolves a static segment before a dynamic one, so an app
+actually called `settings` would be a resource nothing could open — the
+settings screen would answer at its address instead, silently. Refusing
+the name at creation is the only place that can be caught while the
+person who typed it is still there.
 
 There is **no flat list of apps**. An app only means something inside an
 environment — `gateway` is unique in `acme/api/production` and nowhere
@@ -165,14 +186,7 @@ else — so a page that listed every app on the instance was listing
 things whose names do not identify them. A project opens on
 `production`, the environment it always has and cannot lose.
 
-The project and the app travel as a `ref` in the query string. That is
-left over from the static export and is being converted to real path
-segments; `ref` carries the organization too, so a link works for
-someone whose sidebar is pointing elsewhere — opening it moves the
-whole dashboard to that organization rather than showing one page out
-of frame, and whatever replaces it has to keep that true.
-
-DNS and registries are the shape the rest is moving to:
+DNS and registries follow the same shape:
 
 ```
 /dns                            the credentials
@@ -197,7 +211,7 @@ needs, so it is resolved from the zone listing on arrival — one extra
 request in exchange for a URL that says what it is. A credential keeps
 its numeric id, because its label is a thing its owner renames.
 
-A project and an environment each have a **settings screen** (`/projects/settings?ref=org/project`)
+A project and an environment each have a **settings screen** (`/projects/<org>/<project>/settings`)
 rather than a delete button in its header: renaming it, describing it and
 destroying it are not the same kind of act, and the last one belongs at
 the bottom of a page you went to on purpose. An environment's screen is

@@ -61,6 +61,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrInvalidRole):
 		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, slug.ErrReserved):
+		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, slug.ErrInvalid):
 		http.Error(w, "slug "+slug.ErrInvalid.Error(), http.StatusBadRequest)
 	case errors.Is(err, user.ErrUnauthenticated):

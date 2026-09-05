@@ -14,7 +14,7 @@ const ORIGIN: Record<AppSource, string> = {
 export function AppCard({ app }: { app: App }) {
   return (
     <Link
-      href={`/apps?ref=${app.reference}`}
+      href={`/projects/${app.reference}`}
       className="hud-frame group flex flex-col border border-border bg-card transition-all hover:border-primary/40 hover:bg-secondary/40 focus-visible:border-primary focus-visible:outline-none"
     >
       <div className="flex-1 p-4">

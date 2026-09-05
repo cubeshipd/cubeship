@@ -2,8 +2,8 @@
 
 import { PlusIcon, SettingsIcon, SlidersHorizontalIcon } from "lucide-react";
 import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { AppCard } from "@/components/app-card";
 import { ErrorAlert } from "@/components/error-alert";
@@ -25,30 +25,28 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { type App, api, type Environment } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-// One project, opened on an environment. A static export has no dynamic
-// segments, so the project travels in the query string as org/project —
-// whole, and self-contained enough that the link works for someone whose
-// sidebar is pointing at another organization.
-export default function ProjectPage() {
-  return (
-    <Suspense>
-      <Detail />
-    </Suspense>
-  );
+// One project, opened on an environment.
+//
+// The organization is in the path even though it is never in the
+// sidebar's URLs: a link has to work for someone whose sidebar is
+// pointing elsewhere, and opening one moves the whole dashboard there
+// rather than showing a page out of frame.
+export default function ProjectPage({
+  params,
+}: {
+  params: Promise<{ org: string; project: string; env: string }>;
+}) {
+  return <Detail {...use(params)} />;
 }
 
 // production is the environment a project always has and cannot lose,
 // so it is where the project opens.
 const DEFAULT_ENV = "production";
 
-function Detail() {
+function Detail({ org, project, env: wanted }: { org: string; project: string; env: string }) {
   const router = useRouter();
-  const params = useSearchParams();
   const { org: selected, select } = useOrg();
-
-  const ref = params.get("ref") ?? "";
-  const [org, project] = ref.split("/");
-  const wanted = params.get("env") ?? "";
+  const ref = `${org}/${project}`;
 
   const [envs, setEnvs] = useState<Environment[] | null>(null);
   const [apps, setApps] = useState<App[] | null>(null);
@@ -104,7 +102,7 @@ function Detail() {
   );
 
   function goTo(next: string) {
-    router.replace(`/projects?ref=${ref}&env=${next}`, { scroll: false });
+    router.replace(`/projects/${org}/${project}/${next}`, { scroll: false });
   }
 
   return (
@@ -126,7 +124,7 @@ function Detail() {
               variant="outline"
               nativeButton={false}
               render={
-                <Link href={`/projects/settings?ref=${ref}`}>
+                <Link href={`/projects/${org}/${project}/settings`}>
                   <SettingsIcon />
                   Settings
                 </Link>
@@ -165,7 +163,7 @@ function Detail() {
             aria-label={`Settings for ${env}`}
             nativeButton={false}
             render={
-              <Link href={`/environments/settings?ref=${org}/${project}/${env}`}>
+              <Link href={`/projects/${org}/${project}/${env}/settings`}>
                 <SlidersHorizontalIcon />
               </Link>
             }
@@ -200,7 +198,7 @@ function Detail() {
         environment={env}
         open={creatingApp}
         onOpenChange={setCreatingApp}
-        onCreated={(reference) => router.push(`/apps?ref=${reference}`)}
+        onCreated={(reference) => router.push(`/apps/${reference}`)}
       />
 
       <NewEnvironmentDialog

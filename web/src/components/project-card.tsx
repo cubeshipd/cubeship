@@ -26,7 +26,7 @@ export function ProjectCard({
 
   return (
     <Link
-      href={`/projects?ref=${org}/${slug}`}
+      href={`/projects/${org}/${slug}`}
       className="hud-frame group flex flex-col border border-border bg-card transition-all hover:border-primary/40 hover:bg-secondary/40 focus-visible:border-primary focus-visible:outline-none"
     >
       <div className="flex-1 p-4">

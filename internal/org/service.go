@@ -90,6 +90,9 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug string)
 	if caller == nil || !caller.IsSuperAdmin {
 		return nil, ErrSuperAdminOnly
 	}
+	if slug.Reserved(orgSlug) {
+		return nil, slug.ErrReserved
+	}
 	if !slug.Valid(orgSlug) {
 		return nil, slug.ErrInvalid
 	}

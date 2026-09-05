@@ -106,6 +106,9 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug, projec
 	// The name becomes a path component of the app's registry image
 	// reference (registry.<domain>/<org>/<name>), so it is checked before
 	// anything is looked up.
+	if slug.Reserved(name) {
+		return nil, slug.ErrReserved
+	}
 	if !slug.Valid(name) {
 		return nil, slug.ErrInvalid
 	}
