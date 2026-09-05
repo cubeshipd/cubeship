@@ -42,7 +42,7 @@ func TestSchemasAreIsolated(t *testing.T) {
 	b := dbtest.New(t)
 
 	if _, err := a.ExecContext(ctx,
-		`INSERT INTO organizations (slug, name) VALUES ('acme', 'Acme')`); err != nil {
+		`INSERT INTO organizations (slug) VALUES ('acme')`); err != nil {
 		t.Fatalf("insert into schema a: %v", err)
 	}
 
@@ -64,7 +64,7 @@ func TestWithTxRollsBackOnError(t *testing.T) {
 	sentinel := context.Canceled
 	err := db.WithTx(ctx, func(tx database.Queryer) error {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO organizations (slug, name) VALUES ('acme', 'Acme')`); err != nil {
+			`INSERT INTO organizations (slug) VALUES ('acme')`); err != nil {
 			return err
 		}
 		return sentinel

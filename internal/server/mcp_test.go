@@ -99,7 +99,7 @@ func TestMCPToolsAreAuthorizedLikeHTTP(t *testing.T) {
 	t.Run("a member cannot create an organization", func(t *testing.T) {
 		session := connectMCP(t, f, memberKey)
 		_, result := callTool[map[string]any](t, session, "create_org",
-			map[string]any{"slug": "globex", "name": "Globex"})
+			map[string]any{"slug": "globex"})
 		if !result.IsError {
 			t.Fatal("a member was allowed to create an organization over MCP")
 		}
@@ -109,7 +109,7 @@ func TestMCPToolsAreAuthorizedLikeHTTP(t *testing.T) {
 		session := connectMCP(t, f, f.AdminKey)
 		out, result := callTool[struct {
 			Slug string `json:"slug"`
-		}](t, session, "create_org", map[string]any{"slug": "globex", "name": "Globex"})
+		}](t, session, "create_org", map[string]any{"slug": "globex"})
 		if result.IsError {
 			t.Fatalf("super-admin create_org failed: %s", toolErrorText(result))
 		}
@@ -121,7 +121,7 @@ func TestMCPToolsAreAuthorizedLikeHTTP(t *testing.T) {
 	t.Run("a member cannot create a project", func(t *testing.T) {
 		session := connectMCP(t, f, memberKey)
 		_, result := callTool[map[string]any](t, session, "create_project",
-			map[string]any{"org": "acme", "slug": "nope", "name": "Nope"})
+			map[string]any{"org": "acme", "slug": "nope"})
 		if !result.IsError {
 			t.Fatal("a member was allowed to create a project over MCP")
 		}

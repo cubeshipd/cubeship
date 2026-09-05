@@ -147,10 +147,10 @@ func TestDeployEndToEnd(t *testing.T) {
 	adminKey := claimInstance(t, adminUsername, adminPassword)
 	client := client.New(daemonURL, adminKey)
 
-	if _, err := client.CreateOrg(ctx, "acme", "Acme Inc"); err != nil {
+	if _, err := client.CreateOrg(ctx, "acme"); err != nil {
 		t.Fatalf("CreateOrg: %v", err)
 	}
-	if _, err := client.CreateProject(ctx, "acme", "web", "Web"); err != nil {
+	if _, err := client.CreateProject(ctx, "acme", "web"); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
 
