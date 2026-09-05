@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/docker/docker/api/types"
@@ -427,46 +425,4 @@ func (c *Client) ImageID(ctx context.Context, ref string) (string, error) {
 		return "", fmt.Errorf("inspect image %q: %w", ref, err)
 	}
 	return info.ID, nil
-}
-
-// ExposedPorts reads what an image says it listens on.
-//
-// `EXPOSE` in a Dockerfile is written into the image's config, so the
-// image is where the answer already is — the Dockerfile itself is not
-// always around to read, and never is for an image someone else built.
-//
-// All of them, in order, because an image can expose several and which
-// one a name should reach is not this function's decision: an app with
-// two domains may want both. An image this host does not have answers
-// with nothing rather than an error, because "not built yet" is a normal
-// state and not a failure.
-//
-// UDP is left out. Traefik routes HTTP.
-func (c *Client) ExposedPorts(ctx context.Context, ref string) ([]int, error) {
-	info, _, err := c.api.ImageInspectWithRaw(ctx, ref)
-	if err != nil {
-		if errdefs.IsNotFound(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("inspect image %q: %w", ref, err)
-	}
-	if info.Config == nil {
-		return nil, nil
-	}
-
-	var out []int
-	for spec := range info.Config.ExposedPorts {
-		if proto := spec.Proto(); proto != "" && proto != "tcp" {
-			continue
-		}
-		n, err := strconv.Atoi(spec.Port())
-		if err != nil || n <= 0 {
-			continue
-		}
-		out = append(out, n)
-	}
-	// A map has no order, and a list that reshuffles between calls would
-	// make "the first one" mean something different each time.
-	sort.Ints(out)
-	return out, nil
 }

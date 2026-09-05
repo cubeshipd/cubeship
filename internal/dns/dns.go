@@ -165,3 +165,20 @@ func NormalizeLabel(label string) string {
 func NormalizeName(name string) string {
 	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), "."))
 }
+
+// Conflicts reports whether a record already at a name stands in the way
+// of one being written there.
+//
+// A CNAME cannot share a name with anything else — that is DNS, not a
+// provider's quirk — so it excludes every other type and every other
+// type excludes it. Two records of the same type are in the way for a
+// different reason: writing one means replacing what is there, not
+// adding a second answer beside it.
+//
+// Both providers have to obey this before writing. Neither of them will
+// do it for you: Cloudflare refuses the create, and Route 53 refuses the
+// change set, each with a message about the record already there rather
+// than about the one you asked for.
+func Conflicts(existing, wanted string) bool {
+	return existing == wanted || existing == "CNAME" || wanted == "CNAME"
+}

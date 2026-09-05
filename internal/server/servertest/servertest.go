@@ -100,9 +100,6 @@ func (noDocker) IsRunning(context.Context, string) (bool, error) {
 	return false, errNoDocker
 }
 
-func (noDocker) ExposedPorts(context.Context, string) ([]int, error) {
-	return nil, errNoDocker
-}
 func (noDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {
 	return nil, errNoDocker
 }

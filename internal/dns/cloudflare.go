@@ -253,9 +253,10 @@ func cfRecords(ctx context.Context, client *http.Client, c *Credential, zoneID s
 // type. Cloudflare has no such operation — it addresses rows by id — so
 // this is the read, the deletes and the creates that add up to one.
 //
-// Every row at that name and type goes first, however many values it
-// had: a replace that left the old rows behind would leave the name
-// resolving to both answers.
+// Every row in the way goes first — see Conflicts. That is more than the
+// rows being replaced: a CNAME at the name blocks an A, and Cloudflare
+// refuses the create rather than making room, so the caller would get a
+// message about a record they did not ask for.
 func cfPutRecord(ctx context.Context, client *http.Client, c *Credential, zoneID string, r Record) error {
 	rows, err := cfRows(ctx, client, c, zoneID)
 	if err != nil {
@@ -263,7 +264,7 @@ func cfPutRecord(ctx context.Context, client *http.Client, c *Credential, zoneID
 	}
 
 	for _, row := range rows {
-		if NormalizeName(row.Name) != r.Name || row.Type != r.Type {
+		if NormalizeName(row.Name) != r.Name || !Conflicts(row.Type, r.Type) {
 			continue
 		}
 		if err := cfCall(ctx, client, c, http.MethodDelete,

@@ -13,6 +13,7 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
+import { Wordmark } from "@/components/brand";
 import { QueryProvider } from "@/components/query-provider";
 import { SessionProvider } from "@/components/session-context";
 import {
@@ -100,11 +101,15 @@ export function Shell({ children }: { children: ReactNode }) {
       <QueryProvider>
         <div className="flex min-h-screen bg-background">
           <nav className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-border bg-card">
-            <div className="flex h-14 items-center gap-2 border-b border-border px-4">
-              <span className="font-semibold tracking-[0.2em] text-primary uppercase text-glow">
-                Cubeship
-              </span>
-            </div>
+            {/* A link rather than a plate: the mark is the way back to
+                the projects grid, which is where every other product
+                puts it and where a click on it is aimed. */}
+            <Link
+              href="/"
+              className="flex h-14 items-center border-b border-border px-4 text-primary transition-opacity hover:opacity-80"
+            >
+              <Wordmark className="text-xs" markClassName="size-5" />
+            </Link>
 
             <div className="flex-1 p-2">
               {sections.map((section, i) => (

@@ -27,6 +27,10 @@ import {
 import { DNS_PROVIDERS } from "@/lib/dns";
 import { message } from "@/lib/errors";
 
+// DEFAULT_PORT is what the daemon serves a name on when nobody said
+// otherwise. It is app.DefaultPort.
+const DEFAULT_PORT = 8080;
+
 // Where an app answers, and on which port.
 //
 // The same act as giving the instance its own name — pick the provider,
@@ -137,7 +141,7 @@ function DomainRow({
         <Input
           aria-label={`Port for ${domain.host}`}
           className="h-9 w-28 px-3 text-sm"
-          placeholder="from image"
+          placeholder="8080"
           spellCheck={false}
           value={port}
           onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))}
@@ -181,7 +185,10 @@ function AddDomain({
   const [zoneID, setZoneID] = useState("");
   const [subdomain, setSubdomain] = useState("");
   const [manualHost, setManualHost] = useState("");
-  const [port, setPort] = useState("");
+  // The port is asked for, not detected. 8080 is where most things
+  // listen, so it is the value the field opens on rather than a
+  // placeholder somebody has to accept.
+  const [port, setPort] = useState(String(DEFAULT_PORT));
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(false);
 
@@ -241,7 +248,7 @@ function AddDomain({
       onSaved(await api.post<App>(`${base}/domains`, { host, port: Number(port) || 0 }));
       setSubdomain("");
       setManualHost("");
-      setPort("");
+      setPort(String(DEFAULT_PORT));
       setDone(true);
     } catch (err) {
       onError(message(err));
@@ -319,10 +326,9 @@ function AddDomain({
               label="Port"
               fieldClassName="col-span-3"
               spellCheck={false}
-              placeholder="from image"
+              placeholder="8080"
               value={port}
               onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))}
-              hint="Left empty, it is read from the image's EXPOSE. Give a number when the image exposes several, exposes none, or has not been built yet."
             />
           </div>
 

@@ -285,7 +285,25 @@ func r53Change(ctx context.Context, client *http.Client, c *Credential, zoneID, 
 }
 
 // r53PutRecord writes a record set, creating or replacing it.
+// r53PutRecord writes a record set, clearing whatever is in the way
+// first.
+//
+// UPSERT replaces a set of the same type and does nothing about the
+// rest: a CNAME at the name makes Route 53 refuse the change with a
+// message about the record already there. See Conflicts.
 func r53PutRecord(ctx context.Context, client *http.Client, c *Credential, zoneID string, r Record) error {
+	existing, err := r53Records(ctx, client, c, zoneID)
+	if err != nil {
+		return err
+	}
+	for _, e := range existing {
+		if e.Name != r.Name || e.Type == r.Type || !Conflicts(e.Type, r.Type) {
+			continue
+		}
+		if err := r53Change(ctx, client, c, zoneID, "DELETE", e); err != nil {
+			return err
+		}
+	}
 	return r53Change(ctx, client, c, zoneID, "UPSERT", r)
 }
 

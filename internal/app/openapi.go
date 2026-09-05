@@ -58,7 +58,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			"AppDomain": openapi.Object(map[string]*openapi.Schema{
 				"id":   openapi.Integer("Identifies this domain on this app, for changing or removing it."),
 				"host": openapi.String("The name Traefik routes to this app, over HTTPS. Lowercase, without a trailing dot — which is how a browser sends one and how Traefik matches it."),
-				"port": openapi.Integer("What this name reaches inside the container, or 0 for \"read it from the image\". Zero is the normal answer: EXPOSE ends up in an image's config, so an image that says what it listens on is answering a question nobody should have to look up. A number is you overruling it, which is what an image exposing several ports — or none, or one that has not been built yet — needs."),
+				"port": openapi.Integer("What this name reaches inside the container. Omitted or 0 falls back to the default, 8080. Nothing is read off the image: `EXPOSE` is a hint its author wrote, an image exposing several ports has no single answer, and an app that has not been built yet has no image to ask."),
 			}, "id", "host", "port"),
 		}),
 		Paths: map[string]openapi.PathItem{
@@ -280,7 +280,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					OperationID: "addAppDomain",
 					Summary:     "Give an app a name to answer at",
 					Description: "An app can answer at several, and each names its own port — one image can expose more than one, and `api.example.com` and `admin.example.com` on one container are two of them.\n\n" +
-						"`port` is optional and normally omitted: 0 means read it from the image, which is where EXPOSE ends up. Give a number when the image exposes several, exposes none, or has not been built yet.\n\n" +
+						"`port` is what this name reaches inside the container; omitted or 0 falls back to 8080.\n\n" +
 						"A name is unique across the instance, not per app: Traefik routes by host and nothing else, so two apps claiming one name would give it two answers.\n\n" +
 						"**The container keeps the labels it was created with**, so a new name is not served until the app is redeployed. Organization admins only — where an app is served is a routing decision, the same weight as changing its source.",
 					Tags:       []string{"Apps"},

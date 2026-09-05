@@ -431,8 +431,8 @@ func (s *Service) DeployOnPush(ctx context.Context, fullName, branch string) (in
 // trailing dot — because that is what Traefik matches against, and a
 // name stored differently is a name that never matches.
 //
-// Port 0 means "read it from the image", which is the normal answer and
-// the only one available before an app that builds has been built.
+// Port 0 means DefaultPort. See Domain.Port for why nothing reads it
+// off the image.
 func (s *Service) AddDomain(ctx context.Context, caller *user.User, ref Reference, host string, port int) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.RoleAdmin)
 	if err != nil {

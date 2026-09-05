@@ -92,12 +92,8 @@ const (
 	StatusDown    = "down"
 )
 
-// DefaultPort is what an app is served on when nothing else says: the
-// image exposes nothing, exposes more than one thing, or has not been
-// built yet.
-//
-// It used to be the only answer, and Cubeship refused anything that
-// disagreed with it. Now it is the last one.
+// DefaultPort is what a name reaches when nobody said otherwise. It is
+// the most common answer rather than a detected one — see Domain.Port.
 const DefaultPort = 8080
 
 // Network is the Docker network app containers must join. Traefik
@@ -123,7 +119,7 @@ var (
 	ErrDomainNotFound = errors.New("no such domain on this app")
 
 	// ErrBadPort is a port outside what a port can be.
-	ErrBadPort = errors.New("a port is between 1 and 65535, or 0 to read it from the image")
+	ErrBadPort = errors.New("a port is between 1 and 65535")
 
 	// ErrNotFound covers both "no such app" and "not yours to see", so a
 	// response never confirms that another organization's app exists.
@@ -158,13 +154,16 @@ var (
 type Domain struct {
 	ID   int64
 	Host string
-	// Port is what this name reaches, or 0 for "read it from the image".
+	// Port is what this name reaches inside the container. Zero falls
+	// back to DefaultPort.
 	//
-	// Zero is the normal answer. An image says what it listens on —
-	// EXPOSE is written into its config — and reading it there beats
-	// asking someone to know it. A number is an operator overruling the
-	// image, which is what an image exposing several ports, or none,
-	// needs, and what an app with no image yet has to fall back on.
+	// It is asked for rather than detected. Cubeship used to read the
+	// image's EXPOSE, and that was a guess dressed as an answer: EXPOSE
+	// is a hint the image's author wrote, an image exposing several has
+	// no single answer, and an app that has not been built yet has no
+	// image to ask. When the guess was wrong the container came up
+	// answering nothing, at a name that resolved, for a reason nobody
+	// could see.
 	Port int
 }
 

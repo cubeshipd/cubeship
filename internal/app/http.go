@@ -438,9 +438,7 @@ func toDomains(domains []Domain) []DomainResponse {
 func (h *Handler) addDomain(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Host string `json:"host"`
-		// Omitted or 0 means "read it from the image", which is the
-		// normal answer and the only one available before an app that
-		// builds has been built.
+		// Omitted or 0 means DefaultPort.
 		Port int `json:"port"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
