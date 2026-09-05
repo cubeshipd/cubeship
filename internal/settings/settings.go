@@ -101,8 +101,8 @@ var ErrSuperAdminOnly = errors.New("forbidden: only a super-admin can change ins
 
 // known is every key this version recognizes, with what it is for.
 var known = map[string]string{
-	Domain:              "Base domain. The API is served at api.<domain> and the registry at registry.<domain>; both must resolve to this host.",
-	ACMEEmail:           "Contact address for Let's Encrypt. Certificates are only issued once this is set.",
+	Domain:              "Base domain. The dashboard and the API are served at <domain> and the registry at registry.<domain>; both must resolve to this host.",
+	ACMEEmail:           "Contact address for Let's Encrypt. Optional: certificates are issued as soon as there is a domain.",
 	PublicIP:            "What this instance's DNS records should point at. Empty means the address on the interface this host reaches the internet through, which is right on a VPS and wrong behind NAT.",
 	DNSProviderID:       "Which stored DNS credential writes this instance's own records. Empty means the operator keeps their DNS elsewhere and writes them by hand.",
 	GitHubAppID:         "The numeric id of the GitHub App this instance acts as.",
@@ -150,11 +150,12 @@ func (v Values) HasGitHubOAuth() bool {
 // possible at all.
 func (v Values) HasDomain() bool { return v[Domain] != "" }
 
-// HasTLS reports whether certificates can be issued. Both a domain and a
-// contact address are needed: Let's Encrypt will not register an account
-// without one, and there is nothing to get a certificate for without the
-// other.
-func (v Values) HasTLS() bool { return v.HasDomain() && v[ACMEEmail] != "" }
+// HasTLS reports whether certificates can be issued, which takes a
+// domain and nothing else: Let's Encrypt registers an account without a
+// contact address, and Traefik passes an empty one through. The address
+// is where expiry notices would go, and Let's Encrypt stopped sending
+// those — it is a courtesy, not a condition.
+func (v Values) HasTLS() bool { return v.HasDomain() }
 
 // The names derived from the base domain. They are computed here rather
 // than stored so that changing the domain changes them everywhere at

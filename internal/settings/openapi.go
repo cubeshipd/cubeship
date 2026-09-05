@@ -12,7 +12,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 		Schemas: map[string]*openapi.Schema{
 			"Settings": openapi.Object(map[string]*openapi.Schema{
 				"domain":               openapi.String("The instance's own name, e.g. cubeship.example.com. The daemon is served at it and the registry at registry.<domain>; both must resolve to this host. A subdomain is what setup offers, because it makes the DNS one A record plus one wildcard rather than a growing list — but nothing enforces the shape. Empty until configured."),
-				"acme_email":           openapi.String("Contact address Let's Encrypt registers for expiry notices. Empty until configured."),
+				"acme_email":           openapi.String("Contact address Let's Encrypt registers. Optional; empty until configured."),
 				"public_ip":            openapi.String("What this instance's DNS records should point at — the operator's answer if they gave one, and otherwise the address on the interface this host reaches the internet through. A browser cannot work this out, which is why it is reported here."),
 				"public_ip_configured": openapi.Bool("Whether the address above was typed rather than detected."),
 				"dns_provider_id":      openapi.String("The stored DNS credential that writes this instance's own records. Empty while its DNS is kept somewhere Cubeship cannot reach."),
@@ -45,7 +45,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Tags: []string{"Instance"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"domain":                openapi.String("The instance's own name, e.g. cubeship.example.com."),
-						"acme_email":            openapi.String("Contact address for Let's Encrypt."),
+						"acme_email":            openapi.String("Contact address for Let's Encrypt. Optional."),
 						"github_client_id":      openapi.String("The App's OAuth client id. Written by the manifest flow; it is what proves who is connecting an installation."),
 						"github_client_secret":  openapi.String("The App's OAuth client secret. Write-only."),
 						"public_ip":             openapi.String("Override what this host believes its own address to be. Empty restores detection."),

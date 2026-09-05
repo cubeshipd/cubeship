@@ -168,7 +168,7 @@ export function InstanceDomain({
   }
 
   const automatic = Boolean(providerID);
-  const ready = Boolean(domain && email && (!automatic || (zoneID && ip)));
+  const ready = Boolean(domain && (!automatic || (zoneID && ip)));
 
   return (
     <>
@@ -262,7 +262,7 @@ export function InstanceDomain({
               placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              hint="Where expiry warnings go. Certificates are only issued once this is set — it is the one thing here nothing can work out for you."
+              hint="Optional. Let's Encrypt registers it with the account; certificates are issued with or without one."
             />
           </div>
 

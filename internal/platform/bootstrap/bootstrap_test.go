@@ -145,7 +145,7 @@ func TestWriteRegistryTokenCertWritesFile(t *testing.T) {
 }
 
 func TestTraefikContainerOpts(t *testing.T) {
-	opts := TraefikContainerOpts(testConfig(), "admin@example.com")
+	opts := TraefikContainerOpts(testConfig(), true, "admin@example.com")
 
 	if len(opts.Binds) != 3 {
 		t.Fatalf("expected docker socket + acme storage + dynamic config binds, got %v", opts.Binds)
@@ -540,7 +540,7 @@ func TestConfigHashTracksTheOptions(t *testing.T) {
 // Plain HTTP used to answer 404 for everything, since nothing was routed
 // on :80.
 func TestTraefikRedirectsHTTPToHTTPS(t *testing.T) {
-	opts := TraefikContainerOpts(testConfig(), "admin@example.com")
+	opts := TraefikContainerOpts(testConfig(), true, "admin@example.com")
 
 	for _, want := range []string{
 		"--entrypoints.web.http.redirections.entryPoint.to=websecure",
@@ -558,15 +558,15 @@ func TestTraefikRedirectsHTTPToHTTPS(t *testing.T) {
 	}
 }
 
-// Until a contact address is configured, Traefik must have no ACME
-// resolver at all — Let's Encrypt will not register an account without
-// one — and must not redirect :80 to a port that cannot serve.
-func TestTraefikWithoutAnACMEEmailHasNoResolver(t *testing.T) {
-	opts := TraefikContainerOpts(testConfig(), "")
+// Until a domain is configured, Traefik must have no ACME resolver at
+// all — there is nothing to get a certificate for — and must not
+// redirect :80 to a port that cannot serve.
+func TestTraefikWithoutADomainHasNoResolver(t *testing.T) {
+	opts := TraefikContainerOpts(testConfig(), false, "")
 
 	for _, flag := range opts.Cmd {
 		if strings.Contains(flag, "certificatesresolvers") {
-			t.Errorf("a certificate resolver was configured with no contact address: %q", flag)
+			t.Errorf("a certificate resolver was configured with no domain: %q", flag)
 		}
 		if strings.Contains(flag, "redirections") {
 			t.Errorf("plain HTTP is redirected to a port that cannot serve: %q", flag)
@@ -577,16 +577,32 @@ func TestTraefikWithoutAnACMEEmailHasNoResolver(t *testing.T) {
 	}
 }
 
-// Adding the contact address changes the options, which is what makes
-// Ensure replace the container — a resolver cannot be added to a running
+// Setting a domain changes the options, which is what makes Ensure
+// replace the container — a resolver cannot be added to a running
 // Traefik.
 func TestConfiguringTLSChangesTheTraefikContainer(t *testing.T) {
 	const image = "sha256:same"
-	without := configHash(TraefikContainerOpts(testConfig(), ""), image)
-	with := configHash(TraefikContainerOpts(testConfig(), "admin@example.com"), image)
+	without := configHash(TraefikContainerOpts(testConfig(), false, ""), image)
+	with := configHash(TraefikContainerOpts(testConfig(), true, "admin@example.com"), image)
 
 	if without == with {
-		t.Fatal("configuring a contact address left the container unchanged, so TLS would never take effect")
+		t.Fatal("configuring a domain left the container unchanged, so TLS would never take effect")
+	}
+}
+
+// A contact address is a courtesy, not a condition: Let's Encrypt opens
+// an account without one, so a domain alone must bring the resolver up,
+// and the email flag appears only when there is an address to put in it.
+func TestTLSNeedsNoContactAddress(t *testing.T) {
+	opts := TraefikContainerOpts(testConfig(), true, "")
+
+	if !slices.Contains(opts.Cmd, "--certificatesresolvers.letsencrypt.acme.tlschallenge=true") {
+		t.Error("a domain without a contact address got no certificate resolver")
+	}
+	for _, flag := range opts.Cmd {
+		if strings.HasPrefix(flag, "--certificatesresolvers.letsencrypt.acme.email=") {
+			t.Errorf("an empty contact address was passed to Traefik: %q", flag)
+		}
 	}
 }
 
@@ -630,7 +646,7 @@ func TestAddressesFollowWhereTheDaemonRuns(t *testing.T) {
 // that it does not work at all on Docker Desktop — and nothing needs it
 // now.
 func TestTraefikIsOnTheSharedNetwork(t *testing.T) {
-	opts := TraefikContainerOpts(testConfig(), "admin@example.com")
+	opts := TraefikContainerOpts(testConfig(), true, "admin@example.com")
 
 	if opts.HostNetwork {
 		t.Error("Traefik is still on the host's network")
