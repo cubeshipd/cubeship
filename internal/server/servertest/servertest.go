@@ -27,6 +27,7 @@ import (
 	"cubeship/internal/project"
 	"cubeship/internal/server"
 	"cubeship/internal/settings"
+	"cubeship/internal/setup"
 	"cubeship/internal/user"
 )
 
@@ -112,6 +113,20 @@ func NewEmpty(t testing.TB) *Fixture {
 	return &Fixture{
 		Server: server.New(db, noDocker{}, server.Options{WebhookToken: WebhookToken, LocalRegistry: LocalRegistry}),
 		DB:     db,
+	}
+}
+
+// NewUnclaimed is NewEmpty with the setup token a real daemon writes on
+// first start, which is the state an instance is actually in between
+// installing and someone claiming it.
+func NewUnclaimed(t testing.TB, token setup.Token) *Fixture {
+	t.Helper()
+	db := dbtest.New(t)
+	return &Fixture{
+		Server: server.New(db, noDocker{}, server.Options{
+			WebhookToken: WebhookToken, LocalRegistry: LocalRegistry, SetupToken: token,
+		}),
+		DB: db,
 	}
 }
 

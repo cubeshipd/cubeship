@@ -531,6 +531,19 @@ or an MCP client carries in `Authorization: Bearer`; a **session cookie**
 is what a browser carries. The header is tried first, so a request
 sending both meant the key.
 
+**A cookie is not enough on its own for a state-changing request.**
+`SameSite=Lax` is the first line and does not reach far enough: an app
+deployed here answers at `app.example.com` while the dashboard is at
+`example.com`, so the two are *same-site* and the cookie is sent —
+anyone who can push an app could otherwise host a page that acts as
+whoever visits it. So the session branch of the middleware requires
+`httpx.SameOrigin`: `Sec-Fetch-Site` where the browser sends it, `Origin`
+compared by host otherwise, neither being a refusal. `httpx.DecodeJSON`
+is the other half — a body must be declared as JSON, because
+form-encoded, multipart and `text/plain` are exactly the three a browser
+will send cross-site without a preflight. Safe methods and API keys are
+untouched: a key is not a credential a browser attaches by itself.
+
 Sessions are rows, not signed cookies, because they have to be revocable:
 logging out ends one, and changing a password ends every other one the
 account holds. Only the token's hash is stored, like an API key's.
@@ -572,6 +585,18 @@ and a project is something you make when you have something to put in it
 — a slug is permanent, so a name picked on someone's behalf is one they
 are stuck with. The projects screen opens empty, saying so and offering
 the button.
+
+**Claiming it takes the setup token**, which the daemon writes to
+`setup-token` in the data directory on its first start and the installer
+prints. Without it the installer publishes a port and whoever reaches it
+first is the admin of the machine — a race the operator can lose between
+running the install command and opening their browser. The data
+directory is root-only, so the token makes claiming the instance take
+access to the host, which is what it always meant to require.
+`setup.EnsureToken` keeps the one it wrote across restarts — a new token
+every start would invalidate the one the installer printed — and removes
+it the moment setup succeeds, because a credential that can no longer do
+anything should not be left in a directory that gets backed up.
 
 The account gets a **password and no API key** — its way in is the
 session setup starts. A key nobody is ever shown would be a live

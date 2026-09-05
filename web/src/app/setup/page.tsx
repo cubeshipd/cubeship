@@ -17,13 +17,26 @@ export default function Setup() {
   const [ready, setReady] = useState(false);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  // Whether this instance asks for the token the installer printed. The
+  // daemon writes it into the data directory, which only root can read,
+  // so claiming the instance takes access to the host rather than
+  // merely reaching the port first.
+  const [tokenRequired, setTokenRequired] = useState(false);
+  const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api
       .get<SetupStatus>("/setup")
-      .then((s) => (s.needed ? setReady(true) : router.replace("/login")))
+      .then((s) => {
+        if (!s.needed) {
+          router.replace("/login");
+          return;
+        }
+        setTokenRequired(s.token_required);
+        setReady(true);
+      })
       .catch(() => setReady(true));
   }, [router]);
 
@@ -32,7 +45,7 @@ export default function Setup() {
     setBusy(true);
     setError(null);
     try {
-      await api.post("/setup", { username, password });
+      await api.post("/setup", { username, password, token });
       // Setup signs you in, so there is nowhere to go but in.
       router.replace("/");
     } catch (err) {
@@ -70,12 +83,23 @@ export default function Setup() {
           autoComplete="new-password"
         />
 
+        {tokenRequired && (
+          <TextField
+            label="Setup token"
+            hint="Printed by the installer. Also in setup-token inside the data directory on the server."
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            autoComplete="off"
+            spellCheck={false}
+          />
+        )}
+
         <ActionButton
           type="submit"
           busy={busy}
           size="lg"
           className="h-10 w-full"
-          disabled={!username || !password}
+          disabled={!username || !password || (tokenRequired && !token)}
         >
           {busy ? "Creating account" : "Create account"}
         </ActionButton>

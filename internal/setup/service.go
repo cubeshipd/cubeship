@@ -22,11 +22,16 @@ const setupLock = 0x00BE5117
 type Service struct {
 	db    *database.DB
 	users *user.Service
+	token Token
 }
 
-func NewService(db *database.DB, users *user.Service) *Service {
-	return &Service{db: db, users: users}
+func NewService(db *database.DB, users *user.Service, token Token) *Service {
+	return &Service{db: db, users: users, token: token}
 }
+
+// TokenRequired reports whether claiming this instance needs the setup
+// token. A browser asks so it knows whether to show the field.
+func (s *Service) TokenRequired() bool { return s.token.Required() }
 
 // Needed reports whether the instance is still unclaimed.
 func (s *Service) Needed(ctx context.Context) (bool, error) {
@@ -53,7 +58,13 @@ type Result struct {
 // The count and the insert are one transaction. A half-finished setup
 // would be unrecoverable through the API: the user exists, so setup
 // refuses to run again.
-func (s *Service) Claim(ctx context.Context, username, password string) (*Result, error) {
+func (s *Service) Claim(ctx context.Context, username, password, token string) (*Result, error) {
+	// Checked before anything else, including the fields: whoever cannot
+	// read the data directory has no business finding out what this
+	// endpoint would otherwise say.
+	if s.token.Required() && !s.token.matches(token) {
+		return nil, ErrBadToken
+	}
 	if username == "" {
 		return nil, ErrUsernameRequired
 	}
@@ -90,5 +101,8 @@ func (s *Service) Claim(ctx context.Context, username, password string) (*Result
 	if err != nil {
 		return nil, err
 	}
+	// Spent. It can claim nothing now, and a credential that can do
+	// nothing should not be left in a directory that gets backed up.
+	s.token.forget()
 	return &result, nil
 }
