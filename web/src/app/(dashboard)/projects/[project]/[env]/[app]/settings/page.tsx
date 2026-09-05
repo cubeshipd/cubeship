@@ -32,11 +32,9 @@ const SOURCE: Record<Origin, Record<string, AppSource>> = {
 
 export default function AppSettingsPage({
   params,
-}: {
-  params: Promise<{ org: string; project: string; env: string; app: string }>;
-}) {
-  const { org, project, env, app } = use(params);
-  return <Settings reference={`${org}/${project}/${env}/${app}`} />;
+}: PageProps<"/projects/[project]/[env]/[app]/settings">) {
+  const { project, env, app } = use(params);
+  return <Settings reference={`${project}/${env}/${app}`} />;
 }
 
 function Settings({ reference }: { reference: string }) {

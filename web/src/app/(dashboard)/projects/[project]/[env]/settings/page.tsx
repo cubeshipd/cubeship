@@ -23,15 +23,12 @@ const PRODUCTION = "production";
 
 export default function EnvironmentSettingsPage({
   params,
-}: {
-  params: Promise<{ org: string; project: string; env: string }>;
-}) {
+}: PageProps<"/projects/[project]/[env]/settings">) {
   return <Settings {...use(params)} />;
 }
 
-function Settings({ org, project, env }: { org: string; project: string; env: string }) {
+function Settings({ project, env }: { project: string; env: string }) {
   const router = useRouter();
-  const ref = `${org}/${project}/${env}`;
 
   const [current, setCurrent] = useState<Environment | null>(null);
   const [description, setDescription] = useState("");
@@ -46,7 +43,7 @@ function Settings({ org, project, env }: { org: string; project: string; env: st
   // There is no "get one environment" endpoint — the list is the read,
   // and a project holds a handful of them.
   useEffect(() => {
-    if (project || !env) return;
+    if (!project || !env) return;
     api
       .get<Environment[]>(`${projectPath}/environments`)
       .then((list) => {
@@ -58,7 +55,7 @@ function Settings({ org, project, env }: { org: string; project: string; env: st
       .catch((e) => setError(message(e)));
   }, [projectPath, project, env]);
 
-  if (!ref || !env) {
+  if (!project || !env) {
     return (
       <p className="text-sm text-muted-foreground">
         No environment named.{" "}
@@ -94,7 +91,7 @@ function Settings({ org, project, env }: { org: string; project: string; env: st
         className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
       >
         <ChevronLeftIcon className="size-3.5" />
-        {org}/{project}/{env}
+        {project}/{env}
       </Link>
 
       <PageHeader
@@ -121,7 +118,7 @@ function Settings({ org, project, env }: { org: string; project: string; env: st
             <div className="space-y-2">
               <Label className="text-xs text-muted-foreground">Slug</Label>
               <div className="flex h-10 items-center border border-border bg-secondary/40 px-3 font-mono text-sm text-muted-foreground">
-                {org}/{project}/{env}
+                {project}/{env}
               </div>
               <p className="text-xs text-subtle-foreground">
                 Not editable. It is the third component of every app reference in this environment.
