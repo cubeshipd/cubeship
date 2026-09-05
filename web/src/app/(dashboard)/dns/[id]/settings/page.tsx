@@ -27,7 +27,7 @@ import { message } from "@/lib/errors";
 // how it authenticates and what its secret even is both follow from
 // that — so changing it in place would not be an edit, it would be a
 // different credential wearing the old one's id.
-export default function DNSSettings({ params }: { params: Promise<{ id: string }> }) {
+export default function DNSSettings({ params }: PageProps<"/dns/[id]/settings">) {
   const { id } = use(params);
   const router = useRouter();
 

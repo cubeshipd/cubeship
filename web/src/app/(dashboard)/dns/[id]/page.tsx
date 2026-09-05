@@ -28,7 +28,7 @@ import { message } from "@/lib/errors";
 // could do: there was no route to send you to. A zone holds tens or
 // hundreds of records and is the thing you actually work in, so it is a
 // page of its own — reachable by a link you can send someone.
-export default function DNSZones({ params }: { params: Promise<{ id: string }> }) {
+export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
   const { id } = use(params);
 
   const [credential, setCredential] = useState<DNSCredential | null>(null);

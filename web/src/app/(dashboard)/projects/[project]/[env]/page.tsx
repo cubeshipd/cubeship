@@ -26,15 +26,10 @@ import { message } from "@/lib/errors";
 
 // One project, opened on an environment.
 //
-// The organization is in the path even though it is never in the
-// sidebar's URLs: a link has to work for someone whose sidebar is
-// pointing elsewhere, and opening one moves the whole dashboard there
-// rather than showing a page out of frame.
-export default function ProjectPage({
-  params,
-}: {
-  params: Promise<{ project: string; env: string }>;
-}) {
+// The environment is in the path rather than in a tab's state: it is
+// what identifies the apps below it, so a link someone sends opens the
+// same screen they were looking at.
+export default function ProjectPage({ params }: PageProps<"/projects/[project]/[env]">) {
   return <Detail {...use(params)} />;
 }
 

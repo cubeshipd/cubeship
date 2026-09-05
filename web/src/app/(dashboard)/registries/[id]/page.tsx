@@ -38,7 +38,7 @@ import { message } from "@/lib/errors";
 // own has no credential — a push authenticates with the pusher's API key
 // — so it is addressed as the organization's registry rather than by an
 // id. Everything below the fetch is the same either way.
-export default function RegistryDetail({ params }: { params: Promise<{ id: string }> }) {
+export default function RegistryDetail({ params }: PageProps<"/registries/[id]">) {
   const { id } = use(params);
   // "cubeship" is the reserved name for the one registry this instance
   // runs. Every other id is a stored credential's, which is a number, so
