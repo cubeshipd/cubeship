@@ -106,6 +106,16 @@ func (h *Handler) Middleware(next http.Handler) http.Handler {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
+		// A cookie is sent by the browser, not by the page: the request
+		// has to be shown to come from this dashboard before it counts
+		// as something the signed-in person asked for. See
+		// httpx.SameOrigin for why SameSite=Lax is not enough on its
+		// own — an app deployed on this instance is same-site with it.
+		if !httpx.SameOrigin(r) {
+			http.Error(w, "cross-site request refused; sign in on this instance and try again",
+				http.StatusForbidden)
+			return
+		}
 		u, sessionHash, err := h.svc.AuthenticateSession(r.Context(), cookie.Value)
 		if err != nil {
 			// The cookie is stale. Clear it, so a browser holding an

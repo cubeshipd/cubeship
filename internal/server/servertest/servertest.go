@@ -211,6 +211,10 @@ func (f *Fixture) DoAs(t testing.TB, method, path string, body any, session *htt
 	if session != nil {
 		req.AddCookie(session)
 	}
+	// What a browser sends for a request its own page made. The
+	// middleware refuses a cookie without it — see httpx.SameOrigin —
+	// so a fixture that acts as a browser has to look like one.
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	rec := httptest.NewRecorder()
 	f.Server.Router().ServeHTTP(rec, req)
 	return rec

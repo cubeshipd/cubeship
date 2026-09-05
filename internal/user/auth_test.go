@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"cubeship/internal/platform/httpx"
 	"cubeship/internal/server/servertest"
 	"cubeship/internal/user"
 )
@@ -250,4 +252,100 @@ func TestUnauthenticatedRequestsAreStillRejected(t *testing.T) {
 	servertest.RequireStatus(t, f.DoAs(t, http.MethodGet, "/projects", nil, &http.Cookie{
 		Name: user.SessionCookieName, Value: "not-a-real-session",
 	}), http.StatusUnauthorized)
+}
+
+// as builds a request the way a browser would send it, with whatever
+// fetch metadata the case is about.
+func as(t *testing.T, method, path string, body string, session *http.Cookie, headers map[string]string) *http.Request {
+	t.Helper()
+	req := httptest.NewRequest(method, httpx.APIPrefix+path, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	if session != nil {
+		req.AddCookie(session)
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	return req
+}
+
+// SameSite=Lax is not the whole answer, and this is why: an app deployed
+// on this instance answers at app.example.com while the dashboard is at
+// example.com, which makes them same-*site*. The cookie is sent. Anyone
+// who can push an app here could otherwise host a page that acts as
+// whoever visits it — creating projects, deleting apps, or registering
+// the instance as somebody else's GitHub App.
+func TestACrossSiteRequestCarryingASessionIsRefused(t *testing.T) {
+	f := servertest.New(t)
+	withPassword(t, f)
+	session := f.Login(t, "admin", goodPassword)
+
+	for name, headers := range map[string]map[string]string{
+		"the browser says it is cross-site": {"Sec-Fetch-Site": "cross-site"},
+		"the browser says it is same-site":  {"Sec-Fetch-Site": "same-site"},
+		"another origin":                    {"Origin": "https://evil.example"},
+		"nothing at all":                    {},
+	} {
+		rec := httptest.NewRecorder()
+		f.Server.Router().ServeHTTP(rec, as(t, http.MethodPost, "/projects",
+			`{"slug":"stolen"}`, session, headers))
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s: answered %d, want 403", name, rec.Code)
+		}
+	}
+
+	// The dashboard's own requests still work, by either header.
+	for slug, headers := range map[string]map[string]string{
+		"by-fetch-metadata": {"Sec-Fetch-Site": "same-origin"},
+		"by-origin":         {"Origin": "http://example.com"},
+	} {
+		rec := httptest.NewRecorder()
+		req := as(t, http.MethodPost, "/projects", `{"slug":"`+slug+`"}`, session, headers)
+		req.Host = "example.com"
+		f.Server.Router().ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Errorf("%s: answered %d %s, want 201", slug, rec.Code, rec.Body.String())
+		}
+	}
+
+	// Reading is not a state change, and the answer is no more than the
+	// caller could get by asking for it themselves.
+	rec := httptest.NewRecorder()
+	f.Server.Router().ServeHTTP(rec, as(t, http.MethodGet, "/projects", "", session,
+		map[string]string{"Sec-Fetch-Site": "cross-site"}))
+	servertest.RequireStatus(t, rec, http.StatusOK)
+}
+
+// An API key is not a credential a browser attaches on its own, so none
+// of this applies to it. A CLI sends no fetch metadata and no origin.
+func TestAnAPIKeyNeedsNoOrigin(t *testing.T) {
+	f := servertest.New(t)
+
+	rec := httptest.NewRecorder()
+	req := as(t, http.MethodPost, "/projects", `{"slug":"from-a-cli"}`, nil, nil)
+	req.Header.Set("Authorization", "Bearer "+f.AdminKey)
+	f.Server.Router().ServeHTTP(rec, req)
+	servertest.RequireStatus(t, rec, http.StatusCreated)
+}
+
+// The three content types a browser will send cross-site without asking
+// permission first are exactly the three this refuses. Declaring JSON is
+// what forces a preflight the other origin cannot pass.
+func TestABodyHasToBeDeclaredAsJSON(t *testing.T) {
+	f := servertest.New(t)
+
+	for _, contentType := range []string{
+		"text/plain;charset=UTF-8",
+		"application/x-www-form-urlencoded",
+		"multipart/form-data; boundary=x",
+	} {
+		rec := httptest.NewRecorder()
+		req := as(t, http.MethodPost, "/projects", `{"slug":"disguised"}`, nil, nil)
+		req.Header.Set("Authorization", "Bearer "+f.AdminKey)
+		req.Header.Set("Content-Type", contentType)
+		f.Server.Router().ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("%s: answered %d, want 400", contentType, rec.Code)
+		}
+	}
 }
