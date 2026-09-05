@@ -51,6 +51,23 @@ var (
 	// ErrNoOAuth is an App registered before it asked for OAuth on
 	// install, so there is nothing to verify a connect with.
 	ErrNoOAuth = errors.New("this instance's GitHub App has no OAuth credentials; re-register it")
+
+	// ErrNotStartedHere is a manifest exchange whose state this daemon
+	// did not issue to this caller.
+	//
+	// The code in the URL is not proof of anything: GitHub's conversion
+	// endpoint is unauthenticated, so a code from anyone's manifest
+	// works, and the browser attaches the session cookie whoever wrote
+	// the link. The state is what says the flow started here.
+	ErrNotStartedHere = errors.New("this registration did not start on this dashboard, or it has expired; start it again")
+
+	// ErrAlreadyRegistered is a registration that would replace the App
+	// this instance already has, without having said so.
+	//
+	// Replacing it invalidates every installation on the old App: this
+	// instance stops being able to clone what it was granted, and stops
+	// receiving its pushes.
+	ErrAlreadyRegistered = errors.New("this instance is already registered as a GitHub App; say so explicitly to replace it")
 )
 
 // Repository is a GitHub repository named the way both a URL and a

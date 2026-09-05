@@ -58,7 +58,16 @@ export function ConnectGitHub({
     );
   }
 
+  // Getting here with an App already registered means it is one that
+  // cannot be installed anywhere useful, so a new one replaces it —
+  // which the daemon has to be told before GitHub is involved.
   return (
-    <CreateGitHubApp instanceName={instanceName} label="Connect GitHub" note={false} size={size} />
+    <CreateGitHubApp
+      instanceName={instanceName}
+      label="Connect GitHub"
+      note={false}
+      size={size}
+      replace={settings.github_connected}
+    />
   );
 }

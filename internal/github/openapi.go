@@ -1,6 +1,14 @@
 package github
 
-import "cubeship/internal/platform/openapi"
+import (
+	"fmt"
+
+	"cubeship/internal/platform/openapi"
+)
+
+// manifestStateTTLWords is the TTL as the document says it, so the
+// wording follows the constant rather than repeating it.
+var manifestStateTTLWords = fmt.Sprintf("%d minutes", int(ManifestStateTTL.Minutes()))
 
 func (h *Handler) OpenAPI() openapi.Spec {
 	orgParam := openapi.PathParam("orgSlug", "Organization slug.")
@@ -72,21 +80,45 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
+			"/settings/github/manifest/state": {
+				"post": {
+					OperationID: "startGitHubAppRegistration",
+					Summary:     "Start registering this instance as a GitHub App",
+					Description: "Returns the `state` the manifest form carries to GitHub. GitHub echoes it in the redirect, and the exchange below refuses a code that comes back without it.\n\n" +
+						"**This is what makes the exchange safe.** GitHub's manifest conversion endpoint is unauthenticated — a code is a code, whoever made the manifest it came from — and the browser attaches the session cookie to whatever link it follows. Without the state, a link to the redirect page sent to a signed-in admin would register *the sender's* App: their private key, their webhook secret, and installation tokens over every repository the admin then grants it.\n\n" +
+						"The state is single-use and expires in " + manifestStateTTLWords + ". Admins only.",
+					Tags: []string{"GitHub"},
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"replace": openapi.Bool("Whether this registration may replace an App the instance already has. Recorded with the state, not read from the redirect that comes back — replacing breaks every installation on the old App, so it is a thing to mean rather than a thing to arrive at."),
+					})),
+					Responses: openapi.Responses{
+						"201": openapi.JSONResponse("The state to send to GitHub.", openapi.Object(map[string]*openapi.Schema{
+							"state": openapi.String("Put it in the manifest form's URL as `?state=`."),
+						}, "state")),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"403": openapi.TextResponse("You lack the admin role."),
+					},
+				},
+			},
 			"/settings/github/manifest": {
 				"post": {
 					OperationID: "registerGitHubAppFromManifest",
 					Summary:     "Register this instance as a GitHub App from a manifest",
 					Description: "The end of the flow that spares someone creating an App by hand: the dashboard sends them to GitHub with a manifest, GitHub creates the App and redirects back with a code, and this exchanges it for the App's id, slug, private key and webhook secret — all four written straight into the settings.\n\n" +
-						"The code is single-use and expires in an hour. Super-admin only: this is the instance's configuration, not an organization's.",
+						"The code is single-use and expires in an hour. It is **not** sufficient on its own: the `state` this instance issued when the flow started has to come back with it. See the endpoint above for why.\n\n" +
+						"Admins only: this is the instance's configuration.",
 					Tags: []string{"GitHub"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"code": openapi.String("What GitHub redirected back with."),
-					}, "code")),
+						"code":  openapi.String("What GitHub redirected back with."),
+						"state": openapi.String("What GitHub echoed back from the manifest form."),
+					}, "code", "state")),
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The instance's configuration, with the App now registered.", openapi.Ref("Settings")),
 						"400": openapi.TextResponse("No code was given, or GitHub refused it."),
 						"401": openapi.Unauthorized,
-						"403": openapi.TextResponse("You are not a super-admin."),
+						"403": openapi.TextResponse("You lack the admin role, or the state did not come from a registration you started here."),
+						"409": openapi.TextResponse("This instance already has a GitHub App, and the registration did not say it was replacing it."),
 					},
 				},
 			},
