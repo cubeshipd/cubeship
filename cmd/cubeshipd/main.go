@@ -23,6 +23,7 @@ import (
 	"cubeship/internal/platform/regauth"
 	"cubeship/internal/server"
 	"cubeship/internal/settings"
+	"cubeship/internal/setup"
 	"cubeship/internal/user"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -333,11 +334,19 @@ func run() error {
 		return bootstrap.EnsureBuildKit(ctx, docker, cfg)
 	}
 
+	// Written before the server exists, because the setup endpoint is
+	// built around whether there is one.
+	setupToken, err := setup.EnsureToken(ctx, db, cfg.DataDir)
+	if err != nil {
+		return fmt.Errorf("prepare the setup token: %w", err)
+	}
+
 	srv := server.New(db, docker, server.Options{
 		WebhookToken:  cfg.Token,
 		Builder:       builder,
 		LocalRegistry: localRegistry,
 		Frontend:      bootstrap.FrontendAddress(cfg),
+		SetupToken:    setupToken,
 	})
 
 	// An install upgrading from the release where the domain and contact
@@ -378,11 +387,17 @@ func run() error {
 		return fmt.Errorf("check whether this instance is set up: %w", err)
 	}
 	if needsSetup {
-		// Anyone who can reach this port before setup runs can claim the
-		// instance, so say it plainly rather than leaving it to be
-		// discovered.
-		log.Printf("this instance has no account yet: open it and create one. " +
-			"Until you do, anyone who can reach this port can claim it.")
+		// The token is what keeps whoever reaches the port first from
+		// claiming the machine, so the one thing worth logging is where
+		// to read it. Never the value: the daemon's logs are not a
+		// secret store.
+		if setupToken.Required() {
+			log.Printf("this instance has no account yet: open it and create one. "+
+				"Creating it needs the setup token in %s.", setupToken.Path)
+		} else {
+			log.Printf("this instance has no account yet, and no setup token was written: " +
+				"anyone who can reach this port can claim it.")
+		}
 	}
 
 	log.Printf("cubeshipd listening on %s", listenAddr)

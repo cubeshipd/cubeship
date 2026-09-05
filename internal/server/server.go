@@ -74,6 +74,12 @@ type Options struct {
 	// container on the shared network — or, on a developer's machine,
 	// of `make web-dev`.
 	Frontend string
+
+	// SetupToken guards claiming an unclaimed instance. The daemon
+	// writes it into the data directory on first start and the
+	// installer prints it; a zero value asks for none, which is what a
+	// test wants and what an instance already claimed has.
+	SetupToken setup.Token
 }
 
 // New wires the modules together. The dependency order here is the real
@@ -99,7 +105,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Projects:   projects,
 		Apps:       apps,
 		Settings:   cfg,
-		Setup:      setup.NewService(db, users),
+		Setup:      setup.NewService(db, users, opts.SetupToken),
 		Registries: registries,
 		DNS:        dnsProviders,
 		GitHub:     gh,
