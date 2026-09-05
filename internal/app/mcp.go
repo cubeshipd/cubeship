@@ -218,7 +218,6 @@ func (t *Tools) deployments(ctx context.Context, _ *mcp.CallToolRequest, in name
 }
 
 func (t *Tools) delete(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, user.ActionResult, error) {
-	tag := in.Tag
 	ref, err := ParseReference(in.App)
 	if err != nil {
 		return nil, user.ActionResult{}, err
@@ -235,7 +234,6 @@ type envOutput struct {
 }
 
 func (t *Tools) getEnv(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, envOutput, error) {
-	tag := in.Tag
 	ref, err := ParseReference(in.App)
 	if err != nil {
 		return nil, envOutput{}, err
@@ -260,7 +258,6 @@ func (t *Tools) setEnv(ctx context.Context, _ *mcp.CallToolRequest, in setEnvInp
 	if len(in.Set) == 0 && len(in.Unset) == 0 {
 		return nil, user.ActionResult{}, fmt.Errorf("give set, unset, or both")
 	}
-	tag := in.Tag
 	ref, err := ParseReference(in.App)
 	if err != nil {
 		return nil, user.ActionResult{}, err
@@ -282,7 +279,6 @@ func (t *Tools) logs(ctx context.Context, _ *mcp.CallToolRequest, in logsInput) 
 	if tail == "" {
 		tail = mcpDefaultLogTail
 	}
-	tag := in.Tag
 	ref, err := ParseReference(in.App)
 	if err != nil {
 		return nil, nil, err
