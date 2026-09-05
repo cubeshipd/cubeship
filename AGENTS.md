@@ -568,8 +568,8 @@ pays for a hash verification.
 
 `internal/setup` is the first-run flow, and it exists because the daemon
 now starts with no account at all — bootstrap creating a super-admin from
-the environment is gone. `POST /setup` creates the account, an
-organization and a project, signs the caller in, and closes setup
+the environment is gone. `POST /setup` creates the account and the
+organization it names, signs the caller in, and closes setup
 permanently: `Needed` is "are there zero users", so the *first* account is
 the only one setup ever makes.
 
@@ -579,9 +579,19 @@ not both succeed and the username's unique index would not stop them —
 they may well pick different names. The loser gets `ErrAlreadySetUp`
 (409).
 
-Everything the account needs is created in that same transaction. A user
-row with no organization would be unrecoverable: setup refuses to run
-again, and the account it made has nowhere to work.
+**The organization is asked for, not invented.** It used to be
+`my-organization`, and a slug is permanent — it is the first component of
+every app's registry reference — so a name picked on someone's behalf is
+one they are stuck with. The dashboard asks for it on a second onboarding
+step, and submits both steps as one request, because the account and the
+organization have to be created together: a user row with no organization
+would be unrecoverable, since setup refuses to run again and the account
+it made would have nowhere to work.
+
+**No project.** A project is something you create when you have something
+to put in it, and `default` was a row nobody asked for under a name
+nobody chose. The projects screen opens empty, saying so and offering the
+button.
 
 The account gets a **password and no API key** — its way in is the
 session setup starts. A key nobody is ever shown would be a live

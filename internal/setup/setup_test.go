@@ -25,10 +25,14 @@ func status(t *testing.T, f *servertest.Fixture) setup.Status {
 	return got
 }
 
+// orgSlug is what the onboarding screen asks for after the account: the
+// first organization's name, typed rather than invented.
+const orgSlug = "acme"
+
 func claim(t *testing.T, f *servertest.Fixture, username string) *http.Cookie {
 	t.Helper()
 	rec := f.Do(t, http.MethodPost, "/setup",
-		map[string]string{"username": username, "password": password}, "")
+		map[string]string{"username": username, "password": password, "org": orgSlug}, "")
 	servertest.RequireStatus(t, rec, http.StatusCreated)
 
 	for _, cookie := range rec.Result().Cookies() {
@@ -41,8 +45,8 @@ func claim(t *testing.T, f *servertest.Fixture, username string) *http.Cookie {
 }
 
 // The flow end to end: a fresh instance says it needs setting up, one
-// request claims it, and whoever made that request is already signed in
-// with somewhere to put an app.
+// request claims it, and whoever made that request is already signed in,
+// in the organization they named.
 func TestClaimingAFreshInstance(t *testing.T) {
 	f := servertest.NewEmpty(t)
 
@@ -70,37 +74,27 @@ func TestClaimingAFreshInstance(t *testing.T) {
 		t.Fatalf("the first account is %+v; it should be a super-admin", me)
 	}
 
-	// And there is an organization and a project waiting.
+	// And the organization they named is there.
 	var orgs []struct{ Slug string }
 	rec = f.DoAs(t, http.MethodGet, "/orgs", nil, session)
 	servertest.RequireStatus(t, rec, http.StatusOK)
 	if err := json.Unmarshal(rec.Body.Bytes(), &orgs); err != nil {
 		t.Fatal(err)
 	}
-	if len(orgs) != 1 || orgs[0].Slug != setup.OrgSlug {
-		t.Fatalf("expected exactly the setup organization, got %v", orgs)
+	if len(orgs) != 1 || orgs[0].Slug != orgSlug {
+		t.Fatalf("expected exactly the organization that was named, got %v", orgs)
 	}
 
+	// And nothing else. A project invented here would be a row nobody
+	// asked for, under a slug that can never be changed.
 	var projects []struct{ Slug string }
-	rec = f.DoAs(t, http.MethodGet, "/orgs/"+setup.OrgSlug+"/projects", nil, session)
+	rec = f.DoAs(t, http.MethodGet, "/orgs/"+orgSlug+"/projects", nil, session)
 	servertest.RequireStatus(t, rec, http.StatusOK)
 	if err := json.Unmarshal(rec.Body.Bytes(), &projects); err != nil {
 		t.Fatal(err)
 	}
-	if len(projects) != 1 || projects[0].Slug != setup.ProjectSlug {
-		t.Fatalf("expected the default project, got %v", projects)
-	}
-
-	// The project has somewhere to put an app.
-	var envs []struct{ Slug string }
-	rec = f.DoAs(t, http.MethodGet,
-		"/orgs/"+setup.OrgSlug+"/projects/"+setup.ProjectSlug+"/environments", nil, session)
-	servertest.RequireStatus(t, rec, http.StatusOK)
-	if err := json.Unmarshal(rec.Body.Bytes(), &envs); err != nil {
-		t.Fatal(err)
-	}
-	if len(envs) != 1 || envs[0].Slug != "production" {
-		t.Fatalf("expected a production environment, got %v", envs)
+	if len(projects) != 0 {
+		t.Fatalf("setup created projects: %v", projects)
 	}
 }
 
@@ -111,7 +105,7 @@ func TestSetupClosesAfterTheFirstAccount(t *testing.T) {
 	claim(t, f, "lucas")
 
 	rec := f.Do(t, http.MethodPost, "/setup",
-		map[string]string{"username": "intruder", "password": password}, "")
+		map[string]string{"username": "intruder", "password": password, "org": "other"}, "")
 	servertest.RequireStatus(t, rec, http.StatusConflict)
 }
 
@@ -124,7 +118,7 @@ func TestSetupIsClosedOnAnInstanceThatAlreadyHasUsers(t *testing.T) {
 		t.Error("an instance with an account reports needing setup")
 	}
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/setup",
-		map[string]string{"username": "intruder", "password": password}, ""), http.StatusConflict)
+		map[string]string{"username": "intruder", "password": password, "org": "other"}, ""), http.StatusConflict)
 }
 
 // Two people opening the page at once must not both claim it. The
@@ -141,7 +135,9 @@ func TestConcurrentClaimsProduceOneAccount(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			codes[i] = f.Do(t, http.MethodPost, "/setup", map[string]string{
-				"username": "claimant" + string(rune('a'+i)), "password": password,
+				"username": "claimant" + string(rune('a'+i)),
+				"password": password,
+				"org":      "org" + string(rune('a'+i)),
 			}, "").Code
 		}()
 	}
@@ -173,10 +169,13 @@ func TestARefusedClaimLeavesNothingBehind(t *testing.T) {
 	f := servertest.NewEmpty(t)
 
 	for _, body := range []map[string]string{
-		{"username": "lucas", "password": "short"},
-		{"username": "", "password": password},
-		{"username": "lucas", "password": ""},
-		{"username": "Not A Slug", "password": password},
+		{"username": "lucas", "password": "short", "org": orgSlug},
+		{"username": "", "password": password, "org": orgSlug},
+		{"username": "lucas", "password": "", "org": orgSlug},
+		{"username": "Not A Slug", "password": password, "org": orgSlug},
+		{"username": "lucas", "password": password, "org": ""},
+		{"username": "lucas", "password": password, "org": "Not A Slug"},
+		{"username": "lucas", "password": password, "org": "settings"},
 	} {
 		rec := f.Do(t, http.MethodPost, "/setup", body, "")
 		servertest.RequireStatus(t, rec, http.StatusBadRequest)

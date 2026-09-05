@@ -116,7 +116,16 @@ function Projects() {
       {projects?.length === 0 && (
         <Card>
           <CardContent className="py-2 text-sm text-muted-foreground">
-            No projects in this organization yet.
+            No projects in this organization yet. A project holds your environments, and each
+            environment holds the apps you deploy — start with{" "}
+            <button
+              type="button"
+              onClick={() => setCreating(true)}
+              className="text-foreground underline underline-offset-4"
+            >
+              New project
+            </button>
+            .
           </CardContent>
         </Card>
       )}

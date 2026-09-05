@@ -6,7 +6,6 @@ import (
 
 	"cubeship/internal/org"
 	"cubeship/internal/platform/database"
-	"cubeship/internal/project"
 	"cubeship/internal/slug"
 	"cubeship/internal/user"
 )
@@ -41,28 +40,40 @@ func (s *Service) Needed(ctx context.Context) (bool, error) {
 
 // Result is what claiming an instance produced.
 type Result struct {
-	User    *user.User
-	Org     *org.Organization
-	Project *project.Project
+	User *user.User
+	Org  *org.Organization
 }
 
-// Claim creates the instance's first account and everything it needs to
-// be useful: a super-admin, an organization, and a project with its
-// production environment.
+// Claim creates the instance's first account and the organization it
+// works in: a super-admin, and the organization they named.
 //
-// All of it in one transaction. A half-finished setup would be
+// No project. A project is a thing someone creates when they have
+// something to put in it, and one invented here would be a row nobody
+// asked for with a name nobody chose — permanent, since a slug never
+// changes.
+//
+// Both halves in one transaction. A half-finished setup would be
 // unrecoverable through the API — the user exists, so setup refuses to
 // run again, but there is no organization to put anything in and no way
 // to create one except as a super-admin who cannot sign in.
-func (s *Service) Claim(ctx context.Context, username, password string) (*Result, error) {
+func (s *Service) Claim(ctx context.Context, username, password, orgSlug string) (*Result, error) {
 	if username == "" {
 		return nil, ErrUsernameRequired
 	}
 	if password == "" {
 		return nil, ErrPasswordRequired
 	}
+	if orgSlug == "" {
+		return nil, ErrOrgRequired
+	}
 	if !slug.Valid(username) {
 		return nil, fmt.Errorf("username %w", slug.ErrInvalid)
+	}
+	if slug.Reserved(orgSlug) {
+		return nil, slug.ErrReserved
+	}
+	if !slug.Valid(orgSlug) {
+		return nil, fmt.Errorf("organization %w", slug.ErrInvalid)
 	}
 
 	var result Result
@@ -88,7 +99,7 @@ func (s *Service) Claim(ctx context.Context, username, password string) (*Result
 		result.User = created
 
 		orgs := org.NewRepository(tx)
-		o, err := orgs.Create(ctx, OrgSlug)
+		o, err := orgs.Create(ctx, orgSlug)
 		if err != nil {
 			return err
 		}
@@ -98,19 +109,7 @@ func (s *Service) Claim(ctx context.Context, username, password string) (*Result
 		// authorized everywhere — but without it the organization would
 		// not appear in their own list, which is where the dashboard
 		// starts.
-		if err := orgs.AddMembership(ctx, created.ID, o.ID, org.RoleAdmin); err != nil {
-			return err
-		}
-
-		p, err := project.NewRepository(tx).Create(ctx, o.ID, ProjectSlug)
-		if err != nil {
-			return err
-		}
-		result.Project = p
-
-		// A project without an environment has nowhere for an app to go.
-		_, err = project.NewEnvironmentRepository(tx).Create(ctx, p.ID, project.ProductionEnvSlug)
-		return err
+		return orgs.AddMembership(ctx, created.ID, o.ID, org.RoleAdmin)
 	})
 	if err != nil {
 		return nil, err
