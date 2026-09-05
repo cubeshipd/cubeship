@@ -41,6 +41,28 @@ func (s *Service) RegistryHost(ctx context.Context) string {
 	return settings.RegistryHostFor(values.Get(settings.Domain))
 }
 
+// Instance is the configuration an app's response depends on that the
+// app itself does not carry. It is read once per request rather than
+// once per app in a listing.
+type Instance struct {
+	// RegistryHost is where a push goes, or "" while there is no domain
+	// to derive one from.
+	RegistryHost string
+	// Domain is the instance's own, which is what a suggested host for
+	// an app is built under.
+	Domain string
+}
+
+// InstanceConfig reads what a response needs about the instance.
+func (s *Service) InstanceConfig(ctx context.Context) Instance {
+	values, err := s.settings.Load(ctx)
+	if err != nil {
+		return Instance{}
+	}
+	domain := values.Get(settings.Domain)
+	return Instance{RegistryHost: settings.RegistryHostFor(domain), Domain: domain}
+}
+
 // ImageFor returns the registry path a push to this app targets, or ""
 // while no domain is configured — there is nowhere to push to yet.
 func (s *Service) ImageFor(ctx context.Context, a *Scoped) string {
@@ -475,7 +497,7 @@ func (s *Service) AddDomain(ctx context.Context, caller *user.User, ref Referenc
 
 	host = NormalizeHost(host)
 	if host == "" {
-		return nil, ErrDomainRequired
+		return nil, ErrHostRequired
 	}
 	if !ValidHost(host) {
 		return nil, ErrBadHost

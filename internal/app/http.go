@@ -47,17 +47,25 @@ type Response struct {
 	Dockerfile  string `json:"dockerfile,omitempty"`
 	Project     string `json:"project"`
 	Environment string `json:"environment"`
+	// SuggestedHost is a name this app could answer at, under the
+	// instance's own domain — see SuggestedHostFor. Nothing assigns it:
+	// an app with no domain is a normal app, and this is only what the
+	// dashboard offers when somebody does want one. Empty while the
+	// instance has no domain to build it under.
+	SuggestedHost string `json:"suggested_host,omitempty"`
 }
 
-// toResponse needs the registry host, which is instance configuration
-// rather than a property of the app, so it is passed in — resolved once
-// per request instead of once per app in a listing.
-func toResponse(a *Scoped, registryHost string) Response {
+// toResponse needs the instance's configuration, which is not a
+// property of the app, so it is passed in — resolved once per request
+// instead of once per app in a listing.
+func toResponse(a *Scoped, in Instance) Response {
+	ref := ReferenceOf(a)
 	r := Response{
-		Reference: ReferenceOf(a).String(),
+		Reference: ref.String(),
 		Name:      a.Name, Description: a.Description, Domains: toDomains(a.Domains),
 		Status: a.Status, Source: a.Source,
 		Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
+		SuggestedHost: SuggestedHostFor(ref, in.Domain),
 	}
 	switch Source(a.Source) {
 	case SourceExternal:
@@ -65,17 +73,17 @@ func toResponse(a *Scoped, registryHost string) Response {
 	case SourceDockerfile, SourceRailpack:
 		r.Repo, r.Ref, r.Dockerfile = a.SourceRepo, a.SourceRef, a.SourceDockerfile
 	default:
-		if registryHost != "" {
-			r.Image = ReferenceOf(a).ImageFor(registryHost)
+		if in.RegistryHost != "" {
+			r.Image = ref.ImageFor(in.RegistryHost)
 		}
 	}
 	return r
 }
 
-func toResponses(apps []*Scoped, registryHost string) []Response {
+func toResponses(apps []*Scoped, in Instance) []Response {
 	out := make([]Response, 0, len(apps))
 	for _, a := range apps {
-		out = append(out, toResponse(a, registryHost))
+		out = append(out, toResponse(a, in))
 	}
 	return out
 }
@@ -130,10 +138,9 @@ func WriteError(w http.ResponseWriter, err error) {
 		errors.Is(err, ErrRepoRequired), errors.Is(err, ErrRepoNotAllowed),
 		errors.Is(err, ErrRepoNotSupported), errors.Is(err, ErrDockerfileNotAllowed):
 		http.Error(w, err.Error(), http.StatusBadRequest)
-	case errors.Is(err, ErrBadHost), errors.Is(err, ErrHostIsTheInstance):
+	case errors.Is(err, ErrBadHost), errors.Is(err, ErrHostIsTheInstance),
+		errors.Is(err, ErrHostRequired):
 		http.Error(w, err.Error(), http.StatusBadRequest)
-	case errors.Is(err, ErrDomainRequired):
-		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrNoBuilder):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrNoRegistry):
@@ -176,7 +183,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusCreated, toResponse(created, h.svc.RegistryHost(r.Context())))
+	httpx.WriteJSON(w, http.StatusCreated, toResponse(created, h.svc.InstanceConfig(r.Context())))
 }
 
 // update is PATCH: a field left out of the body is left alone, so one
@@ -224,7 +231,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, toResponse(updated, h.svc.RegistryHost(r.Context())))
+	httpx.WriteJSON(w, http.StatusOK, toResponse(updated, h.svc.InstanceConfig(r.Context())))
 }
 
 func deref(s *string) string {
@@ -240,7 +247,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, toResponses(apps, h.svc.RegistryHost(r.Context())))
+	httpx.WriteJSON(w, http.StatusOK, toResponses(apps, h.svc.InstanceConfig(r.Context())))
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
@@ -249,7 +256,7 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, toResponse(a, h.svc.RegistryHost(r.Context())))
+	httpx.WriteJSON(w, http.StatusOK, toResponse(a, h.svc.InstanceConfig(r.Context())))
 }
 
 // delete removes an app and the container serving it. Requires the
@@ -453,7 +460,7 @@ func (h *Handler) addDomain(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusCreated, toResponse(updated, h.svc.RegistryHost(ctx)))
+	httpx.WriteJSON(w, http.StatusCreated, toResponse(updated, h.svc.InstanceConfig(ctx)))
 }
 
 func (h *Handler) setDomainPort(w http.ResponseWriter, r *http.Request) {
@@ -474,7 +481,7 @@ func (h *Handler) setDomainPort(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, toResponse(updated, h.svc.RegistryHost(ctx)))
+	httpx.WriteJSON(w, http.StatusOK, toResponse(updated, h.svc.InstanceConfig(ctx)))
 }
 
 func (h *Handler) removeDomain(w http.ResponseWriter, r *http.Request) {
@@ -488,7 +495,7 @@ func (h *Handler) removeDomain(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, toResponse(updated, h.svc.RegistryHost(ctx)))
+	httpx.WriteJSON(w, http.StatusOK, toResponse(updated, h.svc.InstanceConfig(ctx)))
 }
 
 // domainIDFrom reads the domain's id, answering 404 for anything that is

@@ -18,10 +18,11 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"dns_provider_id":      openapi.String("The stored DNS credential that writes this instance's own records. Empty while its DNS is kept somewhere Cubeship cannot reach."),
 				"registry_host":        openapi.String("Where a `docker push` goes. Absent while no domain is set — there is nowhere to push yet."),
 				"tls_enabled":          openapi.Bool("Whether certificates can be issued, which needs both a domain and a contact address. While false, apps are served over plain HTTP."),
+				"wildcard_domain":      openapi.Bool("Whether every name under the instance's domain already resolves here — true of the sslip.io address a default install takes. It is what lets an app be given a name with no record to write and no DNS provider connected."),
 				"github_app_slug":      openapi.String("The GitHub App this instance acts as. Absent until one is registered."),
 				"github_connected":     openapi.Bool("Whether the GitHub App's credentials are present. The credentials themselves are never returned — an endpoint that handed a private key back would turn every read of this into a way out for it."),
 				"github_oauth_ready":   openapi.Bool("Whether the registered App can be installed anywhere but the account that owns it. An App from before Cubeship asked for OAuth on install was also registered private, and a private GitHub App reaches only its owner's account — so false here means it has to be replaced, not fixed."),
-			}, "domain", "acme_email", "tls_enabled", "github_connected", "github_oauth_ready", "public_ip_configured"),
+			}, "domain", "acme_email", "tls_enabled", "wildcard_domain", "github_connected", "github_oauth_ready", "public_ip_configured"),
 		},
 		Paths: map[string]openapi.PathItem{
 			"/settings": {

@@ -31,8 +31,12 @@ type App struct {
 	// are all an app is created with.
 	Description string
 	// Domains are every name Traefik serves this app at, each with the
-	// port behind it. Empty until one is configured, which is also what
-	// makes the app undeployable — see ErrDomainRequired.
+	// port behind it.
+	//
+	// Empty is a normal state, not a half-finished one: an app nobody
+	// outside the instance should reach — a worker, a queue consumer,
+	// something its neighbours call by container name — deploys with
+	// none, and Traefik is simply given no opinion about it.
 	Domains []Domain
 
 	Source string
@@ -107,6 +111,35 @@ const Network = "cubeship"
 // way is a name that never matches.
 func NormalizeHost(host string) string {
 	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+}
+
+// SuggestedHostFor is the name an app answers at when nobody has a
+// domain of their own to give it: the app's reference, most specific
+// first, under the instance's own domain.
+//
+// It is a suggestion rather than a default. An app is created with no
+// domain and that is a real state — plenty of them should never answer
+// on the internet — so nothing assigns this. What it removes is the
+// other side of the same problem: giving an app an address used to mean
+// owning a domain, pointing a record at this host, and waiting for it,
+// before anything could be reached at all.
+//
+// Whether it resolves without further work depends on the instance's
+// domain. An install that took its default has an sslip.io address, and
+// every name under one of those already resolves to the same host — so
+// this is a name that works the moment it is added. Under a real
+// domain it needs a wildcard record, or the DNS provider that writes
+// the instance's own records.
+func SuggestedHostFor(ref Reference, instanceDomain string) string {
+	if instanceDomain == "" {
+		return ""
+	}
+	host := NormalizeHost(strings.Join(
+		[]string{ref.Name, ref.Environment, ref.Project, instanceDomain}, "."))
+	if !ValidHost(host) {
+		return ""
+	}
+	return host
 }
 
 // MaxHostLength is what a DNS name can be, dots included.
