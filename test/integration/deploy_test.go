@@ -66,6 +66,7 @@ import (
 
 	"cubeship/internal/cli/client"
 	"cubeship/internal/platform/httpx"
+	"cubeship/internal/setup"
 	"cubeship/internal/user"
 )
 
@@ -166,7 +167,7 @@ func TestDeployEndToEnd(t *testing.T) {
 	// CUBESHIP_TOKEN is the registry/webhook credential only. A fresh
 	// instance has no account at all: the first request anyone makes
 	// claims it, exactly as a browser would on the setup page.
-	adminKey = claimInstance(t, adminUsername, adminPassword)
+	adminKey = claimInstance(t, dataDir, adminUsername, adminPassword)
 	client := client.New(daemonURL, adminKey)
 
 	if _, err := client.CreateProject(ctx, "web"); err != nil {
@@ -276,8 +277,16 @@ const (
 // session that comes back then issues the API key everything else here
 // authenticates with — a browser can hold a cookie, `docker login` and
 // the CLI cannot.
-func claimInstance(t *testing.T, username, password string) string {
+func claimInstance(t *testing.T, dataDir, username, password string) string {
 	t.Helper()
+
+	// The token the installer would have printed: the daemon wrote it
+	// into the data directory, and creating the first account asks for
+	// it — see setup.Token.
+	token, err := os.ReadFile(filepath.Join(dataDir, setup.TokenFileName))
+	if err != nil {
+		t.Fatalf("read the setup token: %v", err)
+	}
 
 	post := func(path string, body any, cookie *http.Cookie) *http.Response {
 		t.Helper()
@@ -301,7 +310,8 @@ func claimInstance(t *testing.T, username, password string) string {
 		return resp
 	}
 
-	resp := post("/setup", map[string]string{"username": username, "password": password}, nil)
+	resp := post("/setup", map[string]string{"username": username, "password": password,
+		"token": strings.TrimSpace(string(token))}, nil)
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusCreated {
 		t.Fatalf("POST /setup: %s", resp.Status)
