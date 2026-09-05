@@ -1002,6 +1002,34 @@ cycle.
 The suite is deliberately not exhaustive. It covers the things that are
 expensive to get wrong: the authorization matrix, deploy ordering and
 rollback, transaction rollback, registry scope grants, and MCP parity with
-HTTP. Docker is always faked. `test/integration` needs a Linux Docker
-daemon (`--network host` doesn't reach the host on Docker Desktop) and
-sits behind `//go:build integration`.
+HTTP. Docker is always faked.
+
+**Nothing local touches infrastructure.** `make check` needs no Docker,
+no Postgres and no network. Standing that up to find out whether a
+function returns the right string is time taken out of the edit-run loop,
+and CI is where nobody is waiting.
+
+Two mechanisms draw the line, and they are different on purpose:
+
+- **A build tag, for anything that boots a container.** Those tests live
+  in `test/integration` and are not in `./...` at all — a laptop does not
+  even compile them. `internal/platform/buildkit` keeps only what needs
+  nothing: the frontend version pinned against the library, the two
+  refusals that never reach a builder, and a clone from a repository on
+  disk.
+- **`-short`, for the DB-backed tests.** Those are spread through every
+  module and cannot move, so `dbtest.RequireDatabase` skips on it.
+  Without `-short` a missing database is still a **failure, never a
+  skip** — CI runs that way, and a suite that quietly reported success
+  for tests that never ran would be worse than no suite.
+
+| Where | What |
+| --- | --- |
+| `make check` | fmt, vet, shell syntax, `go test -short -race` — nothing to start |
+| `make test-db` | the same tests with the Postgres they want |
+| `.github/workflows/ci.yml` | all of it, plus the two a Mac cannot run |
+
+The two a Mac cannot run are `test/integration`, which needs a Linux
+Docker daemon (`--network host` doesn't reach the host on Docker Desktop)
+and sits behind `//go:build integration`, and `make test-install` /
+`make test-uninstall`, which run the scripts on a real Debian.

@@ -133,8 +133,22 @@ db-up: ## Start the Postgres the tests run against (idempotent)
 db-down: ## Stop and remove the test Postgres, discarding its data
 	-docker rm -f $(PG_CONTAINER)
 
+# `make test` needs nothing installed, and that is the whole point: the
+# edit-run loop should not wait on a Postgres, a builder container or a
+# git clone.
+#
+# Two mechanisms draw that line. Anything that boots a container lives in
+# test/integration behind a build tag, so it is not in ./... at all. The
+# DB-backed tests are spread through the modules and cannot move, so they
+# skip on -short — see dbtest.RequireDatabase, which fails rather than
+# skipping when -short is absent.
 .PHONY: test
-test: db-up ## Unit tests, race detector on (starts the test Postgres)
+test: ## Unit tests that need nothing but this repository, race detector on
+	$(GO) test -short -race -count=1 ./...
+
+# The same tests with the database they want. This is what CI runs.
+.PHONY: test-db
+test-db: db-up ## Unit tests including the DB-backed ones (starts Postgres)
 	$(GO) test -race -count=1 ./...
 
 # The installer is the first thing every user runs, and no Go test can

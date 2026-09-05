@@ -35,12 +35,26 @@ func DSN() string {
 	return DefaultDSN
 }
 
+// RequireDatabase is where the whole suite decides whether it is running
+// against real infrastructure.
+//
+// Under -short it skips. That is what makes an edit-run loop possible
+// with nothing installed: `make check` compiles every package and runs
+// every test that needs only this repository, and the ones that need a
+// Postgres wait for CI.
+//
+// Without -short a missing database is still a failure, never a skip. CI
+// runs that way, and a suite that quietly reported success for tests
+// that never ran would be worse than no suite.
+func RequireDatabase(t testing.TB) {
+	t.Helper()
+	if testing.Short() {
+		t.Skip("-short: this test needs a Postgres; CI runs it")
+	}
+}
+
 // New returns a DB backed by a schema of its own, dropped when t
 // finishes.
-//
-// It fails the test — rather than skipping — when no database is
-// reachable. A skip here would let `make check` go green on a machine
-// with no Postgres, reporting success for tests that never ran.
 func New(t testing.TB) *database.DB {
 	t.Helper()
 	db, _ := newInSchema(t)
@@ -69,6 +83,7 @@ func NewWithRawDB(t testing.TB) (*database.DB, *sql.DB) {
 
 func newInSchema(t testing.TB) (*database.DB, string) {
 	t.Helper()
+	RequireDatabase(t)
 
 	b := make([]byte, 8)
 	if _, err := rand.Read(b); err != nil {

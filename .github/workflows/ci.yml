@@ -1,0 +1,104 @@
+# This is where every test that needs infrastructure runs.
+#
+# `make check` on a laptop passes -short, so anything wanting a Postgres
+# or a Docker daemon skips there: standing that up to find out whether a
+# function returns the right string is time taken out of the edit-run
+# loop. Here nobody is waiting, so nothing is skipped.
+#
+# It also runs the two things a Mac cannot: the integration test, which
+# needs `--network host` to reach the host (Docker Desktop runs the
+# Engine in a VM, so it never does), and the installer scripts, which
+# need a real Linux.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  GO_VERSION: "1.27"
+
+jobs:
+  # The whole unit suite, without -short: the tests a laptop skips are
+  # exactly the ones this job exists for. A missing Postgres fails here
+  # rather than skipping, so a green run means the tests ran.
+  check:
+    name: Format, vet and unit tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: cubeship
+          POSTGRES_PASSWORD: cubeship
+          POSTGRES_DB: cubeship_test
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U cubeship"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - run: make fmt-check
+      - run: make vet
+      - run: make sh-check
+
+      # db-up is skipped: the service container above is the Postgres,
+      # already up and health-checked, at the port the tests default to.
+      # No -short, so the DB-backed tests run rather than skipping.
+      - name: Unit tests
+        run: go test -race -count=1 ./...
+
+  # Everything that boots a container: a privileged buildkitd per build
+  # test, and the whole product once — install the daemon, push an image,
+  # watch it come up behind Traefik. All of it behind the integration
+  # build tag, so a laptop never compiles it, let alone runs it.
+  integration:
+    name: End to end
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+      - run: make test-integration
+
+  # install.sh is the product's front door and uninstall.sh deletes
+  # things. Both run for real, on a Linux, with Docker stubbed.
+  scripts:
+    name: Installer scripts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test-install
+      - run: make test-uninstall
+
+  # The dashboard is its own image, so it fails on its own terms rather
+  # than inside a Docker build.
+  dashboard:
+    name: Dashboard
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec biome ci .
+      - run: pnpm exec tsc --noEmit
+      - run: pnpm run build
