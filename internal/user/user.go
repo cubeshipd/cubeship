@@ -105,4 +105,19 @@ var (
 	// ErrUsernameTaken reports that the username was claimed by a
 	// concurrent request while this one was working.
 	ErrUsernameTaken = errors.New("that username was just taken; try again")
+
+	// ErrNoSuchUser is a username that is not an account here.
+	ErrNoSuchUser = errors.New("no such account")
+
+	// ErrCannotRemoveYourself refuses deleting the account making the
+	// request. Whoever meant to leave has to be removed by somebody
+	// else, and an admin who deletes themselves mid-session is the one
+	// mistake nothing on the instance can undo.
+	ErrCannotRemoveYourself = errors.New("you cannot delete the account you are signed in as")
+
+	// ErrLastAdmin refuses removing or demoting the only admin. An
+	// instance with no admin can never configure itself again, and
+	// nothing in the API could put one back — setup is closed the
+	// moment the first account exists.
+	ErrLastAdmin = errors.New("this is the only admin on the instance")
 )

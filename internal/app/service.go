@@ -470,6 +470,14 @@ func (s *Service) AddDomain(ctx context.Context, caller *user.User, ref Referenc
 	if host == "" {
 		return nil, ErrDomainRequired
 	}
+	if !ValidHost(host) {
+		return nil, ErrBadHost
+	}
+	if taken, err := s.instanceOwnsHost(ctx, host); err != nil {
+		return nil, err
+	} else if taken {
+		return nil, ErrHostIsTheInstance
+	}
 	if port < 0 || port > 65535 {
 		return nil, ErrBadPort
 	}
@@ -484,6 +492,27 @@ func (s *Service) AddDomain(ctx context.Context, caller *user.User, ref Referenc
 		return nil, err
 	}
 	return s.Resolve(ctx, caller, ref, user.RoleAdmin)
+}
+
+// instanceOwnsHost reports whether a name is one the daemon already
+// routes to itself.
+//
+// The domain is the dashboard and the API; registry.<domain> is the
+// registry. Both get Traefik routers of their own, and a router the
+// unique index knows nothing about is exactly the collision it cannot
+// catch — the app would be created, and one of the two would quietly
+// stop answering after a deploy.
+func (s *Service) instanceOwnsHost(ctx context.Context, host string) (bool, error) {
+	values, err := s.settings.Load(ctx)
+	if err != nil {
+		return false, err
+	}
+	domain := settings.APIHostFor(values.Get(settings.Domain))
+	if domain == "" {
+		return false, nil
+	}
+	return host == NormalizeHost(domain) ||
+		host == NormalizeHost(settings.RegistryHostFor(values.Get(settings.Domain))), nil
 }
 
 // SetDomainPort changes what one of an app's names reaches.

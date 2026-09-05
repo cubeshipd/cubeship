@@ -61,6 +61,97 @@ func (s *Service) Add(ctx context.Context, caller *User, username string, role R
 	return created, key, nil
 }
 
+// List returns every account on the instance. An admin's, because it is
+// the roster of who can reach this instance at all.
+func (s *Service) List(ctx context.Context, caller *User) ([]*User, error) {
+	if err := Require(caller, RoleAdmin); err != nil {
+		return nil, err
+	}
+	return s.Repo().List(ctx)
+}
+
+// Delete removes an account and everything it authenticates with.
+//
+// This is what a person leaving looks like: the account goes, and with
+// it every API key and every session it holds — in one transaction, so
+// there is no window where the rows that authenticate somebody outlive
+// the account they belong to.
+func (s *Service) Delete(ctx context.Context, caller *User, username string) error {
+	if err := Require(caller, RoleAdmin); err != nil {
+		return err
+	}
+	target, err := s.Repo().ByUsername(ctx, username)
+	if err != nil {
+		return ErrNoSuchUser
+	}
+	if caller.ID == target.ID {
+		return ErrCannotRemoveYourself
+	}
+
+	return s.db.WithTx(ctx, func(tx database.Queryer) error {
+		repo := NewRepository(tx)
+		if target.Role == RoleAdmin {
+			// Counted inside the transaction: two requests each
+			// deleting one of the last two admins would otherwise both
+			// pass a check taken outside it and leave none.
+			admins, err := repo.CountByRole(ctx, RoleAdmin)
+			if err != nil {
+				return err
+			}
+			if admins <= 1 {
+				return ErrLastAdmin
+			}
+		}
+		if _, err := repo.DeleteSessions(ctx, target.ID); err != nil {
+			return err
+		}
+		if _, err := repo.DeleteAPIKeys(ctx, target.ID); err != nil {
+			return err
+		}
+		return repo.Delete(ctx, target.ID)
+	})
+}
+
+// Revoked counts what RevokeCredentials ended.
+type Revoked struct {
+	APIKeys  int64 `json:"api_keys"`
+	Sessions int64 `json:"sessions"`
+}
+
+// RevokeCredentials ends every session and revokes every API key an
+// account holds, leaving the account itself.
+//
+// It is the answer to a laptop that walked off: what was on it stops
+// working everywhere, at once, without the account having to be deleted
+// and made again. The password is not touched — it is a secret in
+// somebody's head, not a credential lying on the machine that was lost —
+// so signing in again is how the account comes back.
+func (s *Service) RevokeCredentials(ctx context.Context, caller *User, username string) (Revoked, error) {
+	if err := Require(caller, RoleAdmin); err != nil {
+		return Revoked{}, err
+	}
+	target, err := s.Repo().ByUsername(ctx, username)
+	if err != nil {
+		return Revoked{}, ErrNoSuchUser
+	}
+
+	var out Revoked
+	err = s.db.WithTx(ctx, func(tx database.Queryer) error {
+		repo := NewRepository(tx)
+		sessions, err := repo.DeleteSessions(ctx, target.ID)
+		if err != nil {
+			return err
+		}
+		keys, err := repo.DeleteAPIKeys(ctx, target.ID)
+		if err != nil {
+			return err
+		}
+		out = Revoked{APIKeys: keys, Sessions: sessions}
+		return nil
+	})
+	return out, err
+}
+
 // Repo returns a repository over the shared pool, for callers that only
 // need to read.
 func (s *Service) Repo() *Repository {

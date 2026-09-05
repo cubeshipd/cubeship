@@ -71,6 +71,76 @@ func (r *Repository) ByID(ctx context.Context, id int64) (*User, error) {
 	return u, nil
 }
 
+// List returns every account, ordered by name. There is one instance
+// and no tenant boundary, so this is the whole of it.
+func (r *Repository) List(ctx context.Context) ([]*User, error) {
+	rows, err := r.q.QueryContext(ctx, `SELECT `+userColumns+` FROM users ORDER BY username`)
+	if err != nil {
+		return nil, fmt.Errorf("list users: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*User
+	for rows.Next() {
+		u, err := scanUser(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// CountByRole is what the last-admin rule asks: an instance with no
+// admin left can never configure itself again, and nothing in the API
+// could put one back.
+func (r *Repository) CountByRole(ctx context.Context, role Role) (int, error) {
+	var n int
+	if err := r.q.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM users WHERE role = $1`, string(role)).Scan(&n); err != nil {
+		return 0, fmt.Errorf("count %s users: %w", role, err)
+	}
+	return n, nil
+}
+
+// Delete removes an account. Its keys and sessions reference it, so they
+// go first — see Service.Delete, which does all three in one
+// transaction.
+func (r *Repository) Delete(ctx context.Context, id int64) error {
+	res, err := r.q.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete user: %w", err)
+	}
+	if n == 0 {
+		return database.ErrNotFound
+	}
+	return nil
+}
+
+// DeleteAPIKeys revokes every key one account holds, and reports how
+// many there were.
+func (r *Repository) DeleteAPIKeys(ctx context.Context, userID int64) (int64, error) {
+	res, err := r.q.ExecContext(ctx, `DELETE FROM api_keys WHERE user_id = $1`, userID)
+	if err != nil {
+		return 0, fmt.Errorf("revoke api keys: %w", err)
+	}
+	return res.RowsAffected()
+}
+
+// DeleteSessions ends every session one account holds, and reports how
+// many there were.
+func (r *Repository) DeleteSessions(ctx context.Context, userID int64) (int64, error) {
+	res, err := r.q.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = $1`, userID)
+	if err != nil {
+		return 0, fmt.Errorf("end sessions: %w", err)
+	}
+	return res.RowsAffected()
+}
+
 func (r *Repository) Count(ctx context.Context) (int, error) {
 	var n int
 	if err := r.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM users`).Scan(&n); err != nil {

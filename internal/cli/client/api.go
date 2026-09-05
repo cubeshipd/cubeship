@@ -97,6 +97,41 @@ func (c *Client) AddUser(ctx context.Context, username, role string) (string, er
 	return out.APIKey, nil
 }
 
+// User is one account on the instance.
+type User struct {
+	Username  string `json:"username"`
+	Role      string `json:"role"`
+	CreatedAt string `json:"created_at"`
+}
+
+// ListUsers returns every account. Admin only.
+func (c *Client) ListUsers(ctx context.Context) ([]User, error) {
+	out, err := request[struct {
+		Users []User `json:"users"`
+	}](ctx, c, "list users", http.MethodGet, "/users", nil, http.StatusOK, DefaultTimeout)
+	return out.Users, err
+}
+
+// DeleteUser removes an account and every key and session it holds.
+func (c *Client) DeleteUser(ctx context.Context, username string) error {
+	_, err := request[struct{}](ctx, c, "delete user", http.MethodDelete,
+		"/users/"+segment(username), nil, http.StatusNoContent, DefaultTimeout)
+	return err
+}
+
+// Revoked is what revoking an account's credentials ended.
+type Revoked struct {
+	APIKeys  int64 `json:"api_keys"`
+	Sessions int64 `json:"sessions"`
+}
+
+// RevokeUserCredentials ends every session and revokes every API key an
+// account holds, leaving the account itself.
+func (c *Client) RevokeUserCredentials(ctx context.Context, username string) (Revoked, error) {
+	return request[Revoked](ctx, c, "revoke credentials", http.MethodDelete,
+		"/users/"+segment(username)+"/credentials", nil, http.StatusOK, DefaultTimeout)
+}
+
 // --- projects and environments ---
 
 func (c *Client) CreateProject(ctx context.Context, slug string) (Project, error) {

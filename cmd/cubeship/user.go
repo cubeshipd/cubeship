@@ -132,6 +132,81 @@ func newUserCmd() *cobra.Command {
 
 	apiKeyCmd.AddCommand(rotateCmd, createKeyCmd, listKeysCmd, revokeKeyCmd)
 
-	userCmd.AddCommand(createCmd, apiKeyCmd)
+	listCmd := &cobra.Command{
+		Use:   "list",
+		Short: "List the accounts on this instance",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			users, err := c.ListUsers(context.Background())
+			if err != nil {
+				return err
+			}
+			for _, u := range users {
+				fmt.Printf("%s\t%s\n", u.Username, u.Role)
+			}
+			return nil
+		},
+	}
+
+	var deleteConfirmed bool
+	deleteCmd := &cobra.Command{
+		Use:   "delete <username>",
+		Short: "Delete an account and everything it authenticates with",
+		Long: "Delete an account. Every API key and every session it holds go\n" +
+			"with it, in one transaction.\n\n" +
+			"Refused for the account you are signed in as, and for the only\n" +
+			"admin on the instance — nothing here could put one back.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !deleteConfirmed {
+				return fmt.Errorf("this deletes the account %s and every key and session it holds; pass --yes to confirm", args[0])
+			}
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			if err := c.DeleteUser(context.Background(), args[0]); err != nil {
+				return err
+			}
+			fmt.Printf("Deleted account %q\n", args[0])
+			return nil
+		},
+	}
+	deleteCmd.Flags().BoolVar(&deleteConfirmed, "yes", false, "confirm that the account should be deleted")
+
+	var revokeConfirmed bool
+	revokeCmd := &cobra.Command{
+		Use:   "revoke <username>",
+		Short: "Revoke every key and session an account holds, keeping the account",
+		Long: "End every session and revoke every API key an account holds.\n\n" +
+			"This is what a lost laptop needs: what was on it stops working\n" +
+			"everywhere at once, and the account survives. The password is not\n" +
+			"touched — it is not what was on the machine — so signing in again\n" +
+			"is how the account comes back.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !revokeConfirmed {
+				return fmt.Errorf("this signs %s out everywhere and revokes every API key they hold; pass --yes to confirm", args[0])
+			}
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			revoked, err := c.RevokeUserCredentials(context.Background(), args[0])
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Revoked %d API key(s) and ended %d session(s) for %q\n",
+				revoked.APIKeys, revoked.Sessions, args[0])
+			return nil
+		},
+	}
+	revokeCmd.Flags().BoolVar(&revokeConfirmed, "yes", false, "confirm that the credentials should be revoked")
+
+	userCmd.AddCommand(createCmd, listCmd, deleteCmd, revokeCmd, apiKeyCmd)
 	return userCmd
 }

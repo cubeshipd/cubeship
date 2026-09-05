@@ -560,6 +560,19 @@ Secure cookie there is simply never sent back — the sign-in would appear
 to work and nothing would stay signed in. `SameSite=Lax` is what stands
 in for CSRF tokens.
 
+**An account's credentials can be revoked by an admin, and so can the
+account.** `DELETE /users/{username}/credentials` ends every session and
+revokes every API key one account holds and leaves the account — the
+answer to a laptop that walked off, where what was on the machine has to
+stop working everywhere at once. The password is not touched: it is a
+secret in somebody's head rather than a credential lying on the machine
+that was lost. `DELETE /users/{username}` is the person leaving: the
+account goes and its keys and sessions go with it, in one transaction,
+so nothing that authenticates outlives the account it belonged to. Two
+refusals: the account you are signed in as, and the last admin — setup
+closed when the first account appeared, and nothing in the API can make
+an admin without one.
+
 An account can exist with no password. One an admin creates gets an API
 key immediately and a password only when it sets one, which
 is why every sign-in failure — unknown username, wrong password, no

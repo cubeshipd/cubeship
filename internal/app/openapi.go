@@ -294,12 +294,12 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Tags:       []string{"Apps"},
 					Parameters: refParams,
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"host": openapi.String("The name to serve this app at. It has to resolve to this host before a certificate can issue."),
+						"host": openapi.String("The name to serve this app at, as a DNS name. It has to resolve to this host before a certificate can issue, and it cannot be the instance's own domain or its registry's."),
 						"port": openapi.Integer("What it reaches inside the container. Omit to read it from the image."),
 					}, "host")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse("The app, with the name added.", openapi.Ref("App")),
-						"400": openapi.BadRequest,
+						"400": openapi.TextResponse("The name is not a DNS name, or it is one this instance answers at itself — the dashboard and the registry have Traefik routers of their own."),
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,
