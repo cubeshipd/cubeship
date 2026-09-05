@@ -97,7 +97,7 @@ func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInp
 	if err != nil {
 		return nil, Response{}, err
 	}
-	return nil, toResponse(created, t.svc.RegistryHost(ctx)), nil
+	return nil, toResponse(created, t.svc.InstanceConfig(ctx)), nil
 }
 
 type updateInput struct {
@@ -136,7 +136,7 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 	if err != nil {
 		return nil, Response{}, err
 	}
-	return nil, toResponse(updated, t.svc.RegistryHost(ctx)), nil
+	return nil, toResponse(updated, t.svc.InstanceConfig(ctx)), nil
 }
 
 func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, []Response, error) {
@@ -144,7 +144,7 @@ func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*
 	if err != nil {
 		return nil, nil, err
 	}
-	return nil, toResponses(apps, t.svc.RegistryHost(ctx)), nil
+	return nil, toResponses(apps, t.svc.InstanceConfig(ctx)), nil
 }
 
 type nameInput struct {
@@ -156,7 +156,7 @@ func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (
 	if err != nil {
 		return nil, Response{}, err
 	}
-	return nil, toResponse(a, t.svc.RegistryHost(ctx)), nil
+	return nil, toResponse(a, t.svc.InstanceConfig(ctx)), nil
 }
 
 type deployInput struct {

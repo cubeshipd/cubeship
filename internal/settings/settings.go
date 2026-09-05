@@ -8,7 +8,10 @@
 // knowing neither.
 package settings
 
-import "errors"
+import (
+	"errors"
+	"strings"
+)
 
 // Keys. Every setting is optional: the daemon runs, in a reduced form,
 // with none of them set.
@@ -167,6 +170,32 @@ func RegistryHostFor(domain string) string {
 		return ""
 	}
 	return "registry." + domain
+}
+
+// wildcardDNS are the services that answer for every name under an
+// IP-embedding address: <anything>.<a-b-c-d>.sslip.io resolves to
+// a.b.c.d, at any depth, with nothing registered anywhere.
+//
+// install.sh falls back to one of these when nobody gave a domain, which
+// is what makes a fresh instance reachable by name — and, because the
+// wildcard is not only for the instance, what lets an app be given an
+// address without owning a domain at all.
+var wildcardDNS = []string{".sslip.io", ".nip.io"}
+
+// ResolvesEveryName reports whether every name under this domain already
+// points at this host.
+//
+// It is the difference between an address that works the moment it is
+// added and one that needs a record written first, which is the only
+// thing anybody has to be told when they are offered a name for an app.
+func ResolvesEveryName(domain string) bool {
+	domain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
+	for _, suffix := range wildcardDNS {
+		if strings.HasSuffix(domain, suffix) {
+			return true
+		}
+	}
+	return false
 }
 
 // APIHostFor is where the daemon is reached through Traefik, which is

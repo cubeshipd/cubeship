@@ -37,3 +37,27 @@ func TestWhatCanBeAHostName(t *testing.T) {
 		t.Error("a name longer than a DNS name can be was accepted")
 	}
 }
+
+// Giving an app an address used to mean owning a domain, pointing a
+// record at this host and waiting for it. The instance already has a
+// domain — an sslip.io address, on a default install — and every name
+// under one of those resolves here already, so the app's own reference
+// under it is a name that works the moment it is added.
+func TestTheSuggestedHostIsTheReferenceUnderTheInstancesDomain(t *testing.T) {
+	ref := Reference{Project: "octokube", Environment: "production", Name: "octokube-server"}
+
+	for domain, want := range map[string]string{
+		"75-119-141-235.sslip.io": "octokube-server.production.octokube.75-119-141-235.sslip.io",
+		"Example.COM":             "octokube-server.production.octokube.example.com",
+		"example.com.":            "octokube-server.production.octokube.example.com",
+		// Nothing to build it under, so there is nothing to suggest.
+		"": "",
+		// A domain that could not be a host name would make one that
+		// Traefik could not route.
+		"not a domain": "",
+	} {
+		if got := SuggestedHostFor(ref, domain); got != want {
+			t.Errorf("SuggestedHostFor(%q) = %q, want %q", domain, got, want)
+		}
+	}
+}

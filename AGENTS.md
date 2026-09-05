@@ -261,15 +261,20 @@ for the screen.
 
 Creating an app asks for a slug and a description, in a modal, like
 every other resource. It arrives with **no domain and nothing chosen**,
-and `Orchestrator.Start` refuses to deploy it: Traefik routes by host,
-so an app without one would come up answering nothing.
+and it deploys anyway.
 
-That is the point rather than an omission. Where an app is served has to
-resolve to this host, and where its image comes from decides whether
-this instance executes a repository — two decisions with consequences,
-made in the app's settings with the reasons in front of you, not guessed
-at in the moment you name it. `PATCH /apps/{ref}` is what makes an app
-deployable, and it is the only place any of it can be changed.
+**An app with no domain is a normal app**, not a half-finished one. A
+worker, a queue consumer, a service its neighbours call by container
+name — none of those should answer on the internet, and an instance that
+could only run things that do would be the wrong instance.
+`traefik.Labels` already says so: with no domains it emits the network
+label and no `traefik.enable`, so Traefik is given no opinion rather than
+an empty rule. `Orchestrator.Start` used to refuse the deploy, which was
+this rule read backwards.
+
+Where an app is served is still a decision with consequences, made in
+the app's settings rather than guessed at in the moment you name it, and
+`PATCH /apps/{ref}` is the only place any of it can be changed.
 
 The source and its settings are one field group there, never four
 independent ones: `checkOrigin` judges them together, and moving an app
@@ -693,6 +698,20 @@ service, so every name behind one rule would reach the same port.
 `host` is unique across the instance, not per app. Traefik routes by
 host and nothing else; two apps claiming one name would give it two
 answers, and which it picked would be a detail of label ordering.
+
+**An app is offered a name under the instance's own domain.**
+`SuggestedHostFor` builds `<app>.<environment>.<project>.<instance
+domain>` and the app's response carries it as `suggested_host`. Nothing
+assigns it — see above — but giving an app an address used to mean
+owning a domain, pointing a record at this host, and waiting for it. A
+default install's domain is an sslip.io address, and *every* name under
+one of those resolves to the same host with nothing registered
+anywhere, so under one the suggestion is a name that works the moment it
+is added. `settings.ResolvesEveryName` is what knows the difference, and
+`wildcard_domain` in the settings response is what tells the dashboard
+whether to also write a record. Each name is still its own Let's Encrypt
+certificate; a wildcard would need DNS-01, which an IP-embedding service
+has no API for.
 
 **Port 0 means "read it from the image"**, and is the normal answer.
 `EXPOSE` ends up in an image's config, so `dockerx.ExposedPorts` reads
