@@ -202,16 +202,56 @@ run_daemon() {
 		die "could not start $CONTAINER. See: docker logs $CONTAINER"
 }
 
+# The daemon only listens once its siblings are up, and on a first
+# install that is four images to pull — minutes on a slow box, with
+# nothing to show for it. So its log is streamed here while we wait:
+# the `bootstrap:` lines say which image is being pulled and which
+# container just started, and that is exactly what the wait is.
 wait_for_health() {
+	progress=$(mktemp)
+	docker logs -f "$CONTAINER" >"$progress" 2>&1 &
+	logs=$!
+	shown=0
+
 	i=0
-	while [ "$i" -lt 60 ]; do
+	while [ "$i" -lt 300 ]; do
+		report_progress
 		if curl -fsS "http://127.0.0.1:$PORT/healthz" >/dev/null 2>&1; then
+			report_progress
+			kill "$logs" 2>/dev/null
+			rm -f "$progress"
 			return 0
 		fi
 		i=$((i + 1))
 		sleep 2
 	done
+	kill "$logs" 2>/dev/null
+	rm -f "$progress"
 	die "the daemon did not come up. See: docker logs $CONTAINER"
+}
+
+# report_progress prints the daemon's `bootstrap:` lines that arrived
+# since the last call. The log is a file rather than a pipe so that the
+# one process to stop afterwards is `docker logs` itself — a pipeline in
+# the background would outlive the script and keep writing to the
+# terminal after it.
+report_progress() {
+	total=$(wc -l <"$progress" | tr -d ' ')
+	[ "$total" -gt "$shown" ] || return 0
+	sed -n "$((shown + 1)),${total}p" "$progress" | sed -n 's/.*bootstrap: /    /p'
+	shown=$total
+}
+
+banner() {
+	cat <<-'ART'
+
+		   ██████╗██╗   ██╗██████╗ ███████╗███████╗██╗  ██╗██╗██████╗
+		  ██╔════╝██║   ██║██╔══██╗██╔════╝██╔════╝██║  ██║██║██╔══██╗
+		  ██║     ██║   ██║██████╔╝█████╗  ███████╗███████║██║██████╔╝
+		  ██║     ██║   ██║██╔══██╗██╔══╝  ╚════██║██╔══██║██║██╔═══╝
+		  ╚██████╗╚██████╔╝██████╔╝███████╗███████║██║  ██║██║██║
+		   ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝╚═╝  ╚═╝╚═╝╚═╝
+	ART
 }
 
 # address is the host's own routable address, the fallback for telling
@@ -267,6 +307,7 @@ main() {
 	host=$(address)
 	[ -n "$host" ] || host="<this host's address>"
 
+	banner
 	if [ -n "$DOMAIN" ]; then
 		cat <<-DONE
 

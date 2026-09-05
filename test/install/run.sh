@@ -92,6 +92,7 @@ run_tests() {
 	check "publishes the port" "$(grep -c '\-p 3000:3000' /tmp/docker.log)" "1"
 	check "restarts it with the host" \
 		"$(grep -c '\-\-restart unless-stopped' /tmp/docker.log)" "1"
+	check "ends with the name in lights" "$(printf '%s' "$out" | grep -c '██████╗██╗')" "1"
 	check "tells you where to open it" \
 		"$(printf '%s' "$out" | grep -c 'https://203-0-113-7.sslip.io')" "1"
 	check "makes a domain from the public address" \

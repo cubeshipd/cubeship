@@ -647,6 +647,10 @@ func Ensure(ctx context.Context, docker dockerAPI, opts dockerx.ContainerOpts) e
 		return err
 	}
 	if imageID == "" {
+		// Said before rather than after: on a first install these pulls
+		// are most of the wait, and the installer streams these lines
+		// so the person watching knows what the wait is.
+		log.Printf("bootstrap: pulling %s for %s", opts.Image, opts.Name)
 		if err := docker.PullImage(ctx, opts.Image, nil); err != nil {
 			return fmt.Errorf("pull %s: %w (if this image was built on this host, it is not there — check the tag)", opts.Image, err)
 		}
@@ -695,6 +699,7 @@ func Ensure(ctx context.Context, docker dockerAPI, opts dockerx.ContainerOpts) e
 	if err := docker.StartContainer(ctx, id); err != nil {
 		return fmt.Errorf("start %s: %w", opts.Name, err)
 	}
+	log.Printf("bootstrap: %s started", opts.Name)
 	return nil
 }
 
