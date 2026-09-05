@@ -121,6 +121,17 @@ on the host proxies there rather than to a container —
 `bootstrap.FrontendAddress` is the one place that branches. Reaching
 :3001 directly works too; it rewrites `/api` to the daemon.
 
+**A page's params come from Next's generated route types**, not from a
+hand-written one: `PageProps<"/projects/[project]/[env]/[app]">` reads
+the segments the directory actually has, so a segment renamed without
+the page following it is a type error. A hand-written type is how a page
+went on destructuring `org` after organizations were removed and asked
+the daemon for `/apps/undefined/<project>/<env>/<app>` — which answers
+"no such endpoint", at the address the dashboard sends you to after
+creating something. Those generated types do not exist in a fresh
+checkout, so `pnpm typecheck` writes them first; CI runs that before the
+build.
+
 Package manager is **pnpm** (`pnpm-lock.yaml` is the lockfile the image
 build installs from, along with `pnpm-workspace.yaml`, which carries the
 settings that install is governed by), and linting and formatting are both **Biome** —

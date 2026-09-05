@@ -29,7 +29,7 @@ import { message } from "@/lib/errors";
 // This is also where a registry that has stopped accepting its login
 // lands when you click it, because re-authenticating is the only thing
 // there is to do with one.
-export default function RegistrySettings({ params }: { params: Promise<{ id: string }> }) {
+export default function RegistrySettings({ params }: PageProps<"/registries/[id]/settings">) {
   const { id } = use(params);
   const router = useRouter();
 

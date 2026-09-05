@@ -19,13 +19,14 @@ import { message } from "@/lib/errors";
 // it means anything. `gateway` is unique in acme/api/production and
 // nowhere else, so the URL is the reference and the reference is the
 // URL.
-export default function AppPage({
-  params,
-}: {
-  params: Promise<{ org: string; project: string; env: string; app: string }>;
-}) {
-  const { org, project, env, app } = use(params);
-  return <Detail reference={`${org}/${project}/${env}/${app}`} />;
+// PageProps comes from Next's generated route types, so the params this
+// destructures are the segments the directory actually has. Spelling one
+// that is not there is a build error rather than an `undefined` glued
+// into the reference — which is how this page once asked the daemon for
+// /apps/undefined/<project>/<env>/<app> and got "no such endpoint".
+export default function AppPage({ params }: PageProps<"/projects/[project]/[env]/[app]">) {
+  const { project, env, app } = use(params);
+  return <Detail reference={`${project}/${env}/${app}`} />;
 }
 
 function Detail({ reference }: { reference: string }) {
