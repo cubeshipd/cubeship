@@ -101,6 +101,7 @@ func TestDeployEndToEnd(t *testing.T) {
 	}
 
 	dataDir := t.TempDir()
+	var adminKey string
 	daemon := exec.Command(daemonBin)
 	daemon.Env = append(os.Environ(),
 		"CUBESHIP_DOMAIN=localtest.me",
@@ -120,9 +121,13 @@ func TestDeployEndToEnd(t *testing.T) {
 				out, _ := exec.Command("docker", "logs", "--tail", "60", name).CombinedOutput()
 				t.Logf("---- docker logs %s ----\n%s", name, out)
 			}
-			out, _ := exec.Command("curl", "-sk", "-o", "/dev/null", "-w", "%{http_code} %{redirect_url}",
-				"https://localtest.me/v2/token").CombinedOutput()
-			t.Logf("---- curl https://localtest.me/v2/token: %s", out)
+			out, _ := exec.Command("sh", "-c", "docker ps -a --filter name=cubeship- --format '{{.Names}}\t{{.Status}}\t{{.Image}}'").CombinedOutput()
+			t.Logf("---- docker ps -a ----\n%s", out)
+			out, _ = exec.Command("sh", "-c", "docker logs --tail 20 $(docker ps -aq --filter name=cubeship-myapp-) 2>&1").CombinedOutput()
+			t.Logf("---- app container logs ----\n%s", out)
+			out, _ = exec.Command("curl", "-s", "-H", "Authorization: Bearer "+adminKey,
+				daemonURL+httpx.APIPrefix+"/apps/myapp/deployments").CombinedOutput()
+			t.Logf("---- deployments ----\n%s", out)
 		}
 		daemon.Process.Kill()
 		daemon.Wait()
@@ -160,7 +165,7 @@ func TestDeployEndToEnd(t *testing.T) {
 	// CUBESHIP_TOKEN is the registry/webhook credential only. A fresh
 	// instance has no account at all: the first request anyone makes
 	// claims it, exactly as a browser would on the setup page.
-	adminKey := claimInstance(t, adminUsername, adminPassword)
+	adminKey = claimInstance(t, adminUsername, adminPassword)
 	client := client.New(daemonURL, adminKey)
 
 	if _, err := client.CreateProject(ctx, "web"); err != nil {
