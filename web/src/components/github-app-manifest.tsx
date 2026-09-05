@@ -1,8 +1,9 @@
 "use client";
 
 import { ExternalLinkIcon } from "lucide-react";
-import type { ComponentType } from "react";
+import { type ComponentType, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { api } from "@/lib/api";
 
 // One button instead of four fields and a private key.
 //
@@ -22,6 +23,7 @@ export function CreateGitHubApp({
   icon: Icon,
   note = true,
   size,
+  replace = false,
 }: {
   instanceName?: string;
   icon?: ComponentType<{ className?: string }>;
@@ -34,7 +36,30 @@ export function CreateGitHubApp({
   // Passed through, so this can sit in a table row as well as under a
   // paragraph.
   size?: "sm" | "xs";
+  // Whether this is knowingly replacing an App the instance already
+  // has. It is recorded with the state below, on the daemon, so that
+  // the redirect coming back cannot claim it.
+  replace?: boolean;
 }) {
+  // The nonce that ties the exchange to this flow. It is fetched when
+  // the button appears rather than when it is pressed: the click opens
+  // a tab, and a tab opened after an await is a popup a browser blocks.
+  const [state, setState] = useState("");
+  useEffect(() => {
+    let live = true;
+    api
+      .post<{ state: string }>("/settings/github/manifest/state", { replace })
+      .then((s) => {
+        if (live) setState(s.state);
+      })
+      // Nothing to say here: the button stays disabled, which is the
+      // whole of what a failure means for someone looking at it.
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [replace]);
+
   function create() {
     // The origin the operator is looking at right now is the address
     // this instance is reachable on — by IP before there is a domain,
@@ -85,7 +110,11 @@ export function CreateGitHubApp({
 
     const form = document.createElement("form");
     form.method = "post";
-    form.action = "https://github.com/settings/apps/new";
+    // GitHub echoes `state` back in the redirect, and the daemon
+    // refuses a code that returns without the one it issued. Without
+    // it, a link to the redirect page would register somebody else's
+    // App on this instance with an admin's session.
+    form.action = `https://github.com/settings/apps/new?state=${encodeURIComponent(state)}`;
     form.target = "_blank";
     form.rel = "noopener";
 
@@ -104,7 +133,7 @@ export function CreateGitHubApp({
   }
 
   const button = (
-    <Button type="button" size={size} onClick={create}>
+    <Button type="button" size={size} onClick={create} disabled={!state}>
       {Icon && <Icon className="size-4 shrink-0" />}
       {label}
       <ExternalLinkIcon className="size-3.5" />

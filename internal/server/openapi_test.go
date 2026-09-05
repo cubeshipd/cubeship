@@ -128,6 +128,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"POST /registries",
 		"POST /registry/garbage-collect",
 		"POST /settings/github/manifest",
+		"POST /settings/github/manifest/state",
 		"POST /users",
 		"PUT /apps/{project}/{env}/{name}/env",
 		"PUT /dns/{id}/records",

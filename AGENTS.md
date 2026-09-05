@@ -817,6 +817,22 @@ connecting an installation a way to read a stranger's private code.
 signature already stops a forgery; the lookup stops a genuine delivery
 from an App installation nobody here asked for.
 
+**Registering the App carries a nonce, and the exchange requires it.**
+GitHub's manifest conversion endpoint is unauthenticated — a code is a
+code, whoever made the manifest it came from — and the redirect that
+brings one back is a link a browser follows with the session cookie
+attached. So `POST /settings/github/manifest/state` issues a single-use
+`state` bound to the caller, the manifest form carries it to GitHub,
+GitHub echoes it back, and `RegisterFromManifest` refuses a code that
+arrives without it. Without that, a link sent to a signed-in admin would
+make this instance somebody else's App: their webhook secret, their
+private key, and installation tokens over every repository the admin then
+granted it — landing them, meanwhile, on exactly the install page they
+expected. The nonce also carries whether the registration may **replace**
+an App the instance already has, decided before GitHub is involved
+rather than read from the redirect coming back, because replacing one
+breaks every installation on it.
+
 The App's private key and webhook secret are **write-only**. `settings`
 reports `github_connected`, never the values;
 `TestTheAppCredentialsAreNeverReturned` pins that.
@@ -884,15 +900,26 @@ is the answer: running an image someone already published is a
 executes whatever the source contains, on this host, with the builder's
 privileges — a different kind of act from running a published artifact.
 
-It binds both creating an app and deploying one. A member who could
-create an app they can never deploy would be an odd thing to allow.
+It binds creating an app, deploying one, **and writing its environment**.
+A member who could create an app they can never deploy would be an odd
+thing to allow — and one who could write a building app's environment
+would be building through it. For an app that builds, the environment is
+build input as well as the container's: Railpack reads it to work out how
+to build the repository and turns `RAILPACK_INSTALL_CMD`,
+`RAILPACK_BUILD_CMD` and `RAILPACK_START_CMD` into commands the build
+runs. The app's own variables win the merge over its environment's and
+its project's, both of which are already an admin's, so the app level was
+the way round them. Reading stays a member's: seeing how an app is
+configured is not deciding what it builds.
 
 Deploy resolves as a member first and checks the source's own
 requirement after, so a member deploying a building app is told they lack
 the role rather than that the app is missing.
 
-No source builds yet, and `TestBuildingSourcesNeedAnAdmin` fails the
-moment one does — so its role is a decision someone made.
+Every source is listed in `TestTheRoleEachSourceNeeds`, so adding one is
+a decision about its role rather than an accident.
+`TestOnlyAnAdminMayCreateOrDeployABuildingApp` and
+`TestOnlyAnAdminMayWriteABuildingAppsEnv` pin the two ways in.
 
 ## Pulling from someone else's registry
 

