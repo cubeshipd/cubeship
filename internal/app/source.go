@@ -98,12 +98,12 @@ var ErrDockerfileNotAllowed = errors.New(`only a "dockerfile" app names a Docker
 // fetch.
 var ErrRepoNotSupported = errors.New("the repository must be an https://, http:// or git:// URL — ssh needs a key this instance does not have")
 
-// ErrDomainRequired reports a deploy asked for before anyone said where
-// the app is served. It is checked at deploy rather than at creation
-// because an app is created empty on purpose: you configure it in the
-// app, and finding out then is finding out with the form in front of
-// you.
-var ErrDomainRequired = errors.New("the app has no domain yet — set one in its settings before deploying")
+// ErrHostRequired reports a domain given with no name in it.
+//
+// It is about the request, not about the app: an app with no domain at
+// all is a normal app — a worker, a queue consumer, something only its
+// neighbours on the instance talk to — and it deploys like any other.
+var ErrHostRequired = errors.New("a domain needs a host name")
 
 // ErrImageRequired reports an external app with nothing to pull.
 var ErrImageRequired = errors.New("an external app needs the image it pulls, without a tag")

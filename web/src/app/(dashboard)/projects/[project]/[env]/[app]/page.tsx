@@ -93,9 +93,10 @@ function Detail({ reference }: { reference: string }) {
       />
 
       {app.domains.length === 0 && (
-        <Notice tone="warning">
-          Nothing is configured yet, so this app cannot deploy. Give it a domain and say where its
-          image comes from in{" "}
+        <Notice>
+          This app answers at no name, so only its neighbours on this instance reach it — by
+          container name. That is all a worker needs; anything meant to be visited wants a domain,
+          in{" "}
           <Link href={`/projects/${reference}/settings`} className="underline underline-offset-4">
             settings
           </Link>
@@ -108,7 +109,6 @@ function Detail({ reference }: { reference: string }) {
       <Deployments
         reference={reference}
         buildsFromRepo={BUILDING_SOURCES.includes(app.source)}
-        canDeploy={app.domains.length > 0}
         onDeployed={reload}
       />
       <EnvVars reference={reference} />
@@ -184,13 +184,9 @@ function Origin({ app }: { app: App }) {
 function Deployments({
   reference,
   buildsFromRepo,
-  canDeploy,
   onDeployed,
 }: {
   reference: string;
-  // An app with no domain would come up answering nothing, so the
-  // daemon refuses it. Saying so here beats a 409 after the click.
-  canDeploy: boolean;
   // A build takes a branch or a commit; an image takes a tag. Same
   // field, same endpoint, two different things to type into it.
   buildsFromRepo: boolean;
@@ -248,7 +244,7 @@ function Deployments({
               aria-label={buildsFromRepo ? "Branch or commit to deploy" : "Tag to deploy"}
               className="w-32 text-xs"
             />
-            <Button type="submit" variant="outline" disabled={busy || !canDeploy}>
+            <Button type="submit" variant="outline" disabled={busy}>
               Deploy
             </Button>
           </form>

@@ -339,3 +339,39 @@ func TestWaitForGivesUpOnItsContextNotOnTheDeploy(t *testing.T) {
 		t.Errorf("abandoning the wait ended the deploy: %q (%s)", finished.Status, finished.Error)
 	}
 }
+
+// An app with no domain deploys. It is not a half-configured app: a
+// worker, a queue consumer, something only its neighbours on the
+// instance call by container name — none of those should answer on the
+// internet, and refusing to deploy them would mean this instance can
+// only run things that do.
+//
+// What it gets is a container with no routing: Traefik is given no
+// opinion about it rather than an empty rule.
+func TestAnAppWithNoDomainDeploysWithoutRouting(t *testing.T) {
+	docker := &fakeDocker{nextCreateID: "new-container", running: true}
+	orch, db, a := newDeployFixture(t, docker)
+	ctx := context.Background()
+
+	// A second app in the same environment, left with no name to answer
+	// at — the state every app is created in.
+	worker, err := NewRepository(db).Create(ctx, a.ProjectID, a.EnvironmentID, "worker", "", SourceRegistry, Origin{})
+	if err != nil {
+		t.Fatalf("create the app: %v", err)
+	}
+
+	if d := runDeploy(t, orch, db, worker.ID, "v2"); d.Status != DeploymentSucceeded {
+		t.Fatalf("deploy ended %q: %s", d.Status, d.Error)
+	}
+
+	created, started, _, _ := docker.snapshot()
+	if len(created) != 1 || len(started) != 1 {
+		t.Fatalf("created %d containers and started %d, want one of each", len(created), len(started))
+	}
+	for label := range created[0].Labels {
+		if strings.HasPrefix(label, "traefik.http.") || label == "traefik.enable" {
+			t.Errorf("an app with no domain was given routing labels: %v", created[0].Labels)
+			break
+		}
+	}
+}
