@@ -37,7 +37,7 @@ func newAppCmd() *cobra.Command {
 			"same name can exist in production and staging at once.",
 	}
 
-	var domain, org, project, environment, source string
+	var domain, project, environment, source string
 	var port int
 	createCmd := &cobra.Command{
 		Use:   "create <name>",
@@ -49,7 +49,7 @@ func newAppCmd() *cobra.Command {
 				return err
 			}
 			ctx := context.Background()
-			created, err := c.CreateApp(ctx, args[0], org, project, environment, source)
+			created, err := c.CreateApp(ctx, args[0], project, environment, source)
 			if err != nil {
 				return err
 			}
@@ -67,8 +67,6 @@ func newAppCmd() *cobra.Command {
 	}
 	createCmd.Flags().StringVar(&domain, "domain", "", "a domain to serve the app on; add more with `app domain add`")
 	createCmd.Flags().IntVar(&port, "port", 0, "what that domain reaches inside the container; 0 reads it from the image")
-	createCmd.Flags().StringVar(&org, "org", "", "organization slug that will own this app")
-	createCmd.MarkFlagRequired("org")
 	createCmd.Flags().StringVar(&project, "project", "", "project slug this app belongs to")
 	createCmd.MarkFlagRequired("project")
 	createCmd.Flags().StringVar(&environment, "env", "", `environment slug within the project (default "production")`)
@@ -181,7 +179,7 @@ func newAppCmd() *cobra.Command {
 			}
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 			for _, row := range [][2]string{
-				{"App", a.Reference}, {"Organization", a.Org}, {"Project", a.Project},
+				{"App", a.Reference}, {"Project", a.Project},
 				{"Environment", a.Environment}, {"Domains", hostsOf(a)},
 				{"Source", a.Source}, {"Status", a.Status}, {"Push to", a.Image},
 			} {

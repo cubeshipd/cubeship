@@ -11,7 +11,6 @@ import (
 func newProjectCmd() *cobra.Command {
 	projectCmd := &cobra.Command{Use: "project", Short: "Manage Cubeship projects"}
 
-	var org string
 	createCmd := &cobra.Command{
 		Use:   "create <slug>",
 		Short: `Create a new project (comes with a "production" environment)`,
@@ -21,7 +20,7 @@ func newProjectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			p, err := c.CreateProject(context.Background(), org, args[0])
+			p, err := c.CreateProject(context.Background(), args[0])
 			if err != nil {
 				return err
 			}
@@ -29,10 +28,7 @@ func newProjectCmd() *cobra.Command {
 			return nil
 		},
 	}
-	createCmd.Flags().StringVar(&org, "org", "", "organization slug the project belongs to")
-	createCmd.MarkFlagRequired("org")
 
-	var listOrg string
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List projects in an organization",
@@ -42,7 +38,7 @@ func newProjectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			projects, err := c.ListProjects(context.Background(), listOrg)
+			projects, err := c.ListProjects(context.Background())
 			if err != nil {
 				return err
 			}
@@ -52,10 +48,7 @@ func newProjectCmd() *cobra.Command {
 			return nil
 		},
 	}
-	listCmd.Flags().StringVar(&listOrg, "org", "", "organization slug")
-	listCmd.MarkFlagRequired("org")
 
-	var deleteOrg string
 	var deleteConfirmed bool
 	deleteCmd := &cobra.Command{
 		Use:   "delete <project-slug>",
@@ -71,15 +64,13 @@ func newProjectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := c.DeleteProject(context.Background(), deleteOrg, args[0]); err != nil {
+			if err := c.DeleteProject(context.Background(), args[0]); err != nil {
 				return err
 			}
 			fmt.Printf("Deleted project %s\n", args[0])
 			return nil
 		},
 	}
-	deleteCmd.Flags().StringVar(&deleteOrg, "org", "", "organization slug")
-	deleteCmd.MarkFlagRequired("org")
 	deleteCmd.Flags().BoolVar(&deleteConfirmed, "yes", false, "confirm that the project should be deleted")
 
 	projectCmd.AddCommand(createCmd, listCmd, deleteCmd, projectEnvCommands())

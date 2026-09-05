@@ -14,7 +14,6 @@ import (
 	"cubeship/internal/dns"
 	"cubeship/internal/extregistry"
 	"cubeship/internal/github"
-	"cubeship/internal/org"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/project"
@@ -28,7 +27,6 @@ import (
 // Server owns the module graph and the mux they are mounted on.
 type Server struct {
 	Users      *user.Service
-	Orgs       *org.Service
 	Projects   *project.Service
 	Apps       *app.Service
 	Settings   *settings.Service
@@ -79,28 +77,25 @@ type Options struct {
 }
 
 // New wires the modules together. The dependency order here is the real
-// one: users know nothing of organizations, organizations authorize
-// everything below them, and apps sit at the bottom.
+// one: users authorize everything, and apps sit at the bottom.
 func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	users := user.NewService(db)
-	orgs := org.NewService(db, users)
-	projects := project.NewService(db, orgs)
+	projects := project.NewService(db)
 	cfg := settings.NewService(db)
-	registries := extregistry.NewService(db, orgs)
-	dnsProviders := dns.NewService(db, orgs)
-	gh := github.NewService(db, orgs, cfg)
-	apps := app.NewService(db, orgs, projects,
+	registries := extregistry.NewService(db)
+	dnsProviders := dns.NewService(db)
+	gh := github.NewService(db, cfg)
+	apps := app.NewService(db, projects,
 		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gh, opts.LocalRegistry), cfg)
 
-	// Deleting an organization or a project takes the apps inside it
-	// with it, and only this module knows how to stop a container. The
+	// Deleting a project or an environment takes the apps inside it with
+	// it, and only this module knows how to stop a container. The
 	// dependency runs downward everywhere else, so it is handed back up
 	// here — the one place that knows every module exists.
-	orgs.SetAppTeardown(apps)
+	projects.SetAppTeardown(apps)
 
 	srv := &Server{
 		Users:      users,
-		Orgs:       orgs,
 		Projects:   projects,
 		Apps:       apps,
 		Settings:   cfg,
@@ -108,7 +103,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Registries: registries,
 		DNS:        dnsProviders,
 		GitHub:     gh,
-		Registry:   registry.NewHandler(users, orgs, apps, cfg, opts.WebhookToken, opts.LocalRegistry),
+		Registry:   registry.NewHandler(users, apps, cfg, opts.WebhookToken, opts.LocalRegistry),
 		frontend:   opts.Frontend,
 		router:     httpx.NewRouter(),
 	}
@@ -168,7 +163,6 @@ func (s *Server) routes() {
 	// Setup is the one surface that cannot require being signed in:
 	// before it runs there is nobody to be.
 	setup.NewHandler(s.Setup, userHandler.StartSession).Routes(s.router)
-	org.NewHandler(s.Orgs).Routes(s.router, auth)
 	project.NewHandler(s.Projects).Routes(s.router, auth)
 	settings.NewHandler(s.Settings).Routes(s.router, auth)
 	extregistry.NewHandler(s.Registries).Routes(s.router, auth)

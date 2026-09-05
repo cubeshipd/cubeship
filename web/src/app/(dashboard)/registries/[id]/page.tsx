@@ -9,7 +9,6 @@ import { ErrorAlert } from "@/components/error-alert";
 import { AWSIcon, DigitalOceanIcon } from "@/components/icons";
 import { LoadingList, LoadingNote } from "@/components/loading";
 import { Notice } from "@/components/notice";
-import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
 import { SearchBar } from "@/components/search-bar";
 import { Button } from "@/components/ui/button";
@@ -41,7 +40,6 @@ import { message } from "@/lib/errors";
 // id. Everything below the fetch is the same either way.
 export default function RegistryDetail({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { org } = useOrg();
   // "cubeship" is the reserved name for the one registry this instance
   // runs. Every other id is a stored credential's, which is a number, so
   // the two can never collide.
@@ -53,12 +51,12 @@ export default function RegistryDetail({ params }: { params: Promise<{ id: strin
   // render a heading was a link nobody could type.
   const [credential, setCredential] = useState<RegistryCredential | null>(null);
   useEffect(() => {
-    if (own || !org) return;
+    if (own) return;
     api
-      .get<RegistryCredential[]>(`/orgs/${org}/registries`)
+      .get<RegistryCredential[]>(`/registries`)
       .then((list) => setCredential(list.find((c) => String(c.id) === id) ?? null))
       .catch(() => setCredential(null));
-  }, [org, own, id]);
+  }, [own, id]);
   const host = credential?.host ?? "";
 
   const [repos, setRepos] = useState<RegistryRepository[] | null>(null);
@@ -72,10 +70,9 @@ export default function RegistryDetail({ params }: { params: Promise<{ id: strin
   const [query, setQuery] = useState("");
   const [usage, setUsage] = useState<RegistryUsage | null>(null);
 
-  const base = own ? `/orgs/${org}/registry` : `/orgs/${org}/registries/${id}`;
+  const base = own ? "/registry" : `/registries/${id}`;
 
   const load = useCallback(() => {
-    if (!org) return;
     setError(null);
     setUnsupported(false);
     api
@@ -92,18 +89,18 @@ export default function RegistryDetail({ params }: { params: Promise<{ id: strin
         }
         setError(message(e));
       });
-  }, [base, org]);
+  }, [base]);
   useEffect(load, [load]);
 
   // Measured after the list is on screen, never before it: it is one
   // call per repository at the far end, and there can be hundreds.
   useEffect(() => {
-    if (!org || own || !repos || repos.length === 0) return;
+    if (!own || !repos || repos.length === 0) return;
     api
       .get<RegistryUsage>(`${base}/usage`)
       .then(setUsage)
       .catch(() => setUsage(null));
-  }, [base, org, own, repos]);
+  }, [base, own, repos]);
 
   // refresh re-reads the tags of repositories whose contents changed.
   // A row that is open has to be re-read here, because nothing else

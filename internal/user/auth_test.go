@@ -45,7 +45,7 @@ func TestSigningInGivesASessionThatWorksEverywhere(t *testing.T) {
 	}
 
 	// And on an ordinary resource, not just the identity endpoint.
-	servertest.RequireStatus(t, f.DoAs(t, http.MethodGet, "/orgs", nil, session), http.StatusOK)
+	servertest.RequireStatus(t, f.DoAs(t, http.MethodGet, "/projects", nil, session), http.StatusOK)
 }
 
 // The cookie has to survive a fresh install reached at http://<ip>:3000.
@@ -91,7 +91,7 @@ func TestFailedSignInsAreIndistinguishable(t *testing.T) {
 // with an empty password.
 func TestAnAccountWithNoPasswordCannotSignIn(t *testing.T) {
 	f := servertest.New(t)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs/acme/users",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/users",
 		map[string]string{"username": "employee", "role": "member"}, f.AdminKey), http.StatusCreated)
 
 	for _, password := range []string{"", " ", goodPassword} {
@@ -237,17 +237,17 @@ func TestAPIKeysStillWorkAlongsideSessions(t *testing.T) {
 	f := servertest.New(t)
 	withPassword(t, f)
 
-	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/orgs", nil, f.AdminKey), http.StatusOK)
+	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/projects", nil, f.AdminKey), http.StatusOK)
 
 	session := f.Login(t, "admin", goodPassword)
-	servertest.RequireStatus(t, f.DoAs(t, http.MethodGet, "/orgs", nil, session), http.StatusOK)
+	servertest.RequireStatus(t, f.DoAs(t, http.MethodGet, "/projects", nil, session), http.StatusOK)
 }
 
 func TestUnauthenticatedRequestsAreStillRejected(t *testing.T) {
 	f := servertest.New(t)
 
-	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/orgs", nil, ""), http.StatusUnauthorized)
-	servertest.RequireStatus(t, f.DoAs(t, http.MethodGet, "/orgs", nil, &http.Cookie{
+	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/projects", nil, ""), http.StatusUnauthorized)
+	servertest.RequireStatus(t, f.DoAs(t, http.MethodGet, "/projects", nil, &http.Cookie{
 		Name: user.SessionCookieName, Value: "not-a-real-session",
 	}), http.StatusUnauthorized)
 }

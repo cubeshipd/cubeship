@@ -7,13 +7,12 @@ import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { CloudflareIcon } from "@/components/icons";
 import { LoadingRows } from "@/components/loading";
-import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
 import { SearchableSelect } from "@/components/searchable-select";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -39,24 +38,19 @@ import { message } from "@/lib/errors";
 // A table rather than cards: a credential has a label, a provider and a
 // state, and what someone comes here to do is scan for one of them.
 export default function DNSProviders() {
-  const { org, loaded } = useOrg();
   const [creds, setCreds] = useState<DNSCredential[] | null>(null);
   const [statuses, setStatuses] = useState<Record<number, DNSStatus>>({});
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const router = useRouter();
 
-  const path = org ? `/orgs/${org}/dns` : "";
+  const path = `/dns`;
   const reload = useCallback(() => {
-    if (!path) {
-      setCreds(null);
-      return;
-    }
     api
       .get<DNSCredential[]>(path)
       .then(setCreds)
       .catch((e) => setError(message(e)));
-  }, [path]);
+  }, []);
   useEffect(reload, [reload]);
 
   // One probe per row, in parallel, after the list is on screen. Each is
@@ -64,10 +58,10 @@ export default function DNSProviders() {
   // before drawing anything would make the page as slow as the slowest
   // provider in it.
   useEffect(() => {
-    if (!org || !creds) return;
+    if (!creds) return;
     for (const c of creds) {
       api
-        .get<DNSStatus>(`/orgs/${org}/dns/${c.id}/status`)
+        .get<DNSStatus>(`/dns/${c.id}/status`)
         .then((s) => setStatuses((prev) => ({ ...prev, [c.id]: s })))
         .catch((e) =>
           setStatuses((prev) => ({
@@ -76,7 +70,7 @@ export default function DNSProviders() {
           })),
         );
     }
-  }, [org, creds]);
+  }, [creds]);
 
   const open = useCallback(
     (c: DNSCredential) => {
@@ -94,38 +88,23 @@ export default function DNSProviders() {
       <PageHeader
         title="DNS Providers"
         sub={
-          org ? (
-            <>
-              The DNS accounts <code className="text-foreground">{org}</code> manages records
-              through. Cubeship already asks you to point a name at this host — this is where that
-              happens, rather than in somebody else&apos;s control panel.
-            </>
-          ) : (
-            "The DNS accounts an organization manages its records through."
-          )
+          <>
+            The DNS accounts this instance manages records through. Cubeship already asks you to
+            point a name at this host — this is where that happens, rather than in somebody
+            else&apos;s control panel.
+          </>
         }
         actions={
-          org && (
-            <Button onClick={() => setAdding(true)}>
-              <PlusIcon />
-              New provider
-            </Button>
-          )
+          <Button onClick={() => setAdding(true)}>
+            <PlusIcon />
+            New provider
+          </Button>
         }
       />
 
       <ErrorAlert error={error} />
 
-      {loaded && !org && (
-        <Card>
-          <CardContent className="py-2 text-sm text-muted-foreground">
-            No organization selected. A DNS credential belongs to one — pick or create an
-            organization from the switcher at the top of the sidebar.
-          </CardContent>
-        </Card>
-      )}
-
-      {org && (
+      {
         <Card className="py-0">
           <Table>
             <TableHeader>
@@ -174,11 +153,9 @@ export default function DNSProviders() {
             </TableBody>
           </Table>
         </Card>
-      )}
+      }
 
-      {org && (
-        <NewProviderDialog path={path} open={adding} onOpenChange={setAdding} onCreated={reload} />
-      )}
+      {<NewProviderDialog path={path} open={adding} onOpenChange={setAdding} onCreated={reload} />}
     </>
   );
 }

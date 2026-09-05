@@ -184,46 +184,39 @@ func appEnvCommands() *cobra.Command {
 }
 
 func projectEnvCommands() *cobra.Command {
-	org := new(string)
 	cmd := envCommands{
 		noun: "project",
 		arg:  "<project-slug>",
 		read: func(c *client.Client, slug string) (client.EnvVars, error) {
-			return c.ProjectEnv(context.Background(), *org, slug)
+			return c.ProjectEnv(context.Background(), slug)
 		},
 		merge: func(c *client.Client, slug string, set map[string]string, unset []string) error {
-			return c.MergeProjectEnv(context.Background(), *org, slug, set, unset)
+			return c.MergeProjectEnv(context.Background(), slug, set, unset)
 		},
 		replace: func(c *client.Client, slug string, vars map[string]string) error {
-			return c.SetProjectEnv(context.Background(), *org, slug, vars)
+			return c.SetProjectEnv(context.Background(), slug, vars)
 		},
 	}.command()
 
-	// A persistent flag on the group, so every subcommand inherits it
-	// rather than each declaring its own copy.
-	cmd.PersistentFlags().StringVar(org, "org", "", "organization slug")
-	cmd.MarkPersistentFlagRequired("org")
 	return cmd
 }
 
 func environmentEnvCommands() *cobra.Command {
-	org, project := new(string), new(string)
+	project := new(string)
 	cmd := envCommands{
 		noun: "environment",
 		arg:  "<env-slug>",
 		read: func(c *client.Client, slug string) (client.EnvVars, error) {
-			return c.EnvironmentEnv(context.Background(), *org, *project, slug)
+			return c.EnvironmentEnv(context.Background(), *project, slug)
 		},
 		merge: func(c *client.Client, slug string, set map[string]string, unset []string) error {
-			return c.MergeEnvironmentEnv(context.Background(), *org, *project, slug, set, unset)
+			return c.MergeEnvironmentEnv(context.Background(), *project, slug, set, unset)
 		},
 		replace: func(c *client.Client, slug string, vars map[string]string) error {
-			return c.SetEnvironmentEnv(context.Background(), *org, *project, slug, vars)
+			return c.SetEnvironmentEnv(context.Background(), *project, slug, vars)
 		},
 	}.command()
 
-	cmd.PersistentFlags().StringVar(org, "org", "", "organization slug")
-	cmd.MarkPersistentFlagRequired("org")
 	cmd.PersistentFlags().StringVar(project, "project", "", "project slug")
 	cmd.MarkPersistentFlagRequired("project")
 	return cmd

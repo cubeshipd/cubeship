@@ -10,12 +10,10 @@ import { GitHubAppCard } from "@/components/github-app-card";
 import { ConnectGitHub } from "@/components/github-connect";
 import { GitHubIcon } from "@/components/icons";
 import { Notice } from "@/components/notice";
-import { useOrg } from "@/components/org-context";
 import { PageHeader, SectionHeader } from "@/components/page-header";
 import { useSession } from "@/components/session-context";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { api, type GitHubConnections, type Settings } from "@/lib/api";
 import { message } from "@/lib/errors";
 
@@ -40,7 +38,6 @@ type Provider = {
 };
 
 export default function GitProviders() {
-  const { org, loaded } = useOrg();
   const me = useSession();
   const [disconnecting, setDisconnecting] = useState(false);
 
@@ -50,16 +47,15 @@ export default function GitProviders() {
   });
 
   const connections = useQuery({
-    queryKey: ["github", org],
-    queryFn: () => api.get<GitHubConnections>(`/orgs/${org}/github`),
-    enabled: Boolean(org),
+    queryKey: ["github"],
+    queryFn: () => api.get<GitHubConnections>(`/github`),
   });
 
   const slug = settings.data?.github_app_slug ?? "";
   const installations = connections.data?.installations ?? [];
 
   const providers: Provider[] | null =
-    settings.isLoading || (Boolean(org) && connections.isLoading)
+    settings.isLoading || connections.isLoading
       ? null
       : [
           {
@@ -164,21 +160,12 @@ export default function GitProviders() {
 
       <ErrorAlert error={connections.error ? message(connections.error) : null} />
 
-      {loaded && !org && (
-        <Card>
-          <CardContent className="py-2 text-sm text-muted-foreground">
-            No organization selected. A connection belongs to one — pick or create an organization
-            from the switcher at the top of the sidebar.
-          </CardContent>
-        </Card>
-      )}
-
       {/* An App registered before Cubeship asked for OAuth on install
           was registered private too, and a private GitHub App installs
           only on the account that owns it — which is why the install
           page offers no organizations. Neither can be changed after the
           fact, so the only thing that helps is a new App. */}
-      {org && settings.data?.github_connected && settings.data?.github_oauth_ready === false && (
+      {settings.data?.github_connected && settings.data?.github_oauth_ready === false && (
         <Notice tone="warning">
           This instance&apos;s GitHub App was registered before Cubeship could install on
           organizations, so GitHub only offers your personal account. It cannot be changed — an App
@@ -203,7 +190,7 @@ export default function GitProviders() {
         </Notice>
       )}
 
-      {org && (
+      {
         <>
           <SectionHeader
             title="Connected accounts"
@@ -211,12 +198,12 @@ export default function GitProviders() {
           />
           <DataTable columns={columns} rows={providers} rowKey={(p) => p.id} loadingRows={1} />
         </>
-      )}
+      }
 
       {/* The escape hatch, and deliberately a link rather than a
           section: an App made by hand is a real thing to have and not
           something anyone should read about on the way to connecting. */}
-      {org && me.is_super_admin && !settings.data?.github_connected && settings.data && (
+      {me.is_super_admin && !settings.data?.github_connected && settings.data && (
         <div className="mt-4">
           <GitHubAppCard settings={settings.data} onSaved={() => settings.refetch()} />
         </div>
@@ -246,7 +233,7 @@ export default function GitProviders() {
           // being ended — leaving one behind would be a connection the
           // page says is gone.
           for (const i of installations) {
-            await api.del(`/orgs/${org}/github/${i.id}`);
+            await api.del(`/github/${i.id}`);
           }
           await connections.refetch();
           setDisconnecting(false);

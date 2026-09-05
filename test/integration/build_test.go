@@ -37,8 +37,8 @@ func buildFromARepository(t *testing.T, apiKey string) {
 
 	created := createApp(t, apiKey, map[string]string{
 		"name": "built", "domain": "built.localtest.me",
-		"org": "acme", "project": "web",
-		"source": "dockerfile", "repo": repo, "ref": "main",
+		"project": "web",
+		"source":  "dockerfile", "repo": repo, "ref": "main",
 	})
 
 	deployment := deployApp(t, apiKey, created)
@@ -76,8 +76,8 @@ func buildWithRailpack(t *testing.T, apiKey string) {
 	})
 	created := createApp(t, apiKey, map[string]string{
 		"name": "detected", "domain": "detected.localtest.me",
-		"org": "acme", "project": "web",
-		"source": "railpack", "repo": repo, "ref": "main",
+		"project": "web",
+		"source":  "railpack", "repo": repo, "ref": "main",
 	})
 	id := deployApp(t, apiKey, created)
 
@@ -109,8 +109,8 @@ func buildLogsArriveWhileTheBuildRuns(t *testing.T, apiKey string) {
 	})
 	created := createApp(t, apiKey, map[string]string{
 		"name": "watched", "domain": "watched.localtest.me",
-		"org": "acme", "project": "web",
-		"source": "dockerfile", "repo": repo, "ref": "main",
+		"project": "web",
+		"source":  "dockerfile", "repo": repo, "ref": "main",
 	})
 	id := deployApp(t, apiKey, created)
 

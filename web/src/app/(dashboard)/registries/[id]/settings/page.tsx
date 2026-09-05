@@ -11,7 +11,6 @@ import { ErrorAlert } from "@/components/error-alert";
 import { AWSIcon, DigitalOceanIcon } from "@/components/icons";
 import { LoadingNote } from "@/components/loading";
 import { Notice } from "@/components/notice";
-import { useOrg } from "@/components/org-context";
 import { PageHeader, SectionHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
@@ -33,7 +32,6 @@ import { message } from "@/lib/errors";
 export default function RegistrySettings({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const { org } = useOrg();
 
   const [credential, setCredential] = useState<RegistryCredential | null>(null);
   const [status, setStatus] = useState<RegistryStatus | null>(null);
@@ -54,7 +52,7 @@ export default function RegistrySettings({ params }: { params: Promise<{ id: str
     setSavingName(true);
     setError(null);
     try {
-      const updated = await api.put<RegistryCredential>(`/orgs/${org}/registries/${id}`, {
+      const updated = await api.put<RegistryCredential>(`/registries/${id}`, {
         namespace,
       });
       setCredential(updated);
@@ -66,9 +64,9 @@ export default function RegistrySettings({ params }: { params: Promise<{ id: str
   }
 
   useEffect(() => {
-    if (!org || !id) return;
+    if (id) return;
     api
-      .get<RegistryCredential[]>(`/orgs/${org}/registries`)
+      .get<RegistryCredential[]>(`/registries`)
       .then((list) => {
         const found = list.find((c) => String(c.id) === id) ?? null;
         setCredential(found);
@@ -79,19 +77,19 @@ export default function RegistrySettings({ params }: { params: Promise<{ id: str
         setUsername(found?.username ?? "");
       })
       .catch((e) => setError(message(e)));
-  }, [org, id]);
+  }, [id]);
 
   // The probe runs on arrival and again after a new login is stored,
   // because whether the new one works is the question this screen was
   // opened to answer.
   const probe = useCallback(() => {
-    if (!org || !id) return;
+    if (id) return;
     setStatus(null);
     api
-      .get<RegistryStatus>(`/orgs/${org}/registries/${id}/status`)
+      .get<RegistryStatus>(`/registries/${id}/status`)
       .then(setStatus)
       .catch((e) => setStatus({ state: "unreachable", detail: message(e) }));
-  }, [org, id]);
+  }, [id]);
   useEffect(probe, [probe]);
 
   const provider = credential?.provider ?? "generic";
@@ -106,7 +104,7 @@ export default function RegistrySettings({ params }: { params: Promise<{ id: str
     setError(null);
     setSaved(false);
     try {
-      await api.put(`/orgs/${org}/registries/${id}`, { username, password });
+      await api.put(`/registries/${id}`, { username, password });
       setPassword("");
       setSaved(true);
       probe();
@@ -254,7 +252,7 @@ export default function RegistrySettings({ params }: { params: Promise<{ id: str
         confirmWord={credential?.host}
         description="Nothing in the registry is touched. What goes is this instance's ability to pull from it."
         onConfirm={async () => {
-          await api.del(`/orgs/${org}/registries/${id}`);
+          await api.del(`/registries/${id}`);
           router.push("/registries");
         }}
       />

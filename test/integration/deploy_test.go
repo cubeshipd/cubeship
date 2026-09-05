@@ -147,14 +147,11 @@ func TestDeployEndToEnd(t *testing.T) {
 	adminKey := claimInstance(t, adminUsername, adminPassword)
 	client := client.New(daemonURL, adminKey)
 
-	if _, err := client.CreateOrg(ctx, "acme"); err != nil {
-		t.Fatalf("CreateOrg: %v", err)
-	}
-	if _, err := client.CreateProject(ctx, "acme", "web"); err != nil {
+	if _, err := client.CreateProject(ctx, "web"); err != nil {
 		t.Fatalf("CreateProject: %v", err)
 	}
 
-	created, err := client.CreateApp(ctx, "myapp", "acme", "web", "production", "")
+	created, err := client.CreateApp(ctx, "myapp", "web", "production", "")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -163,15 +160,15 @@ func TestDeployEndToEnd(t *testing.T) {
 		t.Fatalf("AddAppDomain: %v", err)
 	}
 	// The push path is the app's reference with the registry host in
-	// front — org, project, environment, name.
-	if created.Reference != "acme/web/production/myapp" {
+	// front — project, environment, name.
+	if created.Reference != "web/production/myapp" {
 		t.Fatalf("unexpected reference: %q", created.Reference)
 	}
 	if created.Image != "registry.localtest.me/"+created.Reference {
 		t.Fatalf("unexpected image: %q", created.Image)
 	}
 
-	buildApp := exec.Command("docker", "build", "-t", "localhost:5000/acme/web/production/myapp:latest", "./testapp")
+	buildApp := exec.Command("docker", "build", "-t", "localhost:5000/web/production/myapp:latest", "./testapp")
 	if out, err := buildApp.CombinedOutput(); err != nil {
 		t.Fatalf("build fixture image: %v\n%s", err, out)
 	}
@@ -188,7 +185,7 @@ func TestDeployEndToEnd(t *testing.T) {
 	}
 	t.Cleanup(func() { exec.Command("docker", "logout", "localhost:5000").Run() })
 
-	push := exec.Command("docker", "push", "localhost:5000/acme/web/production/myapp:latest")
+	push := exec.Command("docker", "push", "localhost:5000/web/production/myapp:latest")
 	if out, err := push.CombinedOutput(); err != nil {
 		t.Fatalf("push fixture image: %v\n%s", err, out)
 	}

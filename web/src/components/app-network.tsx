@@ -8,7 +8,6 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
-import { useOrg } from "@/components/org-context";
 import { SectionHeader } from "@/components/page-header";
 import { SearchableSelect } from "@/components/searchable-select";
 import { TextField } from "@/components/text-field";
@@ -39,7 +38,6 @@ import { message } from "@/lib/errors";
 // list rather than a field. An image can expose several; api.example.com
 // and admin.example.com on one container are two of them.
 export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => void }) {
-  const { org } = useOrg();
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<AppDomain | null>(null);
 
@@ -83,13 +81,7 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
         </Card>
       )}
 
-      <AddDomain
-        base={base}
-        org={org}
-        settings={settings.data}
-        onSaved={onSaved}
-        onError={setError}
-      />
+      <AddDomain base={base} settings={settings.data} onSaved={onSaved} onError={setError} />
 
       <ConfirmDialog
         open={removing !== null}
@@ -176,13 +168,11 @@ function DomainRow({
 // that says it is served somewhere nothing answers.
 function AddDomain({
   base,
-  org,
   settings,
   onSaved,
   onError,
 }: {
   base: string;
-  org: string;
   settings: Settings | undefined;
   onSaved: (a: App) => void;
   onError: (e: string | null) => void;
@@ -203,15 +193,14 @@ function AddDomain({
   }, [settings?.dns_provider_id]);
 
   const providers = useQuery({
-    queryKey: ["dns", org],
-    queryFn: () => api.get<DNSCredential[]>(`/orgs/${org}/dns`),
-    enabled: Boolean(org),
+    queryKey: ["dns"],
+    queryFn: () => api.get<DNSCredential[]>(`/dns`),
   });
 
   const zones = useQuery({
-    queryKey: ["dns", org, providerID, "zones"],
-    queryFn: () => api.get<DNSZone[]>(`/orgs/${org}/dns/${providerID}/zones`),
-    enabled: Boolean(org && providerID),
+    queryKey: ["dns", providerID, "zones"],
+    queryFn: () => api.get<DNSZone[]>(`/dns/${providerID}/zones`),
+    enabled: Boolean(providerID),
   });
 
   const automatic = Boolean(providerID);
@@ -220,9 +209,9 @@ function AddDomain({
   const ip = settings?.public_ip ?? "";
 
   const records = useQuery({
-    queryKey: ["dns", org, providerID, "records", zoneID],
-    queryFn: () => api.get<DNSRecord[]>(`/orgs/${org}/dns/${providerID}/records?zone=${zoneID}`),
-    enabled: Boolean(org && providerID && zoneID),
+    queryKey: ["dns", providerID, "records", zoneID],
+    queryFn: () => api.get<DNSRecord[]>(`/dns/${providerID}/records?zone=${zoneID}`),
+    enabled: Boolean(providerID && zoneID),
   });
 
   // Anything already answering at that name, of any type: a CNAME where
@@ -241,7 +230,7 @@ function AddDomain({
       // The record first. A name added here that does not resolve is an
       // app claiming to be served somewhere nothing answers.
       if (automatic && zone && ip) {
-        await api.put(`/orgs/${org}/dns/${providerID}/records?zone=${zoneID}`, {
+        await api.put(`/dns/${providerID}/records?zone=${zoneID}`, {
           name: host,
           type: "A",
           values: [ip],

@@ -8,13 +8,12 @@ import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { AWSIcon, DigitalOceanIcon } from "@/components/icons";
 import { LoadingRows } from "@/components/loading";
-import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
 import { SearchableSelect } from "@/components/searchable-select";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -73,7 +72,6 @@ const PROVIDERS: Record<
 // of its own, and what someone comes here to do is scan a list for one
 // of them.
 export default function Registries() {
-  const { org, loaded } = useOrg();
   const [creds, setCreds] = useState<RegistryCredential[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -99,17 +97,13 @@ export default function Registries() {
       .catch(() => setSettings(null));
   }, []);
 
-  const path = org ? `/orgs/${org}/registries` : "";
+  const path = `/registries`;
   const reload = useCallback(() => {
-    if (!path) {
-      setCreds(null);
-      return;
-    }
     api
       .get<RegistryCredential[]>(path)
       .then(setCreds)
       .catch((e) => setError(message(e)));
-  }, [path]);
+  }, []);
   useEffect(reload, [reload]);
 
   // One probe per row, in parallel, after the list is on screen. Each is
@@ -117,10 +111,10 @@ export default function Registries() {
   // them before drawing anything would make the page as slow as the
   // slowest registry in it.
   useEffect(() => {
-    if (!org || !creds) return;
+    if (!creds) return;
     for (const c of creds) {
       api
-        .get<RegistryStatus>(`/orgs/${org}/registries/${c.id}/status`)
+        .get<RegistryStatus>(`/registries/${c.id}/status`)
         .then((s) => setStatuses((prev) => ({ ...prev, [c.id]: s })))
         .catch((e) =>
           setStatuses((prev) => ({
@@ -129,45 +123,29 @@ export default function Registries() {
           })),
         );
     }
-  }, [org, creds]);
+  }, [creds]);
 
   return (
     <>
       <PageHeader
         title="Registries"
         sub={
-          org ? (
-            <>
-              Logins <code className="text-foreground">{org}</code> holds for registries Cubeship
-              does not run. An app with an external image pulls through whichever of these matches
-              its registry.
-            </>
-          ) : (
-            "Logins for registries Cubeship does not run."
-          )
+          <>
+            Logins this instance holds for registries Cubeship does not run. An app with an external
+            image pulls through whichever of these matches its registry.
+          </>
         }
         actions={
-          org && (
-            <Button onClick={() => setAdding(true)}>
-              <PlusIcon />
-              New registry
-            </Button>
-          )
+          <Button onClick={() => setAdding(true)}>
+            <PlusIcon />
+            New registry
+          </Button>
         }
       />
 
       <ErrorAlert error={error} />
 
-      {loaded && !org && (
-        <Card>
-          <CardContent className="py-2 text-sm text-muted-foreground">
-            No organization selected. A login belongs to one — pick or create an organization from
-            the switcher at the top of the sidebar.
-          </CardContent>
-        </Card>
-      )}
-
-      {org && (
+      {
         <Card className="py-0">
           <Table>
             <TableHeader>
@@ -238,11 +216,9 @@ export default function Registries() {
             </TableBody>
           </Table>
         </Card>
-      )}
+      }
 
-      {org && (
-        <NewRegistryDialog path={path} open={adding} onOpenChange={setAdding} onCreated={reload} />
-      )}
+      {<NewRegistryDialog path={path} open={adding} onOpenChange={setAdding} onCreated={reload} />}
     </>
   );
 }

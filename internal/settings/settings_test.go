@@ -1,10 +1,10 @@
 package settings_test
 
 import (
+	"cubeship/internal/user"
 	"net/http"
 	"testing"
 
-	"cubeship/internal/org"
 	"cubeship/internal/server/servertest"
 	"cubeship/internal/settings"
 )
@@ -50,10 +50,10 @@ func TestAppsCanBeCreatedBeforeADomainExists(t *testing.T) {
 		Image     string `json:"image"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
+		"name": "myapp", "domain": "myapp.example.com", "project": "web",
 	}, f.AdminKey, &created), http.StatusCreated)
 
-	if created.Reference != "acme/web/production/myapp" {
+	if created.Reference != "web/production/myapp" {
 		t.Fatalf("reference is %q", created.Reference)
 	}
 	if created.Image != "" {
@@ -75,7 +75,7 @@ func TestConfiguringADomainGivesExistingAppsAPushPath(t *testing.T) {
 		Image     string `json:"image"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "myapp", "domain": "myapp.example.com", "org": "acme", "project": "web",
+		"name": "myapp", "domain": "myapp.example.com", "project": "web",
 	}, f.AdminKey, &created), http.StatusCreated)
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodPut, "/settings",
@@ -118,11 +118,11 @@ func TestTLSNeedsBothADomainAndAContactAddress(t *testing.T) {
 	}
 }
 
-// Instance configuration is the VPS operator's. An organization admin
-// runs their own org, not the machine.
-func TestOnlyASuperAdminChangesSettings(t *testing.T) {
+// Instance configuration is an admin's: where this instance answers and
+// which certificates it asks for are not a member's to change.
+func TestOnlyAnAdminChangesSettings(t *testing.T) {
 	f := servertest.New(t)
-	_, adminKey := f.AddMember(t, "org-admin", org.RoleAdmin)
+	_, adminKey := f.AddMember(t, "member", user.RoleMember)
 
 	// Reading is fine: a dashboard has to know where to tell you to push.
 	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/settings", nil, adminKey), http.StatusOK)

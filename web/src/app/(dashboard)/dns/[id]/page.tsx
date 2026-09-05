@@ -6,7 +6,6 @@ import { use, useCallback, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { CloudflareIcon } from "@/components/icons";
 import { LoadingList, LoadingNote } from "@/components/loading";
-import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
 import { SearchBar } from "@/components/search-bar";
 import { Button } from "@/components/ui/button";
@@ -31,22 +30,20 @@ import { message } from "@/lib/errors";
 // page of its own — reachable by a link you can send someone.
 export default function DNSZones({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
-  const { org } = useOrg();
 
   const [credential, setCredential] = useState<DNSCredential | null>(null);
   const [zones, setZones] = useState<DNSZone[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
-  const base = org ? `/orgs/${org}/dns/${id}` : "";
+  const base = `/dns/${id}`;
 
   useEffect(() => {
-    if (!org) return;
     api
-      .get<DNSCredential[]>(`/orgs/${org}/dns`)
+      .get<DNSCredential[]>(`/dns`)
       .then((list) => setCredential(list.find((c) => String(c.id) === id) ?? null))
       .catch(() => setCredential(null));
-  }, [org, id]);
+  }, [id]);
 
   const load = useCallback(() => {
     if (!base) return;

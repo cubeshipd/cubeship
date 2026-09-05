@@ -10,6 +10,7 @@ import (
 
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/httpx"
+	"cubeship/internal/slug"
 )
 
 // Handler is this module's HTTP surface. Every method is a thin adapter
@@ -36,6 +37,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.HandleInternal("POST /auth/logout", auth(http.HandlerFunc(h.logout)))
 	r.HandleInternal("PUT /users/me/password", auth(http.HandlerFunc(h.setPassword)))
 
+	r.Handle("POST /users", auth(http.HandlerFunc(h.add)))
 	r.Handle("GET /users/me", auth(http.HandlerFunc(h.whoAmI)))
 	r.HandleInternal("POST /users/me/api-key/rotate", auth(http.HandlerFunc(h.rotateAPIKey)))
 	r.HandleInternal("POST /users/me/api-keys", auth(http.HandlerFunc(h.createAPIKey)))
@@ -156,8 +158,8 @@ func overTLS(r *http.Request) bool {
 
 // WhoAmIResponse is also what the MCP whoami tool returns.
 type WhoAmIResponse struct {
-	Username     string `json:"username"`
-	IsSuperAdmin bool   `json:"is_super_admin"`
+	Username string `json:"username"`
+	Role     Role   `json:"role"`
 }
 
 // APIKeyResponse is one key's metadata. The key value itself appears
@@ -274,7 +276,7 @@ func (h *Handler) whoAmI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, WhoAmIResponse{Username: u.Username, IsSuperAdmin: u.IsSuperAdmin})
+	httpx.WriteJSON(w, http.StatusOK, WhoAmIResponse{Username: u.Username, Role: u.Role})
 }
 
 // rotateAPIKey replaces exactly the key this request authenticated with,
@@ -349,4 +351,60 @@ func (h *Handler) revokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 	}
+}
+
+// WriteError maps this module's errors onto status codes. Every other
+// module falls through to it, since authorization now lives here and its
+// two refusals are the ones they all raise.
+func WriteError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, ErrUnauthenticated):
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	case errors.Is(err, ErrForbidden):
+		http.Error(w, err.Error(), http.StatusForbidden)
+	case errors.Is(err, ErrUsernameTaken):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, ErrInvalidRole), errors.Is(err, ErrPasswordTooShort),
+		errors.Is(err, slug.ErrReserved):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, slug.ErrInvalid):
+		http.Error(w, "username "+slug.ErrInvalid.Error(), http.StatusBadRequest)
+	default:
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
+}
+
+// AddResponse is a newly created account and the key it authenticates
+// with, shown exactly once.
+type AddResponse struct {
+	Username string `json:"username"`
+	Role     Role   `json:"role"`
+	APIKey   string `json:"api_key"`
+}
+
+func (h *Handler) add(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Username string `json:"username"`
+		Role     string `json:"role"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil || req.Username == "" {
+		http.Error(w, "username is required", http.StatusBadRequest)
+		return
+	}
+	if req.Role == "" {
+		req.Role = string(RoleMember)
+	}
+	if !slug.Valid(req.Username) {
+		WriteError(w, slug.ErrInvalid)
+		return
+	}
+
+	created, key, err := h.svc.Add(r.Context(), FromContext(r.Context()), req.Username, Role(req.Role))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, AddResponse{
+		Username: created.Username, Role: created.Role, APIKey: key,
+	})
 }

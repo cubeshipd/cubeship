@@ -13,8 +13,6 @@ import {
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
-import { OrgProvider } from "@/components/org-context";
-import { OrgSwitcher } from "@/components/org-switcher";
 import { QueryProvider } from "@/components/query-provider";
 import { SessionProvider } from "@/components/session-context";
 import {
@@ -100,40 +98,40 @@ export function Shell({ children }: { children: ReactNode }) {
   return (
     <SessionProvider me={me}>
       <QueryProvider>
-        <OrgProvider>
-          <div className="flex min-h-screen bg-background">
-            <nav className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-border bg-card">
-              <div className="border-b border-border">
-                <OrgSwitcher />
-              </div>
+        <div className="flex min-h-screen bg-background">
+          <nav className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-border bg-card">
+            <div className="flex h-14 items-center gap-2 border-b border-border px-4">
+              <span className="font-semibold tracking-[0.2em] text-primary uppercase text-glow">
+                Cubeship
+              </span>
+            </div>
 
-              <div className="flex-1 p-2">
-                {sections.map((section, i) => (
-                  <div key={section.label ?? "workspace"} className={i > 0 ? "mt-5" : undefined}>
-                    {/* A heading rather than a rule: a line says these
+            <div className="flex-1 p-2">
+              {sections.map((section, i) => (
+                <div key={section.label ?? "workspace"} className={i > 0 ? "mt-5" : undefined}>
+                  {/* A heading rather than a rule: a line says these
                         are apart, a word says what the other side is. */}
-                    {section.label && (
-                      <p className="mb-1 px-3 text-[10px] font-semibold tracking-[0.18em] text-subtle-foreground uppercase">
-                        {section.label}
-                      </p>
-                    )}
-                    {section.items.map((item) => (
-                      <NavLink key={item.href} {...item} />
-                    ))}
-                  </div>
-                ))}
-              </div>
+                  {section.label && (
+                    <p className="mb-1 px-3 text-[10px] font-semibold tracking-[0.18em] text-subtle-foreground uppercase">
+                      {section.label}
+                    </p>
+                  )}
+                  {section.items.map((item) => (
+                    <NavLink key={item.href} {...item} />
+                  ))}
+                </div>
+              ))}
+            </div>
 
-              <div className="border-t border-border p-2">
-                <UserMenu me={me} />
-              </div>
-            </nav>
+            <div className="border-t border-border p-2">
+              <UserMenu me={me} />
+            </div>
+          </nav>
 
-            <main className="min-w-0 flex-1">
-              <div className="mx-auto max-w-5xl px-8 py-8">{children}</div>
-            </main>
-          </div>
-        </OrgProvider>
+          <main className="min-w-0 flex-1">
+            <div className="mx-auto max-w-5xl px-8 py-8">{children}</div>
+          </main>
+        </div>
       </QueryProvider>
     </SessionProvider>
   );

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"cubeship/internal/envvar"
-	"cubeship/internal/org"
 	"cubeship/internal/user"
 
 	"github.com/docker/docker/pkg/stdcopy"
@@ -16,7 +15,7 @@ import (
 
 // orgRoleMember is the role every read-and-deploy action needs. Aliased
 // here so the handlers and tools don't each spell out the import.
-const orgRoleMember = org.RoleMember
+const orgRoleMember = user.RoleMember
 
 // maxMCPLogBytes bounds how much of an app's log get_app_logs returns — a
 // large log pasted whole into an LLM's context is mostly waste. Paired
@@ -80,7 +79,6 @@ func (t *Tools) Register(srv *mcp.Server) {
 }
 
 type createInput struct {
-	Org         string `json:"org" jsonschema:"organization slug"`
 	Project     string `json:"project" jsonschema:"project slug"`
 	Environment string `json:"environment,omitempty" jsonschema:"environment slug (default \"production\")"`
 	Name        string `json:"name" jsonschema:"app name: lowercase letters, digits and dashes — becomes part of its registry image path. Permanent"`
@@ -93,7 +91,7 @@ type createInput struct {
 }
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
-	created, err := t.svc.Create(ctx, t.caller, in.Org, in.Project, in.Environment,
+	created, err := t.svc.Create(ctx, t.caller, in.Project, in.Environment,
 		in.Name, in.Description, Source(in.Source),
 		Origin{Image: in.Image, Repo: in.Repo, Ref: in.Ref, Dockerfile: in.Dockerfile})
 	if err != nil {

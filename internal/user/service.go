@@ -20,6 +20,47 @@ func NewService(db *database.DB) *Service {
 	return &Service{db: db}
 }
 
+// Add creates an account and its first API key, and is the only way one
+// is made after setup. Admin only: an account is a way into this
+// instance, so handing out the ability to mint them would hand out the
+// instance.
+//
+// The key is shown exactly once, here. There is no second endpoint that
+// reveals it, and no password: an account gets one when it sets one.
+//
+// One transaction for both halves. A user created without a key would
+// hold their username forever with no way to finish or undo it through
+// the API.
+func (s *Service) Add(ctx context.Context, caller *User, username string, role Role) (*User, string, error) {
+	if err := Require(caller, RoleAdmin); err != nil {
+		return nil, "", err
+	}
+	if !role.Valid() {
+		return nil, "", ErrInvalidRole
+	}
+
+	var created *User
+	var key string
+	err := s.db.WithTx(ctx, func(tx database.Queryer) error {
+		u, k, err := s.CreateWithAPIKey(ctx, tx, username, role)
+		if database.IsUniqueViolation(err) {
+			// Another request took this username between the caller
+			// typing it and here. Both cannot own it; the loser is told
+			// so rather than shown a driver error.
+			return ErrUsernameTaken
+		}
+		if err != nil {
+			return err
+		}
+		created, key = u, k
+		return nil
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	return created, key, nil
+}
+
 // Repo returns a repository over the shared pool, for callers that only
 // need to read.
 func (s *Service) Repo() *Repository {
@@ -149,9 +190,9 @@ func (s *Service) RevokeAPIKey(ctx context.Context, u *User, id int64) error {
 // It takes a Queryer so a caller already inside a transaction — adding a
 // user to an organization, which must also write a membership — can make
 // the whole thing atomic. Pass s.db to run it standalone.
-func (s *Service) CreateWithAPIKey(ctx context.Context, q database.Queryer, username string, isSuperAdmin bool) (*User, string, error) {
+func (s *Service) CreateWithAPIKey(ctx context.Context, q database.Queryer, username string, role Role) (*User, string, error) {
 	repo := NewRepository(q)
-	u, err := repo.Create(ctx, username, isSuperAdmin)
+	u, err := repo.Create(ctx, username, role)
 	if err != nil {
 		return nil, "", err
 	}
@@ -277,7 +318,7 @@ func (s *Service) SetPassword(ctx context.Context, u *User, currentSessionHash, 
 // nobody is ever shown would be a live credential lying around for
 // nothing. Keys are self-service, created when someone actually wants
 // one.
-func (s *Service) CreateWithPassword(ctx context.Context, q database.Queryer, username, password string, isSuperAdmin bool) (*User, error) {
+func (s *Service) CreateWithPassword(ctx context.Context, q database.Queryer, username, password string, role Role) (*User, error) {
 	// Hash before inserting: a password too short to accept should not
 	// leave a user row behind.
 	hash, err := HashPassword(password)
@@ -286,7 +327,7 @@ func (s *Service) CreateWithPassword(ctx context.Context, q database.Queryer, us
 	}
 
 	repo := NewRepository(q)
-	u, err := repo.Create(ctx, username, isSuperAdmin)
+	u, err := repo.Create(ctx, username, role)
 	if err != nil {
 		return nil, err
 	}

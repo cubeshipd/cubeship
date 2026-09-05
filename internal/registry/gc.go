@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"cubeship/internal/org"
 	"cubeship/internal/platform/bootstrap"
 	"cubeship/internal/user"
 )
@@ -63,12 +62,9 @@ var ErrNoMaintenance = errors.New("this daemon cannot run maintenance on the reg
 // including when the pass fails: leaving it down would turn a
 // maintenance action into an outage.
 //
-// It is an instance-wide operation over storage that has no notion of
-// tenants, so it is not scoped to an organization the way the catalogue
-// is. The caller must be an admin of the organization it is asked
-// through, which is the same bar as deleting an image.
-func (h *Handler) GarbageCollect(ctx context.Context, caller *user.User, orgSlug string) (*GCResult, error) {
-	if _, err := h.orgs.Resolve(ctx, caller, orgSlug, org.RoleAdmin); err != nil {
+// It takes an admin, which is the same bar as deleting an image.
+func (h *Handler) GarbageCollect(ctx context.Context, caller *user.User) (*GCResult, error) {
+	if err := user.Require(caller, user.RoleAdmin); err != nil {
 		return nil, err
 	}
 	if h.maintenance == nil {

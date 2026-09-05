@@ -15,13 +15,13 @@ type Repo struct {
 
 func NewRepository(q database.Queryer) *Repo { return &Repo{q: q} }
 
-const columns = `id, org_id, installation_id, account_login, created_at`
+const columns = `id, installation_id, account_login, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
 func scan(row scanner) (*Installation, error) {
 	var i Installation
-	if err := row.Scan(&i.ID, &i.OrgID, &i.GitHubID, &i.Account, &i.CreatedAt); err != nil {
+	if err := row.Scan(&i.ID, &i.GitHubID, &i.Account, &i.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &i, nil
@@ -31,16 +31,16 @@ func scan(row scanner) (*Installation, error) {
 // installation was tied to before.
 //
 // GitHub reuses an installation id when an App is reinstalled on the
-// same account, and someone moving one between Cubeship organizations is
-// a real thing to do. Refusing would leave them with an installation
-// they cannot use and cannot replace.
-func (r *Repo) Upsert(ctx context.Context, orgID, installationID int64, account string) (*Installation, error) {
+// same account, so a reinstall replaces the row rather than colliding
+// with it: refusing would leave someone with an installation they can
+// neither use nor replace.
+func (r *Repo) Upsert(ctx context.Context, installationID int64, account string) (*Installation, error) {
 	row := r.q.QueryRowContext(ctx, `
-		INSERT INTO github_installations (org_id, installation_id, account_login)
-		VALUES ($1, $2, $3)
+		INSERT INTO github_installations (installation_id, account_login)
+		VALUES ($1, $2)
 		ON CONFLICT (installation_id) DO UPDATE
-		SET org_id = EXCLUDED.org_id, account_login = EXCLUDED.account_login
-		RETURNING `+columns, orgID, installationID, account)
+		SET account_login = EXCLUDED.account_login
+		RETURNING `+columns, installationID, account)
 	i, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("record the installation: %w", err)
@@ -48,9 +48,9 @@ func (r *Repo) Upsert(ctx context.Context, orgID, installationID int64, account 
 	return i, nil
 }
 
-func (r *Repo) List(ctx context.Context, orgID int64) ([]*Installation, error) {
+func (r *Repo) List(ctx context.Context) ([]*Installation, error) {
 	rows, err := r.q.QueryContext(ctx,
-		`SELECT `+columns+` FROM github_installations WHERE org_id = $1 ORDER BY account_login`, orgID)
+		`SELECT `+columns+` FROM github_installations ORDER BY account_login`)
 	if err != nil {
 		return nil, err
 	}
@@ -70,10 +70,9 @@ func (r *Repo) List(ctx context.Context, orgID int64) ([]*Installation, error) {
 // ForAccount is the clone-time lookup: an organization, the GitHub
 // account a repository belongs to, and whether there is an installation
 // joining the two.
-func (r *Repo) ForAccount(ctx context.Context, orgID int64, account string) (*Installation, bool, error) {
+func (r *Repo) ForAccount(ctx context.Context, account string) (*Installation, bool, error) {
 	row := r.q.QueryRowContext(ctx,
-		`SELECT `+columns+` FROM github_installations
-		 WHERE org_id = $1 AND lower(account_login) = lower($2)`, orgID, account)
+		`SELECT `+columns+` FROM github_installations WHERE lower(account_login) = lower($1)`, account)
 	i, err := scan(row)
 	if err != nil {
 		return nil, false, nil
@@ -92,9 +91,9 @@ func (r *Repo) ByGitHubID(ctx context.Context, installationID int64) (*Installat
 	return i, true, nil
 }
 
-func (r *Repo) Delete(ctx context.Context, id, orgID int64) error {
+func (r *Repo) Delete(ctx context.Context, id int64) error {
 	res, err := r.q.ExecContext(ctx,
-		`DELETE FROM github_installations WHERE id = $1 AND org_id = $2`, id, orgID)
+		`DELETE FROM github_installations WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete the installation: %w", err)
 	}

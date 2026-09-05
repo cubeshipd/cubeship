@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"context"
+	"cubeship/internal/user"
 	"fmt"
 	"io"
 	"net/http"
@@ -9,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"cubeship/internal/org"
 	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/project"
 	"cubeship/internal/server/servertest"
@@ -45,13 +45,13 @@ func (d *stubDocker) Logs(context.Context, string, string) (io.ReadCloser, error
 func TestDeletingAnAppStopsItsContainerFirst(t *testing.T) {
 	docker := &stubDocker{running: true}
 	f := servertest.NewWithDocker(t, docker)
-	_, key := f.AddMember(t, "member", org.RoleMember)
+	_, key := f.AddMember(t, "member", user.RoleMember)
 
 	var created struct {
 		Reference string `json:"reference"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "myapp", "org": "acme", "project": "web",
+		"name": "myapp", "project": "web",
 	}, key, &created), http.StatusCreated)
 	// Admin, like every other routing change: a member can deploy an
 	// app but not decide where it is served.
@@ -83,22 +83,22 @@ func TestDeletingAnAppStopsItsContainerFirst(t *testing.T) {
 // not fail because of it.
 func TestDeletingAnAppWithNoContainer(t *testing.T) {
 	f := servertest.New(t)
-	_, key := f.AddMember(t, "member", org.RoleMember)
+	_, key := f.AddMember(t, "member", user.RoleMember)
 	createApp(t, f, key, "myapp")
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
-		"/apps/acme/web/production/myapp", nil, key), http.StatusOK)
+		"/apps/web/production/myapp", nil, key), http.StatusOK)
 }
 
 // Once deleted, the name is free again — which it never was before,
 // since it was taken instance-wide and forever.
 func TestDeletingAnAppFreesItsName(t *testing.T) {
 	f := servertest.New(t)
-	_, key := f.AddMember(t, "member", org.RoleMember)
+	_, key := f.AddMember(t, "member", user.RoleMember)
 
 	createApp(t, f, key, "myapp")
 	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
-		"/apps/acme/web/production/myapp", nil, key), http.StatusOK)
+		"/apps/web/production/myapp", nil, key), http.StatusOK)
 	createApp(t, f, key, "myapp")
 }
 
@@ -110,26 +110,10 @@ func TestDeletingAProjectTakesItsAppsWithIt(t *testing.T) {
 	createApp(t, f, f.AdminKey, "myapp")
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
-		"/orgs/acme/projects/web", nil, f.AdminKey), http.StatusOK)
+		"/projects/web", nil, f.AdminKey), http.StatusOK)
 
-	if rec := f.Do(t, http.MethodGet, "/apps/acme/web/production/myapp", nil, f.AdminKey); rec.Code != http.StatusNotFound {
+	if rec := f.Do(t, http.MethodGet, "/apps/web/production/myapp", nil, f.AdminKey); rec.Code != http.StatusNotFound {
 		t.Errorf("the app survived its project: %d", rec.Code)
-	}
-}
-
-// And an organization takes everything: apps, projects, environments.
-func TestDeletingAnOrganizationTakesEverythingInIt(t *testing.T) {
-	f := servertest.New(t)
-	createApp(t, f, f.AdminKey, "myapp")
-
-	servertest.RequireStatus(t, f.Do(t, http.MethodDelete, "/orgs/acme", nil, f.AdminKey), http.StatusOK)
-
-	// The organization is really gone, not just hidden.
-	if rec := f.Do(t, http.MethodGet, "/orgs/acme/projects", nil, f.AdminKey); rec.Code != http.StatusNotFound {
-		t.Errorf("the organization survived: %d", rec.Code)
-	}
-	if rec := f.Do(t, http.MethodGet, "/apps/acme/web/production/myapp", nil, f.AdminKey); rec.Code != http.StatusNotFound {
-		t.Errorf("the app survived its organization: %d", rec.Code)
 	}
 }
 
@@ -144,7 +128,7 @@ func TestDeletingAProjectStopsTheContainersInIt(t *testing.T) {
 		Reference string `json:"reference"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "myapp", "org": "acme", "project": "web",
+		"name": "myapp", "project": "web",
 	}, f.AdminKey, &created), http.StatusCreated)
 	servertest.AddDomain(t, f, f.AdminKey, created.Reference, "myapp.example.com")
 
@@ -158,30 +142,19 @@ func TestDeletingAProjectStopsTheContainersInIt(t *testing.T) {
 		"/apps/%s/deployments/%d?wait=true", created.Reference, deployment.ID), nil, f.AdminKey), http.StatusOK)
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
-		"/orgs/acme/projects/web", nil, f.AdminKey), http.StatusOK)
+		"/projects/web", nil, f.AdminKey), http.StatusOK)
 
 	if !slices.Contains(docker.stopped, "container-1") || !slices.Contains(docker.removed, "container-1") {
 		t.Errorf("the container outlived its project: stopped %v, removed %v", docker.stopped, docker.removed)
 	}
 }
 
-func TestDeletingAnOrganizationIsSuperAdminOnly(t *testing.T) {
-	f := servertest.New(t)
-	_, adminKey := f.AddMember(t, "org-admin", org.RoleAdmin)
-
-	// An org admin may delete a project...
-	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
-		"/orgs/acme/projects/web", nil, adminKey), http.StatusOK)
-	// ...but not the organization itself.
-	servertest.RequireStatus(t, f.Do(t, http.MethodDelete, "/orgs/acme", nil, adminKey), http.StatusForbidden)
-}
-
 func TestDeletingAProjectRequiresAdmin(t *testing.T) {
 	f := servertest.New(t)
-	_, memberKey := f.AddMember(t, "member", org.RoleMember)
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
-		"/orgs/acme/projects/web", nil, memberKey), http.StatusForbidden)
+		"/projects/web", nil, memberKey), http.StatusForbidden)
 }
 
 // Deleting a project takes its environments with it, so no environment
@@ -189,22 +162,22 @@ func TestDeletingAProjectRequiresAdmin(t *testing.T) {
 func TestDeletingAProjectRemovesItsEnvironments(t *testing.T) {
 	f := servertest.New(t)
 
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs/acme/projects/web/environments",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/projects/web/environments",
 		map[string]string{"slug": "staging", "name": "Staging"}, f.AdminKey), http.StatusCreated)
 	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
-		"/orgs/acme/projects/web", nil, f.AdminKey), http.StatusOK)
+		"/projects/web", nil, f.AdminKey), http.StatusOK)
 
 	// Recreating the project gives a fresh production environment and
 	// nothing else — the staging row did not survive.
 	var recreated struct {
 		Environments []string `json:"environments"`
 	}
-	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/orgs/acme/projects",
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/projects",
 		map[string]string{"slug": "web", "name": "Web"}, f.AdminKey, &recreated), http.StatusCreated)
 
 	var envs []struct{ Slug string }
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet,
-		"/orgs/acme/projects/web/environments", nil, f.AdminKey, &envs), http.StatusOK)
+		"/projects/web/environments", nil, f.AdminKey, &envs), http.StatusOK)
 	if len(envs) != 1 || envs[0].Slug != project.ProductionEnvSlug {
 		t.Fatalf("expected only a fresh production environment, got %v", envs)
 	}

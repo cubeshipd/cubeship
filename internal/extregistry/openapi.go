@@ -44,7 +44,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			}, "id", "provider", "host", "username", "created_at", "updated_at"),
 		},
 		Paths: map[string]openapi.PathItem{
-			"/orgs/{orgSlug}/registries": {
+			"/registries": {
 				"get": {
 					OperationID: "listRegistryCredentials",
 					Summary:     "List an organization's registry logins",
@@ -86,7 +86,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/registries/{id}/status": {
+			"/registries/{id}/status": {
 				"get": {
 					OperationID: "probeRegistry",
 					Summary:     "Ask whether this login still works",
@@ -109,7 +109,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/registries/{id}/repositories": {
+			"/registries/{id}/repositories": {
 				"delete": {
 					OperationID: "deleteRegistryRepository",
 					Summary:     "Delete a repository and everything in it",
@@ -141,7 +141,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/registries/{id}/images": {
+			"/registries/{id}/images": {
 				"delete": {
 					OperationID: "deleteRegistryImage",
 					Summary:     "Delete one image",
@@ -183,7 +183,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/registries/{id}/usage": {
+			"/registries/{id}/usage": {
 				"get": {
 					OperationID: "measureRegistryUsage",
 					Summary:     "Measure what a registry's images add up to",
@@ -200,7 +200,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/registries/{id}": {
+			"/registries/{id}": {
 				"put": {
 					OperationID: "replaceRegistryCredential",
 					Summary:     "Replace a registry login",

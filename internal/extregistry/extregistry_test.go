@@ -1,17 +1,17 @@
 package extregistry_test
 
 import (
+	"cubeship/internal/user"
 	"net/http"
 	"strconv"
 	"strings"
 	"testing"
 
 	"cubeship/internal/extregistry"
-	"cubeship/internal/org"
 	"cubeship/internal/server/servertest"
 )
 
-const orgPath = "/orgs/acme/registries"
+const orgPath = "/registries"
 
 type credential struct {
 	ID        int64  `json:"id"`
@@ -95,7 +95,7 @@ func TestHostOfAnImage(t *testing.T) {
 		{"registry.digitalocean.com/acme/api", "registry.digitalocean.com"},
 		{"ghcr.io/acme/api", "ghcr.io"},
 		{"localhost:5000/api", "localhost:5000"},
-		{"127.0.0.1:5000/acme/web/production/api", "127.0.0.1:5000"},
+		{"127.0.0.1:5000/web/production/api", "127.0.0.1:5000"},
 		// No registry in the name means Docker Hub, whether or not the
 		// reference has a slash in it.
 		{"acme/api", extregistry.DockerHub},
@@ -112,7 +112,7 @@ func TestHostOfAnImage(t *testing.T) {
 // thereby allowed to read or change the login they deploy through.
 func TestOnlyAdminsManageCredentials(t *testing.T) {
 	f := servertest.New(t)
-	_, memberKey := f.AddMember(t, "member", org.RoleMember)
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
 
 	for _, call := range []struct {
 		method string
@@ -153,13 +153,14 @@ func TestRotationKeepsTheHost(t *testing.T) {
 	}
 }
 
-// Credentials belong to an organization, and an organization's contents
-// are invisible to anyone outside it — the same 404 an unknown org gets.
-func TestAnOutsiderSeesNothing(t *testing.T) {
+// A registry login is a password this instance will send somewhere, so
+// reading the list is an admin's. A member deploys apps that use one and
+// never sees it.
+func TestAMemberCannotReadTheCredentials(t *testing.T) {
 	f := servertest.New(t)
-	_, outsiderKey := servertest.CreateUser(t, f.DB, "outsider", false)
+	_, memberKey := servertest.CreateUser(t, f.DB, "member", user.RoleMember)
 
-	servertest.RequireStatus(t, f.Do(t, http.MethodGet, orgPath, nil, outsiderKey), http.StatusNotFound)
+	servertest.RequireStatus(t, f.Do(t, http.MethodGet, orgPath, nil, memberKey), http.StatusForbidden)
 }
 
 // DigitalOcean's host never varies — what differs between accounts is

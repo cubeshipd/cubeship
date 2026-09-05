@@ -2,13 +2,13 @@ package app
 
 import (
 	"context"
+	"cubeship/internal/user"
 	"errors"
 	"fmt"
 	"io"
 	"path"
 	"strings"
 
-	"cubeship/internal/org"
 	"cubeship/internal/platform/dockerx"
 )
 
@@ -73,11 +73,11 @@ func (s Source) Builds() bool {
 //
 // Running a published image is what a member is for. Turning source into
 // an image means executing it, so that is an admin's.
-func RoleToDeploy(s Source) org.Role {
+func RoleToDeploy(s Source) user.Role {
 	if s.Builds() {
-		return org.RoleAdmin
+		return user.RoleAdmin
 	}
-	return org.RoleMember
+	return user.RoleMember
 }
 
 // ErrUnknownSource reports a source this version cannot deploy.
@@ -184,9 +184,9 @@ func (s registrySource) Resolve(ctx context.Context, a *Scoped, tag string, _ io
 
 // externalSource pulls an image somebody else's registry holds.
 type externalSource struct {
-	// credentials answers what login the app's organization holds for a
+	// credentials answers what login this instance holds for a
 	// given image's registry, if any.
-	credentials func(ctx context.Context, orgID int64, image string) (*dockerx.RegistryAuth, error)
+	credentials func(ctx context.Context, image string) (*dockerx.RegistryAuth, error)
 }
 
 // Check only confirms there is something to pull. Whether the
@@ -207,7 +207,7 @@ func (s externalSource) Resolve(ctx context.Context, a *Scoped, tag string, _ io
 	if tag == "" {
 		tag = "latest"
 	}
-	auth, err := s.credentials(ctx, a.OrgID, a.SourceImage)
+	auth, err := s.credentials(ctx, a.SourceImage)
 	if err != nil {
 		return Image{}, err
 	}

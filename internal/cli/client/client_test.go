@@ -7,6 +7,7 @@ package client_test
 
 import (
 	"context"
+	"cubeship/internal/user"
 	"errors"
 	"io"
 	"net/http"
@@ -15,7 +16,6 @@ import (
 	"testing"
 
 	"cubeship/internal/cli/client"
-	"cubeship/internal/org"
 	"cubeship/internal/server/servertest"
 )
 
@@ -24,7 +24,7 @@ import (
 func connect(t *testing.T) (*client.Client, *servertest.Fixture) {
 	t.Helper()
 	f := servertest.New(t)
-	_, key := f.AddMember(t, "member", org.RoleAdmin)
+	_, key := f.AddMember(t, "member", user.RoleAdmin)
 	return client.New(f.HTTPServer(t).URL, key), f
 }
 
@@ -34,7 +34,7 @@ func TestClientRoundTripsTheWholeHierarchy(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	projects, err := c.ListProjects(ctx, "acme")
+	projects, err := c.ListProjects(ctx)
 	if err != nil {
 		t.Fatalf("ListProjects: %v", err)
 	}
@@ -42,7 +42,7 @@ func TestClientRoundTripsTheWholeHierarchy(t *testing.T) {
 		t.Fatalf("expected the fixture's web project, got %v", projects)
 	}
 
-	envs, err := c.ListEnvironments(ctx, "acme", "web")
+	envs, err := c.ListEnvironments(ctx, "web")
 	if err != nil {
 		t.Fatalf("ListEnvironments: %v", err)
 	}
@@ -50,17 +50,17 @@ func TestClientRoundTripsTheWholeHierarchy(t *testing.T) {
 		t.Fatalf("expected only production, got %v", envs)
 	}
 
-	created, err := c.CreateApp(ctx, "myapp", "acme", "web", "", "")
+	created, err := c.CreateApp(ctx, "myapp", "web", "", "")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 	// Every field the CLI prints has to survive the round trip.
-	if created.Name != "myapp" || created.Org != "acme" ||
-		created.Project != "web" || created.Environment != "production" {
+	if created.Name != "myapp" || created.Project != "web" ||
+		created.Environment != "production" {
 		t.Errorf("app came back as %+v", created)
 	}
-	if created.Reference != "acme/web/production/myapp" {
-		t.Errorf("reference is %q, want acme/web/production/myapp", created.Reference)
+	if created.Reference != "web/production/myapp" {
+		t.Errorf("reference is %q, want web/production/myapp", created.Reference)
 	}
 	if created.Image != servertest.RegistryHost+"/"+created.Reference {
 		t.Errorf("push path is %q, want %s/%s", created.Image, servertest.RegistryHost, created.Reference)
@@ -102,21 +102,21 @@ func TestClientRoundTripsTheWholeHierarchy(t *testing.T) {
 	if err := c.SetAppEnv(ctx, created.Reference, map[string]string{"KEY": "value"}); err != nil {
 		t.Fatalf("SetAppEnv: %v", err)
 	}
-	if err := c.SetProjectEnv(ctx, "acme", "web", map[string]string{"SHARED": "1"}); err != nil {
+	if err := c.SetProjectEnv(ctx, "web", map[string]string{"SHARED": "1"}); err != nil {
 		t.Fatalf("SetProjectEnv: %v", err)
 	}
 
-	env, err := c.CreateEnvironment(ctx, "acme", "web", "staging")
+	env, err := c.CreateEnvironment(ctx, "web", "staging")
 	if err != nil {
 		t.Fatalf("CreateEnvironment: %v", err)
 	}
 	if env.Slug != "staging" {
 		t.Errorf("environment came back as %+v", env)
 	}
-	if err := c.SetEnvironmentEnv(ctx, "acme", "web", "staging", map[string]string{"LOG": "debug"}); err != nil {
+	if err := c.SetEnvironmentEnv(ctx, "web", "staging", map[string]string{"LOG": "debug"}); err != nil {
 		t.Fatalf("SetEnvironmentEnv: %v", err)
 	}
-	if err := c.DeleteEnvironment(ctx, "acme", "web", "staging"); err != nil {
+	if err := c.DeleteEnvironment(ctx, "web", "staging"); err != nil {
 		t.Fatalf("DeleteEnvironment: %v", err)
 	}
 }
@@ -128,11 +128,11 @@ func TestErrorsCarryTheDaemonsMessage(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	if _, err := c.CreateApp(ctx, "myapp", "acme", "web", "", ""); err != nil {
+	if _, err := c.CreateApp(ctx, "myapp", "web", "", ""); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 
-	_, err := c.CreateApp(ctx, "myapp", "acme", "web", "", "")
+	_, err := c.CreateApp(ctx, "myapp", "web", "", "")
 	if err == nil {
 		t.Fatal("expected the duplicate name to be refused")
 	}
@@ -155,7 +155,7 @@ func TestErrorsCarryTheDaemonsMessage(t *testing.T) {
 func TestUnknownAppIsNotFound(t *testing.T) {
 	c, _ := connect(t)
 
-	_, err := c.GetApp(context.Background(), "acme/web/production/no-such-app")
+	_, err := c.GetApp(context.Background(), "web/production/no-such-app")
 	if got := client.Status(err); got != http.StatusNotFound {
 		t.Fatalf("Status(err) is %d, want 404 (err: %v)", got, err)
 	}
@@ -167,7 +167,7 @@ func TestPathSegmentsAreEscaped(t *testing.T) {
 	c, _ := connect(t)
 
 	// Unescaped, ".." would climb out of the app's path entirely.
-	_, err := c.GetApp(context.Background(), "acme/web/production/../../../orgs")
+	_, err := c.GetApp(context.Background(), "web/production/../../../orgs")
 	if err == nil {
 		t.Fatal("a traversal in the app reference was accepted")
 	}
@@ -245,11 +245,11 @@ func TestLogsOnAnAppThatWasNeverDeployed(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	if _, err := c.CreateApp(ctx, "myapp", "acme", "web", "", ""); err != nil {
+	if _, err := c.CreateApp(ctx, "myapp", "web", "", ""); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 
-	rc, err := c.Logs(ctx, "acme/web/production/myapp", "100")
+	rc, err := c.Logs(ctx, "web/production/myapp", "100")
 	if err == nil {
 		io.Copy(io.Discard, rc)
 		rc.Close()
@@ -264,7 +264,7 @@ func TestUnauthenticatedClientIsRejected(t *testing.T) {
 	f := servertest.New(t)
 	c := client.New(f.HTTPServer(t).URL, "not-a-real-key")
 
-	_, err := c.ListOrgs(context.Background())
+	_, err := c.ListProjects(context.Background())
 	if got := client.Status(err); got != http.StatusUnauthorized {
 		t.Fatalf("Status(err) is %d, want 401 (err: %v)", got, err)
 	}
@@ -276,11 +276,11 @@ func TestClientMergeEnvKeepsOtherVariables(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	if _, err := c.CreateApp(ctx, "myapp", "acme", "web", "", ""); err != nil {
+	if _, err := c.CreateApp(ctx, "myapp", "web", "", ""); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 
-	const ref = "acme/web/production/myapp"
+	const ref = "web/production/myapp"
 	if err := c.MergeAppEnv(ctx, ref, map[string]string{"A": "1", "B": "2"}, nil); err != nil {
 		t.Fatalf("MergeAppEnv: %v", err)
 	}
@@ -316,14 +316,14 @@ func TestClientReadsEnvAtEveryLevel(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	if err := c.MergeProjectEnv(ctx, "acme", "web", map[string]string{"SHARED": "p", "P": "1"}, nil); err != nil {
+	if err := c.MergeProjectEnv(ctx, "web", map[string]string{"SHARED": "p", "P": "1"}, nil); err != nil {
 		t.Fatalf("MergeProjectEnv: %v", err)
 	}
-	if err := c.MergeEnvironmentEnv(ctx, "acme", "web", "production", map[string]string{"SHARED": "e"}, nil); err != nil {
+	if err := c.MergeEnvironmentEnv(ctx, "web", "production", map[string]string{"SHARED": "e"}, nil); err != nil {
 		t.Fatalf("MergeEnvironmentEnv: %v", err)
 	}
 
-	project, err := c.ProjectEnv(ctx, "acme", "web")
+	project, err := c.ProjectEnv(ctx, "web")
 	if err != nil {
 		t.Fatalf("ProjectEnv: %v", err)
 	}
@@ -331,7 +331,7 @@ func TestClientReadsEnvAtEveryLevel(t *testing.T) {
 		t.Errorf("project vars are %v", project.Vars)
 	}
 
-	environment, err := c.EnvironmentEnv(ctx, "acme", "web", "production")
+	environment, err := c.EnvironmentEnv(ctx, "web", "production")
 	if err != nil {
 		t.Fatalf("EnvironmentEnv: %v", err)
 	}
@@ -355,7 +355,7 @@ func TestClientDeployReturnsADeploymentToFollow(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	created, err := c.CreateApp(ctx, "myapp", "acme", "web", "", "")
+	created, err := c.CreateApp(ctx, "myapp", "web", "", "")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}

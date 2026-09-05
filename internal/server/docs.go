@@ -20,8 +20,7 @@ const scalarVersion = "1.25.61"
 // OpenAPIPath is plain JSON and always works offline.
 var docsHTML = strings.NewReplacer(
 	"{{openapi}}", OpenAPIPath,
-	"{{version}}", scalarVersion,
-).Replace(`<!doctype html>
+	"{{version}}", scalarVersion).Replace(`<!doctype html>
 <html>
   <head>
     <title>Cubeship API</title>

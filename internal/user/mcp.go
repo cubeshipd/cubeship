@@ -50,7 +50,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 }
 
 func (t *Tools) whoAmI(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, WhoAmIResponse, error) {
-	return nil, WhoAmIResponse{Username: t.caller.Username, IsSuperAdmin: t.caller.IsSuperAdmin}, nil
+	return nil, WhoAmIResponse{Username: t.caller.Username, Role: t.caller.Role}, nil
 }
 
 type createAPIKeyInput struct {

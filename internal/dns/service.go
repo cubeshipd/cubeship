@@ -8,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"cubeship/internal/org"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/user"
 )
@@ -18,14 +17,12 @@ import (
 // does.
 type Service struct {
 	db     *database.DB
-	orgs   *org.Service
 	client *http.Client
 }
 
-func NewService(db *database.DB, orgs *org.Service) *Service {
+func NewService(db *database.DB) *Service {
 	return &Service{
-		db:   db,
-		orgs: orgs,
+		db: db,
 		// A provider that has not answered in this long is not going to.
 		// A dashboard row is waiting on some of these calls.
 		client: &http.Client{Timeout: 20 * time.Second},
@@ -40,15 +37,14 @@ func (s *Service) Repo() *Repository { return NewRepository(s.db) }
 // it moves where a name points, for every name on the account — which
 // includes names that have nothing to do with Cubeship. That is closer
 // to holding the account than to deploying an app.
-const manageRole = org.RoleAdmin
+const manageRole = user.RoleAdmin
 
 // Create stores a credential, after checking it is one this daemon can
 // act through. A provider it cannot act on is refused rather than
 // stored: accepting one would let someone save a credential that can
 // never resolve anything.
-func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug string, in Credential) (*Credential, error) {
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
-	if err != nil {
+func (s *Service) Create(ctx context.Context, caller *user.User, in Credential) (*Credential, error) {
+	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
 	if !in.Provider.Valid() {
@@ -71,7 +67,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug string,
 		in.Username = ""
 	}
 
-	c, err := s.Repo().Create(ctx, o.ID, in)
+	c, err := s.Repo().Create(ctx, in)
 	if database.IsUniqueViolation(err) {
 		return nil, ErrLabelTaken
 	}
@@ -84,12 +80,11 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug string,
 // the calls it makes, the way it authenticates and what its secret even
 // is all follow from that — so changing it in place would not be an
 // edit, it would be a different credential wearing the old one's id.
-func (s *Service) Update(ctx context.Context, caller *user.User, orgSlug string, id int64, label, username, password *string) (*Credential, error) {
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
-	if err != nil {
+func (s *Service) Update(ctx context.Context, caller *user.User, id int64, label, username, password *string) (*Credential, error) {
+	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
-	existing, err := s.Repo().Get(ctx, id, o.ID)
+	existing, err := s.Repo().Get(ctx, id)
 	if errors.Is(err, database.ErrNotFound) {
 		return nil, ErrNotFound
 	}
@@ -119,7 +114,7 @@ func (s *Service) Update(ctx context.Context, caller *user.User, orgSlug string,
 		username = nil
 	}
 
-	c, err := s.Repo().Update(ctx, id, o.ID, label, username, password)
+	c, err := s.Repo().Update(ctx, id, label, username, password)
 	if database.IsUniqueViolation(err) {
 		return nil, ErrLabelTaken
 	}
@@ -129,33 +124,30 @@ func (s *Service) Update(ctx context.Context, caller *user.User, orgSlug string,
 	return c, err
 }
 
-func (s *Service) List(ctx context.Context, caller *user.User, orgSlug string) ([]*Credential, error) {
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
-	if err != nil {
+func (s *Service) List(ctx context.Context, caller *user.User) ([]*Credential, error) {
+	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
-	return s.Repo().List(ctx, o.ID)
+	return s.Repo().List(ctx)
 }
 
-func (s *Service) Delete(ctx context.Context, caller *user.User, orgSlug string, id int64) error {
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
-	if err != nil {
+func (s *Service) Delete(ctx context.Context, caller *user.User, id int64) error {
+	if err := user.Require(caller, manageRole); err != nil {
 		return err
 	}
-	err = s.Repo().Delete(ctx, id, o.ID)
+	err := s.Repo().Delete(ctx, id)
 	if errors.Is(err, database.ErrNotFound) {
 		return ErrNotFound
 	}
 	return err
 }
 
-// resolve finds one of this organization's credentials.
-func (s *Service) resolve(ctx context.Context, caller *user.User, orgSlug string, id int64) (*Credential, error) {
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
-	if err != nil {
+// resolve finds one of this instance's credentials.
+func (s *Service) resolve(ctx context.Context, caller *user.User, id int64) (*Credential, error) {
+	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
-	c, err := s.Repo().Get(ctx, id, o.ID)
+	c, err := s.Repo().Get(ctx, id)
 	if errors.Is(err, database.ErrNotFound) {
 		return nil, ErrNotFound
 	}
@@ -169,8 +161,8 @@ func (s *Service) resolve(ctx context.Context, caller *user.User, orgSlug string
 // revoked, an access key deleted in IAM. Neither tells Cubeship
 // anything — the first sign would be a record edit failing — and the
 // point of asking now is to find out before that.
-func (s *Service) Probe(ctx context.Context, caller *user.User, orgSlug string, id int64) (*Status, error) {
-	c, err := s.resolve(ctx, caller, orgSlug, id)
+func (s *Service) Probe(ctx context.Context, caller *user.User, id int64) (*Status, error) {
+	c, err := s.resolve(ctx, caller, id)
 	if err != nil {
 		return nil, err
 	}
@@ -198,8 +190,8 @@ func (s *Service) Probe(ctx context.Context, caller *user.User, orgSlug string, 
 const probeTimeout = 10 * time.Second
 
 // Zones lists the domains a credential can reach.
-func (s *Service) Zones(ctx context.Context, caller *user.User, orgSlug string, id int64) ([]Zone, error) {
-	c, err := s.resolve(ctx, caller, orgSlug, id)
+func (s *Service) Zones(ctx context.Context, caller *user.User, id int64) ([]Zone, error) {
+	c, err := s.resolve(ctx, caller, id)
 	if err != nil {
 		return nil, err
 	}
@@ -210,8 +202,8 @@ func (s *Service) Zones(ctx context.Context, caller *user.User, orgSlug string, 
 }
 
 // Records lists one zone's entries.
-func (s *Service) Records(ctx context.Context, caller *user.User, orgSlug string, id int64, zoneID string) ([]Record, error) {
-	c, err := s.resolve(ctx, caller, orgSlug, id)
+func (s *Service) Records(ctx context.Context, caller *user.User, id int64, zoneID string) ([]Record, error) {
+	c, err := s.resolve(ctx, caller, id)
 	if err != nil {
 		return nil, err
 	}
@@ -231,8 +223,8 @@ func (s *Service) Records(ctx context.Context, caller *user.User, orgSlug string
 // what one of the two providers actually offers: Route 53's UPSERT
 // creates or replaces the set whole, and a create/update split would be
 // two names for one call there and a race between them at the other.
-func (s *Service) PutRecord(ctx context.Context, caller *user.User, orgSlug string, id int64, zoneID string, r Record) error {
-	c, err := s.resolve(ctx, caller, orgSlug, id)
+func (s *Service) PutRecord(ctx context.Context, caller *user.User, id int64, zoneID string, r Record) error {
+	c, err := s.resolve(ctx, caller, id)
 	if err != nil {
 		return err
 	}
@@ -262,8 +254,8 @@ func (s *Service) PutRecord(ctx context.Context, caller *user.User, orgSlug stri
 }
 
 // DeleteRecord removes everything at one name and type.
-func (s *Service) DeleteRecord(ctx context.Context, caller *user.User, orgSlug string, id int64, zoneID, name, kind string) error {
-	c, err := s.resolve(ctx, caller, orgSlug, id)
+func (s *Service) DeleteRecord(ctx context.Context, caller *user.User, id int64, zoneID, name, kind string) error {
+	c, err := s.resolve(ctx, caller, id)
 	if err != nil {
 		return err
 	}

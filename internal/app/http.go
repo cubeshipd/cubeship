@@ -45,7 +45,6 @@ type Response struct {
 	Repo        string `json:"repo,omitempty"`
 	Ref         string `json:"ref,omitempty"`
 	Dockerfile  string `json:"dockerfile,omitempty"`
-	Org         string `json:"org"`
 	Project     string `json:"project"`
 	Environment string `json:"environment"`
 }
@@ -58,7 +57,7 @@ func toResponse(a *Scoped, registryHost string) Response {
 		Reference: ReferenceOf(a).String(),
 		Name:      a.Name, Description: a.Description, Domains: toDomains(a.Domains),
 		Status: a.Status, Source: a.Source,
-		Org: a.OrgSlug, Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
+		Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
 	}
 	switch Source(a.Source) {
 	case SourceExternal:
@@ -89,7 +88,7 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
 // An app is addressed by its four-part reference, because a name is only
 // unique within its environment.
-const appPath = "/apps/{org}/{project}/{env}/{name}"
+const appPath = "/apps/{project}/{env}/{name}"
 
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.Handle("POST /apps", auth(http.HandlerFunc(h.create)))
@@ -112,7 +111,6 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 // refFrom builds the app reference from the request path.
 func refFrom(r *http.Request) Reference {
 	return Reference{
-		Org:         r.PathValue("org"),
 		Project:     r.PathValue("project"),
 		Environment: r.PathValue("env"),
 		Name:        r.PathValue("name"),
@@ -151,7 +149,6 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        string `json:"name"`
 		Description string `json:"description"`
-		Org         string `json:"org"`
 		Project     string `json:"project"`
 		Environment string `json:"environment"`
 		Source      string `json:"source"`
@@ -166,12 +163,12 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	// deployable afterwards, in its own settings. Everything that says
 	// *where the app is* still is.
 	if err := httpx.DecodeJSON(r, &req); err != nil ||
-		req.Name == "" || req.Org == "" || req.Project == "" {
-		http.Error(w, "name, org and project are required", http.StatusBadRequest)
+		req.Name == "" || req.Project == "" {
+		http.Error(w, "name and project are required", http.StatusBadRequest)
 		return
 	}
 	created, err := h.svc.Create(r.Context(), user.FromContext(r.Context()),
-		req.Org, req.Project, req.Environment, req.Name, req.Description, Source(req.Source),
+		req.Project, req.Environment, req.Name, req.Description, Source(req.Source),
 		Origin{Image: req.Image, Repo: req.Repo, Ref: req.Ref, Dockerfile: req.Dockerfile})
 	if err != nil {
 		WriteError(w, err)

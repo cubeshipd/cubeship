@@ -26,13 +26,11 @@ import { message } from "@/lib/errors";
 // there is no point choosing between Railpack and a Dockerfile for a
 // repository Cubeship cannot reach.
 export function GitHubSource({
-  org,
   repo,
   gitRef,
   onRepo,
   onRef,
 }: {
-  org: string;
   repo: string;
   gitRef: string;
   onRepo: (url: string, defaultBranch: string) => void;
@@ -58,12 +56,11 @@ export function GitHubSource({
   }, []);
 
   const loadRepos = useCallback(() => {
-    if (!org) return;
     setLoading(true);
     setError(null);
     Promise.all([
-      api.get<GitHubConnections>(`/orgs/${org}/github`),
-      api.get<GitHubRepository[]>(`/orgs/${org}/github/repositories`).catch(() => []),
+      api.get<GitHubConnections>(`/github`),
+      api.get<GitHubRepository[]>(`/github/repositories`).catch(() => []),
     ])
       .then(([c, r]) => {
         setConnections(c);
@@ -71,7 +68,7 @@ export function GitHubSource({
       })
       .catch((e) => setError(message(e)))
       .finally(() => setLoading(false));
-  }, [org]);
+  }, []);
   useEffect(loadRepos, [loadRepos]);
 
   // Connecting happens on GitHub, in another tab. Coming back to this
@@ -90,15 +87,15 @@ export function GitHubSource({
   const fullName = repo.replace(/^https?:\/\/(www\.)?github\.com\//i, "").replace(/\.git$/, "");
 
   useEffect(() => {
-    if (!org || !fullName.includes("/")) {
+    if (fullName.includes("/")) {
       setBranches(null);
       return;
     }
     api
-      .get<GitHubBranch[]>(`/orgs/${org}/github/branches?repo=${encodeURIComponent(fullName)}`)
+      .get<GitHubBranch[]>(`/github/branches?repo=${encodeURIComponent(fullName)}`)
       .then(setBranches)
       .catch(() => setBranches(null));
-  }, [org, fullName]);
+  }, [fullName]);
 
   const connected = (connections?.installations.length ?? 0) > 0;
 

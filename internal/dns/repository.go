@@ -18,24 +18,24 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, org_id, provider, label, username, password, created_at, updated_at`
+const columns = `id, provider, label, username, password, created_at, updated_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
 func scan(row scanner) (*Credential, error) {
 	var c Credential
-	if err := row.Scan(&c.ID, &c.OrgID, &c.Provider, &c.Label,
+	if err := row.Scan(&c.ID, &c.Provider, &c.Label,
 		&c.Username, &c.Password, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &c, nil
 }
 
-func (r *Repository) Create(ctx context.Context, orgID int64, in Credential) (*Credential, error) {
+func (r *Repository) Create(ctx context.Context, in Credential) (*Credential, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO dns_providers (org_id, provider, label, username, password)
-		 VALUES ($1, $2, $3, $4, $5) RETURNING `+columns,
-		orgID, string(in.Provider), in.Label, in.Username, in.Password)
+		`INSERT INTO dns_providers (provider, label, username, password)
+		 VALUES ($1, $2, $3, $4) RETURNING `+columns,
+		string(in.Provider), in.Label, in.Username, in.Password)
 	c, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("create DNS provider: %w", err)
@@ -48,15 +48,15 @@ func (r *Repository) Create(ctx context.Context, orgID int64, in Credential) (*C
 // All three are pointers because "leave it alone" and "set it to empty"
 // are different requests, and a nil is the only way to say the first
 // one. Renaming a credential must not blank its token.
-func (r *Repository) Update(ctx context.Context, id, orgID int64, label, username, password *string) (*Credential, error) {
+func (r *Repository) Update(ctx context.Context, id int64, label, username, password *string) (*Credential, error) {
 	row := r.q.QueryRowContext(ctx,
 		`UPDATE dns_providers
 		 SET label    = COALESCE($1, label),
 		     username = COALESCE($2, username),
 		     password = COALESCE($3, password),
 		     updated_at = now()
-		 WHERE id = $4 AND org_id = $5 RETURNING `+columns,
-		label, username, password, id, orgID)
+		 WHERE id = $4 RETURNING `+columns,
+		label, username, password, id)
 	c, err := scan(row)
 	if err != nil {
 		return nil, database.ErrNotFound
@@ -64,9 +64,9 @@ func (r *Repository) Update(ctx context.Context, id, orgID int64, label, usernam
 	return c, nil
 }
 
-func (r *Repository) List(ctx context.Context, orgID int64) ([]*Credential, error) {
+func (r *Repository) List(ctx context.Context) ([]*Credential, error) {
 	rows, err := r.q.QueryContext(ctx,
-		`SELECT `+columns+` FROM dns_providers WHERE org_id = $1 ORDER BY label`, orgID)
+		`SELECT `+columns+` FROM dns_providers ORDER BY label`)
 	if err != nil {
 		return nil, fmt.Errorf("list DNS providers: %w", err)
 	}
@@ -83,9 +83,9 @@ func (r *Repository) List(ctx context.Context, orgID int64) ([]*Credential, erro
 	return out, rows.Err()
 }
 
-func (r *Repository) Get(ctx context.Context, id, orgID int64) (*Credential, error) {
+func (r *Repository) Get(ctx context.Context, id int64) (*Credential, error) {
 	row := r.q.QueryRowContext(ctx,
-		`SELECT `+columns+` FROM dns_providers WHERE id = $1 AND org_id = $2`, id, orgID)
+		`SELECT `+columns+` FROM dns_providers WHERE id = $1`, id)
 	c, err := scan(row)
 	if err != nil {
 		return nil, database.ErrNotFound
@@ -93,9 +93,9 @@ func (r *Repository) Get(ctx context.Context, id, orgID int64) (*Credential, err
 	return c, nil
 }
 
-func (r *Repository) Delete(ctx context.Context, id, orgID int64) error {
+func (r *Repository) Delete(ctx context.Context, id int64) error {
 	result, err := r.q.ExecContext(ctx,
-		`DELETE FROM dns_providers WHERE id = $1 AND org_id = $2`, id, orgID)
+		`DELETE FROM dns_providers WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete DNS provider: %w", err)
 	}

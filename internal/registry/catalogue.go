@@ -7,10 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
-	"strings"
 	"time"
 
-	"cubeship/internal/org"
 	"cubeship/internal/platform/regauth"
 	"cubeship/internal/user"
 )
@@ -27,20 +25,23 @@ type Image struct {
 	Tag string `json:"tag"`
 }
 
-// ErrNoRegistry reports a registry that is running but has no address
-// the daemon was told to reach it at.
-var ErrNoRegistry = errors.New("the registry is not reachable from here")
+var (
+	// ErrNoRegistry reports a registry that is running but has no address
+	// the daemon was told to reach it at.
+	ErrNoRegistry = errors.New("the registry is not reachable from here")
 
-// Repositories lists what an organization has pushed.
+	// ErrNotFound covers a repository or a tag this registry does not
+	// hold, and a repository named as something it could never be.
+	ErrNotFound = errors.New("not found in this registry")
+)
+
+// Repositories lists what has been pushed to this instance's registry.
 //
-// A repository path in this registry *is* an app's reference —
-// org/project/environment/app — so an organization's own are exactly
-// those under its slug. The filter is what keeps one tenant from reading
-// the catalogue of another out of a registry that has no idea tenants
-// exist.
-func (h *Handler) Repositories(ctx context.Context, caller *user.User, orgSlug string) ([]Repo, error) {
-	o, err := h.orgs.Resolve(ctx, caller, orgSlug, org.RoleMember)
-	if err != nil {
+// A repository path here *is* an app's reference —
+// project/environment/app — so the catalogue is the list of apps that
+// have ever had an image pushed to them.
+func (h *Handler) Repositories(ctx context.Context, caller *user.User) ([]Repo, error) {
+	if err := user.Require(caller, user.RoleMember); err != nil {
 		return nil, err
 	}
 
@@ -53,27 +54,21 @@ func (h *Handler) Repositories(ctx context.Context, caller *user.User, orgSlug s
 		return nil, err
 	}
 
-	prefix := o.Slug + "/"
 	out := []Repo{}
 	for _, name := range answer.Repositories {
-		if strings.HasPrefix(name, prefix) {
-			out = append(out, Repo{Name: name})
-		}
+		out = append(out, Repo{Name: name})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out, nil
 }
 
 // Images lists one repository's tags.
-func (h *Handler) Images(ctx context.Context, caller *user.User, orgSlug, repository string) ([]Image, error) {
-	o, err := h.orgs.Resolve(ctx, caller, orgSlug, org.RoleMember)
-	if err != nil {
+func (h *Handler) Images(ctx context.Context, caller *user.User, repository string) ([]Image, error) {
+	if err := user.Require(caller, user.RoleMember); err != nil {
 		return nil, err
 	}
-	// Naming a repository outside the organization is the same request
-	// as naming one that does not exist, and gets the same answer.
-	if !strings.HasPrefix(repository, o.Slug+"/") {
-		return nil, org.ErrNotFound
+	if repository == "" {
+		return nil, ErrNotFound
 	}
 
 	var answer struct {
@@ -141,8 +136,8 @@ func (h *Handler) callRegistry(ctx context.Context, path string, access []regaut
 // What this frees is nothing, immediately. Deleting a manifest only
 // makes the image unreachable; the layers stay on disk until a garbage
 // collection walks the storage. See GarbageCollect.
-func (h *Handler) DeleteImage(ctx context.Context, caller *user.User, orgSlug, repository, tag string) error {
-	if _, err := h.ownRepository(ctx, caller, orgSlug, repository); err != nil {
+func (h *Handler) DeleteImage(ctx context.Context, caller *user.User, repository, tag string) error {
+	if err := h.ownRepository(ctx, caller, repository); err != nil {
 		return err
 	}
 	if tag == "" {
@@ -166,12 +161,12 @@ func (h *Handler) DeleteImage(ctx context.Context, caller *user.User, orgSlug, r
 // whatever its manifests say it is, and it stops existing once they are
 // gone. The empty name lingers in the catalogue until a garbage
 // collection clears it.
-func (h *Handler) DeleteRepository(ctx context.Context, caller *user.User, orgSlug, repository string) error {
-	if _, err := h.ownRepository(ctx, caller, orgSlug, repository); err != nil {
+func (h *Handler) DeleteRepository(ctx context.Context, caller *user.User, repository string) error {
+	if err := h.ownRepository(ctx, caller, repository); err != nil {
 		return err
 	}
 
-	images, err := h.Images(ctx, caller, orgSlug, repository)
+	images, err := h.Images(ctx, caller, repository)
 	if err != nil {
 		return err
 	}
@@ -198,21 +193,17 @@ func (h *Handler) DeleteRepository(ctx context.Context, caller *user.User, orgSl
 
 // ownRepository is the tenancy check every write shares. A repository
 // path in this registry is an app's reference, so an organization's own
-// are exactly those under its slug — and naming one outside it is the
-// same request as naming one that does not exist.
-//
-// Deleting is an admin's job. Reading the catalogue is a member's: what
-// is in there is what the organization pushed, and removing it is the
-// same kind of act as deleting the app that pushed it.
-func (h *Handler) ownRepository(ctx context.Context, caller *user.User, orgSlug, repository string) (*org.Organization, error) {
-	o, err := h.orgs.Resolve(ctx, caller, orgSlug, org.RoleAdmin)
-	if err != nil {
-		return nil, err
+// Deleting is an admin's job. Reading the catalogue is a member's:
+// removing an image is the same kind of act as deleting the app that
+// pushed it.
+func (h *Handler) ownRepository(ctx context.Context, caller *user.User, repository string) error {
+	if err := user.Require(caller, user.RoleAdmin); err != nil {
+		return err
 	}
-	if repository == "" || !strings.HasPrefix(repository, o.Slug+"/") {
-		return nil, org.ErrNotFound
+	if repository == "" {
+		return ErrNotFound
 	}
-	return o, nil
+	return nil
 }
 
 // digestOf asks the registry what a tag currently names.
@@ -229,7 +220,7 @@ func (h *Handler) digestOf(ctx context.Context, repository, tag string, access [
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return "", org.ErrNotFound
+		return "", ErrNotFound
 	}
 	if resp.StatusCode/100 != 2 {
 		return "", fmt.Errorf("the registry answered %s", resp.Status)
@@ -251,7 +242,7 @@ func (h *Handler) deleteManifest(ctx context.Context, repository, digest string,
 
 	switch {
 	case resp.StatusCode == http.StatusNotFound:
-		return org.ErrNotFound
+		return ErrNotFound
 	// The registry is configured with storage.delete.enabled, so a 405
 	// means it is running from an older configuration than this daemon
 	// writes — which restarting it fixes.

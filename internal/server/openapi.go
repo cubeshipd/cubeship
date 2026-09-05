@@ -10,7 +10,6 @@ import (
 	"cubeship/internal/dns"
 	"cubeship/internal/extregistry"
 	"cubeship/internal/github"
-	"cubeship/internal/org"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/platform/openapi"
 	"cubeship/internal/project"
@@ -38,15 +37,13 @@ const (
 func (s *Server) OpenAPI() openapi.Document {
 	merged := openapi.Merge(
 		user.NewHandler(s.Users).OpenAPI(),
-		org.NewHandler(s.Orgs).OpenAPI(),
 		project.NewHandler(s.Projects).OpenAPI(),
 		app.NewHandler(s.Apps).OpenAPI(),
 		extregistry.NewHandler(s.Registries).OpenAPI(),
 		dns.NewHandler(s.DNS).OpenAPI(),
 		github.NewHandler(s.GitHub, s.Apps).OpenAPI(),
 		s.Registry.OpenAPI(),
-		settings.NewHandler(s.Settings).OpenAPI(),
-	)
+		settings.NewHandler(s.Settings).OpenAPI())
 
 	return openapi.Document{
 		OpenAPI: "3.1.0",

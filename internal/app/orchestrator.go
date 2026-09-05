@@ -79,7 +79,7 @@ const DeployTimeout = 10 * time.Minute
 // CredentialLookup answers what login an organization holds for the
 // registry an image lives in. Only an external app ever needs one.
 type CredentialLookup interface {
-	ForImage(ctx context.Context, orgID int64, image string) (*extregistry.Credential, bool, error)
+	ForImage(ctx context.Context, image string) (*extregistry.Credential, bool, error)
 	// LoginFor is what the pull actually authenticates with. For most
 	// registries it is what was stored; for AWS the stored value is an
 	// access key and the login is fetched from it.
@@ -98,7 +98,7 @@ type ImageBuilder interface {
 // repository should use. Only a private repository ever needs one, so it
 // may be nil.
 type GitTokens interface {
-	TokenForRepository(ctx context.Context, orgID int64, repoURL string) (string, bool, error)
+	TokenForRepository(ctx context.Context, repoURL string) (string, bool, error)
 }
 
 func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds CredentialLookup, builder ImageBuilder, git GitTokens, localRegistry string) *Orchestrator {
@@ -123,11 +123,11 @@ func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds 
 // an image with. Nothing found means a public image, which is not an
 // error: the registry itself is what refuses an anonymous pull it should
 // not have served.
-func (o *Orchestrator) registryCredentials(ctx context.Context, orgID int64, image string) (*dockerx.RegistryAuth, error) {
+func (o *Orchestrator) registryCredentials(ctx context.Context, image string) (*dockerx.RegistryAuth, error) {
 	if o.creds == nil {
 		return nil, nil
 	}
-	c, found, err := o.creds.ForImage(ctx, orgID, image)
+	c, found, err := o.creds.ForImage(ctx, image)
 	if err != nil || !found {
 		return nil, err
 	}
@@ -189,7 +189,7 @@ func (o *Orchestrator) cloneToken(ctx context.Context, a *Scoped) (string, error
 	if o.git == nil {
 		return "", nil
 	}
-	token, _, err := o.git.TokenForRepository(ctx, a.OrgID, a.SourceRepo)
+	token, _, err := o.git.TokenForRepository(ctx, a.SourceRepo)
 	return token, err
 }
 

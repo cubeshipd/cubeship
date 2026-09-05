@@ -3,13 +3,13 @@ package github_test
 import (
 	"crypto/hmac"
 	"crypto/sha256"
+	"cubeship/internal/user"
 	"encoding/hex"
 	"net/http"
 	"strconv"
 	"testing"
 
 	"cubeship/internal/github"
-	"cubeship/internal/org"
 	"cubeship/internal/server/servertest"
 )
 
@@ -150,22 +150,22 @@ func TestWithNoSecretEveryDeliveryIsRefused(t *testing.T) {
 // run, so it takes the same role building does.
 func TestOnlyAnAdminConnectsAnAccount(t *testing.T) {
 	f := configured(t)
-	_, memberKey := f.AddMember(t, "member", org.RoleMember)
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
 
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs/acme/github",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/github",
 		map[string]any{"installation_id": 99, "account": "acme"}, memberKey), http.StatusForbidden)
-	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/orgs/acme/github", nil, memberKey),
+	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/github", nil, memberKey),
 		http.StatusForbidden)
 }
 
-// An organization's connections are invisible from outside it — the same
-// 404 an unknown organization gets.
-func TestAnOutsiderSeesNoConnections(t *testing.T) {
+// Connecting a GitHub account decides which private repositories this
+// instance can clone and build, so the list is an admin's.
+func TestAMemberSeesNoConnections(t *testing.T) {
 	f := configured(t)
-	_, outsiderKey := servertest.CreateUser(t, f.DB, "outsider", false)
+	_, memberKey := servertest.CreateUser(t, f.DB, "member", user.RoleMember)
 
-	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/orgs/acme/github", nil, outsiderKey),
-		http.StatusNotFound)
+	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/github", nil, memberKey),
+		http.StatusForbidden)
 }
 
 // The install link is what someone follows to connect an account, and it
@@ -176,7 +176,7 @@ func TestTheInstallLinkAppearsWithTheApp(t *testing.T) {
 	var before struct {
 		InstallURL string `json:"install_url"`
 	}
-	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/orgs/acme/github", nil, f.AdminKey, &before),
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/github", nil, f.AdminKey, &before),
 		http.StatusOK)
 	if before.InstallURL != "" {
 		t.Errorf("an install link was offered with no App registered: %q", before.InstallURL)
@@ -188,7 +188,7 @@ func TestTheInstallLinkAppearsWithTheApp(t *testing.T) {
 	var after struct {
 		InstallURL string `json:"install_url"`
 	}
-	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/orgs/acme/github", nil, f.AdminKey, &after),
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/github", nil, f.AdminKey, &after),
 		http.StatusOK)
 	if after.InstallURL != "https://github.com/apps/cubeship-test/installations/new" {
 		t.Errorf("the install link is %q", after.InstallURL)
@@ -238,7 +238,7 @@ func contains(s, sub string) bool {
 // else entirely. What the endpoint does is tested on its own, below.
 func connect(t *testing.T, f *servertest.Fixture, installationID int64, account string) {
 	t.Helper()
-	if _, err := github.NewRepository(f.DB).Upsert(t.Context(), f.Org.ID, installationID, account); err != nil {
+	if _, err := github.NewRepository(f.DB).Upsert(t.Context(), installationID, account); err != nil {
 		t.Fatalf("record installation: %v", err)
 	}
 }
@@ -253,12 +253,12 @@ func connect(t *testing.T, f *servertest.Fixture, installationID int64, account 
 func TestConnectingAnInstallationNeedsProofItIsYours(t *testing.T) {
 	f := configured(t)
 
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs/acme/github",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/github",
 		map[string]any{"installation_id": 42}, f.AdminKey), http.StatusBadRequest)
 
 	// And naming an account does not stand in for it: the account is
 	// read from GitHub's answer, never from the request.
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs/acme/github",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/github",
 		map[string]any{"installation_id": 42, "account": "somebody-else"},
 		f.AdminKey), http.StatusBadRequest)
 }
@@ -269,7 +269,7 @@ func createBuildingApp(t *testing.T, f *servertest.Fixture, name, repo, ref stri
 		Reference string `json:"reference"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": name, "org": "acme", "project": "web",
+		"name": name, "project": "web",
 		"source": "dockerfile", "repo": repo, "ref": ref,
 	}, f.AdminKey, &created), http.StatusCreated)
 	// A name to answer at. A push deploys an app, and an app with no
@@ -367,46 +367,9 @@ func TestUninstallingForgetsTheConnection(t *testing.T) {
 	var got struct {
 		Installations []github.Installation `json:"installations"`
 	}
-	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/orgs/acme/github", nil, f.AdminKey, &got),
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/github", nil, f.AdminKey, &got),
 		http.StatusOK)
 	if len(got.Installations) != 0 {
 		t.Errorf("the connection survived being uninstalled: %+v", got.Installations)
-	}
-}
-
-// The load-bearing isolation: a push GitHub signed for one
-// organization's installation must not deploy another organization's
-// app, even when both name the same repository.
-//
-// Two tenants can legitimately build the same public repository. What
-// separates them is whose installation the delivery came through.
-func TestAPushOnlyDeploysTheConnectedOrganizationsApps(t *testing.T) {
-	f := configured(t)
-	connect(t, f, 42, "acme")
-
-	// A second organization, with an app on the same repository and no
-	// connection of its own.
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs",
-		map[string]string{"slug": "globex", "name": "Globex"}, f.AdminKey), http.StatusCreated)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs/globex/projects",
-		map[string]string{"slug": "web", "name": "Web"}, f.AdminKey), http.StatusCreated)
-
-	var theirs struct {
-		Reference string `json:"reference"`
-	}
-	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "api", "org": "globex", "project": "web",
-		"source": "dockerfile", "repo": "https://github.com/acme/api.git", "ref": "main",
-	}, f.AdminKey, &theirs), http.StatusCreated)
-
-	ours := createBuildingApp(t, f, "api", "https://github.com/acme/api.git", "main")
-
-	push(t, f, 42, "acme/api", "refs/heads/main")
-
-	if got := deployments(t, f, ours); got != 1 {
-		t.Errorf("the connected organization's app has %d deployments, want 1", got)
-	}
-	if got := deployments(t, f, theirs.Reference); got != 0 {
-		t.Errorf("another organization's app deployed on our push (%d deployments)", got)
 	}
 }

@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"cubeship/internal/app"
-	"cubeship/internal/org"
 	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/platform/regauth"
 	"cubeship/internal/settings"
@@ -23,7 +22,6 @@ import (
 // Handler serves the registry's token realm and its webhook.
 type Handler struct {
 	users *user.Service
-	orgs  *org.Service
 	apps  *app.Service
 
 	// webhookToken is the shared secret the registry's own push
@@ -64,9 +62,9 @@ type Maintainer interface {
 	StartContainer(ctx context.Context, id string) error
 }
 
-func NewHandler(users *user.Service, orgs *org.Service, apps *app.Service, cfg *settings.Service, webhookToken, localRegistry string) *Handler {
+func NewHandler(users *user.Service, apps *app.Service, cfg *settings.Service, webhookToken, localRegistry string) *Handler {
 	return &Handler{
-		users: users, orgs: orgs, apps: apps, settings: cfg,
+		users: users, apps: apps, settings: cfg,
 		webhookToken: webhookToken, localRegistry: localRegistry,
 	}
 }
@@ -119,19 +117,10 @@ func (h *Handler) authorizeScope(ctx scopeContext, caller *user.User, scope stri
 		return nil
 	}
 
-	orgSlug := name
-	if i := strings.Index(name, "/"); i >= 0 {
-		orgSlug = name[:i]
-	}
-
-	if !caller.IsSuperAdmin {
-		o, err := h.orgs.Repo().BySlug(ctx, orgSlug)
-		if err != nil {
-			return nil
-		}
-		if !h.orgs.Authorize(ctx, caller, o.ID, org.RoleMember) {
-			return nil
-		}
+	// Any account on this instance may push and pull its apps' images:
+	// there is one namespace, and a member can already deploy into it.
+	if !caller.Is(user.RoleMember) {
+		return nil
 	}
 
 	// Keep only actions this instance grants at all. Without this filter

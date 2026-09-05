@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"cubeship/internal/org"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/slug"
 	"cubeship/internal/user"
@@ -41,39 +40,28 @@ func (s *Service) Needed(ctx context.Context) (bool, error) {
 // Result is what claiming an instance produced.
 type Result struct {
 	User *user.User
-	Org  *org.Organization
 }
 
-// Claim creates the instance's first account and the organization it
-// works in: a super-admin, and the organization they named.
+// Claim creates the instance's first account: an admin, with the
+// password they chose.
 //
-// No project. A project is a thing someone creates when they have
-// something to put in it, and one invented here would be a row nobody
-// asked for with a name nobody chose — permanent, since a slug never
-// changes.
+// Nothing else. There is no organization to invent any more, and a
+// project is something you create when you have something to put in it —
+// a slug is permanent, so a name picked on someone's behalf is one they
+// are stuck with.
 //
-// Both halves in one transaction. A half-finished setup would be
-// unrecoverable through the API — the user exists, so setup refuses to
-// run again, but there is no organization to put anything in and no way
-// to create one except as a super-admin who cannot sign in.
-func (s *Service) Claim(ctx context.Context, username, password, orgSlug string) (*Result, error) {
+// The count and the insert are one transaction. A half-finished setup
+// would be unrecoverable through the API: the user exists, so setup
+// refuses to run again.
+func (s *Service) Claim(ctx context.Context, username, password string) (*Result, error) {
 	if username == "" {
 		return nil, ErrUsernameRequired
 	}
 	if password == "" {
 		return nil, ErrPasswordRequired
 	}
-	if orgSlug == "" {
-		return nil, ErrOrgRequired
-	}
 	if !slug.Valid(username) {
 		return nil, fmt.Errorf("username %w", slug.ErrInvalid)
-	}
-	if slug.Reserved(orgSlug) {
-		return nil, slug.ErrReserved
-	}
-	if !slug.Valid(orgSlug) {
-		return nil, fmt.Errorf("organization %w", slug.ErrInvalid)
 	}
 
 	var result Result
@@ -92,24 +80,12 @@ func (s *Service) Claim(ctx context.Context, username, password, orgSlug string)
 			return ErrAlreadySetUp
 		}
 
-		created, err := s.users.CreateWithPassword(ctx, tx, username, password, true)
+		created, err := s.users.CreateWithPassword(ctx, tx, username, password, user.RoleAdmin)
 		if err != nil {
 			return err
 		}
 		result.User = created
-
-		orgs := org.NewRepository(tx)
-		o, err := orgs.Create(ctx, orgSlug)
-		if err != nil {
-			return err
-		}
-		result.Org = o
-
-		// The membership is not strictly needed — a super-admin is
-		// authorized everywhere — but without it the organization would
-		// not appear in their own list, which is where the dashboard
-		// starts.
-		return orgs.AddMembership(ctx, created.ID, o.ID, org.RoleAdmin)
+		return nil
 	})
 	if err != nil {
 		return nil, err

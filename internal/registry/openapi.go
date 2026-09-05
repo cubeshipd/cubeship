@@ -24,7 +24,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			}, "tag"),
 		},
 		Paths: map[string]openapi.PathItem{
-			"/orgs/{orgSlug}/registry/repositories": {
+			"/registry/repositories": {
 				"get": {
 					OperationID: "listPushedRepositories",
 					Summary:     "List what this organization has pushed",
@@ -56,7 +56,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/registry/garbage-collect": {
+			"/registry/garbage-collect": {
 				"post": {
 					OperationID: "collectRegistryGarbage",
 					Summary:     "Reclaim the disk deleted images left behind",
@@ -78,7 +78,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/registry/images": {
+			"/registry/images": {
 				"get": {
 					OperationID: "listPushedImages",
 					Summary:     "List one repository's tags",

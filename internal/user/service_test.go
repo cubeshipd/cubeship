@@ -1,6 +1,7 @@
 package user_test
 
 import (
+	"cubeship/internal/user"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -63,7 +64,7 @@ func TestRevokingYourOnlyKeyIsRefused(t *testing.T) {
 // not be reported as "that's your last key", which would confirm it.
 func TestRevokingAnotherUsersKeyIsNotFound(t *testing.T) {
 	f := servertest.New(t)
-	_, victimKey := servertest.CreateUser(t, f.DB, "victim", false)
+	_, victimKey := servertest.CreateUser(t, f.DB, "victim", user.RoleMember)
 
 	var victimKeys []struct {
 		ID int64 `json:"id"`

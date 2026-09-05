@@ -5,7 +5,6 @@ import (
 	"net/http"
 
 	"cubeship/internal/envvar"
-	"cubeship/internal/org"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/user"
 )
@@ -54,20 +53,20 @@ type Handler struct {
 func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
-	r.Handle("POST /orgs/{orgSlug}/projects", auth(http.HandlerFunc(h.create)))
-	r.Handle("GET /orgs/{orgSlug}/projects", auth(http.HandlerFunc(h.list)))
-	r.Handle("PATCH /orgs/{orgSlug}/projects/{projectSlug}", auth(http.HandlerFunc(h.update)))
-	r.Handle("DELETE /orgs/{orgSlug}/projects/{projectSlug}", auth(http.HandlerFunc(h.delete)))
-	r.Handle("GET /orgs/{orgSlug}/projects/{projectSlug}/env", auth(http.HandlerFunc(h.getEnv)))
-	r.Handle("PUT /orgs/{orgSlug}/projects/{projectSlug}/env", auth(http.HandlerFunc(h.setEnv)))
-	r.Handle("PATCH /orgs/{orgSlug}/projects/{projectSlug}/env", auth(http.HandlerFunc(h.mergeEnv)))
-	r.Handle("POST /orgs/{orgSlug}/projects/{projectSlug}/environments", auth(http.HandlerFunc(h.createEnvironment)))
-	r.Handle("GET /orgs/{orgSlug}/projects/{projectSlug}/environments", auth(http.HandlerFunc(h.listEnvironments)))
-	r.Handle("GET /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.getEnvironmentEnv)))
-	r.Handle("PUT /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.setEnvironmentEnv)))
-	r.Handle("PATCH /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.mergeEnvironmentEnv)))
-	r.Handle("PATCH /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}", auth(http.HandlerFunc(h.updateEnvironment)))
-	r.Handle("DELETE /orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}", auth(http.HandlerFunc(h.deleteEnvironment)))
+	r.Handle("POST /projects", auth(http.HandlerFunc(h.create)))
+	r.Handle("GET /projects", auth(http.HandlerFunc(h.list)))
+	r.Handle("PATCH /projects/{projectSlug}", auth(http.HandlerFunc(h.update)))
+	r.Handle("DELETE /projects/{projectSlug}", auth(http.HandlerFunc(h.delete)))
+	r.Handle("GET /projects/{projectSlug}/env", auth(http.HandlerFunc(h.getEnv)))
+	r.Handle("PUT /projects/{projectSlug}/env", auth(http.HandlerFunc(h.setEnv)))
+	r.Handle("PATCH /projects/{projectSlug}/env", auth(http.HandlerFunc(h.mergeEnv)))
+	r.Handle("POST /projects/{projectSlug}/environments", auth(http.HandlerFunc(h.createEnvironment)))
+	r.Handle("GET /projects/{projectSlug}/environments", auth(http.HandlerFunc(h.listEnvironments)))
+	r.Handle("GET /projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.getEnvironmentEnv)))
+	r.Handle("PUT /projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.setEnvironmentEnv)))
+	r.Handle("PATCH /projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.mergeEnvironmentEnv)))
+	r.Handle("PATCH /projects/{projectSlug}/environments/{envSlug}", auth(http.HandlerFunc(h.updateEnvironment)))
+	r.Handle("DELETE /projects/{projectSlug}/environments/{envSlug}", auth(http.HandlerFunc(h.deleteEnvironment)))
 }
 
 // WriteError maps this module's domain errors onto status codes, falling
@@ -81,7 +80,7 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrProductionUndeletable):
 		http.Error(w, err.Error(), http.StatusForbidden)
 	default:
-		org.WriteError(w, err)
+		user.WriteError(w, err)
 	}
 }
 
@@ -93,7 +92,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "slug is required", http.StatusBadRequest)
 		return
 	}
-	p, env, err := h.svc.Create(r.Context(), user.FromContext(r.Context()), r.PathValue("orgSlug"), req.Slug)
+	p, env, err := h.svc.Create(r.Context(), user.FromContext(r.Context()), req.Slug)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -116,8 +115,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "give a description", http.StatusBadRequest)
 		return
 	}
-	p, err := h.svc.Update(r.Context(), user.FromContext(r.Context()),
-		r.PathValue("orgSlug"), r.PathValue("projectSlug"), req.Description)
+	p, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), r.PathValue("projectSlug"), req.Description)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -126,7 +124,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
-	projects, err := h.svc.List(r.Context(), user.FromContext(r.Context()), r.PathValue("orgSlug"))
+	projects, err := h.svc.List(r.Context(), user.FromContext(r.Context()))
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -157,8 +155,7 @@ type MergeEnvRequest struct {
 // delete removes a project and its environments, refusing while any app
 // remains.
 func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.svc.Delete(r.Context(), user.FromContext(r.Context()),
-		r.PathValue("orgSlug"), r.PathValue("projectSlug")); err != nil {
+	if _, err := h.svc.Delete(r.Context(), user.FromContext(r.Context()), r.PathValue("projectSlug")); err != nil {
 		WriteError(w, err)
 		return
 	}
@@ -166,8 +163,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getEnv(w http.ResponseWriter, r *http.Request) {
-	vars, err := h.svc.Env(r.Context(), user.FromContext(r.Context()),
-		r.PathValue("orgSlug"), r.PathValue("projectSlug"))
+	vars, err := h.svc.Env(r.Context(), user.FromContext(r.Context()), r.PathValue("projectSlug"))
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -181,8 +177,7 @@ func (h *Handler) mergeEnv(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
-	if _, err := h.svc.MergeEnv(r.Context(), user.FromContext(r.Context()),
-		r.PathValue("orgSlug"), r.PathValue("projectSlug"), req.Set, req.Unset); err != nil {
+	if _, err := h.svc.MergeEnv(r.Context(), user.FromContext(r.Context()), r.PathValue("projectSlug"), req.Set, req.Unset); err != nil {
 		WriteError(w, err)
 		return
 	}
@@ -190,8 +185,7 @@ func (h *Handler) mergeEnv(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getEnvironmentEnv(w http.ResponseWriter, r *http.Request) {
-	vars, effective, err := h.svc.EnvironmentEnv(r.Context(), user.FromContext(r.Context()),
-		r.PathValue("orgSlug"), r.PathValue("projectSlug"), r.PathValue("envSlug"))
+	vars, effective, err := h.svc.EnvironmentEnv(r.Context(), user.FromContext(r.Context()), r.PathValue("projectSlug"), r.PathValue("envSlug"))
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -205,8 +199,7 @@ func (h *Handler) mergeEnvironmentEnv(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
-	if _, err := h.svc.MergeEnvironmentEnv(r.Context(), user.FromContext(r.Context()),
-		r.PathValue("orgSlug"), r.PathValue("projectSlug"), r.PathValue("envSlug"),
+	if _, err := h.svc.MergeEnvironmentEnv(r.Context(), user.FromContext(r.Context()), r.PathValue("projectSlug"), r.PathValue("envSlug"),
 		req.Set, req.Unset); err != nil {
 		WriteError(w, err)
 		return
@@ -220,8 +213,7 @@ func (h *Handler) setEnv(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
-	if _, err := h.svc.SetEnv(r.Context(), user.FromContext(r.Context()),
-		r.PathValue("orgSlug"), r.PathValue("projectSlug"), req.Vars); err != nil {
+	if _, err := h.svc.SetEnv(r.Context(), user.FromContext(r.Context()), r.PathValue("projectSlug"), req.Vars); err != nil {
 		WriteError(w, err)
 		return
 	}
@@ -236,8 +228,7 @@ func (h *Handler) createEnvironment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "slug is required", http.StatusBadRequest)
 		return
 	}
-	env, err := h.svc.CreateEnvironment(r.Context(), user.FromContext(r.Context()),
-		r.PathValue("orgSlug"), r.PathValue("projectSlug"), req.Slug)
+	env, err := h.svc.CreateEnvironment(r.Context(), user.FromContext(r.Context()), r.PathValue("projectSlug"), req.Slug)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -260,8 +251,7 @@ func (h *Handler) updateEnvironment(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "give a description", http.StatusBadRequest)
 		return
 	}
-	env, err := h.svc.UpdateEnvironment(r.Context(), user.FromContext(r.Context()),
-		r.PathValue("orgSlug"), r.PathValue("projectSlug"), r.PathValue("envSlug"),
+	env, err := h.svc.UpdateEnvironment(r.Context(), user.FromContext(r.Context()), r.PathValue("projectSlug"), r.PathValue("envSlug"),
 		req.Description)
 	if err != nil {
 		WriteError(w, err)
@@ -271,8 +261,7 @@ func (h *Handler) updateEnvironment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listEnvironments(w http.ResponseWriter, r *http.Request) {
-	envs, err := h.svc.ListEnvironments(r.Context(), user.FromContext(r.Context()),
-		r.PathValue("orgSlug"), r.PathValue("projectSlug"))
+	envs, err := h.svc.ListEnvironments(r.Context(), user.FromContext(r.Context()), r.PathValue("projectSlug"))
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -286,8 +275,7 @@ func (h *Handler) setEnvironmentEnv(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
-	if _, err := h.svc.SetEnvironmentEnv(r.Context(), user.FromContext(r.Context()),
-		r.PathValue("orgSlug"), r.PathValue("projectSlug"), r.PathValue("envSlug"), req.Vars); err != nil {
+	if _, err := h.svc.SetEnvironmentEnv(r.Context(), user.FromContext(r.Context()), r.PathValue("projectSlug"), r.PathValue("envSlug"), req.Vars); err != nil {
 		WriteError(w, err)
 		return
 	}
@@ -295,8 +283,7 @@ func (h *Handler) setEnvironmentEnv(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteEnvironment(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.svc.DeleteEnvironment(r.Context(), user.FromContext(r.Context()),
-		r.PathValue("orgSlug"), r.PathValue("projectSlug"), r.PathValue("envSlug")); err != nil {
+	if _, err := h.svc.DeleteEnvironment(r.Context(), user.FromContext(r.Context()), r.PathValue("projectSlug"), r.PathValue("envSlug")); err != nil {
 		WriteError(w, err)
 		return
 	}

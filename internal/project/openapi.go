@@ -80,7 +80,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			}, "slug", "description"),
 		}),
 		Paths: map[string]openapi.PathItem{
-			"/orgs/{orgSlug}/projects": {
+			"/projects": {
 				"post": {
 					OperationID: "createProject",
 					Summary:     "Create a project",
@@ -111,7 +111,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/projects/{projectSlug}": {
+			"/projects/{projectSlug}": {
 				"patch": {
 					OperationID: "updateProject",
 					Summary:     "Rename a project or describe it",
@@ -147,7 +147,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/projects/{projectSlug}/env": {
+			"/projects/{projectSlug}/env": {
 				"get": {
 					OperationID: "getProjectEnv",
 					Summary:     "Read a project's environment variables",
@@ -191,7 +191,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/projects/{projectSlug}/environments": {
+			"/projects/{projectSlug}/environments": {
 				"post": {
 					OperationID: "createEnvironment",
 					Summary:     "Create an environment",
@@ -222,7 +222,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}/env": {
+			"/projects/{projectSlug}/environments/{envSlug}/env": {
 				"get": {
 					OperationID: "getEnvironmentEnv",
 					Summary:     "Read an environment's variables",
@@ -266,7 +266,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/projects/{projectSlug}/environments/{envSlug}": {
+			"/projects/{projectSlug}/environments/{envSlug}": {
 				"patch": {
 					OperationID: "updateEnvironment",
 					Summary:     "Rename an environment or describe it",

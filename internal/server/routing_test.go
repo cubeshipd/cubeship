@@ -16,12 +16,12 @@ func TestTheAPILivesUnderItsPrefixAndTheRootIsTheDashboard(t *testing.T) {
 	f := servertest.New(t)
 
 	// Do prefixes for us — this is the API.
-	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/orgs", nil, f.AdminKey), http.StatusOK)
+	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/projects", nil, f.AdminKey), http.StatusOK)
 
 	// The same path at the root is the dashboard's to name. What it
 	// answers depends on whether this binary was built with one; what it
 	// must never answer is the API.
-	rec := f.DoRoot(t, http.MethodGet, "/orgs")
+	rec := f.DoRoot(t, http.MethodGet, "/projects")
 	if ct := rec.Header().Get("Content-Type"); strings.Contains(ct, "json") {
 		t.Errorf("GET /orgs answered JSON (%s) — it should be the dashboard's route", ct)
 	}
@@ -33,7 +33,7 @@ func TestTheAPILivesUnderItsPrefixAndTheRootIsTheDashboard(t *testing.T) {
 func TestAnUnknownAPIPathIsNotFound(t *testing.T) {
 	f := servertest.New(t)
 
-	for _, path := range []string{"/nope", "/orgs/acme/nope", "/apps/a/b/c/d/e/f"} {
+	for _, path := range []string{"/nope", "/nope", "/apps/a/b/c/d/e/f"} {
 		rec := f.Do(t, http.MethodGet, path, nil, f.AdminKey)
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("GET %s%s: %d, want 404", httpx.APIPrefix, path, rec.Code)

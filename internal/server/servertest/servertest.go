@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"cubeship/internal/app"
-	"cubeship/internal/org"
 	"cubeship/internal/platform/authkey"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/database/dbtest"
@@ -61,20 +60,20 @@ type Fixture struct {
 	Server *server.Server
 	DB     *database.DB
 
-	// Admin is a super-admin, and AdminKey their API key. Use it to set
-	// up whatever a test needs; use OrgAdmin/Member to test authorization.
+	// Admin holds the admin role, and AdminKey is their API key. Use it
+	// to set up whatever a test needs; use AddMember to test
+	// authorization.
 	Admin    *user.User
 	AdminKey string
 
-	// Org, Project and Environment are a ready-made scope for apps:
-	// "acme" / "web" / "production".
-	Org         *org.Organization
+	// Project and Environment are a ready-made scope for apps:
+	// "web" / "production".
 	Project     *project.Project
 	Environment *project.Environment
 }
 
-// New returns a server wired over an empty database, with a super-admin
-// and an "acme" organization holding a "web" project.
+// New returns a server wired over an empty database, with an admin
+// account and a "web" project.
 //
 // Docker is a stub that refuses every operation, so a test that deploys
 // without meaning to gets a failed deployment rather than a panic in a
@@ -145,12 +144,8 @@ func newFixture(t testing.TB, docker app.DockerAPI, domain string) *Fixture {
 		}
 	}
 
-	admin, adminKey := CreateUser(t, db, "admin", true)
-	o, err := srv.Orgs.Repo().Create(ctx, "acme")
-	if err != nil {
-		t.Fatalf("create organization: %v", err)
-	}
-	p, env, err := srv.Projects.Create(ctx, admin, o.Slug, "web")
+	admin, adminKey := CreateUser(t, db, "admin", user.RoleAdmin)
+	p, env, err := srv.Projects.Create(ctx, admin, "web")
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
@@ -158,7 +153,7 @@ func newFixture(t testing.TB, docker app.DockerAPI, domain string) *Fixture {
 	return &Fixture{
 		Server: srv, DB: db,
 		Admin: admin, AdminKey: adminKey,
-		Org: o, Project: p, Environment: env,
+		Project: p, Environment: env,
 	}
 }
 
@@ -167,12 +162,12 @@ func newFixture(t testing.TB, docker app.DockerAPI, domain string) *Fixture {
 // identity should not have to succeed at creating one first, and on a
 // real instance the only account creation that needs no account is
 // setup, which most tests are not about.
-func CreateUser(t testing.TB, db *database.DB, username string, superAdmin bool) (*user.User, string) {
+func CreateUser(t testing.TB, db *database.DB, username string, role user.Role) (*user.User, string) {
 	t.Helper()
 	ctx := context.Background()
 	repo := user.NewRepository(db)
 
-	u, err := repo.Create(ctx, username, superAdmin)
+	u, err := repo.Create(ctx, username, role)
 	if err != nil {
 		t.Fatalf("create user %q: %v", username, err)
 	}
@@ -186,15 +181,11 @@ func CreateUser(t testing.TB, db *database.DB, username string, superAdmin bool)
 	return u, key
 }
 
-// AddMember creates a user with the given role in f.Org and returns
-// their API key.
-func (f *Fixture) AddMember(t testing.TB, username string, role org.Role) (*user.User, string) {
+// AddMember creates an account with the given role and returns their
+// API key.
+func (f *Fixture) AddMember(t testing.TB, username string, role user.Role) (*user.User, string) {
 	t.Helper()
-	u, key := CreateUser(t, f.DB, username, false)
-	if err := f.Server.Orgs.Repo().AddMembership(context.Background(), u.ID, f.Org.ID, role); err != nil {
-		t.Fatalf("add %q to the organization: %v", username, err)
-	}
-	return u, key
+	return CreateUser(t, f.DB, username, role)
 }
 
 // Login signs in through the real endpoint and returns the session

@@ -15,17 +15,10 @@ var (
 	// and it requires already being one.
 	ErrAlreadySetUp = errors.New("this instance has already been set up")
 
-	// ErrUsernameRequired, ErrPasswordRequired and ErrOrgRequired are
-	// the three fields with nothing sensible to default.
-	//
-	// The organization is asked for rather than invented. A slug is
-	// permanent — it is the first component of every app's registry
-	// reference — so an organization named on someone's behalf is one
-	// they are stuck with, and "my-organization" was never anybody's
-	// answer.
+	// ErrUsernameRequired and ErrPasswordRequired are the two fields
+	// with nothing sensible to default.
 	ErrUsernameRequired = errors.New("username is required")
 	ErrPasswordRequired = errors.New("password is required")
-	ErrOrgRequired      = errors.New("organization is required")
 )
 
 // Status is what a browser asks before showing anything: is there an

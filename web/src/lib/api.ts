@@ -98,7 +98,6 @@ export type App = {
   repo?: string;
   ref?: string;
   dockerfile?: string;
-  org: string;
   project: string;
   environment: string;
 };
@@ -131,7 +130,7 @@ export type DNSProvider = "cloudflare" | "route53";
 export type DNSCredential = {
   id: number;
   provider: DNSProvider;
-  // What tells two accounts on one provider apart. Unique in the org.
+  // What tells two accounts on one provider apart. Unique on the instance.
   label: string;
   // Route 53's access key id. Absent for Cloudflare, whose token is a
   // single value with no name attached to it.
@@ -189,7 +188,7 @@ export type Settings = {
   github_connected: boolean;
 };
 
-// GitHubInstallation is one GitHub account an organization has
+// GitHubInstallation is one GitHub account this instance has
 // connected. The installation is what lets Cubeship clone that
 // account's private repositories, and what makes a push to one deploy
 // the apps built from it.

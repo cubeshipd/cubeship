@@ -10,7 +10,7 @@ import (
 func newEnvironmentCmd() *cobra.Command {
 	environmentCmd := &cobra.Command{Use: "environment", Short: "Manage environments within a project"}
 
-	var org, project string
+	var project string
 	createCmd := &cobra.Command{
 		Use:   "create <slug>",
 		Short: "Create a new environment within a project",
@@ -20,7 +20,7 @@ func newEnvironmentCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			e, err := c.CreateEnvironment(context.Background(), org, project, args[0])
+			e, err := c.CreateEnvironment(context.Background(), project, args[0])
 			if err != nil {
 				return err
 			}
@@ -28,12 +28,10 @@ func newEnvironmentCmd() *cobra.Command {
 			return nil
 		},
 	}
-	createCmd.Flags().StringVar(&org, "org", "", "organization slug")
-	createCmd.MarkFlagRequired("org")
 	createCmd.Flags().StringVar(&project, "project", "", "project slug")
 	createCmd.MarkFlagRequired("project")
 
-	var listOrg, listProject string
+	var listProject string
 	listCmd := &cobra.Command{
 		Use:   "list",
 		Short: "List environments in a project",
@@ -43,7 +41,7 @@ func newEnvironmentCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			envs, err := c.ListEnvironments(context.Background(), listOrg, listProject)
+			envs, err := c.ListEnvironments(context.Background(), listProject)
 			if err != nil {
 				return err
 			}
@@ -53,12 +51,10 @@ func newEnvironmentCmd() *cobra.Command {
 			return nil
 		},
 	}
-	listCmd.Flags().StringVar(&listOrg, "org", "", "organization slug")
-	listCmd.MarkFlagRequired("org")
 	listCmd.Flags().StringVar(&listProject, "project", "", "project slug")
 	listCmd.MarkFlagRequired("project")
 
-	var deleteOrg, deleteProject string
+	var deleteProject string
 	var deleteConfirmed bool
 	deleteCmd := &cobra.Command{
 		Use:   "delete <slug>",
@@ -75,15 +71,13 @@ func newEnvironmentCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := c.DeleteEnvironment(context.Background(), deleteOrg, deleteProject, args[0]); err != nil {
+			if err := c.DeleteEnvironment(context.Background(), deleteProject, args[0]); err != nil {
 				return err
 			}
 			fmt.Printf("Deleted environment %s\n", args[0])
 			return nil
 		},
 	}
-	deleteCmd.Flags().StringVar(&deleteOrg, "org", "", "organization slug")
-	deleteCmd.MarkFlagRequired("org")
 	deleteCmd.Flags().BoolVar(&deleteConfirmed, "yes", false, "confirm the deletion")
 	deleteCmd.Flags().StringVar(&deleteProject, "project", "", "project slug")
 	deleteCmd.MarkFlagRequired("project")

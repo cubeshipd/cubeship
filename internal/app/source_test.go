@@ -1,9 +1,8 @@
 package app
 
 import (
+	"cubeship/internal/user"
 	"testing"
-
-	"cubeship/internal/org"
 )
 
 // Running an image somebody already published is what a member is for.
@@ -14,11 +13,11 @@ import (
 // Every source is listed, so adding one is a decision about its role
 // rather than an accident.
 func TestTheRoleEachSourceNeeds(t *testing.T) {
-	for source, want := range map[Source]org.Role{
-		SourceRegistry:   org.RoleMember,
-		SourceExternal:   org.RoleMember,
-		SourceDockerfile: org.RoleAdmin,
-		SourceRailpack:   org.RoleAdmin,
+	for source, want := range map[Source]user.Role{
+		SourceRegistry:   user.RoleMember,
+		SourceExternal:   user.RoleMember,
+		SourceDockerfile: user.RoleAdmin,
+		SourceRailpack:   user.RoleAdmin,
 	} {
 		if got := RoleToDeploy(source); got != want {
 			t.Errorf("RoleToDeploy(%q) = %q, want %q", source, got, want)
@@ -30,17 +29,17 @@ func TestTheRoleEachSourceNeeds(t *testing.T) {
 // can carry anything. The built image is named after it, so it has to
 // survive the trip.
 func TestABuiltImageIsNamedAfterItsRef(t *testing.T) {
-	a := &Scoped{OrgSlug: "acme", ProjectSlug: "web", EnvironmentSlug: "production"}
+	a := &Scoped{ProjectSlug: "web", EnvironmentSlug: "production"}
 	a.Name = "api"
 
 	for ref, want := range map[string]string{
-		"main":            "cubeship-build/acme/web/production/api:main",
-		"v1.2.0":          "cubeship-build/acme/web/production/api:v1.2.0",
-		"feature/log-in":  "cubeship-build/acme/web/production/api:feature-log-in",
-		"release~1":       "cubeship-build/acme/web/production/api:release-1",
-		"":                "cubeship-build/acme/web/production/api:default",
-		"---":             "cubeship-build/acme/web/production/api:build",
-		"refs/heads/main": "cubeship-build/acme/web/production/api:refs-heads-main",
+		"main":            "cubeship-build/web/production/api:main",
+		"v1.2.0":          "cubeship-build/web/production/api:v1.2.0",
+		"feature/log-in":  "cubeship-build/web/production/api:feature-log-in",
+		"release~1":       "cubeship-build/web/production/api:release-1",
+		"":                "cubeship-build/web/production/api:default",
+		"---":             "cubeship-build/web/production/api:build",
+		"refs/heads/main": "cubeship-build/web/production/api:refs-heads-main",
 	} {
 		if got := BuildImageName(a, ref); got != want {
 			t.Errorf("BuildImageName(%q) = %q, want %q", ref, got, want)

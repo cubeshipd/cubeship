@@ -57,7 +57,7 @@ function Detail({ reference }: { reference: string }) {
   if (!app) return null;
 
   // Where this app came from.
-  const environment = `/projects/${app.org}/${app.project}/${app.environment}`;
+  const environment = `/projects/${app.project}/${app.environment}`;
 
   return (
     <>
@@ -66,7 +66,7 @@ function Detail({ reference }: { reference: string }) {
         className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
       >
         <ChevronLeftIcon className="size-3.5" />
-        {app.org}/{app.project}/{app.environment}
+        {app.project}/{app.environment}
       </Link>
 
       <PageHeader

@@ -1,6 +1,7 @@
 package registry_test
 
 import (
+	"cubeship/internal/user"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -8,7 +9,6 @@ import (
 	"strings"
 	"testing"
 
-	"cubeship/internal/org"
 	"cubeship/internal/platform/regauth"
 	"cubeship/internal/server/servertest"
 
@@ -54,7 +54,7 @@ func tokenAccess(t *testing.T, f *servertest.Fixture, username, key, scope strin
 // another team's images.
 func TestTokenGrantsOnlyPushAndPull(t *testing.T) {
 	f := newSignedFixture(t)
-	_, memberKey := f.AddMember(t, "member", org.RoleMember)
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
 
 	access := tokenAccess(t, f, "member", memberKey, "repository:acme/myapp:pull,push,delete,*")
 	if len(access) != 1 {
@@ -71,23 +71,9 @@ func TestTokenGrantsOnlyPushAndPull(t *testing.T) {
 }
 
 // Membership is what scopes registry access: a valid login for one
-// organization must grant nothing in another's namespace.
-func TestTokenRefusesAnotherOrganizationsNamespace(t *testing.T) {
-	f := newSignedFixture(t)
-	_, memberKey := f.AddMember(t, "member", org.RoleMember)
-
-	if _, err := f.Server.Orgs.Repo().Create(t.Context(), "globex"); err != nil {
-		t.Fatalf("create the other organization: %v", err)
-	}
-
-	if access := tokenAccess(t, f, "member", memberKey, "repository:globex/theirapp:pull,push"); len(access) != 0 {
-		t.Fatalf("a member of acme was granted access to globex: %v", access)
-	}
-}
-
 func TestTokenRejectsABadAPIKey(t *testing.T) {
 	f := newSignedFixture(t)
-	f.AddMember(t, "member", org.RoleMember)
+	f.AddMember(t, "member", user.RoleMember)
 
 	req := httptestRequest(t, "/v2/token?scope=repository:acme/myapp:pull")
 	req.SetBasicAuth("member", "not-their-key")
@@ -148,7 +134,7 @@ func TestAPushDoesNotDeployAnExternalApp(t *testing.T) {
 		Reference string `json:"reference"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "myapp", "org": "acme", "project": "web",
+		"name": "myapp", "project": "web",
 		"source": "external", "image": "ghcr.io/acme/api",
 	}, f.AdminKey, &created), http.StatusCreated)
 
@@ -179,9 +165,9 @@ func TestAPushDoesNotDeployAnExternalApp(t *testing.T) {
 // refused.
 func TestIssuedTokensCarryTheCertificate(t *testing.T) {
 	f := newSignedFixture(t)
-	_, memberKey := f.AddMember(t, "member", org.RoleMember)
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
 
-	req := httptestRequest(t, "/v2/token?scope="+url.QueryEscape("repository:"+f.Org.Slug+"/myapp:pull"))
+	req := httptestRequest(t, "/v2/token?scope="+url.QueryEscape("repository:"+"acme"+"/myapp:pull"))
 	req.SetBasicAuth("member", memberKey)
 	rec := newRecorder()
 	f.Server.Router().ServeHTTP(rec, req)

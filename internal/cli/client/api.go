@@ -17,10 +17,6 @@ func errorsAs(err error, target any) bool { return errors.As(err, target) }
 
 // --- wire types ---
 
-type Org struct {
-	Slug string `json:"slug"`
-}
-
 type Project struct {
 	Slug         string   `json:"slug"`
 	Environments []string `json:"environments,omitempty"`
@@ -43,7 +39,6 @@ type App struct {
 	Domains     []Domain `json:"domains"`
 	Image       string   `json:"image"`
 	Status      string   `json:"status"`
-	Org         string   `json:"org"`
 	Project     string   `json:"project"`
 	Environment string   `json:"environment"`
 }
@@ -89,37 +84,30 @@ func (c *Client) WhoAmI(ctx context.Context) (string, error) {
 
 // --- organizations ---
 
-func (c *Client) CreateOrg(ctx context.Context, slug string) (Org, error) {
-	return request[Org](ctx, c, "create organization", http.MethodPost, "/orgs",
-		map[string]string{"slug": slug}, http.StatusCreated, DefaultTimeout)
-}
-
-func (c *Client) ListOrgs(ctx context.Context) ([]Org, error) {
-	return request[[]Org](ctx, c, "list organizations", http.MethodGet, "/orgs", nil, http.StatusOK, DefaultTimeout)
-}
-
-// CreateOrgUser adds a user to an organization. The returned API key is
-// empty when the username already existed and only gained a membership —
-// that user keeps the key they already have.
-func (c *Client) CreateOrgUser(ctx context.Context, orgSlug, username, role string) (string, error) {
+// AddUser creates an account and returns the API key it authenticates
+// with, shown exactly once.
+func (c *Client) AddUser(ctx context.Context, username, role string) (string, error) {
 	out, err := request[struct {
 		APIKey string `json:"api_key"`
-	}](ctx, c, "add user to organization", http.MethodPost, "/orgs/"+segment(orgSlug)+"/users",
+	}](ctx, c, "add user", http.MethodPost, "/users",
 		map[string]string{"username": username, "role": role}, http.StatusCreated, DefaultTimeout)
-	return out.APIKey, err
+	if err != nil {
+		return "", err
+	}
+	return out.APIKey, nil
 }
 
 // --- projects and environments ---
 
-func (c *Client) CreateProject(ctx context.Context, orgSlug, slug string) (Project, error) {
+func (c *Client) CreateProject(ctx context.Context, slug string) (Project, error) {
 	return request[Project](ctx, c, "create project", http.MethodPost,
-		"/orgs/"+segment(orgSlug)+"/projects",
+		"/projects",
 		map[string]string{"slug": slug}, http.StatusCreated, DefaultTimeout)
 }
 
-func (c *Client) ListProjects(ctx context.Context, orgSlug string) ([]Project, error) {
+func (c *Client) ListProjects(ctx context.Context) ([]Project, error) {
 	return request[[]Project](ctx, c, "list projects", http.MethodGet,
-		"/orgs/"+segment(orgSlug)+"/projects", nil, http.StatusOK, DefaultTimeout)
+		"/projects", nil, http.StatusOK, DefaultTimeout)
 }
 
 // EnvVars is what reading variables at one level returns: the ones set
@@ -144,67 +132,67 @@ type mergeEnv struct {
 	Unset []string          `json:"unset,omitempty"`
 }
 
-func (c *Client) ProjectEnv(ctx context.Context, orgSlug, projectSlug string) (EnvVars, error) {
+func (c *Client) ProjectEnv(ctx context.Context, projectSlug string) (EnvVars, error) {
 	return request[EnvVars](ctx, c, "read project env", http.MethodGet,
-		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/env", nil, http.StatusOK, DefaultTimeout)
+		"/projects/"+segment(projectSlug)+"/env", nil, http.StatusOK, DefaultTimeout)
 }
 
 // MergeProjectEnv adds or overwrites set and removes unset, leaving every
 // other variable alone.
-func (c *Client) MergeProjectEnv(ctx context.Context, orgSlug, projectSlug string, set map[string]string, unset []string) error {
+func (c *Client) MergeProjectEnv(ctx context.Context, projectSlug string, set map[string]string, unset []string) error {
 	_, err := request[noContent](ctx, c, "update project env", http.MethodPatch,
-		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/env",
+		"/projects/"+segment(projectSlug)+"/env",
 		mergeEnv{Set: set, Unset: unset}, http.StatusOK, DefaultTimeout)
 	return err
 }
 
 // SetProjectEnv replaces every project-level variable. Callers that mean
 // "change these" want MergeProjectEnv.
-func (c *Client) SetProjectEnv(ctx context.Context, orgSlug, projectSlug string, vars map[string]string) error {
+func (c *Client) SetProjectEnv(ctx context.Context, projectSlug string, vars map[string]string) error {
 	_, err := request[noContent](ctx, c, "set project env", http.MethodPut,
-		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/env",
+		"/projects/"+segment(projectSlug)+"/env",
 		envVars{Vars: vars}, http.StatusOK, DefaultTimeout)
 	return err
 }
 
-func (c *Client) CreateEnvironment(ctx context.Context, orgSlug, projectSlug, slug string) (Environment, error) {
+func (c *Client) CreateEnvironment(ctx context.Context, projectSlug, slug string) (Environment, error) {
 	return request[Environment](ctx, c, "create environment", http.MethodPost,
-		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/environments",
+		"/projects/"+segment(projectSlug)+"/environments",
 		map[string]string{"slug": slug}, http.StatusCreated, DefaultTimeout)
 }
 
-func (c *Client) ListEnvironments(ctx context.Context, orgSlug, projectSlug string) ([]Environment, error) {
+func (c *Client) ListEnvironments(ctx context.Context, projectSlug string) ([]Environment, error) {
 	return request[[]Environment](ctx, c, "list environments", http.MethodGet,
-		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/environments",
+		"/projects/"+segment(projectSlug)+"/environments",
 		nil, http.StatusOK, DefaultTimeout)
 }
 
-func (c *Client) EnvironmentEnv(ctx context.Context, orgSlug, projectSlug, envSlug string) (EnvVars, error) {
+func (c *Client) EnvironmentEnv(ctx context.Context, projectSlug, envSlug string) (EnvVars, error) {
 	return request[EnvVars](ctx, c, "read environment env", http.MethodGet,
-		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/environments/"+segment(envSlug)+"/env",
+		"/projects/"+segment(projectSlug)+"/environments/"+segment(envSlug)+"/env",
 		nil, http.StatusOK, DefaultTimeout)
 }
 
 // MergeEnvironmentEnv adds or overwrites set and removes unset, leaving
 // every other variable alone.
-func (c *Client) MergeEnvironmentEnv(ctx context.Context, orgSlug, projectSlug, envSlug string, set map[string]string, unset []string) error {
+func (c *Client) MergeEnvironmentEnv(ctx context.Context, projectSlug, envSlug string, set map[string]string, unset []string) error {
 	_, err := request[noContent](ctx, c, "update environment env", http.MethodPatch,
-		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/environments/"+segment(envSlug)+"/env",
+		"/projects/"+segment(projectSlug)+"/environments/"+segment(envSlug)+"/env",
 		mergeEnv{Set: set, Unset: unset}, http.StatusOK, DefaultTimeout)
 	return err
 }
 
 // SetEnvironmentEnv replaces every environment-level variable.
-func (c *Client) SetEnvironmentEnv(ctx context.Context, orgSlug, projectSlug, envSlug string, vars map[string]string) error {
+func (c *Client) SetEnvironmentEnv(ctx context.Context, projectSlug, envSlug string, vars map[string]string) error {
 	_, err := request[noContent](ctx, c, "set environment env", http.MethodPut,
-		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/environments/"+segment(envSlug)+"/env",
+		"/projects/"+segment(projectSlug)+"/environments/"+segment(envSlug)+"/env",
 		envVars{Vars: vars}, http.StatusOK, DefaultTimeout)
 	return err
 }
 
-func (c *Client) DeleteEnvironment(ctx context.Context, orgSlug, projectSlug, envSlug string) error {
+func (c *Client) DeleteEnvironment(ctx context.Context, projectSlug, envSlug string) error {
 	_, err := request[noContent](ctx, c, "delete environment", http.MethodDelete,
-		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug)+"/environments/"+segment(envSlug),
+		"/projects/"+segment(projectSlug)+"/environments/"+segment(envSlug),
 		nil, http.StatusOK, DefaultTimeout)
 	return err
 }
@@ -213,10 +201,10 @@ func (c *Client) DeleteEnvironment(ctx context.Context, orgSlug, projectSlug, en
 
 // CreateApp registers an app and returns it, including the registry path
 // to push to. environment may be empty, which means "production".
-func (c *Client) CreateApp(ctx context.Context, name, orgSlug, projectSlug, environment, source string) (App, error) {
+func (c *Client) CreateApp(ctx context.Context, name, projectSlug, environment, source string) (App, error) {
 	return request[App](ctx, c, "create app", http.MethodPost, "/apps", map[string]string{
-		"name": name, "org": orgSlug,
-		"project": projectSlug, "environment": environment, "source": source,
+		"name": name, "project": projectSlug,
+		"environment": environment, "source": source,
 	}, http.StatusCreated, DefaultTimeout)
 }
 
@@ -252,15 +240,9 @@ func (c *Client) DeleteApp(ctx context.Context, ref string) error {
 	return err
 }
 
-func (c *Client) DeleteProject(ctx context.Context, orgSlug, projectSlug string) error {
+func (c *Client) DeleteProject(ctx context.Context, projectSlug string) error {
 	_, err := request[noContent](ctx, c, "delete project", http.MethodDelete,
-		"/orgs/"+segment(orgSlug)+"/projects/"+segment(projectSlug), nil, http.StatusOK, DefaultTimeout)
-	return err
-}
-
-func (c *Client) DeleteOrg(ctx context.Context, orgSlug string) error {
-	_, err := request[noContent](ctx, c, "delete organization", http.MethodDelete,
-		"/orgs/"+segment(orgSlug), nil, http.StatusOK, DefaultTimeout)
+		"/projects/"+segment(projectSlug), nil, http.StatusOK, DefaultTimeout)
 	return err
 }
 

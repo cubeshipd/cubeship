@@ -454,8 +454,7 @@ func TraefikContainerOpts(cfg *config.Config, acmeEmail string) dockerx.Containe
 			// with no certificate.
 			"--entrypoints.web.http.redirections.entryPoint.to=websecure",
 			"--entrypoints.web.http.redirections.entryPoint.scheme=https",
-			"--entrypoints.web.http.redirections.entryPoint.permanent=true",
-		)
+			"--entrypoints.web.http.redirections.entryPoint.permanent=true")
 	}
 	return dockerx.ContainerOpts{
 		Name:  "cubeship-traefik",

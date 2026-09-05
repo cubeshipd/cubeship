@@ -10,7 +10,6 @@ import (
 
 	"cubeship/internal/envvar"
 	"cubeship/internal/extregistry"
-	"cubeship/internal/org"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/database/dbtest"
 	"cubeship/internal/project"
@@ -31,24 +30,18 @@ func newDeployFixture(t *testing.T, docker DockerAPI) (*Orchestrator, *database.
 	ctx := context.Background()
 	db := dbtest.New(t)
 
-	users := user.NewService(db)
-	orgs := org.NewService(db, users)
-	projects := project.NewService(db, orgs)
+	projects := project.NewService(db)
 
-	admin, err := user.NewRepository(db).Create(ctx, "admin", true)
+	admin, err := user.NewRepository(db).Create(ctx, "admin", user.RoleAdmin)
 	if err != nil {
 		t.Fatalf("create admin: %v", err)
 	}
-	o, err := orgs.Repo().Create(ctx, "acme")
-	if err != nil {
-		t.Fatalf("create org: %v", err)
-	}
-	p, env, err := projects.Create(ctx, admin, o.Slug, "web")
+	p, env, err := projects.Create(ctx, admin, "web")
 	if err != nil {
 		t.Fatalf("create project: %v", err)
 	}
 
-	a, err := NewRepository(db).Create(ctx, o.ID, p.ID, env.ID, "myapp", "", SourceRegistry, Origin{})
+	a, err := NewRepository(db).Create(ctx, p.ID, env.ID, "myapp", "", SourceRegistry, Origin{})
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -62,7 +55,7 @@ func newDeployFixture(t *testing.T, docker DockerAPI) (*Orchestrator, *database.
 	if err := cfg.SeedFromEnv(ctx, map[string]string{settings.Domain: "example.com"}); err != nil {
 		t.Fatalf("configure the domain: %v", err)
 	}
-	orch := NewOrchestrator(db, docker, cfg, extregistry.NewService(db, nil), nil, nil, testRegistry)
+	orch := NewOrchestrator(db, docker, cfg, extregistry.NewService(db), nil, nil, testRegistry)
 	// The health check's real timing has nothing to test here, and
 	// sleeping through it would make every deploy test slow.
 	orch.HealthCheckInterval = 0

@@ -45,7 +45,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			}, "name", "type", "values", "ttl"),
 		},
 		Paths: map[string]openapi.PathItem{
-			"/orgs/{orgSlug}/dns": {
+			"/dns": {
 				"get": {
 					OperationID: "listDNSProviders",
 					Summary:     "List this organization's DNS providers",
@@ -85,7 +85,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/dns/{id}": {
+			"/dns/{id}": {
 				"patch": {
 					OperationID: "updateDNSProvider",
 					Summary:     "Rename a DNS provider, or rotate its credential",
@@ -121,7 +121,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/dns/{id}/status": {
+			"/dns/{id}/status": {
 				"get": {
 					OperationID: "probeDNSProvider",
 					Summary:     "Ask whether this credential still works",
@@ -144,7 +144,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/dns/{id}/zones": {
+			"/dns/{id}/zones": {
 				"get": {
 					OperationID: "listDNSZones",
 					Summary:     "List the domains this credential can reach",
@@ -159,7 +159,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/dns/{id}/records": {
+			"/dns/{id}/records": {
 				"get": {
 					OperationID: "listDNSRecords",
 					Summary:     "List a zone's records",

@@ -14,7 +14,6 @@ import (
 // trip.
 type Response struct {
 	Username string `json:"username"`
-	Org      string `json:"org"`
 }
 
 // Handler serves the two setup endpoints. Both are unauthenticated, and
@@ -53,21 +52,20 @@ func (h *Handler) claim(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
-		Org      string `json:"org"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
 
-	result, err := h.svc.Claim(r.Context(), req.Username, req.Password, req.Org)
+	result, err := h.svc.Claim(r.Context(), req.Username, req.Password)
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrAlreadySetUp):
 		http.Error(w, err.Error(), http.StatusConflict)
 		return
 	case errors.Is(err, ErrUsernameRequired), errors.Is(err, ErrPasswordRequired),
-		errors.Is(err, ErrOrgRequired), errors.Is(err, user.ErrPasswordTooShort),
+		errors.Is(err, user.ErrPasswordTooShort),
 		errors.Is(err, slug.ErrReserved), errors.Is(err, slug.ErrInvalid):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -86,6 +84,5 @@ func (h *Handler) claim(w http.ResponseWriter, r *http.Request) {
 
 	httpx.WriteJSON(w, http.StatusCreated, Response{
 		Username: result.User.Username,
-		Org:      result.Org.Slug,
 	})
 }

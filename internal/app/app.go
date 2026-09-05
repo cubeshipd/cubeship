@@ -24,7 +24,6 @@ import (
 // has nothing to derive from, so SourceImage is where it pulls.
 type App struct {
 	ID            int64
-	OrgID         int64
 	ProjectID     int64
 	EnvironmentID int64
 	Name          string

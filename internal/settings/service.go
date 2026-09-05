@@ -57,7 +57,7 @@ func (s *Service) Load(ctx context.Context) (Values, error) {
 // domain and a contact address together should rebuild Traefik once, not
 // twice.
 func (s *Service) Set(ctx context.Context, caller *user.User, values map[string]string) (Values, error) {
-	if caller == nil || !caller.IsSuperAdmin {
+	if caller == nil || !caller.Is(user.RoleAdmin) {
 		return nil, ErrSuperAdminOnly
 	}
 	for key := range values {

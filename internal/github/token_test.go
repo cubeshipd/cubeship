@@ -157,7 +157,7 @@ func TestTokenForRepository(t *testing.T) {
 	pointAtStub(t, stub.URL)
 
 	token, found, err := f.Server.GitHub.TokenForRepository(
-		context.Background(), f.Org.ID, "https://github.com/acme/api.git")
+		context.Background(), "https://github.com/acme/api.git")
 	if err != nil {
 		t.Fatalf("TokenForRepository: %v", err)
 	}
@@ -169,7 +169,7 @@ func TestTokenForRepository(t *testing.T) {
 	// Minting one per clone would be a round trip against a rate limit
 	// for nothing.
 	if _, _, err := f.Server.GitHub.TokenForRepository(
-		context.Background(), f.Org.ID, "https://github.com/acme/other"); err != nil {
+		context.Background(), "https://github.com/acme/other"); err != nil {
 		t.Fatal(err)
 	}
 	if calls := stub.calls.Load(); calls != 1 {
@@ -188,7 +188,7 @@ func TestATokenNearExpiryIsReplaced(t *testing.T) {
 
 	for range 2 {
 		if _, _, err := f.Server.GitHub.TokenForRepository(
-			context.Background(), f.Org.ID, "https://github.com/acme/api"); err != nil {
+			context.Background(), "https://github.com/acme/api"); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -208,7 +208,7 @@ func TestNoInstallationMeansNoToken(t *testing.T) {
 		"https://github.com/acme/api.git", // on GitHub, but not connected
 		"https://gitlab.com/acme/api.git", // not on GitHub at all
 	} {
-		token, found, err := f.Server.GitHub.TokenForRepository(context.Background(), f.Org.ID, url)
+		token, found, err := f.Server.GitHub.TokenForRepository(context.Background(), url)
 		if err != nil {
 			t.Errorf("%s: %v", url, err)
 		}
@@ -232,7 +232,7 @@ func TestGitHubRefusingIsAnError(t *testing.T) {
 	pointAtStub(t, refuses.URL)
 
 	_, _, err := f.Server.GitHub.TokenForRepository(
-		context.Background(), f.Org.ID, "https://github.com/acme/api")
+		context.Background(), "https://github.com/acme/api")
 	if err == nil {
 		t.Fatal("GitHub refusing was reported as no token rather than as a failure")
 	}

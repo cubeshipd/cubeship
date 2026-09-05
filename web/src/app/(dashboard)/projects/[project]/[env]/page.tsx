@@ -7,7 +7,6 @@ import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { AppCard } from "@/components/app-card";
 import { ErrorAlert } from "@/components/error-alert";
-import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
 import { SlugField } from "@/components/slug-field";
 import { TextAreaField } from "@/components/text-field";
@@ -34,7 +33,7 @@ import { message } from "@/lib/errors";
 export default function ProjectPage({
   params,
 }: {
-  params: Promise<{ org: string; project: string; env: string }>;
+  params: Promise<{ project: string; env: string }>;
 }) {
   return <Detail {...use(params)} />;
 }
@@ -43,10 +42,8 @@ export default function ProjectPage({
 // so it is where the project opens.
 const DEFAULT_ENV = "production";
 
-function Detail({ org, project, env: wanted }: { org: string; project: string; env: string }) {
+function Detail({ project, env: wanted }: { project: string; env: string }) {
   const router = useRouter();
-  const { org: selected, select } = useOrg();
-  const ref = `${org}/${project}`;
 
   const [envs, setEnvs] = useState<Environment[] | null>(null);
   const [apps, setApps] = useState<App[] | null>(null);
@@ -54,20 +51,14 @@ function Detail({ org, project, env: wanted }: { org: string; project: string; e
   const [creatingApp, setCreatingApp] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Following a link into another organization moves the whole
-  // dashboard there, rather than showing one page out of frame.
-  useEffect(() => {
-    if (org && selected && org !== selected) select(org);
-  }, [org, selected, select]);
-
-  const path = `/orgs/${org}/projects/${project}`;
+  const path = `/projects/${project}`;
   const reloadEnvs = useCallback(() => {
-    if (!org || !project) return;
+    if (!project) return;
     api
       .get<Environment[]>(`${path}/environments`)
       .then(setEnvs)
       .catch((e) => setError(message(e)));
-  }, [path, org, project]);
+  }, [path, project]);
   useEffect(reloadEnvs, [reloadEnvs]);
 
   const reloadApps = useCallback(() => {
@@ -78,7 +69,7 @@ function Detail({ org, project, env: wanted }: { org: string; project: string; e
   }, []);
   useEffect(reloadApps, [reloadApps]);
 
-  if (!ref || !project) {
+  if (!project) {
     return (
       <p className="text-sm text-muted-foreground">
         No project named.{" "}
@@ -97,23 +88,17 @@ function Detail({ org, project, env: wanted }: { org: string; project: string; e
       ? DEFAULT_ENV
       : (known[0] ?? "");
 
-  const shown = apps?.filter(
-    (a) => a.org === org && a.project === project && a.environment === env,
-  );
+  const shown = apps?.filter((a) => a.project === project && a.environment === env);
 
   function goTo(next: string) {
-    router.replace(`/projects/${org}/${project}/${next}`, { scroll: false });
+    router.replace(`/projects/${project}/${next}`, { scroll: false });
   }
 
   return (
     <>
       <PageHeader
         title={project}
-        sub={
-          <span className="font-mono text-xs">
-            {org}/{project}
-          </span>
-        }
+        sub={<span className="font-mono text-xs">{project}</span>}
         actions={
           <>
             <Button onClick={() => setCreatingApp(true)}>
@@ -124,7 +109,7 @@ function Detail({ org, project, env: wanted }: { org: string; project: string; e
               variant="outline"
               nativeButton={false}
               render={
-                <Link href={`/projects/${org}/${project}/settings`}>
+                <Link href={`/projects/${project}/settings`}>
                   <SettingsIcon />
                   Settings
                 </Link>
@@ -163,7 +148,7 @@ function Detail({ org, project, env: wanted }: { org: string; project: string; e
             aria-label={`Settings for ${env}`}
             nativeButton={false}
             render={
-              <Link href={`/projects/${org}/${project}/${env}/settings`}>
+              <Link href={`/projects/${project}/${env}/settings`}>
                 <SlidersHorizontalIcon />
               </Link>
             }
@@ -193,12 +178,11 @@ function Detail({ org, project, env: wanted }: { org: string; project: string; e
       )}
 
       <NewAppDialog
-        org={org}
         project={project}
         environment={env}
         open={creatingApp}
         onOpenChange={setCreatingApp}
-        onCreated={(reference) => router.push(`/apps/${reference}`)}
+        onCreated={(reference) => router.push(`/projects/${reference}`)}
       />
 
       <NewEnvironmentDialog
@@ -281,14 +265,12 @@ function NewEnvironmentDialog({
 // here — so they are made inside the app, with the reasons in front of
 // you, rather than guessed at in the moment you name it.
 function NewAppDialog({
-  org,
   project,
   environment,
   open,
   onOpenChange,
   onCreated,
 }: {
-  org: string;
   project: string;
   environment: string;
   open: boolean;
@@ -306,7 +288,6 @@ function NewAppDialog({
     setError(null);
     try {
       const created = await api.post<App>("/apps", {
-        org,
         project,
         environment,
         name: slug,

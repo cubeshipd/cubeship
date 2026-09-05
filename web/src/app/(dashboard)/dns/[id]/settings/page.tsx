@@ -11,7 +11,6 @@ import { ErrorAlert } from "@/components/error-alert";
 import { CloudflareIcon } from "@/components/icons";
 import { LoadingNote } from "@/components/loading";
 import { Notice } from "@/components/notice";
-import { useOrg } from "@/components/org-context";
 import { PageHeader, SectionHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
@@ -31,7 +30,6 @@ import { message } from "@/lib/errors";
 export default function DNSSettings({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
   const router = useRouter();
-  const { org } = useOrg();
 
   const [credential, setCredential] = useState<DNSCredential | null>(null);
   const [status, setStatus] = useState<DNSStatus | null>(null);
@@ -47,9 +45,9 @@ export default function DNSSettings({ params }: { params: Promise<{ id: string }
   const [saved, setSaved] = useState(false);
 
   useEffect(() => {
-    if (!org || !id) return;
+    if (id) return;
     api
-      .get<DNSCredential[]>(`/orgs/${org}/dns`)
+      .get<DNSCredential[]>(`/dns`)
       .then((list) => {
         const found = list.find((c) => String(c.id) === id) ?? null;
         setCredential(found);
@@ -60,19 +58,19 @@ export default function DNSSettings({ params }: { params: Promise<{ id: string }
         setUsername(found?.username ?? "");
       })
       .catch((e) => setError(message(e)));
-  }, [org, id]);
+  }, [id]);
 
   // The probe runs on arrival and again after a new credential is
   // stored, because whether the new one works is the question this
   // screen was opened to answer.
   const probe = useCallback(() => {
-    if (!org || !id) return;
+    if (id) return;
     setStatus(null);
     api
-      .get<DNSStatus>(`/orgs/${org}/dns/${id}/status`)
+      .get<DNSStatus>(`/dns/${id}/status`)
       .then(setStatus)
       .catch((e) => setStatus({ state: "unreachable", detail: message(e) }));
-  }, [org, id]);
+  }, [id]);
   useEffect(probe, [probe]);
 
   const shape = credential ? DNS_PROVIDERS[credential.provider] : null;
@@ -83,7 +81,7 @@ export default function DNSSettings({ params }: { params: Promise<{ id: string }
     setSavingLabel(true);
     setError(null);
     try {
-      setCredential(await api.patch<DNSCredential>(`/orgs/${org}/dns/${id}`, { label }));
+      setCredential(await api.patch<DNSCredential>(`/dns/${id}`, { label }));
     } catch (err) {
       setError(message(err));
     }
@@ -100,7 +98,7 @@ export default function DNSSettings({ params }: { params: Promise<{ id: string }
       // a new secret against the old id is not a credential anybody
       // chose, and it fails in a way that reads as the secret being
       // wrong.
-      await api.patch(`/orgs/${org}/dns/${id}`, {
+      await api.patch(`/dns/${id}`, {
         password,
         ...(shape?.userLabel ? { username } : {}),
       });
@@ -231,7 +229,7 @@ export default function DNSSettings({ params }: { params: Promise<{ id: string }
         confirmWord={credential?.label}
         description="Your records stay exactly as they are. Cubeship just stops being able to reach them."
         onConfirm={async () => {
-          await api.del(`/orgs/${org}/dns/${id}`);
+          await api.del(`/dns/${id}`);
           router.push("/dns");
         }}
       />

@@ -13,49 +13,55 @@ import { TextAreaField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { api, type Project } from "@/lib/api";
+import { api, type Environment } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-export default function ProjectSettingsPage({
+// production is the environment every project is created with, and the
+// daemon refuses to delete it — so an app can always assume its project
+// has somewhere to live.
+const PRODUCTION = "production";
+
+export default function EnvironmentSettingsPage({
   params,
 }: {
-  params: Promise<{ org: string; project: string }>;
+  params: Promise<{ org: string; project: string; env: string }>;
 }) {
   return <Settings {...use(params)} />;
 }
 
-function Settings({ org, project }: { org: string; project: string }) {
+function Settings({ org, project, env }: { org: string; project: string; env: string }) {
   const router = useRouter();
-  const ref = `${org}/${project}`;
+  const ref = `${org}/${project}/${env}`;
 
-  const [current, setCurrent] = useState<Project | null>(null);
+  const [current, setCurrent] = useState<Environment | null>(null);
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const path = `/orgs/${org}/projects/${project}`;
+  const projectPath = `/projects/${project}`;
+  const path = `${projectPath}/environments/${env}`;
 
-  // There is no "get one project" endpoint — the list is the read, and
-  // on a single-VPS install it is a handful of rows.
+  // There is no "get one environment" endpoint — the list is the read,
+  // and a project holds a handful of them.
   useEffect(() => {
-    if (!org || !project) return;
+    if (project || !env) return;
     api
-      .get<Project[]>(`/orgs/${org}/projects`)
+      .get<Environment[]>(`${projectPath}/environments`)
       .then((list) => {
-        const found = list.find((p) => p.slug === project);
-        if (!found) throw new Error("project not found");
+        const found = list.find((e) => e.slug === env);
+        if (!found) throw new Error("environment not found");
         setCurrent(found);
         setDescription(found.description ?? "");
       })
       .catch((e) => setError(message(e)));
-  }, [org, project]);
+  }, [projectPath, project, env]);
 
-  if (!ref || !project) {
+  if (!ref || !env) {
     return (
       <p className="text-sm text-muted-foreground">
-        No project named.{" "}
+        No environment named.{" "}
         <Link href="/" className="text-foreground underline underline-offset-4">
           Back to projects
         </Link>
@@ -64,6 +70,7 @@ function Settings({ org, project }: { org: string; project: string }) {
     );
   }
 
+  const isProduction = env === PRODUCTION;
   const dirty = !!current && description !== (current.description ?? "");
 
   async function save(e: React.FormEvent) {
@@ -72,9 +79,7 @@ function Settings({ org, project }: { org: string; project: string }) {
     setError(null);
     setSaved(false);
     try {
-      // PATCH, so sending both is a statement about both and neither is
-      // cleared by having been left off the form.
-      setCurrent(await api.patch<Project>(path, { description }));
+      setCurrent(await api.patch<Environment>(path, { description }));
       setSaved(true);
     } catch (err) {
       setError(message(err));
@@ -85,14 +90,17 @@ function Settings({ org, project }: { org: string; project: string }) {
   return (
     <>
       <Link
-        href={`/projects/${org}/${project}`}
+        href={`/projects/${project}/${env}`}
         className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
       >
         <ChevronLeftIcon className="size-3.5" />
-        {org}/{project}
+        {org}/{project}/{env}
       </Link>
 
-      <PageHeader title="Project settings" sub="What this project is called, and what it is for." />
+      <PageHeader
+        title="Environment settings"
+        sub="What this stage of the project is called, and what it is for."
+      />
 
       <ErrorAlert error={error} />
 
@@ -102,23 +110,21 @@ function Settings({ org, project }: { org: string; project: string }) {
           <form onSubmit={save} className="space-y-4">
             <TextAreaField
               label="Description"
-              hint="Shown on the project's card. Empty is fine."
+              hint="What runs here, and who it is for. Empty is fine."
               rows={3}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               disabled={!current}
-              placeholder="What this project holds, and who it is for."
+              placeholder="Where a change goes before production."
             />
 
             <div className="space-y-2">
               <Label className="text-xs text-muted-foreground">Slug</Label>
               <div className="flex h-10 items-center border border-border bg-secondary/40 px-3 font-mono text-sm text-muted-foreground">
-                {org}/{project}
+                {org}/{project}/{env}
               </div>
               <p className="text-xs text-subtle-foreground">
-                Not editable. It is a path component of every app&apos;s registry reference under
-                this project, so renaming it would move every app in it — breaking pushes configured
-                against the old path and stranding images already pushed there.
+                Not editable. It is the third component of every app reference in this environment.
               </p>
             </div>
 
@@ -134,16 +140,23 @@ function Settings({ org, project }: { org: string; project: string }) {
 
       <DangerZone>
         <DangerAction
-          title="Delete this project"
+          title="Delete this environment"
           description={
-            <>
-              Removes the project, every environment in it and every app inside those. Each
-              app&apos;s container is stopped and removed first.
-            </>
+            isProduction ? (
+              <>
+                <code>production</code> is created with the project and cannot be deleted — an app
+                and a deploy both assume every project has at least one environment.
+              </>
+            ) : (
+              <>
+                Removes the environment and every app deployed in it. Each app&apos;s container is
+                stopped and removed first.
+              </>
+            )
           }
           action={
-            <Button variant="destructive" onClick={() => setDeleting(true)}>
-              Delete project
+            <Button variant="destructive" disabled={isProduction} onClick={() => setDeleting(true)}>
+              Delete environment
             </Button>
           }
         />
@@ -152,13 +165,13 @@ function Settings({ org, project }: { org: string; project: string }) {
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
-        title="Delete project"
-        description="Every environment in it goes, and every app in those — containers included. This cannot be undone."
-        confirmWord={project}
-        confirmLabel="Delete project"
+        title="Delete environment"
+        description="The environment, the variables set on it and every app in it go — containers included. This cannot be undone."
+        confirmWord={env}
+        confirmLabel="Delete environment"
         onConfirm={async () => {
           await api.del(path);
-          router.push("/");
+          router.push(`/projects/${project}`);
         }}
       />
     </>

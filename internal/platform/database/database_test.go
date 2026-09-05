@@ -42,12 +42,12 @@ func TestSchemasAreIsolated(t *testing.T) {
 	b := dbtest.New(t)
 
 	if _, err := a.ExecContext(ctx,
-		`INSERT INTO organizations (slug) VALUES ('acme')`); err != nil {
+		`INSERT INTO projects (slug) VALUES ('acme')`); err != nil {
 		t.Fatalf("insert into schema a: %v", err)
 	}
 
 	var n int
-	if err := b.QueryRowContext(ctx, `SELECT COUNT(*) FROM organizations`).Scan(&n); err != nil {
+	if err := b.QueryRowContext(ctx, `SELECT COUNT(*) FROM projects`).Scan(&n); err != nil {
 		t.Fatalf("count in schema b: %v", err)
 	}
 	if n != 0 {
@@ -64,7 +64,7 @@ func TestWithTxRollsBackOnError(t *testing.T) {
 	sentinel := context.Canceled
 	err := db.WithTx(ctx, func(tx database.Queryer) error {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO organizations (slug) VALUES ('acme')`); err != nil {
+			`INSERT INTO projects (slug) VALUES ('acme')`); err != nil {
 			return err
 		}
 		return sentinel
@@ -74,7 +74,7 @@ func TestWithTxRollsBackOnError(t *testing.T) {
 	}
 
 	var n int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM organizations`).Scan(&n); err != nil {
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM projects`).Scan(&n); err != nil {
 		t.Fatal(err)
 	}
 	if n != 0 {

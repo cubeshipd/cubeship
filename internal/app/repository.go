@@ -18,7 +18,7 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, org_id, project_id, environment_id, name, description, source, source_image,
+const columns = `id, project_id, environment_id, name, description, source, source_image,
 	source_repo, source_ref, source_dockerfile, container_id, status, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
@@ -26,7 +26,7 @@ type scanner interface{ Scan(dest ...any) error }
 func scan(row scanner) (*App, error) {
 	var a App
 	var envJSON []byte
-	if err := row.Scan(&a.ID, &a.OrgID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Description,
+	if err := row.Scan(&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Description,
 		&a.Source, &a.SourceImage, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
 		&a.ContainerID, &a.Status, &envJSON, &a.CreatedAt); err != nil {
 		return nil, err
@@ -83,13 +83,13 @@ type Origin struct {
 	Dockerfile string
 }
 
-func (r *Repository) Create(ctx context.Context, orgID, projectID, environmentID int64, name, description string, source Source, origin Origin) (*App, error) {
+func (r *Repository) Create(ctx context.Context, projectID, environmentID int64, name, description string, source Source, origin Origin) (*App, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO apps (org_id, project_id, environment_id, name, description, source,
+		`INSERT INTO apps (project_id, environment_id, name, description, source,
 		                   source_image, source_repo, source_ref, source_dockerfile)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		 RETURNING `+columns,
-		orgID, projectID, environmentID, name, description, string(source),
+		projectID, environmentID, name, description, string(source),
 		origin.Image, origin.Repo, origin.Ref, origin.Dockerfile)
 	a, err := scan(row)
 	if err != nil {
@@ -133,20 +133,14 @@ func (r *Repository) Delete(ctx context.Context, appID int64) error {
 	return nil
 }
 
-// List returns every app on the instance. Only the reconciler, which is
-// instance-wide by nature, should use it; callers acting for a user want
-// ListScopedForOrgs so the database does the filtering.
+// List returns every app on the instance.
 func (r *Repository) List(ctx context.Context) ([]*App, error) {
 	return r.list(ctx, `SELECT `+columns+` FROM apps ORDER BY id`)
 }
 
-// ListForOrg, ListForProject and ListForEnvironment are what deleting
-// something above an app reads: everything that has to be stopped before
-// the row above it can go. See org.AppTeardown.
-func (r *Repository) ListForOrg(ctx context.Context, orgID int64) ([]*App, error) {
-	return r.list(ctx, `SELECT `+columns+` FROM apps WHERE org_id = $1 ORDER BY id`, orgID)
-}
-
+// ListForProject and ListForEnvironment are what deleting something
+// above an app reads: everything that has to be stopped before the row
+// above it can go. See project.AppTeardown.
 func (r *Repository) ListForProject(ctx context.Context, projectID int64) ([]*App, error) {
 	return r.list(ctx, `SELECT `+columns+` FROM apps WHERE project_id = $1 ORDER BY id`, projectID)
 }
@@ -303,7 +297,6 @@ func (r *Repository) ListDeployments(ctx context.Context, appID int64, limit int
 // query instead of three more per app.
 type Scoped struct {
 	App
-	OrgSlug         string
 	ProjectSlug     string
 	EnvironmentSlug string
 }
@@ -311,22 +304,21 @@ type Scoped struct {
 // scopedQuery selects an app with its containing slugs. The column order
 // matches scanScoped.
 const scopedQuery = `
-	SELECT a.id, a.org_id, a.project_id, a.environment_id, a.name, a.description,
+	SELECT a.id, a.project_id, a.environment_id, a.name, a.description,
 	       a.source, a.source_image, a.source_repo, a.source_ref, a.source_dockerfile,
 	       a.container_id, a.status, a.env, a.created_at,
-	       o.slug, p.slug, e.slug
+	       p.slug, e.slug
 	FROM apps a
-	JOIN organizations o ON o.id = a.org_id
 	JOIN projects p ON p.id = a.project_id
 	JOIN environments e ON e.id = a.environment_id`
 
 func scanScoped(row scanner) (*Scoped, error) {
 	var s Scoped
 	var envJSON []byte
-	if err := row.Scan(&s.ID, &s.OrgID, &s.ProjectID, &s.EnvironmentID, &s.Name, &s.Description,
+	if err := row.Scan(&s.ID, &s.ProjectID, &s.EnvironmentID, &s.Name, &s.Description,
 		&s.Source, &s.SourceImage, &s.SourceRepo, &s.SourceRef, &s.SourceDockerfile,
 		&s.ContainerID, &s.Status, &envJSON, &s.CreatedAt,
-		&s.OrgSlug, &s.ProjectSlug, &s.EnvironmentSlug); err != nil {
+		&s.ProjectSlug, &s.EnvironmentSlug); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &s.Env); err != nil {
@@ -335,8 +327,8 @@ func scanScoped(row scanner) (*Scoped, error) {
 	return &s, nil
 }
 
-// BuildingFromRepository finds every app in an organization that builds
-// from a repository at a branch.
+// BuildingFromRepository finds every app that builds from a repository
+// at a branch.
 //
 // The repository is matched on the "owner/name" a URL and a webhook
 // payload both reduce to, because the two are rarely spelled the same —
@@ -345,13 +337,12 @@ func scanScoped(row scanner) (*Scoped, error) {
 // An app with no ref of its own tracks whatever branch it is told about,
 // which is what makes "deploy on push" work without anybody naming a
 // branch twice.
-func (r *Repository) BuildingFromRepository(ctx context.Context, orgID int64, fullName, branch string) ([]*Scoped, error) {
+func (r *Repository) BuildingFromRepository(ctx context.Context, fullName, branch string) ([]*Scoped, error) {
 	rows, err := r.q.QueryContext(ctx, scopedQuery+`
-		WHERE a.org_id = $1
-		  AND a.source = ANY($2)
-		  AND lower(regexp_replace(regexp_replace(a.source_repo, '^https?://(www\.)?github\.com/', ''), '(\.git)?/?$', '')) = lower($3)
-		  AND (a.source_ref = '' OR a.source_ref = $4)`,
-		orgID, []string{string(SourceDockerfile), string(SourceRailpack)}, fullName, branch)
+		WHERE a.source = ANY($1)
+		  AND lower(regexp_replace(regexp_replace(a.source_repo, '^https?://(www\.)?github\.com/', ''), '(\.git)?/?$', '')) = lower($2)
+		  AND (a.source_ref = '' OR a.source_ref = $3)`,
+		[]string{string(SourceDockerfile), string(SourceRailpack)}, fullName, branch)
 	if err != nil {
 		return nil, err
 	}
@@ -368,15 +359,15 @@ func (r *Repository) BuildingFromRepository(ctx context.Context, orgID int64, fu
 	return out, rows.Err()
 }
 
-// ScopedByReference resolves the four-part reference that identifies an
+// ScopedByReference resolves the three-part reference that identifies an
 // app, in one query.
-func (r *Repository) ScopedByReference(ctx context.Context, org, proj, env, name string) (*Scoped, error) {
+func (r *Repository) ScopedByReference(ctx context.Context, proj, env, name string) (*Scoped, error) {
 	row := r.q.QueryRowContext(ctx,
-		scopedQuery+` WHERE o.slug = $1 AND p.slug = $2 AND e.slug = $3 AND a.name = $4`,
-		org, proj, env, name)
+		scopedQuery+` WHERE p.slug = $1 AND e.slug = $2 AND a.name = $3`,
+		proj, env, name)
 	s, err := scanScoped(row)
 	if err != nil {
-		return nil, fmt.Errorf("get app %s/%s/%s/%s: %w", org, proj, env, name, err)
+		return nil, fmt.Errorf("get app %s/%s/%s: %w", proj, env, name, err)
 	}
 	// Loaded here rather than by whoever asked. An app with no domains
 	// cannot deploy at all, so every reader of a single app needs them —

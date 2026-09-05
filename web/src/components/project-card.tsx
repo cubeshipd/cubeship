@@ -7,13 +7,11 @@ import type { App } from "@/lib/api";
 // open it to learn: which environments it has, how many apps are in it
 // and whether any of them is unhappy.
 export function ProjectCard({
-  org,
   slug,
   description,
   environments,
   apps,
 }: {
-  org: string;
   slug: string;
   description?: string;
   environments: string[];
@@ -26,7 +24,7 @@ export function ProjectCard({
 
   return (
     <Link
-      href={`/projects/${org}/${slug}`}
+      href={`/projects/${slug}`}
       className="hud-frame group flex flex-col border border-border bg-card transition-all hover:border-primary/40 hover:bg-secondary/40 focus-visible:border-primary focus-visible:outline-none"
     >
       <div className="flex-1 p-4">
@@ -35,7 +33,6 @@ export function ProjectCard({
             <h3 className="truncate font-mono text-sm font-semibold group-hover:text-primary">
               {slug}
             </h3>
-            <p className="mt-1 truncate font-mono text-[11px] text-subtle-foreground">{org}</p>
             {description && (
               <p className="mt-2.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                 {description}

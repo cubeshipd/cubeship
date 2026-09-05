@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"time"
 
-	"cubeship/internal/org"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/user"
 )
@@ -53,25 +52,24 @@ type Handler struct{ svc *Service }
 func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
-	r.Handle("GET /orgs/{orgSlug}/registries", auth(http.HandlerFunc(h.list)))
-	r.Handle("POST /orgs/{orgSlug}/registries", auth(http.HandlerFunc(h.create)))
-	r.Handle("PUT /orgs/{orgSlug}/registries/{id}", auth(http.HandlerFunc(h.update)))
-	r.Handle("DELETE /orgs/{orgSlug}/registries/{id}", auth(http.HandlerFunc(h.delete)))
-	r.Handle("GET /orgs/{orgSlug}/registries/{id}/repositories", auth(http.HandlerFunc(h.repositories)))
-	r.Handle("GET /orgs/{orgSlug}/registries/{id}/images", auth(http.HandlerFunc(h.images)))
-	r.Handle("GET /orgs/{orgSlug}/registries/{id}/status", auth(http.HandlerFunc(h.status)))
-	r.Handle("GET /orgs/{orgSlug}/registries/{id}/usage", auth(http.HandlerFunc(h.usage)))
-	r.Handle("DELETE /orgs/{orgSlug}/registries/{id}/images", auth(http.HandlerFunc(h.deleteImage)))
-	r.Handle("DELETE /orgs/{orgSlug}/registries/{id}/repositories", auth(http.HandlerFunc(h.deleteRepository)))
+	r.Handle("GET /registries", auth(http.HandlerFunc(h.list)))
+	r.Handle("POST /registries", auth(http.HandlerFunc(h.create)))
+	r.Handle("PUT /registries/{id}", auth(http.HandlerFunc(h.update)))
+	r.Handle("DELETE /registries/{id}", auth(http.HandlerFunc(h.delete)))
+	r.Handle("GET /registries/{id}/repositories", auth(http.HandlerFunc(h.repositories)))
+	r.Handle("GET /registries/{id}/images", auth(http.HandlerFunc(h.images)))
+	r.Handle("GET /registries/{id}/status", auth(http.HandlerFunc(h.status)))
+	r.Handle("GET /registries/{id}/usage", auth(http.HandlerFunc(h.usage)))
+	r.Handle("DELETE /registries/{id}/images", auth(http.HandlerFunc(h.deleteImage)))
+	r.Handle("DELETE /registries/{id}/repositories", auth(http.HandlerFunc(h.deleteRepository)))
 }
 
-// WriteError maps this module's domain errors onto status codes. The
-// 404/403 split is org.Service.Authorize's, unchanged.
+// WriteError maps this module's domain errors onto status codes.
 func WriteError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, org.ErrForbidden):
+	case errors.Is(err, user.ErrForbidden):
 		http.Error(w, "forbidden", http.StatusForbidden)
-	case errors.Is(err, org.ErrNotFound), errors.Is(err, ErrNotFound):
+	case errors.Is(err, ErrNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
 	case errors.Is(err, ErrNoListing):
 		http.Error(w, err.Error(), http.StatusNotImplemented)
@@ -90,7 +88,7 @@ func WriteError(w http.ResponseWriter, err error) {
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	creds, err := h.svc.List(ctx, user.FromContext(ctx), r.PathValue("orgSlug"))
+	creds, err := h.svc.List(ctx, user.FromContext(ctx))
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -120,7 +118,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	created, err := h.svc.Create(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), Credential{
+	created, err := h.svc.Create(ctx, user.FromContext(ctx), Credential{
 		Provider:  Provider(req.Provider),
 		Host:      req.Host,
 		Namespace: req.Namespace,
@@ -154,7 +152,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	updated, err := h.svc.Update(ctx, user.FromContext(ctx), r.PathValue("orgSlug"),
+	updated, err := h.svc.Update(ctx, user.FromContext(ctx),
 		id, req.Username, req.Password, req.Namespace)
 	if err != nil {
 		WriteError(w, err)
@@ -174,7 +172,7 @@ func (h *Handler) repositories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	repos, err := h.svc.Repositories(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), id)
+	repos, err := h.svc.Repositories(ctx, user.FromContext(ctx), id)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -195,7 +193,7 @@ func (h *Handler) images(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	images, err := h.svc.Images(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), id, repository)
+	images, err := h.svc.Images(ctx, user.FromContext(ctx), id, repository)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -213,7 +211,7 @@ func (h *Handler) usage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	usage, err := h.svc.Usage(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), id)
+	usage, err := h.svc.Usage(ctx, user.FromContext(ctx), id)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -228,7 +226,7 @@ func (h *Handler) deleteImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if err := h.svc.DeleteImage(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), id,
+	if err := h.svc.DeleteImage(ctx, user.FromContext(ctx), id,
 		r.URL.Query().Get("repository"), ImageRef{
 			Tag:    r.URL.Query().Get("tag"),
 			Digest: r.URL.Query().Get("digest"),
@@ -246,7 +244,7 @@ func (h *Handler) deleteRepository(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if err := h.svc.DeleteRepository(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), id,
+	if err := h.svc.DeleteRepository(ctx, user.FromContext(ctx), id,
 		r.URL.Query().Get("repository")); err != nil {
 		WriteError(w, err)
 		return
@@ -261,7 +259,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	status, err := h.svc.Probe(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), id)
+	status, err := h.svc.Probe(ctx, user.FromContext(ctx), id)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -276,7 +274,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if err := h.svc.Delete(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), id); err != nil {
+	if err := h.svc.Delete(ctx, user.FromContext(ctx), id); err != nil {
 		WriteError(w, err)
 		return
 	}

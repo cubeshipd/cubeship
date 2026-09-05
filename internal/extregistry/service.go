@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"cubeship/internal/org"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/user"
 )
@@ -17,8 +16,7 @@ import (
 // Service holds the use cases for registry credentials. Both the HTTP
 // handlers and the deploy path call exactly these.
 type Service struct {
-	db   *database.DB
-	orgs *org.Service
+	db *database.DB
 
 	// client talks to a provider's API — AWS's, so far. Only a
 	// credential whose token has to be fetched needs one.
@@ -30,9 +28,9 @@ type Service struct {
 	tokens sync.Map // credential id -> fetchedLogin
 }
 
-func NewService(db *database.DB, orgs *org.Service) *Service {
+func NewService(db *database.DB) *Service {
 	return &Service{
-		db: db, orgs: orgs,
+		db:     db,
 		client: &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -53,15 +51,14 @@ func (s *Service) Repo() *Repository { return NewRepository(s.db) }
 
 // Managing credentials is an admin's job. A member can deploy an app
 // that uses one — they just cannot read, add or change the login.
-const manageRole = org.RoleAdmin
+const manageRole = user.RoleAdmin
 
 // Create adds a login. What it asks for depends on the provider, and so
 // does what it does with it: a generic registry is taken at its word,
 // and an AWS one is used immediately — the call that proves the key
 // works is also the call that says where the registry is.
-func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug string, in Credential) (*Credential, error) {
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
-	if err != nil {
+func (s *Service) Create(ctx context.Context, caller *user.User, in Credential) (*Credential, error) {
+	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
 	if !in.Provider.Valid() {
@@ -107,7 +104,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug string,
 		in.Region = ""
 	}
 
-	c, err := s.Repo().Create(ctx, o.ID, in)
+	c, err := s.Repo().Create(ctx, in)
 	if database.IsUniqueViolation(err) {
 		return nil, ErrHostTaken
 	}
@@ -126,14 +123,13 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug string,
 // them somewhere else. A namespace is different in kind: it is typed by
 // hand, it is wrong in exactly one way, and until now the only way to
 // fix a typo was to delete the login and enter the password again.
-func (s *Service) Update(ctx context.Context, caller *user.User, orgSlug string, id int64, username, password string, namespace *string) (*Credential, error) {
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
-	if err != nil {
+func (s *Service) Update(ctx context.Context, caller *user.User, id int64, username, password string, namespace *string) (*Credential, error) {
+	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
 
 	if namespace != nil {
-		normalized, err := checkNamespace(ctx, s, caller, orgSlug, id, *namespace)
+		normalized, err := checkNamespace(ctx, s, caller, id, *namespace)
 		if err != nil {
 			return nil, err
 		}
@@ -157,41 +153,39 @@ func (s *Service) Update(ctx context.Context, caller *user.User, orgSlug string,
 		return nil, ErrUsernameRequired
 	}
 
-	c, err := s.Repo().Update(ctx, id, o.ID, user, pass, namespace)
+	c, err := s.Repo().Update(ctx, id, user, pass, namespace)
 	if errors.Is(err, database.ErrNotFound) {
 		return nil, ErrNotFound
 	}
 	return c, err
 }
 
-func (s *Service) List(ctx context.Context, caller *user.User, orgSlug string) ([]*Credential, error) {
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
-	if err != nil {
+func (s *Service) List(ctx context.Context, caller *user.User) ([]*Credential, error) {
+	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
-	return s.Repo().List(ctx, o.ID)
+	return s.Repo().List(ctx)
 }
 
-func (s *Service) Delete(ctx context.Context, caller *user.User, orgSlug string, id int64) error {
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
-	if err != nil {
+func (s *Service) Delete(ctx context.Context, caller *user.User, id int64) error {
+	if err := user.Require(caller, manageRole); err != nil {
 		return err
 	}
-	err = s.Repo().Delete(ctx, id, o.ID)
+	err := s.Repo().Delete(ctx, id)
 	if errors.Is(err, database.ErrNotFound) {
 		return ErrNotFound
 	}
 	return err
 }
 
-// ForImage returns the credential an organization holds for whichever
+// ForImage returns the credential this instance holds for whichever
 // registry image names, if it holds one.
 //
 // It runs inside a deploy, on the daemon's behalf rather than a
 // caller's, so it does not authorize: by the time a deploy is running,
 // the right to deploy that app has already been settled.
-func (s *Service) ForImage(ctx context.Context, orgID int64, image string) (*Credential, bool, error) {
-	return s.Repo().ByHost(ctx, orgID, HostOf(image))
+func (s *Service) ForImage(ctx context.Context, image string) (*Credential, bool, error) {
+	return s.Repo().ByHost(ctx, HostOf(image))
 }
 
 // LoginFor is what a pull authenticates with.
@@ -231,8 +225,8 @@ func (s *Service) LoginFor(ctx context.Context, c *Credential) (username, passwo
 var ErrNoListing = errors.New("this registry does not list what it holds")
 
 // Repositories lists what a credential's registry contains.
-func (s *Service) Repositories(ctx context.Context, caller *user.User, orgSlug string, id int64) ([]Repo, error) {
-	c, err := s.resolve(ctx, caller, orgSlug, id)
+func (s *Service) Repositories(ctx context.Context, caller *user.User, id int64) ([]Repo, error) {
+	c, err := s.resolve(ctx, caller, id)
 	if err != nil {
 		return nil, err
 	}
@@ -246,8 +240,8 @@ func (s *Service) Repositories(ctx context.Context, caller *user.User, orgSlug s
 }
 
 // Images lists one repository's tags.
-func (s *Service) Images(ctx context.Context, caller *user.User, orgSlug string, id int64, repository string) ([]Image, error) {
-	c, err := s.resolve(ctx, caller, orgSlug, id)
+func (s *Service) Images(ctx context.Context, caller *user.User, id int64, repository string) ([]Image, error) {
+	c, err := s.resolve(ctx, caller, id)
 	if err != nil {
 		return nil, err
 	}
@@ -263,13 +257,12 @@ func (s *Service) Images(ctx context.Context, caller *user.User, orgSlug string,
 	return listV2Images(ctx, s.client, c, repository)
 }
 
-// resolve finds one of this organization's credentials.
-func (s *Service) resolve(ctx context.Context, caller *user.User, orgSlug string, id int64) (*Credential, error) {
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
-	if err != nil {
+// resolve finds one of this instance's credentials.
+func (s *Service) resolve(ctx context.Context, caller *user.User, id int64) (*Credential, error) {
+	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
-	creds, err := s.Repo().List(ctx, o.ID)
+	creds, err := s.Repo().List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -286,8 +279,8 @@ func (s *Service) resolve(ctx context.Context, caller *user.User, orgSlug string
 // Whether it frees anything is the registry's business: ECR reclaims the
 // storage, and a registry that only untags does not. What is promised
 // here is that nothing can pull that tag afterwards.
-func (s *Service) DeleteImage(ctx context.Context, caller *user.User, orgSlug string, id int64, repository string, ref ImageRef) error {
-	c, err := s.resolve(ctx, caller, orgSlug, id)
+func (s *Service) DeleteImage(ctx context.Context, caller *user.User, id int64, repository string, ref ImageRef) error {
+	c, err := s.resolve(ctx, caller, id)
 	if err != nil {
 		return err
 	}
@@ -304,8 +297,8 @@ func (s *Service) DeleteImage(ctx context.Context, caller *user.User, orgSlug st
 }
 
 // DeleteRepository removes a repository and everything in it.
-func (s *Service) DeleteRepository(ctx context.Context, caller *user.User, orgSlug string, id int64, repository string) error {
-	c, err := s.resolve(ctx, caller, orgSlug, id)
+func (s *Service) DeleteRepository(ctx context.Context, caller *user.User, id int64, repository string) error {
+	c, err := s.resolve(ctx, caller, id)
 	if err != nil {
 		return err
 	}
@@ -326,8 +319,8 @@ func (s *Service) DeleteRepository(ctx context.Context, caller *user.User, orgSl
 // It is one call per repository — ECR has no aggregate to ask for — so
 // it is its own endpoint rather than part of the listing: a page that
 // waited for this before showing anything would wait for all of them.
-func (s *Service) Usage(ctx context.Context, caller *user.User, orgSlug string, id int64) (*Usage, error) {
-	c, err := s.resolve(ctx, caller, orgSlug, id)
+func (s *Service) Usage(ctx context.Context, caller *user.User, id int64) (*Usage, error) {
+	c, err := s.resolve(ctx, caller, id)
 	if err != nil {
 		return nil, err
 	}
@@ -374,8 +367,8 @@ type Status struct {
 // For AWS the probe deliberately bypasses the token cache: a cached
 // token stays valid for hours after the access key that minted it was
 // deleted, so answering from it would report a dead login as healthy.
-func (s *Service) Probe(ctx context.Context, caller *user.User, orgSlug string, id int64) (*Status, error) {
-	c, err := s.resolve(ctx, caller, orgSlug, id)
+func (s *Service) Probe(ctx context.Context, caller *user.User, id int64) (*Status, error) {
+	c, err := s.resolve(ctx, caller, id)
 	if err != nil {
 		return nil, err
 	}
@@ -411,8 +404,8 @@ const probeTimeout = 10 * time.Second
 // the image; a generic registry's path is whatever the image says. Only
 // DigitalOcean has a name sitting in the middle that someone types, so
 // only DigitalOcean has one to correct.
-func checkNamespace(ctx context.Context, s *Service, caller *user.User, orgSlug string, id int64, namespace string) (string, error) {
-	c, err := s.resolve(ctx, caller, orgSlug, id)
+func checkNamespace(ctx context.Context, s *Service, caller *user.User, id int64, namespace string) (string, error) {
+	c, err := s.resolve(ctx, caller, id)
 	if err != nil {
 		return "", err
 	}

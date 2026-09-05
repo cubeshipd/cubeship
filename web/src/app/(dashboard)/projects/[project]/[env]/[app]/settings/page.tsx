@@ -111,7 +111,7 @@ function Settings({ reference }: { reference: string }) {
         confirmLabel="Delete app"
         onConfirm={async () => {
           await api.del(path);
-          router.push(`/projects/${app.org}/${app.project}/${app.environment}`);
+          router.push(`/projects/${app.project}/${app.environment}`);
         }}
       />
     </>
@@ -259,7 +259,6 @@ function SourceSection(props: SectionProps) {
             {origin === "github" ? (
               <div className="space-y-5 border-l-2 border-primary/40 pl-4">
                 <GitHubSource
-                  org={app.org}
                   repo={repo}
                   gitRef={gitRef}
                   onRepo={(url, defaultBranch) => {

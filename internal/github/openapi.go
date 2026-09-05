@@ -34,7 +34,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			}, "installations"),
 		},
 		Paths: map[string]openapi.PathItem{
-			"/orgs/{orgSlug}/github": {
+			"/github": {
 				"get": {
 					OperationID: "listGitHubConnections",
 					Summary:     "List an organization's connected GitHub accounts",
@@ -90,7 +90,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/github/repositories": {
+			"/github/repositories": {
 				"get": {
 					OperationID: "listGitHubRepositories",
 					Summary:     "List the repositories this organization can build",
@@ -108,7 +108,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/github/branches": {
+			"/github/branches": {
 				"get": {
 					OperationID: "listGitHubBranches",
 					Summary:     "List a repository's branches",
@@ -128,7 +128,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/orgs/{orgSlug}/github/{id}": {
+			"/github/{id}": {
 				"delete": {
 					OperationID: "disconnectGitHubAccount",
 					Summary:     "Forget a GitHub App installation",

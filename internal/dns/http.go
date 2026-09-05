@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"time"
 
-	"cubeship/internal/org"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/user"
 )
@@ -50,24 +49,23 @@ type Handler struct{ svc *Service }
 func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
-	r.Handle("GET /orgs/{orgSlug}/dns", auth(http.HandlerFunc(h.list)))
-	r.Handle("POST /orgs/{orgSlug}/dns", auth(http.HandlerFunc(h.create)))
-	r.Handle("PATCH /orgs/{orgSlug}/dns/{id}", auth(http.HandlerFunc(h.update)))
-	r.Handle("DELETE /orgs/{orgSlug}/dns/{id}", auth(http.HandlerFunc(h.delete)))
-	r.Handle("GET /orgs/{orgSlug}/dns/{id}/status", auth(http.HandlerFunc(h.status)))
-	r.Handle("GET /orgs/{orgSlug}/dns/{id}/zones", auth(http.HandlerFunc(h.zones)))
-	r.Handle("GET /orgs/{orgSlug}/dns/{id}/records", auth(http.HandlerFunc(h.records)))
-	r.Handle("PUT /orgs/{orgSlug}/dns/{id}/records", auth(http.HandlerFunc(h.putRecord)))
-	r.Handle("DELETE /orgs/{orgSlug}/dns/{id}/records", auth(http.HandlerFunc(h.deleteRecord)))
+	r.Handle("GET /dns", auth(http.HandlerFunc(h.list)))
+	r.Handle("POST /dns", auth(http.HandlerFunc(h.create)))
+	r.Handle("PATCH /dns/{id}", auth(http.HandlerFunc(h.update)))
+	r.Handle("DELETE /dns/{id}", auth(http.HandlerFunc(h.delete)))
+	r.Handle("GET /dns/{id}/status", auth(http.HandlerFunc(h.status)))
+	r.Handle("GET /dns/{id}/zones", auth(http.HandlerFunc(h.zones)))
+	r.Handle("GET /dns/{id}/records", auth(http.HandlerFunc(h.records)))
+	r.Handle("PUT /dns/{id}/records", auth(http.HandlerFunc(h.putRecord)))
+	r.Handle("DELETE /dns/{id}/records", auth(http.HandlerFunc(h.deleteRecord)))
 }
 
-// WriteError maps this module's domain errors onto status codes. The
-// 404/403 split is org.Service.Authorize's, unchanged.
+// WriteError maps this module's domain errors onto status codes.
 func WriteError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, org.ErrForbidden):
+	case errors.Is(err, user.ErrForbidden):
 		http.Error(w, "forbidden", http.StatusForbidden)
-	case errors.Is(err, org.ErrNotFound), errors.Is(err, ErrNotFound),
+	case errors.Is(err, ErrNotFound),
 		errors.Is(err, ErrRecordNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
 	case errors.Is(err, ErrLabelTaken):
@@ -83,7 +81,7 @@ func WriteError(w http.ResponseWriter, err error) {
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	creds, err := h.svc.List(ctx, user.FromContext(ctx), r.PathValue("orgSlug"))
+	creds, err := h.svc.List(ctx, user.FromContext(ctx))
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -104,7 +102,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	created, err := h.svc.Create(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), Credential{
+	created, err := h.svc.Create(ctx, user.FromContext(ctx), Credential{
 		Provider: req.Provider, Label: req.Label,
 		Username: req.Username, Password: req.Password,
 	})
@@ -134,7 +132,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	updated, err := h.svc.Update(ctx, user.FromContext(ctx), r.PathValue("orgSlug"),
+	updated, err := h.svc.Update(ctx, user.FromContext(ctx),
 		id, req.Label, req.Username, req.Password)
 	if err != nil {
 		WriteError(w, err)
@@ -149,7 +147,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if err := h.svc.Delete(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), id); err != nil {
+	if err := h.svc.Delete(ctx, user.FromContext(ctx), id); err != nil {
 		WriteError(w, err)
 		return
 	}
@@ -162,7 +160,7 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	status, err := h.svc.Probe(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), id)
+	status, err := h.svc.Probe(ctx, user.FromContext(ctx), id)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -176,7 +174,7 @@ func (h *Handler) zones(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	zones, err := h.svc.Zones(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), id)
+	zones, err := h.svc.Zones(ctx, user.FromContext(ctx), id)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -190,7 +188,7 @@ func (h *Handler) records(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	records, err := h.svc.Records(ctx, user.FromContext(ctx), r.PathValue("orgSlug"),
+	records, err := h.svc.Records(ctx, user.FromContext(ctx),
 		id, r.URL.Query().Get("zone"))
 	if err != nil {
 		WriteError(w, err)
@@ -211,7 +209,7 @@ func (h *Handler) putRecord(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	if err := h.svc.PutRecord(ctx, user.FromContext(ctx), r.PathValue("orgSlug"),
+	if err := h.svc.PutRecord(ctx, user.FromContext(ctx),
 		id, r.URL.Query().Get("zone"), req); err != nil {
 		WriteError(w, err)
 		return
@@ -226,7 +224,7 @@ func (h *Handler) deleteRecord(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	query := r.URL.Query()
-	if err := h.svc.DeleteRecord(ctx, user.FromContext(ctx), r.PathValue("orgSlug"),
+	if err := h.svc.DeleteRecord(ctx, user.FromContext(ctx),
 		id, query.Get("zone"), query.Get("name"), query.Get("type")); err != nil {
 		WriteError(w, err)
 		return

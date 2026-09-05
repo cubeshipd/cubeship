@@ -4,7 +4,6 @@ import { PlusIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
-import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
 import { ProjectCard } from "@/components/project-card";
 import { SlugField } from "@/components/slug-field";
@@ -33,7 +32,6 @@ export default function Home() {
 // listed here: an app only means something inside an environment, and
 // which environment is a choice you make after opening the project.
 function Projects() {
-  const { org, loaded } = useOrg();
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [envs, setEnvs] = useState<Record<string, string[]>>({});
   const [apps, setApps] = useState<App[]>([]);
@@ -41,15 +39,11 @@ function Projects() {
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
-    if (!org) {
-      setProjects(null);
-      return;
-    }
     api
-      .get<Project[]>(`/orgs/${org}/projects`)
+      .get<Project[]>(`/projects`)
       .then(setProjects)
       .catch((e) => setError(message(e)));
-  }, [org]);
+  }, []);
   useEffect(reload, [reload]);
 
   // The daemon answers with every app you can see, across organizations
@@ -64,12 +58,12 @@ function Projects() {
   // Environments come one project at a time; a card that showed none
   // until you opened it would be the wrong shape of empty.
   useEffect(() => {
-    if (!org || !projects) return;
+    if (!projects) return;
     let live = true;
     Promise.all(
       projects.map((p) =>
         api
-          .get<Environment[]>(`/orgs/${org}/projects/${p.slug}/environments`)
+          .get<Environment[]>(`/projects/${p.slug}/environments`)
           .then((list) => [p.slug, list.map((e) => e.slug)] as const)
           .catch(() => [p.slug, []] as const),
       ),
@@ -77,41 +71,22 @@ function Projects() {
     return () => {
       live = false;
     };
-  }, [org, projects]);
+  }, [projects]);
 
   return (
     <>
       <PageHeader
         title="Projects"
-        sub={
-          org ? (
-            <>
-              Everything under <code className="text-foreground">{org}</code>. An app lives in an
-              environment, inside one of these.
-            </>
-          ) : (
-            "An app lives in an environment, inside a project, inside an organization."
-          )
-        }
+        sub="An app lives in an environment, inside a project."
         actions={
-          org && (
-            <Button onClick={() => setCreating(true)}>
-              <PlusIcon />
-              New project
-            </Button>
-          )
+          <Button onClick={() => setCreating(true)}>
+            <PlusIcon />
+            New project
+          </Button>
         }
       />
 
       <ErrorAlert error={error} />
-
-      {loaded && !org && (
-        <Card>
-          <CardContent className="py-2 text-sm text-muted-foreground">
-            No organization selected. Create one from the switcher at the top of the sidebar.
-          </CardContent>
-        </Card>
-      )}
 
       {projects?.length === 0 && (
         <Card>
@@ -135,30 +110,25 @@ function Projects() {
           {projects.map((p) => (
             <ProjectCard
               key={p.slug}
-              org={org}
               slug={p.slug}
               description={p.description}
               environments={envs[p.slug] ?? p.environments ?? []}
-              apps={apps.filter((a) => a.org === org && a.project === p.slug)}
+              apps={apps.filter((a) => a.project === p.slug)}
             />
           ))}
         </div>
       )}
 
-      {org && (
-        <NewProjectDialog org={org} open={creating} onOpenChange={setCreating} onCreated={reload} />
-      )}
+      <NewProjectDialog open={creating} onOpenChange={setCreating} onCreated={reload} />
     </>
   );
 }
 
 function NewProjectDialog({
-  org,
   open,
   onOpenChange,
   onCreated,
 }: {
-  org: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
@@ -174,7 +144,7 @@ function NewProjectDialog({
     try {
       // No name: the daemon derives one from the slug, and it is edited
       // afterwards in settings if the guess is wrong.
-      await api.post(`/orgs/${org}/projects`, { slug });
+      await api.post(`/projects`, { slug });
       setSlug("");
       onCreated();
       onOpenChange(false);

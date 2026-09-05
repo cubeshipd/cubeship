@@ -20,7 +20,7 @@ func NewRepository(q database.Queryer) *Repository {
 }
 
 const (
-	userColumns   = `id, username, is_super_admin, created_at`
+	userColumns   = `id, username, role, created_at`
 	apiKeyColumns = `id, user_id, key_hash, name, created_at, last_used_at`
 )
 
@@ -28,7 +28,7 @@ type scanner interface{ Scan(dest ...any) error }
 
 func scanUser(row scanner) (*User, error) {
 	var u User
-	if err := row.Scan(&u.ID, &u.Username, &u.IsSuperAdmin, &u.CreatedAt); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.Role, &u.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &u, nil
@@ -42,10 +42,10 @@ func scanAPIKey(row scanner) (*APIKey, error) {
 	return &k, nil
 }
 
-func (r *Repository) Create(ctx context.Context, username string, isSuperAdmin bool) (*User, error) {
+func (r *Repository) Create(ctx context.Context, username string, role Role) (*User, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO users (username, is_super_admin) VALUES ($1, $2) RETURNING `+userColumns,
-		username, isSuperAdmin)
+		`INSERT INTO users (username, role) VALUES ($1, $2) RETURNING `+userColumns,
+		username, string(role))
 	u, err := scanUser(row)
 	if err != nil {
 		return nil, fmt.Errorf("create user: %w", err)
@@ -94,7 +94,7 @@ func (r *Repository) CreateAPIKey(ctx context.Context, userID int64, keyHash, na
 // is the authentication query.
 func (r *Repository) ByAPIKeyHash(ctx context.Context, keyHash string) (*User, error) {
 	row := r.q.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.is_super_admin, u.created_at
+		SELECT u.id, u.username, u.role, u.created_at
 		FROM api_keys k
 		JOIN users u ON u.id = k.user_id
 		WHERE k.key_hash = $1`, keyHash)
@@ -190,7 +190,7 @@ func (r *Repository) PasswordHash(ctx context.Context, username string) (*User, 
 
 	var u User
 	var hash string
-	if err := row.Scan(&u.ID, &u.Username, &u.IsSuperAdmin, &u.CreatedAt, &hash); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.Role, &u.CreatedAt, &hash); err != nil {
 		return nil, "", fmt.Errorf("get user %q: %w", username, err)
 	}
 	return &u, hash, nil
@@ -227,7 +227,7 @@ func (r *Repository) CreateSession(ctx context.Context, tokenHash string, userID
 // thing that makes expiry take effect.
 func (r *Repository) UserBySession(ctx context.Context, tokenHash string) (*User, error) {
 	row := r.q.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.is_super_admin, u.created_at
+		SELECT u.id, u.username, u.role, u.created_at
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = $1 AND s.expires_at > now()`, tokenHash)

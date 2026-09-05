@@ -23,7 +23,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 		openapi.PathParam("env", "The environment's slug."),
 		openapi.PathParam("name", "The app's name, unique within that environment."),
 	}
-	const appPath = "/apps/{org}/{project}/{env}/{name}"
+	const appPath = "/apps/{project}/{env}/{name}"
 
 	return openapi.Spec{
 		Tags: []openapi.Tag{{
@@ -195,8 +195,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Tags:        []string{"Apps"},
 					Parameters: append(refParams,
 						openapi.PathParam("id", "The deployment's id, from the deploy response."),
-						openapi.QueryParam("wait", `"true" to hold the response open until the deploy finishes.`),
-					),
+						openapi.QueryParam("wait", `"true" to hold the response open until the deploy finishes.`)),
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The deployment.", openapi.Ref("Deployment")),
 						"400": openapi.TextResponse("The id is not a number."),
@@ -264,8 +263,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Description: "Stdout and stderr, already demultiplexed out of Docker's frame format. Returns the last " + DefaultLogTail + " lines unless `tail` says otherwise.",
 					Tags:        []string{"Apps"},
 					Parameters: append(refParams,
-						openapi.QueryParam("tail", `Number of trailing lines, e.g. "1000", or "all" for the entire log. Defaults to `+DefaultLogTail+"."),
-					),
+						openapi.QueryParam("tail", `Number of trailing lines, e.g. "1000", or "all" for the entire log. Defaults to `+DefaultLogTail+".")),
 					Responses: openapi.Responses{
 						"200": {
 							Description: "The log output.",
@@ -277,7 +275,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/apps/{org}/{project}/{env}/{name}/domains": {
+			"/apps/{project}/{env}/{name}/domains": {
 				"post": {
 					OperationID: "addAppDomain",
 					Summary:     "Give an app a name to answer at",
@@ -301,7 +299,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
-			"/apps/{org}/{project}/{env}/{name}/domains/{domainID}": {
+			"/apps/{project}/{env}/{name}/domains/{domainID}": {
 				"patch": {
 					OperationID: "setAppDomainPort",
 					Summary:     "Change what one of an app's names reaches",

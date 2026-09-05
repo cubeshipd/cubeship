@@ -4,7 +4,6 @@ import (
 	"net/http"
 
 	"cubeship/internal/app"
-	"cubeship/internal/org"
 	"cubeship/internal/project"
 	"cubeship/internal/user"
 
@@ -48,7 +47,6 @@ func (s *Server) mcpServerForRequest(r *http.Request) *mcp.Server {
 func (s *Server) BuildMCPServer(caller *user.User, keyHash string) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "cubeship", Version: mcpVersion}, nil)
 	user.NewTools(s.Users, caller, keyHash).Register(srv)
-	org.NewTools(s.Orgs, caller).Register(srv)
 	project.NewTools(s.Projects, caller).Register(srv)
 	app.NewTools(s.Apps, caller).Register(srv)
 	return srv

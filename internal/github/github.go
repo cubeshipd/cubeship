@@ -18,7 +18,6 @@ import (
 // organization.
 type Installation struct {
 	ID        int64
-	OrgID     int64
 	GitHubID  int64
 	Account   string
 	CreatedAt time.Time

@@ -12,7 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"cubeship/internal/org"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/settings"
 	"cubeship/internal/user"
@@ -22,7 +21,6 @@ import (
 // tokens a clone needs, and deciding whether a webhook is real.
 type Service struct {
 	db       *database.DB
-	orgs     *org.Service
 	settings *settings.Service
 
 	client *http.Client
@@ -30,9 +28,9 @@ type Service struct {
 	now    func() time.Time
 }
 
-func NewService(db *database.DB, orgs *org.Service, cfg *settings.Service) *Service {
+func NewService(db *database.DB, cfg *settings.Service) *Service {
 	return &Service{
-		db: db, orgs: orgs, settings: cfg,
+		db: db, settings: cfg,
 		client: &http.Client{Timeout: 30 * time.Second},
 		now:    time.Now,
 	}
@@ -42,14 +40,13 @@ func (s *Service) Repo() *Repo { return NewRepository(s.db) }
 
 // Connecting an account is deciding what code this instance will build
 // and run, so it takes the same role building does.
-const manageRole = org.RoleAdmin
+const manageRole = user.RoleAdmin
 
 // Connect records that an organization has installed the App on a GitHub
 // account. The installation id comes back from GitHub when someone
 // finishes the install, and the account is which login it landed on.
-func (s *Service) Connect(ctx context.Context, caller *user.User, orgSlug string, installationID int64, code string) (*Installation, error) {
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
-	if err != nil {
+func (s *Service) Connect(ctx context.Context, caller *user.User, installationID int64, code string) (*Installation, error) {
+	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
 	if installationID == 0 {
@@ -85,26 +82,24 @@ func (s *Service) Connect(ctx context.Context, caller *user.User, orgSlug string
 	// the account is what every repository lookup matches against.
 	for _, i := range reachable {
 		if i.ID == installationID {
-			return s.Repo().Upsert(ctx, o.ID, installationID, i.Account.Login)
+			return s.Repo().Upsert(ctx, installationID, i.Account.Login)
 		}
 	}
 	return nil, ErrNotYours
 }
 
-func (s *Service) List(ctx context.Context, caller *user.User, orgSlug string) ([]*Installation, error) {
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
-	if err != nil {
+func (s *Service) List(ctx context.Context, caller *user.User) ([]*Installation, error) {
+	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
-	return s.Repo().List(ctx, o.ID)
+	return s.Repo().List(ctx)
 }
 
-func (s *Service) Disconnect(ctx context.Context, caller *user.User, orgSlug string, id int64) error {
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
-	if err != nil {
+func (s *Service) Disconnect(ctx context.Context, caller *user.User, id int64) error {
+	if err := user.Require(caller, manageRole); err != nil {
 		return err
 	}
-	if err := s.Repo().Delete(ctx, id, o.ID); errors.Is(err, database.ErrNotFound) {
+	if err := s.Repo().Delete(ctx, id); errors.Is(err, database.ErrNotFound) {
 		return ErrNotFound
 	} else if err != nil {
 		return err
@@ -119,13 +114,13 @@ func (s *Service) Disconnect(ctx context.Context, caller *user.User, orgSlug str
 // Nothing is not an error. A public repository needs no token, and
 // letting GitHub refuse a private one is better than refusing a clone
 // that would have worked.
-func (s *Service) TokenForRepository(ctx context.Context, orgID int64, repoURL string) (string, bool, error) {
+func (s *Service) TokenForRepository(ctx context.Context, repoURL string) (string, bool, error) {
 	repo, ok := ParseRepositoryURL(repoURL)
 	if !ok {
 		return "", false, nil // not on GitHub; nothing here applies
 	}
 
-	installation, found, err := s.Repo().ForAccount(ctx, orgID, repo.Owner)
+	installation, found, err := s.Repo().ForAccount(ctx, repo.Owner)
 	if err != nil || !found {
 		return "", false, err
 	}
@@ -186,12 +181,11 @@ func (s *Service) InstallURL(ctx context.Context) string {
 // It is what the dashboard offers instead of a URL field: someone
 // picking from a list cannot mistype an owner, and cannot name a
 // repository this instance has no way to clone.
-func (s *Service) Repositories(ctx context.Context, caller *user.User, orgSlug string) ([]RepositoryRef, error) {
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
-	if err != nil {
+func (s *Service) Repositories(ctx context.Context, caller *user.User) ([]RepositoryRef, error) {
+	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
-	installations, err := s.Repo().List(ctx, o.ID)
+	installations, err := s.Repo().List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -222,9 +216,8 @@ func (s *Service) Repositories(ctx context.Context, caller *user.User, orgSlug s
 
 // Branches lists a repository's branches, for the same reason
 // Repositories exists: a branch is chosen, not spelled.
-func (s *Service) Branches(ctx context.Context, caller *user.User, orgSlug, fullName string) ([]Branch, error) {
-	o, err := s.orgs.Resolve(ctx, caller, orgSlug, manageRole)
-	if err != nil {
+func (s *Service) Branches(ctx context.Context, caller *user.User, fullName string) ([]Branch, error) {
+	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
 	owner, _, found := strings.Cut(fullName, "/")
@@ -232,7 +225,7 @@ func (s *Service) Branches(ctx context.Context, caller *user.User, orgSlug, full
 		return nil, fmt.Errorf("name the repository as owner/name")
 	}
 
-	installation, found, err := s.Repo().ForAccount(ctx, o.ID, owner)
+	installation, found, err := s.Repo().ForAccount(ctx, owner)
 	if err != nil {
 		return nil, err
 	}
@@ -286,8 +279,8 @@ func (s *Service) tokenFor(ctx context.Context, installation *Installation) (str
 func (s *Service) RegisterFromManifest(ctx context.Context, caller *user.User, code string) (settings.Values, error) {
 	// Settings are the VPS operator's, and this writes four of them.
 	// Doing the exchange first would spend the code before finding out.
-	if caller == nil || !caller.IsSuperAdmin {
-		return nil, settings.ErrSuperAdminOnly
+	if err := user.Require(caller, user.RoleAdmin); err != nil {
+		return nil, err
 	}
 	if code == "" {
 		return nil, fmt.Errorf("no code to exchange")

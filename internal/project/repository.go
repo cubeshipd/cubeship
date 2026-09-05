@@ -16,14 +16,14 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, org_id, slug, description, env, created_at`
+const columns = `id, slug, description, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
 func scan(row scanner) (*Project, error) {
 	var p Project
 	var envJSON []byte
-	if err := row.Scan(&p.ID, &p.OrgID, &p.Slug, &p.Description, &envJSON, &p.CreatedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.Slug, &p.Description, &envJSON, &p.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &p.Env); err != nil {
@@ -32,10 +32,9 @@ func scan(row scanner) (*Project, error) {
 	return &p, nil
 }
 
-func (r *Repository) Create(ctx context.Context, orgID int64, slug string) (*Project, error) {
+func (r *Repository) Create(ctx context.Context, slug string) (*Project, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO projects (org_id, slug) VALUES ($1, $2) RETURNING `+columns,
-		orgID, slug)
+		`INSERT INTO projects (slug) VALUES ($1) RETURNING `+columns, slug)
 	p, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("create project: %w", err)
@@ -60,9 +59,9 @@ func (r *Repository) Update(ctx context.Context, projectID int64, description *s
 	return p, nil
 }
 
-func (r *Repository) BySlug(ctx context.Context, orgID int64, slug string) (*Project, error) {
+func (r *Repository) BySlug(ctx context.Context, slug string) (*Project, error) {
 	row := r.q.QueryRowContext(ctx,
-		`SELECT `+columns+` FROM projects WHERE org_id = $1 AND slug = $2`, orgID, slug)
+		`SELECT `+columns+` FROM projects WHERE slug = $1`, slug)
 	p, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("get project %q: %w", slug, err)
@@ -79,9 +78,9 @@ func (r *Repository) ByID(ctx context.Context, id int64) (*Project, error) {
 	return p, nil
 }
 
-func (r *Repository) ListForOrg(ctx context.Context, orgID int64) ([]*Project, error) {
+func (r *Repository) List(ctx context.Context) ([]*Project, error) {
 	rows, err := r.q.QueryContext(ctx,
-		`SELECT `+columns+` FROM projects WHERE org_id = $1 ORDER BY id`, orgID)
+		`SELECT `+columns+` FROM projects ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}
@@ -124,7 +123,7 @@ func (r *Repository) MergeEnv(ctx context.Context, projectID int64, set envvar.M
 
 // Delete removes a project and the environments inside it. The apps must
 // already be gone — stopping their containers is the app module's job,
-// which is what org.AppTeardown is for.
+// which is what AppTeardown is for.
 func (r *Repository) Delete(ctx context.Context, projectID int64) error {
 	if _, err := r.q.ExecContext(ctx, `DELETE FROM environments WHERE project_id = $1`, projectID); err != nil {
 		return fmt.Errorf("delete environments: %w", err)

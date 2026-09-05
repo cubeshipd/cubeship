@@ -29,8 +29,8 @@ cases, and every surface it is reached through.
 
 ```
 internal/
-  user/         identities and the API keys they authenticate with
-  org/          organizations, memberships, and all authorization
+  user/         identities, the API keys they authenticate with, and the
+                one authorization question on the instance
   project/      projects and the environments inside them
   app/          apps, deployments, and the deploy orchestrator
   registry/     who may docker push/pull, and the push webhook
@@ -65,8 +65,8 @@ input, call one service method, and render the result. A rule that lives
 in a handler is a rule the MCP surface doesn't have — that is exactly how
 the two drifted apart before this layout.
 
-Dependencies run one way: `user ← org ← project ← app`, with `registry`
-and `server` on top. `server` is the only package that knows every module
+Dependencies run one way: `user ← project ← app`, with `registry` and
+`server` on top. `server` is the only package that knows every module
 exists.
 
 ## The API lives under /api, and the root is the dashboard
@@ -153,10 +153,9 @@ already have for no gain the sidebar does not give.
 Four levels, and only the first is in the sidebar:
 
 ```
-organization   the switcher at the top of the sidebar
-  project      /                                        the grid you land on
-    environment  /projects/<org>/<project>/<env>        tabs inside a project
-      app        /projects/<org>/<project>/<env>/<app>
+project        /                                  the grid you land on
+  environment  /projects/<project>/<env>          tabs inside a project
+    app        /projects/<project>/<env>/<app>
 ```
 
 The URL **is** the app's reference, and the project's and the
@@ -166,12 +165,6 @@ because an app only means something inside an environment — a top-level
 `/projects/<org>/<project>` redirects to `production` rather than being
 a screen of its own, so there is one page for "a project's apps" instead
 of two that have to stay identical.
-
-The **organization is in the path** here and nowhere else. It is not in
-the sidebar's URLs — an organization is the frame, not a thing you
-navigate to — but a link into one has to work for someone whose sidebar
-is pointing elsewhere, and opening one moves the whole dashboard there
-rather than showing a page out of frame.
 
 `settings` is refused as a slug for any of them (`slug.Reserved`).
 Next.js resolves a static segment before a dynamic one, so an app
@@ -227,7 +220,7 @@ the one the daemon would happily carry out.
 for a slug and nothing else, and that is all there is afterwards.
 
 An app was always this way — its name *is* its slug, the last component
-of its reference — and organizations, projects and environments having a
+of its reference — and projects and environments having a
 second, editable name made the rule an exception rather than the rule:
 two ideas for one thing, asked for at creation, drifting apart after.
 
@@ -239,8 +232,8 @@ What survives is the **description**, which says something a name never
 could. `name` is gone from every create body, every PATCH, every MCP
 tool and the CLI, where the positional argument is now the slug.
 
-**No slug is editable after its resource exists** — organization,
-project, environment or app. Every one of them is a path component of an
+**No slug is editable after its resource exists** — project,
+environment or app. Every one of them is a path component of an
 app's registry reference, and that reference is derived on read rather
 than stored, so renaming any of them would silently move every app
 underneath: pushes configured against the old path would start failing,
@@ -295,22 +288,6 @@ an external image, an `ssh://` repository, a `#ref` in the URL — so a
 mistake is a sentence under the field rather than a rejected submit. It
 is a courtesy, not the rule: the daemon still checks, and it is the one
 that decides.
-
-### The selected organization
-
-There is no organizations *page*. An organization is the frame every
-other screen sits inside, so it is a switcher at the top of the sidebar
-— pick one, create one, delete one — and `useOrg()` is how a page asks
-which one. Apps, projects and registry logins all read it; the projects
-page, the registries page and the new-app form no longer ask a second
-time.
-
-It is deliberately **not in the URL**: threading it through every path
-would mean every link in the dashboard has to carry it, and an
-organization is the frame rather than a thing you navigate to. It is remembered in
-`localStorage`, and a remembered slug that no longer exists falls back
-to the first organization the daemon returns rather than leaving the
-dashboard pointing at nothing.
 
 ### The components
 
@@ -448,7 +425,7 @@ with no credentials to offer.
 
 **The document is the product's API, not an inventory of routes.** It
 describes what someone integrating against Cubeship would call:
-organizations, projects, environments, apps. It leaves out the daemon's
+projects, environments, apps. It leaves out the daemon's
 own machinery (`/healthz`, `/openapi.json`, `/docs`, `/mcp`), the
 registry's two endpoints (`docker` and the registry container call
 those, nobody else), and API-key self-service, which you do once from the
@@ -505,33 +482,45 @@ it at an existing server.
 
 ## Authorization
 
-One question, one answer: `org.Service.Authorize`. Everything else
-reaches it through `Resolve` on its own module's service.
+**There are no organizations.** Cubeship runs one instance on one VPS,
+and a tenant boundary inside it was a level everybody had to name and
+nobody could use: one organization existed, every screen asked which, and
+every app's registry path carried a component that was always the same
+word.
 
-The two refusals mean different things, and the difference is load-bearing:
+What the organization actually held was a role, so the role is a column
+on `users` and `user.Require(caller, minRole)` is the whole question.
+`RoleAdmin` and `RoleMember` keep their meanings exactly — a member
+deploys published images, an admin also builds source on this host (see
+`app.RoleToDeploy`) and configures the instance.
 
-- **404** — the caller is not a member of the organization at all, or the
-  resource doesn't exist. Identical answers on purpose, so a valid API key
-  can't enumerate tenants or app names by guessing.
-- **403** — the caller IS a member but lacks the role. They already know
-  the resource exists; hiding it would only confuse them.
+The two refusals are still distinct, and still mean different things:
+
+- **401** — nobody is signed in.
+- **403** — somebody is, and lacks the role. Said plainly: they can see
+  the instance's projects listed, so hiding one would only confuse them.
+
+The 404-instead-of-403 rule is gone with the tenants it protected. It
+existed so a valid API key could not enumerate *other people's*
+organizations; with one namespace there is nothing to enumerate that the
+caller cannot already list.
 
 `/mcp` is authenticated by the same bearer API key and **stateless on
 purpose** — the server is rebuilt per request so its tools close over that
 request's caller, and no session can be reused across users.
 
-Slugs — orgs, projects, environments, apps — go through `slug.Valid`,
-because they become path segments of a registry image reference and
-Docker rejects anything else.
+Slugs — projects, environments, apps — go through `slug.Valid`, because
+they become path segments of a registry image reference and Docker
+rejects anything else.
 
 ## App identity
 
-An app is named by a `app.Reference`: `<org>/<project>/<environment>/<app>`,
+An app is named by a `app.Reference`: `<project>/<environment>/<app>`,
 which is also its registry repository path and the basis of its
 container and Traefik router names. A bare name identifies nothing — it
 is unique only within its environment.
 
-`ParseReference` accepts three parts as shorthand for `production`, and
+`ParseReference` accepts two parts as shorthand for `production`, and
 validates every part as a slug, so a malformed reference can never reach
 a registry path or a router name.
 
@@ -558,8 +547,8 @@ Secure cookie there is simply never sent back — the sign-in would appear
 to work and nothing would stay signed in. `SameSite=Lax` is what stands
 in for CSRF tokens.
 
-An account can exist with no password. One an organization admin creates
-gets an API key immediately and a password only when it sets one, which
+An account can exist with no password. One an admin creates gets an API
+key immediately and a password only when it sets one, which
 is why every sign-in failure — unknown username, wrong password, no
 password at all — is the same answer, and why an unknown username still
 pays for a hash verification.
@@ -567,11 +556,10 @@ pays for a hash verification.
 ## Claiming an instance
 
 `internal/setup` is the first-run flow, and it exists because the daemon
-now starts with no account at all — bootstrap creating a super-admin from
-the environment is gone. `POST /setup` creates the account and the
-organization it names, signs the caller in, and closes setup
-permanently: `Needed` is "are there zero users", so the *first* account is
-the only one setup ever makes.
+starts with no account at all. `POST /setup` creates the account, signs
+the caller in, and closes setup permanently: `Needed` is "are there zero
+users", so the *first* account is the only one setup ever makes, and it
+is an admin.
 
 That check and the insert are one transaction behind
 `pg_advisory_xact_lock`, because two people opening the page at once must
@@ -579,19 +567,11 @@ not both succeed and the username's unique index would not stop them —
 they may well pick different names. The loser gets `ErrAlreadySetUp`
 (409).
 
-**The organization is asked for, not invented.** It used to be
-`my-organization`, and a slug is permanent — it is the first component of
-every app's registry reference — so a name picked on someone's behalf is
-one they are stuck with. The dashboard asks for it on a second onboarding
-step, and submits both steps as one request, because the account and the
-organization have to be created together: a user row with no organization
-would be unrecoverable, since setup refuses to run again and the account
-it made would have nowhere to work.
-
-**No project.** A project is something you create when you have something
-to put in it, and `default` was a row nobody asked for under a name
-nobody chose. The projects screen opens empty, saying so and offering the
-button.
+**Nothing else is created.** There is no organization to invent any more,
+and a project is something you make when you have something to put in it
+— a slug is permanent, so a name picked on someone's behalf is one they
+are stuck with. The projects screen opens empty, saying so and offering
+the button.
 
 The account gets a **password and no API key** — its way in is the
 session setup starts. A key nobody is ever shown would be a live
@@ -690,7 +670,7 @@ can never deploy.
 - **`railpack`** — built here from a Git repository with **no Dockerfile
   at all**: Railpack reads the code and works the build out.
 
-Both builds autodeploy once the organization has connected the GitHub
+Both builds autodeploy once this instance has connected the GitHub
 account the repository is on. Until then, and for a repository anywhere
 else, a deploy is something you ask for.
 
@@ -811,18 +791,18 @@ now.
 ## Acting as a GitHub App
 
 One App per instance, registered by whoever runs the VPS; its
-credentials are settings. Organizations install that App on their own
-GitHub accounts, and **an installation belongs to a Cubeship
-organization** — that is what stops one tenant deploying another's
-private code by naming its URL.
+credentials are settings. The App is installed on the GitHub accounts
+whose repositories this instance may build, and an installation is a row
+here — the instance builds what it has been given access to, and nothing
+else.
 
 **The App is public, and connecting an installation is verified.** The
 two go together. A private GitHub App can only be installed on the
 account that owns it, so an instance whose App was private could reach
-one person's repositories and no organization's — the install page
-offered no organizations at all. Public fixes that and costs the
-guarantee that came with it: anyone can install it, so an installation
-id is a number the caller chose and every id is somebody's real id.
+one person's repositories and no GitHub organization's — the install page
+offered none at all. Public fixes that and costs the guarantee that came
+with it: anyone can install it, so an installation id is a number the
+caller chose and every id is somebody's real id.
 
 `request_oauth_on_install` is what pays for it. GitHub sends the
 installer back with a code as well as an id; `Connect` spends the code,
@@ -833,10 +813,9 @@ matches against, and a mismatched one would silently stop matching.
 Turning the OAuth off while leaving the App public would make
 connecting an installation a way to read a stranger's private code.
 
-**The installation, not the payload, decides whose push this is.** The
-signature already stops a forgery, but resolving the organization from
-the installation is what makes tenancy true rather than merely unlikely:
-two tenants can legitimately build the same public repository.
+**A delivery has to name an installation this instance connected.** The
+signature already stops a forgery; the lookup stops a genuine delivery
+from an App installation nobody here asked for.
 
 The App's private key and webhook secret are **write-only**. `settings`
 reports `github_connected`, never the values;
@@ -908,9 +887,9 @@ privileges — a different kind of act from running a published artifact.
 It binds both creating an app and deploying one. A member who could
 create an app they can never deploy would be an odd thing to allow.
 
-Deploy still resolves as a member first, so someone outside the
-organization gets the 404 an unknown app gets rather than learning it
-exists; the source's own requirement is checked after.
+Deploy resolves as a member first and checks the source's own
+requirement after, so a member deploying a building app is told they lack
+the role rather than that the app is missing.
 
 No source builds yet, and `TestBuildingSourcesNeedAnAdmin` fails the
 moment one does — so its role is a decision someone made.
@@ -918,10 +897,9 @@ moment one does — so its role is a decision someone made.
 ## Pulling from someone else's registry
 
 `internal/extregistry` holds the logins. They belong to the
-**organization**, not the app: one DigitalOcean or ECR login covers every
-image in it, and rotating a password should be one edit rather than one
-per app. One per host per organization, or "which one does this pull
-use" has no answer.
+**instance**, not the app: one DigitalOcean or ECR login covers every
+image on it, and rotating a password should be one edit rather than one
+per app. One per host, or "which one does this pull use" has no answer.
 
 Matching is by host, and the two sides have to agree about spelling —
 `NormalizeHost` reduces what someone types, `HostOf` reads what an image
@@ -964,9 +942,8 @@ abandoning either does not touch the deploy.
 
 ## Deleting
 
-**Deleting something takes everything under it.** An organization takes
-its projects, environments and apps; a project takes its environments and
-apps; an environment takes its apps. Every app's container is stopped and
+**Deleting something takes everything under it.** A project takes its
+environments and apps; an environment takes its apps. Every app's container is stopped and
 removed on the way.
 
 It used to refuse at each level instead, and that was bookkeeping rather
@@ -984,9 +961,9 @@ The order is containers first, then rows, and outside the transaction —
 Docker has no rollback. A failure there leaves the apps gone and the
 thing above them still standing, which a retry finishes; the reverse
 would leave a container running with nothing on the instance naming it.
-`org.AppTeardown` is the seam: `org` and `project` sit below `app` and
-cannot import it, so `server` hands the app service back up at wiring
-time, and a service with no teardown wired refuses to delete at all.
+`project.AppTeardown` is the seam: `project` sits below `app` and cannot
+import it, so `server` hands the app service back up at wiring time, and
+a service with no teardown wired refuses to delete at all.
 
 Deleting an app leaves its images in the registry — reclaiming that disk
 needs a registry garbage collection pass, which Cubeship does not run.

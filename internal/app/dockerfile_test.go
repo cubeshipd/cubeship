@@ -1,26 +1,26 @@
 package app_test
 
 import (
+	"cubeship/internal/user"
 	"encoding/json"
 	"net/http"
 	"strconv"
 	"strings"
 	"testing"
 
-	"cubeship/internal/org"
 	"cubeship/internal/server/servertest"
 )
 
 func railpackApp(name string) map[string]string {
 	return map[string]string{
-		"name": name, "org": "acme", "project": "web",
+		"name": name, "project": "web",
 		"source": "railpack", "repo": "https://github.com/acme/api.git",
 	}
 }
 
 func dockerfileApp(name string) map[string]string {
 	return map[string]string{
-		"name": name, "org": "acme", "project": "web",
+		"name": name, "project": "web",
 		"source": "dockerfile", "repo": "https://github.com/acme/api.git",
 	}
 }
@@ -30,11 +30,11 @@ func dockerfileApp(name string) map[string]string {
 // not, which is why one is an admin's and the other a member's.
 func TestOnlyAnAdminMayCreateOrDeployABuildingApp(t *testing.T) {
 	f := servertest.New(t)
-	_, memberKey := f.AddMember(t, "member", org.RoleMember)
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
 
 	// A member may create an app that only runs published images.
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", map[string]string{
-		"name": "published", "org": "acme", "project": "web",
+		"name": "published", "project": "web",
 		"source": "external", "image": "nginx",
 	}, memberKey), http.StatusCreated)
 
@@ -53,22 +53,6 @@ func TestOnlyAnAdminMayCreateOrDeployABuildingApp(t *testing.T) {
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost,
 		"/apps/"+created.Reference+"/deploy", nil, memberKey), http.StatusForbidden)
-}
-
-// Someone outside the organization must not learn a building app exists
-// by being told they lack the role for it.
-func TestAnOutsiderStillGetsNotFoundOnABuildingApp(t *testing.T) {
-	f := servertest.New(t)
-	_, outsiderKey := servertest.CreateUser(t, f.DB, "outsider", false)
-
-	var created struct {
-		Reference string `json:"reference"`
-	}
-	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps",
-		dockerfileApp("built"), f.AdminKey, &created), http.StatusCreated)
-
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost,
-		"/apps/"+created.Reference+"/deploy", nil, outsiderKey), http.StatusNotFound)
 }
 
 // A building app reports what it builds, not an image it would push.

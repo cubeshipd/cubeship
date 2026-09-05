@@ -8,13 +8,19 @@ import { toast } from "sonner";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
-import { useOrg } from "@/components/org-context";
 import { SearchableSelect } from "@/components/searchable-select";
 import { TextField } from "@/components/text-field";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { api, type DNSCredential, type DNSRecord, type DNSZone, type Settings } from "@/lib/api";
+import {
+  type App,
+  api,
+  type DNSCredential,
+  type DNSRecord,
+  type DNSZone,
+  type Settings,
+} from "@/lib/api";
 import { DNS_PROVIDERS } from "@/lib/dns";
 import { message } from "@/lib/errors";
 
@@ -44,8 +50,6 @@ export function InstanceDomain({
   settings: Settings;
   onSaved: (s: Settings) => void;
 }) {
-  const { org } = useOrg();
-
   const [providerID, setProviderID] = useState(settings.dns_provider_id ?? "");
   const [zoneID, setZoneID] = useState("");
   // The label in front of the zone. Editable, because one box can hold
@@ -60,15 +64,14 @@ export function InstanceDomain({
   const [error, setError] = useState<string | null>(null);
 
   const providers = useQuery({
-    queryKey: ["dns", org],
-    queryFn: () => api.get<DNSCredential[]>(`/orgs/${org}/dns`),
-    enabled: Boolean(org),
+    queryKey: ["dns"],
+    queryFn: () => api.get<DNSCredential[]>(`/dns`),
   });
 
   const zones = useQuery({
-    queryKey: ["dns", org, providerID, "zones"],
-    queryFn: () => api.get<DNSZone[]>(`/orgs/${org}/dns/${providerID}/zones`),
-    enabled: Boolean(org && providerID),
+    queryKey: ["dns", providerID, "zones"],
+    queryFn: () => api.get<DNSZone[]>(`/dns/${providerID}/zones`),
+    enabled: Boolean(providerID),
   });
 
   const zone = zones.data?.find((z) => z.id === zoneID) ?? null;
@@ -92,9 +95,9 @@ export function InstanceDomain({
   useEffect(() => setIP(settings.public_ip ?? ""), [settings.public_ip]);
 
   const records = useQuery({
-    queryKey: ["dns", org, providerID, "records", zoneID],
-    queryFn: () => api.get<DNSRecord[]>(`/orgs/${org}/dns/${providerID}/records?zone=${zoneID}`),
-    enabled: Boolean(org && providerID && zoneID),
+    queryKey: ["dns", providerID, "records", zoneID],
+    queryFn: () => api.get<DNSRecord[]>(`/dns/${providerID}/records?zone=${zoneID}`),
+    enabled: Boolean(providerID && zoneID),
   });
 
   // Anything already answering at either name, whatever its type: a
@@ -115,7 +118,7 @@ export function InstanceDomain({
     try {
       if (providerID && zoneID) {
         for (const name of [domain, wildcard]) {
-          await api.put(`/orgs/${org}/dns/${providerID}/records?zone=${zoneID}`, {
+          await api.put(`/dns/${providerID}/records?zone=${zoneID}`, {
             name,
             type: "A",
             values: [ip],
@@ -124,21 +127,39 @@ export function InstanceDomain({
         }
         await records.refetch();
       }
-      onSaved(
-        await api.put<Settings>("/settings", {
-          domain,
-          acme_email: email,
-          public_ip: ip,
-          dns_provider_id: providerID,
-        }),
-      );
-      // A toast rather than a line beside the button: what this says is
-      // about apps on the rest of the instance, not about this form, and
-      // it kept sitting under a button whose job was already done.
-      toast.success("Domain set up", {
-        description:
-          "Apps already running keep the routing they were deployed with — redeploy them to serve over HTTPS.",
+      const saved = await api.put<Settings>("/settings", {
+        domain,
+        acme_email: email,
+        public_ip: ip,
+        dns_provider_id: providerID,
       });
+      onSaved(saved);
+
+      // The note about redeploying is worth saying exactly once: on the
+      // save that turns certificates on, to someone who already has
+      // something running. Traefik routes by the labels a container was
+      // created with and Docker cannot change those afterwards, so an
+      // app that came up before this stays on HTTP until it is deployed
+      // again. On a fresh instance there is nothing standing to warn
+      // about, and on a re-save nothing changed — so the running apps
+      // are asked for rather than assumed.
+      //
+      // A toast rather than a line beside the button: what it says is
+      // about apps on the rest of the instance, not about this form.
+      const running =
+        !settings.tls_enabled &&
+        saved.tls_enabled &&
+        (await api.get<App[]>("/apps").catch(() => [] as App[])).some(
+          (a) => a.status === "running",
+        );
+      if (running) {
+        toast.success("Certificates are on", {
+          description:
+            "Apps already running keep the routing they were deployed with — redeploy them to serve over HTTPS.",
+        });
+      } else {
+        toast.success("Domain set up");
+      }
     } catch (err) {
       setError(message(err));
     }

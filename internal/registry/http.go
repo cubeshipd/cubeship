@@ -8,7 +8,6 @@ import (
 	"net/http"
 
 	"cubeship/internal/app"
-	"cubeship/internal/org"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/platform/regauth"
 	"cubeship/internal/user"
@@ -29,16 +28,16 @@ type scopeContext = context.Context
 // because those two are the registry container's and Docker's, and
 // authenticate differently.
 func (h *Handler) CatalogueRoutes(r *httpx.Router, auth func(http.Handler) http.Handler) {
-	r.Handle("GET /orgs/{orgSlug}/registry/repositories", auth(http.HandlerFunc(h.repositories)))
-	r.Handle("GET /orgs/{orgSlug}/registry/images", auth(http.HandlerFunc(h.images)))
-	r.Handle("DELETE /orgs/{orgSlug}/registry/images", auth(http.HandlerFunc(h.deleteImage)))
-	r.Handle("DELETE /orgs/{orgSlug}/registry/repositories", auth(http.HandlerFunc(h.deleteRepository)))
-	r.Handle("POST /orgs/{orgSlug}/registry/garbage-collect", auth(http.HandlerFunc(h.garbageCollect)))
+	r.Handle("GET /registry/repositories", auth(http.HandlerFunc(h.repositories)))
+	r.Handle("GET /registry/images", auth(http.HandlerFunc(h.images)))
+	r.Handle("DELETE /registry/images", auth(http.HandlerFunc(h.deleteImage)))
+	r.Handle("DELETE /registry/repositories", auth(http.HandlerFunc(h.deleteRepository)))
+	r.Handle("POST /registry/garbage-collect", auth(http.HandlerFunc(h.garbageCollect)))
 }
 
 func (h *Handler) deleteImage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if err := h.DeleteImage(ctx, user.FromContext(ctx), r.PathValue("orgSlug"),
+	if err := h.DeleteImage(ctx, user.FromContext(ctx),
 		r.URL.Query().Get("repository"), r.URL.Query().Get("tag")); err != nil {
 		writeCatalogueError(w, err)
 		return
@@ -48,7 +47,7 @@ func (h *Handler) deleteImage(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) deleteRepository(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if err := h.DeleteRepository(ctx, user.FromContext(ctx), r.PathValue("orgSlug"),
+	if err := h.DeleteRepository(ctx, user.FromContext(ctx),
 		r.URL.Query().Get("repository")); err != nil {
 		writeCatalogueError(w, err)
 		return
@@ -61,7 +60,7 @@ func (h *Handler) deleteRepository(w http.ResponseWriter, r *http.Request) {
 // person who needs to know when pushes work again.
 func (h *Handler) garbageCollect(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	result, err := h.GarbageCollect(ctx, user.FromContext(ctx), r.PathValue("orgSlug"))
+	result, err := h.GarbageCollect(ctx, user.FromContext(ctx))
 	if err != nil {
 		writeCatalogueError(w, err)
 		return
@@ -71,7 +70,7 @@ func (h *Handler) garbageCollect(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) repositories(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	repos, err := h.Repositories(ctx, user.FromContext(ctx), r.PathValue("orgSlug"))
+	repos, err := h.Repositories(ctx, user.FromContext(ctx))
 	if err != nil {
 		writeCatalogueError(w, err)
 		return
@@ -86,7 +85,7 @@ func (h *Handler) images(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	images, err := h.Images(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), repository)
+	images, err := h.Images(ctx, user.FromContext(ctx), repository)
 	if err != nil {
 		writeCatalogueError(w, err)
 		return
@@ -96,9 +95,9 @@ func (h *Handler) images(w http.ResponseWriter, r *http.Request) {
 
 func writeCatalogueError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, org.ErrForbidden):
+	case errors.Is(err, user.ErrForbidden):
 		http.Error(w, "forbidden", http.StatusForbidden)
-	case errors.Is(err, org.ErrNotFound):
+	case errors.Is(err, ErrNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
 	case errors.Is(err, ErrNoRegistry), errors.Is(err, ErrNoMaintenance):
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
@@ -217,7 +216,7 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			continue // not a repository shaped like one of our apps
 		}
-		a, err := h.apps.Repo().ScopedByReference(r.Context(), ref.Org, ref.Project, ref.Environment, ref.Name)
+		a, err := h.apps.Repo().ScopedByReference(r.Context(), ref.Project, ref.Environment, ref.Name)
 		if err != nil {
 			continue // no app owns this repository
 		}

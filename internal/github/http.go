@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"cubeship/internal/org"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/settings"
 	"cubeship/internal/user"
@@ -42,7 +41,7 @@ func toResponses(installations []*Installation) []Response {
 type Deployer interface {
 	// DeployOnPush starts a deploy for every app that builds from this
 	// repository at this branch, and reports how many it started.
-	DeployOnPush(ctx context.Context, orgID int64, repo, branch string) (int, error)
+	DeployOnPush(ctx context.Context, repo, branch string) (int, error)
 }
 
 type Handler struct {
@@ -63,11 +62,11 @@ func NewHandler(svc *Service, deploy Deployer) *Handler {
 func (h *Handler) WaitForDeploys() { h.deploys.Wait() }
 
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
-	r.Handle("GET /orgs/{orgSlug}/github", auth(http.HandlerFunc(h.list)))
-	r.Handle("POST /orgs/{orgSlug}/github", auth(http.HandlerFunc(h.connect)))
-	r.Handle("DELETE /orgs/{orgSlug}/github/{id}", auth(http.HandlerFunc(h.disconnect)))
-	r.Handle("GET /orgs/{orgSlug}/github/repositories", auth(http.HandlerFunc(h.repositories)))
-	r.Handle("GET /orgs/{orgSlug}/github/branches", auth(http.HandlerFunc(h.branches)))
+	r.Handle("GET /github", auth(http.HandlerFunc(h.list)))
+	r.Handle("POST /github", auth(http.HandlerFunc(h.connect)))
+	r.Handle("DELETE /github/{id}", auth(http.HandlerFunc(h.disconnect)))
+	r.Handle("GET /github/repositories", auth(http.HandlerFunc(h.repositories)))
+	r.Handle("GET /github/branches", auth(http.HandlerFunc(h.branches)))
 	// Instance configuration rather than an organization's: this is how
 	// the instance becomes a GitHub App at all.
 	r.Handle("POST /settings/github/manifest", auth(http.HandlerFunc(h.registerFromManifest)))
@@ -82,9 +81,9 @@ func (h *Handler) WebhookRoutes(r *httpx.Router) {
 
 func WriteError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, org.ErrForbidden):
+	case errors.Is(err, user.ErrForbidden):
 		http.Error(w, "forbidden", http.StatusForbidden)
-	case errors.Is(err, org.ErrNotFound), errors.Is(err, ErrNotFound):
+	case errors.Is(err, ErrNotFound):
 		http.Error(w, "not found", http.StatusNotFound)
 	case errors.Is(err, ErrNotConfigured), errors.Is(err, ErrNoInstallation):
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -105,7 +104,7 @@ func WriteError(w http.ResponseWriter, err error) {
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	installations, err := h.svc.List(ctx, user.FromContext(ctx), r.PathValue("orgSlug"))
+	installations, err := h.svc.List(ctx, user.FromContext(ctx))
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -123,7 +122,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 // repository this instance has no way to clone.
 func (h *Handler) repositories(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	repos, err := h.svc.Repositories(ctx, user.FromContext(ctx), r.PathValue("orgSlug"))
+	repos, err := h.svc.Repositories(ctx, user.FromContext(ctx))
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -140,7 +139,7 @@ func (h *Handler) branches(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	branches, err := h.svc.Branches(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), repo)
+	branches, err := h.svc.Branches(ctx, user.FromContext(ctx), repo)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -181,7 +180,7 @@ func (h *Handler) connect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	created, err := h.svc.Connect(ctx, user.FromContext(ctx), r.PathValue("orgSlug"),
+	created, err := h.svc.Connect(ctx, user.FromContext(ctx),
 		req.InstallationID, req.Code)
 	if err != nil {
 		WriteError(w, err)
@@ -197,7 +196,7 @@ func (h *Handler) disconnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	if err := h.svc.Disconnect(ctx, user.FromContext(ctx), r.PathValue("orgSlug"), id); err != nil {
+	if err := h.svc.Disconnect(ctx, user.FromContext(ctx), id); err != nil {
 		WriteError(w, err)
 		return
 	}
@@ -270,13 +269,10 @@ func (h *Handler) handlePush(r *http.Request, body []byte) {
 		return
 	}
 
-	// The installation is what says whose repository this is. Trusting
-	// the payload's repository name alone would let anyone who can forge
-	// a delivery deploy somebody else's app — which the signature
-	// already prevents, but the ownership check is what makes it true
-	// rather than merely unlikely.
-	installation, found, err := h.svc.Repo().ByGitHubID(r.Context(), event.Installation.ID)
-	if err != nil || !found {
+	// The delivery has to name an installation this instance connected.
+	// The signature already stops a forgery; this stops a genuine
+	// delivery from an App installation nobody here asked for.
+	if _, found, err := h.svc.Repo().ByGitHubID(r.Context(), event.Installation.ID); err != nil || !found {
 		return
 	}
 
@@ -288,7 +284,7 @@ func (h *Handler) handlePush(r *http.Request, body []byte) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 
-		started, err := h.deploy.DeployOnPush(ctx, installation.OrgID, event.Repository.FullName, branch)
+		started, err := h.deploy.DeployOnPush(ctx, event.Repository.FullName, branch)
 		if err != nil {
 			log.Printf("github webhook: could not deploy %s@%s: %v",
 				event.Repository.FullName, branch, err)

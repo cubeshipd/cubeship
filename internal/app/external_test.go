@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"cubeship/internal/extregistry"
-	"cubeship/internal/org"
 	"cubeship/internal/platform/database/dbtest"
 	"cubeship/internal/project"
 	"cubeship/internal/settings"
@@ -18,12 +17,7 @@ func externalFixture(t *testing.T, image string) (*Orchestrator, *fakeDocker, *S
 	ctx := context.Background()
 	db := dbtest.New(t)
 
-	orgs := org.NewRepository(db)
-	o, err := orgs.Create(ctx, "acme")
-	if err != nil {
-		t.Fatal(err)
-	}
-	p, err := project.NewRepository(db).Create(ctx, o.ID, "web")
+	p, err := project.NewRepository(db).Create(ctx, "web")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +25,7 @@ func externalFixture(t *testing.T, image string) (*Orchestrator, *fakeDocker, *S
 	if err != nil {
 		t.Fatal(err)
 	}
-	created, err := NewRepository(db).Create(ctx, o.ID, p.ID, env.ID,
+	created, err := NewRepository(db).Create(ctx, p.ID, env.ID,
 		"myapp", "", SourceExternal, Origin{Image: image})
 	if err != nil {
 		t.Fatal(err)
@@ -41,13 +35,13 @@ func externalFixture(t *testing.T, image string) (*Orchestrator, *fakeDocker, *S
 	if _, err := NewRepository(db).AddDomain(ctx, created.ID, "myapp.example.com", 0); err != nil {
 		t.Fatal(err)
 	}
-	a, err := NewRepository(db).ScopedByReference(ctx, "acme", "web", "production", "myapp")
+	a, err := NewRepository(db).ScopedByReference(ctx, "web", "production", "myapp")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	docker := &fakeDocker{nextCreateID: "new-container", running: true}
-	orch := NewOrchestrator(db, docker, settings.NewService(db), extregistry.NewService(db, nil), nil, nil, testRegistry)
+	orch := NewOrchestrator(db, docker, settings.NewService(db), extregistry.NewService(db), nil, nil, testRegistry)
 	orch.HealthCheckInterval = 0
 	return orch, docker, a, extregistry.NewRepository(db)
 }
@@ -92,11 +86,11 @@ func TestAPublicImagePullsWithNoCredentials(t *testing.T) {
 // The organization's credential for that registry is what the pull
 // authenticates with. Matching is by host, so one login covers every
 // image in it.
-func TestAPrivateImagePullsWithTheOrgsCredential(t *testing.T) {
+func TestAPrivateImagePullsWithTheStoredCredential(t *testing.T) {
 	orch, docker, a, creds := externalFixture(t, "ghcr.io/acme/api")
 	ctx := context.Background()
 
-	if _, err := creds.Create(ctx, a.OrgID, extregistry.Credential{
+	if _, err := creds.Create(ctx, extregistry.Credential{
 		Provider: extregistry.ProviderGeneric, Host: "ghcr.io", Username: "acme-bot", Password: "ghp_token",
 	}); err != nil {
 		t.Fatal(err)
@@ -121,7 +115,7 @@ func TestACredentialForAnotherRegistryIsNotUsed(t *testing.T) {
 	orch, docker, a, creds := externalFixture(t, "ghcr.io/acme/api")
 	ctx := context.Background()
 
-	if _, err := creds.Create(ctx, a.OrgID, extregistry.Credential{
+	if _, err := creds.Create(ctx, extregistry.Credential{
 		Provider: extregistry.ProviderGeneric, Host: "registry.digitalocean.com", Username: "someone", Password: "dop_token",
 	}); err != nil {
 		t.Fatal(err)

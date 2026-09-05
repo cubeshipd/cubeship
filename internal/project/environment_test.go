@@ -12,12 +12,12 @@ import (
 func TestProductionEnvironmentCannotBeDeleted(t *testing.T) {
 	f := servertest.New(t)
 
-	rec := f.Do(t, http.MethodDelete, "/orgs/acme/projects/web/environments/production", nil, f.AdminKey)
+	rec := f.Do(t, http.MethodDelete, "/projects/web/environments/production", nil, f.AdminKey)
 	servertest.RequireStatus(t, rec, http.StatusForbidden)
 
 	var envs []struct{ Slug string }
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet,
-		"/orgs/acme/projects/web/environments", nil, f.AdminKey, &envs), http.StatusOK)
+		"/projects/web/environments", nil, f.AdminKey, &envs), http.StatusOK)
 	if len(envs) != 1 || envs[0].Slug != "production" {
 		t.Fatalf("expected production to survive, got %v", envs)
 	}
@@ -29,16 +29,16 @@ func TestProductionEnvironmentCannotBeDeleted(t *testing.T) {
 func TestDeletingAnEnvironmentTakesItsAppsWithIt(t *testing.T) {
 	f := servertest.New(t)
 
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs/acme/projects/web/environments",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/projects/web/environments",
 		map[string]string{"slug": "staging"}, f.AdminKey), http.StatusCreated)
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", map[string]string{
-		"name": "staging-app", "org": "acme", "project": "web", "environment": "staging",
+		"name": "staging-app", "project": "web", "environment": "staging",
 	}, f.AdminKey), http.StatusCreated)
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
-		"/orgs/acme/projects/web/environments/staging", nil, f.AdminKey), http.StatusOK)
+		"/projects/web/environments/staging", nil, f.AdminKey), http.StatusOK)
 
-	if rec := f.Do(t, http.MethodGet, "/apps/acme/web/staging/staging-app", nil, f.AdminKey); rec.Code != http.StatusNotFound {
+	if rec := f.Do(t, http.MethodGet, "/apps/web/staging/staging-app", nil, f.AdminKey); rec.Code != http.StatusNotFound {
 		t.Errorf("the app survived its environment: %d", rec.Code)
 	}
 }
@@ -46,14 +46,14 @@ func TestDeletingAnEnvironmentTakesItsAppsWithIt(t *testing.T) {
 func TestEmptyNonProductionEnvironmentCanBeDeleted(t *testing.T) {
 	f := servertest.New(t)
 
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs/acme/projects/web/environments",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/projects/web/environments",
 		map[string]string{"slug": "preview", "name": "Preview"}, f.AdminKey), http.StatusCreated)
 	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
-		"/orgs/acme/projects/web/environments/preview", nil, f.AdminKey), http.StatusOK)
+		"/projects/web/environments/preview", nil, f.AdminKey), http.StatusOK)
 
 	var envs []struct{ Slug string }
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet,
-		"/orgs/acme/projects/web/environments", nil, f.AdminKey, &envs), http.StatusOK)
+		"/projects/web/environments", nil, f.AdminKey, &envs), http.StatusOK)
 	if len(envs) != 1 {
 		t.Fatalf("expected only production to remain, got %v", envs)
 	}
@@ -67,7 +67,7 @@ func TestNewProjectComesWithProduction(t *testing.T) {
 	var created struct {
 		Environments []string `json:"environments"`
 	}
-	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/orgs/acme/projects",
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/projects",
 		map[string]string{"slug": "api", "name": "API"}, f.AdminKey, &created), http.StatusCreated)
 
 	if len(created.Environments) != 1 || created.Environments[0] != "production" {
@@ -85,14 +85,14 @@ func TestSlugsAreRejectedWhenTheyWouldBreakARegistryPath(t *testing.T) {
 	for _, name := range bad {
 		t.Run("app "+name, func(t *testing.T) {
 			rec := f.Do(t, http.MethodPost, "/apps", map[string]string{
-				"name": name, "org": "acme", "project": "web",
+				"name": name, "project": "web",
 			}, f.AdminKey)
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("app name %q was accepted (%d): %s", name, rec.Code, rec.Body.String())
 			}
 		})
 		t.Run("project "+name, func(t *testing.T) {
-			rec := f.Do(t, http.MethodPost, "/orgs/acme/projects",
+			rec := f.Do(t, http.MethodPost, "/projects",
 				map[string]string{"slug": name, "name": "X"}, f.AdminKey)
 			if rec.Code != http.StatusBadRequest {
 				t.Fatalf("project slug %q was accepted (%d): %s", name, rec.Code, rec.Body.String())

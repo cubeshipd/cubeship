@@ -71,12 +71,11 @@ func (t *Tools) Register(srv *mcp.Server) {
 }
 
 type createInput struct {
-	Org  string `json:"org" jsonschema:"organization slug"`
 	Slug string `json:"slug" jsonschema:"short identifier used in URLs: lowercase letters, digits and dashes. Permanent - it cannot be changed later"`
 }
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
-	p, env, err := t.svc.Create(ctx, t.caller, in.Org, in.Slug)
+	p, env, err := t.svc.Create(ctx, t.caller, in.Slug)
 	if err != nil {
 		return nil, Response{}, err
 	}
@@ -84,11 +83,10 @@ func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInp
 }
 
 type orgScopedInput struct {
-	Org string `json:"org" jsonschema:"organization slug"`
 }
 
 func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, in orgScopedInput) (*mcp.CallToolResult, []Response, error) {
-	projects, err := t.svc.List(ctx, t.caller, in.Org)
+	projects, err := t.svc.List(ctx, t.caller)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -101,7 +99,7 @@ type envOutput struct {
 }
 
 func (t *Tools) getEnv(ctx context.Context, _ *mcp.CallToolRequest, in projectScopedInput) (*mcp.CallToolResult, envOutput, error) {
-	vars, err := t.svc.Env(ctx, t.caller, in.Org, in.Project)
+	vars, err := t.svc.Env(ctx, t.caller, in.Project)
 	if err != nil {
 		return nil, envOutput{}, err
 	}
@@ -109,7 +107,6 @@ func (t *Tools) getEnv(ctx context.Context, _ *mcp.CallToolRequest, in projectSc
 }
 
 type updateInput struct {
-	Org         string  `json:"org" jsonschema:"organization slug"`
 	Project     string  `json:"project" jsonschema:"project slug"`
 	Description *string `json:"description,omitempty" jsonschema:"what the project is for; leave out to keep it, send empty to clear it"`
 }
@@ -118,7 +115,7 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 	if in.Description == nil {
 		return nil, Response{}, fmt.Errorf("give name, description, or both")
 	}
-	p, err := t.svc.Update(ctx, t.caller, in.Org, in.Project, in.Description)
+	p, err := t.svc.Update(ctx, t.caller, in.Project, in.Description)
 	if err != nil {
 		return nil, Response{}, err
 	}
@@ -126,7 +123,7 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 }
 
 func (t *Tools) delete(ctx context.Context, _ *mcp.CallToolRequest, in projectScopedInput) (*mcp.CallToolResult, user.ActionResult, error) {
-	p, err := t.svc.Delete(ctx, t.caller, in.Org, in.Project)
+	p, err := t.svc.Delete(ctx, t.caller, in.Project)
 	if err != nil {
 		return nil, user.ActionResult{}, err
 	}
@@ -134,7 +131,6 @@ func (t *Tools) delete(ctx context.Context, _ *mcp.CallToolRequest, in projectSc
 }
 
 type setEnvInput struct {
-	Org     string     `json:"org" jsonschema:"organization slug"`
 	Project string     `json:"project" jsonschema:"project slug"`
 	Set     envvar.Map `json:"set,omitempty" jsonschema:"variables to add or overwrite"`
 	Unset   []string   `json:"unset,omitempty" jsonschema:"names of variables to remove"`
@@ -144,7 +140,7 @@ func (t *Tools) setEnv(ctx context.Context, _ *mcp.CallToolRequest, in setEnvInp
 	if len(in.Set) == 0 && len(in.Unset) == 0 {
 		return nil, user.ActionResult{}, fmt.Errorf("give set, unset, or both")
 	}
-	p, err := t.svc.MergeEnv(ctx, t.caller, in.Org, in.Project, in.Set, in.Unset)
+	p, err := t.svc.MergeEnv(ctx, t.caller, in.Project, in.Set, in.Unset)
 	if err != nil {
 		return nil, user.ActionResult{}, err
 	}
@@ -152,13 +148,12 @@ func (t *Tools) setEnv(ctx context.Context, _ *mcp.CallToolRequest, in setEnvInp
 }
 
 type createEnvironmentInput struct {
-	Org     string `json:"org" jsonschema:"organization slug"`
 	Project string `json:"project" jsonschema:"project slug"`
 	Slug    string `json:"slug" jsonschema:"short identifier used in URLs and as the environment name apps request. Permanent - it cannot be changed later"`
 }
 
 func (t *Tools) createEnvironment(ctx context.Context, _ *mcp.CallToolRequest, in createEnvironmentInput) (*mcp.CallToolResult, EnvironmentResponse, error) {
-	env, err := t.svc.CreateEnvironment(ctx, t.caller, in.Org, in.Project, in.Slug)
+	env, err := t.svc.CreateEnvironment(ctx, t.caller, in.Project, in.Slug)
 	if err != nil {
 		return nil, EnvironmentResponse{}, err
 	}
@@ -166,12 +161,11 @@ func (t *Tools) createEnvironment(ctx context.Context, _ *mcp.CallToolRequest, i
 }
 
 type projectScopedInput struct {
-	Org     string `json:"org" jsonschema:"organization slug"`
 	Project string `json:"project" jsonschema:"project slug"`
 }
 
 func (t *Tools) listEnvironments(ctx context.Context, _ *mcp.CallToolRequest, in projectScopedInput) (*mcp.CallToolResult, []EnvironmentResponse, error) {
-	envs, err := t.svc.ListEnvironments(ctx, t.caller, in.Org, in.Project)
+	envs, err := t.svc.ListEnvironments(ctx, t.caller, in.Project)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -179,7 +173,6 @@ func (t *Tools) listEnvironments(ctx context.Context, _ *mcp.CallToolRequest, in
 }
 
 type setEnvironmentEnvInput struct {
-	Org         string     `json:"org" jsonschema:"organization slug"`
 	Project     string     `json:"project" jsonschema:"project slug"`
 	Environment string     `json:"environment" jsonschema:"environment slug"`
 	Set         envvar.Map `json:"set,omitempty" jsonschema:"variables to add or overwrite"`
@@ -187,7 +180,7 @@ type setEnvironmentEnvInput struct {
 }
 
 func (t *Tools) getEnvironmentEnv(ctx context.Context, _ *mcp.CallToolRequest, in environmentScopedInput) (*mcp.CallToolResult, envOutput, error) {
-	vars, effective, err := t.svc.EnvironmentEnv(ctx, t.caller, in.Org, in.Project, in.Environment)
+	vars, effective, err := t.svc.EnvironmentEnv(ctx, t.caller, in.Project, in.Environment)
 	if err != nil {
 		return nil, envOutput{}, err
 	}
@@ -198,7 +191,7 @@ func (t *Tools) setEnvironmentEnv(ctx context.Context, _ *mcp.CallToolRequest, i
 	if len(in.Set) == 0 && len(in.Unset) == 0 {
 		return nil, user.ActionResult{}, fmt.Errorf("give set, unset, or both")
 	}
-	env, err := t.svc.MergeEnvironmentEnv(ctx, t.caller, in.Org, in.Project, in.Environment, in.Set, in.Unset)
+	env, err := t.svc.MergeEnvironmentEnv(ctx, t.caller, in.Project, in.Environment, in.Set, in.Unset)
 	if err != nil {
 		return nil, user.ActionResult{}, err
 	}
@@ -206,13 +199,11 @@ func (t *Tools) setEnvironmentEnv(ctx context.Context, _ *mcp.CallToolRequest, i
 }
 
 type environmentScopedInput struct {
-	Org         string `json:"org" jsonschema:"organization slug"`
 	Project     string `json:"project" jsonschema:"project slug"`
 	Environment string `json:"environment" jsonschema:"environment slug"`
 }
 
 type updateEnvironmentInput struct {
-	Org         string  `json:"org" jsonschema:"organization slug"`
 	Project     string  `json:"project" jsonschema:"project slug"`
 	Environment string  `json:"environment" jsonschema:"environment slug"`
 	Description *string `json:"description,omitempty" jsonschema:"what this stage is for; leave out to keep it, send empty to clear it"`
@@ -222,7 +213,7 @@ func (t *Tools) updateEnvironment(ctx context.Context, _ *mcp.CallToolRequest, i
 	if in.Description == nil {
 		return nil, EnvironmentResponse{}, fmt.Errorf("give name, description, or both")
 	}
-	e, err := t.svc.UpdateEnvironment(ctx, t.caller, in.Org, in.Project, in.Environment, in.Description)
+	e, err := t.svc.UpdateEnvironment(ctx, t.caller, in.Project, in.Environment, in.Description)
 	if err != nil {
 		return nil, EnvironmentResponse{}, err
 	}
@@ -230,7 +221,7 @@ func (t *Tools) updateEnvironment(ctx context.Context, _ *mcp.CallToolRequest, i
 }
 
 func (t *Tools) deleteEnvironment(ctx context.Context, _ *mcp.CallToolRequest, in environmentScopedInput) (*mcp.CallToolResult, user.ActionResult, error) {
-	env, err := t.svc.DeleteEnvironment(ctx, t.caller, in.Org, in.Project, in.Environment)
+	env, err := t.svc.DeleteEnvironment(ctx, t.caller, in.Project, in.Environment)
 	if err != nil {
 		return nil, user.ActionResult{}, err
 	}

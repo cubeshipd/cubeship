@@ -9,7 +9,6 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
-import { useOrg } from "@/components/org-context";
 import { PageHeader } from "@/components/page-header";
 import { SearchBar } from "@/components/search-bar";
 import { SearchableSelect } from "@/components/searchable-select";
@@ -40,19 +39,17 @@ import { message } from "@/lib/errors";
 export default function ZoneRecords({ params }: { params: Promise<{ id: string; zone: string }> }) {
   const { id, zone: zoneName } = use(params);
   const name = decodeURIComponent(zoneName);
-  const { org } = useOrg();
   const queries = useQueryClient();
 
   const [editing, setEditing] = useState<{ record?: DNSRecord } | null>(null);
   const [deleting, setDeleting] = useState<DNSRecord | null>(null);
   const [query, setQuery] = useState("");
 
-  const base = org ? `/orgs/${org}/dns/${id}` : "";
+  const base = `/dns/${id}`;
 
   const credentials = useQuery({
-    queryKey: ["dns", org],
-    queryFn: () => api.get<DNSCredential[]>(`/orgs/${org}/dns`),
-    enabled: Boolean(org),
+    queryKey: ["dns"],
+    queryFn: () => api.get<DNSCredential[]>(`/dns`),
   });
   const credential = credentials.data?.find((c) => String(c.id) === id) ?? null;
 
@@ -63,7 +60,7 @@ export default function ZoneRecords({ params }: { params: Promise<{ id: string; 
   // The listing is the same query the zones page ran, under the same
   // key, so arriving here from there costs nothing.
   const zones = useQuery({
-    queryKey: ["dns", org, id, "zones"],
+    queryKey: ["dns", id, "zones"],
     queryFn: () => api.get<DNSZone[]>(`${base}/zones`),
     enabled: Boolean(base),
   });
@@ -71,7 +68,7 @@ export default function ZoneRecords({ params }: { params: Promise<{ id: string; 
   const missing = zones.isSuccess && zone === null;
 
   const records = useQuery({
-    queryKey: ["dns", org, id, "records", zone?.id],
+    queryKey: ["dns", id, "records", zone?.id],
     queryFn: () =>
       api.get<DNSRecord[]>(`${base}/records?zone=${encodeURIComponent(zone?.id ?? "")}`),
     enabled: Boolean(base && zone),
@@ -79,8 +76,7 @@ export default function ZoneRecords({ params }: { params: Promise<{ id: string; 
 
   // One invalidation rather than a refetch call: anything else showing
   // this zone's records is looking at the same key and is wrong too.
-  const reread = () =>
-    queries.invalidateQueries({ queryKey: ["dns", org, id, "records", zone?.id] });
+  const reread = () => queries.invalidateQueries({ queryKey: ["dns", id, "records", zone?.id] });
 
   const error = credentials.error ?? zones.error ?? records.error;
 

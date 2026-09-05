@@ -1,11 +1,11 @@
 package app_test
 
 import (
+	"cubeship/internal/user"
 	"net/http"
 	"testing"
 
 	"cubeship/internal/app"
-	"cubeship/internal/org"
 	"cubeship/internal/server/servertest"
 )
 
@@ -13,9 +13,9 @@ import (
 // exist in production and staging at once. It could not before.
 func TestSameNameCanExistInTwoEnvironments(t *testing.T) {
 	f := servertest.New(t)
-	_, key := f.AddMember(t, "member", org.RoleAdmin)
+	_, key := f.AddMember(t, "member", user.RoleAdmin)
 
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs/acme/projects/web/environments",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/projects/web/environments",
 		map[string]string{"slug": "staging", "name": "Staging"}, key), http.StatusCreated)
 
 	type appResponse struct {
@@ -26,7 +26,7 @@ func TestSameNameCanExistInTwoEnvironments(t *testing.T) {
 		t.Helper()
 		var got appResponse
 		servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-			"name": "api", "org": "acme", "project": "web", "environment": env,
+			"name": "api", "project": "web", "environment": env,
 		}, key, &got), http.StatusCreated)
 		return got
 	}
@@ -34,7 +34,7 @@ func TestSameNameCanExistInTwoEnvironments(t *testing.T) {
 	prod := create("production")
 	staging := create("staging")
 
-	if prod.Reference != "acme/web/production/api" || staging.Reference != "acme/web/staging/api" {
+	if prod.Reference != "web/production/api" || staging.Reference != "web/staging/api" {
 		t.Fatalf("references collided: %q and %q", prod.Reference, staging.Reference)
 	}
 	// Different registry paths, or one push would overwrite the other.
@@ -43,31 +43,14 @@ func TestSameNameCanExistInTwoEnvironments(t *testing.T) {
 	}
 }
 
-// Two organizations must likewise be able to have an app of the same
-// name without one blocking the other.
-func TestSameNameCanExistInTwoOrganizations(t *testing.T) {
-	f := servertest.New(t)
-
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs",
-		map[string]string{"slug": "globex", "name": "Globex"}, f.AdminKey), http.StatusCreated)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs/globex/projects",
-		map[string]string{"slug": "web", "name": "Web"}, f.AdminKey), http.StatusCreated)
-
-	for _, o := range []string{"acme", "globex"} {
-		servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", map[string]string{
-			"name": "api", "org": o, "project": "web",
-		}, f.AdminKey), http.StatusCreated)
-	}
-}
-
 // The same name in the same environment is still a conflict — that is
 // the constraint that remains.
 func TestSameNameTwiceInOneEnvironmentConflicts(t *testing.T) {
 	f := servertest.New(t)
-	_, key := f.AddMember(t, "member", org.RoleMember)
+	_, key := f.AddMember(t, "member", user.RoleMember)
 
 	body := map[string]string{
-		"name": "api", "org": "acme", "project": "web",
+		"name": "api", "project": "web",
 	}
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", body, key), http.StatusCreated)
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", body, key), http.StatusConflict)
@@ -79,22 +62,21 @@ func TestParseReference(t *testing.T) {
 		want    string
 		invalid bool
 	}{
-		{in: "acme/web/production/api", want: "acme/web/production/api"},
-		{in: "acme/web/staging/api", want: "acme/web/staging/api"},
-		// Three parts mean the environment every project is guaranteed
+		{in: "web/production/api", want: "web/production/api"},
+		{in: "web/staging/api", want: "web/staging/api"},
+		// Two parts mean the environment every project is guaranteed
 		// to have.
-		{in: "acme/web/api", want: "acme/web/production/api"},
-		{in: "/acme/web/api/", want: "acme/web/production/api"},
+		{in: "web/api", want: "web/production/api"},
+		{in: "/web/api/", want: "web/production/api"},
 
 		{in: "api", invalid: true},
-		{in: "acme/api", invalid: true},
-		{in: "acme/web/production/staging/api", invalid: true},
+		{in: "acme/web/production/api", invalid: true},
 		{in: "", invalid: true},
 		// Each part is a slug, so a traversal or an uppercase name never
 		// reaches a registry path or a router name.
-		{in: "acme/web/../api", invalid: true},
-		{in: "acme/web/production/API", invalid: true},
-		{in: "acme/web/production/my app", invalid: true},
+		{in: "web/../api", invalid: true},
+		{in: "web/production/API", invalid: true},
+		{in: "web/production/my app", invalid: true},
 	}
 
 	for _, tt := range tests {
@@ -119,11 +101,11 @@ func TestParseReference(t *testing.T) {
 // The reference is the registry repository path, so what you push to and
 // what you call the app are one thing.
 func TestReferenceIsTheRegistryPath(t *testing.T) {
-	ref, err := app.ParseReference("acme/web/staging/api")
+	ref, err := app.ParseReference("web/staging/api")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := ref.ImageFor("registry.example.com"); got != "registry.example.com/acme/web/staging/api" {
+	if got := ref.ImageFor("registry.example.com"); got != "registry.example.com/web/staging/api" {
 		t.Errorf("image is %q", got)
 	}
 }
@@ -139,7 +121,7 @@ func TestAppsCarryTheirSource(t *testing.T) {
 		Source    string `json:"source"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "myapp", "org": "acme", "project": "web",
+		"name": "myapp", "project": "web",
 	}, f.AdminKey, &created), http.StatusCreated)
 
 	if created.Source != string(app.SourceRegistry) {
@@ -151,7 +133,7 @@ func TestAppsCarryTheirSource(t *testing.T) {
 		Source string `json:"source"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "other", "org": "acme", "project": "web",
+		"name": "other", "project": "web",
 		"source": "registry",
 	}, f.AdminKey, &explicit), http.StatusCreated)
 	if explicit.Source != "registry" {
@@ -167,7 +149,7 @@ func TestUnsupportedSourceIsRefused(t *testing.T) {
 
 	for _, source := range []string{"git", "build", "ftp", "REGISTRY", "EXTERNAL"} {
 		rec := f.Do(t, http.MethodPost, "/apps", map[string]string{
-			"name": "myapp", "org": "acme", "project": "web",
+			"name": "myapp", "project": "web",
 			"source": source,
 		}, f.AdminKey)
 		servertest.RequireStatus(t, rec, http.StatusBadRequest)
@@ -184,7 +166,7 @@ func TestDeployIsRefusedBeforeItStartsWhenTheSourceCannotProduceAnImage(t *testi
 		Reference string `json:"reference"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "myapp", "org": "acme", "project": "web",
+		"name": "myapp", "project": "web",
 	}, f.AdminKey, &created), http.StatusCreated)
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost,
@@ -208,7 +190,7 @@ func TestAnExternalAppNeedsAnImageAndNothingElseMayHaveOne(t *testing.T) {
 	create := func(body map[string]string) int {
 		return f.Do(t, http.MethodPost, "/apps", body, f.AdminKey).Code
 	}
-	base := map[string]string{"org": "acme", "project": "web"}
+	base := map[string]string{"project": "web"}
 	with := func(extra map[string]string) map[string]string {
 		out := map[string]string{}
 		for k, v := range base {
@@ -262,7 +244,7 @@ func TestAnExternalAppCanDeployBeforeAnyDomainExists(t *testing.T) {
 		Reference string `json:"reference"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
-		"name": "myapp", "org": "acme", "project": "web",
+		"name": "myapp", "project": "web",
 		"source": "external", "image": "ghcr.io/acme/api",
 	}, f.AdminKey, &created), http.StatusCreated)
 	servertest.AddDomain(t, f, f.AdminKey, created.Reference, "myapp.example.com")

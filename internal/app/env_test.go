@@ -1,11 +1,11 @@
 package app_test
 
 import (
+	"cubeship/internal/user"
 	"net/http"
 	"sync"
 	"testing"
 
-	"cubeship/internal/org"
 	"cubeship/internal/server/servertest"
 )
 
@@ -21,13 +21,13 @@ type envResponse struct {
 func createApp(t *testing.T, f *servertest.Fixture, key, name string) {
 	t.Helper()
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", map[string]string{
-		"name": name, "org": "acme", "project": "web",
+		"name": name, "project": "web",
 	}, key), http.StatusCreated)
 }
 
 // appRef is where the fixture's apps live: every one created by
 // createApp lands in acme/web/production.
-func appRef(name string) string { return "/apps/acme/web/production/" + name }
+func appRef(name string) string { return "/apps/web/production/" + name }
 
 func appEnv(t *testing.T, f *servertest.Fixture, key, name string) envResponse {
 	t.Helper()
@@ -40,7 +40,7 @@ func appEnv(t *testing.T, f *servertest.Fixture, key, name string) envResponse {
 // every other one, silently, with no way to look before or after.
 func TestMergingEnvKeepsVariablesYouDidNotMention(t *testing.T) {
 	f := servertest.New(t)
-	_, key := f.AddMember(t, "member", org.RoleMember)
+	_, key := f.AddMember(t, "member", user.RoleMember)
 	createApp(t, f, key, "myapp")
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, appRef("myapp")+"/env",
@@ -58,7 +58,7 @@ func TestMergingEnvKeepsVariablesYouDidNotMention(t *testing.T) {
 
 func TestMergingEnvOverwritesAndUnsets(t *testing.T) {
 	f := servertest.New(t)
-	_, key := f.AddMember(t, "member", org.RoleMember)
+	_, key := f.AddMember(t, "member", user.RoleMember)
 	createApp(t, f, key, "myapp")
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, appRef("myapp")+"/env",
@@ -83,7 +83,7 @@ func TestMergingEnvOverwritesAndUnsets(t *testing.T) {
 // what it says.
 func TestPuttingEnvStillReplacesEverything(t *testing.T) {
 	f := servertest.New(t)
-	_, key := f.AddMember(t, "member", org.RoleMember)
+	_, key := f.AddMember(t, "member", user.RoleMember)
 	createApp(t, f, key, "myapp")
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, appRef("myapp")+"/env",
@@ -101,14 +101,14 @@ func TestPuttingEnvStillReplacesEverything(t *testing.T) {
 // what was configured, which is what made losing it invisible.
 func TestReadingAppEnvShowsWhereEachValueCameFrom(t *testing.T) {
 	f := servertest.New(t)
-	_, memberKey := f.AddMember(t, "member", org.RoleMember)
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
 	createApp(t, f, memberKey, "myapp")
 
 	// One key set at all three levels, plus one unique to each.
-	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/orgs/acme/projects/web/env",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/projects/web/env",
 		map[string]any{"set": map[string]string{"SHARED": "from-project", "ONLY_PROJECT": "p"}},
 		f.AdminKey), http.StatusOK)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/orgs/acme/projects/web/environments/production/env",
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/projects/web/environments/production/env",
 		map[string]any{"set": map[string]string{"SHARED": "from-environment", "ONLY_ENV": "e"}},
 		f.AdminKey), http.StatusOK)
 	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, appRef("myapp")+"/env",
@@ -148,7 +148,7 @@ func TestReadingAppEnvShowsWhereEachValueCameFrom(t *testing.T) {
 // it read, and the last commit would drop the others' keys.
 func TestConcurrentMergesDoNotLoseKeys(t *testing.T) {
 	f := servertest.New(t)
-	_, key := f.AddMember(t, "member", org.RoleMember)
+	_, key := f.AddMember(t, "member", user.RoleMember)
 	createApp(t, f, key, "myapp")
 
 	const writers = 8
@@ -170,27 +170,12 @@ func TestConcurrentMergesDoNotLoseKeys(t *testing.T) {
 	}
 }
 
-func TestReadingEnvRequiresAccessToTheApp(t *testing.T) {
-	f := servertest.New(t)
-	_, memberKey := f.AddMember(t, "member", org.RoleMember)
-	_, outsiderKey := servertest.CreateUser(t, f.DB, "outsider", false)
-	createApp(t, f, memberKey, "myapp")
-
-	if rec := f.Do(t, http.MethodGet, appRef("myapp")+"/env", nil, outsiderKey); rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 so the app's existence stays hidden, got %d", rec.Code)
-	}
-	if rec := f.Do(t, http.MethodPatch, appRef("myapp")+"/env",
-		map[string]any{"set": map[string]string{"A": "1"}}, outsiderKey); rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404, got %d", rec.Code)
-	}
-}
-
 // Creating the same name twice must be a 409, and stay a 409 when the
 // two attempts race. The old check-then-insert had both callers pass the
 // lookup, and the loser surfaced as a 500 built from a driver error.
 func TestConcurrentCreatesOfTheSameNameConflictCleanly(t *testing.T) {
 	f := servertest.New(t)
-	_, key := f.AddMember(t, "member", org.RoleMember)
+	_, key := f.AddMember(t, "member", user.RoleMember)
 
 	const attempts = 6
 	codes := make([]int, attempts)
@@ -200,7 +185,7 @@ func TestConcurrentCreatesOfTheSameNameConflictCleanly(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			codes[i] = f.Do(t, http.MethodPost, "/apps", map[string]string{
-				"name": "myapp", "org": "acme", "project": "web",
+				"name": "myapp", "project": "web",
 			}, key).Code
 		}()
 	}

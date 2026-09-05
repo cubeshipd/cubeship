@@ -16,15 +16,14 @@ import (
 // "acme/web/production/myapp" — is also the app's registry repository
 // path, so what you push to and what you name it are the same thing.
 type Reference struct {
-	Org         string
 	Project     string
 	Environment string
 	Name        string
 }
 
-// String is the canonical four-part form.
+// String is the canonical three-part form.
 func (r Reference) String() string {
-	return r.Org + "/" + r.Project + "/" + r.Environment + "/" + r.Name
+	return r.Project + "/" + r.Environment + "/" + r.Name
 }
 
 // ImageFor returns the registry path a push to this app targets.
@@ -32,7 +31,7 @@ func (r Reference) ImageFor(registryHost string) string {
 	return registryHost + "/" + r.String()
 }
 
-// ParseReference reads "org/project/environment/app". Three parts are
+// ParseReference reads "project/environment/app". Two parts are
 // accepted as a shorthand for the "production" environment, which is the
 // one every project is guaranteed to have.
 func ParseReference(s string) (Reference, error) {
@@ -40,13 +39,13 @@ func ParseReference(s string) (Reference, error) {
 
 	var ref Reference
 	switch len(parts) {
-	case 4:
-		ref = Reference{Org: parts[0], Project: parts[1], Environment: parts[2], Name: parts[3]}
 	case 3:
-		ref = Reference{Org: parts[0], Project: parts[1], Environment: project.ProductionEnvSlug, Name: parts[2]}
+		ref = Reference{Project: parts[0], Environment: parts[1], Name: parts[2]}
+	case 2:
+		ref = Reference{Project: parts[0], Environment: project.ProductionEnvSlug, Name: parts[1]}
 	default:
 		return Reference{}, fmt.Errorf(
-			"%q is not an app reference: expected org/project/environment/app, or org/project/app for %s",
+			"%q is not an app reference: expected project/environment/app, or project/app for %s",
 			s, project.ProductionEnvSlug)
 	}
 
@@ -54,8 +53,7 @@ func ParseReference(s string) (Reference, error) {
 	// malformed reference from ever reaching a registry path or a
 	// Traefik router name.
 	for label, part := range map[string]string{
-		"organization": ref.Org, "project": ref.Project,
-		"environment": ref.Environment, "app name": ref.Name,
+		"project": ref.Project, "environment": ref.Environment, "app name": ref.Name,
 	} {
 		if !slug.Valid(part) {
 			return Reference{}, fmt.Errorf("%s %q %s", label, part, slug.ErrInvalid)
@@ -66,7 +64,7 @@ func ParseReference(s string) (Reference, error) {
 
 // ReferenceOf is the reference of an app already loaded with its scope.
 func ReferenceOf(a *Scoped) Reference {
-	return Reference{Org: a.OrgSlug, Project: a.ProjectSlug, Environment: a.EnvironmentSlug, Name: a.Name}
+	return Reference{Project: a.ProjectSlug, Environment: a.EnvironmentSlug, Name: a.Name}
 }
 
 // resourceName is the Docker and Traefik identifier for an app: unique
@@ -78,5 +76,5 @@ func ReferenceOf(a *Scoped) Reference {
 // references themselves collide — which the unique index prevents.
 func resourceName(ref Reference) string {
 	return "cubeship-" + strings.Join(
-		[]string{ref.Org, ref.Project, ref.Environment, ref.Name}, "-")
+		[]string{ref.Project, ref.Environment, ref.Name}, "-")
 }

@@ -2,12 +2,12 @@ package server_test
 
 import (
 	"context"
+	"cubeship/internal/user"
 	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
 
-	"cubeship/internal/org"
 	"cubeship/internal/server/servertest"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -94,24 +94,24 @@ func TestMCPRejectsUnauthenticatedRequests(t *testing.T) {
 // the locks.
 func TestMCPToolsAreAuthorizedLikeHTTP(t *testing.T) {
 	f := servertest.New(t)
-	_, memberKey := f.AddMember(t, "member", org.RoleMember)
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
 
-	t.Run("a member cannot create an organization", func(t *testing.T) {
+	t.Run("a member cannot create a project", func(t *testing.T) {
 		session := connectMCP(t, f, memberKey)
-		_, result := callTool[map[string]any](t, session, "create_org",
+		_, result := callTool[map[string]any](t, session, "create_project",
 			map[string]any{"slug": "globex"})
 		if !result.IsError {
-			t.Fatal("a member was allowed to create an organization over MCP")
+			t.Fatal("a member was allowed to create a project over MCP")
 		}
 	})
 
-	t.Run("a super-admin can", func(t *testing.T) {
+	t.Run("an admin can", func(t *testing.T) {
 		session := connectMCP(t, f, f.AdminKey)
 		out, result := callTool[struct {
 			Slug string `json:"slug"`
-		}](t, session, "create_org", map[string]any{"slug": "globex"})
+		}](t, session, "create_project", map[string]any{"slug": "globex"})
 		if result.IsError {
-			t.Fatalf("super-admin create_org failed: %s", toolErrorText(result))
+			t.Fatalf("admin create_project failed: %s", toolErrorText(result))
 		}
 		if out.Slug != "globex" {
 			t.Errorf("got slug %q, want globex", out.Slug)
@@ -121,14 +121,14 @@ func TestMCPToolsAreAuthorizedLikeHTTP(t *testing.T) {
 	t.Run("a member cannot create a project", func(t *testing.T) {
 		session := connectMCP(t, f, memberKey)
 		_, result := callTool[map[string]any](t, session, "create_project",
-			map[string]any{"org": "acme", "slug": "nope"})
+			map[string]any{"slug": "nope"})
 		if !result.IsError {
 			t.Fatal("a member was allowed to create a project over MCP")
 		}
 	})
 
 	t.Run("an outsider sees no apps", func(t *testing.T) {
-		_, outsiderKey := servertest.CreateUser(t, f.DB, "outsider", false)
+		_, outsiderKey := servertest.CreateUser(t, f.DB, "outsider", user.RoleMember)
 		session := connectMCP(t, f, outsiderKey)
 		out, result := callTool[[]map[string]any](t, session, "list_apps", nil)
 		if result.IsError {
@@ -169,26 +169,25 @@ func TestMCPCreatedKeyIsIndependentOfRotate(t *testing.T) {
 // in.
 func TestMCPCreateAppRoundTrip(t *testing.T) {
 	f := servertest.New(t)
-	_, memberKey := f.AddMember(t, "member", org.RoleMember)
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
 	session := connectMCP(t, f, memberKey)
 
 	created, result := callTool[struct {
 		Reference   string `json:"reference"`
 		Name        string `json:"name"`
 		Image       string `json:"image"`
-		Org         string `json:"org"`
 		Project     string `json:"project"`
 		Environment string `json:"environment"`
 	}](t, session, "create_app", map[string]any{
-		"org": "acme", "project": "web", "name": "myapp"})
+		"project": "web", "name": "myapp"})
 	if result.IsError {
 		t.Fatalf("create_app failed: %s", toolErrorText(result))
 	}
 
 	// The reference is the registry path minus the host — that identity
 	// is the point of scoping names to their environment.
-	if created.Reference != "acme/web/production/myapp" {
-		t.Errorf("reference is %q, want acme/web/production/myapp", created.Reference)
+	if created.Reference != "web/production/myapp" {
+		t.Errorf("reference is %q, want web/production/myapp", created.Reference)
 	}
 	if created.Image != servertest.RegistryHost+"/"+created.Reference {
 		t.Errorf("push path is %q, want %s/%s", created.Image, servertest.RegistryHost, created.Reference)
@@ -204,13 +203,13 @@ func TestMCPCreateAppRoundTrip(t *testing.T) {
 		t.Errorf("HTTP sees %q, MCP created %q", viaHTTP.Reference, created.Reference)
 	}
 
-	// The three-part shorthand names the production environment.
+	// The two-part shorthand names the production environment.
 	var shorthand struct {
 		Reference string `json:"reference"`
 	}
 	got, result := callTool[struct {
 		Reference string `json:"reference"`
-	}](t, session, "get_app", map[string]any{"app": "acme/web/myapp"})
+	}](t, session, "get_app", map[string]any{"app": "web/myapp"})
 	if result.IsError {
 		t.Fatalf("get_app with the shorthand failed: %s", toolErrorText(result))
 	}

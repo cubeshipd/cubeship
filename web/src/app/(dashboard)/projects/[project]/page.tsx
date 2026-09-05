@@ -6,11 +6,7 @@ import { redirect } from "next/navigation";
 // "a project's apps" instead of two that have to stay identical — and so
 // the address bar says which environment you are looking at even when
 // you did not pick one.
-export default async function Project({
-  params,
-}: {
-  params: Promise<{ org: string; project: string }>;
-}) {
-  const { org, project } = await params;
-  redirect(`/projects/${org}/${project}/production`);
+export default async function Project({ params }: { params: Promise<{ project: string }> }) {
+  const { project } = await params;
+  redirect(`/projects/${project}/production`);
 }
