@@ -49,3 +49,50 @@ func TestAnAppCannotClaimTheInstancesOwnNames(t *testing.T) {
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps/"+created.Reference+"/domains",
 		map[string]any{"host": "myapp.example.com"}, f.AdminKey), http.StatusCreated)
 }
+
+// The suggestion reaches the client, because the client is where
+// somebody decides to use it. It is only ever offered: an app is still
+// created with no domain.
+func TestAnAppReportsAHostItCouldAnswerAt(t *testing.T) {
+	f := servertest.New(t)
+
+	var created struct {
+		Reference     string `json:"reference"`
+		SuggestedHost string `json:"suggested_host"`
+		Domains       []struct {
+			Host string `json:"host"`
+		} `json:"domains"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
+		"name": "gateway", "project": "web",
+	}, f.AdminKey, &created), http.StatusCreated)
+
+	want := "gateway.production.web." + servertest.Domain
+	if created.SuggestedHost != want {
+		t.Errorf("suggested %q, want %q", created.SuggestedHost, want)
+	}
+	if len(created.Domains) != 0 {
+		t.Errorf("a suggestion was taken for an assignment: %v", created.Domains)
+	}
+
+	// And it is a name the daemon accepts, which is the whole point of
+	// offering it.
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps/"+created.Reference+"/domains",
+		map[string]any{"host": created.SuggestedHost}, f.AdminKey), http.StatusCreated)
+}
+
+// An instance with no domain has nothing to build a name under, and says
+// so by leaving it out rather than by offering half of one.
+func TestNoDomainOnTheInstanceMeansNoSuggestion(t *testing.T) {
+	f := servertest.NewUnconfigured(t)
+
+	var created struct {
+		SuggestedHost string `json:"suggested_host"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
+		"name": "gateway", "project": "web",
+	}, f.AdminKey, &created), http.StatusCreated)
+	if created.SuggestedHost != "" {
+		t.Errorf("suggested %q with no instance domain", created.SuggestedHost)
+	}
+}

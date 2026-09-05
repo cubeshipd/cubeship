@@ -75,8 +75,9 @@ export type AppDomain = {
 };
 
 // hostsOf renders every name an app answers at, for the places that have
-// room for one line. "no domain" rather than an empty string, because an
-// app with none cannot deploy and that is worth reading as a state.
+// room for one line. "no domain" rather than an empty string, because
+// answering nowhere is a state worth reading — a normal one for a worker
+// or a queue consumer, and a surprise for anything meant to be visited.
 export function hostsOf(app: { domains: AppDomain[] }): string {
   if (app.domains.length === 0) return "no domain";
   return app.domains.map((d) => d.host).join(", ");
@@ -87,9 +88,13 @@ export type App = {
   name: string;
   description: string;
   // Every name this app answers at, each with the port behind it. Empty
-  // until one is added, and an app with none cannot deploy — which is
-  // what makes a freshly created app undeployable.
+  // is a normal state: an app nothing outside the instance should reach
+  // deploys with none, and its neighbours reach it by container name.
   domains: AppDomain[];
+  // A name this app could answer at, under the instance's own domain.
+  // Only ever offered — nothing assigns it. Absent while the instance
+  // has no domain to build one under.
+  suggested_host?: string;
   // For a registry app, where to push; for an external one, what it pulls.
   image?: string;
   status: string;
@@ -188,6 +193,10 @@ export type Settings = {
   // they are.
   github_app_slug?: string;
   github_connected: boolean;
+  // Whether every name under the instance's domain already resolves
+  // here — true of the sslip.io address a default install takes. It is
+  // what decides whether a name for an app needs a record written.
+  wildcard_domain?: boolean;
 };
 
 // GitHubInstallation is one GitHub account this instance has

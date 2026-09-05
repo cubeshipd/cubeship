@@ -23,6 +23,12 @@ type Response struct {
 	// exist. While it is false, apps are served over plain HTTP.
 	TLSEnabled bool `json:"tls_enabled"`
 
+	// WildcardDomain says every name under the instance's domain
+	// already resolves here — which is true of the sslip.io address a
+	// default install takes, and is what lets an app be given a name
+	// with no record to write and no DNS provider to connect.
+	WildcardDomain bool `json:"wildcard_domain"`
+
 	// PublicIP is what this instance's DNS records should point at —
 	// what the operator configured, or what the daemon reads off its own
 	// interface. A browser cannot work this out, which is why it is
@@ -71,6 +77,7 @@ func toResponse(v Values, reachedAt string) Response {
 	if v.HasDomain() {
 		r.RegistryHost = RegistryHostFor(v.Get(Domain))
 	}
+	r.WildcardDomain = ResolvesEveryName(v.Get(Domain))
 	r.PublicIP = v.PublicAddressFor(reachedAt)
 	r.PublicIPConfigured = v.Get(PublicIP) != ""
 	r.DNSProviderID = v.Get(DNSProviderID)
