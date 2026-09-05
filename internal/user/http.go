@@ -38,7 +38,12 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.HandleInternal("PUT /users/me/password", auth(http.HandlerFunc(h.setPassword)))
 
 	r.Handle("POST /users", auth(http.HandlerFunc(h.add)))
+	r.Handle("GET /users", auth(http.HandlerFunc(h.list)))
 	r.Handle("GET /users/me", auth(http.HandlerFunc(h.whoAmI)))
+	// Someone leaves, or a laptop does. Neither had an answer here
+	// before, and "go and delete the rows yourself" is not one.
+	r.Handle("DELETE /users/{username}", auth(http.HandlerFunc(h.remove)))
+	r.Handle("DELETE /users/{username}/credentials", auth(http.HandlerFunc(h.revokeCredentials)))
 	r.HandleInternal("POST /users/me/api-key/rotate", auth(http.HandlerFunc(h.rotateAPIKey)))
 	r.HandleInternal("POST /users/me/api-keys", auth(http.HandlerFunc(h.createAPIKey)))
 	r.HandleInternal("GET /users/me/api-keys", auth(http.HandlerFunc(h.listAPIKeys)))
@@ -289,6 +294,50 @@ func (h *Handler) whoAmI(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, WhoAmIResponse{Username: u.Username, Role: u.Role})
 }
 
+// UserResponse is one account as the API returns it. Never a hash, and
+// never a key: those are shown once, at creation.
+type UserResponse struct {
+	Username  string    `json:"username"`
+	Role      Role      `json:"role"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	users, err := h.svc.List(ctx, FromContext(ctx))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	out := make([]UserResponse, 0, len(users))
+	for _, u := range users {
+		out = append(out, UserResponse{Username: u.Username, Role: u.Role, CreatedAt: u.CreatedAt})
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"users": out})
+}
+
+// remove deletes an account and everything it authenticates with.
+func (h *Handler) remove(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := h.svc.Delete(ctx, FromContext(ctx), r.PathValue("username")); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// revokeCredentials ends every session and key an account holds without
+// deleting the account — the answer to a laptop that walked off.
+func (h *Handler) revokeCredentials(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	revoked, err := h.svc.RevokeCredentials(ctx, FromContext(ctx), r.PathValue("username"))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, revoked)
+}
+
 // rotateAPIKey replaces exactly the key this request authenticated with,
 // keeping its name. A user can hold several independent keys precisely so
 // that rotating one — routine hygiene on the key your terminal uses, for
@@ -373,6 +422,10 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrForbidden):
 		http.Error(w, err.Error(), http.StatusForbidden)
 	case errors.Is(err, ErrUsernameTaken):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, ErrNoSuchUser):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, ErrCannotRemoveYourself), errors.Is(err, ErrLastAdmin):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrInvalidRole), errors.Is(err, ErrPasswordTooShort),
 		errors.Is(err, slug.ErrReserved):
