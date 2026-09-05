@@ -373,3 +373,80 @@ func TestUninstallingForgetsTheConnection(t *testing.T) {
 		t.Errorf("the connection survived being uninstalled: %+v", got.Installations)
 	}
 }
+
+// The manifest exchange is what makes this instance a GitHub App, and a
+// code alone is not evidence of anything: GitHub's conversion endpoint
+// is unauthenticated, so a code from anybody's manifest works, and this
+// endpoint is reached by a browser that attaches the session cookie to
+// whatever link it follows.
+//
+// So a link sent to a signed-in admin would otherwise register the
+// sender's App here — their private key, their webhook secret, and
+// installation tokens over every repository the admin then granted it.
+// The state this instance issued when the flow started is what stops
+// that, and nothing gets as far as talking to GitHub without it.
+func TestAManifestExchangeNeedsAStateThisInstanceIssued(t *testing.T) {
+	f := servertest.New(t)
+
+	for _, state := range []string{"", "a-state-nobody-issued"} {
+		servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/settings/github/manifest",
+			map[string]string{"code": "somebody-elses-code", "state": state}, f.AdminKey),
+			http.StatusForbidden)
+	}
+
+	// Not even a real one, if it was issued to somebody else: two admins
+	// are two flows.
+	_, otherKey := servertest.CreateUser(t, f.DB, "other", user.RoleAdmin)
+	var issued struct {
+		State string `json:"state"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/settings/github/manifest/state",
+		nil, otherKey, &issued), http.StatusCreated)
+	if issued.State == "" {
+		t.Fatal("no state was issued")
+	}
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/settings/github/manifest",
+		map[string]string{"code": "somebody-elses-code", "state": issued.State}, f.AdminKey),
+		http.StatusForbidden)
+
+	// And none of that wrote anything.
+	var settings struct {
+		GitHubConnected bool `json:"github_connected"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/settings", nil, f.AdminKey, &settings),
+		http.StatusOK)
+	if settings.GitHubConnected {
+		t.Error("a refused exchange registered an App anyway")
+	}
+}
+
+// Registering a second App invalidates every installation on the first:
+// this instance stops being able to clone what it was granted and stops
+// receiving its pushes. That is a thing to mean rather than a thing to
+// arrive at, and the answer comes from the state — issued before GitHub
+// was involved — rather than from the redirect coming back.
+func TestReplacingTheAppHasToBeMeant(t *testing.T) {
+	f := configured(t)
+
+	var issued struct {
+		State string `json:"state"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/settings/github/manifest/state",
+		map[string]bool{"replace": false}, f.AdminKey, &issued), http.StatusCreated)
+
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/settings/github/manifest",
+		map[string]string{"code": "a-code", "state": issued.State}, f.AdminKey),
+		http.StatusConflict)
+}
+
+// Registering the instance as an App is the operator's configuration,
+// so starting the flow takes the same role finishing it does.
+func TestOnlyAnAdminStartsAManifestRegistration(t *testing.T) {
+	f := servertest.New(t)
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
+
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/settings/github/manifest/state",
+		nil, memberKey), http.StatusForbidden)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/settings/github/manifest",
+		map[string]string{"code": "a-code", "state": "any"}, memberKey), http.StatusForbidden)
+}

@@ -70,6 +70,9 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	// Instance configuration rather than an organization's: this is how
 	// the instance becomes a GitHub App at all.
 	r.Handle("POST /settings/github/manifest", auth(http.HandlerFunc(h.registerFromManifest)))
+	// The nonce that flow carries. It is a separate call because the
+	// exchange has to be able to refuse a code that arrived without one.
+	r.Handle("POST /settings/github/manifest/state", auth(http.HandlerFunc(h.newManifestState)))
 }
 
 // WebhookRoutes mounts the one endpoint GitHub itself calls. It stays at
@@ -92,6 +95,10 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrNoProof):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNoOAuth):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, ErrNotStartedHere):
+		http.Error(w, err.Error(), http.StatusForbidden)
+	case errors.Is(err, ErrAlreadyRegistered):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, settings.ErrSuperAdminOnly):
 		http.Error(w, err.Error(), http.StatusForbidden)
@@ -147,19 +154,49 @@ func (h *Handler) branches(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, branches)
 }
 
+// newManifestState starts a registration and hands back the nonce it
+// carries. GitHub echoes it in the redirect, and the exchange below
+// refuses a code that comes back without it.
+func (h *Handler) newManifestState(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		// Replace says the caller means to replace an App this instance
+		// already has. It is recorded now, with the nonce, rather than
+		// read from the redirect that comes back.
+		Replace bool `json:"replace"`
+	}
+	// A body is optional here: not replacing is the ordinary case.
+	if r.ContentLength > 0 {
+		if err := httpx.DecodeJSON(r, &req); err != nil {
+			http.Error(w, "invalid body", http.StatusBadRequest)
+			return
+		}
+	}
+	ctx := r.Context()
+	state, err := h.svc.NewManifestState(ctx, user.FromContext(ctx), req.Replace)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, map[string]string{"state": state})
+}
+
 // registerFromManifest finishes the flow that spares someone creating
-// an App by hand: GitHub redirects back with a code, and this exchanges
-// it for the App it just made.
+// an App by hand: GitHub redirects back with a code and the state it was
+// sent with, and this exchanges the code for the App it just made.
 func (h *Handler) registerFromManifest(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Code string `json:"code"`
+		// What GitHub echoed back from the manifest form. Without it
+		// the code is only evidence that somebody, somewhere, made an
+		// App — see Service.RegisterFromManifest.
+		State string `json:"state"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil || req.Code == "" {
 		http.Error(w, "code is required", http.StatusBadRequest)
 		return
 	}
 	ctx := r.Context()
-	values, err := h.svc.RegisterFromManifest(ctx, user.FromContext(ctx), req.Code)
+	values, err := h.svc.RegisterFromManifest(ctx, user.FromContext(ctx), req.Code, req.State)
 	if err != nil {
 		WriteError(w, err)
 		return

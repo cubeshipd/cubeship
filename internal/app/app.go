@@ -109,11 +109,63 @@ func NormalizeHost(host string) string {
 	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
 }
 
+// MaxHostLength is what a DNS name can be, dots included.
+const MaxHostLength = 253
+
+// ValidHost reports whether host is a DNS name, on an already
+// normalised value.
+//
+// The rule is the grammar, not a guess at what resolves: labels of
+// letters, digits and dashes, none of them starting or ending with a
+// dash, none empty, and 253 characters in total.
+//
+// It is checked because the name is interpolated into a Traefik rule —
+// Host(`%s`) — and a backtick, a space or a `||` in it is a routing rule
+// somebody else wrote. An admin is the only caller today and already
+// controls the instance's own domain, so this is not the boundary that
+// makes the instance safe; it is the one that keeps a typo from becoming
+// a rule nobody can see. A name that cannot appear in DNS could never
+// have reached the app anyway.
+func ValidHost(host string) bool {
+	if host == "" || len(host) > MaxHostLength {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if label == "" || len(label) > 63 {
+			return false
+		}
+		if label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for i := 0; i < len(label); i++ {
+			c := label[i]
+			switch {
+			case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '-':
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
 var (
 	// ErrDomainTaken is a name another app already answers at. Traefik
 	// routes by host and nothing else, so two apps claiming one name
 	// would give it two answers.
 	ErrDomainTaken = errors.New("another app is already served at that name")
+
+	// ErrBadHost is a name that is not a DNS name. It goes into a
+	// Traefik routing rule, so what it may contain is the grammar and
+	// nothing wider.
+	ErrBadHost = errors.New("that is not a valid host name")
+
+	// ErrHostIsTheInstance is one of the names this instance answers at
+	// itself. Traefik routes by host and nothing else, so an app
+	// claiming it would fight the daemon's own router for the dashboard
+	// or the registry, and which one won would be a detail of label
+	// ordering.
+	ErrHostIsTheInstance = errors.New("that name is this instance's own; the dashboard and registry answer there")
 
 	// ErrDomainNotFound is a domain id that is not this app's.
 	ErrDomainNotFound = errors.New("no such domain on this app")

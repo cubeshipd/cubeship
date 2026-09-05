@@ -38,6 +38,9 @@ LOCAL=0
 CONTAINER=cubeship-daemon
 NETWORK=cubeship
 DATA_DIR="${CUBESHIP_DATA_DIR:-/var/lib/cubeship}"
+# Where the daemon writes the token that guards claiming an unclaimed
+# instance. Must match setup.TokenFileName.
+SETUP_TOKEN_FILE="setup-token"
 PORT=3000
 
 # DOMAIN is where the instance answers over HTTPS. Left empty, one is
@@ -334,9 +337,24 @@ main() {
 		DONE
 	fi
 
+	# The setup token is what keeps whoever reaches the port first from
+	# claiming the machine: the daemon writes it where only root can read
+	# it, and creating the first account asks for it. It is gone from
+	# here the moment somebody does, so an upgrade prints nothing.
+	if [ -f "$DATA_DIR/$SETUP_TOKEN_FILE" ]; then
+		cat <<-DONE
+			Creating the first account needs this token:
+
+			  $(cat "$DATA_DIR/$SETUP_TOKEN_FILE")
+
+			It is stored in $DATA_DIR/$SETUP_TOKEN_FILE and is removed once
+			the account exists. Anyone who can read it can claim this
+			instance, so treat it as a password.
+
+		DONE
+	fi
+
 	cat <<-DONE
-		The first person to open it creates the account — until someone
-		does, anyone who can reach this instance can claim it.
 
 		  docker ps
 		  docker logs -f $CONTAINER
