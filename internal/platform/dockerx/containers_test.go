@@ -412,7 +412,7 @@ func TestPullImageAttachesRegistryAuthForMatchingHost(t *testing.T) {
 	if err != nil {
 		t.Fatalf("decode auth: %v", err)
 	}
-	if decoded.IdentityToken != "signed-jwt" {
+	if decoded.RegistryToken != "signed-jwt" {
 		t.Fatalf("unexpected credentials: %+v", decoded)
 	}
 }

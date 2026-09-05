@@ -625,7 +625,8 @@ credential lying around for nothing; keys are self-service.
 
 ## Instance settings
 
-The domain and the Let's Encrypt contact address are rows in `settings`,
+The domain and the Let's Encrypt contact address (optional: an account
+opens without one, so TLS follows the domain alone) are rows in `settings`,
 not environment variables: Cubeship is installed with one command,
 reached by IP, and configured from there. `config.Load` therefore
 requires nothing, and `config.SeedSettings` carries the old environment

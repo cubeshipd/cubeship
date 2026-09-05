@@ -101,10 +101,10 @@ func TestDeployEndToEnd(t *testing.T) {
 	}
 
 	dataDir := t.TempDir()
+	var adminKey string
 	daemon := exec.Command(daemonBin)
 	daemon.Env = append(os.Environ(),
 		"CUBESHIP_DOMAIN=localtest.me",
-		"CUBESHIP_ACME_EMAIL=test@example.com",
 		"CUBESHIP_TOKEN="+testToken,
 		"CUBESHIP_DATA_DIR="+dataDir,
 	)
@@ -114,10 +114,32 @@ func TestDeployEndToEnd(t *testing.T) {
 		t.Fatalf("start daemon: %v", err)
 	}
 	t.Cleanup(func() {
+		// What the daemon's own log cannot say: how the proxy and the
+		// registry saw the requests that failed.
+		if t.Failed() {
+			for _, name := range []string{"cubeship-traefik", "cubeship-registry"} {
+				out, _ := exec.Command("docker", "logs", "--tail", "60", name).CombinedOutput()
+				t.Logf("---- docker logs %s ----\n%s", name, out)
+			}
+			out, _ := exec.Command("sh", "-c", "docker ps -a --filter name=cubeship- --format '{{.Names}}\t{{.Status}}\t{{.Image}}'").CombinedOutput()
+			t.Logf("---- docker ps -a ----\n%s", out)
+			out, _ = exec.Command("sh", "-c", "docker logs --tail 20 $(docker ps -aq --filter name=cubeship-web-production-myapp-) 2>&1").CombinedOutput()
+			t.Logf("---- app container logs ----\n%s", out)
+			out, _ = exec.Command("curl", "-s", "-H", "Authorization: Bearer "+adminKey,
+				daemonURL+httpx.APIPrefix+"/apps/web/production/myapp/deployments").CombinedOutput()
+			t.Logf("---- deployments ----\n%s", out)
+		}
 		daemon.Process.Kill()
 		daemon.Wait()
-		exec.Command("docker", "rm", "-f", "cubeship-registry", "cubeship-traefik").Run()
-		exec.Command("sh", "-c", "docker rm -f $(docker ps -aq --filter name=cubeship-myapp-)").Run()
+		exec.Command("docker", "rm", "-f", "cubeship-registry", "cubeship-traefik",
+			"cubeship-postgres", "cubeship-frontend", "cubeship-buildkit").Run()
+		exec.Command("sh", "-c", "docker rm -f $(docker ps -aq --filter name=cubeship-web-production-myapp-)").Run()
+		// Postgres and BuildKit wrote the data directory as root, with
+		// sticky bits the TempDir cleanup cannot get past — and a cleanup
+		// that fails fails the test. A root inside a container empties
+		// it; the Postgres image is already here.
+		exec.Command("docker", "run", "--rm", "-v", dataDir+":/d", "--entrypoint", "sh",
+			"postgres:16-alpine", "-c", "rm -rf /d/* /d/.[!.]*").Run()
 	})
 
 	waitFor(t, 30*time.Second, "daemon healthz", func() bool {
@@ -144,7 +166,7 @@ func TestDeployEndToEnd(t *testing.T) {
 	// CUBESHIP_TOKEN is the registry/webhook credential only. A fresh
 	// instance has no account at all: the first request anyone makes
 	// claims it, exactly as a browser would on the setup page.
-	adminKey := claimInstance(t, adminUsername, adminPassword)
+	adminKey = claimInstance(t, adminUsername, adminPassword)
 	client := client.New(daemonURL, adminKey)
 
 	if _, err := client.CreateProject(ctx, "web"); err != nil {
@@ -191,7 +213,7 @@ func TestDeployEndToEnd(t *testing.T) {
 	}
 
 	waitFor(t, 60*time.Second, "app deployed after push", func() bool {
-		req, _ := http.NewRequest(http.MethodGet, daemonURL+httpx.APIPrefix+"/apps/myapp", nil)
+		req, _ := http.NewRequest(http.MethodGet, daemonURL+httpx.APIPrefix+"/apps/web/production/myapp", nil)
 		req.Header.Set("Authorization", "Bearer "+adminKey)
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -301,7 +323,7 @@ func claimInstance(t *testing.T, username, password string) string {
 		t.Fatalf("POST /users/me/api-keys: %s", keyResp.Status)
 	}
 	var created struct {
-		Key string `json:"key"`
+		Key string `json:"api_key"`
 	}
 	jsonDecodeOrFatal(t, keyResp, &created)
 	if created.Key == "" {

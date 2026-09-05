@@ -92,28 +92,29 @@ func TestConfiguringADomainGivesExistingAppsAPushPath(t *testing.T) {
 	}
 }
 
-// Certificates need both: Let's Encrypt will not register an account
-// without a contact address, and there is nothing to certify without a
-// domain.
-func TestTLSNeedsBothADomainAndAContactAddress(t *testing.T) {
+// Certificates need a domain and nothing else: Let's Encrypt opens an
+// account without a contact address, so the address is a courtesy that
+// must not hold TLS back.
+func TestTLSNeedsOnlyADomain(t *testing.T) {
 	f := servertest.NewUnconfigured(t)
+
+	if read(t, f, f.AdminKey).TLSEnabled {
+		t.Error("TLS is claimed with nothing configured")
+	}
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodPut, "/settings",
 		map[string]string{"domain": "example.com"}, f.AdminKey), http.StatusOK)
-	if read(t, f, f.AdminKey).TLSEnabled {
-		t.Error("TLS is claimed with a domain but no contact address")
+	if !read(t, f, f.AdminKey).TLSEnabled {
+		t.Error("TLS is off with a domain and no contact address")
 	}
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodPut, "/settings",
 		map[string]string{"acme_email": "admin@example.com"}, f.AdminKey), http.StatusOK)
 
 	got := read(t, f, f.AdminKey)
-	if !got.TLSEnabled {
-		t.Error("TLS is still off with both configured")
-	}
 	// Setting the email must not have cleared the domain: only the field
 	// sent is changed.
-	if got.Domain != "example.com" {
+	if got.Domain != "example.com" || !got.TLSEnabled {
 		t.Errorf("the domain was lost when the contact address was set: %+v", got)
 	}
 }

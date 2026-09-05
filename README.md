@@ -94,16 +94,24 @@ the API there too — bypassing Traefik's TLS. A fresh box has no domain
 and no certificate, so this is the only way in and it has to be
 reachable; a password and a session cookie cross it in the clear.
 
-Once a domain is set, everything is reachable over HTTPS at
-`api.<domain>` and 3000 has no remaining use from outside. Close it then,
-and open only 80 and 443.
+Once a domain is set, everything is reachable over HTTPS at `<domain>`
+and 3000 has no remaining use from outside. Close it then, and open only
+80 and 443.
+
+The installer sets one for you: it looks up the box's public address and
+uses `<a-b-c-d>.sslip.io`, a wildcard DNS name that resolves to
+`a.b.c.d` with nothing to register, so a fresh install answers over
+HTTPS at a name a certificate can be issued for. `--domain` (or
+`CUBESHIP_DOMAIN`) uses yours instead, and `CUBESHIP_ACME_EMAIL` gives
+Let's Encrypt a contact address — optional, an account opens without
+one.
 
 ## Claiming the instance
 
-Open `http://<ip>:3000` and create the account. A fresh instance has no
-account and no way to add one from outside, so this first page creates a
-super-admin, an organization and a project, signs you in, and closes
-setup for good — every account after it is added from inside.
+Open the address the installer printed and create the account. A fresh
+instance has no account and no way to add one from outside, so this
+first page creates an admin, signs you in, and closes setup for good —
+every account after it is added from inside.
 
 **Until you do this, whoever reaches that port first owns the instance.**
 Claim it as soon as the daemon starts; it says so in its log while the
@@ -114,17 +122,18 @@ You are signed in with a session cookie. For `cubeship login` and
 
 ## Configuring the instance
 
-Until a domain is set there is no registry to push to, and until a
-contact address is set there are no certificates, so apps are served over
-plain HTTP. Both are under **Instance** in the dashboard, or:
+Until a domain is set there is no registry to push to and no
+certificates, so apps are served over plain HTTP. The installer's
+sslip.io name covers both; to move to your own, under **Instance** in
+the dashboard, or:
 
 ```sh
-curl -X PUT https://api.example.com/api/settings \
+curl -X PUT https://example.com/api/settings \
   -H "Authorization: Bearer $KEY" \
   -d '{"domain":"example.com","acme_email":"admin@example.com"}'
 ```
 
-Both `api.<domain>` and `registry.<domain>` must resolve to this host for
+Both `<domain>` and `registry.<domain>` must resolve to this host for
 certificates to issue. Applying this replaces the affected containers,
 which costs a few seconds of downtime for them; apps already running keep
 the routing they were deployed with, so **redeploy them to serve over

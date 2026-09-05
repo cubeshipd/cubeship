@@ -352,10 +352,11 @@ func (s *Service) MergeEnv(ctx context.Context, caller *user.User, ref Reference
 // registry path, and returns the deployment recording it. The work runs
 // detached — see Orchestrator.Start — so the caller can stop waiting
 // without stopping the deploy.
+//
+// An empty tag is the source's to fill in: "latest" for an image, the
+// stored ref for a source that builds. Defaulting it here turned every
+// build with no tag asked for into a build of a branch called latest.
 func (s *Service) Deploy(ctx context.Context, caller *user.User, ref Reference, tag string) (*Scoped, *Deployment, error) {
-	if tag == "" {
-		tag = "latest"
-	}
 	// Resolved as a member first, so someone outside the organization
 	// gets the same 404 an unknown app gets rather than learning it
 	// exists. The source's own requirement is checked after.
@@ -372,6 +373,12 @@ func (s *Service) Deploy(ctx context.Context, caller *user.User, ref Reference, 
 	}
 	return a, deployment, nil
 }
+
+// WaitForDeploys blocks until every deploy the orchestrator has running
+// has finished. For tests: a deploy started by a webhook outlives the
+// request that started it, and a test that drops its schema while one
+// is still writing deadlocks in Postgres.
+func (s *Service) WaitForDeploys() { s.orch.Wait() }
 
 // WaitForDeployment blocks until a deployment finishes or ctx is done.
 // Abandoning the wait does not abandon the deploy.
