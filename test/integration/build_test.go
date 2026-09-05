@@ -156,15 +156,22 @@ func serveRepo(t *testing.T, files map[string]string) string {
 	git(work, "clone", "--quiet", "--bare", work, bare)
 	git(bare, "--git-dir", bare, "update-server-info")
 
-	srv := httptest.NewServer(http.FileServer(http.Dir(serveDir)))
+	// The builder is a container reaching back to this process, and a
+	// Railpack build clones in the daemon: see hostAddress.
+	l, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewUnstartedServer(http.FileServer(http.Dir(serveDir)))
+	srv.Listener = l
+	srv.Start()
 	t.Cleanup(srv.Close)
 
-	// The builder is a container reaching back to this process.
 	_, port, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return "http://host.docker.internal:" + port + "/repo.git"
+	return "http://" + hostAddress(t) + ":" + port + "/repo.git"
 }
 
 func apiRequest(t *testing.T, method, path, apiKey string, body string) *http.Response {
