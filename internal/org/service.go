@@ -14,11 +14,25 @@ import (
 type Service struct {
 	db    *database.DB
 	users *user.Service
+
+	// apps is how deleting an organization reaches the containers
+	// running inside it. See AppTeardown.
+	apps AppTeardown
 }
 
 func NewService(db *database.DB, users *user.Service) *Service {
 	return &Service{db: db, users: users}
 }
+
+// SetAppTeardown wires the app module in. Called once, at startup, by
+// the only package that knows every module exists.
+func (s *Service) SetAppTeardown(t AppTeardown) { s.apps = t }
+
+// AppTeardownFor hands the same implementation to the modules between
+// this one and app, which cannot be given it directly: internal/project
+// is below app and above org, so it takes its teardown from here rather
+// than from a second setter nobody would remember to call.
+func (s *Service) AppTeardownFor() AppTeardown { return s.apps }
 
 func (s *Service) Repo() *Repository { return NewRepository(s.db) }
 
@@ -105,10 +119,24 @@ func (s *Service) Create(ctx context.Context, caller *user.User, orgSlug string)
 	return created, err
 }
 
-// Delete removes an organization and its memberships. Super-admin only,
-// like creating one, and refused while any project remains: an
-// organization is a tenant boundary, and removing it out from under live
-// projects would strand every app inside them.
+// Delete removes an organization and everything inside it: every app's
+// container is stopped and removed, then the projects, environments,
+// memberships and the organization itself. Super-admin only, like
+// creating one.
+//
+// It takes the whole tenant rather than refusing while projects remain.
+// An organization is the frame everything else hangs off, and a delete
+// that stops at the first thing in the way leaves whoever asked walking
+// the tree by hand — deleting apps one at a time to reach the row they
+// actually wanted gone. What makes that safe is not a refusal here but
+// the confirmation in front of it: nothing deletes an organization
+// without its own name being typed.
+//
+// The containers go first and outside the transaction, because Docker
+// has no rollback. If the row deletion then fails, the apps are gone and
+// the organization remains — a state a retry finishes, unlike the
+// reverse, which would leave containers running with nothing left that
+// names them.
 func (s *Service) Delete(ctx context.Context, caller *user.User, orgSlug string) (*Organization, error) {
 	if caller == nil || !caller.IsSuperAdmin {
 		return nil, ErrSuperAdminOnly
@@ -117,12 +145,11 @@ func (s *Service) Delete(ctx context.Context, caller *user.User, orgSlug string)
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	count, err := s.Repo().CountProjects(ctx, o.ID)
-	if err != nil {
-		return nil, err
+	if s.apps == nil {
+		return nil, ErrNoTeardown
 	}
-	if count > 0 {
-		return nil, ErrHasProjects
+	if err := s.apps.DeleteAppsInOrg(ctx, o.ID); err != nil {
+		return nil, err
 	}
 	return o, s.db.WithTx(ctx, func(tx database.Queryer) error {
 		return NewRepository(tx).Delete(ctx, o.ID)

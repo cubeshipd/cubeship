@@ -137,8 +137,8 @@ function Settings({ org, project }: { org: string; project: string }) {
           title="Delete this project"
           description={
             <>
-              Removes the project and every environment in it. Refused while any app still lives
-              here — delete those first, since removing an app means stopping its container.
+              Removes the project, every environment in it and every app inside those. Each
+              app&apos;s container is stopped and removed first.
             </>
           }
           action={
@@ -153,7 +153,7 @@ function Settings({ org, project }: { org: string; project: string }) {
         open={deleting}
         onOpenChange={setDeleting}
         title="Delete project"
-        description="Every environment in it goes too. This cannot be undone."
+        description="Every environment in it goes, and every app in those — containers included. This cannot be undone."
         confirmWord={project}
         confirmLabel="Delete project"
         onConfirm={async () => {

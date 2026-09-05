@@ -106,7 +106,7 @@ export function OrgSwitcher() {
           open={deleting}
           onOpenChange={setDeleting}
           title="Delete organization"
-          description="It has to hold no projects first — nothing cascades into stopping containers behind your back."
+          description="Every project, environment and app in it goes too, and every app's container is stopped and removed. This cannot be undone."
           confirmWord={current.slug}
           confirmLabel="Delete organization"
           onConfirm={async () => {

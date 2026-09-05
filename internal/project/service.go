@@ -157,20 +157,27 @@ func (s *Service) MergeEnv(ctx context.Context, caller *user.User, orgSlug, proj
 	return p, s.Repo().MergeEnv(ctx, p.ID, set, unset)
 }
 
-// Delete removes a project and its environments. It is refused while any
-// app still lives in it: deleting those means stopping containers, which
-// is the app module's job and the operator's decision, one app at a time.
+// Delete removes a project and everything in it: every app's container
+// is stopped and removed, then the environments and the project itself.
+//
+// It does not refuse while apps remain. Deleting a project is a decision
+// about the project, and making someone delete its apps one at a time to
+// get there is bookkeeping, not a safeguard — the safeguard is the
+// confirmation in front of it, which asks for the project's own name.
+//
+// Containers go first and outside the transaction, because Docker has no
+// rollback: see org.Service.Delete for why that order is the safe one.
 func (s *Service) Delete(ctx context.Context, caller *user.User, orgSlug, projectSlug string) (*Project, error) {
 	p, err := s.Resolve(ctx, caller, orgSlug, projectSlug, org.RoleAdmin)
 	if err != nil {
 		return nil, err
 	}
-	count, err := s.Repo().CountApps(ctx, p.ID)
-	if err != nil {
-		return nil, err
+	teardown := s.orgs.AppTeardownFor()
+	if teardown == nil {
+		return nil, org.ErrNoTeardown
 	}
-	if count > 0 {
-		return nil, ErrHasApps
+	if err := teardown.DeleteAppsInProject(ctx, p.ID); err != nil {
+		return nil, err
 	}
 	return p, s.db.WithTx(ctx, func(tx database.Queryer) error {
 		return NewRepository(tx).Delete(ctx, p.ID)
@@ -243,8 +250,6 @@ func (s *Service) MergeEnvironmentEnv(ctx context.Context, caller *user.User, or
 	return e, s.EnvironmentRepo().MergeEnv(ctx, e.ID, set, unset)
 }
 
-// DeleteEnvironment removes an environment, refusing to delete
-// production or one that still has apps in it.
 // UpdateEnvironment changes an environment's description. Not
 // its slug: unlike a project's, which the dashboard lets you rename
 // with a warning, an environment's slug is the third component of every
@@ -258,6 +263,9 @@ func (s *Service) UpdateEnvironment(ctx context.Context, caller *user.User, orgS
 	return s.EnvironmentRepo().Update(ctx, e.ID, description)
 }
 
+// DeleteEnvironment removes an environment and everything deployed in
+// it. production is the one refusal left: it is created with the project
+// and every app assumes it exists.
 func (s *Service) DeleteEnvironment(ctx context.Context, caller *user.User, orgSlug, projectSlug, envSlug string) (*Environment, error) {
 	e, err := s.ResolveEnvironment(ctx, caller, orgSlug, projectSlug, envSlug, org.RoleAdmin)
 	if err != nil {
@@ -266,12 +274,12 @@ func (s *Service) DeleteEnvironment(ctx context.Context, caller *user.User, orgS
 	if e.Slug == ProductionEnvSlug {
 		return nil, ErrProductionUndeletable
 	}
-	count, err := s.EnvironmentRepo().CountApps(ctx, e.ID)
-	if err != nil {
-		return nil, err
+	teardown := s.orgs.AppTeardownFor()
+	if teardown == nil {
+		return nil, org.ErrNoTeardown
 	}
-	if count > 0 {
-		return nil, ErrEnvironmentHasApps
+	if err := teardown.DeleteAppsInEnvironment(ctx, e.ID); err != nil {
+		return nil, err
 	}
 	return e, s.EnvironmentRepo().Delete(ctx, e.ID)
 }

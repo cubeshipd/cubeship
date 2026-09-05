@@ -964,10 +964,29 @@ abandoning either does not touch the deploy.
 
 ## Deleting
 
-Each level refuses while the one below it is occupied: an app can always
-go (its container is stopped first), a project only once it holds no
-apps, an organization only once it holds no projects. Nothing cascades
-into stopping containers behind your back.
+**Deleting something takes everything under it.** An organization takes
+its projects, environments and apps; a project takes its environments and
+apps; an environment takes its apps. Every app's container is stopped and
+removed on the way.
+
+It used to refuse at each level instead, and that was bookkeeping rather
+than a safeguard: reaching a project you wanted gone meant deleting its
+apps one at a time first, and the daemon would have carried out every one
+of those deletes anyway. The safeguard is the confirmation in front of it
+— `ConfirmDialog` asks for the thing's own name, and the CLI wants
+`--yes` — not a refusal you can satisfy by hand.
+
+`production` is the one refusal left. It is created with its project and
+every app assumes it exists, so it goes when the project does and never
+before.
+
+The order is containers first, then rows, and outside the transaction —
+Docker has no rollback. A failure there leaves the apps gone and the
+thing above them still standing, which a retry finishes; the reverse
+would leave a container running with nothing on the instance naming it.
+`org.AppTeardown` is the seam: `org` and `project` sit below `app` and
+cannot import it, so `server` hands the app service back up at wiring
+time, and a service with no teardown wired refuses to delete at all.
 
 Deleting an app leaves its images in the registry — reclaiming that disk
 needs a registry garbage collection pass, which Cubeship does not run.

@@ -53,15 +53,14 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"delete": {
 					OperationID: "deleteOrg",
 					Summary:     "Delete an organization",
-					Description: "Removes the organization and every membership in it; the users themselves stay, since they may belong to others. **Refused while any project remains.** Super-admin only, like creating one.",
+					Description: "Removes the organization and **everything inside it**: every app's container is stopped and removed, then its projects, environments and memberships. The users themselves stay, since they may belong to others. Super-admin only, like creating one, and it cannot be undone.",
 					Tags:        []string{"Organizations"},
 					Parameters:  []openapi.Parameter{openapi.PathParam("orgSlug", "The organization's slug.")},
 					Responses: openapi.Responses{
-						"200": openapi.Empty("The organization is gone."),
+						"200": openapi.Empty("The organization and everything in it are gone."),
 						"401": openapi.Unauthorized,
 						"403": openapi.TextResponse("You are not a super-admin."),
 						"404": openapi.NotFound,
-						"409": openapi.TextResponse("The organization still has projects in it."),
 					},
 				},
 			},

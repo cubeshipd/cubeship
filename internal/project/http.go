@@ -76,8 +76,7 @@ func WriteError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound), errors.Is(err, ErrEnvironmentNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
-	case errors.Is(err, ErrAlreadyExists), errors.Is(err, ErrEnvironmentExists),
-		errors.Is(err, ErrEnvironmentHasApps), errors.Is(err, ErrHasApps):
+	case errors.Is(err, ErrAlreadyExists), errors.Is(err, ErrEnvironmentExists):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrProductionUndeletable):
 		http.Error(w, err.Error(), http.StatusForbidden)

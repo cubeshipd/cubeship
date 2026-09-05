@@ -111,23 +111,6 @@ func (r *EnvironmentRepository) SetEnv(ctx context.Context, environmentID int64,
 	return nil
 }
 
-// CountApps reports how many apps live in environmentID. Deleting an
-// environment is refused while any remain.
-//
-// This is the one place this module reads the apps table. It stays here
-// rather than in internal/app because the rule it serves — an
-// environment cannot be deleted out from under its apps — is the
-// environment's invariant, and having app depend on project (it already
-// does) while project depends on app would be a cycle.
-func (r *EnvironmentRepository) CountApps(ctx context.Context, environmentID int64) (int, error) {
-	var n int
-	if err := r.q.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM apps WHERE environment_id = $1`, environmentID).Scan(&n); err != nil {
-		return 0, fmt.Errorf("count apps in environment: %w", err)
-	}
-	return n, nil
-}
-
 func (r *EnvironmentRepository) Delete(ctx context.Context, environmentID int64) error {
 	if _, err := r.q.ExecContext(ctx, `DELETE FROM environments WHERE id = $1`, environmentID); err != nil {
 		return fmt.Errorf("delete environment: %w", err)

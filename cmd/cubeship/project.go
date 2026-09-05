@@ -59,14 +59,13 @@ func newProjectCmd() *cobra.Command {
 	var deleteConfirmed bool
 	deleteCmd := &cobra.Command{
 		Use:   "delete <project-slug>",
-		Short: "Delete a project and the environments in it",
-		Long: "Delete a project and every environment inside it.\n\n" +
-			"Refused while any app still lives in the project — delete those\n" +
-			"first, since removing an app means stopping its container.",
+		Short: "Delete a project and everything in it",
+		Long: "Delete a project, every environment inside it and every app in\n" +
+			"those — each app's container is stopped and removed first.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !deleteConfirmed {
-				return fmt.Errorf("this deletes %s and its environments for good; pass --yes to confirm", args[0])
+				return fmt.Errorf("this deletes %s, its environments and every app in them for good; pass --yes to confirm", args[0])
 			}
 			c, err := newAPIClient()
 			if err != nil {

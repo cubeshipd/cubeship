@@ -140,6 +140,21 @@ func (r *Repository) List(ctx context.Context) ([]*App, error) {
 	return r.list(ctx, `SELECT `+columns+` FROM apps ORDER BY id`)
 }
 
+// ListForOrg, ListForProject and ListForEnvironment are what deleting
+// something above an app reads: everything that has to be stopped before
+// the row above it can go. See org.AppTeardown.
+func (r *Repository) ListForOrg(ctx context.Context, orgID int64) ([]*App, error) {
+	return r.list(ctx, `SELECT `+columns+` FROM apps WHERE org_id = $1 ORDER BY id`, orgID)
+}
+
+func (r *Repository) ListForProject(ctx context.Context, projectID int64) ([]*App, error) {
+	return r.list(ctx, `SELECT `+columns+` FROM apps WHERE project_id = $1 ORDER BY id`, projectID)
+}
+
+func (r *Repository) ListForEnvironment(ctx context.Context, environmentID int64) ([]*App, error) {
+	return r.list(ctx, `SELECT `+columns+` FROM apps WHERE environment_id = $1 ORDER BY id`, environmentID)
+}
+
 func (r *Repository) list(ctx context.Context, query string, args ...any) ([]*App, error) {
 	rows, err := r.q.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -382,17 +397,6 @@ func (r *Repository) ScopedByID(ctx context.Context, id int64) (*Scoped, error) 
 		return nil, err
 	}
 	return s, nil
-}
-
-// CountInProject reports how many apps live anywhere in a project.
-// Deleting a project is refused while any remain.
-func (r *Repository) CountInProject(ctx context.Context, projectID int64) (int, error) {
-	var n int
-	if err := r.q.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM apps WHERE project_id = $1`, projectID).Scan(&n); err != nil {
-		return 0, fmt.Errorf("count apps in project: %w", err)
-	}
-	return n, nil
 }
 
 // ListScopedForOrgs returns the apps owned by any of orgIDs, each with

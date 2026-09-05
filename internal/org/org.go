@@ -5,6 +5,7 @@
 package org
 
 import (
+	"context"
 	"errors"
 	"time"
 )
@@ -75,6 +76,26 @@ var (
 	// concurrent request while this one was working.
 	ErrUsernameTaken = errors.New("that username was just taken; try again")
 
-	// ErrHasProjects refuses a delete that would orphan projects.
-	ErrHasProjects = errors.New("organization still has projects in it")
+	// ErrNoTeardown reports that the app module was never wired in, so a
+	// delete cannot know what it would leave running. Refusing is the
+	// only safe answer: rows would go and containers would stay.
+	ErrNoTeardown = errors.New("cannot delete: the app module is not wired in")
 )
+
+// AppTeardown removes the apps under something being deleted — their
+// containers first, then their rows.
+//
+// Deleting an organization or a project takes everything under it with
+// it, and stopping a container is the app module's job. Dependencies run
+// one way, so org knows nothing of app: the app service is handed in at
+// wiring time, and internal/project reaches this same interface through
+// the org package it already depends on.
+//
+// Authorization has already happened by the time one of these is called
+// — the caller had to be able to delete the thing above — so none of
+// them takes a caller.
+type AppTeardown interface {
+	DeleteAppsInOrg(ctx context.Context, orgID int64) error
+	DeleteAppsInProject(ctx context.Context, projectID int64) error
+	DeleteAppsInEnvironment(ctx context.Context, environmentID int64) error
+}

@@ -102,28 +102,66 @@ func TestDeletingAnAppFreesItsName(t *testing.T) {
 	createApp(t, f, key, "myapp")
 }
 
-// The hierarchy is deleted from the inside out, and each level refuses
-// while the one below it is occupied.
-func TestDeletesRefuseWhileSomethingLivesInside(t *testing.T) {
+// Deleting a project takes the apps inside it, rather than refusing
+// while any remain: making someone empty a project by hand to delete it
+// is bookkeeping, not a safeguard.
+func TestDeletingAProjectTakesItsAppsWithIt(t *testing.T) {
 	f := servertest.New(t)
 	createApp(t, f, f.AdminKey, "myapp")
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
-		"/orgs/acme/projects/web", nil, f.AdminKey), http.StatusConflict)
-	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
-		"/orgs/acme", nil, f.AdminKey), http.StatusConflict)
-
-	// Empty the app out and the project goes; empty the org and it goes.
-	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
-		"/apps/acme/web/production/myapp", nil, f.AdminKey), http.StatusOK)
-	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
 		"/orgs/acme/projects/web", nil, f.AdminKey), http.StatusOK)
-	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
-		"/orgs/acme", nil, f.AdminKey), http.StatusOK)
+
+	if rec := f.Do(t, http.MethodGet, "/apps/acme/web/production/myapp", nil, f.AdminKey); rec.Code != http.StatusNotFound {
+		t.Errorf("the app survived its project: %d", rec.Code)
+	}
+}
+
+// And an organization takes everything: apps, projects, environments.
+func TestDeletingAnOrganizationTakesEverythingInIt(t *testing.T) {
+	f := servertest.New(t)
+	createApp(t, f, f.AdminKey, "myapp")
+
+	servertest.RequireStatus(t, f.Do(t, http.MethodDelete, "/orgs/acme", nil, f.AdminKey), http.StatusOK)
 
 	// The organization is really gone, not just hidden.
 	if rec := f.Do(t, http.MethodGet, "/orgs/acme/projects", nil, f.AdminKey); rec.Code != http.StatusNotFound {
 		t.Errorf("the organization survived: %d", rec.Code)
+	}
+	if rec := f.Do(t, http.MethodGet, "/apps/acme/web/production/myapp", nil, f.AdminKey); rec.Code != http.StatusNotFound {
+		t.Errorf("the app survived its organization: %d", rec.Code)
+	}
+}
+
+// The containers go too, and before the rows. A row deleted while its
+// container survives leaves something running that nothing on the
+// instance names any more.
+func TestDeletingAProjectStopsTheContainersInIt(t *testing.T) {
+	docker := &stubDocker{running: true}
+	f := servertest.NewWithDocker(t, docker)
+
+	var created struct {
+		Reference string `json:"reference"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
+		"name": "myapp", "org": "acme", "project": "web",
+	}, f.AdminKey, &created), http.StatusCreated)
+	servertest.AddDomain(t, f, f.AdminKey, created.Reference, "myapp.example.com")
+
+	var deployment struct {
+		ID int64 `json:"id"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost,
+		"/apps/"+created.Reference+"/deploy", map[string]string{"tag": "v1"}, f.AdminKey, &deployment),
+		http.StatusAccepted)
+	servertest.RequireStatus(t, f.Do(t, http.MethodGet, fmt.Sprintf(
+		"/apps/%s/deployments/%d?wait=true", created.Reference, deployment.ID), nil, f.AdminKey), http.StatusOK)
+
+	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
+		"/orgs/acme/projects/web", nil, f.AdminKey), http.StatusOK)
+
+	if !slices.Contains(docker.stopped, "container-1") || !slices.Contains(docker.removed, "container-1") {
+		t.Errorf("the container outlived its project: stopped %v, removed %v", docker.stopped, docker.removed)
 	}
 }
 

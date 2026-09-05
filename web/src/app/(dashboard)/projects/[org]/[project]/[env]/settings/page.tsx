@@ -149,8 +149,8 @@ function Settings({ org, project, env }: { org: string; project: string; env: st
               </>
             ) : (
               <>
-                Refused while any app still lives here — delete those first, since removing an app
-                means stopping its container.
+                Removes the environment and every app deployed in it. Each app&apos;s container is
+                stopped and removed first.
               </>
             )
           }
@@ -166,7 +166,7 @@ function Settings({ org, project, env }: { org: string; project: string; env: st
         open={deleting}
         onOpenChange={setDeleting}
         title="Delete environment"
-        description="The environment and the variables set on it go. This cannot be undone."
+        description="The environment, the variables set on it and every app in it go — containers included. This cannot be undone."
         confirmWord={env}
         confirmLabel="Delete environment"
         onConfirm={async () => {

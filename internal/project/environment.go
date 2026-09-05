@@ -46,7 +46,4 @@ var (
 	// ErrProductionUndeletable guards the one environment every project
 	// must keep.
 	ErrProductionUndeletable = errors.New(`the "production" environment can never be deleted`)
-
-	// ErrEnvironmentHasApps refuses a delete that would orphan apps.
-	ErrEnvironmentHasApps = errors.New("environment still has apps in it")
 )

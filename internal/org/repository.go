@@ -120,25 +120,24 @@ func (r *Repository) ListMembershipsForUser(ctx context.Context, userID int64) (
 	return out, rows.Err()
 }
 
-// CountProjects reports how many projects an organization holds.
+// Delete removes an organization, the projects and environments inside
+// it, and every membership in it. The users themselves stay: they may
+// belong to other organizations, and their API keys are their own.
 //
-// It reads the projects table from this package because the rule it
-// serves is the organization's invariant — an organization cannot be
-// deleted out from under its projects — and internal/project already
-// depends on this one, so the dependency cannot run the other way.
-func (r *Repository) CountProjects(ctx context.Context, orgID int64) (int, error) {
-	var n int
-	if err := r.q.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM projects WHERE org_id = $1`, orgID).Scan(&n); err != nil {
-		return 0, fmt.Errorf("count projects in organization: %w", err)
-	}
-	return n, nil
-}
-
-// Delete removes an organization and every membership in it. The users
-// themselves stay: they may belong to other organizations, and their API
-// keys are their own.
+// The apps must already be gone — their containers are not this
+// package's to stop, which is what AppTeardown is for. The environments
+// and projects are deleted from here rather than through internal/project
+// because the rule is the organization's, and the dependency cannot run
+// the other way.
 func (r *Repository) Delete(ctx context.Context, orgID int64) error {
+	if _, err := r.q.ExecContext(ctx,
+		`DELETE FROM environments WHERE project_id IN (SELECT id FROM projects WHERE org_id = $1)`,
+		orgID); err != nil {
+		return fmt.Errorf("delete environments: %w", err)
+	}
+	if _, err := r.q.ExecContext(ctx, `DELETE FROM projects WHERE org_id = $1`, orgID); err != nil {
+		return fmt.Errorf("delete projects: %w", err)
+	}
 	if _, err := r.q.ExecContext(ctx, `DELETE FROM memberships WHERE org_id = $1`, orgID); err != nil {
 		return fmt.Errorf("delete memberships: %w", err)
 	}

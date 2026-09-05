@@ -203,6 +203,59 @@ func (s *Service) Delete(ctx context.Context, caller *user.User, ref Reference) 
 	return a, s.Repo().Delete(ctx, a.ID)
 }
 
+// DeleteAppsInOrg, DeleteAppsInProject and DeleteAppsInEnvironment are
+// org.AppTeardown: what deleting an organization, a project or an
+// environment calls to take the apps under it out of service first.
+//
+// They take no caller. Authorization happened above — nobody reaches
+// these without having been allowed to delete the thing that contains
+// them — and re-deriving it here from an app's own organization would
+// ask a question already answered.
+func (s *Service) DeleteAppsInOrg(ctx context.Context, orgID int64) error {
+	apps, err := s.Repo().ListForOrg(ctx, orgID)
+	if err != nil {
+		return err
+	}
+	return s.deleteAll(ctx, apps)
+}
+
+func (s *Service) DeleteAppsInProject(ctx context.Context, projectID int64) error {
+	apps, err := s.Repo().ListForProject(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	return s.deleteAll(ctx, apps)
+}
+
+func (s *Service) DeleteAppsInEnvironment(ctx context.Context, environmentID int64) error {
+	apps, err := s.Repo().ListForEnvironment(ctx, environmentID)
+	if err != nil {
+		return err
+	}
+	return s.deleteAll(ctx, apps)
+}
+
+// deleteAll retires and removes apps one at a time, stopping at the
+// first failure.
+//
+// Stopping is deliberate. Retire already refuses to return success while
+// a container it could not remove is still running, and carrying on past
+// that would delete the rest of the rows and leave whoever asked with a
+// container nothing on the instance names any more. What has been
+// deleted stays deleted, and the delete above is refused — so a retry
+// resumes rather than starting over.
+func (s *Service) deleteAll(ctx context.Context, apps []*App) error {
+	for _, a := range apps {
+		if err := s.orch.Retire(ctx, a.ID); err != nil {
+			return fmt.Errorf("stop app %q's container: %w", a.Name, err)
+		}
+		if err := s.Repo().Delete(ctx, a.ID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // List returns every app caller can see. The organization filter is
 // applied in SQL, not in Go: a member of one organization should never
 // have every other tenant's rows read on their behalf.

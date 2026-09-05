@@ -23,23 +23,24 @@ func TestProductionEnvironmentCannotBeDeleted(t *testing.T) {
 	}
 }
 
-// Deleting an environment with apps in it would orphan them: their rows
-// would point at an environment that no longer exists, and every deploy
-// would fail resolving inherited variables.
-func TestEnvironmentWithAppsCannotBeDeleted(t *testing.T) {
+// Deleting an environment takes the apps deployed in it. Refusing
+// instead would leave someone deleting apps one at a time to reach the
+// thing they actually asked to delete.
+func TestDeletingAnEnvironmentTakesItsAppsWithIt(t *testing.T) {
 	f := servertest.New(t)
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/orgs/acme/projects/web/environments",
-		map[string]string{"slug": "staging", "name": "Staging"}, f.AdminKey), http.StatusCreated)
+		map[string]string{"slug": "staging"}, f.AdminKey), http.StatusCreated)
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", map[string]string{
 		"name": "staging-app", "org": "acme", "project": "web", "environment": "staging",
 	}, f.AdminKey), http.StatusCreated)
 
-	rec := f.Do(t, http.MethodDelete, "/orgs/acme/projects/web/environments/staging", nil, f.AdminKey)
-	servertest.RequireStatus(t, rec, http.StatusConflict)
+	servertest.RequireStatus(t, f.Do(t, http.MethodDelete,
+		"/orgs/acme/projects/web/environments/staging", nil, f.AdminKey), http.StatusOK)
 
-	// Emptying it is not possible yet (apps cannot be deleted), so this
-	// asserts only the refusal — see the TODO on the apps table.
+	if rec := f.Do(t, http.MethodGet, "/apps/acme/web/staging/staging-app", nil, f.AdminKey); rec.Code != http.StatusNotFound {
+		t.Errorf("the app survived its environment: %d", rec.Code)
+	}
 }
 
 func TestEmptyNonProductionEnvironmentCanBeDeleted(t *testing.T) {

@@ -29,7 +29,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.list)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_org",
-		Description: "Delete an organization and its memberships. Refused while any project remains — delete those first. Super-admin only, and cannot be undone.",
+		Description: "Delete an organization and everything inside it: every app is stopped and removed, then its projects, environments and memberships. Super-admin only, and cannot be undone.",
 	}, t.delete)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "create_org_user",

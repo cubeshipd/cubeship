@@ -92,6 +92,12 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	apps := app.NewService(db, orgs, projects,
 		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gh, opts.LocalRegistry), cfg)
 
+	// Deleting an organization or a project takes the apps inside it
+	// with it, and only this module knows how to stop a container. The
+	// dependency runs downward everywhere else, so it is handed back up
+	// here — the one place that knows every module exists.
+	orgs.SetAppTeardown(apps)
+
 	srv := &Server{
 		Users:      users,
 		Orgs:       orgs,

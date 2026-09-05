@@ -34,7 +34,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.update)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_project",
-		Description: "Delete a project and the environments inside it. Refused while any app still lives in the project — delete those first. Requires admin role in the organization.",
+		Description: "Delete a project, the environments inside it and every app in those — each app's container is stopped and removed first. Requires admin role in the organization, and cannot be undone.",
 	}, t.delete)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_project_env",
@@ -66,7 +66,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.updateEnvironment)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_environment",
-		Description: `Delete an environment. Refused for the "production" environment, and refused if the environment still has apps in it. Requires admin role in the organization.`,
+		Description: `Delete an environment and every app deployed in it. Refused for the "production" environment, which every project must keep. Requires admin role in the organization, and cannot be undone.`,
 	}, t.deleteEnvironment)
 }
 

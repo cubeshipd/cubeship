@@ -59,11 +59,18 @@ func newEnvironmentCmd() *cobra.Command {
 	listCmd.MarkFlagRequired("project")
 
 	var deleteOrg, deleteProject string
+	var deleteConfirmed bool
 	deleteCmd := &cobra.Command{
 		Use:   "delete <slug>",
-		Short: `Delete an environment (the "production" environment can never be deleted)`,
-		Args:  cobra.ExactArgs(1),
+		Short: `Delete an environment and the apps in it`,
+		Long: "Delete an environment and every app deployed in it — each\n" +
+			"app's container is stopped and removed first.\n\n" +
+			`The "production" environment can never be deleted.`,
+		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if !deleteConfirmed {
+				return fmt.Errorf("this deletes %s and every app in it for good; pass --yes to confirm", args[0])
+			}
 			c, err := newAPIClient()
 			if err != nil {
 				return err
@@ -77,6 +84,7 @@ func newEnvironmentCmd() *cobra.Command {
 	}
 	deleteCmd.Flags().StringVar(&deleteOrg, "org", "", "organization slug")
 	deleteCmd.MarkFlagRequired("org")
+	deleteCmd.Flags().BoolVar(&deleteConfirmed, "yes", false, "confirm the deletion")
 	deleteCmd.Flags().StringVar(&deleteProject, "project", "", "project slug")
 	deleteCmd.MarkFlagRequired("project")
 
