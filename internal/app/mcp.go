@@ -50,7 +50,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.get)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "deploy_app",
-		Description: `Manually redeploy an app from an image tag already pushed to its registry path (tag defaults to "latest"). Waits for the deploy to finish and reports the outcome; if this call times out first, the deploy carries on regardless — check it with get_app_deployments. Requires member role in the organization.`,
+		Description: `Manually redeploy an app from an image tag already pushed to its registry path (no tag means "latest" for an image, or the stored ref for a source that builds). Waits for the deploy to finish and reports the outcome; if this call times out first, the deploy carries on regardless — check it with get_app_deployments. Requires member role in the organization.`,
 	}, t.deploy)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_app_env",
@@ -166,9 +166,6 @@ type deployInput struct {
 
 func (t *Tools) deploy(ctx context.Context, _ *mcp.CallToolRequest, in deployInput) (*mcp.CallToolResult, user.ActionResult, error) {
 	tag := in.Tag
-	if tag == "" {
-		tag = "latest"
-	}
 	ref, err := ParseReference(in.App)
 	if err != nil {
 		return nil, user.ActionResult{}, err

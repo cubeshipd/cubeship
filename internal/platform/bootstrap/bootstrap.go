@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"cubeship/internal/platform/config"
@@ -332,9 +333,18 @@ func BuildKitSocket(cfg *config.Config) string {
 // is not incorrect, only slow, but slow builds are the thing a cache
 // exists to prevent.
 func BuildKitContainerOpts(cfg *config.Config) dockerx.ContainerOpts {
+	// buildkitd creates its socket as root. The daemon in its container
+	// is root too; on the host (`make dev`, CI) it is whoever ran it, and
+	// a socket it cannot open is a builder that is never available.
+	// buildkitd's --group hands the socket to that user's group instead.
+	var cmd []string
+	if !cfg.InContainer {
+		cmd = []string{"--group", strconv.Itoa(os.Getgid())}
+	}
 	return dockerx.ContainerOpts{
 		Name:       BuildKitContainerName,
 		Image:      BuildKitImage,
+		Cmd:        cmd,
 		Privileged: true,
 		Binds: []string{
 			cfg.DataDir + "/buildkit:/var/lib/buildkit",
@@ -426,15 +436,16 @@ func EnsureBuildKit(ctx context.Context, docker dockerAPI, cfg *config.Config) e
 	return Ensure(ctx, docker, BuildKitContainerOpts(cfg))
 }
 
-// TraefikContainerOpts describes the proxy. An empty acmeEmail means no
-// certificate resolver at all: Let's Encrypt will not register an account
-// without a contact address, so until one is configured apps are served
-// over plain HTTP.
+// TraefikContainerOpts describes the proxy. With tls false there is no
+// certificate resolver at all: nothing has a name to get a certificate
+// for, so apps are served over plain HTTP. acmeEmail is the contact
+// address Let's Encrypt registers, and may be empty — an account is
+// opened without one.
 //
-// Adding the email later changes these options, which is what makes
+// Setting a domain later changes these options, which is what makes
 // Ensure replace the container — the resolver cannot be added to a
 // running one.
-func TraefikContainerOpts(cfg *config.Config, acmeEmail string) dockerx.ContainerOpts {
+func TraefikContainerOpts(cfg *config.Config, tls bool, acmeEmail string) dockerx.ContainerOpts {
 	cmd := []string{
 		"--providers.docker=true",
 		"--providers.docker.exposedbydefault=false",
@@ -444,10 +455,9 @@ func TraefikContainerOpts(cfg *config.Config, acmeEmail string) dockerx.Containe
 		"--entrypoints.websecure.address=:443",
 		"--api.dashboard=false",
 	}
-	if acmeEmail != "" {
+	if tls {
 		cmd = append(cmd,
 			"--certificatesresolvers.letsencrypt.acme.tlschallenge=true",
-			"--certificatesresolvers.letsencrypt.acme.email="+acmeEmail,
 			"--certificatesresolvers.letsencrypt.acme.storage=/letsencrypt/acme.json",
 			// Redirecting :80 is only right once :443 can actually serve.
 			// Without a resolver it would send every visitor to a port
@@ -455,6 +465,9 @@ func TraefikContainerOpts(cfg *config.Config, acmeEmail string) dockerx.Containe
 			"--entrypoints.web.http.redirections.entryPoint.to=websecure",
 			"--entrypoints.web.http.redirections.entryPoint.scheme=https",
 			"--entrypoints.web.http.redirections.entryPoint.permanent=true")
+		if acmeEmail != "" {
+			cmd = append(cmd, "--certificatesresolvers.letsencrypt.acme.email="+acmeEmail)
+		}
 	}
 	return dockerx.ContainerOpts{
 		Name:  "cubeship-traefik",
@@ -644,6 +657,10 @@ func Ensure(ctx context.Context, docker dockerAPI, opts dockerx.ContainerOpts) e
 		return err
 	}
 	if imageID == "" {
+		// Said before rather than after: on a first install these pulls
+		// are most of the wait, and the installer streams these lines
+		// so the person watching knows what the wait is.
+		log.Printf("bootstrap: pulling %s for %s", opts.Image, opts.Name)
 		if err := docker.PullImage(ctx, opts.Image, nil); err != nil {
 			return fmt.Errorf("pull %s: %w (if this image was built on this host, it is not there — check the tag)", opts.Image, err)
 		}
@@ -692,6 +709,7 @@ func Ensure(ctx context.Context, docker dockerAPI, opts dockerx.ContainerOpts) e
 	if err := docker.StartContainer(ctx, id); err != nil {
 		return fmt.Errorf("start %s: %w", opts.Name, err)
 	}
+	log.Printf("bootstrap: %s started", opts.Name)
 	return nil
 }
 

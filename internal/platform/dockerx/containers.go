@@ -110,8 +110,13 @@ func (c *Client) PullImage(ctx context.Context, ref string, creds *RegistryAuth)
 	return nil
 }
 
-// authForRef mints a fresh identity token for the registry host of ref,
-// if a signer is registered for it. The host is the segment before the
+// authForRef mints a fresh bearer token for the registry host of ref,
+// if a signer is registered for it. It goes in RegistryToken, which the
+// Engine sends to the registry as is; IdentityToken is not that — it is
+// an OAuth refresh token the Engine takes to the token realm first,
+// which for this registry is the public API through Traefik: a hairpin
+// that needs the domain to resolve and the proxy to be up before the
+// daemon can pull from a registry on its own loopback. The host is the segment before the
 // first "/"; a reference with no "/" (e.g. "registry:2") is a Docker
 // Hub official image and never carries credentials here. The token is
 // scoped to exactly the repository being pulled (everything between the
@@ -165,7 +170,7 @@ func (c *Client) authForRef(ref string) (registry.AuthConfig, bool, error) {
 	if err != nil {
 		return registry.AuthConfig{}, false, err
 	}
-	return registry.AuthConfig{IdentityToken: token, ServerAddress: host}, true, nil
+	return registry.AuthConfig{RegistryToken: token, ServerAddress: host}, true, nil
 }
 
 // LoadImage imports an image tarball into the Engine's own store, which
