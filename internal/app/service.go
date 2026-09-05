@@ -300,12 +300,36 @@ func (s *Service) Env(ctx context.Context, caller *user.User, ref Reference) (en
 	return a.Env, resolved, nil
 }
 
+// requireEnvRole is the role writing an app's environment takes.
+//
+// For an app that runs a published image it is a member's: the variables
+// are the container's, read by whatever that image already does with
+// them.
+//
+// For an app that builds, they are also *build input*. Railpack reads
+// the environment to work out how to build the repository, and turns
+// RAILPACK_INSTALL_CMD, RAILPACK_BUILD_CMD and RAILPACK_START_CMD into
+// the commands the build runs — inside the privileged builder, on this
+// host. Writing them is therefore the same act as building, and it takes
+// the same role: an app's own variables win the merge over its
+// environment's and its project's, so a member who could write them
+// could decide what an admin's app builds and runs.
+func (s *Service) requireEnvRole(caller *user.User, a *Scoped) error {
+	return user.Require(caller, RoleToDeploy(Source(a.Source)))
+}
+
 // SetEnv replaces the app's own variables, deleting any key not present.
 // They are layered on top of (and override) its environment's and
 // project's.
 func (s *Service) SetEnv(ctx context.Context, caller *user.User, ref Reference, env envvar.Map) (*Scoped, error) {
+	// Resolved as a member first, so someone who cannot write this app's
+	// environment still gets the answer an unknown app gets rather than
+	// two different refusals. See requireEnvRole for the check after.
 	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.requireEnvRole(caller, a); err != nil {
 		return nil, err
 	}
 	return a, s.Repo().SetEnv(ctx, a.ID, env)
@@ -316,6 +340,9 @@ func (s *Service) SetEnv(ctx context.Context, caller *user.User, ref Reference, 
 func (s *Service) MergeEnv(ctx context.Context, caller *user.User, ref Reference, set envvar.Map, unset []string) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.requireEnvRole(caller, a); err != nil {
 		return nil, err
 	}
 	return a, s.Repo().MergeEnv(ctx, a.ID, set, unset)
@@ -450,6 +477,14 @@ func (s *Service) AddDomain(ctx context.Context, caller *user.User, ref Referenc
 	if host == "" {
 		return nil, ErrDomainRequired
 	}
+	if !ValidHost(host) {
+		return nil, ErrBadHost
+	}
+	if taken, err := s.instanceOwnsHost(ctx, host); err != nil {
+		return nil, err
+	} else if taken {
+		return nil, ErrHostIsTheInstance
+	}
 	if port < 0 || port > 65535 {
 		return nil, ErrBadPort
 	}
@@ -464,6 +499,27 @@ func (s *Service) AddDomain(ctx context.Context, caller *user.User, ref Referenc
 		return nil, err
 	}
 	return s.Resolve(ctx, caller, ref, user.RoleAdmin)
+}
+
+// instanceOwnsHost reports whether a name is one the daemon already
+// routes to itself.
+//
+// The domain is the dashboard and the API; registry.<domain> is the
+// registry. Both get Traefik routers of their own, and a router the
+// unique index knows nothing about is exactly the collision it cannot
+// catch — the app would be created, and one of the two would quietly
+// stop answering after a deploy.
+func (s *Service) instanceOwnsHost(ctx context.Context, host string) (bool, error) {
+	values, err := s.settings.Load(ctx)
+	if err != nil {
+		return false, err
+	}
+	domain := settings.APIHostFor(values.Get(settings.Domain))
+	if domain == "" {
+		return false, nil
+	}
+	return host == NormalizeHost(domain) ||
+		host == NormalizeHost(settings.RegistryHostFor(values.Get(settings.Domain))), nil
 }
 
 // SetDomainPort changes what one of an app's names reaches.

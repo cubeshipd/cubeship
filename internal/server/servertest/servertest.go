@@ -27,6 +27,7 @@ import (
 	"cubeship/internal/project"
 	"cubeship/internal/server"
 	"cubeship/internal/settings"
+	"cubeship/internal/setup"
 	"cubeship/internal/user"
 )
 
@@ -112,6 +113,20 @@ func NewEmpty(t testing.TB) *Fixture {
 	return &Fixture{
 		Server: server.New(db, noDocker{}, server.Options{WebhookToken: WebhookToken, LocalRegistry: LocalRegistry}),
 		DB:     db,
+	}
+}
+
+// NewUnclaimed is NewEmpty with the setup token a real daemon writes on
+// first start, which is the state an instance is actually in between
+// installing and someone claiming it.
+func NewUnclaimed(t testing.TB, token setup.Token) *Fixture {
+	t.Helper()
+	db := dbtest.New(t)
+	return &Fixture{
+		Server: server.New(db, noDocker{}, server.Options{
+			WebhookToken: WebhookToken, LocalRegistry: LocalRegistry, SetupToken: token,
+		}),
+		DB: db,
 	}
 }
 
@@ -211,6 +226,10 @@ func (f *Fixture) DoAs(t testing.TB, method, path string, body any, session *htt
 	if session != nil {
 		req.AddCookie(session)
 	}
+	// What a browser sends for a request its own page made. The
+	// middleware refuses a cookie without it — see httpx.SameOrigin —
+	// so a fixture that acts as a browser has to look like one.
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	rec := httptest.NewRecorder()
 	f.Server.Router().ServeHTTP(rec, req)
 	return rec

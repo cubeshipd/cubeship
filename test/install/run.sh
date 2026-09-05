@@ -83,6 +83,7 @@ run_tests() {
 	out=$(main 2>&1) || { printf '%s\n' "$out"; exit 1; }
 
 	check "creates the data directory" "$(stat -c '%a' /var/lib/cubeship)" "700"
+	# Two images, at the same version: the daemon and the dashboard.
 	check "pulls both images" "$(grep -c '^docker pull ' /tmp/docker.log)" "2"
 	check "creates the shared network" \
 		"$(grep -c '^docker network create cubeship' /tmp/docker.log)" "1"
@@ -123,13 +124,32 @@ run_tests() {
 	check "mounts the data directory at the same path" \
 		"$(grep -c '\-v /var/lib/cubeship:/var/lib/cubeship' /tmp/docker.log)" "1"
 
+	# The setup token is what stops whoever reaches the port first from
+	# claiming the machine, and the installer is where the operator
+	# reads it. A stubbed Docker starts no daemon to write one, so it is
+	# planted here.
+	printf 'a-planted-setup-token\n' > /var/lib/cubeship/setup-token
+	out=$(main 2>&1) || { printf '%s\n' "$out"; exit 1; }
+	check "prints the setup token" \
+		"$(printf '%s' "$out" | grep -c 'a-planted-setup-token')" "1"
+
+	# It is removed the moment the instance is claimed, and an upgrade
+	# must not talk about a credential that no longer exists.
+	rm -f /var/lib/cubeship/setup-token
+	out=$(main 2>&1) || { printf '%s\n' "$out"; exit 1; }
+	check "says nothing about a token once the instance is claimed" \
+		"$(printf '%s' "$out" | grep -ci 'setup token')" "0"
+
 	# --local builds instead of pulling. Running your own code on a box
 	# is the normal case before anything is published, and the build has
 	# to happen from the checkout the script is in.
 	rm -f /tmp/docker.log
-	touch /src/Dockerfile
+	touch /src/Dockerfile /src/Dockerfile.web
 	LOCAL=1
 	build_images
+	# The dashboard first and the daemon last: the daemon starts
+	# everything, and a half-built pair is better found before anything
+	# is replaced.
 	check "--local builds both images" "$(grep -c '^docker build ' /tmp/docker.log)" "2"
 	check "--local does not pull" "$(grep -c '^docker pull ' /tmp/docker.log)" "0"
 	check "--local builds from the checkout" "$(grep -c ' /src$' /tmp/docker.log)" "2"
@@ -137,7 +157,7 @@ run_tests() {
 
 	# Piped from curl there is no checkout, and --local cannot serve
 	# that. Saying so beats a build that fails on a missing Dockerfile.
-	rm -f /src/Dockerfile
+	rm -f /src/Dockerfile /src/Dockerfile.web
 	if (LOCAL=1; build_images) >/dev/null 2>&1; then
 		printf '  FAIL --local built with no repository present\n'
 		FAILURES=$((FAILURES + 1))

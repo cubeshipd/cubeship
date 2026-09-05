@@ -39,7 +39,9 @@ export const api = {
   del: <T>(path: string) => request<T>("DELETE", path),
 };
 
-export type SetupStatus = { needed: boolean };
+// token_required says the claim has to carry the token the installer
+// printed — see setup.Token on the daemon.
+export type SetupStatus = { needed: boolean; token_required: boolean };
 export type Me = { username: string; is_super_admin: boolean };
 // None of these has a display name. The slug is the name — the rule an
 // app has always followed, now everywhere: a slug is a path component of

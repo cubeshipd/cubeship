@@ -423,6 +423,14 @@ Served at `/openapi.json`, with a Scalar reference at `/docs`. Both are
 unauthenticated, because Scalar fetches the document from the browser
 with no credentials to offer.
 
+Scalar is loaded from a CDN, **pinned and with an integrity hash**. The
+version says which file to ask for; the hash says what the file is, and
+they are not the same promise — a CDN serving something else under that
+version would run its code on this daemon's own origin, beside the
+session cookie. `scalarIntegrity` is how to change it. The page's CSP
+allows no inline script: it has none of its own, and Scalar renders
+without one.
+
 **The document is the product's API, not an inventory of routes.** It
 describes what someone integrating against Cubeship would call:
 projects, environments, apps. It leaves out the daemon's
@@ -531,6 +539,19 @@ or an MCP client carries in `Authorization: Bearer`; a **session cookie**
 is what a browser carries. The header is tried first, so a request
 sending both meant the key.
 
+**A cookie is not enough on its own for a state-changing request.**
+`SameSite=Lax` is the first line and does not reach far enough: an app
+deployed here answers at `app.example.com` while the dashboard is at
+`example.com`, so the two are *same-site* and the cookie is sent —
+anyone who can push an app could otherwise host a page that acts as
+whoever visits it. So the session branch of the middleware requires
+`httpx.SameOrigin`: `Sec-Fetch-Site` where the browser sends it, `Origin`
+compared by host otherwise, neither being a refusal. `httpx.DecodeJSON`
+is the other half — a body must be declared as JSON, because
+form-encoded, multipart and `text/plain` are exactly the three a browser
+will send cross-site without a preflight. Safe methods and API keys are
+untouched: a key is not a credential a browser attaches by itself.
+
 Sessions are rows, not signed cookies, because they have to be revocable:
 logging out ends one, and changing a password ends every other one the
 account holds. Only the token's hash is stored, like an API key's.
@@ -546,6 +567,19 @@ hard-coded: a fresh install is reached at `http://<ip>:3000`, and a
 Secure cookie there is simply never sent back — the sign-in would appear
 to work and nothing would stay signed in. `SameSite=Lax` is what stands
 in for CSRF tokens.
+
+**An account's credentials can be revoked by an admin, and so can the
+account.** `DELETE /users/{username}/credentials` ends every session and
+revokes every API key one account holds and leaves the account — the
+answer to a laptop that walked off, where what was on the machine has to
+stop working everywhere at once. The password is not touched: it is a
+secret in somebody's head rather than a credential lying on the machine
+that was lost. `DELETE /users/{username}` is the person leaving: the
+account goes and its keys and sessions go with it, in one transaction,
+so nothing that authenticates outlives the account it belonged to. Two
+refusals: the account you are signed in as, and the last admin — setup
+closed when the first account appeared, and nothing in the API can make
+an admin without one.
 
 An account can exist with no password. One an admin creates gets an API
 key immediately and a password only when it sets one, which
@@ -572,6 +606,18 @@ and a project is something you make when you have something to put in it
 — a slug is permanent, so a name picked on someone's behalf is one they
 are stuck with. The projects screen opens empty, saying so and offering
 the button.
+
+**Claiming it takes the setup token**, which the daemon writes to
+`setup-token` in the data directory on its first start and the installer
+prints. Without it the installer publishes a port and whoever reaches it
+first is the admin of the machine — a race the operator can lose between
+running the install command and opening their browser. The data
+directory is root-only, so the token makes claiming the instance take
+access to the host, which is what it always meant to require.
+`setup.EnsureToken` keeps the one it wrote across restarts — a new token
+every start would invalidate the one the installer printed — and removes
+it the moment setup succeeds, because a credential that can no longer do
+anything should not be left in a directory that gets backed up.
 
 The account gets a **password and no API key** — its way in is the
 session setup starts. A key nobody is ever shown would be a live
@@ -818,6 +864,22 @@ connecting an installation a way to read a stranger's private code.
 signature already stops a forgery; the lookup stops a genuine delivery
 from an App installation nobody here asked for.
 
+**Registering the App carries a nonce, and the exchange requires it.**
+GitHub's manifest conversion endpoint is unauthenticated — a code is a
+code, whoever made the manifest it came from — and the redirect that
+brings one back is a link a browser follows with the session cookie
+attached. So `POST /settings/github/manifest/state` issues a single-use
+`state` bound to the caller, the manifest form carries it to GitHub,
+GitHub echoes it back, and `RegisterFromManifest` refuses a code that
+arrives without it. Without that, a link sent to a signed-in admin would
+make this instance somebody else's App: their webhook secret, their
+private key, and installation tokens over every repository the admin then
+granted it — landing them, meanwhile, on exactly the install page they
+expected. The nonce also carries whether the registration may **replace**
+an App the instance already has, decided before GitHub is involved
+rather than read from the redirect coming back, because replacing one
+breaks every installation on it.
+
 The App's private key and webhook secret are **write-only**. `settings`
 reports `github_connected`, never the values;
 `TestTheAppCredentialsAreNeverReturned` pins that.
@@ -885,15 +947,26 @@ is the answer: running an image someone already published is a
 executes whatever the source contains, on this host, with the builder's
 privileges — a different kind of act from running a published artifact.
 
-It binds both creating an app and deploying one. A member who could
-create an app they can never deploy would be an odd thing to allow.
+It binds creating an app, deploying one, **and writing its environment**.
+A member who could create an app they can never deploy would be an odd
+thing to allow — and one who could write a building app's environment
+would be building through it. For an app that builds, the environment is
+build input as well as the container's: Railpack reads it to work out how
+to build the repository and turns `RAILPACK_INSTALL_CMD`,
+`RAILPACK_BUILD_CMD` and `RAILPACK_START_CMD` into commands the build
+runs. The app's own variables win the merge over its environment's and
+its project's, both of which are already an admin's, so the app level was
+the way round them. Reading stays a member's: seeing how an app is
+configured is not deciding what it builds.
 
 Deploy resolves as a member first and checks the source's own
 requirement after, so a member deploying a building app is told they lack
 the role rather than that the app is missing.
 
-No source builds yet, and `TestBuildingSourcesNeedAnAdmin` fails the
-moment one does — so its role is a decision someone made.
+Every source is listed in `TestTheRoleEachSourceNeeds`, so adding one is
+a decision about its role rather than an accident.
+`TestOnlyAnAdminMayCreateOrDeployABuildingApp` and
+`TestOnlyAnAdminMayWriteABuildingAppsEnv` pin the two ways in.
 
 ## Pulling from someone else's registry
 

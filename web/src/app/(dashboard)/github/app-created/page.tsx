@@ -24,6 +24,12 @@ function Exchange() {
   const params = useSearchParams();
   const router = useRouter();
   const code = params.get("code") ?? "";
+  // What GitHub echoed back from the manifest form. The daemon issued
+  // it when the flow started and refuses a code that returns without
+  // it: the code alone is only evidence that somebody, somewhere, made
+  // an App, and this page is reached by following a link with a session
+  // cookie attached.
+  const manifestState = params.get("state") ?? "";
   // Where the flow was started from. Coming back to it is the
   // difference between "the App exists" and "carry on with what you
   // were doing".
@@ -39,7 +45,7 @@ function Exchange() {
       return;
     }
     api
-      .post<Settings>("/settings/github/manifest", { code })
+      .post<Settings>("/settings/github/manifest", { code, state: manifestState })
       .then((s) => {
         setSlug(s.github_app_slug ?? "");
         setState("done");
@@ -64,7 +70,7 @@ function Exchange() {
         setError(message(e));
         setState("failed");
       });
-  }, [code, returnTo, router]);
+  }, [code, manifestState, returnTo, router]);
 
   return (
     <>

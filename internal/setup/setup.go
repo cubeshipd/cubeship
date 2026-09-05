@@ -19,10 +19,17 @@ var (
 	// with nothing sensible to default.
 	ErrUsernameRequired = errors.New("username is required")
 	ErrPasswordRequired = errors.New("password is required")
+
+	// ErrBadToken is a claim without the setup token this instance
+	// generated. See Token for what it is and where to read it.
+	ErrBadToken = errors.New("wrong setup token; it is printed by the installer and stored in the data directory as " + TokenFileName)
 )
 
 // Status is what a browser asks before showing anything: is there an
 // account to sign in to, or is this instance still unclaimed?
 type Status struct {
 	Needed bool `json:"needed"`
+	// TokenRequired says the claim has to carry the setup token, so a
+	// browser knows to ask for it rather than failing at submit.
+	TokenRequired bool `json:"token_required"`
 }

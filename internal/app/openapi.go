@@ -25,6 +25,10 @@ func (h *Handler) OpenAPI() openapi.Spec {
 	}
 	const appPath = "/apps/{project}/{env}/{name}"
 
+	// Writing an app's environment takes the role its source takes to
+	// deploy, which is not the same answer for every app.
+	const envRole = "\n\nRequires the member role — or the admin role if the app **builds**: for a building source the environment is build input as well as the container's, and Railpack turns `RAILPACK_INSTALL_CMD`, `RAILPACK_BUILD_CMD` and `RAILPACK_START_CMD` into commands the build runs on this host."
+
 	return openapi.Spec{
 		Tags: []openapi.Tag{{
 			Name:        "Apps",
@@ -220,9 +224,10 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"patch": {
 					OperationID: "mergeAppEnv",
 					Summary:     "Add, change or remove some of an app's variables",
-					Description: "The safe way to change configuration: only the keys you name are touched, so you cannot delete a variable by forgetting to mention it. Requires the member role.",
-					Tags:        []string{"Apps"},
-					Parameters:  refParams,
+					Description: "The safe way to change configuration: only the keys you name are touched, so you cannot delete a variable by forgetting to mention it." +
+						envRole,
+					Tags:       []string{"Apps"},
+					Parameters: refParams,
 					RequestBody: &openapi.RequestBody{
 						Required:    true,
 						Description: "Adds or overwrites the variables in `set` and removes those named in `unset`. Every other app-level variable is left exactly as it was.",
@@ -232,15 +237,17 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"200": openapi.Empty("The variables are stored. The running container picks them up on its next deploy."),
 						"400": openapi.BadRequest,
 						"401": openapi.Unauthorized,
+						"403": openapi.TextResponse("The app builds, and you lack the admin role its build takes."),
 						"404": openapi.NotFound,
 					},
 				},
 				"put": {
 					OperationID: "setAppEnv",
 					Summary:     "Set an app's environment variables",
-					Description: "These are layered on top of, and override, the app's environment's and project's variables. Requires the member role.",
-					Tags:        []string{"Apps"},
-					Parameters:  refParams,
+					Description: "These are layered on top of, and override, the app's environment's and project's variables." +
+						envRole,
+					Tags:       []string{"Apps"},
+					Parameters: refParams,
 					RequestBody: &openapi.RequestBody{
 						Required:    true,
 						Description: "**Replaces** the full set of app-level variables: any key you omit is deleted. Use PATCH to change some without disturbing the rest.",
@@ -252,6 +259,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"200": openapi.Empty("The variables are stored. The running container picks them up on its next deploy."),
 						"400": openapi.BadRequest,
 						"401": openapi.Unauthorized,
+						"403": openapi.TextResponse("The app builds, and you lack the admin role its build takes."),
 						"404": openapi.NotFound,
 					},
 				},
@@ -286,12 +294,12 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Tags:       []string{"Apps"},
 					Parameters: refParams,
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"host": openapi.String("The name to serve this app at. It has to resolve to this host before a certificate can issue."),
+						"host": openapi.String("The name to serve this app at, as a DNS name. It has to resolve to this host before a certificate can issue, and it cannot be the instance's own domain or its registry's."),
 						"port": openapi.Integer("What it reaches inside the container. Omit to read it from the image."),
 					}, "host")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse("The app, with the name added.", openapi.Ref("App")),
-						"400": openapi.BadRequest,
+						"400": openapi.TextResponse("The name is not a DNS name, or it is one this instance answers at itself — the dashboard and the registry have Traefik routers of their own."),
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,

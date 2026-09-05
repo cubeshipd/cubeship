@@ -25,6 +25,9 @@ type Service struct {
 
 	client *http.Client
 	tokens tokenCache
+	// states holds the nonces that tie a manifest exchange to the flow
+	// that started it. See manifestStates.
+	states manifestStates
 	now    func() time.Time
 }
 
@@ -270,20 +273,62 @@ func (s *Service) tokenFor(ctx context.Context, installation *Installation) (str
 	return token, nil
 }
 
+// NewManifestState mints the nonce a registration carries to GitHub and
+// back. It is the first half of RegisterFromManifest's check — see
+// manifestStates for what it is for.
+//
+// replace says the caller knows this instance already has an App and
+// means to replace it. It is bound into the nonce rather than taken from
+// the request that comes back, because that request arrives from a
+// redirect somebody else may have written.
+func (s *Service) NewManifestState(ctx context.Context, caller *user.User, replace bool) (string, error) {
+	if err := user.Require(caller, user.RoleAdmin); err != nil {
+		return "", err
+	}
+	return s.states.issue(caller.ID, replace, s.now())
+}
+
 // RegisterFromManifest turns the code GitHub redirects back with into
 // this instance's GitHub App.
 //
 // It writes the settings the manual path asks a person to paste, which
 // is the entire reason it exists: nobody should have to copy a private
 // key out of a browser to make a deploy work.
-func (s *Service) RegisterFromManifest(ctx context.Context, caller *user.User, code string) (settings.Values, error) {
-	// Settings are the VPS operator's, and this writes four of them.
+//
+// state is the nonce this daemon issued to this caller when the flow
+// started, and it is required. The role is not enough on its own: the
+// code arrives in a query string, GitHub's conversion endpoint is
+// unauthenticated, and the browser sends the session cookie whoever
+// wrote the link. Without the nonce, a link to /github/app-created sent
+// to a signed-in admin would quietly make this instance somebody else's
+// App — their webhook secret, their private key, their installation
+// tokens over every repository the admin then grants.
+func (s *Service) RegisterFromManifest(ctx context.Context, caller *user.User, code, state string) (settings.Values, error) {
+	// Settings are the VPS operator's, and this writes six of them.
 	// Doing the exchange first would spend the code before finding out.
 	if err := user.Require(caller, user.RoleAdmin); err != nil {
 		return nil, err
 	}
 	if code == "" {
 		return nil, fmt.Errorf("no code to exchange")
+	}
+	started, ok := s.states.consume(state, caller.ID, s.now())
+	if !ok {
+		return nil, ErrNotStartedHere
+	}
+
+	// Replacing the App an instance already has breaks every
+	// installation on it, so it is a thing to mean rather than a thing
+	// to arrive at. The answer comes from the nonce, which was issued
+	// before GitHub was ever involved.
+	if !started.replace {
+		current, err := s.settings.Load(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if current.Get(settings.GitHubAppID) != "" {
+			return nil, ErrAlreadyRegistered
+		}
 	}
 
 	app, err := convertManifest(ctx, s.client, code)

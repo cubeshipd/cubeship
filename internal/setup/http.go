@@ -45,24 +45,31 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, Status{Needed: needed})
+	httpx.WriteJSON(w, http.StatusOK, Status{Needed: needed, TokenRequired: h.svc.TokenRequired()})
 }
 
 func (h *Handler) claim(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
+		// What the installer printed. See setup.Token: it is what makes
+		// claiming the instance take access to the host rather than
+		// merely reaching the port first.
+		Token string `json:"token"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
 
-	result, err := h.svc.Claim(r.Context(), req.Username, req.Password)
+	result, err := h.svc.Claim(r.Context(), req.Username, req.Password, req.Token)
 	switch {
 	case err == nil:
 	case errors.Is(err, ErrAlreadySetUp):
 		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	case errors.Is(err, ErrBadToken):
+		http.Error(w, err.Error(), http.StatusForbidden)
 		return
 	case errors.Is(err, ErrUsernameRequired), errors.Is(err, ErrPasswordRequired),
 		errors.Is(err, user.ErrPasswordTooShort),
