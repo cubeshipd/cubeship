@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -306,16 +307,43 @@ func gitRepo(t *testing.T, files map[string]string) string {
 		t.Fatalf("update-server-info: %v\n%s", err, out)
 	}
 
-	srv := httptest.NewServer(http.FileServer(http.Dir(filepath.Dir(bare))))
+	// The builder is a container, so it reaches this server by the
+	// host's gateway rather than by the loopback the test sees — which
+	// on Linux is a different interface, so the server must listen on
+	// all of them. httptest's default is loopback only.
+	l, err := net.Listen("tcp", "0.0.0.0:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewUnstartedServer(http.FileServer(http.Dir(filepath.Dir(bare))))
+	srv.Listener = l
+	srv.Start()
 	t.Cleanup(srv.Close)
 
-	// The builder is a container, so it reaches this server by the
-	// host's gateway rather than by the loopback the test sees.
 	_, port, err := net.SplitHostPort(strings.TrimPrefix(srv.URL, "http://"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return "http://host.docker.internal:" + port + "/repo.git"
+	return "http://" + hostAddress(t) + ":" + port + "/repo.git"
+}
+
+// hostAddress is where a container reaches this test's servers, and
+// where the daemon on the host reaches them too — a Railpack build
+// clones in the daemon, so the address has to work from both sides.
+// Docker Desktop resolves host.docker.internal on the Mac itself; a
+// Linux host does not, and there the bridge gateway is an address of
+// the host that both sides share.
+func hostAddress(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		return "host.docker.internal"
+	}
+	out, err := exec.Command("docker", "network", "inspect", "bridge",
+		"-f", "{{(index .IPAM.Config 0).Gateway}}").Output()
+	if err != nil {
+		t.Fatalf("docker network inspect bridge: %v", err)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // End to end: a repository with no Dockerfile becomes an image that

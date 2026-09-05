@@ -45,7 +45,14 @@ setup_stubs() {
 		esac
 		exit 0
 	EOF
-	chmod +x /stub/systemctl /stub/docker
+	# curl stands in for the public-address lookup: the container this
+	# runs in may have no network, and the test wants a known answer.
+	cat > /stub/curl <<-'EOF'
+		#!/bin/sh
+		echo "curl $*" >> /tmp/curl.log
+		echo "203.0.113.7"
+	EOF
+	chmod +x /stub/systemctl /stub/docker /stub/curl
 	PATH="/stub:$PATH"
 	export PATH
 }
@@ -76,7 +83,7 @@ run_tests() {
 	out=$(main 2>&1) || { printf '%s\n' "$out"; exit 1; }
 
 	check "creates the data directory" "$(stat -c '%a' /var/lib/cubeship)" "700"
-	check "pulls the image" "$(grep -c '^docker pull ' /tmp/docker.log)" "1"
+	check "pulls both images" "$(grep -c '^docker pull ' /tmp/docker.log)" "2"
 	check "creates the shared network" \
 		"$(grep -c '^docker network create cubeship' /tmp/docker.log)" "1"
 	check "runs the daemon" "$(grep -c 'docker run .*--name cubeship-daemon' /tmp/docker.log)" "1"
@@ -85,8 +92,30 @@ run_tests() {
 	check "publishes the port" "$(grep -c '\-p 3000:3000' /tmp/docker.log)" "1"
 	check "restarts it with the host" \
 		"$(grep -c '\-\-restart unless-stopped' /tmp/docker.log)" "1"
+	check "ends with the name in lights" "$(printf '%s' "$out" | grep -c '██████╗██╗')" "1"
 	check "tells you where to open it" \
+		"$(printf '%s' "$out" | grep -c 'https://203-0-113-7.sslip.io')" "1"
+	check "makes a domain from the public address" \
+		"$(grep -c 'CUBESHIP_DOMAIN=203-0-113-7.sslip.io' /tmp/docker.log)" "1"
+	check "keeps the port as the way in until the certificate is up" \
 		"$(printf '%s' "$out" | grep -c ':3000')" "1"
+
+	# A domain given wins over the one made up, and is passed as is.
+	rm -f /tmp/docker.log
+	DOMAIN=cube.example.com main >/dev/null 2>&1
+	check "--domain is passed through" \
+		"$(grep -c 'CUBESHIP_DOMAIN=cube.example.com' /tmp/docker.log)" "1"
+	DOMAIN=""
+
+	# A lookup that fails is an install with no domain, not a failed one.
+	rm -f /tmp/docker.log
+	printf '#!/bin/sh\nexit 22\n' > /stub/curl
+	out=$(main 2>&1) || { printf '%s\n' "$out"; exit 1; }
+	check "no public address means no domain" \
+		"$(grep -c 'CUBESHIP_DOMAIN= ' /tmp/docker.log)" "1"
+	check "and says where to open instead" \
+		"$(printf '%s' "$out" | grep -c 'http://.*:3000')" "1"
+	printf '#!/bin/sh\necho 203.0.113.7\n' > /stub/curl
 
 	# The data directory has to be mounted at the same path inside as
 	# outside: the daemon hands these paths to the Engine for its
@@ -100,16 +129,16 @@ run_tests() {
 	rm -f /tmp/docker.log
 	touch /src/Dockerfile
 	LOCAL=1
-	build_image
-	check "--local builds the image" "$(grep -c '^docker build ' /tmp/docker.log)" "1"
+	build_images
+	check "--local builds both images" "$(grep -c '^docker build ' /tmp/docker.log)" "2"
 	check "--local does not pull" "$(grep -c '^docker pull ' /tmp/docker.log)" "0"
-	check "--local builds from the checkout" "$(grep -c ' /src$' /tmp/docker.log)" "1"
+	check "--local builds from the checkout" "$(grep -c ' /src$' /tmp/docker.log)" "2"
 	LOCAL=0
 
 	# Piped from curl there is no checkout, and --local cannot serve
 	# that. Saying so beats a build that fails on a missing Dockerfile.
 	rm -f /src/Dockerfile
-	if (LOCAL=1; build_image) >/dev/null 2>&1; then
+	if (LOCAL=1; build_images) >/dev/null 2>&1; then
 		printf '  FAIL --local built with no repository present\n'
 		FAILURES=$((FAILURES + 1))
 	else
