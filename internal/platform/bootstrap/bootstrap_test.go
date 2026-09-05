@@ -834,3 +834,20 @@ func TestANewTokenCertificateReplacesTheRegistry(t *testing.T) {
 		t.Error("the container does not record which trust root it was started with")
 	}
 }
+
+// On the host the daemon is not root, and the socket buildkitd creates
+// as root would be one it cannot open. In its container it is root and
+// nothing needs saying.
+func TestBuildKitSocketIsReachableByAHostDaemon(t *testing.T) {
+	cfg := testConfig()
+	cfg.InContainer = false
+	host := BuildKitContainerOpts(cfg)
+	if !slices.Contains(host.Cmd, "--group") {
+		t.Errorf("a host daemon's buildkitd does not hand its socket to the daemon's group: %v", host.Cmd)
+	}
+
+	cfg.InContainer = true
+	if got := BuildKitContainerOpts(cfg).Cmd; len(got) != 0 {
+		t.Errorf("a containerised daemon passes buildkitd flags it does not need: %v", got)
+	}
+}

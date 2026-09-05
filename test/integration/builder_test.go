@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -323,7 +324,26 @@ func gitRepo(t *testing.T, files map[string]string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return "http://host.docker.internal:" + port + "/repo.git"
+	return "http://" + hostAddress(t) + ":" + port + "/repo.git"
+}
+
+// hostAddress is where a container reaches this test's servers, and
+// where the daemon on the host reaches them too — a Railpack build
+// clones in the daemon, so the address has to work from both sides.
+// Docker Desktop resolves host.docker.internal on the Mac itself; a
+// Linux host does not, and there the bridge gateway is an address of
+// the host that both sides share.
+func hostAddress(t *testing.T) string {
+	t.Helper()
+	if runtime.GOOS != "linux" {
+		return "host.docker.internal"
+	}
+	out, err := exec.Command("docker", "network", "inspect", "bridge",
+		"-f", "{{(index .IPAM.Config 0).Gateway}}").Output()
+	if err != nil {
+		t.Fatalf("docker network inspect bridge: %v", err)
+	}
+	return strings.TrimSpace(string(out))
 }
 
 // End to end: a repository with no Dockerfile becomes an image that

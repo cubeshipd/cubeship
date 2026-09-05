@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 
 	"cubeship/internal/platform/config"
@@ -332,9 +333,18 @@ func BuildKitSocket(cfg *config.Config) string {
 // is not incorrect, only slow, but slow builds are the thing a cache
 // exists to prevent.
 func BuildKitContainerOpts(cfg *config.Config) dockerx.ContainerOpts {
+	// buildkitd creates its socket as root. The daemon in its container
+	// is root too; on the host (`make dev`, CI) it is whoever ran it, and
+	// a socket it cannot open is a builder that is never available.
+	// buildkitd's --group hands the socket to that user's group instead.
+	var cmd []string
+	if !cfg.InContainer {
+		cmd = []string{"--group", strconv.Itoa(os.Getgid())}
+	}
 	return dockerx.ContainerOpts{
 		Name:       BuildKitContainerName,
 		Image:      BuildKitImage,
+		Cmd:        cmd,
 		Privileged: true,
 		Binds: []string{
 			cfg.DataDir + "/buildkit:/var/lib/buildkit",
