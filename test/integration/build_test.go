@@ -182,11 +182,17 @@ func apiRequest(t *testing.T, method, path, apiKey string, body string) *http.Re
 	return resp
 }
 
+// createApp creates an app and, when fields names a "domain", adds it
+// afterwards: an app is created empty and a domain is its own resource,
+// and without one a deploy is refused.
 func createApp(t *testing.T, apiKey string, fields map[string]string) string {
 	t.Helper()
+	domain := fields["domain"]
 	var parts []string
 	for k, v := range fields {
-		parts = append(parts, fmt.Sprintf("%q:%q", k, v))
+		if k != "domain" {
+			parts = append(parts, fmt.Sprintf("%q:%q", k, v))
+		}
 	}
 	resp := apiRequest(t, http.MethodPost, "/apps", apiKey, "{"+strings.Join(parts, ",")+"}")
 	defer resp.Body.Close()
@@ -197,6 +203,15 @@ func createApp(t *testing.T, apiKey string, fields map[string]string) string {
 		Reference string `json:"reference"`
 	}
 	jsonDecodeOrFatal(t, resp, &created)
+
+	if domain != "" {
+		resp := apiRequest(t, http.MethodPost, "/apps/"+created.Reference+"/domains", apiKey,
+			fmt.Sprintf(`{"host":%q}`, domain))
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
+			t.Fatalf("add domain: %s", resp.Status)
+		}
+	}
 	return created.Reference
 }
 
