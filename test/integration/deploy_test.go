@@ -134,11 +134,12 @@ func TestDeployEndToEnd(t *testing.T) {
 		exec.Command("docker", "rm", "-f", "cubeship-registry", "cubeship-traefik",
 			"cubeship-postgres", "cubeship-frontend", "cubeship-buildkit").Run()
 		exec.Command("sh", "-c", "docker rm -f $(docker ps -aq --filter name=cubeship-web-production-myapp-)").Run()
-		// Postgres wrote its data directory as its own user, which the
-		// TempDir cleanup cannot remove — and a cleanup that fails fails
-		// the test. Its image is already here, so it does the chmod.
-		exec.Command("docker", "run", "--rm", "-v", dataDir+":/d", "--entrypoint", "chmod",
-			"postgres:16-alpine", "-R", "a+rwX", "/d").Run()
+		// Postgres and BuildKit wrote the data directory as root, with
+		// sticky bits the TempDir cleanup cannot get past — and a cleanup
+		// that fails fails the test. A root inside a container empties
+		// it; the Postgres image is already here.
+		exec.Command("docker", "run", "--rm", "-v", dataDir+":/d", "--entrypoint", "sh",
+			"postgres:16-alpine", "-c", "rm -rf /d/* /d/.[!.]*").Run()
 	})
 
 	waitFor(t, 30*time.Second, "daemon healthz", func() bool {
