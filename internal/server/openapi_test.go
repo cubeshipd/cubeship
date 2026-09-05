@@ -281,6 +281,23 @@ func TestDocsAndDocumentAreServedUnauthenticated(t *testing.T) {
 	if !strings.Contains(body, "@scalar/api-reference@") {
 		t.Error("the reference page does not load a pinned Scalar build")
 	}
+
+	// The version says which file to ask the CDN for; the hash says what
+	// the file is. Without the second, a CDN serving something else
+	// under that version would run its code on the same origin as the
+	// session cookie — /docs is this daemon's own address.
+	if !strings.Contains(body, `integrity="sha384-`) || !strings.Contains(body, `crossorigin="anonymous"`) {
+		t.Error("the Scalar build is loaded without subresource integrity")
+	}
+
+	csp := docs.Header().Get("Content-Security-Policy")
+	scripts, _, _ := strings.Cut(strings.TrimPrefix(csp, "default-src 'self'; "), ";")
+	if strings.Contains(scripts, "unsafe-inline") {
+		t.Errorf("the reference page allows inline scripts; it has none and Scalar needs none: %q", scripts)
+	}
+	if !strings.Contains(csp, "connect-src 'self'") {
+		t.Errorf("the reference page may talk to somewhere other than this daemon: %q", csp)
+	}
 }
 
 // Authentication is declared once, at the document level, and only the
