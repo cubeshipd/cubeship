@@ -36,7 +36,7 @@ import { message } from "@/lib/errors";
 // is unique within an account either way. The id is what every call
 // needs, so it is resolved from the zone listing on arrival — one extra
 // request, in exchange for a URL that says what it is.
-export default function ZoneRecords({ params }: { params: Promise<{ id: string; zone: string }> }) {
+export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone]">) {
   const { id, zone: zoneName } = use(params);
   const name = decodeURIComponent(zoneName);
   const queries = useQueryClient();

@@ -16,17 +16,12 @@ import { Label } from "@/components/ui/label";
 import { api, type Project } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-export default function ProjectSettingsPage({
-  params,
-}: {
-  params: Promise<{ org: string; project: string }>;
-}) {
+export default function ProjectSettingsPage({ params }: PageProps<"/projects/[project]/settings">) {
   return <Settings {...use(params)} />;
 }
 
-function Settings({ org, project }: { org: string; project: string }) {
+function Settings({ project }: { project: string }) {
   const router = useRouter();
-  const ref = `${org}/${project}`;
 
   const [current, setCurrent] = useState<Project | null>(null);
   const [description, setDescription] = useState("");
@@ -40,7 +35,7 @@ function Settings({ org, project }: { org: string; project: string }) {
   // There is no "get one project" endpoint — the list is the read, and
   // on a single-VPS install it is a handful of rows.
   useEffect(() => {
-    if (project) return;
+    if (!project) return;
     api
       .get<Project[]>(`/projects`)
       .then((list) => {
@@ -52,7 +47,7 @@ function Settings({ org, project }: { org: string; project: string }) {
       .catch((e) => setError(message(e)));
   }, [project]);
 
-  if (!ref || !project) {
+  if (!project) {
     return (
       <p className="text-sm text-muted-foreground">
         No project named.{" "}
@@ -89,7 +84,7 @@ function Settings({ org, project }: { org: string; project: string }) {
         className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
       >
         <ChevronLeftIcon className="size-3.5" />
-        {org}/{project}
+        {project}
       </Link>
 
       <PageHeader title="Project settings" sub="What this project is called, and what it is for." />
@@ -113,7 +108,7 @@ function Settings({ org, project }: { org: string; project: string }) {
             <div className="space-y-2">
               <Label className="text-xs text-muted-foreground">Slug</Label>
               <div className="flex h-10 items-center border border-border bg-secondary/40 px-3 font-mono text-sm text-muted-foreground">
-                {org}/{project}
+                {project}
               </div>
               <p className="text-xs text-subtle-foreground">
                 Not editable. It is a path component of every app&apos;s registry reference under

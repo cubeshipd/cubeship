@@ -102,5 +102,9 @@ jobs:
           cache-dependency-path: web/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec biome ci .
-      - run: pnpm exec tsc --noEmit
+      # typegen first: the pages take their params from Next's generated
+      # route types, so a segment renamed without the page following it
+      # is a type error rather than an undefined glued into a URL. Those
+      # types do not exist in a fresh checkout.
+      - run: pnpm run typecheck
       - run: pnpm run build
