@@ -302,6 +302,9 @@ func claimInstance(t *testing.T, dataDir, username, password string) string {
 		req.Header.Set("Content-Type", "application/json")
 		if cookie != nil {
 			req.AddCookie(cookie)
+			// A session is only honoured from the dashboard's own origin
+			// — see httpx.SameOrigin — and a browser would say so.
+			req.Header.Set("Origin", daemonURL)
 		}
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
