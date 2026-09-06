@@ -155,15 +155,16 @@ export default function FirewallPage() {
               The firewall is off, so the rules below are waiting rather than applying. Everything
               this machine listens on is offered to the network — whether anything reaches it
               depends on what is in front, which this page cannot see —{" "}
-              {data.ssh_allowed
+              {data.ssh_allowed || (data.ssh_ports ?? []).length > 0
                 ? "turning it on puts them in force."
-                : `add one admitting SSH on ${(data.ssh_ports ?? [22]).join(" or ")} before turning it on, or you will not get back in.`}
+                : "and this daemon could not find out which port sshd is on, so turning it on is refused: add the rule for the port you connect on first, or you would not get back in."}
             </Notice>
           )}
           {data.enabled && !data.ssh_allowed && (
             <Notice tone="warning">
-              Nothing here admits SSH on {(data.ssh_ports ?? [22]).join(" or ")}. If this session
-              ends you may not get another.
+              Nothing here admits SSH
+              {(data.ssh_ports ?? []).length > 0 && ` on ${data.ssh_ports?.join(" or ")}`}. If this
+              session ends you may not get another.
             </Notice>
           )}
 

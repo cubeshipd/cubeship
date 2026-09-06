@@ -64,28 +64,55 @@ func newService(t *testing.T, h *fakeHost) *Service {
 	return NewService(h, nil, t.TempDir())
 }
 
-// The refusal this module exists for.
+// The guarantee this module exists for: the firewall is never turned on
+// in a way that ends the session it was asked from.
 //
 // UFW denies incoming by default, so enabling it with nothing admitting
-// SSH ends the session it was asked from and every future one — and the
-// person it happens to is by then unable to undo it. The command must
-// not be sent at all.
-func TestEnablingIsRefusedWhileNothingAdmitsSSH(t *testing.T) {
-	host := &fakeHost{status: status(active,
-		"", "", "0", "22")}
+// SSH costs somebody the machine. Enabling therefore writes that rule
+// itself — refusing was the first answer, and it was a mechanical step
+// in front of a button for a rule the daemon already knew how to write.
+func TestEnablingAdmitsSSHBeforeItTurnsAnythingOn(t *testing.T) {
+	host := &fakeHost{status: status(active, "", "", "0", "22")}
+	if _, err := newService(t, host).Enable(context.Background(), admin); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+
+	if len(host.ran) < 2 {
+		t.Fatalf("ran %v", host.ran)
+	}
+	if !strings.Contains(host.ran[0], "port 22") {
+		t.Errorf("the first thing it did was not admitting SSH: %v", host.ran)
+	}
+	if !strings.Contains(host.ran[len(host.ran)-1], "enable") {
+		t.Errorf("the last thing it did was not enabling: %v", host.ran)
+	}
+}
+
+// And it follows where sshd actually listens, because a rule for the
+// wrong port is the lockout wearing the safeguard's clothes.
+func TestEnablingAdmitsThePortSSHIsReallyOn(t *testing.T) {
+	host := &fakeHost{status: status(active, "", "", "0", "2222")}
+	if _, err := newService(t, host).Enable(context.Background(), admin); err != nil {
+		t.Fatalf("enable: %v", err)
+	}
+	if !strings.Contains(host.ran[0], "port 2222") {
+		t.Errorf("it opened the wrong port: %v", host.ran)
+	}
+}
+
+// The one case that cannot be made safe, and the one refusal left: a
+// host whose sshd did not say. Any rule written there would be a guess,
+// and a wrong guess is the lockout.
+func TestEnablingIsRefusedWhenNobodyKnowsWhereSSHIs(t *testing.T) {
+	host := &fakeHost{status: status(active, "", "", "0", "")}
 	_, err := newService(t, host).Enable(context.Background(), admin)
 
 	if !errors.Is(err, ErrWouldLockYouOut) {
 		t.Fatalf("enabling was allowed: %v", err)
 	}
-	// The refusal names the port, because "add a rule first" without
-	// saying which is a refusal somebody has to go and look up.
-	if !strings.Contains(err.Error(), "22") {
-		t.Errorf("the refusal does not name the port: %v", err)
-	}
 	for _, cmd := range host.ran {
-		if strings.Contains(cmd, "enable") {
-			t.Fatalf("the enable ran anyway: %v", host.ran)
+		if strings.Contains(cmd, "enable") || strings.Contains(cmd, "allow") {
+			t.Fatalf("it guessed anyway: %v", host.ran)
 		}
 	}
 }
@@ -99,21 +126,6 @@ func TestEnablingProceedsOnceSSHIsAdmitted(t *testing.T) {
 	}
 	if len(host.ran) == 0 || !strings.Contains(host.ran[0], "ufw --force enable") {
 		t.Errorf("ran %v", host.ran)
-	}
-}
-
-// A non-standard SSH port is the case where a hard-coded 22 would be
-// worse than no check at all: it would pass, and the machine would go.
-func TestTheCheckFollowsWhereSSHActuallyListens(t *testing.T) {
-	host := &fakeHost{status: status(active,
-		"[ 1] 22/tcp                     ALLOW IN    Anywhere", "", "0", "2222")}
-	_, err := newService(t, host).Enable(context.Background(), admin)
-
-	if !errors.Is(err, ErrWouldLockYouOut) {
-		t.Fatalf("a rule for 22 satisfied a host listening on 2222: %v", err)
-	}
-	if !strings.Contains(err.Error(), "2222") {
-		t.Errorf("the refusal does not name the real port: %v", err)
 	}
 }
 

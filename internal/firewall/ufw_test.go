@@ -117,12 +117,16 @@ func TestWhichRulesCountAsAdmittingSSH(t *testing.T) {
 	}
 }
 
-// A host that says nothing about sshd is assumed to be on 22. The point
-// of the check is to refuse a lockout, and guessing the usual port is
-// safer than concluding there is no SSH to protect.
-func TestAHostThatSaysNothingIsAssumedToBeOn22(t *testing.T) {
-	if got := parsePorts(""); len(got) != 1 || got[0] != 22 {
-		t.Errorf("parsePorts(\"\") = %v", got)
+// A host that says nothing about sshd says nothing, and is not filled in
+// with 22.
+//
+// The guess was harmless while it only decided whether to refuse. It
+// stopped being harmless when enabling started opening these ports: 22
+// on a host listening on 2222 opens a port nobody uses and then enables,
+// which is the lockout arriving through the door built to stop it.
+func TestAHostThatSaysNothingAboutSSHIsNotGuessedAt(t *testing.T) {
+	if got := parsePorts(""); len(got) != 0 {
+		t.Errorf("parsePorts(\"\") = %v, want nothing", got)
 	}
 	if got := parsePorts("2222\n22\n"); len(got) != 2 {
 		t.Errorf("parsePorts read %v", got)

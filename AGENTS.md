@@ -917,12 +917,18 @@ then: there are no positions until the firewall is running.
 Three refusals are the point of the module, and each is a thing that
 silently costs somebody a machine:
 
-- **Enabling with nothing admitting SSH.** UFW denies incoming by
-  default, so that ends the session it was asked from and every future
-  one, to somebody who is by then unable to undo it. The SSH port is
-  read from the host (`sshd -T`) rather than assumed to be 22 — a
-  hard-coded 22 would *pass* on a host listening on 2222, which is worse
-  than no check.
+- **Enabling with nothing admitting SSH** — which `Enable` prevents by
+  *writing that rule itself*, not by refusing. Refusing was the first
+  answer and it was the wrong shape: if a rule is compulsory, making
+  somebody add it by hand is a mechanical step in front of a button, and
+  one they can get wrong, for a rule the daemon already knows how to
+  write. The port comes from the host's own `sshd -T`. The refusal
+  survives for the single case where the guarantee cannot be kept — a
+  host whose sshd did not say — because any rule written there would be
+  a guess, and a wrong guess *is* the lockout. For the same reason the
+  detected list is never filled in with 22: a guess is harmless while it
+  only decides whether to refuse, and is a lockout once it decides which
+  port to open.
 - **An `apps` rule before adoption**, above.
 - **Deleting by a position that has moved.** UFW deletes by number and
   numbers shift; the caller sends the rule's own text and the daemon
