@@ -24,7 +24,13 @@ export function AppCard({ app }: { app: App }) {
           </h3>
           <StatusBadge value={app.status} />
         </div>
-        <p className="mt-2 truncate font-mono text-[11px] text-muted-foreground">{hostsOf(app)}</p>
+        {/* Nothing at all when it answers nowhere, which is the normal
+            state for a worker or a queue consumer. */}
+        {hostsOf(app) && (
+          <p className="mt-2 truncate font-mono text-[11px] text-muted-foreground">
+            {hostsOf(app)}
+          </p>
+        )}
       </div>
 
       <div className="border-t border-border px-4 py-2.5">

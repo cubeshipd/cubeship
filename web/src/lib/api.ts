@@ -74,12 +74,15 @@ export type AppDomain = {
   port: number;
 };
 
-// hostsOf renders every name an app answers at, for the places that have
-// room for one line. "no domain" rather than an empty string, because
-// answering nowhere is a state worth reading — a normal one for a worker
-// or a queue consumer, and a surprise for anything meant to be visited.
+// hostsOf renders every name an app answers at, for the places that
+// have room for one line.
+//
+// Empty when there are none, and the caller renders nothing. It used to
+// say "no domain" on the grounds that answering nowhere is a state
+// worth reading — but it is the *normal* state for a worker or a queue
+// consumer, and a line of grey text under every one of them saying so
+// is a caption on the ordinary.
 export function hostsOf(app: { domains: AppDomain[] }): string {
-  if (app.domains.length === 0) return "no domain";
   return app.domains.map((d) => d.host).join(", ");
 }
 

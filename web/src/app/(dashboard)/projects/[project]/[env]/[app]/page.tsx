@@ -1,8 +1,10 @@
 "use client";
 
-import { ChevronLeftIcon, RefreshCwIcon, SettingsIcon } from "lucide-react";
+import { ChevronLeftIcon, EyeIcon, EyeOffIcon, RefreshCwIcon, SettingsIcon } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
+import { CopyButton } from "@/components/copy-button";
+import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
 import { MetricsSection } from "@/components/metrics-section";
 import { Notice } from "@/components/notice";
@@ -13,7 +15,15 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { ValueCard } from "@/components/value-card";
-import { type App, api, BUILDING_SOURCES, type Deployment, type EnvView, hostsOf } from "@/lib/api";
+import {
+  type App,
+  api,
+  BUILDING_SOURCES,
+  type Deployment,
+  type EnvView,
+  hostsOf,
+  type ResolvedVar,
+} from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // One app, under the environment it lives in — which is the only place
@@ -75,7 +85,10 @@ function Detail({ reference }: { reference: string }) {
         title={<span className="font-mono text-lg tracking-normal normal-case">{app.name}</span>}
         sub={
           <span className="flex items-center gap-2">
-            {hostsOf(app)}
+            {/* Conditional rather than an empty string: an empty text
+                node is still a flex item, and the gap after it is
+                indentation nobody asked for. */}
+            {hostsOf(app) && <span>{hostsOf(app)}</span>}
             <StatusBadge value={app.status} />
           </span>
         }
@@ -157,13 +170,12 @@ function Origin({ app }: { app: App }) {
     );
   }
 
+  // An app that pushes to Cubeship's own registry says nothing here.
+  // Where to push is one line somebody needs once, when they wire the
+  // repository up, and a banner carrying it sat at the top of the page
+  // for the rest of the app's life.
   if (app.image) {
-    return (
-      <ValueCard
-        label="Push an image here and it deploys"
-        value={`docker push ${app.image}:latest`}
-      />
-    );
+    return null;
   }
 
   return (
@@ -281,6 +293,34 @@ function Deployments({
   );
 }
 
+// One variable's value: hidden until asked for, copyable either way.
+//
+// Hidden by default because this table is most of a page of secrets —
+// an app's environment is where its database password, its API keys and
+// its signing secrets all end up — and it is the section somebody
+// scrolls past with a screen share running. The copy button works while
+// it is hidden, which is what makes hiding it cost nothing.
+function SecretValue({ value }: { value: string }) {
+  const [shown, setShown] = useState(false);
+  return (
+    <span className="flex items-center gap-1">
+      <span className="min-w-0 flex-1 truncate font-mono text-xs">
+        {shown ? value : "•".repeat(Math.min(value.length, 24)) || "—"}
+      </span>
+      <Button
+        variant="ghost"
+        size="xs"
+        aria-label={shown ? "Hide this value" : "Reveal this value"}
+        className="shrink-0 text-muted-foreground"
+        onClick={() => setShown(!shown)}
+      >
+        {shown ? <EyeOffIcon className="size-3.5" /> : <EyeIcon className="size-3.5" />}
+      </Button>
+      <CopyButton value={value} label="Copy this value" className="shrink-0" />
+    </span>
+  );
+}
+
 function EnvVars({ reference }: { reference: string }) {
   const [view, setView] = useState<EnvView | null>(null);
   const [key, setKey] = useState("");
@@ -296,53 +336,76 @@ function EnvVars({ reference }: { reference: string }) {
   }, [path]);
   useEffect(reload, [reload]);
 
+  async function unset(name: string) {
+    setError(null);
+    try {
+      await api.patch(path, { unset: [name] });
+      reload();
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+
+  const columns: Column<ResolvedVar>[] = [
+    {
+      id: "key",
+      header: "Name",
+      width: 30,
+      sortBy: (v) => v.key,
+      cell: (v) => <span className="font-mono text-xs">{v.key}</span>,
+    },
+    {
+      id: "value",
+      header: "Value",
+      width: 46,
+      cell: (v) => <SecretValue value={v.value} />,
+    },
+    {
+      id: "source",
+      header: "Set at",
+      width: 14,
+      sortBy: (v) => v.source,
+      cell: (v) => <span className="text-xs text-muted-foreground">{v.source}</span>,
+    },
+    {
+      id: "unset",
+      header: "",
+      width: 10,
+      align: "right",
+      cell: (v) =>
+        // Only what this app set itself. A variable inherited from the
+        // project or the environment is not this screen's to remove —
+        // unsetting it here would look like it worked and change
+        // nothing.
+        v.source === "app" ? (
+          <Button
+            variant="ghost"
+            size="xs"
+            className="text-muted-foreground hover:text-destructive"
+            onClick={() => unset(v.key)}
+          >
+            Unset
+          </Button>
+        ) : null,
+    },
+  ];
+
   return (
     <>
       <SectionHeader
         title="Environment"
-        sub="The project's variables, then the environment's, then the app's own. Setting one here overrides the levels above it."
+        sub="The project's variables, then the environment's, then any database attached to this app, then the app's own. Setting one here overrides the levels above it."
       />
       <ErrorAlert error={error} />
 
-      <Card className="mb-3 py-0">
-        <Table>
-          <TableBody>
-            {view?.effective?.map((v) => (
-              <TableRow key={v.key}>
-                <TableCell className="px-4 py-2.5 font-mono text-xs">{v.key}</TableCell>
-                <TableCell className="px-4 py-2.5 font-mono text-xs break-all">{v.value}</TableCell>
-                <TableCell className="px-4 py-2.5 text-right text-xs text-muted-foreground">
-                  {v.source}
-                  {v.source === "app" && (
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      className="ml-2 text-muted-foreground hover:text-destructive"
-                      onClick={async () => {
-                        try {
-                          await api.patch(path, { unset: [v.key] });
-                          reload();
-                        } catch (e) {
-                          setError(message(e));
-                        }
-                      }}
-                    >
-                      Unset
-                    </Button>
-                  )}
-                </TableCell>
-              </TableRow>
-            ))}
-            {view?.effective?.length === 0 && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell className="px-4 py-3 text-sm text-muted-foreground">
-                  No variables.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+      <DataTable
+        columns={columns}
+        rows={view?.effective ?? null}
+        rowKey={(v) => v.key}
+        loadingRows={3}
+        empty="No variables."
+        className="mb-3"
+      />
 
       <form
         className="flex items-center gap-2"
@@ -373,11 +436,10 @@ function EnvVars({ reference }: { reference: string }) {
           aria-label="Variable value"
           className="flex-1 text-xs"
         />
-        <Button type="submit" variant="outline">
+        <Button type="submit" variant="outline" disabled={!key}>
           Set
         </Button>
       </form>
-      <p className="mt-2 text-xs text-subtle-foreground">Takes effect on the next deploy.</p>
     </>
   );
 }

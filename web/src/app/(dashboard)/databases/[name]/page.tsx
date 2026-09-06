@@ -11,11 +11,13 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ContainerLogs } from "@/components/container-logs";
 import { CopyField } from "@/components/copy-field";
+import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
 import { MetricsSection } from "@/components/metrics-section";
 import { Notice } from "@/components/notice";
@@ -34,19 +36,12 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import {
   ApiError,
   type App,
   api,
   DATASTORE_STOPPED,
   type Datastore,
+  type DatastoreAttachment,
   type DatastoreCredentials,
   datastoreLabel,
   datastorePath,
@@ -202,7 +197,14 @@ function Connection({ datastore }: { datastore: Datastore }) {
         sub="Apps on this instance reach it by container name on the shared network. Nothing else can, unless it is published."
         actions={
           creds && (
-            <Button variant="ghost" size="xs" onClick={() => setRevealed(!revealed)}>
+            <Button
+              variant="ghost"
+              size="xs"
+              onClick={() => setRevealed(!revealed)}
+              aria-label={
+                revealed ? "Hide the password and the URIs" : "Reveal the password and the URIs"
+              }
+            >
               {revealed ? <EyeOffIcon /> : <EyeIcon />}
               {revealed ? "Hide" : "Reveal"}
             </Button>
@@ -243,6 +245,11 @@ function Connection({ datastore }: { datastore: Datastore }) {
             <CopyField
               label="Internal URI"
               value={creds.internal_uri}
+              // The password is inside it. Hiding one and printing the
+              // other on the same card would be a lock on a door with
+              // the key taped beside it — and this is the field
+              // somebody leaves on screen while they go and paste it.
+              masked={!revealed}
               fieldClassName="sm:col-span-2"
               hint="What an attached app already receives as DATABASE_URL. This is for anything wired by hand."
             />
@@ -252,6 +259,7 @@ function Connection({ datastore }: { datastore: Datastore }) {
             <CopyField
               label="External URI"
               value={creds.external_uri}
+              masked={!revealed}
               fieldClassName="sm:col-span-2"
               hint="From off this host, on the port this database is published on. There is no TLS in front of it."
             />
@@ -262,12 +270,63 @@ function Connection({ datastore }: { datastore: Datastore }) {
   );
 }
 
+// The wiring, as a table like every other list here.
+//
+// The whole row opens the app rather than the name being a link inside
+// it: two click targets for one destination is one of them that people
+// miss. The detach button stops the click from reaching the row, or
+// removing a wiring would also navigate away from the page that shows
+// it worked.
+function attachmentColumns(onDetach: (app: string) => void): Column<DatastoreAttachment>[] {
+  return [
+    {
+      id: "app",
+      header: "App",
+      width: 90,
+      sortBy: (a) => a.app,
+      cell: (a) => (
+        <span className="flex items-center gap-2">
+          <span className="truncate font-mono text-sm">{a.app}</span>
+          {/* The prefix, and only when there is one. It is what
+              changes the names an app reads, and this is the only
+              place it would ever be visible. */}
+          {a.prefix && (
+            <code className="shrink-0 border border-border bg-secondary/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+              {a.prefix}
+            </code>
+          )}
+        </span>
+      ),
+    },
+    {
+      id: "detach",
+      header: "",
+      width: 10,
+      align: "right",
+      cell: (a) => (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={`Detach ${a.app}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            onDetach(a.app);
+          }}
+        >
+          <Trash2Icon className="size-3.5" />
+        </Button>
+      ),
+    },
+  ];
+}
+
 // Which apps get this database's connection variables.
 //
 // The variable names are listed rather than summarised, because the
 // question somebody has on this screen is "what do I read in my code",
 // and the answer is exactly this list.
 function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged: () => void }) {
+  const router = useRouter();
   const [attaching, setAttaching] = useState(false);
   const [detaching, setDetaching] = useState<string | null>(null);
   const [apps, setApps] = useState<App[] | null>(null);
@@ -309,60 +368,13 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
 
       <ErrorAlert error={error} />
 
-      {datastore.attachments.length === 0 ? (
-        // One line, not a notice. The section's own subtitle already
-        // says what an attachment does; a box repeating it under an
-        // empty table is furniture.
-        <Card className="mb-4">
-          <CardContent className="py-2 text-sm text-muted-foreground">
-            Nothing is attached yet.
-          </CardContent>
-        </Card>
-      ) : (
-        <Card className="mb-4">
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>App</TableHead>
-                  <TableHead className="w-10" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {datastore.attachments.map((a) => (
-                  <TableRow key={a.app}>
-                    <TableCell className="font-mono">
-                      <Link href={`/projects/${a.app}`} className="hover:text-primary">
-                        {a.app}
-                      </Link>
-                      {/* The prefix, and only when there is one. The
-                          full list of variable names was noise — they
-                          are the same six every time — but a prefix
-                          changes what they are called, and this is the
-                          only place it would ever be visible. */}
-                      {a.prefix && (
-                        <code className="ml-2 border border-border bg-secondary/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                          {a.prefix}
-                        </code>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      <Button
-                        variant="ghost"
-                        size="icon-sm"
-                        aria-label={`Detach ${a.app}`}
-                        onClick={() => setDetaching(a.app)}
-                      >
-                        <Trash2Icon className="size-3.5" />
-                      </Button>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+      <DataTable
+        columns={attachmentColumns((app) => setDetaching(app))}
+        rows={datastore.attachments}
+        rowKey={(a) => a.app}
+        onRowClick={(a) => router.push(`/projects/${a.app}`)}
+        empty="Nothing is attached yet."
+      />
 
       <AttachDialog
         datastore={datastore}
