@@ -18,9 +18,10 @@ func (h *Handler) OpenAPI() openapi.Spec {
 		}},
 		Schemas: map[string]*openapi.Schema{
 			"WhoAmI": openapi.Object(map[string]*openapi.Schema{
-				"username": openapi.String("The account this API key belongs to."),
-				"role":     openapi.String("Either `admin` or `member`."),
-			}, "username", "role"),
+				"username":     openapi.String("The account this API key belongs to."),
+				"role":         openapi.String("Either `admin` or `member`."),
+				"has_password": openapi.Bool("Whether this account can sign in without an API key. It matters where a key is revoked: revoking the last one is allowed, and this is what says whether that leaves a way in."),
+			}, "username", "role", "has_password"),
 			"User": openapi.Object(map[string]*openapi.Schema{
 				"username":   openapi.String("The account."),
 				"role":       openapi.String("Either `admin` or `member`."),

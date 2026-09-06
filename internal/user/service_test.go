@@ -37,9 +37,18 @@ func TestRotatingOneKeyLeavesEveryOtherKeyWorking(t *testing.T) {
 	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/users/me", nil, created.APIKey), http.StatusOK)
 }
 
-// Revoking your last key would lock you out with no way back — and for
-// the super-admin, no way back at all.
-func TestRevokingYourOnlyKeyIsRefused(t *testing.T) {
+// Revoking your last key is allowed.
+//
+// It was refused once, to stop somebody locking themselves out — and
+// that is the wrong trade the moment you name the case revocation
+// exists for. A key that has leaked has to be able to go *now*; under
+// the old rule the answer was to mint a second one first, which leaves
+// the leaked one live for as long as that takes.
+//
+// What replaces the refusal is knowing: /users/me says whether the
+// account can sign in without a key, so the screen offering the revoke
+// can say what it costs before it is pressed.
+func TestRevokingYourOnlyKeyIsAllowed(t *testing.T) {
 	f := servertest.New(t)
 
 	var keys []struct {
@@ -55,10 +64,11 @@ func TestRevokingYourOnlyKeyIsRefused(t *testing.T) {
 	}
 
 	rec := f.Do(t, http.MethodDelete, "/users/me/api-keys/"+strconv.FormatInt(keys[0].ID, 10), nil, f.AdminKey)
-	servertest.RequireStatus(t, rec, http.StatusConflict)
+	servertest.RequireStatus(t, rec, http.StatusOK)
 
-	// Still usable.
-	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/users/me", nil, f.AdminKey), http.StatusOK)
+	// And it really is gone: the key that just revoked itself does not
+	// authenticate the next request.
+	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/users/me", nil, f.AdminKey), http.StatusUnauthorized)
 }
 
 // Revoking is scoped to your own keys. Guessing another user's key id
@@ -72,10 +82,6 @@ func TestRevokingAnotherUsersKeyIsNotFound(t *testing.T) {
 		ID int64 `json:"id"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/users/me/api-keys", nil, victimKey, &victimKeys), http.StatusOK)
-
-	// The admin holds two keys, so a "last key" refusal cannot mask this.
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/users/me/api-keys",
-		map[string]string{"name": "second"}, f.AdminKey), http.StatusCreated)
 
 	rec := f.Do(t, http.MethodDelete, "/users/me/api-keys/"+strconv.FormatInt(victimKeys[0].ID, 10), nil, f.AdminKey)
 	servertest.RequireStatus(t, rec, http.StatusNotFound)
@@ -191,5 +197,30 @@ func TestListingAccounts(t *testing.T) {
 		if strings.Contains(body, leak) {
 			t.Errorf("the roster carries %q: %s", leak, body)
 		}
+	}
+}
+
+// The account screen has to know what revoking the last key costs, and
+// that depends on whether there is another way in.
+func TestWhoAmISaysWhetherThereIsAnotherWayIn(t *testing.T) {
+	f := servertest.New(t)
+
+	var me struct {
+		Username    string `json:"username"`
+		HasPassword bool   `json:"has_password"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/users/me", nil, f.AdminKey, &me), http.StatusOK)
+	// An account an admin created holds a key and no password until it
+	// sets one — for that account, its keys are the whole of its access.
+	if me.HasPassword {
+		t.Errorf("%s reports a password it was never given", me.Username)
+	}
+
+	servertest.RequireStatus(t, f.Do(t, http.MethodPut, "/users/me/password",
+		map[string]string{"new_password": "a-long-enough-password"}, f.AdminKey), http.StatusOK)
+
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/users/me", nil, f.AdminKey, &me), http.StatusOK)
+	if !me.HasPassword {
+		t.Error("the account set a password and still reports none")
 	}
 }

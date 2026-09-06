@@ -241,10 +241,22 @@ func (s *Service) ListAPIKeys(ctx context.Context, u *User) ([]*APIKey, error) {
 	return s.Repo().ListAPIKeys(ctx, u.ID)
 }
 
-// RevokeAPIKey deletes one of u's own keys by id. It refuses when id is
-// their last remaining key: deleting it would lock them out with no way
-// back short of a super-admin re-adding them (or, if they are the
-// super-admin, nothing at all).
+// RevokeAPIKey deletes one of u's own keys by id.
+//
+// **Including the last one.** It used to refuse that, to stop somebody
+// locking themselves out — and that was the wrong trade the moment you
+// name the case revocation exists for: a key that has leaked. Under the
+// old rule the answer to "this key is in someone else's hands" was to
+// mint a second one first, which leaves the leaked key live for as long
+// as that takes and is a strange thing to be made to do while you are
+// already in a hurry.
+//
+// The lockout it guarded against is also smaller than it was. An
+// account has a password and a session now, so an API key is not the
+// only way in; the account screen says plainly when revoking this one
+// leaves no way to authenticate, and asks. That is the same shape as
+// every other irreversible act here — a confirmation in front of it,
+// not a refusal you have to work around.
 func (s *Service) RevokeAPIKey(ctx context.Context, u *User, id int64) error {
 	if u == nil {
 		return ErrUnauthenticated
@@ -266,9 +278,6 @@ func (s *Service) RevokeAPIKey(ctx context.Context, u *User, id int64) error {
 	}
 	if !owned {
 		return database.ErrNotFound
-	}
-	if len(keys) <= 1 {
-		return ErrLastAPIKey
 	}
 	return s.Repo().RevokeAPIKeyByID(ctx, id, u.ID)
 }
@@ -432,4 +441,17 @@ func (s *Service) CreateWithPassword(ctx context.Context, q database.Queryer, us
 // effect at lookup; this only stops the table growing forever.
 func (s *Service) PurgeExpiredSessions(ctx context.Context) (int64, error) {
 	return s.Repo().DeleteExpiredSessions(ctx)
+}
+
+// HasPassword reports whether the caller's account can sign in without
+// an API key.
+//
+// It is the account screen's, and it is there because revoking a key may
+// leave none: what that costs depends on whether there is another way
+// in, and only the daemon knows.
+func (s *Service) HasPassword(ctx context.Context, u *User) (bool, error) {
+	if u == nil {
+		return false, ErrUnauthenticated
+	}
+	return s.Repo().HasPassword(ctx, u.ID)
 }

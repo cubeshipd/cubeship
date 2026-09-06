@@ -83,10 +83,6 @@ type APIKey struct {
 const DefaultAPIKeyName = "default"
 
 var (
-	// ErrLastAPIKey reports that a revoke was refused because it would
-	// have left the caller with no way to authenticate at all.
-	ErrLastAPIKey = errors.New("cannot revoke your only remaining API key")
-
 	// ErrUnauthenticated is what the service returns when it is handed
 	// no caller at all — a bug in the transport wiring rather than a
 	// user error, but never a panic.

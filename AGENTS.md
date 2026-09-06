@@ -656,6 +656,20 @@ refusals: the account you are signed in as, and the last admin — setup
 closed when the first account appeared, and nothing in the API can make
 an admin without one.
 
+**Revoking a key is never refused, including the last one.** It used to
+be, to stop somebody locking themselves out — and that is the wrong
+trade the moment you name the case revocation exists for. A key that has
+leaked has to be able to go *now*; under the old rule the answer to
+"this key is in somebody else's hands" was to mint a second one first,
+which leaves the leaked one live for as long as that takes and is a
+strange thing to be made to do in a hurry.
+
+What replaces it is knowing rather than refusing, which is the same
+shape as every other irreversible act here: `/users/me` carries
+`has_password`, so the account screen can say what revoking this one
+costs — the CLI until you make another, or the way in — and ask. A
+confirmation in front of it, not a refusal to work around.
+
 An account can exist with no password. One an admin creates gets an API
 key immediately and a password only when it sets one, which
 is why every sign-in failure — unknown username, wrong password, no
@@ -734,6 +748,26 @@ That is only safe because everything those containers must keep is in a
 host bind mount. Anything you add to them has to keep that true —
 persistent state inside a container's writable layer will be silently
 destroyed the next time its configuration changes.
+
+**Traefik's version is pinned, and the pin is load-bearing.** Its Docker
+provider asks the Engine for a fixed API version, and up to v3.5 that
+version is 1.24 — which Docker Engine 28 and later refuse outright.
+Refused, not degraded: the provider retries forever and Traefik sees
+**no container at all**, so every router that comes from a container
+label silently does not exist.
+
+Nothing about that looks broken from the outside. Apps deploy,
+containers run, and the *file* provider carries on — so the daemon's own
+name still routes and still gets a certificate, while everything routed
+by a label answers with Traefik's default self-signed certificate. It
+reads as a certificate problem, and it is a proxy that cannot see
+anything. `TraefikImage` is v3.6, which negotiates the version;
+`DOCKER_API_VERSION` is not a way out, because the older provider
+ignores it.
+
+`internal/certificates` carries the provider's own error into
+`traefik_says` for exactly this reason — it is the only place the real
+cause is written down, and it says nothing about ACME.
 
 Traefik redirects the whole `web` entrypoint to `websecure`, so plain
 HTTP reaches every app and the API without per-router labels. It does not

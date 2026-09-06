@@ -175,6 +175,16 @@ func overTLS(r *http.Request) bool {
 type WhoAmIResponse struct {
 	Username string `json:"username"`
 	Role     Role   `json:"role"`
+	// HasPassword says whether this account can sign in without an API
+	// key. It is here because revoking a key is allowed to leave you
+	// with none, and what that costs depends entirely on this: with a
+	// password it costs the CLI until you make another, and without one
+	// it is the way in. The screen that offers the revoke has to be
+	// able to say which.
+	//
+	// Not a secret: it is the caller's own account, and it is the same
+	// fact the sign-in page discovers by being used.
+	HasPassword bool `json:"has_password"`
 }
 
 // APIKeyResponse is one key's metadata. The key value itself appears
@@ -291,7 +301,14 @@ func (h *Handler) whoAmI(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, WhoAmIResponse{Username: u.Username, Role: u.Role})
+	// A miss is reported as "no password" rather than as an error: this
+	// endpoint's job is to say who you are, and the CLI calls it to
+	// learn a username. Failing the whole call over a hint would be the
+	// tail wagging the dog.
+	has, _ := h.svc.HasPassword(r.Context(), u)
+	httpx.WriteJSON(w, http.StatusOK, WhoAmIResponse{
+		Username: u.Username, Role: u.Role, HasPassword: has,
+	})
 }
 
 // UserResponse is one account as the API returns it. Never a hash, and
@@ -403,8 +420,6 @@ func (h *Handler) revokeAPIKey(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	case errors.Is(err, ErrUnauthenticated):
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
-	case errors.Is(err, ErrLastAPIKey):
-		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, database.ErrNotFound):
 		http.Error(w, "api key not found", http.StatusNotFound)
 	default:
