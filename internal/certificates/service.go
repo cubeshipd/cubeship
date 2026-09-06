@@ -281,7 +281,16 @@ func (s *Service) explain(ctx context.Context, missing []Missing) []string {
 }
 
 // complaints keeps the lines where Traefik said something went wrong
-// with a certificate, oldest first.
+// with a certificate — or with reading the Engine, which comes to the
+// same thing — oldest first.
+//
+// **A failing provider belongs here.** Traefik's Docker provider asks
+// for a fixed API version, and an Engine that will not answer it leaves
+// Traefik seeing no container at all: every router that comes from a
+// label silently does not exist, so every name behind one is served the
+// default self-signed certificate and reported as waiting. Nothing in
+// the ACME wording says that. The provider's own line does, and it is
+// the only place it is written down.
 //
 // Docker frames the log, and a frame header is a few bytes of binary in
 // front of each line. Nothing here needs to be exact about it: the
@@ -296,17 +305,21 @@ func complaints(r io.Reader) []string {
 	for scanner.Scan() {
 		line := strings.TrimSpace(strings.Map(printable, scanner.Text()))
 		lower := strings.ToLower(line)
-		if !strings.Contains(lower, "acme") && !strings.Contains(lower, "certificate") {
+		about := strings.Contains(lower, "acme") || strings.Contains(lower, "certificate") ||
+			strings.Contains(lower, "provider")
+		if !about {
 			continue
 		}
 		if !strings.Contains(lower, "error") && !strings.Contains(lower, "unable") &&
 			!strings.Contains(lower, "too many") && !strings.Contains(lower, "fail") {
 			continue
 		}
-		// Traefik retries, so the same refusal appears over and over
-		// with a new timestamp each time. The page wants the distinct
-		// things that are wrong, not how often it tried.
-		key := timestamps.ReplaceAllString(lower, "")
+		// Traefik retries, so the same refusal appears over and over —
+		// with a new timestamp each time, and the provider's with a new
+		// backoff too. The page wants the distinct things that are
+		// wrong, not how often it tried, so every number is out of the
+		// key.
+		key := digits.ReplaceAllString(timestamps.ReplaceAllString(lower, ""), "#")
 		if seen[key] {
 			continue
 		}
@@ -319,6 +332,11 @@ func complaints(r io.Reader) []string {
 // timestamps is what makes one retry look like another: the same
 // refusal, logged again a minute later.
 var timestamps = regexp.MustCompile(`(?i)"?time"?[=:]\s*"?[^"\s]+"?`)
+
+// digits finishes the job for a line that carries its own backoff —
+// "retrying in 6.055130443s" is the same complaint as "retrying in
+// 1.079379231s", and without this every retry is its own entry.
+var digits = regexp.MustCompile(`[0-9]+(\.[0-9]+)?`)
 
 // about is the last distinct thing said about one name.
 func about(lines []string, host string) string {

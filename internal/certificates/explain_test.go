@@ -58,3 +58,36 @@ func TestAComplaintThatNamesNoHostIsStillKept(t *testing.T) {
 		t.Error("a line naming no host was attributed to one")
 	}
 }
+
+// The failure that hides behind "waiting".
+//
+// Traefik's Docker provider asks the Engine for a fixed API version.
+// An Engine that refuses it leaves Traefik seeing no container at all,
+// so every router that comes from a label does not exist and every name
+// behind one is served the default self-signed certificate — while the
+// file provider carries on, which is why the instance's own name still
+// has a certificate and the registry's does not.
+//
+// Nothing in the ACME wording says any of that, because ACME is never
+// reached. The provider's own line is the only place it is written
+// down, so it has to survive the filter.
+func TestAProviderThatCannotReadTheEngineIsAComplaint(t *testing.T) {
+	// The retry loop, with its own backoff on every line — which is
+	// what made the timestamp alone useless as a key.
+	log := strings.Join([]string{
+		`time="2026-09-06T07:09:56Z" level=error msg="Failed to retrieve information of the docker client and server host" error="Error response from daemon: client version 1.24 is too old. Minimum supported API version is 1.40, please upgrade your client to a newer version" providerName=docker`,
+		`time="2026-09-06T07:09:56Z" level=error msg="Provider error, retrying in 6.055130443s" error="Error response from daemon: client version 1.24 is too old. Minimum supported API version is 1.40" providerName=docker`,
+		`time="2026-09-06T07:10:02Z" level=error msg="Provider error, retrying in 4.305096518s" error="Error response from daemon: client version 1.24 is too old. Minimum supported API version is 1.40" providerName=docker`,
+		`time="2026-09-06T07:10:06Z" level=info msg="Starting provider *docker.Provider"`,
+	}, "\n")
+
+	lines := complaints(strings.NewReader(log))
+	if len(lines) != 2 {
+		t.Fatalf("kept %d lines, want the two distinct ones: %v", len(lines), lines)
+	}
+	for _, line := range lines {
+		if !strings.Contains(line, "1.24 is too old") {
+			t.Errorf("a line came through without the reason: %q", line)
+		}
+	}
+}
