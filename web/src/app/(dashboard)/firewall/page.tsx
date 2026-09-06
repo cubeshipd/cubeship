@@ -152,8 +152,9 @@ export default function FirewallPage() {
         <>
           {!data.enabled && (
             <Notice tone="warning">
-              The firewall is off. Every port this machine listens on is reachable from anywhere,
-              and the rules below are waiting rather than applying —{" "}
+              The firewall is off, so the rules below are waiting rather than applying. Everything
+              this machine listens on is offered to the network — whether anything reaches it
+              depends on what is in front, which this page cannot see —{" "}
               {data.ssh_allowed
                 ? "turning it on puts them in force."
                 : `add one admitting SSH on ${(data.ssh_ports ?? [22]).join(" or ")} before turning it on, or you will not get back in.`}
@@ -193,7 +194,7 @@ export default function FirewallPage() {
 
           <SectionHeader
             title="Published ports"
-            sub="Traffic forwarded to a container — Traefik, an exposed database, anything you published. Docker routes this around ufw, so it is governed separately or not at all."
+            sub="Traffic forwarded to a container — Traefik, an exposed database, anything you published. Docker routes this around ufw, so it is governed separately or not at all. A firewall at your provider sits in front of both and is not visible here."
             actions={
               data.docker_adopted ? (
                 <Button variant="outline" size="sm" onClick={() => setAdding("apps")}>
