@@ -87,7 +87,7 @@ function Settings({ project }: { project: string }) {
         {project}
       </Link>
 
-      <PageHeader title="Project settings" sub="What this project is called, and what it is for." />
+      <PageHeader title="Project settings" />
 
       <ErrorAlert error={error} />
 

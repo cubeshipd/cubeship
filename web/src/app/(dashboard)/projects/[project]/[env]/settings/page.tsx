@@ -94,10 +94,7 @@ function Settings({ project, env }: { project: string; env: string }) {
         {project}/{env}
       </Link>
 
-      <PageHeader
-        title="Environment settings"
-        sub="What this stage of the project is called, and what it is for."
-      />
+      <PageHeader title="Environment settings" />
 
       <ErrorAlert error={error} />
 
