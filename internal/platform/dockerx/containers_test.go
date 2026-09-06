@@ -37,6 +37,8 @@ type fakeAPI struct {
 	loggedID                string
 	loggedOptions           container.LogsOptions
 	localImages             map[string]bool
+	containers              []types.Container
+	exitCode                int
 	statsID                 string
 	statsJSON               string
 	loaded                  []byte
@@ -120,6 +122,18 @@ func (f *fakeAPI) ContainerExecInspect(context.Context, string) (container.ExecI
 // statsJSON is what the Engine answers a one-shot stats request with.
 // Empty by default: the fake exists for the tests below, and the ones
 // about stats set it.
+// containers is what ContainerList answers with, for the tests about
+// which ports are published.
+func (f *fakeAPI) ContainerList(context.Context, container.ListOptions) ([]types.Container, error) {
+	return f.containers, nil
+}
+
+func (f *fakeAPI) ContainerWait(_ context.Context, _ string, _ container.WaitCondition) (<-chan container.WaitResponse, <-chan error) {
+	done := make(chan container.WaitResponse, 1)
+	done <- container.WaitResponse{StatusCode: int64(f.exitCode)}
+	return done, make(chan error, 1)
+}
+
 func (f *fakeAPI) ContainerStatsOneShot(ctx context.Context, id string) (container.StatsResponseReader, error) {
 	f.statsID = id
 	body := f.statsJSON
@@ -579,5 +593,45 @@ func TestContainerStatsNeverReportsZeroCPUs(t *testing.T) {
 	}
 	if stats.OnlineCPUs != 1 {
 		t.Errorf("online CPUs is %d, want 1", stats.OnlineCPUs)
+	}
+}
+
+// What is exposed on a Docker host is what containers publish, not what
+// the host's own services listen on — and a port bound to loopback is
+// exposed to nothing at all.
+func TestOnlyPortsSomethingOutsideCouldReachAreReported(t *testing.T) {
+	fake := &fakeAPI{containers: []types.Container{
+		{
+			Names: []string{"/cubeship-traefik"},
+			Ports: []types.Port{
+				{PublicPort: 443, PrivatePort: 443, Type: "tcp", IP: "0.0.0.0"},
+				{PublicPort: 443, PrivatePort: 443, Type: "tcp", IP: "::"},
+			},
+		},
+		{
+			// Postgres publishes on loopback, which is how the daemon
+			// reaches it and why nothing outside can. Offering to open
+			// it would be offering a hole for something never exposed.
+			Names: []string{"/cubeship-postgres"},
+			Ports: []types.Port{{PublicPort: 5433, PrivatePort: 5432, Type: "tcp", IP: "127.0.0.1"}},
+		},
+		{
+			// A container that publishes nothing at all.
+			Names: []string{"/cubeship-frontend"},
+			Ports: []types.Port{{PrivatePort: 3000, Type: "tcp"}},
+		},
+	}}
+
+	got, err := newWithAPI(fake).PublishedPorts(context.Background())
+	if err != nil {
+		t.Fatalf("PublishedPorts: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("reported %+v", got)
+	}
+	// One port, though it is published on two address families: a rule
+	// is about the port.
+	if got[0].Port != 443 || got[0].Container != "cubeship-traefik" {
+		t.Errorf("reported %+v", got[0])
 	}
 }

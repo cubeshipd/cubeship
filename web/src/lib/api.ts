@@ -546,3 +546,50 @@ export function formatBytes(bytes: number): string {
 export function formatCPU(percent: number): string {
   return `${percent < 10 ? percent.toFixed(1) : Math.round(percent)}%`;
 }
+
+// --- firewall ---
+
+// One rule as UFW prints it.
+//
+// `text` is what a screen shows: UFW's syntax is wider than the parsed
+// fields — an interface, a rate limit — and a rule shown as less than it
+// is would be a rule somebody deletes by mistake.
+export type FirewallRule = {
+  index: number;
+  text: string;
+  // `host` is traffic to the machine; `apps` is traffic forwarded to a
+  // container, which is every port Cubeship publishes.
+  scope: "host" | "apps";
+  action?: "allow" | "deny" | "reject";
+  protocol?: "tcp" | "udp";
+  ports?: string;
+  from?: string;
+  comment?: string;
+  // The IPv6 half of a rule UFW wrote twice. One decision, two lines.
+  v6: boolean;
+};
+
+// A host port a container is answering on right now, which on this kind
+// of machine is what is actually exposed.
+export type FirewallPublishedPort = {
+  port: number;
+  protocol: string;
+  container: string;
+  allowed: boolean;
+};
+
+export type Firewall = {
+  // False when the daemon is a host process rather than a container —
+  // `make dev`. Then nothing else here is known.
+  available: boolean;
+  installed: boolean;
+  enabled: boolean;
+  default_incoming?: string;
+  rules: FirewallRule[];
+  // Whether published container ports are answerable to ufw at all.
+  // False means every `apps` rule would be inert.
+  docker_adopted: boolean;
+  ssh_ports?: number[];
+  ssh_allowed: boolean;
+  published: FirewallPublishedPort[];
+};
