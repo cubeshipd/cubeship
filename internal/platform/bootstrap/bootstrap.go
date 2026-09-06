@@ -23,6 +23,11 @@ import (
 
 const registryPort = 5000
 
+// TraefikContainerName is the reverse proxy. It is exported because it
+// is also the only place an ACME failure is recorded: certificates reads
+// its log to say why a name has no certificate.
+const TraefikContainerName = "cubeship-traefik"
+
 // RegistryContainerName is the embedded registry, and the name the
 // daemon pulls from when both are containers.
 const RegistryContainerName = "cubeship-registry"
@@ -470,7 +475,7 @@ func TraefikContainerOpts(cfg *config.Config, tls bool, acmeEmail string) docker
 		}
 	}
 	return dockerx.ContainerOpts{
-		Name:  "cubeship-traefik",
+		Name:  TraefikContainerName,
 		Image: "traefik:v3.1",
 		Cmd:   cmd,
 		Binds: []string{

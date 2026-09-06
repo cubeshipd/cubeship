@@ -116,6 +116,12 @@ type Report struct {
 	ACMEEmail    string        `json:"acme_email,omitempty"`
 	Certificates []Certificate `json:"certificates"`
 	Missing      []Missing     `json:"missing"`
+	// TraefikSays is what Traefik has lately complained about while
+	// trying to get certificates, whether or not the complaint names a
+	// host this instance knows. Read out of the container's log, so it
+	// is a quotation and not a contract — and often the only place the
+	// real reason appears, a rate limit especially.
+	TraefikSays []string `json:"traefik_says,omitempty"`
 }
 
 // ServedHost is a name this instance routes and what answers there. It
