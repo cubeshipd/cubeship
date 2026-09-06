@@ -280,6 +280,40 @@ func TestThePasswordIsNeverInAListing(t *testing.T) {
 	}
 }
 
+// A database's series is served at the database's own address. Same
+// module behind it as an app's — what differs is how the subject is
+// resolved, and that is what this pins.
+func TestADatabasesMetricsAreAMembersToRead(t *testing.T) {
+	dbtest.RequireDatabase(t)
+	f := servertest.New(t)
+	createDatastore(t, f, map[string]any{"name": "pg", "engine": "postgres"})
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
+
+	rec := f.Do(t, http.MethodGet, "/datastores/pg/metrics", nil, memberKey)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("read metrics as a member: %d %s", rec.Code, rec.Body.String())
+	}
+	var series struct {
+		Window  string           `json:"window"`
+		Samples []map[string]any `json:"samples"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &series); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if series.Window != "1h" || series.Samples == nil {
+		t.Errorf("window %q, samples %v", series.Window, series.Samples)
+	}
+
+	rec = f.Do(t, http.MethodGet, "/datastores/pg/metrics?window=6h", nil, f.AdminKey)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("a window this release offers: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = f.Do(t, http.MethodGet, "/datastores/nope/metrics", nil, f.AdminKey)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("metrics for an unknown database: %d %s, want 404", rec.Code, rec.Body.String())
+	}
+}
+
 // Running a database costs disk on this host and its password reaches
 // every app attached to it, so every write is an admin's. Reading which
 // databases exist is not — you cannot understand what you are deploying

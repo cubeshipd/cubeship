@@ -1369,7 +1369,12 @@ dimming a disabled control normally gets is undone for these in
 
 Settings stays on its own page like every other resource, because the
 actions that cannot be undone belong at the bottom of a page you went to
-on purpose.
+on purpose. It holds two things and no more — publishing on a host port,
+and deleting. There was a "general" section above them showing the name,
+the engine and the login; everything in it was already on the database's
+own page one click away, and a settings screen that mostly restates
+another screen teaches people that settings screens are where facts
+live.
 
 ### What is not here
 
