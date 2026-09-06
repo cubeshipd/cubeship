@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 
 	"cubeship/internal/platform/database"
 )
@@ -25,6 +26,26 @@ func NewRepository(q database.Queryer) *Repository {
 // there is nothing above it to bring along.
 const columns = `id, slug, description, engine, version, username, password,
 	database_name, exposed_port, container_id, status, error, created_at`
+
+// datastoreColumns is the same list under the alias `d`, for the one
+// query that joins a table with an `id` and a `created_at` of its own.
+//
+// Derived rather than written out again. Two lists to keep in step is
+// exactly what the note above warns about, and the way it went wrong
+// was the unqualified list reaching a join: `id` matched two tables and
+// Postgres refused every read of an app's environment with "column
+// reference is ambiguous".
+var datastoreColumns = qualify("d", columns)
+
+// qualify prefixes every name in a comma-separated select list with a
+// table alias.
+func qualify(alias, list string) string {
+	names := strings.Split(list, ",")
+	for i, name := range names {
+		names[i] = alias + "." + strings.TrimSpace(name)
+	}
+	return strings.Join(names, ", ")
+}
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -220,7 +241,7 @@ type Attached struct {
 // deterministic whatever order the rows were written in.
 func (r *Repository) AttachedTo(ctx context.Context, appID int64) ([]Attached, error) {
 	rows, err := r.q.QueryContext(ctx,
-		`SELECT `+columns+`, t.prefix
+		`SELECT `+datastoreColumns+`, t.prefix
 		 FROM datastores d
 		 JOIN datastore_attachments t ON t.datastore_id = d.id
 		 WHERE t.app_id = $1 ORDER BY t.prefix, d.id`, appID)

@@ -280,7 +280,7 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
     <>
       <SectionHeader
         title="Attached apps"
-        sub="Each one receives the connection string as environment variables, from its next deploy onwards. They may be in any project."
+        sub="Each one receives DATABASE_URL and its parts, from its next deploy onwards. They may be in any project."
         actions={
           <Button variant="outline" size="sm" onClick={() => setAttaching(true)}>
             <PlugIcon />
@@ -307,7 +307,6 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
               <TableHeader>
                 <TableRow>
                   <TableHead>App</TableHead>
-                  <TableHead>Variables it receives</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
@@ -318,22 +317,16 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
                       <Link href={`/projects/${a.app}`} className="hover:text-primary">
                         {a.app}
                       </Link>
-                    </TableCell>
-                    {/* The variable names wrap rather than scroll. The
-                        question this column answers is "what do I read
-                        in my code", and an answer you have to drag
-                        sideways to finish reading is a worse one. */}
-                    <TableCell className="whitespace-normal">
-                      <span className="flex flex-wrap gap-1">
-                        {a.variables.map((v) => (
-                          <code
-                            key={v}
-                            className="border border-border bg-secondary/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
-                          >
-                            {v}
-                          </code>
-                        ))}
-                      </span>
+                      {/* The prefix, and only when there is one. The
+                          full list of variable names was noise — they
+                          are the same six every time — but a prefix
+                          changes what they are called, and this is the
+                          only place it would ever be visible. */}
+                      {a.prefix && (
+                        <code className="ml-2 border border-border bg-secondary/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                          {a.prefix}
+                        </code>
+                      )}
                     </TableCell>
                     <TableCell>
                       <Button

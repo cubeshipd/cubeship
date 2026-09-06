@@ -10,13 +10,11 @@ import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
-import { TextAreaField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
-import { api, type Datastore, datastoreLabel, datastorePath } from "@/lib/api";
+import { api, type Datastore, datastorePath } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 export default function DatastoreSettingsPage({ params }: PageProps<"/databases/[name]/settings">) {
@@ -29,41 +27,19 @@ function Settings({ name }: { name: string }) {
   const path = datastorePath(name);
 
   const [datastore, setDatastore] = useState<Datastore | null>(null);
-  const [description, setDescription] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
     api
       .get<Datastore>(path)
-      .then((d) => {
-        setDatastore(d);
-        setDescription(d.description ?? "");
-      })
+      .then(setDatastore)
       .catch((e) => setError(message(e)));
   }, [path]);
   useEffect(reload, [reload]);
 
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    setSaved(false);
-    try {
-      setDatastore(await api.patch<Datastore>(path, { description }));
-      setSaved(true);
-    } catch (err) {
-      setError(message(err));
-    }
-    setBusy(false);
-  }
-
   if (error && !datastore) return <ErrorAlert error={error} />;
   if (!datastore) return null;
-
-  const dirty = description !== (datastore.description ?? "");
 
   return (
     <>
@@ -77,69 +53,10 @@ function Settings({ name }: { name: string }) {
 
       <PageHeader
         title="Database settings"
-        sub="What this database is for, who outside the instance can reach it, and how to get rid of it."
+        sub="Who outside the instance can reach it, and how to get rid of it. Everything else about a database is fixed once it exists — see the database's own page for what it is."
       />
 
       <ErrorAlert error={error} />
-
-      <SectionHeader title="General" />
-      <Card>
-        <CardContent>
-          <form onSubmit={save} className="space-y-4">
-            <TextAreaField
-              label="Description"
-              value={description}
-              onChange={(e) => {
-                setDescription(e.target.value);
-                setSaved(false);
-              }}
-              hint="What this database holds. With no project above it to say where it belongs, this is the only place that can."
-            />
-
-            {/* Everything else about a database is fixed, and each for
-                its own reason. Saying so beats a form that silently
-                ignores what you typed into it. */}
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Fixed after creation</Label>
-              <Table>
-                <TableBody>
-                  <TableRow>
-                    <TableCell className="w-32 text-muted-foreground">Name</TableCell>
-                    <TableCell className="font-mono">{datastore.name}</TableCell>
-                    <TableCell className="text-xs whitespace-normal text-subtle-foreground">
-                      It is the container's own name, which every attached app resolves.
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="text-muted-foreground">Engine</TableCell>
-                    <TableCell className="font-mono">
-                      {datastoreLabel(datastore.engine)} {datastore.version}
-                    </TableCell>
-                    <TableCell className="text-xs whitespace-normal text-subtle-foreground">
-                      A data directory written by one major version cannot be read by another.
-                      Changing version means a second database and a migration.
-                    </TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell className="text-muted-foreground">Username</TableCell>
-                    <TableCell className="font-mono">{datastore.username}</TableCell>
-                    <TableCell className="text-xs whitespace-normal text-subtle-foreground">
-                      The login the server was created with. Others are made inside the database.
-                    </TableCell>
-                  </TableRow>
-                </TableBody>
-              </Table>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <ActionButton type="submit" busy={busy} disabled={!dirty}>
-                Save
-              </ActionButton>
-              {saved && !dirty && <span className="text-xs text-muted-foreground">Saved.</span>}
-            </div>
-          </form>
-        </CardContent>
-      </Card>
 
       <ExternalAccess datastore={datastore} onChanged={reload} />
 
