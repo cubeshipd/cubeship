@@ -383,6 +383,89 @@ func (s *Service) AddRule(ctx context.Context, caller *user.User, req Request) (
 	return s.Status(ctx, caller)
 }
 
+// ReplaceRule edits a rule, which UFW has no way to do: it is a delete
+// and an add, and the interesting part is the order of the two.
+//
+// **The new rule goes in first, at the old one's position, and the old
+// one is removed after.** The other way round has a window where the
+// rule is simply gone, and if the add then fails — the host refuses it,
+// the daemon dies — what is left is a firewall missing a line nobody
+// took out on purpose. This way the window holds a duplicate, which is
+// harmless and visible.
+//
+// The position is kept because order is meaning here: the first rule
+// that matches decides, so a rule appended to the end is a rule that may
+// now be shadowed by one above it.
+func (s *Service) ReplaceRule(ctx context.Context, caller *user.User, index int, expect string, req Request) (*Status, error) {
+	status, err := s.Status(ctx, caller)
+	if err != nil {
+		return nil, err
+	}
+	if !status.Installed {
+		return nil, ErrNotInstalled
+	}
+	found, err := findRule(status, index, expect)
+	if err != nil {
+		return nil, err
+	}
+	// The same refusal as deleting, and for the same reason: an edit
+	// that changed the source of the rule admitting SSH is a lockout
+	// with an extra step.
+	if found.Protected {
+		return nil, KeepsYouInError(*found)
+	}
+
+	specs := req.Specs()
+	for _, spec := range specs {
+		if err := spec.Check(); err != nil {
+			return nil, err
+		}
+	}
+	if req.Scope == ScopeApps && !status.DockerAdopted {
+		return nil, fmt.Errorf("%w: turn on Docker port control first, or this rule would sit in the table doing nothing", ErrDockerNotAdopted)
+	}
+
+	for i, spec := range specs {
+		if status.Enabled {
+			if err := s.run(ctx, spec.InsertArgs(index+i)...); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		// With the firewall off there are no positions to insert at —
+		// see parseAdded — so the new rules are appended and the old one
+		// removed by its own spelling. Nothing is ordered yet anyway.
+		if err := s.run(ctx, spec.Args()...); err != nil {
+			return nil, err
+		}
+	}
+
+	argv := []string{"ufw", "--force", "delete", strconv.Itoa(index + len(specs))}
+	if len(found.Delete) > 0 {
+		argv = append([]string{"ufw", "--force"}, found.Delete[1:]...)
+	}
+	if err := s.run(ctx, argv...); err != nil {
+		return nil, err
+	}
+	return s.Status(ctx, caller)
+}
+
+// findRule is the lookup both editing and deleting start with: the rule
+// at a position, and a refusal when the list has moved under the caller.
+func findRule(status *Status, index int, expect string) (*Rule, error) {
+	for i := range status.Rules {
+		if status.Rules[i].Index != index {
+			continue
+		}
+		found := &status.Rules[i]
+		if expect != "" && !sameRule(found.Text, expect) {
+			return nil, ErrRuleChanged
+		}
+		return found, nil
+	}
+	return nil, ErrNoSuchRule
+}
+
 // DeleteRule removes the rule at index.
 //
 // UFW deletes by position, and positions shift as soon as anything above
@@ -399,18 +482,9 @@ func (s *Service) DeleteRule(ctx context.Context, caller *user.User, index int, 
 		return nil, ErrNotInstalled
 	}
 
-	var found *Rule
-	for i := range status.Rules {
-		if status.Rules[i].Index == index {
-			found = &status.Rules[i]
-			break
-		}
-	}
-	if found == nil {
-		return nil, ErrNoSuchRule
-	}
-	if expect != "" && !sameRule(found.Text, expect) {
-		return nil, ErrRuleChanged
+	found, err := findRule(status, index, expect)
+	if err != nil {
+		return nil, err
 	}
 	if found.Protected {
 		return nil, KeepsYouInError(*found)

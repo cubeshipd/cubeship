@@ -36,6 +36,15 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"allowed":   openapi.Bool("Whether a rule already admits it. Ports bound to loopback are not listed at all: nothing outside the host can reach them, and offering to open one would be offering a hole for something that was never exposed."),
 			}, "port", "protocol", "container", "allowed"),
 
+			"FirewallRuleRequest": openapi.Object(map[string]*openapi.Schema{
+				"scope":    {Type: "string", Enum: []string{"host", "apps"}, Description: "`host` for the machine's own services — SSH, anything not in a container. `apps` for a published container port."},
+				"action":   {Type: "string", Enum: []string{"allow", "deny", "reject"}, Description: "`deny` drops silently; `reject` answers."},
+				"protocol": {Type: "string", Enum: []string{"tcp", "udp"}, Description: "Omit for both. A port range must name one — UFW cannot write a range into both tables at once."},
+				"port":     openapi.String(`A port, or a range as UFW spells one: "15000:15999".`),
+				"sources":  openapi.Array(openapi.String("An address or CIDR this applies from.")),
+				"comment":  openapi.String("Carried into UFW's own comment, so `ufw status` on the host says who wrote it and why."),
+			}, "scope", "action", "port"),
+
 			"Firewall": openapi.Object(map[string]*openapi.Schema{
 				"available":        openapi.Bool("False when this daemon cannot reach the host — it is running as a host process rather than as a container. Then nothing else here is known."),
 				"installed":        openapi.Bool("False when the host has no `ufw`. Not an error: installing it is the operator's call, on their machine's package manager."),
@@ -96,14 +105,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Add a rule",
 					Description: "Scope decides which of two different things this is.\n\n`sources` is a list because UFW takes one source per rule — there is no \"from A or B\" — so admitting a port from three addresses is three rules. This is the one request that writes them: every one is checked before any is written, because a request half applied is a firewall nobody asked for. An empty list, or any empty entry, means anywhere — and anywhere makes everything narrower meaningless, so it wins." + dockerNote,
 					Tags:        []string{"Firewall"},
-					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"scope":    {Type: "string", Enum: []string{"host", "apps"}, Description: "`host` for the machine's own services — SSH, anything not in a container. `apps` for a published container port."},
-						"action":   {Type: "string", Enum: []string{"allow", "deny", "reject"}, Description: "`deny` drops silently; `reject` answers."},
-						"protocol": {Type: "string", Enum: []string{"tcp", "udp"}, Description: "Omit for both. A port range must name one — UFW cannot write a range into both tables at once."},
-						"port":     openapi.String(`A port, or a range as UFW spells one: "15000:15999".`),
-						"sources":  openapi.Array(openapi.String("An address or CIDR this applies from.")),
-						"comment":  openapi.String("Carried into UFW's own comment, so `ufw status` on the host says who wrote it and why."),
-					}, "scope", "action", "port")),
+					RequestBody: openapi.Body(openapi.Ref("FirewallRuleRequest")),
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The firewall, with the rule in it.", openapi.Ref("Firewall")),
 						"400": openapi.TextResponse("The rule does not describe anything: an unknown scope or action, a port that is not a number or a range, a source that is not an address."),
@@ -114,6 +116,25 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				},
 			},
 			"/firewall/rules/{index}": {
+				"put": {
+					OperationID: "replaceFirewallRule",
+					Summary:     "Edit a rule",
+					Description: "UFW has no edit, so this is a delete and an add — and the order is the point. The new rule goes in **first**, at the old one's position, and the old one goes after: the other way round has a window where the rule is simply gone, and an add that then fails leaves a firewall missing a line nobody took out on purpose. This way the window holds a duplicate, which is harmless.\n\nThe position is kept because order is meaning in a firewall: the first rule that matches decides, so a rule appended to the end may now be shadowed by one above it. With the firewall off there are no positions and the rules are appended instead.\n\nRefused for the rule admitting SSH, for the same reason deleting it is: changing its source is a lockout with an extra step. Pass `expect` as you would when deleting.",
+					Tags:        []string{"Firewall"},
+					Parameters: []openapi.Parameter{
+						openapi.PathParam("index", "The rule's position, from the listing."),
+						openapi.QueryParam("expect", "The rule's `text` as you last read it."),
+					},
+					RequestBody: openapi.Body(openapi.Ref("FirewallRuleRequest")),
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The firewall, with the rule replaced.", openapi.Ref("Firewall")),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.TextResponse("There is no rule at that position."),
+						"409": openapi.TextResponse("The list moved, the rule is the one admitting SSH, or an `apps` rule while Docker's ports are not adopted."),
+					},
+				},
 				"delete": {
 					OperationID: "deleteFirewallRule",
 					Summary:     "Delete a rule",

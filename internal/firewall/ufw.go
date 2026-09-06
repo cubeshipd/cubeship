@@ -197,6 +197,26 @@ func (s Spec) Check() error {
 	return nil
 }
 
+// InsertArgs is Args, at a position.
+//
+// Editing a rule is a delete and an add — UFW has no edit — and doing
+// it as an append would quietly move the rule to the end. Order is
+// meaning in a firewall: the first rule that matches decides, so a rule
+// that moved is a rule that may now be shadowed by one above it, or may
+// now shadow one below. The position is kept.
+func (s Spec) InsertArgs(at int) []string {
+	args := s.Args()
+	// After "ufw", and after "route" when there is one, which is where
+	// UFW expects it.
+	at1 := 1
+	if s.Scope == ScopeApps {
+		at1 = 2
+	}
+	out := append([]string{}, args[:at1]...)
+	out = append(out, "insert", strconv.Itoa(at))
+	return append(out, args[at1:]...)
+}
+
 // Args builds the ufw command line for this spec.
 //
 // Written out as argv rather than a string: nothing here is ever handed

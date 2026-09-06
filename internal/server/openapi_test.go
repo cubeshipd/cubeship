@@ -165,6 +165,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"POST /users",
 		"PUT /apps/{project}/{env}/{name}/env",
 		"PUT /dns/{id}/records",
+		"PUT /firewall/rules/{index}",
 		"PUT /projects/{projectSlug}/env",
 		"PUT /projects/{projectSlug}/environments/{envSlug}/env",
 		"PUT /registries/{id}",
