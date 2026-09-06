@@ -10,9 +10,10 @@ import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
-import { TextAreaField, TextField } from "@/components/text-field";
+import { TextAreaField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { api, type Datastore, datastoreLabel, datastorePath } from "@/lib/api";
@@ -238,35 +239,34 @@ function ExternalAccess({ datastore, onChanged }: { datastore: Datastore; onChan
             </>
           ) : (
             <>
-              <Notice>
-                Reachable only from apps on this instance, which is the right answer for almost
-                every database.
-              </Notice>
-              <div className="flex items-end gap-3">
-                <TextField
-                  label="Host port"
-                  value={port}
-                  spellCheck={false}
-                  placeholder="auto"
-                  onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))}
-                  fieldClassName="w-40"
-                  hint="Leave empty to take the next free one from 15000-15999."
-                />
-                <ActionButton
-                  variant="outline"
-                  busy={busy}
-                  onClick={() =>
-                    run(() => api.post(`${path}/expose`, { port: port ? Number(port) : 0 }))
-                  }
-                >
-                  Publish it
-                </ActionButton>
+              <Notice>Leave empty to take the next free one from 15000-15999.</Notice>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Host port</Label>
+                {/* Joined rather than spaced: the port and the act of
+                    publishing on it are one control, and a gap between
+                    them invites filling the box and walking away. The
+                    negative margin is what makes the two borders share
+                    one line. */}
+                <div className="flex">
+                  <Input
+                    value={port}
+                    spellCheck={false}
+                    placeholder="auto"
+                    onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))}
+                    className="h-10 w-40 px-3 text-sm"
+                  />
+                  <ActionButton
+                    variant="outline"
+                    busy={busy}
+                    className="-ml-px h-10"
+                    onClick={() =>
+                      run(() => api.post(`${path}/expose`, { port: port ? Number(port) : 0 }))
+                    }
+                  >
+                    Publish it
+                  </ActionButton>
+                </div>
               </div>
-              <p className="text-xs leading-relaxed text-subtle-foreground">
-                The container is replaced to pick the port up, so the database restarts. Its data is
-                a directory on the host and is not touched. You still have to open the port in your
-                firewall.
-              </p>
             </>
           )}
         </CardContent>
