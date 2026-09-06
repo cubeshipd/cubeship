@@ -13,7 +13,7 @@ import (
 
 // externalFixture is an app that pulls from somebody else's registry,
 // with the orchestrator wired to real credential storage.
-func externalFixture(t *testing.T, image string) (*Orchestrator, *fakeDocker, *Scoped, *extregistry.Repository) {
+func externalFixture(t *testing.T, image string) (*Orchestrator, *fakeDocker, *Scoped, func(host, username, password string)) {
 	t.Helper()
 	ctx := context.Background()
 	db := dbtest.New(t)
@@ -44,7 +44,25 @@ func externalFixture(t *testing.T, image string) (*Orchestrator, *fakeDocker, *S
 	docker := &fakeDocker{nextCreateID: "new-container", running: true}
 	orch := NewOrchestrator(db, docker, settings.NewService(db), extregistry.NewService(db, credential.NewService(db)), nil, nil, testRegistry)
 	orch.HealthCheckInterval = 0
-	return orch, docker, a, extregistry.NewRepository(db)
+
+	// A registry row holds which registry it is and which credential it
+	// logs in with — the secret lives in credentials, and one there may
+	// be doing two jobs at once.
+	addRegistry := func(host, username, password string) {
+		t.Helper()
+		cred, err := credential.NewRepository(db).Create(ctx, &credential.Credential{
+			Label: host, Username: username, Password: password,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := extregistry.NewRepository(db).Create(ctx, extregistry.Credential{
+			CredentialID: cred.ID, Provider: extregistry.ProviderGeneric, Host: host,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return orch, docker, a, addRegistry
 }
 
 // An external app deploys with no domain configured. That is the point
@@ -88,14 +106,10 @@ func TestAPublicImagePullsWithNoCredentials(t *testing.T) {
 // authenticates with. Matching is by host, so one login covers every
 // image in it.
 func TestAPrivateImagePullsWithTheStoredCredential(t *testing.T) {
-	orch, docker, a, creds := externalFixture(t, "ghcr.io/acme/api")
+	orch, docker, a, addRegistry := externalFixture(t, "ghcr.io/acme/api")
 	ctx := context.Background()
 
-	if _, err := creds.Create(ctx, extregistry.Credential{
-		Provider: extregistry.ProviderGeneric, Host: "ghcr.io", Username: "acme-bot", Password: "ghp_token",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	addRegistry("ghcr.io", "acme-bot", "ghp_token")
 	if _, err := orch.Start(ctx, a.ID, ""); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -113,14 +127,10 @@ func TestAPrivateImagePullsWithTheStoredCredential(t *testing.T) {
 // A credential for a different registry is not a credential for this
 // one. Sending it would leak a token to a host it was never issued for.
 func TestACredentialForAnotherRegistryIsNotUsed(t *testing.T) {
-	orch, docker, a, creds := externalFixture(t, "ghcr.io/acme/api")
+	orch, docker, a, addRegistry := externalFixture(t, "ghcr.io/acme/api")
 	ctx := context.Background()
 
-	if _, err := creds.Create(ctx, extregistry.Credential{
-		Provider: extregistry.ProviderGeneric, Host: "registry.digitalocean.com", Username: "someone", Password: "dop_token",
-	}); err != nil {
-		t.Fatal(err)
-	}
+	addRegistry("registry.digitalocean.com", "someone", "dop_token")
 	if _, err := orch.Start(ctx, a.ID, ""); err != nil {
 		t.Fatalf("Start: %v", err)
 	}

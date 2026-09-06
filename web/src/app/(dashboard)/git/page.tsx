@@ -10,10 +10,10 @@ import { GitHubAppCard } from "@/components/github-app-card";
 import { ConnectGitHub } from "@/components/github-connect";
 import { GitHubIcon } from "@/components/icons";
 import { Notice } from "@/components/notice";
-import { PageHeader, SectionHeader } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
+import { RowAction, RowActions } from "@/components/row-actions";
 import { useSession } from "@/components/session-context";
 import { StatusBadge } from "@/components/status-badge";
-import { Button } from "@/components/ui/button";
 import { api, type GitHubConnections, type Settings } from "@/lib/api";
 import { message } from "@/lib/errors";
 
@@ -114,31 +114,22 @@ export default function GitProviders() {
       // page's own actions go and where it read as "connect something".
       cell: (p) =>
         p.connected ? (
-          <div className="flex items-center justify-end gap-2">
+          <RowActions>
             {p.configureURL && (
-              <Button
-                variant="ghost"
-                size="xs"
-                nativeButton={false}
-                aria-label="Configure on GitHub"
-                className="size-6 p-0 text-muted-foreground"
-                render={
-                  <a href={p.configureURL} target="_blank" rel="noreferrer noopener">
-                    <ExternalLinkIcon className="size-3.5" />
-                  </a>
-                }
+              <RowAction
+                icon={ExternalLinkIcon}
+                label="Configure on GitHub"
+                title="Add an organization, or let it see more repositories"
+                href={p.configureURL}
               />
             )}
-            <Button
-              variant="ghost"
-              size="xs"
-              aria-label="Disconnect"
-              className="size-6 p-0 text-muted-foreground hover:text-destructive"
+            <RowAction
+              icon={Trash2Icon}
+              label="Disconnect"
+              danger
               onClick={() => setDisconnecting(true)}
-            >
-              <Trash2Icon className="size-3.5" />
-            </Button>
-          </div>
+            />
+          </RowActions>
         ) : (
           <div className="flex justify-end">
             <ConnectGitHub
@@ -153,10 +144,7 @@ export default function GitProviders() {
 
   return (
     <>
-      <PageHeader
-        title="Git Providers"
-        sub="Where this instance's code is read from. A connection lets Cubeship clone private repositories and deploy on a push to them."
-      />
+      <PageHeader title="Git Providers" />
 
       <ErrorAlert error={connections.error ? message(connections.error) : null} />
 
@@ -190,15 +178,7 @@ export default function GitProviders() {
         </Notice>
       )}
 
-      {
-        <>
-          <SectionHeader
-            title="Connected accounts"
-            sub="Configure opens GitHub, where you add an organization or let it see more repositories. Both go through the same page there — adding a second organization is widening this connection, not making another."
-          />
-          <DataTable columns={columns} rows={providers} rowKey={(p) => p.id} loadingRows={1} />
-        </>
-      }
+      <DataTable columns={columns} rows={providers} rowKey={(p) => p.id} loadingRows={1} />
 
       {/* The escape hatch, and deliberately a link rather than a
           section: an App made by hand is a real thing to have and not

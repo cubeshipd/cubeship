@@ -17,7 +17,7 @@ import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { api, type Credential, type RegistryCredential, type RegistryStatus } from "@/lib/api";
-import { providerIcon, REGISTRY_CREDENTIALS } from "@/lib/credentials";
+import { providerIcon } from "@/lib/credentials";
 import { message } from "@/lib/errors";
 
 // A registry's settings: which account it logs in as, and getting rid
@@ -108,17 +108,16 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
   const digitalocean = provider === "digitalocean";
   const Icon = providerIcon(provider);
 
-  // Only accounts on the same provider are offered. A registry's
-  // address was derived from the one it has — ECR's carries the account
-  // id — so moving it to a Cloudflare token is not an edit anything
-  // could carry out.
+  // Every credential is offered. A credential is a secret, not a kind
+  // of registry, so nothing here can rule one out in advance — whether
+  // it works is this registry's to refuse.
   useEffect(() => {
     api
-      .get<Credential[]>(REGISTRY_CREDENTIALS)
+      .get<Credential[]>("/credentials")
       .then(setAccounts)
       .catch((e) => setError(message(e)));
   }, []);
-  const choices = accounts.filter((a) => a.provider === provider);
+  const choices = accounts;
   const account = accounts.find((a) => a.id === credential?.credential_id);
   // DigitalOcean's token is one value: the registry takes it as both
   // halves of a docker login, so there is no name to ask for.
@@ -191,7 +190,6 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
         title={credential?.host || "Registry"}
         literal
         icon={<Icon className="size-5 shrink-0 text-muted-foreground" />}
-        sub="Which stored account this registry logs in as."
         actions={<StatusBadge value={status?.state ?? "checking"} />}
       />
 
@@ -261,15 +259,11 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
             <SearchableSelect
               label="Credential"
               placeholder="Which account logs in"
-              choices={choices.map((a) => ({
-                value: String(a.id),
-                label: a.label,
-                hint: a.provider_name,
-                icon: providerIcon(a.provider),
-              }))}
+              searchable={false}
+              choices={choices.map((a) => ({ value: String(a.id), label: a.label }))}
               value={credentialID}
               onChange={setCredentialID}
-              empty="No other account on this provider."
+              empty="No credentials stored yet."
             />
             <div className="flex items-center gap-3">
               <ActionButton

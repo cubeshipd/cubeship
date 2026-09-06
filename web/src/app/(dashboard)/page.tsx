@@ -77,7 +77,6 @@ function Projects() {
     <>
       <PageHeader
         title="Projects"
-        sub="An app lives in an environment, inside a project."
         actions={
           <Button onClick={() => setCreating(true)}>
             <PlusIcon />

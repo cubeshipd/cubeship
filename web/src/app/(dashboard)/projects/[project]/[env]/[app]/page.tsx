@@ -6,7 +6,7 @@ import { use, useCallback, useEffect, useState } from "react";
 import { CopyButton } from "@/components/copy-button";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { LoadingList, LoadingValue } from "@/components/loading";
+import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
@@ -22,7 +22,6 @@ import {
   BUILDING_SOURCES,
   type Deployment,
   type EnvView,
-  hostsOf,
   type ResolvedVar,
 } from "@/lib/api";
 import { message } from "@/lib/errors";
@@ -103,19 +102,6 @@ function Detail({
           slow however fast the request was. */}
       <PageHeader
         title={<span className="font-mono text-lg tracking-normal normal-case">{name}</span>}
-        sub={
-          app ? (
-            <span className="flex items-center gap-2">
-              {/* Conditional rather than an empty string: an empty text
-                  node is still a flex item, and the gap after it is
-                  indentation nobody asked for. */}
-              {hostsOf(app) && <span>{hostsOf(app)}</span>}
-              <StatusBadge value={app.status} />
-            </span>
-          ) : (
-            <LoadingValue className="h-4 w-32" />
-          )
-        }
         actions={
           <Button
             variant="outline"
