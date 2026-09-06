@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"cubeship/internal/credential"
 	"cubeship/internal/platform/database/dbtest"
 	"cubeship/internal/server/servertest"
 	"cubeship/internal/user"
@@ -27,65 +26,52 @@ func create(t *testing.T, f *servertest.Fixture, body map[string]any) map[string
 }
 
 // The point of the module, end to end: one AWS key is stored once and
-// offered wherever it can be used. Before this it was two rows — a
-// "route53" DNS provider and an "aws" registry login — holding the same
-// secret, rotated in two places or in one and forgotten in the other.
-func TestOneKeyIsOfferedToEveryJobItCanDo(t *testing.T) {
+// used by two different things at once. It carries no provider of its
+// own, so nothing about storing it decides which of those jobs it may
+// ever do — which matters because most API secrets can only be read at
+// the moment they are issued.
+func TestOneCredentialServesTwoDifferentUses(t *testing.T) {
 	dbtest.RequireDatabase(t)
 	f := servertest.New(t)
 
 	aws := create(t, f, map[string]any{
-		"provider": "aws", "label": "Company AWS",
-		"username": "AKIAEXAMPLE", "password": "secret",
+		"label": "Company AWS", "username": "AKIAEXAMPLE", "password": "secret",
 	})
-	create(t, f, map[string]any{
-		"provider": "cloudflare", "label": "Cloudflare", "password": "cf-token",
-	})
-	create(t, f, map[string]any{
-		"provider": "generic", "label": "Docker Hub",
-		"username": "someone", "password": "hub-token",
-	})
+	id := int64(aws["id"].(float64))
 
-	labels := func(capability string) []string {
-		t.Helper()
-		path := "/credentials"
-		if capability != "" {
-			path += "?capability=" + capability
-		}
-		rec := f.Do(t, http.MethodGet, path, nil, f.AdminKey)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("list %s: %d %s", path, rec.Code, rec.Body.String())
-		}
-		var out []struct {
-			Label string `json:"label"`
-		}
-		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-			t.Fatalf("decode: %v", err)
-		}
-		var names []string
-		for _, c := range out {
-			names = append(names, c.Label)
-		}
-		return names
+	// Route 53 writes records with it.
+	rec := f.Do(t, http.MethodPost, "/dns",
+		map[string]any{"provider": "aws", "credential_id": id}, f.AdminKey)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("connect DNS: %d %s", rec.Code, rec.Body.String())
 	}
 
-	if got := len(labels("")); got != 3 {
-		t.Errorf("the instance holds %d credentials, want 3", got)
+	// And a registry logs in with the same row. Under the old model
+	// this was impossible without storing the key twice.
+	rec = f.Do(t, http.MethodPost, "/registries",
+		map[string]any{"provider": "generic", "credential_id": id, "host": "ghcr.io"}, f.AdminKey)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create registry: %d %s", rec.Code, rec.Body.String())
 	}
 
-	// The AWS key appears under both jobs. That is the whole feature.
-	dns := labels("dns")
-	if len(dns) != 2 || !has(dns, "Company AWS") || !has(dns, "Cloudflare") {
-		t.Errorf("the DNS page would offer %v, want the AWS key and Cloudflare", dns)
+	// One row, so rotating it is one edit — and the listing says both
+	// things are standing on it.
+	rec = f.Do(t, http.MethodGet, "/credentials", nil, f.AdminKey)
+	var out []struct {
+		Label   string   `json:"label"`
+		InUseBy []string `json:"in_use_by"`
 	}
-	registry := labels("registry")
-	if len(registry) != 2 || !has(registry, "Company AWS") || !has(registry, "Docker Hub") {
-		t.Errorf("the registry page would offer %v, want the AWS key and Docker Hub", registry)
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode: %v", err)
 	}
-
-	// And it is one row, so rotating it is one edit.
-	if _, ok := aws["id"]; !ok {
-		t.Fatal("the created credential has no id")
+	if len(out) != 1 {
+		t.Fatalf("the instance holds %d credentials, want 1", len(out))
+	}
+	uses := strings.Join(out[0].InUseBy, ", ")
+	for _, want := range []string{"ghcr.io", "Amazon Web Services"} {
+		if !strings.Contains(uses, want) {
+			t.Errorf("in_use_by is %q, missing %q", uses, want)
+		}
 	}
 }
 
@@ -94,9 +80,7 @@ func TestOneKeyIsOfferedToEveryJobItCanDo(t *testing.T) {
 func TestTheSecretIsNeverReturned(t *testing.T) {
 	dbtest.RequireDatabase(t)
 	f := servertest.New(t)
-	created := create(t, f, map[string]any{
-		"provider": "cloudflare", "label": "Cloudflare", "password": "cf-token-hunter2",
-	})
+	created := create(t, f, map[string]any{"label": "Cloudflare", "password": "cf-token-hunter2"})
 	if _, leaked := created["password"]; leaked {
 		t.Error("create returned the secret")
 	}
@@ -105,33 +89,29 @@ func TestTheSecretIsNeverReturned(t *testing.T) {
 		t.Errorf("the listing carries the secret: %s", rec.Body.String())
 	}
 	// The key id is not a secret — it is the half you read off a
-	// console — so a provider that has one still reports it.
+	// console — so a credential that has one still reports it.
 	aws := create(t, f, map[string]any{
-		"provider": "aws", "label": "AWS", "username": "AKIAEXAMPLE", "password": "s",
+		"label": "AWS", "username": "AKIAEXAMPLE", "password": "s",
 	})
 	if aws["username"] != "AKIAEXAMPLE" {
 		t.Errorf("the key id came back as %v", aws["username"])
 	}
 }
 
-// Both halves or neither, and the refusals are symmetrical: silently
-// dropping the extra is how a credential comes out different from what
-// somebody thought they stored.
-func TestWhatEachProviderAsksFor(t *testing.T) {
+// A label and a secret, and nothing else is asked. A bare token with no
+// first half is a normal credential, not a half-filled one: whether a
+// login has two halves is the use's question, not this module's.
+func TestWhatACredentialAsksFor(t *testing.T) {
 	dbtest.RequireDatabase(t)
 	f := servertest.New(t)
 
+	create(t, f, map[string]any{"label": "A bare token", "password": "cf-token"})
+
 	refused := []map[string]any{
-		// A key with no id.
-		{"provider": "aws", "label": "a", "password": "s"},
-		// A token with a name beside it.
-		{"provider": "cloudflare", "label": "b", "username": "who", "password": "s"},
-		// No secret at all.
-		{"provider": "cloudflare", "label": "c"},
+		// No secret at all — it would reach nothing.
+		{"label": "c"},
 		// No label — there would be nothing to call it by.
-		{"provider": "cloudflare", "label": "", "password": "s"},
-		// A provider this release cannot act through.
-		{"provider": "hetzner", "label": "d", "password": "s"},
+		{"label": "", "password": "s"},
 	}
 	for _, body := range refused {
 		rec := f.Do(t, http.MethodPost, "/credentials", body, f.AdminKey)
@@ -140,9 +120,9 @@ func TestWhatEachProviderAsksFor(t *testing.T) {
 		}
 	}
 
-	create(t, f, map[string]any{"provider": "cloudflare", "label": "Taken", "password": "s"})
+	create(t, f, map[string]any{"label": "Taken", "password": "s"})
 	rec := f.Do(t, http.MethodPost, "/credentials",
-		map[string]any{"provider": "aws", "label": "taken", "username": "k", "password": "s"}, f.AdminKey)
+		map[string]any{"label": "taken", "username": "k", "password": "s"}, f.AdminKey)
 	if rec.Code != http.StatusConflict {
 		t.Errorf("a label that differs only in case: %d %s, want 409", rec.Code, rec.Body.String())
 	}
@@ -157,13 +137,12 @@ func TestDeletingOneInUseIsRefusedAndSaysByWhat(t *testing.T) {
 	f := servertest.New(t)
 
 	cred := create(t, f, map[string]any{
-		"provider": "generic", "label": "Docker Hub",
-		"username": "someone", "password": "hub-token",
+		"label": "Docker Hub", "username": "someone", "password": "hub-token",
 	})
 	id := int64(cred["id"].(float64))
 
 	rec := f.Do(t, http.MethodPost, "/registries",
-		map[string]any{"credential_id": id, "host": "docker.io"}, f.AdminKey)
+		map[string]any{"provider": "generic", "credential_id": id, "host": "docker.io"}, f.AdminKey)
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("create registry: %d %s", rec.Code, rec.Body.String())
 	}
@@ -183,21 +162,6 @@ func TestDeletingOneInUseIsRefusedAndSaysByWhat(t *testing.T) {
 	}
 }
 
-// A registry cannot authenticate as an account that does not do
-// registries. Refused when it is stored, not discovered at a deploy.
-func TestARegistryRefusesAnAccountThatCannotDoRegistries(t *testing.T) {
-	dbtest.RequireDatabase(t)
-	f := servertest.New(t)
-	cred := create(t, f, map[string]any{
-		"provider": "cloudflare", "label": "Cloudflare", "password": "cf-token",
-	})
-	rec := f.Do(t, http.MethodPost, "/registries",
-		map[string]any{"credential_id": int64(cred["id"].(float64)), "host": "docker.io"}, f.AdminKey)
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("a Cloudflare token was accepted for a registry: %d %s", rec.Code, rec.Body.String())
-	}
-}
-
 // Everything about credentials is an admin's, reading included: the
 // list is the map of what this instance can reach.
 func TestCredentialsAreEntirelyAnAdmins(t *testing.T) {
@@ -207,7 +171,6 @@ func TestCredentialsAreEntirelyAnAdmins(t *testing.T) {
 
 	for _, c := range []struct{ method, path string }{
 		{http.MethodGet, "/credentials"},
-		{http.MethodGet, "/credentials/providers"},
 		{http.MethodPost, "/credentials"},
 		{http.MethodPatch, "/credentials/1"},
 		{http.MethodDelete, "/credentials/1"},
@@ -217,43 +180,6 @@ func TestCredentialsAreEntirelyAnAdmins(t *testing.T) {
 			t.Errorf("%s %s as a member: %d, want 403", c.method, c.path, rec.Code)
 		}
 	}
-}
-
-// The providers a form is built from come from the daemon, so a client
-// never keeps its own copy of what this release supports.
-func TestTheProvidersAreServedRatherThanGuessed(t *testing.T) {
-	dbtest.RequireDatabase(t)
-	f := servertest.New(t)
-	rec := f.Do(t, http.MethodGet, "/credentials/providers", nil, f.AdminKey)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("list providers: %d %s", rec.Code, rec.Body.String())
-	}
-	var out []struct {
-		Provider      string   `json:"provider"`
-		Capabilities  []string `json:"capabilities"`
-		UsernameLabel string   `json:"username_label"`
-		PasswordLabel string   `json:"password_label"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if len(out) != len(credential.Providers()) {
-		t.Fatalf("served %d providers, the daemon has %d", len(out), len(credential.Providers()))
-	}
-	for _, p := range out {
-		if p.PasswordLabel == "" || len(p.Capabilities) == 0 {
-			t.Errorf("%s arrives unusable for building a form: %+v", p.Provider, p)
-		}
-	}
-}
-
-func has(names []string, want string) bool {
-	for _, n := range names {
-		if n == want {
-			return true
-		}
-	}
-	return false
 }
 
 func itoa(n int64) string {

@@ -17,10 +17,7 @@ import { message } from "@/lib/errors";
 export default function Account() {
   return (
     <>
-      <PageHeader
-        title="Account"
-        sub="Your password, and the API keys that authenticate the CLI and docker."
-      />
+      <PageHeader title="Account" />
       <Keys />
       <Password />
     </>

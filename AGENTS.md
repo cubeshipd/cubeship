@@ -38,12 +38,12 @@ internal/
   metrics/      what every container is using, sampled on a timer — the
                 series both apps and databases are charted from
   registry/     who may docker push/pull, and the push webhook
-  credential/   the accounts this instance is wired to — one secret,
-                stored once, used by everything its provider can reach
+  credential/   the secrets this instance holds — one secret, stored
+                once, named by everything that needs it
   extregistry/  which registry Cubeship does not run, and which
                 credential logs in to it
-  dns/          reading and writing records through a credential that
-                can
+  dns/          which provider writes this instance's records, and the
+                credential it writes them with
   github/       the GitHub App: private clones, and deploy on push
   setup/        the first-run flow that claims an instance
   settings/     the instance's domain and contact address
@@ -213,11 +213,12 @@ things whose names do not identify them. A project opens on
 DNS and registries follow the same shape:
 
 ```
-/credentials                    the accounts, and the only place a
-                                secret is entered or replaced
+/credentials                    the secrets, and where one is renamed
+                                or rotated
 
-/dns                            the credentials that can write records
-/dns/[id]                       one credential's zones
+/dns                            the providers, and which secret each
+                                writes through
+/dns/[id]                       one provider's zones
 /dns/[id]/zones/[zone]          a zone's records, by domain name
 
 /registries                     the logins, Cubeship's own first
@@ -227,14 +228,15 @@ DNS and registries follow the same shape:
 ```
 
 `/dns` has no `[id]/settings`, and that is the model showing through:
-**DNS has no configuration of its own.** What there is to add, rename or
-delete is the *account*, and an account is a credential — so `/dns`
-lists `GET /credentials?capability=dns` and adds, edits and deletes them
-in place, through the same `CredentialDialog` the Credentials screen
-uses.
+**a DNS provider has almost no configuration of its own.** It is which
+API to speak and which stored credential to speak it with, so `/dns`
+lists `GET /dns` and adds, re-points and removes rows in place.
 
-It does **not** send you to that screen to make one first. For one
-release it did, and that was the whole idea upside down: see below.
+Adding one asks two questions — the provider, and the credential — and
+the second offers "type a new one", so a first provider takes no trip to
+the Credentials screen. It does **not** send you there to make one
+first. For one release it did, and that was the whole idea upside down:
+see below.
 
 `cubeship` is the reserved id for the registry this instance runs.
 Every other id is a stored credential's, which is a number, so the two
@@ -258,7 +260,9 @@ absent — the reason it cannot go is worth reading, and a missing button
 explains nothing. `ConfirmDialog` guards every
 irreversible action by making you type the thing's own name — a second
 button is no obstacle to a misclick, and the dangerous case is precisely
-the one the daemon would happily carry out.
+the one the daemon would happily carry out. **Anything that deletes or
+unlinks goes through it**, wherever it lives: a table's trash icon, a
+"revoke" beside an API key, unpublishing a database's host port.
 
 **Nothing has a display name. A slug is a name.** Creating anything asks
 for a slug and nothing else, and that is all there is afterwards.
@@ -348,10 +352,32 @@ linter is turned off for the directory for that reason.
 `src/components/` is the layer above it, in the vocabulary of this
 product rather than of a component library: `Shell`, `PageHeader`,
 `StatusBadge`, `TextField`, `ActionButton`, `ErrorAlert`, `Notice`,
-`ValueCard`, `AuthLayout`. A page composes those and reaches for
-`ui/` directly for the rest. **A page should not restyle a primitive**
-— if two pages need the same thing to look the same, it belongs in
-`src/components/`.
+`ValueCard`, `RowActions`, `AuthLayout`. A page composes those and
+reaches for `ui/` directly for the rest. **A page should not restyle a
+primitive** — if two pages need the same thing to look the same, it
+belongs in `src/components/`.
+
+`RowActions` is the one at the end of a table row, and it exists
+because the buttons were being written out per page and the difference
+showed: some lit up under the pointer and some did not, which reads as
+"this one is not a button". The hover is the whole affordance — an icon
+on its own says nothing about being pressable — so it is decided there
+rather than by whoever writes the next table. `danger` is the only
+colour a row action spends, which is what makes it mean something when
+it appears.
+
+**A page title carries no paragraph under it.** `PageHeader` has no
+`sub`: a title says what you are looking at, the screen itself is what
+explains it, and a paragraph repeated on every visit is a paragraph
+nobody reads twice. `SectionHeader` keeps one, because a section's
+subtitle is about the specific thing under it.
+
+**A choice between named things is a select**, not a grid of cards —
+which provider, which engine, which credential. `OptionCards` is for
+the case it was built for and no other: where picking wrong is
+expensive and the difference is a sentence rather than a word, which is
+where an app's image comes from and how it gets built. Everywhere else
+the cards were a paragraph per option in a dialog nobody reads twice.
 
 ### The look
 
@@ -1112,56 +1138,62 @@ a decision about its role rather than an accident.
 
 ## Credentials
 
-`internal/credential` holds the accounts this instance is wired to —
-an AWS access key, a Cloudflare token, a DigitalOcean token — and it
-exists because the same account kept being entered twice. An AWS key is
-the same key whether Route 53 writes a record with it or ECR is pulled
-from with it, and it used to live once under DNS providers and again
-under registries: two rows, two rotations, and one of them forgotten.
+`internal/credential` holds the secrets this instance is wired to — an
+AWS access key, a Cloudflare token, a registry password — and it exists
+because the same secret kept being entered twice. An AWS key is the same
+key whether Route 53 writes a record with it or ECR is pulled from with
+it, and it used to live once under DNS providers and again under
+registries: two rows, two rotations, and one of them forgotten.
+
+**A credential is a label, an optional first half and a secret, and
+nothing else.** It carries no provider. It did once, and the provider
+was what said which API the daemon speaks with it — which made a
+credential a thing you create *per provider*: most API tokens can only
+be read at the moment they are issued, so a secret filed under the one
+job it may ever do has to be issued a second time for the second job.
+The point of storing a secret centrally is exactly the opposite.
+
+**Which API is spoken belongs to the use, and every use keeps a row.**
+A registry names its provider (`generic`, `digitalocean`, `aws`) and the
+credential it logs in with; a DNS provider names Route 53 or Cloudflare
+and the credential it writes through. One credential may be named by any
+number of them, which is the payoff: one AWS key, entered once, writing
+records with one hand and pulling images with the other.
 
 **A credential is a convenience, not a prerequisite.** This is the part
 that is easy to get backwards, and was: every screen that uses one also
 *makes* one. A registry is added with a login typed in place and the
-account is created from it — one request, one transaction, so a secret
-is never left behind by a registry that turned out to be unreachable —
-and it then appears under Credentials, ready to be picked for the second
-registry or for DNS. `POST /registries` therefore takes either a
-`credential_id` or a `provider`/`username`/`password`, and refuses both
-at once, which has no obvious reading.
+credential is created from it — one request, one transaction, so a
+secret is never left behind by a registry that turned out to be
+unreachable — and it then appears under Credentials, ready to be picked
+for the second registry or for DNS. `POST /registries` and `POST /dns`
+therefore take either a `credential_id` or a `label`/`username`/
+`password`, and refuse both at once, which has no obvious reading.
 
-What that buys is the thing the module is for: one AWS key, entered
-once, writing Route 53 records and pulling from ECR. What it must not
-become is a gate in front of adding a registry, which is the tail
-wagging the dog — nobody's first act on a fresh instance is naming an
-account.
+What it must not become is a gate in front of adding a registry, which
+is the tail wagging the dog — nobody's first act on a fresh instance is
+naming an account.
 
-Rotating from a registry rotates **the account**, and everything else on
-it follows. A caller who wanted only that one registry to move wanted a
-different account, which is what `credential_id` is for; the screen says
-which other things share it before the button is pressed.
-
-**A credential's capabilities are derived from its provider, never
-ticked.** `specs` is the whole model — a provider's name, what its two
-fields are called, and what this release's clients can actually do with
-it. AWS carries `dns` and `registry` both, which is the payoff;
-DigitalOcean carries `registry` alone, because there is no DigitalOcean
-DNS client here. A capability is a claim about code that exists, so it
-is not something a form can assert.
+Rotating from a registry rotates **the credential**, and everything else
+on it follows. A caller who wanted only that one registry to move wanted
+a different credential, which is what `credential_id` is for; the screen
+says which other things share it before the button is pressed.
 
 The module knows nothing about DNS or registries. What it knows is
 `Dependant`, an interface the modules that *use* credentials implement:
 
-- `Resolve(ctx, caller, id, capability)` is the one way to get a secret,
-  and it refuses an account whose provider cannot do the job — at the
-  moment somebody wires it up, rather than at a deploy months later.
+- `Resolve(ctx, caller, id)` is the one way to get a secret. It asks no
+  question about what the secret is for, because that is not this
+  module's to answer — whether a token works for a job is the job's to
+  refuse.
 - `UsesCredential` is each dependant's answer to "what would deleting
   this break", so `in_use_by` can say so in the listing and a delete
   that would strand something is refused with the names.
 
 `server` is where the two halves meet: `creds.SetDependants(registries,
-cfg)`, at wiring time, the same seam `project.AppTeardown` uses and for
-the same reason — the module that owns the rows is the only one that can
-answer, and it sits above the one asking.
+dnsProviders)`, at wiring time, the same seam `project.AppTeardown` uses
+and for the same reason — the module that owns the rows is the only one
+that can answer, and it sits above the one asking.
 
 **A secret is stored as given and never returned.** A provider takes the
 secret itself, so a hash could not be sent to one; an endpoint that
@@ -1169,8 +1201,8 @@ handed it back would turn every read of the list into a way out for it.
 `PATCH` with no password leaves it alone, which is what makes renaming
 a credential not a rotation.
 
-Managing them is an **admin's** job, reads included: the list names
-which accounts this instance holds and what each reaches, which is not
+Managing them is an **admin's** job, reads included: the list names what
+secrets this instance holds and what stands on each, which is not
 something a member needs and is exactly what somebody probing would
 want.
 
@@ -1178,35 +1210,40 @@ There are no MCP tools here, deliberately — creating one means a
 password passing through a model's context — and the same reasoning that
 kept them off `extregistry`.
 
-`00021_credentials.sql` is the migration that moved the existing rows
-in: `dns_providers` became credentials (`route53` is spelled `aws`
-now, because the account is AWS and Route 53 is one thing it reaches),
-every external registry got one derived from its own login, and the
-`dns_provider_id` setting was re-pointed at the new id. The foreign key
-is `ON DELETE RESTRICT`, because a credential a registry stands on must
-not vanish underneath it.
+Two migrations tell the story. `00021_credentials.sql` moved the rows
+in: `dns_providers` became credentials and every external registry got
+one derived from its own login. `00023_credentials_are_generic.sql`
+undoes the half of that which went too far — the registries get their
+`provider` column back, `dns_providers` returns as a provider and a
+credential id with no secret in it, and `credentials.provider` is
+dropped. Both foreign keys are `ON DELETE RESTRICT`, because a
+credential something stands on must not vanish underneath it.
 
 ## Pulling from someone else's registry
 
-`internal/extregistry` says which registries Cubeship does not run and
-which credential logs in to each. The login itself lives in
-`credentials` — one DigitalOcean or ECR account covers every image on
-it, and rotating a password is one edit there rather than one per row.
-One registry per host, or "which one does this pull use" has no answer.
+`internal/extregistry` says which registries Cubeship does not run,
+which kind each is, and which credential logs in to each. The login
+itself lives in `credentials` — one DigitalOcean or ECR account covers
+every image on it, and rotating a password is one edit there rather than
+one per row. One registry per host, or "which one does this pull use"
+has no answer.
 
-A row is joined to its credential on every read, so everything above
-this — the provider clients, the deploy path — still sees one value with
-a provider and a login on it. None of them had to learn where the login
-moved.
+The **provider is the registry's own column**, not the credential's: a
+credential is a secret, and the same DigitalOcean token may be reaching
+two different things. A row is joined to its credential on every read,
+so everything above this — the provider clients, the deploy path — still
+sees one value with a provider and a login on it. None of them had to
+learn where the login moved.
 
 Matching is by host, and the two sides have to agree about spelling —
 `NormalizeHost` reduces what someone types, `HostOf` reads what an image
 reference carries, and both land on `index.docker.io` for a reference
 with no registry in it at all.
 
-**The host is fixed once a registry exists.** Re-pointing one in place
-would silently send an app's pulls somewhere else; what can be changed
-is which credential it authenticates as — a second AWS account, not a
+**The host and the provider are fixed once a registry exists.**
+Re-pointing one in place would silently send an app's pulls somewhere
+else, and the host was derived from the provider; what can be changed is
+which credential it authenticates as — a second AWS account, not a
 second address — and the secret that credential holds.
 
 The two are not the same edit and cannot be asked for together: one
