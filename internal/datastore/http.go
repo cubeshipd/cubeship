@@ -30,6 +30,12 @@ type Response struct {
 
 	Engine  string `json:"engine"`
 	Version string `json:"version"`
+	// VarStem is the middle of the variables an attached app receives:
+	// DATABASE for the engines that hold tables, REDIS and MONGO for
+	// the two that do not. Served rather than derived out here, so
+	// nothing keeps a second copy of the engine table — and so a
+	// client can say what an attachment will actually be called.
+	VarStem string `json:"var_stem"`
 	Status  string `json:"status"`
 	// Error is why provisioning failed, when it did.
 	Error string `json:"error,omitempty"`
@@ -128,6 +134,10 @@ type EngineResponse struct {
 	// DefaultUsername is the login an empty username becomes — and the
 	// only one there is when HasUser is false.
 	DefaultUsername string `json:"default_username"`
+	// VarStem is what an attached app's variables are called: an app
+	// on a Redis gets REDIS_URL, not DATABASE_URL, which is why two
+	// engines can sit on one app under the same prefix.
+	VarStem string `json:"var_stem"`
 }
 
 // Instance is what a response depends on that the datastore itself does
@@ -143,7 +153,8 @@ func toResponse(d *Datastore, in Instance) Response {
 	r := Response{
 		Name: d.Slug, Description: d.Description,
 		Engine: string(d.Engine), Version: d.Version,
-		Status: d.Status, Error: d.Error,
+		VarStem: d.Engine.VarStem(),
+		Status:  d.Status, Error: d.Error,
 		Username: d.Username, Database: d.Database,
 		HasContainer: d.ContainerID != "",
 		Host:         host, Port: d.Engine.Port(),
@@ -312,6 +323,7 @@ func engineResponses() []EngineResponse {
 			DefaultVersion: e.DefaultVersion(), Port: e.Port(),
 			HasDatabase: e.HasDatabase(),
 			HasUser:     e.HasUser(), DefaultUsername: e.DefaultUsername(),
+			VarStem: e.VarStem(),
 		})
 	}
 	return out

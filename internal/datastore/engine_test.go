@@ -2,8 +2,11 @@ package datastore
 
 import (
 	"net/url"
+	"sort"
 	"strings"
 	"testing"
+
+	"cubeship/internal/envvar"
 )
 
 // Every engine offered has to be one the daemon can actually run.
@@ -142,6 +145,35 @@ func TestAnEngineWithoutDatabasesOffersNoDatabaseVariable(t *testing.T) {
 	if _, clash := vars["DATABASE_URL"]; clash {
 		t.Error("redis wrote DATABASE_URL, which is the SQL database's")
 	}
+}
+
+// The stem an attachment is stored under has to be the stem the
+// variables are actually written with.
+//
+// Two places name it: `Vars`, which builds the environment, and
+// `VarStem`, which goes on the attachment row and decides — through
+// `datastore_attachments_app_vars` — whether two attachments collide.
+// If they ever disagreed, an app would either be refused an attachment
+// that names nothing in common or allowed one that silently overwrites
+// another's URL.
+func TestTheStoredStemIsTheOneTheVariablesUse(t *testing.T) {
+	for _, e := range Engines() {
+		d := &Datastore{Engine: e, Username: "u", Password: "p", Database: "db"}
+		vars := d.Vars("", "host", e.Port())
+		want := e.VarStem() + "_URL"
+		if _, ok := vars[want]; !ok {
+			t.Errorf("%s stores the stem %q but writes %v", e, e.VarStem(), keysOf(vars))
+		}
+	}
+}
+
+func keysOf(m envvar.Map) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // No engine may move its data below the mount point.

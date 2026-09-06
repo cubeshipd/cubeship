@@ -270,7 +270,7 @@ function Connection({ datastore }: { datastore: Datastore }) {
               // somebody leaves on screen while they go and paste it.
               masked={!revealed}
               fieldClassName="sm:col-span-2"
-              hint="What an attached app already receives as DATABASE_URL. This is for anything wired by hand."
+              hint={`What an attached app already receives as ${datastore.var_stem}_URL. This is for anything wired by hand.`}
             />
           )}
 
@@ -376,7 +376,7 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
     <>
       <SectionHeader
         title="Attached apps"
-        sub="Each one receives DATABASE_URL and its parts, from its next deploy onwards. They may be in any project."
+        sub={`Each one receives ${datastore.var_stem}_URL and its parts, from its next deploy onwards. They may be in any project.`}
         actions={
           <Button variant="outline" size="sm" onClick={() => setAttaching(true)}>
             <PlugIcon />
@@ -582,13 +582,17 @@ function AttachDialog({
           <DialogHeader>
             <DialogTitle>Attach an app</DialogTitle>
             <DialogDescription>
-              It will receive <code className="text-foreground">{prefix}DATABASE_URL</code> and its
-              parts on its next deploy.
+              It will receive{" "}
+              <code className="text-foreground">
+                {prefix}
+                {datastore.var_stem}_URL
+              </code>{" "}
+              and its parts on its next deploy.
             </DialogDescription>
           </DialogHeader>
 
           <div className="-mx-2 max-h-[55vh] space-y-4 overflow-y-auto px-2 py-5">
-            <ErrorAlert error={error} className="mb-0" />
+            <ErrorAlert error={error} />
 
             {apps && available.length === 0 ? (
               <Notice>
@@ -651,7 +655,7 @@ function AttachDialog({
               spellCheck={false}
               placeholder="ANALYTICS_"
               onChange={(e) => setPrefix(e.target.value.toUpperCase())}
-              hint="Leave empty unless this app already has a database. Two under the same prefix would be one variable with two values."
+              hint={`Leave empty unless the app already gets ${datastore.var_stem}_URL from another database — two of those would be one variable with two values. Anything writing different names, like a cache beside a database, needs no prefix.`}
             />
           </div>
 

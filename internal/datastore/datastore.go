@@ -160,10 +160,15 @@ var (
 	// environment variable name once a suffix is appended to it.
 	ErrBadPrefix = errors.New(`prefix must be uppercase letters, digits and underscores, ending in "_" — e.g. "ANALYTICS_"`)
 
-	// ErrPrefixTaken reports that the app already has a datastore
-	// attached under that prefix. Two would be one variable with two
-	// values, and which one won would be a detail of map iteration.
-	ErrPrefixTaken = errors.New("that app already has a datastore attached under this prefix")
+	// ErrPrefixTaken reports that the app already receives the same
+	// variables from another datastore. Two would be one variable with
+	// two values, and which one won would be a detail of map
+	// iteration.
+	//
+	// PrefixTakenError is what is actually returned; this is what it
+	// answers errors.Is with, so the status mapping keeps working
+	// without knowing about the wording.
+	ErrPrefixTaken = errors.New("that app already receives those variables from another datastore")
 
 	// ErrAlreadyAttached reports the same pair attached twice.
 	ErrAlreadyAttached = errors.New("that app is already attached to this datastore")
@@ -202,4 +207,15 @@ type Attachment struct {
 	// the usual case — see the variable names in engine.go.
 	Prefix    string
 	CreatedAt time.Time
+}
+
+// PrefixTakenError names the variables that collide.
+//
+// Which variables, not which prefix: an app may already hold two
+// databases and be colliding with exactly one of them, and "that prefix
+// is taken" leaves somebody to work out which — and why a cache
+// attached at the same prefix was fine.
+func PrefixTakenError(prefix, stem string) error {
+	return fmt.Errorf("%w: it already gets %s_URL and its parts from one. Give this attachment a prefix, so the two do not name the same variables",
+		ErrPrefixTaken, prefix+stem)
 }

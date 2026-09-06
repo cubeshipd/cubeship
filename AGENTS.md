@@ -1335,9 +1335,24 @@ domain take effect on redeploy.
 
 The app is named by its **full reference**, because a datastore is not
 inside an environment: `api` alone identifies nothing here, and two apps
-called `api` in two projects may both be attached to one database. A
-second database on one app takes a `prefix` (`ANALYTICS_`), since two
-under the same prefix would be one variable with two values.
+called `api` in two projects may both be attached to one database.
+
+**Two attachments collide when they name the same variables, and the
+prefix is only half of that name.** The other half is the engine's
+stem — `DATABASE` for the three that hold tables, `REDIS` and `MONGO`
+for the two that do not (`Engine.VarStem`). A second Postgres on one app
+therefore takes a `prefix` like `ANALYTICS_`, since two would be one
+variable with two values; a Redis beside that Postgres takes nothing,
+because `REDIS_URL` and `DATABASE_URL` cannot overwrite each other.
+
+That is why the stem is **stored on the attachment row** and the unique
+index is `(app_id, prefix, stem)`. A unique index cannot reach into
+another table for the engine, and storing it is safe because an engine
+is fixed for the life of a datastore. It was `(app_id, prefix)` first,
+and attaching a cache to an app that already had a database was refused
+for a conflict that does not exist. `PrefixTakenError` names the
+variables rather than the prefix, because an app may hold several
+databases and be colliding with exactly one of them.
 
 The seam is `app.DatastoreVars`, declared in `app` and satisfied by
 `datastore` — the dependency runs `app ← datastore`, and this is the one

@@ -514,6 +514,47 @@ func TestASecondDatabaseOnOneAppNeedsAPrefix(t *testing.T) {
 	}
 }
 
+// A cache and a database on one app are not a collision.
+//
+// The prefix was doing the whole of that judgement, so attaching a
+// Redis to an app that already had a Postgres was refused for a
+// conflict that does not exist: one writes REDIS_URL and the other
+// DATABASE_URL, and neither can overwrite the other. What has to be
+// unique is the variable name, and the prefix is only half of it.
+func TestOnlyDatabasesThatNameTheSameVariablesCollide(t *testing.T) {
+	dbtest.RequireDatabase(t)
+	f := servertest.New(t)
+	createApp(t, f, "web", "production", "api")
+	createDatastore(t, f, map[string]any{"name": "pg", "engine": "postgres"})
+	createDatastore(t, f, map[string]any{"name": "cache", "engine": "redis"})
+	createDatastore(t, f, map[string]any{"name": "docs", "engine": "mongodb"})
+
+	for _, name := range []string{"pg", "cache", "docs"} {
+		if rec := attach(t, f, name, "web/production/api", ""); rec.Code != http.StatusCreated {
+			t.Fatalf("attach %s at no prefix: %d %s", name, rec.Code, rec.Body.String())
+		}
+	}
+
+	env := appEnv(t, f, "web/production/api")
+	for _, key := range []string{"DATABASE_URL", "REDIS_URL", "MONGO_URL"} {
+		if _, ok := env[key]; !ok {
+			t.Errorf("the app did not inherit %s: %v", key, env)
+		}
+	}
+
+	// And two of the same kind still are one, at the same prefix.
+	createDatastore(t, f, map[string]any{"name": "second", "engine": "mysql"})
+	rec := attach(t, f, "second", "web/production/api", "")
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("a second SQL database landed on DATABASE_URL: %d %s", rec.Code, rec.Body.String())
+	}
+	// The refusal names what collides. "That prefix is taken" leaves
+	// somebody to work out which of three attachments it meant.
+	if !strings.Contains(rec.Body.String(), "DATABASE_URL") {
+		t.Errorf("the refusal does not name the variables: %s", rec.Body.String())
+	}
+}
+
 // fakeDocker is a Docker that agrees to everything, so a test can watch
 // a datastore go up, off and back on. servertest's own stub refuses
 // every call, which is right for the tests that must not deploy by

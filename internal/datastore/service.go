@@ -529,8 +529,11 @@ func (s *Service) Start(ctx context.Context, caller *user.User, name string) (*D
 // the reason this module is instance-wide at all.
 //
 // prefix is empty for the usual case and gives DATABASE_URL and its
-// parts. An app that needs two databases names one of them, because two
-// under the same prefix would be one variable with two values.
+// parts. It is needed when two attachments would name the same
+// variables — two SQL databases, both writing DATABASE_URL — and not
+// when they would not: a Redis writes REDIS_URL and a MongoDB
+// MONGO_URL, so either sits beside a Postgres at the same prefix
+// without a word.
 func (s *Service) Attach(ctx context.Context, caller *user.User, name, appRef, prefix string) (*Datastore, error) {
 	d, err := s.Resolve(ctx, caller, name, RoleToManage)
 	if err != nil {
@@ -544,12 +547,15 @@ func (s *Service) Attach(ctx context.Context, caller *user.User, name, appRef, p
 		return nil, err
 	}
 
-	if err := s.Repo().Attach(ctx, d.ID, a.ID, prefix); err != nil {
+	if err := s.Repo().Attach(ctx, d.ID, a.ID, prefix, d.Engine.VarStem()); err != nil {
 		switch {
 		case database.UniqueViolationOn(err, "datastore_attachments_pair"):
 			return nil, ErrAlreadyAttached
-		case database.UniqueViolationOn(err, "datastore_attachments_app_prefix"):
-			return nil, ErrPrefixTaken
+		case database.UniqueViolationOn(err, "datastore_attachments_app_vars"):
+			// Which variables, not which prefix: the app may well have
+			// two databases attached already and be colliding with
+			// exactly one of them.
+			return nil, PrefixTakenError(prefix, d.Engine.VarStem())
 		case database.IsUniqueViolation(err):
 			return nil, ErrAlreadyAttached
 		}

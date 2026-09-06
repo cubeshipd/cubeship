@@ -263,10 +263,16 @@ func (r *Repository) AttachedTo(ctx context.Context, appID int64) ([]Attached, e
 	return out, rows.Err()
 }
 
-func (r *Repository) Attach(ctx context.Context, datastoreID, appID int64, prefix string) error {
+// Attach wires an app to a datastore. stem is the engine's — see
+// Engine.VarStem — and it is written rather than joined because it is
+// half of what makes an attachment unique: `(app_id, prefix, stem)` is
+// the variable name, and a unique index cannot reach another table for
+// it.
+func (r *Repository) Attach(ctx context.Context, datastoreID, appID int64, prefix, stem string) error {
 	_, err := r.q.ExecContext(ctx,
-		`INSERT INTO datastore_attachments (datastore_id, app_id, prefix) VALUES ($1, $2, $3)`,
-		datastoreID, appID, prefix)
+		`INSERT INTO datastore_attachments (datastore_id, app_id, prefix, stem)
+		 VALUES ($1, $2, $3, $4)`,
+		datastoreID, appID, prefix, stem)
 	return err
 }
 

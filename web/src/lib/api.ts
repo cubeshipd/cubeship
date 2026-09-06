@@ -364,6 +364,9 @@ export type DatastoreEngine = {
   // The login an empty username becomes, and the only one there is when
   // has_user is false.
   default_username: string;
+  // What an attached app's variables are called: an app on a Redis gets
+  // REDIS_URL, not DATABASE_URL.
+  var_stem: string;
 };
 
 // What an attached app receives, by name. Values are not in it: one of
@@ -390,6 +393,11 @@ export type Datastore = {
   description: string;
   engine: string;
   version: string;
+  // The middle of the variables an attached app receives — DATABASE,
+  // REDIS or MONGO. Served rather than derived here, so nothing out
+  // here keeps a second copy of the engine table, and it is what says
+  // whether two attachments would collide.
+  var_stem: string;
   status: string;
   // Why provisioning failed, when it did.
   error?: string;
