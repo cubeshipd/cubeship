@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"cubeship/internal/app"
+	"cubeship/internal/metrics"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/user"
 )
@@ -185,6 +186,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("PATCH "+datastorePath, auth(http.HandlerFunc(h.update)))
 	r.Handle("DELETE "+datastorePath, auth(http.HandlerFunc(h.delete)))
 	r.Handle("GET "+datastorePath+"/credentials", auth(http.HandlerFunc(h.credentials)))
+	r.Handle("GET "+datastorePath+"/metrics", auth(http.HandlerFunc(h.metrics)))
 	r.Handle("POST "+datastorePath+"/expose", auth(http.HandlerFunc(h.expose)))
 	r.Handle("DELETE "+datastorePath+"/expose", auth(http.HandlerFunc(h.unexpose)))
 	r.Handle("POST "+datastorePath+"/attachments", auth(http.HandlerFunc(h.attach)))
@@ -326,6 +328,17 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, toResponse(d, h.instance(r)))
+}
+
+// metrics is what this database's container has been using. The series
+// is metrics' to render; what this adds is who may look at it.
+func (h *Handler) metrics(w http.ResponseWriter, r *http.Request) {
+	d, err := h.svc.Resolve(r.Context(), user.FromContext(r.Context()), nameFrom(r), user.RoleMember)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	metrics.WriteSeries(w, r, h.svc.Metrics(), metrics.KindDatastore, d.ID, d.ContainerID != "")
 }
 
 func (h *Handler) credentials(w http.ResponseWriter, r *http.Request) {

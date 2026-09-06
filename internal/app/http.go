@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"cubeship/internal/envvar"
+	"cubeship/internal/metrics"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/project"
 	"cubeship/internal/user"
@@ -114,6 +115,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("PUT "+appPath+"/env", auth(http.HandlerFunc(h.setEnv)))
 	r.Handle("PATCH "+appPath+"/env", auth(http.HandlerFunc(h.mergeEnv)))
 	r.Handle("GET "+appPath+"/logs", auth(http.HandlerFunc(h.logs)))
+	r.Handle("GET "+appPath+"/metrics", auth(http.HandlerFunc(h.metrics)))
 }
 
 // refFrom builds the app reference from the request path.
@@ -401,6 +403,19 @@ func (h *Handler) setEnv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// metrics is what this app's container has been using. The series
+// itself is metrics' to render — see metrics.WriteSeries — and what
+// this adds is the one thing that package must not decide: who is
+// allowed to look.
+func (h *Handler) metrics(w http.ResponseWriter, r *http.Request) {
+	a, err := h.svc.Resolve(r.Context(), user.FromContext(r.Context()), refFrom(r), user.RoleMember)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	metrics.WriteSeries(w, r, h.svc.Metrics(), metrics.KindApp, a.ID, a.ContainerID != "")
 }
 
 func (h *Handler) logs(w http.ResponseWriter, r *http.Request) {

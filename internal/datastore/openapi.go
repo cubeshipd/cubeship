@@ -1,8 +1,18 @@
 package datastore
 
 import (
+	"maps"
+
+	"cubeship/internal/metrics"
 	"cubeship/internal/platform/openapi"
 )
+
+// withMetrics folds in the components every metrics endpoint shares, so
+// the series has one shape wherever it is served from.
+func withMetrics(own map[string]*openapi.Schema) map[string]*openapi.Schema {
+	maps.Copy(own, metrics.Schemas())
+	return own
+}
 
 func (h *Handler) OpenAPI() openapi.Spec {
 	nameParam := []openapi.Parameter{
@@ -22,7 +32,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			Name:        "Datastores",
 			Description: "A managed database. It belongs to the instance rather than to a project — on one host the common shape is a single Postgres serving several apps, and those apps are routinely in different projects. What connects it to anything is an attachment, which names one app and gives it the connection string as environment variables.",
 		}},
-		Schemas: map[string]*openapi.Schema{
+		Schemas: withMetrics(map[string]*openapi.Schema{
 			"Datastore": openapi.Object(map[string]*openapi.Schema{
 				"name":          openapi.String("Unique across the instance. It is the container's own name, which every attached app resolves, so it is permanent."),
 				"description":   openapi.String("What this database is for. With no project above it to say where it belongs, this is the only place that can."),
@@ -66,7 +76,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"port":            openapi.Integer("What this engine listens on."),
 				"has_database":    openapi.Bool("Whether naming a database inside the server means anything for this engine."),
 			}, "engine", "versions", "default_version", "port", "has_database"),
-		},
+		}),
 		Paths: map[string]openapi.PathItem{
 			"/datastores": {
 				"post": {
@@ -170,6 +180,21 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"200": openapi.JSONResponse("The login and where to use it.", openapi.Ref("DatastoreCredentials")),
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+					},
+				},
+			},
+			datastorePath + "/metrics": {
+				"get": {
+					OperationID: "getDatastoreMetrics",
+					Summary:     "Read a database's CPU and memory",
+					Description: "What the container running this database has been using.\n\n" + metrics.Description,
+					Tags:        []string{"Datastores"},
+					Parameters:  append(append([]openapi.Parameter{}, nameParam...), metrics.WindowParam()),
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The series.", openapi.Ref("MetricSeries")),
+						"400": openapi.TextResponse("No such window."),
+						"401": openapi.Unauthorized,
 						"404": openapi.NotFound,
 					},
 				},

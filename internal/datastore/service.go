@@ -8,6 +8,7 @@ import (
 
 	"cubeship/internal/app"
 	"cubeship/internal/envvar"
+	"cubeship/internal/metrics"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/settings"
 	"cubeship/internal/slug"
@@ -49,10 +50,48 @@ type Service struct {
 	apps     *app.Service
 	prov     *Provisioner
 	settings *settings.Service
+	// metrics answers what this database's container has been using.
+	// The same package the app module uses: a database and an app are
+	// both a container with a CPU and a resident set.
+	metrics *metrics.Service
 }
 
-func NewService(db *database.DB, apps *app.Service, prov *Provisioner, cfg *settings.Service) *Service {
-	return &Service{db: db, apps: apps, prov: prov, settings: cfg}
+func NewService(db *database.DB, apps *app.Service, prov *Provisioner,
+	cfg *settings.Service, series *metrics.Service) *Service {
+	return &Service{db: db, apps: apps, prov: prov, settings: cfg, metrics: series}
+}
+
+// Metrics exposes the series service to this module's own handlers.
+func (s *Service) Metrics() *metrics.Service { return s.metrics }
+
+// MetricSubjects is what the collector samples on this module's behalf:
+// every datastore with a container behind it right now.
+func (s *Service) MetricSubjects(ctx context.Context) ([]metrics.Subject, error) {
+	all, err := s.Repo().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]metrics.Subject, 0, len(all))
+	for _, d := range all {
+		if d.ContainerID == "" {
+			continue
+		}
+		out = append(out, metrics.Subject{Kind: metrics.KindDatastore, ID: d.ID, ContainerID: d.ContainerID})
+	}
+	return out, nil
+}
+
+// Series is a database's recent CPU and memory.
+//
+// A member's, like every other read here: what a database is using is
+// part of knowing whether the app in front of it is slow because of
+// it, and that is not an admin's question.
+func (s *Service) Series(ctx context.Context, caller *user.User, name, window string) (metrics.Series, error) {
+	d, err := s.Resolve(ctx, caller, name, user.RoleMember)
+	if err != nil {
+		return metrics.Series{}, err
+	}
+	return s.metrics.Series(ctx, metrics.KindDatastore, d.ID, window, d.ContainerID != "")
 }
 
 func (s *Service) Repo() *Repository         { return NewRepository(s.db) }
@@ -512,7 +551,12 @@ func (s *Service) Delete(ctx context.Context, caller *user.User, name string) (*
 	if err := s.prov.Teardown(ctx, d, false); err != nil {
 		return nil, err
 	}
-	return d, s.Repo().Delete(ctx, d.ID)
+	if err := s.Repo().Delete(ctx, d.ID); err != nil {
+		return nil, err
+	}
+	// Its history goes with it, so a later datastore reusing this id
+	// does not inherit a chart of a stranger's.
+	return d, s.metrics.Forget(ctx, metrics.KindDatastore, d.ID)
 }
 
 // Reconcile corrects each datastore's recorded status against what

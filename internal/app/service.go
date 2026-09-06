@@ -8,6 +8,7 @@ import (
 	"log"
 
 	"cubeship/internal/envvar"
+	"cubeship/internal/metrics"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/project"
 	"cubeship/internal/settings"
@@ -23,6 +24,11 @@ type Service struct {
 	projects *project.Service
 	orch     *Orchestrator
 	settings *settings.Service
+	// metrics answers what this app's container has been using. Held
+	// rather than reached for, because the endpoint that serves it is
+	// this module's — an app's series lives at the app's address, where
+	// this module has already decided who may look.
+	metrics *metrics.Service
 
 	// datastores is what an attached database contributes to an app's
 	// environment. See DatastoreVars: the module that implements it
@@ -30,8 +36,43 @@ type Service struct {
 	datastores DatastoreVars
 }
 
-func NewService(db *database.DB, projects *project.Service, orch *Orchestrator, cfg *settings.Service) *Service {
-	return &Service{db: db, projects: projects, orch: orch, settings: cfg}
+func NewService(db *database.DB, projects *project.Service, orch *Orchestrator,
+	cfg *settings.Service, series *metrics.Service) *Service {
+	return &Service{db: db, projects: projects, orch: orch, settings: cfg, metrics: series}
+}
+
+// Metrics exposes the series service to this module's own handlers.
+func (s *Service) Metrics() *metrics.Service { return s.metrics }
+
+// MetricSubjects is what the collector samples on this module's behalf:
+// every app with a container behind it right now. See metrics.Source —
+// nothing about an app travels into that package but its id.
+func (s *Service) MetricSubjects(ctx context.Context) ([]metrics.Subject, error) {
+	all, err := s.Repo().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]metrics.Subject, 0, len(all))
+	for _, a := range all {
+		if a.ContainerID == "" {
+			continue
+		}
+		out = append(out, metrics.Subject{Kind: metrics.KindApp, ID: a.ID, ContainerID: a.ContainerID})
+	}
+	return out, nil
+}
+
+// Series is an app's recent CPU and memory.
+//
+// Resolved at member first, like every other read of an app: what it is
+// using is part of knowing whether it is healthy, which is not an
+// admin's question.
+func (s *Service) Series(ctx context.Context, caller *user.User, ref Reference, window string) (metrics.Series, error) {
+	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	if err != nil {
+		return metrics.Series{}, err
+	}
+	return s.metrics.Series(ctx, metrics.KindApp, a.ID, window, a.ContainerID != "")
 }
 
 // SetDatastoreVars wires the datastore module in. Called once, at
@@ -277,6 +318,12 @@ func (s *Service) deleteAll(ctx context.Context, apps []*App) error {
 			return fmt.Errorf("stop app %q's container: %w", a.Name, err)
 		}
 		if err := s.Repo().Delete(ctx, a.ID); err != nil {
+			return err
+		}
+		// Its history goes with it. Ids come from a sequence and are
+		// reused across tables, so leaving these behind would give some
+		// later app a chart of a stranger's.
+		if err := s.metrics.Forget(ctx, metrics.KindApp, a.ID); err != nil {
 			return err
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"maps"
 	"strconv"
 
+	"cubeship/internal/metrics"
 	"cubeship/internal/platform/openapi"
 	"cubeship/internal/project"
 )
@@ -34,7 +35,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			Name:        "Apps",
 			Description: "A deployable service. Pushing a tag to an app's registry path is what deploys it; these endpoints register apps, configure them, and redeploy on demand.",
 		}},
-		Schemas: mergeSchemas(project.EnvSchemas(), map[string]*openapi.Schema{
+		Schemas: mergeSchemas(mergeSchemas(project.EnvSchemas(), metrics.Schemas()), map[string]*openapi.Schema{
 			"Deployment": openapi.Object(map[string]*openapi.Schema{
 				"id":         openapi.Integer("Poll this deploy at .../deployments/{id}."),
 				"status":     {Type: "string", Enum: []string{"pending", "succeeded", "failed"}},
@@ -261,6 +262,21 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"400": openapi.BadRequest,
 						"401": openapi.Unauthorized,
 						"403": openapi.TextResponse("The app builds, and you lack the admin role its build takes."),
+						"404": openapi.NotFound,
+					},
+				},
+			},
+			appPath + "/metrics": {
+				"get": {
+					OperationID: "getAppMetrics",
+					Summary:     "Read an app's CPU and memory",
+					Description: "What the container serving this app has been using.\n\n" + metrics.Description,
+					Tags:        []string{"Apps"},
+					Parameters:  append(append([]openapi.Parameter{}, refParams...), metrics.WindowParam()),
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The series.", openapi.Ref("MetricSeries")),
+						"400": openapi.TextResponse("No such window."),
+						"401": openapi.Unauthorized,
 						"404": openapi.NotFound,
 					},
 				},

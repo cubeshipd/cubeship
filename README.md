@@ -212,6 +212,17 @@ cubeship db create pg-production --engine postgres
 cubeship db create pg-staging --engine postgres
 ```
 
+Every app and every database has a **monitoring** section: CPU and
+memory over the last hour, six hours or day, sampled from the
+container's own counters every 30 seconds. CPU is a percentage of one
+core, so 250% is two and a half cores. Nothing is stored outside this
+instance and nothing is kept beyond a day.
+
+```sh
+curl -H "Authorization: Bearer $KEY" \
+  https://api.example.com/api/datastores/pg/metrics?window=6h
+```
+
 Nothing outside the instance can reach a database unless you say so:
 
 ```sh

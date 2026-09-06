@@ -1,13 +1,22 @@
 "use client";
 
-import { ChevronLeftIcon, EyeIcon, PlugIcon, SettingsIcon, Trash2Icon } from "lucide-react";
+import {
+  ChevronLeftIcon,
+  EyeIcon,
+  EyeOffIcon,
+  PlugIcon,
+  SettingsIcon,
+  Trash2Icon,
+} from "lucide-react";
 import Link from "next/link";
-import { use, useCallback, useEffect, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
-import { CopyButton } from "@/components/copy-button";
+import { CopyField } from "@/components/copy-field";
 import { ErrorAlert } from "@/components/error-alert";
+import { MetricsSection } from "@/components/metrics-section";
 import { Notice } from "@/components/notice";
-import { PageHeader } from "@/components/page-header";
+import { PageHeader, SectionHeader } from "@/components/page-header";
+import { SearchableSelect } from "@/components/searchable-select";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -28,9 +37,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { ValueCard } from "@/components/value-card";
 import {
+  ApiError,
   type App,
   api,
   type Datastore,
@@ -40,22 +48,23 @@ import {
 } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-// One database. Its name is the whole of the address, because it
-// belongs to the instance rather than to a project.
+// One database, on one page.
+//
+// Sections rather than tabs. There are three things to know about a
+// database — how hard it is working, how to connect to it, and what is
+// connected to it — and none of them is an alternative to the others:
+// hiding two of three behind a click made you click through all of them
+// every time you opened it.
+//
+// Monitoring is first because it is the question you have before you
+// know you have one.
 export default function DatastorePage({ params }: PageProps<"/databases/[name]">) {
   const { name } = use(params);
   return <Detail name={name} />;
 }
 
-// The two things there are to know about a database, as tabs: where it
-// answers, and who is wired to it. Settings is its own page, like every
-// other resource here — the actions that cannot be undone belong at the
-// bottom of a page you went to on purpose.
-type Tab = "overview" | "apps";
-
 function Detail({ name }: { name: string }) {
   const [datastore, setDatastore] = useState<Datastore | null>(null);
-  const [tab, setTab] = useState<Tab>("overview");
   const [error, setError] = useState<string | null>(null);
 
   const path = datastorePath(name);
@@ -117,8 +126,7 @@ function Detail({ name }: { name: string }) {
 
       {/* The reason a database did not come up is the tail of what the
           engine printed, and it appears nowhere else — the container it
-          came from has been removed. It is above the tabs because it is
-          about the whole thing, not one view of it. */}
+          came from has been removed. */}
       {datastore.status === "failed" && datastore.error && (
         <Card className="mb-4 border-l-2 border-destructive/30 border-l-destructive">
           <CardContent>
@@ -132,135 +140,105 @@ function Detail({ name }: { name: string }) {
         </Card>
       )}
 
-      <div className="mb-5">
-        <Tabs value={tab} onValueChange={(v) => setTab(String(v) as Tab)}>
-          <TabsList>
-            <TabsTrigger value="overview" className="px-3 text-xs">
-              Overview
-            </TabsTrigger>
-            <TabsTrigger value="apps" className="px-3 text-xs">
-              Apps
-              {datastore.attachments.length > 0 && (
-                <span className="ml-1.5 font-mono text-subtle-foreground">
-                  {datastore.attachments.length}
-                </span>
-              )}
-            </TabsTrigger>
-          </TabsList>
-        </Tabs>
-      </div>
-
-      {tab === "overview" ? (
-        <Connection datastore={datastore} />
-      ) : (
-        <Attachments datastore={datastore} onChanged={reload} />
-      )}
+      <MetricsSection path={path} />
+      <Connection datastore={datastore} />
+      <Attachments datastore={datastore} onChanged={reload} />
     </>
   );
 }
 
-// Where it answers, and what to connect with.
+// Everything needed to connect, as fields you can copy and cannot edit.
 //
-// The address an app uses is on the page; the password is a click away.
-// Both are true of the same thing, and the difference is that one of
-// them is a credential — a screen you leave open at a desk should not
-// have it on it by default.
+// Read-only inputs rather than a table of values: a connection string
+// is long, and a field scrolls inside itself and takes one click to
+// select, where a wrapped line of prose gives you three lines and a
+// chance to miss one. None of it is editable — see Service.Update on
+// the daemon for why almost none of it can be.
 function Connection({ datastore }: { datastore: Datastore }) {
   const [creds, setCreds] = useState<DatastoreCredentials | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [forbidden, setForbidden] = useState(false);
+  const [revealed, setRevealed] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const internal = creds ? creds.internal_uri : `${datastore.host}:${datastore.port}`;
-
-  async function reveal() {
-    setBusy(true);
-    setError(null);
-    try {
-      setCreds(await api.get<DatastoreCredentials>(`${datastorePath(datastore.name)}/credentials`));
-    } catch (err) {
-      setError(message(err));
-    }
-    setBusy(false);
-  }
+  useEffect(() => {
+    setCreds(null);
+    setForbidden(false);
+    api
+      .get<DatastoreCredentials>(`${datastorePath(datastore.name)}/credentials`)
+      .then(setCreds)
+      .catch((e) => {
+        // Reading the login is an admin's. A member still gets the
+        // address and the user name, which is most of what is on this
+        // screen — so the refusal is a note, not an error.
+        if (e instanceof ApiError && e.status === 403) {
+          setForbidden(true);
+          return;
+        }
+        setError(message(e));
+      });
+  }, [datastore.name]);
 
   return (
     <>
-      <ErrorAlert error={error} />
-
-      {!creds && (
-        <div className="mb-4 flex justify-end">
-          <ActionButton variant="outline" size="sm" busy={busy} onClick={reveal}>
-            <EyeIcon />
-            Show credentials
-          </ActionButton>
-        </div>
-      )}
-
-      <ValueCard
-        label="From an app on this instance"
-        value={
-          <span className="flex items-start justify-between gap-2">
-            <span>{internal}</span>
-            <CopyButton value={internal} />
-          </span>
+      <SectionHeader
+        title="Connection"
+        sub="Apps on this instance reach it by container name on the shared network. Nothing else can, unless it is published."
+        actions={
+          creds && (
+            <Button variant="ghost" size="xs" onClick={() => setRevealed(!revealed)}>
+              {revealed ? <EyeOffIcon /> : <EyeIcon />}
+              {revealed ? "Hide" : "Reveal"}
+            </Button>
+          )
         }
       />
 
-      {datastore.exposed_port ? (
-        <ValueCard
-          label="From anywhere else"
-          value={
-            <span className="flex items-start justify-between gap-2">
-              <span>
-                {creds?.external_uri ??
-                  `${datastore.external_host ?? "this host"}:${datastore.exposed_port}`}
-              </span>
-              <CopyButton
-                value={
-                  creds?.external_uri ??
-                  `${datastore.external_host ?? ""}:${datastore.exposed_port}`
-                }
-              />
-            </span>
-          }
-        />
-      ) : null}
+      <ErrorAlert error={error} />
+
+      {forbidden && (
+        <Notice>
+          The password and the connection strings need the admin role. Everything else about this
+          database is below.
+        </Notice>
+      )}
 
       <Card className="mb-4">
-        <CardContent>
-          <Table>
-            <TableBody>
-              <TableRow>
-                <TableCell className="w-40 text-muted-foreground">Username</TableCell>
-                <TableCell className="font-mono">{datastore.username}</TableCell>
-              </TableRow>
-              {datastore.database && (
-                <TableRow>
-                  <TableCell className="text-muted-foreground">Database</TableCell>
-                  <TableCell className="font-mono">{datastore.database}</TableCell>
-                </TableRow>
-              )}
-              <TableRow>
-                <TableCell className="text-muted-foreground">Password</TableCell>
-                <TableCell className="font-mono">
-                  {creds ? (
-                    <span className="flex items-center gap-1">
-                      {creds.password}
-                      <CopyButton value={creds.password} />
-                    </span>
-                  ) : (
-                    <span className="text-subtle-foreground">hidden</span>
-                  )}
-                </TableCell>
-              </TableRow>
-              {datastore.description && (
-                <TableRow>
-                  <TableCell className="text-muted-foreground">Description</TableCell>
-                  <TableCell>{datastore.description}</TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <CopyField label="Username" value={datastore.username} />
+          {datastore.database && <CopyField label="Database" value={datastore.database} />}
+
+          {creds && (
+            <CopyField
+              label="Password"
+              value={creds.password}
+              masked={!revealed}
+              hint="Copyable while hidden — nothing has to read it to use it."
+            />
+          )}
+
+          <CopyField
+            label="Internal host"
+            value={`${datastore.host}:${datastore.port}`}
+            hint="The container's own name on the shared network."
+          />
+
+          {creds && (
+            <CopyField
+              label="Internal URI"
+              value={creds.internal_uri}
+              fieldClassName="sm:col-span-2"
+              hint="What an attached app already receives as DATABASE_URL. This is for anything wired by hand."
+            />
+          )}
+
+          {creds?.external_uri && (
+            <CopyField
+              label="External URI"
+              value={creds.external_uri}
+              fieldClassName="sm:col-span-2"
+              hint="From off this host, on the port this database is published on. There is no TLS in front of it."
+            />
+          )}
         </CardContent>
       </Card>
     </>
@@ -274,7 +252,19 @@ function Connection({ datastore }: { datastore: Datastore }) {
 // and the answer is exactly this list.
 function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged: () => void }) {
   const [attaching, setAttaching] = useState(false);
+  const [apps, setApps] = useState<App[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Loaded here rather than when the dialog opens, and not only to save
+  // a wait. A select with nothing in it yet is a disabled select, and a
+  // dialog whose first field is disabled opens focused on whatever
+  // comes after it.
+  useEffect(() => {
+    api
+      .get<App[]>("/apps")
+      .then(setApps)
+      .catch((e) => setError(message(e)));
+  }, []);
 
   async function detach(appRef: string) {
     setError(null);
@@ -288,18 +278,18 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
 
   return (
     <>
-      <ErrorAlert error={error} />
+      <SectionHeader
+        title="Attached apps"
+        sub="Each one receives the connection string as environment variables, from its next deploy onwards. They may be in any project."
+        actions={
+          <Button variant="outline" size="sm" onClick={() => setAttaching(true)}>
+            <PlugIcon />
+            Attach an app
+          </Button>
+        }
+      />
 
-      <div className="mb-4 flex items-center justify-between gap-4">
-        <p className="text-sm text-muted-foreground">
-          Each app here receives the connection string as environment variables, from its next
-          deploy onwards. They may be in any project.
-        </p>
-        <Button variant="outline" size="sm" onClick={() => setAttaching(true)}>
-          <PlugIcon />
-          Attach an app
-        </Button>
-      </div>
+      <ErrorAlert error={error} />
 
       {datastore.attachments.length === 0 ? (
         <Notice>
@@ -328,8 +318,7 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
                     {/* The variable names wrap rather than scroll. The
                         question this column answers is "what do I read
                         in my code", and an answer you have to drag
-                        sideways to finish reading is a worse answer
-                        than a taller row. */}
+                        sideways to finish reading is a worse one. */}
                     <TableCell className="whitespace-normal">
                       <span className="flex flex-wrap gap-1">
                         {a.variables.map((v) => (
@@ -367,6 +356,7 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
 
       <AttachDialog
         datastore={datastore}
+        apps={apps}
         open={attaching}
         onOpenChange={setAttaching}
         onAttached={onChanged}
@@ -377,44 +367,77 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
 
 function AttachDialog({
   datastore,
+  apps,
   open,
   onOpenChange,
   onAttached,
 }: {
   datastore: Datastore;
+  // Already loaded by the time this opens — see Attachments.
+  apps: App[] | null;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onAttached: () => void;
 }) {
-  const [apps, setApps] = useState<App[] | null>(null);
-  const [app, setApp] = useState("");
+  const [project, setProject] = useState("");
+  const [environment, setEnvironment] = useState("");
+  const [appName, setAppName] = useState("");
   const [prefix, setPrefix] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
-    setApp("");
+    setProject("");
+    setEnvironment("");
+    setAppName("");
     setPrefix("");
     setError(null);
-    api
-      .get<App[]>("/apps")
-      .then(setApps)
-      .catch((e) => setError(message(e)));
   }, [open]);
 
-  // Every app on the instance, minus the ones already attached — the
-  // daemon refuses those, and offering a choice it would refuse is a
-  // form that argues with you.
-  const attached = new Set(datastore.attachments.map((a) => a.app));
-  const candidates = (apps ?? []).filter((a) => !attached.has(a.reference));
+  // Everything that could still be attached. Apps already wired to this
+  // database are left out: the daemon refuses them, and offering a
+  // choice it would refuse is a form that argues with you.
+  const available = useMemo(() => {
+    const attached = new Set(datastore.attachments.map((a) => a.app));
+    return (apps ?? []).filter((a) => !attached.has(a.reference));
+  }, [apps, datastore.attachments]);
+
+  // The three lists are derived from the apps rather than fetched
+  // separately, which is one request instead of three and — more to the
+  // point — means every project and environment offered has something
+  // in it. Picking one and finding it empty is a dead end nobody should
+  // be able to walk into.
+  const projects = useMemo(() => [...new Set(available.map((a) => a.project))].sort(), [available]);
+  const environments = useMemo(
+    () =>
+      [...new Set(available.filter((a) => a.project === project).map((a) => a.environment))].sort(),
+    [available, project],
+  );
+  const candidates = useMemo(
+    () => available.filter((a) => a.project === project && a.environment === environment),
+    [available, project, environment],
+  );
+
+  // Snap to the only answer. Most instances are one project with one
+  // environment, and there the app is the only real choice — three
+  // fields where two of them can only be answered one way is two clicks
+  // charged for nothing.
+  useEffect(() => {
+    if (!project && projects.length === 1) setProject(projects[0]);
+  }, [project, projects]);
+  useEffect(() => {
+    if (!environment && environments.length === 1) setEnvironment(environments[0]);
+  }, [environment, environments]);
+
+  const reference = project && environment && appName && `${project}/${environment}/${appName}`;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await api.post(`${datastorePath(datastore.name)}/attachments`, { app, prefix });
+      await api.post(`${datastorePath(datastore.name)}/attachments`, { app: reference, prefix });
       onAttached();
       onOpenChange(false);
     } catch (err) {
@@ -438,30 +461,59 @@ function AttachDialog({
           <div className="-mx-2 max-h-[55vh] space-y-4 overflow-y-auto px-2 py-5">
             <ErrorAlert error={error} className="mb-0" />
 
-            {apps && candidates.length === 0 ? (
+            {apps && available.length === 0 ? (
               <Notice>
                 Every app on this instance is already attached, or there are none yet.
               </Notice>
             ) : (
-              <div className="flex flex-wrap gap-2">
-                {candidates.map((a) => (
-                  <Button
-                    key={a.reference}
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    aria-pressed={a.reference === app}
-                    onClick={() => setApp(a.reference)}
-                    className={
-                      a.reference === app
-                        ? "neon-edge border-primary/60 bg-primary/8 font-mono text-foreground"
-                        : "font-mono"
-                    }
-                  >
-                    {a.reference}
-                  </Button>
-                ))}
-              </div>
+              <>
+                {/* Narrowed one level at a time, because an app's name
+                    only means anything inside an environment inside a
+                    project — and a flat list of every app on the
+                    instance is a list nobody can find anything in once
+                    there are more than a handful. */}
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <SearchableSelect
+                    label="Project"
+                    placeholder="Choose one"
+                    empty="No project has an app to attach."
+                    busy={!apps}
+                    choices={projects.map((p) => ({ value: p, label: p }))}
+                    value={project}
+                    onChange={(next) => {
+                      setProject(next);
+                      setEnvironment("");
+                      setAppName("");
+                    }}
+                  />
+                  <SearchableSelect
+                    label="Environment"
+                    placeholder="Choose one"
+                    empty="This project has no app to attach."
+                    disabled={!project}
+                    choices={environments.map((e) => ({ value: e, label: e }))}
+                    value={environment}
+                    onChange={(next) => {
+                      setEnvironment(next);
+                      setAppName("");
+                    }}
+                  />
+                </div>
+
+                <SearchableSelect
+                  label="App"
+                  placeholder="Choose an app"
+                  empty="Every app here is already attached."
+                  disabled={!environment}
+                  choices={candidates.map((a) => ({
+                    value: a.name,
+                    label: a.name,
+                    hint: a.description || undefined,
+                  }))}
+                  value={appName}
+                  onChange={setAppName}
+                />
+              </>
             )}
 
             <TextField
@@ -478,7 +530,7 @@ function AttachDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <ActionButton type="submit" busy={busy} disabled={!app}>
+            <ActionButton type="submit" busy={busy} disabled={!reference}>
               Attach
             </ActionButton>
           </DialogFooter>
