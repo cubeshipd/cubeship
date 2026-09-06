@@ -7,7 +7,6 @@ import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
-import { Notice } from "@/components/notice";
 import { SectionHeader } from "@/components/page-header";
 import { SearchableSelect } from "@/components/searchable-select";
 import { TextField } from "@/components/text-field";
@@ -68,14 +67,6 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
       />
 
       <ErrorAlert error={error} />
-
-      {app.domains.length === 0 && (
-        <Notice>
-          This app answers at no name, so nothing outside this instance reaches it. It still
-          deploys, and other apps here reach it by container name — which is all a worker or a queue
-          consumer needs.
-        </Notice>
-      )}
 
       {app.domains.length > 0 && (
         <Card className="mb-4 py-0">
