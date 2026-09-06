@@ -321,7 +321,7 @@ function NewRegistryDialog({
           </DialogHeader>
 
           <div className="-mx-2 max-h-[60vh] space-y-4 overflow-y-auto px-2 py-5">
-            <ErrorAlert error={error} className="mb-0" />
+            <ErrorAlert error={error} />
 
             {accounts.length === 0 ? (
               <Notice>

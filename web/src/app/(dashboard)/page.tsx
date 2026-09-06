@@ -91,8 +91,8 @@ function Projects() {
       {projects?.length === 0 && (
         <Card>
           <CardContent className="py-2 text-sm text-muted-foreground">
-            No projects yet. A project holds your environments, and each
-            environment holds the apps you deploy — start with{" "}
+            No projects yet. A project holds your environments, and each environment holds the apps
+            you deploy — start with{" "}
             <button
               type="button"
               onClick={() => setCreating(true)}
@@ -167,7 +167,7 @@ function NewProjectDialog({
           </DialogHeader>
 
           <div className="space-y-4 py-5">
-            <ErrorAlert error={error} className="mb-0" />
+            <ErrorAlert error={error} />
             <SlugField autoFocus value={slug} onChange={setSlug} placeholder="public-api" />
           </div>
 
