@@ -4,6 +4,7 @@ import { ChevronLeftIcon, RefreshCwIcon, SettingsIcon } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
+import { MetricsSection } from "@/components/metrics-section";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
@@ -93,6 +94,13 @@ function Detail({ reference }: { reference: string }) {
       />
 
       <Origin app={app} />
+
+      {/* After what the app is made of and before how it has been
+          deployed: the first says which app this is, and this says how
+          it is doing right now. Same component and same daemon module
+          the databases use — an app and a database are one question
+          about two kinds of container. */}
+      <MetricsSection path={path} />
 
       <Deployments
         reference={reference}

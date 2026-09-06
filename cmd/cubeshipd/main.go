@@ -15,6 +15,7 @@ import (
 
 	"cubeship/internal/app"
 	"cubeship/internal/datastore"
+	"cubeship/internal/metrics"
 	"cubeship/internal/platform/authkey"
 	"cubeship/internal/platform/bootstrap"
 	"cubeship/internal/platform/buildkit"
@@ -387,6 +388,12 @@ func run() error {
 	}
 
 	srv.SetRegistrySigningKey(registrySigningKey, registryCertDER)
+
+	// What every container is using, sampled on a timer. It runs here
+	// rather than inside the server because a server is a request
+	// handler — a test builds one and must not thereby start polling
+	// Docker every thirty seconds.
+	go metrics.NewCollector(db, docker, srv.MetricSources()...).Run(ctx)
 
 	go purgeExpiredSessions(ctx, srv.Users)
 

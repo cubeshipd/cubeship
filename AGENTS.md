@@ -35,6 +35,8 @@ internal/
   app/          apps, deployments, and the deploy orchestrator
   datastore/    the databases the instance runs, and which apps are
                 wired to which
+  metrics/      what every container is using, sampled on a timer — the
+                series both apps and databases are charted from
   registry/     who may docker push/pull, and the push webhook
   extregistry/  logins for registries Cubeship does not run
   github/       the GitHub App: private clones, and deploy on push
@@ -69,15 +71,17 @@ input, call one service method, and render the result. A rule that lives
 in a handler is a rule the MCP surface doesn't have — that is exactly how
 the two drifted apart before this layout.
 
-Dependencies run one way: `user ← project ← app ← datastore`, with
-`registry` and `server` on top. `server` is the only package that knows
+Dependencies run one way: `metrics ← user ← project ← app ← datastore`,
+with `registry` and `server` on top. `server` is the only package that knows
 every module exists.
 
 Two things travel back down, and both do it as an interface the lower
 module declares and `server` satisfies at wiring time:
 `project.AppTeardown` (deleting a project stops the containers inside
 it) and `app.DatastoreVars` (what an attached database contributes to a
-container's environment).
+container's environment). `metrics.Source` runs the same way in
+reverse: `metrics` knows nothing about apps or datastores, and they
+hand it the containers worth sampling.
 
 ## The API lives under /api, and the root is the dashboard
 
@@ -1127,6 +1131,77 @@ a service with no teardown wired refuses to delete at all.
 Deleting an app leaves its images in the registry — reclaiming that disk
 needs a registry garbage collection pass, which Cubeship does not run.
 
+## Monitoring
+
+`internal/metrics` records what every container on this instance is
+using and answers the series a chart is drawn from. Both `app` and
+`datastore` serve it, at their own addresses.
+
+**One module, because it is one question.** An app and a datastore are
+both a container with a CPU and a resident set, and the chart is the
+same chart. This package knows about neither: a `Subject` is a kind, an
+id and a container, and the modules that have those hand them over
+through `metrics.Source`. The read endpoints live at `/apps/{ref}/metrics`
+and `/datastores/{name}/metrics`, where each module has already decided
+who may look — `metrics.Service` takes no caller and checks no role,
+because asking twice is two answers to a question with one.
+
+**In Postgres, because it is the only store this instance has.**
+Cubeship runs on one VPS with no external services; "add Prometheus" is
+not a smaller answer than a table, it is a second thing to install, run,
+back up and reach. `metric_samples` has one row per container per
+interval, and `kind` is what tells an app's from a database's —
+deliberately not a foreign key, since there is no one table to point at.
+
+**Sampled every 30 seconds, kept for a day.** There is no downsampling
+behind that, so a day is what there is: a week of raw rows per container
+is twenty thousand nobody looks at. What a day buys is the question
+people actually ask — what happened overnight. `Prune` runs on every
+collection pass rather than on a timer of its own, because the pass is
+already the thing that knows time has moved.
+
+**The percentage is computed at collection time, not on read.** A CPU
+percentage is a difference, and `ContainerStatsOneShot` returns counters
+with nothing to subtract from — so the collector holds the previous
+reading per container and does the subtraction. Keyed by container id
+rather than by subject, because a redeployed app is a new container and
+comparing across the swap would produce one impossible reading. The
+first sample after a restart reports 0 rather than a guess: an invented
+first point is a point somebody reads as a fact.
+
+The alternative was the Engine's own `stream=false`, which computes the
+delta for you by sleeping about a second first — a second per container
+on every pass, for a percentage averaged over that second rather than
+over the interval anybody is charting.
+
+**100% is one core.** 250 means two and a half. Not rescaled to a share
+of the machine, because that hides how much work something is doing
+behind how large the host is.
+
+**Memory is usage minus reclaimable page cache**, which is what `docker
+stats` shows. Without the subtraction every container looks about to run
+out. The key is spelled `inactive_file` under cgroup v2 and
+`total_inactive_file` under v1, and `dockerx.ContainerStats` handles both.
+
+The collector runs in `cmd/cubeshipd`, not in `server.New`: a server is
+a request handler, and a test that builds one must not thereby start
+polling Docker every thirty seconds.
+
+Bucketing is in SQL (`date_bin`), against a fixed origin rather than
+`now`, so two charts loaded seconds apart line up instead of each having
+its own grid. Every window buckets to around `TargetPoints`, so a chart
+is the same density whichever is asked for.
+
+**On the dashboard**, `MetricsSection` is one component for both pages
+and `TimeSeries` is a hand-drawn SVG rather than a charting dependency
+— a line, a fill and a crosshair, in a house style that is 1px rules and
+glow. Two things in it are load-bearing: `vector-effect` keeps the
+stroke 1px while the viewBox is scaled non-uniformly, and the scale
+comes from the data rather than from the memory ceiling. Drawn against
+the ceiling, a container using 200 MiB of a 2 GiB cgroup is a flat line
+along the bottom — a chart that has given up its only job to answer a
+question the caption answers better.
+
 ## Managed databases
 
 `internal/datastore` runs Postgres, MySQL and MariaDB for the apps on
@@ -1266,10 +1341,27 @@ than under Platform: a database belongs to the instance, but it is a
 thing you deploy against, not a thing the instance is wired to, and it
 is opened as often as an app is.
 
-One database's page is two tabs — **Overview**, where it answers and
-what to connect with, and **Apps**, which is the wiring — with settings
-on its own page like every other resource, because the actions that
-cannot be undone belong at the bottom of a page you went to on purpose.
+The list is a **table**, like the registries and the DNS accounts: what
+someone comes here to do is scan a column — which engine, is it up, what
+is using it — and cards make you read each one whole to find the line
+you were after.
+
+One database's page is **sections, not tabs**: monitoring, then how to
+connect, then what is connected. None of the three is an alternative to
+the others, and hiding two behind a click made you click through all of
+them every time. Monitoring is first because it is the question you have
+before you know you have one.
+
+The connection details are **read-only fields with a copy button**
+rather than a table of values. A connection string is long, and a field
+scrolls inside itself and takes one click to select, where a wrapped
+line of prose gives you three lines and a chance to miss one. `readOnly`
+rather than `disabled`: a disabled input cannot be focused, selected or
+copied from with the keyboard, which is most of what it is for.
+
+Settings stays on its own page like every other resource, because the
+actions that cannot be undone belong at the bottom of a page you went to
+on purpose.
 
 ### What is not here
 

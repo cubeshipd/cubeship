@@ -431,3 +431,81 @@ func (c *Client) ImageID(ctx context.Context, ref string) (string, error) {
 	}
 	return info.ID, nil
 }
+
+// Stats is one reading of what a container is using, in the terms the
+// Engine reports them: counters, not rates.
+//
+// The counters rather than a percentage, because a percentage needs two
+// readings and the Engine's own one-shot has nothing to compare against
+// — see ContainerStats. Whoever samples these holds the previous
+// reading and does the subtraction.
+type Stats struct {
+	// CPUTotal is nanoseconds of CPU this container has used since it
+	// started, and CPUSystem the same for the whole host. The ratio of
+	// their two deltas, times OnlineCPUs, is the percentage.
+	CPUTotal  uint64
+	CPUSystem uint64
+	// OnlineCPUs is how many the host has, which is what makes 100%
+	// mean "one core" rather than "the machine".
+	OnlineCPUs int
+	// MemoryBytes is what `docker stats` calls MEM USAGE: the cgroup's
+	// usage minus its inactive page cache, which is memory the kernel
+	// will reclaim rather than memory the process needs.
+	MemoryBytes uint64
+	// MemoryLimit is the cgroup's ceiling. On a container with no limit
+	// set this is the host's total memory.
+	MemoryLimit uint64
+}
+
+// ContainerStats reads one sample for a container.
+//
+// One-shot, which returns immediately with no previous reading in it.
+// The alternative — the Engine's `stream=false` — computes a delta for
+// you by sleeping about a second first, which is a second per container
+// on every collection pass, and produces a percentage averaged over
+// that second rather than over the interval anybody is charting.
+func (c *Client) ContainerStats(ctx context.Context, containerID string) (Stats, error) {
+	resp, err := c.api.ContainerStatsOneShot(ctx, containerID)
+	if err != nil {
+		return Stats{}, fmt.Errorf("stats for container %q: %w", containerID, err)
+	}
+	defer resp.Body.Close()
+
+	var raw container.StatsResponse
+	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+		return Stats{}, fmt.Errorf("decode stats for container %q: %w", containerID, err)
+	}
+
+	cpus := int(raw.CPUStats.OnlineCPUs)
+	if cpus == 0 {
+		// Older Engines report the per-CPU slice instead, and a machine
+		// with no answer at all is treated as one core rather than
+		// zero — a division by it is the alternative.
+		cpus = len(raw.CPUStats.CPUUsage.PercpuUsage)
+	}
+	if cpus == 0 {
+		cpus = 1
+	}
+
+	// What the kernel counts as used includes the page cache it would
+	// hand back under pressure. `docker stats` subtracts it and so does
+	// this, or every container looks as though it is about to run out.
+	// The key is named differently under cgroup v1 and v2.
+	used := raw.MemoryStats.Usage
+	for _, key := range []string{"inactive_file", "total_inactive_file"} {
+		if cached, ok := raw.MemoryStats.Stats[key]; ok {
+			if cached < used {
+				used -= cached
+			}
+			break
+		}
+	}
+
+	return Stats{
+		CPUTotal:    raw.CPUStats.CPUUsage.TotalUsage,
+		CPUSystem:   raw.CPUStats.SystemUsage,
+		OnlineCPUs:  cpus,
+		MemoryBytes: used,
+		MemoryLimit: raw.MemoryStats.Limit,
+	}, nil
+}

@@ -37,6 +37,8 @@ type fakeAPI struct {
 	loggedID                string
 	loggedOptions           container.LogsOptions
 	localImages             map[string]bool
+	statsID                 string
+	statsJSON               string
 	loaded                  []byte
 	loadStream              string
 }
@@ -113,6 +115,18 @@ func (f *fakeAPI) ContainerExecAttach(context.Context, string, container.ExecAtt
 
 func (f *fakeAPI) ContainerExecInspect(context.Context, string) (container.ExecInspect, error) {
 	return container.ExecInspect{}, nil
+}
+
+// statsJSON is what the Engine answers a one-shot stats request with.
+// Empty by default: the fake exists for the tests below, and the ones
+// about stats set it.
+func (f *fakeAPI) ContainerStatsOneShot(ctx context.Context, id string) (container.StatsResponseReader, error) {
+	f.statsID = id
+	body := f.statsJSON
+	if body == "" {
+		body = "{}"
+	}
+	return container.StatsResponseReader{Body: io.NopCloser(strings.NewReader(body))}, nil
 }
 
 func (f *fakeAPI) ContainerLogs(ctx context.Context, id string, options container.LogsOptions) (io.ReadCloser, error) {
@@ -487,5 +501,83 @@ func TestInspectContainerByNameReturnsOtherErrors(t *testing.T) {
 	_, err := c.InspectContainerByName(context.Background(), "cubeship-traefik")
 	if err == nil || errors.Is(err, ErrContainerNotFound) {
 		t.Fatalf("expected a real error to be returned, got %v", err)
+	}
+}
+
+// The percentage the dashboard charts is computed from these counters,
+// so what matters is that they come back unmangled — and that memory is
+// what `docker stats` shows rather than what the cgroup counts, which
+// includes page cache the kernel would hand straight back.
+func TestContainerStatsSubtractsReclaimablePageCache(t *testing.T) {
+	fake := &fakeAPI{statsJSON: `{
+		"cpu_stats": {
+			"cpu_usage": {"total_usage": 900},
+			"system_cpu_usage": 9000,
+			"online_cpus": 4
+		},
+		"memory_stats": {
+			"usage": 500,
+			"limit": 2000,
+			"stats": {"inactive_file": 200}
+		}
+	}`}
+	c := newWithAPI(fake)
+
+	stats, err := c.ContainerStats(context.Background(), "some-id")
+	if err != nil {
+		t.Fatalf("ContainerStats: %v", err)
+	}
+	if fake.statsID != "some-id" {
+		t.Errorf("asked about %q", fake.statsID)
+	}
+	if stats.CPUTotal != 900 || stats.CPUSystem != 9000 {
+		t.Errorf("CPU counters came back as %d/%d", stats.CPUTotal, stats.CPUSystem)
+	}
+	if stats.OnlineCPUs != 4 {
+		t.Errorf("online CPUs is %d; 100%% means one core, so this is what makes 400%% possible", stats.OnlineCPUs)
+	}
+	if stats.MemoryBytes != 300 {
+		t.Errorf("memory is %d, want 500 minus the 200 of reclaimable cache", stats.MemoryBytes)
+	}
+	if stats.MemoryLimit != 2000 {
+		t.Errorf("limit is %d", stats.MemoryLimit)
+	}
+}
+
+// cgroup v1 spells the same number differently, and a host on it must
+// not read as though every container were about to run out of memory.
+func TestContainerStatsHandlesCgroupV1(t *testing.T) {
+	fake := &fakeAPI{statsJSON: `{
+		"cpu_stats": {"cpu_usage": {"percpu_usage": [1, 2]}},
+		"memory_stats": {"usage": 500, "stats": {"total_inactive_file": 100}}
+	}`}
+	c := newWithAPI(fake)
+
+	stats, err := c.ContainerStats(context.Background(), "some-id")
+	if err != nil {
+		t.Fatalf("ContainerStats: %v", err)
+	}
+	if stats.MemoryBytes != 400 {
+		t.Errorf("memory is %d, want 500 minus 100", stats.MemoryBytes)
+	}
+	// An Engine that reports no online_cpus still says how many there
+	// are, in the per-CPU slice.
+	if stats.OnlineCPUs != 2 {
+		t.Errorf("online CPUs is %d, want the length of percpu_usage", stats.OnlineCPUs)
+	}
+}
+
+// A host that answers neither must not make the percentage a division
+// by zero, or worse, always zero.
+func TestContainerStatsNeverReportsZeroCPUs(t *testing.T) {
+	fake := &fakeAPI{statsJSON: `{"memory_stats": {"usage": 10}}`}
+	c := newWithAPI(fake)
+
+	stats, err := c.ContainerStats(context.Background(), "some-id")
+	if err != nil {
+		t.Fatalf("ContainerStats: %v", err)
+	}
+	if stats.OnlineCPUs != 1 {
+		t.Errorf("online CPUs is %d, want 1", stats.OnlineCPUs)
 	}
 }

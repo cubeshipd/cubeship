@@ -416,3 +416,55 @@ export function generatePassword(length = 24): string {
 export function datastorePath(name: string): string {
   return `/datastores/${name}`;
 }
+
+// --- metrics ---
+
+// One bucket of one container's readings. `at` is the start of the
+// bucket, and the API buckets server-side so a chart is the same
+// density whichever window is asked for.
+export type MetricSample = {
+  at: string;
+  // Percent of one core: 250 is two and a half cores. Deliberately not
+  // capped at 100 — a container using four cores on an eight-core host
+  // is a fact worth seeing.
+  cpu_percent: number;
+  memory_bytes: number;
+  memory_limit_bytes: number;
+};
+
+export type MetricSeries = {
+  window: string;
+  samples: MetricSample[];
+  // The ceiling the newest sample saw, which is what a memory chart is
+  // drawn against. 0 when nothing has been sampled.
+  memory_limit_bytes: number;
+  // Whether there is a container behind this right now. False with no
+  // samples means there is nothing to sample — a different sentence
+  // from "nothing has been sampled yet", and the only one worth
+  // showing.
+  collecting: boolean;
+};
+
+// The windows the daemon offers, shortest first. Kept in step with
+// metrics.Windows on the daemon, which is the side that refuses one it
+// does not know.
+export const METRIC_WINDOWS = ["1h", "6h", "24h"] as const;
+export type MetricWindow = (typeof METRIC_WINDOWS)[number];
+
+// Bytes as a person reads them. Binary units, because that is what a
+// cgroup limit is expressed in and what every other tool shows.
+export function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 B";
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  const exp = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** exp;
+  // One decimal below 10 — 1.4 GiB says something 1 GiB does not — and
+  // none above it, where the digit is noise.
+  return `${value < 10 && exp > 0 ? value.toFixed(1) : Math.round(value)} ${units[exp]}`;
+}
+
+// A percentage of one core. Under 10 the fraction is the whole signal;
+// above it, it is noise.
+export function formatCPU(percent: number): string {
+  return `${percent < 10 ? percent.toFixed(1) : Math.round(percent)}%`;
+}

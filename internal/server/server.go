@@ -16,6 +16,7 @@ import (
 	"cubeship/internal/dns"
 	"cubeship/internal/extregistry"
 	"cubeship/internal/github"
+	"cubeship/internal/metrics"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/project"
@@ -32,6 +33,7 @@ type Server struct {
 	Projects   *project.Service
 	Apps       *app.Service
 	Datastores *datastore.Service
+	Metrics    *metrics.Service
 	Settings   *settings.Service
 	Certs      *certificates.Service
 	Setup      *setup.Service
@@ -100,8 +102,12 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	registries := extregistry.NewService(db)
 	dnsProviders := dns.NewService(db)
 	gh := github.NewService(db, cfg)
+	// One series service for both modules below: an app and a datastore
+	// are the same question about two kinds of container.
+	series := metrics.NewService(db)
 	apps := app.NewService(db, projects,
-		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gh, opts.LocalRegistry), cfg)
+		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gh, opts.LocalRegistry),
+		cfg, series)
 
 	// Datastores sit above apps: an attachment names one, so this module
 	// depends on that one. Nothing below them knows they exist —
@@ -109,7 +115,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// no database with it, and an attachment to a deleted app is
 	// removed by the foreign key.
 	datastores := datastore.NewService(db, apps,
-		datastore.NewProvisioner(db, docker, opts.DataDir), cfg)
+		datastore.NewProvisioner(db, docker, opts.DataDir), cfg, series)
 
 	// Deleting a project or an environment takes the apps inside it with
 	// it, and only this module knows how to stop a container. The
@@ -128,6 +134,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Projects:   projects,
 		Apps:       apps,
 		Datastores: datastores,
+		Metrics:    series,
 		Settings:   cfg,
 		Certs:      certificates.NewService(cfg, apps, opts.DataDir),
 		Setup:      setup.NewService(db, users, opts.SetupToken),
@@ -153,6 +160,13 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 
 	srv.routes()
 	return srv
+}
+
+// MetricSources are the modules the collector samples on behalf of.
+// The daemon builds a Collector from these; a test does not collect at
+// all, which is why this is a list rather than a running goroutine.
+func (s *Server) MetricSources() []metrics.Source {
+	return []metrics.Source{s.Apps, s.Datastores}
 }
 
 // WaitForGitHubDeploys blocks until every deploy a GitHub webhook
