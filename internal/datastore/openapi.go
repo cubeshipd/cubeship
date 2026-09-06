@@ -30,13 +30,13 @@ func (h *Handler) OpenAPI() openapi.Spec {
 	return openapi.Spec{
 		Tags: []openapi.Tag{{
 			Name:        "Datastores",
-			Description: "A managed database. It belongs to the instance rather than to a project — on one host the common shape is a single Postgres serving several apps, and those apps are routinely in different projects. What connects it to anything is an attachment, which names one app and gives it the connection string as environment variables.",
+			Description: "A managed database — Postgres, MySQL, MariaDB, Redis or MongoDB. It belongs to the instance rather than to a project — on one host the common shape is a single Postgres serving several apps, and those apps are routinely in different projects. What connects it to anything is an attachment, which names one app and gives it the connection string as environment variables.",
 		}},
 		Schemas: withMetrics(map[string]*openapi.Schema{
 			"Datastore": openapi.Object(map[string]*openapi.Schema{
 				"name":          openapi.String("Unique across the instance. It is the container's own name, which every attached app resolves, so it is permanent."),
 				"description":   openapi.String("What this database is for. With no project above it to say where it belongs, this is the only place that can."),
-				"engine":        {Type: "string", Enum: []string{"postgres", "mysql", "mariadb"}, Description: "Which server this runs. Permanent."},
+				"engine":        {Type: "string", Enum: []string{"postgres", "mysql", "mariadb", "redis", "mongodb"}, Description: "Which server this runs. Permanent."},
 				"version":       openapi.String("The engine's version. Permanent: a data directory written by one major version is not readable by another, so changing this would be a container that will not start with the only copy of the data inside it."),
 				"status":        {Type: "string", Enum: []string{"provisioning", "running", "down", "failed"}, Description: `"provisioning" while the container is being pulled and started, which happens detached from the request that asked for it.`},
 				"error":         openapi.String("Why provisioning failed, when it did — usually the tail of what the engine printed before it exited."),
@@ -49,7 +49,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"attachments":   openapi.Array(openapi.Ref("DatastoreAttachment")),
 				"created_at":    {Type: "string", Format: "date-time"},
 			}, "name", "description", "engine", "version", "status", "username",
-				"host", "port", "attachments", "created_at"),
+				"has_container", "host", "port", "attachments", "created_at"),
 
 			"DatastoreAttachment": openapi.Object(map[string]*openapi.Schema{
 				"app":       openapi.String("The app's full reference, `project/environment/name`. Full, because a datastore is not inside an environment and one may serve apps in several."),
@@ -70,12 +70,14 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			}, "username", "password", "internal_uri", "internal_host", "internal_port"),
 
 			"DatastoreEngine": openapi.Object(map[string]*openapi.Schema{
-				"engine":          openapi.String(""),
-				"versions":        openapi.Array(openapi.String("A version tag this release offers, newest first.")),
-				"default_version": openapi.String("What a datastore created without naming one runs."),
-				"port":            openapi.Integer("What this engine listens on."),
-				"has_database":    openapi.Bool("Whether naming a database inside the server means anything for this engine."),
-			}, "engine", "versions", "default_version", "port", "has_database"),
+				"engine":           openapi.String(""),
+				"versions":         openapi.Array(openapi.String("A version tag this release offers, newest first.")),
+				"default_version":  openapi.String("What a datastore created without naming one runs."),
+				"port":             openapi.Integer("What this engine listens on."),
+				"has_database":     openapi.Bool("Whether naming a database inside the server means anything for this engine."),
+				"has_user":         openapi.Bool("Whether the login is yours to choose. False for Redis, whose password belongs to the ACL user `default`, which already exists and cannot be renamed."),
+				"default_username": openapi.String("The login an empty username becomes — and the only one there is when `has_user` is false."),
+			}, "engine", "versions", "default_version", "port", "has_database", "has_user", "default_username"),
 		}),
 		Paths: map[string]openapi.PathItem{
 			"/datastores": {
@@ -87,9 +89,9 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"name":        openapi.String("Lowercase letters, digits and dashes, unique across the instance. It becomes the container's name, so it is permanent. `engines` is refused — it is where this API lists what it can run."),
 						"description": openapi.String("What this database is for. Optional."),
-						"engine":      {Type: "string", Enum: []string{"postgres", "mysql", "mariadb"}, Description: "Which server to run. GET /datastores/engines lists what this release offers."},
+						"engine":      {Type: "string", Enum: []string{"postgres", "mysql", "mariadb", "redis", "mongodb"}, Description: "Which server to run. GET /datastores/engines lists what this release offers, and whether each takes a login of your choosing."},
 						"version":     openapi.String("A version this release offers for that engine. Defaults to the newest. Permanent."),
-						"username":    openapi.String(`The login to create. Defaults to "cubeship". MySQL and MariaDB refuse "root" — it already exists and Cubeship does not hold its password.`),
+						"username":    openapi.String("The login to create. Defaults to the engine's own — \"cubeship\" for the ones that let you choose. MySQL and MariaDB refuse \"root\", which already exists and whose password Cubeship does not hold; Redis refuses anything but \"default\", which is the only login it has."),
 						"password":    openapi.String("Generated when omitted. Any characters: it is escaped into the connection URL rather than concatenated into it."),
 						"database":    openapi.String("The database to create inside the server. Defaults to the name with dashes turned into underscores. Ignored by an engine that has no named databases."),
 						"expose":      openapi.Integer("Publish on a host port at creation: 0 picks one from 15000-15999, or name one. Omit for internal-only, which is the normal answer." + exposeWarning),
@@ -195,6 +197,56 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"200": openapi.JSONResponse("The series.", openapi.Ref("MetricSeries")),
 						"400": openapi.TextResponse("No such window."),
 						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
+					},
+				},
+			},
+			datastorePath + "/logs": {
+				"get": {
+					OperationID: "getDatastoreLogs",
+					Summary:     "Read a database's logs",
+					Description: "What the engine itself has printed — stdout and stderr, already demultiplexed out of Docker's frame format. Returns the last " + DefaultLogTail + " lines unless `tail` says otherwise.\n\nThe first place to look when a database refuses connections or will not start. It carries no credential: the engine prints its own startup, not what Cubeship configured it with.",
+					Tags:        []string{"Datastores"},
+					Parameters: append(append([]openapi.Parameter{}, nameParam...),
+						openapi.QueryParam("tail", `Number of trailing lines, e.g. "1000", or "all" for the entire log. Defaults to `+DefaultLogTail+".")),
+					Responses: openapi.Responses{
+						"200": {
+							Description: "The log output.",
+							Content:     map[string]openapi.MediaType{"text/plain": {Schema: openapi.String("")}},
+						},
+						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("This database has no container: it has never been provisioned, or provisioning failed."),
+					},
+				},
+			},
+			datastorePath + "/stop": {
+				"post": {
+					OperationID: "stopDatastore",
+					Summary:     "Turn a database off",
+					Description: "Stops the container and leaves it, and its data, where they are.\n\n**Every attached app keeps running and starts failing to connect.** That is sometimes the point — a migration nobody should be writing through, an engine eating the box — but it is worth knowing before rather than after.\n\nStopped rather than removed, so the log survives: what somebody wants immediately after turning a database off is usually the reason they turned it off. Docker's restart policy is `unless-stopped`, so it stays off across a reboot — turning it back on is a decision, not something a power cut makes for you.\n\nThe status becomes `stopped` rather than `down`, because one is a decision and the other is a fault.",
+					Tags:        []string{"Datastores"},
+					Parameters:  nameParam,
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The stopped datastore.", openapi.Ref("Datastore")),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("There is no container to stop."),
+					},
+				},
+			},
+			datastorePath + "/start": {
+				"post": {
+					OperationID: "startDatastore",
+					Summary:     "Turn a database back on",
+					Description: "Provisions it again: the container is recreated from the same options, and the data is a host bind mount that a recreate does not touch. The datastore goes back to `provisioning` while it happens, and how it went lands on its own row.\n\nThis is also how a datastore whose provisioning failed is retried.",
+					Tags:        []string{"Datastores"},
+					Parameters:  nameParam,
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The datastore, provisioning again.", openapi.Ref("Datastore")),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
 						"404": openapi.NotFound,
 					},
 				},

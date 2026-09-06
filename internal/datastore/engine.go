@@ -26,19 +26,26 @@ const (
 	EnginePostgres Engine = "postgres"
 	EngineMySQL    Engine = "mysql"
 	EngineMariaDB  Engine = "mariadb"
+	EngineRedis    Engine = "redis"
+	EngineMongoDB  Engine = "mongodb"
 )
 
 // Engines is every engine this version can run, in the order a form
-// should offer them. Redis and MongoDB are next, and each is one entry
-// in specs below rather than a change anywhere else.
+// should offer them: the relational ones first, because that is what
+// most things mean by "a database".
 func Engines() []Engine {
-	return []Engine{EnginePostgres, EngineMySQL, EngineMariaDB}
+	return []Engine{EnginePostgres, EngineMySQL, EngineMariaDB, EngineRedis, EngineMongoDB}
 }
 
-// DefaultUsername is the login offered when nobody names one. Ours
-// rather than the engine's own — `postgres` and `root` are the two
-// names every scanner on the internet tries first, and "root" is one
-// MySQL refuses to create through its environment anyway.
+// DefaultUsername is the login offered when nobody names one, for the
+// engines that let you choose. Ours rather than the engine's own —
+// `postgres` and `root` are the two names every scanner on the internet
+// tries first, and "root" is one MySQL refuses to create through its
+// environment anyway.
+//
+// Redis is the exception, and it is the engine's own rule rather than a
+// preference: its password belongs to the ACL user `default`, which
+// already exists and cannot be renamed. See spec.fixedUser.
 const DefaultUsername = "cubeship"
 
 // spec is everything that differs between one engine and another.
@@ -65,11 +72,23 @@ type spec struct {
 	// stem names the variables an attached app receives: DATABASE_URL
 	// for the engines that hold tables, REDIS_URL for one that does not.
 	stem string
+	// defaultUser is the login an empty username becomes.
+	defaultUser string
+	// fixedUser says the engine has exactly one login and it cannot be
+	// renamed — Redis's `default`. A request naming another is refused
+	// rather than quietly overwritten: silently ignoring what somebody
+	// typed is how a connection string comes out different from what
+	// they thought they asked for.
+	fixedUser bool
 	// hasDatabase reports whether a named database inside the server
 	// means anything here.
 	hasDatabase bool
 	// env is how this image is told what to create on first start.
+	// Nil for an engine configured through its command line instead.
 	env func(d *Datastore) []string
+	// cmd replaces the image's own command, for an engine that takes
+	// its password as an argument rather than from the environment.
+	cmd func(d *Datastore) []string
 	// checkUsername refuses a login this engine will not create, beyond
 	// the shape every engine requires.
 	checkUsername func(name string) error
@@ -88,6 +107,7 @@ var specs = map[Engine]spec{
 		scheme:      "postgresql",
 		query:       "sslmode=disable",
 		stem:        "DATABASE",
+		defaultUser: DefaultUsername,
 		hasDatabase: true,
 		env: func(d *Datastore) []string {
 			return []string{
@@ -109,6 +129,7 @@ var specs = map[Engine]spec{
 		dataPath:    "/var/lib/mysql",
 		scheme:      "mysql",
 		stem:        "DATABASE",
+		defaultUser: DefaultUsername,
 		hasDatabase: true,
 		env: func(d *Datastore) []string {
 			return []string{
@@ -134,6 +155,7 @@ var specs = map[Engine]spec{
 		// addresses it the same way, so the URL says so too.
 		scheme:      "mysql",
 		stem:        "DATABASE",
+		defaultUser: DefaultUsername,
 		hasDatabase: true,
 		env: func(d *Datastore) []string {
 			return []string{
@@ -145,7 +167,66 @@ var specs = map[Engine]spec{
 		},
 		checkUsername: refuseRoot,
 	},
+	EngineRedis: {
+		image:    "redis",
+		versions: []string{"7.4", "7.2"},
+		port:     6379,
+		dataPath: "/data",
+		scheme:   "redis",
+		stem:     "REDIS",
+		// Redis has one login and it is called `default`. The password
+		// set below belongs to it; naming any other user would be a
+		// connection string nothing accepts.
+		defaultUser: "default",
+		fixedUser:   true,
+		// No named databases. Redis has numbered ones, which are not
+		// the same idea and are not something to provision.
+		hasDatabase: false,
+		cmd: func(d *Datastore) []string {
+			// Through the command line because the official image has
+			// no password environment variable — the ones that do are
+			// somebody else's build of it.
+			//
+			// appendonly makes it write to the data directory this
+			// instance mounts. Without it Redis keeps everything in
+			// memory and snapshots on its own schedule, and a restart
+			// is a database that lost the last few minutes. Somebody
+			// running Redis purely as a cache loses nothing by having
+			// it on; somebody running it as a queue loses their queue
+			// by having it off.
+			return []string{
+				"redis-server",
+				"--requirepass", d.Password,
+				"--appendonly", "yes",
+			}
+		},
+	},
+	EngineMongoDB: {
+		image:    "mongo",
+		versions: []string{"8.0", "7.0"},
+		port:     27017,
+		dataPath: "/data/db",
+		scheme:   "mongodb",
+		// The root user lives in the `admin` database whatever database
+		// the connection names, so every client has to be told where to
+		// authenticate. Left out, every connection fails on credentials
+		// that are perfectly correct.
+		query:       "authSource=admin",
+		stem:        "MONGO",
+		defaultUser: DefaultUsername,
+		hasDatabase: true,
+		env: func(d *Datastore) []string {
+			return []string{
+				"MONGO_INITDB_ROOT_USERNAME=" + d.Username,
+				"MONGO_INITDB_ROOT_PASSWORD=" + d.Password,
+				"MONGO_INITDB_DATABASE=" + d.Database,
+			}
+		},
+	},
 }
+
+// ErrFixedUsername is a login an engine will not let you choose.
+var ErrFixedUsername = errors.New("this engine's login cannot be changed")
 
 // refuseRoot is MySQL's and MariaDB's own rule, said where the person
 // who typed it can still type another. Their images refuse to create
@@ -183,6 +264,13 @@ func (e Engine) Port() int { return specs[e].port }
 // anything for this engine.
 func (e Engine) HasDatabase() bool { return specs[e].hasDatabase }
 
+// HasUser reports whether the login is somebody's to choose. False for
+// Redis, whose password belongs to a user that already exists.
+func (e Engine) HasUser() bool { return !specs[e].fixedUser }
+
+// DefaultUsername is the login an empty username becomes.
+func (e Engine) DefaultUsername() string { return specs[e].defaultUser }
+
 // Image is the reference the container runs.
 func (e Engine) Image(version string) string {
 	return specs[e].image + ":" + version
@@ -199,7 +287,23 @@ func (e Engine) KnowsVersion(version string) bool {
 }
 
 // ContainerEnv is how the image is told what to create on first start.
-func (d *Datastore) ContainerEnv() []string { return specs[d.Engine].env(d) }
+// Empty for an engine configured through its command line instead.
+func (d *Datastore) ContainerEnv() []string {
+	if build := specs[d.Engine].env; build != nil {
+		return build(d)
+	}
+	return nil
+}
+
+// ContainerCmd replaces the image's own command, for an engine that
+// takes its password as an argument. Empty for the rest, which leaves
+// the image's entrypoint alone.
+func (d *Datastore) ContainerCmd() []string {
+	if build := specs[d.Engine].cmd; build != nil {
+		return build(d)
+	}
+	return nil
+}
 
 // DataPath is where this engine keeps its files inside the container,
 // and so what the host directory is mounted over.
@@ -215,6 +319,10 @@ var identifier = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]{0,62}$`)
 // CheckUsername refuses a login no engine would create, then whatever
 // this engine refuses on top of that.
 func CheckUsername(e Engine, name string) error {
+	if specs[e].fixedUser && name != specs[e].defaultUser {
+		return fmt.Errorf("%w: %s authenticates as %q, and the password belongs to it",
+			ErrFixedUsername, e, specs[e].defaultUser)
+	}
 	if !identifier.MatchString(name) {
 		return fmt.Errorf("%w: letters, digits and underscores, starting with a letter or underscore, at most 63 characters", ErrBadUsername)
 	}

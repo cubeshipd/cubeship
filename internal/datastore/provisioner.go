@@ -111,6 +111,7 @@ func (p *Provisioner) containerOpts(d *Datastore) dockerx.ContainerOpts {
 		Name:    ContainerName(d.Slug),
 		Image:   d.Engine.Image(d.Version),
 		Env:     d.ContainerEnv(),
+		Cmd:     d.ContainerCmd(),
 		Network: Network,
 		Labels: map[string]string{
 			// No Traefik labels: these speak their own wire protocol
@@ -275,6 +276,36 @@ func (p *Provisioner) tail(ctx context.Context, containerID string) string {
 		return "it wrote nothing to its log"
 	}
 	return text
+}
+
+// Stop turns a datastore off without removing it.
+//
+// Stopped rather than removed, so the container keeps whatever the
+// Engine knows about it — its logs above all, which are the first thing
+// anybody wants after something goes quiet. Docker's restart policy is
+// unless-stopped, so a container stopped here stays stopped across a
+// reboot: turning it back on is a decision, not something a power cut
+// makes for you.
+func (p *Provisioner) Stop(ctx context.Context, d *Datastore) error {
+	mu := p.lock(d.ID)
+	mu.Lock()
+	defer mu.Unlock()
+
+	// By name rather than by the recorded id, because the name is the
+	// one that is right even when the row is stale.
+	if err := p.docker.StopContainer(ctx, ContainerName(d.Slug)); err != nil {
+		return fmt.Errorf("stop container: %w", err)
+	}
+	return p.repo().UpdateContainer(ctx, d.ID, d.ContainerID, StatusStopped, "")
+}
+
+// Logs is what the engine has written, most recent `tail` lines.
+//
+// Read from the container by name, so a datastore whose row remembers a
+// container that has since been replaced still answers with the one
+// running now.
+func (p *Provisioner) Logs(ctx context.Context, d *Datastore, tail string) (io.ReadCloser, error) {
+	return p.docker.Logs(ctx, ContainerName(d.Slug), tail)
 }
 
 // Teardown removes a datastore's container, and its data with it when

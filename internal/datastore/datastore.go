@@ -77,7 +77,13 @@ const (
 	// detached from the request that asked for it.
 	StatusProvisioning = "provisioning"
 	StatusRunning      = "running"
-	StatusDown         = "down"
+	// StatusStopped is a database somebody turned off. Distinct from
+	// "down", which is a container that stopped on its own: one is a
+	// decision and the other is a fault, and a screen that shows the
+	// same word for both makes an operator go looking for a problem
+	// they created on purpose.
+	StatusStopped = "stopped"
+	StatusDown    = "down"
 	// StatusFailed is provisioning that did not finish. Error says why.
 	StatusFailed = "failed"
 )
@@ -170,6 +176,10 @@ var (
 
 	// ErrPortTaken is a host port another datastore already answers on.
 	ErrPortTaken = errors.New("another datastore is already exposed on that port")
+
+	// ErrNotRunning is an operation that needs a live container on a
+	// database that has none.
+	ErrNotRunning = errors.New("this database has no container running")
 
 	// ErrNoPortsLeft reports the automatic range exhausted.
 	ErrNoPortsLeft = fmt.Errorf("no free port left in the range %d-%d; name one explicitly", PortRangeStart, PortRangeEnd)

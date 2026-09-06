@@ -23,8 +23,14 @@ func TestEveryEngineHasASpec(t *testing.T) {
 		if len(sp.versions) == 0 {
 			t.Errorf("%s offers no versions, so nothing can be created with it", e)
 		}
-		if sp.env == nil {
+		// Told through the environment or through its command line —
+		// one or the other, or the password it comes up with is not one
+		// anybody holds.
+		if sp.env == nil && sp.cmd == nil {
 			t.Errorf("%s cannot be told what login to create", e)
+		}
+		if sp.defaultUser == "" {
+			t.Errorf("%s has no default login, so an empty username would create nothing", e)
 		}
 		if !e.Valid() {
 			t.Errorf("%s is offered but Valid says no", e)
@@ -54,16 +60,87 @@ func TestEveryEngineHasASpec(t *testing.T) {
 // refused.
 func TestEachEngineIsToldItsLogin(t *testing.T) {
 	for _, e := range Engines() {
-		d := &Datastore{Engine: e, Username: "app", Password: "s3cret", Database: "app_db"}
-		env := strings.Join(d.ContainerEnv(), "\n")
-		for _, want := range []string{"app", "s3cret"} {
-			if !strings.Contains(env, want) {
-				t.Errorf("%s: the container is never told %q:\n%s", e, want, env)
-			}
+		user := "app"
+		if !e.HasUser() {
+			user = e.DefaultUsername()
 		}
-		if e.HasDatabase() && !strings.Contains(env, "app_db") {
-			t.Errorf("%s: the container is never told which database to create:\n%s", e, env)
+		d := &Datastore{Engine: e, Username: user, Password: "s3cret", Database: "app_db"}
+		// Environment or command line — Redis takes its password as an
+		// argument, because the official image has no variable for it.
+		told := strings.Join(append(d.ContainerEnv(), d.ContainerCmd()...), "\n")
+
+		if !strings.Contains(told, "s3cret") {
+			t.Errorf("%s: the container is never told the password:\n%s", e, told)
 		}
+		if e.HasUser() && !strings.Contains(told, "app") {
+			t.Errorf("%s: the container is never told the login:\n%s", e, told)
+		}
+		if e.HasDatabase() && !strings.Contains(told, "app_db") {
+			t.Errorf("%s: the container is never told which database to create:\n%s", e, told)
+		}
+	}
+}
+
+// Redis has one login, called `default`, and the password belongs to
+// it. Accepting another name would produce a connection string nothing
+// accepts — refused rather than quietly overwritten, because silently
+// ignoring what somebody typed is how a credential comes out different
+// from what they thought they asked for.
+func TestAnEngineWithOneLoginRefusesAnother(t *testing.T) {
+	if EngineRedis.HasUser() {
+		t.Error("redis reports a choosable login")
+	}
+	if got := EngineRedis.DefaultUsername(); got != "default" {
+		t.Errorf("redis defaults to %q", got)
+	}
+	if err := CheckUsername(EngineRedis, "cubeship"); err == nil {
+		t.Error("redis accepted a login it does not have")
+	}
+	if err := CheckUsername(EngineRedis, "default"); err != nil {
+		t.Errorf("redis refused its own login: %v", err)
+	}
+	// Everything else is somebody's to choose.
+	for _, e := range []Engine{EnginePostgres, EngineMySQL, EngineMariaDB, EngineMongoDB} {
+		if !e.HasUser() {
+			t.Errorf("%s reports a fixed login", e)
+		}
+	}
+}
+
+// Mongo's root user lives in the `admin` database whatever database the
+// connection names, so every client has to be told where to
+// authenticate. Left out, every connection fails on credentials that
+// are perfectly correct.
+func TestMongoTellsClientsWhereToAuthenticate(t *testing.T) {
+	d := &Datastore{Engine: EngineMongoDB, Username: "app", Password: "secret", Database: "app_db"}
+	uri := d.URI("cubeship-db-mongo", 27017)
+	if !strings.Contains(uri, "authSource=admin") {
+		t.Errorf("mongo URI is %q, and would fail on correct credentials", uri)
+	}
+	if !strings.HasPrefix(uri, "mongodb://") {
+		t.Errorf("mongo URI is %q", uri)
+	}
+}
+
+// An engine with no named databases is handed no database name, and its
+// variables do not carry one — there is nothing for a client to put in
+// it.
+func TestAnEngineWithoutDatabasesOffersNoDatabaseVariable(t *testing.T) {
+	d := &Datastore{Engine: EngineRedis, Username: "default", Password: "secret"}
+	vars := d.Vars("", "cubeship-db-cache", 6379)
+
+	if _, ok := vars["REDIS_NAME"]; ok {
+		t.Errorf("redis offered a database name: %v", vars)
+	}
+	for _, key := range []string{"REDIS_URL", "REDIS_HOST", "REDIS_PORT", "REDIS_PASSWORD"} {
+		if vars[key] == "" {
+			t.Errorf("%s is missing: %v", key, vars)
+		}
+	}
+	// The stem is the engine's, not DATABASE_ for everything: an app
+	// with a Postgres and a Redis attached needs both, unprefixed.
+	if _, clash := vars["DATABASE_URL"]; clash {
+		t.Error("redis wrote DATABASE_URL, which is the SQL database's")
 	}
 }
 

@@ -4,13 +4,17 @@ import {
   ChevronLeftIcon,
   EyeIcon,
   EyeOffIcon,
+  PlayIcon,
   PlugIcon,
+  PowerIcon,
   SettingsIcon,
   Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
+import { ConfirmDialog } from "@/components/confirm-dialog";
+import { ContainerLogs } from "@/components/container-logs";
 import { CopyField } from "@/components/copy-field";
 import { ErrorAlert } from "@/components/error-alert";
 import { MetricsSection } from "@/components/metrics-section";
@@ -41,6 +45,7 @@ import {
   ApiError,
   type App,
   api,
+  DATASTORE_STOPPED,
   type Datastore,
   type DatastoreCredentials,
   datastoreLabel,
@@ -109,16 +114,19 @@ function Detail({ name }: { name: string }) {
           </span>
         }
         actions={
-          <Button
-            variant="outline"
-            nativeButton={false}
-            render={
-              <Link href={`/databases/${datastore.name}/settings`}>
-                <SettingsIcon />
-                Settings
-              </Link>
-            }
-          />
+          <>
+            <PowerButton datastore={datastore} onChanged={reload} />
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={
+                <Link href={`/databases/${datastore.name}/settings`}>
+                  <SettingsIcon />
+                  Settings
+                </Link>
+              }
+            />
+          </>
         }
       />
 
@@ -142,6 +150,15 @@ function Detail({ name }: { name: string }) {
 
       <MetricsSection path={path} />
       <Connection datastore={datastore} />
+      {/* Only once there is a container to have written one. Before
+          that the endpoint answers 409, and an error box saying so is
+          worse than the section not being there. */}
+      {datastore.has_container && (
+        <ContainerLogs
+          path={path}
+          sub="What the engine itself has printed. The first place to look when it refuses connections or will not start."
+        />
+      )}
       <Attachments datastore={datastore} onChanged={reload} />
     </>
   );
@@ -252,6 +269,7 @@ function Connection({ datastore }: { datastore: Datastore }) {
 // and the answer is exactly this list.
 function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged: () => void }) {
   const [attaching, setAttaching] = useState(false);
+  const [detaching, setDetaching] = useState<string | null>(null);
   const [apps, setApps] = useState<App[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -333,7 +351,7 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
                         variant="ghost"
                         size="icon-sm"
                         aria-label={`Detach ${a.app}`}
-                        onClick={() => detach(a.app)}
+                        onClick={() => setDetaching(a.app)}
                       >
                         <Trash2Icon className="size-3.5" />
                       </Button>
@@ -352,6 +370,94 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
         open={attaching}
         onOpenChange={setAttaching}
         onAttached={onChanged}
+      />
+
+      {/* A confirmation with no word to type. Detaching is undone by
+          attaching again, so the guard only has to stop the misclick —
+          typing a name is for what cannot be put back. */}
+      <ConfirmDialog
+        open={detaching !== null}
+        onOpenChange={(open) => !open && setDetaching(null)}
+        title="Detach this app?"
+        description={
+          <>
+            <code className="text-foreground">{detaching}</code> keeps the variables it is running
+            with until it is deployed again, and comes up without them after that. Attaching it
+            again puts them back.
+          </>
+        }
+        confirmLabel="Detach"
+        onConfirm={async () => {
+          if (detaching) await detach(detaching);
+          setDetaching(null);
+        }}
+      />
+    </>
+  );
+}
+
+// Turning a database off and on.
+//
+// In the header rather than in settings, because it is not a setting:
+// it is a thing you do, in the moment you decide to, and its result is
+// the status badge two inches away. Deleting stays in settings, where
+// what cannot be undone belongs.
+function PowerButton({ datastore, onChanged }: { datastore: Datastore; onChanged: () => void }) {
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const off = datastore.status === DATASTORE_STOPPED || datastore.status === "failed";
+  const path = datastorePath(datastore.name);
+
+  async function run(action: "start" | "stop") {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.post(`${path}/${action}`);
+      onChanged();
+    } catch (err) {
+      setError(message(err));
+    }
+    setBusy(false);
+    setConfirming(false);
+  }
+
+  return (
+    <>
+      <ErrorAlert error={error} />
+      <ActionButton
+        variant="outline"
+        busy={busy}
+        // Nothing to turn off while it is still coming up, and nothing
+        // to turn on until it has a container to have been off.
+        disabled={datastore.status === "provisioning"}
+        onClick={() => (off ? run("start") : setConfirming(true))}
+      >
+        {off ? <PlayIcon /> : <PowerIcon />}
+        {off ? "Start" : "Stop"}
+      </ActionButton>
+
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={`Stop ${datastore.name}?`}
+        description={
+          <>
+            The container stops and its data stays where it is — starting it again brings it back
+            unchanged.{" "}
+            {datastore.attachments.length > 0 ? (
+              <>
+                <strong>{datastore.attachments.map((a) => a.app).join(", ")}</strong> will keep
+                running and start failing to connect.
+              </>
+            ) : (
+              "No app is attached to it."
+            )}
+          </>
+        }
+        confirmLabel="Stop it"
+        onConfirm={() => run("stop")}
       />
     </>
   );
