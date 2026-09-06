@@ -236,7 +236,7 @@ function NewEnvironmentDialog({
           </DialogHeader>
 
           <div className="space-y-4 py-5">
-            <ErrorAlert error={error} className="mb-0" />
+            <ErrorAlert error={error} />
             <SlugField autoFocus value={slug} onChange={setSlug} placeholder="staging" />
           </div>
 
@@ -311,7 +311,7 @@ function NewAppDialog({
           </DialogHeader>
 
           <div className="space-y-4 py-5">
-            <ErrorAlert error={error} className="mb-0" />
+            <ErrorAlert error={error} />
             <SlugField autoFocus value={slug} onChange={setSlug} placeholder="gateway" />
             <TextAreaField
               label="Description"

@@ -147,7 +147,7 @@ export function NewDatastoreDialog({
               them room and the negative margin puts the content back
               where it was. */}
           <div className="-mx-2 max-h-[65vh] space-y-4 overflow-y-auto px-2 py-5">
-            <ErrorAlert error={error} className="mb-0" />
+            <ErrorAlert error={error} />
 
             {/* scroll-mt is not decoration. Focusing a field inside a
                 scroll container makes the browser scroll it into view,
