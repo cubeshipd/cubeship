@@ -92,18 +92,6 @@ function Detail({ reference }: { reference: string }) {
         }
       />
 
-      {app.domains.length === 0 && (
-        <Notice>
-          This app answers at no name, so only its neighbours on this instance reach it — by
-          container name. That is all a worker needs; anything meant to be visited wants a domain,
-          in{" "}
-          <Link href={`/projects/${reference}/settings`} className="underline underline-offset-4">
-            settings
-          </Link>
-          .
-        </Notice>
-      )}
-
       <Origin app={app} />
 
       <Deployments
