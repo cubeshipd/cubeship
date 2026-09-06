@@ -895,6 +895,16 @@ leaves and never rewrites. Until that stanza is there, an `apps` rule is
 **refused rather than written**, because a rule that governs nothing is
 the exact lie this module exists to avoid.
 
+**A firewall at the provider is a third layer, and it is not visible
+here.** Contabo, Hetzner, DigitalOcean and AWS all filter in front of
+the machine, and that layer does *not* have the Docker problem: it drops
+a packet before it reaches the host's netfilter at all, so
+`DOCKER-USER` never enters into it. An operator who has one is already
+covered for published ports, and one who has not — or who has one and
+does not know how to use it — is what this module is for. What follows
+is that the screen must not claim to know what is *reachable*: it knows
+what this machine is offering, and says so in those words.
+
 **A firewall that is off still has rules**, and reading only `ufw
 status` misses them: it answers "inactive" and stops, while what
 somebody added sits in ufw's file waiting to be applied. That was a dead
