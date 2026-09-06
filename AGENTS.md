@@ -940,6 +940,14 @@ silently costs somebody a machine:
   than "the last one" — somebody moving SSH to another port adds the new
   rule, moves sshd, and the old one stops being protected on the next
   read, because what counts is where sshd is *now*.
+- **Editing** is a delete and an add, because UFW has no edit — and the
+  order is the safety: the new rule goes in **first**, at the old one's
+  position, and the old one after. The reverse has a window where the
+  rule is simply gone, and an add that then fails leaves a firewall
+  missing a line nobody removed on purpose; this way the window holds a
+  duplicate, which is harmless. The position is kept because order is
+  meaning here — the first rule that matches decides, so a rule appended
+  to the end may now be shadowed by one above it.
 - **Deleting by a position that has moved.** UFW deletes by number and
   numbers shift; the caller sends the rule's own text and the daemon
   refuses if it no longer matches. Otherwise a stale screen deletes a
@@ -955,6 +963,12 @@ empty entry means anywhere, which absorbs the rest. The screen offers
 status — the address a person almost always wants is the one they would
 otherwise go and look up, and get wrong by pasting a private one the
 firewall never sees.
+
+Adopting **asks which ports stay open**, ticked by default. The safe
+default for a firewall is the state the machine is already in: somebody
+who wants a port closed says so, and somebody who does not know yet does
+not lose a service by pressing a button they were told to press. 80 and
+443 cannot be unticked, because they are the page the button is on.
 
 Adopting is the dangerous direction, and the **order is not cosmetic**:
 the `ufw route allow` rules go in first, while they are inert, and the

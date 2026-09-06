@@ -427,3 +427,60 @@ func TestARuleStopsBeingProtectedWhenSSHMovesOff(t *testing.T) {
 		t.Error("a rule for a port sshd left is still protected")
 	}
 }
+
+// UFW has no edit, so this is a delete and an add — and the order of
+// the two is the whole safety of it.
+//
+// The new rule goes in first, at the old one's position, and the old one
+// goes after. The other way round has a window where the rule is simply
+// gone; if the add then fails, what is left is a firewall missing a line
+// nobody took out on purpose. This way the window holds a duplicate,
+// which is harmless.
+//
+// The position is kept because order is meaning here: the first rule
+// that matches decides, so a rule appended to the end may now be
+// shadowed by one above it.
+func TestEditingKeepsThePositionAndAddsBeforeItRemoves(t *testing.T) {
+	host := &fakeHost{status: status(active,
+		"[ 1] 22/tcp                     ALLOW IN    Anywhere\n"+
+			"[ 2] 5432                       DENY IN     Anywhere", "", "0", "2222")}
+
+	if _, err := newService(t, host).ReplaceRule(context.Background(), admin, 2, "", Request{
+		Scope: ScopeHost, Action: ActionDeny, Protocol: ProtocolTCP, Port: "5432",
+		Sources: []string{"10.0.0.0/8"},
+	}); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+
+	if len(host.ran) != 2 {
+		t.Fatalf("ran %v", host.ran)
+	}
+	if !strings.Contains(host.ran[0], "insert 2") {
+		t.Errorf("the new rule did not go in at the old one's place: %q", host.ran[0])
+	}
+	if !strings.Contains(host.ran[0], "from 10.0.0.0/8") {
+		t.Errorf("the edit did not carry: %q", host.ran[0])
+	}
+	// The old rule has been pushed down by the one inserted above it.
+	if !strings.HasSuffix(host.ran[1], "delete 3") {
+		t.Errorf("it deleted the wrong position: %q", host.ran[1])
+	}
+}
+
+// And the rule keeping SSH in cannot be edited either. Changing its
+// source is a lockout with an extra step.
+func TestTheRuleThatKeepsYouInCannotBeEdited(t *testing.T) {
+	host := &fakeHost{status: status(active,
+		"[ 1] 22/tcp                     ALLOW IN    Anywhere", "", "0", "22")}
+
+	_, err := newService(t, host).ReplaceRule(context.Background(), admin, 1, "", Request{
+		Scope: ScopeHost, Action: ActionAllow, Protocol: ProtocolTCP, Port: "22",
+		Sources: []string{"203.0.113.4"},
+	})
+	if !errors.Is(err, ErrKeepsYouIn) {
+		t.Fatalf("it was edited: %v", err)
+	}
+	if len(host.ran) != 0 {
+		t.Errorf("it ran anyway: %v", host.ran)
+	}
+}

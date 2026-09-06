@@ -149,6 +149,14 @@
     text-transform: uppercase;
   }
 
+  /* shadcn's checkbox hard-codes its own corner radius, which is the
+     one thing in this interface that is never round. Squared here
+     rather than in ui/, so a re-run of `shadcn add` cannot take the
+     house style with it. */
+  [data-slot="checkbox"] {
+    border-radius: 0;
+  }
+
   /* A field's name is a machine label, not prose. */
   [data-slot="label"],
   [data-slot="table"] thead [data-slot="table-head"],

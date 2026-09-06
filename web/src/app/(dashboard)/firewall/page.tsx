@@ -1,6 +1,6 @@
 "use client";
 
-import { PlusIcon, ShieldAlertIcon, Trash2Icon, XIcon } from "lucide-react";
+import { PencilIcon, PlusIcon, ShieldAlertIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -15,6 +15,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -24,8 +25,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { api, type Firewall, type FirewallRule } from "@/lib/api";
+import { api, type Firewall, type FirewallPublishedPort, type FirewallRule } from "@/lib/api";
 import { message } from "@/lib/errors";
+
+// Why the SSH rule's buttons are dead. Said on both of them, because
+// somebody who tried one will try the other.
+const keepsYouIn =
+  "This is what admits SSH. Changing or removing it would end this session — do it on the machine if you mean to.";
 
 // The host's firewall.
 //
@@ -42,6 +48,7 @@ export default function FirewallPage() {
   const [busy, setBusy] = useState(false);
   const [adding, setAdding] = useState<"host" | "apps" | null>(null);
   const [deleting, setDeleting] = useState<FirewallRule | null>(null);
+  const [editing, setEditing] = useState<FirewallRule | null>(null);
   const [adopting, setAdopting] = useState(false);
 
   const reload = useCallback(() => {
@@ -105,15 +112,18 @@ export default function FirewallPage() {
       cell: (r) => (
         <RowActions>
           <RowAction
+            icon={PencilIcon}
+            label={`Edit rule ${r.index}`}
+            disabled={r.protected}
+            title={r.protected ? keepsYouIn : undefined}
+            onClick={() => setEditing(r)}
+          />
+          <RowAction
             icon={Trash2Icon}
             label={`Delete rule ${r.index}`}
             danger={!r.protected}
             disabled={r.protected}
-            title={
-              r.protected
-                ? "This is what admits SSH. Removing it would end this session — do it on the machine if you mean to."
-                : undefined
-            }
+            title={r.protected ? keepsYouIn : undefined}
             onClick={() => setDeleting(r)}
           />
         </RowActions>
@@ -257,9 +267,7 @@ export default function FirewallPage() {
 
                 <div className="flex items-center gap-3">
                   <Button onClick={() => setAdopting(true)}>Put them behind the firewall</Button>
-                  <span className="text-xs text-muted-foreground">
-                    80 and 443 stay open whatever you choose — they are Traefik.
-                  </span>
+                  <span className="text-xs text-muted-foreground">You choose which stay open.</span>
                 </div>
               </CardContent>
             </Card>
@@ -299,10 +307,15 @@ export default function FirewallPage() {
       )}
 
       <RuleDialog
-        scope={adding}
+        scope={adding ?? editing?.scope ?? null}
+        rule={editing}
         published={data?.published ?? []}
         yourIP={data?.your_ip}
-        onOpenChange={(open) => !open && setAdding(null)}
+        onOpenChange={(open) => {
+          if (open) return;
+          setAdding(null);
+          setEditing(null);
+        }}
         onSaved={setData}
       />
 
@@ -330,25 +343,11 @@ export default function FirewallPage() {
         }}
       />
 
-      <ConfirmDialog
+      <AdoptDialog
         open={adopting}
+        published={data?.published ?? []}
         onOpenChange={setAdopting}
-        title="Put published ports behind the firewall?"
-        confirmLabel="Do it"
-        description={
-          <>
-            Everything published and not allowed stops being reachable from outside this host. Ports
-            80 and 443 are allowed for you, and so is everything currently published — you can
-            remove those rules afterwards, one at a time, and see what breaks before the next one.
-          </>
-        }
-        onConfirm={async () => {
-          const next = await api.post<Firewall>("/firewall/docker", {
-            allow_ports: (data?.published ?? []).map((p) => p.port),
-          });
-          setAdopting(false);
-          setData(next);
-        }}
+        onSaved={setData}
       />
     </>
   );
@@ -357,6 +356,112 @@ export default function FirewallPage() {
 // One dialog for both kinds of rule. They ask for the same things — the
 // scope is what the caller pressed, not a field, because "which of these
 // two firewalls" is a question nobody should be asked twice.
+// What turning on Docker port control asks: which of the ports open
+// right now should stay open.
+//
+// It has to ask. The stanza closes every published port no rule admits,
+// so pressing this without choosing is the difference between a
+// firewall and an outage — and the screen said "80 and 443 stay open
+// whatever you choose", which was only true because it was quietly
+// sending all of them.
+function AdoptDialog({
+  open,
+  published,
+  onOpenChange,
+  onSaved,
+}: {
+  open: boolean;
+  published: FirewallPublishedPort[];
+  onOpenChange: (v: boolean) => void;
+  onSaved: (f: Firewall) => void;
+}) {
+  // Everything starts ticked. The safe default for a firewall is the
+  // state the machine is already in — somebody who wants a port closed
+  // can say so here, and somebody who does not know yet does not lose a
+  // service by pressing a button they were told to press.
+  const [keep, setKeep] = useState<number[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    setKeep(published.map((p) => p.port));
+  }, [open, published]);
+
+  // 80 and 443 are Traefik, which is every app and this page. The
+  // daemon allows them whatever arrives, so offering to untick them
+  // would be offering something that does not happen.
+  const fixed = (port: number) => port === 80 || port === 443;
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      onSaved(await api.post<Firewall>("/firewall/docker", { allow_ports: keep }));
+      onOpenChange(false);
+    } catch (err) {
+      setError(message(err));
+    }
+    setBusy(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <form onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>Put published ports behind the firewall</DialogTitle>
+            <DialogDescription>
+              Everything not ticked stops being reachable from outside this host.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="-mx-2 max-h-[60vh] space-y-2 overflow-y-auto px-2 py-5">
+            <ErrorAlert error={error} />
+            {published.map((p) => (
+              <label
+                key={`${p.port}/${p.protocol}`}
+                htmlFor={`keep-${p.port}-${p.protocol}`}
+                className="flex items-center gap-3 border border-border px-3 py-2 font-mono text-xs"
+              >
+                <Checkbox
+                  id={`keep-${p.port}-${p.protocol}`}
+                  checked={fixed(p.port) || keep.includes(p.port)}
+                  disabled={fixed(p.port)}
+                  onCheckedChange={(on) =>
+                    setKeep((ports) =>
+                      on ? [...ports, p.port] : ports.filter((at) => at !== p.port),
+                    )
+                  }
+                />
+                <span className="flex-1">
+                  {p.port}/{p.protocol}
+                </span>
+                <span className="text-muted-foreground">{p.container}</span>
+              </label>
+            ))}
+            <p className="text-xs text-muted-foreground">
+              80 and 443 stay open whatever you choose — they are Traefik, which is every app and
+              this page.
+            </p>
+          </div>
+
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <ActionButton type="submit" busy={busy}>
+              Do it
+            </ActionButton>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 // A source is one of three answers, and only the third is typed.
 //
 // It is a select because "leave it empty for anywhere" is a rule you
@@ -367,12 +472,17 @@ type Source = { kind: "any" | "mine" | "custom"; value: string };
 
 function RuleDialog({
   scope,
+  rule,
   published,
   yourIP,
   onOpenChange,
   onSaved,
 }: {
   scope: "host" | "apps" | null;
+  // The rule being edited, or nothing when one is being added. One
+  // dialog for both because they ask for exactly the same things —
+  // editing *is* a delete and an add, so it could hardly ask for less.
+  rule?: FirewallRule | null;
   published: { port: number; container: string }[];
   yourIP?: string;
   onOpenChange: (v: boolean) => void;
@@ -389,11 +499,18 @@ function RuleDialog({
   useEffect(() => {
     if (!scope) return;
     setError(null);
-    setPort("");
-    setSources([{ kind: "any", value: "" }]);
-    setComment("");
-    setAction("allow");
-  }, [scope]);
+    setPort(rule?.ports ?? "");
+    setComment(rule?.comment ?? "");
+    setAction(rule?.action ?? "allow");
+    setProtocol(rule?.protocol ?? "tcp");
+    // A rule holds one source — ufw takes one each — so an edit starts
+    // on that one and can grow from there.
+    setSources([
+      rule?.from
+        ? { kind: rule.from === yourIP ? "mine" : "custom", value: rule.from }
+        : { kind: "any", value: "" },
+    ]);
+  }, [scope, rule, yourIP]);
 
   function setSource(index: number, next: Partial<Source>) {
     setSources((rows) => rows.map((row, i) => (i === index ? { ...row, ...next } : row)));
@@ -404,19 +521,25 @@ function RuleDialog({
     setBusy(true);
     setError(null);
     try {
+      const body = {
+        scope,
+        action,
+        protocol,
+        port,
+        // One rule per source — ufw takes one each — and an empty
+        // string is anywhere, which the daemon lets absorb the rest.
+        sources: sources.map((s) =>
+          s.kind === "any" ? "" : s.kind === "mine" ? (yourIP ?? "") : s.value.trim(),
+        ),
+        comment,
+      };
       onSaved(
-        await api.post<Firewall>("/firewall/rules", {
-          scope,
-          action,
-          protocol,
-          port,
-          // One rule per source — ufw takes one each — and an empty
-          // string is anywhere, which the daemon lets absorb the rest.
-          sources: sources.map((s) =>
-            s.kind === "any" ? "" : s.kind === "mine" ? (yourIP ?? "") : s.value.trim(),
-          ),
-          comment,
-        }),
+        rule
+          ? await api.put<Firewall>(
+              `/firewall/rules/${rule.index}?expect=${encodeURIComponent(rule.text)}`,
+              body,
+            )
+          : await api.post<Firewall>("/firewall/rules", body),
       );
       onOpenChange(false);
     } catch (err) {
@@ -433,7 +556,7 @@ function RuleDialog({
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>
-              {apps ? "Rule for a published port" : "Rule for this machine"}
+              {rule ? "Edit rule" : apps ? "Rule for a published port" : "Rule for this machine"}
             </DialogTitle>
             <DialogDescription>
               {apps
@@ -565,7 +688,7 @@ function RuleDialog({
               Cancel
             </Button>
             <ActionButton type="submit" busy={busy} disabled={!port}>
-              Add rule
+              {rule ? "Save" : "Add rule"}
             </ActionButton>
           </DialogFooter>
         </form>

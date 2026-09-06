@@ -21,6 +21,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("POST /firewall/enable", auth(http.HandlerFunc(h.enable)))
 	r.Handle("POST /firewall/disable", auth(http.HandlerFunc(h.disable)))
 	r.Handle("POST /firewall/rules", auth(http.HandlerFunc(h.addRule)))
+	r.Handle("PUT /firewall/rules/{index}", auth(http.HandlerFunc(h.replaceRule)))
 	r.Handle("DELETE /firewall/rules/{index}", auth(http.HandlerFunc(h.deleteRule)))
 	r.Handle("POST /firewall/docker", auth(http.HandlerFunc(h.adoptDocker)))
 	r.Handle("DELETE /firewall/docker", auth(http.HandlerFunc(h.releaseDocker)))
@@ -115,7 +116,21 @@ func (h *Handler) disable(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) addRule(w http.ResponseWriter, r *http.Request) {
-	var req struct {
+	req, ok := decodeRule(w, r)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	write(w, func() (*Status, error) {
+		return h.svc.AddRule(ctx, user.FromContext(ctx), req)
+	})
+}
+
+// decodeRule reads the body both writing and editing take. They ask for
+// the same thing — editing is a delete and an add, so it can hardly ask
+// for less.
+func decodeRule(w http.ResponseWriter, r *http.Request) (Request, bool) {
+	var body struct {
 		Scope    string `json:"scope"`
 		Action   string `json:"action"`
 		Protocol string `json:"protocol"`
@@ -126,20 +141,34 @@ func (h *Handler) addRule(w http.ResponseWriter, r *http.Request) {
 		Sources []string `json:"sources"`
 		Comment string   `json:"comment"`
 	}
-	if err := httpx.DecodeJSON(r, &req); err != nil {
+	if err := httpx.DecodeJSON(r, &body); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
+		return Request{}, false
+	}
+	return Request{
+		Scope:    Scope(body.Scope),
+		Action:   Action(body.Action),
+		Protocol: Protocol(body.Protocol),
+		Port:     body.Port,
+		Sources:  body.Sources,
+		Comment:  body.Comment,
+	}, true
+}
+
+func (h *Handler) replaceRule(w http.ResponseWriter, r *http.Request) {
+	req, ok := decodeRule(w, r)
+	if !ok {
+		return
+	}
+	index, err := strconv.Atoi(r.PathValue("index"))
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 	ctx := r.Context()
 	write(w, func() (*Status, error) {
-		return h.svc.AddRule(ctx, user.FromContext(ctx), Request{
-			Scope:    Scope(req.Scope),
-			Action:   Action(req.Action),
-			Protocol: Protocol(req.Protocol),
-			Port:     req.Port,
-			Sources:  req.Sources,
-			Comment:  req.Comment,
-		})
+		return h.svc.ReplaceRule(ctx, user.FromContext(ctx), index,
+			r.URL.Query().Get("expect"), req)
 	})
 }
 
