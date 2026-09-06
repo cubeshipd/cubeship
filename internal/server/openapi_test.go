@@ -92,6 +92,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"GET /apps/{project}/{env}/{name}/deployments/{id}",
 		"GET /apps/{project}/{env}/{name}/env",
 		"GET /apps/{project}/{env}/{name}/logs",
+		"GET /certificates",
 		"GET /dns",
 		"GET /dns/{id}/records",
 		"GET /dns/{id}/status",

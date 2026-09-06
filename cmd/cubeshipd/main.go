@@ -346,6 +346,7 @@ func run() error {
 		Builder:       builder,
 		LocalRegistry: localRegistry,
 		Frontend:      bootstrap.FrontendAddress(cfg),
+		DataDir:       cfg.DataDir,
 		SetupToken:    setupToken,
 	})
 
