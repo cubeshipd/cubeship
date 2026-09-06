@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"cubeship/internal/app"
+	"cubeship/internal/datastore"
 	"cubeship/internal/platform/authkey"
 	"cubeship/internal/platform/bootstrap"
 	"cubeship/internal/platform/buildkit"
@@ -377,6 +378,12 @@ func run() error {
 
 	if err := app.Reconcile(ctx, srv.Apps.Repo(), docker); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
+	}
+	// The same correction for the databases. Their containers come back
+	// on their own — Docker's restart policy is unless-stopped — but
+	// the rows still describe the world from before the reboot.
+	if err := datastore.Reconcile(ctx, srv.Datastores.Repo(), docker); err != nil {
+		return fmt.Errorf("reconcile datastores: %w", err)
 	}
 
 	srv.SetRegistrySigningKey(registrySigningKey, registryCertDER)

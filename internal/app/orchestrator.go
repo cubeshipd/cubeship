@@ -44,6 +44,9 @@ type Orchestrator struct {
 	creds    CredentialLookup
 	builder  ImageBuilder
 	git      GitTokens
+	// datastores is what an attached database contributes to a
+	// container's environment. Nil until the daemon wires it in.
+	datastores DatastoreVars
 
 	// localRegistry is where the daemon pulls an app's own image from:
 	// the registry reached directly, never the public name. Pulling the
@@ -74,6 +77,23 @@ type Orchestrator struct {
 // timeout — nobody is waiting on the connection any more — it only stops
 // a wedged deploy running forever.
 const DeployTimeout = 10 * time.Minute
+
+// DatastoreVars answers what the databases attached to an app
+// contribute to its environment: DATABASE_URL and its parts, for every
+// datastore wired to it.
+//
+// An interface rather than an import, and the direction is deliberate.
+// Datastores are addressed the way apps are and are attached to apps,
+// so that module sits above this one and depends on it; this is the one
+// thing that has to travel back down, and it travels as a question this
+// package asks rather than as a package it reaches for. The daemon
+// hands the implementation in at wiring time — see server.New.
+//
+// Nil is a legal state: a server built without the module simply has no
+// databases to inherit from.
+type DatastoreVars interface {
+	VarsForApp(ctx context.Context, appID int64) (envvar.Map, error)
+}
 
 // CredentialLookup answers what login an organization holds for the
 // registry an image lives in. Only an external app ever needs one.
@@ -562,7 +582,18 @@ func (o *Orchestrator) inheritedEnv(ctx context.Context, a *App) (envvar.Map, er
 	if err != nil {
 		return nil, fmt.Errorf("get environment: %w", err)
 	}
-	return envvar.Merge(p.Env, e.Env, a.Env), nil
+	// A database's variables are read fresh at every deploy, not stored
+	// on the app: an attachment made after the last deploy is exactly
+	// the case this has to pick up, and the connection string is
+	// derived from the datastore rather than copied anywhere.
+	var stores envvar.Map
+	if o.datastores != nil {
+		stores, err = o.datastores.VarsForApp(ctx, a.ID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve attached datastores: %w", err)
+		}
+	}
+	return envvar.Merge(p.Env, e.Env, stores, a.Env), nil
 }
 
 // routing pairs every name the app answers at with the port behind it.

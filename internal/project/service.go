@@ -18,6 +18,9 @@ type Service struct {
 	// apps is how deleting a project or an environment reaches the
 	// containers running inside it. See AppTeardown.
 	apps AppTeardown
+	// datastores is the same for the databases in it. See
+	// DatastoreTeardown.
+	datastores DatastoreTeardown
 }
 
 func NewService(db *database.DB) *Service {
@@ -27,6 +30,10 @@ func NewService(db *database.DB) *Service {
 // SetAppTeardown wires the app module in. Called once, at startup, by
 // the only package that knows every module exists.
 func (s *Service) SetAppTeardown(t AppTeardown) { s.apps = t }
+
+// SetDatastoreTeardown wires the datastore module in, the same way and
+// at the same moment.
+func (s *Service) SetDatastoreTeardown(t DatastoreTeardown) { s.datastores = t }
 
 func (s *Service) Repo() *Repository                       { return NewRepository(s.db) }
 func (s *Service) EnvironmentRepo() *EnvironmentRepository { return NewEnvironmentRepository(s.db) }
@@ -173,7 +180,15 @@ func (s *Service) Delete(ctx context.Context, caller *user.User, projectSlug str
 	if s.apps == nil {
 		return nil, ErrNoTeardown
 	}
+	if s.datastores == nil {
+		return nil, ErrNoDatastoreTeardown
+	}
 	if err := s.apps.DeleteAppsInProject(ctx, p.ID); err != nil {
+		return nil, err
+	}
+	// The apps go first, so nothing is left connecting to a database
+	// while it is being taken away.
+	if err := s.datastores.DeleteDatastoresInProject(ctx, p.ID); err != nil {
 		return nil, err
 	}
 	return p, s.db.WithTx(ctx, func(tx database.Queryer) error {
@@ -273,7 +288,13 @@ func (s *Service) DeleteEnvironment(ctx context.Context, caller *user.User, proj
 	if s.apps == nil {
 		return nil, ErrNoTeardown
 	}
+	if s.datastores == nil {
+		return nil, ErrNoDatastoreTeardown
+	}
 	if err := s.apps.DeleteAppsInEnvironment(ctx, e.ID); err != nil {
+		return nil, err
+	}
+	if err := s.datastores.DeleteDatastoresInEnvironment(ctx, e.ID); err != nil {
 		return nil, err
 	}
 	return e, s.EnvironmentRepo().Delete(ctx, e.ID)

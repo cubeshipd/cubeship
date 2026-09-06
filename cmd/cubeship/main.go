@@ -21,6 +21,7 @@ func main() {
 	root.AddCommand(newAppCmd())
 	root.AddCommand(newProjectCmd())
 	root.AddCommand(newEnvironmentCmd())
+	root.AddCommand(newDatastoreCmd())
 	root.AddCommand(newUserCmd())
 
 	if err := root.Execute(); err != nil {

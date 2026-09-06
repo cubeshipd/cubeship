@@ -44,6 +44,9 @@ var (
 	// delete cannot know what it would leave running. Refusing is the
 	// only safe answer: rows would go and containers would stay.
 	ErrNoTeardown = errors.New("cannot delete: the app module is not wired in")
+
+	// ErrNoDatastoreTeardown is the same refusal for the databases.
+	ErrNoDatastoreTeardown = errors.New("cannot delete: the datastore module is not wired in")
 )
 
 // AppTeardown removes the apps under something being deleted — their
@@ -60,4 +63,19 @@ var (
 type AppTeardown interface {
 	DeleteAppsInProject(ctx context.Context, projectID int64) error
 	DeleteAppsInEnvironment(ctx context.Context, environmentID int64) error
+}
+
+// DatastoreTeardown is AppTeardown for the databases in something being
+// deleted: their containers and the data directories behind them.
+//
+// A second interface rather than a wider first one, because they are
+// wired by different modules and a server may plausibly have one and not
+// the other. Both are refused when missing, for the same reason: rows
+// cascade away on their own, and a datastore whose row went while its
+// container kept running would be a database serving traffic that
+// nothing on the instance names — with the disk it holds unreclaimable,
+// since nothing knows which directory was whose any more.
+type DatastoreTeardown interface {
+	DeleteDatastoresInProject(ctx context.Context, projectID int64) error
+	DeleteDatastoresInEnvironment(ctx context.Context, environmentID int64) error
 }

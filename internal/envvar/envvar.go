@@ -61,10 +61,21 @@ func Slice(m Map) []string {
 }
 
 // Source names the level a variable was set at.
+//
+// The order is the precedence: each overrides the one before it. A
+// datastore's variables sit between the environment's and the app's own
+// because an attachment is more specific than the environment it is in,
+// and because an app's own variable is how you point one somewhere else
+// without detaching anything.
 const (
 	SourceProject     = "project"
 	SourceEnvironment = "environment"
-	SourceApp         = "app"
+	// SourceDatastore is a connection variable an attached database
+	// contributes — DATABASE_URL and its parts. Nobody types these, so
+	// this is the label that tells you where one came from when you go
+	// looking for who set it.
+	SourceDatastore = "datastore"
+	SourceApp       = "app"
 )
 
 // Layer is one level's variables together with where they came from.
