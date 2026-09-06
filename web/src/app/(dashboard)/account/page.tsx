@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
 import { PageHeader, SectionHeader } from "@/components/page-header";
+import { useSession } from "@/components/session-context";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -26,7 +28,13 @@ export default function Account() {
 }
 
 function Keys() {
+  // Whether this account can sign in without a key is what says how
+  // much revoking the last one costs. The shell has already resolved
+  // it — nothing renders under it until it has — so this does not ask
+  // again.
+  const me = useSession();
   const [keys, setKeys] = useState<ApiKey[] | null>(null);
+  const [revoking, setRevoking] = useState<ApiKey | null>(null);
   const [name, setName] = useState("");
   const [issued, setIssued] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -39,6 +47,8 @@ function Keys() {
       .catch((e) => setError(message(e)));
   }, []);
   useEffect(reload, [reload]);
+
+  const last = (keys?.length ?? 0) <= 1;
 
   async function create(e: React.FormEvent) {
     e.preventDefault();
@@ -89,14 +99,7 @@ function Keys() {
                     variant="ghost"
                     size="xs"
                     className="text-muted-foreground hover:text-destructive"
-                    onClick={async () => {
-                      try {
-                        await api.del(`/users/me/api-keys/${k.id}`);
-                        reload();
-                      } catch (e) {
-                        setError(message(e));
-                      }
-                    }}
+                    onClick={() => setRevoking(k)}
                   >
                     Revoke
                   </Button>
@@ -114,6 +117,40 @@ function Keys() {
           </TableBody>
         </Table>
       </Card>
+
+      {/* Revoking the last key is allowed — a leaked key has to be able
+          to go now, not after you have made a replacement. What stands
+          in front of it is a confirmation that says what it costs, and
+          that depends on whether this account has another way in. */}
+      <ConfirmDialog
+        open={revoking !== null}
+        onOpenChange={(open) => !open && setRevoking(null)}
+        title={`Revoke ${revoking?.name}?`}
+        confirmLabel="Revoke"
+        description={
+          !last ? (
+            <>Anything using this key stops working immediately. Your other keys are untouched.</>
+          ) : me.has_password ? (
+            <>
+              This is your only key. <code>cubeship</code> and <code>docker login</code> stop
+              working until you create another — which you can do here, because this account signs
+              in with a password.
+            </>
+          ) : (
+            <>
+              <strong>This is your only key, and this account has no password.</strong> Revoking it
+              leaves nothing to authenticate with: another admin would have to let you back in. Set
+              a password below first if you want to keep your way in.
+            </>
+          )
+        }
+        onConfirm={async () => {
+          if (!revoking) return;
+          await api.del(`/users/me/api-keys/${revoking.id}`);
+          setRevoking(null);
+          reload();
+        }}
+      />
 
       <form className="flex items-end gap-2" onSubmit={create}>
         <TextField

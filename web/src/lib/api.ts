@@ -42,7 +42,20 @@ export const api = {
 // token_required says the claim has to carry the token the installer
 // printed — see setup.Token on the daemon.
 export type SetupStatus = { needed: boolean; token_required: boolean };
-export type Me = { username: string; is_super_admin: boolean };
+// Who is signed in, from GET /users/me.
+//
+// `is_super_admin` used to be here, and it outlived the thing it named:
+// organizations went, roles moved onto the account, and the daemon has
+// answered with `role` ever since. Nothing complained, because reading
+// a field that is not in the JSON is `undefined` rather than an error —
+// so every admin-only piece of UI behind it was simply never rendered.
+export type Me = {
+  username: string;
+  role: "admin" | "member";
+  // Whether this account can sign in without an API key. It is what
+  // says how much revoking the last key costs — see the account screen.
+  has_password: boolean;
+};
 // None of these has a display name. The slug is the name — the rule an
 // app has always followed, now everywhere: a slug is a path component of
 // every registry reference underneath it, so it is the identifier that

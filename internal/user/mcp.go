@@ -50,6 +50,9 @@ func (t *Tools) Register(srv *mcp.Server) {
 }
 
 func (t *Tools) whoAmI(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, WhoAmIResponse, error) {
+	// No password flag here. It exists for the account screen, which
+	// has a revoke button beside it; an agent has nothing to do with
+	// how its caller signs in.
 	return nil, WhoAmIResponse{Username: t.caller.Username, Role: t.caller.Role}, nil
 }
 
