@@ -209,6 +209,24 @@
   background-color: var(--background);
 }
 
+/* A field that is a value to copy, never one to edit — see CopyField.
+   Disabled, so nothing can focus it or change it, and unselectable, so
+   a click on its label cannot leave half a connection string
+   highlighted.
+
+   The dimming a disabled control normally gets is undone here rather
+   than per usage, because that is the rule this whole block exists for.
+   Dimming says "unavailable for now"; this is not unavailable, it is
+   final, and a connection string at half opacity is one nobody can
+   read. */
+[data-slot="input"][data-copyable] {
+  opacity: 1;
+  color: var(--foreground);
+  cursor: default;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 /* The list a select opens is portalled out of the trigger, so it does
    not inherit from it. Font family only — the popup keeps its own
    surface, which sits a step above the field rather than on it. */

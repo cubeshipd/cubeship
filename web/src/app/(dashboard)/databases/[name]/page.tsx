@@ -292,10 +292,14 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
       <ErrorAlert error={error} />
 
       {datastore.attachments.length === 0 ? (
-        <Notice>
-          Nothing is attached, so no app on this instance can reach this database yet. Attaching one
-          gives it <code className="text-foreground">DATABASE_URL</code> and its parts.
-        </Notice>
+        // One line, not a notice. The section's own subtitle already
+        // says what an attachment does; a box repeating it under an
+        // empty table is furniture.
+        <Card className="mb-4">
+          <CardContent className="py-2 text-sm text-muted-foreground">
+            Nothing is attached yet.
+          </CardContent>
+        </Card>
       ) : (
         <Card className="mb-4">
           <CardContent>
@@ -348,11 +352,6 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
           </CardContent>
         </Card>
       )}
-
-      <Notice>
-        A container keeps the environment it was created with, so attaching or detaching changes
-        nothing until the app is deployed again.
-      </Notice>
 
       <AttachDialog
         datastore={datastore}

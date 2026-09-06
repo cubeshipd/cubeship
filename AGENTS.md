@@ -1352,12 +1352,20 @@ the others, and hiding two behind a click made you click through all of
 them every time. Monitoring is first because it is the question you have
 before you know you have one.
 
-The connection details are **read-only fields with a copy button**
-rather than a table of values. A connection string is long, and a field
-scrolls inside itself and takes one click to select, where a wrapped
-line of prose gives you three lines and a chance to miss one. `readOnly`
-rather than `disabled`: a disabled input cannot be focused, selected or
-copied from with the keyboard, which is most of what it is for.
+The connection details are **fields with a copy button** rather than a
+table of values. A connection string is long, and a field bounds it and
+keeps it on one line where a wrapped paragraph gives you three and a
+chance to miss one.
+
+`CopyField` is `disabled` and `user-select: none`. It was `readOnly`
+first, focusing and selecting itself on a click — so clicking its
+*label* lit the focus ring and highlighted the value, which reads as an
+edit about to happen on something that cannot be edited. The button is
+how a value leaves the field; nothing has to take focus for that, and a
+selection nobody asked for is only ever half a connection string. The
+dimming a disabled control normally gets is undone for these in
+`globals.css`, where every other field rule lives: dimming says
+"unavailable for now", and this is not unavailable, it is final.
 
 Settings stays on its own page like every other resource, because the
 actions that cannot be undone belong at the bottom of a page you went to
