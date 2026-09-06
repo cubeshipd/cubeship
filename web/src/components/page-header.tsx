@@ -1,15 +1,16 @@
 import type { ReactNode } from "react";
 
+// The page's own heading, and nothing under it. A page title says what
+// you are looking at; the screen itself is what explains it, and a
+// paragraph repeated on every visit is a paragraph nobody reads twice.
 export function PageHeader({
   title,
-  sub,
   actions,
   icon,
   literal = false,
   below,
 }: {
   title: ReactNode;
-  sub?: ReactNode;
   actions?: ReactNode;
   // Something that belongs to the page rather than to what is under it
   // — a filter, say. It sits above the separator, which is what says so.
@@ -37,7 +38,6 @@ export function PageHeader({
             {icon}
             {title}
           </h1>
-          {sub && <p className="mt-2 max-w-2xl text-sm text-muted-foreground">{sub}</p>}
         </div>
         {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
       </div>

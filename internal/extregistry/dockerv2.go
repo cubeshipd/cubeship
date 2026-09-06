@@ -49,11 +49,12 @@ type v2Client struct {
 }
 
 func newV2Client(client *http.Client, c *Credential) *v2Client {
+	username, password := c.Login()
 	return &v2Client{
 		http:     client,
 		host:     c.Host,
-		username: c.Username,
-		password: c.Password,
+		username: username,
+		password: password,
 		tokens:   map[string]string{},
 	}
 }

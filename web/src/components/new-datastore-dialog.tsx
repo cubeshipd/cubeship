@@ -6,15 +6,13 @@ import { useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { CopyButton } from "@/components/copy-button";
 import { ErrorAlert } from "@/components/error-alert";
-import { Notice } from "@/components/notice";
-import { OptionCards } from "@/components/option-cards";
+import { SearchableSelect } from "@/components/searchable-select";
 import { SlugField } from "@/components/slug-field";
-import { TextAreaField, TextField } from "@/components/text-field";
+import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -28,18 +26,6 @@ import {
   generatePassword,
 } from "@/lib/api";
 import { message } from "@/lib/errors";
-
-// What each engine is, in the sentence somebody choosing between them
-// needs. An engine the daemon offers that is not here still appears —
-// by its own name, with nothing invented about it.
-const BLURBS: Record<string, string> = {
-  postgres: "The default, and what most things mean by “a database”.",
-  mysql: "Relational, and what a PHP or WordPress stack usually expects.",
-  mariadb: "MySQL’s fork. Clients connect to it as MySQL.",
-  redis:
-    "In-memory, for caches, queues and sessions. Writes to disk, so a restart is not an empty one.",
-  mongodb: "Document-oriented, with no fixed schema.",
-};
 
 // Creating a database.
 //
@@ -62,7 +48,6 @@ export function NewDatastoreDialog({
 }) {
   const [engines, setEngines] = useState<DatastoreEngine[] | null>(null);
   const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
   const [engine, setEngine] = useState("");
   const [version, setVersion] = useState("");
   const [username, setUsername] = useState("cubeship");
@@ -75,7 +60,6 @@ export function NewDatastoreDialog({
   useEffect(() => {
     if (!open) return;
     setName("");
-    setDescription("");
     setUsername("");
     setPassword(generatePassword());
     setError(null);
@@ -112,7 +96,6 @@ export function NewDatastoreDialog({
     try {
       const created = await api.post<CreatedDatastore>("/datastores", {
         name,
-        description,
         engine,
         version,
         username,
@@ -132,10 +115,6 @@ export function NewDatastoreDialog({
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>New database</DialogTitle>
-            <DialogDescription>
-              It belongs to the instance, not to a project. Attach apps to it afterwards — in any
-              project — and each one gets the connection string.
-            </DialogDescription>
           </DialogHeader>
 
           {/* This form is long enough to scroll on a laptop, and a
@@ -163,14 +142,14 @@ export function NewDatastoreDialog({
               className="scroll-mt-12"
             />
 
-            <OptionCards
+            <SearchableSelect
               label="Engine"
+              searchable={false}
               value={engine}
               onChange={pickEngine}
-              options={(engines ?? []).map((e) => ({
+              choices={(engines ?? []).map((e) => ({
                 value: e.engine,
-                title: datastoreLabel(e.engine),
-                body: BLURBS[e.engine] ?? `Version ${e.default_version}.`,
+                label: datastoreLabel(e.engine),
               }))}
             />
 
@@ -195,8 +174,7 @@ export function NewDatastoreDialog({
                 ))}
               </div>
               <p className="text-xs leading-relaxed text-subtle-foreground">
-                Permanent. A data directory written by one major version cannot be read by another,
-                so changing this later means a second database and a migration.
+                Permanent. A data directory written by one major version cannot be read by another.
               </p>
             </div>
 
@@ -211,8 +189,8 @@ export function NewDatastoreDialog({
                 onChange={(e) => setUsername(e.target.value)}
                 hint={
                   engine === "mysql" || engine === "mariadb"
-                    ? "The login the server is created with. Not “root” — it already exists, and this would not be its password."
-                    : "The login the server is created with."
+                    ? "Not “root” — it already exists, and this would not be its password."
+                    : undefined
                 }
               />
             )}
@@ -236,20 +214,8 @@ export function NewDatastoreDialog({
                   </Button>
                 </span>
               }
-              hint="Generated for you. Change it if you already have one, but there is nothing to gain from a shorter one."
+              hint="Generated for you. Copy it now — no endpoint returns it in a listing."
             />
-
-            <TextAreaField
-              label="Description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              hint="What this database holds. Optional."
-            />
-
-            <Notice>
-              It will be reachable only from apps on this instance. Publishing it on a host port is
-              a separate decision, in its settings.
-            </Notice>
           </div>
 
           <DialogFooter>

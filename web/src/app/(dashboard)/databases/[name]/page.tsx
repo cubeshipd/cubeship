@@ -19,12 +19,12 @@ import { ContainerLogs } from "@/components/container-logs";
 import { CopyField } from "@/components/copy-field";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { LoadingList, LoadingValue } from "@/components/loading";
+import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
+import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchableSelect } from "@/components/searchable-select";
-import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -44,7 +44,6 @@ import {
   type Datastore,
   type DatastoreAttachment,
   type DatastoreCredentials,
-  datastoreLabel,
   datastorePath,
 } from "@/lib/api";
 import { message } from "@/lib/errors";
@@ -109,16 +108,6 @@ function Detail({ name }: { name: string }) {
           fast the request was. */}
       <PageHeader
         title={<span className="font-mono text-lg tracking-normal normal-case">{name}</span>}
-        sub={
-          datastore ? (
-            <span className="flex items-center gap-2">
-              {datastoreLabel(datastore.engine)} {datastore.version}
-              <StatusBadge value={datastore.status} />
-            </span>
-          ) : (
-            <LoadingValue className="h-4 w-40" />
-          )
-        }
         actions={
           datastore && (
             <>
@@ -323,17 +312,14 @@ function attachmentColumns(onDetach: (app: string) => void): Column<DatastoreAtt
       width: 10,
       align: "right",
       cell: (a) => (
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={`Detach ${a.app}`}
-          onClick={(e) => {
-            e.stopPropagation();
-            onDetach(a.app);
-          }}
-        >
-          <Trash2Icon className="size-3.5" />
-        </Button>
+        <RowActions>
+          <RowAction
+            icon={Trash2Icon}
+            label={`Detach ${a.app}`}
+            danger
+            onClick={() => onDetach(a.app)}
+          />
+        </RowActions>
       ),
     },
   ];

@@ -110,15 +110,16 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
+		// Provider is which registry this is. Always asked for: a
+		// credential is a secret, not a kind of registry, so a stored
+		// account cannot answer it.
+		Provider string `json:"provider"`
 		// CredentialID is the stored account this registry
-		// authenticates as. It decides the provider, so nothing else
-		// need name one.
+		// authenticates as.
 		CredentialID int64 `json:"credential_id"`
 		// Or a login typed here, for somebody who has no stored account
 		// yet — the account is created from it and is there to pick
-		// next time. Then the provider is asked for, because there is
-		// no account to read it off.
-		Provider string `json:"provider"`
+		// next time.
 		Label    string `json:"label"`
 		Username string `json:"username"`
 		Password string `json:"password"`
@@ -137,21 +138,17 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A login is offered when any of its parts is: a request that names
-	// a provider and no secret is somebody who meant to type one, and
+	// a label and no secret is somebody who meant to type one, and
 	// telling them the secret is missing beats "no login" for a form
 	// they just filled in.
 	var login *NewLogin
-	if req.Provider != "" || req.Username != "" || req.Password != "" {
-		login = &NewLogin{
-			Provider: Provider(req.Provider),
-			Label:    req.Label,
-			Username: req.Username,
-			Password: req.Password,
-		}
+	if req.Label != "" || req.Username != "" || req.Password != "" {
+		login = &NewLogin{Label: req.Label, Username: req.Username, Password: req.Password}
 	}
 
 	ctx := r.Context()
 	created, err := h.svc.Create(ctx, user.FromContext(ctx), Credential{
+		Provider:     Provider(req.Provider),
 		CredentialID: req.CredentialID,
 		Host:         req.Host,
 		Namespace:    req.Namespace,

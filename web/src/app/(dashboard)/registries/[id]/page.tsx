@@ -9,6 +9,7 @@ import { ErrorAlert } from "@/components/error-alert";
 import { LoadingList, LoadingNote } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
+import { RowAction } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -317,11 +318,6 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
               }
             />
           )
-        }
-        sub={
-          own
-            ? "What this instance has pushed. A repository path here is an app's reference."
-            : "What this registry holds, as it reports it."
         }
         below={
           repos &&
@@ -689,17 +685,7 @@ function RepoRows({
               </span>
             )}
             {onDelete && (
-              <Button
-                variant="ghost"
-                size="xs"
-                className="size-6 p-0 text-muted-foreground hover:text-destructive"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete();
-                }}
-              >
-                <Trash2Icon className="size-3.5" />
-              </Button>
+              <RowAction icon={Trash2Icon} label={`Delete ${name}`} danger onClick={onDelete} />
             )}
             <ChevronRightIcon
               className={`size-3.5 shrink-0 text-muted-foreground transition-transform ${
@@ -756,15 +742,12 @@ function RepoRows({
                       className="size-6 shrink-0 p-0"
                     />
                     {onDeleteTag && (
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        aria-label={`Delete ${imageLabel(image)}`}
-                        className="size-6 shrink-0 p-0 text-muted-foreground hover:text-destructive"
+                      <RowAction
+                        icon={Trash2Icon}
+                        label={`Delete ${imageLabel(image)}`}
+                        danger
                         onClick={() => onDeleteTag(imageRef(image))}
-                      >
-                        <Trash2Icon className="size-3.5" />
-                      </Button>
+                      />
                     )}
                   </li>
                 ))}

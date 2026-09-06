@@ -93,7 +93,6 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
     <>
       <PageHeader
         title={project}
-        sub={<span className="font-mono text-xs">{project}</span>}
         actions={
           <>
             <Button onClick={() => setCreatingApp(true)}>

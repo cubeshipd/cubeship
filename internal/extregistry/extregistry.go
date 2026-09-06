@@ -58,10 +58,10 @@ type Credential struct {
 	// both, and storing it once is the point of internal/credential.
 	CredentialID int64
 
-	// Provider, Username and Password come from that credential and are
-	// filled on read. Nothing writes them through this type — an edit
-	// to a login is an edit to the credential, in one place, and every
-	// registry using it follows.
+	// Provider is which registry this is, and it is this row's own: a
+	// credential carries no provider, because the same DigitalOcean
+	// token may be reaching two things. Fixed once the row exists, like
+	// the host it decides.
 	Provider Provider
 	// Host is the registry, and the identity: one per host per
 	// organization.
@@ -73,12 +73,32 @@ type Credential struct {
 	// Region is AWS's. An ECR host carries the account id and the
 	// region; the account id is discovered, the region is asked for.
 	Region string
-	// Username and Password mean different things per provider: a login
+	// Username and Password come from the credential and are filled on
+	// read. Nothing writes them through this type — an edit to a login
+	// is an edit to the credential, in one place, and every registry
+	// using it follows. What they mean differs per provider: a login
 	// for a generic registry, an access key id and secret for AWS.
 	Username  string
 	Password  string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+}
+
+// Login is what a `docker login` to this registry uses, which is not
+// always what is stored.
+//
+// DigitalOcean's registry takes the API token as both halves, and a
+// DigitalOcean account holds one value — there is no name beside a
+// token — so the token stands in for the user. That substitution
+// happens **here, at the point of use**, and deliberately not on the
+// stored value: Username is a field the API returns, and doubling it on
+// the way out of the database put the secret in it. A password that is
+// never returned has to be never returned by every route out.
+func (c *Credential) Login() (username, password string) {
+	if c.Provider == ProviderDigitalOcean && c.Username == "" {
+		return c.Password, c.Password
+	}
+	return c.Username, c.Password
 }
 
 // NewLogin is a login typed in place of choosing a stored account.
@@ -91,7 +111,6 @@ type Credential struct {
 // Credentials and can be picked next time, for the second registry or
 // for DNS.
 type NewLogin struct {
-	Provider Provider
 	// Label is what the stored account is called. Derived from the
 	// registry when empty, because somebody adding a registry is not
 	// necessarily thinking about naming an account.
@@ -103,7 +122,6 @@ type NewLogin struct {
 var (
 	ErrNothingToUpdate    = errors.New("nothing to change: give a credential, a registry name, or both")
 	ErrTwoLogins          = errors.New("pick a stored account or type a login, not both")
-	ErrDifferentProvider  = errors.New("that credential is for a different provider — a registry's host was derived from the account it was created with, so it cannot move to another kind of account")
 	ErrCredentialRequired = errors.New("no login: pick the account this registry authenticates as, or type one")
 	ErrUnknownProvider    = errors.New(`provider must be "generic", "digitalocean" or "aws"`)
 	ErrHostRequired       = errors.New("host is required")
