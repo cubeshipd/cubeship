@@ -16,8 +16,13 @@ import { message } from "@/lib/errors";
 //
 // A table rather than cards, like the registries and the DNS accounts:
 // what someone comes here to do is scan a column — which engine, is it
-// up, what is using it — and cards make you read each one whole to find
-// the one line you were after.
+// up — and cards make you read each one whole to find the one line you
+// were after.
+//
+// What is attached to each is not among them. It is a list inside a
+// row, as long as the number of apps, and in a listing it is either
+// truncated to uselessness or the widest thing on the screen. It
+// belongs on the database's own page, where it is a table of its own.
 export default function DatabasesPage() {
   const router = useRouter();
   const [datastores, setDatastores] = useState<Datastore[] | null>(null);
@@ -36,14 +41,14 @@ export default function DatabasesPage() {
     {
       id: "name",
       header: "Name",
-      width: 26,
+      width: 40,
       sortBy: (d) => d.name,
       cell: (d) => <span className="font-mono text-sm">{d.name}</span>,
     },
     {
       id: "engine",
       header: "Engine",
-      width: 20,
+      width: 26,
       sortBy: (d) => `${d.engine} ${d.version}`,
       cell: (d) => (
         <span className="text-sm">
@@ -54,30 +59,14 @@ export default function DatabasesPage() {
     {
       id: "status",
       header: "Status",
-      width: 16,
+      width: 20,
       sortBy: (d) => d.status,
       cell: (d) => <StatusBadge value={d.status} />,
     },
     {
-      id: "apps",
-      header: "Attached apps",
-      width: 28,
-      sortBy: (d) => d.attachments.length,
-      cell: (d) =>
-        d.attachments.length === 0 ? (
-          // Worth reading rather than leaving blank: a database nothing
-          // is attached to is one no app on this instance can reach.
-          <span className="text-xs text-subtle-foreground">none</span>
-        ) : (
-          <span className="font-mono text-xs text-muted-foreground">
-            {d.attachments.map((a) => a.app).join(", ")}
-          </span>
-        ),
-    },
-    {
       id: "exposed",
       header: "Exposed",
-      width: 10,
+      width: 14,
       align: "right",
       sortBy: (d) => d.exposed_port ?? 0,
       cell: (d) =>
@@ -96,7 +85,7 @@ export default function DatabasesPage() {
     <>
       <PageHeader
         title="Databases"
-        sub="Postgres, MySQL and MariaDB, run by this instance for the apps on it. An app reaches one by being attached to it."
+        sub="Postgres, MySQL, MariaDB, Redis and MongoDB, run by this instance for the apps on it. An app reaches one by being attached to it."
         actions={
           <Button onClick={() => setCreating(true)}>
             <PlusIcon />
