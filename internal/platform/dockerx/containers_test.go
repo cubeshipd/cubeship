@@ -39,6 +39,7 @@ type fakeAPI struct {
 	localImages             map[string]bool
 	containers              []types.Container
 	exitCode                int
+	waitedBeforeStart       bool
 	statsID                 string
 	statsJSON               string
 	loaded                  []byte
@@ -129,6 +130,9 @@ func (f *fakeAPI) ContainerList(context.Context, container.ListOptions) ([]types
 }
 
 func (f *fakeAPI) ContainerWait(_ context.Context, _ string, _ container.WaitCondition) (<-chan container.WaitResponse, <-chan error) {
+	if f.startedID == "" {
+		f.waitedBeforeStart = true
+	}
 	done := make(chan container.WaitResponse, 1)
 	done <- container.WaitResponse{StatusCode: int64(f.exitCode)}
 	return done, make(chan error, 1)
@@ -633,5 +637,31 @@ func TestOnlyPortsSomethingOutsideCouldReachAreReported(t *testing.T) {
 	// is about the port.
 	if got[0].Port != 443 || got[0].Container != "cubeship-traefik" {
 		t.Errorf("reported %+v", got[0])
+	}
+}
+
+// A one-shot has to be started before it is waited on.
+//
+// It was the other way round, on the theory that a fast command could
+// exit before the wait was registered. That race does not exist. The one
+// that does is the mirror image: a container that has been created and
+// not started is already "not running", so the wait returns at once —
+// exit code 0, empty log — before the command has done anything, and
+// the caller cannot tell that from success.
+//
+// The symptom is the worst kind: every command reports success and has
+// no effect. Reads come back empty and writes never land.
+func TestAOneShotIsStartedBeforeItIsWaitedOn(t *testing.T) {
+	fake := &fakeAPI{}
+	if _, _, err := newWithAPI(fake).RunOneShot(context.Background(), ContainerOpts{
+		Image: "alpine", Cmd: []string{"true"},
+	}); err != nil {
+		t.Fatalf("RunOneShot: %v", err)
+	}
+	if fake.waitedBeforeStart {
+		t.Error("it waited on a container it had not started, which always returns immediately")
+	}
+	if fake.startedID == "" {
+		t.Error("nothing was started")
 	}
 }
