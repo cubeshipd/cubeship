@@ -570,6 +570,9 @@ export type FirewallRule = {
   ports?: string;
   from?: string;
   comment?: string;
+  // This rule admits SSH on a running firewall. Deleting it from here
+  // is refused — it is what keeps the session you are reading this in.
+  protected: boolean;
   // The IPv6 half of a rule UFW wrote twice. One decision, two lines.
   v6: boolean;
 };

@@ -40,6 +40,7 @@ func WriteError(w http.ResponseWriter, err error) {
 	// machine is not in a position to carry out, and the difference is
 	// what tells somebody whether to fix the form or fix the instance.
 	case errors.Is(err, ErrWouldLockYouOut), errors.Is(err, ErrRuleChanged),
+		errors.Is(err, ErrKeepsYouIn),
 		errors.Is(err, ErrDockerNotAdopted), errors.Is(err, ErrNotInstalled),
 		errors.Is(err, hostexec.ErrUnavailable):
 		http.Error(w, err.Error(), http.StatusConflict)

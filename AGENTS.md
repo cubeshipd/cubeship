@@ -930,6 +930,16 @@ silently costs somebody a machine:
   only decides whether to refuse, and is a lockout once it decides which
   port to open.
 - **An `apps` rule before adoption**, above.
+- **Deleting the rule that admits SSH**, while the firewall is running.
+  It is the same guarantee as the one above, from the other side:
+  enabling writes that rule so the session survives, and letting the
+  next click remove it would make the promise last exactly as long as
+  nobody was curious. It is still removable on the machine, where the
+  person doing it can watch what happens, and the refusal names the
+  command. Every rule admitting a port sshd is on is protected rather
+  than "the last one" — somebody moving SSH to another port adds the new
+  rule, moves sshd, and the old one stops being protected on the next
+  read, because what counts is where sshd is *now*.
 - **Deleting by a position that has moved.** UFW deletes by number and
   numbers shift; the caller sends the rule's own text and the daemon
   refuses if it no longer matches. Otherwise a stale screen deletes a

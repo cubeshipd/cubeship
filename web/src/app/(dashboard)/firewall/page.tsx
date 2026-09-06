@@ -97,12 +97,22 @@ export default function FirewallPage() {
       header: "",
       width: 18,
       align: "right",
+      // The rule admitting SSH is not offered for deletion: it is what
+      // keeps the session this is being read in, and the daemon refuses
+      // it anyway. Disabled with the reason rather than hidden — a
+      // missing button explains nothing.
       cell: (r) => (
         <RowActions>
           <RowAction
             icon={Trash2Icon}
             label={`Delete rule ${r.index}`}
-            danger
+            danger={!r.protected}
+            disabled={r.protected}
+            title={
+              r.protected
+                ? "This is what admits SSH. Removing it would end this session — do it on the machine if you mean to."
+                : undefined
+            }
             onClick={() => setDeleting(r)}
           />
         </RowActions>

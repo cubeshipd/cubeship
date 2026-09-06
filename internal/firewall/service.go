@@ -124,6 +124,7 @@ func (s *Service) Status(ctx context.Context, caller *user.User) (*Status, error
 		strings.TrimSpace(sections[3]) != "0"
 	status.SSHPorts = parsePorts(sections[4])
 	status.SSHAllowed = allowsAny(status.Rules, ScopeHost, status.SSHPorts)
+	markProtected(status)
 
 	// What is actually exposed on a Docker host, which is rarely what
 	// the host's own services are listening on.
@@ -207,6 +208,29 @@ func coversPort(spec string, port int) bool {
 		}
 	}
 	return false
+}
+
+// markProtected marks the rules this screen will not delete.
+//
+// Every host rule admitting a port sshd is on, and only while the
+// firewall is running — with it off, removing one cannot lock anybody
+// out, and Enable would write it again anyway.
+//
+// Every one of them rather than "the last one", deliberately. Somebody
+// moving SSH from 22 to 2222 does not have to fight the screen for it:
+// they add the new rule, move sshd, and the old one stops being an SSH
+// rule on the next read, because what counts is where sshd is *now*.
+func markProtected(status *Status) {
+	if !status.Enabled {
+		return
+	}
+	for i := range status.Rules {
+		r := &status.Rules[i]
+		if r.Action == ActionAllow && r.Scope == ScopeHost &&
+			allowsAny([]Rule{*r}, ScopeHost, status.SSHPorts) {
+			r.Protected = true
+		}
+	}
 }
 
 // Enable turns the firewall on, and never turns it on in a way that
@@ -330,6 +354,9 @@ func (s *Service) DeleteRule(ctx context.Context, caller *user.User, index int, 
 	}
 	if expect != "" && !sameRule(found.Text, expect) {
 		return nil, ErrRuleChanged
+	}
+	if found.Protected {
+		return nil, KeepsYouInError(*found)
 	}
 
 	// Two ways out, and which one applies is decided by whether the
