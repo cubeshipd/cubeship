@@ -38,6 +38,16 @@ func scan(row scanner) (*Credential, error) {
 		&c.Username, &c.Password, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, err
 	}
+	// DigitalOcean's registry takes the API token as both halves of a
+	// docker login, and a DigitalOcean credential stores one value:
+	// there is no name beside a token, so the account has no username
+	// to give. It is doubled here, on the way out, because every caller
+	// below wants a usable login and none of them should have to know
+	// this — a pull with an empty username is refused by the registry
+	// and reads as a wrong token.
+	if c.Provider == ProviderDigitalOcean && c.Username == "" {
+		c.Username = c.Password
+	}
 	return &c, nil
 }
 

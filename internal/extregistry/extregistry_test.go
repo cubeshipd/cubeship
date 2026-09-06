@@ -14,12 +14,13 @@ import (
 const orgPath = "/registries"
 
 type credential struct {
-	ID        int64  `json:"id"`
-	Provider  string `json:"provider"`
-	Host      string `json:"host"`
-	Namespace string `json:"namespace"`
-	Region    string `json:"region"`
-	Username  string `json:"username"`
+	ID           int64  `json:"id"`
+	CredentialID int64  `json:"credential_id"`
+	Provider     string `json:"provider"`
+	Host         string `json:"host"`
+	Namespace    string `json:"namespace"`
+	Region       string `json:"region"`
+	Username     string `json:"username"`
 }
 
 // A password is stored so it can be sent to a registry, which means an
@@ -30,8 +31,7 @@ func TestThePasswordIsNeverReturned(t *testing.T) {
 
 	const secret = "dop_v1_verysecrettoken"
 	rec := f.Do(t, http.MethodPost, orgPath, map[string]string{
-		"provider": "digitalocean", "namespace": "acme",
-		"username": "someone@example.com", "password": secret,
+		"provider": "digitalocean", "namespace": "acme", "password": secret,
 	}, f.AdminKey)
 	servertest.RequireStatus(t, rec, http.StatusCreated)
 	if strings.Contains(rec.Body.String(), secret) {
@@ -171,8 +171,7 @@ func TestDigitalOceanIsAskedForItsNameAndNotItsURL(t *testing.T) {
 
 	var created credential
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, orgPath, map[string]string{
-		"provider": "digitalocean", "namespace": "acme",
-		"username": "someone@example.com", "password": "dop_v1_token",
+		"provider": "digitalocean", "namespace": "acme", "password": "dop_v1_token",
 	}, f.AdminKey, &created), http.StatusCreated)
 
 	if created.Host != extregistry.DigitalOceanHost {
@@ -184,7 +183,7 @@ func TestDigitalOceanIsAskedForItsNameAndNotItsURL(t *testing.T) {
 
 	// And it is required: without it there is no image path to build.
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, orgPath, map[string]string{
-		"provider": "digitalocean", "username": "a", "password": "b",
+		"provider": "digitalocean", "password": "b",
 	}, f.AdminKey), http.StatusBadRequest)
 }
 
@@ -214,4 +213,74 @@ func TestAnUnknownProviderIsRefused(t *testing.T) {
 			"provider": provider, "host": "example.com", "username": "a", "password": "b",
 		}, f.AdminKey), http.StatusBadRequest)
 	}
+}
+
+// A stored account is a convenience, not a prerequisite.
+//
+// Somebody adding their first registry has no account yet, and being
+// sent to another screen to make one before they can do the thing they
+// came to do is the tail wagging the dog. So the login is typed here —
+// and what it becomes is an account, listed under credentials and there
+// to pick next time, for the second registry or for DNS.
+func TestATypedLoginBecomesAnAccountYouCanReuse(t *testing.T) {
+	f := servertest.New(t)
+
+	var created credential
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, orgPath, map[string]string{
+		"provider": "digitalocean", "namespace": "acme", "password": "dop_v1_token",
+	}, f.AdminKey, &created), http.StatusCreated)
+
+	if created.CredentialID == 0 {
+		t.Fatal("the registry names no account, so the login went nowhere reusable")
+	}
+
+	var accounts []struct {
+		ID       int64    `json:"id"`
+		Provider string   `json:"provider"`
+		Label    string   `json:"label"`
+		InUseBy  []string `json:"in_use_by"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet,
+		"/credentials", nil, f.AdminKey, &accounts), http.StatusOK)
+
+	var found bool
+	for _, a := range accounts {
+		if a.ID != created.CredentialID {
+			continue
+		}
+		found = true
+		if a.Provider != "digitalocean" {
+			t.Errorf("the account is for %q", a.Provider)
+		}
+		// Nobody was asked to name it, so it is named after what it was
+		// created for — and it says what is standing on it, which is
+		// what makes deleting it refusable.
+		if a.Label == "" {
+			t.Error("the account has no label")
+		}
+		if len(a.InUseBy) == 0 {
+			t.Error("the account does not say the registry is using it")
+		}
+	}
+	if !found {
+		t.Errorf("the account is not in the listing: %+v", accounts)
+	}
+}
+
+// Both at once has no obvious reading, and guessing which was meant is
+// how the wrong secret gets stored.
+func TestAnAccountAndATypedLoginTogetherAreRefused(t *testing.T) {
+	f := servertest.New(t)
+
+	var created credential
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, orgPath, map[string]string{
+		"provider": "generic", "host": "ghcr.io", "username": "a", "password": "b",
+	}, f.AdminKey, &created), http.StatusCreated)
+
+	rec := f.Do(t, http.MethodPost, orgPath, map[string]any{
+		"credential_id": created.CredentialID,
+		"provider":      "generic", "host": "quay.io",
+		"username": "a", "password": "b",
+	}, f.AdminKey)
+	servertest.RequireStatus(t, rec, http.StatusBadRequest)
 }

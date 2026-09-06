@@ -55,6 +55,19 @@ func (s *Service) Repo() *Repository { return NewRepository(s.db) }
 // with it. Dropping the extra silently is how a credential comes out
 // different from what somebody thought they stored.
 func (s *Service) Create(ctx context.Context, caller *user.User, in Credential) (*Credential, error) {
+	return s.CreateWith(ctx, caller, s.db, in)
+}
+
+// CreateWith is Create on a given Queryer, so a module that stores a
+// credential as part of a larger act can do both in one transaction.
+//
+// That is what keeps a credential from being a *prerequisite*. A
+// registry added with a login typed in place of choosing a stored
+// account is one request: the account is created and the registry is
+// created, or neither is. Without this the caller would have to make
+// the credential first and be left holding an orphan when the registry
+// turned out to be unreachable.
+func (s *Service) CreateWith(ctx context.Context, caller *user.User, q database.Queryer, in Credential) (*Credential, error) {
 	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
@@ -76,7 +89,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, in Credential) 
 		return nil, ErrPasswordRequired
 	}
 
-	created, err := s.Repo().Create(ctx, &in)
+	created, err := NewRepository(q).Create(ctx, &in)
 	if database.IsUniqueViolation(err) {
 		// The index decides, not a preceding lookup: two concurrent
 		// creates would both pass a check and the loser would surface

@@ -226,12 +226,15 @@ DNS and registries follow the same shape:
                                 deleting it
 ```
 
-`/dns` has no create button and no `[id]/settings`, and that is the
-model showing through rather than a screen someone forgot: **DNS has no
-configuration of its own.** What was there to add, rename or delete was
-the account, and the account is a credential now. `/dns` lists
-`GET /credentials?capability=dns` and sends anything about the account
-itself to `/credentials`.
+`/dns` has no `[id]/settings`, and that is the model showing through:
+**DNS has no configuration of its own.** What there is to add, rename or
+delete is the *account*, and an account is a credential — so `/dns`
+lists `GET /credentials?capability=dns` and adds, edits and deletes them
+in place, through the same `CredentialDialog` the Credentials screen
+uses.
+
+It does **not** send you to that screen to make one first. For one
+release it did, and that was the whole idea upside down: see below.
 
 `cubeship` is the reserved id for the registry this instance runs.
 Every other id is a stored credential's, which is a number, so the two
@@ -1082,6 +1085,27 @@ the same key whether Route 53 writes a record with it or ECR is pulled
 from with it, and it used to live once under DNS providers and again
 under registries: two rows, two rotations, and one of them forgotten.
 
+**A credential is a convenience, not a prerequisite.** This is the part
+that is easy to get backwards, and was: every screen that uses one also
+*makes* one. A registry is added with a login typed in place and the
+account is created from it — one request, one transaction, so a secret
+is never left behind by a registry that turned out to be unreachable —
+and it then appears under Credentials, ready to be picked for the second
+registry or for DNS. `POST /registries` therefore takes either a
+`credential_id` or a `provider`/`username`/`password`, and refuses both
+at once, which has no obvious reading.
+
+What that buys is the thing the module is for: one AWS key, entered
+once, writing Route 53 records and pulling from ECR. What it must not
+become is a gate in front of adding a registry, which is the tail
+wagging the dog — nobody's first act on a fresh instance is naming an
+account.
+
+Rotating from a registry rotates **the account**, and everything else on
+it follows. A caller who wanted only that one registry to move wanted a
+different account, which is what `credential_id` is for; the screen says
+which other things share it before the button is pressed.
+
 **A credential's capabilities are derived from its provider, never
 ticked.** `specs` is the whole model — a provider's name, what its two
 fields are called, and what this release's clients can actually do with
@@ -1148,8 +1172,14 @@ with no registry in it at all.
 
 **The host is fixed once a registry exists.** Re-pointing one in place
 would silently send an app's pulls somewhere else; what can be changed
-is which credential it authenticates as, and that is a different
-question — a second AWS account, not a second address.
+is which credential it authenticates as — a second AWS account, not a
+second address — and the secret that credential holds.
+
+The two are not the same edit and cannot be asked for together: one
+moves this registry, the other moves every registry on that account.
+Rotating also drops the cached ECR token minted from the key that just
+changed, or pulls would go on working for hours on the old one and then
+fail for no visible reason.
 
 A missing credential is not an error. Public images need none, and
 letting the registry be the one to refuse is what keeps a deploy that

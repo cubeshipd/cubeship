@@ -1,13 +1,12 @@
 "use client";
 
+import { cn } from "cn";
 import { BoxIcon, PlusIcon } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { LoadingRows } from "@/components/loading";
-import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
 import { SearchableSelect } from "@/components/searchable-select";
 import { StatusBadge } from "@/components/status-badge";
@@ -33,6 +32,7 @@ import {
 import {
   api,
   type Credential,
+  type CredentialProvider,
   type RegistryCredential,
   type RegistryProvider,
   type RegistryStatus,
@@ -75,6 +75,7 @@ export default function Registries() {
   const [adding, setAdding] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [accounts, setAccounts] = useState<Credential[]>([]);
+  const [providers, setProviders] = useState<CredentialProvider[]>([]);
   const [statuses, setStatuses] = useState<Record<number, RegistryStatus>>({});
   const router = useRouter();
 
@@ -107,6 +108,16 @@ export default function Registries() {
       .catch((e) => setError(message(e)));
   }, []);
   useEffect(loadAccounts, [loadAccounts]);
+
+  // What each provider's login is called. Served rather than copied,
+  // so a provider whose secret is a single token is not asked for a
+  // username the account has nowhere to put.
+  useEffect(() => {
+    api
+      .get<CredentialProvider[]>("/credentials/providers")
+      .then(setProviders)
+      .catch((e) => setError(message(e)));
+  }, []);
 
   const path = `/registries`;
   const reload = useCallback(() => {
@@ -241,6 +252,7 @@ export default function Registries() {
         <NewRegistryDialog
           path={path}
           accounts={accounts}
+          providers={providers}
           open={adding}
           onOpenChange={setAdding}
           onCreated={reload}
@@ -253,37 +265,66 @@ export default function Registries() {
 function NewRegistryDialog({
   path,
   accounts,
+  providers,
   open,
   onOpenChange,
   onCreated,
 }: {
   path: string;
   accounts: Credential[];
+  providers: CredentialProvider[];
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
 }) {
+  // Two ways in, and neither is privileged over the other: pick an
+  // account this instance already holds, or type a login and let the
+  // account be made from it. A stored account is a convenience — the
+  // second registry on one DigitalOcean token, or an AWS key already
+  // there for Route 53 — not a thing to go and create first.
+  const [mode, setMode] = useState<"saved" | "new">("new");
   const [credentialID, setCredentialID] = useState("");
+  const [provider, setProvider] = useState<RegistryProvider>("digitalocean");
+  const [label, setLabel] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [host, setHost] = useState("");
   const [namespace, setNamespace] = useState("");
   const [region, setRegion] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // The account is the first question, and it answers the second: what
-  // this registry is on. There is no provider field, because picking
-  // one that disagreed with the credential would be picking something
-  // the daemon then refuses.
-  const account = accounts.find((a) => String(a.id) === credentialID);
-  const provider = (account?.provider ?? "generic") as RegistryProvider;
-  const shape = PROVIDERS[provider] ?? PROVIDERS.generic;
+  // With nothing stored there is nothing to pick, so the form opens on
+  // the half that always works.
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    setMode(accounts.length > 0 ? "saved" : "new");
+  }, [open, accounts.length]);
 
-  // Only what this provider asks for is sent. The daemon fills in the
-  // rest — DigitalOcean's host is fixed, and AWS's is discovered by the
-  // same call that proves the key works.
-  const complete =
-    credentialID &&
-    (provider === "generic" ? host : provider === "digitalocean" ? namespace : region);
+  const account = accounts.find((a) => String(a.id) === credentialID);
+  const saved = mode === "saved";
+  const chosen: RegistryProvider = saved
+    ? ((account?.provider ?? "generic") as RegistryProvider)
+    : provider;
+  const shape = PROVIDERS[chosen] ?? PROVIDERS.generic;
+  // Which registry to ask about follows from the provider, and under
+  // "saved account" nothing knows it until an account is picked. Asking
+  // for a host before then is asking a question whose answer may turn
+  // out not to apply.
+  const known = !saved || account !== undefined;
+
+  // What the login's two halves are called is the daemon's answer, not
+  // a copy kept here: a provider whose secret is one value has no first
+  // field, and asking for one would be asking for something that does
+  // not exist.
+  const spec = providers.find((p) => p.provider === chosen);
+  const needsUsername = !!spec?.username_label;
+
+  const identified = chosen === "generic" ? host : chosen === "digitalocean" ? namespace : region;
+  const complete = saved
+    ? credentialID && identified
+    : identified && password && (!needsUsername || username);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -291,7 +332,14 @@ function NewRegistryDialog({
     setError(null);
     try {
       await api.post(path, {
-        credential_id: Number(credentialID),
+        ...(saved
+          ? { credential_id: Number(credentialID) }
+          : {
+              provider,
+              label,
+              ...(needsUsername ? { username } : {}),
+              password,
+            }),
         host,
         namespace,
         region,
@@ -299,6 +347,9 @@ function NewRegistryDialog({
       setHost("");
       setNamespace("");
       setRegion("");
+      setLabel("");
+      setUsername("");
+      setPassword("");
       onCreated();
       onOpenChange(false);
     } catch (err) {
@@ -313,26 +364,36 @@ function NewRegistryDialog({
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>New registry</DialogTitle>
-            <DialogDescription>
-              {account
-                ? shape.hint
-                : "Which stored account logs in to it. The provider follows from that."}
-            </DialogDescription>
+            <DialogDescription>{shape.hint}</DialogDescription>
           </DialogHeader>
 
           <div className="-mx-2 max-h-[60vh] space-y-4 overflow-y-auto px-2 py-5">
             <ErrorAlert error={error} />
 
-            {accounts.length === 0 ? (
-              <Notice>
-                No credential here can log in to a registry yet. Add one under{" "}
-                <Link href="/credentials" className="text-foreground underline underline-offset-4">
-                  Credentials
-                </Link>{" "}
-                — it is the same account that reaches everything else on that provider, so it is
-                stored once.
-              </Notice>
-            ) : (
+            {accounts.length > 0 && (
+              <div className="flex items-center gap-1">
+                {(
+                  [
+                    ["saved", "Saved account"],
+                    ["new", "New login"],
+                  ] as const
+                ).map(([value, text]) => (
+                  <Button
+                    key={value}
+                    type="button"
+                    variant="ghost"
+                    size="xs"
+                    aria-pressed={mode === value}
+                    onClick={() => setMode(value)}
+                    className={cn(mode === value && "bg-secondary text-foreground")}
+                  >
+                    {text}
+                  </Button>
+                ))}
+              </div>
+            )}
+
+            {saved ? (
               <SearchableSelect
                 label="Credential"
                 placeholder="Which account logs in"
@@ -344,11 +405,54 @@ function NewRegistryDialog({
                 }))}
                 value={credentialID}
                 onChange={setCredentialID}
-                hint="Its secret stays where it is. Rotating it later is one edit under Credentials, and every registry on it follows."
+                hint="Its secret stays where it is. Rotating it later is one edit, and every registry on it follows."
               />
+            ) : (
+              <>
+                <SearchableSelect
+                  label="Provider"
+                  choices={(Object.keys(PROVIDERS) as RegistryProvider[]).map((id) => ({
+                    value: id,
+                    label: PROVIDERS[id].label,
+                    icon: providerIcon(id),
+                  }))}
+                  value={provider}
+                  onChange={(v) => setProvider(v as RegistryProvider)}
+                />
+
+                {/* Side by side only when there are two halves. A
+                    provider whose secret is a single token would
+                    otherwise get a half-width box and an empty column
+                    beside it. */}
+                <div className={cn("grid gap-4", needsUsername && "sm:grid-cols-2")}>
+                  {needsUsername && (
+                    <TextField
+                      label={spec?.username_label ?? "Username"}
+                      spellCheck={false}
+                      value={username}
+                      onChange={(e) => setUsername(e.target.value)}
+                    />
+                  )}
+                  <TextField
+                    label={spec?.password_label ?? "Password or token"}
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    hint={needsUsername ? undefined : spec?.hint}
+                  />
+                </div>
+
+                <TextField
+                  label="Account name"
+                  value={label}
+                  spellCheck={false}
+                  onChange={(e) => setLabel(e.target.value)}
+                  hint="What this login is called under Credentials, where it is stored and can be picked again. Leave it empty and it is named after the registry."
+                />
+              </>
             )}
 
-            {account && provider === "generic" && (
+            {known && chosen === "generic" && (
               <TextField
                 label="Registry"
                 hint="docker.io for the Hub."
@@ -359,7 +463,7 @@ function NewRegistryDialog({
               />
             )}
 
-            {account && provider === "digitalocean" && (
+            {known && chosen === "digitalocean" && (
               <TextField
                 label="Registry name"
                 hint="What follows registry.digitalocean.com/ in an image path."
@@ -370,7 +474,7 @@ function NewRegistryDialog({
               />
             )}
 
-            {account && provider === "aws" && (
+            {known && chosen === "aws" && (
               <TextField
                 label="Region"
                 hint="Where the ECR registry lives. The account id is discovered."
@@ -387,7 +491,7 @@ function NewRegistryDialog({
               Cancel
             </Button>
             <ActionButton type="submit" busy={busy} disabled={!complete}>
-              {provider === "aws" && busy ? "Checking with AWS" : "Add"}
+              {chosen === "aws" && busy ? "Checking with AWS" : "Add"}
             </ActionButton>
           </DialogFooter>
         </form>
