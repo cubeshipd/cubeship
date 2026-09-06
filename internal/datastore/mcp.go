@@ -35,7 +35,7 @@ func NewTools(svc *Service, caller *user.User) *Tools {
 func (t *Tools) Register(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "create_datastore",
-		Description: `Provision a managed database in a project's environment. It comes up with a generated password, which is never returned: attach an app to it and the app receives the connection string as environment variables. environment defaults to "production". Requires the admin role.`,
+		Description: "Provision a managed database on this instance. It belongs to the instance, not to a project — one database can serve apps in several. It comes up with a generated password, which is never returned: attach an app to it and the app receives the connection string as environment variables. Requires the admin role.",
 	}, t.create)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "list_datastores",
@@ -51,7 +51,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.engines)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "attach_datastore",
-		Description: "Wire an app to a database: the app's container is given DATABASE_URL and its parts from its next deploy onwards. The app must be in the same environment. Use a prefix like \"ANALYTICS_\" when one app needs a second database. Requires the admin role.",
+		Description: "Wire an app to a database: the app's container is given DATABASE_URL and its parts from its next deploy onwards. The app is named by its full reference, project/environment/name, and may be in any project. Use a prefix like \"ANALYTICS_\" when one app needs a second database. Requires the admin role.",
 	}, t.attach)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "detach_datastore",
@@ -64,9 +64,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 }
 
 type createInput struct {
-	Project     string `json:"project" jsonschema:"project slug"`
-	Environment string `json:"environment,omitempty" jsonschema:"environment slug (default \"production\")"`
-	Name        string `json:"name" jsonschema:"the database's name within that environment: lowercase letters, digits and dashes. Permanent"`
+	Name        string `json:"name" jsonschema:"the database's name, unique on the instance: lowercase letters, digits and dashes. It is the container's name and is permanent"`
 	Description string `json:"description,omitempty" jsonschema:"what this database is for, in a sentence"`
 	Engine      string `json:"engine" jsonschema:"which server to run: postgres, mysql or mariadb. Call list_datastore_engines for what this release offers"`
 	Version     string `json:"version,omitempty" jsonschema:"a version this release offers for that engine. Defaults to the newest. Permanent — a major version cannot be changed under an existing data directory"`
@@ -76,7 +74,6 @@ type createInput struct {
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
 	created, err := t.svc.Create(ctx, t.caller, Spec{
-		Project: in.Project, Environment: in.Environment,
 		Slug: in.Name, Description: in.Description,
 		Engine: Engine(in.Engine), Version: in.Version,
 		Username: in.Username, Database: in.Database,
@@ -96,11 +93,11 @@ func (t *Tools) instance(ctx context.Context) Instance {
 }
 
 type nameInput struct {
-	Datastore string `json:"datastore" jsonschema:"datastore reference: project/environment/name, or project/name for production"`
+	Datastore string `json:"datastore" jsonschema:"the database's name on this instance"`
 }
 
 func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, Response, error) {
-	d, err := t.svc.ResolveString(ctx, t.caller, in.Datastore, user.RoleMember)
+	d, err := t.svc.Resolve(ctx, t.caller, in.Datastore, user.RoleMember)
 	if err != nil {
 		return nil, Response{}, err
 	}
@@ -119,29 +116,17 @@ func (t *Tools) engines(ctx context.Context, _ *mcp.CallToolRequest, _ struct{})
 	if err := user.Require(t.caller, user.RoleMember); err != nil {
 		return nil, nil, err
 	}
-	out := make([]EngineResponse, 0, len(Engines()))
-	for _, e := range Engines() {
-		out = append(out, EngineResponse{
-			Engine: string(e), Versions: e.Versions(),
-			DefaultVersion: e.DefaultVersion(), Port: e.Port(),
-			HasDatabase: e.HasDatabase(),
-		})
-	}
-	return nil, out, nil
+	return nil, engineResponses(), nil
 }
 
 type attachInput struct {
-	Datastore string `json:"datastore" jsonschema:"datastore reference: project/environment/name"`
-	App       string `json:"app" jsonschema:"the app's name within the same environment — not its full reference"`
+	Datastore string `json:"datastore" jsonschema:"the database's name on this instance"`
+	App       string `json:"app" jsonschema:"the app's full reference: project/environment/name, or project/name for production"`
 	Prefix    string `json:"prefix,omitempty" jsonschema:"what the injected variables are named under, e.g. \"ANALYTICS_\". Leave empty for DATABASE_URL. Uppercase, ending in an underscore"`
 }
 
 func (t *Tools) attach(ctx context.Context, _ *mcp.CallToolRequest, in attachInput) (*mcp.CallToolResult, Response, error) {
-	ref, err := ParseReference(in.Datastore)
-	if err != nil {
-		return nil, Response{}, err
-	}
-	d, err := t.svc.Attach(ctx, t.caller, ref, in.App, in.Prefix)
+	d, err := t.svc.Attach(ctx, t.caller, in.Datastore, in.App, in.Prefix)
 	if err != nil {
 		return nil, Response{}, err
 	}
@@ -149,16 +134,12 @@ func (t *Tools) attach(ctx context.Context, _ *mcp.CallToolRequest, in attachInp
 }
 
 type detachInput struct {
-	Datastore string `json:"datastore" jsonschema:"datastore reference: project/environment/name"`
-	App       string `json:"app" jsonschema:"the app's name within the same environment"`
+	Datastore string `json:"datastore" jsonschema:"the database's name on this instance"`
+	App       string `json:"app" jsonschema:"the app's full reference: project/environment/name"`
 }
 
 func (t *Tools) detach(ctx context.Context, _ *mcp.CallToolRequest, in detachInput) (*mcp.CallToolResult, Response, error) {
-	ref, err := ParseReference(in.Datastore)
-	if err != nil {
-		return nil, Response{}, err
-	}
-	d, err := t.svc.Detach(ctx, t.caller, ref, in.App)
+	d, err := t.svc.Detach(ctx, t.caller, in.Datastore, in.App)
 	if err != nil {
 		return nil, Response{}, err
 	}
@@ -166,14 +147,10 @@ func (t *Tools) detach(ctx context.Context, _ *mcp.CallToolRequest, in detachInp
 }
 
 func (t *Tools) delete(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, user.ActionResult, error) {
-	ref, err := ParseReference(in.Datastore)
-	if err != nil {
-		return nil, user.ActionResult{}, err
-	}
-	if _, err := t.svc.Delete(ctx, t.caller, ref); err != nil {
+	if _, err := t.svc.Delete(ctx, t.caller, in.Datastore); err != nil {
 		return nil, user.ActionResult{}, err
 	}
 	return nil, user.ActionResult{
-		Message: fmt.Sprintf("deleted datastore %s and the data on disk behind it", ref),
+		Message: fmt.Sprintf("deleted datastore %s and the data on disk behind it", in.Datastore),
 	}, nil
 }

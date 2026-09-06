@@ -51,14 +51,10 @@ const BLURBS: Record<string, string> = {
 // and ask — and a password field somebody has to fill in is a password
 // field somebody fills in badly.
 export function NewDatastoreDialog({
-  project,
-  environment,
   open,
   onOpenChange,
   onCreated,
 }: {
-  project: string;
-  environment: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCreated: (created: CreatedDatastore) => void;
@@ -110,8 +106,6 @@ export function NewDatastoreDialog({
       const created = await api.post<CreatedDatastore>("/datastores", {
         name,
         description,
-        project,
-        environment,
         engine,
         version,
         username,
@@ -132,15 +126,35 @@ export function NewDatastoreDialog({
           <DialogHeader>
             <DialogTitle>New database</DialogTitle>
             <DialogDescription>
-              It runs in <code className="text-foreground">{environment}</code>, beside the apps
-              there. Attach an app to it afterwards and that app gets the connection string.
+              It belongs to the instance, not to a project. Attach apps to it afterwards — in any
+              project — and each one gets the connection string.
             </DialogDescription>
           </DialogHeader>
 
-          <div className="max-h-[65vh] space-y-4 overflow-y-auto py-5">
+          {/* This form is long enough to scroll on a laptop, and a
+              scroll container clips both axes — `overflow-y: auto`
+              computes `overflow-x` to `auto` too, however wide the
+              content is. The 1px borders, the focus rings and the
+              neon-edge glow all sit at the content edge, so they were
+              being shaved off at the left and right. The padding gives
+              them room and the negative margin puts the content back
+              where it was. */}
+          <div className="-mx-2 max-h-[65vh] space-y-4 overflow-y-auto px-2 py-5">
             <ErrorAlert error={error} className="mb-0" />
 
-            <SlugField label="Name" value={name} onChange={setName} autoFocus />
+            {/* scroll-mt is not decoration. Focusing a field inside a
+                scroll container makes the browser scroll it into view,
+                and it scrolls to the *input* — which put its own label
+                above the top edge, so the first field in this form
+                arrived unlabelled. The margin is the room the label
+                needs. */}
+            <SlugField
+              label="Name"
+              value={name}
+              onChange={setName}
+              autoFocus
+              className="scroll-mt-12"
+            />
 
             <OptionCards
               label="Engine"

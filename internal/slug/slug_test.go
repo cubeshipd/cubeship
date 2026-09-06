@@ -11,10 +11,7 @@ import "testing"
 // Refusing it at creation is the only place that can be caught while the
 // person who typed it is still there to type another.
 func TestReservedWordsAreRefused(t *testing.T) {
-	// "databases" is the second one: an environment's databases are at
-	// /projects/<project>/<env>/databases, which is where an app's name
-	// goes.
-	for _, word := range []string{"settings", "databases"} {
+	for _, word := range []string{"settings"} {
 		if Valid(word) {
 			t.Errorf("%q was accepted, and would be a resource with no address of its own", word)
 		}

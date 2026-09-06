@@ -18,17 +18,14 @@ import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { api, type Datastore, datastoreLabel, datastorePath } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-export default function DatastoreSettingsPage({
-  params,
-}: PageProps<"/projects/[project]/[env]/databases/[name]/settings">) {
-  const { project, env, name } = use(params);
-  return <Settings project={project} env={env} name={name} />;
+export default function DatastoreSettingsPage({ params }: PageProps<"/databases/[name]/settings">) {
+  const { name } = use(params);
+  return <Settings name={name} />;
 }
 
-function Settings({ project, env, name }: { project: string; env: string; name: string }) {
+function Settings({ name }: { name: string }) {
   const router = useRouter();
-  const reference = `${project}/${env}/${name}`;
-  const path = datastorePath(reference);
+  const path = datastorePath(name);
 
   const [datastore, setDatastore] = useState<Datastore | null>(null);
   const [description, setDescription] = useState("");
@@ -54,8 +51,7 @@ function Settings({ project, env, name }: { project: string; env: string; name: 
     setError(null);
     setSaved(false);
     try {
-      const updated = await api.patch<Datastore>(path, { description });
-      setDatastore(updated);
+      setDatastore(await api.patch<Datastore>(path, { description }));
       setSaved(true);
     } catch (err) {
       setError(message(err));
@@ -71,11 +67,11 @@ function Settings({ project, env, name }: { project: string; env: string; name: 
   return (
     <>
       <Link
-        href={`/projects/${project}/${env}/databases/${name}`}
+        href={`/databases/${name}`}
         className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
       >
         <ChevronLeftIcon className="size-3.5" />
-        {reference}
+        {name}
       </Link>
 
       <PageHeader
@@ -96,7 +92,7 @@ function Settings({ project, env, name }: { project: string; env: string; name: 
                 setDescription(e.target.value);
                 setSaved(false);
               }}
-              hint="What this database holds. Empty is fine."
+              hint="What this database holds. With no project above it to say where it belongs, this is the only place that can."
             />
 
             {/* Everything else about a database is fixed, and each for
@@ -109,8 +105,8 @@ function Settings({ project, env, name }: { project: string; env: string; name: 
                   <TableRow>
                     <TableCell className="w-32 text-muted-foreground">Name</TableCell>
                     <TableCell className="font-mono">{datastore.name}</TableCell>
-                    <TableCell className="text-xs text-subtle-foreground">
-                      It is part of the address every attached app connects to.
+                    <TableCell className="text-xs whitespace-normal text-subtle-foreground">
+                      It is the container's own name, which every attached app resolves.
                     </TableCell>
                   </TableRow>
                   <TableRow>
@@ -118,7 +114,7 @@ function Settings({ project, env, name }: { project: string; env: string; name: 
                     <TableCell className="font-mono">
                       {datastoreLabel(datastore.engine)} {datastore.version}
                     </TableCell>
-                    <TableCell className="text-xs text-subtle-foreground">
+                    <TableCell className="text-xs whitespace-normal text-subtle-foreground">
                       A data directory written by one major version cannot be read by another.
                       Changing version means a second database and a migration.
                     </TableCell>
@@ -126,7 +122,7 @@ function Settings({ project, env, name }: { project: string; env: string; name: 
                   <TableRow>
                     <TableCell className="text-muted-foreground">Username</TableCell>
                     <TableCell className="font-mono">{datastore.username}</TableCell>
-                    <TableCell className="text-xs text-subtle-foreground">
+                    <TableCell className="text-xs whitespace-normal text-subtle-foreground">
                       The login the server was created with. Others are made inside the database.
                     </TableCell>
                   </TableRow>
@@ -167,8 +163,8 @@ function Settings({ project, env, name }: { project: string; env: string; name: 
             The container is stopped and the data on disk goes with it. Nothing is kept, and{" "}
             {datastore.attachments.length > 0 ? (
               <>
-                <strong>{datastore.attachments.map((a) => a.app).join(", ")}</strong> will fail to
-                connect on their next deploy.
+                <strong>{datastore.attachments.map((a) => a.app).join(", ")}</strong> will come up
+                without a connection string the next time they are deployed.
               </>
             ) : (
               "no app is attached to it."
@@ -178,7 +174,7 @@ function Settings({ project, env, name }: { project: string; env: string; name: 
         confirmWord={datastore.name}
         onConfirm={async () => {
           await api.del(path);
-          router.push(`/projects/${project}/${env}`);
+          router.push("/databases");
         }}
       />
     </>
@@ -196,13 +192,11 @@ function ExternalAccess({ datastore, onChanged }: { datastore: Datastore; onChan
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function expose() {
+  async function run(fn: () => Promise<unknown>) {
     setBusy(true);
     setError(null);
     try {
-      await api.post(`${datastorePath(datastore.reference)}/expose`, {
-        port: port ? Number(port) : 0,
-      });
+      await fn();
       setPort("");
       onChanged();
     } catch (err) {
@@ -211,17 +205,7 @@ function ExternalAccess({ datastore, onChanged }: { datastore: Datastore; onChan
     setBusy(false);
   }
 
-  async function unexpose() {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.del(`${datastorePath(datastore.reference)}/expose`);
-      onChanged();
-    } catch (err) {
-      setError(message(err));
-    }
-    setBusy(false);
-  }
+  const path = datastorePath(datastore.name);
 
   return (
     <>
@@ -244,7 +228,11 @@ function ExternalAccess({ datastore, onChanged }: { datastore: Datastore; onChan
                 . There is no TLS in front of it — a database speaks its own protocol on its own
                 port — so the password and your firewall are what protect it.
               </Notice>
-              <ActionButton variant="outline" busy={busy} onClick={unexpose}>
+              <ActionButton
+                variant="outline"
+                busy={busy}
+                onClick={() => run(() => api.del(`${path}/expose`))}
+              >
                 Stop publishing it
               </ActionButton>
             </>
@@ -264,7 +252,13 @@ function ExternalAccess({ datastore, onChanged }: { datastore: Datastore; onChan
                   fieldClassName="w-40"
                   hint="Leave empty to take the next free one from 15000-15999."
                 />
-                <ActionButton variant="outline" busy={busy} onClick={expose}>
+                <ActionButton
+                  variant="outline"
+                  busy={busy}
+                  onClick={() =>
+                    run(() => api.post(`${path}/expose`, { port: port ? Number(port) : 0 }))
+                  }
+                >
                   Publish it
                 </ActionButton>
               </div>

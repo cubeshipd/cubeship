@@ -434,15 +434,14 @@ func (c *Client) RevokeAPIKey(ctx context.Context, id int64) error {
 
 // --- datastores ---
 
-// Datastore is one managed database. Its password is deliberately not a
-// field: it comes back once at creation, and afterwards only from
-// DatastoreCredentials.
+// Datastore is one managed database. It belongs to the instance, not to
+// a project, so its name is the whole of its address.
+//
+// Its password is deliberately not a field: it comes back once at
+// creation, and afterwards only from DatastoreCredentials.
 type Datastore struct {
-	Reference   string `json:"reference"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
-	Project     string `json:"project"`
-	Environment string `json:"environment"`
 	Engine      string `json:"engine"`
 	Version     string `json:"version"`
 	Status      string `json:"status"`
@@ -461,7 +460,9 @@ type Datastore struct {
 }
 
 // DatastoreAttachment is one app wired to a database, and what the
-// variables it receives are called.
+// variables it receives are called. App is a full reference — a
+// datastore is not inside an environment, so a bare name would identify
+// nothing.
 type DatastoreAttachment struct {
 	App       string   `json:"app"`
 	Prefix    string   `json:"prefix,omitempty"`
@@ -499,8 +500,6 @@ type DatastoreEngine struct {
 type DatastoreSpec struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
-	Project     string `json:"project"`
-	Environment string `json:"environment,omitempty"`
 	Engine      string `json:"engine"`
 	Version     string `json:"version,omitempty"`
 	Username    string `json:"username,omitempty"`
@@ -530,54 +529,65 @@ func (c *Client) ListDatastoreEngines(ctx context.Context) ([]DatastoreEngine, e
 		"/datastores/engines", nil, http.StatusOK, DefaultTimeout)
 }
 
-func (c *Client) GetDatastore(ctx context.Context, ref string) (Datastore, error) {
+func (c *Client) GetDatastore(ctx context.Context, name string) (Datastore, error) {
 	return request[Datastore](ctx, c, "get datastore", http.MethodGet,
-		datastorePath(ref), nil, http.StatusOK, DefaultTimeout)
+		datastorePath(name), nil, http.StatusOK, DefaultTimeout)
 }
 
-func (c *Client) DatastoreCredentials(ctx context.Context, ref string) (DatastoreCredentials, error) {
+func (c *Client) DatastoreCredentials(ctx context.Context, name string) (DatastoreCredentials, error) {
 	return request[DatastoreCredentials](ctx, c, "read datastore credentials", http.MethodGet,
-		datastorePath(ref)+"/credentials", nil, http.StatusOK, DefaultTimeout)
+		datastorePath(name)+"/credentials", nil, http.StatusOK, DefaultTimeout)
 }
 
 // DeleteDatastore removes the database, its container and its data.
-func (c *Client) DeleteDatastore(ctx context.Context, ref string) error {
+func (c *Client) DeleteDatastore(ctx context.Context, name string) error {
 	_, err := request[noContent](ctx, c, "delete datastore", http.MethodDelete,
-		datastorePath(ref), nil, http.StatusOK, DeployTimeout)
+		datastorePath(name), nil, http.StatusOK, DeployTimeout)
 	return err
 }
 
 // ExposeDatastore publishes it on a host port. port 0 asks the daemon
 // to pick one.
-func (c *Client) ExposeDatastore(ctx context.Context, ref string, port int) (Datastore, error) {
+func (c *Client) ExposeDatastore(ctx context.Context, name string, port int) (Datastore, error) {
 	return request[Datastore](ctx, c, "expose datastore", http.MethodPost,
-		datastorePath(ref)+"/expose", map[string]int{"port": port}, http.StatusOK, DefaultTimeout)
+		datastorePath(name)+"/expose", map[string]int{"port": port}, http.StatusOK, DefaultTimeout)
 }
 
-func (c *Client) UnexposeDatastore(ctx context.Context, ref string) (Datastore, error) {
+func (c *Client) UnexposeDatastore(ctx context.Context, name string) (Datastore, error) {
 	return request[Datastore](ctx, c, "unexpose datastore", http.MethodDelete,
-		datastorePath(ref)+"/expose", nil, http.StatusOK, DefaultTimeout)
+		datastorePath(name)+"/expose", nil, http.StatusOK, DefaultTimeout)
 }
 
-// AttachDatastore wires an app in the same environment to it.
-func (c *Client) AttachDatastore(ctx context.Context, ref, app, prefix string) (Datastore, error) {
+// AttachDatastore wires an app to it. app is the app's full
+// reference, and may name one in any project.
+func (c *Client) AttachDatastore(ctx context.Context, name, app, prefix string) (Datastore, error) {
 	return request[Datastore](ctx, c, "attach datastore", http.MethodPost,
-		datastorePath(ref)+"/attachments",
+		datastorePath(name)+"/attachments",
 		map[string]string{"app": app, "prefix": prefix}, http.StatusCreated, DefaultTimeout)
 }
 
-func (c *Client) DetachDatastore(ctx context.Context, ref, app string) (Datastore, error) {
+func (c *Client) DetachDatastore(ctx context.Context, name, app string) (Datastore, error) {
 	return request[Datastore](ctx, c, "detach datastore", http.MethodDelete,
-		datastorePath(ref)+"/attachments/"+segment(app), nil, http.StatusOK, DefaultTimeout)
+		datastorePath(name)+"/attachments/"+appSegments(app), nil, http.StatusOK, DefaultTimeout)
 }
 
-// datastorePath turns a datastore reference into its URL, escaping each
-// part separately so three segments stay three segments.
-func datastorePath(ref string) string {
+// datastorePath turns a datastore name into its URL. One segment: a
+// datastore belongs to the instance, so its name is its whole address.
+func datastorePath(name string) string {
+	return "/datastores/" + segment(name)
+}
+
+// appSegments renders an app reference as the three path segments the
+// detach route takes, escaping each separately. A two-part reference is
+// production, the same shorthand the daemon accepts.
+func appSegments(ref string) string {
 	parts := strings.Split(strings.Trim(ref, "/"), "/")
+	if len(parts) == 2 {
+		parts = []string{parts[0], "production", parts[1]}
+	}
 	escaped := make([]string, len(parts))
 	for i, p := range parts {
 		escaped[i] = segment(p)
 	}
-	return "/datastores/" + strings.Join(escaped, "/")
+	return strings.Join(escaped, "/")
 }

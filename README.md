@@ -186,15 +186,15 @@ logs, manual redeploys, additional API keys.
 ## Databases
 
 Cubeship runs Postgres, MySQL and MariaDB for the apps on it. A database
-lives in an environment, beside the apps that use it — so `staging` and
-`production` hold different data without anybody spelling that into a
-name.
+belongs to the **instance**, not to a project: on one host the common
+shape is a single Postgres serving several small apps, and those apps
+are routinely in different projects.
 
 ```sh
-cubeship db engines                                   # what this daemon can run
-cubeship db create pg --project web --engine postgres # prints the generated password
-cubeship db attach web/production/pg --app myapp      # gives myapp DATABASE_URL
-cubeship app deploy web/production/myapp              # its container picks it up
+cubeship db engines                              # what this daemon can run
+cubeship db create pg --engine postgres          # prints the generated password
+cubeship db attach pg --app web/production/api   # gives that app DATABASE_URL
+cubeship app deploy web/production/api           # its container picks it up
 ```
 
 An attached app receives `DATABASE_URL` and its parts — `DATABASE_HOST`,
@@ -203,11 +203,20 @@ from its **next deploy** onwards: a container keeps the environment it
 was created with. An app that needs a second database takes a prefix
 (`--prefix ANALYTICS_`).
 
+One database can serve apps in any number of projects and environments.
+Nothing separates one environment's data from another's — that is what
+the names are for:
+
+```sh
+cubeship db create pg-production --engine postgres
+cubeship db create pg-staging --engine postgres
+```
+
 Nothing outside the instance can reach a database unless you say so:
 
 ```sh
-cubeship db credentials web/production/pg   # the login, and the connection strings
-cubeship db expose web/production/pg        # publish it on a host port
+cubeship db credentials pg   # the login, and the connection strings
+cubeship db expose pg        # publish it on a host port
 ```
 
 Exposing puts the database on the open internet with **no TLS** — it

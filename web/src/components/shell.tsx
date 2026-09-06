@@ -3,6 +3,7 @@
 import { cn } from "cn";
 import {
   ContainerIcon,
+  DatabaseIcon,
   FolderTreeIcon,
   GitBranchIcon,
   GlobeIcon,
@@ -58,6 +59,11 @@ const sections: { label?: string; items: NavItem[] }[] = [
         icon: FolderTreeIcon,
         owns: ["/projects", "/environments", "/apps"],
       },
+      // Beside Projects rather than under Platform: a database belongs
+      // to the instance, but it is a thing you deploy against, not a
+      // thing the instance is wired to. It is opened as often as an app
+      // is, which is what the Platform section is not for.
+      { href: "/databases", label: "Databases", icon: DatabaseIcon, owns: ["/databases"] },
     ],
   },
   {

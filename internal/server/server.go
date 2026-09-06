@@ -103,9 +103,12 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	apps := app.NewService(db, projects,
 		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gh, opts.LocalRegistry), cfg)
 
-	// Datastores sit above apps: they are addressed the way apps are and
-	// are attached to them, so this module depends on that one.
-	datastores := datastore.NewService(db, projects, apps,
+	// Datastores sit above apps: an attachment names one, so this module
+	// depends on that one. Nothing below them knows they exist —
+	// a datastore belongs to the instance, so deleting a project takes
+	// no database with it, and an attachment to a deleted app is
+	// removed by the foreign key.
+	datastores := datastore.NewService(db, apps,
 		datastore.NewProvisioner(db, docker, opts.DataDir), cfg)
 
 	// Deleting a project or an environment takes the apps inside it with
@@ -113,7 +116,6 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// dependency runs downward everywhere else, so it is handed back up
 	// here — the one place that knows every module exists.
 	projects.SetAppTeardown(apps)
-	projects.SetDatastoreTeardown(datastores)
 
 	// The one thing that travels back down from datastores to apps:
 	// what an attached database contributes to a container's

@@ -14,22 +14,24 @@ import (
 
 // newDatastoreCmd is `cubeship db`.
 //
-// A managed database is addressed the way an app is, because it lives in
-// the same place: project/environment/name, with two parts meaning
-// production.
+// A managed database belongs to the instance, so its name is the whole
+// of its address — no project, no environment in front of it.
 func newDatastoreCmd() *cobra.Command {
 	dbCmd := &cobra.Command{
 		Use:     "db",
 		Aliases: []string{"datastore"},
 		Short:   "Manage the databases Cubeship runs",
 		Long: "Manage the databases Cubeship runs for the apps on this instance.\n\n" +
-			"A database is named by its reference: project/environment/name.\n" +
-			"Two parts — project/name — means the production environment. It\n" +
-			"lives in an environment beside the apps that use it, so staging\n" +
-			"and production hold different data without anybody spelling that\n" +
-			"into a name.\n\n" +
+			"A database belongs to the instance rather than to a project: on\n" +
+			"one host, one Postgres serving several small apps is the normal\n" +
+			"shape, and those apps are routinely in different projects. Its\n" +
+			"name is unique across the instance and is the whole of how it is\n" +
+			"addressed.\n\n" +
 			"Apps reach it by being attached to it: `db attach` gives an app\n" +
-			"DATABASE_URL and its parts, from its next deploy onwards.",
+			"DATABASE_URL and its parts, from its next deploy onwards. The app\n" +
+			"is named by its full reference, and may be in any project.\n\n" +
+			"Nothing separates one environment's data from another's any more\n" +
+			"— that is what the names are for: pg-production, pg-staging.",
 	}
 
 	dbCmd.AddCommand(
@@ -52,7 +54,7 @@ func newDatastoreCreateCmd() *cobra.Command {
 	var expose int
 	cmd := &cobra.Command{
 		Use:   "create <name>",
-		Short: "Provision a database in a project's environment",
+		Short: "Provision a database on this instance",
 		Long: "Provision a database.\n\n" +
 			"The password is generated unless you give one, and it is printed\n" +
 			"here once — after this, `db credentials` is where to read it.\n\n" +
@@ -73,19 +75,16 @@ func newDatastoreCreateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Created %s (%s %s).\n", created.Reference, created.Engine, created.Version)
+			fmt.Printf("Created %s (%s %s).\n", created.Name, created.Engine, created.Version)
 			fmt.Printf("  password: %s\n", created.Password)
 			fmt.Printf("  reachable from apps at: %s:%d\n", created.Host, created.Port)
 			if created.ExposedPort != 0 {
 				fmt.Printf("  published on host port %d\n", created.ExposedPort)
 			}
-			fmt.Printf("\nAttach an app to it with: cubeship db attach %s --app <app>\n", created.Reference)
+			fmt.Printf("\nAttach an app to it with: cubeship db attach %s --app <project/env/app>\n", created.Name)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&spec.Project, "project", "", "project slug this database belongs to")
-	cmd.MarkFlagRequired("project")
-	cmd.Flags().StringVar(&spec.Environment, "env", "", `environment slug within the project (default "production")`)
 	cmd.Flags().StringVar(&spec.Engine, "engine", "", "postgres, mysql or mariadb — see `db engines`")
 	cmd.MarkFlagRequired("engine")
 	cmd.Flags().StringVar(&spec.Version, "version", "", "a version the daemon offers for that engine (default: the newest). Permanent")
@@ -112,14 +111,14 @@ func newDatastoreListCmd() *cobra.Command {
 				return err
 			}
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "REFERENCE\tENGINE\tSTATUS\tEXPOSED\tATTACHED")
+			fmt.Fprintln(w, "NAME\tENGINE\tSTATUS\tEXPOSED\tATTACHED")
 			for _, d := range all {
 				exposed := "-"
 				if d.ExposedPort != 0 {
 					exposed = fmt.Sprintf("%d", d.ExposedPort)
 				}
 				fmt.Fprintf(w, "%s\t%s %s\t%s\t%s\t%s\n",
-					d.Reference, d.Engine, d.Version, d.Status, exposed, attachedList(d))
+					d.Name, d.Engine, d.Version, d.Status, exposed, attachedList(d))
 			}
 			return w.Flush()
 		},
@@ -142,7 +141,7 @@ func attachedList(d client.Datastore) string {
 
 func newDatastoreGetCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "get <datastore>",
+		Use:   "get <name>",
 		Short: "Show one database, and which apps are attached to it",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -154,7 +153,7 @@ func newDatastoreGetCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Reference:   %s\n", d.Reference)
+			fmt.Printf("Name:        %s\n", d.Name)
 			fmt.Printf("Engine:      %s %s\n", d.Engine, d.Version)
 			fmt.Printf("Status:      %s\n", d.Status)
 			if d.Error != "" {
@@ -215,7 +214,7 @@ func newDatastoreEnginesCmd() *cobra.Command {
 func newDatastoreCredentialsCmd() *cobra.Command {
 	var quiet bool
 	cmd := &cobra.Command{
-		Use:     "credentials <datastore>",
+		Use:     "credentials <name>",
 		Aliases: []string{"creds"},
 		Short:   "Print the login and connection strings for a database",
 		Long: "Print a database's login.\n\n" +
@@ -262,14 +261,15 @@ func newDatastoreCredentialsCmd() *cobra.Command {
 func newDatastoreAttachCmd() *cobra.Command {
 	var appName, prefix string
 	cmd := &cobra.Command{
-		Use:   "attach <datastore>",
+		Use:   "attach <name>",
 		Short: "Give an app this database's connection variables",
 		Long: "Attach an app to a database.\n\n" +
 			"The app's container is given DATABASE_URL and its parts from its\n" +
 			"next deploy onwards — a container keeps the environment it was\n" +
 			"created with, so nothing changes until you deploy it.\n\n" +
-			"The app has to be in the same environment as the database. Use\n" +
-			"--prefix when one app needs a second database.",
+			"The app is named by its full reference, project/environment/app,\n" +
+			"and may be in any project. Use --prefix when one app needs a\n" +
+			"second database.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := newAPIClient()
@@ -285,13 +285,13 @@ func newDatastoreAttachCmd() *cobra.Command {
 					continue
 				}
 				fmt.Printf("Attached %s to %s. It will receive:\n  %s\n",
-					appName, d.Reference, strings.Join(a.Variables, "\n  "))
+					appName, d.Name, strings.Join(a.Variables, "\n  "))
 			}
 			fmt.Printf("\nDeploy %s for its container to pick them up.\n", appName)
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&appName, "app", "", "the app's name within the same environment")
+	cmd.Flags().StringVar(&appName, "app", "", "the app's full reference: project/environment/app")
 	cmd.MarkFlagRequired("app")
 	cmd.Flags().StringVar(&prefix, "prefix", "", `name the variables under a prefix, e.g. "ANALYTICS_"`)
 	return cmd
@@ -300,7 +300,7 @@ func newDatastoreAttachCmd() *cobra.Command {
 func newDatastoreDetachCmd() *cobra.Command {
 	var appName string
 	cmd := &cobra.Command{
-		Use:   "detach <datastore>",
+		Use:   "detach <name>",
 		Short: "Stop giving an app this database's variables",
 		Long: "Detach an app from a database.\n\n" +
 			"Its container keeps the variables it was created with until it is\n" +
@@ -318,7 +318,7 @@ func newDatastoreDetachCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&appName, "app", "", "the app's name within the same environment")
+	cmd.Flags().StringVar(&appName, "app", "", "the app's full reference: project/environment/app")
 	cmd.MarkFlagRequired("app")
 	return cmd
 }
@@ -326,7 +326,7 @@ func newDatastoreDetachCmd() *cobra.Command {
 func newDatastoreExposeCmd() *cobra.Command {
 	var port int
 	cmd := &cobra.Command{
-		Use:   "expose <datastore>",
+		Use:   "expose <name>",
 		Short: "Publish a database on a host port",
 		Long: "Publish a database on a host port, so something that is not an app\n" +
 			"on this instance can connect to it.\n\n" +
@@ -350,7 +350,7 @@ func newDatastoreExposeCmd() *cobra.Command {
 			if where == "" {
 				where = "this host"
 			}
-			fmt.Printf("%s is being republished on %s:%d.\n", d.Reference, where, d.ExposedPort)
+			fmt.Printf("%s is being republished on %s:%d.\n", d.Name, where, d.ExposedPort)
 			fmt.Println("Open that port in your firewall for it to be reachable.")
 			return nil
 		},
@@ -361,7 +361,7 @@ func newDatastoreExposeCmd() *cobra.Command {
 
 func newDatastoreUnexposeCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "unexpose <datastore>",
+		Use:   "unexpose <name>",
 		Short: "Take a database off its host port",
 		Long: "Take a database off its host port.\n\n" +
 			"Apps on this instance are unaffected — they never used it.",
@@ -383,12 +383,15 @@ func newDatastoreUnexposeCmd() *cobra.Command {
 func newDatastoreDeleteCmd() *cobra.Command {
 	var confirmed bool
 	cmd := &cobra.Command{
-		Use:   "delete <datastore>",
+		Use:   "delete <name>",
 		Short: "Delete a database, its container and its data",
 		Long: "Delete a database.\n\n" +
 			"The container is stopped and removed, and the data directory on\n" +
 			"the host goes with it. There is no backup and this cannot be\n" +
-			"undone.",
+			"undone.\n\n" +
+			"The apps attached to it keep running: a container holds the\n" +
+			"environment it was created with, so they only lose DATABASE_URL\n" +
+			"the next time they are deployed.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !confirmed {

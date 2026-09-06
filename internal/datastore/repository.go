@@ -20,44 +20,28 @@ func NewRepository(q database.Queryer) *Repository {
 }
 
 // columns is read in order by scan. Change one, change both.
-const columns = `id, project_id, environment_id, slug, description, engine, version,
-	username, password, database_name, exposed_port, container_id, status, error, created_at`
+//
+// A flat list with no joins: a datastore belongs to the instance, so
+// there is nothing above it to bring along.
+const columns = `id, slug, description, engine, version, username, password,
+	database_name, exposed_port, container_id, status, error, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
-// A datastore is almost always read with the slugs it lives under: they
-// are what its reference is built from, and a datastore with no
-// reference cannot be rendered anywhere. The select list and the source
-// are separate constants because one query needs a column added to the
-// first — see AttachedTo.
-//
-// The column order matches scanScoped.
-const scopedColumns = `d.id, d.project_id, d.environment_id, d.slug, d.description,
-	d.engine, d.version, d.username, d.password, d.database_name, d.exposed_port,
-	d.container_id, d.status, d.error, d.created_at, p.slug, e.slug`
-
-const scopedFrom = `
-	FROM datastores d
-	JOIN projects p ON p.id = d.project_id
-	JOIN environments e ON e.id = d.environment_id`
-
-const scopedQuery = `SELECT ` + scopedColumns + scopedFrom
-
-func scanScoped(row scanner) (*Scoped, error) {
-	var s Scoped
-	if err := row.Scan(&s.ID, &s.ProjectID, &s.EnvironmentID, &s.Slug, &s.Description,
-		&s.Engine, &s.Version, &s.Username, &s.Password, &s.Database, &s.ExposedPort,
-		&s.ContainerID, &s.Status, &s.Error, &s.CreatedAt,
-		&s.ProjectSlug, &s.EnvironmentSlug); err != nil {
+func scan(row scanner) (*Datastore, error) {
+	var d Datastore
+	if err := row.Scan(&d.ID, &d.Slug, &d.Description, &d.Engine, &d.Version,
+		&d.Username, &d.Password, &d.Database, &d.ExposedPort,
+		&d.ContainerID, &d.Status, &d.Error, &d.CreatedAt); err != nil {
 		return nil, err
 	}
-	return &s, nil
+	return &d, nil
 }
 
-func scanAll(rows *sql.Rows) ([]*Scoped, error) {
-	var out []*Scoped
+func scanAll(rows *sql.Rows) ([]*Datastore, error) {
+	var out []*Datastore
 	for rows.Next() {
-		d, err := scanScoped(rows)
+		d, err := scan(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -69,27 +53,17 @@ func scanAll(rows *sql.Rows) ([]*Scoped, error) {
 func (r *Repository) Create(ctx context.Context, d *Datastore) (*Datastore, error) {
 	row := r.q.QueryRowContext(ctx,
 		`INSERT INTO datastores
-		 (project_id, environment_id, slug, description, engine, version,
-		  username, password, database_name, exposed_port, status)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		 (slug, description, engine, version, username, password,
+		  database_name, exposed_port, status)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		 RETURNING `+columns,
-		d.ProjectID, d.EnvironmentID, d.Slug, d.Description, string(d.Engine), d.Version,
+		d.Slug, d.Description, string(d.Engine), d.Version,
 		d.Username, d.Password, d.Database, d.ExposedPort, StatusProvisioning)
-	created, err := scanPlain(row)
+	created, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("create datastore: %w", err)
 	}
 	return created, nil
-}
-
-func scanPlain(row scanner) (*Datastore, error) {
-	var d Datastore
-	if err := row.Scan(&d.ID, &d.ProjectID, &d.EnvironmentID, &d.Slug, &d.Description,
-		&d.Engine, &d.Version, &d.Username, &d.Password, &d.Database, &d.ExposedPort,
-		&d.ContainerID, &d.Status, &d.Error, &d.CreatedAt); err != nil {
-		return nil, err
-	}
-	return &d, nil
 }
 
 // Update changes a datastore's editable field. A nil argument leaves the
@@ -101,52 +75,24 @@ func (r *Repository) Update(ctx context.Context, id int64, description *string) 
 	row := r.q.QueryRowContext(ctx,
 		`UPDATE datastores SET description = COALESCE($1, description)
 		 WHERE id = $2 RETURNING `+columns, description, id)
-	d, err := scanPlain(row)
+	d, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("update datastore: %w", err)
 	}
 	return d, nil
 }
 
-func (r *Repository) ScopedByReference(ctx context.Context, project, env, slug string) (*Scoped, error) {
-	row := r.q.QueryRowContext(ctx,
-		scopedQuery+` WHERE p.slug = $1 AND e.slug = $2 AND d.slug = $3`, project, env, slug)
-	d, err := scanScoped(row)
+func (r *Repository) BySlug(ctx context.Context, slug string) (*Datastore, error) {
+	row := r.q.QueryRowContext(ctx, `SELECT `+columns+` FROM datastores WHERE slug = $1`, slug)
+	d, err := scan(row)
 	if err != nil {
-		return nil, fmt.Errorf("get datastore %s/%s/%s: %w", project, env, slug, err)
+		return nil, fmt.Errorf("get datastore %q: %w", slug, err)
 	}
 	return d, nil
 }
 
-func (r *Repository) ScopedByID(ctx context.Context, id int64) (*Scoped, error) {
-	row := r.q.QueryRowContext(ctx, scopedQuery+` WHERE d.id = $1`, id)
-	d, err := scanScoped(row)
-	if err != nil {
-		return nil, fmt.Errorf("get datastore %d: %w", id, err)
-	}
-	return d, nil
-}
-
-func (r *Repository) List(ctx context.Context) ([]*Scoped, error) {
-	rows, err := r.q.QueryContext(ctx, scopedQuery+` ORDER BY d.id`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanAll(rows)
-}
-
-func (r *Repository) ListForProject(ctx context.Context, projectID int64) ([]*Scoped, error) {
-	rows, err := r.q.QueryContext(ctx, scopedQuery+` WHERE d.project_id = $1 ORDER BY d.id`, projectID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return scanAll(rows)
-}
-
-func (r *Repository) ListForEnvironment(ctx context.Context, environmentID int64) ([]*Scoped, error) {
-	rows, err := r.q.QueryContext(ctx, scopedQuery+` WHERE d.environment_id = $1 ORDER BY d.id`, environmentID)
+func (r *Repository) List(ctx context.Context) ([]*Datastore, error) {
+	rows, err := r.q.QueryContext(ctx, `SELECT `+columns+` FROM datastores ORDER BY slug`)
 	if err != nil {
 		return nil, err
 	}
@@ -206,24 +152,24 @@ func (r *Repository) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// Attachments are the apps wired to one datastore, with the app's own
-// name joined in so nothing has to reach into the app module to render
-// the list.
-func (r *Repository) Attachments(ctx context.Context, datastoreID int64) ([]Attachment, error) {
-	rows, err := r.q.QueryContext(ctx,
-		`SELECT t.id, t.datastore_id, t.app_id, a.name, t.prefix, t.created_at
-		 FROM datastore_attachments t
-		 JOIN apps a ON a.id = t.app_id
-		 WHERE t.datastore_id = $1 ORDER BY a.name`, datastoreID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
+// attachmentQuery selects an attachment with the app's full reference
+// built in SQL. A datastore is not inside an environment any more, so a
+// bare app name identifies nothing — two apps called `api` in two
+// projects may both be attached to one database.
+const attachmentQuery = `
+	SELECT t.id, t.datastore_id, t.app_id,
+	       p.slug || '/' || e.slug || '/' || a.name, t.prefix, t.created_at
+	FROM datastore_attachments t
+	JOIN apps a ON a.id = t.app_id
+	JOIN projects p ON p.id = a.project_id
+	JOIN environments e ON e.id = a.environment_id`
 
+func scanAttachments(rows *sql.Rows) ([]Attachment, error) {
 	var out []Attachment
 	for rows.Next() {
 		var a Attachment
-		if err := rows.Scan(&a.ID, &a.DatastoreID, &a.AppID, &a.AppSlug, &a.Prefix, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.DatastoreID, &a.AppID,
+			&a.AppReference, &a.Prefix, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -231,10 +177,41 @@ func (r *Repository) Attachments(ctx context.Context, datastoreID int64) ([]Atta
 	return out, rows.Err()
 }
 
+// Attachments are the apps wired to one datastore.
+func (r *Repository) Attachments(ctx context.Context, datastoreID int64) ([]Attachment, error) {
+	rows, err := r.q.QueryContext(ctx,
+		attachmentQuery+` WHERE t.datastore_id = $1 ORDER BY 4`, datastoreID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanAttachments(rows)
+}
+
+// AllAttachments is every attachment on the instance, for a listing
+// that would otherwise ask per datastore. One query instead of N.
+func (r *Repository) AllAttachments(ctx context.Context) (map[int64][]Attachment, error) {
+	rows, err := r.q.QueryContext(ctx, attachmentQuery+` ORDER BY t.datastore_id, 4`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	all, err := scanAttachments(rows)
+	if err != nil {
+		return nil, err
+	}
+	byDatastore := map[int64][]Attachment{}
+	for _, a := range all {
+		byDatastore[a.DatastoreID] = append(byDatastore[a.DatastoreID], a)
+	}
+	return byDatastore, nil
+}
+
 // Attached is one datastore an app receives variables from, and the
 // prefix it receives them under.
 type Attached struct {
-	Scoped
+	Datastore
 	Prefix string
 }
 
@@ -243,7 +220,8 @@ type Attached struct {
 // deterministic whatever order the rows were written in.
 func (r *Repository) AttachedTo(ctx context.Context, appID int64) ([]Attached, error) {
 	rows, err := r.q.QueryContext(ctx,
-		`SELECT `+scopedColumns+`, t.prefix`+scopedFrom+`
+		`SELECT `+columns+`, t.prefix
+		 FROM datastores d
 		 JOIN datastore_attachments t ON t.datastore_id = d.id
 		 WHERE t.app_id = $1 ORDER BY t.prefix, d.id`, appID)
 	if err != nil {
@@ -254,10 +232,9 @@ func (r *Repository) AttachedTo(ctx context.Context, appID int64) ([]Attached, e
 	var out []Attached
 	for rows.Next() {
 		var a Attached
-		if err := rows.Scan(&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Slug, &a.Description,
-			&a.Engine, &a.Version, &a.Username, &a.Password, &a.Database, &a.ExposedPort,
-			&a.ContainerID, &a.Status, &a.Error, &a.CreatedAt,
-			&a.ProjectSlug, &a.EnvironmentSlug, &a.Prefix); err != nil {
+		if err := rows.Scan(&a.ID, &a.Slug, &a.Description, &a.Engine, &a.Version,
+			&a.Username, &a.Password, &a.Database, &a.ExposedPort,
+			&a.ContainerID, &a.Status, &a.Error, &a.CreatedAt, &a.Prefix); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -266,12 +243,10 @@ func (r *Repository) AttachedTo(ctx context.Context, appID int64) ([]Attached, e
 }
 
 func (r *Repository) Attach(ctx context.Context, datastoreID, appID int64, prefix string) error {
-	if _, err := r.q.ExecContext(ctx,
+	_, err := r.q.ExecContext(ctx,
 		`INSERT INTO datastore_attachments (datastore_id, app_id, prefix) VALUES ($1, $2, $3)`,
-		datastoreID, appID, prefix); err != nil {
-		return err
-	}
-	return nil
+		datastoreID, appID, prefix)
+	return err
 }
 
 // Detach reports whether it removed anything, so the caller can tell

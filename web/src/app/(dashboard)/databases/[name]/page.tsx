@@ -7,7 +7,7 @@ import { ActionButton } from "@/components/action-button";
 import { CopyButton } from "@/components/copy-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
-import { PageHeader, SectionHeader } from "@/components/page-header";
+import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -28,6 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ValueCard } from "@/components/value-card";
 import {
   type App,
@@ -39,25 +40,25 @@ import {
 } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-// One database, under the environment it lives in — the same address an
-// app has, because it is the same kind of thing to reach for.
-//
-// "databases" is a static segment, so it is refused as a slug by the
-// daemon (see internal/slug): Next resolves a static segment before a
-// dynamic one, and an app called "databases" would otherwise be a
-// resource nothing could open.
-export default function DatastorePage({
-  params,
-}: PageProps<"/projects/[project]/[env]/databases/[name]">) {
-  const { project, env, name } = use(params);
-  return <Detail reference={`${project}/${env}/${name}`} />;
+// One database. Its name is the whole of the address, because it
+// belongs to the instance rather than to a project.
+export default function DatastorePage({ params }: PageProps<"/databases/[name]">) {
+  const { name } = use(params);
+  return <Detail name={name} />;
 }
 
-function Detail({ reference }: { reference: string }) {
+// The two things there are to know about a database, as tabs: where it
+// answers, and who is wired to it. Settings is its own page, like every
+// other resource here — the actions that cannot be undone belong at the
+// bottom of a page you went to on purpose.
+type Tab = "overview" | "apps";
+
+function Detail({ name }: { name: string }) {
   const [datastore, setDatastore] = useState<Datastore | null>(null);
+  const [tab, setTab] = useState<Tab>("overview");
   const [error, setError] = useState<string | null>(null);
 
-  const path = datastorePath(reference);
+  const path = datastorePath(name);
   const reload = useCallback(() => {
     api
       .get<Datastore>(path)
@@ -78,16 +79,14 @@ function Detail({ reference }: { reference: string }) {
   if (error && !datastore) return <ErrorAlert error={error} />;
   if (!datastore) return null;
 
-  const environment = `/projects/${datastore.project}/${datastore.environment}`;
-
   return (
     <>
       <Link
-        href={environment}
+        href="/databases"
         className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
       >
         <ChevronLeftIcon className="size-3.5" />
-        {datastore.project}/{datastore.environment}
+        databases
       </Link>
 
       <PageHeader
@@ -105,7 +104,7 @@ function Detail({ reference }: { reference: string }) {
             variant="outline"
             nativeButton={false}
             render={
-              <Link href={`${environment}/databases/${datastore.name}/settings`}>
+              <Link href={`/databases/${datastore.name}/settings`}>
                 <SettingsIcon />
                 Settings
               </Link>
@@ -118,9 +117,10 @@ function Detail({ reference }: { reference: string }) {
 
       {/* The reason a database did not come up is the tail of what the
           engine printed, and it appears nowhere else — the container it
-          came from has been removed. */}
+          came from has been removed. It is above the tabs because it is
+          about the whole thing, not one view of it. */}
       {datastore.status === "failed" && datastore.error && (
-        <Card className="mb-4 border-destructive/30 border-l-2 border-l-destructive">
+        <Card className="mb-4 border-l-2 border-destructive/30 border-l-destructive">
           <CardContent>
             <div className="text-[11px] tracking-[0.12em] text-destructive uppercase">
               It did not start
@@ -132,8 +132,29 @@ function Detail({ reference }: { reference: string }) {
         </Card>
       )}
 
-      <Connection datastore={datastore} />
-      <Attachments datastore={datastore} onChanged={reload} />
+      <div className="mb-5">
+        <Tabs value={tab} onValueChange={(v) => setTab(String(v) as Tab)}>
+          <TabsList>
+            <TabsTrigger value="overview" className="px-3 text-xs">
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="apps" className="px-3 text-xs">
+              Apps
+              {datastore.attachments.length > 0 && (
+                <span className="ml-1.5 font-mono text-subtle-foreground">
+                  {datastore.attachments.length}
+                </span>
+              )}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+      </div>
+
+      {tab === "overview" ? (
+        <Connection datastore={datastore} />
+      ) : (
+        <Attachments datastore={datastore} onChanged={reload} />
+      )}
     </>
   );
 }
@@ -149,13 +170,13 @@ function Connection({ datastore }: { datastore: Datastore }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const internal = creds ? creds.internal_uri : `${datastore.host}:${datastore.port}`;
+
   async function reveal() {
     setBusy(true);
     setError(null);
     try {
-      setCreds(
-        await api.get<DatastoreCredentials>(`${datastorePath(datastore.reference)}/credentials`),
-      );
+      setCreds(await api.get<DatastoreCredentials>(`${datastorePath(datastore.name)}/credentials`));
     } catch (err) {
       setError(message(err));
     }
@@ -164,29 +185,23 @@ function Connection({ datastore }: { datastore: Datastore }) {
 
   return (
     <>
-      <SectionHeader
-        title="Connection"
-        sub="Apps on this instance reach it by container name on the shared network. Nothing else can, unless it is published."
-        actions={
-          !creds && (
-            <ActionButton variant="outline" size="sm" busy={busy} onClick={reveal}>
-              <EyeIcon />
-              Show credentials
-            </ActionButton>
-          )
-        }
-      />
-
       <ErrorAlert error={error} />
+
+      {!creds && (
+        <div className="mb-4 flex justify-end">
+          <ActionButton variant="outline" size="sm" busy={busy} onClick={reveal}>
+            <EyeIcon />
+            Show credentials
+          </ActionButton>
+        </div>
+      )}
 
       <ValueCard
         label="From an app on this instance"
         value={
           <span className="flex items-start justify-between gap-2">
-            <span>{creds ? creds.internal_uri : `${datastore.host}:${datastore.port}`}</span>
-            <CopyButton
-              value={creds ? creds.internal_uri : `${datastore.host}:${datastore.port}`}
-            />
+            <span>{internal}</span>
+            <CopyButton value={internal} />
           </span>
         }
       />
@@ -238,6 +253,12 @@ function Connection({ datastore }: { datastore: Datastore }) {
                   )}
                 </TableCell>
               </TableRow>
+              {datastore.description && (
+                <TableRow>
+                  <TableCell className="text-muted-foreground">Description</TableCell>
+                  <TableCell>{datastore.description}</TableCell>
+                </TableRow>
+              )}
             </TableBody>
           </Table>
         </CardContent>
@@ -255,10 +276,10 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
   const [attaching, setAttaching] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function detach(app: string) {
+  async function detach(appRef: string) {
     setError(null);
     try {
-      await api.del(`${datastorePath(datastore.reference)}/attachments/${app}`);
+      await api.del(`${datastorePath(datastore.name)}/attachments/${appRef}`);
       onChanged();
     } catch (err) {
       setError(message(err));
@@ -267,18 +288,18 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
 
   return (
     <>
-      <SectionHeader
-        title="Attached apps"
-        sub="Each one receives the connection string as environment variables, from its next deploy onwards."
-        actions={
-          <Button variant="outline" size="sm" onClick={() => setAttaching(true)}>
-            <PlugIcon />
-            Attach an app
-          </Button>
-        }
-      />
-
       <ErrorAlert error={error} />
+
+      <div className="mb-4 flex items-center justify-between gap-4">
+        <p className="text-sm text-muted-foreground">
+          Each app here receives the connection string as environment variables, from its next
+          deploy onwards. They may be in any project.
+        </p>
+        <Button variant="outline" size="sm" onClick={() => setAttaching(true)}>
+          <PlugIcon />
+          Attach an app
+        </Button>
+      </div>
 
       {datastore.attachments.length === 0 ? (
         <Notice>
@@ -300,15 +321,26 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
                 {datastore.attachments.map((a) => (
                   <TableRow key={a.app}>
                     <TableCell className="font-mono">
-                      <Link
-                        href={`/projects/${datastore.project}/${datastore.environment}/${a.app}`}
-                        className="hover:text-primary"
-                      >
+                      <Link href={`/projects/${a.app}`} className="hover:text-primary">
                         {a.app}
                       </Link>
                     </TableCell>
-                    <TableCell className="font-mono text-[11px] text-muted-foreground">
-                      {a.variables.join(", ")}
+                    {/* The variable names wrap rather than scroll. The
+                        question this column answers is "what do I read
+                        in my code", and an answer you have to drag
+                        sideways to finish reading is a worse answer
+                        than a taller row. */}
+                    <TableCell className="whitespace-normal">
+                      <span className="flex flex-wrap gap-1">
+                        {a.variables.map((v) => (
+                          <code
+                            key={v}
+                            className="border border-border bg-secondary/50 px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"
+                          >
+                            {v}
+                          </code>
+                        ))}
+                      </span>
                     </TableCell>
                     <TableCell>
                       <Button
@@ -371,23 +403,18 @@ function AttachDialog({
       .catch((e) => setError(message(e)));
   }, [open]);
 
-  // Only apps in this database's own environment, and only ones not
-  // already attached — the daemon refuses both, and offering a choice
-  // it would refuse is a form that argues with you.
+  // Every app on the instance, minus the ones already attached — the
+  // daemon refuses those, and offering a choice it would refuse is a
+  // form that argues with you.
   const attached = new Set(datastore.attachments.map((a) => a.app));
-  const candidates = (apps ?? []).filter(
-    (a) =>
-      a.project === datastore.project &&
-      a.environment === datastore.environment &&
-      !attached.has(a.name),
-  );
+  const candidates = (apps ?? []).filter((a) => !attached.has(a.reference));
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError(null);
     try {
-      await api.post(`${datastorePath(datastore.reference)}/attachments`, { app, prefix });
+      await api.post(`${datastorePath(datastore.name)}/attachments`, { app, prefix });
       onAttached();
       onOpenChange(false);
     } catch (err) {
@@ -408,31 +435,30 @@ function AttachDialog({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-5">
+          <div className="-mx-2 max-h-[55vh] space-y-4 overflow-y-auto px-2 py-5">
             <ErrorAlert error={error} className="mb-0" />
 
             {apps && candidates.length === 0 ? (
               <Notice>
-                Every app in <code className="text-foreground">{datastore.environment}</code> is
-                already attached, or there are none yet.
+                Every app on this instance is already attached, or there are none yet.
               </Notice>
             ) : (
               <div className="flex flex-wrap gap-2">
                 {candidates.map((a) => (
                   <Button
-                    key={a.name}
+                    key={a.reference}
                     type="button"
                     variant="outline"
                     size="sm"
-                    aria-pressed={a.name === app}
-                    onClick={() => setApp(a.name)}
+                    aria-pressed={a.reference === app}
+                    onClick={() => setApp(a.reference)}
                     className={
-                      a.name === app
+                      a.reference === app
                         ? "neon-edge border-primary/60 bg-primary/8 font-mono text-foreground"
                         : "font-mono"
                     }
                   >
-                    {a.name}
+                    {a.reference}
                   </Button>
                 ))}
               </div>

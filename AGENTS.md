@@ -33,8 +33,8 @@ internal/
                 one authorization question on the instance
   project/      projects and the environments inside them
   app/          apps, deployments, and the deploy orchestrator
-  datastore/    the databases Cubeship runs for those apps, and which
-                apps are wired to which
+  datastore/    the databases the instance runs, and which apps are
+                wired to which
   registry/     who may docker push/pull, and the push webhook
   extregistry/  logins for registries Cubeship does not run
   github/       the GitHub App: private clones, and deploy on push
@@ -74,10 +74,10 @@ Dependencies run one way: `user ← project ← app ← datastore`, with
 every module exists.
 
 Two things travel back down, and both do it as an interface the lower
-module declares and `server` satisfies at wiring time: `project.AppTeardown`
-and `project.DatastoreTeardown` (deleting a project stops what is running
-inside it), and `app.DatastoreVars` (what an attached database
-contributes to a container's environment).
+module declares and `server` satisfies at wiring time:
+`project.AppTeardown` (deleting a project stops the containers inside
+it) and `app.DatastoreVars` (what an attached database contributes to a
+container's environment).
 
 ## The API lives under /api, and the root is the dashboard
 
@@ -187,17 +187,12 @@ because an app only means something inside an environment — a top-level
 a screen of its own, so there is one page for "a project's apps" instead
 of two that have to stay identical.
 
-`settings` and `databases` are refused as slugs for any of them
-(`slug.Reserved`). Next.js resolves a static segment before a dynamic
-one, so an app actually called `settings` would be a resource nothing
-could open — the settings screen would answer at its address instead,
-silently. `databases` is the same story one level along:
-`/projects/<project>/<env>/databases` is where an environment's managed
-databases live. One set for every level rather than one per level — only
-some collide at each, but a slug that means different things at
-different depths is a rule nobody can hold in their head. Refusing the
-name at creation is the only place that can be caught while the person
-who typed it is still there.
+`settings` is refused as a slug for any of them (`slug.Reserved`).
+Next.js resolves a static segment before a dynamic one, so an app
+actually called `settings` would be a resource nothing could open — the
+settings screen would answer at its address instead, silently. Refusing
+the name at creation is the only place that can be caught while the
+person who typed it is still there.
 
 There is **no flat list of apps**. An app only means something inside an
 environment — `gateway` is unique in `acme/api/production` and nowhere
@@ -1138,45 +1133,60 @@ needs a registry garbage collection pass, which Cubeship does not run.
 this instance. Redis and MongoDB are next, and each is one entry in
 `specs` rather than a change anywhere else.
 
-**A database lives in an environment, not in a list of its own.** That
-is the whole design decision, and everything follows from it. A flat
-list on the instance would have made people spell the environment into
-the name — `api-staging-pg` — which is the component the organization
-used to be. Staging and production must hold different data, and an
-environment is exactly the thing that says so. Deleting a project or an
-environment takes its databases the way it takes its apps.
+**A database belongs to the instance, not to a project.** That is the
+design decision, and everything follows from it.
+
+It was inside an environment first, so that an app inherited its
+connection string through the layering it was already in. That is true
+and it was not enough: on one VPS the common shape is a single Postgres
+serving several small apps, and those apps are routinely in different
+projects. Owned by `web/production`, a database could not be reached
+from `blog/production` at all — not because anything prevented it, but
+because the model had decided in advance that it was the wrong thing to
+want.
+
+So ownership moved to the attachment, and 00019 is the migration that
+moved it. A datastore exists on its own; `datastore_attachments` is the
+whole of what connects it to anything, and it may cross projects and
+environments freely.
+
+**What is given up is that an environment no longer separates data by
+itself.** `pg-production` and `pg-staging` are two datastores, told
+apart by their names, and attaching the wrong one to the wrong app is
+now possible where it used to be unrepresentable. That is a real cost,
+paid for a database that can be shared — which is the reason to run one
+on a box this size.
 
 **It is a module of its own, not part of `app`.** A database has no
-image to push, no source to build, no domain, no zero-downtime swap, and
-no deployments table. It is provisioned once and then runs. The two
-share an address shape — `<project>/<environment>/<name>` — and nothing
-else.
+image to push, no source to build, no domain, no zero-downtime swap and
+no deployments table. It is provisioned once and then runs.
 
-**Container names are in a separate namespace on purpose.** An app's is
-`cubeship-<project>-<env>-<name>-<nanos>`; a datastore's is
-`cubeship-db-<project>-<env>-<name>`, with no suffix, because it is also
-the host its apps resolve on the shared network. Two namespaces that
-cannot collide are two namespaces nobody has to keep apart: an app and a
-database in one environment may both be called `api`.
+**The name is the whole of the address.** Unique across the instance,
+because it *is* the container: `cubeship-db-<slug>`, which is the host
+every attached app resolves on the shared network. An app's container is
+`cubeship-<project>-<env>-<name>-<nanos>`, so the two namespaces cannot
+collide and a database called `api` may sit beside an app called `api`.
+`engines` is the one refused name (`reservedSlugs`) — the API lists what
+it can run at `/datastores/engines`, and Go's mux prefers the literal.
 
 **The data is a host bind mount**, under `<data dir>/datastores/<id>`,
-keyed by id rather than by reference. Same rule as every other container
+keyed by id rather than by name. Same rule as every other container
 Cubeship runs: anything in a container's writable layer is destroyed the
 next time its configuration changes, and changing the published port is
 exactly such a change.
 
 ### How an app reaches one
 
-By being **attached** to it. An attachment gives the app
-`DATABASE_URL` and its parts, from its next deploy onwards — a container
-keeps the environment it was created with, the same rule that makes
-adding a domain take effect on redeploy.
+By being **attached** to it. An attachment gives the app `DATABASE_URL`
+and its parts, from its next deploy onwards — a container keeps the
+environment it was created with, the same rule that makes adding a
+domain take effect on redeploy.
 
-Explicit rather than "every app in the environment gets it": two apps in
-one environment routinely want different databases, and an attachment is
-also what lets deleting one say what breaks. A second database on one
-app takes a `prefix` (`ANALYTICS_`), because two under the same prefix
-would be one variable with two values.
+The app is named by its **full reference**, because a datastore is not
+inside an environment: `api` alone identifies nothing here, and two apps
+called `api` in two projects may both be attached to one database. A
+second database on one app takes a `prefix` (`ANALYTICS_`), since two
+under the same prefix would be one variable with two values.
 
 The seam is `app.DatastoreVars`, declared in `app` and satisfied by
 `datastore` — the dependency runs `app ← datastore`, and this is the one
@@ -1184,10 +1194,15 @@ thing that has to travel back. It is read fresh at every deploy rather
 than stored on the app, so an attachment made after the last deploy is
 picked up.
 
+**Nothing below a datastore knows it exists.** Deleting a project takes
+its apps and no database; the attachments to those apps go with them,
+through the foreign key. A database outliving the apps that used it is
+the point — it is the instance's, and deleting an app is not a decision
+about anybody's data.
+
 ### Fixed after creation, and why each one is
 
-- **The slug.** It is a component of the container name every attached
-  app resolves.
+- **The name.** It is the container's, which every attached app resolves.
 - **The engine and the version.** A data directory written by one major
   version is not readable by another. A datastore that "changed version"
   would be a container that will not start, with the only copy of the
@@ -1198,13 +1213,15 @@ picked up.
   every connection string Cubeship hands out while the database went on
   accepting only the old one.
 
-The description is what is left, which is why `PATCH` takes one field.
+The description is what is left, which is why `PATCH` takes one field —
+and with no project above it to say where a database belongs, it is the
+only place that can.
 
 ### Credentials
 
 Stored as given, like an external registry's login and for the same
 reason: a hash cannot connect to anything. Never in a listing —
-`GET /datastores/{ref}/credentials` is its own request and an admin's.
+`GET /datastores/{name}/credentials` is its own request and an admin's.
 Generated when a request carries no password, so a database with a weak
 one is not something anybody gets by leaving a box empty; the dashboard
 generates its own and shows it, because a field somebody has to fill in
@@ -1222,7 +1239,7 @@ receives it through its environment.
 
 ### Exposing one
 
-Off by default. `POST /datastores/{ref}/expose` publishes it on a host
+Off by default. `POST /datastores/{name}/expose` publishes it on a host
 port — from `PortRangeStart`-`PortRangeEnd` unless one is named — for a
 migration run from a laptop, psql, a BI tool.
 
@@ -1241,6 +1258,18 @@ because it is a bind mount.
 Ports 15000-15999 for the automatic range: the daemon's own Postgres
 already publishes 5432 on loopback, so the obvious number is the one
 number that cannot work.
+
+### In the dashboard
+
+`/databases` is its own section in the sidebar, beside Projects rather
+than under Platform: a database belongs to the instance, but it is a
+thing you deploy against, not a thing the instance is wired to, and it
+is opened as often as an app is.
+
+One database's page is two tabs — **Overview**, where it answers and
+what to connect with, and **Apps**, which is the wiring — with settings
+on its own page like every other resource, because the actions that
+cannot be undone belong at the bottom of a page you went to on purpose.
 
 ### What is not here
 
