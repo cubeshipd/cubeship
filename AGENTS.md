@@ -1298,6 +1298,23 @@ somewhere:
   a Postgres *and* a Redis attached gets both, unprefixed, without
   colliding.
 
+**None of them may move its data below the mount point.** Each of these
+images chowns its data directory — and only its data directory — to the
+unprivileged user it drops to. Point that at a subdirectory and the
+mount above it keeps the mode the daemon created it with, `0700 root`,
+which the engine's own user cannot traverse: the container comes up as
+root, chowns something it can reach, drops privileges, and then cannot
+open the directory it just prepared.
+
+Postgres is where this bit. Its image documents pointing `PGDATA` at a
+subdirectory when the data lives on a bind mount, and following that
+advice broke every Postgres this module provisioned — `Permission
+denied` on a restart loop, from a container that had been root a moment
+earlier. The daemon's own Postgres never had the problem because it
+never set `PGDATA`; `bootstrap.PostgresContainerOpts` is the same image
+on the same kind of directory, and it works. `TestNoEngineMovesItsDataBelowTheMount`
+is what keeps the advice from being taken again.
+
 Two smaller ones worth knowing: Redis is started with `--appendonly
 yes`, because otherwise it snapshots on its own schedule and a restart
 loses the last few minutes — free for a cache, and somebody's queue

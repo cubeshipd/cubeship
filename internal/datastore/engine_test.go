@@ -144,6 +144,42 @@ func TestAnEngineWithoutDatabasesOffersNoDatabaseVariable(t *testing.T) {
 	}
 }
 
+// No engine may move its data below the mount point.
+//
+// This is the bug that took down every Postgres this module
+// provisioned, written down so it cannot come back. Each of these
+// images chowns its data directory — and only its data directory — to
+// the unprivileged user it drops to. Point that at a subdirectory and
+// the mount above it keeps the mode the daemon created it with, 0700
+// root, which the engine's own user cannot traverse. The container
+// comes up as root, chowns something it can reach, drops privileges,
+// and then cannot open the directory it just prepared.
+//
+// The mount point *is* the data directory. Then the entrypoint chowns
+// the mount, and everything below inherits an owner that can read it.
+func TestNoEngineMovesItsDataBelowTheMount(t *testing.T) {
+	// The variables each image reads to relocate its data. Setting any
+	// of them is the mistake; there is no correct value.
+	relocators := []string{"PGDATA", "MYSQL_DATADIR", "MONGO_DATA_DIR"}
+
+	for _, e := range Engines() {
+		d := &Datastore{Engine: e, Username: "app", Password: "secret", Database: "app_db"}
+		told := append(d.ContainerEnv(), d.ContainerCmd()...)
+		for _, line := range told {
+			for _, name := range relocators {
+				if strings.HasPrefix(line, name+"=") {
+					t.Errorf("%s sets %s. Its data must live at the mount point, or the engine's own user cannot reach it: %q",
+						e, name, line)
+				}
+			}
+		}
+		// And the mount point is somewhere, for every engine.
+		if d.DataPath() == "" {
+			t.Errorf("%s has no data path, so nothing it writes would survive a restart", e)
+		}
+	}
+}
+
 // MySQL and MariaDB refuse to create root through their environment —
 // it already exists. Catching it here is the difference between a
 // sentence under the field and a container that exits with the reason

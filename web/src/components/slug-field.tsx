@@ -8,8 +8,19 @@ import { sanitize } from "@/lib/slug";
 // is typed — a preview of the resulting reference wrapped onto three
 // lines the moment a slug got long, which is the one moment you are
 // least sure you have typed it right.
+//
+// It says nothing about a display name, and must not: there are none.
+// A slug is the name, at every level — the hint used to promise that
+// something friendlier came from it and could be changed later, which
+// was an offer nothing has been able to honour since display names were
+// removed.
+//
+// Why it is permanent is the part worth carrying: a slug is a component
+// of the address other things are configured against — a registry path,
+// a container name — so changing one would break whatever was pointed
+// at the old one.
 const HINT =
-  "Lowercase letters, digits and dashes. Permanent — a display name comes from it and can be changed later, this cannot.";
+  "Lowercase letters, digits and dashes, and permanent: it becomes part of an address other things are configured against. A description carries whatever the name cannot.";
 
 export function SlugField({
   label = "Slug",
