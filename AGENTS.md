@@ -630,6 +630,20 @@ refusals: the account you are signed in as, and the last admin — setup
 closed when the first account appeared, and nothing in the API can make
 an admin without one.
 
+**Revoking a key is never refused, including the last one.** It used to
+be, to stop somebody locking themselves out — and that is the wrong
+trade the moment you name the case revocation exists for. A key that has
+leaked has to be able to go *now*; under the old rule the answer to
+"this key is in somebody else's hands" was to mint a second one first,
+which leaves the leaked one live for as long as that takes and is a
+strange thing to be made to do in a hurry.
+
+What replaces it is knowing rather than refusing, which is the same
+shape as every other irreversible act here: `/users/me` carries
+`has_password`, so the account screen can say what revoking this one
+costs — the CLI until you make another, or the way in — and ask. A
+confirmation in front of it, not a refusal to work around.
+
 An account can exist with no password. One an admin creates gets an API
 key immediately and a password only when it sets one, which
 is why every sign-in failure — unknown username, wrong password, no

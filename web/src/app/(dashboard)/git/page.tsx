@@ -203,7 +203,7 @@ export default function GitProviders() {
       {/* The escape hatch, and deliberately a link rather than a
           section: an App made by hand is a real thing to have and not
           something anyone should read about on the way to connecting. */}
-      {me.is_super_admin && !settings.data?.github_connected && settings.data && (
+      {me.role === "admin" && !settings.data?.github_connected && settings.data && (
         <div className="mt-4">
           <GitHubAppCard settings={settings.data} onSaved={() => settings.refetch()} />
         </div>
