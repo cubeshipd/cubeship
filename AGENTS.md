@@ -49,10 +49,12 @@ internal/
   settings/     the instance's domain and contact address
   certificates/ what TLS certificates the instance holds, read out of
                 Traefik's own store
+  firewall/     the host's ufw, and the one thing it does not cover on a
+                machine running Docker
   web/          proxies page requests to the dashboard's container
   server/       mounts every module on the HTTP mux and the MCP endpoint
   platform/     infrastructure: database, dockerx, traefik, bootstrap,
-                buildkit, config, authkey, regauth, httpx
+                buildkit, config, authkey, regauth, hostexec, httpx
   envvar/ slug/ small shared vocabulary
 cmd/cubeshipd/  the daemon
 cmd/cubeship/   the CLI (cobra), one file per noun
@@ -163,7 +165,7 @@ The sidebar is in sections, because its entries are not peers:
 
 - **Workspace** — projects, environments, apps. What you deploy.
 - **Platform** — credentials, registries, Git providers, DNS providers,
-  the instance's own domain. What the instance is wired to. Nothing in
+  certificates, the firewall, the instance's own domain. What the instance is wired to. Nothing in
   it belongs to a project, and almost none of it is touched twice: a
   registry is connected once and deployed through for a year.
   **Credentials is first**, because the others stand on it.
@@ -840,6 +842,91 @@ stopped — a few seconds of downtime for every app — and every re-issue
 spends one of a weekly limit shared with everyone else using the same
 registered domain. That is a decision to make deliberately, not a button
 beside a table.
+
+## The firewall
+
+`internal/firewall` is the host's UFW: whether it is on, what it admits,
+and one thing that is not UFW's at all. It **owns no rows** — the rules
+live in UFW, where an operator's own `ufw` command looks for them, and a
+second copy here would be a copy that drifts the first time somebody
+types `ufw allow` over SSH. Same shape as `certificates`, which reads
+Traefik's store.
+
+**Docker publishes ports around UFW, and that is the whole design.** A
+published port is DNAT'd and *forwarded* to a container rather than
+delivered to the host, so it never passes the INPUT chain `ufw allow`
+and `ufw deny` govern — and every port Cubeship opens is one of those:
+Traefik's 80 and 443, an exposed datastore's, the daemon's own. A screen
+wrapping `ufw status` would therefore show a firewall that is not in
+front of anything you deployed, which is worse than showing nothing.
+
+So a rule has a **scope**. `host` is `ufw allow`, traffic to the machine.
+`apps` is `ufw route allow`, traffic forwarded to a container — and it
+only means anything once `AdoptDocker` has appended a stanza to the
+host's `/etc/ufw/after.rules` sending Docker's `DOCKER-USER` chain
+through UFW's forward chain first. `DOCKER-USER` is the one seam Docker
+leaves and never rewrites. Until that stanza is there, an `apps` rule is
+**refused rather than written**, because a rule that governs nothing is
+the exact lie this module exists to avoid.
+
+Three refusals are the point of the module, and each is a thing that
+silently costs somebody a machine:
+
+- **Enabling with nothing admitting SSH.** UFW denies incoming by
+  default, so that ends the session it was asked from and every future
+  one, to somebody who is by then unable to undo it. The SSH port is
+  read from the host (`sshd -T`) rather than assumed to be 22 — a
+  hard-coded 22 would *pass* on a host listening on 2222, which is worse
+  than no check.
+- **An `apps` rule before adoption**, above.
+- **Deleting by a position that has moved.** UFW deletes by number and
+  numbers shift; the caller sends the rule's own text and the daemon
+  refuses if it no longer matches. Otherwise a stale screen deletes a
+  different rule and the only sign is a port that stops answering.
+
+Adopting is the dangerous direction, and the **order is not cosmetic**:
+the `ufw route allow` rules go in first, while they are inert, and the
+stanza that starts denying goes in last. 80 and 443 are allowed whatever
+the caller asked for — they are Traefik, which is every app and the
+dashboard the button was pressed from. Everything else currently
+published is offered, because `Status` reports it: on this kind of host
+what is exposed is what containers publish, not what the host's own
+services listen on.
+
+There are **no MCP tools**, deliberately. The line is the one
+`extregistry` draws by having none at all, for a different reason: an
+agent that closes 443 takes the instance off the internet, and nothing
+about that is worth automating.
+
+### Reaching the host at all
+
+The daemon is a container on a bridge network; `ufw` is a host program
+editing the host's netfilter tables. `internal/platform/hostexec` is the
+bridge: a throwaway container in the host's PID namespace, privileged,
+running `nsenter -t 1 -m -u -i -n -p --` against PID 1. What runs is
+then the host's own binary with the host's filesystem and network.
+
+**It adds no privilege the daemon does not already hold.** The daemon
+has `/var/run/docker.sock`, which is root on the host by another name —
+anything that can create containers can create a privileged one. This is
+that existing door, used deliberately in one place, rather than left for
+a future module to reinvent worse.
+
+The image is the daemon's own, read back from the Engine
+(`bootstrap.OwnImage`) rather than configured: it is Alpine, busybox
+carries `nsenter`, and it is on the box by definition — so there is no
+third image in the release and nothing to pull the first time a rule is
+written. It is off entirely when the daemon is a host process, which is
+`make dev`, where it would be editing the developer's own firewall.
+
+Nothing user-supplied is ever interpolated into a command line.
+`Spec.Check` matches every field against a pattern — a port is digits or
+a range, a source is an address, a comment is a short line of ordinary
+characters — and `Spec.Args` builds argv rather than a string. The
+stanza reaches the host through the **data directory**, not through an
+argument: it is mounted at the same path inside and out, so the host
+reads a file the daemon just wrote and several hundred bytes of iptables
+syntax never pass a shell.
 
 ## Where an app's image comes from
 

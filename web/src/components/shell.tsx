@@ -11,6 +11,7 @@ import {
   LogOutIcon,
   ServerCogIcon,
   ShieldCheckIcon,
+  ShieldIcon,
   UserRoundIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -78,6 +79,10 @@ const sections: { label?: string; items: NavItem[] }[] = [
       { href: "/git", label: "Git Providers", icon: GitBranchIcon, owns: ["/git"] },
       { href: "/dns", label: "DNS Providers", icon: GlobeIcon, owns: ["/dns"] },
       { href: "/certificates", label: "Certificates", icon: ShieldCheckIcon },
+      // Next to Certificates rather than under Instance: both are about
+      // how the outside reaches this machine, and both are read far
+      // more often than they are changed.
+      { href: "/firewall", label: "Firewall", icon: ShieldIcon },
       { href: "/settings", label: "Instance", icon: ServerCogIcon },
     ],
   },

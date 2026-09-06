@@ -2,10 +2,12 @@ package dockerx
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/docker/docker/api/types"
@@ -49,6 +51,15 @@ type ContainerOpts struct {
 	// Privileged drops the container's isolation. Only BuildKit needs
 	// it, and only because building an image means running one.
 	Privileged bool
+	// HostPID puts the container in the host's PID namespace, which is
+	// what makes PID 1 there addressable — the one thing a container
+	// needs to step out into the host's namespaces with nsenter. See
+	// internal/platform/hostexec, the only caller.
+	HostPID bool
+	// AutoRemove asks the Engine to delete the container when it exits.
+	// For a one-shot that is read through ContainerWait, not through
+	// its logs.
+	AutoRemove bool
 }
 
 // RegistryAuth is a username and password for a registry Cubeship does
@@ -238,18 +249,36 @@ func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (strin
 			ExposedPorts: exposedPorts,
 		},
 		&container.HostConfig{
-			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
+			RestartPolicy: restartPolicy(opts),
 			Binds:         opts.Binds,
 			PortBindings:  portBindings,
 			NetworkMode:   networkMode,
 			ExtraHosts:    opts.ExtraHosts,
 			Privileged:    opts.Privileged,
+			PidMode:       pidMode(opts),
 		},
 		networkingConfig, nil, opts.Name)
 	if err != nil {
 		return "", fmt.Errorf("create container %q: %w", opts.Name, err)
 	}
 	return resp.ID, nil
+}
+
+// restartPolicy: everything Cubeship runs is meant to come back after a
+// reboot, except a one-shot, which has already done its job. Docker
+// refuses a restart policy together with AutoRemove anyway.
+func restartPolicy(opts ContainerOpts) container.RestartPolicy {
+	if opts.AutoRemove {
+		return container.RestartPolicy{}
+	}
+	return container.RestartPolicy{Name: container.RestartPolicyUnlessStopped}
+}
+
+func pidMode(opts ContainerOpts) container.PidMode {
+	if opts.HostPID {
+		return "host"
+	}
+	return ""
 }
 
 // EnsureNetwork creates the named Docker network if it doesn't already
@@ -508,4 +537,136 @@ func (c *Client) ContainerStats(ctx context.Context, containerID string) (Stats,
 		MemoryBytes: used,
 		MemoryLimit: raw.MemoryStats.Limit,
 	}, nil
+}
+
+// RunOneShot runs a container to completion and returns everything it
+// printed, plus its exit code.
+//
+// Both streams together, deliberately: this exists for commands whose
+// failure is the interesting part, and a tool that writes its refusal to
+// stderr would otherwise come back as an exit code with no words
+// attached.
+//
+// The container is removed either way. A one-shot left behind is
+// rubbish that accumulates one row per invocation in `docker ps -a`.
+func (c *Client) RunOneShot(ctx context.Context, opts ContainerOpts) (output string, exitCode int, err error) {
+	id, err := c.CreateContainer(ctx, opts)
+	if err != nil {
+		return "", 0, err
+	}
+	defer func() {
+		// Best effort: the caller's answer is already in hand, and a
+		// failed cleanup is not a reason to lose it.
+		_ = c.RemoveContainer(ctx, id)
+	}()
+
+	// Waiting is set up before starting. The other way round is a race
+	// a fast command wins: it exits before the wait is registered, and
+	// the wait then blocks until the context gives up.
+	waitCh, errCh := c.api.ContainerWait(ctx, id, container.WaitConditionNotRunning)
+	if err := c.StartContainer(ctx, id); err != nil {
+		return "", 0, err
+	}
+	select {
+	case err := <-errCh:
+		return "", 0, fmt.Errorf("wait for %s: %w", opts.Name, err)
+	case done := <-waitCh:
+		exitCode = int(done.StatusCode)
+	case <-ctx.Done():
+		return "", 0, ctx.Err()
+	}
+
+	logs, err := c.Logs(ctx, id, "all")
+	if err != nil {
+		return "", exitCode, err
+	}
+	defer logs.Close()
+	body, err := io.ReadAll(logs)
+	if err != nil {
+		return "", exitCode, err
+	}
+	return string(demux(body)), exitCode, nil
+}
+
+// demux strips Docker's stream framing.
+//
+// A container without a TTY has its output framed: eight bytes in front
+// of every chunk, the first saying which stream it came from and the
+// last four the length. Handing that to a parser gives it a stray NUL
+// and a length byte in the middle of a line — which, for `ufw status`,
+// is a rule that does not parse for a reason nobody would guess.
+func demux(b []byte) []byte {
+	var out []byte
+	for len(b) >= 8 {
+		// The first byte is the stream id: 0, 1 or 2. Anything else
+		// means this is not framed output after all, so the rest is
+		// taken as written.
+		if b[0] > 2 {
+			return append(out, b...)
+		}
+		n := int(binary.BigEndian.Uint32(b[4:8]))
+		b = b[8:]
+		if n > len(b) {
+			n = len(b)
+		}
+		out = append(out, b[:n]...)
+		b = b[n:]
+	}
+	return append(out, b...)
+}
+
+// PublishedPort is a host port some container is answering on, and
+// which one.
+type PublishedPort struct {
+	Port      int
+	Protocol  string
+	Container string
+}
+
+// PublishedPorts is every host port a running container has published.
+//
+// It exists for the firewall, and for one reason: on a Docker host, the
+// ports that are actually exposed to the internet are not the ones the
+// host's own services listen on — they are these, and they are the ones
+// a firewall over UFW alone does not govern. A screen that is about to
+// start denying forwarded traffic has to be able to say what it is
+// about to deny.
+//
+// Ports bound to loopback are left out. They are not reachable from
+// anywhere a firewall rule would apply, and listing them would invite
+// somebody to open a hole for something that was never exposed.
+func (c *Client) PublishedPorts(ctx context.Context) ([]PublishedPort, error) {
+	list, err := c.api.ContainerList(ctx, container.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+
+	seen := map[string]bool{}
+	var out []PublishedPort
+	for _, item := range list {
+		name := ""
+		if len(item.Names) > 0 {
+			name = strings.TrimPrefix(item.Names[0], "/")
+		}
+		for _, p := range item.Ports {
+			if p.PublicPort == 0 {
+				continue
+			}
+			if p.IP == "127.0.0.1" || p.IP == "::1" {
+				continue
+			}
+			// One container publishes a port once per address family,
+			// and a rule is about the port.
+			key := fmt.Sprintf("%d/%s", p.PublicPort, p.Type)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, PublishedPort{
+				Port: int(p.PublicPort), Protocol: p.Type, Container: name,
+			})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Port < out[j].Port })
+	return out, nil
 }

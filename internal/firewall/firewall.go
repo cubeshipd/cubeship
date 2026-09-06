@@ -1,0 +1,215 @@
+// Package firewall is the host's UFW, as this instance sees it: whether
+// it is on, what it lets through, and the one thing UFW does not cover
+// on a machine running Docker.
+//
+// **It owns no rows.** The rules live in UFW, which is where the
+// operator's own `ufw` command would look for them, and a second copy
+// here would be a copy that drifts the first time somebody types
+// `ufw allow` over SSH. Same shape as internal/certificates, which reads
+// Traefik's store: this module reads and writes the thing that is
+// already the truth.
+//
+// # Docker goes around UFW, and that is the whole reason this is not a
+// # thin wrapper
+//
+// Docker publishes a port by writing DNAT rules of its own. That traffic
+// is *forwarded* to a container rather than delivered to the host, so it
+// never reaches the INPUT chain UFW governs — and every port Cubeship
+// opens is a published container port: Traefik's 80 and 443, an exposed
+// datastore's 15000-15999, the daemon itself.
+//
+// So `ufw deny 15432` would sit in a table looking like protection while
+// the port stayed open to the internet. A firewall screen that lies is
+// worse than no firewall screen, and it is the ordinary outcome of
+// wrapping UFW on a Docker host without knowing this.
+//
+// What covers those ports is the DOCKER-USER chain, which Docker jumps
+// to before its own rules and never rewrites. Sending it through UFW's
+// forward chain is what `ufw route allow` then governs — see dockerBlock
+// for the stanza that does it and Service.AdoptDocker for when it is
+// installed.
+package firewall
+
+import (
+	"errors"
+	"fmt"
+	"strings"
+)
+
+// Scope is which traffic a rule is about, and it is the distinction the
+// whole module turns on.
+type Scope string
+
+const (
+	// ScopeHost is traffic to the machine itself: SSH, and anything
+	// else not in a container. Plain `ufw allow`.
+	ScopeHost Scope = "host"
+
+	// ScopeApps is traffic forwarded to a container — every port
+	// Cubeship publishes. `ufw route allow`, which only means anything
+	// once the DOCKER-USER stanza is installed.
+	ScopeApps Scope = "apps"
+)
+
+func (s Scope) Valid() bool { return s == ScopeHost || s == ScopeApps }
+
+// Action is what happens to what a rule matches.
+type Action string
+
+const (
+	ActionAllow  Action = "allow"
+	ActionDeny   Action = "deny"
+	ActionReject Action = "reject"
+)
+
+func (a Action) Valid() bool {
+	switch a {
+	case ActionAllow, ActionDeny, ActionReject:
+		return true
+	}
+	return false
+}
+
+// Protocol is tcp, udp, or empty for both.
+type Protocol string
+
+const (
+	ProtocolAny Protocol = ""
+	ProtocolTCP Protocol = "tcp"
+	ProtocolUDP Protocol = "udp"
+)
+
+func (p Protocol) Valid() bool {
+	switch p {
+	case ProtocolAny, ProtocolTCP, ProtocolUDP:
+		return true
+	}
+	return false
+}
+
+// Rule is one line of `ufw status numbered`.
+//
+// It carries the raw text as well as the parsed parts, because UFW's
+// output is richer than this struct — an interface, a rate limit, a
+// v6 twin — and a rule shown as less than it is would be a rule
+// somebody deletes by mistake. Text is what the screen prints; the parts
+// are for grouping and for the one thing the daemon has to understand,
+// which is whether SSH is still let in.
+type Rule struct {
+	// Index is the position `ufw status numbered` gave it, which is
+	// also how it is deleted. It shifts whenever anything above it
+	// goes, so it is read fresh every time and never stored.
+	Index int    `json:"index"`
+	Text  string `json:"text"`
+	Scope Scope  `json:"scope"`
+
+	Action   Action   `json:"action"`
+	Protocol Protocol `json:"protocol,omitempty"`
+	// Ports is what the rule admits, as UFW spells it: "22", "80,443",
+	// "15000:15999". Empty for a rule that names none.
+	Ports string `json:"ports,omitempty"`
+	// From is where it applies from, empty for anywhere.
+	From string `json:"from,omitempty"`
+	// Comment is UFW's own, the part after "# ".
+	Comment string `json:"comment,omitempty"`
+	// V6 marks the IPv6 half of a rule UFW wrote twice. The screen
+	// folds these away: two lines for one decision is a list nobody can
+	// read.
+	V6 bool `json:"v6"`
+}
+
+// Status is the whole of what this instance can say about the host's
+// firewall.
+type Status struct {
+	// Available is false when the daemon cannot reach the host at all —
+	// it is running as a host process rather than a container. Then
+	// nothing below is known, and the screen says so rather than
+	// showing an empty firewall.
+	Available bool `json:"available"`
+	// Installed is false when the host has no ufw. Not an error: plenty
+	// of machines do not, and saying "not installed" beats a failure
+	// that reads like a bug.
+	Installed bool `json:"installed"`
+	Enabled   bool `json:"enabled"`
+	// DefaultIncoming is what happens to traffic no rule matches —
+	// "deny" or "allow". It is the single most important fact here and
+	// the one people assume rather than check.
+	DefaultIncoming string `json:"default_incoming,omitempty"`
+	Rules           []Rule `json:"rules"`
+
+	// DockerAdopted says whether the DOCKER-USER stanza is installed —
+	// that is, whether an "apps" rule means anything at all. Without
+	// it, published container ports are open whatever this list says.
+	DockerAdopted bool `json:"docker_adopted"`
+
+	// SSHPorts are the ports the host's sshd is listening on. They are
+	// here because enabling a default-deny firewall without one of them
+	// allowed is how somebody loses a machine, and because the screen
+	// should be able to offer the rule rather than describe it.
+	SSHPorts []int `json:"ssh_ports,omitempty"`
+	// SSHAllowed is whether some rule already lets one of those in.
+	SSHAllowed bool `json:"ssh_allowed"`
+
+	// Published are the host ports containers are answering on right
+	// now — which, on this machine, is what is actually exposed. They
+	// are here because turning on Docker port control starts denying
+	// every one of them that no rule admits, and a screen about to do
+	// that has to be able to say what it is about to close.
+	Published []Published `json:"published"`
+}
+
+// Published is one host port a container answers on.
+type Published struct {
+	Port      int    `json:"port"`
+	Protocol  string `json:"protocol"`
+	Container string `json:"container"`
+	// Allowed is whether a rule already admits it, so the screen can
+	// offer the ones that would go dark rather than all of them.
+	Allowed bool `json:"allowed"`
+}
+
+var (
+	// ErrNotInstalled is a host with no ufw. Installing one is the
+	// operator's call — it is their machine's package manager, and a
+	// daemon that installs software on the host uninvited is a
+	// different kind of program from this one.
+	ErrNotInstalled = errors.New("this host has no ufw installed")
+
+	// ErrWouldLockYouOut refuses enabling a default-deny firewall while
+	// nothing admits SSH.
+	ErrWouldLockYouOut = errors.New("no rule admits SSH")
+
+	// ErrBadRule is a rule that does not describe anything.
+	ErrBadRule = errors.New("invalid rule")
+
+	// ErrNoSuchRule is deleting a position that is not there — usually
+	// a screen acting on a listing something else has changed since.
+	ErrNoSuchRule = errors.New("no such rule")
+
+	// ErrRuleChanged is deleting a position that holds something other
+	// than what the caller was looking at.
+	ErrRuleChanged = errors.New("that rule is not the one you were looking at; the list changed")
+
+	// ErrDockerNotAdopted refuses an "apps" rule while the DOCKER-USER
+	// stanza is missing. Writing one anyway would put a line in the
+	// table that governs nothing, which is the exact lie this module
+	// exists to avoid.
+	ErrDockerNotAdopted = errors.New("published container ports are not governed by ufw on this host yet")
+)
+
+// LockedOutError names the ports that would have had to be allowed.
+func LockedOutError(ports []int) error {
+	return fmt.Errorf("%w: enabling would end this SSH session and every other one. Allow %s first",
+		ErrWouldLockYouOut, portList(ports))
+}
+
+func portList(ports []int) string {
+	if len(ports) == 0 {
+		return "the port you reach this host on"
+	}
+	out := make([]string, 0, len(ports))
+	for _, p := range ports {
+		out = append(out, fmt.Sprintf("port %d", p))
+	}
+	return strings.Join(out, " or ")
+}

@@ -22,6 +22,7 @@ import (
 	"cubeship/internal/platform/config"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/dockerx"
+	"cubeship/internal/platform/hostexec"
 	"cubeship/internal/platform/regauth"
 	"cubeship/internal/server"
 	"cubeship/internal/settings"
@@ -343,6 +344,13 @@ func run() error {
 		return fmt.Errorf("prepare the setup token: %w", err)
 	}
 
+	// What lets the firewall module reach the host it is a firewall
+	// for. It runs a throwaway container from this daemon's own image,
+	// so the daemon has to know which that is — the Engine is asked,
+	// rather than anything being configured. Off entirely when the
+	// daemon is a host process, where there is no such container.
+	host := hostexec.NewRunner(docker, bootstrap.OwnImage(ctx, docker, cfg), cfg.InContainer)
+
 	srv := server.New(db, docker, server.Options{
 		WebhookToken:  cfg.Token,
 		Builder:       builder,
@@ -350,6 +358,7 @@ func run() error {
 		Frontend:      bootstrap.FrontendAddress(cfg),
 		DataDir:       cfg.DataDir,
 		SetupToken:    setupToken,
+		Host:          host,
 	})
 
 	// An install upgrading from the release where the domain and contact

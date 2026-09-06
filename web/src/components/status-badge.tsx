@@ -34,6 +34,13 @@ const tones: Record<string, Tone> = {
   // working — amber, not green — and an expired one is already failing
   // handshakes.
   valid: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
+  // A firewall rule's verb. Allow is green because it is what makes
+  // something work; deny and reject are red because they are what stops
+  // it — the colour is about what the rule does, not about whether
+  // having it is good news.
+  allow: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
+  deny: { dot: "bg-destructive", text: "text-destructive", edge: "border-destructive/40" },
+  reject: { dot: "bg-destructive", text: "text-destructive", edge: "border-destructive/40" },
   expiring: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40" },
   expired: { dot: "bg-destructive", text: "text-destructive", edge: "border-destructive/40" },
   stopped: {

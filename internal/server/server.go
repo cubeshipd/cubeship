@@ -16,6 +16,7 @@ import (
 	"cubeship/internal/datastore"
 	"cubeship/internal/dns"
 	"cubeship/internal/extregistry"
+	"cubeship/internal/firewall"
 	"cubeship/internal/github"
 	"cubeship/internal/metrics"
 	"cubeship/internal/platform/database"
@@ -38,6 +39,7 @@ type Server struct {
 	Credentials *credential.Service
 	Settings    *settings.Service
 	Certs       *certificates.Service
+	Firewall    *firewall.Service
 	Setup       *setup.Service
 	Registries  *extregistry.Service
 	DNS         *dns.Service
@@ -87,6 +89,12 @@ type Options struct {
 	// outside the database a module reads: Traefik's certificate store
 	// lives in it.
 	DataDir string
+
+	// Host runs a command on the machine this instance is on, which is
+	// what a firewall is made of. Nil in a test and on a daemon that is
+	// itself a host process: both would otherwise be editing somebody's
+	// real netfilter tables.
+	Host firewall.Host
 
 	// SetupToken guards claiming an unclaimed instance. The daemon
 	// writes it into the data directory on first start and the
@@ -141,13 +149,17 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	apps.SetDatastoreVars(datastores)
 
 	srv := &Server{
-		Users:       users,
-		Projects:    projects,
-		Apps:        apps,
-		Datastores:  datastores,
-		Metrics:     series,
-		Settings:    cfg,
-		Certs:       certificates.NewService(cfg, apps, opts.DataDir),
+		Users:      users,
+		Projects:   projects,
+		Apps:       apps,
+		Datastores: datastores,
+		Metrics:    series,
+		Settings:   cfg,
+		Certs:      certificates.NewService(cfg, apps, opts.DataDir),
+		// A firewall is the host's, so a server with no way to reach the
+		// host has one that answers "not available" — which is what a
+		// test wants, and what `make dev` is.
+		Firewall:    firewall.NewService(opts.Host, ports(docker), opts.DataDir),
 		Setup:       setup.NewService(db, users, opts.SetupToken),
 		Credentials: creds,
 		Registries:  registries,
@@ -232,6 +244,7 @@ func (s *Server) routes() {
 	project.NewHandler(s.Projects).Routes(s.router, auth)
 	settings.NewHandler(s.Settings).Routes(s.router, auth)
 	certificates.NewHandler(s.Certs).Routes(s.router, auth)
+	firewall.NewHandler(s.Firewall).Routes(s.router, auth)
 	credential.NewHandler(s.Credentials).Routes(s.router, auth)
 	extregistry.NewHandler(s.Registries).Routes(s.router, auth)
 	dns.NewHandler(s.DNS).Routes(s.router, auth)
@@ -264,4 +277,14 @@ func (s *Server) routes() {
 	// narrower path — and it refuses to choose. The handler answers 405
 	// to anything but a read.
 	s.router.HandleRoot("/", web.Handler(s.frontend))
+}
+
+// ports narrows the Engine to the one question the firewall asks of it.
+// A fake in a test is not a Docker client, and the firewall reports no
+// published ports rather than refusing to answer at all.
+func ports(docker app.DockerAPI) firewall.Ports {
+	if p, ok := docker.(firewall.Ports); ok {
+		return p
+	}
+	return nil
 }

@@ -763,3 +763,26 @@ func isNameConflict(err error) bool {
 	msg := strings.ToLower(err.Error())
 	return strings.Contains(msg, "already in use") || strings.Contains(msg, "already exists")
 }
+
+// OwnImage is the image this daemon is running from, read from its own
+// container.
+//
+// Asked for rather than configured, and that is the opposite call to
+// CUBESHIP_WEB_IMAGE — for a reason. The dashboard's image has to be
+// *derived* from the daemon's, and deriving means string surgery on a
+// registry path an operator is free to change. This is not derivation:
+// it is the Engine being asked what this container was created from,
+// which is exactly right whatever anybody named it.
+//
+// Empty when the daemon is not a container, which is `make dev`. The one
+// caller — hostexec — is off there anyway.
+func OwnImage(ctx context.Context, docker dockerAPI, cfg *config.Config) string {
+	if !cfg.InContainer {
+		return ""
+	}
+	info, err := docker.InspectContainerByName(ctx, DaemonContainerName)
+	if err != nil {
+		return ""
+	}
+	return info.Image
+}
