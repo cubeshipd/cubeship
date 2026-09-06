@@ -146,18 +146,19 @@ func (s *Service) Status(ctx context.Context, caller *user.User) (*Status, error
 
 // parsePorts reads the numbers sshd printed, one per line.
 //
-// A host that answers nothing is assumed to be on 22 — the point of
-// this is to refuse a lockout, and guessing the usual port is safer
-// than concluding there is no SSH to protect.
+// **Empty means "could not tell", and it is not filled in with 22.** It
+// used to be, back when the only thing this decided was whether to
+// refuse — a guess is harmless when the consequence is refusing. It is
+// not harmless now that Enable opens these ports itself: guessing 22 on
+// a host listening on 2222 would open a port nobody uses, enable, and
+// lock the operator out through the one door built to stop exactly
+// that.
 func parsePorts(out string) []int {
 	var ports []int
 	for _, line := range strings.Fields(out) {
 		if n, err := strconv.Atoi(strings.TrimSpace(line)); err == nil && n > 0 && n < 65536 {
 			ports = append(ports, n)
 		}
-	}
-	if len(ports) == 0 {
-		return []int{22}
 	}
 	return ports
 }
@@ -208,13 +209,25 @@ func coversPort(spec string, port int) bool {
 	return false
 }
 
-// Enable turns the firewall on, and refuses while nothing admits SSH.
+// Enable turns the firewall on, and never turns it on in a way that
+// ends the session it was asked from.
 //
-// **That refusal is the most valuable thing in this module.** UFW's
-// default is to deny incoming, so enabling it on a machine reached over
-// SSH, with no rule for SSH, ends the session it was typed in and every
-// future one. It is the classic way to lose a VPS, it is silent, and
-// the person it happens to is by definition no longer able to undo it.
+// UFW denies incoming by default, so enabling it on a machine reached
+// over SSH with no rule for SSH is the classic way to lose a VPS: it is
+// silent, and the person it happens to is by definition no longer able
+// to undo it.
+//
+// **So it admits SSH itself rather than refusing.** Refusing was the
+// first answer and it was the wrong shape of one: if a rule is
+// compulsory, making somebody add it by hand is a mechanical step in
+// front of a button, and one they can get wrong — the daemon already
+// knows the port and can write it correctly. What is compulsory is that
+// the firewall is never enabled without it, and adding it keeps that
+// promise better than refusing does.
+//
+// The refusal survives for the one case where the guarantee cannot be
+// kept: a host whose sshd did not say which port it is on. There, any
+// rule this wrote would be a guess, and a wrong guess is the lockout.
 func (s *Service) Enable(ctx context.Context, caller *user.User) (*Status, error) {
 	status, err := s.Status(ctx, caller)
 	if err != nil {
@@ -227,7 +240,18 @@ func (s *Service) Enable(ctx context.Context, caller *user.User) (*Status, error
 		return nil, ErrNotInstalled
 	}
 	if !status.SSHAllowed {
-		return nil, LockedOutError(status.SSHPorts)
+		if len(status.SSHPorts) == 0 {
+			return nil, ErrSSHUnknown
+		}
+		for _, port := range status.SSHPorts {
+			spec := Spec{
+				Scope: ScopeHost, Action: ActionAllow, Protocol: ProtocolTCP,
+				Port: strconv.Itoa(port), Comment: "ssh",
+			}
+			if err := s.run(ctx, spec.Args()...); err != nil {
+				return nil, err
+			}
+		}
 	}
 	// --force is not "do it anyway": it is what answers the y/n prompt
 	// ufw would otherwise wait on forever with no terminal attached.

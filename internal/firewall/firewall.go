@@ -150,10 +150,13 @@ type Status struct {
 	// it, published container ports are open whatever this list says.
 	DockerAdopted bool `json:"docker_adopted"`
 
-	// SSHPorts are the ports the host's sshd is listening on. They are
-	// here because enabling a default-deny firewall without one of them
-	// allowed is how somebody loses a machine, and because the screen
-	// should be able to offer the rule rather than describe it.
+	// SSHPorts are the ports the host's sshd said it is listening on.
+	// Enabling admits them if nothing else does, which is why they are
+	// read from the host rather than assumed.
+	//
+	// **Empty means the host did not say**, and is not filled in with
+	// 22: a guess is harmless while it only decides whether to refuse,
+	// and is a lockout once it decides which port to open.
 	SSHPorts []int `json:"ssh_ports,omitempty"`
 	// SSHAllowed is whether some rule already lets one of those in.
 	SSHAllowed bool `json:"ssh_allowed"`
@@ -184,8 +187,17 @@ var (
 	ErrNotInstalled = errors.New("this host has no ufw installed")
 
 	// ErrWouldLockYouOut refuses enabling a default-deny firewall while
-	// nothing admits SSH.
+	// nothing admits SSH. Enable now writes that rule itself, so this is
+	// only reached through ErrSSHUnknown below.
 	ErrWouldLockYouOut = errors.New("no rule admits SSH")
+
+	// ErrSSHUnknown is a host whose sshd did not say which port it is
+	// on. It is the one case where enabling cannot be made safe: any
+	// rule written here would be a guess, and a wrong guess is exactly
+	// the lockout the check exists to prevent.
+	ErrSSHUnknown = fmt.Errorf(
+		"%w, and this daemon could not find out which port sshd is on. Add a rule for the port you connect on, then turn it on",
+		ErrWouldLockYouOut)
 
 	// ErrBadRule is a rule that does not describe anything.
 	ErrBadRule = errors.New("invalid rule")
