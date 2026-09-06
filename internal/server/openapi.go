@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"cubeship/internal/app"
+	"cubeship/internal/certificates"
 	"cubeship/internal/dns"
 	"cubeship/internal/extregistry"
 	"cubeship/internal/github"
@@ -43,7 +44,8 @@ func (s *Server) OpenAPI() openapi.Document {
 		dns.NewHandler(s.DNS).OpenAPI(),
 		github.NewHandler(s.GitHub, s.Apps).OpenAPI(),
 		s.Registry.OpenAPI(),
-		settings.NewHandler(s.Settings).OpenAPI())
+		settings.NewHandler(s.Settings).OpenAPI(),
+		certificates.NewHandler(s.Certs).OpenAPI())
 
 	return openapi.Document{
 		OpenAPI: "3.1.0",
