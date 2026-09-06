@@ -115,7 +115,7 @@ export function GitHubSource({
     return (
       <div className="space-y-3">
         <ErrorAlert error={error} />
-        <GitProviders providers={providers} canRegister={me.is_super_admin} returnTo={returnTo} />
+        <GitProviders providers={providers} canRegister={me.role === "admin"} returnTo={returnTo} />
       </div>
     );
   }

@@ -207,9 +207,7 @@ function UserMenu({ me }: { me: Me }) {
         <DropdownMenuGroup>
           <DropdownMenuLabel className="font-mono text-xs">
             {me.username}
-            {me.is_super_admin && (
-              <span className="ml-1.5 text-subtle-foreground">· super admin</span>
-            )}
+            {me.role === "admin" && <span className="ml-1.5 text-subtle-foreground">· admin</span>}
           </DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />

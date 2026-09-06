@@ -441,6 +441,26 @@ func EnsureBuildKit(ctx context.Context, docker dockerAPI, cfg *config.Config) e
 	return Ensure(ctx, docker, BuildKitContainerOpts(cfg))
 }
 
+// TraefikImage is pinned, and the pin is not cosmetic.
+//
+// Traefik's Docker provider asks the Engine for a fixed API version, and
+// up to v3.5 that version is 1.24. Docker Engine 28 raised the minimum
+// it will answer to 1.40, so on any host with a current Engine those
+// releases are refused — not degraded, refused: the provider retries
+// forever, Traefik sees **no container at all**, and every router that
+// comes from a container label silently does not exist.
+//
+// It is a nasty failure because nothing looks broken. Apps deploy,
+// containers run, the file provider keeps working — so the daemon's own
+// name still resolves and still gets a certificate — and the only
+// symptom is that everything routed by label answers with Traefik's
+// default self-signed certificate, which reads as a certificate problem
+// rather than a proxy that cannot see anything.
+//
+// v3.6 negotiates the version. `DOCKER_API_VERSION` is not a way out:
+// the older provider ignores it.
+const TraefikImage = "traefik:v3.6"
+
 // TraefikContainerOpts describes the proxy. With tls false there is no
 // certificate resolver at all: nothing has a name to get a certificate
 // for, so apps are served over plain HTTP. acmeEmail is the contact
@@ -476,7 +496,7 @@ func TraefikContainerOpts(cfg *config.Config, tls bool, acmeEmail string) docker
 	}
 	return dockerx.ContainerOpts{
 		Name:  TraefikContainerName,
-		Image: "traefik:v3.1",
+		Image: TraefikImage,
 		Cmd:   cmd,
 		Binds: []string{
 			"/var/run/docker.sock:/var/run/docker.sock:ro",
