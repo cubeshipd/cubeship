@@ -135,7 +135,7 @@ func TestEnablingProceedsOnceSSHIsAdmitted(t *testing.T) {
 func TestAContainerRuleIsRefusedUntilDockerIsAdopted(t *testing.T) {
 	host := &fakeHost{status: status(active,
 		"", "", "0", "22")}
-	_, err := newService(t, host).AddRule(context.Background(), admin, Spec{
+	_, err := newService(t, host).AddRule(context.Background(), admin, Request{
 		Scope: ScopeApps, Action: ActionAllow, Protocol: ProtocolTCP, Port: "15432",
 	})
 	if !errors.Is(err, ErrDockerNotAdopted) {
@@ -145,7 +145,7 @@ func TestAContainerRuleIsRefusedUntilDockerIsAdopted(t *testing.T) {
 	// The same rule is fine once the stanza is in.
 	host = &fakeHost{status: status(active,
 		"", "", "1", "22")}
-	if _, err := newService(t, host).AddRule(context.Background(), admin, Spec{
+	if _, err := newService(t, host).AddRule(context.Background(), admin, Request{
 		Scope: ScopeApps, Action: ActionAllow, Protocol: ProtocolTCP, Port: "15432",
 	}); err != nil {
 		t.Fatalf("adopted, and still refused: %v", err)
@@ -244,7 +244,7 @@ func TestOnlyAnAdminSeesTheFirewall(t *testing.T) {
 		{"enable", func() error { _, err := svc.Enable(context.Background(), member); return err }()},
 		{"disable", func() error { _, err := svc.Disable(context.Background(), member); return err }()},
 		{"add", func() error {
-			_, err := svc.AddRule(context.Background(), member, Spec{Scope: ScopeHost, Action: ActionAllow, Port: "22"})
+			_, err := svc.AddRule(context.Background(), member, Request{Scope: ScopeHost, Action: ActionAllow, Port: "22"})
 			return err
 		}()},
 		{"delete", func() error { _, err := svc.DeleteRule(context.Background(), member, 1, ""); return err }()},

@@ -172,6 +172,14 @@ type Status struct {
 	// SSHAllowed is whether some rule already lets one of those in.
 	SSHAllowed bool `json:"ssh_allowed"`
 
+	// YourIP is the address the request asking for this came from, so a
+	// screen can offer "just me" without sending somebody to look their
+	// own address up. It is what the daemon sees — the forwarded
+	// address through Traefik, the socket's otherwise — and it is per
+	// request rather than a fact about the host, which is why it is
+	// filled in by the handler.
+	YourIP string `json:"your_ip,omitempty"`
+
 	// Published are the host ports containers are answering on right
 	// now — which, on this machine, is what is actually exposed. They
 	// are here because turning on Docker port control starts denying

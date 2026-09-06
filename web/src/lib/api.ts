@@ -599,5 +599,8 @@ export type Firewall = {
   docker_adopted: boolean;
   ssh_ports?: number[];
   ssh_allowed: boolean;
+  // The address this request came from, so the rule form can offer
+  // "just me" without sending anybody to look their own address up.
+  your_ip?: string;
   published: FirewallPublishedPort[];
 };

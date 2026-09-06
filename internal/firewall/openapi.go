@@ -45,6 +45,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"docker_adopted":   openapi.Bool("Whether published container ports are answerable to UFW at all — see the note on this tag. False means every `apps` rule would be inert, so writing one is refused."),
 				"ssh_ports":        openapi.Array(openapi.Integer("A port the host's sshd said it is listening on. **Absent means it did not say**, and is not filled in with 22 — a guess is harmless while it only decides whether to refuse, and is a lockout once it decides which port to open.")),
 				"ssh_allowed":      openapi.Bool("Whether some rule admits one of those. False is not a refusal: enabling writes the rule itself, from the port above."),
+				"your_ip":          openapi.String("The address this request came from, so a screen can offer \"just me\" without sending somebody to look their own address up. What the daemon sees — the forwarded address through Traefik, the socket's otherwise."),
 				"published":        openapi.Array(openapi.Ref("FirewallPublishedPort")),
 			}, "available", "installed", "enabled", "rules", "docker_adopted", "ssh_allowed", "published"),
 		},
@@ -93,14 +94,14 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"post": {
 					OperationID: "addFirewallRule",
 					Summary:     "Add a rule",
-					Description: "Scope decides which of two different things this is." + dockerNote,
+					Description: "Scope decides which of two different things this is.\n\n`sources` is a list because UFW takes one source per rule — there is no \"from A or B\" — so admitting a port from three addresses is three rules. This is the one request that writes them: every one is checked before any is written, because a request half applied is a firewall nobody asked for. An empty list, or any empty entry, means anywhere — and anywhere makes everything narrower meaningless, so it wins." + dockerNote,
 					Tags:        []string{"Firewall"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"scope":    {Type: "string", Enum: []string{"host", "apps"}, Description: "`host` for the machine's own services — SSH, anything not in a container. `apps` for a published container port."},
 						"action":   {Type: "string", Enum: []string{"allow", "deny", "reject"}, Description: "`deny` drops silently; `reject` answers."},
 						"protocol": {Type: "string", Enum: []string{"tcp", "udp"}, Description: "Omit for both. A port range must name one — UFW cannot write a range into both tables at once."},
 						"port":     openapi.String(`A port, or a range as UFW spells one: "15000:15999".`),
-						"from":     openapi.String("An address or CIDR. Omit for anywhere."),
+						"sources":  openapi.Array(openapi.String("An address or CIDR this applies from.")),
 						"comment":  openapi.String("Carried into UFW's own comment, so `ufw status` on the host says who wrote it and why."),
 					}, "scope", "action", "port")),
 					Responses: openapi.Responses{
