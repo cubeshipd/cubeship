@@ -77,10 +77,7 @@ function Settings({ reference }: { reference: string }) {
         {reference}
       </Link>
 
-      <PageHeader
-        title="App settings"
-        sub="What this app is, where it is served, and where its image comes from."
-      />
+      <PageHeader title="App settings" />
 
       <ErrorAlert error={error} />
 

@@ -235,10 +235,9 @@ func TestATypedLoginBecomesAnAccountYouCanReuse(t *testing.T) {
 	}
 
 	var accounts []struct {
-		ID       int64    `json:"id"`
-		Provider string   `json:"provider"`
-		Label    string   `json:"label"`
-		InUseBy  []string `json:"in_use_by"`
+		ID      int64    `json:"id"`
+		Label   string   `json:"label"`
+		InUseBy []string `json:"in_use_by"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet,
 		"/credentials", nil, f.AdminKey, &accounts), http.StatusOK)
@@ -249,9 +248,6 @@ func TestATypedLoginBecomesAnAccountYouCanReuse(t *testing.T) {
 			continue
 		}
 		found = true
-		if a.Provider != "digitalocean" {
-			t.Errorf("the account is for %q", a.Provider)
-		}
 		// Nobody was asked to name it, so it is named after what it was
 		// created for — and it says what is standing on it, which is
 		// what makes deleting it refusable.

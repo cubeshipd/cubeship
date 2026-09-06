@@ -5,17 +5,13 @@ import { ErrorAlert } from "@/components/error-alert";
 import { InstanceDomain } from "@/components/instance-domain";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
-import { ValueCard } from "@/components/value-card";
 import { api, type Settings } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 export default function Instance() {
   return (
     <>
-      <PageHeader
-        title="Instance"
-        sub="What this box is called and how the world reaches it. Until a domain is set, apps are served over plain HTTP and there is nowhere to push images."
-      />
+      <PageHeader title="Instance" />
       <Body />
     </>
   );
@@ -50,12 +46,6 @@ function Body() {
         sub="The instance's own name. The dashboard and the API are served at it, the registry at registry.<domain>, and anything Cubeship grows later underneath — which is why a subdomain you hand over whole beats your apex."
       />
       <InstanceDomain settings={current} onSaved={setCurrent} />
-
-      {current.registry_host && (
-        <div className="mt-4">
-          <ValueCard label="Push images to" value={current.registry_host} />
-        </div>
-      )}
     </>
   );
 }

@@ -85,7 +85,6 @@ export default function DatabasesPage() {
     <>
       <PageHeader
         title="Databases"
-        sub="Postgres, MySQL, MariaDB, Redis and MongoDB, run by this instance for the apps on it. An app reaches one by being attached to it."
         actions={
           <Button onClick={() => setCreating(true)}>
             <PlusIcon />

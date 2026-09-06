@@ -3,70 +3,44 @@
 import { useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
-import { Notice } from "@/components/notice";
-import { OptionCards } from "@/components/option-cards";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  api,
-  type Credential,
-  type CredentialCapability,
-  type CredentialProvider,
-} from "@/lib/api";
-import { CAPABILITY_LABELS } from "@/lib/credentials";
+import { api, type Credential } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-// Adding an account, and editing one.
+// Adding a credential, and editing one.
 //
-// It lives here rather than on the credentials page because the pages
-// that *use* credentials open it too: a credential is a convenience,
-// not a prerequisite, so "add one" has to be reachable from the screen
-// you are already on. `capability` is what narrows the providers to the
-// ones that can do that screen's job — the DNS page offers no
-// registry-only account, because storing one there would be storing a
-// secret for a job it cannot do.
-//
-// One dialog for both acts, because they ask for the same things minus
-// one: the provider is permanent — what a credential is for is what its
-// secret is — so editing offers the label and the secret and nothing
-// else.
+// It asks for a label, a first half where the secret has one, and the
+// secret. Nothing else: a credential carries no provider, because what
+// it is *for* is decided where it is wired up — a registry, a DNS
+// provider — and one may be doing both at once. Most API tokens can
+// only be read at the moment they are issued, so a secret filed under
+// one job is a secret you have to issue twice.
 export function CredentialDialog({
-  providers,
   credential,
-  capability,
   title,
-  description,
   open,
   onOpenChange,
   onSaved,
 }: {
-  providers: CredentialProvider[];
   credential?: Credential;
-  capability?: CredentialCapability;
   // What the dialog calls itself, for a screen where "credential" is
-  // not the word somebody has in mind — the DNS page is adding a DNS
-  // provider, and it happens to be an account.
+  // not the word somebody has in mind.
   title?: string;
-  description?: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   // The saved credential, for a caller that wants to use it straight
   // away rather than only reload a list.
   onSaved: (saved: Credential) => void;
 }) {
-  const offered = capability
-    ? providers.filter((p) => p.capabilities.includes(capability))
-    : providers;
   const editing = credential !== undefined;
-  const [provider, setProvider] = useState("");
   const [label, setLabel] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -77,13 +51,9 @@ export function CredentialDialog({
     if (!open) return;
     setError(null);
     setPassword("");
-    setProvider(credential?.provider ?? offered[0]?.provider ?? "");
     setLabel(credential?.label ?? "");
     setUsername(credential?.username ?? "");
-  }, [open, credential, offered]);
-
-  const chosen = providers.find((p) => p.provider === provider);
-  const needsUsername = !!chosen?.username_label;
+  }, [open, credential]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -95,15 +65,10 @@ export function CredentialDialog({
           // renaming one not a rotation.
           await api.patch<Credential>(`/credentials/${credential.id}`, {
             label,
-            ...(needsUsername ? { username } : {}),
+            username,
             ...(password ? { password } : {}),
           })
-        : await api.post<Credential>("/credentials", {
-            provider,
-            label,
-            ...(needsUsername ? { username } : {}),
-            password,
-          });
+        : await api.post<Credential>("/credentials", { label, username, password });
       onSaved(saved);
       onOpenChange(false);
     } catch (err) {
@@ -120,65 +85,38 @@ export function CredentialDialog({
             <DialogTitle>
               {editing ? `Edit ${credential.label}` : (title ?? "New credential")}
             </DialogTitle>
-            <DialogDescription>
-              {editing
-                ? "Rotating the secret here rotates it everywhere: everything authenticating with this account follows."
-                : (description ??
-                  "It becomes available to everything its provider can be used for.")}
-            </DialogDescription>
           </DialogHeader>
 
           <div className="-mx-2 max-h-[60vh] space-y-4 overflow-y-auto px-2 py-5">
             <ErrorAlert error={error} />
 
-            {editing ? (
-              <Notice>
-                The provider stays <strong>{credential.provider_name}</strong>. What a credential is
-                for is what its secret is — moving one to another provider means adding a credential
-                and deleting this.
-              </Notice>
-            ) : (
-              <OptionCards
-                label="Provider"
-                value={provider}
-                onChange={setProvider}
-                options={offered.map((p) => ({
-                  value: p.provider,
-                  title: p.name,
-                  body: `${p.capabilities.map((c) => CAPABILITY_LABELS[c] ?? c).join(" and ")} — ${p.hint}`,
-                }))}
-              />
-            )}
-
             <TextField
               label="Label"
               value={label}
               spellCheck={false}
-              autoFocus={editing}
+              autoFocus
+              className="scroll-mt-12"
               onChange={(e) => setLabel(e.target.value)}
-              hint="How you will recognise it. “the AWS one” stops identifying anything the moment there are two."
             />
 
-            {needsUsername && (
-              <TextField
-                label={chosen.username_label ?? ""}
-                value={username}
-                spellCheck={false}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            )}
+            {/* Optional, because a bare token is a normal credential:
+                whether a login has two halves is decided by whatever
+                the secret is wired to, not here. */}
+            <TextField
+              label="Username or key ID"
+              value={username}
+              spellCheck={false}
+              placeholder="Leave empty for a bare token"
+              onChange={(e) => setUsername(e.target.value)}
+            />
 
             <TextField
-              label={chosen?.password_label ?? "Secret"}
+              label="Secret"
               type="password"
               value={password}
               spellCheck={false}
               onChange={(e) => setPassword(e.target.value)}
-              hint={
-                editing
-                  ? "Leave empty to keep the secret it has. Anything here replaces it."
-                  : "Stored as given, because the provider takes the secret itself. No endpoint returns it."
-              }
+              hint={editing ? "Leave empty to keep the secret it has." : undefined}
             />
           </div>
 
@@ -186,11 +124,7 @@ export function CredentialDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <ActionButton
-              type="submit"
-              busy={busy}
-              disabled={!label || !provider || (!editing && !password)}
-            >
+            <ActionButton type="submit" busy={busy} disabled={!label || (!editing && !password)}>
               {editing ? "Save" : "Add credential"}
             </ActionButton>
           </DialogFooter>

@@ -36,10 +36,7 @@ export default function Certificates() {
 
   return (
     <>
-      <PageHeader
-        title="Certificates"
-        sub="Every certificate this instance holds, and every name it serves that has none."
-      />
+      <PageHeader title="Certificates" />
 
       {report.error && <ErrorAlert error={message(report.error)} />}
 

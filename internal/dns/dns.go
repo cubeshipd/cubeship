@@ -2,16 +2,14 @@
 // pointed at this host, a challenge proving a domain is yours — through
 // the account whose DNS you already manage.
 //
-// It holds no accounts of its own. It used to: a DNS provider was a
-// label and a secret, which is exactly what a credential is, so the
-// same Cloudflare token lived here and an AWS key lived here *and* in
-// the registries. Both moved to internal/credential, and what is left
-// in this package is the part that is actually about DNS — two provider
-// clients and the operations they have in common.
+// It holds no secrets of its own. What it holds is which API to speak
+// and which stored credential to speak it with — see Account. The two
+// are separate because one AWS access key writes Route 53 records here
+// and pulls from ECR through a registry row, and a secret filed under
+// one of those jobs is a secret that has to be issued twice.
 //
-// A credential id is therefore what every operation here is addressed
-// by. Whether the account can do DNS at all is the credential module's
-// question, asked once in resolve.
+// An account id is therefore what every operation here is addressed by,
+// and resolve is the one place it is turned into a login.
 package dns
 
 import (
@@ -21,7 +19,8 @@ import (
 	"cubeship/internal/credential"
 )
 
-// Credential is what a provider client authenticates with.
+// Credential is what a provider client authenticates with — the login
+// an Account carries, handed over with nothing about DNS on it.
 //
 // An alias rather than a type of its own, and deliberately: there is
 // one credential in this daemon now, and a second name for it here
@@ -100,7 +99,7 @@ func ValidRecordType(t string) bool {
 const DefaultTTL = 300
 
 var (
-	// ErrNotFound is a zone or a credential this instance cannot see.
+	// ErrNotFound is a zone or a provider this instance cannot see.
 	// It stays here rather than moving with the accounts, because a
 	// provider client raises it for a zone that is gone.
 	ErrNotFound          = errors.New("not found")

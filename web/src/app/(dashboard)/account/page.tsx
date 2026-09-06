@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
 import { PageHeader, SectionHeader } from "@/components/page-header";
 import { TextField } from "@/components/text-field";
@@ -15,10 +16,7 @@ import { message } from "@/lib/errors";
 export default function Account() {
   return (
     <>
-      <PageHeader
-        title="Account"
-        sub="Your password, and the API keys that authenticate the CLI and docker."
-      />
+      <PageHeader title="Account" />
       <Keys />
       <Password />
     </>
@@ -29,6 +27,7 @@ function Keys() {
   const [keys, setKeys] = useState<ApiKey[] | null>(null);
   const [name, setName] = useState("");
   const [issued, setIssued] = useState<string | null>(null);
+  const [revoking, setRevoking] = useState<ApiKey | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,14 +88,7 @@ function Keys() {
                     variant="ghost"
                     size="xs"
                     className="text-muted-foreground hover:text-destructive"
-                    onClick={async () => {
-                      try {
-                        await api.del(`/users/me/api-keys/${k.id}`);
-                        reload();
-                      } catch (e) {
-                        setError(message(e));
-                      }
-                    }}
+                    onClick={() => setRevoking(k)}
                   >
                     Revoke
                   </Button>
@@ -114,6 +106,32 @@ function Keys() {
           </TableBody>
         </Table>
       </Card>
+
+      {/* Revoking cannot be undone, and the key in the way is often the
+          one this session is holding: whatever is configured with it
+          stops authenticating the moment the button lands. */}
+      <ConfirmDialog
+        open={revoking !== null}
+        onOpenChange={(open) => !open && setRevoking(null)}
+        title={`Revoke ${revoking?.name}?`}
+        confirmWord={revoking?.name}
+        confirmLabel="Revoke"
+        description={
+          revoking?.current_key
+            ? "This is the key this session is using. Revoking it signs this session out of the API, and anything else configured with it stops working."
+            : "Anything configured with this key stops authenticating immediately. It cannot be brought back — issue a new one instead."
+        }
+        onConfirm={async () => {
+          if (!revoking) return;
+          try {
+            await api.del(`/users/me/api-keys/${revoking.id}`);
+            reload();
+          } catch (e) {
+            setError(message(e));
+          }
+          setRevoking(null);
+        }}
+      />
 
       <form className="flex items-end gap-2" onSubmit={create}>
         <TextField

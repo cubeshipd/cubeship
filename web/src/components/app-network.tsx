@@ -8,9 +8,9 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
 import { SectionHeader } from "@/components/page-header";
+import { RowAction } from "@/components/row-actions";
 import { SearchableSelect } from "@/components/searchable-select";
 import { TextField } from "@/components/text-field";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,12 +18,12 @@ import {
   type App,
   type AppDomain,
   api,
-  type DNSCredential,
+  type DNSProvider,
   type DNSRecord,
   type DNSZone,
   type Settings,
 } from "@/lib/api";
-import { DNS_CREDENTIALS, providerIcon } from "@/lib/credentials";
+import { providerIcon } from "@/lib/credentials";
 import { message } from "@/lib/errors";
 
 // DEFAULT_PORT is what the daemon serves a name on when nobody said
@@ -157,15 +157,7 @@ function DomainRow({
             Save
           </ActionButton>
         )}
-        <Button
-          variant="ghost"
-          size="xs"
-          aria-label={`Remove ${domain.host}`}
-          className="size-8 p-0 text-muted-foreground hover:text-destructive"
-          onClick={onRemove}
-        >
-          <Trash2Icon className="size-3.5" />
-        </Button>
+        <RowAction icon={Trash2Icon} label={`Remove ${domain.host}`} danger onClick={onRemove} />
       </div>
     </div>
   );
@@ -228,7 +220,7 @@ function AddDomain({
 
   const providers = useQuery({
     queryKey: ["dns"],
-    queryFn: () => api.get<DNSCredential[]>(DNS_CREDENTIALS),
+    queryFn: () => api.get<DNSProvider[]>("/dns"),
   });
 
   const zones = useQuery({
@@ -317,8 +309,8 @@ function AddDomain({
                   : []),
                 ...(providers.data ?? []).map((p) => ({
                   value: String(p.id),
-                  label: p.label,
-                  hint: p.provider_name,
+                  label: p.provider_name,
+                  hint: p.label,
                   icon: providerIcon(p.provider),
                 })),
               ]}
