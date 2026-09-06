@@ -284,6 +284,16 @@ func (e Engine) HasUser() bool { return !specs[e].fixedUser }
 // DefaultUsername is the login an empty username becomes.
 func (e Engine) DefaultUsername() string { return specs[e].defaultUser }
 
+// VarStem is the middle of the variables an attached app receives:
+// `<prefix>DATABASE_URL` for the engines that hold tables, `REDIS_URL`
+// and `MONGO_URL` for the two that do not.
+//
+// It is what decides whether two attachments collide. A Redis and a
+// Postgres on one app at the same prefix name nothing in common, so
+// they are not a conflict — which is why the uniqueness is over this
+// and not over the prefix alone.
+func (e Engine) VarStem() string { return specs[e].stem }
+
 // Image is the reference the container runs.
 func (e Engine) Image(version string) string {
 	return specs[e].image + ":" + version

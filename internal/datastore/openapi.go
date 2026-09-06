@@ -40,6 +40,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"version":       openapi.String("The engine's version. Permanent: a data directory written by one major version is not readable by another, so changing this would be a container that will not start with the only copy of the data inside it."),
 				"status":        {Type: "string", Enum: []string{"provisioning", "running", "down", "failed"}, Description: `"provisioning" while the container is being pulled and started, which happens detached from the request that asked for it.`},
 				"error":         openapi.String("Why provisioning failed, when it did — usually the tail of what the engine printed before it exited."),
+				"var_stem":      openapi.String("The middle of the variables an attached app receives: `DATABASE` for the engines that hold tables, `REDIS` and `MONGO` for the two that do not. It is what decides whether two attachments collide — a cache and a database name nothing in common, so both sit on one app at the same prefix."),
+				"has_container": openapi.Bool("Whether a container currently backs this, which is what decides whether there is a log to read or anything to stop. The status alone cannot answer it: one whose provisioning failed may have neither."),
 				"username":      openapi.String("The login the engine was initialized with. Its password is not reported here; see the credentials endpoint."),
 				"database":      openapi.String("The database created inside the server. Absent for an engine with no such concept."),
 				"host":          openapi.String("Where an app on this instance reaches it: the container's own name on the shared Docker network. Attached apps already receive this as a variable."),
@@ -48,12 +50,12 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"external_host": openapi.String("The instance's own domain, which is where an exposed datastore is reached. Absent while there is no domain, or while it is not exposed."),
 				"attachments":   openapi.Array(openapi.Ref("DatastoreAttachment")),
 				"created_at":    {Type: "string", Format: "date-time"},
-			}, "name", "description", "engine", "version", "status", "username",
+			}, "name", "description", "engine", "version", "var_stem", "status", "username",
 				"has_container", "host", "port", "attachments", "created_at"),
 
 			"DatastoreAttachment": openapi.Object(map[string]*openapi.Schema{
 				"app":       openapi.String("The app's full reference, `project/environment/name`. Full, because a datastore is not inside an environment and one may serve apps in several."),
-				"prefix":    openapi.String(`What the injected variables are named under. Absent for the usual case, which gives DATABASE_URL.`),
+				"prefix":    openapi.String(`What the injected variables are named under. Absent for the usual case, which gives DATABASE_URL — or REDIS_URL, or MONGO_URL, depending on the engine.`),
 				"variables": openapi.Array(openapi.String("A variable name this app's container receives.")),
 			}, "app", "variables"),
 
@@ -77,7 +79,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"has_database":     openapi.Bool("Whether naming a database inside the server means anything for this engine."),
 				"has_user":         openapi.Bool("Whether the login is yours to choose. False for Redis, whose password belongs to the ACL user `default`, which already exists and cannot be renamed."),
 				"default_username": openapi.String("The login an empty username becomes — and the only one there is when `has_user` is false."),
-			}, "engine", "versions", "default_version", "port", "has_database", "has_user", "default_username"),
+				"var_stem":         openapi.String("What an attached app's variables are called: an app on a Redis gets `REDIS_URL`, not `DATABASE_URL`."),
+			}, "engine", "versions", "default_version", "port", "has_database", "has_user", "default_username", "var_stem"),
 		}),
 		Paths: map[string]openapi.PathItem{
 			"/datastores": {
@@ -296,7 +299,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Parameters:  nameParam,
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"app":    openapi.String("The app's full reference: `project/environment/name`, or `project/name` for production."),
-						"prefix": openapi.String(`What the variables are named under, e.g. "ANALYTICS_" for ANALYTICS_DATABASE_URL. Empty is the usual answer. An app that needs two databases names one of them: two under the same prefix would be one variable with two values.`),
+						"prefix": openapi.String(`What the variables are named under, e.g. "ANALYTICS_" for ANALYTICS_DATABASE_URL. Empty is the usual answer, and stays the answer for a Redis or a MongoDB beside a SQL database — those write REDIS_ and MONGO_ variables and collide with nothing. A prefix is what an app needs when two attachments would name the same variables: a second Postgres, MySQL or MariaDB.`),
 					}, "app")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse("The datastore, with the new attachment.", openapi.Ref("Datastore")),
@@ -304,7 +307,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.TextResponse("No such datastore, or no such app."),
-						"409": openapi.TextResponse("That app is already attached, or already has a datastore under that prefix."),
+						"409": openapi.TextResponse("That app is already attached, or already receives the same variables from another datastore. The message names them."),
 					},
 				},
 			},

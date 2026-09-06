@@ -51,7 +51,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.engines)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "attach_datastore",
-		Description: "Wire an app to a database: the app's container is given DATABASE_URL and its parts from its next deploy onwards. The app is named by its full reference, project/environment/name, and may be in any project. Use a prefix like \"ANALYTICS_\" when one app needs a second database. Requires the admin role.",
+		Description: "Wire an app to a database: the app's container is given DATABASE_URL and its parts — REDIS_URL for a Redis, MONGO_URL for a MongoDB — from its next deploy onwards. The app is named by its full reference, project/environment/name, and may be in any project. Use a prefix like \"ANALYTICS_\" when one app needs a second database of the same kind; a cache beside a database needs none, since the two name different variables. Requires the admin role.",
 	}, t.attach)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "detach_datastore",
@@ -122,7 +122,7 @@ func (t *Tools) engines(ctx context.Context, _ *mcp.CallToolRequest, _ struct{})
 type attachInput struct {
 	Datastore string `json:"datastore" jsonschema:"the database's name on this instance"`
 	App       string `json:"app" jsonschema:"the app's full reference: project/environment/name, or project/name for production"`
-	Prefix    string `json:"prefix,omitempty" jsonschema:"what the injected variables are named under, e.g. \"ANALYTICS_\". Leave empty for DATABASE_URL. Uppercase, ending in an underscore"`
+	Prefix    string `json:"prefix,omitempty" jsonschema:"what the injected variables are named under, e.g. \"ANALYTICS_\". Leave empty for DATABASE_URL, REDIS_URL or MONGO_URL — whichever this engine writes. Only needed when two attachments would name the same variables. Uppercase, ending in an underscore"`
 }
 
 func (t *Tools) attach(ctx context.Context, _ *mcp.CallToolRequest, in attachInput) (*mcp.CallToolResult, Response, error) {
