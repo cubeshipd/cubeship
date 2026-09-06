@@ -183,6 +183,43 @@ cubeship app env unset acme/web/myapp OLD_FLAG
 `cubeship --help` covers the rest: users and roles, extra environments,
 logs, manual redeploys, additional API keys.
 
+## Databases
+
+Cubeship runs Postgres, MySQL and MariaDB for the apps on it. A database
+lives in an environment, beside the apps that use it — so `staging` and
+`production` hold different data without anybody spelling that into a
+name.
+
+```sh
+cubeship db engines                                   # what this daemon can run
+cubeship db create pg --project web --engine postgres # prints the generated password
+cubeship db attach web/production/pg --app myapp      # gives myapp DATABASE_URL
+cubeship app deploy web/production/myapp              # its container picks it up
+```
+
+An attached app receives `DATABASE_URL` and its parts — `DATABASE_HOST`,
+`DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD` —
+from its **next deploy** onwards: a container keeps the environment it
+was created with. An app that needs a second database takes a prefix
+(`--prefix ANALYTICS_`).
+
+Nothing outside the instance can reach a database unless you say so:
+
+```sh
+cubeship db credentials web/production/pg   # the login, and the connection strings
+cubeship db expose web/production/pg        # publish it on a host port
+```
+
+Exposing puts the database on the open internet with **no TLS** — it
+speaks its own protocol on its own port, so Traefik is not in front of
+it. The password and your firewall are what protect it. Leave it off for
+anything an app on this instance can reach.
+
+The engine and the version are permanent: a data directory written by
+one major version cannot be read by another. Deleting a database deletes
+its data, and **there are no backups** — `cubeship db delete` wants
+`--yes`, and the dashboard asks you to type the name.
+
 ## Signing in
 
 The API takes two credentials. A key is what the CLI and MCP clients

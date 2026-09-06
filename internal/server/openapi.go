@@ -8,6 +8,7 @@ import (
 
 	"cubeship/internal/app"
 	"cubeship/internal/certificates"
+	"cubeship/internal/datastore"
 	"cubeship/internal/dns"
 	"cubeship/internal/extregistry"
 	"cubeship/internal/github"
@@ -40,6 +41,7 @@ func (s *Server) OpenAPI() openapi.Document {
 		user.NewHandler(s.Users).OpenAPI(),
 		project.NewHandler(s.Projects).OpenAPI(),
 		app.NewHandler(s.Apps).OpenAPI(),
+		datastore.NewHandler(s.Datastores).OpenAPI(),
 		extregistry.NewHandler(s.Registries).OpenAPI(),
 		dns.NewHandler(s.DNS).OpenAPI(),
 		github.NewHandler(s.GitHub, s.Apps).OpenAPI(),

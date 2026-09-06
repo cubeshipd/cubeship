@@ -33,6 +33,8 @@ internal/
                 one authorization question on the instance
   project/      projects and the environments inside them
   app/          apps, deployments, and the deploy orchestrator
+  datastore/    the databases Cubeship runs for those apps, and which
+                apps are wired to which
   registry/     who may docker push/pull, and the push webhook
   extregistry/  logins for registries Cubeship does not run
   github/       the GitHub App: private clones, and deploy on push
@@ -67,9 +69,15 @@ input, call one service method, and render the result. A rule that lives
 in a handler is a rule the MCP surface doesn't have — that is exactly how
 the two drifted apart before this layout.
 
-Dependencies run one way: `user ← project ← app`, with `registry` and
-`server` on top. `server` is the only package that knows every module
-exists.
+Dependencies run one way: `user ← project ← app ← datastore`, with
+`registry` and `server` on top. `server` is the only package that knows
+every module exists.
+
+Two things travel back down, and both do it as an interface the lower
+module declares and `server` satisfies at wiring time: `project.AppTeardown`
+and `project.DatastoreTeardown` (deleting a project stops what is running
+inside it), and `app.DatastoreVars` (what an attached database
+contributes to a container's environment).
 
 ## The API lives under /api, and the root is the dashboard
 
@@ -179,12 +187,17 @@ because an app only means something inside an environment — a top-level
 a screen of its own, so there is one page for "a project's apps" instead
 of two that have to stay identical.
 
-`settings` is refused as a slug for any of them (`slug.Reserved`).
-Next.js resolves a static segment before a dynamic one, so an app
-actually called `settings` would be a resource nothing could open — the
-settings screen would answer at its address instead, silently. Refusing
-the name at creation is the only place that can be caught while the
-person who typed it is still there.
+`settings` and `databases` are refused as slugs for any of them
+(`slug.Reserved`). Next.js resolves a static segment before a dynamic
+one, so an app actually called `settings` would be a resource nothing
+could open — the settings screen would answer at its address instead,
+silently. `databases` is the same story one level along:
+`/projects/<project>/<env>/databases` is where an environment's managed
+databases live. One set for every level rather than one per level — only
+some collide at each, but a slug that means different things at
+different depths is a rule nobody can hold in their head. Refusing the
+name at creation is the only place that can be caught while the person
+who typed it is still there.
 
 There is **no flat list of apps**. An app only means something inside an
 environment — `gateway` is unique in `acme/api/production` and nowhere
@@ -1119,6 +1132,126 @@ a service with no teardown wired refuses to delete at all.
 Deleting an app leaves its images in the registry — reclaiming that disk
 needs a registry garbage collection pass, which Cubeship does not run.
 
+## Managed databases
+
+`internal/datastore` runs Postgres, MySQL and MariaDB for the apps on
+this instance. Redis and MongoDB are next, and each is one entry in
+`specs` rather than a change anywhere else.
+
+**A database lives in an environment, not in a list of its own.** That
+is the whole design decision, and everything follows from it. A flat
+list on the instance would have made people spell the environment into
+the name — `api-staging-pg` — which is the component the organization
+used to be. Staging and production must hold different data, and an
+environment is exactly the thing that says so. Deleting a project or an
+environment takes its databases the way it takes its apps.
+
+**It is a module of its own, not part of `app`.** A database has no
+image to push, no source to build, no domain, no zero-downtime swap, and
+no deployments table. It is provisioned once and then runs. The two
+share an address shape — `<project>/<environment>/<name>` — and nothing
+else.
+
+**Container names are in a separate namespace on purpose.** An app's is
+`cubeship-<project>-<env>-<name>-<nanos>`; a datastore's is
+`cubeship-db-<project>-<env>-<name>`, with no suffix, because it is also
+the host its apps resolve on the shared network. Two namespaces that
+cannot collide are two namespaces nobody has to keep apart: an app and a
+database in one environment may both be called `api`.
+
+**The data is a host bind mount**, under `<data dir>/datastores/<id>`,
+keyed by id rather than by reference. Same rule as every other container
+Cubeship runs: anything in a container's writable layer is destroyed the
+next time its configuration changes, and changing the published port is
+exactly such a change.
+
+### How an app reaches one
+
+By being **attached** to it. An attachment gives the app
+`DATABASE_URL` and its parts, from its next deploy onwards — a container
+keeps the environment it was created with, the same rule that makes
+adding a domain take effect on redeploy.
+
+Explicit rather than "every app in the environment gets it": two apps in
+one environment routinely want different databases, and an attachment is
+also what lets deleting one say what breaks. A second database on one
+app takes a `prefix` (`ANALYTICS_`), because two under the same prefix
+would be one variable with two values.
+
+The seam is `app.DatastoreVars`, declared in `app` and satisfied by
+`datastore` — the dependency runs `app ← datastore`, and this is the one
+thing that has to travel back. It is read fresh at every deploy rather
+than stored on the app, so an attachment made after the last deploy is
+picked up.
+
+### Fixed after creation, and why each one is
+
+- **The slug.** It is a component of the container name every attached
+  app resolves.
+- **The engine and the version.** A data directory written by one major
+  version is not readable by another. A datastore that "changed version"
+  would be a container that will not start, with the only copy of the
+  data inside the directory it will not read. Running a new version
+  means a second datastore and the engine's own migration tools.
+- **The password.** It is used once, when the engine initializes itself,
+  and nothing reads the column afterwards. Changing it would change
+  every connection string Cubeship hands out while the database went on
+  accepting only the old one.
+
+The description is what is left, which is why `PATCH` takes one field.
+
+### Credentials
+
+Stored as given, like an external registry's login and for the same
+reason: a hash cannot connect to anything. Never in a listing —
+`GET /datastores/{ref}/credentials` is its own request and an admin's.
+Generated when a request carries no password, so a database with a weak
+one is not something anybody gets by leaving a box empty; the dashboard
+generates its own and shows it, because a field somebody has to fill in
+is a field somebody fills in badly.
+
+`Datastore.URI` builds the connection string through `net/url`, so a
+chosen password containing `@` or `/` is escaped rather than producing a
+URL that parses as a different host.
+
+**The MCP tools stop short of two things**, and the line is the one
+`internal/extregistry` draws by having no tools at all: no tool reads or
+sets a password, and no tool exposes a datastore. An agent can provision
+a database, attach an app and never hold the credential, because the app
+receives it through its environment.
+
+### Exposing one
+
+Off by default. `POST /datastores/{ref}/expose` publishes it on a host
+port — from `PortRangeStart`-`PortRangeEnd` unless one is named — for a
+migration run from a laptop, psql, a BI tool.
+
+**Not through Traefik.** Traefik routes HTTP by host name; a database
+speaks its own protocol on its own port, and a TCP router matching
+`HostSNI(*)` can only have one backend per entrypoint, so two exposed
+databases of one engine could not share one. The container publishes the
+port itself.
+
+That means there is **no TLS**, and the endpoint says so. What makes an
+exposed database safe is the password and a firewall rule, and the second
+is the operator's. Publishing replaces the container to pick the port up
+— published ports are fixed at create time — and the data survives
+because it is a bind mount.
+
+Ports 15000-15999 for the automatic range: the daemon's own Postgres
+already publishes 5432 on loopback, so the obvious number is the one
+number that cannot work.
+
+### What is not here
+
+**Backups.** "Managed" suggests they exist and they do not. The storage
+layout does not preclude them — `docker exec` a dump into
+`<data dir>/datastores/<id>/backups` — but nothing runs one, and
+deleting a datastore deletes its data with no copy anywhere.
+
+**Rotating a password**, for the reason above: it would take an
+`ALTER USER` inside the database, not a column write.
+
 ## Environment variables
 
 Set at three levels, and an app inherits all of them: project, then
@@ -1126,6 +1259,13 @@ environment, then the app's own, each overriding the last. `envvar.Merge`
 computes the result a container runs with; `envvar.Resolve` computes the
 same thing but labels each value with the level that won it, which is
 what the read endpoints return.
+
+There is a fourth layer nobody types: an attached **datastore**'s
+connection variables, between the environment's and the app's own. More
+specific than the environment it is in, and still beaten by an app's own
+variable — which is how you point an app somewhere else without
+detaching anything. `envvar.SourceDatastore` is what labels it, so the
+env screen can answer "where did `DATABASE_URL` come from".
 
 **PATCH merges, PUT replaces.** The merge is one SQL statement
 (`database.MergeJSONBMap`), not a read-modify-write, so two callers

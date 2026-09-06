@@ -171,6 +171,11 @@ func newFixture(t testing.TB, docker app.DockerAPI, domain string) *Fixture {
 		}
 	}
 
+	// Provisioning a datastore runs detached, like a deploy. Without
+	// this the goroutine outlives the test and races the temporary data
+	// directory being removed under it.
+	t.Cleanup(srv.Datastores.WaitForProvisioning)
+
 	admin, adminKey := CreateUser(t, db, "admin", user.RoleAdmin)
 	p, env, err := srv.Projects.Create(ctx, admin, "web")
 	if err != nil {

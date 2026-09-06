@@ -23,10 +23,27 @@ type Service struct {
 	projects *project.Service
 	orch     *Orchestrator
 	settings *settings.Service
+
+	// datastores is what an attached database contributes to an app's
+	// environment. See DatastoreVars: the module that implements it
+	// sits above this one, so the daemon hands it back down.
+	datastores DatastoreVars
 }
 
 func NewService(db *database.DB, projects *project.Service, orch *Orchestrator, cfg *settings.Service) *Service {
 	return &Service{db: db, projects: projects, orch: orch, settings: cfg}
+}
+
+// SetDatastoreVars wires the datastore module in. Called once, at
+// startup, by the only package that knows every module exists.
+//
+// Both this service and the orchestrator need it — one to say what an
+// app's environment resolves to, the other to build the container's —
+// and they must not be able to answer differently, so there is one
+// setter for both.
+func (s *Service) SetDatastoreVars(v DatastoreVars) {
+	s.datastores = v
+	s.orch.datastores = v
 }
 
 // registryHost is where apps are pushed, or "" while the instance has no
@@ -315,9 +332,20 @@ func (s *Service) Env(ctx context.Context, caller *user.User, ref Reference) (en
 	if err != nil {
 		return nil, nil, err
 	}
+	// The same layers the container is built from, in the same order —
+	// this is the screen that answers "where did DATABASE_URL come
+	// from", and it can only answer it if it is looking at what the
+	// deploy looks at.
+	var stores envvar.Map
+	if s.datastores != nil {
+		if stores, err = s.datastores.VarsForApp(ctx, a.ID); err != nil {
+			return nil, nil, err
+		}
+	}
 	resolved := envvar.Resolve(
 		envvar.Layer{Source: envvar.SourceProject, Vars: p.Env},
 		envvar.Layer{Source: envvar.SourceEnvironment, Vars: e.Env},
+		envvar.Layer{Source: envvar.SourceDatastore, Vars: stores},
 		envvar.Layer{Source: envvar.SourceApp, Vars: a.Env})
 	return a.Env, resolved, nil
 }

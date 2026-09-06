@@ -20,3 +20,17 @@ func IsUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == uniqueViolation
 }
+
+// UniqueViolationOn is IsUniqueViolation for a table that has more than
+// one unique index, where "already exists" is a different sentence
+// depending on which column collided.
+//
+// A datastore is the case that needed it: its slug is unique within its
+// environment and the host port it is exposed on is unique across the
+// instance, and telling someone their slug is taken when what collided
+// was a port sends them to fix the wrong thing.
+func UniqueViolationOn(err error, constraint string) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == uniqueViolation &&
+		pgErr.ConstraintName == constraint
+}

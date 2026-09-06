@@ -307,3 +307,109 @@ export type CertificateReport = {
   // names a host. Often the only place the real reason appears.
   traefik_says?: string[];
 };
+
+// --- managed databases ---
+
+// The engines the daemon can run. Not a hard-coded list: a version is
+// permanent once a database runs it, so the daemon is the only thing
+// that knows which ones it will accept — see GET /datastores/engines.
+export type DatastoreEngine = {
+  engine: string;
+  versions: string[];
+  default_version: string;
+  port: number;
+  has_database: boolean;
+};
+
+// What an attached app receives, by name. Values are not in it: one of
+// them is the password.
+export type DatastoreAttachment = {
+  app: string;
+  prefix?: string;
+  variables: string[];
+};
+
+// One managed database, in an environment beside the apps that use it.
+//
+// No password field, deliberately. It is read from its own endpoint, by
+// an admin, on purpose — see DatastoreCredentials.
+export type Datastore = {
+  reference: string;
+  name: string;
+  description: string;
+  project: string;
+  environment: string;
+  engine: string;
+  version: string;
+  status: string;
+  // Why provisioning failed, when it did.
+  error?: string;
+  username: string;
+  database?: string;
+  // Where an app on this instance reaches it: the container's own name
+  // on the shared network.
+  host: string;
+  port: number;
+  // The host port it also answers on from outside, absent when it does
+  // not — which is the default.
+  exposed_port?: number;
+  external_host?: string;
+  attachments: DatastoreAttachment[];
+  created_at: string;
+};
+
+// The response to creating one, which is the single place the password
+// comes back without being asked for: whoever left the field empty is
+// whoever needs to see what was generated.
+export type CreatedDatastore = Datastore & { password: string };
+
+export type DatastoreCredentials = {
+  username: string;
+  password: string;
+  database?: string;
+  internal_uri: string;
+  internal_host: string;
+  internal_port: number;
+  external_uri?: string;
+  external_host?: string;
+  external_port?: number;
+};
+
+// The engines the dashboard knows how to label. One the daemon adds
+// that is not here is shown by its own name rather than guessed at.
+export const DATASTORE_LABELS: Record<string, string> = {
+  postgres: "PostgreSQL",
+  mysql: "MySQL",
+  mariadb: "MariaDB",
+  redis: "Redis",
+  mongodb: "MongoDB",
+};
+
+export function datastoreLabel(engine: string): string {
+  return DATASTORE_LABELS[engine] ?? engine;
+}
+
+// The password field of a create form comes pre-filled, so a database
+// with a weak password is not something you get by not thinking about
+// it. Generated here rather than left to the daemon because the person
+// filling the form should be able to see it, change it, and copy it
+// before anything is created.
+//
+// The alphabet is letters and digits only — the same one the daemon
+// uses, and for the same reason: a generated password gets retyped into
+// a psql prompt and pasted into config boxes, and a quote or a
+// backslash in one is somebody's afternoon.
+const PASSWORD_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+export function generatePassword(length = 24): string {
+  const bytes = new Uint32Array(length);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (n) => PASSWORD_ALPHABET[n % PASSWORD_ALPHABET.length]).join("");
+}
+
+// datastorePath is the API path for a reference. The reference is
+// already project/environment/name, which is exactly the shape the
+// endpoint takes.
+export function datastorePath(reference: string): string {
+  return `/datastores/${reference}`;
+}

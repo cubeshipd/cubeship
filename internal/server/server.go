@@ -12,6 +12,7 @@ import (
 
 	"cubeship/internal/app"
 	"cubeship/internal/certificates"
+	"cubeship/internal/datastore"
 	"cubeship/internal/dns"
 	"cubeship/internal/extregistry"
 	"cubeship/internal/github"
@@ -30,6 +31,7 @@ type Server struct {
 	Users      *user.Service
 	Projects   *project.Service
 	Apps       *app.Service
+	Datastores *datastore.Service
 	Settings   *settings.Service
 	Certs      *certificates.Service
 	Setup      *setup.Service
@@ -101,16 +103,29 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	apps := app.NewService(db, projects,
 		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gh, opts.LocalRegistry), cfg)
 
+	// Datastores sit above apps: they are addressed the way apps are and
+	// are attached to them, so this module depends on that one.
+	datastores := datastore.NewService(db, projects, apps,
+		datastore.NewProvisioner(db, docker, opts.DataDir), cfg)
+
 	// Deleting a project or an environment takes the apps inside it with
 	// it, and only this module knows how to stop a container. The
 	// dependency runs downward everywhere else, so it is handed back up
 	// here — the one place that knows every module exists.
 	projects.SetAppTeardown(apps)
+	projects.SetDatastoreTeardown(datastores)
+
+	// The one thing that travels back down from datastores to apps:
+	// what an attached database contributes to a container's
+	// environment. app asks for it through an interface rather than
+	// importing the module above it — see app.DatastoreVars.
+	apps.SetDatastoreVars(datastores)
 
 	srv := &Server{
 		Users:      users,
 		Projects:   projects,
 		Apps:       apps,
+		Datastores: datastores,
 		Settings:   cfg,
 		Certs:      certificates.NewService(cfg, apps, opts.DataDir),
 		Setup:      setup.NewService(db, users, opts.SetupToken),
@@ -194,6 +209,7 @@ func (s *Server) routes() {
 	s.githubHandler = github.NewHandler(s.GitHub, s.Apps)
 	s.githubHandler.Routes(s.router, auth)
 	app.NewHandler(s.Apps).Routes(s.router, auth)
+	datastore.NewHandler(s.Datastores).Routes(s.router, auth)
 
 	// The registry's own two endpoints authenticate differently (Basic
 	// auth, and a shared webhook secret), so they mount unwrapped. So

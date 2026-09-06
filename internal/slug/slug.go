@@ -25,20 +25,27 @@ var ErrInvalid = errors.New("must be lowercase letters, digits and dashes, start
 
 // ErrReserved is the other reason Valid says no: a slug of the right
 // shape that the dashboard needs as a path segment.
-var ErrReserved = errors.New(`"settings" is reserved: it is a page in the dashboard at the same address a resource of that name would have`)
+var ErrReserved = errors.New(`"settings" and "databases" are reserved: each is a page in the dashboard at the same address a resource of that name would have`)
 
 // reserved are the words the dashboard uses as path segments beside a
 // slug of the same shape.
 //
-// An app is addressed at /projects/<org>/<project>/<env>/<app>, and its
-// settings at that path plus /settings. Next.js resolves a static
-// segment before a dynamic one, so an app or environment actually called
-// "settings" would be a resource nothing could open — the settings
-// screen would answer for it instead, silently and forever.
+// An app is addressed at /projects/<project>/<env>/<app>, its settings
+// at that path plus /settings, and the environment's databases at
+// /projects/<project>/<env>/databases. Next.js resolves a static
+// segment before a dynamic one, so an app actually called "settings" or
+// "databases" would be a resource nothing could open — that screen
+// would answer for it instead, silently and forever.
+//
+// One set for every level rather than one per level. Only some of these
+// collide at each — "databases" sits where an app's name goes, not
+// where a project's does — but a slug that means different things at
+// different depths is a rule nobody can hold in their head, and the
+// cost of refusing a name one level up is a name nobody wanted.
 //
 // Refusing the name at creation is the only place this can be caught
 // where the person who typed it is still there to type another.
-var reserved = map[string]bool{"settings": true}
+var reserved = map[string]bool{"settings": true, "databases": true}
 
 // Valid reports whether s is an acceptable slug.
 func Valid(s string) bool {

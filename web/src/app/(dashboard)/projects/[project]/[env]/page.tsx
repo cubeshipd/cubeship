@@ -1,13 +1,15 @@
 "use client";
 
-import { PlusIcon, SettingsIcon, SlidersHorizontalIcon } from "lucide-react";
+import { DatabaseIcon, PlusIcon, SettingsIcon, SlidersHorizontalIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { AppCard } from "@/components/app-card";
+import { DatastoreCard } from "@/components/datastore-card";
 import { ErrorAlert } from "@/components/error-alert";
-import { PageHeader } from "@/components/page-header";
+import { NewDatastoreDialog } from "@/components/new-datastore-dialog";
+import { PageHeader, SectionHeader } from "@/components/page-header";
 import { SlugField } from "@/components/slug-field";
 import { TextAreaField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -21,7 +23,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { type App, api, type Environment } from "@/lib/api";
+import { type App, api, type Datastore, type Environment } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // One project, opened on an environment.
@@ -42,8 +44,10 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
 
   const [envs, setEnvs] = useState<Environment[] | null>(null);
   const [apps, setApps] = useState<App[] | null>(null);
+  const [datastores, setDatastores] = useState<Datastore[] | null>(null);
   const [adding, setAdding] = useState(false);
   const [creatingApp, setCreatingApp] = useState(false);
+  const [creatingDatastore, setCreatingDatastore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const path = `/projects/${project}`;
@@ -63,6 +67,14 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
       .catch((e) => setError(message(e)));
   }, []);
   useEffect(reloadApps, [reloadApps]);
+
+  const reloadDatastores = useCallback(() => {
+    api
+      .get<Datastore[]>("/datastores")
+      .then(setDatastores)
+      .catch((e) => setError(message(e)));
+  }, []);
+  useEffect(reloadDatastores, [reloadDatastores]);
 
   if (!project) {
     return (
@@ -84,6 +96,7 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
       : (known[0] ?? "");
 
   const shown = apps?.filter((a) => a.project === project && a.environment === env);
+  const databases = datastores?.filter((d) => d.project === project && d.environment === env);
 
   function goTo(next: string) {
     router.replace(`/projects/${project}/${next}`, { scroll: false });
@@ -99,6 +112,10 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
             <Button onClick={() => setCreatingApp(true)}>
               <PlusIcon />
               New app
+            </Button>
+            <Button variant="outline" onClick={() => setCreatingDatastore(true)}>
+              <DatabaseIcon />
+              New database
             </Button>
             <Button
               variant="outline"
@@ -171,6 +188,34 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
           ))}
         </div>
       )}
+
+      {/* Databases sit under the apps rather than beside them in a tab:
+          they are in this environment for the apps above to use, and
+          which ones exist is part of reading the environment. An
+          environment with none says nothing at all. */}
+      {databases && databases.length > 0 && (
+        <>
+          <SectionHeader
+            title="Databases"
+            sub="Managed by Cubeship, in this environment. An app reaches one by being attached to it."
+          />
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {databases.map((d) => (
+              <DatastoreCard key={d.reference} datastore={d} />
+            ))}
+          </div>
+        </>
+      )}
+
+      <NewDatastoreDialog
+        project={project}
+        environment={env}
+        open={creatingDatastore}
+        onOpenChange={setCreatingDatastore}
+        onCreated={(created) =>
+          router.push(`/projects/${project}/${env}/databases/${created.name}`)
+        }
+      />
 
       <NewAppDialog
         project={project}

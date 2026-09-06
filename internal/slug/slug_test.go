@@ -11,11 +11,16 @@ import "testing"
 // Refusing it at creation is the only place that can be caught while the
 // person who typed it is still there to type another.
 func TestReservedWordsAreRefused(t *testing.T) {
-	if Valid("settings") {
-		t.Error(`"settings" was accepted, and would be a resource with no address of its own`)
-	}
-	if !Reserved("settings") {
-		t.Error("Reserved does not report why it was refused, so the caller cannot say")
+	// "databases" is the second one: an environment's databases are at
+	// /projects/<project>/<env>/databases, which is where an app's name
+	// goes.
+	for _, word := range []string{"settings", "databases"} {
+		if Valid(word) {
+			t.Errorf("%q was accepted, and would be a resource with no address of its own", word)
+		}
+		if !Reserved(word) {
+			t.Errorf("Reserved does not report why %q was refused, so the caller cannot say", word)
+		}
 	}
 
 	// Only the exact word. A slug that merely contains it is fine —
