@@ -114,11 +114,24 @@ var specs = map[Engine]spec{
 				"POSTGRES_USER=" + d.Username,
 				"POSTGRES_PASSWORD=" + d.Password,
 				"POSTGRES_DB=" + d.Database,
-				// The image's own advice for a bind mount rather than a
-				// named volume: initdb wants a directory it owns and can
-				// be sure is empty, and a mount point is neither on
-				// every host. A subdirectory of the mount is both.
-				"PGDATA=/var/lib/postgresql/data/pgdata",
+				// No PGDATA. The image's own advice is to point it at a
+				// subdirectory of the mount, and following it broke
+				// every Postgres this ever provisioned.
+				//
+				// The entrypoint chowns PGDATA *and below* to the
+				// postgres user, and nothing above it. With PGDATA a
+				// subdirectory, the mount itself stayed root-owned and
+				// 0700 — the mode the daemon creates it with — and the
+				// postgres user could not traverse into its own data
+				// directory. Permission denied, on a loop, from a
+				// container running as root a moment earlier.
+				//
+				// Left alone, PGDATA is the mount, the entrypoint
+				// chowns the mount, and it works. That is what the
+				// daemon's own Postgres has always done — see
+				// bootstrap.PostgresContainerOpts, which is the same
+				// image on the same kind of directory and has never had
+				// this problem.
 			}
 		},
 	},
