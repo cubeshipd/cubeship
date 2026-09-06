@@ -19,6 +19,7 @@ import { ContainerLogs } from "@/components/container-logs";
 import { CopyField } from "@/components/copy-field";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { LoadingList, LoadingValue } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
@@ -86,7 +87,6 @@ function Detail({ name }: { name: string }) {
   }, [datastore?.status, reload]);
 
   if (error && !datastore) return <ErrorAlert error={error} />;
-  if (!datastore) return null;
 
   return (
     <>
@@ -98,39 +98,54 @@ function Detail({ name }: { name: string }) {
         databases
       </Link>
 
+      {/* The header does not wait. Its name is in the URL — we are on
+          this page because somebody asked for this database by name —
+          so rendering it needs no round trip, and the page has a title
+          the instant it is navigated to.
+          
+          It used to return null until the fetch landed, which meant
+          every navigation blanked the content area and then filled it.
+          A page that disappears before it appears reads as slow however
+          fast the request was. */}
       <PageHeader
-        title={
-          <span className="font-mono text-lg tracking-normal normal-case">{datastore.name}</span>
-        }
+        title={<span className="font-mono text-lg tracking-normal normal-case">{name}</span>}
         sub={
-          <span className="flex items-center gap-2">
-            {datastoreLabel(datastore.engine)} {datastore.version}
-            <StatusBadge value={datastore.status} />
-          </span>
+          datastore ? (
+            <span className="flex items-center gap-2">
+              {datastoreLabel(datastore.engine)} {datastore.version}
+              <StatusBadge value={datastore.status} />
+            </span>
+          ) : (
+            <LoadingValue className="h-4 w-40" />
+          )
         }
         actions={
-          <>
-            <PowerButton datastore={datastore} onChanged={reload} />
-            <Button
-              variant="outline"
-              nativeButton={false}
-              render={
-                <Link href={`/databases/${datastore.name}/settings`}>
-                  <SettingsIcon />
-                  Settings
-                </Link>
-              }
-            />
-          </>
+          datastore && (
+            <>
+              <PowerButton datastore={datastore} onChanged={reload} />
+              <Button
+                variant="outline"
+                nativeButton={false}
+                render={
+                  <Link href={`/databases/${datastore.name}/settings`}>
+                    <SettingsIcon />
+                    Settings
+                  </Link>
+                }
+              />
+            </>
+          )
         }
       />
 
       <ErrorAlert error={error} />
 
+      {!datastore && <LoadingList rows={5} />}
+
       {/* The reason a database did not come up is the tail of what the
           engine printed, and it appears nowhere else — the container it
           came from has been removed. */}
-      {datastore.status === "failed" && datastore.error && (
+      {datastore?.status === "failed" && datastore.error && (
         <Card className="mb-4 border-l-2 border-destructive/30 border-l-destructive">
           <CardContent>
             <div className="text-[11px] tracking-[0.12em] text-destructive uppercase">
@@ -143,18 +158,22 @@ function Detail({ name }: { name: string }) {
         </Card>
       )}
 
-      <MetricsSection path={path} />
-      <Connection datastore={datastore} />
-      {/* Only once there is a container to have written one. Before
+      {datastore && (
+        <>
+          <MetricsSection path={path} />
+          <Connection datastore={datastore} />
+          {/* Only once there is a container to have written one. Before
           that the endpoint answers 409, and an error box saying so is
           worse than the section not being there. */}
-      {datastore.has_container && (
-        <ContainerLogs
-          path={path}
-          sub="What the engine itself has printed. The first place to look when it refuses connections or will not start."
-        />
+          {datastore.has_container && (
+            <ContainerLogs
+              path={path}
+              sub="What the engine itself has printed. The first place to look when it refuses connections or will not start."
+            />
+          )}
+          <Attachments datastore={datastore} onChanged={reload} />
+        </>
       )}
-      <Attachments datastore={datastore} onChanged={reload} />
     </>
   );
 }
