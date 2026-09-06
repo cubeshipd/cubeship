@@ -81,10 +81,30 @@ type Credential struct {
 	UpdatedAt time.Time
 }
 
+// NewLogin is a login typed in place of choosing a stored account.
+//
+// A credential is a **convenience, not a prerequisite**: somebody adding
+// their first registry has no stored account yet, and being sent to
+// another screen to make one before they can do the thing they came to
+// do is the tail wagging the dog. So the login can be typed here, and
+// the account is created from it — which means it turns up under
+// Credentials and can be picked next time, for the second registry or
+// for DNS.
+type NewLogin struct {
+	Provider Provider
+	// Label is what the stored account is called. Derived from the
+	// registry when empty, because somebody adding a registry is not
+	// necessarily thinking about naming an account.
+	Label    string
+	Username string
+	Password string
+}
+
 var (
 	ErrNothingToUpdate    = errors.New("nothing to change: give a credential, a registry name, or both")
+	ErrTwoLogins          = errors.New("pick a stored account or type a login, not both")
 	ErrDifferentProvider  = errors.New("that credential is for a different provider — a registry's host was derived from the account it was created with, so it cannot move to another kind of account")
-	ErrCredentialRequired = errors.New("a credential is required: pick the account this registry authenticates as")
+	ErrCredentialRequired = errors.New("no login: pick the account this registry authenticates as, or type one")
 	ErrUnknownProvider    = errors.New(`provider must be "generic", "digitalocean" or "aws"`)
 	ErrHostRequired       = errors.New("host is required")
 	ErrUsernameRequired   = errors.New("username is required")

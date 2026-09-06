@@ -49,6 +49,10 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
   const [accounts, setAccounts] = useState<Credential[]>([]);
   const [namespace, setNamespace] = useState("");
   const [credentialID, setCredentialID] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [rotating, setRotating] = useState(false);
+  const [rotated, setRotated] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savingName, setSavingName] = useState(false);
@@ -79,6 +83,10 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
         setCredential(found);
         setNamespace(found?.namespace ?? "");
         setCredentialID(found ? String(found.credential_id) : "");
+        // The username is not a secret and comes back with the
+        // listing, so the field starts on it: an empty box next to a
+        // stored login reads as nothing configured.
+        setUsername(found?.username ?? "");
       })
       .catch((e) => setError(message(e)));
   }, [id]);
@@ -111,6 +119,41 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
       .catch((e) => setError(message(e)));
   }, []);
   const choices = accounts.filter((a) => a.provider === provider);
+  const account = accounts.find((a) => a.id === credential?.credential_id);
+  // DigitalOcean's token is one value: the registry takes it as both
+  // halves of a docker login, so there is no name to ask for.
+  const needsUsername = provider !== "digitalocean";
+  // What else stands on this account. Rotating from here rotates the
+  // account, so anything sharing it follows — which is the point, and
+  // worth saying before the button is pressed rather than after.
+  const shared = (account?.in_use_by ?? []).filter(
+    (use) => !use.includes(credential?.host ?? "\u0000"),
+  );
+
+  // Rotating goes to the registry rather than straight to the
+  // credential, so the daemon can drop a cached ECR token minted from
+  // the key that just changed — a pull working for hours on the old one
+  // and then failing is worse than failing now.
+  async function rotate(e: React.FormEvent) {
+    e.preventDefault();
+    setRotating(true);
+    setError(null);
+    setRotated(false);
+    try {
+      setCredential(
+        await api.put<RegistryCredential>(`/registries/${id}`, {
+          ...(needsUsername ? { username } : {}),
+          password,
+        }),
+      );
+      setPassword("");
+      setRotated(true);
+      probe();
+    } catch (err) {
+      setError(message(err));
+    }
+    setRotating(false);
+  }
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -239,12 +282,66 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
               {saved && <span className="text-xs text-muted-foreground">Credential changed.</span>}
             </div>
             <p className="text-xs text-muted-foreground">
-              A refused login is fixed where the secret lives:{" "}
+              The same accounts are listed under{" "}
               <Link href="/credentials" className="text-foreground underline underline-offset-4">
                 <KeyRoundIcon className="inline size-3" /> Credentials
               </Link>
-              . Every registry on that account follows the same edit.
+              , where one reaches everything its provider can.
             </p>
+          </form>
+        </CardContent>
+      </Card>
+
+      <SectionHeader
+        title="Login"
+        sub={
+          aws
+            ? "The access key this account holds. What Docker logs in with is a token fetched from it at each pull, so nothing here expires."
+            : "The secret this account holds. Stored as given — a hash could not be sent to a registry — and never returned."
+        }
+      />
+      <Card>
+        <CardContent>
+          <form onSubmit={rotate} className="max-w-md space-y-4">
+            {shared.length > 0 && (
+              <Notice tone="warning">
+                This account is also used by <strong>{shared.join(", ")}</strong>. Replacing the
+                secret here replaces it for those too — which is what an account is for. To change
+                only this registry, point it at a different one above.
+              </Notice>
+            )}
+
+            {needsUsername && (
+              <TextField
+                label={aws ? "Access key ID" : "Username"}
+                spellCheck={false}
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+              />
+            )}
+            {/* The secret is never returned — an endpoint that handed
+                it back would turn every read of this page into a way
+                out for it — so the field cannot start on it. The
+                placeholder says something is stored; the box being
+                empty on arrival says only that you have not typed. */}
+            <TextField
+              label={aws ? "Secret access key" : "Password or token"}
+              type="password"
+              placeholder="••••••••••"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              hint="Stored and never returned, so replacing it means entering it again in full."
+            />
+            <div className="flex items-center gap-3">
+              <ActionButton
+                type="submit"
+                busy={rotating}
+                disabled={!password || (needsUsername && !username)}
+              >
+                Save
+              </ActionButton>
+              {rotated && <span className="text-xs text-muted-foreground">Login replaced.</span>}
+            </div>
           </form>
         </CardContent>
       </Card>

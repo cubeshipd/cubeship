@@ -80,29 +80,48 @@ const manageRole = user.RoleAdmin
 // does what it does with it: a generic registry is taken at its word,
 // and an AWS one is used immediately — the call that proves the key
 // works is also the call that says where the registry is.
-func (s *Service) Create(ctx context.Context, caller *user.User, in Credential) (*Credential, error) {
+// The login comes from one of two places, and neither is privileged
+// over the other: a stored account, or one typed here — see NewLogin.
+func (s *Service) Create(ctx context.Context, caller *user.User, in Credential, login *NewLogin) (*Credential, error) {
 	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
-	if in.CredentialID == 0 {
+	switch {
+	case in.CredentialID != 0 && login != nil:
+		// Both is not a request with an obvious reading, and guessing
+		// which one was meant is how the wrong secret gets stored.
+		return nil, ErrTwoLogins
+
+	case in.CredentialID != 0:
+		// The account decides everything that follows: which provider
+		// this is, and the login used below to prove the key works. A
+		// credential that cannot do registries is refused here rather
+		// than stored and discovered at a deploy.
+		cred, err := s.creds.Resolve(ctx, caller, in.CredentialID, credential.CapabilityRegistry)
+		if err != nil {
+			return nil, err
+		}
+		in.Provider = Provider(cred.Provider)
+		in.Username, in.Password = cred.Username, cred.Password
+
+	case login != nil:
+		in.Provider = login.Provider
+		in.Username, in.Password = login.Username, login.Password
+		if !credential.Provider(in.Provider).Can(credential.CapabilityRegistry) {
+			return nil, credential.CannotError(
+				credential.Provider(in.Provider), credential.CapabilityRegistry)
+		}
+
+	default:
 		return nil, ErrCredentialRequired
 	}
-	// The account decides everything that follows: which provider this
-	// is, and the login used a line below to prove the key works. A
-	// credential that cannot do registries is refused here rather than
-	// stored and discovered at a deploy.
-	cred, err := s.creds.Resolve(ctx, caller, in.CredentialID, credential.CapabilityRegistry)
-	if err != nil {
-		return nil, err
-	}
-	in.Provider = Provider(cred.Provider)
-	in.Username, in.Password = cred.Username, cred.Password
 	if !in.Provider.Valid() {
 		return nil, ErrUnknownProvider
 	}
 	// DigitalOcean's registry takes the API token as both halves of a
-	// docker login. The token has no name beside it, so this is where
-	// the one it needs comes from.
+	// docker login, and the token has no name beside it. Every read
+	// does this too — see the repository's scan — but nothing has been
+	// read yet here, and the ECR-style check below uses this login.
 	if in.Provider == ProviderDigitalOcean && in.Username == "" {
 		in.Username = in.Password
 	}
@@ -140,38 +159,113 @@ func (s *Service) Create(ctx context.Context, caller *user.User, in Credential) 
 		in.Region = ""
 	}
 
-	c, err := s.Repo().Create(ctx, in)
-	if database.IsUniqueViolation(err) {
-		return nil, ErrHostTaken
+	if login == nil {
+		c, err := s.Repo().Create(ctx, in)
+		if database.IsUniqueViolation(err) {
+			return nil, ErrHostTaken
+		}
+		return c, err
 	}
-	return c, err
+
+	// A typed login is two rows, and they go in together: an account
+	// stored beside a registry that turned out to be unreachable is a
+	// secret nobody asked to keep.
+	//
+	// The label is derived when none was given, from the host — which
+	// is unique here, so the derived one is too. Somebody adding a
+	// registry is thinking about the registry, not about naming an
+	// account they did not know they were creating.
+	label := login.Label
+	if strings.TrimSpace(label) == "" {
+		label = credential.Provider(in.Provider).Name() + " · " + in.Host
+		if in.Namespace != "" {
+			label += "/" + in.Namespace
+		}
+	}
+
+	var created *Credential
+	err := s.db.WithTx(ctx, func(tx database.Queryer) error {
+		cred, err := s.creds.CreateWith(ctx, caller, tx, credential.Credential{
+			Provider: credential.Provider(in.Provider),
+			Label:    label,
+			// What is stored is what was typed. The DigitalOcean
+			// doubling above is how the login is *used*, not what the
+			// account is — the token has no name beside it.
+			Username: login.Username,
+			Password: login.Password,
+		})
+		if err != nil {
+			return err
+		}
+		in.CredentialID = cred.ID
+		created, err = NewRepository(tx).Create(ctx, in)
+		if database.IsUniqueViolation(err) {
+			return ErrHostTaken
+		}
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return created, nil
 }
 
-// Update re-points a registry at a different account, and corrects a
-// namespace typed by hand.
+// Changes is what may be edited about a registry.
 //
-// The host is still not editable — an app's pulls are matched to a
-// registry by host, so re-pointing one in place would silently send
-// them somewhere else.
+// Every field is a pointer because "leave it alone" and "set it to
+// this" are different requests, and a plain value cannot tell them
+// apart.
+type Changes struct {
+	// CredentialID re-points the registry at a different stored
+	// account. It must be one of the same provider.
+	CredentialID *int64
+	// Namespace corrects DigitalOcean's registry name.
+	Namespace *string
+	// Username and Password rotate the login **on the account this
+	// registry authenticates as**, which is the point of the account:
+	// every registry on it follows the one edit. See Update.
+	Username *string
+	Password *string
+}
+
+func (c Changes) empty() bool {
+	return c.CredentialID == nil && c.Namespace == nil &&
+		c.Username == nil && c.Password == nil
+}
+
+// Update re-points a registry at a different account, rotates the login
+// of the account it has, and corrects a namespace typed by hand.
 //
-// Rotating a secret is not here at all any more, and that is the whole
-// improvement: it is one edit to the credential, and every registry
-// authenticating with it follows. Before, the same token had to be
-// re-entered once per registry that used it.
-func (s *Service) Update(ctx context.Context, caller *user.User, id int64, credentialID *int64, namespace *string) (*Credential, error) {
+// The host is not editable — an app's pulls are matched to a registry by
+// host, so re-pointing one in place would silently send them somewhere
+// else.
+//
+// **Rotating from here rotates the account**, not a copy of it: that is
+// what a shared secret means, and it is the improvement — the same token
+// used to be re-entered once per registry that held it. A caller that
+// wanted only this registry to move wanted a different account, which is
+// what CredentialID is for. Asking for both at once has no obvious
+// reading — it would rotate the account being pointed at, which is
+// nobody's intent — so it is refused.
+func (s *Service) Update(ctx context.Context, caller *user.User, id int64, ch Changes) (*Credential, error) {
 	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
-	if credentialID == nil && namespace == nil {
+	if ch.empty() {
 		return nil, ErrNothingToUpdate
 	}
+	rotating := ch.Username != nil || ch.Password != nil
+	if ch.CredentialID != nil && rotating {
+		return nil, ErrTwoLogins
+	}
 
-	if credentialID != nil {
-		existing, err := s.resolve(ctx, caller, id)
-		if err != nil {
-			return nil, err
-		}
-		cred, err := s.creds.Resolve(ctx, caller, *credentialID, credential.CapabilityRegistry)
+	existing, err := s.resolve(ctx, caller, id)
+	if err != nil {
+		return nil, err
+	}
+
+	if ch.CredentialID != nil {
+		cred, err := s.creds.Resolve(ctx, caller, *ch.CredentialID, credential.CapabilityRegistry)
 		if err != nil {
 			return nil, err
 		}
@@ -184,15 +278,32 @@ func (s *Service) Update(ctx context.Context, caller *user.User, id int64, crede
 		}
 	}
 
-	if namespace != nil {
-		normalized, err := checkNamespace(ctx, s, caller, id, *namespace)
+	if rotating {
+		if _, err := s.creds.Update(ctx, caller,
+			existing.CredentialID, nil, ch.Username, ch.Password); err != nil {
+			return nil, err
+		}
+		// A cached ECR token was minted from the key that just
+		// changed. Keeping it would leave pulls working on the old key
+		// for hours and then failing for no visible reason.
+		s.tokens.Delete(existing.CredentialID)
+	}
+
+	if ch.Namespace != nil {
+		normalized, err := checkNamespace(ctx, s, caller, id, *ch.Namespace)
 		if err != nil {
 			return nil, err
 		}
-		namespace = &normalized
+		ch.Namespace = &normalized
 	}
 
-	c, err := s.Repo().Update(ctx, id, credentialID, namespace)
+	if ch.CredentialID == nil && ch.Namespace == nil {
+		// Only the login changed, and that is a row in another table.
+		// Read the registry back so the caller sees the new username.
+		return s.resolve(ctx, caller, id)
+	}
+
+	c, err := s.Repo().Update(ctx, id, ch.CredentialID, ch.Namespace)
 	if errors.Is(err, database.ErrNotFound) {
 		return nil, ErrNotFound
 	}

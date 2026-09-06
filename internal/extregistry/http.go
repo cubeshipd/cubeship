@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"cubeship/internal/credential"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/user"
 )
@@ -80,6 +81,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusNotImplemented)
 	case errors.Is(err, ErrHostTaken):
 		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, ErrTwoLogins):
+		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrUnknownProvider), errors.Is(err, ErrHostRequired),
 		errors.Is(err, ErrUsernameRequired), errors.Is(err, ErrPasswordRequired),
 		errors.Is(err, ErrNamespaceRequired), errors.Is(err, ErrRegionRequired):
@@ -87,7 +90,11 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, user.ErrUnauthenticated):
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	default:
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		// A login typed here is stored as a credential, so the refusals
+		// about a secret — a name where the provider has none, a label
+		// already taken — are that module's to phrase rather than this
+		// one guessing at a status for an error it did not raise.
+		credential.WriteError(w, err)
 	}
 }
 
@@ -104,9 +111,17 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		// CredentialID is the stored account this registry
-		// authenticates as. It decides the provider, so nothing here
-		// names one.
+		// authenticates as. It decides the provider, so nothing else
+		// need name one.
 		CredentialID int64 `json:"credential_id"`
+		// Or a login typed here, for somebody who has no stored account
+		// yet — the account is created from it and is there to pick
+		// next time. Then the provider is asked for, because there is
+		// no account to read it off.
+		Provider string `json:"provider"`
+		Label    string `json:"label"`
+		Username string `json:"username"`
+		Password string `json:"password"`
 		// Host is the registry, for a generic one. Fixed for
 		// DigitalOcean and discovered for AWS, so it is ignored there.
 		Host string `json:"host"`
@@ -121,13 +136,27 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
+	// A login is offered when any of its parts is: a request that names
+	// a provider and no secret is somebody who meant to type one, and
+	// telling them the secret is missing beats "no login" for a form
+	// they just filled in.
+	var login *NewLogin
+	if req.Provider != "" || req.Username != "" || req.Password != "" {
+		login = &NewLogin{
+			Provider: Provider(req.Provider),
+			Label:    req.Label,
+			Username: req.Username,
+			Password: req.Password,
+		}
+	}
+
 	ctx := r.Context()
 	created, err := h.svc.Create(ctx, user.FromContext(ctx), Credential{
 		CredentialID: req.CredentialID,
 		Host:         req.Host,
 		Namespace:    req.Namespace,
 		Region:       req.Region,
-	})
+	}, login)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -137,14 +166,17 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		// Both pointers, because omitting one means "leave it alone"
+		// All pointers, because omitting one means "leave it alone"
 		// and sending it means "change it" — two different requests
 		// that a plain value cannot tell apart.
 		//
-		// The login is not here. Rotating a secret is an edit to the
-		// credential, and every registry using it follows.
+		// A login here rotates the account this registry authenticates
+		// as, so every registry on that account follows. Pointing this
+		// one somewhere else instead is credential_id.
 		CredentialID *int64  `json:"credential_id"`
 		Namespace    *string `json:"namespace"`
+		Username     *string `json:"username"`
+		Password     *string `json:"password"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -156,8 +188,12 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	updated, err := h.svc.Update(ctx, user.FromContext(ctx),
-		id, req.CredentialID, req.Namespace)
+	updated, err := h.svc.Update(ctx, user.FromContext(ctx), id, Changes{
+		CredentialID: req.CredentialID,
+		Namespace:    req.Namespace,
+		Username:     req.Username,
+		Password:     req.Password,
+	})
 	if err != nil {
 		WriteError(w, err)
 		return
