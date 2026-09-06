@@ -2,16 +2,18 @@ import Link from "next/link";
 import { StatusBadge } from "@/components/status-badge";
 import { type Datastore, datastoreLabel } from "@/lib/api";
 
-// One database in an environment's grid, beside the apps that use it.
+// One database in the instance's grid.
 //
 // The attached apps are on the card because that is what the thing is
 // for: a database nothing is attached to is one no app on this instance
-// can reach, and that is worth seeing without opening it.
+// can reach, and that is worth seeing without opening it. They are full
+// references, because a database may serve apps in several projects and
+// "api" alone would not say which.
 export function DatastoreCard({ datastore }: { datastore: Datastore }) {
   const attached = datastore.attachments.map((a) => a.app);
   return (
     <Link
-      href={`/projects/${datastore.project}/${datastore.environment}/databases/${datastore.name}`}
+      href={`/databases/${datastore.name}`}
       className="hud-frame group flex flex-col border border-border bg-card transition-all hover:border-primary/40 hover:bg-secondary/40 focus-visible:border-primary focus-visible:outline-none"
     >
       <div className="flex-1 p-4">

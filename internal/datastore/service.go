@@ -9,16 +9,15 @@ import (
 	"cubeship/internal/app"
 	"cubeship/internal/envvar"
 	"cubeship/internal/platform/database"
-	"cubeship/internal/project"
 	"cubeship/internal/settings"
 	"cubeship/internal/slug"
 	"cubeship/internal/user"
 )
 
 // Index names the service tells one "already exists" from another. They
-// are the names the migration gives them.
+// are the names the migrations give them.
 const (
-	slugIndex = "datastores_environment_slug"
+	slugIndex = "datastores_slug"
 	portIndex = "datastores_exposed_port"
 )
 
@@ -29,9 +28,9 @@ const (
 // one hands its password to an app. Neither is the kind of act a member
 // does — a member deploys images somebody else already published.
 //
-// Reading is a member's, minus the credentials: seeing that an
-// environment has a Postgres, and which apps use it, is part of
-// understanding what you are deploying into.
+// Reading is a member's, minus the credentials: seeing what databases
+// the instance runs, and which apps use them, is part of understanding
+// what you are deploying into.
 const RoleToManage = user.RoleAdmin
 
 // Service holds the datastore use cases.
@@ -41,31 +40,33 @@ const RoleToManage = user.RoleAdmin
 // app needs back — what an attached database contributes to a
 // container's environment — which app asks for through an interface
 // this satisfies. See app.DatastoreVars.
+//
+// There is no project dependency at all any more: a datastore is the
+// instance's, and an attachment reaches an app by its own full
+// reference.
 type Service struct {
 	db       *database.DB
-	projects *project.Service
 	apps     *app.Service
 	prov     *Provisioner
 	settings *settings.Service
 }
 
-func NewService(db *database.DB, projects *project.Service, apps *app.Service,
-	prov *Provisioner, cfg *settings.Service) *Service {
-	return &Service{db: db, projects: projects, apps: apps, prov: prov, settings: cfg}
+func NewService(db *database.DB, apps *app.Service, prov *Provisioner, cfg *settings.Service) *Service {
+	return &Service{db: db, apps: apps, prov: prov, settings: cfg}
 }
 
 func (s *Service) Repo() *Repository         { return NewRepository(s.db) }
 func (s *Service) Provisioner() *Provisioner { return s.prov }
 func (s *Service) WaitForProvisioning()      { s.prov.Wait() }
 
-// Resolve looks up a datastore by reference and requires minRole of the
-// caller, loading the apps attached to it — what a database is wired to
-// is most of what anyone wants to know about one.
-func (s *Service) Resolve(ctx context.Context, caller *user.User, ref Reference, minRole user.Role) (*Scoped, error) {
+// Resolve looks up a datastore by name and requires minRole of the
+// caller, loading the apps attached to it — with nothing above a
+// datastore, what it is wired to is the whole of where it sits.
+func (s *Service) Resolve(ctx context.Context, caller *user.User, name string, minRole user.Role) (*Datastore, error) {
 	if err := user.Require(caller, minRole); err != nil {
 		return nil, err
 	}
-	d, err := s.Repo().ScopedByReference(ctx, ref.Project, ref.Environment, ref.Name)
+	d, err := s.Repo().BySlug(ctx, name)
 	if err != nil {
 		return nil, ErrNotFound
 	}
@@ -77,20 +78,9 @@ func (s *Service) Resolve(ctx context.Context, caller *user.User, ref Reference,
 	return d, nil
 }
 
-// ResolveString is Resolve for a reference that still has to be parsed.
-func (s *Service) ResolveString(ctx context.Context, caller *user.User, ref string, minRole user.Role) (*Scoped, error) {
-	parsed, err := ParseReference(ref)
-	if err != nil {
-		return nil, err
-	}
-	return s.Resolve(ctx, caller, parsed, minRole)
-}
-
-// Spec is what a datastore is created from. Everything but the project
-// and the slug has an answer Cubeship supplies when the caller does not.
+// Spec is what a datastore is created from. Everything but the name has
+// an answer Cubeship supplies when the caller does not.
 type Spec struct {
-	Project     string
-	Environment string
 	Slug        string
 	Description string
 	Engine      Engine
@@ -98,8 +88,9 @@ type Spec struct {
 	// the newest.
 	Version string
 	// Username and Database default to something workable; Password is
-	// generated when it is empty, so a database with no password is not
-	// something anybody can create by leaving a box alone.
+	// generated when it is empty, so a database without a strong
+	// password is not something anybody can create by leaving a box
+	// alone.
 	Username string
 	Password string
 	Database string
@@ -108,23 +99,23 @@ type Spec struct {
 	Expose *int
 }
 
-// Create provisions a database in a project's environment.
+// Create provisions a database on this instance.
 //
 // The row is written and the container is started detached, so this
 // returns as soon as there is something to report on rather than
 // holding the request open for an image pull. The datastore comes back
 // in "provisioning"; how it went lands on the same row.
-func (s *Service) Create(ctx context.Context, caller *user.User, spec Spec) (*Scoped, error) {
+func (s *Service) Create(ctx context.Context, caller *user.User, spec Spec) (*Datastore, error) {
 	if err := user.Require(caller, RoleToManage); err != nil {
 		return nil, err
 	}
-	if spec.Environment == "" {
-		spec.Environment = project.ProductionEnvSlug
-	}
-	// The slug becomes a component of the container name its apps
-	// resolve, so it is checked before anything is looked up.
+	// The name is the container's, which is the host every attached app
+	// resolves, so it is checked before anything else happens.
 	if slug.Reserved(spec.Slug) {
 		return nil, slug.ErrReserved
+	}
+	if reservedSlugs[spec.Slug] {
+		return nil, ErrReservedSlug
 	}
 	if !slug.Valid(spec.Slug) {
 		return nil, slug.ErrInvalid
@@ -165,24 +156,15 @@ func (s *Service) Create(ctx context.Context, caller *user.User, spec Spec) (*Sc
 		}
 	}
 
-	p, err := s.projects.Repo().BySlug(ctx, spec.Project)
-	if err != nil {
-		return nil, project.ErrNotFound
-	}
-	env, err := s.projects.EnvironmentRepo().BySlug(ctx, p.ID, spec.Environment)
-	if err != nil {
-		return nil, project.ErrEnvironmentNotFound
-	}
-
 	port := 0
 	if spec.Expose != nil {
+		var err error
 		if port, err = s.resolvePort(ctx, *spec.Expose); err != nil {
 			return nil, err
 		}
 	}
 
 	created, err := s.Repo().Create(ctx, &Datastore{
-		ProjectID: p.ID, EnvironmentID: env.ID,
 		Slug: spec.Slug, Description: spec.Description,
 		Engine: spec.Engine, Version: spec.Version,
 		Username: spec.Username, Password: spec.Password, Database: spec.Database,
@@ -196,18 +178,14 @@ func (s *Service) Create(ctx context.Context, caller *user.User, spec Spec) (*Sc
 		if database.UniqueViolationOn(err, portIndex) {
 			return nil, ErrPortTaken
 		}
-		if database.IsUniqueViolation(err) {
+		if database.UniqueViolationOn(err, slugIndex) || database.IsUniqueViolation(err) {
 			return nil, ErrAlreadyExists
 		}
 		return nil, err
 	}
 
-	d, err := s.Repo().ScopedByID(ctx, created.ID)
-	if err != nil {
-		return nil, err
-	}
-	s.prov.Start(d)
-	return d, nil
+	s.prov.Start(created)
+	return created, nil
 }
 
 func engineList() string {
@@ -223,10 +201,10 @@ func engineList() string {
 
 // Update changes a datastore's description, and only that.
 //
-// Not the slug, for the reason no slug in Cubeship is editable: it is a
-// component of the container name every attached app resolves, and
-// renaming it would silently point them at a host that stopped
-// existing.
+// Not the name, for the reason no identifier in Cubeship is editable:
+// it is the container's own name, which every attached app resolves on
+// the shared network, and renaming it would silently point them at a
+// host that stopped existing.
 //
 // Not the engine or the version either, and those are worse. A data
 // directory is written by one major version of one engine and is not
@@ -240,18 +218,21 @@ func engineList() string {
 // initializes itself, and nothing reads it afterwards. Changing this
 // column would change every connection string Cubeship hands out while
 // the database went on accepting only the old one.
-func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, description *string) (*Scoped, error) {
-	d, err := s.Resolve(ctx, caller, ref, RoleToManage)
+func (s *Service) Update(ctx context.Context, caller *user.User, name string, description *string) (*Datastore, error) {
+	d, err := s.Resolve(ctx, caller, name, RoleToManage)
 	if err != nil {
 		return nil, err
 	}
 	if _, err := s.Repo().Update(ctx, d.ID, description); err != nil {
 		return nil, err
 	}
-	return s.Resolve(ctx, caller, ref, RoleToManage)
+	return s.Resolve(ctx, caller, name, RoleToManage)
 }
 
-func (s *Service) List(ctx context.Context, caller *user.User) ([]*Scoped, error) {
+// List is every database on the instance, each with what it is attached
+// to. The attachments come back in one query rather than one per row —
+// this is the screen the sidebar opens on.
+func (s *Service) List(ctx context.Context, caller *user.User) ([]*Datastore, error) {
 	if err := user.Require(caller, user.RoleMember); err != nil {
 		return nil, err
 	}
@@ -259,24 +240,21 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Scoped, error
 	if err != nil {
 		return nil, err
 	}
+	byDatastore, err := s.Repo().AllAttachments(ctx)
+	if err != nil {
+		return nil, err
+	}
 	for _, d := range all {
-		attachments, err := s.Repo().Attachments(ctx, d.ID)
-		if err != nil {
-			return nil, err
-		}
-		d.Attachments = attachments
+		d.Attachments = byDatastore[d.ID]
 	}
 	return all, nil
 }
 
 // Credentials is the login for one datastore, and where to use it.
 type Credentials struct {
-	Username string
-	Password string
-	Database string
-	// Internal is the connection string an app on this instance uses:
-	// the container's own name on the shared network, which is what
-	// every attached app already receives.
+	Username     string
+	Password     string
+	Database     string
 	Internal     string
 	InternalHost string
 	InternalPort int
@@ -291,12 +269,12 @@ type Credentials struct {
 // Credentials reads the login. An admin's, and its own request rather
 // than a field on the datastore: everything else about a database is
 // worth listing on a screen, and this is worth asking for.
-func (s *Service) Credentials(ctx context.Context, caller *user.User, ref Reference) (Credentials, error) {
-	d, err := s.Resolve(ctx, caller, ref, RoleToManage)
+func (s *Service) Credentials(ctx context.Context, caller *user.User, name string) (Credentials, error) {
+	d, err := s.Resolve(ctx, caller, name, RoleToManage)
 	if err != nil {
 		return Credentials{}, err
 	}
-	host := ref.ContainerName()
+	host := ContainerName(d.Slug)
 	creds := Credentials{
 		Username: d.Username, Password: d.Password, Database: d.Database,
 		Internal:     d.URI(host, d.Engine.Port()),
@@ -343,8 +321,8 @@ func (s *Service) externalHost(ctx context.Context) string {
 // published ports are fixed when it is created. The data is a host bind
 // mount, so it survives that untouched — the same property everything
 // else in Cubeship relies on when a container's configuration changes.
-func (s *Service) Expose(ctx context.Context, caller *user.User, ref Reference, port int) (*Scoped, error) {
-	d, err := s.Resolve(ctx, caller, ref, RoleToManage)
+func (s *Service) Expose(ctx context.Context, caller *user.User, name string, port int) (*Datastore, error) {
+	d, err := s.Resolve(ctx, caller, name, RoleToManage)
 	if err != nil {
 		return nil, err
 	}
@@ -355,30 +333,30 @@ func (s *Service) Expose(ctx context.Context, caller *user.User, ref Reference, 
 	if chosen == d.ExposedPort {
 		return d, nil
 	}
-	return s.setPort(ctx, caller, ref, d, chosen)
+	return s.setPort(ctx, caller, d, chosen)
 }
 
 // Unexpose takes the datastore off its host port, leaving it reachable
 // only by its neighbours on the shared network.
-func (s *Service) Unexpose(ctx context.Context, caller *user.User, ref Reference) (*Scoped, error) {
-	d, err := s.Resolve(ctx, caller, ref, RoleToManage)
+func (s *Service) Unexpose(ctx context.Context, caller *user.User, name string) (*Datastore, error) {
+	d, err := s.Resolve(ctx, caller, name, RoleToManage)
 	if err != nil {
 		return nil, err
 	}
 	if d.ExposedPort == 0 {
 		return d, nil
 	}
-	return s.setPort(ctx, caller, ref, d, 0)
+	return s.setPort(ctx, caller, d, 0)
 }
 
-func (s *Service) setPort(ctx context.Context, caller *user.User, ref Reference, d *Scoped, port int) (*Scoped, error) {
+func (s *Service) setPort(ctx context.Context, caller *user.User, d *Datastore, port int) (*Datastore, error) {
 	if err := s.Repo().SetExposedPort(ctx, d.ID, port); err != nil {
 		if database.UniqueViolationOn(err, portIndex) {
 			return nil, ErrPortTaken
 		}
 		return nil, err
 	}
-	updated, err := s.Resolve(ctx, caller, ref, RoleToManage)
+	updated, err := s.Resolve(ctx, caller, d.Slug, RoleToManage)
 	if err != nil {
 		return nil, err
 	}
@@ -430,28 +408,25 @@ func (s *Service) resolvePort(ctx context.Context, want int) (int, error) {
 // effect on redeploy — so attaching something an app is already running
 // against changes nothing until it is deployed again.
 //
+// appRef is the app's full reference, project/environment/name. It has
+// to be: a datastore is not inside an environment, so a bare name would
+// identify nothing, and one database serving apps in two projects is
+// the reason this module is instance-wide at all.
+//
 // prefix is empty for the usual case and gives DATABASE_URL and its
 // parts. An app that needs two databases names one of them, because two
 // under the same prefix would be one variable with two values.
-func (s *Service) Attach(ctx context.Context, caller *user.User, ref Reference, appName, prefix string) (*Scoped, error) {
-	d, err := s.Resolve(ctx, caller, ref, RoleToManage)
+func (s *Service) Attach(ctx context.Context, caller *user.User, name, appRef, prefix string) (*Datastore, error) {
+	d, err := s.Resolve(ctx, caller, name, RoleToManage)
 	if err != nil {
 		return nil, err
 	}
 	if err := CheckPrefix(prefix); err != nil {
 		return nil, err
 	}
-	a, err := s.apps.Resolve(ctx, caller, app.Reference{
-		Project: ref.Project, Environment: ref.Environment, Name: appName,
-	}, RoleToManage)
+	a, err := s.apps.ResolveString(ctx, caller, appRef, RoleToManage)
 	if err != nil {
 		return nil, err
-	}
-	// Belt and braces: the reference above already put the app in this
-	// datastore's environment, so this can only fire if that ever stops
-	// being true.
-	if a.EnvironmentID != d.EnvironmentID {
-		return nil, ErrDifferentEnvironment
 	}
 
 	if err := s.Repo().Attach(ctx, d.ID, a.ID, prefix); err != nil {
@@ -465,21 +440,19 @@ func (s *Service) Attach(ctx context.Context, caller *user.User, ref Reference, 
 		}
 		return nil, fmt.Errorf("attach datastore: %w", err)
 	}
-	return s.Resolve(ctx, caller, ref, RoleToManage)
+	return s.Resolve(ctx, caller, name, RoleToManage)
 }
 
 // Detach unwires an app. Its container keeps the variables it was
 // created with until it is deployed again — which is worth knowing,
 // because detaching is not how you cut an app off from a database in a
 // hurry.
-func (s *Service) Detach(ctx context.Context, caller *user.User, ref Reference, appName string) (*Scoped, error) {
-	d, err := s.Resolve(ctx, caller, ref, RoleToManage)
+func (s *Service) Detach(ctx context.Context, caller *user.User, name, appRef string) (*Datastore, error) {
+	d, err := s.Resolve(ctx, caller, name, RoleToManage)
 	if err != nil {
 		return nil, err
 	}
-	a, err := s.apps.Resolve(ctx, caller, app.Reference{
-		Project: ref.Project, Environment: ref.Environment, Name: appName,
-	}, RoleToManage)
+	a, err := s.apps.ResolveString(ctx, caller, appRef, RoleToManage)
 	if err != nil {
 		return nil, err
 	}
@@ -490,7 +463,7 @@ func (s *Service) Detach(ctx context.Context, caller *user.User, ref Reference, 
 	if !removed {
 		return nil, ErrNotAttached
 	}
-	return s.Resolve(ctx, caller, ref, RoleToManage)
+	return s.Resolve(ctx, caller, name, RoleToManage)
 }
 
 // VarsForApp is what app asks this module for: the variables every
@@ -507,8 +480,7 @@ func (s *Service) VarsForApp(ctx context.Context, appID int64) (envvar.Map, erro
 	vars := envvar.Map{}
 	for i := range attached {
 		a := &attached[i]
-		host := ReferenceOf(&a.Scoped).ContainerName()
-		maps.Copy(vars, a.Vars(a.Prefix, host, a.Engine.Port()))
+		maps.Copy(vars, a.Vars(a.Prefix, ContainerName(a.Slug), a.Engine.Port()))
 	}
 	return vars, nil
 }
@@ -522,12 +494,18 @@ func (s *Service) VarsForApp(ctx context.Context, appID int64) (envvar.Map, erro
 // this one is the largest thing on the disk. The guard is the
 // confirmation in front of it, which asks for the datastore's own name.
 //
+// Its attachments go with the row, and the apps that had them keep
+// running: a container holds the environment it was created with, so
+// nothing breaks until they are deployed again — at which point they
+// will come up without a DATABASE_URL. That is worth saying out loud
+// wherever this is offered.
+//
 // Container and files first, outside any transaction, because neither
 // Docker nor the filesystem has a rollback. A failure there leaves the
 // row standing, which a retry finishes; the reverse would leave a
 // database running with nothing on the instance naming it.
-func (s *Service) Delete(ctx context.Context, caller *user.User, ref Reference) (*Scoped, error) {
-	d, err := s.Resolve(ctx, caller, ref, RoleToManage)
+func (s *Service) Delete(ctx context.Context, caller *user.User, name string) (*Datastore, error) {
+	d, err := s.Resolve(ctx, caller, name, RoleToManage)
 	if err != nil {
 		return nil, err
 	}
@@ -535,40 +513,6 @@ func (s *Service) Delete(ctx context.Context, caller *user.User, ref Reference) 
 		return nil, err
 	}
 	return d, s.Repo().Delete(ctx, d.ID)
-}
-
-// DeleteDatastoresInProject and DeleteDatastoresInEnvironment are the
-// project module's teardown seam: deleting a project or an environment
-// takes the databases inside it the way it takes the apps.
-//
-// Authorization has already happened — the caller had to be able to
-// delete the thing above — so neither takes a caller.
-func (s *Service) DeleteDatastoresInProject(ctx context.Context, projectID int64) error {
-	all, err := s.Repo().ListForProject(ctx, projectID)
-	if err != nil {
-		return err
-	}
-	return s.deleteAll(ctx, all)
-}
-
-func (s *Service) DeleteDatastoresInEnvironment(ctx context.Context, environmentID int64) error {
-	all, err := s.Repo().ListForEnvironment(ctx, environmentID)
-	if err != nil {
-		return err
-	}
-	return s.deleteAll(ctx, all)
-}
-
-func (s *Service) deleteAll(ctx context.Context, all []*Scoped) error {
-	for _, d := range all {
-		if err := s.prov.Teardown(ctx, d, false); err != nil {
-			return err
-		}
-		if err := s.Repo().Delete(ctx, d.ID); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // Reconcile corrects each datastore's recorded status against what
@@ -592,7 +536,7 @@ func Reconcile(ctx context.Context, repo *Repository, d interface {
 		running, err := d.IsRunning(ctx, ds.ContainerID)
 		if err != nil {
 			log.Printf("reconcile: datastore %s: inspect container %s failed: %v",
-				ReferenceOf(ds), ds.ContainerID, err)
+				ds.Slug, ds.ContainerID, err)
 			running = false
 		}
 		want := StatusDown
@@ -606,7 +550,7 @@ func Reconcile(ctx context.Context, repo *Repository, d interface {
 			continue
 		}
 		if want != ds.Status {
-			log.Printf("reconcile: datastore %s: status %s -> %s", ReferenceOf(ds), ds.Status, want)
+			log.Printf("reconcile: datastore %s: status %s -> %s", ds.Slug, ds.Status, want)
 			if err := repo.UpdateContainer(ctx, ds.ID, ds.ContainerID, want, ds.Error); err != nil {
 				return err
 			}

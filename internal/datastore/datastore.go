@@ -1,12 +1,18 @@
-// Package datastore owns the databases Cubeship runs for the apps on it:
-// the Datastore entity, its persistence, the container lifecycle behind
-// it, and the HTTP and MCP surfaces both are reached through.
+// Package datastore owns the databases Cubeship runs for the apps on
+// it: the Datastore entity, its persistence, the container lifecycle
+// behind it, and the HTTP and MCP surfaces both are reached through.
 //
-// A datastore lives in an environment, inside a project — the same
-// address an app has, because it is the same kind of thing to reach for.
-// An app in `acme/api/production` and the database it talks to belong to
-// one deployment of one project, and `staging` holding different data
-// from `production` is what an environment already means.
+// A datastore belongs to the **instance**, not to a project. On one VPS
+// the common shape is a single Postgres serving several small apps, and
+// those apps are routinely in different projects — a database owned by
+// one project could not be reached from another at all, not because
+// anything prevented it but because the model had decided in advance
+// that it was the wrong thing to want.
+//
+// What connects a database to anything is therefore an Attachment, and
+// only that. An attachment names one app, gives it the connection
+// string as environment variables, and may cross projects and
+// environments freely.
 //
 // It is not an app, which is why it is not in that package: there is no
 // image to push, no source to build, no domain, no zero-downtime swap. A
@@ -16,23 +22,20 @@ package datastore
 import (
 	"errors"
 	"fmt"
-	"strings"
 	"time"
-
-	"cubeship/internal/slug"
 )
 
-// Datastore is one database server, running in a container of its own on
-// the shared network.
+// Datastore is one database server, running in a container of its own
+// on the shared network.
 type Datastore struct {
-	ID            int64
-	ProjectID     int64
-	EnvironmentID int64
-	// Slug names it within its environment and is permanent. It is a
-	// component of the container name its apps resolve, so renaming it
-	// would break every connection already handed out.
+	ID int64
+	// Slug names it on the whole instance and is permanent. It is the
+	// container's name, which is the host every attached app resolves,
+	// so renaming it would break every connection already handed out.
 	Slug string
-	// Description is what this database is for, in a sentence.
+	// Description is what this database is for, in a sentence. With no
+	// project above it to say where it belongs, this is the only place
+	// that can.
 	Description string
 
 	// Engine and Version say which server this runs. Neither is
@@ -59,6 +62,12 @@ type Datastore struct {
 	// Error is why provisioning failed, when it did.
 	Error     string
 	CreatedAt time.Time
+
+	// Attachments are the apps that receive this datastore's connection
+	// variables. Loaded with the datastore rather than asked for
+	// separately: with nothing above it, what a database is wired to is
+	// the whole of where it sits in the instance.
+	Attachments []Attachment
 }
 
 // Statuses a datastore can be in.
@@ -73,6 +82,24 @@ const (
 	StatusFailed = "failed"
 )
 
+// Network is the Docker network these containers join — the same one
+// apps are on, which is the whole of how an app reaches one.
+const Network = "cubeship"
+
+// containerPrefix is what a datastore's container is named under.
+//
+// Deliberately not the prefix an app's container takes. Two namespaces
+// that cannot collide are two namespaces nobody has to keep apart: a
+// datastore called `api` and an app called `api` may both exist, and
+// the name says which is which when somebody is reading `docker ps` at
+// three in the morning.
+const containerPrefix = "cubeship-db-"
+
+// ContainerName is what slug's container is called, and so the host its
+// apps connect to: Docker resolves a container's name on the shared
+// network, and that is the whole of the internal wiring.
+func ContainerName(slug string) string { return containerPrefix + slug }
+
 // PortRangeStart and PortRangeEnd bound the host ports Cubeship hands
 // out when someone exposes a datastore without naming one.
 //
@@ -86,26 +113,31 @@ const (
 	PortRangeEnd   = 15999
 )
 
-// Network is the Docker network these containers join — the same one
-// apps are on, which is the whole of how an app reaches one.
-const Network = "cubeship"
-
-// containerPrefix is what a datastore's container is named under.
+// reservedSlugs are names this module's own API needs as path segments
+// beside a slug of the same shape.
 //
-// Deliberately not the prefix an app's container takes. Two namespaces
-// that cannot collide are two namespaces nobody has to keep apart: an
-// app and a database in one environment may both be called `api`
-// without either being unable to start, and the name says which is
-// which when somebody is reading `docker ps` at three in the morning.
-const containerPrefix = "cubeship-db-"
+// Only `engines`: a datastore is addressed at /datastores/{name}, and
+// GET /datastores/engines lists what this release can run. Go's mux
+// prefers the literal, so a datastore called `engines` would be a
+// resource nothing could fetch. `settings` is refused one level up, by
+// slug.Reserved, because the dashboard needs it at every level.
+//
+// Local rather than global: this collides with an address this module
+// serves, and a word refused everywhere for one module's sake is a rule
+// nobody can trace back to a reason.
+var reservedSlugs = map[string]bool{"engines": true}
 
 var (
-	// ErrNotFound covers both "no such datastore" and a malformed
-	// reference resolved against a real instance.
+	// ErrNotFound is "no such datastore".
 	ErrNotFound = errors.New("datastore not found")
 
-	// ErrAlreadyExists reports a slug already used in that environment.
-	ErrAlreadyExists = errors.New("a datastore with that slug already exists in this environment")
+	// ErrAlreadyExists reports a slug already used on this instance.
+	// Instance-wide now, not per environment: two databases cannot
+	// share a name, because the name is the container.
+	ErrAlreadyExists = errors.New("a datastore with that name already exists on this instance")
+
+	// ErrReservedSlug is a name this module's own API answers at.
+	ErrReservedSlug = errors.New(`"engines" is reserved: it is where the API lists the engines this release can run`)
 
 	// ErrUnknownEngine is an engine this version cannot run. Refused at
 	// creation: accepting one would be a datastore that can never start.
@@ -115,17 +147,8 @@ var (
 	// offer for that engine.
 	ErrUnknownVersion = errors.New("unknown version for this engine")
 
-	// ErrImmutable is an attempt to change what cannot change after
-	// creation — see Service.Update for why each one cannot.
-	ErrImmutable = errors.New("a datastore's slug, engine and version cannot be changed after it is created")
-
 	// ErrBadUsername is a login the engine itself will not create.
 	ErrBadUsername = errors.New("invalid username")
-
-	// ErrBadPassword is an empty password. Nothing else is refused: the
-	// password goes into a URL through proper encoding, so no character
-	// in it is a problem.
-	ErrBadPassword = errors.New("password must not be empty")
 
 	// ErrBadPrefix is an attachment prefix that would not be a legal
 	// environment variable name once a suffix is appended to it.
@@ -142,12 +165,6 @@ var (
 	// ErrNotAttached is detaching something that was never attached.
 	ErrNotAttached = errors.New("that app is not attached to this datastore")
 
-	// ErrDifferentEnvironment refuses attaching an app to a database in
-	// another environment. The network would carry it, but it would
-	// make `staging` write to production data through a link nothing on
-	// either screen shows.
-	ErrDifferentEnvironment = errors.New("an app can only be attached to a datastore in its own environment")
-
 	// ErrBadPort is a host port outside what may be published.
 	ErrBadPort = errors.New("port must be between 1024 and 65535")
 
@@ -156,85 +173,23 @@ var (
 
 	// ErrNoPortsLeft reports the automatic range exhausted.
 	ErrNoPortsLeft = fmt.Errorf("no free port left in the range %d-%d; name one explicitly", PortRangeStart, PortRangeEnd)
-
-	// ErrNotProvisioned is an operation that needs a container behind
-	// it on a datastore that has none yet.
-	ErrNotProvisioned = errors.New("this datastore has no running container yet")
 )
 
-// Reference names one datastore: <project>/<environment>/<slug>.
-//
-// The same shape an app's reference has, because it addresses the same
-// place. A bare slug identifies nothing — it is unique only within its
-// environment.
-type Reference struct {
-	Project     string
-	Environment string
-	Name        string
-}
-
-func (r Reference) String() string {
-	return strings.Join([]string{r.Project, r.Environment, r.Name}, "/")
-}
-
-// ContainerName is what this datastore's container is called, and so the
-// host its apps connect to: Docker resolves a container's name on the
-// shared network, and that is the whole of the internal wiring.
-func (r Reference) ContainerName() string {
-	return containerPrefix + strings.Join(
-		[]string{r.Project, r.Environment, r.Name}, "-")
-}
-
-// ParseReference reads "project/environment/name", accepting two parts
-// as shorthand for the production environment. Every part is validated
-// as a slug, so a malformed reference can never reach a container name.
-func ParseReference(s string) (Reference, error) {
-	parts := strings.Split(strings.Trim(s, "/"), "/")
-	var ref Reference
-	switch len(parts) {
-	case 2:
-		ref = Reference{Project: parts[0], Environment: "production", Name: parts[1]}
-	case 3:
-		ref = Reference{Project: parts[0], Environment: parts[1], Name: parts[2]}
-	default:
-		return Reference{}, fmt.Errorf("%q is not a datastore reference: want project/environment/name", s)
-	}
-	for _, part := range []string{ref.Project, ref.Environment, ref.Name} {
-		if !slug.Valid(part) {
-			return Reference{}, fmt.Errorf("%q is not a datastore reference: %q %w", s, part, slug.ErrInvalid)
-		}
-	}
-	return ref, nil
-}
-
-// Scoped is a datastore with the slugs it lives under, which is what
-// every surface reports and what a reference is built from.
-type Scoped struct {
-	Datastore
-	ProjectSlug     string
-	EnvironmentSlug string
-	// Attachments are the apps that receive this datastore's connection
-	// variables. Loaded with the datastore rather than asked for
-	// separately: what a database is wired to is most of what anyone
-	// wants to know about it.
-	Attachments []Attachment
-}
-
-// ReferenceOf builds the reference identifying d.
-func ReferenceOf(d *Scoped) Reference {
-	return Reference{Project: d.ProjectSlug, Environment: d.EnvironmentSlug, Name: d.Slug}
-}
-
 // Attachment is one app wired to one datastore.
+//
+// It carries the app's full reference rather than its bare name,
+// because a datastore is no longer inside an environment: `api` alone
+// identifies nothing here, and two apps called `api` in two projects
+// may both be attached to the same database.
 type Attachment struct {
 	ID          int64
 	DatastoreID int64
 	AppID       int64
-	// AppSlug is the app's name within the environment, joined on read
-	// so nothing has to reach into the app module to render one.
-	AppSlug string
+	// AppReference is project/environment/name, joined on read so
+	// nothing has to reach into the app module to render or link one.
+	AppReference string
 	// Prefix is what the injected variables are named under. Empty for
-	// the usual case — see envvar names in engine.go.
+	// the usual case — see the variable names in engine.go.
 	Prefix    string
 	CreatedAt time.Time
 }

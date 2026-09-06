@@ -222,43 +222,40 @@ func TestAGeneratedPasswordIsLongRandomAndTypeable(t *testing.T) {
 	}
 }
 
-// A reference is what becomes a container name, so a malformed one must
-// not get that far.
-func TestAReferenceIsThreeSlugsAndBecomesAContainerName(t *testing.T) {
-	ref, err := ParseReference("web/production/pg")
-	if err != nil {
-		t.Fatalf("ParseReference: %v", err)
+// A datastore's container name must not be able to collide with an
+// app's. People name things the same way in both, and two containers
+// under one name is one that will not start.
+//
+// The name is also the host every attached app resolves, which is why
+// it is the whole of the addressing: there is nothing above a datastore
+// to qualify it with.
+func TestADatastoreCannotCollideWithAnAppsContainer(t *testing.T) {
+	name := ContainerName("api")
+	if !strings.HasPrefix(name, containerPrefix) {
+		t.Fatalf("container name %q does not carry the datastore prefix", name)
 	}
-	if got := ref.ContainerName(); got != "cubeship-db-web-production-pg" {
-		t.Errorf("container name is %q", got)
+	// The app orchestrator names containers "cubeship-<project>-...",
+	// so nothing an app produces can start with this prefix.
+	if strings.HasPrefix(name, "cubeship-api") {
+		t.Errorf("container name %q is in the same namespace an app's is", name)
 	}
-
-	// Two parts is production, the same shorthand an app reference takes.
-	short, err := ParseReference("web/pg")
-	if err != nil {
-		t.Fatalf("ParseReference(two parts): %v", err)
-	}
-	if short.Environment != "production" {
-		t.Errorf("two-part reference resolved to environment %q", short.Environment)
-	}
-
-	for _, bad := range []string{"pg", "web/production/pg/extra", "web/production/PG", "web//pg", ""} {
-		if _, err := ParseReference(bad); err == nil {
-			t.Errorf("%q was accepted as a reference", bad)
-		}
+	if name != "cubeship-db-api" {
+		t.Errorf("container name is %q", name)
 	}
 }
 
-// A datastore's container name must not be able to collide with an
-// app's. They share an environment and people name things the same way
-// in both, and two containers under one name is one that will not start.
-func TestADatastoreCannotCollideWithAnAppsContainer(t *testing.T) {
-	ref := Reference{Project: "web", Environment: "production", Name: "api"}
-	if !strings.HasPrefix(ref.ContainerName(), containerPrefix) {
-		t.Fatalf("container name %q does not carry the datastore prefix", ref.ContainerName())
+// The API answers at /datastores/engines, and Go's mux prefers a
+// literal over a wildcard — so a datastore called "engines" would be
+// one nothing could fetch. It is refused where the person who typed it
+// can still type another.
+func TestTheApisOwnSegmentIsRefusedAsAName(t *testing.T) {
+	if !reservedSlugs["engines"] {
+		t.Error(`"engines" is not reserved, and would be a datastore with no address of its own`)
 	}
-	// The app orchestrator names containers "cubeship-<project>-...".
-	if strings.HasPrefix(ref.ContainerName(), "cubeship-"+ref.Project) {
-		t.Errorf("container name %q is in the same namespace an app's is", ref.ContainerName())
+	// Only the exact word. A name that merely contains it is fine.
+	for _, ok := range []string{"engines-cache", "my-engines", "engine"} {
+		if reservedSlugs[ok] {
+			t.Errorf("%q was reported as reserved", ok)
+		}
 	}
 }

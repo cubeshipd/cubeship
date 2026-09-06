@@ -323,22 +323,26 @@ export type DatastoreEngine = {
 
 // What an attached app receives, by name. Values are not in it: one of
 // them is the password.
+//
+// `app` is a full reference, project/environment/name. Full, because a
+// datastore is not inside an environment and one may serve apps in
+// several.
 export type DatastoreAttachment = {
   app: string;
   prefix?: string;
   variables: string[];
 };
 
-// One managed database, in an environment beside the apps that use it.
+// One managed database. It belongs to the instance, not to a project:
+// on one host, one Postgres serving several small apps is the normal
+// shape, and those apps are routinely in different projects. Its name
+// is unique across the instance and is the whole of its address.
 //
 // No password field, deliberately. It is read from its own endpoint, by
 // an admin, on purpose — see DatastoreCredentials.
 export type Datastore = {
-  reference: string;
   name: string;
   description: string;
-  project: string;
-  environment: string;
   engine: string;
   version: string;
   status: string;
@@ -407,9 +411,8 @@ export function generatePassword(length = 24): string {
   return Array.from(bytes, (n) => PASSWORD_ALPHABET[n % PASSWORD_ALPHABET.length]).join("");
 }
 
-// datastorePath is the API path for a reference. The reference is
-// already project/environment/name, which is exactly the shape the
-// endpoint takes.
-export function datastorePath(reference: string): string {
-  return `/datastores/${reference}`;
+// datastorePath is the API path for one database. One segment: the name
+// is the whole address.
+export function datastorePath(name: string): string {
+  return `/datastores/${name}`;
 }

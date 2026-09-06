@@ -5,28 +5,27 @@ import (
 )
 
 func (h *Handler) OpenAPI() openapi.Spec {
-	refParams := []openapi.Parameter{
-		openapi.PathParam("project", "The project's slug."),
-		openapi.PathParam("env", "The environment's slug."),
-		openapi.PathParam("name", "The datastore's name, unique within that environment."),
+	nameParam := []openapi.Parameter{
+		openapi.PathParam("name", "The datastore's name, unique across the instance."),
 	}
-	attachParams := append(append([]openapi.Parameter{}, refParams...),
-		openapi.PathParam("app", "The app's name within the same environment."))
+	attachParams := []openapi.Parameter{
+		openapi.PathParam("name", "The datastore's name."),
+		openapi.PathParam("project", "The attached app's project slug."),
+		openapi.PathParam("env", "The attached app's environment slug."),
+		openapi.PathParam("app", "The attached app's own name."),
+	}
 
-	const exposeWarning = "\n\n**There is no TLS in front of this.** Traefik terminates HTTPS for HTTP; a database speaks its own protocol on its own port, so an exposed datastore is a password on the open internet. What makes that safe is the password — generated, 24 characters — and a firewall rule, which is yours to write. Leave it off for anything an app on this instance can reach through its container name."
+	const exposeWarning = "\n\n**There is no TLS in front of this.** Traefik terminates HTTPS for HTTP; a database speaks its own protocol on its own port, so an exposed datastore is a password on the open internet. What makes that safe is the password — generated, 24 characters — and a firewall rule, which is yours to write. Leave it off for anything an app on this instance can reach."
 
 	return openapi.Spec{
 		Tags: []openapi.Tag{{
 			Name:        "Datastores",
-			Description: "A managed database, running in an environment beside the apps that use it. Cubeship provisions the container, keeps its data in a directory on the host, and hands the connection string to whichever apps are attached to it.",
+			Description: "A managed database. It belongs to the instance rather than to a project — on one host the common shape is a single Postgres serving several apps, and those apps are routinely in different projects. What connects it to anything is an attachment, which names one app and gives it the connection string as environment variables.",
 		}},
 		Schemas: map[string]*openapi.Schema{
 			"Datastore": openapi.Object(map[string]*openapi.Schema{
-				"reference":     openapi.String("The datastore's identifier, project/environment/name."),
-				"name":          openapi.String("Unique within its environment, not across the instance. Permanent."),
-				"description":   openapi.String("What this database is for. Empty unless someone set it."),
-				"project":       openapi.String(""),
-				"environment":   openapi.String(""),
+				"name":          openapi.String("Unique across the instance. It is the container's own name, which every attached app resolves, so it is permanent."),
+				"description":   openapi.String("What this database is for. With no project above it to say where it belongs, this is the only place that can."),
 				"engine":        {Type: "string", Enum: []string{"postgres", "mysql", "mariadb"}, Description: "Which server this runs. Permanent."},
 				"version":       openapi.String("The engine's version. Permanent: a data directory written by one major version is not readable by another, so changing this would be a container that will not start with the only copy of the data inside it."),
 				"status":        {Type: "string", Enum: []string{"provisioning", "running", "down", "failed"}, Description: `"provisioning" while the container is being pulled and started, which happens detached from the request that asked for it.`},
@@ -39,11 +38,11 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"external_host": openapi.String("The instance's own domain, which is where an exposed datastore is reached. Absent while there is no domain, or while it is not exposed."),
 				"attachments":   openapi.Array(openapi.Ref("DatastoreAttachment")),
 				"created_at":    {Type: "string", Format: "date-time"},
-			}, "reference", "name", "description", "project", "environment", "engine", "version",
-				"status", "username", "host", "port", "attachments", "created_at"),
+			}, "name", "description", "engine", "version", "status", "username",
+				"host", "port", "attachments", "created_at"),
 
 			"DatastoreAttachment": openapi.Object(map[string]*openapi.Schema{
-				"app":       openapi.String("The app's name within the environment."),
+				"app":       openapi.String("The app's full reference, `project/environment/name`. Full, because a datastore is not inside an environment and one may serve apps in several."),
 				"prefix":    openapi.String(`What the injected variables are named under. Absent for the usual case, which gives DATABASE_URL.`),
 				"variables": openapi.Array(openapi.String("A variable name this app's container receives.")),
 			}, "app", "variables"),
@@ -73,27 +72,24 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"post": {
 					OperationID: "createDatastore",
 					Summary:     "Provision a database",
-					Description: "Creates the row and starts the container detached, so this returns while the image is still being pulled: the datastore comes back in `provisioning`, and how it went lands on the same row.\n\nThe password is generated when the request does not carry one, so a database with no password is not something anyone can create by leaving a field empty. It is returned here once, and afterwards only from the credentials endpoint.\n\nRequires the admin role: this starts a container and claims disk on the host that nothing reclaims on its own.",
+					Description: "Creates the row and starts the container detached, so this returns while the image is still being pulled: the datastore comes back in `provisioning`, and how it went lands on the same row.\n\nIt belongs to the instance. Attaching it to an app is a separate call, and one database may be attached to apps in several projects.\n\nThe password is generated when the request does not carry one, so a database with no password is not something anyone can create by leaving a field empty. It is returned here once, and afterwards only from the credentials endpoint.\n\nRequires the admin role: this starts a container and claims disk on the host that nothing reclaims on its own.",
 					Tags:        []string{"Datastores"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"name":        openapi.String("Lowercase letters, digits and dashes. It becomes a component of the container name attached apps resolve, so it is permanent."),
+						"name":        openapi.String("Lowercase letters, digits and dashes, unique across the instance. It becomes the container's name, so it is permanent. `engines` is refused — it is where this API lists what it can run."),
 						"description": openapi.String("What this database is for. Optional."),
-						"project":     openapi.String("Project slug."),
-						"environment": openapi.String(`Environment slug. Defaults to "production".`),
 						"engine":      {Type: "string", Enum: []string{"postgres", "mysql", "mariadb"}, Description: "Which server to run. GET /datastores/engines lists what this release offers."},
 						"version":     openapi.String("A version this release offers for that engine. Defaults to the newest. Permanent."),
 						"username":    openapi.String(`The login to create. Defaults to "cubeship". MySQL and MariaDB refuse "root" — it already exists and Cubeship does not hold its password.`),
 						"password":    openapi.String("Generated when omitted. Any characters: it is escaped into the connection URL rather than concatenated into it."),
 						"database":    openapi.String("The database to create inside the server. Defaults to the name with dashes turned into underscores. Ignored by an engine that has no named databases."),
 						"expose":      openapi.Integer("Publish on a host port at creation: 0 picks one from 15000-15999, or name one. Omit for internal-only, which is the normal answer." + exposeWarning),
-					}, "name", "project", "engine")),
+					}, "name", "engine")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse("The provisioning datastore, with the password it was created with.", openapi.Ref("Datastore")),
 						"400": openapi.BadRequest,
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
-						"404": openapi.TextResponse("The project or environment does not exist."),
-						"409": openapi.TextResponse("A datastore with that name already exists in the environment, or the host port asked for is already taken."),
+						"409": openapi.TextResponse("A datastore with that name already exists, or the host port asked for is already taken."),
 					},
 				},
 				"get": {
@@ -123,9 +119,9 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"get": {
 					OperationID: "getDatastore",
 					Summary:     "Get a database",
-					Description: "One datastore: its engine, status, the address apps reach it at, and what each attached app receives. Not its password.",
+					Description: "One datastore: its engine, status, the address apps reach it at, and every app attached to it. Not its password.",
 					Tags:        []string{"Datastores"},
-					Parameters:  refParams,
+					Parameters:  nameParam,
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The datastore.", openapi.Ref("Datastore")),
 						"401": openapi.Unauthorized,
@@ -135,9 +131,9 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"patch": {
 					OperationID: "updateDatastore",
 					Summary:     "Change a database's description",
-					Description: "The description is the only editable field, and the rest is not an oversight.\n\nThe name is a component of the container name every attached app resolves. The engine and the version are what wrote the data directory — a major version changed under an existing one is a container that will not start, with the only copy of the data inside the directory it will not read. The password is used once, when the engine initializes itself: changing this column would change every connection string Cubeship hands out while the database went on accepting only the old one.\n\nRunning a different version means creating a second datastore and moving the data with the engine's own tools.",
+					Description: "The description is the only editable field, and the rest is not an oversight.\n\nThe name is the container's own, which every attached app resolves on the shared network. The engine and the version are what wrote the data directory — a major version changed under an existing one is a container that will not start, with the only copy of the data inside the directory it will not read. The password is used once, when the engine initializes itself: changing this column would change every connection string Cubeship hands out while the database went on accepting only the old one.\n\nRunning a different version means creating a second datastore and moving the data with the engine's own tools.",
 					Tags:        []string{"Datastores"},
-					Parameters:  refParams,
+					Parameters:  nameParam,
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"description": openapi.String("May be empty."),
 					})),
@@ -152,9 +148,9 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"delete": {
 					OperationID: "deleteDatastore",
 					Summary:     "Delete a database",
-					Description: "Stops and removes the container, **and removes its data directory from the host**. There is no backup and this cannot be undone.\n\nThe data goes because a managed database whose files outlived it would leave a directory nothing on the instance names any more and nothing ever reclaims — and it is the largest thing on the disk. Deleting a project or an environment does the same to every datastore inside it.",
+					Description: "Stops and removes the container, **and removes its data directory from the host**. There is no backup and this cannot be undone.\n\nThe data goes because a managed database whose files outlived it would leave a directory nothing on the instance names any more and nothing ever reclaims — and it is the largest thing on the disk.\n\nThe apps attached to it keep running: a container holds the environment it was created with, so nothing breaks until they are deployed again, at which point they come up without a `DATABASE_URL`.",
 					Tags:        []string{"Datastores"},
-					Parameters:  refParams,
+					Parameters:  nameParam,
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The deleted datastore, as it last was.", openapi.Ref("Datastore")),
 						"401": openapi.Unauthorized,
@@ -169,7 +165,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Read a database's login",
 					Description: "The username, the password and the connection strings to use them with — from inside the instance, and from outside it when the datastore is exposed.\n\nIts own request rather than a field on the datastore: everything else is worth listing on a screen, and a credential is worth asking for on purpose. Requires the admin role.",
 					Tags:        []string{"Datastores"},
-					Parameters:  refParams,
+					Parameters:  nameParam,
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The login and where to use it.", openapi.Ref("DatastoreCredentials")),
 						"401": openapi.Unauthorized,
@@ -184,7 +180,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Publish a database on a host port",
 					Description: "So that something which is not an app on this instance can connect: a migration run from a laptop, psql, a BI tool." + exposeWarning + "\n\nThe container is replaced to pick the port up, because a container's published ports are fixed when it is created — the data is a host bind mount and survives that untouched. The datastore goes back to `provisioning` while it happens.",
 					Tags:        []string{"Datastores"},
-					Parameters:  refParams,
+					Parameters:  nameParam,
 					RequestBody: &openapi.RequestBody{
 						Description: "Which port to publish on. An empty body picks one.",
 						Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
@@ -205,7 +201,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Take a database off its host port",
 					Description: "It stays reachable by the apps on this instance, which never used the published port. The container is replaced, so the datastore goes back to `provisioning` briefly.",
 					Tags:        []string{"Datastores"},
-					Parameters:  refParams,
+					Parameters:  nameParam,
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The datastore, no longer published.", openapi.Ref("Datastore")),
 						"401": openapi.Unauthorized,
@@ -218,11 +214,11 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"post": {
 					OperationID: "attachDatastore",
 					Summary:     "Wire an app to a database",
-					Description: "The app's container is given `DATABASE_URL` and its parts — host, port, name, user, password — **from its next deploy onwards**. A container keeps the environment it was created with, the same rule that makes adding a domain take effect on redeploy.\n\nThe variables sit between the environment's and the app's own in the layering, so an app can override one without detaching anything.\n\nThe app must be in the same environment as the datastore. Requires the admin role: attaching hands the database's password to an app.",
+					Description: "The app's container is given `DATABASE_URL` and its parts — host, port, name, user, password — **from its next deploy onwards**. A container keeps the environment it was created with, the same rule that makes adding a domain take effect on redeploy.\n\nThe variables sit between the environment's and the app's own in the layering, so an app can override one without detaching anything.\n\nThe app is named by its full reference and may be in any project: one database serving apps in several is the reason a datastore belongs to the instance. Requires the admin role, because attaching hands the database's password to an app.",
 					Tags:        []string{"Datastores"},
-					Parameters:  refParams,
+					Parameters:  nameParam,
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"app":    openapi.String("The app's name within the same environment — not its full reference."),
+						"app":    openapi.String("The app's full reference: `project/environment/name`, or `project/name` for production."),
 						"prefix": openapi.String(`What the variables are named under, e.g. "ANALYTICS_" for ANALYTICS_DATABASE_URL. Empty is the usual answer. An app that needs two databases names one of them: two under the same prefix would be one variable with two values.`),
 					}, "app")),
 					Responses: openapi.Responses{
@@ -230,12 +226,12 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"400": openapi.BadRequest,
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
-						"404": openapi.TextResponse("No such datastore, or no such app in its environment."),
+						"404": openapi.TextResponse("No such datastore, or no such app."),
 						"409": openapi.TextResponse("That app is already attached, or already has a datastore under that prefix."),
 					},
 				},
 			},
-			datastorePath + "/attachments/{app}": {
+			attachmentPath: {
 				"delete": {
 					OperationID: "detachDatastore",
 					Summary:     "Unwire an app from a database",

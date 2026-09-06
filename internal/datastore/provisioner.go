@@ -106,10 +106,9 @@ func (p *Provisioner) DataDirFor(d *Datastore) string {
 // published on every interface: an exposed database is one somebody
 // means to reach from off this host, and a bind on loopback would be a
 // port that answers only to the machine that did not need it.
-func (p *Provisioner) containerOpts(d *Scoped) dockerx.ContainerOpts {
-	ref := ReferenceOf(d)
+func (p *Provisioner) containerOpts(d *Datastore) dockerx.ContainerOpts {
 	opts := dockerx.ContainerOpts{
-		Name:    ref.ContainerName(),
+		Name:    ContainerName(d.Slug),
 		Image:   d.Engine.Image(d.Version),
 		Env:     d.ContainerEnv(),
 		Network: Network,
@@ -118,11 +117,11 @@ func (p *Provisioner) containerOpts(d *Scoped) dockerx.ContainerOpts {
 			// over TCP, and Traefik routes HTTP by host name. What
 			// identifies the container is here for whoever is reading
 			// `docker ps` instead.
-			"cubeship.datastore": ref.String(),
+			"cubeship.datastore": d.Slug,
 			"cubeship.engine":    string(d.Engine),
 		},
 	}
-	if dir := p.DataDirFor(&d.Datastore); dir != "" {
+	if dir := p.DataDirFor(d); dir != "" {
 		opts.Binds = []string{dir + ":" + d.DataPath()}
 	}
 	if d.ExposedPort != 0 {
@@ -137,7 +136,7 @@ func (p *Provisioner) containerOpts(d *Scoped) dockerx.ContainerOpts {
 // most of a minute on a fresh instance, and nothing useful happens by
 // holding a connection open for it. How it went is on the datastore's
 // own row, which is where every surface reads it from.
-func (p *Provisioner) Start(d *Scoped) {
+func (p *Provisioner) Start(d *Datastore) {
 	p.running.Add(1)
 	go func() {
 		defer p.running.Done()
@@ -155,7 +154,7 @@ func (p *Provisioner) Start(d *Scoped) {
 		defer cancel()
 
 		if err := p.provision(ctx, d); err != nil {
-			log.Printf("datastore %s: %v", ReferenceOf(d), err)
+			log.Printf("datastore %s: %v", d.Slug, err)
 			p.fail(ctx, d, err)
 		}
 	}()
@@ -165,20 +164,20 @@ func (p *Provisioner) Start(d *Scoped) {
 // finished. For tests.
 func (p *Provisioner) Wait() { p.running.Wait() }
 
-func (p *Provisioner) fail(ctx context.Context, d *Scoped, cause error) {
+func (p *Provisioner) fail(ctx context.Context, d *Datastore, cause error) {
 	if err := p.repo().UpdateContainer(ctx, d.ID, "", StatusFailed, cause.Error()); err != nil {
 		log.Printf("datastore %d: recording the failure failed too: %v", d.ID, err)
 	}
 }
 
-func (p *Provisioner) provision(ctx context.Context, d *Scoped) error {
+func (p *Provisioner) provision(ctx context.Context, d *Datastore) error {
 	mu := p.lock(d.ID)
 	mu.Lock()
 	defer mu.Unlock()
 
 	opts := p.containerOpts(d)
 
-	if dir := p.DataDirFor(&d.Datastore); dir != "" {
+	if dir := p.DataDirFor(d); dir != "" {
 		// Created here rather than left to Docker, which would create
 		// it root-owned from the Engine's side. The engine images run
 		// as root and drop privileges after taking ownership, so an
@@ -194,7 +193,7 @@ func (p *Provisioner) provision(ctx context.Context, d *Scoped) error {
 	// fix. RemoveContainer forces, and "no such container" is the
 	// normal answer.
 	if err := p.docker.RemoveContainer(ctx, opts.Name); err != nil {
-		log.Printf("datastore %s: nothing to remove under %s (%v)", ReferenceOf(d), opts.Name, err)
+		log.Printf("datastore %s: nothing to remove under %s (%v)", d.Slug, opts.Name, err)
 	}
 
 	// The pull is unconditional. There is no cheap "is this image here"
@@ -202,7 +201,7 @@ func (p *Provisioner) provision(ctx context.Context, d *Scoped) error {
 	// version on a box — the round trip that finds it already present
 	// costs less than the branch that guesses wrong.
 	if err := p.docker.PullImage(ctx, opts.Image, nil); err != nil {
-		log.Printf("datastore %s: pull %s failed, trying the local image (%v)", ReferenceOf(d), opts.Image, err)
+		log.Printf("datastore %s: pull %s failed, trying the local image (%v)", d.Slug, opts.Image, err)
 	}
 
 	id, err := p.docker.CreateContainer(ctx, opts)
@@ -213,7 +212,7 @@ func (p *Provisioner) provision(ctx context.Context, d *Scoped) error {
 		// A container that would not start is not left lying about
 		// under a name the next attempt needs.
 		if rmErr := p.docker.RemoveContainer(ctx, id); rmErr != nil {
-			log.Printf("datastore %s: abandoning a container that would not start: %v", ReferenceOf(d), rmErr)
+			log.Printf("datastore %s: abandoning a container that would not start: %v", d.Slug, rmErr)
 		}
 		return fmt.Errorf("start container: %w", err)
 	}
@@ -284,7 +283,7 @@ func (p *Provisioner) tail(ctx context.Context, containerID string) string {
 // Synchronous, unlike provisioning: whoever asked for this is being
 // told whether it worked, and a delete that reports success while the
 // container is still serving would be a lie somebody acts on.
-func (p *Provisioner) Teardown(ctx context.Context, d *Scoped, keepData bool) error {
+func (p *Provisioner) Teardown(ctx context.Context, d *Datastore, keepData bool) error {
 	mu := p.lock(d.ID)
 	mu.Lock()
 	defer mu.Unlock()
@@ -292,15 +291,15 @@ func (p *Provisioner) Teardown(ctx context.Context, d *Scoped, keepData bool) er
 	// By name rather than by the recorded id, because the name is the
 	// one that is right even if the row is stale — and the row is
 	// exactly what is about to be deleted.
-	name := ReferenceOf(d).ContainerName()
+	name := ContainerName(d.Slug)
 	if err := p.docker.RemoveContainer(ctx, name); err != nil {
-		log.Printf("datastore %s: removing %s: %v", ReferenceOf(d), name, err)
+		log.Printf("datastore %s: removing %s: %v", d.Slug, name, err)
 	}
 	if keepData {
 		return nil
 	}
 
-	dir := p.DataDirFor(&d.Datastore)
+	dir := p.DataDirFor(d)
 	// Never the data directory itself, only a subdirectory of it. A
 	// Provisioner built without one removes nothing rather than
 	// resolving to "/".
