@@ -85,7 +85,9 @@ export default function Certificates() {
                         itself — a log line is one long line by nature. */}
                     <TableCell className="text-xs text-muted-foreground">
                       <div className="max-w-[26rem] whitespace-normal">
-                        {WHY[m.reason]}
+                        {m.instance && m.reason === "not_deployed"
+                          ? WHY_REGISTRY_NOT_DEPLOYED
+                          : WHY[m.reason]}
                         {m.detail && (
                           <p className="mt-1 overflow-x-auto whitespace-nowrap font-mono text-[11px] text-warning">
                             {m.detail}
@@ -97,6 +99,27 @@ export default function Certificates() {
                 ))}
               </TableBody>
             </Table>
+          </Card>
+        </>
+      )}
+
+      {data?.traefik_says && data.traefik_says.length > 0 && (
+        <>
+          <SectionHeader
+            title="What Traefik says"
+            sub="The last distinct things it logged while trying to get certificates. This is the only place an ACME refusal is written down."
+          />
+          <Card className="mb-8">
+            <div className="space-y-2 p-4">
+              {data.traefik_says.map((line) => (
+                <p
+                  key={line}
+                  className="overflow-x-auto whitespace-nowrap font-mono text-[11px] text-warning"
+                >
+                  {line}
+                </p>
+              ))}
+            </div>
           </Card>
         </>
       )}
@@ -175,10 +198,16 @@ export default function Certificates() {
 const WHY: Record<MissingReason, string> = {
   tls_not_configured: "This instance has no domain, so no certificate is asked for at all.",
   not_deployed:
-    "Added after the app's last deploy. A container keeps the routing it was created with — redeploy and Traefik is told about it.",
+    "Nothing is running with this name in its labels. A container keeps the routing it was created with, so Traefik has never been told about it — redeploy the app and it will be.",
   pending:
     "Traefik knows the name and has not got a certificate for it. Normal for a minute after a deploy; after that, check the name resolves to this host.",
 };
+
+// The registry is not an app, so "redeploy it" is not the answer: its
+// container is the instance's own, and the daemon replaces it when the
+// domain changes.
+const WHY_REGISTRY_NOT_DEPLOYED =
+  "The registry's container is not running with this name in its labels — it was made before the instance had a domain, or it is not running at all. Setting the domain again under Instance rebuilds it.";
 
 // Who a name belongs to. An app is a link, because the next thing
 // somebody does about it is open the app.
