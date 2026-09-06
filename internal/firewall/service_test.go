@@ -261,8 +261,10 @@ func TestOnlyAnAdminSeesTheFirewall(t *testing.T) {
 // listing that has moved would delete a different rule, and the only
 // sign would be a port that stopped answering.
 func TestDeletingRefusesWhenTheListMoved(t *testing.T) {
+	// A rule that is not the one keeping SSH in, so this is about the
+	// index and nothing else.
 	host := &fakeHost{status: status(active,
-		"[ 1] 22/tcp                     ALLOW IN    Anywhere", "", "0", "22")}
+		"[ 1] 5432                       DENY IN     Anywhere", "", "0", "22")}
 	svc := newService(t, host)
 
 	_, err := svc.DeleteRule(context.Background(), admin, 1, "80/tcp ALLOW IN Anywhere")
@@ -275,7 +277,7 @@ func TestDeletingRefusesWhenTheListMoved(t *testing.T) {
 
 	// The same call with what is actually there goes through, however
 	// UFW padded the columns.
-	if _, err := svc.DeleteRule(context.Background(), admin, 1, "22/tcp   ALLOW IN   Anywhere"); err != nil {
+	if _, err := svc.DeleteRule(context.Background(), admin, 1, "5432   DENY IN   Anywhere"); err != nil {
 		t.Errorf("a correct delete was refused: %v", err)
 	}
 }
@@ -356,5 +358,72 @@ func TestARuleAddedWhileItIsOffIsStillARule(t *testing.T) {
 	}
 	if !deleted {
 		t.Errorf("ran %v", host.ran)
+	}
+}
+
+// The rule that admits SSH is not deletable from the screen.
+//
+// It is the same guarantee Enable keeps, from the other side: enabling
+// writes that rule precisely so the session survives, and letting the
+// next click remove it would make the promise last exactly as long as
+// nobody was curious.
+func TestTheRuleThatKeepsYouInCannotBeDeletedFromHere(t *testing.T) {
+	const sshRule = "[ 1] 22/tcp                     ALLOW IN    Anywhere"
+	host := &fakeHost{status: status(active, sshRule, "", "0", "22")}
+	svc := newService(t, host)
+
+	got, err := svc.Status(context.Background(), admin)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if !got.Rules[0].Protected {
+		t.Fatal("the SSH rule is not marked, so the screen would offer to delete it")
+	}
+
+	_, err = svc.DeleteRule(context.Background(), admin, 1, "")
+	if !errors.Is(err, ErrKeepsYouIn) {
+		t.Fatalf("it was deleted: %v", err)
+	}
+	// The refusal names a command that actually runs. UFW's listing is a
+	// padded table, so "delete" in front of it is a line that does not.
+	if !strings.Contains(err.Error(), "ufw delete allow 22/tcp") {
+		t.Errorf("the refusal does not name a usable command: %v", err)
+	}
+	for _, cmd := range host.ran {
+		if strings.Contains(cmd, "delete") {
+			t.Fatalf("it ran anyway: %v", host.ran)
+		}
+	}
+}
+
+// With the firewall off nothing is protected: removing a rule then
+// cannot lock anybody out, and enabling would write it again anyway.
+func TestNothingIsProtectedWhileTheFirewallIsOff(t *testing.T) {
+	host := &fakeHost{status: status("Status: inactive\nufw status verbose", "",
+		"Added user rules (see 'ufw status' for running firewall):\nufw allow 22/tcp",
+		"0", "22")}
+
+	got, err := newService(t, host).Status(context.Background(), admin)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if got.Rules[0].Protected {
+		t.Error("a rule was protected on a firewall that is not running")
+	}
+}
+
+// Moving SSH to another port must not mean fighting the screen: what
+// counts is where sshd is now, so the old rule stops being protected as
+// soon as sshd stops answering there.
+func TestARuleStopsBeingProtectedWhenSSHMovesOff(t *testing.T) {
+	const oldRule = "[ 1] 22/tcp                     ALLOW IN    Anywhere"
+	host := &fakeHost{status: status(active, oldRule, "", "0", "2222")}
+
+	got, err := newService(t, host).Status(context.Background(), admin)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if got.Rules[0].Protected {
+		t.Error("a rule for a port sshd left is still protected")
 	}
 }

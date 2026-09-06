@@ -117,6 +117,17 @@ type Rule struct {
 	// read.
 	V6 bool `json:"v6"`
 
+	// Protected marks a rule this screen will not delete: the one
+	// admitting SSH on a running firewall.
+	//
+	// Not a guess about what somebody wants — it is the same guarantee
+	// Enable keeps, from the other side. Enabling writes this rule
+	// precisely so the session survives; letting the next click remove
+	// it would make that promise last exactly as long as nobody was
+	// curious. Deleting it is still possible, on the machine, where the
+	// person doing it can see what happens next.
+	Protected bool `json:"protected"`
+
 	// Delete is the command that removes this rule, for a rule read
 	// while the firewall is off. There are no positions then — `ufw
 	// status numbered` answers "inactive" and nothing else — so the
@@ -206,6 +217,10 @@ var (
 	// a screen acting on a listing something else has changed since.
 	ErrNoSuchRule = errors.New("no such rule")
 
+	// ErrKeepsYouIn refuses deleting the rule that admits SSH while the
+	// firewall is running.
+	ErrKeepsYouIn = errors.New("that rule is what admits SSH")
+
 	// ErrRuleChanged is deleting a position that holds something other
 	// than what the caller was looking at.
 	ErrRuleChanged = errors.New("that rule is not the one you were looking at; the list changed")
@@ -216,6 +231,54 @@ var (
 	// exists to avoid.
 	ErrDockerNotAdopted = errors.New("published container ports are not governed by ufw on this host yet")
 )
+
+// KeepsYouInError says why, and where it can be done instead.
+//
+// It names the command rather than saying "do it on the machine",
+// because somebody who has decided they mean it should not also have to
+// go and look up the syntax.
+func KeepsYouInError(rule Rule) error {
+	return fmt.Errorf(
+		"%w, and the firewall is on: deleting it here would end this session and every other one. If you mean it, do it on the machine, where you can see what happens next — %s",
+		ErrKeepsYouIn, rule.DeleteCommand())
+}
+
+// DeleteCommand is how this rule is removed by hand.
+//
+// Not Text with "delete" in front of it: what `ufw status` prints is a
+// padded table — "22/tcp   ALLOW IN   Anywhere" — and handing that back
+// as a command would be handing somebody a line that does not run. UFW
+// takes a rule back in the form it was given in, so it is rebuilt from
+// the parts.
+func (r Rule) DeleteCommand() string {
+	if len(r.Delete) > 0 {
+		// Read from `ufw show added`, which prints commands already.
+		return strings.Join(r.Delete, " ")
+	}
+	if r.Action == "" || r.Ports == "" {
+		// Nothing reliable to rebuild from, so the position it is at —
+		// which is only meaningful next to the listing it came from.
+		return fmt.Sprintf("ufw status numbered, then ufw delete %d", r.Index)
+	}
+
+	out := "ufw "
+	if r.Scope == ScopeApps {
+		out += "route "
+	}
+	out += "delete " + string(r.Action) + " "
+	if r.From != "" {
+		out += "from " + r.From + " to any port " + r.Ports
+		if r.Protocol != ProtocolAny {
+			out += " proto " + string(r.Protocol)
+		}
+		return out
+	}
+	out += r.Ports
+	if r.Protocol != ProtocolAny {
+		out += "/" + string(r.Protocol)
+	}
+	return out
+}
 
 // LockedOutError names the ports that would have had to be allowed.
 func LockedOutError(ports []int) error {
