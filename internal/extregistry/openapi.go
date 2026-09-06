@@ -33,15 +33,16 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"pushed_at": openapi.String("RFC 3339, where the registry reports it."),
 			}, "tag"),
 			"RegistryCredential": openapi.Object(map[string]*openapi.Schema{
-				"id":         openapi.Integer("Identifies it in the paths below."),
-				"provider":   {Type: "string", Enum: []string{"generic", "digitalocean", "aws"}, Description: "Which registry this is for. It decides what was asked for, and how the daemon authenticates."},
-				"host":       openapi.String("The registry it is for, and its identity: one per host per organization. An image whose reference starts with this host pulls through it. Docker Hub is index.docker.io, which is also what an image with no host in its name resolves to."),
-				"namespace":  openapi.String("The path segment between the host and the image, where the provider has one — DigitalOcean's registry name. Not part of matching."),
-				"region":     openapi.String("AWS only."),
-				"username":   openapi.String("The login's user, or an AWS access key id. Never the secret, whichever it is."),
-				"created_at": openapi.String("RFC 3339."),
-				"updated_at": openapi.String("RFC 3339. Changes when the login is replaced."),
-			}, "id", "provider", "host", "username", "created_at", "updated_at"),
+				"id":            openapi.Integer("Identifies it in the paths below."),
+				"credential_id": openapi.Integer("The stored account this registry authenticates as, and where its secret lives. Rotating that secret is one edit there, and every registry using it follows."),
+				"provider":      {Type: "string", Enum: []string{"generic", "digitalocean", "aws"}, Description: "Which registry this is for. It comes from the credential rather than being a second copy of it, and it decides how the daemon authenticates."},
+				"host":          openapi.String("The registry it is for, and its identity: one per host per organization. An image whose reference starts with this host pulls through it. Docker Hub is index.docker.io, which is also what an image with no host in its name resolves to."),
+				"namespace":     openapi.String("The path segment between the host and the image, where the provider has one — DigitalOcean's registry name. Not part of matching."),
+				"region":        openapi.String("AWS only."),
+				"username":      openapi.String("The login's user, or an AWS access key id. Never the secret, whichever it is."),
+				"created_at":    openapi.String("RFC 3339."),
+				"updated_at":    openapi.String("RFC 3339. Changes when the login is replaced."),
+			}, "id", "credential_id", "provider", "host", "username", "created_at", "updated_at"),
 		},
 		Paths: map[string]openapi.PathItem{
 			"/registries": {
@@ -62,20 +63,18 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					OperationID: "createRegistryCredential",
 					Summary:     "Add a registry login",
 					Description: "One login per registry per organization: two would make \"which one does this pull use\" a question with no answer.\n\n" +
-						"What is asked for depends on the provider. A **generic** registry takes a host, a username and a password. **DigitalOcean** takes its registry name and an API token — the host never varies, so asking for a URL would be asking someone to retype a constant. **AWS** takes an access key and a region, and nothing else: the host carries the account id and is discovered by the same call that proves the key can read a registry, so a key that cannot is refused here rather than at a deploy.\n\n" +
-						"AWS is also the one whose stored value is not a password. What Docker logs in with is a token fetched from the access key, good for hours; the key is what is kept.\n\n" +
+						"The login is not given here — a **credential** is, and it decides the provider. What else is asked for depends on that provider. A **generic** registry takes a host. **DigitalOcean** takes its registry name; the host never varies, so asking for a URL would be asking someone to retype a constant. **AWS** takes a region and nothing else: the host carries the account id and is discovered by the same call that proves the key can read a registry, so a key that cannot is refused here rather than at a deploy.\n\n" +
+						"AWS is also the one whose stored secret is not a password. What Docker logs in with is a token fetched from the access key, good for hours; the key is what is kept, in the credential.\n\n" +
 						"The host is normalized, so \"https://ghcr.io/\" and \"ghcr.io\" are the same registry.\n\n" +
 						"Organization admins only.",
 					Tags:       []string{"Registries"},
 					Parameters: []openapi.Parameter{orgParam},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"provider":  {Type: "string", Enum: []string{"generic", "digitalocean", "aws"}, Description: "Which registry this is for."},
-						"host":      openapi.String("Generic only: the registry, e.g. ghcr.io. Use docker.io for the Hub. Fixed for DigitalOcean and discovered for AWS."),
-						"namespace": openapi.String("DigitalOcean only: the registry's name, which is what follows registry.digitalocean.com/ in an image path."),
-						"region":    openapi.String("AWS only: the region the ECR registry lives in. It cannot be guessed."),
-						"username":  openapi.String("The login's user — a DigitalOcean account email, or an AWS access key id."),
-						"password":  openapi.String("The password, API token, or AWS secret access key. Stored as given — it has to be sent to the registry, or signed with — and never returned."),
-					}, "provider", "username", "password")),
+						"credential_id": openapi.Integer("The stored account to authenticate as. It must be one that can be used for registries — a Cloudflare token is refused here rather than stored and discovered at a deploy."),
+						"host":          openapi.String("Generic only: the registry, e.g. ghcr.io. Use docker.io for the Hub. Fixed for DigitalOcean and discovered for AWS."),
+						"namespace":     openapi.String("DigitalOcean only: the registry's name, which is what follows registry.digitalocean.com/ in an image path."),
+						"region":        openapi.String("AWS only: the region the ECR registry lives in. It cannot be guessed."),
+					}, "credential_id")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse("The new login.", openapi.Ref("RegistryCredential")),
 						"400": openapi.BadRequest,
@@ -203,18 +202,18 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			"/registries/{id}": {
 				"put": {
 					OperationID: "replaceRegistryCredential",
-					Summary:     "Replace a registry login",
-					Description: "Rotation: the host stays, the username and password are replaced.\n\n" +
-						"A credential cannot be re-pointed at a different **registry** — that is a different credential, and changing it in place would silently start authenticating an app's pulls somewhere else. Delete it and add the new one.\n\n" +
-						"`namespace` is the exception, and only for DigitalOcean: the registry's name is typed by hand rather than derived, so a typo is worth correcting in place instead of forcing a delete and a re-entered token. Omit the field to leave it alone; sending an empty string is refused.\n\n" +
-						"Sending `namespace` alone corrects the name and leaves the login untouched — making someone re-enter a token to fix a typo is how the typo stays. Otherwise `username` and `password` travel together: half a login is not one.\n\n" +
+					Summary:     "Re-point a registry at another account",
+					Description: "Re-point a registry at a different account, or correct a registry name typed by hand.\n\n" +
+						"The **host** is still not editable — an app's pulls are matched to a registry by host, so changing it in place would silently send them somewhere else. Delete it and add the new one.\n\n" +
+						"`namespace` is DigitalOcean's registry name, typed by hand rather than derived, so a typo is worth correcting in place. Omit the field to leave it alone; sending an empty string is refused.\n\n" +
+						"**Rotation is not here.** A secret is rotated on the credential, once, and every registry authenticating with it follows — which is what credentials were pulled out of here for.\n\n" +
+						"A credential of a different provider is refused: a registry's host was derived from the account it was created with — ECR's carries an AWS account id, DigitalOcean's is fixed — so moving it would leave a host that account has no registry at.\n\n" +
 						"Organization admins only.",
 					Tags:       []string{"Registries"},
 					Parameters: []openapi.Parameter{orgParam, idParam},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"username":  openapi.String(""),
-						"password":  openapi.String(""),
-						"namespace": openapi.String("DigitalOcean only: the registry's name, which is the path segment between the host and the image. Omit to leave it unchanged."),
+						"credential_id": openapi.Integer("The account to authenticate as instead. Must be the same provider."),
+						"namespace":     openapi.String("DigitalOcean only: the registry's name, which is the path segment between the host and the image. Omit to leave it unchanged."),
 					})),
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The login as it now stands.", openapi.Ref("RegistryCredential")),

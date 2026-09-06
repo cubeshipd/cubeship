@@ -132,8 +132,16 @@ export function DataTable<T extends object>({
                       style={{ width: `${column.width}%` }}
                     >
                       {column.sortBy ? (
+                        // The slot is what globals.css styles it
+                        // through. A button is one of the two elements
+                        // Tailwind's preflight resets `text-transform`
+                        // on, and an explicit rule beats what the
+                        // header cell would otherwise pass down — so a
+                        // sortable column's heading came out in mixed
+                        // case beside its uppercase neighbours.
                         <button
                           type="button"
+                          data-slot="table-head-sort"
                           onClick={header.column.getToggleSortingHandler?.()}
                           className="inline-flex items-center gap-1.5 hover:text-foreground"
                         >

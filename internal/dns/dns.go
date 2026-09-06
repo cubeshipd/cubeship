@@ -1,73 +1,32 @@
-// Package dns holds the DNS providers an organization manages its
-// records through.
+// Package dns writes the records this instance needs — an app's name
+// pointed at this host, a challenge proving a domain is yours — through
+// the account whose DNS you already manage.
 //
-// Cubeship already asks an operator to point a name at this host — that
-// is what a domain and an app's host are for — and until now the pointing
-// happened in somebody else's control panel. These credentials are what
-// let it happen here instead.
+// It holds no accounts of its own. It used to: a DNS provider was a
+// label and a secret, which is exactly what a credential is, so the
+// same Cloudflare token lived here and an AWS key lived here *and* in
+// the registries. Both moved to internal/credential, and what is left
+// in this package is the part that is actually about DNS — two provider
+// clients and the operations they have in common.
 //
-// A credential belongs to the **organization**, not to an app or a
-// domain: one Cloudflare account holds every zone in it, and rotating a
-// token should be one edit rather than one per name. Two credentials for
-// the same provider are allowed — an account can legitimately be split
-// across two — so what is unique is the credential's own label, not the
-// provider.
+// A credential id is therefore what every operation here is addressed
+// by. Whether the account can do DNS at all is the credential module's
+// question, asked once in resolve.
 package dns
 
 import (
 	"errors"
 	"strings"
-	"time"
+
+	"cubeship/internal/credential"
 )
 
-// Provider is who runs the DNS.
-type Provider string
-
-const (
-	ProviderCloudflare Provider = "cloudflare"
-	ProviderRoute53    Provider = "route53"
-)
-
-// Valid reports whether a provider is one this daemon can act through.
-// A value it cannot act on is refused at creation: accepting one would
-// let someone store a credential that can never resolve anything.
-func (p Provider) Valid() bool {
-	return p == ProviderCloudflare || p == ProviderRoute53
-}
-
-// Credential is one account's worth of DNS access.
+// Credential is what a provider client authenticates with.
 //
-// The two providers authenticate differently and the difference is not
-// cosmetic: Cloudflare takes one API token, and Route 53 takes an access
-// key that is two halves. Rather than two tables, both land in the same
-// two columns — Route 53's key id in Username, its secret in Password —
-// because everything above this treats them the same way and only the
-// call to the provider knows which is which.
-type Credential struct {
-	ID       int64    `json:"id"`
-	OrgID    int64    `json:"-"`
-	Provider Provider `json:"provider"`
-
-	// Label is what distinguishes two credentials for one provider. It
-	// is the only thing here someone chooses freely, and it exists
-	// because "the Cloudflare one" stops identifying anything the moment
-	// there are two.
-	Label string `json:"label"`
-
-	// Username is Route 53's access key id, and empty for Cloudflare —
-	// whose token is a single value with no name attached to it.
-	Username string `json:"username,omitempty"`
-
-	// Password is the secret half: Cloudflare's API token, or Route 53's
-	// secret access key. Stored as given and never returned — a provider
-	// takes the secret itself, so a hash could not be sent, and an
-	// endpoint that handed it back would turn every read of the list
-	// into a way out for it.
-	Password string `json:"-"`
-
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-}
+// An alias rather than a type of its own, and deliberately: there is
+// one credential in this daemon now, and a second name for it here
+// would be the beginning of a second copy of it.
+type Credential = credential.Credential
 
 // State is what a live probe of a provider found. The three answers are
 // three different jobs for whoever reads them: nothing, re-authenticate,
@@ -141,22 +100,13 @@ func ValidRecordType(t string) bool {
 const DefaultTTL = 300
 
 var (
-	ErrNotFound          = errors.New("no such DNS provider")
-	ErrProviderRequired  = errors.New("say which provider this is for: cloudflare or route53")
-	ErrLabelRequired     = errors.New("the label is required — it is what tells two accounts apart")
-	ErrPasswordRequired  = errors.New("the API token or secret access key is required")
-	ErrUsernameRequired  = errors.New("Route 53 needs an access key id as well as a secret")
-	ErrLabelTaken        = errors.New("this organization already has a DNS provider with that label")
+	// ErrNotFound is a zone or a credential this instance cannot see.
+	// It stays here rather than moving with the accounts, because a
+	// provider client raises it for a zone that is gone.
+	ErrNotFound          = errors.New("not found")
 	ErrRecordTypeUnknown = errors.New("that is not a record type Cubeship sets")
 	ErrRecordNotFound    = errors.New("no such record in that zone")
 )
-
-// NormalizeLabel trims a label to what is stored. It is a human label
-// rather than an identifier, so it keeps its case and its spaces — the
-// only thing worth removing is what someone did not mean to type.
-func NormalizeLabel(label string) string {
-	return strings.TrimSpace(label)
-}
 
 // NormalizeName renders a record name the way both providers store one:
 // lowercase, with no trailing dot. Route 53 answers with the dot and

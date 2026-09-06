@@ -38,7 +38,12 @@ internal/
   metrics/      what every container is using, sampled on a timer — the
                 series both apps and databases are charted from
   registry/     who may docker push/pull, and the push webhook
-  extregistry/  logins for registries Cubeship does not run
+  credential/   the accounts this instance is wired to — one secret,
+                stored once, used by everything its provider can reach
+  extregistry/  which registry Cubeship does not run, and which
+                credential logs in to it
+  dns/          reading and writing records through a credential that
+                can
   github/       the GitHub App: private clones, and deploy on push
   setup/        the first-run flow that claims an instance
   settings/     the instance's domain and contact address
@@ -157,10 +162,11 @@ Prettier.
 The sidebar is in sections, because its entries are not peers:
 
 - **Workspace** — projects, environments, apps. What you deploy.
-- **Platform** — registries, Git providers, DNS providers, the
-  instance's own domain and credentials. What the instance is wired to. Nothing in it belongs
-  to a project, and almost none of it is touched twice: a registry is
-  connected once and deployed through for a year.
+- **Platform** — credentials, registries, Git providers, DNS providers,
+  the instance's own domain. What the instance is wired to. Nothing in
+  it belongs to a project, and almost none of it is touched twice: a
+  registry is connected once and deployed through for a year.
+  **Credentials is first**, because the others stand on it.
 - **You** — the account.
 
 Flat, those read as one list of peers, and "Registries" sat beside
@@ -207,15 +213,25 @@ things whose names do not identify them. A project opens on
 DNS and registries follow the same shape:
 
 ```
-/dns                            the credentials
+/credentials                    the accounts, and the only place a
+                                secret is entered or replaced
+
+/dns                            the credentials that can write records
 /dns/[id]                       one credential's zones
-/dns/[id]/settings              its label, its secret, deleting it
 /dns/[id]/zones/[zone]          a zone's records, by domain name
 
 /registries                     the logins, Cubeship's own first
 /registries/[id]                what one holds
-/registries/[id]/settings       its login, deleting it
+/registries/[id]/settings       which credential it logs in as,
+                                deleting it
 ```
+
+`/dns` has no create button and no `[id]/settings`, and that is the
+model showing through rather than a screen someone forgot: **DNS has no
+configuration of its own.** What was there to add, rename or delete was
+the account, and the account is a credential now. `/dns` lists
+`GET /credentials?capability=dns` and sends anything about the account
+itself to `/credentials`.
 
 `cubeship` is the reserved id for the registry this instance runs.
 Every other id is a stored credential's, which is a number, so the two
@@ -1057,23 +1073,83 @@ a decision about its role rather than an accident.
 `TestOnlyAnAdminMayCreateOrDeployABuildingApp` and
 `TestOnlyAnAdminMayWriteABuildingAppsEnv` pin the two ways in.
 
+## Credentials
+
+`internal/credential` holds the accounts this instance is wired to —
+an AWS access key, a Cloudflare token, a DigitalOcean token — and it
+exists because the same account kept being entered twice. An AWS key is
+the same key whether Route 53 writes a record with it or ECR is pulled
+from with it, and it used to live once under DNS providers and again
+under registries: two rows, two rotations, and one of them forgotten.
+
+**A credential's capabilities are derived from its provider, never
+ticked.** `specs` is the whole model — a provider's name, what its two
+fields are called, and what this release's clients can actually do with
+it. AWS carries `dns` and `registry` both, which is the payoff;
+DigitalOcean carries `registry` alone, because there is no DigitalOcean
+DNS client here. A capability is a claim about code that exists, so it
+is not something a form can assert.
+
+The module knows nothing about DNS or registries. What it knows is
+`Dependant`, an interface the modules that *use* credentials implement:
+
+- `Resolve(ctx, caller, id, capability)` is the one way to get a secret,
+  and it refuses an account whose provider cannot do the job — at the
+  moment somebody wires it up, rather than at a deploy months later.
+- `UsesCredential` is each dependant's answer to "what would deleting
+  this break", so `in_use_by` can say so in the listing and a delete
+  that would strand something is refused with the names.
+
+`server` is where the two halves meet: `creds.SetDependants(registries,
+cfg)`, at wiring time, the same seam `project.AppTeardown` uses and for
+the same reason — the module that owns the rows is the only one that can
+answer, and it sits above the one asking.
+
+**A secret is stored as given and never returned.** A provider takes the
+secret itself, so a hash could not be sent to one; an endpoint that
+handed it back would turn every read of the list into a way out for it.
+`PATCH` with no password leaves it alone, which is what makes renaming
+a credential not a rotation.
+
+Managing them is an **admin's** job, reads included: the list names
+which accounts this instance holds and what each reaches, which is not
+something a member needs and is exactly what somebody probing would
+want.
+
+There are no MCP tools here, deliberately — creating one means a
+password passing through a model's context — and the same reasoning that
+kept them off `extregistry`.
+
+`00021_credentials.sql` is the migration that moved the existing rows
+in: `dns_providers` became credentials (`route53` is spelled `aws`
+now, because the account is AWS and Route 53 is one thing it reaches),
+every external registry got one derived from its own login, and the
+`dns_provider_id` setting was re-pointed at the new id. The foreign key
+is `ON DELETE RESTRICT`, because a credential a registry stands on must
+not vanish underneath it.
+
 ## Pulling from someone else's registry
 
-`internal/extregistry` holds the logins. They belong to the
-**instance**, not the app: one DigitalOcean or ECR login covers every
-image on it, and rotating a password should be one edit rather than one
-per app. One per host, or "which one does this pull use" has no answer.
+`internal/extregistry` says which registries Cubeship does not run and
+which credential logs in to each. The login itself lives in
+`credentials` — one DigitalOcean or ECR account covers every image on
+it, and rotating a password is one edit there rather than one per row.
+One registry per host, or "which one does this pull use" has no answer.
+
+A row is joined to its credential on every read, so everything above
+this — the provider clients, the deploy path — still sees one value with
+a provider and a login on it. None of them had to learn where the login
+moved.
 
 Matching is by host, and the two sides have to agree about spelling —
 `NormalizeHost` reduces what someone types, `HostOf` reads what an image
 reference carries, and both land on `index.docker.io` for a reference
 with no registry in it at all.
 
-**Passwords are stored as given and never returned.** A hash cannot be
-sent to a registry, so it is stored plainly; an endpoint that handed it
-back would turn every read of the list into a way out for it. Rotation
-replaces the login and keeps the host — re-pointing in place would
-silently send an app's pulls somewhere else.
+**The host is fixed once a registry exists.** Re-pointing one in place
+would silently send an app's pulls somewhere else; what can be changed
+is which credential it authenticates as, and that is a different
+question — a second AWS account, not a second address.
 
 A missing credential is not an error. Public images need none, and
 letting the registry be the one to refuse is what keeps a deploy that

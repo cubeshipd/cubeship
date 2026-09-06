@@ -112,10 +112,54 @@ export type App = {
   environment: string;
 };
 
+// --- credentials ---
+
+// What a credential can be used for. Derived from its provider, never
+// ticked: see internal/credential on the daemon.
+export type CredentialCapability = "dns" | "registry";
+
+// One account this instance is wired to. The secret is not here and
+// cannot be asked for — the daemon is what talks to the provider, so
+// nothing out here needs to read one back.
+export type Credential = {
+  id: number;
+  provider: string;
+  // The provider as a person calls it, served so the dashboard keeps no
+  // table of its own that drifts out of step.
+  provider_name: string;
+  label: string;
+  // The first half, where the provider has one — an access key id. Not
+  // a secret: the secret is the other half.
+  username?: string;
+  capabilities: CredentialCapability[];
+  // What is currently depending on it, so the list can say why one
+  // cannot be deleted before somebody tries.
+  in_use_by?: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+// One provider a credential can be created for, and what to ask for.
+// The form is built from this rather than from a copy of the list.
+export type CredentialProvider = {
+  provider: string;
+  name: string;
+  capabilities: CredentialCapability[];
+  // Absent for a provider whose secret is a single value — then there
+  // is no first field, and asking for one would be asking for
+  // something that does not exist.
+  username_label?: string;
+  password_label: string;
+  hint: string;
+};
+
 export type RegistryProvider = "generic" | "digitalocean" | "aws";
 
 export type RegistryCredential = {
   id: number;
+  // The stored account this authenticates as, and where its secret
+  // lives. Rotating that secret is one edit there.
+  credential_id: number;
   provider: RegistryProvider;
   host: string;
   // The path segment between the host and the image, where the provider
@@ -135,19 +179,10 @@ export type RegistryStatus = {
   detail?: string;
 };
 
-export type DNSProvider = "cloudflare" | "route53";
-
-export type DNSCredential = {
-  id: number;
-  provider: DNSProvider;
-  // What tells two accounts on one provider apart. Unique on the instance.
-  label: string;
-  // Route 53's access key id. Absent for Cloudflare, whose token is a
-  // single value with no name attached to it.
-  username?: string;
-  created_at: string;
-  updated_at: string;
-};
+// A DNS account is a credential now — there is no separate store. What
+// the DNS pages list is `GET /credentials?capability=dns`, and what
+// they address a zone by is that credential's id.
+export type DNSCredential = Credential;
 
 export type DNSStatus = {
   state: "available" | "unauthorized" | "unreachable";

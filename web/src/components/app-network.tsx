@@ -23,7 +23,7 @@ import {
   type DNSZone,
   type Settings,
 } from "@/lib/api";
-import { DNS_PROVIDERS } from "@/lib/dns";
+import { DNS_CREDENTIALS, providerIcon } from "@/lib/credentials";
 import { message } from "@/lib/errors";
 
 // DEFAULT_PORT is what the daemon serves a name on when nobody said
@@ -228,7 +228,7 @@ function AddDomain({
 
   const providers = useQuery({
     queryKey: ["dns"],
-    queryFn: () => api.get<DNSCredential[]>(`/dns`),
+    queryFn: () => api.get<DNSCredential[]>(DNS_CREDENTIALS),
   });
 
   const zones = useQuery({
@@ -318,8 +318,8 @@ function AddDomain({
                 ...(providers.data ?? []).map((p) => ({
                   value: String(p.id),
                   label: p.label,
-                  hint: DNS_PROVIDERS[p.provider]?.label,
-                  icon: DNS_PROVIDERS[p.provider]?.icon,
+                  hint: p.provider_name,
+                  icon: providerIcon(p.provider),
                 })),
               ]}
             />

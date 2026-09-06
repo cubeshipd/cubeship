@@ -51,8 +51,17 @@ const DigitalOceanHost = "registry.digitalocean.com"
 // The secret is stored as given, not hashed: a hash cannot be sent to a
 // registry, nor signed with. Nothing reads it back out through the API.
 type Credential struct {
-	ID       int64
-	OrgID    int64
+	ID int64
+
+	// CredentialID is the account this registry authenticates as. The
+	// secret is not here any more: one AWS key reaches ECR and Route 53
+	// both, and storing it once is the point of internal/credential.
+	CredentialID int64
+
+	// Provider, Username and Password come from that credential and are
+	// filled on read. Nothing writes them through this type — an edit
+	// to a login is an edit to the credential, in one place, and every
+	// registry using it follows.
 	Provider Provider
 	// Host is the registry, and the identity: one per host per
 	// organization.
@@ -73,14 +82,17 @@ type Credential struct {
 }
 
 var (
-	ErrUnknownProvider   = errors.New(`provider must be "generic", "digitalocean" or "aws"`)
-	ErrHostRequired      = errors.New("host is required")
-	ErrUsernameRequired  = errors.New("username is required")
-	ErrPasswordRequired  = errors.New("password is required")
-	ErrNamespaceRequired = errors.New("the registry name is required — it is what follows registry.digitalocean.com/ in an image path")
-	ErrRegionRequired    = errors.New("an AWS region is required: an ECR registry lives in one, and it cannot be guessed")
-	ErrHostTaken         = errors.New("this organization already has a credential for that registry")
-	ErrNotFound          = errors.New("no such registry credential")
+	ErrNothingToUpdate    = errors.New("nothing to change: give a credential, a registry name, or both")
+	ErrDifferentProvider  = errors.New("that credential is for a different provider — a registry's host was derived from the account it was created with, so it cannot move to another kind of account")
+	ErrCredentialRequired = errors.New("a credential is required: pick the account this registry authenticates as")
+	ErrUnknownProvider    = errors.New(`provider must be "generic", "digitalocean" or "aws"`)
+	ErrHostRequired       = errors.New("host is required")
+	ErrUsernameRequired   = errors.New("username is required")
+	ErrPasswordRequired   = errors.New("password is required")
+	ErrNamespaceRequired  = errors.New("the registry name is required — it is what follows registry.digitalocean.com/ in an image path")
+	ErrRegionRequired     = errors.New("an AWS region is required: an ECR registry lives in one, and it cannot be guessed")
+	ErrHostTaken          = errors.New("this organization already has a credential for that registry")
+	ErrNotFound           = errors.New("no such registry credential")
 )
 
 // NormalizeHost reduces what someone types to the host an image

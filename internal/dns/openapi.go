@@ -18,18 +18,6 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"the account, including names that have nothing to do with Cubeship.",
 		}},
 		Schemas: map[string]*openapi.Schema{
-			"DNSProvider": openapi.Object(map[string]*openapi.Schema{
-				"id": openapi.Integer(""),
-				"provider": {
-					Type:        "string",
-					Description: "cloudflare or route53.",
-					Enum:        []string{"cloudflare", "route53"},
-				},
-				"label":      openapi.String("What tells two accounts on one provider apart. Unique within the organization."),
-				"username":   openapi.String("Route 53's access key id. Absent for Cloudflare, whose token is a single value. Never the secret half, whichever provider."),
-				"created_at": openapi.String(""),
-				"updated_at": openapi.String(""),
-			}, "id", "provider", "label", "created_at", "updated_at"),
 			"DNSZone": openapi.Object(map[string]*openapi.Schema{
 				"id":   openapi.String("The provider's own id for the zone, which is what every later call addresses it by. Not derivable from the name."),
 				"name": openapi.String("The domain, lowercase and with no trailing dot."),
@@ -45,82 +33,6 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			}, "name", "type", "values", "ttl"),
 		},
 		Paths: map[string]openapi.PathItem{
-			"/dns": {
-				"get": {
-					OperationID: "listDNSProviders",
-					Summary:     "List this organization's DNS providers",
-					Tags:        []string{"DNS"},
-					Parameters:  []openapi.Parameter{orgParam},
-					Responses: openapi.Responses{
-						"200": openapi.JSONResponse("The providers.", openapi.Array(openapi.Ref("DNSProvider"))),
-						"401": openapi.Unauthorized,
-						"403": openapi.Forbidden,
-						"404": openapi.NotFound,
-					},
-				},
-				"post": {
-					OperationID: "createDNSProvider",
-					Summary:     "Store a DNS credential",
-					Description: "Cloudflare takes one API token, in `password`. Route 53 takes an access key, which is two halves: the key id in `username` and the secret in `password`.\n\n" +
-						"Cloudflare's older scheme — an email and a global key that can do anything to the account — is not accepted: a token is scoped to what someone chose, and the other kind is a credential that can close the account.",
-					Tags:       []string{"DNS"},
-					Parameters: []openapi.Parameter{orgParam},
-					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"provider": {
-							Type:        "string",
-							Description: "cloudflare or route53.",
-							Enum:        []string{"cloudflare", "route53"},
-						},
-						"label":    openapi.String("What tells this account from another on the same provider."),
-						"username": openapi.String("Route 53's access key id. Ignored for Cloudflare."),
-						"password": openapi.String("Cloudflare's API token, or Route 53's secret access key."),
-					}, "provider", "label", "password")),
-					Responses: openapi.Responses{
-						"201": openapi.JSONResponse("The provider as stored.", openapi.Ref("DNSProvider")),
-						"400": openapi.BadRequest,
-						"401": openapi.Unauthorized,
-						"403": openapi.Forbidden,
-						"404": openapi.NotFound,
-						"409": openapi.TextResponse("This organization already has a DNS provider with that label."),
-					},
-				},
-			},
-			"/dns/{id}": {
-				"patch": {
-					OperationID: "updateDNSProvider",
-					Summary:     "Rename a DNS provider, or rotate its credential",
-					Description: "Omit a field to leave it alone. The provider itself is not editable: a credential is *for* one provider — how it authenticates and what its secret even is both follow from that — so changing it in place would be a different credential wearing the old one's id.\n\n" +
-						"For Route 53 a new secret must travel with its key id: a new secret against the old id is not a credential anyone chose, and it fails in a way that reads as the secret being wrong.",
-					Tags:       []string{"DNS"},
-					Parameters: []openapi.Parameter{orgParam, idParam},
-					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"label":    openapi.String("A new label."),
-						"username": openapi.String("Route 53's access key id."),
-						"password": openapi.String("The new token or secret."),
-					})),
-					Responses: openapi.Responses{
-						"200": openapi.JSONResponse("The provider as it now stands.", openapi.Ref("DNSProvider")),
-						"400": openapi.BadRequest,
-						"401": openapi.Unauthorized,
-						"403": openapi.Forbidden,
-						"404": openapi.NotFound,
-						"409": openapi.TextResponse("Another provider in this organization already has that label."),
-					},
-				},
-				"delete": {
-					OperationID: "deleteDNSProvider",
-					Summary:     "Forget a DNS credential",
-					Description: "Nothing at the provider is touched, and no record changes. What goes is this instance's ability to read or write them. Organization admins only.",
-					Tags:        []string{"DNS"},
-					Parameters:  []openapi.Parameter{orgParam, idParam},
-					Responses: openapi.Responses{
-						"204": openapi.Empty("Deleted."),
-						"401": openapi.Unauthorized,
-						"403": openapi.Forbidden,
-						"404": openapi.NotFound,
-					},
-				},
-			},
 			"/dns/{id}/status": {
 				"get": {
 					OperationID: "probeDNSProvider",

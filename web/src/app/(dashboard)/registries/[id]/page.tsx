@@ -1,12 +1,11 @@
 "use client";
 
-import { BoxIcon, ChevronLeftIcon, ChevronRightIcon, SettingsIcon, Trash2Icon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, SettingsIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyButton } from "@/components/copy-button";
 import { ErrorAlert } from "@/components/error-alert";
-import { AWSIcon, DigitalOceanIcon } from "@/components/icons";
 import { LoadingList, LoadingNote } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
@@ -30,13 +29,14 @@ import {
   type RegistryUsage,
   type Settings,
 } from "@/lib/api";
+import { providerIcon } from "@/lib/credentials";
 import { message } from "@/lib/errors";
 
 // What a registry holds.
 //
 // Two registries answer this and they are asked differently: Cubeship's
 // own has no credential — a push authenticates with the pusher's API key
-// — so it is addressed as the organization's registry rather than by an
+// — so it is addressed as this instance's own registry rather than by an
 // id. Everything below the fetch is the same either way.
 export default function RegistryDetail({ params }: PageProps<"/registries/[id]">) {
   const { id } = use(params);
@@ -136,8 +136,7 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
   // The mark belongs to the provider, and the detail page knows which
   // one only from what the listing passed it.
   const provider = credential?.provider ?? "";
-  const Icon =
-    provider === "aws" ? AWSIcon : provider === "digitalocean" ? DigitalOceanIcon : BoxIcon;
+  const Icon = providerIcon(provider);
 
   // Cubeship's own registry has no host in the query string — it is
   // instance configuration, and it is empty until there is a domain.
@@ -321,7 +320,7 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
         }
         sub={
           own
-            ? "What this organization has pushed. A repository path here is an app's reference."
+            ? "What this instance has pushed. A repository path here is an app's reference."
             : "What this registry holds, as it reports it."
         }
         below={

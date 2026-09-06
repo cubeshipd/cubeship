@@ -7,6 +7,7 @@ import {
   FolderTreeIcon,
   GitBranchIcon,
   GlobeIcon,
+  KeyRoundIcon,
   LogOutIcon,
   ServerCogIcon,
   ShieldCheckIcon,
@@ -69,6 +70,10 @@ const sections: { label?: string; items: NavItem[] }[] = [
   {
     label: "Platform",
     items: [
+      // First in the section, because the others are configured
+      // *through* it: a registry and a DNS account both name a
+      // credential now rather than holding a secret of their own.
+      { href: "/credentials", label: "Credentials", icon: KeyRoundIcon, owns: ["/credentials"] },
       { href: "/registries", label: "Registries", icon: ContainerIcon, owns: ["/registries"] },
       { href: "/git", label: "Git Providers", icon: GitBranchIcon, owns: ["/git"] },
       { href: "/dns", label: "DNS Providers", icon: GlobeIcon, owns: ["/dns"] },

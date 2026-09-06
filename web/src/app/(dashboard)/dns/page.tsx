@@ -1,53 +1,34 @@
 "use client";
 
-import { PlusIcon } from "lucide-react";
+import { KeyRoundIcon } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { ActionButton } from "@/components/action-button";
+import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { CloudflareIcon } from "@/components/icons";
-import { LoadingRows } from "@/components/loading";
 import { PageHeader } from "@/components/page-header";
-import { SearchableSelect } from "@/components/searchable-select";
 import { StatusBadge } from "@/components/status-badge";
-import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { api, type DNSCredential, type DNSProvider, type DNSStatus } from "@/lib/api";
-import { DNS_PROVIDERS } from "@/lib/dns";
+import { api, type DNSCredential, type DNSStatus } from "@/lib/api";
+import { DNS_CREDENTIALS, providerIcon } from "@/lib/credentials";
 import { message } from "@/lib/errors";
 
-// The DNS accounts this organization manages records through.
+// The accounts this instance manages records through.
 //
-// A table rather than cards: a credential has a label, a provider and a
-// state, and what someone comes here to do is scan for one of them.
+// There is nothing to create here. DNS has no configuration of its own
+// — an account that can write records is a *credential* whose provider
+// knows how to, so this page lists the credentials that can and sends
+// anything about the account itself to Credentials, where it is stored
+// once and reached by everything else that can use it.
 export default function DNSProviders() {
   const [creds, setCreds] = useState<DNSCredential[] | null>(null);
   const [statuses, setStatuses] = useState<Record<number, DNSStatus>>({});
   const [error, setError] = useState<string | null>(null);
-  const [adding, setAdding] = useState(false);
   const router = useRouter();
 
-  const path = `/dns`;
   const reload = useCallback(() => {
     api
-      .get<DNSCredential[]>(path)
+      .get<DNSCredential[]>(DNS_CREDENTIALS)
       .then(setCreds)
       .catch((e) => setError(message(e)));
   }, []);
@@ -72,16 +53,43 @@ export default function DNSProviders() {
     }
   }, [creds]);
 
-  const open = useCallback(
-    (c: DNSCredential) => {
-      // A credential the provider has stopped accepting has no zones
-      // to browse — asking would fail the same way — so it goes to the
-      // one screen that can fix it.
-      const unauthorized = statuses[c.id]?.state === "unauthorized";
-      router.push(unauthorized ? `/dns/${c.id}/settings` : `/dns/${c.id}`);
+  const columns: Column<DNSCredential>[] = [
+    {
+      id: "label",
+      header: "Label",
+      width: 40,
+      sortBy: (c) => c.label,
+      cell: (c) => <span className="text-sm">{c.label}</span>,
     },
-    [router, statuses],
-  );
+    {
+      id: "provider",
+      header: "Provider",
+      width: 32,
+      sortBy: (c) => c.provider_name,
+      cell: (c) => {
+        const Icon = providerIcon(c.provider);
+        return (
+          <span className="flex items-center gap-2 text-sm">
+            <Icon className="size-4 shrink-0" />
+            {c.provider_name}
+          </span>
+        );
+      },
+    },
+    {
+      id: "status",
+      header: "Status",
+      width: 28,
+      // The reason is on the badge itself: a row that says unauthorized
+      // and nothing else leaves you opening a screen to find out what
+      // the provider actually said.
+      cell: (c) => (
+        <span title={statuses[c.id]?.detail}>
+          <StatusBadge value={statuses[c.id]?.state ?? "checking"} />
+        </span>
+      ),
+    },
+  ];
 
   return (
     <>
@@ -95,173 +103,38 @@ export default function DNSProviders() {
           </>
         }
         actions={
-          <Button onClick={() => setAdding(true)}>
-            <PlusIcon />
-            New provider
-          </Button>
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={
+              <Link href="/credentials">
+                <KeyRoundIcon />
+                Credentials
+              </Link>
+            }
+          />
         }
       />
 
       <ErrorAlert error={error} />
 
-      {
-        <Card className="py-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="px-4">Label</TableHead>
-                <TableHead className="px-4">Provider</TableHead>
-                <TableHead className="px-4">Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {creds === null && <LoadingRows rows={2} columns={3} />}
-
-              {creds?.length === 0 && (
-                <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={3} className="px-4 py-3 text-sm text-muted-foreground">
-                    No DNS providers yet. Add one to manage where your names point without leaving
-                    Cubeship.
-                  </TableCell>
-                </TableRow>
-              )}
-
-              {creds?.map((c) => {
-                const Icon = DNS_PROVIDERS[c.provider]?.icon ?? CloudflareIcon;
-                return (
-                  <TableRow
-                    key={c.id}
-                    className="cursor-pointer select-none"
-                    onClick={() => open(c)}
-                  >
-                    <TableCell className="px-4 py-2.5 text-sm">{c.label}</TableCell>
-                    <TableCell className="px-4 py-2.5 text-sm">
-                      <span className="inline-flex items-center gap-2">
-                        <Icon className="size-4 shrink-0" />
-                        {DNS_PROVIDERS[c.provider]?.label ?? c.provider}
-                      </span>
-                    </TableCell>
-                    {/* The reason is on the badge itself: a row that says
-                        unauthorized and nothing else leaves you opening a
-                        screen to find out what the provider actually said. */}
-                    <TableCell className="px-4 py-2.5" title={statuses[c.id]?.detail}>
-                      <StatusBadge value={statuses[c.id]?.state ?? "checking"} />
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </Card>
-      }
-
-      {<NewProviderDialog path={path} open={adding} onOpenChange={setAdding} onCreated={reload} />}
+      <DataTable
+        columns={columns}
+        rows={creds}
+        rowKey={(c) => String(c.id)}
+        onRowClick={(c) => router.push(`/dns/${c.id}`)}
+        empty={
+          <span className="flex items-center justify-between gap-4">
+            No credential here can write DNS records yet. Add one under Credentials and it appears
+            here.
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={<Link href="/credentials">Add one</Link>}
+            />
+          </span>
+        }
+      />
     </>
-  );
-}
-
-function NewProviderDialog({
-  path,
-  open,
-  onOpenChange,
-  onCreated,
-}: {
-  path: string;
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  onCreated: () => void;
-}) {
-  const [provider, setProvider] = useState<DNSProvider>("cloudflare");
-  const [label, setLabel] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const shape = DNS_PROVIDERS[provider];
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      await api.post(path, { provider, label, username, password });
-      setLabel("");
-      setUsername("");
-      setPassword("");
-      onCreated();
-      onOpenChange(false);
-    } catch (err) {
-      setError(message(err));
-    }
-    setBusy(false);
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <form onSubmit={submit}>
-          <DialogHeader>
-            <DialogTitle>New DNS provider</DialogTitle>
-            <DialogDescription>
-              The account Cubeship reads and writes records through. It belongs to the organization,
-              not to one domain.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-5">
-            <ErrorAlert error={error} className="mb-0" />
-
-            <SearchableSelect
-              label="Provider"
-              value={provider}
-              onChange={(v) => setProvider(v as DNSProvider)}
-              choices={Object.entries(DNS_PROVIDERS).map(([value, p]) => ({
-                value,
-                label: p.label,
-                icon: p.icon,
-              }))}
-            />
-
-            <TextField
-              label="Label"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              hint="What tells this account from another on the same provider. “the Cloudflare one” stops identifying anything the moment there are two."
-            />
-
-            {shape.userLabel && (
-              <TextField
-                label={shape.userLabel}
-                spellCheck={false}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-            )}
-
-            <TextField
-              label={shape.secretLabel}
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              hint={shape.hint}
-            />
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <ActionButton
-              type="submit"
-              busy={busy}
-              disabled={!label || !password || (shape.userLabel !== "" && !username)}
-            >
-              Add
-            </ActionButton>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }

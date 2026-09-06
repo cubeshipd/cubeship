@@ -18,45 +18,45 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, provider, host, namespace, region, username, password, created_at, updated_at`
+// A registry row no longer holds a secret: it holds which credential
+// authenticates with it. Every read joins that credential, so
+// everything above this — the provider clients, the deploy path — still
+// sees one value with a provider and a login on it, and none of them
+// had to learn where the login now lives.
+const columns = `r.id, r.credential_id, c.provider, r.host, r.namespace, r.region,
+	c.username, c.password, r.created_at, r.updated_at`
+
+const from = `
+	FROM external_registries r
+	JOIN credentials c ON c.id = r.credential_id`
 
 type scanner interface{ Scan(dest ...any) error }
 
 func scan(row scanner) (*Credential, error) {
 	var c Credential
-	if err := row.Scan(&c.ID, &c.Provider, &c.Host, &c.Namespace, &c.Region,
+	if err := row.Scan(&c.ID, &c.CredentialID, &c.Provider, &c.Host, &c.Namespace, &c.Region,
 		&c.Username, &c.Password, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, err
 	}
 	return &c, nil
 }
 
+// Create writes the row and reads it back joined, because an INSERT
+// cannot RETURNING across a join and the caller wants the whole thing.
 func (r *Repository) Create(ctx context.Context, in Credential) (*Credential, error) {
-	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO external_registries (provider, host, namespace, region, username, password)
-		 VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+columns,
-		string(in.Provider), in.Host, in.Namespace, in.Region, in.Username, in.Password)
-	c, err := scan(row)
+	var id int64
+	err := r.q.QueryRowContext(ctx,
+		`INSERT INTO external_registries (credential_id, host, namespace, region)
+		 VALUES ($1, $2, $3, $4) RETURNING id`,
+		in.CredentialID, in.Host, in.Namespace, in.Region).Scan(&id)
 	if err != nil {
-		return nil, fmt.Errorf("create registry credential: %w", err)
+		return nil, fmt.Errorf("create registry: %w", err)
 	}
-	return c, nil
+	return r.ByID(ctx, id)
 }
 
-// Update writes whichever of the three fields it was given.
-//
-// All three are pointers because "leave it alone" and "set it to empty"
-// are different requests, and a nil is the only way to say the first
-// one. Correcting a registry name must not blank the password.
-func (r *Repository) Update(ctx context.Context, id int64, username, password, namespace *string) (*Credential, error) {
-	row := r.q.QueryRowContext(ctx,
-		`UPDATE external_registries
-		 SET username  = COALESCE($1, username),
-		     password  = COALESCE($2, password),
-		     namespace = COALESCE($4, namespace),
-		     updated_at = now()
-		 WHERE id = $3 RETURNING `+columns,
-		username, password, id, namespace)
+func (r *Repository) ByID(ctx context.Context, id int64) (*Credential, error) {
+	row := r.q.QueryRowContext(ctx, `SELECT `+columns+from+` WHERE r.id = $1`, id)
 	c, err := scan(row)
 	if err != nil {
 		return nil, database.ErrNotFound
@@ -64,9 +64,53 @@ func (r *Repository) Update(ctx context.Context, id int64, username, password, n
 	return c, nil
 }
 
-func (r *Repository) List(ctx context.Context) ([]*Credential, error) {
+// UsingCredential are the hosts authenticating with one credential —
+// what a delete of that credential would break. See credential.Dependant.
+func (r *Repository) UsingCredential(ctx context.Context, credentialID int64) ([]string, error) {
 	rows, err := r.q.QueryContext(ctx,
-		`SELECT `+columns+` FROM external_registries ORDER BY host`)
+		`SELECT host FROM external_registries WHERE credential_id = $1 ORDER BY host`, credentialID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var hosts []string
+	for rows.Next() {
+		var host string
+		if err := rows.Scan(&host); err != nil {
+			return nil, err
+		}
+		hosts = append(hosts, host)
+	}
+	return hosts, rows.Err()
+}
+
+// Update writes whichever field it was given.
+//
+// Both are pointers because "leave it alone" and "set it to empty" are
+// different requests, and nil is the only way to say the first.
+//
+// The login is not among them any more. Rotating a secret is an edit to
+// the credential, in one place, and every registry using it follows —
+// which is the whole reason credentials were pulled out of here.
+func (r *Repository) Update(ctx context.Context, id int64, credentialID *int64, namespace *string) (*Credential, error) {
+	res, err := r.q.ExecContext(ctx,
+		`UPDATE external_registries
+		 SET credential_id = COALESCE($1, credential_id),
+		     namespace     = COALESCE($2, namespace),
+		     updated_at    = now()
+		 WHERE id = $3`, credentialID, namespace, id)
+	if err != nil {
+		return nil, fmt.Errorf("update registry: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil, database.ErrNotFound
+	}
+	return r.ByID(ctx, id)
+}
+
+func (r *Repository) List(ctx context.Context) ([]*Credential, error) {
+	rows, err := r.q.QueryContext(ctx, `SELECT `+columns+from+` ORDER BY r.host`)
 	if err != nil {
 		return nil, err
 	}
@@ -87,8 +131,7 @@ func (r *Repository) List(ctx context.Context) ([]*Credential, error) {
 // answers whether the instance has a way in. A miss is not an error — a
 // public image needs no credential.
 func (r *Repository) ByHost(ctx context.Context, host string) (*Credential, bool, error) {
-	row := r.q.QueryRowContext(ctx,
-		`SELECT `+columns+` FROM external_registries WHERE host = $1`, host)
+	row := r.q.QueryRowContext(ctx, `SELECT `+columns+from+` WHERE r.host = $1`, host)
 	c, err := scan(row)
 	if err != nil {
 		return nil, false, nil
@@ -98,7 +141,7 @@ func (r *Repository) ByHost(ctx context.Context, host string) (*Credential, bool
 
 func (r *Repository) Delete(ctx context.Context, id int64) error {
 	res, err := r.q.ExecContext(ctx,
-		`DELETE FROM external_registries WHERE id = $1 `, id)
+		`DELETE FROM external_registries WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("delete registry credential: %w", err)
 	}

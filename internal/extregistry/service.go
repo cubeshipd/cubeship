@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"cubeship/internal/credential"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/user"
 )
@@ -17,6 +18,12 @@ import (
 // handlers and the deploy path call exactly these.
 type Service struct {
 	db *database.DB
+
+	// creds is where the secrets live now. A registry row says which
+	// account it authenticates as; this is what turns that into a
+	// login, and what refuses an account that cannot do registries at
+	// all.
+	creds *credential.Service
 
 	// client talks to a provider's API — AWS's, so far. Only a
 	// credential whose token has to be fetched needs one.
@@ -28,11 +35,27 @@ type Service struct {
 	tokens sync.Map // credential id -> fetchedLogin
 }
 
-func NewService(db *database.DB) *Service {
+func NewService(db *database.DB, creds *credential.Service) *Service {
 	return &Service{
 		db:     db,
+		creds:  creds,
 		client: &http.Client{Timeout: 30 * time.Second},
 	}
+}
+
+// UsesCredential answers what a delete of one credential would break
+// here. See credential.Dependant — this module owns these rows, so it
+// is the one that can say.
+func (s *Service) UsesCredential(ctx context.Context, credentialID int64) ([]credential.Use, error) {
+	hosts, err := s.Repo().UsingCredential(ctx, credentialID)
+	if err != nil {
+		return nil, err
+	}
+	uses := make([]credential.Use, 0, len(hosts))
+	for _, host := range hosts {
+		uses = append(uses, credential.Use{Kind: "registry", Name: host})
+	}
+	return uses, nil
 }
 
 // fetchedLogin is a login obtained from a provider, and when it stops
@@ -61,14 +84,27 @@ func (s *Service) Create(ctx context.Context, caller *user.User, in Credential) 
 	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
+	if in.CredentialID == 0 {
+		return nil, ErrCredentialRequired
+	}
+	// The account decides everything that follows: which provider this
+	// is, and the login used a line below to prove the key works. A
+	// credential that cannot do registries is refused here rather than
+	// stored and discovered at a deploy.
+	cred, err := s.creds.Resolve(ctx, caller, in.CredentialID, credential.CapabilityRegistry)
+	if err != nil {
+		return nil, err
+	}
+	in.Provider = Provider(cred.Provider)
+	in.Username, in.Password = cred.Username, cred.Password
 	if !in.Provider.Valid() {
 		return nil, ErrUnknownProvider
 	}
-	if in.Username == "" {
-		return nil, ErrUsernameRequired
-	}
-	if in.Password == "" {
-		return nil, ErrPasswordRequired
+	// DigitalOcean's registry takes the API token as both halves of a
+	// docker login. The token has no name beside it, so this is where
+	// the one it needs comes from.
+	if in.Provider == ProviderDigitalOcean && in.Username == "" {
+		in.Username = in.Password
 	}
 
 	switch in.Provider {
@@ -89,9 +125,9 @@ func (s *Service) Create(ctx context.Context, caller *user.User, in Credential) 
 		// than asked for — and discovering it is the same call that
 		// proves the key can read a registry at all. A key that cannot
 		// is better refused here than at a deploy.
-		auth, err := getECRAuthorization(ctx, s.client, in.Username, in.Password, in.Region)
-		if err != nil {
-			return nil, err
+		auth, ecrErr := getECRAuthorization(ctx, s.client, in.Username, in.Password, in.Region)
+		if ecrErr != nil {
+			return nil, ecrErr
 		}
 		in.Host = auth.Registry
 		in.Namespace = ""
@@ -111,21 +147,41 @@ func (s *Service) Create(ctx context.Context, caller *user.User, in Credential) 
 	return c, err
 }
 
-// Update replaces a credential's login, keeping the host it is for. A
-// registry that has to be re-pointed at a different host is a different
-// credential — delete it and add the new one, so no app silently starts
-// authenticating somewhere else.
-// Update rotates the login, and for a provider whose namespace is a
-// name rather than something derived, corrects that too.
+// Update re-points a registry at a different account, and corrects a
+// namespace typed by hand.
 //
 // The host is still not editable — an app's pulls are matched to a
-// credential by host, so re-pointing one in place would silently send
-// them somewhere else. A namespace is different in kind: it is typed by
-// hand, it is wrong in exactly one way, and until now the only way to
-// fix a typo was to delete the login and enter the password again.
-func (s *Service) Update(ctx context.Context, caller *user.User, id int64, username, password string, namespace *string) (*Credential, error) {
+// registry by host, so re-pointing one in place would silently send
+// them somewhere else.
+//
+// Rotating a secret is not here at all any more, and that is the whole
+// improvement: it is one edit to the credential, and every registry
+// authenticating with it follows. Before, the same token had to be
+// re-entered once per registry that used it.
+func (s *Service) Update(ctx context.Context, caller *user.User, id int64, credentialID *int64, namespace *string) (*Credential, error) {
 	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
+	}
+	if credentialID == nil && namespace == nil {
+		return nil, ErrNothingToUpdate
+	}
+
+	if credentialID != nil {
+		existing, err := s.resolve(ctx, caller, id)
+		if err != nil {
+			return nil, err
+		}
+		cred, err := s.creds.Resolve(ctx, caller, *credentialID, credential.CapabilityRegistry)
+		if err != nil {
+			return nil, err
+		}
+		// A registry's host was derived from its provider — ECR's
+		// carries an AWS account id, DigitalOcean's is fixed. Moving it
+		// to an account of a different provider would leave a host that
+		// account has no registry at.
+		if Provider(cred.Provider) != existing.Provider {
+			return nil, ErrDifferentProvider
+		}
 	}
 
 	if namespace != nil {
@@ -136,24 +192,7 @@ func (s *Service) Update(ctx context.Context, caller *user.User, id int64, usern
 		namespace = &normalized
 	}
 
-	// A login is replaced as a pair or not at all: half of one is not a
-	// login. Correcting only the registry name is the exception, and it
-	// is why the name is worth having here — making someone re-enter a
-	// token to fix a typo is how a typo stays.
-	var user, pass *string
-	switch {
-	case username != "" && password != "":
-		user, pass = &username, &password
-	case username != "" || password != "":
-		if username == "" {
-			return nil, ErrUsernameRequired
-		}
-		return nil, ErrPasswordRequired
-	case namespace == nil:
-		return nil, ErrUsernameRequired
-	}
-
-	c, err := s.Repo().Update(ctx, id, user, pass, namespace)
+	c, err := s.Repo().Update(ctx, id, credentialID, namespace)
 	if errors.Is(err, database.ErrNotFound) {
 		return nil, ErrNotFound
 	}
