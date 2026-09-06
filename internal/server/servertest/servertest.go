@@ -61,6 +61,11 @@ type Fixture struct {
 	Server *server.Server
 	DB     *database.DB
 
+	// DataDir is the instance's state directory, a temporary one per
+	// fixture. Traefik's certificate store lives under it, so a test
+	// about certificates writes one there.
+	DataDir string
+
 	// Admin holds the admin role, and AdminKey is their API key. Use it
 	// to set up whatever a test needs; use AddMember to test
 	// authorization.
@@ -110,9 +115,13 @@ func (noDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {
 func NewEmpty(t testing.TB) *Fixture {
 	t.Helper()
 	db := dbtest.New(t)
+	dataDir := t.TempDir()
 	return &Fixture{
-		Server: server.New(db, noDocker{}, server.Options{WebhookToken: WebhookToken, LocalRegistry: LocalRegistry}),
-		DB:     db,
+		Server: server.New(db, noDocker{}, server.Options{
+			WebhookToken: WebhookToken, LocalRegistry: LocalRegistry, DataDir: dataDir,
+		}),
+		DB:      db,
+		DataDir: dataDir,
 	}
 }
 
@@ -122,11 +131,14 @@ func NewEmpty(t testing.TB) *Fixture {
 func NewUnclaimed(t testing.TB, token setup.Token) *Fixture {
 	t.Helper()
 	db := dbtest.New(t)
+	dataDir := t.TempDir()
 	return &Fixture{
 		Server: server.New(db, noDocker{}, server.Options{
-			WebhookToken: WebhookToken, LocalRegistry: LocalRegistry, SetupToken: token,
+			WebhookToken: WebhookToken, LocalRegistry: LocalRegistry,
+			SetupToken: token, DataDir: dataDir,
 		}),
-		DB: db,
+		DB:      db,
+		DataDir: dataDir,
 	}
 }
 
@@ -149,7 +161,10 @@ func newFixture(t testing.TB, docker app.DockerAPI, domain string) *Fixture {
 	ctx := context.Background()
 	db := dbtest.New(t)
 
-	srv := server.New(db, docker, server.Options{WebhookToken: WebhookToken, LocalRegistry: LocalRegistry})
+	dataDir := t.TempDir()
+	srv := server.New(db, docker, server.Options{
+		WebhookToken: WebhookToken, LocalRegistry: LocalRegistry, DataDir: dataDir,
+	})
 	if domain != "" {
 		if err := srv.Settings.SeedFromEnv(ctx, map[string]string{settings.Domain: domain}); err != nil {
 			t.Fatalf("configure the fixture's domain: %v", err)
@@ -163,7 +178,7 @@ func newFixture(t testing.TB, docker app.DockerAPI, domain string) *Fixture {
 	}
 
 	return &Fixture{
-		Server: srv, DB: db,
+		Server: srv, DB: db, DataDir: dataDir,
 		Admin: admin, AdminKey: adminKey,
 		Project: p, Environment: env,
 	}

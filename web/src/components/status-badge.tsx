@@ -29,6 +29,13 @@ const tones: Record<string, Tone> = {
     edge: "border-border-strong",
     pulse: true,
   },
+  // A certificate's three. Traefik renews thirty days before expiry, so
+  // a certificate still inside two weeks is one whose renewal is not
+  // working — amber, not green — and an expired one is already failing
+  // handshakes.
+  valid: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
+  expiring: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40" },
+  expired: { dot: "bg-destructive", text: "text-destructive", edge: "border-destructive/40" },
   stopped: {
     dot: "bg-subtle-foreground",
     text: "text-muted-foreground",

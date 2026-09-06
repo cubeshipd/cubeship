@@ -38,6 +38,8 @@ internal/
   github/       the GitHub App: private clones, and deploy on push
   setup/        the first-run flow that claims an instance
   settings/     the instance's domain and contact address
+  certificates/ what TLS certificates the instance holds, read out of
+                Traefik's own store
   web/          proxies page requests to the dashboard's container
   server/       mounts every module on the HTTP mux and the MCP endpoint
   platform/     infrastructure: database, dockerx, traefik, bootstrap,
@@ -728,6 +730,38 @@ configured, which is why the field is always offered.
 
 A container keeps the labels it was created with, so adding or removing
 a name changes nothing until the app is redeployed.
+
+## Certificates
+
+`internal/certificates` reports what this instance holds and what it is
+missing. It **issues nothing**: Traefik does that, through the ACME
+resolver it is started with, and keeps the result in
+`<data dir>/letsencrypt/acme.json` — the whole store, with no API in
+front of it and no row about it anywhere here.
+
+The daemon can read that file because the data directory is mounted at
+the same path inside and out, which is the same reason everything else
+about that directory works. It decodes each entry's PEM, takes the
+leaf's own facts — names, issuer, validity, serial — and never touches
+the private key sitting beside it.
+
+What the store cannot answer is what the page is for. `reconcile` lines
+the certificates up against every name this instance routes (an app's
+domains, plus the instance's own two) and says which app each one
+serves, which certificate serves nothing any more, and why a name that
+should have one does not: no domain on the instance at all, a name added
+after the app's last deploy — a container keeps the labels it was
+created with — or Traefik knowing the name and not having got one yet.
+That last case quotes the ACME error from `docker logs
+cubeship-traefik`, because it appears nowhere else; a log line that stops
+matching leaves the field empty and the report is still the report.
+
+**It is read-only on purpose.** Renewing or deleting means editing a file
+Traefik owns while it runs, which is only safe with the container
+stopped — a few seconds of downtime for every app — and every re-issue
+spends one of a weekly limit shared with everyone else using the same
+registered domain. That is a decision to make deliberately, not a button
+beside a table.
 
 ## Where an app's image comes from
 

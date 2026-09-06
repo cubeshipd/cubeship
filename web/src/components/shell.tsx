@@ -8,6 +8,7 @@ import {
   GlobeIcon,
   LogOutIcon,
   ServerCogIcon,
+  ShieldCheckIcon,
   UserRoundIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -65,6 +66,7 @@ const sections: { label?: string; items: NavItem[] }[] = [
       { href: "/registries", label: "Registries", icon: ContainerIcon, owns: ["/registries"] },
       { href: "/git", label: "Git Providers", icon: GitBranchIcon, owns: ["/git"] },
       { href: "/dns", label: "DNS Providers", icon: GlobeIcon, owns: ["/dns"] },
+      { href: "/certificates", label: "Certificates", icon: ShieldCheckIcon },
       { href: "/settings", label: "Instance", icon: ServerCogIcon },
     ],
   },
