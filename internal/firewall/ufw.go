@@ -226,3 +226,102 @@ func (s Spec) Args() []string {
 	}
 	return args
 }
+
+// parseAdded reads `ufw show added`, which is what answers while the
+// firewall is off.
+//
+// It prints commands rather than a table — `ufw allow 22/tcp`, `ufw
+// route allow proto tcp from any to any port 15432` — which is a
+// different shape from `ufw status numbered` and a happier one to work
+// with: the line is both the rule and, with "delete" inserted, the way
+// to remove it. There are no positions while the firewall is off, so
+// that is also the only way to remove one.
+func parseAdded(out string) []Rule {
+	var rules []Rule
+	for _, line := range strings.Split(out, "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) < 2 || fields[0] != "ufw" {
+			continue
+		}
+		rules = append(rules, parseAddedRule(len(rules)+1, fields[1:]))
+	}
+	return rules
+}
+
+func parseAddedRule(index int, args []string) Rule {
+	r := Rule{
+		Index: index,
+		Text:  strings.Join(args, " "),
+		Scope: ScopeHost,
+		// The rule as `ufw delete` wants it back, which is the whole
+		// line minus the verb it is inserted before.
+		Delete: append([]string{"ufw"}, insertDelete(args)...),
+	}
+
+	rest := args
+	if rest[0] == "route" {
+		r.Scope = ScopeApps
+		rest = rest[1:]
+	}
+	if len(rest) == 0 {
+		return r
+	}
+	switch strings.ToLower(rest[0]) {
+	case "allow":
+		r.Action = ActionAllow
+	case "deny":
+		r.Action = ActionDeny
+	case "reject":
+		r.Action = ActionReject
+	}
+
+	// The rest is either the long form — proto/from/to/port — or the
+	// shorthand somebody typed by hand: `ufw allow 22/tcp`.
+	for i := 1; i < len(rest); i++ {
+		switch rest[i] {
+		case "proto":
+			if i+1 < len(rest) {
+				switch rest[i+1] {
+				case "tcp":
+					r.Protocol = ProtocolTCP
+				case "udp":
+					r.Protocol = ProtocolUDP
+				}
+			}
+		case "from":
+			if i+1 < len(rest) && rest[i+1] != "any" {
+				r.From = rest[i+1]
+			}
+		case "port":
+			if i+1 < len(rest) {
+				r.Ports = rest[i+1]
+			}
+		case "comment":
+			r.Comment = strings.Join(rest[i+1:], " ")
+		}
+	}
+	if r.Ports == "" {
+		// The shorthand: the first thing after the verb is the
+		// destination, "22" or "22/tcp" or a name from /etc/services.
+		ports, proto, hasProto := strings.Cut(rest[1], "/")
+		r.Ports = ports
+		if hasProto {
+			switch proto {
+			case "tcp":
+				r.Protocol = ProtocolTCP
+			case "udp":
+				r.Protocol = ProtocolUDP
+			}
+		}
+	}
+	return r
+}
+
+// insertDelete puts "delete" where ufw expects it: after "route" when
+// the rule is a routed one, and before the verb otherwise.
+func insertDelete(args []string) []string {
+	if len(args) > 0 && args[0] == "route" {
+		return append([]string{"route", "delete"}, args[1:]...)
+	}
+	return append([]string{"delete"}, args...)
+}

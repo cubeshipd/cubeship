@@ -116,6 +116,14 @@ type Rule struct {
 	// folds these away: two lines for one decision is a list nobody can
 	// read.
 	V6 bool `json:"v6"`
+
+	// Delete is the command that removes this rule, for a rule read
+	// while the firewall is off. There are no positions then — `ufw
+	// status numbered` answers "inactive" and nothing else — so the
+	// only way back out is the rule's own spelling, which is exactly
+	// what `ufw show added` prints. Empty for a rule read from the
+	// numbered listing, which goes by index.
+	Delete []string `json:"-"`
 }
 
 // Status is the whole of what this instance can say about the host's
