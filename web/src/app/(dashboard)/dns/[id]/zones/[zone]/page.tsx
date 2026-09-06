@@ -329,7 +329,7 @@ function RecordDialog({
           </DialogHeader>
 
           <div className="space-y-4 py-5">
-            <ErrorAlert error={error} className="mb-0" />
+            <ErrorAlert error={error} />
 
             {/* Twelve columns, so the two short fields can be short
                 without the two long ones having to match them. What a

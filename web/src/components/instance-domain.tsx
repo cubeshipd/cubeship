@@ -174,7 +174,7 @@ export function InstanceDomain({
     <>
       <Card>
         <CardContent className="space-y-4">
-          <ErrorAlert error={error} className="mb-0" />
+          <ErrorAlert error={error} />
 
           <div className="grid grid-cols-12 items-start gap-4">
             <SearchableSelect
