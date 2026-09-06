@@ -357,7 +357,7 @@ function SourceSection(props: SectionProps) {
               </div>
             )}
 
-            {problem && <ErrorAlert error={problem} className="mb-0" />}
+            {problem && <ErrorAlert error={problem} />}
             <SaveRow busy={busy} saved={saved} dirty={!problem} />
           </form>
         </CardContent>

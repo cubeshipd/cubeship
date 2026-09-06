@@ -66,7 +66,7 @@ export function ConfirmDialog({
           </DialogHeader>
 
           <div className="space-y-4 py-5">
-            <ErrorAlert error={error} className="mb-0" />
+            <ErrorAlert error={error} />
             {confirmWord && (
               <TextField
                 label={`Type ${confirmWord} to confirm`}
