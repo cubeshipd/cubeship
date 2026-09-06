@@ -29,6 +29,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 
 	"cubeship/internal/platform/dockerx"
@@ -111,10 +112,25 @@ func (r *Runner) Run(ctx context.Context, argv ...string) (Result, error) {
 		// No name: two of these may legitimately overlap, and a fixed
 		// name would make the second fail on a conflict.
 	})
-	if err != nil {
+	res := Result{Output: strings.TrimRight(output, "\n"), Code: code}
+
+	// Every command that runs as root on somebody's host leaves a line,
+	// and a failed one leaves what it said.
+	//
+	// Without this there is no trace at all: a rule that does not appear
+	// is indistinguishable from a request that never arrived, from
+	// outside and from inside both. That is not a thing to work out by
+	// reading code.
+	switch {
+	case err != nil:
+		log.Printf("hostexec: %s: %v", short(argv), err)
 		return Result{}, fmt.Errorf("run %s on the host: %w", argv[0], err)
+	case !res.OK():
+		log.Printf("hostexec: %s: exit %d: %s", short(argv), res.Code, firstLine(res.Output))
+	default:
+		log.Printf("hostexec: %s", short(argv))
 	}
-	return Result{Output: strings.TrimRight(output, "\n"), Code: code}, nil
+	return res, nil
 }
 
 // Script runs a shell line on the host, for the cases that are genuinely
@@ -125,4 +141,21 @@ func (r *Runner) Run(ctx context.Context, argv ...string) (Result, error) {
 // reach the host goes through Run's argv, where the shell never sees it.
 func (r *Runner) Script(ctx context.Context, line string) (Result, error) {
 	return r.Run(ctx, "sh", "-c", line)
+}
+
+// short is the command as one readable line. A script is a paragraph,
+// and a log that prints the whole of one is a log nobody reads.
+func short(argv []string) string {
+	line := strings.Join(strings.Fields(strings.Join(argv, " ")), " ")
+	if len(line) > 120 {
+		return line[:120] + "…"
+	}
+	return line
+}
+
+func firstLine(out string) string {
+	if line, _, found := strings.Cut(strings.TrimSpace(out), "\n"); found {
+		return line
+	}
+	return strings.TrimSpace(out)
 }
