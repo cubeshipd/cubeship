@@ -5,23 +5,27 @@ import (
 	"context"
 	"errors"
 	"io"
+	"regexp"
 	"sort"
 	"strings"
 
 	"cubeship/internal/app"
+	"cubeship/internal/platform/bootstrap"
 	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/settings"
 	"cubeship/internal/user"
 )
 
-// TraefikContainer is the container whose log says why a certificate was
-// not issued. It must match bootstrap.TraefikContainerOpts.
-const TraefikContainer = "cubeship-traefik"
+// logTail is how much of Traefik's log is read looking for a reason.
+//
+// Far enough back to cover a certificate that failed hours ago — ACME
+// retries are quiet and the failure that matters is often the first one
+// — and short enough that reading it is not a job.
+const logTail = "5000"
 
-// logTail is how much of Traefik's log is read looking for a reason. Far
-// enough back to cover the last few deploys, short enough that reading
-// it is not a job.
-const logTail = "2000"
+// maxComplaints bounds what a report carries out of the log. Enough to
+// see a pattern, not so much that the page becomes the log.
+const maxComplaints = 5
 
 // Engine is the little of Docker this module needs: the ACME failures
 // are in Traefik's log and nowhere else.
@@ -88,7 +92,7 @@ func (s *Service) Report(ctx context.Context, caller *user.User) (Report, error)
 	report.ACMEEmail = email
 
 	report.Certificates, report.Missing = reconcile(certs, served, report.TLSEnabled)
-	s.explain(ctx, report.Missing)
+	report.TraefikSays = s.explain(ctx, report.Missing)
 	return report, nil
 }
 
@@ -158,12 +162,21 @@ func (s *Service) servedHosts(ctx context.Context, values settings.Values) ([]Se
 	var out []ServedHost
 
 	if domain := values.Get(settings.Domain); domain != "" {
-		// Both are routed by Traefik with the same resolver: the
-		// dashboard and API at the domain itself, the registry beside
-		// it. Neither belongs to an app.
+		// Both are routed by Traefik with the same resolver, and neither
+		// belongs to an app — but they are routed by different means.
+		// The daemon's own name comes from the file the daemon writes,
+		// so it is there whenever there is a domain. The registry's
+		// comes from its container's labels, and a container keeps the
+		// labels it was created with: one made before the domain existed
+		// carries no router at all, and Traefik has never heard of the
+		// name.
+		registryHost := settings.RegistryHostFor(domain)
 		out = append(out,
 			ServedHost{Host: settings.APIHostFor(domain), Instance: true, Deployed: true},
-			ServedHost{Host: settings.RegistryHostFor(domain), Instance: true, Deployed: true})
+			ServedHost{
+				Host: registryHost, Instance: true,
+				Deployed: s.registryRouted(ctx, registryHost),
+			})
 	}
 
 	apps, err := s.apps.Repo().ListScoped(ctx)
@@ -193,16 +206,45 @@ func (s *Service) servedHosts(ctx context.Context, values settings.Values) ([]Se
 	return out, nil
 }
 
-// explain fills in what Traefik said about each name it could not get a
-// certificate for.
+// registryRouted reports whether the registry's container is running
+// with a Traefik router for this name.
+//
+// Without an Engine there is no way to tell, and the answer is yes: a
+// report that cannot look must not accuse.
+func (s *Service) registryRouted(ctx context.Context, host string) bool {
+	if s.engine == nil {
+		return true
+	}
+	info, err := s.engine.InspectContainerByName(ctx, bootstrap.RegistryContainerName)
+	if err != nil || !info.Running {
+		return false
+	}
+	for key, value := range info.Labels {
+		if strings.HasPrefix(key, "traefik.http.routers.") && strings.HasSuffix(key, ".rule") &&
+			strings.Contains(strings.ToLower(value), app.NormalizeHost(host)) {
+			return true
+		}
+	}
+	return false
+}
+
+// explain fills in what Traefik said about the names that have no
+// certificate, and returns what it has been complaining about lately.
 //
 // It reads the container's log, because Traefik has no API for this and
 // the ACME error appears nowhere else. That makes it a quotation rather
 // than a contract: a log line that stops matching leaves the field
 // empty, and the report is still the report.
-func (s *Service) explain(ctx context.Context, missing []Missing) {
+//
+// The unattributed lines matter as much as the attributed ones. The
+// commonest failure on a default install is a rate limit — sslip.io is
+// not on the Public Suffix List, so Let's Encrypt counts every name
+// under it against one weekly allowance shared with everybody else
+// using the service — and that refusal does not always name the host it
+// was asked for.
+func (s *Service) explain(ctx context.Context, missing []Missing) []string {
 	if s.engine == nil || len(missing) == 0 {
-		return
+		return nil
 	}
 	pending := false
 	for _, m := range missing {
@@ -212,60 +254,81 @@ func (s *Service) explain(ctx context.Context, missing []Missing) {
 		}
 	}
 	if !pending {
-		return
+		return nil
 	}
 
-	info, err := s.engine.InspectContainerByName(ctx, TraefikContainer)
+	info, err := s.engine.InspectContainerByName(ctx, bootstrap.TraefikContainerName)
 	if err != nil || info.ID == "" {
-		return
+		return nil
 	}
 	logs, err := s.engine.Logs(ctx, info.ID, logTail)
 	if err != nil {
-		return
+		return nil
 	}
 	defer logs.Close()
 
-	lines := errorLines(logs)
+	lines := complaints(logs)
 	for i := range missing {
 		if missing[i].Reason != ReasonPending {
 			continue
 		}
-		if line, ok := lines[app.NormalizeHost(missing[i].Host)]; ok {
-			missing[i].Detail = line
-		}
+		missing[i].Detail = about(lines, missing[i].Host)
 	}
+	if len(lines) > maxComplaints {
+		lines = lines[len(lines)-maxComplaints:]
+	}
+	return lines
 }
 
-// errorLines keeps the last thing Traefik complained about, per host.
+// complaints keeps the lines where Traefik said something went wrong
+// with a certificate, oldest first.
 //
 // Docker frames the log, and a frame header is a few bytes of binary in
 // front of each line. Nothing here needs to be exact about it: the
 // scanner reads lines, the header lands at the start of one, and the
-// host is looked for anywhere in it.
-func errorLines(r io.Reader) map[string]string {
-	out := map[string]string{}
+// unprintable bytes are dropped rather than parsed.
+func complaints(r io.Reader) []string {
+	var out []string
+	seen := map[string]bool{}
+
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
 	for scanner.Scan() {
 		line := strings.TrimSpace(strings.Map(printable, scanner.Text()))
 		lower := strings.ToLower(line)
-		if !strings.Contains(lower, "error") && !strings.Contains(lower, "unable") {
-			continue
-		}
 		if !strings.Contains(lower, "acme") && !strings.Contains(lower, "certificate") {
 			continue
 		}
-		// The host appears in the message; which one it is decides
-		// whose line this is.
-		for _, field := range strings.FieldsFunc(lower, func(r rune) bool {
-			return r == '"' || r == ' ' || r == '\'' || r == ',' || r == ':'
-		}) {
-			if strings.Contains(field, ".") {
-				out[app.NormalizeHost(field)] = line
-			}
+		if !strings.Contains(lower, "error") && !strings.Contains(lower, "unable") &&
+			!strings.Contains(lower, "too many") && !strings.Contains(lower, "fail") {
+			continue
 		}
+		// Traefik retries, so the same refusal appears over and over
+		// with a new timestamp each time. The page wants the distinct
+		// things that are wrong, not how often it tried.
+		key := timestamps.ReplaceAllString(lower, "")
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, line)
 	}
 	return out
+}
+
+// timestamps is what makes one retry look like another: the same
+// refusal, logged again a minute later.
+var timestamps = regexp.MustCompile(`(?i)"?time"?[=:]\s*"?[^"\s]+"?`)
+
+// about is the last distinct thing said about one name.
+func about(lines []string, host string) string {
+	host = app.NormalizeHost(host)
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.Contains(strings.ToLower(lines[i]), host) {
+			return lines[i]
+		}
+	}
+	return ""
 }
 
 // printable drops the frame header's control bytes, which would

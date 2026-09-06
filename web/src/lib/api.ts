@@ -303,4 +303,7 @@ export type CertificateReport = {
   acme_email?: string;
   certificates: Certificate[];
   missing: MissingCertificate[];
+  // What Traefik has lately complained about, whether or not the line
+  // names a host. Often the only place the real reason appears.
+  traefik_says?: string[];
 };

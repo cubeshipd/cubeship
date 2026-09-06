@@ -89,3 +89,28 @@ func TestANameOnASANIsNotMissing(t *testing.T) {
 		t.Errorf("missing is %+v, want none", missing)
 	}
 }
+
+// The registry is routed by its container's labels, and a container
+// keeps the labels it was created with — one made before the instance
+// had a domain carries no router at all. Traefik has then never heard of
+// the name, and "pending" would be a lie: nothing is coming.
+func TestTheRegistrysNameIsOnlyServedIfItsContainerSaysSo(t *testing.T) {
+	served := []ServedHost{
+		{Host: "cubeship.example.com", Instance: true, Deployed: true},
+		{Host: "registry.cubeship.example.com", Instance: true, Deployed: false},
+	}
+
+	_, missing := reconcile(nil, served, true)
+
+	reasons := map[string]Reason{}
+	for _, m := range missing {
+		reasons[m.Host] = m.Reason
+	}
+	if reasons["cubeship.example.com"] != ReasonPending {
+		t.Errorf("the daemon's own name is %q", reasons["cubeship.example.com"])
+	}
+	if reasons["registry.cubeship.example.com"] != ReasonNotDeployed {
+		t.Errorf("the registry's name is %q, want %q",
+			reasons["registry.cubeship.example.com"], ReasonNotDeployed)
+	}
+}

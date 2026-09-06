@@ -754,7 +754,20 @@ after the app's last deploy — a container keeps the labels it was
 created with — or Traefik knowing the name and not having got one yet.
 That last case quotes the ACME error from `docker logs
 cubeship-traefik`, because it appears nowhere else; a log line that stops
-matching leaves the field empty and the report is still the report.
+matching leaves the field empty and the report is still the report. The
+complaints that name no host are carried too, in `traefik_says`: the
+commonest failure on a default install is a rate limit, and Let's
+Encrypt counts every name under `sslip.io` against one weekly allowance
+shared with everyone else using it, because `sslip.io` is not on the
+Public Suffix List.
+
+**"Routed" is checked, not assumed.** The daemon's own name comes from
+the dynamic file the daemon writes, so it is there whenever there is a
+domain; the registry's comes from its container's labels, and a
+container keeps the labels it was created with. One made before the
+domain existed carries no router at all, so Traefik has never heard of
+the name and `pending` would be a lie — the report inspects the
+container and says `not_deployed` instead.
 
 **It is read-only on purpose.** Renewing or deleting means editing a file
 Traefik owns while it runs, which is only safe with the container

@@ -26,8 +26,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"host":     openapi.String("A name this instance routes with no certificate behind it."),
 				"app":      openapi.String("The app served there, as its reference. Absent for the instance's own names."),
 				"instance": openapi.Bool("The name is the dashboard's or the registry's."),
-				"reason": openapi.String("`tls_not_configured` — the instance has no domain or no contact address, so Traefik asks for nothing. " +
-					"`not_deployed` — the name was added after the app's last deploy, and a container keeps the labels it was created with, so Traefik has never been told about it. " +
+				"reason": openapi.String("`tls_not_configured` — the instance has no domain, so Traefik asks for nothing. " +
+					"`not_deployed` — nothing is running with that name in its labels: an app not deployed since the name was added, or the registry's container made before the instance had a domain. A container keeps the labels it was created with, so Traefik has never been told about it. " +
 					"`pending` — Traefik knows the name and has not produced a certificate: normal for a minute after a deploy, and after that a name that does not resolve here or a challenge that failed."),
 				"detail": openapi.String("The last thing Traefik's log said about that name, when it said anything. A quotation, not a contract."),
 			}, "host", "reason"),
@@ -36,6 +36,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"acme_email":   openapi.String("The contact Let's Encrypt has, as the store recorded it — which is the one that counts if the setting was changed after registering."),
 				"certificates": openapi.Array(openapi.Ref("Certificate")),
 				"missing":      openapi.Array(openapi.Ref("MissingCertificate")),
+				"traefik_says": openapi.Array(openapi.String("A line Traefik logged while failing to get a certificate, whether or not it names a host. Often the only place the real reason appears — a rate limit especially, which on a default install is shared with everyone else using the same wildcard DNS service.")),
 			}, "tls_enabled", "certificates", "missing"),
 		},
 		Paths: map[string]openapi.PathItem{
