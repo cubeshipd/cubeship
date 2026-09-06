@@ -560,13 +560,26 @@ func (c *Client) RunOneShot(ctx context.Context, opts ContainerOpts) (output str
 		_ = c.RemoveContainer(ctx, id)
 	}()
 
-	// Waiting is set up before starting. The other way round is a race
-	// a fast command wins: it exits before the wait is registered, and
-	// the wait then blocks until the context gives up.
-	waitCh, errCh := c.api.ContainerWait(ctx, id, container.WaitConditionNotRunning)
+	// Started first, then waited on — and the order is the whole
+	// correctness of this.
+	//
+	// It was the other way round, to avoid what looked like the obvious
+	// race: a fast command exiting before the wait is registered. That
+	// race does not exist — the Engine answers a wait on an
+	// already-exited container immediately, with its real exit code.
+	//
+	// The one that does exist is the mirror image, and waiting first
+	// walked straight into it: a container that has been *created* and
+	// not yet started is already "not running", so the wait returned at
+	// once, with exit code 0 and an empty log, before the command had
+	// done anything at all. Then the deferred remove killed it
+	// mid-flight. Every command reported success and had no effect —
+	// reads came back empty and writes never landed, which is a very
+	// long way from where anybody would start looking.
 	if err := c.StartContainer(ctx, id); err != nil {
 		return "", 0, err
 	}
+	waitCh, errCh := c.api.ContainerWait(ctx, id, container.WaitConditionNotRunning)
 	select {
 	case err := <-errCh:
 		return "", 0, fmt.Errorf("wait for %s: %w", opts.Name, err)
