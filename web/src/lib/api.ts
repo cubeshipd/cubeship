@@ -319,6 +319,13 @@ export type DatastoreEngine = {
   default_version: string;
   port: number;
   has_database: boolean;
+  // Whether the login is yours to choose. False for Redis, whose
+  // password belongs to the ACL user `default` — which already exists
+  // and cannot be renamed.
+  has_user: boolean;
+  // The login an empty username becomes, and the only one there is when
+  // has_user is false.
+  default_username: string;
 };
 
 // What an attached app receives, by name. Values are not in it: one of
@@ -350,6 +357,10 @@ export type Datastore = {
   error?: string;
   username: string;
   database?: string;
+  // Whether a container currently backs this — what decides whether
+  // there is a log to read or anything to stop. The status alone cannot
+  // answer it: one whose provisioning failed may have neither.
+  has_container: boolean;
   // Where an app on this instance reaches it: the container's own name
   // on the shared network.
   host: string;
@@ -361,6 +372,14 @@ export type Datastore = {
   attachments: DatastoreAttachment[];
   created_at: string;
 };
+
+// The statuses a database reports. "stopped" is one somebody turned
+// off; "down" is one whose container stopped on its own. One is a
+// decision and the other is a fault, and StatusBadge colours them
+// alike — grey for both — because neither is an error to chase, but the
+// word is what tells them apart.
+export const DATASTORE_RUNNING = "running";
+export const DATASTORE_STOPPED = "stopped";
 
 // The response to creating one, which is the single place the password
 // comes back without being asked for: whoever left the field empty is

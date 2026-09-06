@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"slices"
 	"time"
@@ -10,6 +11,8 @@ import (
 	"cubeship/internal/metrics"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/user"
+
+	"github.com/docker/docker/pkg/stdcopy"
 )
 
 // Response is one datastore as both the API and the MCP tools report
@@ -33,6 +36,12 @@ type Response struct {
 
 	Username string `json:"username"`
 	Database string `json:"database,omitempty"`
+
+	// HasContainer says whether a container currently backs this. It is
+	// what decides whether there is a log to read or anything to stop —
+	// which the status alone cannot answer, since a datastore whose
+	// provisioning failed may have neither.
+	HasContainer bool `json:"has_container"`
 
 	// Host and Port are where an app on this instance reaches it: the
 	// container's own name on the shared network. Every attached app
@@ -113,6 +122,12 @@ type EngineResponse struct {
 	// HasDatabase says whether naming a database inside the server
 	// means anything for this engine.
 	HasDatabase bool `json:"has_database"`
+	// HasUser says whether the login is somebody's to choose. False for
+	// Redis, whose password belongs to a user that already exists.
+	HasUser bool `json:"has_user"`
+	// DefaultUsername is the login an empty username becomes — and the
+	// only one there is when HasUser is false.
+	DefaultUsername string `json:"default_username"`
 }
 
 // Instance is what a response depends on that the datastore itself does
@@ -130,7 +145,8 @@ func toResponse(d *Datastore, in Instance) Response {
 		Engine: string(d.Engine), Version: d.Version,
 		Status: d.Status, Error: d.Error,
 		Username: d.Username, Database: d.Database,
-		Host: host, Port: d.Engine.Port(),
+		HasContainer: d.ContainerID != "",
+		Host:         host, Port: d.Engine.Port(),
 		ExposedPort: d.ExposedPort,
 		Attachments: make([]AttachmentResponse, 0, len(d.Attachments)),
 		CreatedAt:   d.CreatedAt,
@@ -187,6 +203,9 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("DELETE "+datastorePath, auth(http.HandlerFunc(h.delete)))
 	r.Handle("GET "+datastorePath+"/credentials", auth(http.HandlerFunc(h.credentials)))
 	r.Handle("GET "+datastorePath+"/metrics", auth(http.HandlerFunc(h.metrics)))
+	r.Handle("GET "+datastorePath+"/logs", auth(http.HandlerFunc(h.logs)))
+	r.Handle("POST "+datastorePath+"/stop", auth(http.HandlerFunc(h.stop)))
+	r.Handle("POST "+datastorePath+"/start", auth(http.HandlerFunc(h.start)))
 	r.Handle("POST "+datastorePath+"/expose", auth(http.HandlerFunc(h.expose)))
 	r.Handle("DELETE "+datastorePath+"/expose", auth(http.HandlerFunc(h.unexpose)))
 	r.Handle("POST "+datastorePath+"/attachments", auth(http.HandlerFunc(h.attach)))
@@ -213,12 +232,15 @@ func WriteError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound), errors.Is(err, ErrNotAttached):
 		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, ErrNotRunning):
+		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrAlreadyExists), errors.Is(err, ErrAlreadyAttached),
 		errors.Is(err, ErrPrefixTaken), errors.Is(err, ErrPortTaken),
 		errors.Is(err, ErrNoPortsLeft):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrUnknownEngine), errors.Is(err, ErrUnknownVersion),
-		errors.Is(err, ErrBadUsername), errors.Is(err, ErrBadPrefix),
+		errors.Is(err, ErrBadUsername), errors.Is(err, ErrFixedUsername),
+		errors.Is(err, ErrBadPrefix),
 		errors.Is(err, ErrBadPort), errors.Is(err, ErrReservedSlug):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
@@ -289,6 +311,7 @@ func engineResponses() []EngineResponse {
 			Engine: string(e), Versions: e.Versions(),
 			DefaultVersion: e.DefaultVersion(), Port: e.Port(),
 			HasDatabase: e.HasDatabase(),
+			HasUser:     e.HasUser(), DefaultUsername: e.DefaultUsername(),
 		})
 	}
 	return out
@@ -339,6 +362,44 @@ func (h *Handler) metrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	metrics.WriteSeries(w, r, h.svc.Metrics(), metrics.KindDatastore, d.ID, d.ContainerID != "")
+}
+
+func (h *Handler) logs(w http.ResponseWriter, r *http.Request) {
+	rc, err := h.svc.Logs(r.Context(), user.FromContext(r.Context()),
+		nameFrom(r), r.URL.Query().Get("tail"))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	defer rc.Close()
+
+	w.WriteHeader(http.StatusOK)
+	// Containers are created without a TTY, so the Engine returns stdout
+	// and stderr multiplexed behind an 8-byte binary frame header per
+	// chunk. Copying that straight through prints binary garbage between
+	// the log lines — demultiplex it first.
+	if _, err := stdcopy.StdCopy(w, w, rc); err != nil {
+		// The status line is already sent; all we can do is record it.
+		log.Printf("logs for datastore %s: %v", nameFrom(r), err)
+	}
+}
+
+func (h *Handler) stop(w http.ResponseWriter, r *http.Request) {
+	d, err := h.svc.Stop(r.Context(), user.FromContext(r.Context()), nameFrom(r))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toResponse(d, h.instance(r)))
+}
+
+func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
+	d, err := h.svc.Start(r.Context(), user.FromContext(r.Context()), nameFrom(r))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toResponse(d, h.instance(r)))
 }
 
 func (h *Handler) credentials(w http.ResponseWriter, r *http.Request) {

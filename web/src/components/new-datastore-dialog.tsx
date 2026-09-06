@@ -36,7 +36,8 @@ const BLURBS: Record<string, string> = {
   postgres: "The default, and what most things mean by “a database”.",
   mysql: "Relational, and what a PHP or WordPress stack usually expects.",
   mariadb: "MySQL’s fork. Clients connect to it as MySQL.",
-  redis: "In-memory, for caches, queues and sessions.",
+  redis:
+    "In-memory, for caches, queues and sessions. Writes to disk, so a restart is not an empty one.",
   mongodb: "Document-oriented, with no fixed schema.",
 };
 
@@ -75,7 +76,7 @@ export function NewDatastoreDialog({
     if (!open) return;
     setName("");
     setDescription("");
-    setUsername("cubeship");
+    setUsername("");
     setPassword(generatePassword());
     setError(null);
     api
@@ -86,6 +87,7 @@ export function NewDatastoreDialog({
         if (first) {
           setEngine(first.engine);
           setVersion(first.default_version);
+          setUsername(first.default_username);
         }
       })
       .catch((e) => setError(message(e)));
@@ -94,8 +96,13 @@ export function NewDatastoreDialog({
   const chosen = engines?.find((e) => e.engine === engine);
 
   function pickEngine(next: string) {
+    const picked = engines?.find((e) => e.engine === next);
     setEngine(next);
-    setVersion(engines?.find((e) => e.engine === next)?.default_version ?? "");
+    setVersion(picked?.default_version ?? "");
+    // Each engine names its own default login, and Redis has only one:
+    // carrying "cubeship" across from Postgres would be a name it
+    // refuses.
+    setUsername(picked?.default_username ?? "");
   }
 
   async function submit(e: React.FormEvent) {
@@ -193,17 +200,22 @@ export function NewDatastoreDialog({
               </p>
             </div>
 
-            <TextField
-              label="Username"
-              value={username}
-              spellCheck={false}
-              onChange={(e) => setUsername(e.target.value)}
-              hint={
-                engine === "postgres"
-                  ? "The login the server is created with."
-                  : "The login the server is created with. Not “root” — MySQL and MariaDB will not create it."
-              }
-            />
+            {/* Hidden for an engine that has one login and will not
+                take another. A disabled field showing a value you
+                cannot change is a question asked for nothing. */}
+            {chosen?.has_user !== false && (
+              <TextField
+                label="Username"
+                value={username}
+                spellCheck={false}
+                onChange={(e) => setUsername(e.target.value)}
+                hint={
+                  engine === "mysql" || engine === "mariadb"
+                    ? "The login the server is created with. Not “root” — it already exists, and this would not be its password."
+                    : "The login the server is created with."
+                }
+              />
+            )}
 
             <TextField
               label="Password"

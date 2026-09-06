@@ -448,6 +448,8 @@ type Datastore struct {
 	Error       string `json:"error,omitempty"`
 	Username    string `json:"username"`
 	Database    string `json:"database,omitempty"`
+	// HasContainer says whether a container currently backs this.
+	HasContainer bool `json:"has_container"`
 	// Host and Port are where an app on the instance reaches it.
 	Host string `json:"host"`
 	Port int    `json:"port"`
@@ -569,6 +571,36 @@ func (c *Client) AttachDatastore(ctx context.Context, name, app, prefix string) 
 func (c *Client) DetachDatastore(ctx context.Context, name, app string) (Datastore, error) {
 	return request[Datastore](ctx, c, "detach datastore", http.MethodDelete,
 		datastorePath(name)+"/attachments/"+appSegments(app), nil, http.StatusOK, DefaultTimeout)
+}
+
+// StopDatastore turns it off, leaving the container and the data.
+func (c *Client) StopDatastore(ctx context.Context, name string) (Datastore, error) {
+	return request[Datastore](ctx, c, "stop datastore", http.MethodPost,
+		datastorePath(name)+"/stop", nil, http.StatusOK, DefaultTimeout)
+}
+
+// StartDatastore provisions it again, which is also how a failed one is
+// retried.
+func (c *Client) StartDatastore(ctx context.Context, name string) (Datastore, error) {
+	return request[Datastore](ctx, c, "start datastore", http.MethodPost,
+		datastorePath(name)+"/start", nil, http.StatusOK, DefaultTimeout)
+}
+
+// DatastoreLogs streams what the engine has printed.
+func (c *Client) DatastoreLogs(ctx context.Context, name, tail string) (io.ReadCloser, error) {
+	path := datastorePath(name) + "/logs"
+	if tail != "" {
+		path += "?tail=" + url.QueryEscape(tail)
+	}
+	resp, err := c.send(ctx, http.MethodGet, path, nil)
+	if err != nil {
+		return nil, fmt.Errorf("datastore logs: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		defer resp.Body.Close()
+		return nil, apiError("datastore logs", resp)
+	}
+	return resp.Body, nil
 }
 
 // datastorePath turns a datastore name into its URL. One segment: a

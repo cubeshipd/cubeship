@@ -185,8 +185,8 @@ logs, manual redeploys, additional API keys.
 
 ## Databases
 
-Cubeship runs Postgres, MySQL and MariaDB for the apps on it. A database
-belongs to the **instance**, not to a project: on one host the common
+Cubeship runs Postgres, MySQL, MariaDB, Redis and MongoDB for the apps
+on it. A database belongs to the **instance**, not to a project: on one host the common
 shape is a single Postgres serving several small apps, and those apps
 are routinely in different projects.
 
@@ -227,6 +227,9 @@ Nothing outside the instance can reach a database unless you say so:
 
 ```sh
 cubeship db credentials pg   # the login, and the connection strings
+cubeship db logs pg          # what the engine itself has printed
+cubeship db stop pg --yes    # turn it off, keeping it and its data
+cubeship db start pg         # and back on
 cubeship db expose pg        # publish it on a host port
 ```
 

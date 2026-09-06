@@ -3,6 +3,7 @@ package datastore
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"maps"
 
@@ -170,7 +171,9 @@ func (s *Service) Create(ctx context.Context, caller *user.User, spec Spec) (*Da
 			ErrUnknownVersion, spec.Engine, spec.Version, spec.Engine.Versions())
 	}
 	if spec.Username == "" {
-		spec.Username = DefaultUsername
+		// Per engine, because Redis has exactly one login and it is
+		// not ours to name.
+		spec.Username = spec.Engine.DefaultUsername()
 	}
 	if err := CheckUsername(spec.Engine, spec.Username); err != nil {
 		return nil, err
@@ -439,6 +442,79 @@ func (s *Service) resolvePort(ctx context.Context, want int) (int, error) {
 	return 0, ErrNoPortsLeft
 }
 
+// DefaultLogTail is how much of a database's log the API returns when
+// the caller does not ask for a specific amount. An engine that has
+// been up for weeks holds far more than anyone wants streamed at them,
+// and the recent lines are the ones that explain what is happening now.
+const DefaultLogTail = "500"
+
+// Logs is what the engine has written.
+//
+// A member's, like every other read here: the reason a database is
+// refusing connections is in its log, and finding that out is not an
+// admin's privilege. It carries no credential — the engine prints its
+// own startup, not what Cubeship configured it with.
+func (s *Service) Logs(ctx context.Context, caller *user.User, name, tail string) (io.ReadCloser, error) {
+	d, err := s.Resolve(ctx, caller, name, user.RoleMember)
+	if err != nil {
+		return nil, err
+	}
+	if d.ContainerID == "" {
+		return nil, ErrNotRunning
+	}
+	if tail == "" {
+		tail = DefaultLogTail
+	}
+	return s.prov.Logs(ctx, d, tail)
+}
+
+// Stop turns a database off, leaving its container and its data where
+// they are.
+//
+// An admin's, and not a small act: every app attached to this keeps
+// running and starts failing to connect. That is sometimes exactly what
+// you want — a migration nobody should be writing through, an engine
+// eating the box — which is why it exists, and why the screen that
+// offers it names what is attached.
+//
+// The container is stopped rather than removed, so its log survives:
+// what somebody wants immediately after turning a database off is
+// usually the reason they turned it off.
+func (s *Service) Stop(ctx context.Context, caller *user.User, name string) (*Datastore, error) {
+	d, err := s.Resolve(ctx, caller, name, RoleToManage)
+	if err != nil {
+		return nil, err
+	}
+	if d.ContainerID == "" {
+		return nil, ErrNotRunning
+	}
+	if err := s.prov.Stop(ctx, d); err != nil {
+		return nil, err
+	}
+	return s.Resolve(ctx, caller, name, RoleToManage)
+}
+
+// Start brings a stopped database back.
+//
+// It provisions rather than starting the container that is already
+// there, and that is one path instead of two: the container is
+// recreated from the same options, and the data is a host bind mount
+// that a recreate does not touch. The alternative — start the existing
+// one, unless there isn't one, in which case provision — is two code
+// paths where one of them is exercised and the other is not.
+func (s *Service) Start(ctx context.Context, caller *user.User, name string) (*Datastore, error) {
+	d, err := s.Resolve(ctx, caller, name, RoleToManage)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.Repo().UpdateContainer(ctx, d.ID, d.ContainerID, StatusProvisioning, ""); err != nil {
+		return nil, err
+	}
+	d.Status = StatusProvisioning
+	s.prov.Start(d)
+	return d, nil
+}
+
 // Attach wires an app to this datastore: the app's container is given
 // the connection variables from its next deploy onwards.
 //
@@ -590,7 +666,13 @@ func Reconcile(ctx context.Context, repo *Repository, d interface {
 		// A datastore that failed to provision keeps saying so. There
 		// is no container to have gone away, and "down" would lose the
 		// only explanation anybody has.
-		if ds.Status == StatusFailed && !running {
+		//
+		// A stopped one keeps saying so too, and for a better reason:
+		// somebody turned it off, and Docker's unless-stopped policy
+		// means it is still off on purpose after a reboot. Rewriting
+		// that to "down" would turn a decision into what looks like a
+		// fault, every time the daemon restarts.
+		if !running && (ds.Status == StatusFailed || ds.Status == StatusStopped) {
 			continue
 		}
 		if want != ds.Status {

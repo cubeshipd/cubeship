@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -42,6 +43,9 @@ func newDatastoreCmd() *cobra.Command {
 		newDatastoreCredentialsCmd(),
 		newDatastoreAttachCmd(),
 		newDatastoreDetachCmd(),
+		newDatastoreLogsCmd(),
+		newDatastoreStopCmd(),
+		newDatastoreStartCmd(),
 		newDatastoreExposeCmd(),
 		newDatastoreUnexposeCmd(),
 		newDatastoreDeleteCmd(),
@@ -321,6 +325,90 @@ func newDatastoreDetachCmd() *cobra.Command {
 	cmd.Flags().StringVar(&appName, "app", "", "the app's full reference: project/environment/app")
 	cmd.MarkFlagRequired("app")
 	return cmd
+}
+
+func newDatastoreLogsCmd() *cobra.Command {
+	var tail string
+	cmd := &cobra.Command{
+		Use:   "logs <name>",
+		Short: "Print what the database engine has written",
+		Long: "Print a database's own log.\n\n" +
+			"The first place to look when it refuses connections or will\n" +
+			"not start. It carries no credential — the engine prints its own\n" +
+			"startup, not what Cubeship configured it with.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			rc, err := c.DatastoreLogs(context.Background(), args[0], tail)
+			if err != nil {
+				return err
+			}
+			defer rc.Close()
+			_, err = io.Copy(os.Stdout, rc)
+			return err
+		},
+	}
+	cmd.Flags().StringVar(&tail, "tail", "", `number of trailing lines, or "all" (default: the daemon's own limit)`)
+	return cmd
+}
+
+func newDatastoreStopCmd() *cobra.Command {
+	var confirmed bool
+	cmd := &cobra.Command{
+		Use:   "stop <name>",
+		Short: "Turn a database off, keeping it and its data",
+		Long: "Turn a database off.\n\n" +
+			"The container stops and stays, so its log survives and its data\n" +
+			"is untouched. `db start` brings it back.\n\n" +
+			"Every attached app keeps running and starts failing to connect,\n" +
+			"which is why this asks.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !confirmed {
+				return fmt.Errorf("apps attached to %s will start failing to connect; pass --yes to confirm", args[0])
+			}
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			d, err := c.StopDatastore(context.Background(), args[0])
+			if err != nil {
+				return err
+			}
+			fmt.Printf("%s is %s. Bring it back with: cubeship db start %s\n", d.Name, d.Status, d.Name)
+			return nil
+		},
+	}
+	cmd.Flags().BoolVar(&confirmed, "yes", false, "confirm that the database should be turned off")
+	return cmd
+}
+
+func newDatastoreStartCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "start <name>",
+		Short: "Turn a stopped database back on",
+		Long: "Turn a database back on.\n\n" +
+			"It is provisioned again — the container is recreated from the\n" +
+			"same settings, and the data is a directory on the host that a\n" +
+			"recreate does not touch. This is also how a database whose\n" +
+			"provisioning failed is retried.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			d, err := c.StartDatastore(context.Background(), args[0])
+			if err != nil {
+				return err
+			}
+			fmt.Printf("%s is %s. `cubeship db get %s` says how it went.\n", d.Name, d.Status, d.Name)
+			return nil
+		},
+	}
 }
 
 func newDatastoreExposeCmd() *cobra.Command {

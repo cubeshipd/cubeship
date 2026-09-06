@@ -1,16 +1,22 @@
 package datastore_test
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"cubeship/internal/app"
 	"cubeship/internal/datastore"
 	"cubeship/internal/envvar"
 	"cubeship/internal/platform/database/dbtest"
+	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/project"
 	"cubeship/internal/server/servertest"
 	"cubeship/internal/slug"
@@ -506,4 +512,193 @@ func TestASecondDatabaseOnOneAppNeedsAPrefix(t *testing.T) {
 	if env["DATABASE_URL"].Value == env["ANALYTICS_DATABASE_URL"].Value {
 		t.Error("both databases resolved to the same connection string")
 	}
+}
+
+// fakeDocker is a Docker that agrees to everything, so a test can watch
+// a datastore go up, off and back on. servertest's own stub refuses
+// every call, which is right for the tests that must not deploy by
+// accident and useless for these.
+type fakeDocker struct {
+	mu      sync.Mutex
+	running map[string]bool
+	stopped []string
+}
+
+func newFakeDocker() *fakeDocker { return &fakeDocker{running: map[string]bool{}} }
+
+func (f *fakeDocker) PullImage(context.Context, string, *dockerx.RegistryAuth) error { return nil }
+
+func (f *fakeDocker) CreateContainer(_ context.Context, opts dockerx.ContainerOpts) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return opts.Name + "-id", nil
+}
+
+func (f *fakeDocker) StartContainer(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.running[id] = true
+	return nil
+}
+
+func (f *fakeDocker) StopContainer(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stopped = append(f.stopped, name)
+	f.running[name+"-id"] = false
+	return nil
+}
+
+func (f *fakeDocker) RemoveContainer(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.running, name+"-id")
+	return nil
+}
+
+func (f *fakeDocker) IsRunning(_ context.Context, id string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.running[id], nil
+}
+
+func (f *fakeDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {
+	// Docker frames stdout and stderr behind an 8-byte header; the
+	// handler demultiplexes it, so a fake that returns raw bytes would
+	// be testing the wrong thing.
+	var framed bytes.Buffer
+	line := []byte("database system is ready to accept connections\n")
+	header := []byte{1, 0, 0, 0, 0, 0, 0, 0}
+	header[4] = byte(len(line) >> 24)
+	header[5] = byte(len(line) >> 16)
+	header[6] = byte(len(line) >> 8)
+	header[7] = byte(len(line))
+	framed.Write(header)
+	framed.Write(line)
+	return io.NopCloser(&framed), nil
+}
+
+// provisioned creates a datastore against a Docker that works and waits
+// for it to come up.
+func provisioned(t *testing.T, name string) (*servertest.Fixture, *fakeDocker) {
+	t.Helper()
+	docker := newFakeDocker()
+	f := servertest.NewWithDocker(t, docker)
+	// The provisioner watches a started container for a while before
+	// calling it up, which is right on a real box and nine seconds of
+	// nothing here.
+	f.Server.Datastores.Provisioner().ReadyInterval = time.Millisecond
+
+	createDatastore(t, f, map[string]any{"name": name, "engine": "postgres"})
+	f.Server.Datastores.WaitForProvisioning()
+	return f, docker
+}
+
+func statusOf(t *testing.T, f *servertest.Fixture, name string) string {
+	t.Helper()
+	rec := f.Do(t, http.MethodGet, "/datastores/"+name, nil, f.AdminKey)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get datastore: %d %s", rec.Code, rec.Body.String())
+	}
+	var d struct {
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &d); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	return d.Status
+}
+
+// Turning a database off is a decision, and it has to keep looking like
+// one. "down" is a container that stopped on its own; a screen that
+// showed the same word for both would send somebody looking for a fault
+// they created on purpose.
+func TestStoppingADatabaseIsNotTheSameAsItFallingOver(t *testing.T) {
+	dbtest.RequireDatabase(t)
+	f, docker := provisioned(t, "pg")
+
+	if got := statusOf(t, f, "pg"); got != "running" {
+		t.Fatalf("a freshly provisioned datastore is %q", got)
+	}
+
+	rec := f.Do(t, http.MethodPost, "/datastores/pg/stop", nil, f.AdminKey)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("stop: %d %s", rec.Code, rec.Body.String())
+	}
+	if got := statusOf(t, f, "pg"); got != "stopped" {
+		t.Errorf("after stopping, the datastore is %q, want stopped", got)
+	}
+	if len(docker.stopped) != 1 || docker.stopped[0] != "cubeship-db-pg" {
+		t.Errorf("stopped %v, want the container by name", docker.stopped)
+	}
+
+	// The reconciler runs at every daemon start and sees a container
+	// that is not running. Rewriting that to "down" would turn the
+	// decision into what looks like a fault, on every restart.
+	if err := datastore.Reconcile(t.Context(), f.Server.Datastores.Repo(), docker); err != nil {
+		t.Fatalf("Reconcile: %v", err)
+	}
+	if got := statusOf(t, f, "pg"); got != "stopped" {
+		t.Errorf("the reconciler rewrote a deliberate stop to %q", got)
+	}
+
+	// And back on. It is provisioned again rather than restarted, which
+	// is one path instead of two.
+	rec = f.Do(t, http.MethodPost, "/datastores/pg/start", nil, f.AdminKey)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("start: %d %s", rec.Code, rec.Body.String())
+	}
+	f.Server.Datastores.WaitForProvisioning()
+	if got := statusOf(t, f, "pg"); got != "running" {
+		t.Errorf("after starting, the datastore is %q, want running", got)
+	}
+}
+
+// Turning a database off takes it away from every app attached to it,
+// so it is an admin's. Reading its log is not: the reason it is
+// refusing connections is in there, and finding that out is not a
+// privilege.
+func TestLogsAreAMembersAndStoppingIsAnAdmins(t *testing.T) {
+	dbtest.RequireDatabase(t)
+	f, _ := provisioned(t, "pg")
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
+
+	rec := f.Do(t, http.MethodGet, "/datastores/pg/logs", nil, memberKey)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("read logs as a member: %d %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "ready to accept connections") {
+		t.Errorf("logs came back as %q — the frame header was not demultiplexed", rec.Body.String())
+	}
+
+	for _, path := range []string{"/datastores/pg/stop", "/datastores/pg/start"} {
+		if rec := f.Do(t, http.MethodPost, path, nil, memberKey); rec.Code != http.StatusForbidden {
+			t.Errorf("POST %s as a member: %d, want 403", path, rec.Code)
+		}
+	}
+}
+
+// There is nothing to stop or to read a log from before a container
+// exists, and saying so beats a 500 out of the Engine.
+func TestStoppingAndLoggingNeedAContainer(t *testing.T) {
+	dbtest.RequireDatabase(t)
+	f := servertest.New(t)
+	createDatastore(t, f, map[string]any{"name": "pg", "engine": "postgres"})
+	f.Server.Datastores.WaitForProvisioning()
+
+	for _, c := range []struct{ method, path string }{
+		{http.MethodPost, "/datastores/pg/stop"},
+		{http.MethodGet, "/datastores/pg/logs"},
+	} {
+		rec := f.Do(t, c.method, c.path, nil, f.AdminKey)
+		if rec.Code != http.StatusConflict {
+			t.Errorf("%s %s: %d %s, want 409", c.method, c.path, rec.Code, rec.Body.String())
+		}
+	}
+
+	// Starting is how a failed provision is retried, so it is allowed.
+	if rec := f.Do(t, http.MethodPost, "/datastores/pg/start", nil, f.AdminKey); rec.Code != http.StatusOK {
+		t.Errorf("start after a failed provision: %d %s", rec.Code, rec.Body.String())
+	}
+	f.Server.Datastores.WaitForProvisioning()
 }

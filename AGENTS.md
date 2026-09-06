@@ -1204,9 +1204,9 @@ question the caption answers better.
 
 ## Managed databases
 
-`internal/datastore` runs Postgres, MySQL and MariaDB for the apps on
-this instance. Redis and MongoDB are next, and each is one entry in
-`specs` rather than a change anywhere else.
+`internal/datastore` runs Postgres, MySQL, MariaDB, Redis and MongoDB
+for the apps on this instance. Each is one entry in `specs` and nothing
+else — adding the last two touched that map, and the service not at all.
 
 **A database belongs to the instance, not to a project.** That is the
 design decision, and everything follows from it.
@@ -1274,6 +1274,58 @@ its apps and no database; the attachments to those apps go with them,
 through the foreign key. A database outliving the apps that used it is
 the point — it is the instance's, and deleting an app is not a decision
 about anybody's data.
+
+### What differs between engines
+
+Four things, and each is a field on `spec` rather than a branch
+somewhere:
+
+- **How the password is delivered.** Every SQL engine takes it from the
+  environment; Redis's official image has no variable for it, so it goes
+  on the command line (`--requirepass`). `cmd` exists for that one case
+  and `env` is nil there.
+- **Whether the login is yours to choose.** Redis has one, called
+  `default`, and the password belongs to it. Naming another is
+  *refused*, not overwritten — silently ignoring what somebody typed is
+  how a credential comes out different from what they thought they
+  asked for. MySQL and MariaDB refuse `root` for the mirror reason: it
+  already exists and this would not be its password.
+- **Whether a named database means anything.** Redis's numbered
+  databases are not the same idea and are not something to provision,
+  so its variables carry no `_NAME`.
+- **What the variables are called.** `stem` is `DATABASE` for the
+  relational ones, `REDIS` and `MONGO` for the others — so an app with
+  a Postgres *and* a Redis attached gets both, unprefixed, without
+  colliding.
+
+Two smaller ones worth knowing: Redis is started with `--appendonly
+yes`, because otherwise it snapshots on its own schedule and a restart
+loses the last few minutes — free for a cache, and somebody's queue
+otherwise. And Mongo's connection string carries `authSource=admin`,
+because its root user lives in the `admin` database whatever database
+the connection names; without it every connection fails on credentials
+that are perfectly correct.
+
+### Turning one off
+
+`POST /datastores/{name}/stop` stops the container and leaves it, and
+its data, where they are. **Stopped rather than removed, so the log
+survives** — what somebody wants immediately after turning a database
+off is usually the reason they turned it off.
+
+The status becomes `stopped`, not `down`, and the reconciler leaves it
+alone: Docker's restart policy is `unless-stopped`, so it is still off
+on purpose after a reboot, and rewriting that to `down` would turn a
+decision into what looks like a fault on every daemon start.
+
+`start` provisions again rather than starting the container that is
+already there — one path instead of two, the data being a bind mount a
+recreate does not touch. It is also how a datastore whose provisioning
+failed is retried.
+
+`has_container` on the response is what says whether there is a log to
+read or anything to stop. The status cannot answer it: a datastore whose
+provisioning failed may have neither.
 
 ### Fixed after creation, and why each one is
 
