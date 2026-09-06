@@ -12,6 +12,7 @@ import (
 	"cubeship/internal/datastore"
 	"cubeship/internal/dns"
 	"cubeship/internal/extregistry"
+	"cubeship/internal/firewall"
 	"cubeship/internal/github"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/platform/openapi"
@@ -49,7 +50,8 @@ func (s *Server) OpenAPI() openapi.Document {
 		github.NewHandler(s.GitHub, s.Apps).OpenAPI(),
 		s.Registry.OpenAPI(),
 		settings.NewHandler(s.Settings).OpenAPI(),
-		certificates.NewHandler(s.Certs).OpenAPI())
+		certificates.NewHandler(s.Certs).OpenAPI(),
+		firewall.NewHandler(s.Firewall).OpenAPI())
 
 	return openapi.Document{
 		OpenAPI: "3.1.0",
