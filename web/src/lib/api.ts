@@ -264,3 +264,43 @@ export type ApiKey = {
 
 export type ResolvedVar = { key: string; value: string; source: string };
 export type EnvView = { vars: Record<string, string>; effective?: ResolvedVar[] };
+
+// One TLS certificate this instance holds. Traefik issues and renews
+// them; this is what it has, read out of its own store.
+export type Certificate = {
+  host: string;
+  sans?: string[];
+  issuer: string;
+  not_before: string;
+  not_after: string;
+  serial: string;
+  // The app served at that name, as its reference. Absent for the
+  // instance's own names and for one nothing serves any more.
+  app?: string;
+  instance?: boolean;
+  // Nothing on this instance answers there now. Still valid, just
+  // unused.
+  orphan?: boolean;
+};
+
+// Why a name this instance routes has no certificate. The three are
+// three different jobs: configure the instance, redeploy the app, or
+// look at what Traefik said.
+export type MissingReason = "tls_not_configured" | "not_deployed" | "pending";
+
+export type MissingCertificate = {
+  host: string;
+  app?: string;
+  instance?: boolean;
+  reason: MissingReason;
+  // The last thing Traefik's log said about that name, when it said
+  // anything. A quotation, not a contract.
+  detail?: string;
+};
+
+export type CertificateReport = {
+  tls_enabled: boolean;
+  acme_email?: string;
+  certificates: Certificate[];
+  missing: MissingCertificate[];
+};

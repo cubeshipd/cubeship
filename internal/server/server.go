@@ -11,6 +11,7 @@ import (
 	"net/http"
 
 	"cubeship/internal/app"
+	"cubeship/internal/certificates"
 	"cubeship/internal/dns"
 	"cubeship/internal/extregistry"
 	"cubeship/internal/github"
@@ -30,6 +31,7 @@ type Server struct {
 	Projects   *project.Service
 	Apps       *app.Service
 	Settings   *settings.Service
+	Certs      *certificates.Service
 	Setup      *setup.Service
 	Registries *extregistry.Service
 	DNS        *dns.Service
@@ -75,6 +77,11 @@ type Options struct {
 	// of `make web-dev`.
 	Frontend string
 
+	// DataDir is where the instance keeps its state, and the one thing
+	// outside the database a module reads: Traefik's certificate store
+	// lives in it.
+	DataDir string
+
 	// SetupToken guards claiming an unclaimed instance. The daemon
 	// writes it into the data directory on first start and the
 	// installer prints it; a zero value asks for none, which is what a
@@ -105,6 +112,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Projects:   projects,
 		Apps:       apps,
 		Settings:   cfg,
+		Certs:      certificates.NewService(cfg, apps, opts.DataDir),
 		Setup:      setup.NewService(db, users, opts.SetupToken),
 		Registries: registries,
 		DNS:        dnsProviders,
@@ -118,6 +126,12 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// a test is not one, and the endpoint refuses rather than pretending.
 	if m, ok := docker.(registry.Maintainer); ok {
 		srv.Registry.SetMaintainer(m)
+	}
+	// Why a certificate is missing is in Traefik's log and nowhere else.
+	// Without an Engine the report is the same minus those quotations,
+	// which is what a test gets.
+	if e, ok := docker.(certificates.Engine); ok {
+		srv.Certs.SetEngine(e)
 	}
 
 	srv.routes()
@@ -174,6 +188,7 @@ func (s *Server) routes() {
 	setup.NewHandler(s.Setup, userHandler.StartSession).Routes(s.router)
 	project.NewHandler(s.Projects).Routes(s.router, auth)
 	settings.NewHandler(s.Settings).Routes(s.router, auth)
+	certificates.NewHandler(s.Certs).Routes(s.router, auth)
 	extregistry.NewHandler(s.Registries).Routes(s.router, auth)
 	dns.NewHandler(s.DNS).Routes(s.router, auth)
 	s.githubHandler = github.NewHandler(s.GitHub, s.Apps)
