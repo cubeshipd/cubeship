@@ -127,43 +127,22 @@ export type App = {
 
 // --- credentials ---
 
-// What a credential can be used for. Derived from its provider, never
-// ticked: see internal/credential on the daemon.
-export type CredentialCapability = "dns" | "registry";
-
-// One account this instance is wired to. The secret is not here and
+// One secret this instance holds. It carries no provider: what it is
+// used for is the use's business, and the same key may be writing DNS
+// records and pulling images at once. The secret itself is not here and
 // cannot be asked for — the daemon is what talks to the provider, so
 // nothing out here needs to read one back.
 export type Credential = {
   id: number;
-  provider: string;
-  // The provider as a person calls it, served so the dashboard keeps no
-  // table of its own that drifts out of step.
-  provider_name: string;
   label: string;
-  // The first half, where the provider has one — an access key id. Not
-  // a secret: the secret is the other half.
+  // The first half, where the secret has one — an access key id, a
+  // registry login. Not a secret: the secret is the other half.
   username?: string;
-  capabilities: CredentialCapability[];
   // What is currently depending on it, so the list can say why one
   // cannot be deleted before somebody tries.
   in_use_by?: string[];
   created_at: string;
   updated_at: string;
-};
-
-// One provider a credential can be created for, and what to ask for.
-// The form is built from this rather than from a copy of the list.
-export type CredentialProvider = {
-  provider: string;
-  name: string;
-  capabilities: CredentialCapability[];
-  // Absent for a provider whose secret is a single value — then there
-  // is no first field, and asking for one would be asking for
-  // something that does not exist.
-  username_label?: string;
-  password_label: string;
-  hint: string;
 };
 
 export type RegistryProvider = "generic" | "digitalocean" | "aws";
@@ -192,10 +171,36 @@ export type RegistryStatus = {
   detail?: string;
 };
 
-// A DNS account is a credential now — there is no separate store. What
-// the DNS pages list is `GET /credentials?capability=dns`, and what
-// they address a zone by is that credential's id.
-export type DNSCredential = Credential;
+// One DNS provider: which API is spoken, and which stored credential
+// speaks it. The zones and records pages address it by this id.
+export type DNSProvider = {
+  id: number;
+  provider: string;
+  // The provider as a person calls it, served so the dashboard keeps no
+  // table of its own that drifts out of step.
+  provider_name: string;
+  credential_id: number;
+  // The credential's label, which is what a person picked it out of a
+  // list by.
+  label: string;
+  username?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+// One provider a DNS account can be created for, and what to ask for
+// when a login is typed rather than picked. The form is built from this
+// rather than from a copy of the list.
+export type DNSProviderKind = {
+  provider: string;
+  name: string;
+  // Absent where the secret is a single value — then there is no first
+  // field, and asking for one would be asking for something that does
+  // not exist.
+  username_label?: string;
+  password_label: string;
+  hint: string;
+};
 
 export type DNSStatus = {
   state: "available" | "unauthorized" | "unreachable";

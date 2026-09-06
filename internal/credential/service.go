@@ -47,13 +47,12 @@ func (s *Service) SetDependants(d ...Dependant) {
 
 func (s *Service) Repo() *Repository { return NewRepository(s.db) }
 
-// Create stores a secret.
+// Create stores a secret under a label.
 //
-// What is asked for depends on the provider, and the two refusals are
-// symmetrical: a provider whose secret has two halves must have both,
-// and one whose secret is a single value must not be given a name to go
-// with it. Dropping the extra silently is how a credential comes out
-// different from what somebody thought they stored.
+// It asks for nothing else. A credential is a facilitator — see the
+// package comment — so what shape the secret has is the *use*'s
+// question, and this module refusing a token with no username would be
+// this module deciding in advance what the token may be used for.
 func (s *Service) Create(ctx context.Context, caller *user.User, in Credential) (*Credential, error) {
 	return s.CreateWith(ctx, caller, s.db, in)
 }
@@ -71,20 +70,11 @@ func (s *Service) CreateWith(ctx context.Context, caller *user.User, q database.
 	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
-	if !in.Provider.Valid() {
-		return nil, ErrUnknownProvider
-	}
 	in.Label = strings.TrimSpace(in.Label)
 	if in.Label == "" {
 		return nil, ErrLabelRequired
 	}
 	in.Username = strings.TrimSpace(in.Username)
-	if in.Provider.NeedsUsername() && in.Username == "" {
-		return nil, ErrUsernameRequired
-	}
-	if !in.Provider.NeedsUsername() && in.Username != "" {
-		return nil, ErrUsernameNotAllowed
-	}
 	if strings.TrimSpace(in.Password) == "" {
 		return nil, ErrPasswordRequired
 	}
@@ -99,16 +89,10 @@ func (s *Service) CreateWith(ctx context.Context, caller *user.User, q database.
 	return created, err
 }
 
-// Update changes the label and the secret. A nil field is left alone,
-// so renaming one cannot blank its password.
-//
-// Not the provider. What a credential is *for* is what its secret is,
-// and a provider changed under a stored secret would be that secret
-// offered to somebody it was never issued for. Moving a credential to
-// another provider means adding one and deleting this.
+// Update changes the label, the first half and the secret. A nil field
+// is left alone, so renaming one cannot blank its password.
 func (s *Service) Update(ctx context.Context, caller *user.User, id int64, label, username, password *string) (*Credential, error) {
-	existing, err := s.Resolve(ctx, caller, id, "")
-	if err != nil {
+	if _, err := s.Resolve(ctx, caller, id); err != nil {
 		return nil, err
 	}
 	if label != nil {
@@ -120,12 +104,6 @@ func (s *Service) Update(ctx context.Context, caller *user.User, id int64, label
 	}
 	if username != nil {
 		trimmed := strings.TrimSpace(*username)
-		if !existing.Provider.NeedsUsername() && trimmed != "" {
-			return nil, ErrUsernameNotAllowed
-		}
-		if existing.Provider.NeedsUsername() && trimmed == "" {
-			return nil, ErrUsernameRequired
-		}
 		username = &trimmed
 	}
 	if password != nil && strings.TrimSpace(*password) == "" {
@@ -139,59 +117,27 @@ func (s *Service) Update(ctx context.Context, caller *user.User, id int64, label
 	return updated, err
 }
 
-// List is every credential, or every one that can do a given job.
+// List is every credential this instance holds.
 //
-// The filter is what a feature's own screen asks for: the DNS page
-// offers the credentials that can write records, not every secret on
-// the instance. An empty capability means all of them.
-func (s *Service) List(ctx context.Context, caller *user.User, capability Capability) ([]*Credential, error) {
+// Unfiltered, because there is nothing to filter by: a credential is
+// not for one job. Every screen that offers a choice of one offers all
+// of them, and the use it is being wired to is what decides whether it
+// works.
+func (s *Service) List(ctx context.Context, caller *user.User) ([]*Credential, error) {
 	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
-	if capability != "" && !known(capability) {
-		return nil, ErrUnknownCapability
-	}
-	all, err := s.Repo().List(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if capability == "" {
-		return all, nil
-	}
-	out := make([]*Credential, 0, len(all))
-	for _, c := range all {
-		if c.Provider.Can(capability) {
-			out = append(out, c)
-		}
-	}
-	return out, nil
+	return s.Repo().List(ctx)
 }
 
-func known(c Capability) bool {
-	for _, have := range Capabilities() {
-		if have == c {
-			return true
-		}
-	}
-	return false
-}
-
-// Resolve looks one up and requires the caller's role, and the
-// capability when one is named.
-//
-// The capability check belongs here rather than at each use: it is the
-// same question every time — can this account do this job — and the
-// answer is the provider's, which only this module knows.
-func (s *Service) Resolve(ctx context.Context, caller *user.User, id int64, capability Capability) (*Credential, error) {
+// Resolve looks one up and requires the caller's role.
+func (s *Service) Resolve(ctx context.Context, caller *user.User, id int64) (*Credential, error) {
 	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
 	c, err := s.Repo().ByID(ctx, id)
 	if err != nil {
 		return nil, ErrNotFound
-	}
-	if capability != "" && !c.Provider.Can(capability) {
-		return nil, CannotError(c.Provider, capability)
 	}
 	return c, nil
 }
@@ -230,7 +176,7 @@ func (s *Service) Uses(ctx context.Context, id int64) ([]Use, error) {
 // The refusal names what is using it, because "in use" that does not
 // say by what is a refusal somebody has to go hunting to satisfy.
 func (s *Service) Delete(ctx context.Context, caller *user.User, id int64) error {
-	if _, err := s.Resolve(ctx, caller, id, ""); err != nil {
+	if _, err := s.Resolve(ctx, caller, id); err != nil {
 		return err
 	}
 	if !s.wired {

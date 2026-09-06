@@ -110,11 +110,12 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	projects := project.NewService(db)
 	cfg := settings.NewService(db)
 	// One store for every secret this instance holds, and two modules
-	// that used to keep their own. See internal/credential: an AWS key
-	// reaches Route 53 and ECR both, and it is stored once.
+	// that name one rather than keeping their own. See
+	// internal/credential: an AWS key reaches Route 53 and ECR both,
+	// and it is stored once and pointed at twice.
 	creds := credential.NewService(db)
 	registries := extregistry.NewService(db, creds)
-	dnsProviders := dns.NewService(creds)
+	dnsProviders := dns.NewService(db, creds, cfg)
 	gh := github.NewService(db, cfg)
 	// One series service for both modules below: an app and a datastore
 	// are the same question about two kinds of container.
@@ -140,7 +141,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// What would break if a credential were deleted is known only to
 	// the modules using it, so they answer rather than this one
 	// reading their rows. Until they are wired, a delete refuses.
-	creds.SetDependants(registries, cfg)
+	creds.SetDependants(registries, dnsProviders)
 
 	// The one thing that travels back down from datastores to apps:
 	// what an attached database contributes to a container's

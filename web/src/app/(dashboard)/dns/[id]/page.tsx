@@ -17,8 +17,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { api, type DNSCredential, type DNSZone } from "@/lib/api";
-import { DNS_CREDENTIALS, providerIcon } from "@/lib/credentials";
+import { api, type DNSProvider, type DNSZone } from "@/lib/api";
+import { providerIcon } from "@/lib/credentials";
 import { message } from "@/lib/errors";
 
 // One provider's zones. Clicking one opens it.
@@ -30,7 +30,7 @@ import { message } from "@/lib/errors";
 export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
   const { id } = use(params);
 
-  const [credential, setCredential] = useState<DNSCredential | null>(null);
+  const [provider, setProvider] = useState<DNSProvider | null>(null);
   const [zones, setZones] = useState<DNSZone[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -39,9 +39,9 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
 
   useEffect(() => {
     api
-      .get<DNSCredential[]>(DNS_CREDENTIALS)
-      .then((list) => setCredential(list.find((c) => String(c.id) === id) ?? null))
-      .catch(() => setCredential(null));
+      .get<DNSProvider[]>("/dns")
+      .then((list) => setProvider(list.find((p) => String(p.id) === id) ?? null))
+      .catch(() => setProvider(null));
   }, [id]);
 
   const load = useCallback(() => {
@@ -54,7 +54,7 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
   }, [base]);
   useEffect(load, [load]);
 
-  const Icon = providerIcon(credential?.provider ?? "");
+  const Icon = providerIcon(provider?.provider ?? "");
 
   const filtered = zones
     ? zones.filter((z) => z.name.toLowerCase().includes(query.trim().toLowerCase()))
@@ -71,17 +71,16 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
       </Link>
 
       <PageHeader
-        title={credential?.label || "DNS provider"}
+        title={provider?.provider_name || "DNS provider"}
         icon={<Icon className="size-5 shrink-0 text-muted-foreground" />}
-        sub="The zones this credential can reach."
         actions={
           <Button
             variant="outline"
             nativeButton={false}
             render={
-              // What the account is and what it authenticates with are
-              // edited where the account lives, not here: this credential
-              // may be pulling images somewhere else at the same time.
+              // The secret is edited where it lives, not here: this
+              // credential may be pulling images somewhere else at the
+              // same time.
               <Link href="/credentials">
                 <KeyRoundIcon />
                 Credential

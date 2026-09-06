@@ -21,8 +21,8 @@ type Service struct {
 
 	// creds is where the secrets live now. A registry row says which
 	// account it authenticates as; this is what turns that into a
-	// login, and what refuses an account that cannot do registries at
-	// all.
+	// login, and what lets a login typed in place of a stored one
+	// become a credential in the same transaction.
 	creds *credential.Service
 
 	// client talks to a provider's API — AWS's, so far. Only a
@@ -93,24 +93,18 @@ func (s *Service) Create(ctx context.Context, caller *user.User, in Credential, 
 		return nil, ErrTwoLogins
 
 	case in.CredentialID != 0:
-		// The account decides everything that follows: which provider
-		// this is, and the login used below to prove the key works. A
-		// credential that cannot do registries is refused here rather
-		// than stored and discovered at a deploy.
-		cred, err := s.creds.Resolve(ctx, caller, in.CredentialID, credential.CapabilityRegistry)
+		// The account supplies the login used below to prove the key
+		// works. Which provider this is comes from the request: a
+		// credential carries none, because the same access key may be
+		// writing DNS records with the other hand.
+		cred, err := s.creds.Resolve(ctx, caller, in.CredentialID)
 		if err != nil {
 			return nil, err
 		}
-		in.Provider = Provider(cred.Provider)
 		in.Username, in.Password = cred.Username, cred.Password
 
 	case login != nil:
-		in.Provider = login.Provider
 		in.Username, in.Password = login.Username, login.Password
-		if !credential.Provider(in.Provider).Can(credential.CapabilityRegistry) {
-			return nil, credential.CannotError(
-				credential.Provider(in.Provider), credential.CapabilityRegistry)
-		}
 
 	default:
 		return nil, ErrCredentialRequired
@@ -118,14 +112,6 @@ func (s *Service) Create(ctx context.Context, caller *user.User, in Credential, 
 	if !in.Provider.Valid() {
 		return nil, ErrUnknownProvider
 	}
-	// DigitalOcean's registry takes the API token as both halves of a
-	// docker login, and the token has no name beside it. Every read
-	// does this too — see the repository's scan — but nothing has been
-	// read yet here, and the ECR-style check below uses this login.
-	if in.Provider == ProviderDigitalOcean && in.Username == "" {
-		in.Username = in.Password
-	}
-
 	switch in.Provider {
 	case ProviderDigitalOcean:
 		// The host never varies; the registry's name is a path segment.
@@ -177,7 +163,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, in Credential, 
 	// account they did not know they were creating.
 	label := login.Label
 	if strings.TrimSpace(label) == "" {
-		label = credential.Provider(in.Provider).Name() + " · " + in.Host
+		label = in.Host
 		if in.Namespace != "" {
 			label += "/" + in.Namespace
 		}
@@ -186,8 +172,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, in Credential, 
 	var created *Credential
 	err := s.db.WithTx(ctx, func(tx database.Queryer) error {
 		cred, err := s.creds.CreateWith(ctx, caller, tx, credential.Credential{
-			Provider: credential.Provider(in.Provider),
-			Label:    label,
+			Label: label,
 			// What is stored is what was typed. The DigitalOcean
 			// doubling above is how the login is *used*, not what the
 			// account is — the token has no name beside it.
@@ -217,7 +202,8 @@ func (s *Service) Create(ctx context.Context, caller *user.User, in Credential, 
 // apart.
 type Changes struct {
 	// CredentialID re-points the registry at a different stored
-	// account. It must be one of the same provider.
+	// account. Any of them: a credential is a secret, not a kind of
+	// registry, and whether it works is the registry's to refuse.
 	CredentialID *int64
 	// Namespace corrects DigitalOcean's registry name.
 	Namespace *string
@@ -265,16 +251,8 @@ func (s *Service) Update(ctx context.Context, caller *user.User, id int64, ch Ch
 	}
 
 	if ch.CredentialID != nil {
-		cred, err := s.creds.Resolve(ctx, caller, *ch.CredentialID, credential.CapabilityRegistry)
-		if err != nil {
+		if _, err := s.creds.Resolve(ctx, caller, *ch.CredentialID); err != nil {
 			return nil, err
-		}
-		// A registry's host was derived from its provider — ECR's
-		// carries an AWS account id, DigitalOcean's is fixed. Moving it
-		// to an account of a different provider would leave a host that
-		// account has no registry at.
-		if Provider(cred.Provider) != existing.Provider {
-			return nil, ErrDifferentProvider
 		}
 	}
 
@@ -346,7 +324,10 @@ func (s *Service) ForImage(ctx context.Context, image string) (*Credential, bool
 // and Password off the row.
 func (s *Service) LoginFor(ctx context.Context, c *Credential) (username, password string, err error) {
 	if c.Provider != ProviderAWS {
-		return c.Username, c.Password, nil
+		// Not the stored values: DigitalOcean's token is both halves of
+		// the login and the account has no username. See Credential.Login.
+		username, password := c.Login()
+		return username, password, nil
 	}
 
 	if cached, ok := s.tokens.Load(c.ID); ok {

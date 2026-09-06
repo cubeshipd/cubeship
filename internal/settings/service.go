@@ -2,9 +2,7 @@ package settings
 
 import (
 	"context"
-	"strconv"
 
-	"cubeship/internal/credential"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/user"
 )
@@ -109,18 +107,4 @@ func (s *Service) SeedFromEnv(ctx context.Context, values map[string]string) err
 		}
 	}
 	return nil
-}
-
-// UsesCredential reports whether this instance writes its own DNS
-// records through a credential. See credential.Dependant: this module
-// owns the setting, so it is the one that can answer.
-func (s *Service) UsesCredential(ctx context.Context, id int64) ([]credential.Use, error) {
-	values, err := s.Load(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if values.Get(DNSProviderID) != strconv.FormatInt(id, 10) {
-		return nil, nil
-	}
-	return []credential.Use{{Kind: "the instance's own DNS"}}, nil
 }

@@ -17,13 +17,13 @@ func NewRepository(q database.Queryer) *Repository {
 }
 
 // columns is read in order by scan. Change one, change both.
-const columns = `id, provider, label, username, password, created_at, updated_at`
+const columns = `id, label, username, password, created_at, updated_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
 func scan(row scanner) (*Credential, error) {
 	var c Credential
-	if err := row.Scan(&c.ID, &c.Provider, &c.Label, &c.Username, &c.Password,
+	if err := row.Scan(&c.ID, &c.Label, &c.Username, &c.Password,
 		&c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -32,9 +32,9 @@ func scan(row scanner) (*Credential, error) {
 
 func (r *Repository) Create(ctx context.Context, c *Credential) (*Credential, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO credentials (provider, label, username, password)
-		 VALUES ($1, $2, $3, $4) RETURNING `+columns,
-		string(c.Provider), c.Label, c.Username, c.Password)
+		`INSERT INTO credentials (label, username, password)
+		 VALUES ($1, $2, $3) RETURNING `+columns,
+		c.Label, c.Username, c.Password)
 	created, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("create credential: %w", err)
@@ -42,12 +42,9 @@ func (r *Repository) Create(ctx context.Context, c *Credential) (*Credential, er
 	return created, nil
 }
 
-// Update changes the label and the secret. A nil argument leaves the
-// column alone, so renaming one cannot blank its password.
-//
-// Not the provider: what a credential is for is what its secret is, and
-// a provider changed under a stored secret would be a secret sent to
-// somebody it was never issued for.
+// Update changes the label, the first half and the secret. A nil
+// argument leaves the column alone, so renaming one cannot blank its
+// password.
 func (r *Repository) Update(ctx context.Context, id int64, label, username, password *string) (*Credential, error) {
 	row := r.q.QueryRowContext(ctx,
 		`UPDATE credentials SET

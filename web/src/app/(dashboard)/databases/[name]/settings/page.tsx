@@ -51,10 +51,7 @@ function Settings({ name }: { name: string }) {
         {name}
       </Link>
 
-      <PageHeader
-        title="Database settings"
-        sub="Who outside the instance can reach it, and how to get rid of it. Everything else about a database is fixed once it exists — see the database's own page for what it is."
-      />
+      <PageHeader title="Database settings" />
 
       <ErrorAlert error={error} />
 
@@ -117,6 +114,7 @@ function Settings({ name }: { name: string }) {
 function ExternalAccess({ datastore, onChanged }: { datastore: Datastore; onChanged: () => void }) {
   const [port, setPort] = useState("");
   const [busy, setBusy] = useState(false);
+  const [unpublishing, setUnpublishing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function run(fn: () => Promise<unknown>) {
@@ -155,11 +153,7 @@ function ExternalAccess({ datastore, onChanged }: { datastore: Datastore; onChan
                 . There is no TLS in front of it — a database speaks its own protocol on its own
                 port — so the password and your firewall are what protect it.
               </Notice>
-              <ActionButton
-                variant="outline"
-                busy={busy}
-                onClick={() => run(() => api.del(`${path}/expose`))}
-              >
+              <ActionButton variant="outline" busy={busy} onClick={() => setUnpublishing(true)}>
                 Stop publishing it
               </ActionButton>
             </>
@@ -197,6 +191,20 @@ function ExternalAccess({ datastore, onChanged }: { datastore: Datastore; onChan
           )}
         </CardContent>
       </Card>
+
+      {/* Unpublishing replaces the container to drop the port, so
+          whatever is connected over it is cut, not merely blocked. */}
+      <ConfirmDialog
+        open={unpublishing}
+        onOpenChange={setUnpublishing}
+        title={`Stop publishing ${datastore.name}?`}
+        confirmLabel="Stop publishing"
+        description="Anything connected over the host port is disconnected, and the container is replaced to drop it. Apps on this instance are unaffected — they reach it by name on the internal network."
+        onConfirm={async () => {
+          await run(() => api.del(`${path}/expose`));
+          setUnpublishing(false);
+        }}
+      />
     </>
   );
 }

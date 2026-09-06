@@ -235,10 +235,9 @@ func TestATypedLoginBecomesAnAccountYouCanReuse(t *testing.T) {
 	}
 
 	var accounts []struct {
-		ID       int64    `json:"id"`
-		Provider string   `json:"provider"`
-		Label    string   `json:"label"`
-		InUseBy  []string `json:"in_use_by"`
+		ID      int64    `json:"id"`
+		Label   string   `json:"label"`
+		InUseBy []string `json:"in_use_by"`
 	}
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet,
 		"/credentials", nil, f.AdminKey, &accounts), http.StatusOK)
@@ -249,9 +248,6 @@ func TestATypedLoginBecomesAnAccountYouCanReuse(t *testing.T) {
 			continue
 		}
 		found = true
-		if a.Provider != "digitalocean" {
-			t.Errorf("the account is for %q", a.Provider)
-		}
 		// Nobody was asked to name it, so it is named after what it was
 		// created for — and it says what is standing on it, which is
 		// what makes deleting it refusable.
@@ -283,4 +279,43 @@ func TestAnAccountAndATypedLoginTogetherAreRefused(t *testing.T) {
 		"username": "a", "password": "b",
 	}, f.AdminKey)
 	servertest.RequireStatus(t, rec, http.StatusBadRequest)
+}
+
+// DigitalOcean's registry takes the API token as both halves of a
+// docker login, and the account holds one value — so the token has to
+// stand in for the username *somewhere*.
+//
+// Where turns out to matter. Doing it as the row is read put the token
+// in `Username`, which is a field the API returns: every listing then
+// carried the secret in plain sight, in the one module whose first rule
+// is that a password is never returned. It belongs at the point of use
+// and nowhere else.
+func TestDigitalOceansTokenIsALoginWithoutBecomingAUsername(t *testing.T) {
+	const token = "dop_v1_verysecrettoken"
+	c := &extregistry.Credential{Provider: extregistry.ProviderDigitalOcean, Password: token}
+
+	user, pass := c.Login()
+	if user != token || pass != token {
+		t.Errorf("the docker login is %q/%q, want the token twice", user, pass)
+	}
+	if c.Username != "" {
+		t.Errorf("asking for the login wrote the token into Username: %q", c.Username)
+	}
+
+	// An account that does have a name keeps it — the migrated rows,
+	// where somebody had typed an email.
+	named := &extregistry.Credential{
+		Provider: extregistry.ProviderDigitalOcean,
+		Username: "someone@example.com", Password: token,
+	}
+	if user, _ := named.Login(); user != "someone@example.com" {
+		t.Errorf("a stored username was overwritten: %q", user)
+	}
+
+	// And nothing else doubles: a generic registry's login is what was
+	// stored, whatever that is.
+	generic := &extregistry.Credential{Provider: extregistry.ProviderGeneric, Password: token}
+	if user, _ := generic.Login(); user != "" {
+		t.Errorf("a generic registry's username became the password: %q", user)
+	}
 }

@@ -10,6 +10,7 @@ import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
+import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
 import { SearchableSelect } from "@/components/searchable-select";
 import { TextField } from "@/components/text-field";
@@ -25,8 +26,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { api, type DNSCredential, type DNSRecord, type DNSZone } from "@/lib/api";
-import { DNS_CREDENTIALS } from "@/lib/credentials";
+import { api, type DNSProvider, type DNSRecord, type DNSZone } from "@/lib/api";
 import { RECORD_TYPES } from "@/lib/dns";
 import { message } from "@/lib/errors";
 
@@ -48,13 +48,13 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
 
   const base = `/dns/${id}`;
 
-  const credentials = useQuery({
+  const providers = useQuery({
     queryKey: ["dns"],
-    queryFn: () => api.get<DNSCredential[]>(DNS_CREDENTIALS),
+    queryFn: () => api.get<DNSProvider[]>("/dns"),
   });
-  const credential = credentials.data?.find((c) => String(c.id) === id) ?? null;
+  const provider = providers.data?.find((p) => String(p.id) === id) ?? null;
 
-  // The name in the path is resolved against what the credential can
+  // The name in the path is resolved against what the provider can
   // actually reach, so a link to a zone this credential lost access to
   // says so rather than failing on the first record call.
   //
@@ -79,7 +79,7 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
   // this zone's records is looking at the same key and is wrong too.
   const reread = () => queries.invalidateQueries({ queryKey: ["dns", id, "records", zone?.id] });
 
-  const error = credentials.error ?? zones.error ?? records.error;
+  const error = providers.error ?? zones.error ?? records.error;
 
   const q = query.trim().toLowerCase();
   const all = records.data ?? null;
@@ -142,26 +142,19 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
       width: 12,
       align: "right",
       cell: (r) => (
-        <div className="flex items-center justify-end gap-2">
-          <Button
-            variant="ghost"
-            size="xs"
-            aria-label={`Edit ${r.name}`}
-            className="size-6 p-0 text-muted-foreground"
+        <RowActions>
+          <RowAction
+            icon={PencilIcon}
+            label={`Edit ${r.name}`}
             onClick={() => setEditing({ record: r })}
-          >
-            <PencilIcon className="size-3.5" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="xs"
-            aria-label={`Delete ${r.name}`}
-            className="size-6 p-0 text-muted-foreground hover:text-destructive"
+          />
+          <RowAction
+            icon={Trash2Icon}
+            label={`Delete ${r.name}`}
+            danger
             onClick={() => setDeleting(r)}
-          >
-            <Trash2Icon className="size-3.5" />
-          </Button>
-        </div>
+          />
+        </RowActions>
       ),
     },
   ];
@@ -173,13 +166,12 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
         className="mb-4 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
       >
         <ChevronLeftIcon className="size-3.5" />
-        {credential?.label || "Zones"}
+        {provider?.provider_name || "Zones"}
       </Link>
 
       <PageHeader
         title={name}
         literal
-        sub="Every record in this zone, as the provider reports it."
         actions={
           zone && (
             <Button onClick={() => setEditing({})}>
@@ -232,7 +224,7 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
           base={base}
           zone={zone}
           record={editing.record}
-          cloudflare={credential?.provider === "cloudflare"}
+          cloudflare={provider?.provider === "cloudflare"}
           onClose={() => setEditing(null)}
           onWritten={() => {
             reread();

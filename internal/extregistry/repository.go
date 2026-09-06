@@ -18,12 +18,12 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-// A registry row no longer holds a secret: it holds which credential
-// authenticates with it. Every read joins that credential, so
-// everything above this — the provider clients, the deploy path — still
-// sees one value with a provider and a login on it, and none of them
-// had to learn where the login now lives.
-const columns = `r.id, r.credential_id, c.provider, r.host, r.namespace, r.region,
+// A registry row holds which registry it is and which credential
+// authenticates with it — not the secret. Every read joins that
+// credential, so everything above this — the provider clients, the
+// deploy path — still sees one value with a provider and a login on it,
+// and none of them had to learn where the login lives.
+const columns = `r.id, r.credential_id, r.provider, r.host, r.namespace, r.region,
 	c.username, c.password, r.created_at, r.updated_at`
 
 const from = `
@@ -38,16 +38,6 @@ func scan(row scanner) (*Credential, error) {
 		&c.Username, &c.Password, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		return nil, err
 	}
-	// DigitalOcean's registry takes the API token as both halves of a
-	// docker login, and a DigitalOcean credential stores one value:
-	// there is no name beside a token, so the account has no username
-	// to give. It is doubled here, on the way out, because every caller
-	// below wants a usable login and none of them should have to know
-	// this — a pull with an empty username is refused by the registry
-	// and reads as a wrong token.
-	if c.Provider == ProviderDigitalOcean && c.Username == "" {
-		c.Username = c.Password
-	}
 	return &c, nil
 }
 
@@ -56,9 +46,9 @@ func scan(row scanner) (*Credential, error) {
 func (r *Repository) Create(ctx context.Context, in Credential) (*Credential, error) {
 	var id int64
 	err := r.q.QueryRowContext(ctx,
-		`INSERT INTO external_registries (credential_id, host, namespace, region)
-		 VALUES ($1, $2, $3, $4) RETURNING id`,
-		in.CredentialID, in.Host, in.Namespace, in.Region).Scan(&id)
+		`INSERT INTO external_registries (credential_id, provider, host, namespace, region)
+		 VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+		in.CredentialID, string(in.Provider), in.Host, in.Namespace, in.Region).Scan(&id)
 	if err != nil {
 		return nil, fmt.Errorf("create registry: %w", err)
 	}

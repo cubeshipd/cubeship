@@ -9,6 +9,7 @@ import { ErrorAlert } from "@/components/error-alert";
 import { LoadingNote } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
+import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchableSelect } from "@/components/searchable-select";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
@@ -97,16 +98,14 @@ export default function FirewallPage() {
       width: 18,
       align: "right",
       cell: (r) => (
-        <span className="flex justify-end">
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={`Delete rule ${r.index}`}
+        <RowActions>
+          <RowAction
+            icon={Trash2Icon}
+            label={`Delete rule ${r.index}`}
+            danger
             onClick={() => setDeleting(r)}
-          >
-            <Trash2Icon className="size-3.5" />
-          </Button>
-        </span>
+          />
+        </RowActions>
       ),
     },
   ];
@@ -115,7 +114,6 @@ export default function FirewallPage() {
     <>
       <PageHeader
         title="Firewall"
-        sub="What this machine lets in. It is the host's own ufw — the same rules an ssh session would see — read and written from here."
         actions={
           data?.installed ? (
             <ActionButton

@@ -16,12 +16,12 @@ import { Label } from "@/components/ui/label";
 import {
   type App,
   api,
-  type DNSCredential,
+  type DNSProvider,
   type DNSRecord,
   type DNSZone,
   type Settings,
 } from "@/lib/api";
-import { DNS_CREDENTIALS, providerIcon } from "@/lib/credentials";
+import { providerIcon } from "@/lib/credentials";
 import { message } from "@/lib/errors";
 
 // Giving the instance a name, in one act.
@@ -39,8 +39,9 @@ import { message } from "@/lib/errors";
 // failure at the end of it.
 //
 // The manual path is the same screen with the provider left unset: the
-// two records are shown to be copied somewhere else, and the domain
-// becomes a field you type.
+// domain becomes a field you type, and the two names to point here are
+// a sentence rather than a table of records nobody is going to be
+// shown the state of.
 const DEFAULT_SUBDOMAIN = "cubeship";
 
 export function InstanceDomain({
@@ -65,7 +66,7 @@ export function InstanceDomain({
 
   const providers = useQuery({
     queryKey: ["dns"],
-    queryFn: () => api.get<DNSCredential[]>(DNS_CREDENTIALS),
+    queryFn: () => api.get<DNSProvider[]>("/dns"),
   });
 
   const zones = useQuery({
@@ -190,8 +191,8 @@ export function InstanceDomain({
               busy={providers.isLoading}
               choices={(providers.data ?? []).map((p) => ({
                 value: String(p.id),
-                label: p.label,
-                hint: p.provider_name,
+                label: p.provider_name,
+                hint: p.label,
                 icon: providerIcon(p.provider),
               }))}
             />
@@ -266,37 +267,10 @@ export function InstanceDomain({
             />
           </div>
 
-          {/* The records, always: as what is about to be written, or as
-              what to copy into somebody else's control panel. */}
-          {domain && (
-            <div className="border border-border">
-              {[domain, wildcard].map((name) => {
-                const existing = occupied.find((r) => r.name === name);
-                const right = existing?.type === "A" && existing.values[0] === ip;
-                return (
-                  <div
-                    key={name}
-                    className="flex items-center gap-4 border-b border-border px-3 py-2 font-mono text-xs last:border-0"
-                  >
-                    <span className="w-8 shrink-0 text-muted-foreground">A</span>
-                    <span className="min-w-0 flex-1 truncate">{name}</span>
-                    <span className="shrink-0 text-muted-foreground">{ip || "—"}</span>
-                    {existing && (
-                      <span
-                        className={`w-44 shrink-0 truncate text-right text-[11px] ${right ? "text-success" : "text-warning"}`}
-                      >
-                        now {existing.type} {existing.values.join(", ")}
-                      </span>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
           {!automatic && (
             <p className="text-xs leading-relaxed text-muted-foreground">
-              Create those two yourself, wherever your DNS lives — or{" "}
+              Point <code>{domain || "the name"}</code> and <code>{wildcard || "*"}</code> at{" "}
+              <code>{ip || "this host"}</code> wherever your DNS lives — or{" "}
               <Link href="/dns" className="text-foreground underline underline-offset-4">
                 connect a provider
               </Link>{" "}
