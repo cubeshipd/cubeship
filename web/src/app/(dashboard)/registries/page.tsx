@@ -1,13 +1,13 @@
 "use client";
 
 import { BoxIcon, PlusIcon } from "lucide-react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { ComponentType } from "react";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
-import { AWSIcon, DigitalOceanIcon } from "@/components/icons";
 import { LoadingRows } from "@/components/loading";
+import { Notice } from "@/components/notice";
 import { PageHeader } from "@/components/page-header";
 import { SearchableSelect } from "@/components/searchable-select";
 import { StatusBadge } from "@/components/status-badge";
@@ -32,35 +32,33 @@ import {
 } from "@/components/ui/table";
 import {
   api,
+  type Credential,
   type RegistryCredential,
   type RegistryProvider,
   type RegistryStatus,
   type Settings,
 } from "@/lib/api";
+import { providerIcon, REGISTRY_CREDENTIALS } from "@/lib/credentials";
 import { message } from "@/lib/errors";
 
-// What each provider is asked for, and why it is not a URL.
+// What a registry asks for beyond the account it authenticates as.
 //
-// The registry a credential is for is its identity, so nothing here has
-// a display name: two names for one host is a second thing to keep in
-// step for nothing.
-const PROVIDERS: Record<
-  RegistryProvider,
-  { label: string; hint: string; icon: ComponentType<{ className?: string }> }
-> = {
+// The login is not in here any more — that is the credential, stored
+// once under Credentials and used by everything on the same provider.
+// What is left is the one thing per provider that identifies *which*
+// registry, and it is different in kind at each: a host to be typed, a
+// name that is a path segment, a region an address is derived from.
+const PROVIDERS: Record<RegistryProvider, { label: string; hint: string }> = {
   digitalocean: {
     label: "DigitalOcean",
-    icon: DigitalOceanIcon,
     hint: "The host never varies — what differs is the registry's name, which is the first path segment of an image.",
   },
   aws: {
     label: "AWS ECR",
-    icon: AWSIcon,
-    hint: "The registry's address carries your account id and is discovered. What is stored is the access key; the token Docker logs in with is fetched from it at each pull.",
+    hint: "The registry's address carries your account id and is discovered by the same call that proves the key can read a registry at all.",
   },
   generic: {
     label: "Other registry",
-    icon: BoxIcon,
     hint: "Anything that takes a username and a password: Docker Hub, GitHub, a Harbor you run.",
   },
 };
@@ -76,6 +74,7 @@ export default function Registries() {
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [settings, setSettings] = useState<Settings | null>(null);
+  const [accounts, setAccounts] = useState<Credential[]>([]);
   const [statuses, setStatuses] = useState<Record<number, RegistryStatus>>({});
   const router = useRouter();
 
@@ -96,6 +95,18 @@ export default function Registries() {
       .then(setSettings)
       .catch(() => setSettings(null));
   }, []);
+
+  // The accounts, for two things: naming the one each row authenticates
+  // as, and building the dialog's first field. One registry does not
+  // imply one account — an AWS key reaching two regions is two rows on
+  // one credential — so the account is worth a column of its own.
+  const loadAccounts = useCallback(() => {
+    api
+      .get<Credential[]>(REGISTRY_CREDENTIALS)
+      .then(setAccounts)
+      .catch((e) => setError(message(e)));
+  }, []);
+  useEffect(loadAccounts, [loadAccounts]);
 
   const path = `/registries`;
   const reload = useCallback(() => {
@@ -152,6 +163,7 @@ export default function Registries() {
               <TableRow>
                 <TableHead className="px-4">Registry</TableHead>
                 <TableHead className="px-4">Provider</TableHead>
+                <TableHead className="px-4">Credential</TableHead>
                 <TableHead className="px-4">Region</TableHead>
                 <TableHead className="px-4">Status</TableHead>
               </TableRow>
@@ -173,17 +185,21 @@ export default function Registries() {
                     Cubeship
                   </span>
                 </TableCell>
+                {/* Cubeship's own takes no credential and lives in no
+                    region: each user authenticates with their own API
+                    key. */}
+                <TableCell className="px-4 py-2.5 text-xs text-muted-foreground">—</TableCell>
                 <TableCell className="px-4 py-2.5 text-xs text-muted-foreground">—</TableCell>
                 <TableCell className="px-4 py-2.5">
                   <StatusBadge value="running" />
                 </TableCell>
               </TableRow>
 
-              {creds === null && <LoadingRows rows={2} columns={4} />}
+              {creds === null && <LoadingRows rows={2} columns={5} />}
 
               {creds?.length === 0 && (
                 <TableRow className="hover:bg-transparent">
-                  <TableCell colSpan={4} className="px-4 py-3 text-sm text-muted-foreground">
+                  <TableCell colSpan={5} className="px-4 py-3 text-sm text-muted-foreground">
                     No other registries. Public images need none — add one when a registry refuses
                     an anonymous pull.
                   </TableCell>
@@ -199,11 +215,14 @@ export default function Registries() {
                   <TableCell className="px-4 py-2.5 text-sm">
                     <span className="inline-flex items-center gap-2">
                       {(() => {
-                        const Icon = PROVIDERS[c.provider]?.icon ?? BoxIcon;
+                        const Icon = providerIcon(c.provider);
                         return <Icon className="size-4 shrink-0" />;
                       })()}
                       {PROVIDERS[c.provider]?.label ?? c.provider}
                     </span>
+                  </TableCell>
+                  <TableCell className="px-4 py-2.5 text-sm">
+                    {accounts.find((a) => a.id === c.credential_id)?.label ?? "—"}
                   </TableCell>
                   <TableCell className="px-4 py-2.5 font-mono text-xs text-muted-foreground">
                     {c.region || "—"}
@@ -218,37 +237,52 @@ export default function Registries() {
         </Card>
       }
 
-      {<NewRegistryDialog path={path} open={adding} onOpenChange={setAdding} onCreated={reload} />}
+      {
+        <NewRegistryDialog
+          path={path}
+          accounts={accounts}
+          open={adding}
+          onOpenChange={setAdding}
+          onCreated={reload}
+        />
+      }
     </>
   );
 }
 
 function NewRegistryDialog({
   path,
+  accounts,
   open,
   onOpenChange,
   onCreated,
 }: {
   path: string;
+  accounts: Credential[];
   open: boolean;
   onOpenChange: (v: boolean) => void;
   onCreated: () => void;
 }) {
-  const [provider, setProvider] = useState<RegistryProvider>("digitalocean");
+  const [credentialID, setCredentialID] = useState("");
   const [host, setHost] = useState("");
   const [namespace, setNamespace] = useState("");
   const [region, setRegion] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // The account is the first question, and it answers the second: what
+  // this registry is on. There is no provider field, because picking
+  // one that disagreed with the credential would be picking something
+  // the daemon then refuses.
+  const account = accounts.find((a) => String(a.id) === credentialID);
+  const provider = (account?.provider ?? "generic") as RegistryProvider;
+  const shape = PROVIDERS[provider] ?? PROVIDERS.generic;
 
   // Only what this provider asks for is sent. The daemon fills in the
   // rest — DigitalOcean's host is fixed, and AWS's is discovered by the
   // same call that proves the key works.
   const complete =
-    username &&
-    password &&
+    credentialID &&
     (provider === "generic" ? host : provider === "digitalocean" ? namespace : region);
 
   async function submit(e: React.FormEvent) {
@@ -256,12 +290,15 @@ function NewRegistryDialog({
     setBusy(true);
     setError(null);
     try {
-      await api.post(path, { provider, host, namespace, region, username, password });
+      await api.post(path, {
+        credential_id: Number(credentialID),
+        host,
+        namespace,
+        region,
+      });
       setHost("");
       setNamespace("");
       setRegion("");
-      setUsername("");
-      setPassword("");
       onCreated();
       onOpenChange(false);
     } catch (err) {
@@ -276,24 +313,42 @@ function NewRegistryDialog({
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>New registry</DialogTitle>
-            <DialogDescription>{PROVIDERS[provider].hint}</DialogDescription>
+            <DialogDescription>
+              {account
+                ? shape.hint
+                : "Which stored account logs in to it. The provider follows from that."}
+            </DialogDescription>
           </DialogHeader>
 
-          <div className="space-y-4 py-5">
+          <div className="-mx-2 max-h-[60vh] space-y-4 overflow-y-auto px-2 py-5">
             <ErrorAlert error={error} className="mb-0" />
 
-            <SearchableSelect
-              label="Provider"
-              choices={(Object.keys(PROVIDERS) as RegistryProvider[]).map((id) => ({
-                value: id,
-                label: PROVIDERS[id].label,
-                icon: PROVIDERS[id].icon,
-              }))}
-              value={provider}
-              onChange={(v) => setProvider(v as RegistryProvider)}
-            />
+            {accounts.length === 0 ? (
+              <Notice>
+                No credential here can log in to a registry yet. Add one under{" "}
+                <Link href="/credentials" className="text-foreground underline underline-offset-4">
+                  Credentials
+                </Link>{" "}
+                — it is the same account that reaches everything else on that provider, so it is
+                stored once.
+              </Notice>
+            ) : (
+              <SearchableSelect
+                label="Credential"
+                placeholder="Which account logs in"
+                choices={accounts.map((a) => ({
+                  value: String(a.id),
+                  label: a.label,
+                  hint: a.provider_name,
+                  icon: providerIcon(a.provider),
+                }))}
+                value={credentialID}
+                onChange={setCredentialID}
+                hint="Its secret stays where it is. Rotating it later is one edit under Credentials, and every registry on it follows."
+              />
+            )}
 
-            {provider === "generic" && (
+            {account && provider === "generic" && (
               <TextField
                 label="Registry"
                 hint="docker.io for the Hub."
@@ -304,7 +359,7 @@ function NewRegistryDialog({
               />
             )}
 
-            {provider === "digitalocean" && (
+            {account && provider === "digitalocean" && (
               <TextField
                 label="Registry name"
                 hint="What follows registry.digitalocean.com/ in an image path."
@@ -315,7 +370,7 @@ function NewRegistryDialog({
               />
             )}
 
-            {provider === "aws" && (
+            {account && provider === "aws" && (
               <TextField
                 label="Region"
                 hint="Where the ECR registry lives. The account id is discovered."
@@ -325,29 +380,6 @@ function NewRegistryDialog({
                 placeholder="us-east-1"
               />
             )}
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <TextField
-                label={provider === "aws" ? "Access key ID" : "Username"}
-                hint={provider === "digitalocean" ? "Your DigitalOcean account email." : undefined}
-                spellCheck={false}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-              />
-              <TextField
-                label={provider === "aws" ? "Secret access key" : "Password or token"}
-                hint={
-                  provider === "digitalocean"
-                    ? "An API key with registry scope."
-                    : provider === "generic"
-                      ? "An access token wherever the registry offers one."
-                      : undefined
-                }
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
           </div>
 
           <DialogFooter>

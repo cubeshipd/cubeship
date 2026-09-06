@@ -1,10 +1,9 @@
 "use client";
 
-import { ChevronLeftIcon, ChevronRightIcon, SettingsIcon } from "lucide-react";
+import { ChevronLeftIcon, ChevronRightIcon, KeyRoundIcon } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
-import { CloudflareIcon } from "@/components/icons";
 import { LoadingList, LoadingNote } from "@/components/loading";
 import { PageHeader } from "@/components/page-header";
 import { SearchBar } from "@/components/search-bar";
@@ -19,7 +18,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { api, type DNSCredential, type DNSZone } from "@/lib/api";
-import { DNS_PROVIDERS } from "@/lib/dns";
+import { DNS_CREDENTIALS, providerIcon } from "@/lib/credentials";
 import { message } from "@/lib/errors";
 
 // One provider's zones. Clicking one opens it.
@@ -40,7 +39,7 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
 
   useEffect(() => {
     api
-      .get<DNSCredential[]>(`/dns`)
+      .get<DNSCredential[]>(DNS_CREDENTIALS)
       .then((list) => setCredential(list.find((c) => String(c.id) === id) ?? null))
       .catch(() => setCredential(null));
   }, [id]);
@@ -55,8 +54,7 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
   }, [base]);
   useEffect(load, [load]);
 
-  const shape = credential ? DNS_PROVIDERS[credential.provider] : null;
-  const Icon = shape?.icon ?? CloudflareIcon;
+  const Icon = providerIcon(credential?.provider ?? "");
 
   const filtered = zones
     ? zones.filter((z) => z.name.toLowerCase().includes(query.trim().toLowerCase()))
@@ -81,9 +79,12 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
             variant="outline"
             nativeButton={false}
             render={
-              <Link href={`/dns/${id}/settings`}>
-                <SettingsIcon />
-                Settings
+              // What the account is and what it authenticates with are
+              // edited where the account lives, not here: this credential
+              // may be pulling images somewhere else at the same time.
+              <Link href="/credentials">
+                <KeyRoundIcon />
+                Credential
               </Link>
             }
           />

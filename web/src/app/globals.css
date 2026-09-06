@@ -151,7 +151,8 @@
 
   /* A field's name is a machine label, not prose. */
   [data-slot="label"],
-  [data-slot="table"] thead [data-slot="table-head"] {
+  [data-slot="table"] thead [data-slot="table-head"],
+  [data-slot="table-head-sort"] {
     font-family: var(--font-sans);
     font-weight: 600;
     font-size: 0.6875rem;

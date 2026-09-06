@@ -155,7 +155,7 @@ export default function GitProviders() {
     <>
       <PageHeader
         title="Git Providers"
-        sub="Where this organization's code is read from. A connection lets Cubeship clone private repositories and deploy on a push to them."
+        sub="Where this instance's code is read from. A connection lets Cubeship clone private repositories and deploy on a push to them."
       />
 
       <ErrorAlert error={connections.error ? message(connections.error) : null} />

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"cubeship/internal/credential"
 	"cubeship/internal/extregistry"
 	"cubeship/internal/platform/database/dbtest"
 	"cubeship/internal/project"
@@ -41,7 +42,7 @@ func externalFixture(t *testing.T, image string) (*Orchestrator, *fakeDocker, *S
 	}
 
 	docker := &fakeDocker{nextCreateID: "new-container", running: true}
-	orch := NewOrchestrator(db, docker, settings.NewService(db), extregistry.NewService(db), nil, nil, testRegistry)
+	orch := NewOrchestrator(db, docker, settings.NewService(db), extregistry.NewService(db, credential.NewService(db)), nil, nil, testRegistry)
 	orch.HealthCheckInterval = 0
 	return orch, docker, a, extregistry.NewRepository(db)
 }

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"cubeship/internal/platform/database"
+	"cubeship/internal/credential"
 	"cubeship/internal/user"
 )
 
@@ -16,142 +16,30 @@ import (
 // else: http.go parses input and renders the answer, and that is all it
 // does.
 type Service struct {
-	db     *database.DB
+	// creds is where the accounts live. This module has none of its
+	// own — see the package comment.
+	creds  *credential.Service
 	client *http.Client
 }
 
-func NewService(db *database.DB) *Service {
+func NewService(creds *credential.Service) *Service {
 	return &Service{
-		db: db,
+		creds: creds,
 		// A provider that has not answered in this long is not going to.
 		// A dashboard row is waiting on some of these calls.
 		client: &http.Client{Timeout: 20 * time.Second},
 	}
 }
 
-func (s *Service) Repo() *Repository { return NewRepository(s.db) }
-
-// manageRole is the bar for everything here.
+// resolve finds the account an operation is addressed to, and refuses
+// one that cannot do DNS.
 //
-// Not a member's job, and the reason is what a DNS credential can do:
-// it moves where a name points, for every name on the account — which
-// includes names that have nothing to do with Cubeship. That is closer
-// to holding the account than to deploying an app.
-const manageRole = user.RoleAdmin
-
-// Create stores a credential, after checking it is one this daemon can
-// act through. A provider it cannot act on is refused rather than
-// stored: accepting one would let someone save a credential that can
-// never resolve anything.
-func (s *Service) Create(ctx context.Context, caller *user.User, in Credential) (*Credential, error) {
-	if err := user.Require(caller, manageRole); err != nil {
-		return nil, err
-	}
-	if !in.Provider.Valid() {
-		return nil, ErrProviderRequired
-	}
-
-	in.Label = NormalizeLabel(in.Label)
-	if in.Label == "" {
-		return nil, ErrLabelRequired
-	}
-	if in.Password == "" {
-		return nil, ErrPasswordRequired
-	}
-	// Cloudflare's credential is one value; Route 53's is two, and half
-	// of one is not a credential.
-	if in.Provider == ProviderRoute53 && in.Username == "" {
-		return nil, ErrUsernameRequired
-	}
-	if in.Provider == ProviderCloudflare {
-		in.Username = ""
-	}
-
-	c, err := s.Repo().Create(ctx, in)
-	if database.IsUniqueViolation(err) {
-		return nil, ErrLabelTaken
-	}
-	return c, err
-}
-
-// Update rotates the credential, renames it, or both.
-//
-// The provider is not editable. A credential is *for* one provider —
-// the calls it makes, the way it authenticates and what its secret even
-// is all follow from that — so changing it in place would not be an
-// edit, it would be a different credential wearing the old one's id.
-func (s *Service) Update(ctx context.Context, caller *user.User, id int64, label, username, password *string) (*Credential, error) {
-	if err := user.Require(caller, manageRole); err != nil {
-		return nil, err
-	}
-	existing, err := s.Repo().Get(ctx, id)
-	if errors.Is(err, database.ErrNotFound) {
-		return nil, ErrNotFound
-	}
-	if err != nil {
-		return nil, err
-	}
-
-	if label != nil {
-		normalized := NormalizeLabel(*label)
-		if normalized == "" {
-			return nil, ErrLabelRequired
-		}
-		label = &normalized
-	}
-
-	// The secret travels with its key id where the provider has one: a
-	// new Route 53 secret against the old key id is not a credential
-	// anybody chose, and it would fail in a way that reads as the
-	// secret being wrong.
-	if password != nil && *password == "" {
-		return nil, ErrPasswordRequired
-	}
-	if existing.Provider == ProviderRoute53 && password != nil && (username == nil || *username == "") {
-		return nil, ErrUsernameRequired
-	}
-	if existing.Provider == ProviderCloudflare {
-		username = nil
-	}
-
-	c, err := s.Repo().Update(ctx, id, label, username, password)
-	if database.IsUniqueViolation(err) {
-		return nil, ErrLabelTaken
-	}
-	if errors.Is(err, database.ErrNotFound) {
-		return nil, ErrNotFound
-	}
-	return c, err
-}
-
-func (s *Service) List(ctx context.Context, caller *user.User) ([]*Credential, error) {
-	if err := user.Require(caller, manageRole); err != nil {
-		return nil, err
-	}
-	return s.Repo().List(ctx)
-}
-
-func (s *Service) Delete(ctx context.Context, caller *user.User, id int64) error {
-	if err := user.Require(caller, manageRole); err != nil {
-		return err
-	}
-	err := s.Repo().Delete(ctx, id)
-	if errors.Is(err, database.ErrNotFound) {
-		return ErrNotFound
-	}
-	return err
-}
-
-// resolve finds one of this instance's credentials.
+// Both questions belong to the credential module: it owns the row, and
+// what an account can be used for follows from its provider, which only
+// that module knows. This package asks once, here, and every operation
+// below gets an account it can act through.
 func (s *Service) resolve(ctx context.Context, caller *user.User, id int64) (*Credential, error) {
-	if err := user.Require(caller, manageRole); err != nil {
-		return nil, err
-	}
-	c, err := s.Repo().Get(ctx, id)
-	if errors.Is(err, database.ErrNotFound) {
-		return nil, ErrNotFound
-	}
-	return c, err
+	return s.creds.Resolve(ctx, caller, id, credential.CapabilityDNS)
 }
 
 // Probe asks a provider whether this credential still works.
@@ -170,7 +58,7 @@ func (s *Service) Probe(ctx context.Context, caller *user.User, id int64) (*Stat
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
 
-	if c.Provider == ProviderCloudflare {
+	if c.Provider == credential.ProviderCloudflare {
 		err = cfPing(ctx, s.client, c)
 	} else {
 		err = r53Ping(ctx, s.client, c)
@@ -195,7 +83,7 @@ func (s *Service) Zones(ctx context.Context, caller *user.User, id int64) ([]Zon
 	if err != nil {
 		return nil, err
 	}
-	if c.Provider == ProviderCloudflare {
+	if c.Provider == credential.ProviderCloudflare {
 		return cfZones(ctx, s.client, c)
 	}
 	return r53Zones(ctx, s.client, c)
@@ -210,7 +98,7 @@ func (s *Service) Records(ctx context.Context, caller *user.User, id int64, zone
 	if zoneID == "" {
 		return nil, fmt.Errorf("name the zone to list")
 	}
-	if c.Provider == ProviderCloudflare {
+	if c.Provider == credential.ProviderCloudflare {
 		return cfRecords(ctx, s.client, c, zoneID)
 	}
 	return r53Records(ctx, s.client, c, zoneID)
@@ -247,7 +135,7 @@ func (s *Service) PutRecord(ctx context.Context, caller *user.User, id int64, zo
 		r.TTL = DefaultTTL
 	}
 
-	if c.Provider == ProviderCloudflare {
+	if c.Provider == credential.ProviderCloudflare {
 		return cfPutRecord(ctx, s.client, c, zoneID, r)
 	}
 	return r53PutRecord(ctx, s.client, c, zoneID, r)
@@ -264,7 +152,7 @@ func (s *Service) DeleteRecord(ctx context.Context, caller *user.User, id int64,
 	}
 
 	name = NormalizeName(name)
-	if c.Provider == ProviderCloudflare {
+	if c.Provider == credential.ProviderCloudflare {
 		return cfDeleteRecord(ctx, s.client, c, zoneID, name, kind)
 	}
 	return r53DeleteRecord(ctx, s.client, c, zoneID, name, kind)

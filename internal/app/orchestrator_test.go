@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"cubeship/internal/credential"
 	"cubeship/internal/envvar"
 	"cubeship/internal/extregistry"
 	"cubeship/internal/platform/database"
@@ -55,7 +56,7 @@ func newDeployFixture(t *testing.T, docker DockerAPI) (*Orchestrator, *database.
 	if err := cfg.SeedFromEnv(ctx, map[string]string{settings.Domain: "example.com"}); err != nil {
 		t.Fatalf("configure the domain: %v", err)
 	}
-	orch := NewOrchestrator(db, docker, cfg, extregistry.NewService(db), nil, nil, testRegistry)
+	orch := NewOrchestrator(db, docker, cfg, extregistry.NewService(db, credential.NewService(db)), nil, nil, testRegistry)
 	// The health check's real timing has nothing to test here, and
 	// sleeping through it would make every deploy test slow.
 	orch.HealthCheckInterval = 0

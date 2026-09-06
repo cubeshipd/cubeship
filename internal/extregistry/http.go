@@ -17,9 +17,13 @@ import (
 // it back turns every read of this list into a way to exfiltrate it.
 // Replace it if you need to change it.
 type Response struct {
-	ID       int64  `json:"id"`
-	Provider string `json:"provider"`
-	Host     string `json:"host"`
+	ID int64 `json:"id"`
+	// CredentialID is the stored account this authenticates as, and
+	// where its secret lives. Provider comes from that account rather
+	// than being a second copy of it.
+	CredentialID int64  `json:"credential_id"`
+	Provider     string `json:"provider"`
+	Host         string `json:"host"`
 	// Namespace is the path segment between the host and the image
 	// where the provider has one. Absent otherwise.
 	Namespace string `json:"namespace,omitempty"`
@@ -33,7 +37,8 @@ type Response struct {
 
 func toResponse(c *Credential) Response {
 	return Response{
-		ID: c.ID, Provider: string(c.Provider), Host: c.Host,
+		ID: c.ID, CredentialID: c.CredentialID,
+		Provider: string(c.Provider), Host: c.Host,
 		Namespace: c.Namespace, Region: c.Region, Username: c.Username,
 		CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt,
 	}
@@ -98,7 +103,10 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Provider string `json:"provider"`
+		// CredentialID is the stored account this registry
+		// authenticates as. It decides the provider, so nothing here
+		// names one.
+		CredentialID int64 `json:"credential_id"`
 		// Host is the registry, for a generic one. Fixed for
 		// DigitalOcean and discovered for AWS, so it is ignored there.
 		Host string `json:"host"`
@@ -108,10 +116,6 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		// Region is AWS's. An ECR registry lives in one and it cannot
 		// be guessed.
 		Region string `json:"region"`
-		// Username is the login's user, or an AWS access key id;
-		// Password its password, token, or secret access key.
-		Username string `json:"username"`
-		Password string `json:"password"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -119,12 +123,10 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	created, err := h.svc.Create(ctx, user.FromContext(ctx), Credential{
-		Provider:  Provider(req.Provider),
-		Host:      req.Host,
-		Namespace: req.Namespace,
-		Region:    req.Region,
-		Username:  req.Username,
-		Password:  req.Password,
+		CredentialID: req.CredentialID,
+		Host:         req.Host,
+		Namespace:    req.Namespace,
+		Region:       req.Region,
 	})
 	if err != nil {
 		WriteError(w, err)
@@ -135,12 +137,14 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Username string `json:"username"`
-		Password string `json:"password"`
-		// A pointer, because omitting it means "leave the name alone"
-		// and sending "" means "you gave me nothing" — two different
-		// requests that a plain string cannot tell apart.
-		Namespace *string `json:"namespace"`
+		// Both pointers, because omitting one means "leave it alone"
+		// and sending it means "change it" — two different requests
+		// that a plain value cannot tell apart.
+		//
+		// The login is not here. Rotating a secret is an edit to the
+		// credential, and every registry using it follows.
+		CredentialID *int64  `json:"credential_id"`
+		Namespace    *string `json:"namespace"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -153,7 +157,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	updated, err := h.svc.Update(ctx, user.FromContext(ctx),
-		id, req.Username, req.Password, req.Namespace)
+		id, req.CredentialID, req.Namespace)
 	if err != nil {
 		WriteError(w, err)
 		return

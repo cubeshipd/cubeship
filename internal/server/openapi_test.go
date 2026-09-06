@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -74,10 +75,10 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 	want := []string{
 		"DELETE /apps/{project}/{env}/{name}",
 		"DELETE /apps/{project}/{env}/{name}/domains/{domainID}",
+		"DELETE /credentials/{id}",
 		"DELETE /datastores/{name}",
 		"DELETE /datastores/{name}/attachments/{project}/{env}/{app}",
 		"DELETE /datastores/{name}/expose",
-		"DELETE /dns/{id}",
 		"DELETE /dns/{id}/records",
 		"DELETE /github/{id}",
 		"DELETE /projects/{projectSlug}",
@@ -97,13 +98,14 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"GET /apps/{project}/{env}/{name}/logs",
 		"GET /apps/{project}/{env}/{name}/metrics",
 		"GET /certificates",
+		"GET /credentials",
+		"GET /credentials/providers",
 		"GET /datastores",
 		"GET /datastores/engines",
 		"GET /datastores/{name}",
 		"GET /datastores/{name}/credentials",
 		"GET /datastores/{name}/logs",
 		"GET /datastores/{name}/metrics",
-		"GET /dns",
 		"GET /dns/{id}/records",
 		"GET /dns/{id}/status",
 		"GET /dns/{id}/zones",
@@ -127,8 +129,8 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"PATCH /apps/{project}/{env}/{name}",
 		"PATCH /apps/{project}/{env}/{name}/domains/{domainID}",
 		"PATCH /apps/{project}/{env}/{name}/env",
+		"PATCH /credentials/{id}",
 		"PATCH /datastores/{name}",
-		"PATCH /dns/{id}",
 		"PATCH /projects/{projectSlug}",
 		"PATCH /projects/{projectSlug}/env",
 		"PATCH /projects/{projectSlug}/environments/{envSlug}",
@@ -136,12 +138,12 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"POST /apps",
 		"POST /apps/{project}/{env}/{name}/deploy",
 		"POST /apps/{project}/{env}/{name}/domains",
+		"POST /credentials",
 		"POST /datastores",
 		"POST /datastores/{name}/attachments",
 		"POST /datastores/{name}/expose",
 		"POST /datastores/{name}/start",
 		"POST /datastores/{name}/stop",
-		"POST /dns",
 		"POST /github",
 		"POST /projects",
 		"POST /projects/{projectSlug}/environments",
@@ -184,6 +186,40 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 	}
 	if got := f.Server.InternalPatterns(); !slices.Equal(got, wantInternal) {
 		t.Errorf("the internal routes changed.\n got: %v\nwant: %v", got, wantInternal)
+	}
+}
+
+// Every schema the document defines is pointed at, and every schema it
+// points at is defined.
+//
+// Both halves catch the same edit from opposite sides: removing the last
+// operation that used a schema leaves it defined and unreachable, and
+// removing a schema still referenced leaves the reference rendering
+// blank in the browser. Neither is a compile error, and neither shows up
+// anywhere but in the published document.
+func TestEverySchemaIsDefinedAndUsed(t *testing.T) {
+	f := servertest.New(t)
+	doc := f.Server.OpenAPI()
+
+	encoded, err := json.Marshal(doc)
+	if err != nil {
+		t.Fatalf("encode the document: %v", err)
+	}
+	refs := map[string]bool{}
+	for _, m := range regexp.MustCompile(`#/components/schemas/([A-Za-z0-9_]+)`).
+		FindAllStringSubmatch(string(encoded), -1) {
+		refs[m[1]] = true
+	}
+
+	for name := range refs {
+		if _, ok := doc.Components.Schemas[name]; !ok {
+			t.Errorf("the document references schema %q, which it does not define", name)
+		}
+	}
+	for name := range doc.Components.Schemas {
+		if !refs[name] {
+			t.Errorf("schema %q is defined but nothing references it", name)
+		}
 	}
 }
 

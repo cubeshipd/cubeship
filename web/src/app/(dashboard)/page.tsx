@@ -28,7 +28,7 @@ export default function Home() {
   return <Projects />;
 }
 
-// The projects in the selected organization, as cards. Apps are not
+// The instance's projects, as cards. Apps are not
 // listed here: an app only means something inside an environment, and
 // which environment is a choice you make after opening the project.
 function Projects() {
@@ -46,7 +46,7 @@ function Projects() {
   }, []);
   useEffect(reload, [reload]);
 
-  // The daemon answers with every app you can see, across organizations
+  // The daemon answers with every app you can see, across every project
   // — one request, and the cards count out of it.
   useEffect(() => {
     api
@@ -91,7 +91,7 @@ function Projects() {
       {projects?.length === 0 && (
         <Card>
           <CardContent className="py-2 text-sm text-muted-foreground">
-            No projects in this organization yet. A project holds your environments, and each
+            No projects yet. A project holds your environments, and each
             environment holds the apps you deploy — start with{" "}
             <button
               type="button"

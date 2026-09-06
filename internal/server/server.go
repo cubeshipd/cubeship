@@ -12,6 +12,7 @@ import (
 
 	"cubeship/internal/app"
 	"cubeship/internal/certificates"
+	"cubeship/internal/credential"
 	"cubeship/internal/datastore"
 	"cubeship/internal/dns"
 	"cubeship/internal/extregistry"
@@ -29,18 +30,19 @@ import (
 
 // Server owns the module graph and the mux they are mounted on.
 type Server struct {
-	Users      *user.Service
-	Projects   *project.Service
-	Apps       *app.Service
-	Datastores *datastore.Service
-	Metrics    *metrics.Service
-	Settings   *settings.Service
-	Certs      *certificates.Service
-	Setup      *setup.Service
-	Registries *extregistry.Service
-	DNS        *dns.Service
-	GitHub     *github.Service
-	Registry   *registry.Handler
+	Users       *user.Service
+	Projects    *project.Service
+	Apps        *app.Service
+	Datastores  *datastore.Service
+	Metrics     *metrics.Service
+	Credentials *credential.Service
+	Settings    *settings.Service
+	Certs       *certificates.Service
+	Setup       *setup.Service
+	Registries  *extregistry.Service
+	DNS         *dns.Service
+	GitHub      *github.Service
+	Registry    *registry.Handler
 
 	// githubHandler is kept so a test can wait for the deploys a
 	// webhook set going.
@@ -99,8 +101,12 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	users := user.NewService(db)
 	projects := project.NewService(db)
 	cfg := settings.NewService(db)
-	registries := extregistry.NewService(db)
-	dnsProviders := dns.NewService(db)
+	// One store for every secret this instance holds, and two modules
+	// that used to keep their own. See internal/credential: an AWS key
+	// reaches Route 53 and ECR both, and it is stored once.
+	creds := credential.NewService(db)
+	registries := extregistry.NewService(db, creds)
+	dnsProviders := dns.NewService(creds)
 	gh := github.NewService(db, cfg)
 	// One series service for both modules below: an app and a datastore
 	// are the same question about two kinds of container.
@@ -123,6 +129,11 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// here — the one place that knows every module exists.
 	projects.SetAppTeardown(apps)
 
+	// What would break if a credential were deleted is known only to
+	// the modules using it, so they answer rather than this one
+	// reading their rows. Until they are wired, a delete refuses.
+	creds.SetDependants(registries, cfg)
+
 	// The one thing that travels back down from datastores to apps:
 	// what an attached database contributes to a container's
 	// environment. app asks for it through an interface rather than
@@ -130,20 +141,21 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	apps.SetDatastoreVars(datastores)
 
 	srv := &Server{
-		Users:      users,
-		Projects:   projects,
-		Apps:       apps,
-		Datastores: datastores,
-		Metrics:    series,
-		Settings:   cfg,
-		Certs:      certificates.NewService(cfg, apps, opts.DataDir),
-		Setup:      setup.NewService(db, users, opts.SetupToken),
-		Registries: registries,
-		DNS:        dnsProviders,
-		GitHub:     gh,
-		Registry:   registry.NewHandler(users, apps, cfg, opts.WebhookToken, opts.LocalRegistry),
-		frontend:   opts.Frontend,
-		router:     httpx.NewRouter(),
+		Users:       users,
+		Projects:    projects,
+		Apps:        apps,
+		Datastores:  datastores,
+		Metrics:     series,
+		Settings:    cfg,
+		Certs:       certificates.NewService(cfg, apps, opts.DataDir),
+		Setup:       setup.NewService(db, users, opts.SetupToken),
+		Credentials: creds,
+		Registries:  registries,
+		DNS:         dnsProviders,
+		GitHub:      gh,
+		Registry:    registry.NewHandler(users, apps, cfg, opts.WebhookToken, opts.LocalRegistry),
+		frontend:    opts.Frontend,
+		router:      httpx.NewRouter(),
 	}
 	// Garbage collection runs a command inside the registry container,
 	// which needs the Engine rather than the deploy interface. A fake in
@@ -220,6 +232,7 @@ func (s *Server) routes() {
 	project.NewHandler(s.Projects).Routes(s.router, auth)
 	settings.NewHandler(s.Settings).Routes(s.router, auth)
 	certificates.NewHandler(s.Certs).Routes(s.router, auth)
+	credential.NewHandler(s.Credentials).Routes(s.router, auth)
 	extregistry.NewHandler(s.Registries).Routes(s.router, auth)
 	dns.NewHandler(s.DNS).Routes(s.router, auth)
 	s.githubHandler = github.NewHandler(s.GitHub, s.Apps)

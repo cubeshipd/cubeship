@@ -1,6 +1,6 @@
 "use client";
 
-import { BoxIcon, ChevronLeftIcon, Trash2Icon } from "lucide-react";
+import { ChevronLeftIcon, KeyRoundIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
@@ -8,18 +8,26 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
-import { AWSIcon, DigitalOceanIcon } from "@/components/icons";
 import { LoadingNote } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
+import { SearchableSelect } from "@/components/searchable-select";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { api, type RegistryCredential, type RegistryStatus } from "@/lib/api";
+import { api, type Credential, type RegistryCredential, type RegistryStatus } from "@/lib/api";
+import { providerIcon, REGISTRY_CREDENTIALS } from "@/lib/credentials";
 import { message } from "@/lib/errors";
 
-// A registry's settings: what it logs in with, and getting rid of it.
+// A registry's settings: which account it logs in as, and getting rid
+// of it.
+//
+// The secret is not here. It belongs to the credential, which may be
+// pulling from another region and writing DNS records at the same time,
+// so rotating it is one edit under Credentials rather than one per
+// thing standing on it. What this screen decides is which account —
+// which is a different question, and the one that has an answer here.
 //
 // The host is not here. A login is *for* a registry, so pointing an
 // existing one somewhere else would silently redirect every app pulling
@@ -38,9 +46,9 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
+  const [accounts, setAccounts] = useState<Credential[]>([]);
   const [namespace, setNamespace] = useState("");
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const [credentialID, setCredentialID] = useState("");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [savingName, setSavingName] = useState(false);
@@ -64,17 +72,13 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
   }
 
   useEffect(() => {
-    if (id) return;
     api
       .get<RegistryCredential[]>(`/registries`)
       .then((list) => {
         const found = list.find((c) => String(c.id) === id) ?? null;
         setCredential(found);
         setNamespace(found?.namespace ?? "");
-        // The username is not a secret and comes back with the listing,
-        // so the field starts on it: an empty box next to a stored
-        // login reads as nothing configured.
-        setUsername(found?.username ?? "");
+        setCredentialID(found ? String(found.credential_id) : "");
       })
       .catch((e) => setError(message(e)));
   }, [id]);
@@ -83,7 +87,6 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
   // because whether the new one works is the question this screen was
   // opened to answer.
   const probe = useCallback(() => {
-    if (id) return;
     setStatus(null);
     api
       .get<RegistryStatus>(`/registries/${id}/status`)
@@ -95,8 +98,19 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
   const provider = credential?.provider ?? "generic";
   const aws = provider === "aws";
   const digitalocean = provider === "digitalocean";
-  const Icon =
-    provider === "aws" ? AWSIcon : provider === "digitalocean" ? DigitalOceanIcon : BoxIcon;
+  const Icon = providerIcon(provider);
+
+  // Only accounts on the same provider are offered. A registry's
+  // address was derived from the one it has — ECR's carries the account
+  // id — so moving it to a Cloudflare token is not an edit anything
+  // could carry out.
+  useEffect(() => {
+    api
+      .get<Credential[]>(REGISTRY_CREDENTIALS)
+      .then(setAccounts)
+      .catch((e) => setError(message(e)));
+  }, []);
+  const choices = accounts.filter((a) => a.provider === provider);
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -104,8 +118,11 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
     setError(null);
     setSaved(false);
     try {
-      await api.put(`/registries/${id}`, { username, password });
-      setPassword("");
+      setCredential(
+        await api.put<RegistryCredential>(`/registries/${id}`, {
+          credential_id: Number(credentialID),
+        }),
+      );
       setSaved(true);
       probe();
     } catch (err) {
@@ -131,7 +148,7 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
         title={credential?.host || "Registry"}
         literal
         icon={<Icon className="size-5 shrink-0 text-muted-foreground" />}
-        sub="What this organization logs in to this registry with."
+        sub="Which stored account this registry logs in as."
         actions={<StatusBadge value={status?.state ?? "checking"} />}
       />
 
@@ -187,42 +204,47 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
       )}
 
       <SectionHeader
-        title="Login"
+        title="Credential"
         sub={
           aws
-            ? "The access key. What Docker logs in with is a token fetched from it at each pull, so nothing here expires."
-            : "What is stored is sent to the registry as given."
+            ? "The account this registry logs in as. What Docker logs in with is a token fetched from its access key at each pull, so nothing stored expires."
+            : "The account this registry logs in as, stored once and used by everything else on the same provider."
         }
       />
 
       <Card>
         <CardContent>
           <form onSubmit={save} className="max-w-md space-y-4">
-            <TextField
-              label={aws ? "Access key ID" : "Username"}
-              spellCheck={false}
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-            {/* The password is never returned — an endpoint that
-                handed it back would turn every read of this page into a
-                way out for it — so the field cannot start on it. The
-                placeholder says something is stored; the box being
-                empty on arrival says only that you have not typed. */}
-            <TextField
-              label={aws ? "Secret access key" : "Password or token"}
-              type="password"
-              placeholder="••••••••••"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              hint="Stored and never returned, so replacing it means entering it again in full."
+            <SearchableSelect
+              label="Credential"
+              placeholder="Which account logs in"
+              choices={choices.map((a) => ({
+                value: String(a.id),
+                label: a.label,
+                hint: a.provider_name,
+                icon: providerIcon(a.provider),
+              }))}
+              value={credentialID}
+              onChange={setCredentialID}
+              empty="No other account on this provider."
             />
             <div className="flex items-center gap-3">
-              <ActionButton type="submit" busy={saving} disabled={!username || !password}>
+              <ActionButton
+                type="submit"
+                busy={saving}
+                disabled={!credentialID || credentialID === String(credential?.credential_id ?? "")}
+              >
                 Save
               </ActionButton>
-              {saved && <span className="text-xs text-muted-foreground">Login replaced.</span>}
+              {saved && <span className="text-xs text-muted-foreground">Credential changed.</span>}
             </div>
+            <p className="text-xs text-muted-foreground">
+              A refused login is fixed where the secret lives:{" "}
+              <Link href="/credentials" className="text-foreground underline underline-offset-4">
+                <KeyRoundIcon className="inline size-3" /> Credentials
+              </Link>
+              . Every registry on that account follows the same edit.
+            </p>
           </form>
         </CardContent>
       </Card>

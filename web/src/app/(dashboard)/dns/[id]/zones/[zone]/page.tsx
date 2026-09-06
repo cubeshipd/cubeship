@@ -26,6 +26,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { api, type DNSCredential, type DNSRecord, type DNSZone } from "@/lib/api";
+import { DNS_CREDENTIALS } from "@/lib/credentials";
 import { RECORD_TYPES } from "@/lib/dns";
 import { message } from "@/lib/errors";
 
@@ -49,7 +50,7 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
 
   const credentials = useQuery({
     queryKey: ["dns"],
-    queryFn: () => api.get<DNSCredential[]>(`/dns`),
+    queryFn: () => api.get<DNSCredential[]>(DNS_CREDENTIALS),
   });
   const credential = credentials.data?.find((c) => String(c.id) === id) ?? null;
 
