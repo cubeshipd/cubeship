@@ -2,8 +2,10 @@ package firewall
 
 import (
 	"errors"
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"cubeship/internal/platform/hostexec"
 	"cubeship/internal/platform/httpx"
@@ -59,7 +61,35 @@ func (h *Handler) status(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
+	status.YourIP = callerIP(r)
 	httpx.WriteJSON(w, http.StatusOK, status)
+}
+
+// callerIP is the address this request came from, so a screen can offer
+// "just me" without asking somebody to go and look their own address up
+// — which is a detour, and one people get wrong by pasting a private
+// address a firewall would never see.
+//
+// It is what the daemon sees, and it says so: through Traefik that is
+// the forwarded address, and reaching :3000 directly it is the socket's.
+// A forged header would prefill the field wrongly and nothing else —
+// the value is shown before it is used, and it is the admin who submits
+// it.
+func callerIP(r *http.Request) string {
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		first, _, _ := strings.Cut(forwarded, ",")
+		if ip := net.ParseIP(strings.TrimSpace(first)); ip != nil {
+			return ip.String()
+		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		host = r.RemoteAddr
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.String()
+	}
+	return ""
 }
 
 // write is what every mutating handler ends in: they all answer with the
@@ -90,8 +120,11 @@ func (h *Handler) addRule(w http.ResponseWriter, r *http.Request) {
 		Action   string `json:"action"`
 		Protocol string `json:"protocol"`
 		Port     string `json:"port"`
-		From     string `json:"from"`
-		Comment  string `json:"comment"`
+		// Sources is a list because UFW takes one source per rule:
+		// admitting a port from three addresses is three rules, and
+		// this is the one request that writes them.
+		Sources []string `json:"sources"`
+		Comment string   `json:"comment"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -99,12 +132,12 @@ func (h *Handler) addRule(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	write(w, func() (*Status, error) {
-		return h.svc.AddRule(ctx, user.FromContext(ctx), Spec{
+		return h.svc.AddRule(ctx, user.FromContext(ctx), Request{
 			Scope:    Scope(req.Scope),
 			Action:   Action(req.Action),
 			Protocol: Protocol(req.Protocol),
 			Port:     req.Port,
-			From:     req.From,
+			Sources:  req.Sources,
 			Comment:  req.Comment,
 		})
 	})

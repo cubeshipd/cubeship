@@ -298,8 +298,60 @@ func (s *Service) Disable(ctx context.Context, caller *user.User) (*Status, erro
 	return s.Status(ctx, caller)
 }
 
-// AddRule writes one rule.
-func (s *Service) AddRule(ctx context.Context, caller *user.User, spec Spec) (*Status, error) {
+// Request is a rule as a screen asks for it, which is not always one
+// rule.
+//
+// UFW takes one source per rule — there is no "from A or B" — so
+// admitting a port from three addresses is three rules. That is the
+// tool's shape, not a limitation worth hiding, but it should not make
+// the *asking* three times either: this is one act, and it either
+// happens or it does not.
+type Request struct {
+	Scope    Scope
+	Action   Action
+	Protocol Protocol
+	Port     string
+	// Sources are the addresses it applies from. Empty — or any entry
+	// that is empty — means anywhere, and anywhere makes the others
+	// meaningless, so it wins.
+	Sources []string
+	Comment string
+}
+
+// Specs is the rules this request comes to.
+func (r Request) Specs() []Spec {
+	one := func(from string) Spec {
+		return Spec{
+			Scope: r.Scope, Action: r.Action, Protocol: r.Protocol,
+			Port: r.Port, From: from, Comment: r.Comment,
+		}
+	}
+	if len(r.Sources) == 0 {
+		return []Spec{one("")}
+	}
+
+	seen := map[string]bool{}
+	specs := make([]Spec, 0, len(r.Sources))
+	for _, from := range r.Sources {
+		if strings.TrimSpace(from) == "" {
+			// Anywhere. Nothing narrower adds anything to it.
+			return []Spec{one("")}
+		}
+		if seen[from] {
+			continue
+		}
+		seen[from] = true
+		specs = append(specs, one(from))
+	}
+	return specs
+}
+
+// AddRule writes the rules a request comes to.
+//
+// Every one is checked before any is written. A request half applied is
+// a firewall nobody asked for, and the half that landed is the half
+// somebody then has to find.
+func (s *Service) AddRule(ctx context.Context, caller *user.User, req Request) (*Status, error) {
 	status, err := s.Status(ctx, caller)
 	if err != nil {
 		return nil, err
@@ -310,18 +362,23 @@ func (s *Service) AddRule(ctx context.Context, caller *user.User, spec Spec) (*S
 	if !status.Installed {
 		return nil, ErrNotInstalled
 	}
-	if err := spec.Check(); err != nil {
-		return nil, err
+	specs := req.Specs()
+	for _, spec := range specs {
+		if err := spec.Check(); err != nil {
+			return nil, err
+		}
 	}
 	// A rule about forwarded traffic is a rule about a chain that does
 	// not exist yet. Writing it would put a line on the screen that
 	// governs nothing — which is the one failure this module is built
 	// to avoid, so it is refused rather than accepted and explained.
-	if spec.Scope == ScopeApps && !status.DockerAdopted {
+	if req.Scope == ScopeApps && !status.DockerAdopted {
 		return nil, fmt.Errorf("%w: turn on Docker port control first, or this rule would sit in the table doing nothing", ErrDockerNotAdopted)
 	}
-	if err := s.run(ctx, spec.Args()...); err != nil {
-		return nil, err
+	for _, spec := range specs {
+		if err := s.run(ctx, spec.Args()...); err != nil {
+			return nil, err
+		}
 	}
 	return s.Status(ctx, caller)
 }

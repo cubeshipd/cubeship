@@ -232,3 +232,39 @@ ufw deny 5432
 		t.Errorf("the delete for a routed rule is %q", got)
 	}
 }
+
+// UFW takes one source per rule — there is no "from A or B" — so
+// admitting a port from three addresses is three rules. Asking for it
+// should still be one act.
+func TestOneRequestBecomesOneRulePerSource(t *testing.T) {
+	req := Request{
+		Scope: ScopeHost, Action: ActionAllow, Protocol: ProtocolTCP, Port: "22",
+		Sources: []string{"203.0.113.4", "10.0.0.0/8", "203.0.113.4"},
+	}
+	specs := req.Specs()
+	if len(specs) != 2 {
+		t.Fatalf("came to %d rules: %+v", len(specs), specs)
+	}
+	// The same address twice is one rule: ufw would take the second and
+	// list it beside the first, which is a firewall with a duplicate in
+	// it for no reason.
+	if specs[0].From != "203.0.113.4" || specs[1].From != "10.0.0.0/8" {
+		t.Errorf("sources came out as %+v", specs)
+	}
+
+	// Anywhere makes everything narrower meaningless, so it wins rather
+	// than being written alongside — a rule admitting anywhere and a
+	// rule admitting one address is just the first one.
+	wide := Request{
+		Scope: ScopeHost, Action: ActionAllow, Port: "22",
+		Sources: []string{"203.0.113.4", ""},
+	}
+	if specs := wide.Specs(); len(specs) != 1 || specs[0].From != "" {
+		t.Errorf("anywhere did not absorb the rest: %+v", specs)
+	}
+
+	// And no sources at all is the usual rule.
+	if specs := (Request{Port: "22"}).Specs(); len(specs) != 1 || specs[0].From != "" {
+		t.Errorf("no source came to %+v", specs)
+	}
+}

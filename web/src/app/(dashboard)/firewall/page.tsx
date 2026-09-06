@@ -1,6 +1,6 @@
 "use client";
 
-import { PlusIcon, ShieldAlertIcon, Trash2Icon } from "lucide-react";
+import { PlusIcon, ShieldAlertIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -23,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Label } from "@/components/ui/label";
 import { api, type Firewall, type FirewallRule } from "@/lib/api";
 import { message } from "@/lib/errors";
 
@@ -180,7 +181,7 @@ export default function FirewallPage() {
 
           <SectionHeader
             title="This machine"
-            sub="Traffic to the host itself — SSH, and anything else not running in a container."
+            sub="Traffic to the host itself, not to anything in a container."
             actions={
               <Button variant="outline" size="sm" onClick={() => setAdding("host")}>
                 <PlusIcon />
@@ -205,7 +206,7 @@ export default function FirewallPage() {
 
           <SectionHeader
             title="Published ports"
-            sub="Traffic forwarded to a container — Traefik, an exposed database, anything you published. Docker routes this around ufw, so it is governed separately or not at all. A firewall at your provider sits in front of both and is not visible here."
+            sub="Traffic forwarded to a container. Docker routes it around ufw, so it is governed separately — and a firewall at your provider sits in front of both, which this page cannot see."
             actions={
               data.docker_adopted ? (
                 <Button variant="outline" size="sm" onClick={() => setAdding("apps")}>
@@ -226,16 +227,9 @@ export default function FirewallPage() {
                       Published container ports are not behind this firewall.
                     </p>
                     <p>
-                      Docker opens a port by writing its own rules ahead of ufw&apos;s, and that
-                      traffic is forwarded rather than delivered to the host — so it never passes
-                      the chain <code>ufw deny</code> governs. On this instance that is Traefik on
-                      80 and 443, every database you exposed, and the daemon itself.
-                    </p>
-                    <p>
-                      Turning this on adds a stanza to the host&apos;s{" "}
-                      <code>/etc/ufw/after.rules</code> that sends Docker&apos;s own chain through
-                      ufw first. After it, a rule here governs a published port —{" "}
-                      <strong>and a published port with no rule is closed.</strong>
+                      Docker writes its own rules ahead of ufw&apos;s, so <code>ufw deny</code>{" "}
+                      never sees these. Turning this on routes Docker&apos;s chain through ufw first
+                      — after it, <strong>a published port with no rule is closed.</strong>
                     </p>
                   </div>
                 </div>
@@ -307,6 +301,7 @@ export default function FirewallPage() {
       <RuleDialog
         scope={adding}
         published={data?.published ?? []}
+        yourIP={data?.your_ip}
         onOpenChange={(open) => !open && setAdding(null)}
         onSaved={setData}
       />
@@ -362,21 +357,31 @@ export default function FirewallPage() {
 // One dialog for both kinds of rule. They ask for the same things — the
 // scope is what the caller pressed, not a field, because "which of these
 // two firewalls" is a question nobody should be asked twice.
+// A source is one of three answers, and only the third is typed.
+//
+// It is a select because "leave it empty for anywhere" is a rule you
+// have to be told, and because the address somebody almost always wants
+// — their own — is one they would otherwise go and look up, and get
+// wrong by pasting a private one the firewall never sees.
+type Source = { kind: "any" | "mine" | "custom"; value: string };
+
 function RuleDialog({
   scope,
   published,
+  yourIP,
   onOpenChange,
   onSaved,
 }: {
   scope: "host" | "apps" | null;
   published: { port: number; container: string }[];
+  yourIP?: string;
   onOpenChange: (v: boolean) => void;
   onSaved: (f: Firewall) => void;
 }) {
   const [action, setAction] = useState("allow");
   const [protocol, setProtocol] = useState("tcp");
   const [port, setPort] = useState("");
-  const [from, setFrom] = useState("");
+  const [sources, setSources] = useState<Source[]>([{ kind: "any", value: "" }]);
   const [comment, setComment] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -385,10 +390,14 @@ function RuleDialog({
     if (!scope) return;
     setError(null);
     setPort("");
-    setFrom("");
+    setSources([{ kind: "any", value: "" }]);
     setComment("");
     setAction("allow");
   }, [scope]);
+
+  function setSource(index: number, next: Partial<Source>) {
+    setSources((rows) => rows.map((row, i) => (i === index ? { ...row, ...next } : row)));
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -401,7 +410,11 @@ function RuleDialog({
           action,
           protocol,
           port,
-          from,
+          // One rule per source — ufw takes one each — and an empty
+          // string is anywhere, which the daemon lets absorb the rest.
+          sources: sources.map((s) =>
+            s.kind === "any" ? "" : s.kind === "mine" ? (yourIP ?? "") : s.value.trim(),
+          ),
           comment,
         }),
       );
@@ -460,7 +473,7 @@ function RuleDialog({
               spellCheck={false}
               placeholder={apps ? "15432" : "22"}
               onChange={(e) => setPort(e.target.value)}
-              hint='One port, or a range written as "15000:15999".'
+              hint='One port, or a range like "15000:15999".'
             />
 
             {apps && published.length > 0 && (
@@ -480,21 +493,70 @@ function RuleDialog({
               </div>
             )}
 
-            <TextField
-              label="From"
-              value={from}
-              spellCheck={false}
-              placeholder="anywhere"
-              onChange={(e) => setFrom(e.target.value)}
-              hint="An address or a range, like 203.0.113.4 or 10.0.0.0/8. Leave it empty for anywhere — which is what most rules mean."
-            />
+            <div className="space-y-2">
+              <Label>From</Label>
+              {sources.map((source, i) => (
+                // The index is the identity here: a row is a position in
+                // a short list somebody is editing, and nothing else
+                // about it is stable while they type.
+                // biome-ignore lint/suspicious/noArrayIndexKey: see above
+                <div key={i} className="flex items-center gap-2">
+                  <SearchableSelect
+                    label=""
+                    fieldClassName="w-44 shrink-0"
+                    choices={[
+                      { value: "any", label: "Anywhere" },
+                      {
+                        value: "mine",
+                        label: "This computer",
+                        hint: yourIP,
+                      },
+                      { value: "custom", label: "An address…" },
+                    ]}
+                    value={source.kind}
+                    onChange={(kind) => setSource(i, { kind: kind as Source["kind"] })}
+                  />
+                  {source.kind === "custom" && (
+                    <TextField
+                      label=""
+                      fieldClassName="flex-1"
+                      value={source.value}
+                      spellCheck={false}
+                      placeholder="203.0.113.4 or 10.0.0.0/8"
+                      onChange={(e) => setSource(i, { value: e.target.value })}
+                    />
+                  )}
+                  {source.kind === "mine" && (
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {yourIP ?? "unknown"}
+                    </span>
+                  )}
+                  {sources.length > 1 && (
+                    <RowAction
+                      icon={XIcon}
+                      label={`Remove source ${i + 1}`}
+                      onClick={() => setSources((rows) => rows.filter((_, at) => at !== i))}
+                    />
+                  )}
+                </div>
+              ))}
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                onClick={() => setSources((rows) => [...rows, { kind: "custom", value: "" }])}
+              >
+                <PlusIcon />
+                Add a source
+              </Button>
+            </div>
 
             <TextField
               label="Note"
               value={comment}
               spellCheck={false}
               onChange={(e) => setComment(e.target.value)}
-              hint="Carried into ufw's own comment, so this rule explains itself to whoever runs `ufw status` over ssh."
+              hint="Carried into ufw's own comment, so the rule explains itself over ssh."
             />
           </div>
 

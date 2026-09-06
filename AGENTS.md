@@ -945,6 +945,17 @@ silently costs somebody a machine:
   refuses if it no longer matches. Otherwise a stale screen deletes a
   different rule and the only sign is a port that stops answering.
 
+**One request, one rule per source.** UFW takes a single source per rule
+— there is no "from A or B" — so admitting a port from three addresses
+is three rules. That is the tool's shape and not worth hiding, but it
+should not make the *asking* three times either: `firewall.Request`
+carries the list, every spec is checked before any is written, and an
+empty entry means anywhere, which absorbs the rest. The screen offers
+"anywhere", "this computer" and an address, because `your_ip` is on the
+status — the address a person almost always wants is the one they would
+otherwise go and look up, and get wrong by pasting a private one the
+firewall never sees.
+
 Adopting is the dangerous direction, and the **order is not cosmetic**:
 the `ufw route allow` rules go in first, while they are inert, and the
 stanza that starts denying goes in last. 80 and 443 are allowed whatever
