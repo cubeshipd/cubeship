@@ -895,6 +895,15 @@ leaves and never rewrites. Until that stanza is there, an `apps` rule is
 **refused rather than written**, because a rule that governs nothing is
 the exact lie this module exists to avoid.
 
+**A firewall that is off still has rules**, and reading only `ufw
+status` misses them: it answers "inactive" and stops, while what
+somebody added sits in ufw's file waiting to be applied. That was a dead
+end with no way out — adding the rule for SSH did nothing visible, so
+the check below never saw it, so enabling stayed refused however many
+times you added it. `ufw show added` is what answers while it is off. It
+prints commands rather than a table, which is also how a rule is removed
+then: there are no positions until the firewall is running.
+
 Three refusals are the point of the module, and each is a thing that
 silently costs somebody a machine:
 

@@ -153,7 +153,10 @@ export default function FirewallPage() {
           {!data.enabled && (
             <Notice tone="warning">
               The firewall is off. Every port this machine listens on is reachable from anywhere,
-              whatever the rules below say.
+              and the rules below are waiting rather than applying —{" "}
+              {data.ssh_allowed
+                ? "turning it on puts them in force."
+                : `add one admitting SSH on ${(data.ssh_ports ?? [22]).join(" or ")} before turning it on, or you will not get back in.`}
             </Notice>
           )}
           {data.enabled && !data.ssh_allowed && (
@@ -173,15 +176,18 @@ export default function FirewallPage() {
               </Button>
             }
           />
+          {/* Rules exist while the firewall is off — ufw keeps them and
+              applies them when it starts — so they are shown either
+              way, and the banner above says they are not in force. */}
           <DataTable
             columns={columns}
-            rows={data.enabled ? hostRules : []}
+            rows={hostRules}
             rowKey={(r) => `host-${r.index}`}
             className="mb-4"
             empty={
               data.enabled
                 ? "No rules. With the default policy denying incoming, that means nothing reaches this host."
-                : "The firewall is off, so ufw is not reporting rules."
+                : "No rules yet. Add the one for SSH before turning the firewall on — with none, turning it on would end this session."
             }
           />
 

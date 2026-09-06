@@ -179,3 +179,52 @@ func TestTheCommandEachScopeBuilds(t *testing.T) {
 		t.Errorf("apps rule: %v", apps)
 	}
 }
+
+// A firewall that is off reports no rules at all — `ufw status` answers
+// "inactive" and stops — while the rules somebody added sit in its file
+// waiting to be applied.
+//
+// Reading only that listing was a dead end with no way out: adding the
+// rule for SSH did nothing visible, so the check before enabling never
+// saw it, so enabling stayed refused however many times you added it.
+// `ufw show added` is what answers while it is off, and it prints
+// commands rather than a table.
+func TestTheRulesAFirewallThatIsOffStillHas(t *testing.T) {
+	rules := parseAdded(`Added user rules (see 'ufw status' for running firewall):
+ufw allow 22/tcp
+ufw route allow proto tcp from any to any port 15432 comment cubeship
+ufw deny 5432
+`)
+	if len(rules) != 3 {
+		t.Fatalf("read %d rules: %+v", len(rules), rules)
+	}
+
+	// The shorthand somebody types by hand.
+	if rules[0].Action != ActionAllow || rules[0].Ports != "22" ||
+		rules[0].Protocol != ProtocolTCP || rules[0].Scope != ScopeHost {
+		t.Errorf("the SSH rule read as %+v", rules[0])
+	}
+	// And the long form this daemon writes.
+	if rules[1].Scope != ScopeApps || rules[1].Ports != "15432" ||
+		rules[1].Comment != "cubeship" {
+		t.Errorf("the routed rule read as %+v", rules[1])
+	}
+	if rules[2].Action != ActionDeny || rules[2].Ports != "5432" {
+		t.Errorf("the deny read as %+v", rules[2])
+	}
+
+	// Which is what makes enabling possible at all.
+	if !allowsAny(rules, ScopeHost, []int{22}) {
+		t.Error("a rule that admits SSH was not seen, which is the dead end this fixes")
+	}
+
+	// There are no positions while it is off, so each rule carries the
+	// command that removes it — "delete" where ufw wants it, which is
+	// after "route" for a routed rule and before the verb otherwise.
+	if got := strings.Join(rules[0].Delete, " "); got != "ufw delete allow 22/tcp" {
+		t.Errorf("the delete for a host rule is %q", got)
+	}
+	if got := strings.Join(rules[1].Delete, " "); !strings.HasPrefix(got, "ufw route delete allow") {
+		t.Errorf("the delete for a routed rule is %q", got)
+	}
+}

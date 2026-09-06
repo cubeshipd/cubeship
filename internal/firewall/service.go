@@ -67,6 +67,8 @@ ufw status verbose
 echo '` + statusSeparator + `'
 ufw status numbered
 echo '` + statusSeparator + `'
+ufw show added
+echo '` + statusSeparator + `'
 grep -c '` + dockerBeginMarker + `' /etc/ufw/after.rules 2>/dev/null || true
 echo '` + statusSeparator + `'
 sshd -T 2>/dev/null | awk '/^port /{print $2}' || true
@@ -97,17 +99,30 @@ func (s *Service) Status(ctx context.Context, caller *user.User) (*Status, error
 	status.Installed = true
 
 	sections := strings.Split(res.Output, statusSeparator)
-	for len(sections) < 4 {
+	for len(sections) < 5 {
 		sections = append(sections, "")
 	}
 	status.Enabled, status.DefaultIncoming, status.Rules = parseStatus(
 		sections[0] + statusSeparator + sections[1])
+
+	// A firewall that is off reports no rules at all — `ufw status`
+	// answers "inactive" and stops — while the rules somebody added are
+	// sitting in its file waiting to be applied.
+	//
+	// Reading only that listing was a dead end you could not get out
+	// of: adding the rule for SSH did nothing visible, so the check
+	// before enabling never saw it, so enabling stayed refused however
+	// many times you added it. `ufw show added` is what answers while
+	// it is off.
+	if !status.Enabled {
+		status.Rules = parseAdded(sections[2])
+	}
 	if status.Rules == nil {
 		status.Rules = []Rule{}
 	}
-	status.DockerAdopted = strings.TrimSpace(sections[2]) != "" &&
-		strings.TrimSpace(sections[2]) != "0"
-	status.SSHPorts = parsePorts(sections[3])
+	status.DockerAdopted = strings.TrimSpace(sections[3]) != "" &&
+		strings.TrimSpace(sections[3]) != "0"
+	status.SSHPorts = parsePorts(sections[4])
 	status.SSHAllowed = allowsAny(status.Rules, ScopeHost, status.SSHPorts)
 
 	// What is actually exposed on a Docker host, which is rarely what
@@ -292,7 +307,17 @@ func (s *Service) DeleteRule(ctx context.Context, caller *user.User, index int, 
 	if expect != "" && !sameRule(found.Text, expect) {
 		return nil, ErrRuleChanged
 	}
-	if err := s.run(ctx, "ufw", "--force", "delete", strconv.Itoa(index)); err != nil {
+
+	// Two ways out, and which one applies is decided by whether the
+	// firewall is running. Active, ufw deletes by position. Off, there
+	// are no positions — `ufw status numbered` answers "inactive" and
+	// nothing else — so the rule is removed by its own spelling, which
+	// is what `ufw show added` gave us.
+	argv := []string{"ufw", "--force", "delete", strconv.Itoa(index)}
+	if len(found.Delete) > 0 {
+		argv = append([]string{"ufw", "--force"}, found.Delete[1:]...)
+	}
+	if err := s.run(ctx, argv...); err != nil {
 		return nil, err
 	}
 	return s.Status(ctx, caller)

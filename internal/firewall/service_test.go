@@ -45,10 +45,14 @@ func (f *fakeHost) Script(_ context.Context, line string) (hostexec.Result, erro
 	return hostexec.Result{}, nil
 }
 
-// status builds what the read script prints: the four sections, in
+// status builds what the read script prints: the five sections, in
 // order, separated the way the script separates them.
-func status(verbose, numbered, adopted, sshPorts string) string {
-	return strings.Join([]string{verbose, numbered, adopted, sshPorts}, statusSeparator)
+//
+// `added` is what ufw reports while it is off, and it is a separate
+// section because it is a separate command with a different shape — see
+// parseAdded.
+func status(verbose, numbered, added, adopted, sshPorts string) string {
+	return strings.Join([]string{verbose, numbered, added, adopted, sshPorts}, statusSeparator)
 }
 
 const active = "Status: active\nDefault: deny (incoming), allow (outgoing), disabled (routed)\nufw status verbose"
@@ -67,7 +71,8 @@ func newService(t *testing.T, h *fakeHost) *Service {
 // person it happens to is by then unable to undo it. The command must
 // not be sent at all.
 func TestEnablingIsRefusedWhileNothingAdmitsSSH(t *testing.T) {
-	host := &fakeHost{status: status(active, "", "0", "22")}
+	host := &fakeHost{status: status(active,
+		"", "", "0", "22")}
 	_, err := newService(t, host).Enable(context.Background(), admin)
 
 	if !errors.Is(err, ErrWouldLockYouOut) {
@@ -88,7 +93,7 @@ func TestEnablingIsRefusedWhileNothingAdmitsSSH(t *testing.T) {
 // And it goes through once something does.
 func TestEnablingProceedsOnceSSHIsAdmitted(t *testing.T) {
 	host := &fakeHost{status: status(active,
-		"[ 1] 22/tcp                     ALLOW IN    Anywhere", "0", "22")}
+		"[ 1] 22/tcp                     ALLOW IN    Anywhere", "", "0", "22")}
 	if _, err := newService(t, host).Enable(context.Background(), admin); err != nil {
 		t.Fatalf("enable: %v", err)
 	}
@@ -101,7 +106,7 @@ func TestEnablingProceedsOnceSSHIsAdmitted(t *testing.T) {
 // worse than no check at all: it would pass, and the machine would go.
 func TestTheCheckFollowsWhereSSHActuallyListens(t *testing.T) {
 	host := &fakeHost{status: status(active,
-		"[ 1] 22/tcp                     ALLOW IN    Anywhere", "0", "2222")}
+		"[ 1] 22/tcp                     ALLOW IN    Anywhere", "", "0", "2222")}
 	_, err := newService(t, host).Enable(context.Background(), admin)
 
 	if !errors.Is(err, ErrWouldLockYouOut) {
@@ -116,7 +121,8 @@ func TestTheCheckFollowsWhereSSHActuallyListens(t *testing.T) {
 // through UFW, is a line that governs nothing. Writing it would be the
 // exact lie this module exists to avoid, so it is refused.
 func TestAContainerRuleIsRefusedUntilDockerIsAdopted(t *testing.T) {
-	host := &fakeHost{status: status(active, "", "0", "22")}
+	host := &fakeHost{status: status(active,
+		"", "", "0", "22")}
 	_, err := newService(t, host).AddRule(context.Background(), admin, Spec{
 		Scope: ScopeApps, Action: ActionAllow, Protocol: ProtocolTCP, Port: "15432",
 	})
@@ -125,7 +131,8 @@ func TestAContainerRuleIsRefusedUntilDockerIsAdopted(t *testing.T) {
 	}
 
 	// The same rule is fine once the stanza is in.
-	host = &fakeHost{status: status(active, "", "1", "22")}
+	host = &fakeHost{status: status(active,
+		"", "", "1", "22")}
 	if _, err := newService(t, host).AddRule(context.Background(), admin, Spec{
 		Scope: ScopeApps, Action: ActionAllow, Protocol: ProtocolTCP, Port: "15432",
 	}); err != nil {
@@ -142,7 +149,8 @@ func TestAContainerRuleIsRefusedUntilDockerIsAdopted(t *testing.T) {
 // Traefik, which is every app and the dashboard the button was pressed
 // from.
 func TestAdoptingAllowsBeforeItDenies(t *testing.T) {
-	host := &fakeHost{status: status(active, "", "0", "22")}
+	host := &fakeHost{status: status(active,
+		"", "", "0", "22")}
 	if _, err := newService(t, host).AdoptDocker(context.Background(), admin, []int{15432}); err != nil {
 		t.Fatalf("adopt: %v", err)
 	}
@@ -212,7 +220,8 @@ func TestAHostWithoutUFWSaysSo(t *testing.T) {
 // Reading which ports are open is as sensitive as changing them: it is
 // the map of the instance, and exactly what somebody probing would like.
 func TestOnlyAnAdminSeesTheFirewall(t *testing.T) {
-	svc := newService(t, &fakeHost{status: status(active, "", "0", "22")})
+	svc := newService(t, &fakeHost{status: status(active,
+		"", "", "0", "22")})
 	member := &user.User{Username: "member", Role: user.RoleMember}
 
 	for _, call := range []struct {
@@ -241,7 +250,7 @@ func TestOnlyAnAdminSeesTheFirewall(t *testing.T) {
 // sign would be a port that stopped answering.
 func TestDeletingRefusesWhenTheListMoved(t *testing.T) {
 	host := &fakeHost{status: status(active,
-		"[ 1] 22/tcp                     ALLOW IN    Anywhere", "0", "22")}
+		"[ 1] 22/tcp                     ALLOW IN    Anywhere", "", "0", "22")}
 	svc := newService(t, host)
 
 	_, err := svc.DeleteRule(context.Background(), admin, 1, "80/tcp ALLOW IN Anywhere")
@@ -263,7 +272,7 @@ func TestDeletingRefusesWhenTheListMoved(t *testing.T) {
 // the report carries them and says which are already admitted.
 func TestTheReportSaysWhichPublishedPortsAreOpen(t *testing.T) {
 	host := &fakeHost{status: status(active,
-		"[ 1] 80/tcp                     ALLOW FWD   Anywhere", "1", "22")}
+		"[ 1] 80/tcp                     ALLOW FWD   Anywhere", "", "1", "22")}
 	svc := NewService(host, fakePorts{
 		{Port: 80, Protocol: "tcp", Container: "cubeship-traefik"},
 		{Port: 15432, Protocol: "tcp", Container: "cubeship-db-pg"},
@@ -290,4 +299,50 @@ type fakePorts []dockerx.PublishedPort
 
 func (f fakePorts) PublishedPorts(context.Context) ([]dockerx.PublishedPort, error) {
 	return f, nil
+}
+
+// The dead end, end to end.
+//
+// A firewall that is off reports no rules, so the check before enabling
+// saw nothing however many times somebody added the rule for SSH — and
+// enabling stayed refused forever. The added rules are what answers.
+func TestARuleAddedWhileItIsOffIsStillARule(t *testing.T) {
+	const off = "Status: inactive\nufw status verbose"
+	host := &fakeHost{status: status(off, "",
+		"Added user rules (see 'ufw status' for running firewall):\nufw allow 22/tcp",
+		"0", "22")}
+	svc := newService(t, host)
+
+	got, err := svc.Status(context.Background(), admin)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if got.Enabled {
+		t.Fatal("an inactive firewall read as on")
+	}
+	if len(got.Rules) != 1 || !got.SSHAllowed {
+		t.Fatalf("the rule waiting to be applied was not seen: %+v", got.Rules)
+	}
+
+	if _, err := svc.Enable(context.Background(), admin); err != nil {
+		t.Fatalf("enabling was still refused: %v", err)
+	}
+
+	// And it can be removed by its own spelling, since there is no
+	// position to remove it by.
+	if _, err := svc.DeleteRule(context.Background(), admin, 1, ""); err != nil {
+		t.Fatalf("delete: %v", err)
+	}
+	var deleted bool
+	for _, cmd := range host.ran {
+		if cmd == "ufw --force delete allow 22/tcp" {
+			deleted = true
+		}
+		if strings.HasSuffix(cmd, "delete 1") {
+			t.Errorf("it deleted by a position that does not exist: %q", cmd)
+		}
+	}
+	if !deleted {
+		t.Errorf("ran %v", host.ran)
+	}
 }
