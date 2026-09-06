@@ -1269,14 +1269,26 @@ its own grid. Every window buckets to around `TargetPoints`, so a chart
 is the same density whichever is asked for.
 
 **On the dashboard**, `MetricsSection` is one component for both pages
-and `TimeSeries` is a hand-drawn SVG rather than a charting dependency
-— a line, a fill and a crosshair, in a house style that is 1px rules and
-glow. Two things in it are load-bearing: `vector-effect` keeps the
-stroke 1px while the viewBox is scaled non-uniformly, and the scale
-comes from the data rather than from the memory ceiling. Drawn against
-the ceiling, a container using 200 MiB of a 2 GiB cgroup is a flat line
-along the bottom — a chart that has given up its only job to answer a
-question the caption answers better.
+and `TimeSeries` is the chart, over **Recharts**.
+
+It was a hand-drawn SVG first, and that was the right call for exactly
+one chart: a line, a fill and a crosshair is not a dependency's worth of
+work. It stops being right at the second chart — a bar, a second series,
+a legend, a brush is a rewrite of the geometry each time, and each
+brings edge cases nobody here has hit yet. What Recharts asks in return
+is a theme, and a theme is one file rather than one component per page.
+**Charts go through `TimeSeries` or beside it**, sharing that theme; a
+page does not reach for the library directly, for the same reason a page
+does not restyle a field.
+
+What did not move is the look — 1px rules, a gradient under the line,
+the reading over the top left and the peak over the top right, no
+shadows — or the two load-bearing decisions. The grid is at quarters of
+the box rather than at the scale's own ticks, so it does not move as the
+data does. And the scale comes from the data rather than from the memory
+ceiling: drawn against the ceiling, a container using 200 MiB of a 2 GiB
+cgroup is a flat line along the bottom — a chart that has given up its
+only job to answer a question the caption answers better.
 
 ## Managed databases
 
