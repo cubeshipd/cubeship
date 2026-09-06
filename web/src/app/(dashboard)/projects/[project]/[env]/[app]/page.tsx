@@ -6,6 +6,7 @@ import { use, useCallback, useEffect, useState } from "react";
 import { CopyButton } from "@/components/copy-button";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { LoadingList, LoadingValue } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
@@ -37,10 +38,24 @@ import { message } from "@/lib/errors";
 // /apps/undefined/<project>/<env>/<app> and got "no such endpoint".
 export default function AppPage({ params }: PageProps<"/projects/[project]/[env]/[app]">) {
   const { project, env, app } = use(params);
-  return <Detail reference={`${project}/${env}/${app}`} />;
+  // The three segments travel separately as well as joined: they are
+  // what lets the page draw its own heading before the daemon has said
+  // anything, which is the difference between a navigation that feels
+  // instant and one that blinks.
+  return <Detail reference={`${project}/${env}/${app}`} project={project} env={env} name={app} />;
 }
 
-function Detail({ reference }: { reference: string }) {
+function Detail({
+  reference,
+  project,
+  env,
+  name,
+}: {
+  reference: string;
+  project: string;
+  env: string;
+  name: string;
+}) {
   const [app, setApp] = useState<App | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -66,10 +81,10 @@ function Detail({ reference }: { reference: string }) {
     );
   }
   if (error) return <ErrorAlert error={error} />;
-  if (!app) return null;
 
-  // Where this app came from.
-  const environment = `/projects/${app.project}/${app.environment}`;
+  // Where this app came from. Built from the URL rather than from the
+  // answer, so the way back is there before the answer is.
+  const environment = `/projects/${project}/${env}`;
 
   return (
     <>
@@ -78,19 +93,28 @@ function Detail({ reference }: { reference: string }) {
         className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
       >
         <ChevronLeftIcon className="size-3.5" />
-        {app.project}/{app.environment}
+        {project}/{env}
       </Link>
 
+      {/* Drawn from the URL, so it is on screen the moment you navigate
+          here. This used to return null until the app arrived, which
+          blanked the content area on every route change and then
+          filled it — a page that disappears before it appears reads as
+          slow however fast the request was. */}
       <PageHeader
-        title={<span className="font-mono text-lg tracking-normal normal-case">{app.name}</span>}
+        title={<span className="font-mono text-lg tracking-normal normal-case">{name}</span>}
         sub={
-          <span className="flex items-center gap-2">
-            {/* Conditional rather than an empty string: an empty text
-                node is still a flex item, and the gap after it is
-                indentation nobody asked for. */}
-            {hostsOf(app) && <span>{hostsOf(app)}</span>}
-            <StatusBadge value={app.status} />
-          </span>
+          app ? (
+            <span className="flex items-center gap-2">
+              {/* Conditional rather than an empty string: an empty text
+                  node is still a flex item, and the gap after it is
+                  indentation nobody asked for. */}
+              {hostsOf(app) && <span>{hostsOf(app)}</span>}
+              <StatusBadge value={app.status} />
+            </span>
+          ) : (
+            <LoadingValue className="h-4 w-32" />
+          )
         }
         actions={
           <Button
@@ -106,22 +130,28 @@ function Detail({ reference }: { reference: string }) {
         }
       />
 
-      <Origin app={app} />
+      {!app && <LoadingList rows={5} />}
 
-      {/* After what the app is made of and before how it has been
+      {app && (
+        <>
+          <Origin app={app} />
+
+          {/* After what the app is made of and before how it has been
           deployed: the first says which app this is, and this says how
           it is doing right now. Same component and same daemon module
           the databases use — an app and a database are one question
           about two kinds of container. */}
-      <MetricsSection path={path} />
+          <MetricsSection path={path} />
 
-      <Deployments
-        reference={reference}
-        buildsFromRepo={BUILDING_SOURCES.includes(app.source)}
-        onDeployed={reload}
-      />
-      <EnvVars reference={reference} />
-      <Logs reference={reference} />
+          <Deployments
+            reference={reference}
+            buildsFromRepo={BUILDING_SOURCES.includes(app.source)}
+            onDeployed={reload}
+          />
+          <EnvVars reference={reference} />
+          <Logs reference={reference} />
+        </>
+      )}
     </>
   );
 }

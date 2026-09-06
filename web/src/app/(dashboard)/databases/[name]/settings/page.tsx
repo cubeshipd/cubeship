@@ -8,6 +8,7 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
+import { LoadingList } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
@@ -39,7 +40,6 @@ function Settings({ name }: { name: string }) {
   useEffect(reload, [reload]);
 
   if (error && !datastore) return <ErrorAlert error={error} />;
-  if (!datastore) return null;
 
   return (
     <>
@@ -58,43 +58,52 @@ function Settings({ name }: { name: string }) {
 
       <ErrorAlert error={error} />
 
-      <ExternalAccess datastore={datastore} onChanged={reload} />
+      {/* The header above is drawn from the URL and does not wait — see
+          the note on the database's own page. Only what needs the
+          answer waits for it. */}
+      {!datastore && <LoadingList rows={3} />}
 
-      <DangerZone>
-        <DangerAction
-          title="Delete this database"
-          description="Stops the container and removes the data directory from the host. There is no backup, and this cannot be undone."
-          action={
-            <Button variant="destructive" onClick={() => setDeleting(true)}>
-              Delete
-            </Button>
-          }
-        />
-      </DangerZone>
+      {datastore && <ExternalAccess datastore={datastore} onChanged={reload} />}
 
-      <ConfirmDialog
-        open={deleting}
-        onOpenChange={setDeleting}
-        title={`Delete ${datastore.name}?`}
-        description={
-          <>
-            The container is stopped and the data on disk goes with it. Nothing is kept, and{" "}
-            {datastore.attachments.length > 0 ? (
+      {datastore && (
+        <>
+          <DangerZone>
+            <DangerAction
+              title="Delete this database"
+              description="Stops the container and removes the data directory from the host. There is no backup, and this cannot be undone."
+              action={
+                <Button variant="destructive" onClick={() => setDeleting(true)}>
+                  Delete
+                </Button>
+              }
+            />
+          </DangerZone>
+
+          <ConfirmDialog
+            open={deleting}
+            onOpenChange={setDeleting}
+            title={`Delete ${datastore.name}?`}
+            description={
               <>
-                <strong>{datastore.attachments.map((a) => a.app).join(", ")}</strong> will come up
-                without a connection string the next time they are deployed.
+                The container is stopped and the data on disk goes with it. Nothing is kept, and{" "}
+                {datastore.attachments.length > 0 ? (
+                  <>
+                    <strong>{datastore.attachments.map((a) => a.app).join(", ")}</strong> will come
+                    up without a connection string the next time they are deployed.
+                  </>
+                ) : (
+                  "no app is attached to it."
+                )}
               </>
-            ) : (
-              "no app is attached to it."
-            )}
-          </>
-        }
-        confirmWord={datastore.name}
-        onConfirm={async () => {
-          await api.del(path);
-          router.push("/databases");
-        }}
-      />
+            }
+            confirmWord={datastore.name}
+            onConfirm={async () => {
+              await api.del(path);
+              router.push("/databases");
+            }}
+          />
+        </>
+      )}
     </>
   );
 }

@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
 import { GitHubSource } from "@/components/github-source";
+import { LoadingList } from "@/components/loading";
 import { OptionCards } from "@/components/option-cards";
 import { PageHeader, SectionHeader } from "@/components/page-header";
 import { TextAreaField, TextField } from "@/components/text-field";
@@ -65,7 +66,6 @@ function Settings({ reference }: { reference: string }) {
     );
   }
   if (error && !app) return <ErrorAlert error={error} />;
-  if (!app) return null;
 
   return (
     <>
@@ -84,34 +84,44 @@ function Settings({ reference }: { reference: string }) {
 
       <ErrorAlert error={error} />
 
-      <General app={app} onSaved={setApp} onError={setError} />
-      <AppNetwork app={app} onSaved={setApp} />
-      <SourceSection app={app} onSaved={setApp} onError={setError} />
+      {/* The heading above says the same thing for every app and comes
+          from the URL, so it does not wait — see the app's own page for
+          why returning null until the answer lands made every
+          navigation blink. */}
+      {!app && <LoadingList rows={4} />}
 
-      <DangerZone>
-        <DangerAction
-          title="Delete this app"
-          description="Its container is stopped first. Images already pushed stay in the registry — reclaiming that disk needs a garbage collection pass Cubeship does not run."
-          action={
-            <Button variant="destructive" onClick={() => setDeleting(true)}>
-              Delete app
-            </Button>
-          }
-        />
-      </DangerZone>
+      {app && (
+        <>
+          <General app={app} onSaved={setApp} onError={setError} />
+          <AppNetwork app={app} onSaved={setApp} />
+          <SourceSection app={app} onSaved={setApp} onError={setError} />
 
-      <ConfirmDialog
-        open={deleting}
-        onOpenChange={setDeleting}
-        title="Delete app"
-        description="The container serving it is stopped and the app is gone. This cannot be undone."
-        confirmWord={app.name}
-        confirmLabel="Delete app"
-        onConfirm={async () => {
-          await api.del(path);
-          router.push(`/projects/${app.project}/${app.environment}`);
-        }}
-      />
+          <DangerZone>
+            <DangerAction
+              title="Delete this app"
+              description="Its container is stopped first. Images already pushed stay in the registry — reclaiming that disk needs a garbage collection pass Cubeship does not run."
+              action={
+                <Button variant="destructive" onClick={() => setDeleting(true)}>
+                  Delete app
+                </Button>
+              }
+            />
+          </DangerZone>
+
+          <ConfirmDialog
+            open={deleting}
+            onOpenChange={setDeleting}
+            title="Delete app"
+            description="The container serving it is stopped and the app is gone. This cannot be undone."
+            confirmWord={app.name}
+            confirmLabel="Delete app"
+            onConfirm={async () => {
+              await api.del(path);
+              router.push(`/projects/${app.project}/${app.environment}`);
+            }}
+          />
+        </>
+      )}
     </>
   );
 }
