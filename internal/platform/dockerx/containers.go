@@ -367,8 +367,19 @@ func (c *Client) StopContainer(ctx context.Context, id string) error {
 	return nil
 }
 
+// RemoveContainer deletes a container, forcing it if it is running.
+//
+// **A container that is not there satisfies the request.** Remove asks
+// for it to be gone, and one somebody already removed by hand is gone —
+// so not-found is success rather than an error every caller has to
+// recognise and forgive. Returning it made "stop this app" fail
+// permanently on an app whose container had been removed underneath the
+// daemon, which is the one state where being told no is least useful.
 func (c *Client) RemoveContainer(ctx context.Context, id string) error {
 	if err := c.api.ContainerRemove(ctx, id, container.RemoveOptions{Force: true}); err != nil {
+		if errdefs.IsNotFound(err) {
+			return nil
+		}
 		return fmt.Errorf("remove container %q: %w", id, err)
 	}
 	return nil

@@ -29,6 +29,7 @@ type fakeAPI struct {
 	startedID               string
 	stoppedID               string
 	removedID               string
+	removeErr               error
 	inspectedID             string
 	inspectedName           string
 	inspectedRunning        bool
@@ -94,7 +95,7 @@ func (f *fakeAPI) ContainerStop(ctx context.Context, id string, options containe
 
 func (f *fakeAPI) ContainerRemove(ctx context.Context, id string, options container.RemoveOptions) error {
 	f.removedID = id
-	return nil
+	return f.removeErr
 }
 
 func (f *fakeAPI) ImageInspectWithRaw(_ context.Context, ref string) (types.ImageInspect, []byte, error) {
@@ -663,5 +664,24 @@ func TestAOneShotIsStartedBeforeItIsWaitedOn(t *testing.T) {
 	}
 	if fake.startedID == "" {
 		t.Error("nothing was started")
+	}
+}
+
+// A remove asks for the container to be gone. One somebody already
+// removed by hand is gone, so the request is satisfied — and saying no
+// instead made "stop this app" fail permanently for an app whose
+// container had been removed underneath the daemon, which is the one
+// state where being refused helps least.
+func TestRemovingAContainerThatIsAlreadyGoneSucceeds(t *testing.T) {
+	c := newWithAPI(&fakeAPI{removeErr: errdefs.NotFound(errors.New("no such container: c1"))})
+	if err := c.RemoveContainer(context.Background(), "c1"); err != nil {
+		t.Errorf("removing a container that is not there: %v", err)
+	}
+
+	// Anything else is still an error: a daemon that refused for its own
+	// reasons has not removed anything.
+	c = newWithAPI(&fakeAPI{removeErr: errors.New("device or resource busy")})
+	if err := c.RemoveContainer(context.Background(), "c1"); err == nil {
+		t.Error("a refused remove reported success")
 	}
 }
