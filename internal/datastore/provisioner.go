@@ -191,10 +191,10 @@ func (p *Provisioner) provision(ctx context.Context, d *Datastore) error {
 	// Whatever was there under this name goes first. A previous attempt
 	// that failed after creating a container would otherwise make every
 	// retry fail on the name, which is the one failure a retry should
-	// fix. RemoveContainer forces, and "no such container" is the
-	// normal answer.
+	// fix. RemoveContainer forces, and nothing there is success — so
+	// this only speaks up when the Engine actually refused.
 	if err := p.docker.RemoveContainer(ctx, opts.Name); err != nil {
-		log.Printf("datastore %s: nothing to remove under %s (%v)", d.Slug, opts.Name, err)
+		log.Printf("datastore %s: could not clear %s before recreating it: %v", d.Slug, opts.Name, err)
 	}
 
 	// The pull is unconditional. There is no cheap "is this image here"

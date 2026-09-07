@@ -1,7 +1,9 @@
 package app_test
 
 import (
+	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -9,6 +11,7 @@ import (
 
 	"cubeship/internal/app"
 	"cubeship/internal/platform/database/dbtest"
+	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/server/servertest"
 	"cubeship/internal/user"
 )
@@ -104,7 +107,7 @@ func TestADeploymentListingCarriesNoLogs(t *testing.T) {
 // domains, its environment and everything attached to it.
 func TestDeletingTheLiveDeployTakesTheAppDownAndKeepsTheApp(t *testing.T) {
 	dbtest.RequireDatabase(t)
-	f := servertest.New(t)
+	f := servertest.NewWithDocker(t, quietDocker{})
 
 	rec := f.Do(t, http.MethodPost, "/apps", map[string]any{
 		"name": "api", "project": "web",
@@ -237,4 +240,25 @@ func deploymentsOf(t *testing.T, f *servertest.Fixture) map[int64]deploymentFlag
 		out[d.ID] = d.deploymentFlags
 	}
 	return out
+}
+
+// quietDocker is an Engine that says yes. These tests are about which
+// records may go and what that does to the app's row, not about what
+// Docker did — and servertest's default answers "no Docker here", which
+// would make every one of them a failure to stop a container.
+type quietDocker struct{}
+
+func (quietDocker) PullImage(context.Context, string, *dockerx.RegistryAuth) error { return nil }
+func (quietDocker) CreateContainer(context.Context, dockerx.ContainerOpts) (string, error) {
+	return "container-abc", nil
+}
+func (quietDocker) StartContainer(context.Context, string) error  { return nil }
+func (quietDocker) StopContainer(context.Context, string) error   { return nil }
+func (quietDocker) RemoveContainer(context.Context, string) error { return nil }
+func (quietDocker) IsRunning(context.Context, string) (bool, error) {
+	return true, nil
+}
+
+func (quietDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("")), nil
 }

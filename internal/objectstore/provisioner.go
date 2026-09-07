@@ -230,9 +230,10 @@ func (p *Provisioner) provision(ctx context.Context, s *Store) error {
 	// Whatever was there under this name goes first: a previous attempt
 	// that failed after creating a container would otherwise make every
 	// retry fail on the name, which is the one failure a retry should
-	// fix. "No such container" is the normal answer.
+	// fix. Nothing there is success, so this only speaks up when the
+	// Engine actually refused.
 	if err := p.docker.RemoveContainer(ctx, opts.Name); err != nil {
-		log.Printf("object store %s: nothing to remove under %s (%v)", s.Slug, opts.Name, err)
+		log.Printf("object store %s: could not clear %s before recreating it: %v", s.Slug, opts.Name, err)
 	}
 
 	if err := p.docker.PullImage(ctx, opts.Image, nil); err != nil {
