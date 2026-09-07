@@ -433,6 +433,7 @@ function DeploymentDialog({
           <LogView
             text={full?.logs ?? null}
             busy={full === null}
+            name={`${reference.split("/").pop()}-deploy-${deployment?.id ?? ""}`}
             follow={running}
             empty={
               running
