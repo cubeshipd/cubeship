@@ -138,8 +138,9 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	registries := extregistry.NewService(db, creds)
 	dnsProviders := dns.NewService(db, creds, cfg)
 	gh := github.NewService(db, cfg)
-	// One series service for both modules below: an app and a datastore
-	// are the same question about two kinds of container.
+	// One series service for every module below: an app, a database and
+	// the MinIO behind a managed store are the same question about
+	// three kinds of container.
 	series := metrics.NewService(db)
 	apps := app.NewService(db, projects,
 		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gh, opts.LocalRegistry),
@@ -158,7 +159,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// the login an external store authenticates as, and on nothing
 	// else. Nothing below it knows it exists.
 	objectStores := objectstore.NewService(db, creds, apps,
-		objectstore.NewProvisioner(db, docker, opts.DataDir), cfg)
+		objectstore.NewProvisioner(db, docker, opts.DataDir), cfg, series)
 
 	// Deleting a project or an environment takes the apps inside it with
 	// it, and only this module knows how to stop a container. The
@@ -224,7 +225,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 // The daemon builds a Collector from these; a test does not collect at
 // all, which is why this is a list rather than a running goroutine.
 func (s *Server) MetricSources() []metrics.Source {
-	return []metrics.Source{s.Apps, s.Datastores}
+	return []metrics.Source{s.Apps, s.Datastores, s.ObjectStores}
 }
 
 // WaitForGitHubDeploys blocks until every deploy a GitHub webhook

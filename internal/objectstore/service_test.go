@@ -503,6 +503,60 @@ func TestDeletingALinkedStoreLeavesTheBucketAlone(t *testing.T) {
 	}
 }
 
+// A managed store's series is served at the store's own address, like
+// an app's and a database's — one module behind all three, and what
+// differs is how the subject is resolved and who may ask.
+//
+// A linked store has no series at all and says so, rather than
+// answering with an empty one: nothing here samples somebody else's
+// server, and a chart of no samples reads as a store sitting idle.
+func TestAManagedStoresMetricsAreAMembersAndALinkedOneHasNone(t *testing.T) {
+	f, _ := withFake(t)
+	rec := f.Do(t, http.MethodPost, "/objectstores", map[string]any{
+		"kind": "managed", "name": "files",
+	}, f.AdminKey)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create a managed store: %d %s", rec.Code, rec.Body.String())
+	}
+	link(t, f, "offsite", nil)
+
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
+	rec = f.Do(t, http.MethodGet, "/objectstores/files/metrics", nil, memberKey)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("read metrics as a member: %d %s", rec.Code, rec.Body.String())
+	}
+	var series struct {
+		Window     string           `json:"window"`
+		Samples    []map[string]any `json:"samples"`
+		Collecting bool             `json:"collecting"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &series); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if series.Window != "1h" {
+		t.Errorf("no window asked for resolved to %q, want the default", series.Window)
+	}
+	if series.Samples == nil {
+		t.Error("samples came back null, which is a different bug in every client")
+	}
+	// This store never came up — there is no Docker in this test — so
+	// there is nothing to sample, which is a different sentence from
+	// "nothing has been sampled yet" and the only one worth showing.
+	if series.Collecting {
+		t.Error("a store with no container reported that it is being collected")
+	}
+
+	if rec = f.Do(t, http.MethodGet, "/objectstores/files/metrics?window=6h", nil, f.AdminKey); rec.Code != http.StatusOK {
+		t.Errorf("a window this release offers: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec = f.Do(t, http.MethodGet, "/objectstores/offsite/metrics", nil, f.AdminKey); rec.Code != http.StatusConflict {
+		t.Errorf("metrics for a store that runs somewhere else: %d %s, want 409", rec.Code, rec.Body.String())
+	}
+	if rec = f.Do(t, http.MethodGet, "/objectstores/nope/metrics", nil, f.AdminKey); rec.Code != http.StatusNotFound {
+		t.Errorf("metrics for an unknown store: %d %s, want 404", rec.Code, rec.Body.String())
+	}
+}
+
 // A linked store has no container here, and every operation that means
 // one has to say so rather than failing somewhere further in.
 func TestALinkedStoreHasNoContainerToOperateOn(t *testing.T) {
