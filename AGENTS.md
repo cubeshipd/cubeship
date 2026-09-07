@@ -1535,6 +1535,24 @@ a service with no teardown wired refuses to delete at all.
 Deleting an app leaves its images in the registry — reclaiming that disk
 needs a registry garbage collection pass, which Cubeship does not run.
 
+**A deployment is a record, and deleting one deletes a record.** Nothing
+about it stops an app: the container belongs to the app, and the row is
+the history of how it got there. What goes with the row is the build
+log, which is most of its bytes; the image stays where every other image
+stays. Two rows are refused, and `deletable` on the listing says so
+before anybody tries — one **still running**, because the orchestrator is
+writing to it, and the one the app **is running**, because its record is
+the only thing that says what the container is. That last one is derived
+rather than stored: the orchestrator swaps the container in and *then*
+marks the deployment succeeded, so the newest succeeded row is by
+construction the live one, and a column saying so would be a second copy
+of a fact somebody has to keep in step.
+
+The role is the one that deploys that app — `RoleToDeploy` — because
+somebody who may add to a history may tidy it, and making an admin clear
+a member's failed deploy is friction that buys nothing when the
+dangerous rows are refused outright.
+
 ## Monitoring
 
 `internal/metrics` records what every container on this instance is

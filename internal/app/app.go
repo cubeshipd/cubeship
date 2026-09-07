@@ -80,7 +80,15 @@ type Deployment struct {
 	Logs string
 	// HasLogs says the row holds output, so a caller knows whether
 	// there is anything to open without being sent it.
-	HasLogs   bool
+	HasLogs bool
+	// Deletable says this record may be removed, which two of them may
+	// not be: one still running, because the orchestrator is writing to
+	// it, and the one the app is running, because its record is the
+	// only thing that says what that is. Everything else is history,
+	// and a failed deploy is history nobody wants to keep looking at.
+	//
+	// Filled by the service, which is what knows which one is current.
+	Deletable bool
 	CreatedAt time.Time
 }
 
@@ -230,6 +238,19 @@ var (
 	// ErrDeploymentNotFound covers a deployment id that does not belong
 	// to the app it was asked for.
 	ErrDeploymentNotFound = errors.New("deployment not found")
+
+	// ErrDeploymentRunning refuses deleting a deploy that has not
+	// finished. The orchestrator is still writing that row.
+	ErrDeploymentRunning = errors.New("this deploy is still running; wait for it to finish")
+
+	// ErrDeploymentIsCurrent refuses deleting the record of what the
+	// app is running.
+	//
+	// It does not stop the container — nothing here does, and the
+	// record is not what keeps an app up. What it stops is the record
+	// going while the container stays, which leaves something running
+	// that nothing on the instance explains.
+	ErrDeploymentIsCurrent = errors.New("this is the deploy the app is running, and its record is the only thing that says what that is")
 
 	// ErrNoRegistry reports that the instance has no domain yet, so
 	// there is no registry to push to or pull from.

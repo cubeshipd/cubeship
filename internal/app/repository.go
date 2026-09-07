@@ -280,6 +280,44 @@ func (r *Repository) DeploymentByID(ctx context.Context, appID, id int64) (*Depl
 	return d, nil
 }
 
+// DeleteDeployment removes one deploy's record, and reports whether
+// there was one to remove.
+//
+// The record, and nothing else. The container this app is running is
+// the app's, not the deployment's, and the image is in a registry that
+// needs a garbage collection pass Cubeship does not run — the same
+// thing that is true of an app's images when the app itself goes. What
+// this reclaims is the build log, which is most of the row.
+func (r *Repository) DeleteDeployment(ctx context.Context, appID, id int64) (bool, error) {
+	res, err := r.q.ExecContext(ctx,
+		`DELETE FROM deployments WHERE id = $1 AND app_id = $2`, id, appID)
+	if err != nil {
+		return false, fmt.Errorf("delete deployment %d: %w", id, err)
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
+}
+
+// CurrentDeployment is the deploy whose image the app is running: the
+// newest one that succeeded.
+//
+// Derived rather than stored, because it already is. The orchestrator
+// swaps the container in and *then* finishes the deployment as
+// succeeded, so the newest succeeded row is by construction the one
+// behind what is running. A column saying so would be a second copy of
+// that fact, kept in step by hand.
+func (r *Repository) CurrentDeployment(ctx context.Context, appID int64) (int64, bool, error) {
+	var id int64
+	err := r.q.QueryRowContext(ctx,
+		`SELECT id FROM deployments
+		 WHERE app_id = $1 AND status = $2
+		 ORDER BY created_at DESC, id DESC LIMIT 1`, appID, DeploymentSucceeded).Scan(&id)
+	if err != nil {
+		return 0, false, nil
+	}
+	return id, true, nil
+}
+
 // scanDeploymentSummary reads a row selected with
 // deploymentListColumns: everything about the deploy except what it
 // printed.

@@ -237,6 +237,10 @@ export type Deployment = {
   // Whether there is output to read, which is what a listing answers
   // without carrying it.
   has_logs: boolean;
+  // Whether this record may be removed. False for one still running,
+  // and for the one the app is running — see the daemon's
+  // Service.DeleteDeployment for why each.
+  deletable: boolean;
   created_at: string;
 };
 
