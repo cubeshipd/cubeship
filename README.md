@@ -243,6 +243,34 @@ one major version cannot be read by another. Deleting a database deletes
 its data, and **there are no backups** — `cubeship db delete` wants
 `--yes`, and the dashboard asks you to type the name.
 
+## Object storage
+
+**Storage** holds buckets, and they get there two ways. You can **link a
+bucket somewhere else** — S3, Cloudflare R2, DigitalOcean Spaces, or
+anything that speaks S3 — by giving the instance an access key, or you
+can **run a MinIO on this machine**, beside the databases and on the
+same disk.
+
+Both then look the same: a browser for the files, with folders you can
+go into, upload into and delete from, and a connection panel with the
+endpoint and keys to paste into an app.
+
+Which one you want depends on what the bucket is for. A backup of this
+machine kept on this machine is not a backup, so that one goes
+somewhere else; an app's uploads, a dump on its way out, or developing
+against S3 without paying for S3 are all fine here.
+
+Deleting them is not the same act, and the screen says so: deleting a
+MinIO you run removes its objects from this host with no copy anywhere,
+and deleting a link forgets an address and a key while the bucket stays
+exactly where it is.
+
+A MinIO here is reachable only by apps on the instance until you publish
+it on a host port. That is plain HTTP with **no TLS** — the signature
+protects the keys, not what is being transferred — so it is a firewall
+rule away from being safe, and the Firewall screen is where you write
+one.
+
 ## Signing in
 
 The API takes two credentials. A key is what the CLI and MCP clients

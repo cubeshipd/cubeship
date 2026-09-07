@@ -7,6 +7,7 @@ import {
   FolderTreeIcon,
   GitBranchIcon,
   GlobeIcon,
+  HardDriveIcon,
   KeyRoundIcon,
   LogOutIcon,
   ServerCogIcon,
@@ -66,6 +67,13 @@ const sections: { label?: string; items: NavItem[] }[] = [
       // thing the instance is wired to. It is opened as often as an app
       // is, which is what the Platform section is not for.
       { href: "/databases", label: "Databases", icon: DatabaseIcon, owns: ["/databases"] },
+      // Beside Databases for the same reason it is beside Projects: a
+      // bucket belongs to the instance, and it is a thing you deploy
+      // against rather than a thing the instance is wired to. It sits
+      // here even when the store itself is somebody else's — where the
+      // bytes are is not what decides which half of the sidebar a
+      // screen belongs in.
+      { href: "/storage", label: "Storage", icon: HardDriveIcon, owns: ["/storage"] },
     ],
   },
   {

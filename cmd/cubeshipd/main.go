@@ -16,6 +16,7 @@ import (
 	"cubeship/internal/app"
 	"cubeship/internal/datastore"
 	"cubeship/internal/metrics"
+	"cubeship/internal/objectstore"
 	"cubeship/internal/platform/authkey"
 	"cubeship/internal/platform/bootstrap"
 	"cubeship/internal/platform/buildkit"
@@ -394,6 +395,11 @@ func run() error {
 	// the rows still describe the world from before the reboot.
 	if err := datastore.Reconcile(ctx, srv.Datastores.Repo(), docker); err != nil {
 		return fmt.Errorf("reconcile datastores: %w", err)
+	}
+	// And for the object storage this instance runs. A linked one has
+	// no container and is skipped.
+	if err := objectstore.Reconcile(ctx, srv.ObjectStores.Repo(), docker); err != nil {
+		return fmt.Errorf("reconcile object stores: %w", err)
 	}
 
 	srv.SetRegistrySigningKey(registrySigningKey, registryCertDER)
