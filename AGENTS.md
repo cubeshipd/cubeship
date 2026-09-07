@@ -741,6 +741,42 @@ Writing a setting re-runs `applyInfrastructure` in `cmd/cubeshipd`, which
 is what brings the registry up when a domain appears. It works because
 `bootstrap.Ensure` replaces a container whose configuration changed.
 
+### What this instance's records point at
+
+`public_ip` is the address Cubeship writes into a DNS record, and
+`Service.PublicIP` is the four answers to it, best first:
+
+1. **What the operator typed.** They can see the machine. It is the only
+   answer that is not filtered — an instance behind a split-horizon
+   resolver may want one nothing here would guess.
+2. **The address the dashboard was opened at**, when the `Host` header
+   is an IP literal. On a fresh install that is free and exactly right:
+   the dashboard is reached at `http://<ip>:3000` before there is a
+   domain, so it is by construction an address that reaches this host.
+   Once there is a domain it is a name and this stops answering — which
+   is the case that produced the bug below.
+3. **The machine's own**, from `ip route get` run in the host's
+   namespaces, through the same door the firewall uses. Cached for
+   `HostAddressTTL`, because asking costs a container and a machine's
+   address changes about never.
+4. **The daemon's own interface**, which only ever answers on a daemon
+   that is a host process — `make dev`.
+
+**A private address is never an answer.** `Routable` refuses the bridge
+range, RFC1918, loopback, link-local and carrier-grade NAT, and it is
+applied to every answer but the first — including whatever a
+`HostAddress` hands back, because that is the last place between a
+detected value and somebody's zone.
+
+That rule is the whole point of this section. The daemon runs as a
+container, so before it existed the fallback read the *bridge's* address
+and offered `172.18.0.2` as this instance's own. Written into a zone
+that is not a guess that fails to help: it replaces whatever was
+resolving at that name, and the domain goes dark. Empty is the honest
+answer, and **every caller has to treat it as one** — the app's network
+form disables its button and says why rather than adding a name it
+cannot make resolve.
+
 ## Infrastructure containers
 
 `bootstrap.Ensure` fingerprints the `ContainerOpts` it is given into a

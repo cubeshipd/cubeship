@@ -106,7 +106,7 @@ var ErrSuperAdminOnly = errors.New("forbidden: only a super-admin can change ins
 var known = map[string]string{
 	Domain:              "Base domain. The dashboard and the API are served at <domain> and the registry at registry.<domain>; both must resolve to this host.",
 	ACMEEmail:           "Contact address for Let's Encrypt. Optional: certificates are issued as soon as there is a domain.",
-	PublicIP:            "What this instance's DNS records should point at. Empty means the address on the interface this host reaches the internet through, which is right on a VPS and wrong behind NAT.",
+	PublicIP:            "What this instance's DNS records should point at. Empty means work it out — the address the dashboard is opened at, or the machine's own — which is right on a VPS and has no answer behind NAT. A private address is never the answer: one of those in a record is a domain that stops resolving.",
 	DNSProviderID:       "Which stored DNS credential writes this instance's own records. Empty means the operator keeps their DNS elsewhere and writes them by hand.",
 	GitHubAppID:         "The numeric id of the GitHub App this instance acts as.",
 	GitHubClientID:      "The App's OAuth client id, which is what someone connecting an installation is sent to GitHub with.",

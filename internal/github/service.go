@@ -31,6 +31,11 @@ type Service struct {
 	now    func() time.Time
 }
 
+// Settings is the instance's configuration service, for the one place
+// this module answers with a settings response of its own — registering
+// the App writes four of them. See Handler.registerFromManifest.
+func (s *Service) Settings() *settings.Service { return s.settings }
+
 func NewService(db *database.DB, cfg *settings.Service) *Service {
 	return &Service{
 		db: db, settings: cfg,

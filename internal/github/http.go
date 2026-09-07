@@ -201,7 +201,9 @@ func (h *Handler) registerFromManifest(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, settings.ToResponse(values, settings.ReachedAt(r)))
+	reachedAt := settings.ReachedAt(r)
+	httpx.WriteJSON(w, http.StatusOK,
+		settings.ToResponse(values, h.svc.Settings().PublicIP(ctx, values, reachedAt)))
 }
 
 func (h *Handler) connect(w http.ResponseWriter, r *http.Request) {

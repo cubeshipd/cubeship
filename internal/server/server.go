@@ -7,7 +7,9 @@
 package server
 
 import (
+	"context"
 	"crypto/rsa"
+	"fmt"
 	"net/http"
 
 	"cubeship/internal/app"
@@ -111,6 +113,23 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	users := user.NewService(db)
 	projects := project.NewService(db)
 	cfg := settings.NewService(db)
+	// What this instance's DNS records should point at cannot be read
+	// from inside the daemon's own container — what it finds there is a
+	// bridge address, and one of those in an A record is a domain that
+	// stops resolving. The host is asked instead, through the same door
+	// the firewall uses.
+	if opts.Host != nil && opts.Host.Available() {
+		cfg.SetHostAddress(settings.RouteAddress(func(ctx context.Context, argv ...string) (string, error) {
+			res, err := opts.Host.Run(ctx, argv...)
+			if err != nil {
+				return "", err
+			}
+			if !res.OK() {
+				return "", fmt.Errorf("%s: exit %d", argv[0], res.Code)
+			}
+			return res.Output, nil
+		}))
+	}
 	// One store for every secret this instance holds, and two modules
 	// that name one rather than keeping their own. See
 	// internal/credential: an AWS key reaches Route 53 and ECR both,

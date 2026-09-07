@@ -251,7 +251,9 @@ export function InstanceDomain({
                 hint={
                   settings.public_ip_configured
                     ? "Set by you."
-                    : "The address you reached this dashboard at. Correct it if that is not how the world reaches this box."
+                    : ip
+                      ? "Worked out from this host. Correct it if that is not how the world reaches this box."
+                      : "This instance could not work out its own address — it will not guess at one on its private network. Type the address the world reaches this box at."
                 }
               />
             )}
