@@ -1874,19 +1874,32 @@ someone comes here to do is scan a column — which engine, is it up, what
 is using it — and cards make you read each one whole to find the line
 you were after.
 
-One database's page is **sections, not tabs**: monitoring, then how to
-connect, then what is connected. None of the three is an alternative to
-the others, and hiding two behind a click made you click through all of
-them every time.
+**Every page for one running thing is tabs, and the first tab is
+always the same two questions**: is it working, and how do I reach it.
+An app opens on Overview, Environment, Logs; a database on Overview,
+Apps, Logs; an object store on Overview, Buckets, Apps, Logs. Monitoring
+comes first because it is the question you have before you know you have
+one, and how to connect is beside it because it is short, answered once,
+and the reason somebody opened the page. An object store's Overview is
+the connection alone: nothing samples MinIO, because `objectstore` is
+not a `metrics.Source`.
 
-An **app's page is tabs**, and the difference is length rather than
-taste. A database's three sections are short; an app's environment is
-fifty rows on a real app and its log is five thousand lines, so stacked
-they push everything above them off the screen — "how is it doing" stops
-being visible exactly when the app is big enough to care about. The
-tabs are Overview, Environment and Logs, and each is a question somebody
-arrives with. Monitoring is first because it is the question you have
-before you know you have one.
+Everything else is a tab, and the test is length or depth: an app's
+environment is fifty rows and its log five thousand lines; a database's
+attached apps and a store's buckets are tables with their own dialogs
+and their own confirmations. Stacked as sections they push the two
+questions above off the screen, and they do it exactly when the thing is
+busy enough to be worth looking at.
+
+A database's page was sections for a while, on the grounds that all
+three were short. Two of them are not, and a page that opened on a
+scroll past a log to reach a chart is what that argument came to.
+
+A tab that could never have content is **not offered**, and one whose
+content does not exist *yet* is offered and disabled with the reason on
+hover — the difference between a linked store, whose log is on somebody
+else's machine, and a managed one that has not come up. A disabled
+control that explains nothing is one somebody clicks twice.
 
 The connection details are **fields with a copy button** rather than a
 table of values. A connection string is long, and a field bounds it and
