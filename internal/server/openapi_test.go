@@ -74,6 +74,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 
 	want := []string{
 		"DELETE /apps/{project}/{env}/{name}",
+		"DELETE /apps/{project}/{env}/{name}/deployments/{id}",
 		"DELETE /apps/{project}/{env}/{name}/domains/{domainID}",
 		"DELETE /credentials/{id}",
 		"DELETE /datastores/{name}",

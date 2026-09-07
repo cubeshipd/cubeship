@@ -114,6 +114,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("POST "+appPath+"/deploy", auth(http.HandlerFunc(h.deploy)))
 	r.Handle("GET "+appPath+"/deployments", auth(http.HandlerFunc(h.deployments)))
 	r.Handle("GET "+appPath+"/deployments/{id}", auth(http.HandlerFunc(h.deployment)))
+	r.Handle("DELETE "+appPath+"/deployments/{id}", auth(http.HandlerFunc(h.deleteDeployment)))
 	r.Handle("POST "+appPath+"/domains", auth(http.HandlerFunc(h.addDomain)))
 	r.Handle("PATCH "+appPath+"/domains/{domainID}", auth(http.HandlerFunc(h.setDomainPort)))
 	r.Handle("DELETE "+appPath+"/domains/{domainID}", auth(http.HandlerFunc(h.removeDomain)))
@@ -157,6 +158,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, "app has no running container yet", http.StatusConflict)
 	case errors.Is(err, ErrDeploymentNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, ErrDeploymentRunning), errors.Is(err, ErrDeploymentIsCurrent):
+		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		project.WriteError(w, err)
 	}
@@ -290,14 +293,17 @@ type DeploymentResponse struct {
 	Logs string `json:"logs,omitempty"`
 	// HasLogs says there is output to read, which is what a listing can
 	// answer without carrying it.
-	HasLogs   bool      `json:"has_logs"`
+	HasLogs bool `json:"has_logs"`
+	// Deletable says this record may be removed. Two may not be: one
+	// still running, and the one the app is running.
+	Deletable bool      `json:"deletable"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 func toDeploymentResponse(d *Deployment) DeploymentResponse {
 	return DeploymentResponse{
 		ID: d.ID, Status: d.Status, Image: d.ImageRef, Error: d.Error,
-		Logs: d.Logs, HasLogs: d.HasLogs, CreatedAt: d.CreatedAt,
+		Logs: d.Logs, HasLogs: d.HasLogs, Deletable: d.Deletable, CreatedAt: d.CreatedAt,
 	}
 }
 
@@ -317,6 +323,22 @@ func (h *Handler) deploy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusAccepted, toDeploymentResponse(deployment))
+}
+
+// deleteDeployment removes one deploy's record — a record, not a
+// container. See Service.DeleteDeployment.
+func (h *Handler) deleteDeployment(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid deployment id", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	if err := h.svc.DeleteDeployment(ctx, user.FromContext(ctx), refFrom(r), id); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) deployments(w http.ResponseWriter, r *http.Request) {

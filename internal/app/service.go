@@ -516,18 +516,80 @@ func (s *Service) Deployment(ctx context.Context, caller *user.User, ref Referen
 	return d, nil
 }
 
+// DeleteDeployment removes one deploy's record.
+//
+// **It removes a record, not a container.** Nothing here stops an app:
+// the container belongs to the app, and this row is the history of how
+// it got there. What goes with the row is the build log, which is most
+// of its bytes; the image stays in the registry, which needs a garbage
+// collection pass Cubeship does not run — the same thing that is true
+// when an app itself is deleted.
+//
+// Two are refused. One still running, because the orchestrator is
+// writing to it. And the one the app is running, because its record is
+// the only thing that says what that is.
+//
+// The role is the one that deploys this app: somebody who may add to
+// the history may tidy it, and making an admin clear a member's failed
+// deploy is friction that buys nothing — the dangerous rows are refused
+// outright rather than gated behind a role.
+func (s *Service) DeleteDeployment(ctx context.Context, caller *user.User, ref Reference, deploymentID int64) error {
+	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	if err != nil {
+		return err
+	}
+	if err := user.Require(caller, RoleToDeploy(Source(a.Source))); err != nil {
+		return err
+	}
+	d, err := s.Repo().DeploymentByID(ctx, a.ID, deploymentID)
+	if err != nil {
+		return ErrDeploymentNotFound
+	}
+	if !d.Done() {
+		return ErrDeploymentRunning
+	}
+	current, _, err := s.Repo().CurrentDeployment(ctx, a.ID)
+	if err != nil {
+		return err
+	}
+	if d.ID == current {
+		return ErrDeploymentIsCurrent
+	}
+	removed, err := s.Repo().DeleteDeployment(ctx, a.ID, deploymentID)
+	if err != nil {
+		return err
+	}
+	if !removed {
+		return ErrDeploymentNotFound
+	}
+	return nil
+}
+
 // MaxDeploymentHistory bounds how much of an app's history a listing
 // returns. Deploy history grows without limit; nobody reads past the
 // recent ones.
 const MaxDeploymentHistory = 50
 
-// Deployments returns an app's recent deploy history, newest first.
+// Deployments returns an app's recent deploy history, newest first,
+// each marked with whether its record may be removed — see
+// DeleteDeployment for what "may" means and why.
 func (s *Service) Deployments(ctx context.Context, caller *user.User, ref Reference) ([]*Deployment, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
 	if err != nil {
 		return nil, err
 	}
-	return s.Repo().ListDeployments(ctx, a.ID, MaxDeploymentHistory)
+	history, err := s.Repo().ListDeployments(ctx, a.ID, MaxDeploymentHistory)
+	if err != nil {
+		return nil, err
+	}
+	current, _, err := s.Repo().CurrentDeployment(ctx, a.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, d := range history {
+		d.Deletable = d.Done() && d.ID != current
+	}
+	return history, nil
 }
 
 // Logs returns an app's container output. tail limits it to that many
