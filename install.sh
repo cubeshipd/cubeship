@@ -190,12 +190,21 @@ run_daemon() {
 	# directory, so there is nothing in the container to keep.
 	docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
 
+	# The machine's own procfs, read-only, so the daemon can report what
+	# the box is doing. /proc/stat and /proc/meminfo are not namespaced —
+	# a container reading its own sees the machine's, which is why `top`
+	# in one shows the host — but /proc/net is, so the interface counters
+	# in here would be this container's veth. Mounted, PID 1's entry is
+	# init's, which is in the machine's network namespace by definition.
+	# Read-only, and it grants nothing: this daemon already has the
+	# Docker socket, which is root on this box by another name.
 	docker run -d \
 		--name "$CONTAINER" \
 		--network "$NETWORK" \
 		--restart unless-stopped \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v "$DATA_DIR:$DATA_DIR" \
+		-v /proc:/host/proc:ro \
 		-e CUBESHIP_DATA_DIR="$DATA_DIR" \
 		-e CUBESHIP_WEB_IMAGE="$WEB_IMAGE:$VERSION" \
 		-e CUBESHIP_DOMAIN="$DOMAIN" \

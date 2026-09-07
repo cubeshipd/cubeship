@@ -90,6 +90,10 @@ run_tests() {
 	check "runs the daemon" "$(grep -c 'docker run .*--name cubeship-daemon' /tmp/docker.log)" "1"
 	check "gives it the Docker socket" \
 		"$(grep -c 'var/run/docker.sock:/var/run/docker.sock' /tmp/docker.log)" "1"
+	# Read-only, and it is what makes the instance's own network figures
+	# possible: a container's /proc/net is its own namespace.
+	check "gives it the machine's procfs" \
+		"$(grep -c '\-v /proc:/host/proc:ro' /tmp/docker.log)" "1"
 	check "publishes the port" "$(grep -c '\-p 3000:3000' /tmp/docker.log)" "1"
 	check "restarts it with the host" \
 		"$(grep -c '\-\-restart unless-stopped' /tmp/docker.log)" "1"

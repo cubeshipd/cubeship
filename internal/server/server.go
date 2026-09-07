@@ -20,6 +20,7 @@ import (
 	"cubeship/internal/extregistry"
 	"cubeship/internal/firewall"
 	"cubeship/internal/github"
+	"cubeship/internal/machine"
 	"cubeship/internal/metrics"
 	"cubeship/internal/objectstore"
 	"cubeship/internal/platform/database"
@@ -40,15 +41,18 @@ type Server struct {
 	Datastores   *datastore.Service
 	ObjectStores *objectstore.Service
 	Metrics      *metrics.Service
-	Credentials  *credential.Service
-	Settings     *settings.Service
-	Certs        *certificates.Service
-	Firewall     *firewall.Service
-	Setup        *setup.Service
-	Registries   *extregistry.Service
-	DNS          *dns.Service
-	GitHub       *github.Service
-	Registry     *registry.Handler
+	// Machine is what the box itself is doing, which belongs to no
+	// module below: there is one of it, and nothing here configures it.
+	Machine     *machine.Service
+	Credentials *credential.Service
+	Settings    *settings.Service
+	Certs       *certificates.Service
+	Firewall    *firewall.Service
+	Setup       *setup.Service
+	Registries  *extregistry.Service
+	DNS         *dns.Service
+	GitHub      *github.Service
+	Registry    *registry.Handler
 
 	// githubHandler is kept so a test can wait for the deploys a
 	// webhook set going.
@@ -99,6 +103,13 @@ type Options struct {
 	// itself a host process: both would otherwise be editing somebody's
 	// real netfilter tables.
 	Host firewall.Host
+
+	// Machine reads what the box itself is doing — its CPU, memory,
+	// disk and network. The daemon builds it because where those
+	// numbers are depends on whether the daemon is a container: see
+	// machine.NewReader. Nil is a reader for a host process, which is
+	// what a test is.
+	Machine *machine.Reader
 
 	// SetupToken guards claiming an unclaimed instance. The daemon
 	// writes it into the data directory on first start and the
@@ -161,6 +172,14 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	objectStores := objectstore.NewService(db, creds, apps,
 		objectstore.NewProvisioner(db, docker, opts.DataDir), cfg, series)
 
+	// The box itself, which sits beside all of them rather than under
+	// any: one machine, no configuration, and the only module here that
+	// owns nothing but a history.
+	reader := opts.Machine
+	if reader == nil {
+		reader = machine.NewReader(opts.DataDir, false)
+	}
+
 	// Deleting a project or an environment takes the apps inside it with
 	// it, and only this module knows how to stop a container. The
 	// dependency runs downward everywhere else, so it is handed back up
@@ -189,6 +208,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Datastores:   datastores,
 		ObjectStores: objectStores,
 		Metrics:      series,
+		Machine:      machine.NewService(db, reader),
 		Settings:     cfg,
 		Certs:        certificates.NewService(cfg, apps, opts.DataDir),
 		// A firewall is the host's, so a server with no way to reach the
@@ -288,6 +308,7 @@ func (s *Server) routes() {
 	app.NewHandler(s.Apps).Routes(s.router, auth)
 	datastore.NewHandler(s.Datastores).Routes(s.router, auth)
 	objectstore.NewHandler(s.ObjectStores).Routes(s.router, auth)
+	machine.NewHandler(s.Machine).Routes(s.router, auth)
 
 	// The registry's own two endpoints authenticate differently (Basic
 	// auth, and a shared webhook secret), so they mount unwrapped. So

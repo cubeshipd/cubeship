@@ -550,6 +550,47 @@ export type MetricSeries = {
 // The windows the daemon offers, shortest first. Kept in step with
 // metrics.Windows on the daemon, which is the side that refuses one it
 // does not know.
+// What the machine itself has been doing, from GET /instance/metrics.
+//
+// A different shape from a container's series and deliberately not the
+// same type: the box has a disk filling up and a wire moving bytes,
+// neither of which a container has, and its CPU percentage is of the
+// **whole machine** where a container's is of one core.
+export type InstanceSample = {
+  at: string;
+  // 100 is every core busy.
+  cpu_percent: number;
+  memory_bytes: number;
+  memory_total_bytes: number;
+  disk_bytes: number;
+  disk_total_bytes: number;
+  // Absent when this daemon cannot see the machine's own interfaces —
+  // see `unavailable` — and on the first pass after a restart, because
+  // a rate is a difference.
+  rx_bytes_per_sec?: number;
+  tx_bytes_per_sec?: number;
+};
+
+export type InstanceSeries = {
+  window: string;
+  samples: InstanceSample[];
+  // Facts about the machine rather than about the series, so a daemon
+  // that started a minute ago can still say what box it is on.
+  cores: number;
+  memory_total_bytes: number;
+  disk_total_bytes: number;
+  disk_path: string;
+  // The interfaces the network figures add up, so a number that looks
+  // wrong can be explained rather than argued with.
+  interfaces?: string[];
+  // What this daemon cannot measure and why, keyed by "cpu", "memory",
+  // "disk" or "network". The usual entry is the network: a container's
+  // /proc/net is its own namespace, so a daemon whose container was
+  // started without the machine's procfs says so here instead of
+  // charting its own veth.
+  unavailable?: Record<string, string>;
+};
+
 export const METRIC_WINDOWS = ["1h", "6h", "24h"] as const;
 export type MetricWindow = (typeof METRIC_WINDOWS)[number];
 
