@@ -326,6 +326,11 @@
   padding-top: 1rem;
 }
 
+/* The child selector is literal, and that is the thing to know: a
+ * panel whose content is wrapped in anything — a <section>, a <div> —
+ * keeps its section header's margin, because the wrapper is what this
+ * matches and the wrapper has none. A tab's content starts with the
+ * heading itself, or a fragment around it. */
 [data-slot="tabs-content"] > :first-child {
   margin-top: 0;
 }
