@@ -76,6 +76,7 @@ export function DataTable<T extends object>({
   rowKey,
   onRowClick,
   className,
+  maxHeight,
 }: {
   columns: Column<T>[];
   // null means still loading, which is not the same as loaded-and-empty
@@ -86,6 +87,13 @@ export function DataTable<T extends object>({
   rowKey?: (row: T, index: number) => string;
   onRowClick?: (row: T) => void;
   className?: string;
+  // maxHeight bounds the table and scrolls it inside itself, for a list
+  // long enough that the page would otherwise be the list — fifty
+  // environment variables above everything else on the screen. The
+  // header sticks only then: without a scroll container of its own it
+  // would stick to the viewport instead, which is a different and worse
+  // thing to do to every other table here.
+  maxHeight?: string;
 }) {
   const [sorting, setSorting] = useState<SortingState>([]);
 
@@ -116,7 +124,10 @@ export function DataTable<T extends object>({
       {/* The scroll container is here rather than on the page, so a
           table that is genuinely wider than the pane scrolls inside its
           own card and the page body never does. */}
-      <div className="w-full overflow-x-auto">
+      <div
+        className={cn("w-full overflow-x-auto", maxHeight && "overflow-y-auto")}
+        style={maxHeight ? { maxHeight } : undefined}
+      >
         <Table className="w-full table-fixed">
           <TableHeader>
             {table.getHeaderGroups().map((group) => (
@@ -128,7 +139,11 @@ export function DataTable<T extends object>({
                   return (
                     <TableHead
                       key={header.id}
-                      className={cn("px-4", column.align === "right" && "text-right")}
+                      className={cn(
+                        "px-4",
+                        column.align === "right" && "text-right",
+                        maxHeight && "sticky top-0 z-10 bg-card",
+                      )}
                       style={{ width: `${column.width}%` }}
                     >
                       {column.sortBy ? (
@@ -173,7 +188,13 @@ export function DataTable<T extends object>({
                     key={column.id}
                     className={cn(
                       "px-4 py-2.5",
-                      column.wrap ? "break-words" : "truncate",
+                      // whitespace-normal is not decoration: the cell
+                      // primitive carries `whitespace-nowrap`, so
+                      // `break-words` on its own never wrapped anything
+                      // and every column that asked to wrap quietly ran
+                      // off the side instead — a build's error, a DKIM
+                      // record's value, a store's endpoint.
+                      column.wrap ? "break-words whitespace-normal" : "truncate",
                       column.align === "right" && "text-right",
                     )}
                   >
