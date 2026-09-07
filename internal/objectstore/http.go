@@ -64,8 +64,23 @@ type Response struct {
 	Status       string `json:"status"`
 	Error        string `json:"error,omitempty"`
 
+	// Attachments are the apps this store's variables reach.
+	Attachments []AttachmentResponse `json:"attachments"`
+
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// AttachmentResponse is one app wired to one bucket.
+//
+// It carries the variable *names* and not their values: one of them is
+// the secret key, and a screen that says what an app receives does not
+// have to say what is in it.
+type AttachmentResponse struct {
+	App       string   `json:"app"`
+	Bucket    string   `json:"bucket"`
+	Prefix    string   `json:"prefix,omitempty"`
+	Variables []string `json:"variables"`
 }
 
 func toResponse(s *Store, domain string) Response {
@@ -76,8 +91,20 @@ func toResponse(s *Store, domain string) Response {
 		CredentialID: s.CredentialID, Version: s.Version, ExposedPort: s.ExposedPort,
 		ExternalEndpoint: s.ExternalURL(domain),
 		HasContainer:     s.ContainerID != "", Status: s.Status, Error: s.Error,
-		CreatedAt: s.CreatedAt, UpdatedAt: s.UpdatedAt,
+		Attachments: toAttachments(s.Attachments),
+		CreatedAt:   s.CreatedAt, UpdatedAt: s.UpdatedAt,
 	}
+}
+
+func toAttachments(all []Attachment) []AttachmentResponse {
+	out := make([]AttachmentResponse, 0, len(all))
+	for _, a := range all {
+		out = append(out, AttachmentResponse{
+			App: a.AppRef, Bucket: a.Bucket, Prefix: a.Prefix,
+			Variables: VarNames(a.Prefix),
+		})
+	}
+	return out
 }
 
 // BucketResponse is one bucket in a listing.
@@ -134,6 +161,10 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("POST /objectstores/{name}/expose", auth(http.HandlerFunc(h.expose)))
 	r.Handle("DELETE /objectstores/{name}/expose", auth(http.HandlerFunc(h.unexpose)))
 
+	r.Handle("POST /objectstores/{name}/attachments", auth(http.HandlerFunc(h.attach)))
+	r.Handle("DELETE /objectstores/{name}/attachments/{project}/{env}/{app}",
+		auth(http.HandlerFunc(h.detach)))
+
 	r.Handle("GET /objectstores/{name}/buckets", auth(http.HandlerFunc(h.buckets)))
 	r.Handle("POST /objectstores/{name}/buckets", auth(http.HandlerFunc(h.createBucket)))
 	r.Handle("DELETE /objectstores/{name}/buckets/{bucket}", auth(http.HandlerFunc(h.deleteBucket)))
@@ -166,8 +197,12 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 
 	case errors.Is(err, ErrAlreadyExists), errors.Is(err, ErrPortTaken),
-		errors.Is(err, ErrBucketNotEmpty):
+		errors.Is(err, ErrBucketNotEmpty), errors.Is(err, ErrAlreadyAttached),
+		errors.Is(err, ErrPrefixTaken):
 		http.Error(w, err.Error(), http.StatusConflict)
+
+	case errors.Is(err, ErrNotAttached):
+		http.Error(w, err.Error(), http.StatusNotFound)
 
 	case errors.Is(err, ErrDenied):
 		http.Error(w, err.Error(), http.StatusForbidden)
@@ -185,7 +220,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		errors.Is(err, ErrRegionRequired), errors.Is(err, ErrAccountRequired),
 		errors.Is(err, ErrEndpointRequired), errors.Is(err, ErrBadEndpoint),
 		errors.Is(err, ErrBadBucket), errors.Is(err, ErrBadKey),
-		errors.Is(err, ErrSingleBucket), errors.Is(err, ErrBadPort),
+		errors.Is(err, ErrSingleBucket), errors.Is(err, ErrBadPrefix),
+		errors.Is(err, ErrBadPort),
 		errors.Is(err, ErrNoPortsLeft), errors.Is(err, httpx.ErrNotJSON):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 
@@ -414,6 +450,45 @@ func (h *Handler) expose(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	store, err := h.svc.Expose(ctx, user.FromContext(ctx), r.PathValue("name"), req.Port)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toResponse(store, h.svc.ExternalHost(ctx)))
+}
+
+func (h *Handler) attach(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		App    string `json:"app"`
+		Bucket string `json:"bucket"`
+		Prefix string `json:"prefix"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		WriteError(w, err)
+		return
+	}
+	ctx := r.Context()
+	store, err := h.svc.Attach(ctx, user.FromContext(ctx),
+		r.PathValue("name"), req.App, req.Bucket, req.Prefix)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, toResponse(store, h.svc.ExternalHost(ctx)))
+}
+
+// detach takes the app's reference in the path, three segments of it,
+// and the bucket in the query.
+//
+// The bucket cannot be a path segment beside them without reading as a
+// fourth part of the app's name, and it has to be somewhere: unlike a
+// datastore, one app may be attached to the same store twice — a bucket
+// for uploads and one for backups — so "which attachment" needs both.
+func (h *Handler) detach(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	appRef := r.PathValue("project") + "/" + r.PathValue("env") + "/" + r.PathValue("app")
+	store, err := h.svc.Detach(ctx, user.FromContext(ctx),
+		r.PathValue("name"), appRef, r.URL.Query().Get("bucket"))
 	if err != nil {
 		WriteError(w, err)
 		return

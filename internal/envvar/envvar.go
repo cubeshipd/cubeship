@@ -75,7 +75,13 @@ const (
 	// this is the label that tells you where one came from when you go
 	// looking for who set it.
 	SourceDatastore = "datastore"
-	SourceApp       = "app"
+	// SourceObjectStore is a connection variable an attached bucket
+	// contributes — S3_ENDPOINT and its parts. It sits at the same
+	// level as a datastore's and cannot collide with one: the two write
+	// different names, and what keeps two *buckets* apart is the
+	// attachment's prefix.
+	SourceObjectStore = "objectstore"
+	SourceApp         = "app"
 )
 
 // Layer is one level's variables together with where they came from.

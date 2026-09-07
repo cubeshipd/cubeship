@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
-import { OptionCards } from "@/components/option-cards";
 import { SearchableSelect } from "@/components/searchable-select";
 import { SlugField } from "@/components/slug-field";
 import { TextField } from "@/components/text-field";
@@ -26,16 +25,11 @@ import { message } from "@/lib/errors";
 
 // Adding object storage, both ways.
 //
-// **OptionCards, not a select**, and this is the case it exists for:
-// the two are not two spellings of one thing. One starts a server on
-// this box and puts the bytes on its disk — which is where deleting it
-// takes them with it — and the other writes down an address and a key
-// for somebody else's. Picking wrong is expensive and the difference is
-// a sentence, which is the whole test.
-//
-// The provider *is* a select, for the mirror reason: which S3 this is
-// is a choice between named things, and a grid of cards for it would be
-// a paragraph per option nobody reads twice.
+// A select, like every other choice between named things here. The two
+// options are named well enough to choose between — one is somebody
+// else's server, the other is this machine — and what each of them
+// costs belongs on the page where it is acted on, not in a paragraph
+// nobody reads twice in front of a form.
 export function NewObjectStoreDialog({
   open,
   onOpenChange,
@@ -153,20 +147,14 @@ export function NewObjectStoreDialog({
           <div className="-mx-2 max-h-[65vh] space-y-4 overflow-y-auto px-2 py-5">
             <ErrorAlert error={error} />
 
-            <OptionCards
+            <SearchableSelect
+              label="Kind"
+              searchable={false}
               value={kind}
-              onChange={setKind}
-              options={[
-                {
-                  value: "external",
-                  title: "Link a bucket",
-                  body: "An endpoint somewhere else — S3, R2, Spaces, anything that speaks S3. This instance stores the keys and nothing else; removing it later leaves the bucket untouched.",
-                },
-                {
-                  value: "managed",
-                  title: "Run MinIO here",
-                  body: "A server on this machine, on the same disk as everything else. Good for an app's uploads and for developing against S3 — and not for a backup of this machine, which needs to be somewhere else.",
-                },
+              onChange={(v) => setKind(v as ObjectStoreKind)}
+              choices={[
+                { value: "external", label: "Link a bucket somewhere else" },
+                { value: "managed", label: "Run MinIO on this machine" },
               ]}
             />
 
@@ -182,7 +170,6 @@ export function NewObjectStoreDialog({
               label="Description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              hint="What this storage is for. Optional, and the only place that can say — nothing sits above a store."
             />
 
             {kind === "external" && (
@@ -207,11 +194,7 @@ export function NewObjectStoreDialog({
                     value={region}
                     spellCheck={false}
                     onChange={(e) => setRegion(e.target.value)}
-                    hint={
-                      provider === "digitalocean"
-                        ? "The Space's region, e.g. nyc3 — the endpoint is derived from it."
-                        : "e.g. eu-central-1. The endpoint is derived from it."
-                    }
+                    hint={provider === "digitalocean" ? "e.g. nyc3" : "e.g. eu-central-1"}
                   />
                 )}
                 {asks === "account" && (
@@ -220,7 +203,7 @@ export function NewObjectStoreDialog({
                     value={account}
                     spellCheck={false}
                     onChange={(e) => setAccount(e.target.value)}
-                    hint="R2's endpoint is named after it: the hex string in the S3 API address on your R2 page."
+                    hint="The hex string in the S3 API address on your R2 page."
                   />
                 )}
                 {asks === "endpoint" && (
@@ -229,7 +212,7 @@ export function NewObjectStoreDialog({
                     value={endpoint}
                     spellCheck={false}
                     onChange={(e) => setEndpoint(e.target.value)}
-                    hint="Paste what the provider shows you, URL and all: https://s3.eu-central-1.wasabisys.com."
+                    hint="Paste the URL your provider shows you."
                   />
                 )}
 
@@ -261,7 +244,7 @@ export function NewObjectStoreDialog({
                       value={secretKey}
                       spellCheck={false}
                       onChange={(e) => setSecretKey(e.target.value)}
-                      hint="Stored as given — a signature cannot be computed from a hash — and never shown again. It appears under Credentials, ready to be picked next time."
+                      hint="Never shown again. It appears under Credentials, ready to be picked next time."
                     />
                   </>
                 )}
@@ -271,7 +254,7 @@ export function NewObjectStoreDialog({
                   value={bucket}
                   spellCheck={false}
                   onChange={(e) => setBucket(e.target.value)}
-                  hint="Leave empty unless this key reaches exactly one bucket and may not list them — an R2 token scoped to a bucket, a narrow IAM policy. Naming one here pins the store to it."
+                  hint="Only for a key that reaches one bucket and may not list them. Naming one pins the store to it."
                 />
               </>
             )}

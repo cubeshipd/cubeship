@@ -17,6 +17,13 @@ func (h *Handler) OpenAPI() openapi.Spec {
 		openapi.QueryParam("prefix", "The folder to list, e.g. `backups/2026/`. Omit for the root of the bucket. A folder is a common prefix — S3 has no directories — so this is a string match, not a path lookup."),
 		openapi.QueryParam("cursor", "Continue a listing that came back with one."),
 		openapi.QueryParam("limit", "How many entries to return. Defaults to 200 and is capped at 1000."))
+	attachParams := []openapi.Parameter{
+		openapi.PathParam("name", "The store's name."),
+		openapi.PathParam("project", "The attached app's project slug."),
+		openapi.PathParam("env", "The attached app's environment slug."),
+		openapi.PathParam("app", "The attached app's own name."),
+		openapi.QueryParam("bucket", "Which bucket to unwire it from. Required: one app may be attached to two buckets in the same store, so the app's reference alone does not identify an attachment."),
+	}
 	uploadParams := append(append([]openapi.Parameter{}, bucketParams...),
 		openapi.QueryParam("prefix", "The folder to write into. Omit for the root of the bucket."),
 		openapi.QueryParam("filename", "What to call the object inside that folder. It may not start with a slash or contain a `..` segment."))
@@ -41,13 +48,21 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"version":           openapi.String("The MinIO release a managed store runs. Permanent: a data directory belongs to the server that wrote it."),
 				"exposed_port":      openapi.Integer("The host port a managed store also answers on from outside this instance. Absent when it does not, which is the default." + exposeWarning),
 				"external_endpoint": openapi.String("Where something off this host reaches it. Present only while it is exposed and the instance has a domain to be reached at."),
+				"attachments":       openapi.Array(openapi.Ref("ObjectStoreAttachment")),
 				"has_container":     openapi.Bool("Whether a container currently backs this, which is what decides whether there is a log to read or anything to stop. The status alone cannot answer it: one whose provisioning failed may have neither."),
 				"status":            {Type: "string", Enum: []string{"provisioning", "running", "stopped", "down", "failed", "linked"}, Description: `The first five are a managed store's. "linked" is an external one's, and it is not a health check: this instance holds a login, and whether the endpoint answers is found out by opening it.`},
 				"error":             openapi.String("Why provisioning failed, when it did — usually the tail of what the server printed before it exited."),
 				"created_at":        {Type: "string", Format: "date-time"},
 				"updated_at":        {Type: "string", Format: "date-time"},
 			}, "name", "kind", "provider", "provider_label", "endpoint", "region",
-				"path_style", "has_container", "status", "created_at", "updated_at"),
+				"path_style", "attachments", "has_container", "status", "created_at", "updated_at"),
+
+			"ObjectStoreAttachment": openapi.Object(map[string]*openapi.Schema{
+				"app":       openapi.String("The app's full reference, `project/environment/name`. Full, because a store is not inside an environment and one may serve apps in several."),
+				"bucket":    openapi.String("Which bucket in this store the app is pointed at. It is on the attachment rather than on the store because a store holds many and an app wants one."),
+				"prefix":    openapi.String("What the injected variables are named under. Absent for the usual case, which gives `S3_ENDPOINT` and its parts."),
+				"variables": openapi.Array(openapi.String("A variable name this app's container receives. The values are not reported: one of them is the secret key.")),
+			}, "app", "bucket", "variables"),
 
 			"ObjectStoreCredentials": openapi.Object(map[string]*openapi.Schema{
 				"access_key":        openapi.String("The access key id. Generated for a managed store; the stored account's username for a linked one."),
@@ -300,6 +315,45 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,
 						"409": openapi.TextResponse("This store runs somewhere else."),
+					},
+				},
+			},
+
+			"/objectstores/{name}/attachments": {
+				"post": {
+					OperationID: "attachObjectStore",
+					Summary:     "Wire an app to a bucket",
+					Description: "The app's container is given `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and `S3_PATH_STYLE` **from its next deploy onwards** — a container keeps the environment it was created with, the same rule that makes adding a domain take effect on redeploy.\n\nThere is no connection string, because no S3 client agrees on one. There are no `AWS_*` names either: they would make an app using the AWS SDK work with no configuration and would also mean two stores on one app fighting over six names the SDK reads and the prefix does not reach. Map them in the app's own environment when you want that.\n\nThe bucket is not checked against the store. Whether it exists is a live call this instance may not be allowed to make — a credential scoped to one bucket may not stat another — and refusing on evidence it does not have is how a working attachment gets blocked.\n\nRequires the admin role: this hands an app the store's keys.",
+					Tags:        []string{"Object storage"},
+					Parameters:  nameParam,
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"app":    openapi.String("The app's full reference, `project/environment/name` — or `project/name` for production."),
+						"bucket": openapi.String("Which bucket in this store to point it at."),
+						"prefix": openapi.String("What the variables are named under, e.g. `BACKUPS_`. Omit for the usual case. Needed when one app is attached to two buckets, since two attachments would otherwise name the same variables — a datastore's attachment cannot collide with one of these, because the two write different names."),
+					}, "app", "bucket")),
+					Responses: openapi.Responses{
+						"201": openapi.JSONResponse("The store, with the attachment on it.", openapi.Ref("ObjectStore")),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.TextResponse("No such store, or no such app."),
+						"409": openapi.TextResponse("That app is already attached to that bucket, or it already receives those variable names from another attachment."),
+					},
+				},
+			},
+
+			"/objectstores/{name}/attachments/{project}/{env}/{app}": {
+				"delete": {
+					OperationID: "detachObjectStore",
+					Summary:     "Unwire an app from a bucket",
+					Description: "The app's container keeps the variables it was created with until it is deployed again, so this is not how you cut an app off from a bucket in a hurry — rotating the credential is.\n\nRequires the admin role.",
+					Tags:        []string{"Object storage"},
+					Parameters:  attachParams,
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The store, without the attachment.", openapi.Ref("ObjectStore")),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.TextResponse("No such store, no such app, or that app is not attached to that bucket."),
 					},
 				},
 			},

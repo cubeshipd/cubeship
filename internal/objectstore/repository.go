@@ -2,6 +2,7 @@ package objectstore
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 
 	"cubeship/internal/platform/database"
@@ -33,15 +34,24 @@ const from = `
 
 type scanner interface{ Scan(dest ...any) error }
 
-func scan(row scanner) (*Store, error) {
+func scan(row scanner) (*Store, error) { return scanWith(row) }
+
+// scanWith is scan plus whatever a query selected after the store's own
+// columns — an attachment's bucket and prefix, so far.
+//
+// One scanner rather than two, because `columns` is read in order and a
+// second copy of that order is a second place to forget when a column
+// moves.
+func scanWith(row scanner, extra ...any) (*Store, error) {
 	var s Store
 	var ownKey, ownSecret, credUser, credSecret string
-	if err := row.Scan(&s.ID, &s.Slug, &s.Description, &s.Kind, &s.Provider,
+	dest := []any{&s.ID, &s.Slug, &s.Description, &s.Kind, &s.Provider,
 		&s.Endpoint, &s.Region, &s.Secure, &s.PathStyle, &s.Bucket,
 		&s.CredentialID, &s.Version, &ownKey, &ownSecret,
 		&s.ExposedPort, &s.ContainerID, &s.Status, &s.Error,
 		&credUser, &credSecret,
-		&s.CreatedAt, &s.UpdatedAt); err != nil {
+		&s.CreatedAt, &s.UpdatedAt}
+	if err := row.Scan(append(dest, extra...)...); err != nil {
 		return nil, err
 	}
 	if s.Kind == KindManaged {
@@ -205,4 +215,119 @@ func (r *Repository) Delete(ctx context.Context, id int64) error {
 		return database.ErrNotFound
 	}
 	return nil
+}
+
+// -- attachments -----------------------------------------------------
+
+// attachmentQuery selects an attachment with the app's full reference
+// built in SQL. A store is not inside an environment, so a bare app
+// name identifies nothing — two apps called `api` in two projects may
+// both be attached to one bucket.
+const attachmentQuery = `
+	SELECT t.id, t.object_store_id, t.app_id,
+	       p.slug || '/' || e.slug || '/' || a.name,
+	       t.bucket, t.prefix, t.created_at
+	FROM object_store_attachments t
+	JOIN apps a ON a.id = t.app_id
+	JOIN projects p ON p.id = a.project_id
+	JOIN environments e ON e.id = a.environment_id`
+
+func scanAttachments(rows *sql.Rows) ([]Attachment, error) {
+	var out []Attachment
+	for rows.Next() {
+		var a Attachment
+		if err := rows.Scan(&a.ID, &a.StoreID, &a.AppID,
+			&a.AppRef, &a.Bucket, &a.Prefix, &a.CreateAt); err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// Attachments are the apps wired to one store.
+func (r *Repository) Attachments(ctx context.Context, storeID int64) ([]Attachment, error) {
+	rows, err := r.q.QueryContext(ctx,
+		attachmentQuery+` WHERE t.object_store_id = $1 ORDER BY 4, t.bucket`, storeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanAttachments(rows)
+}
+
+// AllAttachments is every attachment on the instance, for a listing
+// that would otherwise ask per store. One query instead of N.
+func (r *Repository) AllAttachments(ctx context.Context) (map[int64][]Attachment, error) {
+	rows, err := r.q.QueryContext(ctx, attachmentQuery+` ORDER BY t.object_store_id, 4, t.bucket`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	all, err := scanAttachments(rows)
+	if err != nil {
+		return nil, err
+	}
+	byStore := map[int64][]Attachment{}
+	for _, a := range all {
+		byStore[a.StoreID] = append(byStore[a.StoreID], a)
+	}
+	return byStore, nil
+}
+
+// Attached is one store an app receives variables from, with the bucket
+// and the prefix it receives them under.
+type Attached struct {
+	Store
+	Bucket string
+	Prefix string
+}
+
+// AttachedTo is what an app's environment is built from — see
+// Service.VarsForApp. Ordered by prefix so a container's environment is
+// deterministic whatever order the rows were written in.
+func (r *Repository) AttachedTo(ctx context.Context, appID int64) ([]Attached, error) {
+	rows, err := r.q.QueryContext(ctx,
+		`SELECT `+columns+`, t.bucket, t.prefix`+from+`
+		 JOIN object_store_attachments t ON t.object_store_id = s.id
+		 WHERE t.app_id = $1 ORDER BY t.prefix, s.id`, appID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Attached
+	for rows.Next() {
+		// The store's own columns are scanned by the shared scanner, so
+		// the two stay in step; the attachment's two are read after it.
+		var a Attached
+		store, err := scanWith(rows, &a.Bucket, &a.Prefix)
+		if err != nil {
+			return nil, err
+		}
+		a.Store = *store
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
+// Attach wires an app to one bucket in this store.
+func (r *Repository) Attach(ctx context.Context, storeID, appID int64, bucket, prefix string) error {
+	_, err := r.q.ExecContext(ctx,
+		`INSERT INTO object_store_attachments (object_store_id, app_id, bucket, prefix)
+		 VALUES ($1, $2, $3, $4)`, storeID, appID, bucket, prefix)
+	return err
+}
+
+// Detach removes one, and reports whether there was one to remove.
+func (r *Repository) Detach(ctx context.Context, storeID, appID int64, bucket string) (bool, error) {
+	res, err := r.q.ExecContext(ctx,
+		`DELETE FROM object_store_attachments
+		 WHERE object_store_id = $1 AND app_id = $2 AND bucket = $3`, storeID, appID, bucket)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }

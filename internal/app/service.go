@@ -34,6 +34,8 @@ type Service struct {
 	// environment. See DatastoreVars: the module that implements it
 	// sits above this one, so the daemon hands it back down.
 	datastores DatastoreVars
+	// objectStores is the same for the buckets attached to it.
+	objectStores ObjectStoreVars
 }
 
 func NewService(db *database.DB, projects *project.Service, orch *Orchestrator,
@@ -85,6 +87,13 @@ func (s *Service) Series(ctx context.Context, caller *user.User, ref Reference, 
 func (s *Service) SetDatastoreVars(v DatastoreVars) {
 	s.datastores = v
 	s.orch.datastores = v
+}
+
+// SetObjectStoreVars wires the object storage module in, for the same
+// reason and in the same place.
+func (s *Service) SetObjectStoreVars(v ObjectStoreVars) {
+	s.objectStores = v
+	s.orch.objectStores = v
 }
 
 // registryHost is where apps are pushed, or "" while the instance has no
@@ -389,10 +398,17 @@ func (s *Service) Env(ctx context.Context, caller *user.User, ref Reference) (en
 			return nil, nil, err
 		}
 	}
+	var buckets envvar.Map
+	if s.objectStores != nil {
+		if buckets, err = s.objectStores.VarsForApp(ctx, a.ID); err != nil {
+			return nil, nil, err
+		}
+	}
 	resolved := envvar.Resolve(
 		envvar.Layer{Source: envvar.SourceProject, Vars: p.Env},
 		envvar.Layer{Source: envvar.SourceEnvironment, Vars: e.Env},
 		envvar.Layer{Source: envvar.SourceDatastore, Vars: stores},
+		envvar.Layer{Source: envvar.SourceObjectStore, Vars: buckets},
 		envvar.Layer{Source: envvar.SourceApp, Vars: a.Env})
 	return a.Env, resolved, nil
 }

@@ -208,6 +208,12 @@ type Store struct {
 
 	CreatedAt time.Time
 	UpdatedAt time.Time
+
+	// Attachments are the apps that receive this store's connection
+	// variables. Loaded with the store rather than asked for
+	// separately: with nothing above it, what a store is wired to is
+	// the whole of where it sits in the instance.
+	Attachments []Attachment
 }
 
 // Statuses a store can be in.

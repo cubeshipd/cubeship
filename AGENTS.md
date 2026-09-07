@@ -1927,9 +1927,15 @@ and a bucket is data. A member deploying an app still uses the store,
 because the app is given the keys and the app is what reads the bucket.
 
 The MCP tools stop one step short of that again: they describe the
-storage and never its contents, and change nothing. An agent can see
-that `backups/2026-09-01.sql.gz` exists and how big it is, and cannot
-open it, create a store, link one, or publish one.
+storage and never its contents. An agent can see that
+`backups/2026-09-01.sql.gz` exists and how big it is, and cannot open
+it, create a store, link one, or publish one.
+
+Attaching is the exception, and it is the one that pays for the rule:
+wiring an app to a bucket hands over no secret at any point, because
+the keys reach the app through its own environment. That is the same
+line `datastore` draws, and it is what lets an agent finish the job
+rather than stop one step short of it.
 
 ### The managed half
 
@@ -1958,13 +1964,54 @@ would mean two modules writing router labels for names neither can see.
 So an exposed store is a plain port with no TLS, the endpoint says so,
 and a firewall rule is what makes it safe.
 
-### What is not here
+### How an app reaches one
 
-**Attaching a store to an app.** A datastore hands an app its
-`DATABASE_URL` through `app.DatastoreVars`; nothing equivalent exists
-here yet, so an app is pointed at a bucket by copying four values into
-its environment. That is the obvious next thing and it is a table, a
-seam and a collision rule, not a field.
+By being **attached** to a bucket. An attachment gives the app six
+variables, from its next deploy onwards — a container keeps the
+environment it was created with, the same rule that makes adding a
+domain take effect on redeploy:
+
+```
+S3_ENDPOINT  S3_REGION  S3_BUCKET
+S3_ACCESS_KEY_ID  S3_SECRET_ACCESS_KEY  S3_PATH_STYLE
+```
+
+**The bucket is on the attachment**, not on the store. A store holds
+many and an app wants one — `S3_BUCKET` has to have a value — which is
+also why one app may be attached to the same store twice: a bucket for
+uploads and one for backups is an ordinary shape, and the prefix keeps
+their variables apart.
+
+**There is no URL**, because no S3 client agrees on one, and **no
+`AWS_*` names**. Those would make an app using the AWS SDK work with no
+configuration at all, and would also mean two stores on one app
+fighting over six names the SDK reads and a prefix does not reach. The
+mapping is one line in an app's own environment when it wants it.
+
+`S3_PATH_STYLE` is there because half the S3 clients in the world have
+to be told and the other half guess wrong.
+
+The unique index is `(app_id, prefix)` and nothing else. The datastores'
+carries the engine's stem as well, because there a Redis and a Postgres
+write different middle words and do not collide at one prefix; every
+attachment here writes the same six names, so the prefix is the whole of
+the namespace — and a column that would always hold `S3` says nothing.
+A datastore's attachment cannot collide with one of these either, which
+is the point of both stems.
+
+The seam is `app.ObjectStoreVars`, declared in `app` and satisfied here
+— a second interface beside `app.DatastoreVars` rather than one list of
+contributors, because each is labelled with its own `envvar.Source` and
+"where did this come from" has to answer "a database" or "a bucket"
+rather than "something attached".
+
+**The bucket is not checked against the store when attaching.** Whether
+it exists is a live call this instance may not be allowed to make — a
+credential scoped to one bucket may not stat another — and refusing on
+evidence it does not have is how a working attachment gets blocked. The
+screen offers the buckets it can list; the API takes the name.
+
+### What is not here
 
 **Public buckets.** Nothing here sets a bucket policy, so a store is
 reached with a key or not at all.
