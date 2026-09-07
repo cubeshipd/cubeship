@@ -36,6 +36,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ApiError,
   type App,
@@ -48,16 +49,25 @@ import {
 } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-// One database, on one page.
+// One database, on one page, in tabs — the same shape as an app's.
 //
-// Sections rather than tabs. There are three things to know about a
-// database — how hard it is working, how to connect to it, and what is
-// connected to it — and none of them is an alternative to the others:
-// hiding two of three behind a click made you click through all of them
-// every time you opened it.
+// It was sections for a while, on the grounds that all three were short
+// and none was an alternative to the others. Two of them are not short.
+// A log is the whole of what the engine has printed, and the attached
+// apps are a table with its own dialog and its own confirmations; below
+// them the two things somebody opens this page for — is it working, and
+// how do I connect to it — sat off the bottom of the screen exactly
+// when the database was busy enough to be worth looking at.
 //
-// Monitoring is first because it is the question you have before you
-// know you have one.
+// So the page opens on what is short and always wanted, and what is
+// long, or is somewhere you go rather than something you read, is a tab
+// beside it.
+type Tab = "overview" | "apps" | "logs";
+
+// Why the Logs tab is dead. Said on hover, because a disabled control
+// that explains nothing is a control somebody clicks twice.
+const noContainer = "This database has no container, so there is nothing to have printed a log.";
+
 export default function DatastorePage({ params }: PageProps<"/databases/[name]">) {
   const { name } = use(params);
   return <Detail name={name} />;
@@ -66,6 +76,7 @@ export default function DatastorePage({ params }: PageProps<"/databases/[name]">
 function Detail({ name }: { name: string }) {
   const [datastore, setDatastore] = useState<Datastore | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("overview");
 
   const path = datastorePath(name);
   const reload = useCallback(() => {
@@ -148,20 +159,36 @@ function Detail({ name }: { name: string }) {
       )}
 
       {datastore && (
-        <>
-          <MetricsSection path={path} />
-          <Connection datastore={datastore} />
-          {/* Only once there is a container to have written one. Before
-          that the endpoint answers 409, and an error box saying so is
-          worse than the section not being there. */}
-          {datastore.has_container && (
-            <ContainerLogs
-              path={path}
-              sub="What the engine itself has printed. The first place to look when it refuses connections or will not start."
-            />
-          )}
-          <Attachments datastore={datastore} onChanged={reload} />
-        </>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+          <TabsList variant="line">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="apps">Apps</TabsTrigger>
+            {/* Nothing has printed anything until there is a container.
+                The daemon refuses this endpoint with a 409 in that
+                state, and a tab whose whole content is that refusal is
+                a tab that should not have been offered. */}
+            <TabsTrigger
+              value="logs"
+              disabled={!datastore.has_container}
+              title={datastore.has_container ? undefined : noContainer}
+            >
+              Logs
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="overview">
+            <MetricsSection path={path} />
+            <Connection datastore={datastore} />
+          </TabsContent>
+
+          <TabsContent value="apps">
+            <Attachments datastore={datastore} onChanged={reload} />
+          </TabsContent>
+
+          <TabsContent value="logs">
+            <ContainerLogs path={path} title={null} tall />
+          </TabsContent>
+        </Tabs>
       )}
     </>
   );

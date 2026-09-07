@@ -33,6 +33,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   ApiError,
   type App,
@@ -46,17 +47,27 @@ import {
 } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-// One object store, on one page: how to connect to it, and what is in
-// it.
+// One object store, on one page, in tabs — like a database's, and for
+// the same reason.
 //
-// Sections rather than tabs, like a database's page and for the same
-// reason — neither is an alternative to the other, and hiding one
-// behind a click made you click through both every time.
+// The page opens on how to connect, which is short, answered once, and
+// what an app needs. Everything else here is a place you go into rather
+// than something you read past on the way somewhere: the buckets are a
+// file browser, the attached apps are a table with its own dialog, and
+// a managed store's log is the whole of what MinIO has printed. Stacked
+// they made every visit a scroll through the other three.
 //
-// The buckets come second. Connecting is what an app needs and is
-// answered once; the buckets are what you came to open, and they are
-// the thing at the bottom of the page you scroll to and then click
-// into.
+// A linked store gets no Logs tab at all, rather than a dead one. There
+// is no container here to have printed anything — the store is
+// somewhere else — which is a different thing from a log that does not
+// exist yet.
+type Tab = "overview" | "buckets" | "apps" | "logs";
+
+// Why the Logs tab is dead on a managed store that has none. Said on
+// hover: a disabled control that explains nothing is one somebody
+// clicks twice.
+const noContainer = "This store has no container, so there is nothing to have printed a log.";
+
 export default function ObjectStorePage({ params }: PageProps<"/storage/[name]">) {
   const { name } = use(params);
   return <Detail name={name} />;
@@ -65,6 +76,7 @@ export default function ObjectStorePage({ params }: PageProps<"/storage/[name]">
 function Detail({ name }: { name: string }) {
   const [store, setStore] = useState<ObjectStore | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [tab, setTab] = useState<Tab>("overview");
 
   const path = objectStorePath(name);
   const reload = useCallback(() => {
@@ -140,17 +152,40 @@ function Detail({ name }: { name: string }) {
       )}
 
       {store && (
-        <>
-          <Connection store={store} />
-          <Buckets store={store} />
-          <Attachments store={store} onChanged={reload} />
-          {store.kind === "managed" && store.has_container && (
-            <ContainerLogs
-              path={path}
-              sub="What the server itself has printed. The first place to look when it refuses a key or will not start."
-            />
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+          <TabsList variant="line">
+            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="buckets">Buckets</TabsTrigger>
+            <TabsTrigger value="apps">Apps</TabsTrigger>
+            {store.kind === "managed" && (
+              <TabsTrigger
+                value="logs"
+                disabled={!store.has_container}
+                title={store.has_container ? undefined : noContainer}
+              >
+                Logs
+              </TabsTrigger>
+            )}
+          </TabsList>
+
+          <TabsContent value="overview">
+            <Connection store={store} />
+          </TabsContent>
+
+          <TabsContent value="buckets">
+            <Buckets store={store} />
+          </TabsContent>
+
+          <TabsContent value="apps">
+            <Attachments store={store} onChanged={reload} />
+          </TabsContent>
+
+          {store.kind === "managed" && (
+            <TabsContent value="logs">
+              <ContainerLogs path={path} title={null} tall />
+            </TabsContent>
           )}
-        </>
+        </Tabs>
       )}
     </>
   );
