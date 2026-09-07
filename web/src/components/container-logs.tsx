@@ -1,13 +1,21 @@
 "use client";
 
 import { cn } from "cn";
-import { RefreshCwIcon } from "lucide-react";
+import { CopyIcon, DownloadIcon, RefreshCwIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toast } from "sonner";
 import { ActionButton } from "@/components/action-button";
+import { copyText } from "@/components/copy-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { SectionHeader } from "@/components/page-header";
 import { SearchBar } from "@/components/search-bar";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { message } from "@/lib/errors";
 
 // What a container has printed.
@@ -76,6 +84,7 @@ export function ContainerLogs({
     return () => clearInterval(timer);
   }, [following, load]);
 
+  const refreshing = busy && !following;
   const toolbar = (
     <div className="flex items-center gap-2">
       {TAILS.map((n) => (
@@ -101,9 +110,17 @@ export function ContainerLogs({
       >
         Follow
       </Button>
-      <ActionButton variant="outline" size="sm" busy={busy && !following} onClick={load}>
-        <RefreshCwIcon />
-        Refresh
+      {/* Icon only: a circular arrow beside a log is not a word
+          anybody needed. */}
+      <ActionButton
+        variant="outline"
+        size="icon-sm"
+        busy={refreshing}
+        aria-label="Refresh"
+        title="Refresh"
+        onClick={load}
+      >
+        {refreshing ? null : <RefreshCwIcon />}
       </ActionButton>
     </div>
   );
@@ -118,6 +135,10 @@ export function ContainerLogs({
         text={text}
         busy={busy}
         tall={tall}
+        // The last segment of the endpoint is the thing whose log this
+        // is — an app's name, a database's, a store's — which is what
+        // a downloaded file should be called.
+        name={path.split("/").filter(Boolean).pop()}
         empty="Nothing in the log yet."
         follow={following}
         trailing={title ? null : toolbar}
@@ -138,6 +159,9 @@ export function LogView({
   busy = false,
   tall = false,
   empty = "Nothing here yet.",
+  // name is what a downloaded copy is called: the app, database or
+  // store this is the log of.
+  name = "log",
   // follow keeps the panel at the bottom as new text arrives, rather
   // than only on the first answer.
   follow = false,
@@ -149,6 +173,7 @@ export function LogView({
   busy?: boolean;
   tall?: boolean;
   empty?: string;
+  name?: string;
   follow?: boolean;
   trailing?: React.ReactNode;
 }) {
@@ -196,6 +221,7 @@ export function LogView({
           }
         />
         {trailing}
+        <TakeAway name={name} text={lines.join("\n")} />
       </div>
 
       <pre
@@ -214,5 +240,67 @@ export function LogView({
               : empty}
       </pre>
     </div>
+  );
+}
+
+// Taking a log with you: to the clipboard, or to a file.
+//
+// **It takes what is on screen**, which is the whole log until somebody
+// types in the filter. One rule rather than four menu items: what you
+// are looking at is what you get, and somebody who has narrowed a
+// thousand lines to twelve wants the twelve — they are what goes in the
+// issue they are about to write.
+//
+// One format, because a log has one. Another extension would be giving
+// it a shape it does not have.
+function TakeAway({ name, text }: { name: string; text: string }) {
+  async function copy() {
+    // A toast, not a mark on the button: the menu closes on the click,
+    // so there is nothing left on screen to change.
+    if (await copyText(text)) {
+      toast.success("Copied.");
+    } else {
+      toast.error("This browser would not let the page write to the clipboard.");
+    }
+  }
+
+  function download() {
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[-:]/g, "").replace("T", "-");
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${name}-${stamp}.log`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="outline"
+            size="icon-sm"
+            aria-label="Copy or download this log"
+            title="Copy or download this log"
+            disabled={text === ""}
+          >
+            <DownloadIcon />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="end" className="w-40">
+        <DropdownMenuItem onClick={copy}>
+          <CopyIcon />
+          Copy
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={download}>
+          <DownloadIcon />
+          Download
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
