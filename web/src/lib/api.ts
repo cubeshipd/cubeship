@@ -604,3 +604,129 @@ export type Firewall = {
   your_ip?: string;
   published: FirewallPublishedPort[];
 };
+
+// --- object storage ---
+
+// Where a store is. "managed" is a MinIO this instance runs; "external"
+// is an endpoint somewhere else it holds keys for. The difference shows
+// up in exactly one place that matters — deleting the first removes the
+// data, deleting the second forgets an address.
+export type ObjectStoreKind = "managed" | "external";
+
+export type ObjectStoreProvider = "minio" | "aws" | "cloudflare" | "digitalocean" | "generic";
+
+export type ObjectStore = {
+  name: string;
+  description?: string;
+  kind: ObjectStoreKind;
+  provider: ObjectStoreProvider;
+  // The provider's name as a person writes it. From the daemon, so
+  // every surface spells "DigitalOcean Spaces" the same way.
+  provider_label: string;
+  endpoint: string;
+  region: string;
+  path_style: boolean;
+  // The one bucket this store is pinned to, when its login reaches
+  // exactly one and cannot list them.
+  bucket?: string;
+  credential_id?: number;
+  version?: string;
+  exposed_port?: number;
+  external_endpoint?: string;
+  has_container: boolean;
+  status: string;
+  error?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ObjectStoreCredentials = {
+  access_key: string;
+  secret_key: string;
+  region: string;
+  endpoint: string;
+  external_endpoint?: string;
+  path_style: boolean;
+};
+
+// What each provider asks for beyond the login, because its endpoint is
+// a template with one variable in it.
+export type ObjectStoreProviderInfo = {
+  provider: ObjectStoreProvider;
+  label: string;
+  asks: "region" | "account" | "endpoint";
+};
+
+export type ObjectStoreProviders = {
+  providers: ObjectStoreProviderInfo[];
+  versions: string[];
+};
+
+export type Bucket = { name: string; created_at?: string };
+
+// A folder is a common prefix, which is the only kind S3 has: `prefix`
+// is what to ask for to go into it, `name` is what it is called here.
+export type ObjectFolder = { prefix: string; name: string };
+
+export type StoredObject = {
+  key: string;
+  name: string;
+  size: number;
+  modified_at: string;
+  etag?: string;
+};
+
+export type ObjectListing = {
+  prefix: string;
+  folders: ObjectFolder[];
+  objects: StoredObject[];
+  cursor?: string;
+};
+
+// objectStorePath is the API path for one store.
+export function objectStorePath(name: string): string {
+  return `/objectstores/${name}`;
+}
+
+// bucketPath is the API path for one bucket inside one store. Both
+// segments are encoded: a bucket name is DNS-shaped and a store's is a
+// slug, so neither can carry a slash — but neither is this code's to
+// assume about a value that arrived over the wire.
+export function bucketPath(store: string, bucket: string): string {
+  return `${objectStorePath(store)}/buckets/${encodeURIComponent(bucket)}`;
+}
+
+// uploadObject sends a file as the request body.
+//
+// Not a multipart form, and not through `api` either, which is JSON in
+// both directions. `multipart/form-data` is one of the three content
+// types a browser sends cross-site with no preflight, so an endpoint
+// taking one would be reachable from any page the session's owner
+// happens to open; a raw body forces the preflight instead.
+export async function uploadObject(
+  store: string,
+  bucket: string,
+  prefix: string,
+  file: File,
+): Promise<StoredObject> {
+  const query = new URLSearchParams({ prefix, filename: file.name });
+  const res = await fetch(`/api${bucketPath(store, bucket)}/objects?${query}`, {
+    method: "PUT",
+    credentials: "same-origin",
+    // The browser knows the length, so the daemon can hand the store a
+    // size instead of uploading in parts.
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, (await res.text()).trim() || res.statusText);
+  }
+  return (await res.json()) as StoredObject;
+}
+
+// downloadURL is where a file is fetched from. A plain link, because
+// the session cookie is what authenticates it and a GET is safe — see
+// httpx.SameOrigin, which lets every read through.
+export function downloadURL(store: string, bucket: string, key: string): string {
+  return `/api${bucketPath(store, bucket)}/download?key=${encodeURIComponent(key)}`;
+}

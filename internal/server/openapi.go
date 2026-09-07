@@ -14,6 +14,7 @@ import (
 	"cubeship/internal/extregistry"
 	"cubeship/internal/firewall"
 	"cubeship/internal/github"
+	"cubeship/internal/objectstore"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/platform/openapi"
 	"cubeship/internal/project"
@@ -44,6 +45,7 @@ func (s *Server) OpenAPI() openapi.Document {
 		project.NewHandler(s.Projects).OpenAPI(),
 		app.NewHandler(s.Apps).OpenAPI(),
 		datastore.NewHandler(s.Datastores).OpenAPI(),
+		objectstore.NewHandler(s.ObjectStores).OpenAPI(),
 		extregistry.NewHandler(s.Registries).OpenAPI(),
 		credential.NewHandler(s.Credentials).OpenAPI(),
 		dns.NewHandler(s.DNS).OpenAPI(),

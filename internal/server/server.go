@@ -19,6 +19,7 @@ import (
 	"cubeship/internal/firewall"
 	"cubeship/internal/github"
 	"cubeship/internal/metrics"
+	"cubeship/internal/objectstore"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/project"
@@ -31,20 +32,21 @@ import (
 
 // Server owns the module graph and the mux they are mounted on.
 type Server struct {
-	Users       *user.Service
-	Projects    *project.Service
-	Apps        *app.Service
-	Datastores  *datastore.Service
-	Metrics     *metrics.Service
-	Credentials *credential.Service
-	Settings    *settings.Service
-	Certs       *certificates.Service
-	Firewall    *firewall.Service
-	Setup       *setup.Service
-	Registries  *extregistry.Service
-	DNS         *dns.Service
-	GitHub      *github.Service
-	Registry    *registry.Handler
+	Users        *user.Service
+	Projects     *project.Service
+	Apps         *app.Service
+	Datastores   *datastore.Service
+	ObjectStores *objectstore.Service
+	Metrics      *metrics.Service
+	Credentials  *credential.Service
+	Settings     *settings.Service
+	Certs        *certificates.Service
+	Firewall     *firewall.Service
+	Setup        *setup.Service
+	Registries   *extregistry.Service
+	DNS          *dns.Service
+	GitHub       *github.Service
+	Registry     *registry.Handler
 
 	// githubHandler is kept so a test can wait for the deploys a
 	// webhook set going.
@@ -132,6 +134,13 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	datastores := datastore.NewService(db, apps,
 		datastore.NewProvisioner(db, docker, opts.DataDir), cfg, series)
 
+	// Object storage is the instance's too, and sits beside the
+	// databases rather than under them: it depends on credential, for
+	// the login an external store authenticates as, and on nothing
+	// else. Nothing below it knows it exists.
+	objectStores := objectstore.NewService(db, creds,
+		objectstore.NewProvisioner(db, docker, opts.DataDir), cfg)
+
 	// Deleting a project or an environment takes the apps inside it with
 	// it, and only this module knows how to stop a container. The
 	// dependency runs downward everywhere else, so it is handed back up
@@ -141,7 +150,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// What would break if a credential were deleted is known only to
 	// the modules using it, so they answer rather than this one
 	// reading their rows. Until they are wired, a delete refuses.
-	creds.SetDependants(registries, dnsProviders)
+	creds.SetDependants(registries, dnsProviders, objectStores)
 
 	// The one thing that travels back down from datastores to apps:
 	// what an attached database contributes to a container's
@@ -150,13 +159,14 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	apps.SetDatastoreVars(datastores)
 
 	srv := &Server{
-		Users:      users,
-		Projects:   projects,
-		Apps:       apps,
-		Datastores: datastores,
-		Metrics:    series,
-		Settings:   cfg,
-		Certs:      certificates.NewService(cfg, apps, opts.DataDir),
+		Users:        users,
+		Projects:     projects,
+		Apps:         apps,
+		Datastores:   datastores,
+		ObjectStores: objectStores,
+		Metrics:      series,
+		Settings:     cfg,
+		Certs:        certificates.NewService(cfg, apps, opts.DataDir),
 		// A firewall is the host's, so a server with no way to reach the
 		// host has one that answers "not available" — which is what a
 		// test wants, and what `make dev` is.
@@ -253,6 +263,7 @@ func (s *Server) routes() {
 	s.githubHandler.Routes(s.router, auth)
 	app.NewHandler(s.Apps).Routes(s.router, auth)
 	datastore.NewHandler(s.Datastores).Routes(s.router, auth)
+	objectstore.NewHandler(s.ObjectStores).Routes(s.router, auth)
 
 	// The registry's own two endpoints authenticate differently (Basic
 	// auth, and a shared webhook secret), so they mount unwrapped. So
