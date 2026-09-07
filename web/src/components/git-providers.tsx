@@ -3,6 +3,7 @@
 import { CheckIcon, ExternalLinkIcon } from "lucide-react";
 import type { ComponentType } from "react";
 import { CreateGitHubApp } from "@/components/github-app-manifest";
+import { LoadingControl } from "@/components/loading";
 import { Label } from "@/components/ui/label";
 
 // The providers Cubeship can build from. GitHub is the only one today,
@@ -24,6 +25,7 @@ export function GitProviders({
   providers,
   canRegister,
   returnTo,
+  checking = false,
 }: {
   providers: Provider[];
   // Registering the instance with a provider is the operator's, not an
@@ -31,7 +33,27 @@ export function GitProviders({
   // shown a button that fails at the last step.
   canRegister: boolean;
   returnTo?: string;
+  // checking is "the daemon has not said yet whether this instance is
+  // registered, or where to install".
+  //
+  // It is a state and not a detail, because of what the button under it
+  // is. "Not connected" and "not asked yet" look identical from here,
+  // and the button for the first of them **registers a new GitHub
+  // App** — which breaks every installation on the old one. Rendering
+  // it while the answer is still in flight puts that one click away
+  // from somebody who arrived on a screen that was already connected.
+  checking?: boolean;
 }) {
+  if (checking) {
+    return (
+      <div className="space-y-1.5">
+        <Label>Provider</Label>
+        {/* Sized like the row it stands in for, so nothing jumps when
+            the answer lands. */}
+        <LoadingControl className="h-9 w-32" />
+      </div>
+    );
+  }
   return (
     <div className="space-y-1.5">
       <Label>Provider</Label>
