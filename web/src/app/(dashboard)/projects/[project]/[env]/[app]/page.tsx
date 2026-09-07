@@ -68,12 +68,9 @@ export default function AppPage({ params }: PageProps<"/projects/[project]/[env]
 
 type Tab = "overview" | "environment" | "logs";
 
-// Why a deploy's record cannot be removed. Two reasons, and they are
-// not the same thing — one is "not yet" and the other is "not this
-// one".
-const stillRunning = "This deploy is still running.";
-const isLive =
-  "This is what the app is running, and its record is the only thing that says what that is.";
+// The one reason a deploy's record cannot be removed: the daemon is
+// still writing to it.
+const stillRunning = "This deploy is still running. Wait for it to finish.";
 
 // Why the Logs tab is dead. Said on hover, because a disabled control
 // that explains nothing is a control somebody clicks twice.
@@ -262,6 +259,9 @@ function Deployments({
   const [list, setList] = useState<Deployment[] | null>(null);
   const [open, setOpen] = useState<Deployment | null>(null);
   const [deleting, setDeleting] = useState<Deployment | null>(null);
+  // The app's own name, which is what the confirmation asks somebody to
+  // type before it takes the app off the air.
+  const name = reference.split("/").pop() ?? reference;
   const [error, setError] = useState<string | null>(null);
 
   const path = `/apps/${reference}/deployments`;
@@ -343,10 +343,16 @@ function Deployments({
         <RowActions>
           <RowAction
             icon={Trash2Icon}
-            label={`Delete deploy ${d.id}`}
+            label={d.live ? `Take the app down` : `Delete deploy ${d.id}`}
             danger={d.deletable}
             disabled={!d.deletable}
-            title={d.deletable ? undefined : d.status === "pending" ? stillRunning : isLive}
+            title={
+              d.deletable
+                ? d.live
+                  ? "This is what the app is running. Deleting it takes the app down."
+                  : undefined
+                : stillRunning
+            }
             onClick={() => setDeleting(d)}
           />
         </RowActions>
@@ -380,26 +386,38 @@ function Deployments({
         onOpenChange={(shown) => !shown && setOpen(null)}
       />
 
-      {/* No word to type. What goes is a record and its build log, not
-          anything the app is running — and the two rows where that
-          would not be true are refused by the daemon and disabled
-          here. */}
+      {/* Two confirmations, because these are two different acts. An
+          old row is history and a second click is guard enough; the
+          live one takes the app off the air, and that asks for the
+          app's own name — the house rule for anything a misclick must
+          not reach. */}
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(shown) => !shown && setDeleting(null)}
-        title="Delete this record?"
-        confirmLabel="Delete"
+        title={deleting?.live ? "Take the app down?" : "Delete this record?"}
+        confirmLabel={deleting?.live ? "Take it down" : "Delete"}
+        confirmWord={deleting?.live ? name : undefined}
         description={
-          <>
-            The row goes, and the build log with it. <strong>The app is not touched</strong> — this
-            is the history of a deploy, not the container it produced.
-          </>
+          deleting?.live ? (
+            <>
+              This is what <code className="text-foreground">{name}</code> is running. Its container
+              is stopped and removed, and the app stops answering.{" "}
+              <strong>The app itself stays</strong> — its domains, its environment and everything
+              attached to it — and the next deploy brings it back.
+            </>
+          ) : (
+            <>
+              The row goes, and the build log with it. <strong>The app is not touched</strong> —
+              this is the history of a deploy, not anything running now.
+            </>
+          )
         }
         onConfirm={async () => {
           if (!deleting) return;
           await api.del(`${path}/${deleting.id}`);
           setDeleting(null);
           reload();
+          onSettled();
         }}
       />
     </>

@@ -96,14 +96,13 @@ func TestADeploymentListingCarriesNoLogs(t *testing.T) {
 	}
 }
 
-// Two records may not go, and the reason is different for each.
+// Deleting the deploy an app is running takes the app down — and leaves
+// everything else about the app standing.
 //
-// A deploy still running is one the orchestrator is writing to. The
-// deploy the app is *running* is the only thing that says what the
-// container is — deleting it would leave something running that nothing
-// on the instance explains. Everything else, and a failed deploy above
-// all, is history somebody should be able to clear.
-func TestOnlyAFinishedDeployThatIsNotLiveCanBeDeleted(t *testing.T) {
+// That is the case this exists for: an app whose running version has to
+// go now should not force somebody to delete the app and lose its
+// domains, its environment and everything attached to it.
+func TestDeletingTheLiveDeployTakesTheAppDownAndKeepsTheApp(t *testing.T) {
 	dbtest.RequireDatabase(t)
 	f := servertest.New(t)
 
@@ -123,78 +122,119 @@ func TestOnlyAFinishedDeployThatIsNotLiveCanBeDeleted(t *testing.T) {
 	}
 	repo := app.NewRepository(f.DB)
 
-	// Three deploys: one that failed, one that succeeded and was
-	// replaced, and the newest success — which is what the app runs.
-	failed, _ := repo.StartDeployment(ctx, scoped.ID, "nginx:1")
-	if err := repo.FinishDeployment(ctx, failed.ID, app.DeploymentFailed, "it did not build"); err != nil {
-		t.Fatal(err)
-	}
-	old, _ := repo.StartDeployment(ctx, scoped.ID, "nginx:2")
+	old, _ := repo.StartDeployment(ctx, scoped.ID, "nginx:1")
 	if err := repo.FinishDeployment(ctx, old.ID, app.DeploymentSucceeded, ""); err != nil {
 		t.Fatal(err)
 	}
-	live, _ := repo.StartDeployment(ctx, scoped.ID, "nginx:3")
+	live, _ := repo.StartDeployment(ctx, scoped.ID, "nginx:2")
 	if err := repo.FinishDeployment(ctx, live.ID, app.DeploymentSucceeded, ""); err != nil {
 		t.Fatal(err)
 	}
-	running, _ := repo.StartDeployment(ctx, scoped.ID, "nginx:4")
-
-	base := "/apps/web/production/api/deployments/"
-
-	// The listing says which is which before anybody tries.
-	var list []struct {
-		ID        int64 `json:"id"`
-		Deletable bool  `json:"deletable"`
-	}
-	rec = f.Do(t, http.MethodGet, "/apps/web/production/api/deployments", nil, f.AdminKey)
-	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+	// A container, which is what makes one of those rows the live one.
+	if err := repo.UpdateContainer(ctx, scoped.ID, "container-abc", app.StatusRunning); err != nil {
 		t.Fatal(err)
 	}
-	deletable := map[int64]bool{}
-	for _, d := range list {
-		deletable[d.ID] = d.Deletable
-	}
-	for id, want := range map[int64]bool{
-		failed.ID: true, old.ID: true, live.ID: false, running.ID: false,
-	} {
-		if deletable[id] != want {
-			t.Errorf("deployment %d: deletable = %v, want %v", id, deletable[id], want)
-		}
+
+	if got := deploymentsOf(t, f); !got[live.ID].Live || got[old.ID].Live {
+		t.Errorf("the newest success is not the one reported as live: %+v", got)
 	}
 
-	// The one still running is refused: the deploy is writing to it.
-	rec = f.Do(t, http.MethodDelete, base+strconv.FormatInt(running.ID, 10), nil, f.AdminKey)
+	base := "/apps/web/production/api/deployments/"
+	rec = f.Do(t, http.MethodDelete, base+strconv.FormatInt(live.ID, 10), nil, f.AdminKey)
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("delete the live deploy: %d %s", rec.Code, rec.Body.String())
+	}
+
+	// The app is still there, with everything about it.
+	var after struct {
+		Status       string `json:"status"`
+		HasContainer bool   `json:"has_container"`
+		Image        string `json:"image"`
+	}
+	rec = f.Do(t, http.MethodGet, "/apps/web/production/api", nil, f.AdminKey)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("the app went with its deployment: %d %s", rec.Code, rec.Body.String())
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &after); err != nil {
+		t.Fatal(err)
+	}
+	if after.HasContainer {
+		t.Error("the app still has a container after its live deploy was deleted")
+	}
+	if after.Status != "down" {
+		t.Errorf("status = %q, want down", after.Status)
+	}
+	if after.Image == "" {
+		t.Error("the app lost what it pulls, which is configuration rather than a deploy")
+	}
+
+	// And nothing inherits the title: an app with no container is
+	// running no deployment, so what is left is all history.
+	remaining := deploymentsOf(t, f)
+	if remaining[old.ID].Live {
+		t.Error("the deploy under the one that was deleted became live without anything starting")
+	}
+	if !remaining[old.ID].Deletable {
+		t.Error("history on a stopped app is not deletable")
+	}
+}
+
+// A deploy that has not finished is the one refusal left: the daemon is
+// still writing to that row.
+func TestADeployStillRunningCannotBeDeleted(t *testing.T) {
+	dbtest.RequireDatabase(t)
+	f := servertest.New(t)
+
+	rec := f.Do(t, http.MethodPost, "/apps", map[string]any{
+		"name": "api", "project": "web",
+		"source": "external", "image": "docker.io/library/nginx",
+	}, f.AdminKey)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create app: %d %s", rec.Code, rec.Body.String())
+	}
+
+	ctx := t.Context()
+	scoped, err := f.Server.Apps.Resolve(ctx, f.Admin,
+		app.Reference{Project: "web", Environment: "production", Name: "api"}, user.RoleAdmin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	running, err := app.NewRepository(f.DB).StartDeployment(ctx, scoped.ID, "nginx:1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if deploymentsOf(t, f)[running.ID].Deletable {
+		t.Error("a deploy still running reports itself as deletable")
+	}
+	rec = f.Do(t, http.MethodDelete,
+		"/apps/web/production/api/deployments/"+strconv.FormatInt(running.ID, 10), nil, f.AdminKey)
 	if rec.Code != http.StatusConflict {
 		t.Errorf("deleting a running deploy: %d %s, want 409", rec.Code, rec.Body.String())
 	}
+}
 
-	// So is the one the app is running.
-	rec = f.Do(t, http.MethodDelete, base+strconv.FormatInt(live.ID, 10), nil, f.AdminKey)
-	if rec.Code != http.StatusConflict {
-		t.Errorf("deleting the live deploy: %d %s, want 409", rec.Code, rec.Body.String())
-	}
+type deploymentFlags struct {
+	Deletable bool `json:"deletable"`
+	Live      bool `json:"live"`
+}
 
-	// The failed one goes, which is the whole point.
-	rec = f.Do(t, http.MethodDelete, base+strconv.FormatInt(failed.ID, 10), nil, f.AdminKey)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("deleting a failed deploy: %d %s", rec.Code, rec.Body.String())
-	}
-	// And so does an older success, which is history too.
-	rec = f.Do(t, http.MethodDelete, base+strconv.FormatInt(old.ID, 10), nil, f.AdminKey)
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("deleting a superseded deploy: %d %s", rec.Code, rec.Body.String())
-	}
-
-	// **The app is untouched.** This deletes records, not containers.
-	rec = f.Do(t, http.MethodGet, "/apps/web/production/api", nil, f.AdminKey)
+func deploymentsOf(t *testing.T, f *servertest.Fixture) map[int64]deploymentFlags {
+	t.Helper()
+	rec := f.Do(t, http.MethodGet, "/apps/web/production/api/deployments", nil, f.AdminKey)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("the app went with its history: %d %s", rec.Code, rec.Body.String())
+		t.Fatalf("list deployments: %d %s", rec.Code, rec.Body.String())
 	}
-
-	// Deleting an older success promotes nothing: the live one is still
-	// the live one, and still refused.
-	rec = f.Do(t, http.MethodDelete, base+strconv.FormatInt(live.ID, 10), nil, f.AdminKey)
-	if rec.Code != http.StatusConflict {
-		t.Errorf("the live deploy became deletable once its predecessor went: %d", rec.Code)
+	var list []struct {
+		ID int64 `json:"id"`
+		deploymentFlags
 	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &list); err != nil {
+		t.Fatal(err)
+	}
+	out := map[int64]deploymentFlags{}
+	for _, d := range list {
+		out[d.ID] = d.deploymentFlags
+	}
+	return out
 }

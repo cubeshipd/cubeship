@@ -158,7 +158,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, "app has no running container yet", http.StatusConflict)
 	case errors.Is(err, ErrDeploymentNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
-	case errors.Is(err, ErrDeploymentRunning), errors.Is(err, ErrDeploymentIsCurrent):
+	case errors.Is(err, ErrDeploymentRunning):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		project.WriteError(w, err)
@@ -294,16 +294,20 @@ type DeploymentResponse struct {
 	// HasLogs says there is output to read, which is what a listing can
 	// answer without carrying it.
 	HasLogs bool `json:"has_logs"`
-	// Deletable says this record may be removed. Two may not be: one
-	// still running, and the one the app is running.
-	Deletable bool      `json:"deletable"`
+	// Deletable says this record may be removed. Only a deploy still
+	// running may not be.
+	Deletable bool `json:"deletable"`
+	// Live says the app is running this deploy — so deleting it takes
+	// the app down, which is why it is reported apart from Deletable.
+	Live      bool      `json:"live"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 func toDeploymentResponse(d *Deployment) DeploymentResponse {
 	return DeploymentResponse{
 		ID: d.ID, Status: d.Status, Image: d.ImageRef, Error: d.Error,
-		Logs: d.Logs, HasLogs: d.HasLogs, Deletable: d.Deletable, CreatedAt: d.CreatedAt,
+		Logs: d.Logs, HasLogs: d.HasLogs, Deletable: d.Deletable, Live: d.Live,
+		CreatedAt: d.CreatedAt,
 	}
 }
 
@@ -325,8 +329,9 @@ func (h *Handler) deploy(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusAccepted, toDeploymentResponse(deployment))
 }
 
-// deleteDeployment removes one deploy's record — a record, not a
-// container. See Service.DeleteDeployment.
+// deleteDeployment removes one deploy's record, and the container it
+// produced when that deploy is the one the app is running. See
+// Service.DeleteDeployment.
 func (h *Handler) deleteDeployment(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {

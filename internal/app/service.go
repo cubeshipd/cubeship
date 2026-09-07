@@ -516,23 +516,31 @@ func (s *Service) Deployment(ctx context.Context, caller *user.User, ref Referen
 	return d, nil
 }
 
-// DeleteDeployment removes one deploy's record.
+// DeleteDeployment removes one deploy's record — and, when that deploy
+// is the one the app is running, the container it produced.
 //
-// **It removes a record, not a container.** Nothing here stops an app:
-// the container belongs to the app, and this row is the history of how
-// it got there. What goes with the row is the build log, which is most
-// of its bytes; the image stays in the registry, which needs a garbage
-// collection pass Cubeship does not run — the same thing that is true
-// when an app itself is deleted.
+// **Deleting the live deployment takes the app down.** That is the
+// point of it. An app whose running version has to go *now* — a
+// compromised image, something doing what it should not — should not
+// force somebody to delete the app and lose its domains, its
+// environment and everything it is attached to. The app stays, with all
+// of it, and comes back on the next deploy.
 //
-// Two are refused. One still running, because the orchestrator is
-// writing to it. And the one the app is running, because its record is
-// the only thing that says what that is.
+// Deleting any other row removes a record and nothing else: the
+// container it produced is long gone, and what goes with the row is the
+// build log, which is most of its bytes. The image stays in the
+// registry, which needs a garbage collection pass Cubeship does not run
+// — the same thing that is true when an app itself is deleted.
 //
-// The role is the one that deploys this app: somebody who may add to
-// the history may tidy it, and making an admin clear a member's failed
-// deploy is friction that buys nothing — the dangerous rows are refused
-// outright rather than gated behind a role.
+// One is refused: a deploy that has not finished, because the
+// orchestrator is still writing to that row.
+//
+// The container goes before the row, because Docker has no rollback. A
+// failure there leaves the record standing, which a retry finishes; the
+// reverse would leave a container running with nothing naming it.
+//
+// The role is the one that deploys this app: somebody who may replace
+// what is running may take it off.
 func (s *Service) DeleteDeployment(ctx context.Context, caller *user.User, ref Reference, deploymentID int64) error {
 	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
 	if err != nil {
@@ -548,13 +556,20 @@ func (s *Service) DeleteDeployment(ctx context.Context, caller *user.User, ref R
 	if !d.Done() {
 		return ErrDeploymentRunning
 	}
-	current, _, err := s.Repo().CurrentDeployment(ctx, a.ID)
+
+	live, err := s.liveDeployment(ctx, a)
 	if err != nil {
 		return err
 	}
-	if d.ID == current {
-		return ErrDeploymentIsCurrent
+	if d.ID == live {
+		if err := s.orch.Retire(ctx, a.ID); err != nil {
+			return fmt.Errorf("stop the app's container: %w", err)
+		}
+		if err := s.Repo().UpdateContainer(ctx, a.ID, "", StatusDown); err != nil {
+			return err
+		}
 	}
+
 	removed, err := s.Repo().DeleteDeployment(ctx, a.ID, deploymentID)
 	if err != nil {
 		return err
@@ -565,14 +580,30 @@ func (s *Service) DeleteDeployment(ctx context.Context, caller *user.User, ref R
 	return nil
 }
 
+// liveDeployment is the deploy the app is running, or 0 for an app that
+// is not running anything.
+//
+// The container is what decides. An app with none is running no
+// deployment whatever its history says — which is the state deleting
+// the live one leaves it in, and the reason the record below it does
+// not quietly inherit the title.
+func (s *Service) liveDeployment(ctx context.Context, a *Scoped) (int64, error) {
+	if a.ContainerID == "" {
+		return 0, nil
+	}
+	id, _, err := s.Repo().CurrentDeployment(ctx, a.ID)
+	return id, err
+}
+
 // MaxDeploymentHistory bounds how much of an app's history a listing
 // returns. Deploy history grows without limit; nobody reads past the
 // recent ones.
 const MaxDeploymentHistory = 50
 
 // Deployments returns an app's recent deploy history, newest first,
-// each marked with whether its record may be removed — see
-// DeleteDeployment for what "may" means and why.
+// each marked with whether its record may be removed and whether it is
+// the one the app is running — which is what makes removing it a
+// different act. See DeleteDeployment.
 func (s *Service) Deployments(ctx context.Context, caller *user.User, ref Reference) ([]*Deployment, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
 	if err != nil {
@@ -582,12 +613,13 @@ func (s *Service) Deployments(ctx context.Context, caller *user.User, ref Refere
 	if err != nil {
 		return nil, err
 	}
-	current, _, err := s.Repo().CurrentDeployment(ctx, a.ID)
+	live, err := s.liveDeployment(ctx, a)
 	if err != nil {
 		return nil, err
 	}
 	for _, d := range history {
-		d.Deletable = d.Done() && d.ID != current
+		d.Deletable = d.Done()
+		d.Live = d.ID == live
 	}
 	return history, nil
 }
