@@ -45,10 +45,8 @@ export function ContainerLogs({
   const [text, setText] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
   const [tail, setTail] = useState<number>(TAILS[0]);
   const [following, setFollowing] = useState(false);
-  const view = useRef<HTMLPreElement>(null);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -77,26 +75,6 @@ export function ContainerLogs({
     const timer = setInterval(load, FOLLOW_MS);
     return () => clearInterval(timer);
   }, [following, load]);
-
-  // A log is read from the end. Going there on the first answer saves
-  // the scroll everybody does anyway, and going there on every answer
-  // while following is what following means.
-  const atEnd = useRef(false);
-  useEffect(() => {
-    if (text === null || !view.current) return;
-    if (following || !atEnd.current) {
-      view.current.scrollTop = view.current.scrollHeight;
-      atEnd.current = true;
-    }
-  }, [text, following]);
-
-  const lines = useMemo(() => {
-    if (!text) return [];
-    const all = text.split("\n");
-    if (!filter.trim()) return all;
-    const needle = filter.toLowerCase();
-    return all.filter((line) => line.toLowerCase().includes(needle));
-  }, [text, filter]);
 
   const toolbar = (
     <div className="flex items-center gap-2">
@@ -136,44 +114,105 @@ export function ContainerLogs({
 
       <ErrorAlert error={error} />
 
-      <div className="mb-4 space-y-2">
-        {/* The filter is on its own line and above the log, not beside
-            the buttons: at five thousand lines it is the control that
-            gets used, and a field the width of a button is a field
-            nobody types a word into. */}
-        <div className="flex items-center gap-2">
-          <SearchBar
-            value={filter}
-            onChange={setFilter}
-            placeholder="Filter lines"
-            className="min-w-0 flex-1"
-            trailing={
-              filter.trim() ? (
-                <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                  {lines.length}
-                </span>
-              ) : undefined
-            }
-          />
-          {title ? null : toolbar}
-        </div>
-
-        <pre
-          ref={view}
-          className={cn(
-            "overflow-auto border border-border bg-black p-3 font-mono text-xs break-all whitespace-pre-wrap text-success/90",
-            tall ? "h-[60vh]" : "max-h-[420px]",
-          )}
-        >
-          {lines.length > 0
-            ? lines.join("\n")
-            : busy
-              ? ""
-              : filter.trim()
-                ? "No line matches."
-                : "Nothing in the log yet."}
-        </pre>
-      </div>
+      <LogView
+        text={text}
+        busy={busy}
+        tall={tall}
+        empty="Nothing in the log yet."
+        follow={following}
+        trailing={title ? null : toolbar}
+      />
     </>
+  );
+}
+
+// The log itself: a filter, and a black panel that opens at its end.
+//
+// Separate from the fetching above because two things want the same
+// panel out of two different places — a container's log, which is text
+// from an endpoint, and a deployment's build output, which is a field
+// on a JSON document. What they share is what somebody does with a log:
+// look for a word in it, and read the last thing it said.
+export function LogView({
+  text,
+  busy = false,
+  tall = false,
+  empty = "Nothing here yet.",
+  // follow keeps the panel at the bottom as new text arrives, rather
+  // than only on the first answer.
+  follow = false,
+  // trailing goes beside the filter, for a caller with no header to put
+  // its controls in.
+  trailing,
+}: {
+  text: string | null;
+  busy?: boolean;
+  tall?: boolean;
+  empty?: string;
+  follow?: boolean;
+  trailing?: React.ReactNode;
+}) {
+  const [filter, setFilter] = useState("");
+  const view = useRef<HTMLPreElement>(null);
+
+  const lines = useMemo(() => {
+    if (!text) return [];
+    const all = text.split("\n");
+    if (!filter.trim()) return all;
+    const needle = filter.toLowerCase();
+    return all.filter((line) => line.toLowerCase().includes(needle));
+  }, [text, filter]);
+
+  // A log is read from the end. Going there on the first answer saves
+  // the scroll everybody does anyway, and going there on every answer
+  // while following is what following means.
+  const atEnd = useRef(false);
+  useEffect(() => {
+    if (text === null || !view.current) return;
+    if (follow || !atEnd.current) {
+      view.current.scrollTop = view.current.scrollHeight;
+      atEnd.current = true;
+    }
+  }, [text, follow]);
+
+  return (
+    <div className="mb-4 space-y-2">
+      {/* The filter is on its own line and above the log, not beside
+          the buttons: at five thousand lines it is the control that
+          gets used, and a field the width of a button is a field nobody
+          types a word into. */}
+      <div className="flex items-center gap-2">
+        <SearchBar
+          value={filter}
+          onChange={setFilter}
+          placeholder="Filter lines"
+          className="min-w-0 flex-1"
+          trailing={
+            filter.trim() ? (
+              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+                {lines.length}
+              </span>
+            ) : undefined
+          }
+        />
+        {trailing}
+      </div>
+
+      <pre
+        ref={view}
+        className={cn(
+          "overflow-auto border border-border bg-black p-3 font-mono text-xs break-all whitespace-pre-wrap text-success/90",
+          tall ? "h-[60vh]" : "max-h-[420px]",
+        )}
+      >
+        {lines.length > 0
+          ? lines.join("\n")
+          : busy
+            ? ""
+            : filter.trim()
+              ? "No line matches."
+              : empty}
+      </pre>
+    </div>
   );
 }

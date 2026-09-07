@@ -15,7 +15,7 @@ import Link from "next/link";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { ContainerLogs } from "@/components/container-logs";
+import { ContainerLogs, LogView } from "@/components/container-logs";
 import { CopyButton } from "@/components/copy-button";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
@@ -253,6 +253,7 @@ function Deployments({
   onSettled: () => void;
 }) {
   const [list, setList] = useState<Deployment[] | null>(null);
+  const [open, setOpen] = useState<Deployment | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const path = `/apps/${reference}/deployments`;
@@ -337,8 +338,111 @@ function Deployments({
         maxHeight="50vh"
         empty="Nothing deployed yet."
         className="mb-4"
+        // Every row opens, not only the ones that built something. What
+        // is behind it is the deploy — what ran, when, why it stopped
+        // and what it printed — and a row that opened for some deploys
+        // and not others would be a table you have to guess at.
+        onRowClick={setOpen}
+      />
+
+      <DeploymentDialog
+        reference={reference}
+        deployment={open}
+        onOpenChange={(shown) => !shown && setOpen(null)}
       />
     </>
+  );
+}
+
+// One deploy, opened.
+//
+// It fetches the deployment again rather than showing the row it was
+// opened from, because the row does not carry the log: a build's output
+// is capped at 256 KiB and the listing is fifty rows, so the daemon
+// hands it over one deployment at a time. While the deploy is still
+// running it asks again on a timer, which is what makes this the place
+// to watch a build from.
+function DeploymentDialog({
+  reference,
+  deployment,
+  onOpenChange,
+}: {
+  reference: string;
+  // The row that was clicked, or null when nothing is open.
+  deployment: Deployment | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [full, setFull] = useState<Deployment | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const id = deployment?.id;
+  const load = useCallback(() => {
+    if (!id) return;
+    api
+      .get<Deployment>(`/apps/${reference}/deployments/${id}`)
+      .then((d) => {
+        setFull(d);
+        setError(null);
+      })
+      .catch((e) => setError(message(e)));
+  }, [reference, id]);
+
+  useEffect(() => {
+    setFull(null);
+    load();
+  }, [load]);
+
+  // A build writes its output as it goes, so this is the one screen
+  // where re-reading under somebody is the point rather than a
+  // discourtesy — and it stops the moment the deploy settles.
+  const running = (full ?? deployment)?.status === "pending";
+  useEffect(() => {
+    if (!id || !running) return;
+    const timer = setInterval(load, 2000);
+    return () => clearInterval(timer);
+  }, [id, running, load]);
+
+  const shown = full ?? deployment;
+
+  return (
+    <Dialog open={deployment !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-4xl">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-3">
+            Deploy
+            {shown && <StatusBadge value={shown.status} />}
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3 py-4">
+          <ErrorAlert error={error} />
+
+          {shown && (
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-1 font-mono text-xs text-muted-foreground">
+              <span className="break-all">{shown.image || "—"}</span>
+              <span>{new Date(shown.created_at).toLocaleString()}</span>
+            </div>
+          )}
+
+          {shown?.error && (
+            <div className="border-l-2 border-destructive bg-destructive/8 px-3 py-2 text-xs leading-relaxed break-words text-destructive">
+              {shown.error}
+            </div>
+          )}
+
+          <LogView
+            text={full?.logs ?? null}
+            busy={full === null}
+            follow={running}
+            empty={
+              running
+                ? "Waiting for the build to say something."
+                : "This deploy printed nothing — it ran an image somebody else built rather than building one."
+            }
+          />
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
 

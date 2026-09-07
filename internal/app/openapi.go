@@ -39,11 +39,12 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			"Deployment": openapi.Object(map[string]*openapi.Schema{
 				"id":         openapi.Integer("Poll this deploy at .../deployments/{id}."),
 				"status":     {Type: "string", Enum: []string{"pending", "succeeded", "failed"}},
+				"has_logs":   openapi.Bool("Whether this deploy printed anything — a build does, a pull does not. A listing answers this and does not carry the output; read one deployment for that."),
 				"image":      openapi.String("The reference the daemon pulled, or the name it gave what it built."),
 				"error":      openapi.String("Why it failed, when it did."),
-				"logs":       openapi.String("What the build printed, for a source that builds. Written while it runs, so polling this deployment shows a build in progress. Absent for a source that only pulls."),
+				"logs":       openapi.String("What the build printed, for a source that builds. Written while it runs, so polling this deployment shows a build in progress.\n\nAbsent for a source that only pulls, and **absent from a listing whatever the deploy printed**: it is capped at 256 KiB and a history is fifty rows, which is twelve megabytes fetched every couple of seconds by anything watching a build. Read one deployment for it."),
 				"created_at": {Type: "string", Format: "date-time"},
-			}, "id", "status", "image", "created_at"),
+			}, "id", "status", "image", "has_logs", "created_at"),
 
 			"App": openapi.Object(map[string]*openapi.Schema{
 				"reference":      openapi.String("The app's identifier, org/project/environment/name — also its registry repository path."),
