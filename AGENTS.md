@@ -1566,24 +1566,33 @@ to type the app's name.
 ## Monitoring
 
 `internal/metrics` records what every container on this instance is
-using and answers the series a chart is drawn from. Both `app` and
-`datastore` serve it, at their own addresses.
+using and answers the series a chart is drawn from. `app`, `datastore`
+and `objectstore` all serve it, at their own addresses.
 
-**One module, because it is one question.** An app and a datastore are
-both a container with a CPU and a resident set, and the chart is the
-same chart. This package knows about neither: a `Subject` is a kind, an
-id and a container, and the modules that have those hand them over
-through `metrics.Source`. The read endpoints live at `/apps/{ref}/metrics`
-and `/datastores/{name}/metrics`, where each module has already decided
+**One module, because it is one question.** An app, a database and the
+MinIO behind a managed store are all a container with a CPU and a
+resident set, and the chart is the same chart. This package knows about
+none of them: a `Subject` is a kind, an id and a container, and the
+modules that have those hand them over through `metrics.Source`. The
+read endpoints live at `/apps/{ref}/metrics`, `/datastores/{name}/metrics`
+and `/objectstores/{name}/metrics`, where each module has already decided
 who may look — `metrics.Service` takes no caller and checks no role,
 because asking twice is two answers to a question with one.
+
+**A linked object store is refused rather than answered.** It is
+somebody else's server, so there is no cgroup here to read and never
+will be — and an empty series is not that sentence: it reads as a store
+sitting idle. `MetricSubjects` drops it on the same test that drops a
+stopped MinIO, since a row with no container id has nothing to sample
+either way.
 
 **In Postgres, because it is the only store this instance has.**
 Cubeship runs on one VPS with no external services; "add Prometheus" is
 not a smaller answer than a table, it is a second thing to install, run,
 back up and reach. `metric_samples` has one row per container per
-interval, and `kind` is what tells an app's from a database's —
-deliberately not a foreign key, since there is no one table to point at.
+interval, and `kind` is what tells an app's from a database's from a
+store's — deliberately not a foreign key, since there is no one table to
+point at.
 
 **Sampled every 30 seconds, kept for a day.** There is no downsampling
 behind that, so a day is what there is: a week of raw rows per container
@@ -1880,9 +1889,8 @@ An app opens on Overview, Environment, Logs; a database on Overview,
 Apps, Logs; an object store on Overview, Buckets, Apps, Logs. Monitoring
 comes first because it is the question you have before you know you have
 one, and how to connect is beside it because it is short, answered once,
-and the reason somebody opened the page. An object store's Overview is
-the connection alone: nothing samples MinIO, because `objectstore` is
-not a `metrics.Source`.
+and the reason somebody opened the page. A **linked** store's Overview
+is the connection alone: there is no container here to chart.
 
 Everything else is a tab, and the test is length or depth: an app's
 environment is fifty rows and its log five thousand lines; a database's

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cubeship/internal/credential"
+	"cubeship/internal/metrics"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/slug"
@@ -156,6 +157,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("DELETE /objectstores/{name}", auth(http.HandlerFunc(h.delete)))
 	r.Handle("GET /objectstores/{name}/credentials", auth(http.HandlerFunc(h.credentials)))
 	r.Handle("GET /objectstores/{name}/logs", auth(http.HandlerFunc(h.logs)))
+	r.Handle("GET /objectstores/{name}/metrics", auth(http.HandlerFunc(h.metrics)))
 	r.Handle("POST /objectstores/{name}/start", auth(http.HandlerFunc(h.start)))
 	r.Handle("POST /objectstores/{name}/stop", auth(http.HandlerFunc(h.stop)))
 	r.Handle("POST /objectstores/{name}/expose", auth(http.HandlerFunc(h.expose)))
@@ -414,6 +416,28 @@ func (h *Handler) logs(w http.ResponseWriter, r *http.Request) {
 		// The status line is already sent; all we can do is record it.
 		log.Printf("logs for object store %s: %v", r.PathValue("name"), err)
 	}
+}
+
+// metrics is what a managed store's container has been using. The
+// series is metrics' to render; what this adds is who may look at it,
+// and that there is anything to look at.
+//
+// A linked store is refused rather than answered with an empty series.
+// Nothing here samples somebody else's server, and "no samples" reads
+// as a store that is idle rather than as one this instance was never
+// measuring.
+func (h *Handler) metrics(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	store, err := h.svc.Resolve(ctx, user.FromContext(ctx), r.PathValue("name"), user.RoleMember)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	if store.Kind != KindManaged {
+		WriteError(w, ErrExternalHasNoContainer)
+		return
+	}
+	metrics.WriteSeries(w, r, h.svc.Metrics(), metrics.KindObjectStore, store.ID, store.ContainerID != "")
 }
 
 func (h *Handler) start(w http.ResponseWriter, r *http.Request) {

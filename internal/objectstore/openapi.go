@@ -1,6 +1,18 @@
 package objectstore
 
-import "cubeship/internal/platform/openapi"
+import (
+	"maps"
+
+	"cubeship/internal/metrics"
+	"cubeship/internal/platform/openapi"
+)
+
+// withMetrics folds in the components every metrics endpoint shares, so
+// the series has one shape wherever it is served from.
+func withMetrics(own map[string]*openapi.Schema) map[string]*openapi.Schema {
+	maps.Copy(own, metrics.Schemas())
+	return own
+}
 
 // The exposure warning, said in one place because it is said in three.
 const exposeWarning = "\n\n**There is no TLS in front of this.** Traefik terminates HTTPS for the things it routes by hostname; a managed store is published as a plain port, so an exposed one answers HTTP on the open internet. The signature protects the keys and nothing protects what is being transferred. What makes it safe is a firewall rule, which is yours to write — this instance has a screen for it."
@@ -33,7 +45,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			Name:        "Object storage",
 			Description: "Buckets and the files in them, from two places at once: a MinIO this instance runs, and an S3 endpoint somewhere else it holds the keys to. Both are the same resource here — an endpoint, a login and buckets inside it — and every call below works the same way on either.\n\nThe convention for object storage is backups, and a backup of this machine kept on this machine is not one, which is why linking somewhere else exists. Running one here is for the other half: an app's uploads, a dump on its way out, developing against S3 without paying for S3.",
 		}},
-		Schemas: map[string]*openapi.Schema{
+		Schemas: withMetrics(map[string]*openapi.Schema{
 			"ObjectStore": openapi.Object(map[string]*openapi.Schema{
 				"name":              openapi.String("Unique across the instance. For a managed store it is the container's own name, which is the host apps connect to, so it is permanent either way."),
 				"description":       openapi.String("What this storage is for. With nothing above a store to say where it belongs, this is the only place that can."),
@@ -108,7 +120,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"modified_at": {Type: "string", Format: "date-time"},
 				"etag":        openapi.String("What the store calls this version of the object. For a single-part upload it is the MD5 of the content; for a multipart one it is not, which is why it is reported rather than described as a checksum."),
 			}, "key", "name", "size", "modified_at"),
-		},
+		}),
 
 		Paths: map[string]openapi.PathItem{
 			"/objectstores": {
@@ -229,6 +241,23 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,
+					},
+				},
+			},
+
+			"/objectstores/{name}/metrics": {
+				"get": {
+					OperationID: "getObjectStoreMetrics",
+					Summary:     "Read a managed store's CPU and memory",
+					Description: "What the container running this store has been using. Only for a store this instance runs — nothing here samples a server somewhere else.\n\n" + metrics.Description,
+					Tags:        []string{"Object storage"},
+					Parameters:  append(append([]openapi.Parameter{}, nameParam...), metrics.WindowParam()),
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The series.", openapi.Ref("MetricSeries")),
+						"400": openapi.TextResponse("No such window."),
+						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("This store runs somewhere else."),
 					},
 				},
 			},

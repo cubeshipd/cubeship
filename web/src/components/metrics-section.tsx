@@ -26,10 +26,11 @@ const REFRESH_MS = 30_000;
 
 // What a container is using, over time.
 //
-// One component for apps and databases both, because it is the same
-// question about the same kind of thing — the only difference is the
-// address, which is why that is a prop. See internal/metrics on the
-// daemon, which is one module for the same reason.
+// One component for an app, a database and a managed object store,
+// because it is the same question about the same kind of thing — the
+// only difference is the address, which is why that is a prop. See
+// internal/metrics on the daemon, which is one module for the same
+// reason.
 export function MetricsSection({ path, title = "Monitoring" }: { path: string; title?: string }) {
   const [window, setWindow] = useState<MetricWindow>("1h");
   const [series, setSeries] = useState<MetricSeries | null>(null);

@@ -1,15 +1,15 @@
 // Package metrics records what each container on this instance is
 // using, and answers the time series a chart is drawn from.
 //
-// It is a module of its own because two others need exactly the same
-// thing: an app and a datastore are both a container with a CPU and a
-// resident set. Neither owns this, and neither should have to know how
-// the other does it.
+// It is a module of its own because three others need exactly the same
+// thing: an app, a datastore and the MinIO behind a managed object
+// store are all a container with a CPU and a resident set. None of them
+// owns this, and none should have to know how the others do it.
 //
-// It knows nothing about apps or datastores. A Subject is a kind, an
-// id and a container — the modules that have those hand them over
-// through Source, and mount the read endpoint at their own addresses,
-// where they have already decided who is allowed to look.
+// It knows nothing about apps, datastores or object stores. A Subject
+// is a kind, an id and a container — the modules that have those hand
+// them over through Source, and mount the read endpoint at their own
+// addresses, where they have already decided who is allowed to look.
 package metrics
 
 import (
@@ -20,8 +20,9 @@ import (
 // Kinds of subject. They are the values in the kind column, so adding
 // one is a decision about what a series belongs to.
 const (
-	KindApp       = "app"
-	KindDatastore = "datastore"
+	KindApp         = "app"
+	KindDatastore   = "datastore"
+	KindObjectStore = "objectstore"
 )
 
 // Subject is one thing worth sampling: what it is, which one, and the

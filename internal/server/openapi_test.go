@@ -132,6 +132,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"GET /objectstores/{name}/buckets/{bucket}/objects",
 		"GET /objectstores/{name}/credentials",
 		"GET /objectstores/{name}/logs",
+		"GET /objectstores/{name}/metrics",
 		"GET /projects",
 		"GET /projects/{projectSlug}/env",
 		"GET /projects/{projectSlug}/environments",

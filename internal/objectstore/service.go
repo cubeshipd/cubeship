@@ -10,6 +10,7 @@ import (
 	"cubeship/internal/app"
 	"cubeship/internal/credential"
 	"cubeship/internal/envvar"
+	"cubeship/internal/metrics"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/settings"
 	"cubeship/internal/slug"
@@ -64,12 +65,44 @@ type Service struct {
 	// connect opens a client for one store. An interface so the use
 	// cases can be tested without a bucket anywhere.
 	connect Connector
+	// metrics answers what a managed store's container has been using.
+	// The same package an app and a database go through: MinIO is a
+	// container with a CPU and a resident set like any other.
+	metrics *metrics.Service
 }
 
 func NewService(db *database.DB, creds *credential.Service, apps *app.Service,
-	prov *Provisioner, cfg *settings.Service,
+	prov *Provisioner, cfg *settings.Service, series *metrics.Service,
 ) *Service {
-	return &Service{db: db, creds: creds, apps: apps, prov: prov, settings: cfg, connect: S3Connector{}}
+	return &Service{db: db, creds: creds, apps: apps, prov: prov, settings: cfg,
+		connect: S3Connector{}, metrics: series}
+}
+
+// Metrics exposes the series service to this module's own handlers.
+func (s *Service) Metrics() *metrics.Service { return s.metrics }
+
+// MetricSubjects is what the collector samples on this module's behalf:
+// every store with a container behind it right now.
+//
+// Which is only ever a managed one. A linked store is somebody else's
+// server — there is nothing here to read a cgroup from, and its row
+// carries no container id, so it falls out of this on the same test a
+// stopped MinIO does.
+func (s *Service) MetricSubjects(ctx context.Context) ([]metrics.Subject, error) {
+	all, err := s.Repo().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]metrics.Subject, 0, len(all))
+	for _, store := range all {
+		if store.ContainerID == "" {
+			continue
+		}
+		out = append(out, metrics.Subject{
+			Kind: metrics.KindObjectStore, ID: store.ID, ContainerID: store.ContainerID,
+		})
+	}
+	return out, nil
 }
 
 // SetConnector replaces how this service reaches a store. For tests.
@@ -705,7 +738,10 @@ func (s *Service) Delete(ctx context.Context, caller *user.User, name string) (*
 	if err := s.Repo().Delete(ctx, store.ID); err != nil {
 		return nil, err
 	}
-	return store, nil
+	// The series outlives nothing: the id is free to be reused by the
+	// next store, and a chart that opened on somebody else's history
+	// would be worse than an empty one.
+	return store, s.metrics.Forget(ctx, metrics.KindObjectStore, store.ID)
 }
 
 // managed resolves a store and refuses one this instance does not run.

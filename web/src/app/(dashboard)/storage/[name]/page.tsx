@@ -19,6 +19,7 @@ import { CopyField } from "@/components/copy-field";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
 import { LoadingList } from "@/components/loading";
+import { MetricsSection } from "@/components/metrics-section";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
 import { RowAction, RowActions } from "@/components/row-actions";
@@ -50,12 +51,15 @@ import { message } from "@/lib/errors";
 // One object store, on one page, in tabs — like a database's, and for
 // the same reason.
 //
-// The page opens on how to connect, which is short, answered once, and
-// what an app needs. Everything else here is a place you go into rather
-// than something you read past on the way somewhere: the buckets are a
-// file browser, the attached apps are a table with its own dialog, and
-// a managed store's log is the whole of what MinIO has printed. Stacked
-// they made every visit a scroll through the other three.
+// The page opens on the same two questions every one of these pages
+// does: is it working, and how do I reach it. Monitoring is a managed
+// store's only — a linked one runs on somebody else's machine, and
+// there is nothing here to read a cgroup from. Everything else is a
+// place you go into rather than something you read past on the way
+// somewhere: the buckets are a file browser, the attached apps are a
+// table with its own dialog, and a managed store's log is the whole of
+// what MinIO has printed. Stacked they made every visit a scroll
+// through the other three.
 //
 // A linked store gets no Logs tab at all, rather than a dead one. There
 // is no container here to have printed anything — the store is
@@ -169,6 +173,11 @@ function Detail({ name }: { name: string }) {
           </TabsList>
 
           <TabsContent value="overview">
+            {/* Only for a store this instance runs. A linked one is
+                somebody else's server: nothing here samples it, and the
+                daemon refuses the endpoint rather than answering with
+                an empty series. */}
+            {store.kind === "managed" && <MetricsSection path={path} />}
             <Connection store={store} />
           </TabsContent>
 
