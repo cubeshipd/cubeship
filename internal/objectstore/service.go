@@ -99,7 +99,7 @@ func (s *Service) MetricSubjects(ctx context.Context) ([]metrics.Subject, error)
 			continue
 		}
 		out = append(out, metrics.Subject{
-			Kind: metrics.KindObjectStore, ID: store.ID, ContainerID: store.ContainerID,
+			Kind: metrics.KindObjectStore, ID: store.ID, ContainerID: store.ContainerID, Name: store.Slug,
 		})
 	}
 	return out, nil

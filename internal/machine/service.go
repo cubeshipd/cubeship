@@ -25,10 +25,14 @@ const RoleToRead = user.RoleMember
 type Service struct {
 	db     *database.DB
 	reader *Reader
+	// series is the container-level history, for the one question that
+	// is about all of them at once: what on this box is using it. The
+	// numbers are metrics' — this module adds who may ask.
+	series *metrics.Service
 }
 
-func NewService(db *database.DB, reader *Reader) *Service {
-	return &Service{db: db, reader: reader}
+func NewService(db *database.DB, reader *Reader, series *metrics.Service) *Service {
+	return &Service{db: db, reader: reader, series: series}
 }
 
 func (s *Service) Repo() *Repository { return NewRepository(s.db) }
@@ -78,4 +82,19 @@ func (s *Service) Series(ctx context.Context, caller *user.User, window string) 
 	}
 	out.Unavailable = s.reader.Unavailable()
 	return out, nil
+}
+
+// Containers is what every container on this instance is using right
+// now, heaviest first.
+//
+// It belongs here rather than beside an app's own metrics because it is
+// not a question about an app: it is "what is eating this box", and the
+// answer crosses every module that has containers. The same role reads
+// it as the machine's own numbers — one screen, one question, one
+// answer about who may see it.
+func (s *Service) Containers(ctx context.Context, caller *user.User) ([]metrics.Usage, error) {
+	if err := user.Require(caller, RoleToRead); err != nil {
+		return nil, err
+	}
+	return s.series.Usage(ctx)
 }

@@ -186,6 +186,11 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// here — the one place that knows every module exists.
 	projects.SetAppTeardown(apps)
 
+	// The same three modules the collector samples on behalf of, handed
+	// to the series service as well: "what is using this machine" is one
+	// question about all of them, and only they can name a subject.
+	series.SetSources(apps, datastores, objectStores)
+
 	// What would break if a credential were deleted is known only to
 	// the modules using it, so they answer rather than this one
 	// reading their rows. Until they are wired, a delete refuses.
@@ -208,7 +213,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Datastores:   datastores,
 		ObjectStores: objectStores,
 		Metrics:      series,
-		Machine:      machine.NewService(db, reader),
+		Machine:      machine.NewService(db, reader, series),
 		Settings:     cfg,
 		Certs:        certificates.NewService(cfg, apps, opts.DataDir),
 		// A firewall is the host's, so a server with no way to reach the

@@ -217,3 +217,75 @@ func TestAnEmptySeriesSaysWhichKindOfEmptyItIs(t *testing.T) {
 		t.Error("an unknown window was accepted")
 	}
 }
+
+// fakeSource stands in for a module that has containers.
+type fakeSource struct{ subjects []Subject }
+
+func (f fakeSource) MetricSubjects(context.Context) ([]Subject, error) { return f.subjects, nil }
+
+// "What is using this machine" is one question about three modules, and
+// none of them can be asked it: metrics has the readings and no names,
+// and each module has a name and no readings. The join is here, in
+// memory, against the subjects the modules already hand over.
+//
+// What it also does is drop a reading whose subject is no longer live —
+// a container that has gone since the last pass. Its rows are still in
+// the table for a day, and a list of what is running now must not
+// include something that is not.
+func TestWhatIsUsingTheMachineIsNamedByTheModulesThatOwnIt(t *testing.T) {
+	dbtest.RequireDatabase(t)
+	db := dbtest.New(t)
+	ctx := context.Background()
+	repo := NewRepository(db)
+
+	now := time.Now()
+	write := func(kind string, id int64, at time.Time, cpu float64, mem int64) {
+		t.Helper()
+		if err := repo.Insert(ctx, kind, id, Sample{At: at, CPUPercent: cpu, MemoryBytes: mem, MemoryLimitBytes: 1 << 31}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Two readings for one app: only the newest is what it is using.
+	write(KindApp, 1, now.Add(-40*time.Second), 5, 100)
+	write(KindApp, 1, now.Add(-5*time.Second), 40, 200)
+	write(KindDatastore, 7, now.Add(-5*time.Second), 40, 900)
+	write(KindObjectStore, 3, now.Add(-5*time.Second), 1, 50)
+	// A container that has since gone: its rows are still here.
+	write(KindApp, 99, now.Add(-5*time.Second), 90, 10)
+	// And one whose last reading is older than the window.
+	write(KindApp, 2, now.Add(-10*time.Minute), 80, 10)
+
+	svc := NewService(db)
+	svc.SetSources(
+		fakeSource{subjects: []Subject{
+			{Kind: KindApp, ID: 1, ContainerID: "a", Name: "memo/production/backend"},
+			{Kind: KindApp, ID: 2, ContainerID: "b", Name: "memo/production/web"},
+		}},
+		fakeSource{subjects: []Subject{{Kind: KindDatastore, ID: 7, ContainerID: "c", Name: "pg"}}},
+		fakeSource{subjects: []Subject{{Kind: KindObjectStore, ID: 3, ContainerID: "d", Name: "files"}}},
+	)
+
+	usage, err := svc.Usage(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, u := range usage {
+		names = append(names, u.Name)
+	}
+	// Heaviest CPU first, memory breaking the tie — a box at rest is a
+	// column of zeroes, and ordering that by name buries whichever one
+	// is holding two gigabytes.
+	want := []string{"pg", "memo/production/backend", "files"}
+	if len(names) != len(want) {
+		t.Fatalf("Usage = %v, want %v", names, want)
+	}
+	for i := range want {
+		if names[i] != want[i] {
+			t.Fatalf("Usage = %v, want %v", names, want)
+		}
+	}
+	if usage[1].CPUPercent != 40 || usage[1].MemoryBytes != 200 {
+		t.Errorf("the app reported %+v, want its newest reading", usage[1])
+	}
+}

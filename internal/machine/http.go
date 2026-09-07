@@ -18,6 +18,7 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 // certificates reads Traefik's store.
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.Handle("GET /instance/metrics", auth(http.HandlerFunc(h.metrics)))
+	r.Handle("GET /instance/containers", auth(http.HandlerFunc(h.containers)))
 }
 
 func (h *Handler) metrics(w http.ResponseWriter, r *http.Request) {
@@ -28,6 +29,22 @@ func (h *Handler) metrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, series)
+}
+
+// containers is what is running on this box and what each is using.
+func (h *Handler) containers(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	usage, err := h.svc.Containers(ctx, user.FromContext(ctx))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	// An empty list rather than null: this is drawn as a table, and
+	// `null.length` is a different bug in every client.
+	if usage == nil {
+		usage = []metrics.Usage{}
+	}
+	httpx.WriteJSON(w, http.StatusOK, usage)
 }
 
 // WriteError maps this module's refusals.

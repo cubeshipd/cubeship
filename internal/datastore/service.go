@@ -77,7 +77,9 @@ func (s *Service) MetricSubjects(ctx context.Context) ([]metrics.Subject, error)
 		if d.ContainerID == "" {
 			continue
 		}
-		out = append(out, metrics.Subject{Kind: metrics.KindDatastore, ID: d.ID, ContainerID: d.ContainerID})
+		out = append(out, metrics.Subject{
+			Kind: metrics.KindDatastore, ID: d.ID, ContainerID: d.ContainerID, Name: d.Slug,
+		})
 	}
 	return out, nil
 }

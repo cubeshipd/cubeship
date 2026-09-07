@@ -17,7 +17,7 @@ export default function NotFound() {
           has since been deleted.
         </p>
         <Link
-          href="/"
+          href="/projects"
           className="mt-6 inline-block font-mono text-xs text-primary underline underline-offset-4"
         >
           Back to projects

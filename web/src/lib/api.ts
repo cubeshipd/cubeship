@@ -591,6 +591,23 @@ export type InstanceSeries = {
   unavailable?: Record<string, string>;
 };
 
+// One container's newest reading, from GET /instance/containers.
+//
+// It crosses every module that runs a container — apps, databases and
+// managed object stores — because "what is using this box" does. The
+// CPU convention here is the **container** one: 100 is one core, not
+// the whole machine as it is on InstanceSample.
+export type ContainerUsage = {
+  kind: "app" | "datastore" | "objectstore";
+  // An app's full project/environment/name reference, or a database's
+  // or store's name. A bare app name would identify nothing.
+  name: string;
+  at: string;
+  cpu_percent: number;
+  memory_bytes: number;
+  memory_limit_bytes: number;
+};
+
 export const METRIC_WINDOWS = ["1h", "6h", "24h"] as const;
 export type MetricWindow = (typeof METRIC_WINDOWS)[number];
 

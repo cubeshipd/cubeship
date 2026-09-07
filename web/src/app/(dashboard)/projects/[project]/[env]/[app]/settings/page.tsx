@@ -58,7 +58,7 @@ function Settings({ reference }: { reference: string }) {
     return (
       <p className="text-sm text-muted-foreground">
         No app named.{" "}
-        <Link href="/" className="text-foreground underline underline-offset-4">
+        <Link href="/projects" className="text-foreground underline underline-offset-4">
           Back to projects
         </Link>
         .

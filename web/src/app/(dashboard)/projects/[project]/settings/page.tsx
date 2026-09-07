@@ -51,7 +51,7 @@ function Settings({ project }: { project: string }) {
     return (
       <p className="text-sm text-muted-foreground">
         No project named.{" "}
-        <Link href="/" className="text-foreground underline underline-offset-4">
+        <Link href="/projects" className="text-foreground underline underline-offset-4">
           Back to projects
         </Link>
         .
@@ -153,7 +153,7 @@ function Settings({ project }: { project: string }) {
         confirmLabel="Delete project"
         onConfirm={async () => {
           await api.del(path);
-          router.push("/");
+          router.push("/projects");
         }}
       />
     </>

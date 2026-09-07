@@ -39,7 +39,7 @@ export default function ErrorPage({
         <div className="mt-6 flex items-center gap-3">
           <Button onClick={reset}>Try again</Button>
           <a
-            href="/"
+            href="/projects"
             className="font-mono text-xs text-muted-foreground underline underline-offset-4 hover:text-primary"
           >
             Back to projects

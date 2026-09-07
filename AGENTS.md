@@ -170,15 +170,14 @@ Prettier.
 
 The sidebar is in sections, because its entries are not peers:
 
+- **Overview** — `/`, and no section of its own: it is the instance
+  itself, above everything that is in it.
 - **Workspace** — projects, environments, apps. What you deploy.
 - **Platform** — credentials, registries, Git providers, DNS providers,
   certificates, the firewall, the instance itself. What the instance is wired to. Nothing in
   it belongs to a project, and almost none of it is touched twice: a
   registry is connected once and deployed through for a year.
-  **Credentials is first**, because the others stand on it. **Instance**
-  is the exception to "not touched twice": it carries the machine's own
-  charts above its domain, and it is the one page here somebody opens
-  because they are wondering rather than because they are configuring.
+  **Credentials is first**, because the others stand on it.
 - **You** — the account.
 
 Flat, those read as one list of peers, and "Registries" sat beside
@@ -193,16 +192,25 @@ already have for no gain the sidebar does not give.
 
 ### How the dashboard is navigated
 
-Four levels, and only the first is in the sidebar:
+`/` is the **Overview**, and it is the only screen about the instance
+rather than about something in it: what is down, what the machine is
+doing, what every container on it is using, and what is deployed. It is
+what you land on because it is the question you have before you know
+which project you want — the projects grid was that address for as long
+as there was nothing else to land on, and it says nothing about whether
+the box is out of disk.
+
+Then four levels, and only the first is in the sidebar:
 
 ```
-project        /                                  the grid you land on
+project        /projects                          the grid
   environment  /projects/<project>/<env>          tabs inside a project
     app        /projects/<project>/<env>/<app>
 ```
 
 The URL **is** the app's reference, and the project's and the
-environment's are its prefixes. Everything lives under `/projects`
+environment's are its prefixes. `/projects` is the address that grid was
+always the index of. Everything lives under `/projects`
 because an app only means something inside an environment — a top-level
 `/apps` would be a section for something that has no meaning on its own.
 `/projects/<org>/<project>` redirects to `production` rather than being
@@ -1674,13 +1682,37 @@ ceiling: drawn against the ceiling, a container using 200 MiB of a 2 GiB
 cgroup is a flat line along the bottom — a chart that has given up its
 only job to answer a question the caption answers better.
 
+### What is using it
+
+`/instance/containers` is the newest reading of every container on the
+instance at once — apps, databases and managed stores — heaviest CPU
+first. It is the counterpart to the machine's own charts: those say the
+box is at 80%, and this says which of the twenty things on it is why.
+
+**The join is in memory, against the subjects the modules already hand
+over.** There is no table to join to — an app, a database and a store
+are three of them — so `metrics.Subject` carries a `Name` beside the id
+it already carries, and `Service.Usage` matches the readings to it.
+A reading whose subject is not in that list is dropped, which is exactly
+a container that has gone since it was taken; `UsageWindow` is the other
+half, so nothing older than two passes is reported as what something is
+using *now*.
+
+The name is the reference, never the bare one: `gateway` is unique
+inside one environment and nowhere else, so an instance-wide list
+calling something `gateway` names what the reader cannot find.
+
+It is served by `machine` rather than by any module that has containers,
+because the question is not about any of them. `server.New` hands the
+same three sources to the series service that it hands to the collector.
+
 ### The machine under them
 
 `internal/machine` is the box itself: how much of its CPU is busy, how
 much of its memory is spoken for, how full the disk everything is kept
 on is, and how fast bytes are moving over its own interfaces. Served at
-`/instance/metrics`, drawn at the top of the Instance page, and a
-**member's** to read — what the box is doing is the context for every
+`/instance/metrics`, drawn on the Overview — the screen the dashboard
+opens on — and a **member's** to read — what the box is doing is the context for every
 "why is this slow" anybody deploying here will have, and it says how
 much of the disk is left, never what is on it.
 

@@ -78,7 +78,7 @@ function Landing() {
         <Notice>
           <code>{account}</code> is connected. Apps built from its repositories can now be cloned,
           and a push to one deploys them.{" "}
-          <Link href="/" className="underline underline-offset-4">
+          <Link href="/projects" className="underline underline-offset-4">
             Back to projects
           </Link>
           .

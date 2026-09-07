@@ -23,6 +23,15 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"tx_bytes_per_sec":   openapi.Number("Bytes a second out, the same way."),
 			}, "at", "cpu_percent", "memory_bytes", "memory_total_bytes", "disk_bytes", "disk_total_bytes"),
 
+			"ContainerUsage": openapi.Object(map[string]*openapi.Schema{
+				"kind":               {Type: "string", Enum: []string{"app", "datastore", "objectstore"}, Description: "What the container is running, which is also which listing names it."},
+				"name":               openapi.String("What to call it: an app's full `project/environment/name` reference, a database's or a store's name. A bare app name would identify nothing — it is unique inside one environment and nowhere else."),
+				"at":                 {Type: "string", Format: "date-time", Description: "When this reading was taken. At most two sampling intervals old, or the container is not reported at all."},
+				"cpu_percent":        openapi.Number("Percent of **one core**, the container convention: 250 is two and a half cores. Not the machine's, which is what /instance/metrics reports."),
+				"memory_bytes":       openapi.Integer("Usage minus reclaimable page cache, which is what `docker stats` shows."),
+				"memory_limit_bytes": openapi.Integer("The cgroup's ceiling, or the machine's memory for a container with no limit of its own."),
+			}, "kind", "name", "at", "cpu_percent", "memory_bytes", "memory_limit_bytes"),
+
 			"InstanceSeries": openapi.Object(map[string]*openapi.Schema{
 				"window":             openapi.String("The window these samples cover."),
 				"samples":            openapi.Array(openapi.Ref("InstanceSample")),
@@ -36,6 +45,19 @@ func (h *Handler) OpenAPI() openapi.Spec {
 		},
 
 		Paths: map[string]openapi.PathItem{
+			"/instance/containers": {
+				"get": {
+					OperationID: "listInstanceContainers",
+					Summary:     "What every container on this instance is using",
+					Description: "One reading per container — the newest, at most two sampling intervals old — heaviest CPU first. It crosses every module that runs one: apps, databases and managed object stores.\n\nA container that has gone is not in the answer, and one that has just started is not in it either until it has been sampled. **The CPU convention here is the container one**: 100 is one core, not one machine.",
+					Tags:        []string{"Instance"},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("What is running, heaviest first.", openapi.Array(openapi.Ref("ContainerUsage"))),
+						"401": openapi.Unauthorized,
+					},
+				},
+			},
+
 			"/instance/metrics": {
 				"get": {
 					OperationID: "getInstanceMetrics",

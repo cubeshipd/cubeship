@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"cubeship/internal/platform/database"
@@ -15,9 +16,19 @@ import (
 // answer to a question with one right answer.
 type Service struct {
 	db *database.DB
+	// sources are the modules that have containers, for the one
+	// question that is about all of them at once: what is using this
+	// machine. They are handed over at wiring time, the same seam
+	// project.AppTeardown and credential.Dependant use and for the same
+	// reason — the modules that own the rows sit above this one.
+	sources []Source
 }
 
 func NewService(db *database.DB) *Service { return &Service{db: db} }
+
+// SetSources wires in the modules that have containers. Called once, by
+// server.New.
+func (s *Service) SetSources(sources ...Source) { s.sources = sources }
 
 func (s *Service) Repo() *Repository { return NewRepository(s.db) }
 
@@ -46,6 +57,62 @@ func (s *Service) Series(ctx context.Context, kind string, subjectID int64, wind
 	if n := len(samples); n > 0 {
 		out.MemoryLimitBytes = samples[n-1].MemoryLimitBytes
 	}
+	return out, nil
+}
+
+// UsageWindow is how far back a reading may be and still count as "now".
+//
+// Two intervals: one pass may be missed — an Engine call that took too
+// long, a daemon that was restarting — without a container dropping off
+// the list and reappearing, and nothing older than that is what
+// anything is using at this moment.
+const UsageWindow = 2 * Interval
+
+// Usage is what every container on this instance is using right now,
+// heaviest CPU first.
+//
+// The names come from the modules rather than from a join: this package
+// has no table to join against — an app, a database and a store are
+// three of them — and the modules already hand over a name with the id
+// they hand over. A reading whose subject is not in that list is
+// dropped, which is exactly a container that has since gone.
+func (s *Service) Usage(ctx context.Context) ([]Usage, error) {
+	readings, err := s.Repo().Latest(ctx, time.Now().Add(-UsageWindow))
+	if err != nil {
+		return nil, err
+	}
+
+	names := map[string]string{}
+	for _, source := range s.sources {
+		subjects, err := source.MetricSubjects(ctx)
+		if err != nil {
+			// One module failing is not a reason to answer nothing
+			// about the others.
+			continue
+		}
+		for _, subject := range subjects {
+			names[subjectKey(subject.Kind, subject.ID)] = subject.Name
+		}
+	}
+
+	out := make([]Usage, 0, len(readings))
+	for _, u := range readings {
+		name, live := names[u.Name]
+		if !live || name == "" {
+			continue
+		}
+		u.Name = name
+		out = append(out, u)
+	}
+	// Heaviest first, and memory breaks the tie: a machine's whole
+	// container list at rest is a column of zeroes, and ordering that
+	// by name would bury the one holding two gigabytes.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CPUPercent != out[j].CPUPercent {
+			return out[i].CPUPercent > out[j].CPUPercent
+		}
+		return out[i].MemoryBytes > out[j].MemoryBytes
+	})
 	return out, nil
 }
 
