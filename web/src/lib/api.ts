@@ -114,6 +114,11 @@ export type App = {
   // For a registry app, where to push; for an external one, what it pulls.
   image?: string;
   status: string;
+  // Whether a container currently backs this app, which is what decides
+  // whether there is a log to read. The status cannot answer it: an app
+  // that has never been deployed and one whose container went away both
+  // read as not running, and only the second has anything to say.
+  has_container: boolean;
   // The daemon's four. The dashboard groups them into two: an app is
   // built from a repository, or it runs an image someone published.
   source: AppSource;

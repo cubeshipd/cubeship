@@ -68,6 +68,10 @@ export default function AppPage({ params }: PageProps<"/projects/[project]/[env]
 
 type Tab = "overview" | "environment" | "logs";
 
+// Why the Logs tab is dead. Said on hover, because a disabled control
+// that explains nothing is a control somebody clicks twice.
+const noContainer = "Nothing has run yet, so there is no log. Deploy the app first.";
+
 function Detail({
   reference,
   project,
@@ -166,7 +170,17 @@ function Detail({
           <TabsList variant="line">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="environment">Environment</TabsTrigger>
-            <TabsTrigger value="logs">Logs</TabsTrigger>
+            {/* Nothing has printed anything until something has run.
+                The daemon refuses this endpoint with a 409 in that
+                state, and a tab whose whole content is that refusal is
+                a tab that should not have been offered. */}
+            <TabsTrigger
+              value="logs"
+              disabled={!app.has_container}
+              title={app.has_container ? undefined : noContainer}
+            >
+              Logs
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview">

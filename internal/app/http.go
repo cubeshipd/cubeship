@@ -39,6 +39,12 @@ type Response struct {
 	// yet — and for an external app, what it pulls.
 	Image  string `json:"image,omitempty"`
 	Status string `json:"status"`
+	// HasContainer says whether a container currently backs this app,
+	// which is what decides whether there is a log to read. The status
+	// alone cannot answer it: an app that has never been deployed and
+	// one whose container went away both read as not running, and only
+	// the second has anything to say.
+	HasContainer bool `json:"has_container"`
 	// Source is where this app's image comes from.
 	Source string `json:"source"`
 	// Repo, Ref and Dockerfile describe a building app's source. Absent
@@ -64,7 +70,7 @@ func toResponse(a *Scoped, in Instance) Response {
 	r := Response{
 		Reference: ref.String(),
 		Name:      a.Name, Description: a.Description, Domains: toDomains(a.Domains),
-		Status: a.Status, Source: a.Source,
+		Status: a.Status, HasContainer: a.ContainerID != "", Source: a.Source,
 		Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
 		SuggestedHost: SuggestedHostFor(ref, in.Domain),
 	}

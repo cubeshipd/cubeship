@@ -108,3 +108,48 @@ func initRepo(t *testing.T, dir string) {
 		}
 	}
 }
+
+// The bug this exists for: every build of a private GitHub repository
+// failed with
+//
+//	failed to read downloaded context: failed to load cache key: invalid response status 404
+//
+// BuildKit reads an https context as a repository **only** when its
+// path ends in `.git`. Without the suffix it downloaded the URL as a
+// tarball, with none of the credentials a clone would carry — so what
+// came back for a private repository was GitHub's 404, and for a public
+// one an HTML page. Nothing in the message says either of those things.
+func TestAnHTTPSContextIsGivenTheSuffixBuildKitLooksFor(t *testing.T) {
+	cases := map[string]string{
+		"https://github.com/acme/api":           "https://github.com/acme/api.git",
+		"https://github.com/acme/api#main":      "https://github.com/acme/api.git#main",
+		"https://github.com/acme/api/":          "https://github.com/acme/api.git",
+		"http://git.internal/acme/api":          "http://git.internal/acme/api.git",
+		"https://gitlab.com/group/sub/api#v1.2": "https://gitlab.com/group/sub/api.git#v1.2",
+
+		// Already a repository as far as BuildKit is concerned.
+		"https://github.com/acme/api.git":      "https://github.com/acme/api.git",
+		"https://github.com/acme/api.git#main": "https://github.com/acme/api.git#main",
+		"https://github.com/acme/API.GIT":      "https://github.com/acme/API.GIT",
+
+		// Schemes that are a git transport on their own. Adding the
+		// suffix to one of these would change which repository it is.
+		"git://git.internal/acme/api":   "git://git.internal/acme/api",
+		"ssh://git@github.com/acme/api": "ssh://git@github.com/acme/api",
+		"git@github.com:acme/api":       "git@github.com:acme/api",
+	}
+	for in, want := range cases {
+		if got := buildkit.GitContext(in); got != want {
+			t.Errorf("buildkit.GitContext(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// A ref is a fragment on the URL, and the suffix goes before it. Put
+// after, `#main.git` is a branch nobody has.
+func TestTheRefStaysAFragment(t *testing.T) {
+	got := buildkit.GitContext("https://github.com/acme/api#feature/some-branch")
+	if want := "https://github.com/acme/api.git#feature/some-branch"; got != want {
+		t.Errorf("GitContext = %q, want %q", got, want)
+	}
+}
