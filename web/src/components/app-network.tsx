@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
+import { Notice } from "@/components/notice";
 import { SectionHeader } from "@/components/page-header";
 import { RowAction } from "@/components/row-actions";
 import { SearchableSelect } from "@/components/searchable-select";
@@ -257,7 +258,9 @@ function AddDomain({
     setDone(false);
     try {
       // The record first. A name added here that does not resolve is an
-      // app claiming to be served somewhere nothing answers.
+      // app claiming to be served somewhere nothing answers — which is
+      // why the button is disabled without an address rather than this
+      // quietly skipping the write.
       if (automatic && zone && ip) {
         await api.put(`/dns/${providerID}/records?zone=${zoneID}`, {
           name: host,
@@ -387,6 +390,21 @@ function AddDomain({
             </div>
           )}
 
+          {/* No address, no record — and no domain either, rather than a
+              name added here that resolves nowhere. It used to write the
+              name and skip the record, which reported success for an app
+              that answered at nothing. */}
+          {automatic && !ip && (
+            <Notice tone="warning">
+              This instance does not know its own public address, so there is nothing to point the
+              record at. Set it under{" "}
+              <Link href="/settings" className="underline underline-offset-4">
+                Instance
+              </Link>{" "}
+              — it is the address the world reaches this machine at, not one on its private network.
+            </Notice>
+          )}
+
           {onInstanceDomain && (
             <p className="text-xs leading-relaxed text-muted-foreground">
               {settings?.wildcard_domain
@@ -408,7 +426,7 @@ function AddDomain({
           <div className="flex items-center gap-3">
             <ActionButton
               busy={busy}
-              disabled={!host || (automatic && !zoneID)}
+              disabled={!host || (automatic && (!zoneID || !ip))}
               variant={occupied.length > 0 ? "destructive" : "default"}
               onClick={() => (occupied.length > 0 ? setConfirming(true) : add())}
             >

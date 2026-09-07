@@ -2,6 +2,7 @@ package settings
 
 import (
 	"context"
+	"strings"
 
 	"cubeship/internal/platform/database"
 	"cubeship/internal/user"
@@ -20,6 +21,12 @@ type Service struct {
 	// the daemon, which owns bootstrapping; nil in tests, where there is
 	// nothing to reconcile.
 	onChange func(context.Context, Values) error
+
+	// host answers what address this machine has. Set by the daemon,
+	// which is the only thing that can reach outside its own container;
+	// nil in a test and on a daemon that is itself a host process, where
+	// the answer below it is already the right one.
+	host HostAddress
 }
 
 func NewService(db *database.DB) *Service {
@@ -30,6 +37,44 @@ func NewService(db *database.DB) *Service {
 // at startup, before anything serves.
 func (s *Service) OnChange(fn func(context.Context, Values) error) {
 	s.onChange = fn
+}
+
+// SetHostAddress wires in the thing that can ask the machine what its
+// own address is. Called once at startup, like OnChange and for the
+// same reason: only the daemon knows how to reach outside its container.
+func (s *Service) SetHostAddress(h HostAddress) { s.host = h }
+
+// PublicIP is what this instance's DNS records should point at, with
+// every answer available to a running daemon rather than only the ones a
+// pure function has.
+//
+// It is Values.PublicAddressFor with the host's own address slotted in
+// **above** the daemon's: in a container the daemon's answer is a bridge
+// address and is discarded anyway, and on a host process the two agree.
+// Below the operator's own value and below the address the dashboard was
+// opened at, both of which are evidence about how this instance is
+// actually reached from outside.
+//
+// Empty is a real answer and means "this instance does not know". A
+// caller about to write a DNS record has to stop there rather than
+// write something.
+func (s *Service) PublicIP(ctx context.Context, v Values, reachedAt string) string {
+	if configured := strings.TrimSpace(v.Get(PublicIP)); configured != "" {
+		return configured
+	}
+	if ip := ipOfHost(reachedAt); ip != "" {
+		return ip
+	}
+	if s.host != nil {
+		// Checked here rather than trusted: this is the last place
+		// between a detected address and a DNS record, and an
+		// implementation that answered with a bridge address would be
+		// the whole bug back again.
+		if ip := routable(s.host.Address(ctx)); ip != "" {
+			return ip
+		}
+	}
+	return outboundAddress()
 }
 
 func (s *Service) Repo() *Repository { return NewRepository(s.db) }
