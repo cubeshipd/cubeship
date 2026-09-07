@@ -237,10 +237,13 @@ export type Deployment = {
   // Whether there is output to read, which is what a listing answers
   // without carrying it.
   has_logs: boolean;
-  // Whether this record may be removed. False for one still running,
-  // and for the one the app is running — see the daemon's
-  // Service.DeleteDeployment for why each.
+  // Whether this record may be removed. False only for a deploy still
+  // running, which the daemon is still writing to.
   deletable: boolean;
+  // Whether the app is running this deploy — so deleting it takes the
+  // app down. Reported apart from `deletable` because it is not a
+  // refusal, it is a different act.
+  live: boolean;
   created_at: string;
 };
 

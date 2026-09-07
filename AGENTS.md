@@ -1535,23 +1535,33 @@ a service with no teardown wired refuses to delete at all.
 Deleting an app leaves its images in the registry — reclaiming that disk
 needs a registry garbage collection pass, which Cubeship does not run.
 
-**A deployment is a record, and deleting one deletes a record.** Nothing
-about it stops an app: the container belongs to the app, and the row is
-the history of how it got there. What goes with the row is the build
-log, which is most of its bytes; the image stays where every other image
-stays. Two rows are refused, and `deletable` on the listing says so
-before anybody tries — one **still running**, because the orchestrator is
-writing to it, and the one the app **is running**, because its record is
-the only thing that says what the container is. That last one is derived
-rather than stored: the orchestrator swaps the container in and *then*
-marks the deployment succeeded, so the newest succeeded row is by
-construction the live one, and a column saying so would be a second copy
-of a fact somebody has to keep in step.
+**Deleting a deployment deletes a record — except the live one, which
+takes the app down.** That is the one place in this product where a
+delete means two things, and it is deliberate: an app whose running
+version has to go *now* — a compromised image, something doing what it
+should not — must not force somebody to delete the app and lose its
+domains, its environment and everything it is attached to. So the
+container is stopped and removed, the app goes to `down`, and the app
+itself stays, coming back on the next deploy. Anything else is history:
+the container it produced is long gone, and what goes with the row is
+the build log.
+
+`live` on the listing is what says which. It is derived rather than
+stored, from two facts that are already there: the app has a container,
+and the orchestrator swaps a container in and *then* marks the
+deployment succeeded — so the newest succeeded row is by construction
+the one behind what is running. An app with no container is running no
+deployment whatever its history says, which is why nothing inherits the
+title when the live one is deleted.
+
+One row is refused, and `deletable` says so in advance: a deploy that
+has **not finished**, because the orchestrator is still writing to it.
 
 The role is the one that deploys that app — `RoleToDeploy` — because
-somebody who may add to a history may tidy it, and making an admin clear
-a member's failed deploy is friction that buys nothing when the
-dangerous rows are refused outright.
+somebody who may replace what is running may take it off. What stands
+between a tidy-up and an outage is not a role but the confirmation:
+clearing an old row asks for a second click, and the live one asks you
+to type the app's name.
 
 ## Monitoring
 
