@@ -1179,7 +1179,16 @@ They differ in **where the recipe comes from**, and that difference
 decides everything else.
 
 A Dockerfile is *in* the repository, so BuildKit clones for itself and
-nothing touches the daemon's disk. Railpack has to **read** the
+nothing touches the daemon's disk — **through a URL ending in `.git`**,
+which `buildkit.GitContext` adds. That suffix is the whole of how
+BuildKit tells a repository from a file: an `https://` context is a git
+remote only when its path ends that way, and anything else is
+*downloaded*, with none of the credentials a clone carries. Without it
+every private repository failed with `failed to read downloaded
+context: ... invalid response status 404`, which names neither the
+repository nor the fact that it was never treated as one. The suffix is
+added at build time rather than stored, because what somebody pasted is
+what the settings screen shows and `.git` is a fact about this builder. Railpack has to **read** the
 repository to work out how to build it, and that reading happens in the
 daemon — so it clones first (go-git, no git on the host), plans, and
 hands BuildKit the result. Both then go through one `solve`.

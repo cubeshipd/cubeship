@@ -52,6 +52,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"domains":        openapi.Array(openapi.Ref("AppDomain")),
 				"image":          openapi.String("For a registry app, the path to push to — a push there deploys. For an external app, the image it pulls."),
 				"status":         {Type: "string", Enum: []string{"pending", "running", "down"}, Description: `"pending" until the first image is pushed.`},
+				"has_container":  openapi.Bool("Whether a container currently backs this app, which is what decides whether there is a log to read. The status cannot answer it: an app that has never been deployed and one whose container went away both read as not running, and only the second has anything to say."),
 				"source":         {Type: "string", Enum: []string{"registry", "external", "dockerfile", "railpack"}, Description: "Where this app's image comes from. \"registry\" is an image pushed to Cubeship, and the push is what deploys it; \"external\" is an image in a registry Cubeship does not run; \"dockerfile\" and \"railpack\" are built here from a Git repository, the first from a Dockerfile you wrote and the second worked out from the code. Only a push to Cubeship's own registry deploys on its own — the other two deploy when asked."},
 				"repo":           openapi.String("For a building app, the Git repository it builds from."),
 				"ref":            openapi.String("For a building app, the branch, tag or commit built. Empty means the repository's default branch."),
@@ -60,7 +61,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"project":        openapi.String(""),
 				"environment":    openapi.String(""),
 				"suggested_host": openapi.String("A name this app could answer at, under the instance's own domain: `<app>.<environment>.<project>.<instance domain>`. Nothing assigns it — an app with no domain is a normal app, and this is what a client offers when somebody does want one. Under a wildcard address (`settings.wildcard_domain`) it resolves the moment it is added; under a real domain it needs a record. Absent while the instance has no domain."),
-			}, "reference", "name", "description", "domains", "status", "source", "org", "project", "environment"),
+			}, "reference", "name", "description", "domains", "status", "has_container", "source", "org", "project", "environment"),
 			"AppDomain": openapi.Object(map[string]*openapi.Schema{
 				"id":   openapi.Integer("Identifies this domain on this app, for changing or removing it."),
 				"host": openapi.String("The name Traefik routes to this app, over HTTPS. Lowercase, without a trailing dot — which is how a browser sends one and how Traefik matches it."),

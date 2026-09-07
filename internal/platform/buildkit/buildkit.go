@@ -67,6 +67,9 @@ type Request struct {
 	// means no git on the host and a clone BuildKit can cache between
 	// builds. Append "#ref" to build something other than the default
 	// branch.
+	//
+	// It is given as a person writes it. GitContext puts it in the one
+	// shape BuildKit will read as a repository.
 	ContextGit string
 
 	// Dockerfile is the build recipe's path, relative to ContextDir.
@@ -118,7 +121,7 @@ func (b *Builder) Build(ctx context.Context, req Request, logs io.Writer) error 
 	if req.ContextGit != "" {
 		// BuildKit resolves this itself, inside the builder, and the
 		// dockerfile is read from the same clone.
-		frontendAttrs["context"] = req.ContextGit
+		frontendAttrs["context"] = GitContext(req.ContextGit)
 	} else {
 		// The recipe is streamed as its own local directory, so a
 		// Dockerfile in a subdirectory works without sending that
@@ -146,6 +149,48 @@ func (b *Builder) Build(ctx context.Context, req Request, logs io.Writer) error 
 		localDirs: localDirs,
 		gitToken:  req.GitToken,
 	}, logs)
+}
+
+// GitContext is a repository URL in the one shape BuildKit reads as a
+// repository rather than as a file to download.
+//
+// **An https URL is a git remote to BuildKit only when its path ends in
+// `.git`.** There is no host list and no probing: anything else with an
+// http or https scheme is fetched as a tarball, and what comes back
+// from `https://github.com/owner/repo` is an HTML page — or, for a
+// private repository, a 404, because the download carries none of the
+// credentials a clone would. That surfaces as
+//
+//	failed to read downloaded context: failed to load cache key: invalid response status 404
+//
+// which says nothing about the repository being private, or about the
+// context not having been treated as a repository at all. It is the
+// error a correctly configured private app got on every deploy.
+//
+// The suffix is added here rather than stored on the app: what somebody
+// pasted is what the settings screen shows and what the link goes to,
+// and `.git` is a fact about this builder rather than about their
+// repository.
+//
+// Left alone: a path that already ends in `.git`, and any scheme that
+// is a git transport on its own — `git://`, `ssh://`, and scp-style
+// `git@host:owner/repo`.
+func GitContext(remote string) string {
+	url, fragment, hasFragment := strings.Cut(remote, "#")
+	url = strings.TrimSpace(url)
+
+	lower := strings.ToLower(url)
+	if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+		trimmed := strings.TrimRight(url, "/")
+		if trimmed != "" && !strings.HasSuffix(strings.ToLower(trimmed), ".git") {
+			trimmed += ".git"
+		}
+		url = trimmed
+	}
+	if hasFragment {
+		return url + "#" + fragment
+	}
+	return url
 }
 
 // solveRequest is what the two build paths — a Dockerfile and a Railpack
