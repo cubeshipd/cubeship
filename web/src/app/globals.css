@@ -8,6 +8,17 @@
    primitives carry `dark:` rules and <html> carries the class. */
 @custom-variant dark (&:where(.dark, .dark *));
 
+/* What the Base UI primitives mean by `data-horizontal:` — which is
+   `data-orientation="horizontal"`, the attribute they actually set.
+   Tailwind reads a bare `data-foo:` as the attribute `data-foo`, so
+   without these the orientation rules in `ui/tabs.tsx` match nothing:
+   the root keeps `flex-row`, and a tab panel renders beside its own tab
+   list instead of under it. The primitives are generated and not
+   hand-edited, so what they expect is declared here, with the rest of
+   the house style. */
+@custom-variant data-horizontal (&[data-orientation="horizontal"]);
+@custom-variant data-vertical (&[data-orientation="vertical"]);
+
 :root {
   /* Surfaces. Near-black with a blue cast, four steps apart by a hair:
      depth comes from 1px lines and glow, never from shadow. */

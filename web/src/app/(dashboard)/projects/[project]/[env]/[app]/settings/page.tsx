@@ -17,7 +17,7 @@ import { TextAreaField, TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { type App, type AppSource, api } from "@/lib/api";
+import { type App, type AppSource, api, BUILDING_SOURCES } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // The daemon has four sources. There are only two things an app can be:
@@ -203,7 +203,7 @@ function SourceSection(props: SectionProps) {
   const { app } = props;
   const { busy, saved, setSaved, save } = usePatch(props);
 
-  const builds = app.source === "dockerfile" || app.source === "railpack";
+  const builds = BUILDING_SOURCES.includes(app.source);
   const [origin, setOrigin] = useState<Origin>(builds ? "github" : "image");
   const [buildWith, setBuildWith] = useState(
     app.source === "dockerfile" ? "dockerfile" : "railpack",
