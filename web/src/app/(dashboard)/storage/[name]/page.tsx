@@ -227,7 +227,7 @@ function Connection({ store }: { store: ObjectStore }) {
   }, [store.name]);
 
   return (
-    <section className="mb-8">
+    <>
       <SectionHeader
         title="Connecting"
         sub={
@@ -265,7 +265,7 @@ function Connection({ store }: { store: ObjectStore }) {
           <code>--endpoint-url</code> plus <code>--force-path-style</code> for the AWS CLI.
         </p>
       )}
-    </section>
+    </>
   );
 }
 
@@ -336,18 +336,18 @@ function Buckets({ store }: { store: ObjectStore }) {
 
   if (forbidden) {
     return (
-      <section className="mb-8">
+      <>
         <SectionHeader title="Buckets" />
         <Notice>
           What is in a store is an admin's to read. Cubeship never lets a member read data — there
           is no way to see a row of a database from here either — and a bucket is data.
         </Notice>
-      </section>
+      </>
     );
   }
 
   return (
-    <section className="mb-8">
+    <>
       <SectionHeader
         title="Buckets"
         sub={
@@ -404,7 +404,7 @@ function Buckets({ store }: { store: ObjectStore }) {
           reload();
         }}
       />
-    </section>
+    </>
   );
 }
 
@@ -542,7 +542,7 @@ function Attachments({ store, onChanged }: { store: ObjectStore; onChanged: () =
   ];
 
   return (
-    <section className="mb-8">
+    <>
       <SectionHeader
         title="Attached apps"
         sub="Each receives S3_ENDPOINT and its parts from its next deploy onwards. They may be in any project."
@@ -595,7 +595,7 @@ function Attachments({ store, onChanged }: { store: ObjectStore; onChanged: () =
           onChanged();
         }}
       />
-    </section>
+    </>
   );
 }
 
