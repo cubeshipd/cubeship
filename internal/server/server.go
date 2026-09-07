@@ -138,7 +138,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// databases rather than under them: it depends on credential, for
 	// the login an external store authenticates as, and on nothing
 	// else. Nothing below it knows it exists.
-	objectStores := objectstore.NewService(db, creds,
+	objectStores := objectstore.NewService(db, creds, apps,
 		objectstore.NewProvisioner(db, docker, opts.DataDir), cfg)
 
 	// Deleting a project or an environment takes the apps inside it with
@@ -157,6 +157,10 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// environment. app asks for it through an interface rather than
 	// importing the module above it — see app.DatastoreVars.
 	apps.SetDatastoreVars(datastores)
+	// And the same for an attached bucket: S3_ENDPOINT and its parts.
+	// A second interface rather than one list, so the env screen can
+	// still say whether a variable came from a database or a bucket.
+	apps.SetObjectStoreVars(objectStores)
 
 	srv := &Server{
 		Users:        users,

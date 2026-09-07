@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"cubeship/internal/envvar"
 	"cubeship/internal/objectstore"
 	"cubeship/internal/server/servertest"
 	"cubeship/internal/user"
@@ -543,4 +545,221 @@ func get(t *testing.T, f *servertest.Fixture, path string, out any) {
 func itoa(v any) string {
 	n, _ := v.(float64)
 	return strconv.FormatInt(int64(n), 10)
+}
+
+// -- attachments -----------------------------------------------------
+
+func createApp(t *testing.T, f *servertest.Fixture, project, env, name string) {
+	t.Helper()
+	rec := f.Do(t, http.MethodPost, "/apps", map[string]any{
+		"name": name, "project": project, "environment": env,
+		"source": "external", "image": "docker.io/library/nginx",
+	}, f.AdminKey)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create app %q: %d %s", name, rec.Code, rec.Body.String())
+	}
+}
+
+func attach(t *testing.T, f *servertest.Fixture, store string, body map[string]any) *httptest.ResponseRecorder {
+	t.Helper()
+	return f.Do(t, http.MethodPost, "/objectstores/"+store+"/attachments", body, f.AdminKey)
+}
+
+func appEnv(t *testing.T, f *servertest.Fixture, ref string) map[string]envvar.Resolved {
+	t.Helper()
+	rec := f.Do(t, http.MethodGet, "/apps/"+ref+"/env", nil, f.AdminKey)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("read app env: %d %s", rec.Code, rec.Body.String())
+	}
+	var out struct {
+		Effective []envvar.Resolved `json:"effective"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatalf("decode env: %v", err)
+	}
+	byKey := map[string]envvar.Resolved{}
+	for _, r := range out.Effective {
+		byKey[r.Key] = r
+	}
+	return byKey
+}
+
+// The whole point of attaching: the app is handed what it needs to
+// reach the bucket, and nobody copies a key anywhere.
+func TestAnAttachedAppReceivesTheBucketsVariables(t *testing.T) {
+	f, _ := withFake(t, "backups")
+	link(t, f, "offsite", nil)
+	createApp(t, f, "web", "production", "api")
+
+	if rec := attach(t, f, "offsite", map[string]any{
+		"app": "web/production/api", "bucket": "backups",
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("attach: %d %s", rec.Code, rec.Body.String())
+	}
+
+	env := appEnv(t, f, "web/production/api")
+	want := map[string]string{
+		"S3_ENDPOINT":          "https://s3.wasabisys.com",
+		"S3_BUCKET":            "backups",
+		"S3_ACCESS_KEY_ID":     "AKIAEXAMPLE",
+		"S3_SECRET_ACCESS_KEY": "s3cr3t-example",
+		"S3_PATH_STYLE":        "true",
+	}
+	for key, value := range want {
+		got, ok := env[key]
+		if !ok {
+			t.Errorf("the app did not receive %s", key)
+			continue
+		}
+		if got.Value != value {
+			t.Errorf("%s = %q, want %q", key, got.Value, value)
+		}
+		// Labelled as a bucket's rather than as a database's, because
+		// "where did this come from" is the question this screen exists
+		// to answer.
+		if got.Source != envvar.SourceObjectStore {
+			t.Errorf("%s came from %q, want %q", key, got.Source, envvar.SourceObjectStore)
+		}
+	}
+	// The variables an app is offered are named on the store, and the
+	// values are not: one of them is the secret.
+	var store map[string]any
+	get(t, f, "/objectstores/offsite", &store)
+	attachments, _ := store["attachments"].([]any)
+	if len(attachments) != 1 {
+		t.Fatalf("the store reports %d attachments, want 1", len(attachments))
+	}
+	if body := bodyOf(t, f, "/objectstores/offsite"); strings.Contains(body, "s3cr3t-example") {
+		t.Error("the secret key came back in the store's own response")
+	}
+
+	if rec := f.Do(t, http.MethodDelete,
+		"/objectstores/offsite/attachments/web/production/api?bucket=backups", nil, f.AdminKey); rec.Code != http.StatusOK {
+		t.Fatalf("detach: %d %s", rec.Code, rec.Body.String())
+	}
+	if _, still := appEnv(t, f, "web/production/api")["S3_ENDPOINT"]; still {
+		t.Error("the app still inherits S3_ENDPOINT after being detached")
+	}
+}
+
+// Two buckets on one app are one variable with two values unless one of
+// them is prefixed — and the refusal names the variables rather than
+// the prefix, because an app may hold several and be colliding with
+// exactly one.
+func TestTwoBucketsOnOneAppNeedAPrefix(t *testing.T) {
+	f, _ := withFake(t, "uploads", "backups")
+	link(t, f, "offsite", nil)
+	createApp(t, f, "web", "production", "api")
+
+	if rec := attach(t, f, "offsite", map[string]any{
+		"app": "web/production/api", "bucket": "uploads",
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("first attach: %d %s", rec.Code, rec.Body.String())
+	}
+
+	clash := attach(t, f, "offsite", map[string]any{
+		"app": "web/production/api", "bucket": "backups",
+	})
+	if clash.Code != http.StatusConflict {
+		t.Fatalf("second bucket at the same prefix: %d %s, want 409", clash.Code, clash.Body.String())
+	}
+	if body := clash.Body.String(); !strings.Contains(body, "S3_ENDPOINT") {
+		t.Errorf("the refusal does not name the variables that collide: %q", body)
+	}
+
+	if rec := attach(t, f, "offsite", map[string]any{
+		"app": "web/production/api", "bucket": "backups", "prefix": "BACKUPS_",
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("second bucket with a prefix: %d %s", rec.Code, rec.Body.String())
+	}
+	env := appEnv(t, f, "web/production/api")
+	if env["S3_BUCKET"].Value != "uploads" {
+		t.Errorf("S3_BUCKET = %q, want uploads", env["S3_BUCKET"].Value)
+	}
+	if env["BACKUPS_S3_BUCKET"].Value != "backups" {
+		t.Errorf("BACKUPS_S3_BUCKET = %q, want backups", env["BACKUPS_S3_BUCKET"].Value)
+	}
+
+	// The same app pointed at the same bucket twice is one set of
+	// variables written twice, whatever the prefix says.
+	again := attach(t, f, "offsite", map[string]any{
+		"app": "web/production/api", "bucket": "uploads", "prefix": "OTHER_",
+	})
+	if again.Code != http.StatusConflict {
+		t.Errorf("the same bucket attached twice: %d, want 409", again.Code)
+	}
+}
+
+// The lesson the datastores learned the hard way, kept from being
+// relearned here: a database and a bucket on one app do not compete for
+// a name, so neither needs a prefix to sit beside the other.
+func TestABucketAndADatabaseDoNotCollideOnOneApp(t *testing.T) {
+	f, _ := withFake(t, "backups")
+	link(t, f, "offsite", nil)
+	createApp(t, f, "web", "production", "api")
+
+	rec := f.Do(t, http.MethodPost, "/datastores", map[string]any{
+		"name": "pg", "engine": "postgres",
+	}, f.AdminKey)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create datastore: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := f.Do(t, http.MethodPost, "/datastores/pg/attachments",
+		map[string]any{"app": "web/production/api"}, f.AdminKey); rec.Code != http.StatusCreated {
+		t.Fatalf("attach datastore: %d %s", rec.Code, rec.Body.String())
+	}
+	if rec := attach(t, f, "offsite", map[string]any{
+		"app": "web/production/api", "bucket": "backups",
+	}); rec.Code != http.StatusCreated {
+		t.Fatalf("attach bucket beside a database: %d %s", rec.Code, rec.Body.String())
+	}
+
+	env := appEnv(t, f, "web/production/api")
+	if env["DATABASE_URL"].Source != envvar.SourceDatastore {
+		t.Errorf("DATABASE_URL came from %q", env["DATABASE_URL"].Source)
+	}
+	if env["S3_ENDPOINT"].Source != envvar.SourceObjectStore {
+		t.Errorf("S3_ENDPOINT came from %q", env["S3_ENDPOINT"].Source)
+	}
+}
+
+// Attaching hands an app the store's keys, so it is an admin's from
+// both ends.
+func TestAMemberCannotAttachAnAppToABucket(t *testing.T) {
+	f, _ := withFake(t, "backups")
+	link(t, f, "offsite", nil)
+	createApp(t, f, "web", "production", "api")
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
+
+	rec := f.Do(t, http.MethodPost, "/objectstores/offsite/attachments",
+		map[string]any{"app": "web/production/api", "bucket": "backups"}, memberKey)
+	if rec.Code != http.StatusForbidden {
+		t.Errorf("a member attached an app to a bucket: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// A store pinned to one bucket cannot be attached to another, for the
+// same reason it cannot be browsed into one: the refusal is a sentence
+// here rather than an access-denied from the provider later.
+func TestAPinnedStoreOnlyAttachesItsOwnBucket(t *testing.T) {
+	f, _ := withFake(t, "backups", "somebody-elses")
+	link(t, f, "scoped", map[string]any{"bucket": "backups"})
+	createApp(t, f, "web", "production", "api")
+
+	if rec := attach(t, f, "scoped", map[string]any{
+		"app": "web/production/api", "bucket": "somebody-elses",
+	}); rec.Code != http.StatusBadRequest {
+		t.Errorf("attached to a bucket the store is not: %d", rec.Code)
+	}
+	if rec := attach(t, f, "scoped", map[string]any{
+		"app": "web/production/api", "bucket": "backups",
+	}); rec.Code != http.StatusCreated {
+		t.Errorf("could not attach to the store's own bucket: %d %s", rec.Code, rec.Body.String())
+	}
+}
+
+// bodyOf is a GET's body, for a test asserting on what is *not* in it.
+func bodyOf(t *testing.T, f *servertest.Fixture, path string) string {
+	t.Helper()
+	return f.Do(t, http.MethodGet, path, nil, f.AdminKey).Body.String()
 }

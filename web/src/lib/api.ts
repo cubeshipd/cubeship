@@ -615,6 +615,15 @@ export type ObjectStoreKind = "managed" | "external";
 
 export type ObjectStoreProvider = "minio" | "aws" | "cloudflare" | "digitalocean" | "generic";
 
+// One app wired to one bucket. The variable *names* and not their
+// values: one of them is the secret key.
+export type ObjectStoreAttachment = {
+  app: string;
+  bucket: string;
+  prefix?: string;
+  variables: string[];
+};
+
 export type ObjectStore = {
   name: string;
   description?: string;
@@ -636,6 +645,7 @@ export type ObjectStore = {
   has_container: boolean;
   status: string;
   error?: string;
+  attachments: ObjectStoreAttachment[];
   created_at: string;
   updated_at: string;
 };

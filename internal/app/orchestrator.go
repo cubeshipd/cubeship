@@ -47,6 +47,8 @@ type Orchestrator struct {
 	// datastores is what an attached database contributes to a
 	// container's environment. Nil until the daemon wires it in.
 	datastores DatastoreVars
+	// objectStores is the same question for an attached bucket.
+	objectStores ObjectStoreVars
 
 	// localRegistry is where the daemon pulls an app's own image from:
 	// the registry reached directly, never the public name. Pulling the
@@ -92,6 +94,18 @@ const DeployTimeout = 10 * time.Minute
 // Nil is a legal state: a server built without the module simply has no
 // databases to inherit from.
 type DatastoreVars interface {
+	VarsForApp(ctx context.Context, appID int64) (envvar.Map, error)
+}
+
+// ObjectStoreVars is the same seam for the buckets attached to an app:
+// S3_ENDPOINT and its parts, for every attachment wired to it.
+//
+// A second interface rather than one list of contributors, because the
+// two are not interchangeable to the screen that has to explain them —
+// each is labelled with its own envvar.Source, so "where did this come
+// from" answers "a database" or "a bucket" rather than "something
+// attached".
+type ObjectStoreVars interface {
 	VarsForApp(ctx context.Context, appID int64) (envvar.Map, error)
 }
 
@@ -593,7 +607,14 @@ func (o *Orchestrator) inheritedEnv(ctx context.Context, a *App) (envvar.Map, er
 			return nil, fmt.Errorf("resolve attached datastores: %w", err)
 		}
 	}
-	return envvar.Merge(p.Env, e.Env, stores, a.Env), nil
+	var buckets envvar.Map
+	if o.objectStores != nil {
+		buckets, err = o.objectStores.VarsForApp(ctx, a.ID)
+		if err != nil {
+			return nil, fmt.Errorf("resolve attached object stores: %w", err)
+		}
+	}
+	return envvar.Merge(p.Env, e.Env, stores, buckets, a.Env), nil
 }
 
 // routing pairs every name the app answers at with the port behind it.

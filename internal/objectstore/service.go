@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"maps"
 	"strings"
 
+	"cubeship/internal/app"
 	"cubeship/internal/credential"
+	"cubeship/internal/envvar"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/settings"
 	"cubeship/internal/slug"
@@ -49,8 +52,13 @@ const RoleForContents = user.RoleAdmin
 // this module exists, and a store belongs to the instance rather than
 // to any of them — the same shape as a datastore, for the same reason.
 type Service struct {
-	db       *database.DB
-	creds    *credential.Service
+	db    *database.DB
+	creds *credential.Service
+	// apps is what an attachment names. This module sits above that one
+	// — a store is attached to apps the way a datastore is — and the
+	// one thing that has to travel back down does so as an interface
+	// app declares. See app.ObjectStoreVars.
+	apps     *app.Service
 	prov     *Provisioner
 	settings *settings.Service
 	// connect opens a client for one store. An interface so the use
@@ -58,8 +66,10 @@ type Service struct {
 	connect Connector
 }
 
-func NewService(db *database.DB, creds *credential.Service, prov *Provisioner, cfg *settings.Service) *Service {
-	return &Service{db: db, creds: creds, prov: prov, settings: cfg, connect: S3Connector{}}
+func NewService(db *database.DB, creds *credential.Service, apps *app.Service,
+	prov *Provisioner, cfg *settings.Service,
+) *Service {
+	return &Service{db: db, creds: creds, apps: apps, prov: prov, settings: cfg, connect: S3Connector{}}
 }
 
 // SetConnector replaces how this service reaches a store. For tests.
@@ -93,6 +103,12 @@ func (s *Service) Resolve(ctx context.Context, caller *user.User, name string, m
 	if err != nil {
 		return nil, ErrNotFound
 	}
+	// With nothing above a store, what it is wired to is the whole of
+	// where it sits in the instance — so it is loaded with it rather
+	// than asked for separately.
+	if store.Attachments, err = s.Repo().Attachments(ctx, store.ID); err != nil {
+		return nil, err
+	}
 	return store, nil
 }
 
@@ -105,7 +121,20 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Store, error)
 	if err := user.Require(caller, user.RoleMember); err != nil {
 		return nil, err
 	}
-	return s.Repo().List(ctx)
+	all, err := s.Repo().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// One query for every store's attachments rather than one per row:
+	// this is the screen the sidebar opens on.
+	byStore, err := s.Repo().AllAttachments(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, store := range all {
+		store.Attachments = byStore[store.ID]
+	}
+	return all, nil
 }
 
 // ManagedSpec is what a MinIO on this instance is created from.
@@ -916,3 +945,102 @@ func (s *Service) checkBucket(store *Store, bucket string) error {
 // store is reached from off this host. Exported for the handlers, which
 // read it once per response rather than once per row.
 func (s *Service) ExternalHost(ctx context.Context) string { return s.externalHost(ctx) }
+
+// -- attachments -----------------------------------------------------
+
+// Attach wires an app to one bucket in this store: the app's container
+// is given S3_ENDPOINT and its parts from its next deploy onwards.
+//
+// From its next deploy, not now. A container keeps the environment it
+// was created with — the same rule that makes adding a domain take
+// effect on redeploy — so attaching something an app is already running
+// against changes nothing until it is deployed again.
+//
+// appRef is the app's full reference, project/environment/name. It has
+// to be: a store is not inside an environment, so a bare name would
+// identify nothing, and one bucket serving apps in two projects is the
+// reason this module is instance-wide at all.
+//
+// **The bucket is not checked against the store.** Whether it exists is
+// a live call this instance may not be allowed to make — a credential
+// scoped to one bucket may not stat another — and refusing on evidence
+// it does not have is how a working attachment gets blocked. The screen
+// offers the buckets it can list; the API takes the name.
+func (s *Service) Attach(ctx context.Context, caller *user.User, name, appRef, bucket, prefix string) (*Store, error) {
+	store, err := s.Resolve(ctx, caller, name, RoleToManage)
+	if err != nil {
+		return nil, err
+	}
+	bucket = strings.TrimSpace(bucket)
+	if err := CheckBucketName(bucket); err != nil {
+		return nil, err
+	}
+	if err := s.checkBucket(store, bucket); err != nil {
+		return nil, err
+	}
+	if err := CheckPrefix(prefix); err != nil {
+		return nil, err
+	}
+	// The app is resolved at the same role, which is what makes this an
+	// admin's act from both ends: it hands an app the store's keys.
+	a, err := s.apps.ResolveString(ctx, caller, appRef, RoleToManage)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.Repo().Attach(ctx, store.ID, a.ID, bucket, prefix); err != nil {
+		switch {
+		case database.UniqueViolationOn(err, "object_store_attachments_pair"):
+			return nil, ErrAlreadyAttached
+		case database.UniqueViolationOn(err, "object_store_attachments_app_vars"):
+			return nil, PrefixTakenError(prefix)
+		case database.IsUniqueViolation(err):
+			return nil, ErrAlreadyAttached
+		}
+		return nil, fmt.Errorf("attach object store: %w", err)
+	}
+	return s.Resolve(ctx, caller, name, RoleToManage)
+}
+
+// Detach unwires an app from one bucket. Its container keeps the
+// variables it was created with until it is deployed again — which is
+// worth knowing, because detaching is not how you cut an app off from a
+// bucket in a hurry. Rotating the credential is.
+func (s *Service) Detach(ctx context.Context, caller *user.User, name, appRef, bucket string) (*Store, error) {
+	store, err := s.Resolve(ctx, caller, name, RoleToManage)
+	if err != nil {
+		return nil, err
+	}
+	a, err := s.apps.ResolveString(ctx, caller, appRef, RoleToManage)
+	if err != nil {
+		return nil, err
+	}
+	removed, err := s.Repo().Detach(ctx, store.ID, a.ID, bucket)
+	if err != nil {
+		return nil, err
+	}
+	if !removed {
+		return nil, ErrNotAttached
+	}
+	return s.Resolve(ctx, caller, name, RoleToManage)
+}
+
+// VarsForApp is what app asks this module for: the variables every
+// bucket attached to one app contributes to its container.
+//
+// Read fresh at every deploy rather than stored on the app, so an
+// attachment made after the last deploy is picked up — and so a rotated
+// key reaches the app on its next deploy without anybody editing
+// anything.
+func (s *Service) VarsForApp(ctx context.Context, appID int64) (envvar.Map, error) {
+	attached, err := s.Repo().AttachedTo(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	vars := envvar.Map{}
+	for i := range attached {
+		a := &attached[i]
+		maps.Copy(vars, a.Store.Vars(a.Prefix, a.Bucket))
+	}
+	return vars, nil
+}

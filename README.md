@@ -265,6 +265,13 @@ MinIO you run removes its objects from this host with no copy anywhere,
 and deleting a link forgets an address and a key while the bucket stays
 exactly where it is.
 
+An app reaches a bucket by being **attached** to it, the same way it
+reaches a database: it receives `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`,
+`S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and `S3_PATH_STYLE` from its
+next deploy onwards, so no key is ever copied by hand. An app that needs
+two buckets takes a prefix for the second, and the apps may be in any
+project.
+
 A MinIO here is reachable only by apps on the instance until you publish
 it on a host port. That is plain HTTP with **no TLS** — the signature
 protects the keys, not what is being transferred — so it is a firewall
