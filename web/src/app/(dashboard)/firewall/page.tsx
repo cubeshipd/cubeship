@@ -6,7 +6,7 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { LoadingNote } from "@/components/loading";
+import { LoadingControl, LoadingNote } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
 import { RowAction, RowActions } from "@/components/row-actions";
@@ -32,6 +32,13 @@ import { message } from "@/lib/errors";
 // somebody who tried one will try the other.
 const keepsYouIn =
   "This is what admits SSH. Changing or removing it would end this session — do it on the machine if you mean to.";
+
+// The two groups, said once. They are facts about the page rather than
+// about the answer, which is what lets the skeleton below use them —
+// and what keeps the heading from being written twice and drifting.
+const hostSub = "Traffic to the host itself, not to anything in a container.";
+const appsSub =
+  "Traffic forwarded to a container. Docker routes it around ufw, so it is governed separately — and a firewall at your provider sits in front of both, which this page cannot see.";
 
 // The host's firewall.
 //
@@ -136,7 +143,9 @@ export default function FirewallPage() {
       <PageHeader
         title="Firewall"
         actions={
-          data?.installed ? (
+          !data && !error ? (
+            <LoadingControl className="h-8 w-[94px]" />
+          ) : data?.installed ? (
             <ActionButton
               busy={busy}
               variant={data.enabled ? "outline" : "default"}
@@ -152,7 +161,7 @@ export default function FirewallPage() {
 
       <ErrorAlert error={error} />
 
-      {!data && !error && <LoadingNote>Reading the host&apos;s firewall</LoadingNote>}
+      {!data && !error && <Skeleton columns={columns} />}
 
       {data && !data.available && (
         <Notice>
@@ -191,7 +200,7 @@ export default function FirewallPage() {
 
           <SectionHeader
             title="This machine"
-            sub="Traffic to the host itself, not to anything in a container."
+            sub={hostSub}
             actions={
               <Button variant="outline" size="sm" onClick={() => setAdding("host")}>
                 <PlusIcon />
@@ -216,7 +225,7 @@ export default function FirewallPage() {
 
           <SectionHeader
             title="Published ports"
-            sub="Traffic forwarded to a container. Docker routes it around ufw, so it is governed separately — and a firewall at your provider sits in front of both, which this page cannot see."
+            sub={appsSub}
             actions={
               data.docker_adopted ? (
                 <Button variant="outline" size="sm" onClick={() => setAdding("apps")}>
@@ -349,6 +358,31 @@ export default function FirewallPage() {
         onOpenChange={setAdopting}
         onSaved={setData}
       />
+    </>
+  );
+}
+
+// What the page is while it waits.
+//
+// Reading this firewall is not a query: the daemon starts a container in
+// the host's namespaces and runs five commands in it, which is a second
+// or two — long enough that a lone line of text on an empty page reads
+// as a page that failed rather than as one that is working.
+//
+// So the wait is the page. The two groups are what this screen is
+// always in, headings and all, with the rows swept in place — so when
+// the answer lands the only thing that moves is the rows, which is the
+// only thing that was ever unknown. The buttons are the exception and
+// are left out: whether there is a rule to add, and whether the one in
+// the header says on or off, is precisely what is being asked.
+function Skeleton({ columns }: { columns: Column<FirewallRule>[] }) {
+  return (
+    <>
+      <SectionHeader title="This machine" sub={hostSub} actions={<LoadingControl />} />
+      <DataTable columns={columns} rows={null} loadingRows={3} className="mb-4" />
+      <SectionHeader title="Published ports" sub={appsSub} actions={<LoadingControl />} />
+      <DataTable columns={columns} rows={null} loadingRows={2} className="mb-4" />
+      <LoadingNote>Reading the host&apos;s firewall</LoadingNote>
     </>
   );
 }

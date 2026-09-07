@@ -18,6 +18,19 @@ export function LoadingValue({ className }: { className?: string }) {
   );
 }
 
+// A control waiting on the answer that decides whether it is there at
+// all, or what it says — a button reading "Turn on" or "Turn off"
+// depending on what comes back.
+//
+// It exists to hold the space rather than to be looked at: a heading
+// row that gains a button reflows the paragraph under it, and a page
+// that settles after it has finished loading reads as one that is still
+// loading. The default is the size of a small button; a caller with a
+// different one says so.
+export function LoadingControl({ className }: { className?: string }) {
+  return <span className={cn("scan-block block h-7 w-[106px]", className)} />;
+}
+
 // A table waiting on its rows. `columns` keeps the placeholder in the
 // same grid as the real rows, so the header above it does not shift.
 export function LoadingRows({ rows = 3, columns = 1 }: { rows?: number; columns?: number }) {
