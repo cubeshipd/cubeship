@@ -1,6 +1,5 @@
 "use client";
 
-import { cn } from "cn";
 import {
   ChevronLeftIcon,
   EyeIcon,
@@ -12,7 +11,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
-import { use, useCallback, useEffect, useMemo, useState } from "react";
+import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ContainerLogs, LogView } from "@/components/container-logs";
@@ -23,7 +22,7 @@ import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
 import { PageHeader, SectionHeader } from "@/components/page-header";
 import { RowAction, RowActions } from "@/components/row-actions";
-import { FieldRow, SearchBar } from "@/components/search-bar";
+import { SearchBar } from "@/components/search-bar";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -474,9 +473,16 @@ function DeploymentDialog({
 
   const shown = full ?? deployment;
 
+  // Focus lands on the panel rather than on the first thing in it.
+  // The first thing in it is the log's filter, and a dialog opened to
+  // read a build's output should not open with a cursor blinking in a
+  // field: it is what a dialog that wants typing looks like, and here
+  // there is nothing to type until somebody has read something.
+  const panel = useRef<HTMLDivElement>(null);
+
   return (
     <Dialog open={deployment !== null} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl">
+      <DialogContent ref={panel} initialFocus={panel} className="sm:max-w-4xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-3">
             Deploy
@@ -558,7 +564,6 @@ function EnvVars({ reference }: { reference: string }) {
   const [view, setView] = useState<EnvView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
-  const [mineOnly, setMineOnly] = useState(false);
   const [editing, setEditing] = useState<ResolvedVar | null>(null);
   const [adding, setAdding] = useState(false);
   const [unsetting, setUnsetting] = useState<ResolvedVar | null>(null);
@@ -576,10 +581,9 @@ function EnvVars({ reference }: { reference: string }) {
   const rows = useMemo(() => {
     if (all === null) return null;
     const needle = filter.trim().toLowerCase();
-    return all.filter(
-      (v) => (!mineOnly || v.source === "app") && (!needle || v.key.toLowerCase().includes(needle)),
-    );
-  }, [all, filter, mineOnly]);
+    if (!needle) return all;
+    return all.filter((v) => v.key.toLowerCase().includes(needle));
+  }, [all, filter]);
 
   const columns: Column<ResolvedVar>[] = [
     {
@@ -641,33 +645,24 @@ function EnvVars({ reference }: { reference: string }) {
       />
       <ErrorAlert error={error} />
 
-      <div className="mb-3 flex items-center gap-2">
-        <SearchBar
-          value={filter}
-          onChange={setFilter}
-          placeholder="Filter by name"
-          className="min-w-0 flex-1"
-          trailing={
-            all && rows ? (
-              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                {rows.length === all.length ? all.length : `${rows.length}/${all.length}`}
-              </span>
-            ) : undefined
-          }
-        />
-        {/* Most of a long list is inherited, and what somebody came here
-            to change is the part this app set itself. */}
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          aria-pressed={mineOnly}
-          onClick={() => setMineOnly(!mineOnly)}
-          className={cn(FieldRow, mineOnly && "bg-secondary text-foreground")}
-        >
-          Set here
-        </Button>
-      </div>
+      {/* The field and nothing beside it. There was a "Set here" toggle
+          here, for the app's own variables — but the table already says
+          which level set each row, and a filter with a second control
+          attached asks somebody to work out how the two combine before
+          typing the name they came with. */}
+      <SearchBar
+        value={filter}
+        onChange={setFilter}
+        placeholder="Filter by name"
+        className="mb-3"
+        trailing={
+          all && rows ? (
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+              {rows.length === all.length ? all.length : `${rows.length}/${all.length}`}
+            </span>
+          ) : undefined
+        }
+      />
 
       <DataTable
         columns={columns}
@@ -675,7 +670,7 @@ function EnvVars({ reference }: { reference: string }) {
         rowKey={(v) => v.key}
         loadingRows={6}
         maxHeight="60vh"
-        empty={filter.trim() || mineOnly ? "Nothing matches." : "No variables."}
+        empty={filter.trim() ? "Nothing matches." : "No variables."}
         className="mb-4"
       />
 
