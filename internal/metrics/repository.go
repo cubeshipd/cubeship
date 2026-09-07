@@ -3,6 +3,7 @@ package metrics
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -101,6 +102,53 @@ func (r *Repository) Series(ctx context.Context, kind string, subjectID int64, w
 		out = append(out, s)
 	}
 	return out, rows.Err()
+}
+
+// Latest is the newest sample for every subject that has one since
+// `since`, which is how "what is using this machine right now" is
+// answered without reading a day of rows.
+//
+// DISTINCT ON is Postgres', and it is exactly this query: order by
+// subject and then by time descending, and keep the first row of each
+// group. The alternative — a window function or a self-join against
+// max(at) — reads the same rows twice to say the same thing.
+//
+// `since` is what keeps a container that has gone out of the answer.
+// The caller matches against the subjects that are live anyway, so this
+// is belt and braces; it also means a redeployed app whose new
+// container has not been sampled yet reports nothing rather than its
+// predecessor's last reading.
+func (r *Repository) Latest(ctx context.Context, since time.Time) ([]Usage, error) {
+	rows, err := r.q.QueryContext(ctx,
+		`SELECT DISTINCT ON (kind, subject_id) kind, subject_id, at, cpu_percent, memory_bytes, memory_limit_bytes
+		 FROM metric_samples
+		 WHERE at >= $1
+		 ORDER BY kind, subject_id, at DESC`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []Usage
+	for rows.Next() {
+		var u Usage
+		var id int64
+		if err := rows.Scan(&u.Kind, &id, &u.At, &u.CPUPercent, &u.MemoryBytes, &u.MemoryLimitBytes); err != nil {
+			return nil, err
+		}
+		// The id is the join key and never leaves this package: what a
+		// caller gets is the name its own module supplied.
+		u.Name = subjectKey(u.Kind, id)
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// subjectKey is how a reading and a subject are matched up. It is not
+// shown to anybody — Service.Usage replaces it with the module's own
+// name before returning.
+func subjectKey(kind string, id int64) string {
+	return kind + ":" + strconv.FormatInt(id, 10)
 }
 
 // DeleteForSubject removes a subject's history. Called when the thing

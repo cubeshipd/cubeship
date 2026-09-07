@@ -50,7 +50,11 @@ func (s *Service) Metrics() *metrics.Service { return s.metrics }
 // every app with a container behind it right now. See metrics.Source —
 // nothing about an app travels into that package but its id.
 func (s *Service) MetricSubjects(ctx context.Context) ([]metrics.Subject, error) {
-	all, err := s.Repo().List(ctx)
+	// The scoped list, because the name that travels has to be the
+	// reference: `gateway` is unique inside one environment and nowhere
+	// else, and a list of what is using this machine that says
+	// `gateway` names something the reader cannot find.
+	all, err := s.Repo().ListScoped(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -59,7 +63,10 @@ func (s *Service) MetricSubjects(ctx context.Context) ([]metrics.Subject, error)
 		if a.ContainerID == "" {
 			continue
 		}
-		out = append(out, metrics.Subject{Kind: metrics.KindApp, ID: a.ID, ContainerID: a.ContainerID})
+		out = append(out, metrics.Subject{
+			Kind: metrics.KindApp, ID: a.ID, ContainerID: a.ContainerID,
+			Name: Reference{Project: a.ProjectSlug, Environment: a.EnvironmentSlug, Name: a.Name}.String(),
+		})
 	}
 	return out, nil
 }

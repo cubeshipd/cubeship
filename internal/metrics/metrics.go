@@ -25,12 +25,35 @@ const (
 	KindObjectStore = "objectstore"
 )
 
-// Subject is one thing worth sampling: what it is, which one, and the
-// container currently serving it.
+// Subject is one thing worth sampling: what it is, which one, the
+// container currently serving it, and what to call it.
+//
+// Name is carried for one reason: "what is using this box" is a
+// question about every container at once, and the answer has to name
+// them. This package cannot work a name out — it does not know an app
+// from a database — so the module that has one hands it over with the
+// id it already hands over. It is the reference somebody would type:
+// an app's `project/environment/name`, a database's or a store's slug.
 type Subject struct {
 	Kind        string
 	ID          int64
 	ContainerID string
+	Name        string
+}
+
+// Usage is one container's most recent reading, with the name of the
+// thing it is running.
+//
+// It is what a "what is eating this machine" list is made of, and it
+// deliberately reports the same CPU convention as the rest of this
+// package: 100 is one core.
+type Usage struct {
+	Kind             string    `json:"kind"`
+	Name             string    `json:"name"`
+	At               time.Time `json:"at"`
+	CPUPercent       float64   `json:"cpu_percent"`
+	MemoryBytes      int64     `json:"memory_bytes"`
+	MemoryLimitBytes int64     `json:"memory_limit_bytes"`
 }
 
 // Sample is one reading, already turned into the numbers a chart shows.

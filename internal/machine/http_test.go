@@ -63,3 +63,31 @@ func TestTheMachinesMetricsAreAMembersToRead(t *testing.T) {
 		t.Errorf("with no key: %d, want 401", rec.Code)
 	}
 }
+
+// What is using this box crosses every module that runs a container, so
+// it is served here rather than beside any one of them — and read by
+// the same role, because it is the same screen and the same question.
+//
+// Nothing has been sampled in a fixture, so what this pins is the
+// route, the role and the shape. The join between a reading and the
+// name of the thing it measured is pinned in internal/metrics, where
+// there is a database to put readings in.
+func TestWhatEveryContainerIsUsingIsAMembersToRead(t *testing.T) {
+	f := servertest.New(t)
+	_, memberKey := f.AddMember(t, "member", user.RoleMember)
+
+	rec := f.Do(t, http.MethodGet, "/instance/containers", nil, memberKey)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list what is running as a member: %d %s", rec.Code, rec.Body.String())
+	}
+	var usage []map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &usage); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if usage == nil {
+		t.Error("came back null rather than an empty list, which is a different bug in every client")
+	}
+	if rec = f.Do(t, http.MethodGet, "/instance/containers", nil, ""); rec.Code != http.StatusUnauthorized {
+		t.Errorf("with no key: %d, want 401", rec.Code)
+	}
+}

@@ -2,6 +2,7 @@
 
 import { cn } from "cn";
 import {
+  ActivityIcon,
   ContainerIcon,
   DatabaseIcon,
   FolderTreeIcon,
@@ -56,8 +57,14 @@ import { api, type Me } from "@/lib/api";
 const sections: { label?: string; items: NavItem[] }[] = [
   {
     items: [
+      // The address you land on, and the one thing on this instance
+      // that is about the instance rather than about something in it:
+      // what the machine is doing, and what is deployed on it. It is
+      // above Projects because it is what you want before you know
+      // which project you want.
+      { href: "/", label: "Overview", icon: ActivityIcon },
       {
-        href: "/",
+        href: "/projects",
         label: "Projects",
         icon: FolderTreeIcon,
         owns: ["/projects", "/environments", "/apps"],

@@ -82,7 +82,7 @@ function Exchange() {
         <Notice>
           This instance is now the GitHub App <code>{slug}</code>. Install it on the accounts you
           deploy from — an app&apos;s{" "}
-          <Link href="/" className="underline underline-offset-4">
+          <Link href="/projects" className="underline underline-offset-4">
             settings
           </Link>{" "}
           will offer it.
