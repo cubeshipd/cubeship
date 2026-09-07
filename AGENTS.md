@@ -368,6 +368,16 @@ live in `globals.css` because that is where what they need is declared:
   and not whether it may, so every wrapping column quietly ran off the
   side instead — a build's error, a DKIM record's value.
 
+**Tabs come in two looks, and which one is not a preference.** The
+generated default is a filled box with a lighter box inside it for the
+tab that is on, and it is right for the environment switcher inside a
+project: a row of slugs beside a `+` and a gear, which is a control
+rather than a heading. `variant="line"` is the other, styled unlayered
+in `globals.css` — uppercase labels on a 1px rule with the live one lit
+cyan — and it is for tabs that stand above sections and name them, like
+an app's. A filled box there drew more of itself than the thing it was
+switching.
+
 `src/components/` is the layer above it, in the vocabulary of this
 product rather than of a component library: `Shell`, `PageHeader`,
 `StatusBadge`, `TextField`, `ActionButton`, `ErrorAlert`, `Notice`,
