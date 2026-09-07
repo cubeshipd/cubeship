@@ -8,7 +8,7 @@ import { ActionButton } from "@/components/action-button";
 import { copyText } from "@/components/copy-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { SectionHeader } from "@/components/page-header";
-import { SearchBar } from "@/components/search-bar";
+import { FieldRow, FieldRowIcon, SearchBar } from "@/components/search-bar";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -92,10 +92,10 @@ export function ContainerLogs({
           key={n}
           type="button"
           variant="ghost"
-          size="xs"
+          size="sm"
           aria-pressed={n === tail}
           onClick={() => setTail(n)}
-          className={cn("font-mono", n === tail && "bg-secondary text-foreground")}
+          className={cn("font-mono", FieldRow, n === tail && "bg-secondary text-foreground")}
         >
           {n}
         </Button>
@@ -103,10 +103,10 @@ export function ContainerLogs({
       <Button
         type="button"
         variant="ghost"
-        size="xs"
+        size="sm"
         aria-pressed={following}
         onClick={() => setFollowing(!following)}
-        className={cn(following && "bg-secondary text-foreground")}
+        className={cn(FieldRow, following && "bg-secondary text-foreground")}
       >
         Follow
       </Button>
@@ -115,6 +115,7 @@ export function ContainerLogs({
       <ActionButton
         variant="outline"
         size="icon-sm"
+        className={FieldRowIcon}
         busy={refreshing}
         aria-label="Refresh"
         title="Refresh"
@@ -283,6 +284,7 @@ function TakeAway({ name, text }: { name: string; text: string }) {
             type="button"
             variant="outline"
             size="icon-sm"
+            className={FieldRowIcon}
             aria-label="Copy or download this log"
             title="Copy or download this log"
             disabled={text === ""}

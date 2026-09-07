@@ -4,6 +4,17 @@ import { cn } from "cn";
 import { SearchIcon, XIcon } from "lucide-react";
 import type { ReactNode, Ref } from "react";
 
+// FieldRow and FieldRowIcon are the height of this control, for
+// anything that sits on its line.
+//
+// A bare input at `h-9` inside a 1px border is 38px, and the Button
+// primitive's own sizes stop at 36 — so a button beside a filter came
+// out ten pixels short, floating in the middle of it. The number lives
+// here because this is where it comes from: a copy of it beside the
+// buttons is a second thing to fix when the field changes.
+export const FieldRow = "h-[38px] px-3";
+export const FieldRowIcon = "size-[38px]";
+
 // A filter field: a mark, a field, and whatever the caller wants on the
 // right — usually how much of the list survived.
 //
