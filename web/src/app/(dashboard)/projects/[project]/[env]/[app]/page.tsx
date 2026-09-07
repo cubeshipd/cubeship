@@ -23,7 +23,7 @@ import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
 import { PageHeader, SectionHeader } from "@/components/page-header";
 import { RowAction, RowActions } from "@/components/row-actions";
-import { SearchBar } from "@/components/search-bar";
+import { FieldRow, SearchBar } from "@/components/search-bar";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -593,7 +593,7 @@ function EnvVars({ reference }: { reference: string }) {
           size="sm"
           aria-pressed={mineOnly}
           onClick={() => setMineOnly(!mineOnly)}
-          className={cn(mineOnly && "bg-secondary text-foreground")}
+          className={cn(FieldRow, mineOnly && "bg-secondary text-foreground")}
         >
           Set here
         </Button>
