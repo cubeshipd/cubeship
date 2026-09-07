@@ -1322,6 +1322,14 @@ leaving a reader thinking they have the whole build.
 `Close` writes whatever is left, and the deploy path defers it, because
 that last flush is the one carrying the explanation of a failure.
 
+**A listing carries none of it.** 256 KiB a row against fifty rows of
+history is twelve megabytes, re-fetched every couple of seconds by
+anything watching a build — which is exactly when somebody is watching.
+`deploymentListColumns` selects `logs <> ''` instead, so a listing
+answers `has_logs` and reading one deployment is what hands the output
+over. That is also the shape the dashboard wants: a row you open, which
+then polls itself while the deploy is still running.
+
 `Image.Local` is what stops the orchestrator pulling something it just
 built — a registry that has never heard of that image would be the only
 place to look.

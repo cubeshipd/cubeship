@@ -230,6 +230,13 @@ export type Deployment = {
   status: string;
   image: string;
   error?: string;
+  // What the build printed. **Absent from a listing**, whatever the
+  // deploy printed: it is capped at 256 KiB a row and a history is
+  // fifty of them. Read one deployment for it.
+  logs?: string;
+  // Whether there is output to read, which is what a listing answers
+  // without carrying it.
+  has_logs: boolean;
   created_at: string;
 };
 

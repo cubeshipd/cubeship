@@ -283,15 +283,21 @@ type DeploymentResponse struct {
 	Status string `json:"status"`
 	Image  string `json:"image"`
 	Error  string `json:"error,omitempty"`
-	// Logs is what a build printed. Absent for a source that only pulls.
-	Logs      string    `json:"logs,omitempty"`
+	// Logs is what a build printed. Absent for a source that only
+	// pulls — and absent from a *listing* whatever the deploy printed,
+	// because a build's output is capped at 256 KiB and a history is
+	// fifty rows. Read one deployment to get it.
+	Logs string `json:"logs,omitempty"`
+	// HasLogs says there is output to read, which is what a listing can
+	// answer without carrying it.
+	HasLogs   bool      `json:"has_logs"`
 	CreatedAt time.Time `json:"created_at"`
 }
 
 func toDeploymentResponse(d *Deployment) DeploymentResponse {
 	return DeploymentResponse{
 		ID: d.ID, Status: d.Status, Image: d.ImageRef, Error: d.Error,
-		Logs: d.Logs, CreatedAt: d.CreatedAt,
+		Logs: d.Logs, HasLogs: d.HasLogs, CreatedAt: d.CreatedAt,
 	}
 }
 

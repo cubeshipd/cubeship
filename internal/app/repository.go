@@ -203,11 +203,20 @@ func (r *Repository) MergeEnv(ctx context.Context, appID int64, set envvar.Map, 
 
 const deploymentColumns = `id, app_id, image_ref, status, error, logs, created_at`
 
+// deploymentListColumns is the same minus the log itself, which is up
+// to MaxDeploymentLogBytes a row against fifty rows of history — and
+// which the dashboard would then re-fetch every two seconds while a
+// build is running. Whether there *is* one is all a listing needs.
+const deploymentListColumns = `id, app_id, image_ref, status, error, logs <> '' AS has_logs, created_at`
+
 func scanDeployment(row scanner) (*Deployment, error) {
 	var d Deployment
 	if err := row.Scan(&d.ID, &d.AppID, &d.ImageRef, &d.Status, &d.Error, &d.Logs, &d.CreatedAt); err != nil {
 		return nil, err
 	}
+	// Derived rather than selected twice: a read that carries the log
+	// answers the question by holding one.
+	d.HasLogs = d.Logs != ""
 	return &d, nil
 }
 
@@ -271,10 +280,22 @@ func (r *Repository) DeploymentByID(ctx context.Context, appID, id int64) (*Depl
 	return d, nil
 }
 
-// ListDeployments returns an app's deploy history, newest first.
+// scanDeploymentSummary reads a row selected with
+// deploymentListColumns: everything about the deploy except what it
+// printed.
+func scanDeploymentSummary(row scanner) (*Deployment, error) {
+	var d Deployment
+	if err := row.Scan(&d.ID, &d.AppID, &d.ImageRef, &d.Status, &d.Error, &d.HasLogs, &d.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
+// ListDeployments returns an app's deploy history, newest first, with
+// no logs on it — see deploymentListColumns.
 func (r *Repository) ListDeployments(ctx context.Context, appID int64, limit int) ([]*Deployment, error) {
 	rows, err := r.q.QueryContext(ctx,
-		`SELECT `+deploymentColumns+` FROM deployments WHERE app_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2`,
+		`SELECT `+deploymentListColumns+` FROM deployments WHERE app_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2`,
 		appID, limit)
 	if err != nil {
 		return nil, err
@@ -283,7 +304,7 @@ func (r *Repository) ListDeployments(ctx context.Context, appID int64, limit int
 
 	var out []*Deployment
 	for rows.Next() {
-		d, err := scanDeployment(rows)
+		d, err := scanDeploymentSummary(rows)
 		if err != nil {
 			return nil, err
 		}

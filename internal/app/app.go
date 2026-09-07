@@ -70,7 +70,17 @@ type Deployment struct {
 	// Logs is what the build printed, when the source builds. It lives
 	// here because a detached deploy has nobody on the connection to
 	// tell, and a build that failed is only explicable by its output.
-	Logs      string
+	//
+	// **Empty in a listing, whatever the row holds.** It is capped at
+	// 256 KiB and a history is fifty rows, so a list that carried them
+	// would be twelve megabytes — fetched every two seconds while a
+	// deploy is running, which is exactly when somebody is looking at
+	// it. HasLogs is what a listing answers instead, and one deployment
+	// read on its own carries the log itself.
+	Logs string
+	// HasLogs says the row holds output, so a caller knows whether
+	// there is anything to open without being sent it.
+	HasLogs   bool
 	CreatedAt time.Time
 }
 
