@@ -39,7 +39,11 @@ internal/
                 and the S3 endpoints it holds keys for — and the files
                 in them
   metrics/      what every container is using, sampled on a timer — the
-                series both apps and databases are charted from
+                series apps, databases and managed stores are charted
+                from
+  machine/      what the box under all of them is doing: its CPU, its
+                memory, the disk everything is kept on, and the bytes
+                over its own interfaces
   registry/     who may docker push/pull, and the push webhook
   credential/   the secrets this instance holds — one secret, stored
                 once, named by everything that needs it
@@ -168,10 +172,13 @@ The sidebar is in sections, because its entries are not peers:
 
 - **Workspace** — projects, environments, apps. What you deploy.
 - **Platform** — credentials, registries, Git providers, DNS providers,
-  certificates, the firewall, the instance's own domain. What the instance is wired to. Nothing in
+  certificates, the firewall, the instance itself. What the instance is wired to. Nothing in
   it belongs to a project, and almost none of it is touched twice: a
   registry is connected once and deployed through for a year.
-  **Credentials is first**, because the others stand on it.
+  **Credentials is first**, because the others stand on it. **Instance**
+  is the exception to "not touched twice": it carries the machine's own
+  charts above its domain, and it is the one page here somebody opens
+  because they are wondering rather than because they are configuring.
 - **You** — the account.
 
 Flat, those read as one list of peers, and "Registries" sat beside
@@ -503,6 +510,18 @@ over loopback, with containers reaching back through
 `TestAddressesFollowWhereTheDaemonRuns` pins both modes: getting this
 wrong is not a compile error and not a failure anywhere else, it is a
 daemon that starts, looks healthy and cannot reach its own database.
+
+**The machine's own `/proc` is mounted at `/host/proc`, read-only**, and
+it is what makes the instance's network figures possible. `/proc/stat`
+and `/proc/meminfo` are not namespaced — a container reading its own
+gets the machine's, which is why `top` in one shows the host's memory —
+but `/proc/net` **is**, so the interface counters a container reads are
+its own veth. Through the mount, PID 1's entry is init's, which is in
+the machine's network namespace by definition. It grants nothing the
+daemon does not already hold: it has the Docker socket, which is root on
+this box by another name. Without it, `internal/machine` reports the
+network missing with that sentence rather than charting the daemon's own
+traffic as the instance's.
 
 **The data directory must be mounted at the same path inside and out.**
 The daemon hands paths to the Engine when it creates its siblings, and
@@ -1633,8 +1652,8 @@ Bucketing is in SQL (`date_bin`), against a fixed origin rather than
 its own grid. Every window buckets to around `TargetPoints`, so a chart
 is the same density whichever is asked for.
 
-**On the dashboard**, `MetricsSection` is one component for both pages
-and `TimeSeries` is the chart, over **Recharts**.
+**On the dashboard**, `MetricsSection` is one component for every page
+that charts a container and `TimeSeries` is the chart, over **Recharts**.
 
 It was a hand-drawn SVG first, and that was the right call for exactly
 one chart: a line, a fill and a crosshair is not a dependency's worth of
@@ -1654,6 +1673,62 @@ data does. And the scale comes from the data rather than from the memory
 ceiling: drawn against the ceiling, a container using 200 MiB of a 2 GiB
 cgroup is a flat line along the bottom — a chart that has given up its
 only job to answer a question the caption answers better.
+
+### The machine under them
+
+`internal/machine` is the box itself: how much of its CPU is busy, how
+much of its memory is spoken for, how full the disk everything is kept
+on is, and how fast bytes are moving over its own interfaces. Served at
+`/instance/metrics`, drawn at the top of the Instance page, and a
+**member's** to read — what the box is doing is the context for every
+"why is this slow" anybody deploying here will have, and it says how
+much of the disk is left, never what is on it.
+
+**Its own module and its own table.** `metrics` answers one question
+about a container — a CPU and a resident set, through the Engine — and
+this is a different set of measurements about something that is not a
+container: no cgroup has a disk filling up, and the Engine has no
+opinion about the wire. Folding them together would be four columns that
+are NULL for every row but one kind's. What is shared is imported rather
+than copied: the interval, the retention, the windows and the bucketing.
+
+**100% is the whole machine here**, the opposite of the container
+convention two paragraphs up. Both are right where they are — what share
+of the host one container is taking, and how much of the host is left —
+and each says so on its own chart, because it is the one thing about
+these numbers that surprises people.
+
+Three of the four are read straight out of `/proc` whatever the daemon
+is, since `/proc/stat` and `/proc/meminfo` are not namespaced. **The
+network is the one that needs the mount**, and the reason is in the
+install section above. Without it the answer is *nothing, with the
+sentence saying what to do* — never zero, and never this container's own
+veth: an instance reporting no traffic is one somebody investigates, and
+one reporting the wrong traffic is one nobody ever does. The missing
+measurement comes back inside a normal 200 in `unavailable`, keyed by
+what could not be read, because the three that worked are still worth
+having.
+
+Two smaller things that are decisions rather than details:
+
+- **`guest` and `guest_nice` are not added to the CPU total.** The
+  kernel already counts a guest tick inside `user` and `nice`, so adding
+  them makes the total larger than the time that passed — which reports
+  a busy machine as idle, on exactly the kind of box somebody virtualises.
+  `iowait` counts as idle for a related reason: a machine waiting on its
+  disk is not a machine short of CPU, and reading it as busy is how a
+  slow disk gets diagnosed as a small box.
+- **Memory used is total minus *available*, not minus free.** Free
+  excludes the page cache, which is every file the machine has ever
+  read, so the other arithmetic reports every box at 95% and leaves it
+  there.
+
+**The first pass of a daemon's life writes nothing.** Every rate here is
+a difference and there is nothing yet to take one against; a zero at the
+left edge after every restart is a point somebody reads as a fact. A
+machine whose numbers cannot be read at all — a Mac running `make dev` —
+records nothing rather than a row of zeros, and says so once in the log
+instead of every thirty seconds.
 
 ## Managed databases
 

@@ -153,6 +153,12 @@ func Integer(description string) *Schema {
 	return &Schema{Type: "integer", Format: "int64", Description: description}
 }
 
+// Number is a value with a fraction — a percentage, a rate. Integer is
+// for the ones that are counted.
+func Number(description string) *Schema {
+	return &Schema{Type: "number", Description: description}
+}
+
 func Bool(description string) *Schema {
 	return &Schema{Type: "boolean", Description: description}
 }

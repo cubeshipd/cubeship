@@ -15,6 +15,7 @@ import (
 
 	"cubeship/internal/app"
 	"cubeship/internal/datastore"
+	"cubeship/internal/machine"
 	"cubeship/internal/metrics"
 	"cubeship/internal/objectstore"
 	"cubeship/internal/platform/authkey"
@@ -352,6 +353,13 @@ func run() error {
 	// daemon is a host process, where there is no such container.
 	host := hostexec.NewRunner(docker, bootstrap.OwnImage(ctx, docker, cfg), cfg.InContainer)
 
+	// What lets the machine module read the box's own numbers. Where
+	// those are depends on the same fact: a container's /proc/stat is
+	// the machine's, and its /proc/net is its own network namespace, so
+	// the interfaces are read through the machine's procfs the daemon's
+	// container is given. See machine.NewReader and install.sh.
+	box := machine.NewReader(cfg.DataDir, cfg.InContainer)
+
 	srv := server.New(db, docker, server.Options{
 		WebhookToken:  cfg.Token,
 		Builder:       builder,
@@ -360,6 +368,7 @@ func run() error {
 		DataDir:       cfg.DataDir,
 		SetupToken:    setupToken,
 		Host:          host,
+		Machine:       box,
 	})
 
 	// An install upgrading from the release where the domain and contact
@@ -409,6 +418,12 @@ func run() error {
 	// handler — a test builds one and must not thereby start polling
 	// Docker every thirty seconds.
 	go metrics.NewCollector(db, docker, srv.MetricSources()...).Run(ctx)
+
+	// And what the box under them is doing, on its own ticker: those
+	// readings are four files rather than an Engine call each, and a
+	// wedged Engine must not be why the machine's own chart has a hole
+	// in it.
+	go machine.NewCollector(db, box).Run(ctx)
 
 	go purgeExpiredSessions(ctx, srv.Users)
 

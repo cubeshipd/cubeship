@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { InstanceDomain } from "@/components/instance-domain";
+import { InstanceMetrics } from "@/components/instance-metrics";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
 import { api, type Settings } from "@/lib/api";
@@ -12,6 +13,13 @@ export default function Instance() {
   return (
     <>
       <PageHeader title="Instance" />
+      {/* What the box is doing comes first, for the same reason it does
+          on an app's page and a database's: it is the question somebody
+          has before they know they have one. It is outside Body, which
+          waits on the settings — the machine's chart has nothing to do
+          with them, and a screen that blanks until an unrelated request
+          lands reads as slow however fast that request was. */}
+      <InstanceMetrics />
       <Body />
     </>
   );
