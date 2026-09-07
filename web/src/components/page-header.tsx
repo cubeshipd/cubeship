@@ -26,7 +26,12 @@ export function PageHeader({
 }) {
   return (
     <header className="mb-7 border-b border-border pb-5">
-      <div className="flex items-start justify-between gap-4">
+      {/* Centred, not top-aligned. The title is one line and the
+          actions are a row of buttons, so aligning their tops left the
+          buttons sitting high against it — and a title that does wrap
+          reads better with the buttons against its middle than against
+          its first line. */}
+      <div className="flex items-center justify-between gap-4">
         <div className="min-w-0">
           <h1
             className={

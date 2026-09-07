@@ -160,7 +160,10 @@ function Detail({
 
       {app && (
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-          <TabsList className="mb-6">
+          {/* The line variant: labels on a rule with the live one lit,
+              rather than a filled box that draws more of itself than
+              what it switches. See globals.css. */}
+          <TabsList variant="line">
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="environment">Environment</TabsTrigger>
             <TabsTrigger value="logs">Logs</TabsTrigger>

@@ -254,6 +254,82 @@
   font-family: var(--font-mono);
 }
 
+/* Tabs, in the `line` variant.
+ *
+ * The generated primitive's default variant is a filled box with a
+ * lighter box inside it for whichever tab is on, which is a control
+ * that draws more of itself than the thing it is switching. This
+ * interface separates with 1px lines and says "here" with cyan, so the
+ * tabs are labels on a rule with the live one lit — the same vocabulary
+ * as a section heading, which is what they sit above.
+ *
+ * Unlayered, for the reason the fields above are: the primitive carries
+ * its own utilities for height, padding, radius and the mark's offset,
+ * and inside `@layer components` every one of them wins. The cost is
+ * the same one — a per-usage override on a line tab no longer takes.
+ *
+ * The default variant is untouched: the environment switcher inside a
+ * project uses it, and a row of slugs beside a + and a trash can is a
+ * different thing from a row of section names. */
+[data-slot="tabs-list"][data-variant="line"] {
+  display: flex;
+  width: 100%;
+  height: auto;
+  justify-content: flex-start;
+  gap: 1.5rem;
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+}
+
+[data-slot="tabs-list"][data-variant="line"] [data-slot="tabs-trigger"] {
+  flex: 0 0 auto;
+  height: auto;
+  padding: 0 0 0.7rem;
+  border: 0;
+  border-radius: 0;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  /* A step above a section heading rather than level with it: these
+     switch what the sections *are*, and at the same size they read as
+     one more heading in the column. */
+  font-size: 0.75rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+}
+
+[data-slot="tabs-list"][data-variant="line"] [data-slot="tabs-trigger"]:hover {
+  color: var(--foreground);
+}
+
+[data-slot="tabs-list"][data-variant="line"] [data-slot="tabs-trigger"][data-active] {
+  color: var(--primary);
+}
+
+/* The mark sits *on* the rule rather than five pixels under it, so the
+   live tab reads as part of the line it is drawn on. */
+[data-slot="tabs-list"][data-variant="line"] [data-slot="tabs-trigger"]::after {
+  inset-inline: 0;
+  bottom: -1px;
+  height: 1px;
+  background: var(--primary);
+  box-shadow: 0 0 8px var(--primary);
+}
+
+/* A tab panel starts at the top of itself.
+ *
+ * Its first section carries the margin that separates one section from
+ * the next further down the page, and directly under a tab row that is
+ * a gap with nothing in it — which is what put most of a screen's worth
+ * of nothing between the tabs and the first chart. */
+[data-slot="tabs-content"] {
+  padding-top: 1rem;
+}
+
+[data-slot="tabs-content"] > :first-child {
+  margin-top: 0;
+}
+
 /* The switch, as a panel toggle rather than a pill.
  *
  * UNLAYERED, like the field rules above and for the same reason: the
