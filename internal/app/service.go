@@ -87,13 +87,22 @@ func (s *Service) MetricSubjects(ctx context.Context) ([]metrics.Subject, error)
 	if err != nil {
 		return nil, err
 	}
+	// This machine's own replicas, and no others: the collector reads a
+	// cgroup through this Engine, and a container on another machine is
+	// one it would ask about and be told does not exist. Those machines
+	// take their own readings and report them — see Sampled.
+	here, err := s.Repo().ControlPlaneID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	out := make([]metrics.Subject, 0, len(all))
 	for _, a := range all {
-		if a.ContainerID == "" {
+		mine, ok := a.ReplicaOn(here)
+		if !ok || mine.Container == "" {
 			continue
 		}
 		out = append(out, metrics.Subject{
-			Kind: metrics.KindApp, ID: a.ID, ContainerID: a.ContainerID,
+			Kind: metrics.KindApp, ID: a.ID, ContainerID: mine.Container,
 			Name: Reference{Project: a.ProjectSlug, Environment: a.EnvironmentSlug, Name: a.Name}.String(),
 		})
 	}
@@ -110,7 +119,12 @@ func (s *Service) Series(ctx context.Context, caller *user.User, ref Reference, 
 	if err != nil {
 		return metrics.Series{}, err
 	}
-	return s.metrics.Series(ctx, metrics.KindApp, a.ID, window, a.ContainerID != "")
+	// An app on several machines has several containers writing into
+	// one series, so a bucket holds a reading from each. The chart is
+	// therefore **the average across its replicas**, and its peak is
+	// the busiest replica's — which is what somebody looking at "is
+	// this app struggling" wants from either shape.
+	return s.metrics.Series(ctx, metrics.KindApp, a.ID, window, a.HasContainer())
 }
 
 // SetDatastoreVars wires the datastore module in. Called once, at
@@ -297,7 +311,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, en
 // decision as creating one that builds — this instance will execute
 // whatever that repository contains — so it takes the same role, checked
 // against the source being moved to rather than the one being left.
-func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, description *string, source *Source, origin *Origin, place *string) (*Scoped, error) {
+func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, description *string, source *Source, origin *Origin, place *Placement) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.RoleAdmin)
 	if err != nil {
 		return nil, err
@@ -331,25 +345,103 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 		return nil, err
 	}
 
-	// Moving an app to another machine, which is a different kind of
-	// change from the rest of this and is checked as one.
-	if place != nil && *place != a.NodeSlug {
+	// Where it runs and where its traffic arrives, which are a
+	// different kind of change from the rest of this and are checked
+	// together: the machine that serves an app has to be one of the
+	// machines running it, or its edge would balance across a set it is
+	// not in.
+	if place != nil {
 		next := Source(a.Source)
 		if source != nil {
 			next = *source
 		}
-		if err := s.checkPlacement(ctx, *place, next); err != nil {
-			return nil, err
-		}
-		// The container it is running now stays where it is until the
-		// machine it is leaving is told to stop it, which is that
-		// machine's next pass. Retiring it here would take the app down
-		// for as long as the new machine takes to pull an image.
-		if err := s.Repo().SetNode(ctx, a.ID, *place); err != nil {
+		if err := s.replace(ctx, a, *place, next); err != nil {
 			return nil, err
 		}
 	}
 	return s.Resolve(ctx, caller, ref, user.RoleMember)
+}
+
+// Placement is where an app runs and where its traffic arrives.
+//
+// Two fields because they are two decisions. Scaling an app out is
+// adding a machine to Nodes; moving where its record points is changing
+// Edge. Conflating them would mean a name that moves every time a
+// replica is added.
+type Placement struct {
+	// Nodes are the machines it runs on, by name. At least one.
+	Nodes []string
+	// Edge is which of them serves its names. Empty keeps the one it
+	// has, when that is still one of Nodes, and takes the first
+	// otherwise — an edge that is no longer running the app is an edge
+	// balancing across a set it is not in.
+	Edge string
+}
+
+// replace applies a placement.
+//
+// The order is the safety: the machines go in first and the edge after,
+// so there is no moment where the app is served by a machine that has
+// been told to stop running it. The container an app is running now
+// stays where it is until the machine it is leaving asks what it should
+// run and does not find it — retiring it here would take the app down
+// for as long as the new machine takes to pull an image.
+func (s *Service) replace(ctx context.Context, a *Scoped, p Placement, source Source) error {
+	nodes := dedupe(p.Nodes)
+	if len(nodes) == 0 {
+		return fmt.Errorf("%w: an app has to run somewhere", ErrNoSuchNode)
+	}
+	for _, n := range nodes {
+		if err := s.checkPlacement(ctx, n, source); err != nil {
+			return err
+		}
+	}
+
+	edge := p.Edge
+	if edge == "" {
+		edge = a.NodeSlug
+	}
+	if !contains(nodes, edge) {
+		// Naming a machine that is not in the set is a mistake worth
+		// refusing; falling back silently would serve the app from
+		// somewhere it does not run. The exception is the edge nobody
+		// named, which is the one it already had — that one follows the
+		// set rather than blocking a scale-out on a second decision.
+		if p.Edge != "" {
+			return fmt.Errorf("%w: %s does not run this app, so it cannot serve it", ErrNotPlaceable, p.Edge)
+		}
+		edge = nodes[0]
+	}
+
+	if err := s.Repo().SetNodes(ctx, a.ID, nodes); err != nil {
+		return err
+	}
+	if edge != a.NodeSlug {
+		return s.Repo().SetEdge(ctx, a.ID, edge)
+	}
+	return nil
+}
+
+func dedupe(in []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(in))
+	for _, s := range in {
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
+}
+
+func contains(in []string, want string) bool {
+	for _, s := range in {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 // checkPlacement is what an app has to be to run somewhere other than
@@ -674,7 +766,11 @@ func (s *Service) DeleteDeployment(ctx context.Context, caller *user.User, ref R
 		if err := s.orch.Retire(ctx, a.ID); err != nil {
 			return fmt.Errorf("stop the app's container: %w", err)
 		}
-		if err := s.Repo().UpdateContainer(ctx, a.ID, "", StatusDown); err != nil {
+		here, err := s.Repo().ControlPlaneID(ctx)
+		if err != nil {
+			return err
+		}
+		if err := s.Repo().UpdateContainer(ctx, a.ID, here, "", "", 0, true, StatusDown); err != nil {
 			return err
 		}
 	}
@@ -697,7 +793,7 @@ func (s *Service) DeleteDeployment(ctx context.Context, caller *user.User, ref R
 // the live one leaves it in, and the reason the record below it does
 // not quietly inherit the title.
 func (s *Service) liveDeployment(ctx context.Context, a *Scoped) (int64, error) {
-	if a.ContainerID == "" {
+	if !a.HasContainer() {
 		return 0, nil
 	}
 	id, _, err := s.Repo().CurrentDeployment(ctx, a.ID)
@@ -735,8 +831,17 @@ func (s *Service) Deployments(ctx context.Context, caller *user.User, ref Refere
 
 // Logs returns an app's container output. tail limits it to that many
 // trailing lines; an empty tail returns the whole log.
-func (s *Service) Logs(ctx context.Context, caller *user.User, ref Reference, tail string) (io.ReadCloser, error) {
+func (s *Service) Logs(ctx context.Context, caller *user.User, ref Reference, server, tail string) (io.ReadCloser, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	if err != nil {
+		return nil, err
+	}
+	// **A log belongs to one container, so it belongs to one machine.**
+	// An app spread over three of them has three logs and no combined
+	// one — interleaving them would need a clock the three do not share
+	// — so the caller names a machine and gets that machine's, and
+	// naming none gets the one its traffic arrives at.
+	r, err := a.pick(server)
 	if err != nil {
 		return nil, err
 	}
@@ -745,10 +850,34 @@ func (s *Service) Logs(ctx context.Context, caller *user.User, ref Reference, ta
 	// and waits there — see internal/node — so what comes back is the
 	// same bytes a local log is, already demultiplexed, and nothing
 	// above this line knows which machine answered.
-	if a.NodeSlug != node.ControlPlaneSlug {
-		return s.remoteLogs(ctx, a, tail)
+	if r.NodeSlug != node.ControlPlaneSlug {
+		return s.remoteLogs(ctx, r, tail)
 	}
 	return s.orch.Logs(ctx, a.ID, tail)
+}
+
+// pick resolves which of an app's machines a request means.
+//
+// Empty is the app's edge — where its traffic arrives — when it runs
+// there, and its first machine otherwise. An edge that runs nothing is
+// possible in one moment only: between a placement being changed and
+// the machines acting on it.
+func (a *App) pick(server string) (Replica, error) {
+	if server == "" {
+		if r, ok := a.ReplicaOn(a.NodeID); ok {
+			return r, nil
+		}
+		if len(a.Replicas) == 0 {
+			return Replica{}, ErrNoContainer
+		}
+		return a.Replicas[0], nil
+	}
+	for _, r := range a.Replicas {
+		if r.NodeSlug == server {
+			return r, nil
+		}
+	}
+	return Replica{}, fmt.Errorf("%w: this app does not run on %s", ErrNoSuchNode, server)
 }
 
 // remoteLogs asks the machine an app is on for its log.
@@ -757,14 +886,14 @@ func (s *Service) Logs(ctx context.Context, caller *user.User, ref Reference, ta
 // allowed: an app that has never run there has no container to read,
 // and a machine that does not answer is one nothing here can make
 // answer.
-func (s *Service) remoteLogs(ctx context.Context, a *Scoped, tail string) (io.ReadCloser, error) {
+func (s *Service) remoteLogs(ctx context.Context, r Replica, tail string) (io.ReadCloser, error) {
 	if s.remote == nil {
 		return nil, fmt.Errorf("%w: this daemon has no way to reach it", ErrRemote)
 	}
-	if a.ContainerID == "" {
+	if r.Container == "" {
 		return nil, ErrNoContainer
 	}
-	out, err := s.remote.Logs(ctx, a.NodeID, a.ContainerID, tail)
+	out, err := s.remote.Logs(ctx, r.NodeID, r.Container, tail)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrRemote, err)
 	}

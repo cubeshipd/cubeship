@@ -18,9 +18,11 @@ import { SearchableSelect } from "@/components/searchable-select";
 import { TextAreaField, TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import {
   type App,
+  type AppReplica,
   type AppSource,
   api,
   BUILDING_SOURCES,
@@ -146,7 +148,9 @@ function usePatch({ app, onSaved, onError }: SectionProps) {
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  async function save(body: Record<string, string>) {
+  // A patch body is one field group's worth of an app. Placement sends
+  // a list, which is why this is not a map of strings.
+  async function save(body: Record<string, string | string[]>) {
     setBusy(true);
     onError(null);
     setSaved(false);
@@ -210,17 +214,19 @@ function General(props: SectionProps) {
   );
 }
 
-// Which machine in the cluster the app runs on.
+// Which machines in the cluster run the app, and which of them its
+// traffic arrives at.
 //
 // The section is only here when there is a choice to make: on an
-// instance of one box there is one machine, and a select with one
-// option is a decision nobody has.
+// instance of one box there is one machine, and a set with one possible
+// member is a decision nobody has.
 function Placement(props: SectionProps) {
   const { app } = props;
   const { busy, saved, setSaved, save } = usePatch(props);
   const [servers, setServers] = useState<ClusterServer[] | null>(null);
   const [registryHost, setRegistryHost] = useState<string | null>(null);
-  const [node, setNode] = useState(app.node);
+  const [nodes, setNodes] = useState<string[]>(app.nodes);
+  const [edge, setEdge] = useState(app.node);
 
   useEffect(() => {
     api
@@ -238,7 +244,7 @@ function Placement(props: SectionProps) {
 
   if (servers !== null && servers.length < 2) return null;
 
-  const dirty = node !== app.node;
+  const dirty = !sameSet(nodes, app.nodes) || edge !== app.node;
   // The one thing left that keeps an app here, said before the request
   // rather than after it. A name no longer does: every machine runs its
   // own edge, so an app answers at its name wherever it is — what has
@@ -250,11 +256,22 @@ function Placement(props: SectionProps) {
       ? "It is built here, and a build reaches another machine only through this instance's own registry — which needs a domain."
       : null;
 
+  // Ticking a machine off the list takes the edge with it when the edge
+  // was that machine: an app cannot be served from somewhere it does not
+  // run, and the daemon refuses it. Picked here so the form never holds
+  // a state the request would be rejected for.
+  const toggle = (name: string, on: boolean) => {
+    const next = on ? [...nodes, name] : nodes.filter((n) => n !== name);
+    setNodes(next);
+    if (!next.includes(edge)) setEdge(next[0] ?? "");
+    setSaved(false);
+  };
+
   return (
     <>
       <SectionHeader
-        title="Server"
-        sub="Which machine in this cluster runs it. Moving it starts the app on the new machine before stopping it on the old one, and takes effect within a few seconds."
+        title="Servers"
+        sub="Which machines in this cluster run it, and which of them its traffic arrives at. More than one puts that machine's proxy in front of all of them, over the cluster's private network. Changes take effect within a few seconds: each new machine starts the app before the ones leaving stop it."
       />
       <Card>
         <CardContent>
@@ -262,42 +279,82 @@ function Placement(props: SectionProps) {
             className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
-              save({ node });
+              save({ nodes, node: edge });
             }}
           >
+            <div className="space-y-2">
+              <Label>Runs on</Label>
+              {(servers ?? []).map((s) => {
+                const on = nodes.includes(s.name);
+                const replica = app.replicas.find((r) => r.node === s.name);
+                return (
+                  <label
+                    key={s.name}
+                    htmlFor={`runs-on-${s.name}`}
+                    className="flex items-center gap-3 border border-border px-3 py-2 font-mono text-xs"
+                  >
+                    <Checkbox
+                      id={`runs-on-${s.name}`}
+                      checked={on}
+                      disabled={stuck !== null || (on && nodes.length === 1)}
+                      onCheckedChange={(next) => toggle(s.name, next === true)}
+                    />
+                    <span className="flex-1">{s.name}</span>
+                    <span className="text-muted-foreground">
+                      {replica ? replicaState(replica) : s.control_plane ? "this machine" : ""}
+                    </span>
+                  </label>
+                );
+              })}
+              <p className="text-xs text-muted-foreground">
+                An app has to run somewhere, so the last machine cannot be unticked. Take it off one
+                by putting it on another first.
+              </p>
+            </div>
+
             <SearchableSelect
-              label="Server"
+              label="Traffic arrives at"
               placeholder="Choose one"
-              disabled={stuck !== null}
-              choices={(servers ?? []).map((s) => ({
-                value: s.name,
-                label: s.name,
-                hint: s.control_plane ? "this machine" : s.description || undefined,
-              }))}
-              value={node}
+              disabled={stuck !== null || nodes.length < 2}
+              choices={nodes.map((name) => ({ value: name, label: name }))}
+              value={edge}
               onChange={(next) => {
-                setNode(next);
+                setEdge(next);
                 setSaved(false);
               }}
             />
+            <p className="text-xs text-muted-foreground">
+              One machine, not all of them, and the reason is the certificate: a machine that routes
+              a name asks Let&apos;s Encrypt for it, and one the name does not resolve to fails that
+              check every time while spending a limit shared with everyone else under that domain.
+              So the record points at one machine and the balancing happens behind it.
+            </p>
+
             {stuck && (
               <Notice>
                 {stuck} It stays on this machine until one is set in the instance settings.
               </Notice>
             )}
-            {/* The one thing moving an app does not do for you. A name
+            {/* The one thing changing this does not do for you. A name
                 follows the app only once its record does, and Cubeship
                 does not know which provider serves a name it did not
                 write. */}
-            {!stuck && dirty && app.domains.length > 0 && (
+            {!stuck && edge !== app.node && app.domains.length > 0 && (
               <Notice tone="warning">
-                {app.domains.length === 1 ? "This name has" : "These names have"} to be repointed at
-                the new server afterwards: {app.domains.map((d) => d.host).join(", ")}. Until then
-                {app.domains.length === 1 ? " it reaches" : " they reach"} the machine the app is
+                {app.domains.length === 1 ? "This name has" : "These names have"} to be repointed at{" "}
+                <code>{edge}</code> afterwards: {app.domains.map((d) => d.host).join(", ")}. Until
+                then {app.domains.length === 1 ? "it reaches" : "they reach"} the machine the app is
                 leaving.
               </Notice>
             )}
-            {!stuck && !dirty && app.node !== "control-plane" && (
+            {!stuck && !dirty && app.nodes.length > 1 && (
+              <Notice>
+                Its traffic arrives at <code>{app.node}</code> and is spread across{" "}
+                {app.nodes.length} machines from there. Each keeps its own log and its own charts;
+                the app&apos;s are the average across them.
+              </Notice>
+            )}
+            {!stuck && !dirty && app.nodes.length === 1 && app.node !== "control-plane" && (
               <Notice>
                 It serves its own names there, and its charts and its log come from it through the
                 connection it keeps open to this one.
@@ -309,6 +366,19 @@ function Placement(props: SectionProps) {
       </Card>
     </>
   );
+}
+
+// replicaState says what one machine's copy is doing, in the two words
+// that matter: whether it is up, and whether the edge is actually
+// sending it anything. The second is not the first — a replica can be
+// running and not yet be a backend.
+function replicaState(r: AppReplica): string {
+  if (r.status !== "running") return r.status;
+  return r.serving ? "serving" : "running, not yet a backend";
+}
+
+function sameSet(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((x) => b.includes(x));
 }
 
 function SourceSection(props: SectionProps) {

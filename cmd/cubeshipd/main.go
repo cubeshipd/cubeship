@@ -127,7 +127,7 @@ func runWorker(cfg *config.Config) error {
 	}
 
 	log.Printf("worker mode: this machine belongs to %s and serves nothing of its own", cfg.ControlPlane)
-	worker.New(cfg.ControlPlane, cfg.NodeToken, version, box, docker, address, host, edge).Run(ctx)
+	worker.New(cfg.ControlPlane, cfg.NodeToken, version, cfg.DataDir, box, docker, address, host, edge).Run(ctx)
 	return nil
 }
 
@@ -514,6 +514,21 @@ func run() error {
 	// wedged Engine must not be why the machine's own chart has a hole
 	// in it.
 	go machine.NewCollector(db, box).Run(ctx)
+
+	// What this machine's own edge serves that its containers do not
+	// say: the apps spread over several machines whose traffic arrives
+	// here. A worker is handed the same answer down its reconcile loop
+	// and writes the same file with the same function; this is that
+	// loop for the machine that has no loop, because it is the one
+	// being called. It runs here for the reason the collectors do.
+	go (&app.RouteWriter{
+		Apps:    srv.Apps,
+		DataDir: cfg.DataDir,
+		TLS: func(ctx context.Context) bool {
+			values, err := srv.Settings.Load(ctx)
+			return err == nil && values.HasTLS()
+		},
+	}).Run(ctx)
 
 	go purgeExpiredSessions(ctx, srv.Users)
 

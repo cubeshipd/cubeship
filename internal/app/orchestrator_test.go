@@ -70,9 +70,7 @@ func TestDeployRetiresTheOldContainerOnlyAfterTheNewOneIsHealthy(t *testing.T) {
 	orch, db, a := newDeployFixture(t, docker)
 	ctx := context.Background()
 
-	if err := NewRepository(db).UpdateContainer(ctx, a.ID, "old-container", StatusRunning); err != nil {
-		t.Fatalf("seed the previous container: %v", err)
-	}
+	seedContainer(t, db, a.ID, "old-container")
 
 	if d := runDeploy(t, orch, db, a.ID, "v2"); d.Status != DeploymentSucceeded {
 		t.Fatalf("deploy ended %q: %s", d.Status, d.Error)
@@ -93,9 +91,8 @@ func TestDeployRetiresTheOldContainerOnlyAfterTheNewOneIsHealthy(t *testing.T) {
 	if err != nil {
 		t.Fatalf("reload app: %v", err)
 	}
-	if updated.ContainerID != "new-container" || updated.Status != StatusRunning {
-		t.Errorf("app records container %q status %q, want new-container/running",
-			updated.ContainerID, updated.Status)
+	if got := containerOf(t, db, updated); got != "new-container" || updated.Status() != StatusRunning {
+		t.Errorf("app records container %q status %q, want new-container/running", got, updated.Status())
 	}
 }
 
@@ -107,9 +104,7 @@ func TestDeployKeepsTheOldContainerWhenTheNewOneNeverBecomesHealthy(t *testing.T
 	orch.HealthCheckAttempts = 3
 	ctx := context.Background()
 
-	if err := NewRepository(db).UpdateContainer(ctx, a.ID, "old-container", StatusRunning); err != nil {
-		t.Fatalf("seed the previous container: %v", err)
-	}
+	seedContainer(t, db, a.ID, "old-container")
 
 	if d := runDeploy(t, orch, db, a.ID, "bad"); d.Status != DeploymentFailed {
 		t.Fatal("expected the deploy to fail when the container never becomes healthy")
@@ -127,8 +122,8 @@ func TestDeployKeepsTheOldContainerWhenTheNewOneNeverBecomesHealthy(t *testing.T
 	if err != nil {
 		t.Fatalf("reload app: %v", err)
 	}
-	if unchanged.ContainerID != "old-container" {
-		t.Errorf("app now records container %q, want old-container", unchanged.ContainerID)
+	if got := containerOf(t, db, unchanged); got != "old-container" {
+		t.Errorf("app now records container %q, want old-container", got)
 	}
 }
 
@@ -272,8 +267,8 @@ func TestStartDetachesTheDeployFromItsCaller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.ContainerID != "new-container" {
-		t.Errorf("the app records container %q; the detached deploy did not finish its work", updated.ContainerID)
+	if containerOf(t, db, updated) != "new-container" {
+		t.Errorf("the app records container %q; the detached deploy did not finish its work", containerOf(t, db, updated))
 	}
 }
 
@@ -375,4 +370,31 @@ func TestAnAppWithNoDomainDeploysWithoutRouting(t *testing.T) {
 			break
 		}
 	}
+}
+
+// seedContainer puts an app on this machine with a container already
+// running, which is the state every deploy but the first starts from.
+func seedContainer(t *testing.T, db *database.DB, appID int64, container string) {
+	t.Helper()
+	repo := NewRepository(db)
+	here, err := repo.ControlPlaneID(context.Background())
+	if err != nil {
+		t.Fatalf("find the control plane: %v", err)
+	}
+	if err := repo.UpdateContainer(context.Background(), appID, here, container, container, 0, true, StatusRunning); err != nil {
+		t.Fatalf("seed the previous container: %v", err)
+	}
+}
+
+// containerOf is what this machine is running for an app. An app has a
+// container per machine now, and every one of these tests is about the
+// one on the machine the test is.
+func containerOf(t *testing.T, db *database.DB, a *App) string {
+	t.Helper()
+	here, err := NewRepository(db).ControlPlaneID(context.Background())
+	if err != nil {
+		t.Fatalf("find the control plane: %v", err)
+	}
+	r, _ := a.ReplicaOn(here)
+	return r.Container
 }

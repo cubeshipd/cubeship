@@ -134,7 +134,11 @@ func TestDeletingTheLiveDeployTakesTheAppDownAndKeepsTheApp(t *testing.T) {
 		t.Fatal(err)
 	}
 	// A container, which is what makes one of those rows the live one.
-	if err := repo.UpdateContainer(ctx, scoped.ID, "container-abc", app.StatusRunning); err != nil {
+	here, err := repo.ControlPlaneID(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.UpdateContainer(ctx, scoped.ID, here, "container-abc", "container-abc", live.ID, true, app.StatusRunning); err != nil {
 		t.Fatal(err)
 	}
 

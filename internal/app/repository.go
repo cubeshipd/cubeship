@@ -20,7 +20,7 @@ func NewRepository(q database.Queryer) *Repository {
 }
 
 const columns = `id, project_id, environment_id, node_id, name, description, source, source_image,
-	source_repo, source_ref, source_dockerfile, container_id, status, env, created_at`
+	source_repo, source_ref, source_dockerfile, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -29,7 +29,7 @@ func scan(row scanner) (*App, error) {
 	var envJSON []byte
 	if err := row.Scan(&a.ID, &a.ProjectID, &a.EnvironmentID, &a.NodeID, &a.Name, &a.Description,
 		&a.Source, &a.SourceImage, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
-		&a.ContainerID, &a.Status, &envJSON, &a.CreatedAt); err != nil {
+		&envJSON, &a.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &a.Env); err != nil {
@@ -71,7 +71,7 @@ func (r *Repository) Update(ctx context.Context, appID int64, description *strin
 	if err != nil {
 		return nil, fmt.Errorf("update app: %w", err)
 	}
-	return a, nil
+	return a, r.attach(ctx, []*App{a})
 }
 
 // Origin is where an app's images come from, beyond the source that
@@ -101,6 +101,18 @@ func (r *Repository) Create(ctx context.Context, projectID, environmentID int64,
 	if err != nil {
 		return nil, fmt.Errorf("create app: %w", err)
 	}
+	// And it runs there too. The two are separate facts — where an app
+	// is served and where it runs — and on a fresh app they are the
+	// same machine, because there is only one until somebody adds
+	// another.
+	if _, err := r.q.ExecContext(ctx,
+		`INSERT INTO app_nodes (app_id, node_id) VALUES ($1, $2)`, a.ID, a.NodeID); err != nil {
+		return nil, fmt.Errorf("create app: %w", err)
+	}
+	a.Replicas, err = r.Replicas(ctx, a.ID)
+	if err != nil {
+		return nil, err
+	}
 	return a, nil
 }
 
@@ -113,7 +125,7 @@ func (r *Repository) ByEnvironmentAndName(ctx context.Context, environmentID int
 	if err != nil {
 		return nil, fmt.Errorf("get app %q: %w", name, err)
 	}
-	return a, nil
+	return a, r.attach(ctx, []*App{a})
 }
 
 func (r *Repository) ByID(ctx context.Context, id int64) (*App, error) {
@@ -122,7 +134,7 @@ func (r *Repository) ByID(ctx context.Context, id int64) (*App, error) {
 	if err != nil {
 		return nil, fmt.Errorf("get app %d: %w", id, err)
 	}
-	return a, nil
+	return a, r.attach(ctx, []*App{a})
 }
 
 // Delete removes an app and the deployment history that points at it.
@@ -170,14 +182,66 @@ func (r *Repository) list(ctx context.Context, query string, args ...any) ([]*Ap
 		}
 		apps = append(apps, a)
 	}
-	return apps, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return apps, r.attach(ctx, apps)
 }
 
-func (r *Repository) UpdateContainer(ctx context.Context, appID int64, containerID, status string) error {
+// attach fills in every app's replicas, because an app read without
+// them has no status at all — App.Status is derived from them, so a
+// caller that forgot would see every app as pending. Loaded here rather
+// than by whoever asked, which is the rule Domains already follows for
+// the same reason.
+func (r *Repository) attach(ctx context.Context, apps []*App) error {
+	if len(apps) == 0 {
+		return nil
+	}
+	ids := make([]int64, 0, len(apps))
+	for _, a := range apps {
+		ids = append(ids, a.ID)
+	}
+	byApp, err := r.ReplicasFor(ctx, ids)
+	if err != nil {
+		return err
+	}
+	for _, a := range apps {
+		a.Replicas = byApp[a.ID]
+	}
+	return nil
+}
+
+// UpdateContainer records what is running an app on one machine.
+//
+// An upsert rather than an update: a machine reporting a container for
+// an app it was given but has never run has no row to update yet, and
+// the report is exactly the moment the row becomes true.
+func (r *Repository) UpdateContainer(ctx context.Context, appID, nodeID int64, containerID, name string, deployment int64, routed bool, status string) error {
+	var deploy any
+	if deployment != 0 {
+		deploy = deployment
+	}
 	if _, err := r.q.ExecContext(ctx,
-		`UPDATE apps SET container_id = $1, status = $2 WHERE id = $3`,
-		containerID, status, appID); err != nil {
+		`INSERT INTO app_nodes (app_id, node_id, container_id, container_name, deployment_id, routed, status, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, now())
+		 ON CONFLICT (app_id, node_id) DO UPDATE
+		 SET container_id = EXCLUDED.container_id, container_name = EXCLUDED.container_name,
+		     deployment_id = EXCLUDED.deployment_id, routed = EXCLUDED.routed,
+		     status = EXCLUDED.status, updated_at = now()`,
+		appID, nodeID, containerID, name, deploy, routed, status); err != nil {
 		return fmt.Errorf("update app container: %w", err)
+	}
+	return nil
+}
+
+// SetStatus changes what one machine says about an app without touching
+// which container it named. It is what the reconciler writes: it looked
+// at the container that is already recorded and found it stopped.
+func (r *Repository) SetStatus(ctx context.Context, appID, nodeID int64, status string) error {
+	if _, err := r.q.ExecContext(ctx,
+		`UPDATE app_nodes SET status = $3, updated_at = now() WHERE app_id = $1 AND node_id = $2`,
+		appID, nodeID, status); err != nil {
+		return fmt.Errorf("set app status: %w", err)
 	}
 	return nil
 }
@@ -420,7 +484,7 @@ type Scoped struct {
 const scopedQuery = `
 	SELECT a.id, a.project_id, a.environment_id, a.node_id, a.name, a.description,
 	       a.source, a.source_image, a.source_repo, a.source_ref, a.source_dockerfile,
-	       a.container_id, a.status, a.env, a.created_at,
+	       a.env, a.created_at,
 	       p.slug, e.slug, n.slug
 	FROM apps a
 	JOIN projects p ON p.id = a.project_id
@@ -432,7 +496,7 @@ func scanScoped(row scanner) (*Scoped, error) {
 	var envJSON []byte
 	if err := row.Scan(&s.ID, &s.ProjectID, &s.EnvironmentID, &s.NodeID, &s.Name, &s.Description,
 		&s.Source, &s.SourceImage, &s.SourceRepo, &s.SourceRef, &s.SourceDockerfile,
-		&s.ContainerID, &s.Status, &envJSON, &s.CreatedAt,
+		&envJSON, &s.CreatedAt,
 		&s.ProjectSlug, &s.EnvironmentSlug, &s.NodeSlug); err != nil {
 		return nil, err
 	}
@@ -486,11 +550,14 @@ func (r *Repository) ScopedByReference(ctx context.Context, proj, env, name stri
 	}
 	// Loaded here rather than by whoever asked. An app with no domains
 	// cannot deploy at all, so every reader of a single app needs them —
-	// and one that forgot would get an app that looks unroutable.
+	// and one that forgot would get an app that looks unroutable. Its
+	// replicas are the same rule and a stronger one: the status is
+	// derived from them, so a reader that forgot would see every app as
+	// pending.
 	if s.Domains, err = r.Domains(ctx, s.ID); err != nil {
 		return nil, err
 	}
-	return s, nil
+	return s, r.attach(ctx, []*App{&s.App})
 }
 
 func (r *Repository) ScopedByID(ctx context.Context, id int64) (*Scoped, error) {
@@ -502,7 +569,7 @@ func (r *Repository) ScopedByID(ctx context.Context, id int64) (*Scoped, error) 
 	if s.Domains, err = r.Domains(ctx, s.ID); err != nil {
 		return nil, err
 	}
-	return s, nil
+	return s, r.attach(ctx, []*App{&s.App})
 }
 
 // ListScopedForOrgs returns the apps owned by any of orgIDs, each with
@@ -515,14 +582,21 @@ func (r *Repository) ListScopedForOrgs(ctx context.Context, orgIDs []int64) ([]*
 	return r.listScoped(ctx, scopedQuery+` WHERE a.org_id = ANY($1) ORDER BY a.id`, orgIDs)
 }
 
-// ScopedOnNode is every app placed on one machine, with what it needs
-// to be run there. Ordered by id so a node's desired state is stable
-// between passes rather than reshuffling under whatever reads it.
+// ScopedOnNode is every app that runs on one machine, with what it
+// needs to be run there.
+//
+// Its replica set rather than its edge: a machine runs the apps it was
+// given, and the machine serving an app's names is a different question
+// — one that machine answers with a router rather than a container.
+// Ordered by id so a node's desired state is stable between passes
+// rather than reshuffling under whatever reads it.
 func (r *Repository) ScopedOnNode(ctx context.Context, nodeID int64) ([]*Scoped, error) {
-	return r.listScoped(ctx, scopedQuery+` WHERE a.node_id = $1 ORDER BY a.id`, nodeID)
+	return r.listScoped(ctx, scopedQuery+`
+		WHERE EXISTS (SELECT 1 FROM app_nodes r WHERE r.app_id = a.id AND r.node_id = $1)
+		ORDER BY a.id`, nodeID)
 }
 
-// SetNode moves an app to a machine, by name.
+// SetEdge moves where an app's traffic arrives, by name.
 //
 // By name rather than by id because the caller has a name — it is what
 // the API takes and what a person types — and resolving it here is one
@@ -530,7 +604,7 @@ func (r *Repository) ScopedOnNode(ctx context.Context, nodeID int64) ([]*Scoped,
 // ErrNoSuchNode when there is no such machine: the subquery would
 // otherwise write NULL into a NOT NULL column and surface as a
 // constraint violation nobody can read.
-func (r *Repository) SetNode(ctx context.Context, appID int64, nodeSlug string) error {
+func (r *Repository) SetEdge(ctx context.Context, appID int64, nodeSlug string) error {
 	res, err := r.q.ExecContext(ctx,
 		`UPDATE apps SET node_id = (SELECT id FROM nodes WHERE slug = $2) WHERE id = $1`,
 		appID, nodeSlug)
@@ -544,6 +618,115 @@ func (r *Repository) SetNode(ctx context.Context, appID int64, nodeSlug string) 
 		return ErrNotFound
 	}
 	return nil
+}
+
+// Replicas reads the machines one app runs on.
+//
+// Ordered by node id, so the list is stable between two reads of the
+// same app — a listing that reshuffled would make the edge's load
+// balancer look like it had changed when nothing had.
+func (r *Repository) Replicas(ctx context.Context, appID int64) ([]Replica, error) {
+	byApp, err := r.ReplicasFor(ctx, []int64{appID})
+	if err != nil {
+		return nil, err
+	}
+	return byApp[appID], nil
+}
+
+// ReplicasFor reads the replicas of several apps at once, keyed by app.
+// A listing needs every app's machines and asking per app would be one
+// query per row — the same argument DomainsFor makes.
+func (r *Repository) ReplicasFor(ctx context.Context, appIDs []int64) (map[int64][]Replica, error) {
+	out := map[int64][]Replica{}
+	if len(appIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.q.QueryContext(ctx, `
+		SELECT r.app_id, r.node_id, n.slug, r.container_id, r.container_name,
+		       COALESCE(r.deployment_id, 0), r.routed, r.status, r.updated_at
+		FROM app_nodes r
+		JOIN nodes n ON n.id = r.node_id
+		WHERE r.app_id = ANY($1)
+		ORDER BY r.app_id, r.node_id`, appIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list app replicas: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var appID int64
+		var rep Replica
+		if err := rows.Scan(&appID, &rep.NodeID, &rep.NodeSlug, &rep.Container,
+			&rep.Name, &rep.Deploy, &rep.Routed, &rep.Status, &rep.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out[appID] = append(out[appID], rep)
+	}
+	return out, rows.Err()
+}
+
+// SetNodes replaces the set of machines an app runs on.
+//
+// One statement per direction rather than a delete-and-insert: a
+// machine that stays keeps its row, which is what keeps the container
+// it is already running from being forgotten and started again beside
+// itself. A machine that goes has its row deleted, and the app stops
+// being in that machine's answer on its next pass — which is how the
+// container there is removed.
+//
+// ErrNoSuchNode when a name is not a machine in this cluster. Refused
+// by name rather than written as a null the column would reject with a
+// message nobody can read.
+func (r *Repository) SetNodes(ctx context.Context, appID int64, nodeSlugs []string) error {
+	if len(nodeSlugs) == 0 {
+		return ErrNoSuchNode
+	}
+	var ids []int64
+	rows, err := r.q.QueryContext(ctx, `SELECT id FROM nodes WHERE slug = ANY($1)`, nodeSlugs)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(ids) != len(nodeSlugs) {
+		return ErrNoSuchNode
+	}
+
+	if _, err := r.q.ExecContext(ctx,
+		`DELETE FROM app_nodes WHERE app_id = $1 AND node_id <> ALL($2)`, appID, ids); err != nil {
+		return fmt.Errorf("take an app off a machine: %w", err)
+	}
+	if _, err := r.q.ExecContext(ctx,
+		`INSERT INTO app_nodes (app_id, node_id) SELECT $1, unnest($2::bigint[])
+		 ON CONFLICT (app_id, node_id) DO NOTHING`, appID, ids); err != nil {
+		return fmt.Errorf("put an app on a machine: %w", err)
+	}
+	return nil
+}
+
+// ControlPlaneID is the machine this daemon is, by id.
+//
+// Read rather than configured: the row is seeded by the migration that
+// created the table, and the one thing this module needs it for is
+// telling its own replicas from the ones somebody else runs. Reading
+// the `nodes` table directly is what the scoped query already does.
+func (r *Repository) ControlPlaneID(ctx context.Context) (int64, error) {
+	var id int64
+	if err := r.q.QueryRowContext(ctx,
+		`SELECT id FROM nodes WHERE control_plane`).Scan(&id); err != nil {
+		return 0, fmt.Errorf("find the control plane: %w", err)
+	}
+	return id, nil
 }
 
 // ListScoped returns every app on the instance with its containing
@@ -567,7 +750,14 @@ func (r *Repository) listScoped(ctx context.Context, query string, args ...any) 
 		}
 		out = append(out, s)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	apps := make([]*App, 0, len(out))
+	for _, s := range out {
+		apps = append(apps, &s.App)
+	}
+	return out, r.attach(ctx, apps)
 }
 
 // Domains reads every name an app is served at.

@@ -10,10 +10,12 @@ import (
 )
 
 type placedApp struct {
-	Reference string `json:"reference"`
-	Node      string `json:"node"`
-	Source    string `json:"source"`
-	Address   string `json:"address"`
+	Reference string   `json:"reference"`
+	Node      string   `json:"node"`
+	Nodes     []string `json:"nodes"`
+	Status    string   `json:"status"`
+	Source    string   `json:"source"`
+	Address   string   `json:"address"`
 }
 
 // addServer puts a machine in the cluster. Nothing is contacted — the

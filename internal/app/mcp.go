@@ -277,6 +277,10 @@ func (t *Tools) setEnv(ctx context.Context, _ *mcp.CallToolRequest, in setEnvInp
 type logsInput struct {
 	App  string `json:"app" jsonschema:"app reference: org/project/environment/app, or org/project/app for production"`
 	Tail string `json:"tail,omitempty" jsonschema:"number of trailing lines to return, e.g. \"500\", or \"all\" for the full log (default \"200\")"`
+	// An app spread over several machines has one log per machine and
+	// no combined one. Naming none gets the machine its traffic
+	// arrives at.
+	Server string `json:"server,omitempty" jsonschema:"which server's copy to read, for an app that runs on more than one; defaults to the one serving its names"`
 }
 
 func (t *Tools) logs(ctx context.Context, _ *mcp.CallToolRequest, in logsInput) (*mcp.CallToolResult, any, error) {
@@ -288,7 +292,7 @@ func (t *Tools) logs(ctx context.Context, _ *mcp.CallToolRequest, in logsInput) 
 	if err != nil {
 		return nil, nil, err
 	}
-	rc, err := t.svc.Logs(ctx, t.caller, ref, tail)
+	rc, err := t.svc.Logs(ctx, t.caller, ref, in.Server, tail)
 	if err != nil {
 		return nil, nil, err
 	}

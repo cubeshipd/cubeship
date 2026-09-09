@@ -408,7 +408,6 @@ func (o *Orchestrator) Start(ctx context.Context, appID int64, tag string) (*Dep
 // The panic is turned into the deployment's error so it is not lost.
 func (o *Orchestrator) run(ctx context.Context, appID int64, tag string, deploymentID int64) {
 	status, errMsg := DeploymentSucceeded, ""
-	handedOff := false
 
 	func() {
 		defer func() {
@@ -420,23 +419,62 @@ func (o *Orchestrator) run(ctx context.Context, appID int64, tag string, deploym
 		}()
 		switch err := o.deploy(ctx, appID, tag, deploymentID); {
 		case errors.Is(err, errPlaced):
-			handedOff = true
+			// Nothing for this machine to do: the app runs somewhere
+			// else, and the machines it runs on will say how it went.
 		case err != nil:
 			status, errMsg = DeploymentFailed, err.Error()
 			log.Printf("deploy of app %d failed: %v", appID, err)
 		}
 	}()
 
-	// A deploy for another machine is not finished here — it is not
-	// finished at all yet. The row stays `pending` until that machine
-	// says what it did, which is the one thing that can honestly close
-	// it. See app.Service.Placed.
-	if handedOff {
+	// **A deploy is finished when every machine has it**, and this
+	// machine is at most one of them. A failure is this instance's to
+	// record either way — it happened here, and nothing else will say
+	// so — but a success only closes the row once nothing is left to
+	// wait for. See settle.
+	if status == DeploymentFailed {
+		if err := o.apps.FinishDeployment(ctx, deploymentID, status, errMsg); err != nil {
+			log.Printf("could not record the outcome of deployment %d: %v", deploymentID, err)
+		}
 		return
 	}
-	if err := o.apps.FinishDeployment(ctx, deploymentID, status, errMsg); err != nil {
+	if err := o.settle(ctx, appID, deploymentID); err != nil {
 		log.Printf("could not record the outcome of deployment %d: %v", deploymentID, err)
 	}
+}
+
+// settle closes a deployment once every machine the app runs on is
+// running that deployment.
+//
+// **Not the first machine to report.** An app on three boxes whose
+// deploy is marked succeeded the moment one of them has it would report
+// a rollout that is a third done as finished, and the two machines
+// still pulling would look like nothing was happening. The row stays
+// `pending`, which is what it means: some of this is still going on.
+//
+// A failure does not come through here — one machine failing fails the
+// deploy immediately, above — so this only ever writes success, and
+// only when there is nothing left to wait for.
+func (o *Orchestrator) settle(ctx context.Context, appID, deploymentID int64) error {
+	a, err := o.apps.ByID(ctx, appID)
+	if err != nil {
+		return err
+	}
+	for _, r := range a.Replicas {
+		if r.Deploy != deploymentID || !r.Running() {
+			return nil
+		}
+	}
+	if len(a.Replicas) == 0 {
+		return nil
+	}
+	d, err := o.apps.UnscopedDeployment(ctx, deploymentID)
+	if err != nil || d == nil || d.Done() {
+		// Already closed — by a failure from another machine, or by
+		// somebody deleting the row. Neither is this one's to reopen.
+		return nil
+	}
+	return o.apps.FinishDeployment(ctx, deploymentID, DeploymentSucceeded, "")
 }
 
 // errPlaced is how deploy says "this one is somebody else's to run".
@@ -520,24 +558,35 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 		return fmt.Errorf("resolve inherited env: %w", err)
 	}
 
-	// An app placed on another machine stops here. Everything above
-	// this line is the control plane's work — resolving the image,
-	// recording what it resolved to — and everything below it is
-	// running a container, which happens where the app lives.
+	// Every machine the app runs on is told, and this one does its own
+	// work below. Everything above this line is the control plane's
+	// whatever the app is on — resolving the image, recording what it
+	// resolved to — and everything below it is running a container,
+	// which happens on each machine that runs one.
 	//
-	// The deploy is left `pending`: the machine picks the placement up
-	// on its next pass, runs it, and says how it went, and that is what
-	// finishes this row. Nothing is polled here — a deploy nobody is
-	// holding a connection open for does not need a second thing
-	// waiting on it.
-	if a.NodeSlug != node.ControlPlaneSlug {
+	// The deploy is left `pending` until **every** machine has reported
+	// the same one running: see settle. Nothing is polled here — a
+	// deploy nobody is holding a connection open for does not need a
+	// second thing waiting on it.
+	here, err := o.apps.ControlPlaneID(ctx)
+	if err != nil {
+		return err
+	}
+	local := false
+	for _, r := range a.Replicas {
+		if r.NodeID == here {
+			local = true
+			continue
+		}
 		// And tell it now rather than letting it find out on its next
 		// poll. The machine is parked on a request this releases, so a
 		// deploy starts in the second it was asked for rather than in
 		// the half-minute after.
 		if o.remote != nil {
-			o.remote.Wake(a.NodeID)
+			o.remote.Wake(r.NodeID)
 		}
+	}
+	if !local {
 		return errPlaced
 	}
 
@@ -568,7 +617,7 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	newID, err := o.docker.CreateContainer(ctx, dockerx.ContainerOpts{
 		Name:         newName,
 		Image:        image.Ref,
-		Labels:       placementLabels(base, o.routing(a.Domains), values.HasTLS(), appName, deploymentID),
+		Labels:       placementLabels(base, o.routedBy(a), values.HasTLS(), appName, deploymentID),
 		Env:          envvar.Slice(env),
 		Network:      Network,
 		AlsoNetworks: o.mesh(ctx),
@@ -587,8 +636,13 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 		return fmt.Errorf("health check timed out for container %s", newID)
 	}
 
-	oldContainerID := a.ContainerID
-	if err := o.apps.UpdateContainer(ctx, a.ID, newID, StatusRunning); err != nil {
+	previous, _ := a.ReplicaOn(here)
+	oldContainerID := previous.Container
+	// Whether this container routes the app's names is recorded with
+	// it, because a container keeps the labels it was created with and
+	// nothing else can recover that afterwards.
+	if err := o.apps.UpdateContainer(ctx, a.ID, here, newID, newName, deploymentID,
+		len(o.routedBy(a)) > 0, StatusRunning); err != nil {
 		// The new container is healthy but the database doesn't know
 		// about it, so nothing will ever retire it. Remove it rather
 		// than leave two containers answering one router.
@@ -596,7 +650,7 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 		return fmt.Errorf("update app container: %w", err)
 	}
 
-	if oldContainerID != "" {
+	if oldContainerID != "" && oldContainerID != newID {
 		if err := o.docker.StopContainer(ctx, oldContainerID); err != nil {
 			log.Printf("deploy %s: could not stop the previous container %s: %v", appName, oldContainerID, err)
 		}
@@ -621,10 +675,19 @@ func (o *Orchestrator) Logs(ctx context.Context, appID int64, tail string) (io.R
 	if err != nil {
 		return nil, ErrNotFound
 	}
-	if a.ContainerID == "" {
+	here, err := o.apps.ControlPlaneID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// This machine's own replica, never whichever container the app has
+	// somewhere. A container id from another Engine is one this Docker
+	// answers "no such container" for, which reads as an app that is
+	// down rather than as a log that is somewhere else.
+	mine, ok := a.ReplicaOn(here)
+	if !ok || mine.Container == "" {
 		return nil, ErrNoContainer
 	}
-	return o.docker.Logs(ctx, a.ContainerID, tail)
+	return o.docker.Logs(ctx, mine.Container, tail)
 }
 
 // Retire stops and removes an app's container, if it has one. It is what
@@ -639,16 +702,26 @@ func (o *Orchestrator) Retire(ctx context.Context, appID int64) error {
 	if err != nil {
 		return ErrNotFound
 	}
-	if a.ContainerID == "" {
+	here, err := o.apps.ControlPlaneID(ctx)
+	if err != nil {
+		return err
+	}
+	// Only this machine's own container. A replica on another machine
+	// goes when that machine next asks what it should be running and
+	// does not find this app in the answer — the row is being deleted,
+	// so it will not be. Reaching for it here would mean stopping a
+	// container through an Engine this daemon cannot see.
+	mine, ok := a.ReplicaOn(here)
+	if !ok || mine.Container == "" {
 		return nil
 	}
-	if err := o.docker.StopContainer(ctx, a.ContainerID); err != nil {
-		log.Printf("retiring app %d: could not stop container %s: %v", appID, a.ContainerID, err)
+	if err := o.docker.StopContainer(ctx, mine.Container); err != nil {
+		log.Printf("retiring app %d: could not stop container %s: %v", appID, mine.Container, err)
 	}
 	// Unlike the log-and-continue cases in Deploy, this one is returned:
 	// the caller is about to delete the row, and doing that while the
 	// container survives is exactly the state to avoid.
-	return o.docker.RemoveContainer(ctx, a.ContainerID)
+	return o.docker.RemoveContainer(ctx, mine.Container)
 }
 
 // waitHealthy reports whether a freshly started container looks healthy.

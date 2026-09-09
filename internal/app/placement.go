@@ -75,11 +75,11 @@ func (s *Service) PlacementsFor(ctx context.Context, nodeID int64) ([]node.Place
 
 // Placed records what a machine did with what it was told to run.
 //
-// This is where a remote deploy ends: the row that has been `pending`
-// since the control plane resolved its image becomes succeeded or
-// failed, and on success the app points at the container that is now
-// serving it. Both of those are exactly what a local deploy writes at
-// the same point — the difference is only which machine did the work.
+// This is where a machine's half of a deploy ends: it says which
+// container is serving the app there, and the deployment closes once
+// **every** machine the app runs on has said the same thing. Both of
+// those are exactly what a local deploy writes at the same point — the
+// difference is only which machine did the work.
 func (s *Service) Placed(ctx context.Context, nodeID int64, results []node.Result) error {
 	for _, r := range results {
 		d, err := s.Repo().UnscopedDeployment(ctx, r.Deploy)
@@ -91,28 +91,45 @@ func (s *Service) Placed(ctx context.Context, nodeID int64, results []node.Resul
 			log.Printf("placement: %s reported on deploy %d, which is not here", r.App, r.Deploy)
 			continue
 		}
-		a, err := s.Repo().ByID(ctx, d.AppID)
+		a, err := s.Repo().ScopedByID(ctx, d.AppID)
 		if err != nil {
 			continue
 		}
-		if a.NodeID != nodeID {
-			// The app has been moved since the machine was told to run
-			// it. What it did is not what this instance wants any more,
-			// and the machine it now belongs to is the one whose report
-			// counts.
+		if _, ours := a.ReplicaOn(nodeID); !ours {
+			// The app has been taken off this machine since it was told
+			// to run it. What it did is not what this instance wants any
+			// more, and the machines it is on now are the ones whose
+			// reports count.
 			continue
 		}
 
 		if r.Error != "" {
+			// **One machine failing fails the deploy**, and it does so
+			// at once rather than when the last machine has been heard
+			// from. A deploy that is going to be reported failed should
+			// say so while somebody is still watching it, and the
+			// machines that did start it keep what they started —
+			// nothing here retires a container that came up.
+			if err := s.Repo().SetStatus(ctx, a.ID, nodeID, StatusDown); err != nil {
+				return err
+			}
 			if err := s.Repo().FinishDeployment(ctx, d.ID, DeploymentFailed, r.Error); err != nil {
 				return err
 			}
 			continue
 		}
-		if err := s.Repo().FinishDeployment(ctx, d.ID, DeploymentSucceeded, ""); err != nil {
+		// The container's **name** is derived rather than reported.
+		// This is where it came from: the placement chose it, from the
+		// app's reference and the deployment's id, and the machine was
+		// told to create exactly that. Taking a name back from the
+		// machine would make what the edge sends traffic to something
+		// the machine gets to decide.
+		name := containerNameFor(resourceName(ReferenceOf(a)), d.ID)
+		if err := s.Repo().UpdateContainer(ctx, a.ID, nodeID, r.Container, name, d.ID,
+			len(a.Replicas) == 1, StatusRunning); err != nil {
 			return err
 		}
-		if err := s.Repo().UpdateContainer(ctx, a.ID, r.Container, StatusRunning); err != nil {
+		if err := s.orch.settle(ctx, a.ID, d.ID); err != nil {
 			return err
 		}
 	}
@@ -140,8 +157,12 @@ func (s *Service) Sampled(ctx context.Context, nodeID int64, readings []node.Rea
 	}
 	byContainer := make(map[string]int64, len(apps))
 	for _, a := range apps {
-		if a.ContainerID != "" {
-			byContainer[a.ContainerID] = a.ID
+		// The container this app has **on the machine that took the
+		// reading**. An app on three machines has three, and matching a
+		// reading to the wrong one would draw one box's line on
+		// another's chart.
+		if r, ok := a.ReplicaOn(nodeID); ok && r.Container != "" {
+			byContainer[r.Container] = a.ID
 		}
 	}
 
@@ -201,12 +222,11 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 		Image:     d.ImageRef,
 		Registry:  auth,
 		Env:       env,
-		// The same labels a container here would carry. They do nothing
-		// on another machine yet — that machine's Traefik is not
-		// running and its names are not routed — and they are what will
-		// make it work when it is, so a container created now is one
-		// that does not have to be recreated for it.
-		Labels:   placementLabels(base, o.routing(a.Domains), values.HasTLS(), ref.String(), d.ID),
+		// The same labels a container here would carry, and by the same
+		// rule: a container routes the names it serves on the machine
+		// it is on, and an app spread over several machines routes none
+		// of them from a container. See routedBy.
+		Labels:   placementLabels(base, o.routedBy(a), values.HasTLS(), ref.String(), d.ID),
 		Networks: networks,
 	}, nil
 }
@@ -223,4 +243,24 @@ func placementLabels(base string, domains []traefik.Domain, tls bool, app string
 	labels[node.LabelApp] = app
 	labels[node.LabelDeploy] = strconv.FormatInt(deploy, 10)
 	return labels
+}
+
+// routedBy is the names a container of this app should carry routers
+// for.
+//
+// **All of them for an app on one machine, and none for an app on
+// several.** A label-router names one backend — the container it is on
+// — so two machines carrying the labels for one name would be two
+// Traefiks each answering for a third of the traffic and each sending
+// all of it to itself. The edge's file is what balances instead, and a
+// name with two answers on one machine is a race nobody can see the
+// result of.
+//
+// The containers still carry the network label and the two that say
+// whose they are, which is what the agent removes them by.
+func (o *Orchestrator) routedBy(a *Scoped) []traefik.Domain {
+	if len(a.Replicas) > 1 {
+		return nil
+	}
+	return o.routing(a.Domains)
 }

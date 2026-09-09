@@ -127,6 +127,11 @@ type Agent struct {
 	// directory, the Engine — is what the daemon already holds.
 	bootstrap func(ctx context.Context, edge node.Edge) error
 
+	// dataDir is this machine's own state directory, and the one thing
+	// the agent writes into: the routes its Traefik reads. Mounted at
+	// the same path inside and out, like every other machine's.
+	dataDir string
+
 	// admitted is the peer set this machine's firewall was last opened
 	// for. Each rule costs a container through hostexec, so it is
 	// written when the cluster changes rather than on every pass.
@@ -166,13 +171,14 @@ type Agent struct {
 	joined bool
 }
 
-func New(controlPlane, token, version string, box *machine.Reader, engine Engine,
+func New(controlPlane, token, version, dataDir string, box *machine.Reader, engine Engine,
 	address HostAddress, host firewall.Host, edge func(context.Context, node.Edge) error,
 ) *Agent {
 	return &Agent{
 		controlPlane: strings.TrimRight(controlPlane, "/"),
 		token:        token,
 		version:      version,
+		dataDir:      dataDir,
 		machine:      box,
 		engine:       engine,
 		address:      address,
@@ -261,7 +267,7 @@ func (a *Agent) tick(ctx context.Context) (interval time.Duration, err error) {
 	// serve. After the containers rather than before: a Traefik started
 	// for an app that then failed to come up would be two ports held
 	// open for nothing.
-	a.applyEdge(work, answer.Edge, answer.Desired.Apps)
+	a.applyEdge(work, answer.Edge, answer.Desired)
 
 	// And whatever this instance asked for while the poll was parked.
 	// Answered one at a time and in order: there is one of each of
@@ -441,17 +447,37 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 // infrastructure somebody's traffic may still be arriving at is a
 // different kind of act from starting it, and an idle Traefik costs a
 // container.
-func (a *Agent) applyEdge(ctx context.Context, edge *node.Edge, placements []node.Placement) {
-	if edge == nil || a.bootstrap == nil || !routesSomething(placements) {
+func (a *Agent) applyEdge(ctx context.Context, edge *node.Edge, desired node.Desired) {
+	if edge == nil || a.bootstrap == nil || !routesSomething(desired) {
 		return
+	}
+	// The routes go in **before** Traefik is started, and are rewritten
+	// on every pass that changes them. Before, because a file provider
+	// pointed at a directory whose file appears a moment later
+	// complains once for nothing; and a machine whose edge is already
+	// up gets the new file here, which is the whole of how a replica
+	// joins or leaves a load balancer.
+	if _, err := node.WriteRoutes(a.dataDir, desired.Routes, edge.TLS); err != nil {
+		log.Printf("agent: writing what this machine serves: %v", err)
 	}
 	if err := a.bootstrap(ctx, *edge); err != nil {
 		log.Printf("agent: starting this machine's edge: %v", err)
 	}
 }
 
-func routesSomething(placements []node.Placement) bool {
-	for _, p := range placements {
+// routesSomething is whether this machine has any reason to hold :80
+// and :443 open.
+//
+// Two ways to have one, and they are the two ways a name is routed: a
+// container of its own carrying the labels, or a route it was given for
+// an app whose traffic it spreads over the cluster. A machine with
+// neither is running workers, and a Traefik on it is two ports open for
+// nothing.
+func routesSomething(desired node.Desired) bool {
+	if len(desired.Routes) > 0 {
+		return true
+	}
+	for _, p := range desired.Apps {
 		if p.Labels["traefik.enable"] == "true" {
 			return true
 		}

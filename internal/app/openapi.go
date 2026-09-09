@@ -49,23 +49,31 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			}, "id", "status", "image", "has_logs", "created_at"),
 
 			"App": openapi.Object(map[string]*openapi.Schema{
-				"reference":      openapi.String("The app's identifier, org/project/environment/name — also its registry repository path."),
-				"name":           openapi.String("Unique within its environment, not across the instance. Permanent."),
-				"description":    openapi.String("What this app is. Empty unless someone set it."),
-				"domains":        openapi.Array(openapi.Ref("AppDomain")),
-				"image":          openapi.String("For a registry app, the path to push to — a push there deploys. For an external app, the image it pulls."),
-				"status":         {Type: "string", Enum: []string{"pending", "running", "down"}, Description: `"pending" until the first image is pushed.`},
-				"has_container":  openapi.Bool("Whether a container currently backs this app, which is what decides whether there is a log to read. The status cannot answer it: an app that has never been deployed and one whose container went away both read as not running, and only the second has anything to say."),
-				"source":         {Type: "string", Enum: []string{"registry", "external", "dockerfile", "railpack"}, Description: "Where this app's image comes from. \"registry\" is an image pushed to Cubeship, and the push is what deploys it; \"external\" is an image in a registry Cubeship does not run; \"dockerfile\" and \"railpack\" are built here from a Git repository, the first from a Dockerfile you wrote and the second worked out from the code. Only a push to Cubeship's own registry deploys on its own — the other two deploy when asked."},
-				"repo":           openapi.String("For a building app, the Git repository it builds from."),
-				"ref":            openapi.String("For a building app, the branch, tag or commit built. Empty means the repository's default branch."),
-				"dockerfile":     openapi.String("For a dockerfile app, the recipe's path in that repository. Empty means \"Dockerfile\" at the root."),
-				"org":            openapi.String(""),
-				"project":        openapi.String(""),
-				"environment":    openapi.String(""),
-				"node":           openapi.String("The machine in this cluster the app runs on, by name. On an instance of one box it is always `control-plane`."),
+				"reference":     openapi.String("The app's identifier, org/project/environment/name — also its registry repository path."),
+				"name":          openapi.String("Unique within its environment, not across the instance. Permanent."),
+				"description":   openapi.String("What this app is. Empty unless someone set it."),
+				"domains":       openapi.Array(openapi.Ref("AppDomain")),
+				"image":         openapi.String("For a registry app, the path to push to — a push there deploys. For an external app, the image it pulls."),
+				"status":        {Type: "string", Enum: []string{"pending", "running", "down", "degraded"}, Description: "`pending` until the first image is pushed, and `degraded` when some of the machines an app runs on are serving it and some are not — which cannot happen to an app on one."},
+				"has_container": openapi.Bool("Whether a container currently backs this app, which is what decides whether there is a log to read. The status cannot answer it: an app that has never been deployed and one whose container went away both read as not running, and only the second has anything to say."),
+				"source":        {Type: "string", Enum: []string{"registry", "external", "dockerfile", "railpack"}, Description: "Where this app's image comes from. \"registry\" is an image pushed to Cubeship, and the push is what deploys it; \"external\" is an image in a registry Cubeship does not run; \"dockerfile\" and \"railpack\" are built here from a Git repository, the first from a Dockerfile you wrote and the second worked out from the code. Only a push to Cubeship's own registry deploys on its own — the other two deploy when asked."},
+				"repo":          openapi.String("For a building app, the Git repository it builds from."),
+				"ref":           openapi.String("For a building app, the branch, tag or commit built. Empty means the repository's default branch."),
+				"dockerfile":    openapi.String("For a dockerfile app, the recipe's path in that repository. Empty means \"Dockerfile\" at the root."),
+				"org":           openapi.String(""),
+				"project":       openapi.String(""),
+				"environment":   openapi.String(""),
+				"node":          openapi.String("The machine whose edge serves this app's names — where its traffic arrives, and what a DNS record for it points at. On an instance of one box it is always `control-plane`."),
+				"nodes":         arrayOf(openapi.String("A machine's name."), "The machines this app runs on. Always includes `node`. More than one is an app whose edge spreads its traffic across them, over the cluster's private network."),
+				"replicas": arrayOf(openapi.Ref("AppReplica"),
+					"What is running on each of those machines. It is what a `degraded` status is made of: some of them serving and some not."),
 				"suggested_host": openapi.String("A name this app could answer at, under the instance's own domain: `<app>.<environment>.<project>.<instance domain>`. Nothing assigns it — an app with no domain is a normal app, and this is what a client offers when somebody does want one. Under a wildcard address (`settings.wildcard_domain`) it resolves the moment it is added; under a real domain it needs a record. Absent while the instance has no domain."),
 			}, "reference", "name", "description", "domains", "status", "has_container", "source", "org", "project", "environment"),
+			"AppReplica": openapi.Object(map[string]*openapi.Schema{
+				"node":    openapi.String("The machine, by name."),
+				"status":  {Type: "string", Enum: []string{"pending", "running", "down"}, Description: "What that machine's copy is doing."},
+				"serving": openapi.Bool("Whether the edge is sending traffic here. A replica can be running and not yet a backend: an app that gained a second machine before this release has containers whose names were never written down, and a name is the address the edge reaches a replica at. Its next deploy fixes it."),
+			}, "node", "status", "serving"),
 			"AppDomain": openapi.Object(map[string]*openapi.Schema{
 				"id":   openapi.Integer("Identifies this domain on this app, for changing or removing it."),
 				"host": openapi.String("The name Traefik routes to this app, over HTTPS. Lowercase, without a trailing dot — which is how a browser sends one and how Traefik matches it."),
@@ -128,7 +136,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 							"repo":        openapi.String("For a building app: the https://, http:// or git:// repository to build."),
 							"ref":         openapi.String("For a building app: the branch, tag or commit to build."),
 							"dockerfile":  openapi.String("For a dockerfile app only: the recipe's path within the repository."),
-							"node":        openapi.String("Which machine in this cluster the app runs on, by name. Moving it takes effect on the machine's next pass: the new one starts the app before the old one stops it, so a move that fails is not an outage.\n\nTwo refusals, and both are things that would otherwise not work in a way nobody would notice. An app with a **domain** cannot leave the control plane: each machine is its own edge, and only this one routes traffic. An app that **builds** cannot either: its image is built here and loaded into this machine's Docker rather than pushed anywhere another machine could pull it from."),
+							"node":        openapi.String("Which machine serves this app's names, by name — where its traffic arrives. Sent alone it is the whole placement: run the app there and serve it from there.\n\nOne machine rather than all of them, and the reason is the certificate: a machine that routes a name asks Let's Encrypt for it, and one the name does not resolve to fails that challenge forever while spending a limit shared with everyone else under that domain."),
+							"nodes":       arrayOf(openapi.String("A machine's name."), "Which machines this app runs on. More than one puts its edge in front of all of them, round-robin, over the cluster's private network — which is what makes a name survive one of those machines going away.\n\nSent without `node`, the edge stays where it is when that machine is still in the set, so scaling an app out does not silently move its DNS record. Moving it takes effect on each machine's next pass: the new one starts the app before the old one stops it, so a move that fails is not an outage.\n\nOne refusal, and it is a thing that would otherwise not work in a way nobody would notice: an app that **builds** cannot leave the control plane on an instance with no domain, because a build only reaches another machine through this instance's own registry and the registry follows the domain."),
 						})),
 					},
 					Responses: openapi.Responses{
@@ -137,7 +146,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.TextResponse("No such app, or no server of that name is in this cluster."),
-						"409": openapi.TextResponse("This app cannot run on another machine: it has a domain, or it is built here."),
+						"409": openapi.TextResponse("This app cannot run on another machine: it is built here and this instance has no registry to push to, or the machine named to serve it is not one of the machines it runs on."),
 					},
 				},
 				"get": {
@@ -311,7 +320,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Description: "Stdout and stderr, already demultiplexed out of Docker's frame format. Returns the last " + DefaultLogTail + " lines unless `tail` says otherwise.",
 					Tags:        []string{"Apps"},
 					Parameters: append(refParams,
-						openapi.QueryParam("tail", `Number of trailing lines, e.g. "1000", or "all" for the entire log. Defaults to `+DefaultLogTail+".")),
+						openapi.QueryParam("tail", `Number of trailing lines, e.g. "1000", or "all" for the entire log. Defaults to `+DefaultLogTail+"."),
+						openapi.QueryParam("server", "Which machine's copy to read, for an app that runs on more than one. A log belongs to one container and so to one machine, and there is no combined one — interleaving them would need a clock those machines do not share. Defaults to the machine serving the app's names.")),
 					Responses: openapi.Responses{
 						"200": {
 							Description: "The log output.",
@@ -381,4 +391,12 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			},
 		},
 	}
+}
+
+// arrayOf is openapi.Array with something to say about the list itself.
+// The items carry their own description; this is what the field means.
+func arrayOf(items *openapi.Schema, description string) *openapi.Schema {
+	a := openapi.Array(items)
+	a.Description = description
+	return a
 }

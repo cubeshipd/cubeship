@@ -128,13 +128,38 @@ export type App = {
   dockerfile?: string;
   project: string;
   environment: string;
-  // The machine in the cluster this app runs on, by name. On an
-  // instance of one box it is always "control-plane".
+  // The machine whose edge serves this app's names — where its traffic
+  // arrives. On an instance of one box it is always "control-plane".
+  //
+  // One machine rather than all of them, and the reason is the
+  // certificate: a machine that routes a name asks Let's Encrypt for
+  // it, and one the name does not resolve to fails that challenge
+  // forever while spending a limit shared with everyone else under that
+  // domain.
   node: string;
-  // Where a DNS record for this app has to point: the machine it runs
-  // on, because every machine is its own edge. Absent when that machine
-  // has not reported an address — a name nothing can be pointed at yet.
+  // The machines it runs on. Always includes `node`. More than one is
+  // an app whose edge spreads its traffic across them, over the
+  // cluster's private network.
+  nodes: string[];
+  // What is running on each of those machines — what a "degraded"
+  // status is made of.
+  replicas: AppReplica[];
+  // Where a DNS record for this app has to point: the machine its
+  // traffic arrives at, because every machine is its own edge. Absent
+  // when that machine has not reported an address — a name nothing can
+  // be pointed at yet.
   address?: string;
+};
+
+// One machine an app runs on.
+export type AppReplica = {
+  node: string;
+  status: string;
+  // Whether the edge is sending traffic here. A replica can be running
+  // and not yet a backend: the edge reaches one by container name, and
+  // a container from before this existed has none written down until
+  // its next deploy.
+  serving: boolean;
 };
 
 // --- credentials ---
