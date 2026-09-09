@@ -186,8 +186,11 @@ run_tests() {
 	check "and no dashboard to start" "$(grep -c 'CUBESHIP_WEB_IMAGE' /tmp/docker.log)" "0"
 	check "it still gets the Docker socket" \
 		"$(grep -c 'var/run/docker.sock:/var/run/docker.sock' /tmp/docker.log)" "1"
+	# The closing line specifically, not any mention: the progress line
+	# above it names the control plane too, and counting both would pin
+	# how many times the installer says a thing rather than that it does.
 	check "and says where it is managed from" \
-		"$(printf '%s' "$out" | grep -c 'https://cube.example.com')" "1"
+		"$(printf '%s' "$out" | grep -c 'It belongs to .*https://cube.example.com')" "1"
 	WORKER=0; CONTROL_PLANE=""; NODE_TOKEN=""
 
 	# Half a worker is not a mode. Refusing here means the machine is
