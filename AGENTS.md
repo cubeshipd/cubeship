@@ -193,8 +193,8 @@ already have for no gain the sidebar does not give.
 ### How the dashboard is navigated
 
 `/` is the **Overview**, and it is the only screen about the instance
-rather than about something in it: what is down, what the machine is
-doing, what every container on it is using, and what is deployed. It is
+rather than about something in it: what is on it, what the machine is
+doing, and what every container on it is using. It is
 what you land on because it is the question you have before you know
 which project you want — the projects grid was that address for as long
 as there was nothing else to land on, and it says nothing about whether
