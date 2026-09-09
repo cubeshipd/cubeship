@@ -148,7 +148,23 @@ func (h *Handler) issueToken(w http.ResponseWriter, r *http.Request) {
 	// on the token it gets says which machine it was. See NodeUsername.
 	subject := ""
 	var access []regauth.AccessEntry
-	if username == node.RegistryUsername && h.nodes != nil {
+	switch {
+	case username == app.BuilderUsername && h.builderToken != "":
+		// A build of this instance's own, pushing what it just made.
+		//
+		// Compared in constant time because this is the one credential
+		// here that is a secret compared against a secret: a node's and
+		// a user's are looked up, and a lookup is not a comparison
+		// somebody can time.
+		if subtle.ConstantTimeCompare([]byte(key), []byte(h.builderToken)) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		subject = "builder"
+		for _, scope := range r.URL.Query()["scope"] {
+			access = append(access, builderAccess(scope)...)
+		}
+	case username == node.RegistryUsername && h.nodes != nil:
 		name, err := h.nodes.AuthenticateNode(r.Context(), key)
 		if err != nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -158,7 +174,7 @@ func (h *Handler) issueToken(w http.ResponseWriter, r *http.Request) {
 		for _, scope := range r.URL.Query()["scope"] {
 			access = append(access, nodeAccess(scope)...)
 		}
-	} else {
+	default:
 		caller, _, err := h.users.Authenticate(r.Context(), key)
 		if err != nil || caller.Username != username {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)

@@ -37,6 +37,13 @@ type Handler struct {
 	// which is the address it pulls from — never the public name.
 	localRegistry string
 
+	// builderToken is what a build authenticates with when it pushes
+	// its result here. A system-to-system credential like the webhook's
+	// and separate from it: this one may push any image, and that one
+	// may only say something was pushed. Empty on an instance that has
+	// not generated one, and then there is no builder login at all.
+	builderToken string
+
 	// nodes authenticates the other machines in this cluster, which
 	// pull the images this registry holds. Nil on an instance with no
 	// cluster module wired in, and then a machine's credential is
@@ -116,6 +123,34 @@ type NodeAuth interface {
 // SetNodeAuth wires in what authenticates the other machines. Called
 // once, by server.New.
 func (h *Handler) SetNodeAuth(a NodeAuth) { h.nodes = a }
+
+// SetBuilderToken wires in the credential a build pushes with. Called
+// once, by server.New.
+func (h *Handler) SetBuilderToken(token string) { h.builderToken = token }
+
+// builderAccess is what a build may do with an image: **push and
+// pull**, on the repository it asked for.
+//
+// Every repository in this registry is an app's, and pushing to one is
+// what a build is. It is not an admin's token by another name: it may
+// not delete, which is the one action that is not recoverable by
+// building again.
+func builderAccess(scope string) []regauth.AccessEntry {
+	parts := strings.SplitN(scope, ":", 3)
+	if len(parts) != 3 || parts[0] != "repository" {
+		return nil
+	}
+	var granted []string
+	for _, action := range strings.Split(parts[2], ",") {
+		if pushPullActions[action] {
+			granted = append(granted, action)
+		}
+	}
+	if len(granted) == 0 {
+		return nil
+	}
+	return []regauth.AccessEntry{{Type: "repository", Name: parts[1], Actions: granted}}
+}
 
 // nodeAccess is what a machine in this cluster may do with an image:
 // **pull, and nothing else**.

@@ -1184,12 +1184,36 @@ asked for until `Resolve` says what actually ran.
 `internal/platform/buildkit` turns a directory of source into an image,
 through a `cubeship-buildkit` container.
 
-**The result is loaded into the Docker Engine, not pushed anywhere.** On
-one VPS the image never has to leave the box, and a registry round-trip
-would need credentials, a reachable host and a certificate — three things
-that can all be missing on a fresh install. `dockerx.LoadImage` imports
-the tarball BuildKit writes, streamed through a pipe so a whole image is
-never held in memory.
+**The result is loaded into the Docker Engine unless the app runs
+somewhere else.** On one VPS the image never has to leave the box, and a
+registry round-trip would need credentials, a reachable host and a
+certificate — three things that can all be missing on a fresh install.
+`dockerx.LoadImage` imports the tarball BuildKit writes, streamed
+through a pipe so a whole image is never held in memory.
+
+An app placed on another machine is the case where it does have to
+leave. Then the exporter is `image` with `push=true` instead of
+`docker`, and **nothing comes back here at all**: no tarball is written,
+no pipe is opened, and the bytes go from the builder to the registry
+without passing through this process. The machine that will run it
+pulls from there. `Orchestrator.buildTarget` is where the two answers
+are decided, from one fact — which machine the app is on.
+
+**The builder has a credential of its own**, `app.BuilderUsername` and
+the `builder-token` the daemon generates on first start. Not the webhook
+token, which would widen it from "forge a push notification" to "push
+any image", and not a person's API key, which would put somebody's
+credential inside every build. `pushAuth` answers for one host and
+refuses every other, so a registry named in a Dockerfile cannot be
+handed the login. The registry's token endpoint grants it push and pull
+and never delete — the one action building again does not undo.
+
+**A build still happens on the control plane, wherever the app runs.**
+That is where the builder, the repository credentials and the plan are;
+what crosses to the other machine is an image reference. So an app that
+builds can be placed anywhere **once the instance has a domain**, and
+without one it is refused — with the reason — rather than built into an
+image nothing can pull.
 
 The build context is streamed from the *daemon's* filesystem over the
 client session, so the builder container needs no access to it.
@@ -1969,8 +1993,13 @@ that decides nothing has no reason to hold a credential that could push.
 
 **One refusal, and it is a thing that would otherwise not work in a way
 nobody would notice**: an app that **builds** cannot leave the control
-plane, because its image is loaded into this machine's Docker rather
-than pushed anywhere another machine could pull it from.
+plane on an instance with **no domain**, because a build reaches another
+machine only through this instance's own registry and the registry
+follows the domain. With one it is placed like anything else — the build
+still happens here and its result is pushed rather than loaded. See
+"Building images". The check is in two places on purpose: in
+`checkPlacement`, which is a sentence in front of somebody making the
+decision, and in `buildTarget`, which is the one that cannot be skipped.
 
 Its **log**, its **charts** and its **names** all work — see below.
 None of them is read from or served by this machine: the machine the app
@@ -2091,9 +2120,6 @@ calls a working name broken is worse than one that says where to look.
   What makes a record stop naming one is several A records or something
   in front of them, and either way it is a decision about failure that
   this does not make yet.
-- **Builds that push.** A built image is loaded into the control plane's
-  Engine, so no other machine can pull it. Exporting to the instance's
-  own registry instead is what lets a built app be placed.
 
 ## Managed databases
 

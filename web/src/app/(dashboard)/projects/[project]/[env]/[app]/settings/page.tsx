@@ -19,7 +19,15 @@ import { TextAreaField, TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { type App, type AppSource, api, BUILDING_SOURCES, type ClusterServer } from "@/lib/api";
+import {
+  type App,
+  type AppSource,
+  api,
+  BUILDING_SOURCES,
+  type ClusterServer,
+  // Aliased: this file's own Settings is the screen.
+  type Settings as InstanceSettings,
+} from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // The daemon has four sources. There are only two things an app can be:
@@ -211,6 +219,7 @@ function Placement(props: SectionProps) {
   const { app } = props;
   const { busy, saved, setSaved, save } = usePatch(props);
   const [servers, setServers] = useState<ClusterServer[] | null>(null);
+  const [registryHost, setRegistryHost] = useState<string | null>(null);
   const [node, setNode] = useState(app.node);
 
   useEffect(() => {
@@ -218,22 +227,28 @@ function Placement(props: SectionProps) {
       .get<ClusterServer[]>("/nodes")
       .then(setServers)
       .catch(() => setServers([]));
+    // Whether a build has anywhere to go. The registry follows the
+    // instance's domain, so an instance with no domain has none — and
+    // an app that builds cannot leave this machine until it does.
+    api
+      .get<InstanceSettings>("/settings")
+      .then((s) => setRegistryHost(s.registry_host ?? ""))
+      .catch(() => setRegistryHost(""));
   }, []);
 
   if (servers !== null && servers.length < 2) return null;
 
   const dirty = node !== app.node;
-  // The two the daemon refuses, said here as well and before the
-  // request: a name to answer at, because only the control plane routes
-  // traffic, and an image built here, because no other machine has
-  // anywhere to pull it from. The daemon still decides — this is the
-  // courtesy of not making somebody press a button to be told no.
-  // The one thing left that keeps an app here. A name no longer does:
-  // every machine runs its own edge, so an app answers at its name
-  // wherever it is — what has to follow it is the DNS record.
-  const stuck = BUILDING_SOURCES.includes(app.source)
-    ? "It is built here, and the image is loaded into this machine's Docker rather than pushed anywhere another machine could pull it from."
-    : null;
+  // The one thing left that keeps an app here, said before the request
+  // rather than after it. A name no longer does: every machine runs its
+  // own edge, so an app answers at its name wherever it is — what has
+  // to follow it is the DNS record. What an app that builds needs is
+  // somewhere to push to, and that is the instance's own registry,
+  // which exists once there is a domain.
+  const stuck =
+    BUILDING_SOURCES.includes(app.source) && registryHost === ""
+      ? "It is built here, and a build reaches another machine only through this instance's own registry — which needs a domain."
+      : null;
 
   return (
     <>
@@ -265,7 +280,11 @@ function Placement(props: SectionProps) {
                 setSaved(false);
               }}
             />
-            {stuck && <Notice>{stuck} It stays on the control plane until that changes.</Notice>}
+            {stuck && (
+              <Notice>
+                {stuck} It stays on this machine until one is set in the instance settings.
+              </Notice>
+            )}
             {/* The one thing moving an app does not do for you. A name
                 follows the app only once its record does, and Cubeship
                 does not know which provider serves a name it did not

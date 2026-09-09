@@ -338,7 +338,7 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 		if source != nil {
 			next = *source
 		}
-		if err := checkPlacement(*place, next); err != nil {
+		if err := s.checkPlacement(ctx, *place, next); err != nil {
 			return nil, err
 		}
 		// The container it is running now stays where it is until the
@@ -355,26 +355,32 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 // checkPlacement is what an app has to be to run somewhere other than
 // the control plane.
 //
-// One refusal left, and it is something that would otherwise not work in
-// a way nobody would notice: **a source that builds**. The image is
-// built on the control plane and loaded into its Engine — no registry
-// has heard of it — so another machine has nowhere to pull it from.
-// What fixes it is builds that push to the instance's own registry,
-// which is its own piece of work.
+// One refusal left, and it is not about the app: **a source that builds
+// needs somewhere to push to**. The build happens on the control plane
+// wherever the app runs — that is where the builder and the repository
+// credentials are — and its result reaches another machine only through
+// this instance's own registry, which exists once there is a domain.
+// Without one the image would be loaded into this machine's Engine and
+// the machine that is to run it would have nowhere to pull it from.
 //
-// A **domain** is no longer one. Every machine runs its own edge, so an
-// app answers at its name wherever it is — what has to follow it is the
-// DNS record, which points at a machine rather than at an instance.
-// That is the operator's to move, and it is why the app's response
-// carries the address it should point at.
-func checkPlacement(nodeSlug string, source Source) error {
+// It is checked here as well as in the build because the two failures
+// are different sizes: here it is a sentence in front of somebody
+// making the decision, and there it is a deploy that fails on a box
+// nobody is looking at.
+//
+// A **domain** for the app itself is no longer one. Every machine runs
+// its own edge, so an app answers at its name wherever it is — what has
+// to follow it is the DNS record, which points at a machine rather than
+// at an instance. That is the operator's to move, and it is why the
+// app's response carries the address it should point at.
+func (s *Service) checkPlacement(ctx context.Context, nodeSlug string, source Source) error {
 	if nodeSlug == node.ControlPlaneSlug {
 		// Coming back to the control plane is always allowed: it is
 		// where everything works.
 		return nil
 	}
-	if source.Builds() {
-		return fmt.Errorf("%w: it is built here, and the image is loaded into this machine's Docker rather than pushed anywhere another machine could pull it from. An app that runs an image from a registry can be placed anywhere",
+	if source.Builds() && s.orch.registryHost(ctx) == "" {
+		return fmt.Errorf("%w: it is built here, and a build only reaches another machine through this instance's own registry — which needs a domain. Set one in the instance settings, or run an image from a registry, which can be placed anywhere",
 			ErrNotPlaceable)
 	}
 	return nil

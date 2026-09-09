@@ -107,26 +107,50 @@ func TestAnAppWithADomainCanMoveAndSaysWhereItsTrafficGoes(t *testing.T) {
 	}
 }
 
-// An app built here cannot run there. The image is loaded into this
-// machine's Docker rather than pushed anywhere, so another machine has
-// nowhere to pull it from — and a placement that cannot be pulled is a
-// deploy that fails on a box nobody is looking at.
-func TestAnAppBuiltHereCannotRunElsewhereYet(t *testing.T) {
-	f := servertest.New(t)
-	_ = addServer(t, f, "eu-1")
-
+func createBuildingApp(t *testing.T, f *servertest.Fixture, name string) placedApp {
+	t.Helper()
 	var created placedApp
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]any{
-		"name": "worker", "project": "web", "source": "railpack",
-		"repo": "https://github.com/acme/worker",
+		"name": name, "project": "web", "source": "railpack",
+		"repo": "https://github.com/acme/" + name,
 	}, f.AdminKey, &created), http.StatusCreated)
+	return created
+}
+
+// An app built here can run there. The build still happens on the
+// control plane — that is where the builder and the repository
+// credentials are — and its result is pushed to this instance's own
+// registry instead of being loaded into this machine's Engine, which is
+// the one address every machine in the cluster can pull from.
+func TestAnAppThatBuildsCanBePlacedOnceThereIsARegistry(t *testing.T) {
+	f := servertest.New(t)
+	_ = addServer(t, f, "eu-1")
+	created := createBuildingApp(t, f, "worker")
+
+	var moved placedApp
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPatch, "/apps/"+created.Reference,
+		map[string]any{"node": "eu-1"}, f.AdminKey, &moved), http.StatusOK)
+	if moved.Node != "eu-1" {
+		t.Errorf("an app that builds is on %q, want the machine it was placed on", moved.Node)
+	}
+}
+
+// With no domain there is no registry, and a build has nowhere to go: the
+// image would be loaded into this machine's Docker and the machine that
+// is to run it would have nowhere to pull it from. Refused in front of
+// the person making the decision rather than minutes later, in a deploy
+// on a box nobody is looking at.
+func TestAnAppThatBuildsCannotLeaveAnInstanceWithNoRegistry(t *testing.T) {
+	f := servertest.NewUnconfigured(t)
+	_ = addServer(t, f, "eu-1")
+	created := createBuildingApp(t, f, "worker")
 
 	rec := f.Do(t, http.MethodPatch, "/apps/"+created.Reference,
 		map[string]any{"node": "eu-1"}, f.AdminKey)
 	if rec.Code != http.StatusConflict {
-		t.Fatalf("moving an app that builds: %d %s, want 409", rec.Code, rec.Body.String())
+		t.Fatalf("moving an app that builds with no registry: %d %s, want 409", rec.Code, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), "registry") {
+	if !strings.Contains(rec.Body.String(), "domain") {
 		t.Errorf("the refusal is %q, and it has to say what would fix it", rec.Body.String())
 	}
 }

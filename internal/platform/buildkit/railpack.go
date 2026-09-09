@@ -126,6 +126,8 @@ func (b *Builder) BuildPlanned(ctx context.Context, req PlannedRequest, logs io.
 			"context":    req.ContextDir,
 			"dockerfile": req.PlanDir,
 		},
+		push:     req.Push,
+		registry: req.Registry,
 	}, logs)
 }
 
@@ -136,4 +138,8 @@ type PlannedRequest struct {
 	Image      string
 	// CacheKey isolates this app's mount caches from every other app's.
 	CacheKey string
+	// Push and Registry are what send the result to the instance's own
+	// registry rather than into this machine's Engine. See Request.
+	Push     bool
+	Registry Login
 }

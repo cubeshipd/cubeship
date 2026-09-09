@@ -35,6 +35,10 @@ import (
 // notifications with.
 const WebhookToken = "webhook-secret"
 
+// BuilderToken is what a build in the test server logs in to the
+// registry with. A real daemon generates one on first start.
+const BuilderToken = "builder-secret"
+
 // LocalRegistry stands in for wherever the daemon pulls an app's own
 // image from. Which address that is depends on whether the daemon is a
 // container or a host process, and no test here depends on which.
@@ -118,7 +122,7 @@ func NewEmpty(t testing.TB) *Fixture {
 	dataDir := t.TempDir()
 	return &Fixture{
 		Server: server.New(db, noDocker{}, server.Options{
-			WebhookToken: WebhookToken, LocalRegistry: LocalRegistry, DataDir: dataDir,
+			WebhookToken: WebhookToken, BuilderToken: BuilderToken, LocalRegistry: LocalRegistry, DataDir: dataDir,
 		}),
 		DB:      db,
 		DataDir: dataDir,
@@ -134,7 +138,7 @@ func NewUnclaimed(t testing.TB, token setup.Token) *Fixture {
 	dataDir := t.TempDir()
 	return &Fixture{
 		Server: server.New(db, noDocker{}, server.Options{
-			WebhookToken: WebhookToken, LocalRegistry: LocalRegistry,
+			WebhookToken: WebhookToken, BuilderToken: BuilderToken, LocalRegistry: LocalRegistry,
 			SetupToken: token, DataDir: dataDir,
 		}),
 		DB:      db,
@@ -163,7 +167,7 @@ func newFixture(t testing.TB, docker app.DockerAPI, domain string) *Fixture {
 
 	dataDir := t.TempDir()
 	srv := server.New(db, docker, server.Options{
-		WebhookToken: WebhookToken, LocalRegistry: LocalRegistry, DataDir: dataDir,
+		WebhookToken: WebhookToken, BuilderToken: BuilderToken, LocalRegistry: LocalRegistry, DataDir: dataDir,
 	})
 	if domain != "" {
 		if err := srv.Settings.SeedFromEnv(ctx, map[string]string{settings.Domain: domain}); err != nil {

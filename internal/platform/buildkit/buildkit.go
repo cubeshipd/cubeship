@@ -17,8 +17,10 @@ import (
 	"strings"
 	"time"
 
+	authtypes "github.com/docker/cli/cli/config/types"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/tonistiigi/fsutil"
 	"golang.org/x/sync/errgroup"
@@ -78,6 +80,20 @@ type Request struct {
 
 	// Image is what the result is named, tag included.
 	Image string
+
+	// Push sends the result to the registry Image names instead of
+	// loading it into this machine's Engine.
+	//
+	// It is what makes a built app placeable: an image loaded here is
+	// one no other machine has ever heard of, and a machine that was
+	// told to run it would have nowhere to pull it from. Loading stays
+	// the default because it is faster and needs no registry at all —
+	// an instance of one box builds and runs on the same Engine.
+	Push bool
+	// Registry is the login for the host Image names, for a push. The
+	// instance's own registry authenticates every request, including
+	// this one.
+	Registry Login
 
 	// Args are the Dockerfile's build arguments.
 	Args map[string]string
@@ -148,6 +164,8 @@ func (b *Builder) Build(ctx context.Context, req Request, logs io.Writer) error 
 		attrs:     frontendAttrs,
 		localDirs: localDirs,
 		gitToken:  req.GitToken,
+		push:      req.Push,
+		registry:  req.Registry,
 	}, logs)
 }
 
@@ -202,6 +220,8 @@ type solveRequest struct {
 	attrs     map[string]string
 	localDirs map[string]string
 	gitToken  string
+	push      bool
+	registry  Login
 }
 
 // gitAuth hands a clone credential to BuildKit as a session secret.
@@ -212,6 +232,46 @@ type solveRequest struct {
 // instruction or the build's output; it authenticates the fetch and
 // nothing else.
 const gitAuthSecret = "GIT_AUTH_TOKEN"
+
+// Login is a username and password for one registry host.
+type Login struct {
+	Host     string
+	Username string
+	Password string
+}
+
+// pushAuth is how BuildKit authenticates the push.
+//
+// One host and one login: this is for the instance's own registry and
+// nothing else. A request for any other host gets nothing, which is
+// what makes this incapable of leaking the credential to a registry
+// somebody put in a Dockerfile.
+func pushAuth(login Login) []session.Attachable {
+	if login.Host == "" || login.Username == "" {
+		return nil
+	}
+	return []session.Attachable{authprovider.NewDockerAuthProvider(authprovider.DockerAuthProviderConfig{
+		AuthConfigProvider: func(_ context.Context, host string, _ []string, _ authprovider.ExpireCachedAuthCheck) (authtypes.AuthConfig, error) {
+			return authConfigFor(login, host), nil
+		},
+	})}
+}
+
+// authConfigFor is the whole of that decision, on its own so it can be
+// pinned by a test: **this login, for this host, and an empty answer for
+// every other**. A build runs whatever the repository contains, and a
+// Dockerfile is free to name a registry — handing it this instance's
+// push credential because it asked is the failure this shape prevents.
+func authConfigFor(login Login, host string) authtypes.AuthConfig {
+	if host != login.Host {
+		return authtypes.AuthConfig{}
+	}
+	return authtypes.AuthConfig{
+		ServerAddress: login.Host,
+		Username:      login.Username,
+		Password:      login.Password,
+	}
+}
 
 func gitAuth(token string) []session.Attachable {
 	if token == "" {
@@ -261,25 +321,49 @@ func (b *Builder) solve(ctx context.Context, req solveRequest, logs io.Writer) e
 		return fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 
-	// The tarball BuildKit writes goes straight into the Engine, so the
-	// image is never held in memory or on disk in full.
-	pr, pw := io.Pipe()
-
 	mounts, err := localMounts(req.localDirs)
 	if err != nil {
 		return err
+	}
+
+	session := gitAuth(req.gitToken)
+
+	// Where the result goes, and it is one of two places.
+	//
+	// **Loaded**, which is the ordinary answer: the tarball BuildKit
+	// writes goes straight into this machine's Engine through a pipe, so
+	// the image is never held in memory or on disk in full.
+	//
+	// **Pushed**, when the app runs on another machine: the builder
+	// sends it to the registry itself. Nothing comes back here at all —
+	// no tarball is written, no pipe is opened, and the loader below
+	// does not run. That is the point of it: the bytes go from the
+	// builder to the registry without passing through this process, and
+	// the machine that will run the image pulls it from there.
+	var pr *io.PipeReader
+	var pw *io.PipeWriter
+	var export client.ExportEntry
+	if req.push {
+		export = client.ExportEntry{
+			Type:  client.ExporterImage,
+			Attrs: map[string]string{"name": req.image, "push": "true"},
+		}
+		session = append(session, pushAuth(req.registry)...)
+	} else {
+		pr, pw = io.Pipe()
+		export = client.ExportEntry{
+			Type:   client.ExporterDocker,
+			Attrs:  map[string]string{"name": req.image},
+			Output: func(map[string]string) (io.WriteCloser, error) { return pw, nil },
+		}
 	}
 
 	opt := client.SolveOpt{
 		Frontend:      req.frontend,
 		FrontendAttrs: req.attrs,
 		LocalMounts:   mounts,
-		Session:       gitAuth(req.gitToken),
-		Exports: []client.ExportEntry{{
-			Type:   client.ExporterDocker,
-			Attrs:  map[string]string{"name": req.image},
-			Output: func(map[string]string) (io.WriteCloser, error) { return pw, nil },
-		}},
+		Session:       session,
+		Exports:       []client.ExportEntry{export},
 	}
 
 	group, ctx := errgroup.WithContext(ctx)
@@ -289,7 +373,9 @@ func (b *Builder) solve(ctx context.Context, req solveRequest, logs io.Writer) e
 		_, err := c.Solve(ctx, nil, opt, status)
 		// Closing the pipe is what ends the load below, success or not.
 		// Without it a failed build leaves the loader waiting forever.
-		pw.CloseWithError(err)
+		if pw != nil {
+			pw.CloseWithError(err)
+		}
 		if err != nil {
 			return fmt.Errorf("build failed: %w", err)
 		}
@@ -301,14 +387,16 @@ func (b *Builder) solve(ctx context.Context, req solveRequest, logs io.Writer) e
 		return nil
 	})
 
-	group.Go(func() error {
-		if err := b.loader.LoadImage(ctx, pr); err != nil {
-			// Drain, so a loader that gave up does not wedge the solve.
-			io.Copy(io.Discard, pr)
-			return err
-		}
-		return nil
-	})
+	if pr != nil {
+		group.Go(func() error {
+			if err := b.loader.LoadImage(ctx, pr); err != nil {
+				// Drain, so a loader that gave up does not wedge the solve.
+				io.Copy(io.Discard, pr)
+				return err
+			}
+			return nil
+		})
+	}
 
 	return group.Wait()
 }
