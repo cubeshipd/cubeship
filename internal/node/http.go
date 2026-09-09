@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"cubeship/internal/mesh"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/slug"
@@ -37,6 +38,10 @@ type Response struct {
 	MemoryBytes *int64   `json:"memory_bytes,omitempty"`
 	DiskBytes   *int64   `json:"disk_bytes,omitempty"`
 	Containers  int      `json:"containers"`
+	// InMesh is whether this machine is on the cluster's private
+	// network. A machine can be `ready` and not on it — it is calling
+	// in, and its containers cannot reach the others'.
+	InMesh bool `json:"in_mesh"`
 
 	LastSeenAt *time.Time `json:"last_seen_at,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
@@ -57,7 +62,8 @@ func toResponse(n *Node) Response {
 		Status: n.Status(), Address: n.Address, Version: n.Version,
 		Cores: n.Cores, MemoryTotalBytes: n.MemoryTotalBytes, DiskTotalBytes: n.DiskTotalBytes,
 		CPUPercent: n.CPUPercent, MemoryBytes: n.MemoryBytes, DiskBytes: n.DiskBytes,
-		Containers: n.Containers, LastSeenAt: n.LastSeenAt, CreatedAt: n.CreatedAt,
+		Containers: n.Containers, InMesh: n.InMesh(),
+		LastSeenAt: n.LastSeenAt, CreatedAt: n.CreatedAt,
 	}
 }
 
@@ -188,6 +194,9 @@ type AgentRequest struct {
 	DiskBytes   *int64   `json:"disk_bytes,omitempty"`
 
 	Containers int `json:"containers"`
+	// MeshNodeID is what this machine's own Engine says the swarm calls
+	// it. Empty is a machine that is not on the cluster's network.
+	MeshNodeID string `json:"mesh_node_id"`
 }
 
 type AgentResponse struct {
@@ -195,6 +204,12 @@ type AgentResponse struct {
 	// on the first pass, so the box says which node it joined as.
 	Name    string  `json:"name"`
 	Desired Desired `json:"desired"`
+	// Mesh is what this machine needs to be on the cluster's private
+	// network. Absent when there is none to be on — an instance whose
+	// Docker cannot cluster, or one that could not bring the network
+	// up this pass. The agent that gets none simply does not change
+	// its own network, and asks again in ten seconds.
+	Mesh *mesh.Info `json:"mesh,omitempty"`
 	// IntervalSeconds is how long to wait before calling again. Served
 	// rather than compiled into the agent, so a cluster's cadence is
 	// the control plane's to change without every worker being upgraded.
@@ -212,11 +227,11 @@ func (h *Handler) reconcile(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	desired, err := h.svc.Reconcile(r.Context(), n, Report{
+	desired, meshInfo, err := h.svc.Reconcile(r.Context(), n, Report{
 		Version: req.Version, Address: req.Address,
 		Cores: req.Cores, MemoryTotalBytes: req.MemoryTotalBytes, DiskTotalBytes: req.DiskTotalBytes,
 		CPUPercent: req.CPUPercent, MemoryBytes: req.MemoryBytes, DiskBytes: req.DiskBytes,
-		Containers: req.Containers,
+		Containers: req.Containers, MeshNodeID: req.MeshNodeID,
 	})
 	if err != nil {
 		WriteError(w, err)
@@ -225,6 +240,7 @@ func (h *Handler) reconcile(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, AgentResponse{
 		Name:            n.Slug,
 		Desired:         desired,
+		Mesh:            meshInfo,
 		IntervalSeconds: int(Interval.Seconds()),
 	})
 }
@@ -241,6 +257,8 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrAlreadyExists):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrControlPlane):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, ErrNoAddress):
 		http.Error(w, err.Error(), http.StatusConflict)
 
 	case errors.Is(err, ErrUnknownToken):

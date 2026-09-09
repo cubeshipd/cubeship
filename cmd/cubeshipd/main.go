@@ -114,7 +114,7 @@ func runWorker(cfg *config.Config) error {
 	}
 
 	log.Printf("worker mode: this machine belongs to %s and serves nothing of its own", cfg.ControlPlane)
-	worker.New(cfg.ControlPlane, cfg.NodeToken, version, box, docker, address).Run(ctx)
+	worker.New(cfg.ControlPlane, cfg.NodeToken, version, box, docker, address, host).Run(ctx)
 	return nil
 }
 

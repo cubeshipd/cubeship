@@ -21,6 +21,7 @@ import (
 	"cubeship/internal/firewall"
 	"cubeship/internal/github"
 	"cubeship/internal/machine"
+	"cubeship/internal/mesh"
 	"cubeship/internal/metrics"
 	"cubeship/internal/node"
 	"cubeship/internal/objectstore"
@@ -185,6 +186,25 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		reader = machine.NewReader(opts.DataDir, false)
 	}
 
+	// And the machines beside it. What the cluster's own network is
+	// made of is wired here rather than passed to the constructor,
+	// because two of the three are things only the daemon has — a
+	// Docker that can cluster and a way to reach the host's firewall —
+	// and the third is a question for another module.
+	nodes := node.NewService(db)
+	if engine, ok := docker.(mesh.Engine); ok {
+		nodes.SetMesh(engine, opts.Host, func(ctx context.Context) string {
+			values, err := cfg.Load(ctx)
+			if err != nil {
+				return ""
+			}
+			// The same answer the DNS screens write into a record, and
+			// filtered the same way: a private address here would be a
+			// swarm the other machines cannot join.
+			return cfg.PublicIP(ctx, values, "")
+		})
+	}
+
 	// Deleting a project or an environment takes the apps inside it with
 	// it, and only this module knows how to stop a container. The
 	// dependency runs downward everywhere else, so it is handed back up
@@ -219,7 +239,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		ObjectStores: objectStores,
 		Metrics:      series,
 		Machine:      machine.NewService(db, reader, series),
-		Nodes:        node.NewService(db),
+		Nodes:        nodes,
 		Settings:     cfg,
 		Certs:        certificates.NewService(cfg, apps, opts.DataDir),
 		// A firewall is the host's, so a server with no way to reach the

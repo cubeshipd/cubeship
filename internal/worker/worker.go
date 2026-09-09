@@ -27,10 +27,13 @@ import (
 	"log"
 	"net/http"
 	"runtime/debug"
+	"sort"
 	"strings"
 	"time"
 
+	"cubeship/internal/firewall"
 	"cubeship/internal/machine"
+	"cubeship/internal/mesh"
 	"cubeship/internal/node"
 	"cubeship/internal/platform/bootstrap"
 )
@@ -58,6 +61,13 @@ type HostAddress interface {
 	Address(ctx context.Context) string
 }
 
+// Engine is what the agent needs from Docker beyond counting what is
+// running: joining the cluster's swarm. *dockerx.Client satisfies both.
+type Engine interface {
+	Containers
+	mesh.Engine
+}
+
 // Agent is the loop.
 type Agent struct {
 	// controlPlane is the instance this machine belongs to, as a base
@@ -66,9 +76,18 @@ type Agent struct {
 	token        string
 	version      string
 
-	machine    *machine.Reader
-	containers Containers
-	address    HostAddress
+	machine *machine.Reader
+	engine  Engine
+	address HostAddress
+	// firewall is how this machine opens the cluster's ports to its
+	// peers. Nil on a daemon with no way to reach the host, which is a
+	// machine whose firewall is somebody else's business.
+	firewall firewall.Host
+
+	// admitted is the peer set this machine's firewall was last opened
+	// for. Each rule costs a container through hostexec, so it is
+	// written when the cluster changes rather than on every pass.
+	admitted string
 
 	client *http.Client
 
@@ -78,20 +97,27 @@ type Agent struct {
 	// as a fact, which is the rule the metric collector follows too.
 	previous *machine.CPUTime
 
+	// reported is the address this machine last worked out for itself,
+	// which is what it advertises to the swarm.
+	reported string
+
 	// joined is whether the first successful pass has been logged.
 	// Saying it once is what the installer waits for; saying it every
 	// ten seconds would be a log nobody can read.
 	joined bool
 }
 
-func New(controlPlane, token, version string, box *machine.Reader, containers Containers, address HostAddress) *Agent {
+func New(controlPlane, token, version string, box *machine.Reader, engine Engine,
+	address HostAddress, host firewall.Host,
+) *Agent {
 	return &Agent{
 		controlPlane: strings.TrimRight(controlPlane, "/"),
 		token:        token,
 		version:      version,
 		machine:      box,
-		containers:   containers,
+		engine:       engine,
 		address:      address,
+		firewall:     host,
 		client:       &http.Client{Timeout: dialTimeout},
 	}
 }
@@ -148,7 +174,55 @@ func (a *Agent) tick(ctx context.Context) (interval time.Duration, err error) {
 		// otherwise have to go to the dashboard to find out.
 		log.Printf("agent: joined %s as %s", a.controlPlane, answer.Name)
 	}
+	// What the machine was told about the cluster's network, applied
+	// here rather than reported on: an agent that knows how to join and
+	// waits to be asked again would be a second round trip for an
+	// instruction it already has.
+	if answer.Mesh != nil {
+		a.applyMesh(ctx, *answer.Mesh)
+	}
 	return time.Duration(answer.IntervalSeconds) * time.Second, nil
+}
+
+// applyMesh puts this machine on the cluster's private network.
+//
+// The firewall first and the swarm second, and that order is the whole
+// of it: joining is an outbound call, which a firewall allows anyway,
+// but the gossip and the traffic that follow are **inbound** from the
+// peers. Joining before opening the ports is a machine that joins and
+// then cannot be reached, which reads as a swarm that half worked.
+//
+// Failures are logged and not retried here: the next pass is ten
+// seconds away and arrives with a fresh answer, which is a better retry
+// than one that reasons about why the last one failed.
+func (a *Agent) applyMesh(ctx context.Context, info mesh.Info) {
+	if a.engine == nil {
+		return
+	}
+	if err := a.admit(ctx, info.Peers); err != nil {
+		log.Printf("agent: opening the cluster's ports: %v", err)
+		return
+	}
+	if err := mesh.Join(ctx, a.engine, info, a.reported); err != nil {
+		log.Printf("agent: joining the cluster's network: %v", err)
+	}
+}
+
+// admit opens this machine's ports to its peers, when the set of them
+// has changed. Each rule is a container through hostexec, so doing it
+// on every pass would be a dozen throwaway containers a minute for a
+// firewall that already says what it needs to.
+func (a *Agent) admit(ctx context.Context, peers []string) error {
+	sort.Strings(peers)
+	key := strings.Join(peers, ",")
+	if key == a.admitted {
+		return nil
+	}
+	if err := mesh.Admit(ctx, a.firewall, peers, false); err != nil {
+		return err
+	}
+	a.admitted = key
+	return nil
 }
 
 // reconcile sends one report and returns what this machine is told.
@@ -204,6 +278,14 @@ func (a *Agent) report(ctx context.Context) node.AgentRequest {
 
 	if a.address != nil {
 		out.Address = a.address.Address(ctx)
+		// Kept, because it is what this machine advertises to the
+		// others when it joins their swarm.
+		a.reported = out.Address
+	}
+	if a.engine != nil {
+		if state, err := a.engine.Swarm(ctx); err == nil && state.Active {
+			out.MeshNodeID = state.NodeID
+		}
 	}
 	if mem, err := a.machine.Memory(); err == nil {
 		out.MemoryTotalBytes = mem.Total
@@ -230,10 +312,10 @@ func (a *Agent) report(ctx context.Context) node.AgentRequest {
 // here, and the agent answering it is not that. An empty worker reports
 // none rather than one, which is the true answer and the readable one.
 func (a *Agent) ours(ctx context.Context) int {
-	if a.containers == nil {
+	if a.engine == nil {
 		return 0
 	}
-	names, err := a.containers.RunningNames(ctx)
+	names, err := a.engine.RunningNames(ctx)
 	if err != nil {
 		return 0
 	}

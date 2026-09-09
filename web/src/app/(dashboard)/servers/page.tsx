@@ -70,7 +70,7 @@ export default function Servers() {
     {
       id: "name",
       header: "Server",
-      width: 24,
+      width: 22,
       sortBy: (s) => s.name,
       // No badge saying which one is the control plane: it is the row
       // called `control-plane`, it is always first, and it is the only
@@ -80,14 +80,34 @@ export default function Servers() {
     {
       id: "status",
       header: "Status",
-      width: 16,
+      width: 14,
       sortBy: (s) => s.status,
       cell: (s) => <StatusBadge value={s.status} />,
     },
     {
+      id: "network",
+      header: "Network",
+      width: 12,
+      sortBy: (s) => (s.in_mesh ? 1 : 0),
+      // Two different questions, side by side on purpose. A machine
+      // can be answering and not be on the cluster's network — its
+      // agent calls in, and its containers cannot reach anything.
+      cell: (s) =>
+        s.in_mesh ? (
+          <span className="font-mono text-xs text-success">mesh</span>
+        ) : (
+          <span
+            className="font-mono text-xs text-subtle-foreground"
+            title="This machine is not on the cluster's private network, so containers here cannot reach containers on the others."
+          >
+            alone
+          </span>
+        ),
+    },
+    {
       id: "machine",
       header: "Machine",
-      width: 30,
+      width: 22,
       sortBy: (s) => s.cores,
       cell: (s) =>
         s.cores > 0 ? (
@@ -102,7 +122,7 @@ export default function Servers() {
     {
       id: "load",
       header: "Now",
-      width: 18,
+      width: 16,
       sortBy: (s) => s.cpu_percent ?? -1,
       cell: (s) =>
         s.cpu_percent === undefined ? (
@@ -117,7 +137,7 @@ export default function Servers() {
     {
       id: "containers",
       header: "Containers",
-      width: 8,
+      width: 10,
       align: "right",
       sortBy: (s) => s.containers,
       cell: (s) => <span className="font-mono text-sm">{s.containers}</span>,

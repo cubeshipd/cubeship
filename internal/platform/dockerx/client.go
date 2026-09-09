@@ -8,6 +8,8 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
+	"github.com/docker/docker/api/types/swarm"
+	"github.com/docker/docker/api/types/system"
 	dockerclient "github.com/docker/docker/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -42,6 +44,12 @@ type apiClient interface {
 	// not network.CreateOptions / network.CreateResponse from a later SDK
 	// version's api/types/network package — see the note above.
 	NetworkCreate(ctx context.Context, name string, options types.NetworkCreate) (types.NetworkCreateResponse, error)
+	// The Engine's own clustering, for its overlay network and nothing
+	// else. See swarm.go.
+	Info(ctx context.Context) (system.Info, error)
+	SwarmInit(ctx context.Context, req swarm.InitRequest) (string, error)
+	SwarmInspect(ctx context.Context) (swarm.Swarm, error)
+	SwarmJoin(ctx context.Context, req swarm.JoinRequest) error
 }
 
 type Client struct {

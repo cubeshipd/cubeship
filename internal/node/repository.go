@@ -23,7 +23,8 @@ func NewRepository(q database.Queryer) *Repository { return &Repository{q: q} }
 // by value instead.
 const columns = `id, slug, description, control_plane, address, version,
 	cores, memory_total_bytes, disk_total_bytes,
-	cpu_percent, memory_bytes, disk_bytes, containers, last_seen_at, created_at`
+	cpu_percent, memory_bytes, disk_bytes, containers, mesh_node_id,
+	last_seen_at, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -35,7 +36,7 @@ func scan(row scanner) (*Node, error) {
 	var lastSeen sql.NullTime
 	if err := row.Scan(&n.ID, &n.Slug, &n.Description, &n.ControlPlane, &address, &version,
 		&n.Cores, &n.MemoryTotalBytes, &n.DiskTotalBytes,
-		&cpu, &memory, &disk, &n.Containers, &lastSeen, &n.CreatedAt); err != nil {
+		&cpu, &memory, &disk, &n.Containers, &n.MeshNodeID, &lastSeen, &n.CreatedAt); err != nil {
 		return nil, err
 	}
 	n.Address, n.Version = address.String, version.String
@@ -130,13 +131,26 @@ func (r *Repository) Record(ctx context.Context, id int64, rep Report) error {
 		`UPDATE nodes SET address = $2, version = $3,
 		        cores = $4, memory_total_bytes = $5, disk_total_bytes = $6,
 		        cpu_percent = $7, memory_bytes = $8, disk_bytes = $9,
-		        containers = $10, last_seen_at = now()
+		        containers = $10, mesh_node_id = $11, last_seen_at = now()
 		 WHERE id = $1`,
 		id, rep.Address, rep.Version,
 		rep.Cores, rep.MemoryTotalBytes, rep.DiskTotalBytes,
-		rep.CPUPercent, rep.MemoryBytes, rep.DiskBytes, rep.Containers)
+		rep.CPUPercent, rep.MemoryBytes, rep.DiskBytes, rep.Containers, rep.MeshNodeID)
 	if err != nil {
 		return fmt.Errorf("record what %d reported: %w", id, err)
+	}
+	return nil
+}
+
+// RecordMesh writes what the control plane's own Engine says about
+// itself. Its row has no agent to report for it — it is the machine the
+// daemon is running on — so the one thing that has to be kept fresh
+// there is kept fresh here.
+func (r *Repository) RecordMesh(ctx context.Context, id int64, address, meshNodeID string) error {
+	_, err := r.q.ExecContext(ctx,
+		`UPDATE nodes SET address = $2, mesh_node_id = $3 WHERE id = $1`, id, address, meshNodeID)
+	if err != nil {
+		return fmt.Errorf("record the control plane's own address: %w", err)
 	}
 	return nil
 }
