@@ -44,12 +44,7 @@ func (s *Service) RoutesFor(ctx context.Context, nodeID int64) ([]node.Route, er
 	if err != nil {
 		return nil, err
 	}
-	ids := make([]int64, 0, len(apps))
-	for _, a := range apps {
-		ids = append(ids, a.ID)
-	}
-	domains, err := s.Repo().DomainsFor(ctx, ids)
-	if err != nil {
+	if apps, err = s.withDomains(ctx, apps); err != nil {
 		return nil, err
 	}
 
@@ -58,7 +53,7 @@ func (s *Service) RoutesFor(ctx context.Context, nodeID int64) ([]node.Route, er
 		if a.NodeID != nodeID || !balanced(a) {
 			continue
 		}
-		for _, d := range domains[a.ID] {
+		for _, d := range a.Domains {
 			port := d.Port
 			if port == 0 {
 				port = DefaultPort
