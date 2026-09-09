@@ -22,6 +22,7 @@ import (
 	"cubeship/internal/github"
 	"cubeship/internal/machine"
 	"cubeship/internal/metrics"
+	"cubeship/internal/node"
 	"cubeship/internal/objectstore"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/httpx"
@@ -43,7 +44,11 @@ type Server struct {
 	Metrics      *metrics.Service
 	// Machine is what the box itself is doing, which belongs to no
 	// module below: there is one of it, and nothing here configures it.
-	Machine     *machine.Service
+	Machine *machine.Service
+	// Nodes is the machines this instance is made of. It sits beside
+	// user at the bottom: it knows about no other module, and what runs
+	// on a node will reach it through the agent's own loop.
+	Nodes       *node.Service
 	Credentials *credential.Service
 	Settings    *settings.Service
 	Certs       *certificates.Service
@@ -214,6 +219,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		ObjectStores: objectStores,
 		Metrics:      series,
 		Machine:      machine.NewService(db, reader, series),
+		Nodes:        node.NewService(db),
 		Settings:     cfg,
 		Certs:        certificates.NewService(cfg, apps, opts.DataDir),
 		// A firewall is the host's, so a server with no way to reach the
@@ -314,6 +320,10 @@ func (s *Server) routes() {
 	datastore.NewHandler(s.Datastores).Routes(s.router, auth)
 	objectstore.NewHandler(s.ObjectStores).Routes(s.router, auth)
 	machine.NewHandler(s.Machine).Routes(s.router, auth)
+	// Two surfaces on one module: the operator's behind `auth`, and the
+	// agent's behind a node's own credential, which node.Routes wires
+	// itself. A worker never reaches anything that takes a caller.
+	node.NewHandler(s.Nodes).Routes(s.router, auth)
 
 	// The registry's own two endpoints authenticate differently (Basic
 	// auth, and a shared webhook secret), so they mount unwrapped. So

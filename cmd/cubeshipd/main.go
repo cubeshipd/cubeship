@@ -30,6 +30,7 @@ import (
 	"cubeship/internal/settings"
 	"cubeship/internal/setup"
 	"cubeship/internal/user"
+	"cubeship/internal/worker"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -66,6 +67,55 @@ func main() {
 	if err := run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// runWorker is the whole of a worker's daemon.
+//
+// No database is opened, no migration runs, no HTTP server is started
+// and no port is published: a worker's entire network presence is an
+// outbound call to its control plane. What it needs is the Engine — for
+// the containers it will be told to run — the machine's own numbers,
+// and a way to work out where it is reached from outside.
+func runWorker(cfg *config.Config) error {
+	ctx := context.Background()
+
+	docker, err := dockerx.New()
+	if err != nil {
+		return fmt.Errorf("connect to docker: %w", err)
+	}
+	// The shared network exists on every machine in the cluster, not
+	// only on the control plane: it is what the containers placed here
+	// will join, and creating it now means the first placement does not
+	// have to.
+	if err := docker.EnsureNetwork(ctx, bootstrap.Network); err != nil {
+		return fmt.Errorf("ensure network: %w", err)
+	}
+
+	box := machine.NewReader(cfg.DataDir, cfg.InContainer)
+
+	// Where this machine is reached from outside, through the same door
+	// the control plane finds its own address through: a command in the
+	// host's namespaces, and a private address refused rather than
+	// reported. What a worker's address is *for* is the same thing —
+	// a DNS record pointing at the box an app runs on.
+	host := hostexec.NewRunner(docker, bootstrap.OwnImage(ctx, docker, cfg), cfg.InContainer)
+	var address worker.HostAddress
+	if host.Available() {
+		address = settings.RouteAddress(func(ctx context.Context, argv ...string) (string, error) {
+			res, err := host.Run(ctx, argv...)
+			if err != nil {
+				return "", err
+			}
+			if !res.OK() {
+				return "", fmt.Errorf("%s: exit %d", argv[0], res.Code)
+			}
+			return res.Output, nil
+		})
+	}
+
+	log.Printf("worker mode: this machine belongs to %s and serves nothing of its own", cfg.ControlPlane)
+	worker.New(cfg.ControlPlane, cfg.NodeToken, version, box, docker, address).Run(ctx)
+	return nil
 }
 
 // Secrets the daemon generates for itself on first start, persisted
@@ -271,6 +321,16 @@ func run() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 	log.Printf("cubeshipd starting")
+
+	// A worker is a different program, and this is where the two part.
+	//
+	// Everything below this line — the database, the registry's signing
+	// key, the settings, the server, the listener — is the control
+	// plane's. A machine that belongs to another instance holds none of
+	// it: it dials out, says what it is, and does what it is told.
+	if cfg.Worker() {
+		return runWorker(cfg)
+	}
 	// Never log the token itself — the daemon's logs are not a secret
 	// store. A fingerprint is enough to tell which token is in use.
 	// This is the instance-wide system credential for the registry's

@@ -35,6 +35,18 @@ VERSION="${CUBESHIP_VERSION:-latest}"
 # LOCAL builds from source instead of pulling. Set by --local.
 LOCAL=0
 
+# A worker is a second machine, managed by an instance that already
+# exists. It runs the same image in a mode where it decides nothing: no
+# database, no dashboard, no registry, no builder, and no published
+# port at all — it dials its control plane and does what it is told.
+#
+# Both of these are needed together. The address alone would be a
+# machine that dials and is refused forever; the credential alone would
+# be a machine with nothing to dial.
+CONTROL_PLANE="${CUBESHIP_CONTROL_PLANE:-}"
+NODE_TOKEN="${CUBESHIP_NODE_TOKEN:-}"
+WORKER=0
+
 CONTAINER=cubeship-daemon
 NETWORK=cubeship
 DATA_DIR="${CUBESHIP_DATA_DIR:-/var/lib/cubeship}"
@@ -65,12 +77,24 @@ require_linux() {
 usage() {
 	cat <<-USAGE
 		Usage: install.sh [--local] [--domain <name>]
+		       install.sh --control-plane <url> --token <token> [--local]
 
 		  --local   Build the image from the checkout this script is in,
 		            instead of pulling a published one. Requires the
 		            repository; the build itself runs inside Docker.
 		  --domain  Where the instance answers. Must resolve to this box.
 		            Without it, <public-ip>.sslip.io is used, which does.
+
+		Joining an existing instance instead of being one:
+
+		  --control-plane  The instance this machine will belong to, e.g.
+		                   https://cube.example.com
+		  --token          The credential that instance minted when the
+		                   server was added to it. Add the server there
+		                   first; the token is shown once.
+
+		  A worker holds no database and serves nothing. It publishes no
+		  port: it dials the control plane, and nothing dials it.
 
 		Environment:
 		  CUBESHIP_IMAGE      daemon image to pull (default $IMAGE)
@@ -88,11 +112,23 @@ parse_args() {
 			--local) LOCAL=1 ;;
 			--domain) shift; [ $# -gt 0 ] || die "--domain needs a name"; DOMAIN="$1" ;;
 			--domain=*) DOMAIN="${1#--domain=}" ;;
+			--control-plane) shift; [ $# -gt 0 ] || die "--control-plane needs a URL"; CONTROL_PLANE="$1" ;;
+			--control-plane=*) CONTROL_PLANE="${1#--control-plane=}" ;;
+			--token) shift; [ $# -gt 0 ] || die "--token needs the credential the control plane minted"; NODE_TOKEN="$1" ;;
+			--token=*) NODE_TOKEN="${1#--token=}" ;;
 			-h | --help) usage; exit 0 ;;
 			*) usage >&2; die "unknown option: $1" ;;
 		esac
 		shift
 	done
+
+	# Half a worker is not a mode, and the daemon refuses to start on
+	# one anyway. Saying so here means the machine is not touched at all.
+	if [ -n "$CONTROL_PLANE" ] || [ -n "$NODE_TOKEN" ]; then
+		[ -n "$CONTROL_PLANE" ] || die "--token was given without --control-plane: a worker needs the address of the instance it belongs to."
+		[ -n "$NODE_TOKEN" ] || die "--control-plane was given without --token: add the server on that instance first, and it will show you the credential once."
+		WORKER=1
+	fi
 }
 
 # source_dir is the checkout this script is in, which only exists when it
@@ -154,9 +190,13 @@ build_images() {
 	WEB_IMAGE="${CUBESHIP_WEB_IMAGE:-cubeship/cubeship-frontend}"
 	VERSION="${CUBESHIP_VERSION:-local}"
 
-	say "Building $WEB_IMAGE:$VERSION from $dir…"
-	docker build -f "$dir/Dockerfile.web" -t "$WEB_IMAGE:$VERSION" "$dir" ||
-		die "the dashboard image did not build. Nothing was changed."
+	# A worker serves no dashboard, so it does not need the image and
+	# should not spend a build on one.
+	if [ "$WORKER" = 0 ]; then
+		say "Building $WEB_IMAGE:$VERSION from $dir…"
+		docker build -f "$dir/Dockerfile.web" -t "$WEB_IMAGE:$VERSION" "$dir" ||
+			die "the dashboard image did not build. Nothing was changed."
+	fi
 
 	say "Building $IMAGE:$VERSION from $dir…"
 	docker build --build-arg "VERSION=$VERSION" -t "$IMAGE:$VERSION" "$dir" ||
@@ -167,12 +207,14 @@ run_daemon() {
 	if [ "$LOCAL" = 1 ]; then
 		build_images
 	else
-		# Both, and the dashboard first: the daemon starts a container
-		# from it the moment it comes up, and pulling it there instead
-		# would be a pull with nobody watching it fail.
-		say "Pulling $WEB_IMAGE:$VERSION…"
-		docker pull "$WEB_IMAGE:$VERSION" >/dev/null ||
-			die "could not pull $WEB_IMAGE:$VERSION"
+		if [ "$WORKER" = 0 ]; then
+			# Both, and the dashboard first: the daemon starts a
+			# container from it the moment it comes up, and pulling it
+			# there instead would be a pull with nobody watching it fail.
+			say "Pulling $WEB_IMAGE:$VERSION…"
+			docker pull "$WEB_IMAGE:$VERSION" >/dev/null ||
+				die "could not pull $WEB_IMAGE:$VERSION"
+		fi
 
 		say "Pulling $IMAGE:$VERSION…"
 		docker pull "$IMAGE:$VERSION" >/dev/null || die "could not pull $IMAGE:$VERSION"
@@ -198,20 +240,59 @@ run_daemon() {
 	# init's, which is in the machine's network namespace by definition.
 	# Read-only, and it grants nothing: this daemon already has the
 	# Docker socket, which is root on this box by another name.
-	docker run -d \
-		--name "$CONTAINER" \
+	#
+	# What the two modes share is everything about reaching this
+	# machine; what they differ in is whether this machine is an
+	# instance. Built as arguments rather than as two docker runs, so
+	# the shared half cannot drift between them.
+	set -- --name "$CONTAINER" \
 		--network "$NETWORK" \
 		--restart unless-stopped \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v "$DATA_DIR:$DATA_DIR" \
 		-v /proc:/host/proc:ro \
-		-e CUBESHIP_DATA_DIR="$DATA_DIR" \
-		-e CUBESHIP_WEB_IMAGE="$WEB_IMAGE:$VERSION" \
-		-e CUBESHIP_DOMAIN="$DOMAIN" \
-		-e CUBESHIP_ACME_EMAIL="$ACME_EMAIL" \
-		-p "$PORT:$PORT" \
-		"$IMAGE:$VERSION" >/dev/null ||
+		-e CUBESHIP_DATA_DIR="$DATA_DIR"
+
+	if [ "$WORKER" = 1 ]; then
+		# No port is published, and that is the point rather than an
+		# omission: a worker's whole network presence is the call it
+		# makes out to its control plane.
+		set -- "$@" \
+			-e CUBESHIP_CONTROL_PLANE="$CONTROL_PLANE" \
+			-e CUBESHIP_NODE_TOKEN="$NODE_TOKEN"
+	else
+		set -- "$@" \
+			-e CUBESHIP_WEB_IMAGE="$WEB_IMAGE:$VERSION" \
+			-e CUBESHIP_DOMAIN="$DOMAIN" \
+			-e CUBESHIP_ACME_EMAIL="$ACME_EMAIL" \
+			-p "$PORT:$PORT"
+	fi
+
+	docker run -d "$@" "$IMAGE:$VERSION" >/dev/null ||
 		die "could not start $CONTAINER. See: docker logs $CONTAINER"
+}
+
+# A worker has no port to poll, so what is waited on is the line the
+# agent writes when its first pass is answered. That line is the whole
+# of joining — there is no separate handshake — so seeing it means the
+# control plane has this machine in its cluster.
+#
+# The one refusal worth failing fast on is a credential the control
+# plane does not know: waiting five minutes to be told the token was
+# wrong is five minutes nobody has to spend.
+wait_for_join() {
+	i=0
+	while [ "$i" -lt 90 ]; do
+		if docker logs "$CONTAINER" 2>&1 | grep -q 'agent: joined'; then
+			return 0
+		fi
+		if docker logs "$CONTAINER" 2>&1 | grep -q 'does not recognise this machine'; then
+			die "$CONTROL_PLANE refused this machine's credential. Add the server there and use the token it shows once."
+		fi
+		i=$((i + 1))
+		sleep 2
+	done
+	die "this machine did not reach $CONTROL_PLANE. See: docker logs $CONTAINER"
 }
 
 # The daemon only listens once its siblings are up, and on a first
@@ -305,13 +386,35 @@ main() {
 	require_root
 	require_linux
 
-	# Only guard the port on a first install: on an upgrade the thing
-	# holding it is the daemon being replaced.
-	docker inspect "$CONTAINER" >/dev/null 2>&1 || check_port
+	# A worker publishes nothing, so there is no port to guard and no
+	# domain to make up. Only guard the port on a first install: on an
+	# upgrade the thing holding it is the daemon being replaced.
+	if [ "$WORKER" = 0 ]; then
+		docker inspect "$CONTAINER" >/dev/null 2>&1 || check_port
+	fi
 
 	ensure_docker
-	default_domain
+	[ "$WORKER" = 1 ] || default_domain
 	run_daemon
+
+	if [ "$WORKER" = 1 ]; then
+		say "Joining $CONTROL_PLANE…"
+		wait_for_join
+		banner
+		cat <<-DONE
+
+			This machine is a Cubeship worker.
+
+			  It belongs to  $CONTROL_PLANE
+
+			It holds no database and serves nothing of its own: it dials
+			the control plane, and nothing dials it. Manage it there.
+
+			  docker logs -f $CONTAINER
+
+		DONE
+		return 0
+	fi
 
 	say "Waiting for the daemon…"
 	wait_for_health

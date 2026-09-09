@@ -12,6 +12,7 @@ import {
   KeyRoundIcon,
   LogOutIcon,
   ServerCogIcon,
+  ServerIcon,
   ShieldCheckIcon,
   ShieldIcon,
   UserRoundIcon,
@@ -98,6 +99,11 @@ const sections: { label?: string; items: NavItem[] }[] = [
       // how the outside reaches this machine, and both are read far
       // more often than they are changed.
       { href: "/firewall", label: "Firewall", icon: ShieldIcon },
+      // Above Instance, and the two read as a pair: the machines this
+      // instance is made of, then the instance itself. A server is not
+      // something you deploy *to* yet — when it is, this may well
+      // belong beside Projects rather than here.
+      { href: "/servers", label: "Servers", icon: ServerIcon, owns: ["/servers"] },
       { href: "/settings", label: "Instance", icon: ServerCogIcon },
     ],
   },

@@ -647,6 +647,27 @@ type PublishedPort struct {
 	Container string
 }
 
+// RunningNames is the name of every container running on this Engine.
+//
+// Names rather than the Engine's own structures, because the one
+// question anybody here asks of this is "how many of ours" — and what
+// makes a container ours is its name. Deciding which of them count is
+// the caller's; this only says what is there.
+func (c *Client) RunningNames(ctx context.Context) ([]string, error) {
+	list, err := c.api.ContainerList(ctx, container.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+	out := make([]string, 0, len(list))
+	for _, item := range list {
+		if len(item.Names) == 0 {
+			continue
+		}
+		out = append(out, strings.TrimPrefix(item.Names[0], "/"))
+	}
+	return out, nil
+}
+
 // PublishedPorts is every host port a running container has published.
 //
 // It exists for the firewall, and for one reason: on a Docker host, the
