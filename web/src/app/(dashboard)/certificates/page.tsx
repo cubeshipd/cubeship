@@ -198,6 +198,10 @@ const WHY: Record<MissingReason, string> = {
     "Nothing is running with this name in its labels. A container keeps the routing it was created with, so Traefik has never been told about it — redeploy the app and it will be.",
   pending:
     "Traefik knows the name and has not got a certificate for it. Normal for a minute after a deploy; after that, check the name resolves to this host.",
+  // Not a problem, and the only entry here that is not: the certificate
+  // is on the machine the app runs on, which is where it has to be.
+  another_server:
+    "This app runs on another server in the cluster, which serves the name itself and holds its own certificate for it. Nothing here can see that store.",
 };
 
 // The registry is not an app, so "redeploy it" is not the answer: its

@@ -1967,16 +1967,14 @@ logs in as `cubeship-node` with the credential it already dials home
 with. `internal/registry` grants it **pull and nothing else**: a machine
 that decides nothing has no reason to hold a credential that could push.
 
-**Two refusals, and both are things that would otherwise not work in a
-way nobody would notice.** An app with a **domain** cannot leave the
-control plane: each machine is its own edge and only this one routes
-traffic, so it would deploy, run, and answer nothing at its address. An
-app that **builds** cannot either: its image is loaded into this
-machine's Docker rather than pushed anywhere another machine could pull
-it from.
+**One refusal, and it is a thing that would otherwise not work in a way
+nobody would notice**: an app that **builds** cannot leave the control
+plane, because its image is loaded into this machine's Docker rather
+than pushed anywhere another machine could pull it from.
 
-Its **log** and its **charts** both work — see below. Neither is read
-from here: the machine answers for its own.
+Its **log**, its **charts** and its **names** all work — see below.
+None of them is read from or served by this machine: the machine the app
+is on answers for its own.
 
 A machine with apps on it cannot be removed — `ON DELETE RESTRICT`, and
 the error says to move them. Where they should go is a decision, and
@@ -2049,12 +2047,50 @@ takes readings on `metrics.Interval` rather than on every pass — and
 takes none at all until it has something to compare against, which is
 the rule the collector here follows too.
 
+### Where an app's traffic arrives
+
+**Every machine is its own edge.** Traffic for an app arrives at the box
+the app is on, terminates TLS there, and is routed to the container by
+the same labels a container here carries — which the placement already
+sends. What the agent starts is the same Traefik with the same
+configuration, and `node.Edge` is the whole of what travels: whether
+certificates are possible, and the contact address.
+
+The alternative was one edge on the control plane proxying to the
+others. It costs more than it buys: every request hairpins through one
+box, that box becomes what the cluster's uptime is, and the traffic
+between them needs a link of its own.
+
+A worker starts its edge **when it is first told to run something with a
+name on it** — a queue consumer has no reason to hold two ports open —
+and does not stop it again when the last name goes. Removing
+infrastructure somebody's traffic may still be arriving at is a
+different kind of act from starting it.
+
+**The DNS record is what has to follow an app**, and it points at a
+machine rather than at an instance. So an app's response carries
+`address`: where a record for *it* has to point, which is its node's,
+falling back to this instance's only for an app that is here. A node
+that has not reported an address has none, and the field is empty —
+saying the control plane's would be a record reaching the box the app
+just left.
+
+Moving an app does not repoint anything. Cubeship does not know which
+provider serves a name it did not write, so the dashboard says which
+names have to move and where to, and leaves it there.
+
+**The certificate report does not accuse a name it cannot see.** A name
+served by another machine gets `another_server` rather than `pending`:
+that certificate was issued into that box's store, and this one has
+never seen it. `internal/certificates` is a report, and a report that
+calls a working name broken is worse than one that says where to look.
+
 ### What is not there yet
 
-- **Routing.** Each node runs its own Traefik and is its own edge, with
-  the app's DNS record pointing at the machine it is on. A load balancer
-  across nodes is the step after, and it is what makes a record stop
-  naming one box.
+- **A load balancer across machines.** One name reaches one box today.
+  What makes a record stop naming one is several A records or something
+  in front of them, and either way it is a decision about failure that
+  this does not make yet.
 - **Builds that push.** A built image is loaded into the control plane's
   Engine, so no other machine can pull it. Exporting to the instance's
   own registry instead is what lets a built app be placed.

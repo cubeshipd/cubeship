@@ -250,6 +250,28 @@ type Result struct {
 	Error string `json:"error,omitempty"`
 }
 
+// Edge is how a machine serves the names the apps on it answer at.
+//
+// **Every machine is its own edge.** Traffic for an app arrives at the
+// box the app is on, terminates TLS there, and is routed to the
+// container by the same labels a container here carries — so what
+// travels is only what that Traefik has to be started with, and the
+// labels are already on the placement.
+//
+// The alternative was one edge on the control plane proxying to the
+// others, and it costs more than it buys: every request would hairpin
+// through one box, that box becomes what the cluster's uptime is, and
+// the traffic between them would need a link of its own.
+type Edge struct {
+	// TLS is whether this instance can get certificates at all — it has
+	// a domain and a contact address — which is what decides whether
+	// Traefik is started with a resolver and redirects :80.
+	TLS bool `json:"tls"`
+	// ACMEEmail is the contact Let's Encrypt registers. Optional: an
+	// account opens without one.
+	ACMEEmail string `json:"acme_email,omitempty"`
+}
+
 // Reading is what one container on a machine is using, as that machine
 // measured it.
 //

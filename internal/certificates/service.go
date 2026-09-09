@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"cubeship/internal/app"
+	"cubeship/internal/node"
 	"cubeship/internal/platform/bootstrap"
 	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/settings"
@@ -131,7 +132,7 @@ func reconcile(certs []Certificate, served []ServedHost, tls bool) ([]Certificat
 			continue
 		}
 		missing = append(missing, Missing{
-			Host: host, App: h.App, Instance: h.Instance,
+			Host: host, App: h.App, Instance: h.Instance, Node: h.Node,
 			Reason: reasonFor(h, tls),
 		})
 	}
@@ -141,6 +142,11 @@ func reconcile(certs []Certificate, served []ServedHost, tls bool) ([]Certificat
 
 func reasonFor(h ServedHost, tls bool) Reason {
 	switch {
+	// Before anything about this instance's own configuration: a name
+	// on another machine has its certificate in that machine's store,
+	// and nothing about this one explains it either way.
+	case h.Node != "":
+		return ReasonElsewhere
 	case !tls:
 		return ReasonNoTLS
 	case !h.Deployed:
@@ -194,13 +200,21 @@ func (s *Service) servedHosts(ctx context.Context, values settings.Values) ([]Se
 	for _, a := range apps {
 		reference := app.ReferenceOf(a).String()
 		for _, d := range domains[a.ID] {
-			out = append(out, ServedHost{
+			served := ServedHost{
 				Host: d.Host,
 				App:  reference,
 				// The container carries the labels, so a name is only
 				// really routed once something is running with it.
 				Deployed: a.ContainerID != "",
-			})
+			}
+			// A name on another machine in this cluster. That machine
+			// runs its own Traefik and holds its own store, so nothing
+			// in this report can say whether the certificate is there —
+			// only where to look.
+			if a.NodeSlug != node.ControlPlaneSlug {
+				served.Node = a.NodeSlug
+			}
+			out = append(out, served)
 		}
 	}
 	return out, nil
