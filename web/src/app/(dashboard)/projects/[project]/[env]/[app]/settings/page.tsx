@@ -268,8 +268,7 @@ function Placement(props: SectionProps) {
             {stuck && <Notice>{stuck} It stays on the control plane until that changes.</Notice>}
             {!stuck && app.node !== "control-plane" && (
               <Notice>
-                Its logs are not readable from here yet, and neither are its charts:{" "}
-                <code>docker logs</code> on that machine is.
+                Its log is read from that machine on demand. Its charts are not collected there yet.
               </Notice>
             )}
             <SaveRow busy={busy} saved={saved} dirty={dirty} />

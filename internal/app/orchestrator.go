@@ -79,6 +79,10 @@ type Orchestrator struct {
 	// meshNetwork answers whether this instance is a cluster, and with
 	// what network. Nil until server.New wires one in.
 	meshNetwork func(context.Context) string
+
+	// remote is how a machine an app is placed on is reached. Only one
+	// thing here uses it: telling that machine a deploy is waiting.
+	remote Remote
 }
 
 // DeployTimeout bounds a detached deploy. It is not any client's
@@ -466,6 +470,13 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	// holding a connection open for does not need a second thing
 	// waiting on it.
 	if a.NodeSlug != node.ControlPlaneSlug {
+		// And tell it now rather than letting it find out on its next
+		// poll. The machine is parked on a request this releases, so a
+		// deploy starts in the second it was asked for rather than in
+		// the half-minute after.
+		if o.remote != nil {
+			o.remote.Wake(a.NodeID)
+		}
 		return errPlaced
 	}
 

@@ -285,6 +285,10 @@ var (
 	// way to tell from here that it cannot.
 	ErrNoAddress = errors.New("this instance has no public address to build a cluster on: set one on the Instance screen, or give the machine a domain that resolves to it")
 
+	// ErrNoContainer is asking about a container an app does not have.
+	// A machine cannot read the log of something that never ran.
+	ErrNoContainer = errors.New("that app has no container on its server")
+
 	// ErrHasApps refuses to remove a machine something still runs on.
 	// Where those apps should go is a decision, and making it by
 	// deleting the row would make it invisibly.

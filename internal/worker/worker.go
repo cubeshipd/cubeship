@@ -26,6 +26,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	neturl "net/url"
 	"runtime/debug"
 	"sort"
 	"strings"
@@ -38,16 +39,30 @@ import (
 	"cubeship/internal/node"
 	"cubeship/internal/platform/bootstrap"
 	"cubeship/internal/platform/dockerx"
+
+	"github.com/docker/docker/pkg/stdcopy"
 )
 
 // ContainerPrefix is what every container this instance creates is
 // named under, on any machine in the cluster.
 const ContainerPrefix = "cubeship-"
 
-// dialTimeout bounds one pass. Well inside the interval, so a control
-// plane that has stopped answering costs one skipped pass rather than a
-// loop that stops calling.
-const dialTimeout = 20 * time.Second
+// dialTimeout bounds one call home.
+//
+// Longer than the control plane holds a poll open, because that is what
+// it is waiting through: a poll parked for its full wait and then
+// answered is a normal pass, and a client that gave up at twenty
+// seconds would have made this channel useless by cutting every quiet
+// poll short.
+const dialTimeout = node.PollWait + 20*time.Second
+
+// workTimeout bounds what a pass *does* rather than what it waits for.
+//
+// Its own budget because the two are nothing alike: a call home is a
+// small request, and starting a placement is an image pull, which on a
+// slow box and a large image is minutes. Bounding both by the same
+// number is how a pull gets killed for taking longer than a heartbeat.
+const workTimeout = 15 * time.Minute
 
 // Containers is what the agent counts on its own machine.
 // *dockerx.Client satisfies it; a test supplies a fake.
@@ -70,6 +85,7 @@ type Engine interface {
 	mesh.Engine
 
 	PullImage(ctx context.Context, ref string, auth *dockerx.RegistryAuth) error
+	Logs(ctx context.Context, id, tail string) (io.ReadCloser, error)
 	CreateContainer(ctx context.Context, opts dockerx.ContainerOpts) (string, error)
 	StartContainer(ctx context.Context, id string) error
 	StopContainer(ctx context.Context, id string) error
@@ -184,10 +200,10 @@ func (a *Agent) tick(ctx context.Context) (interval time.Duration, err error) {
 		}
 	}()
 
-	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
+	call, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
 
-	answer, err := a.reconcile(ctx)
+	answer, err := a.reconcile(call)
 	if err == nil {
 		// Reported. Anything that happens from here is this pass's.
 		a.pending = nil
@@ -207,19 +223,120 @@ func (a *Agent) tick(ctx context.Context) (interval time.Duration, err error) {
 		// otherwise have to go to the dashboard to find out.
 		log.Printf("agent: joined %s as %s", a.controlPlane, answer.Name)
 	}
+	// Everything below is work rather than waiting, and it gets its own
+	// budget: an image pull is minutes, and the call home above is a
+	// small request that must not share a deadline with one.
+	work, stop := context.WithTimeout(ctx, workTimeout)
+	defer stop()
+
 	// What the machine was told about the cluster's network, applied
 	// here rather than reported on: an agent that knows how to join and
 	// waits to be asked again would be a second round trip for an
 	// instruction it already has.
 	if answer.Mesh != nil {
-		a.applyMesh(ctx, *answer.Mesh)
+		a.applyMesh(work, *answer.Mesh)
 	}
 	// What this machine is supposed to be running. Applied after the
 	// network, because a container that comes up before the machine is
 	// on the mesh is one that cannot reach the database it was given
 	// the address of.
-	a.pending = a.apply(ctx, answer.Desired.Apps, answer.Registry)
+	a.pending = a.apply(work, answer.Desired.Apps, answer.Registry)
+
+	// And whatever this instance asked for while the poll was parked.
+	// Answered one at a time and in order: there is one of each of
+	// these in flight per screen somebody is looking at, not a queue.
+	for _, cmd := range answer.Commands {
+		a.answer(work, cmd)
+	}
+
+	// Something happened, so the control plane is told now rather than
+	// after another wait. A deploy that finished and sat unreported for
+	// half a minute is a screen that says `pending` for half a minute.
+	if len(a.pending) > 0 {
+		return time.Second, nil
+	}
 	return time.Duration(answer.IntervalSeconds) * time.Second, nil
+}
+
+// answer does one thing the control plane asked for and posts the
+// result back.
+//
+// The result goes to its own endpoint rather than riding the next poll,
+// because somebody is waiting on it: the request that asked is parked
+// on the control plane until this lands.
+func (a *Agent) answer(ctx context.Context, cmd node.Command) {
+	var output []byte
+	var failed error
+
+	switch cmd.Kind {
+	case node.CommandLogs:
+		output, failed = a.readLog(ctx, cmd)
+	default:
+		// A command this agent does not know is one from a control
+		// plane newer than it. Saying so is better than silence: the
+		// screen that asked gets a sentence rather than a timeout.
+		failed = fmt.Errorf("this server's daemon does not know how to %q — it may be older than the control plane", cmd.Kind)
+	}
+	if err := a.post(ctx, cmd.ID, output, failed); err != nil {
+		log.Printf("agent: answering %s: %v", cmd.Kind, err)
+	}
+}
+
+// readLog is the tail of a container's log, demultiplexed here rather
+// than by whoever reads it.
+//
+// Docker returns stdout and stderr behind an 8-byte frame header per
+// chunk, and separating them is the reading end's job — doing it on the
+// machine means what crosses the wire is what a person would see, and
+// the control plane hands it on without knowing where it came from.
+func (a *Agent) readLog(ctx context.Context, cmd node.Command) ([]byte, error) {
+	if a.engine == nil {
+		return nil, fmt.Errorf("this server has no Docker to read a log from")
+	}
+	rc, err := a.engine.Logs(ctx, cmd.Container, cmd.Tail)
+	if err != nil {
+		return nil, err
+	}
+	defer rc.Close()
+
+	var out bytes.Buffer
+	if _, err := stdcopy.StdCopy(&out, &out, io.LimitReader(rc, node.MaxAnswerBytes)); err != nil {
+		// Whatever was read before it went wrong is still the log, and
+		// it is more useful than the error on its own.
+		if out.Len() == 0 {
+			return nil, err
+		}
+	}
+	return out.Bytes(), nil
+}
+
+// post sends one command's answer back. The body is the answer as
+// bytes; a failure travels as a query parameter with no body, because
+// there is nothing to send.
+func (a *Agent) post(ctx context.Context, id string, output []byte, failed error) error {
+	url := a.controlPlane + "/api/nodes/agent/results/" + id
+	var body io.Reader
+	if failed != nil {
+		url += "?error=" + neturl.QueryEscape(failed.Error())
+	} else {
+		body = bytes.NewReader(output)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, body)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "text/plain")
+	req.Header.Set("Authorization", "Bearer "+a.token)
+
+	res, err := a.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		return fmt.Errorf("control plane answered %d", res.StatusCode)
+	}
+	return nil
 }
 
 // apply makes this machine run what it was told to run, and reports
@@ -460,7 +577,11 @@ func (a *Agent) reconcile(ctx context.Context) (node.AgentResponse, error) {
 // what arrives, and a zero it never overwrites is better than a pass
 // dropped because one file was missing.
 func (a *Agent) report(ctx context.Context) node.AgentRequest {
-	out := node.AgentRequest{Version: a.version, Cores: a.machine.Cores()}
+	// Wait is what turns a poll into a channel: with nothing to say the
+	// control plane holds this request open, and the answer arrives
+	// when something happens rather than when the next interval comes
+	// round.
+	out := node.AgentRequest{Version: a.version, Cores: a.machine.Cores(), Wait: true}
 
 	if a.address != nil {
 		out.Address = a.address.Address(ctx)

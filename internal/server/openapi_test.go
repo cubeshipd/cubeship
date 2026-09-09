@@ -223,6 +223,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"POST /hooks/registry",
 		"POST /mcp",
 		"POST /nodes/agent/reconcile",
+		"POST /nodes/agent/results/{id}",
 		"POST /setup",
 		"POST /users/me/api-key/rotate",
 		"POST /users/me/api-keys",

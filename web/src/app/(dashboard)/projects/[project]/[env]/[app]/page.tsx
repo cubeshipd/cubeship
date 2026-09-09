@@ -76,12 +76,6 @@ const stillRunning = "This deploy is still running. Wait for it to finish.";
 // that explains nothing is a control somebody clicks twice.
 const noContainer = "Nothing has run yet, so there is no log. Deploy the app first.";
 
-// The other reason the Logs tab is dead: the log is on another machine.
-// The daemon refuses it in the same words rather than answering with
-// this machine's Docker saying "no such container", which is what it
-// would say.
-const elsewhere = "This app runs on another server, and its log is not readable from here yet.";
-
 function Detail({
   reference,
   project,
@@ -188,10 +182,14 @@ function Detail({
                 The daemon refuses this endpoint with a 409 in that
                 state, and a tab whose whole content is that refusal is
                 a tab that should not have been offered. */}
+            {/* An app on another machine has a readable log like any
+                other: the request is parked here and that machine's own
+                poll carries the question. What differs is the second it
+                takes, not whether it works. */}
             <TabsTrigger
               value="logs"
-              disabled={!app.has_container || remote}
-              title={remote ? elsewhere : app.has_container ? undefined : noContainer}
+              disabled={!app.has_container}
+              title={app.has_container ? undefined : noContainer}
             >
               Logs
             </TabsTrigger>
@@ -204,8 +202,8 @@ function Detail({
                 on, and only this one writes to the series. */}
             {remote && (
               <Notice>
-                This app runs on <code className="text-foreground">{app.node}</code>. Its charts and
-                its log are on that machine — <code>docker ps</code> there finds it.
+                This app runs on <code className="text-foreground">{app.node}</code>. Its log is
+                read from there on demand; its charts are not collected yet.
               </Notice>
             )}
             <MetricsSection path={path} />
