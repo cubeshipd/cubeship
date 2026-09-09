@@ -6,7 +6,6 @@ import { type Column, DataTable } from "@/components/data-table";
 import { InstanceMetrics } from "@/components/instance-metrics";
 import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
-import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   type App,
@@ -22,8 +21,8 @@ import {
 // The screen this instance opens on.
 //
 // It is about the **instance** rather than about anything in it: what
-// is wrong, what the machine is doing, what is using it, and what is
-// deployed on it. That is the question somebody has before they know
+// is on it, what the machine is doing, and what is using the machine.
+// That is the question somebody has before they know
 // which project they want — and until this existed the answer to it was
 // a page of project cards, which says nothing about whether the box is
 // out of disk.
@@ -31,10 +30,9 @@ import {
 // Projects moved to /projects, which is the address they were always
 // the index of: an app is /projects/<project>/<env>/<app>.
 //
-// The order is what somebody scans, not what is most interesting to
-// build. Anything down comes first and only when there is something —
-// an alert nobody has is a heading everybody learns to skip. Then the
-// machine, then what is using it, then the inventory.
+// The order is what somebody scans: what is on this instance, then how
+// hard the box is working, then which of the things in the first list is
+// the reason.
 export default function Overview() {
   const [projects, setProjects] = useState<Project[] | null>(null);
   const [apps, setApps] = useState<App[] | null>(null);
@@ -64,74 +62,13 @@ export default function Overview() {
       .catch(() => setStores([]));
   }, []);
 
-  // What counts as wrong, per kind, and it is not simply "not running".
-  //
-  // An app that has never been deployed is `pending`, which is a normal
-  // state for a normal app — nothing was asked of it yet. A database
-  // somebody stopped is `stopped`, which is a decision rather than a
-  // fault; `down` is the one that means its container went away on its
-  // own. Flagging either would train people to ignore this list, which
-  // is the only failure mode that matters for it.
-  const troubled = [
-    ...(apps ?? [])
-      .filter((a) => a.status === "down")
-      .map((a) => ({
-        kind: "App",
-        name: a.reference,
-        href: `/projects/${a.reference}`,
-        status: a.status,
-      })),
-    ...(datastores ?? [])
-      .filter((d) => d.status === "down" || d.status === "failed")
-      .map((d) => ({
-        kind: "Database",
-        name: d.name,
-        href: `/databases/${d.name}`,
-        status: d.status,
-      })),
-    ...(stores ?? [])
-      .filter((s) => s.status === "down" || s.status === "failed")
-      .map((s) => ({
-        kind: "Storage",
-        name: s.name,
-        href: `/storage/${s.name}`,
-        status: s.status,
-      })),
-  ];
-
   return (
     <>
       <PageHeader title="Overview" />
 
-      {troubled.length > 0 && (
-        <Card className="mb-6 border-l-2 border-l-destructive">
-          <CardContent className="divide-y divide-border p-0">
-            {troubled.map((t) => (
-              <Link
-                key={`${t.kind}:${t.name}`}
-                href={t.href}
-                className="flex items-center justify-between gap-4 px-4 py-3 transition-colors hover:bg-secondary/50"
-              >
-                <span className="flex min-w-0 items-baseline gap-3">
-                  <span className="w-20 shrink-0 text-[11px] tracking-[0.12em] text-subtle-foreground uppercase">
-                    {t.kind}
-                  </span>
-                  {/* The full reference, never the bare name: `gateway`
-                      is unique inside one environment and nowhere else,
-                      so a list of names across the instance would be a
-                      list of things it does not identify. */}
-                  <span className="truncate font-mono text-sm">{t.name}</span>
-                </span>
-                <StatusBadge value={t.status} />
-              </Link>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-
+      <Stats projects={projects} apps={apps} datastores={datastores} stores={stores} />
       <InstanceMetrics />
       <Containers />
-      <Deployed projects={projects} apps={apps} datastores={datastores} stores={stores} />
     </>
   );
 }
@@ -256,12 +193,13 @@ function hrefFor(u: ContainerUsage): string | null {
   }
 }
 
-// What is deployed here, as four counts.
+// What this instance holds, as four counts.
 //
-// Context rather than the point — the point is above it. A number alone
-// cannot say whether anything is wrong, which is what the list at the
-// top of the page is for.
-function Deployed({
+// First on the page, and short on purpose: it is the sentence before the
+// charts — how much there is of what the numbers under it are about.
+// A count cannot say whether anything is wrong, and does not try to;
+// what is wrong is a status on the thing's own screen.
+function Stats({
   projects,
   apps,
   datastores,
@@ -277,7 +215,7 @@ function Deployed({
 
   return (
     <>
-      <SectionHeader title="Deployed here" />
+      <SectionHeader title="Stats" />
 
       {nothingYet ? (
         <Notice>
