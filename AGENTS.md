@@ -1975,7 +1975,8 @@ app that **builds** cannot either: its image is loaded into this
 machine's Docker rather than pushed anywhere another machine could pull
 it from.
 
-Its **log**, though, is readable: see below. What is not is its charts.
+Its **log** and its **charts** both work — see below. Neither is read
+from here: the machine answers for its own.
 
 A machine with apps on it cannot be removed — `ON DELETE RESTRICT`, and
 the error says to move them. Where they should go is a decision, and
@@ -2024,12 +2025,32 @@ a pass *does*, which includes an image pull and is minutes.
 A deploy placed on a machine wakes it the same way, so it starts in the
 second it was asked for rather than in the half-minute after.
 
+### Charting a container on another machine
+
+The daemon that can reach a container's cgroup is the one on its
+machine, so that machine takes the reading and reports it on its own
+poll. What crosses is a **percentage**, not the counters it came from: a
+CPU percentage is a difference between two readings, and only the
+machine holding the previous one can take it.
+
+Both sides compute it with `metrics.CPUPercent` — one formula, two
+callers — so a chart of a container on a worker is drawn on the same
+axis as one here: 100 is one core on either. The reading lands in
+`metric_samples` through `metrics.Service.Record`, in the same table, at
+the same interval, pruned by the same pass.
+
+**The reading is matched to an app by container id**, never by the name
+the machine reports. A container that has since been replaced is one
+whose reading belongs to nothing, and writing it against the app anyway
+would draw the old version's line on the new one's chart.
+
+A machine polls far more often than a chart wants a point, so the agent
+takes readings on `metrics.Interval` rather than on every pass — and
+takes none at all until it has something to compare against, which is
+the rule the collector here follows too.
+
 ### What is not there yet
 
-- **Charts for a remote app.** What samples a container is the daemon on
-  the machine it is on, and only this one writes to the series. The
-  channel above is what it would go down — the agent already lists what
-  it runs — and it is the next thing that channel is for.
 - **Routing.** Each node runs its own Traefik and is its own edge, with
   the app's DNS record pointing at the machine it is on. A load balancer
   across nodes is the step after, and it is what makes a record stop

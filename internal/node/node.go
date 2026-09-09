@@ -250,16 +250,35 @@ type Result struct {
 	Error string `json:"error,omitempty"`
 }
 
-// Placer is the module that knows what should be running where.
+// Reading is what one container on a machine is using, as that machine
+// measured it.
+//
+// A **percentage**, not the counters it came from: a CPU percentage is
+// a difference between two readings, and only the machine holding the
+// previous one can take it. Both sides compute it with
+// metrics.CPUPercent, so a chart of a container on a worker is drawn on
+// the same axis as one here — 100 is one core on either.
+type Reading struct {
+	// Container is the id the machine reported when it started it,
+	// which is how the control plane works out whose reading this is.
+	Container        string  `json:"container"`
+	CPUPercent       float64 `json:"cpu_percent"`
+	MemoryBytes      int64   `json:"memory_bytes"`
+	MemoryLimitBytes int64   `json:"memory_limit_bytes"`
+}
+
+// Apps is the module that knows what runs on which machine.
 //
 // Declared here and satisfied by `app`, the same direction
 // `metrics.Source` runs: this module owns the conversation with a
 // machine and knows nothing about what an app is.
-type Placer interface {
+type Apps interface {
 	// PlacementsFor is everything one machine should be running.
 	PlacementsFor(ctx context.Context, nodeID int64) ([]Placement, error)
 	// Placed records what it did with them.
 	Placed(ctx context.Context, nodeID int64, results []Result) error
+	// Sampled records what those containers are using.
+	Sampled(ctx context.Context, nodeID int64, readings []Reading) error
 }
 
 var (

@@ -215,6 +215,12 @@ type AgentRequest struct {
 	// since its last pass. Empty on a pass where nothing changed: a
 	// container that was already running is not news.
 	Results []Result `json:"results,omitempty"`
+
+	// Readings are what the containers it runs are using. Empty on most
+	// passes: a machine polls far more often than a chart wants a
+	// point, so it takes one on the interval the control plane samples
+	// its own containers on.
+	Readings []Reading `json:"readings,omitempty"`
 }
 
 type AgentResponse struct {
@@ -267,7 +273,7 @@ func (h *Handler) reconcile(w http.ResponseWriter, r *http.Request) {
 		Cores: req.Cores, MemoryTotalBytes: req.MemoryTotalBytes, DiskTotalBytes: req.DiskTotalBytes,
 		CPUPercent: req.CPUPercent, MemoryBytes: req.MemoryBytes, DiskBytes: req.DiskBytes,
 		Containers: req.Containers, MeshNodeID: req.MeshNodeID,
-	}, req.Results)
+	}, req.Results, req.Readings)
 	if err != nil {
 		WriteError(w, err)
 		return

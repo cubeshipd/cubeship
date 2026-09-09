@@ -224,7 +224,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// What runs where. The module that owns apps sits above the one
 	// that owns machines, so it is handed back down here — the same
 	// seam project.AppTeardown and credential.Dependant use.
-	nodes.SetPlacer(apps)
+	nodes.SetApps(apps)
 	// And the other way: what only the machine an app is on can answer
 	// — its log today — reaches it through the channel that machine's
 	// own poll opens. See app.Remote.
