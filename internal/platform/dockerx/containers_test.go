@@ -48,6 +48,9 @@ type fakeAPI struct {
 	loaded                  []byte
 	loadStream              string
 	swarm                   swarm.Info
+	networks                map[string]bool
+	networkConnectErr       error
+	connected               []string
 }
 
 func (f *fakeAPI) ImagePull(ctx context.Context, ref string, options image.PullOptions) (io.ReadCloser, error) {
@@ -98,6 +101,21 @@ func (f *fakeAPI) SwarmInspect(context.Context) (swarm.Swarm, error) {
 func (f *fakeAPI) SwarmJoin(context.Context, swarm.JoinRequest) error {
 	f.swarm = swarm.Info{LocalNodeState: swarm.LocalNodeStateActive, NodeID: "node-2"}
 	return nil
+}
+
+func (f *fakeAPI) NetworkConnect(_ context.Context, networkID, containerID string, _ *network.EndpointSettings) error {
+	if f.networkConnectErr != nil {
+		return f.networkConnectErr
+	}
+	f.connected = append(f.connected, networkID+":"+containerID)
+	return nil
+}
+
+func (f *fakeAPI) NetworkInspect(_ context.Context, name string, _ network.InspectOptions) (network.Inspect, error) {
+	if f.networks[name] {
+		return network.Inspect{Name: name}, nil
+	}
+	return network.Inspect{}, errdefs.NotFound(errors.New("no such network"))
 }
 
 func (f *fakeAPI) NetworkCreate(ctx context.Context, name string, options types.NetworkCreate) (types.NetworkCreateResponse, error) {
@@ -707,5 +725,96 @@ func TestRemovingAContainerThatIsAlreadyGoneSucceeds(t *testing.T) {
 	c = newWithAPI(&fakeAPI{removeErr: errors.New("device or resource busy")})
 	if err := c.RemoveContainer(context.Background(), "c1"); err == nil {
 		t.Error("a refused remove reported success")
+	}
+}
+
+// A container that has to be reachable from another machine is on the
+// local bridge *and* on the cluster's overlay. The bridge stays because
+// everything on this box already resolves it there; the overlay is what
+// the other machines resolve it on.
+//
+// Connected after create and **before start**, which is the part worth
+// pinning: a server that binds or registers at startup would otherwise
+// come up without the interface.
+func TestAContainerJoinsTheClusterNetworkBeforeItStarts(t *testing.T) {
+	fake := &fakeAPI{}
+	c := newWithAPI(fake)
+
+	id, err := c.CreateContainer(context.Background(), ContainerOpts{
+		Name:         "cubeship-db-pg",
+		Image:        "postgres:17",
+		Network:      "cubeship",
+		AlsoNetworks: []string{"cubeship-mesh"},
+	})
+	if err != nil {
+		t.Fatalf("CreateContainer: %v", err)
+	}
+	if len(fake.connected) != 1 || fake.connected[0] != "cubeship-mesh:"+id {
+		t.Fatalf("connected %v, want the overlay", fake.connected)
+	}
+	if fake.startedID != "" {
+		t.Error("the container was started before it was on every network it was asked for")
+	}
+	// The bridge is passed at create and not connected again.
+	if _, ok := fake.createdNetworkingConfig.EndpointsConfig["cubeship"]; !ok {
+		t.Error("the local bridge is not on the container")
+	}
+}
+
+// A container on fewer networks than it was asked for is not the
+// container that was asked for: it would come up, pass its health check
+// and be unreachable from half the cluster. So the create fails, and
+// what it half-made is removed rather than left running.
+func TestAContainerThatCannotJoinTheClusterIsNotLeftRunning(t *testing.T) {
+	fake := &fakeAPI{networkConnectErr: errors.New("no such network")}
+	c := newWithAPI(fake)
+
+	if _, err := c.CreateContainer(context.Background(), ContainerOpts{
+		Name: "cubeship-db-pg", Image: "postgres:17",
+		Network: "cubeship", AlsoNetworks: []string{"cubeship-mesh"},
+	}); err == nil {
+		t.Fatal("a container that could not join the cluster came back as created")
+	}
+	if fake.removedID != "new-container-id" {
+		t.Errorf("removed %q, want the container that was half-made", fake.removedID)
+	}
+	if fake.startedID != "" {
+		t.Error("it was started anyway")
+	}
+}
+
+// An instance of one machine has no cluster network, and asking for one
+// would be a container that cannot be created at all.
+func TestWithNoClusterNetworkNothingExtraIsAskedFor(t *testing.T) {
+	fake := &fakeAPI{}
+	c := newWithAPI(fake)
+
+	if _, err := c.CreateContainer(context.Background(), ContainerOpts{
+		Name: "cubeship-db-pg", Image: "postgres:17", Network: "cubeship",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(fake.connected) != 0 {
+		t.Errorf("connected %v on an instance with no cluster", fake.connected)
+	}
+}
+
+// The network the daemon decides by: it is there or it is not, and a
+// Docker that says "no such network" is an instance of one machine
+// rather than a failure to report.
+func TestAMissingNetworkIsAnAnswerRatherThanAnError(t *testing.T) {
+	fake := &fakeAPI{networks: map[string]bool{"cubeship-mesh": true}}
+	c := newWithAPI(fake)
+
+	found, err := c.NetworkExists(context.Background(), "cubeship-mesh")
+	if err != nil || !found {
+		t.Errorf("NetworkExists(existing) = %v, %v", found, err)
+	}
+	found, err = c.NetworkExists(context.Background(), "cubeship-mesh-2")
+	if err != nil {
+		t.Errorf("a network that is not there was an error: %v", err)
+	}
+	if found {
+		t.Error("a network that is not there was found")
 	}
 }

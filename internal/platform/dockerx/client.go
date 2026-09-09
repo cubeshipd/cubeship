@@ -44,6 +44,8 @@ type apiClient interface {
 	// not network.CreateOptions / network.CreateResponse from a later SDK
 	// version's api/types/network package — see the note above.
 	NetworkCreate(ctx context.Context, name string, options types.NetworkCreate) (types.NetworkCreateResponse, error)
+	NetworkConnect(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error
+	NetworkInspect(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error)
 	// The Engine's own clustering, for its overlay network and nothing
 	// else. See swarm.go.
 	Info(ctx context.Context) (system.Info, error)
