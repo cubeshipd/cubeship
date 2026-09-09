@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -342,6 +343,7 @@ func (o *Orchestrator) Start(ctx context.Context, appID int64, tag string) (*Dep
 // The panic is turned into the deployment's error so it is not lost.
 func (o *Orchestrator) run(ctx context.Context, appID int64, tag string, deploymentID int64) {
 	status, errMsg := DeploymentSucceeded, ""
+	handedOff := false
 
 	func() {
 		defer func() {
@@ -351,16 +353,31 @@ func (o *Orchestrator) run(ctx context.Context, appID int64, tag string, deploym
 				log.Printf("deploy of app %d panicked: %v\n%s", appID, r, debug.Stack())
 			}
 		}()
-		if err := o.deploy(ctx, appID, tag, deploymentID); err != nil {
+		switch err := o.deploy(ctx, appID, tag, deploymentID); {
+		case errors.Is(err, errPlaced):
+			handedOff = true
+		case err != nil:
 			status, errMsg = DeploymentFailed, err.Error()
 			log.Printf("deploy of app %d failed: %v", appID, err)
 		}
 	}()
 
+	// A deploy for another machine is not finished here — it is not
+	// finished at all yet. The row stays `pending` until that machine
+	// says what it did, which is the one thing that can honestly close
+	// it. See app.Service.Placed.
+	if handedOff {
+		return
+	}
 	if err := o.apps.FinishDeployment(ctx, deploymentID, status, errMsg); err != nil {
 		log.Printf("could not record the outcome of deployment %d: %v", deploymentID, err)
 	}
 }
+
+// errPlaced is how deploy says "this one is somebody else's to run".
+// Not an error anybody sees: it never leaves this file, and what it
+// means is that the deployment row is deliberately left open.
+var errPlaced = errors.New("this app runs on another machine")
 
 // Wait blocks until every detached deploy has finished. Tests use it;
 // the daemon does not.
@@ -449,7 +466,7 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	// holding a connection open for does not need a second thing
 	// waiting on it.
 	if a.NodeSlug != node.ControlPlaneSlug {
-		return nil
+		return errPlaced
 	}
 
 	// A built image is already in the Engine's store — this deploy is
