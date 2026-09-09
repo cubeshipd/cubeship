@@ -164,6 +164,15 @@ func reasonFor(h ServedHost, tls bool) Reason {
 // with, so a name added after the last deploy is a name Traefik has
 // never been told about — which is the commonest reason a certificate is
 // missing, and the one whose answer is "redeploy".
+// servedHere is whether the machine an app's traffic arrives at is one
+// that is actually running it. It is what says the labels exist: a
+// container carries the router for the machine it is on, and only that
+// one.
+func servedHere(a *app.Scoped) bool {
+	r, ok := a.ReplicaOn(a.NodeID)
+	return ok && r.Container != ""
+}
+
 func (s *Service) servedHosts(ctx context.Context, values settings.Values) ([]ServedHost, error) {
 	var out []ServedHost
 
@@ -204,8 +213,11 @@ func (s *Service) servedHosts(ctx context.Context, values settings.Values) ([]Se
 				Host: d.Host,
 				App:  reference,
 				// The container carries the labels, so a name is only
-				// really routed once something is running with it.
-				Deployed: a.ContainerID != "",
+				// really routed once something is running with it —
+				// unless the app is spread over several machines, where
+				// the router is a file its edge is given and does not
+				// wait for a redeploy.
+				Deployed: a.HasContainer() && (len(a.Replicas) > 1 || servedHere(a)),
 			}
 			// A name on another machine in this cluster. That machine
 			// runs its own Traefik and holds its own store, so nothing

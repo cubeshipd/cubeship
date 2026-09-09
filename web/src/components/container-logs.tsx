@@ -44,22 +44,34 @@ export function ContainerLogs({
   // tall is for a log that is the whole of what a screen is showing,
   // rather than one section among several.
   tall = false,
+  // servers are the machines this thing runs on, when there is more
+  // than one. A log belongs to one container and so to one machine, and
+  // there is no combined one — interleaving them would need a clock
+  // those machines do not share — so the reader picks.
+  servers = [],
 }: {
   path: string;
   title?: string | null;
   sub?: string;
   tall?: boolean;
+  servers?: string[];
 }) {
   const [text, setText] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tail, setTail] = useState<number>(TAILS[0]);
   const [following, setFollowing] = useState(false);
+  // Empty is the daemon's own default: the machine the traffic arrives
+  // at. Named here only once somebody has chosen another.
+  const [server, setServer] = useState("");
 
   const load = useCallback(async () => {
     setBusy(true);
     try {
-      const res = await fetch(`/api${path}/logs?tail=${tail}`, { credentials: "same-origin" });
+      const where = server ? `&server=${encodeURIComponent(server)}` : "";
+      const res = await fetch(`/api${path}/logs?tail=${tail}${where}`, {
+        credentials: "same-origin",
+      });
       const body = (await res.text()).trim();
       if (!res.ok) throw new Error(body || res.statusText);
       setText(body);
@@ -68,7 +80,7 @@ export function ContainerLogs({
       setError(message(e));
     }
     setBusy(false);
-  }, [path, tail]);
+  }, [path, tail, server]);
 
   useEffect(() => {
     load();
@@ -87,6 +99,24 @@ export function ContainerLogs({
   const refreshing = busy && !following;
   const toolbar = (
     <div className="flex items-center gap-2">
+      {servers.length > 1 &&
+        servers.map((name) => (
+          <Button
+            key={name}
+            type="button"
+            variant="ghost"
+            size="sm"
+            aria-pressed={name === (server || servers[0])}
+            onClick={() => setServer(name)}
+            className={cn(
+              "font-mono",
+              FieldRow,
+              name === (server || servers[0]) && "bg-secondary text-foreground",
+            )}
+          >
+            {name}
+          </Button>
+        ))}
       {TAILS.map((n) => (
         <Button
           key={n}

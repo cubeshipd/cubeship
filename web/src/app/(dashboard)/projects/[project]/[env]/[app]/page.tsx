@@ -124,6 +124,11 @@ function Detail({
   // Whether this app runs on another machine, which changes what this
   // screen can show: its log and its charts are that machine's.
   const remote = app !== null && app.node !== "control-plane";
+  // And whether it runs on more than one, which changes what a log is:
+  // there is one per machine and no combined one. The machine its
+  // traffic arrives at goes first, because that is the one the daemon
+  // answers with when nobody names one.
+  const servers = app === null ? [] : [app.node, ...app.nodes.filter((n) => n !== app.node)];
 
   return (
     <>
@@ -200,11 +205,21 @@ function Detail({
                 else. It also explains the empty charts under it: what
                 samples a container is the daemon on the machine it is
                 on, and only this one writes to the series. */}
-            {remote && (
+            {app !== null && app.nodes.length > 1 ? (
               <Notice>
-                This app runs on <code className="text-foreground">{app.node}</code>. Its charts and
-                its log come from that machine.
+                This app runs on {app.nodes.length} machines —{" "}
+                <code className="text-foreground">{app.nodes.join(", ")}</code> — and its traffic
+                arrives at <code className="text-foreground">{app.node}</code>, which spreads it
+                across them. The charts below are the average across its replicas; each machine
+                keeps its own log.
               </Notice>
+            ) : (
+              remote && (
+                <Notice>
+                  This app runs on <code className="text-foreground">{app.node}</code>. Its charts
+                  and its log come from that machine.
+                </Notice>
+              )
             )}
             <MetricsSection path={path} />
             <Deployments reference={reference} deployed={deployed} onSettled={reload} />
@@ -215,7 +230,7 @@ function Detail({
           </TabsContent>
 
           <TabsContent value="logs">
-            <ContainerLogs path={path} title={null} tall />
+            <ContainerLogs path={path} title={null} tall servers={servers} />
           </TabsContent>
         </Tabs>
       )}

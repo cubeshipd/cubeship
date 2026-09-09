@@ -55,10 +55,18 @@ type Response struct {
 	Dockerfile  string `json:"dockerfile,omitempty"`
 	Project     string `json:"project"`
 	Environment string `json:"environment"`
-	// Node is the machine in this cluster the app runs on, by name. On
-	// an instance of one box it is always the control plane, which is
-	// where everything ran before there was anywhere else.
+	// Node is the machine whose edge serves this app's names — where
+	// its traffic arrives, and the one address a record for it points
+	// at. On an instance of one box it is always the control plane.
 	Node string `json:"node"`
+	// Nodes are the machines it runs on, by name. One is the ordinary
+	// answer and always includes Node; several is an app whose traffic
+	// that edge spreads across them.
+	Nodes []string `json:"nodes"`
+	// Replicas is what is running on each of those machines. It is what
+	// a `degraded` status is made of: which of them is serving, and
+	// which is not.
+	Replicas []ReplicaResponse `json:"replicas"`
 	// Address is where a DNS record for this app has to point: the
 	// machine it runs on, because each machine is its own edge.
 	//
@@ -76,6 +84,28 @@ type Response struct {
 	SuggestedHost string `json:"suggested_host,omitempty"`
 }
 
+// ReplicaResponse is one machine an app runs on.
+type ReplicaResponse struct {
+	Node   string `json:"node"`
+	Status string `json:"status"`
+	// Serving is whether the edge is sending traffic here. A replica
+	// that is up but has no name written down is not a backend — see
+	// app.Replica.Name — and that difference is worth being able to see
+	// rather than reading as an even split that is not happening.
+	Serving bool `json:"serving"`
+}
+
+func toReplicas(a *Scoped) []ReplicaResponse {
+	out := make([]ReplicaResponse, 0, len(a.Replicas))
+	for _, r := range a.Replicas {
+		out = append(out, ReplicaResponse{
+			Node: r.NodeSlug, Status: r.Status,
+			Serving: r.Running() && (len(a.Replicas) == 1 || r.Name != ""),
+		})
+	}
+	return out
+}
+
 // toResponse needs the instance's configuration, which is not a
 // property of the app, so it is passed in — resolved once per request
 // instead of once per app in a listing.
@@ -84,10 +114,12 @@ func toResponse(a *Scoped, in Instance) Response {
 	r := Response{
 		Reference: ref.String(),
 		Name:      a.Name, Description: a.Description, Domains: toDomains(a.Domains),
-		Status: a.Status, HasContainer: a.ContainerID != "", Source: a.Source,
+		Status: a.Status(), HasContainer: a.HasContainer(), Source: a.Source,
 		Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
 		SuggestedHost: SuggestedHostFor(ref, in.Domain),
 		Node:          a.NodeSlug,
+		Nodes:         a.Nodes(),
+		Replicas:      toReplicas(a),
 		Address:       addressFor(a, in),
 	}
 	switch Source(a.Source) {
@@ -250,10 +282,17 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		Repo        *string `json:"repo"`
 		Ref         *string `json:"ref"`
 		Dockerfile  *string `json:"dockerfile"`
-		// Node is which machine in this cluster the app runs on, by
-		// name. Its own field rather than part of the source group:
-		// where an app runs and what it runs are different decisions.
-		Node *string `json:"node"`
+		// Node is which machine serves this app's names, and Nodes are
+		// the machines it runs on. Their own fields rather than part of
+		// the source group: where an app runs and what it runs are
+		// different decisions, and so are where it runs and where its
+		// traffic arrives.
+		//
+		// Sending `nodes` without `node` keeps the edge it has when
+		// that machine is still in the set, so scaling an app out does
+		// not silently move its DNS record.
+		Node  *string   `json:"node"`
+		Nodes *[]string `json:"nodes"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -274,13 +313,27 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 			Dockerfile: deref(req.Dockerfile),
 		}
 	}
-	if req.Description == nil && source == nil && origin == nil && req.Node == nil {
+	if req.Description == nil && source == nil && origin == nil && req.Node == nil && req.Nodes == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
 
+	var place *Placement
+	if req.Node != nil || req.Nodes != nil {
+		place = &Placement{Edge: deref(req.Node)}
+		if req.Nodes != nil {
+			place.Nodes = *req.Nodes
+		} else {
+			// `node` alone is the whole placement: put it there and
+			// serve it from there. It is what one machine meant before
+			// there was more than one, and it is still the shortest way
+			// to say "move this app".
+			place.Nodes = []string{*req.Node}
+		}
+	}
+
 	updated, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), refFrom(r),
-		req.Description, source, origin, req.Node)
+		req.Description, source, origin, place)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -497,7 +550,7 @@ func (h *Handler) metrics(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	metrics.WriteSeries(w, r, h.svc.Metrics(), metrics.KindApp, a.ID, a.ContainerID != "")
+	metrics.WriteSeries(w, r, h.svc.Metrics(), metrics.KindApp, a.ID, a.HasContainer())
 }
 
 func (h *Handler) logs(w http.ResponseWriter, r *http.Request) {
@@ -506,7 +559,12 @@ func (h *Handler) logs(w http.ResponseWriter, r *http.Request) {
 		tail = DefaultLogTail
 	}
 
-	rc, err := h.svc.Logs(r.Context(), user.FromContext(r.Context()), refFrom(r), tail)
+	// A log belongs to one container and so to one machine. `server`
+	// names which; leaving it off gets the machine the app's traffic
+	// arrives at, which is the one somebody looking at a name means.
+	server := r.URL.Query().Get("server")
+
+	rc, err := h.svc.Logs(r.Context(), user.FromContext(r.Context()), refFrom(r), server, tail)
 	if err != nil {
 		WriteError(w, err)
 		return

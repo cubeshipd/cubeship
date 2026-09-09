@@ -419,6 +419,17 @@ func (s *Service) Desired(ctx context.Context, n *Node) Desired {
 	if apps != nil {
 		desired.Apps = apps
 	}
+	// What its edge serves that its own containers do not say. A
+	// machine that cannot be told this still runs everything on it —
+	// the containers and their labels are the other half of the answer
+	// and are already above — so a failure here is logged and the pass
+	// goes on rather than leaving the machine with nothing.
+	routes, err := s.apps.RoutesFor(ctx, n.ID)
+	if err != nil {
+		log.Printf("cluster: working out what %s should serve: %v", n.Slug, err)
+		return desired
+	}
+	desired.Routes = routes
 	return desired
 }
 

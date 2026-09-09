@@ -45,7 +45,8 @@ internal/
                 memory, the disk everything is kept on, and the bytes
                 over its own interfaces
   node/         the machines this instance is made of — the control
-                plane and the workers that dial it
+                plane and the workers that dial it, and what each of
+                them serves
   mesh/         the private network those machines share, and the
                 firewall rules that let them reach each other
   worker/       the daemon running as somebody else's machine: the loop
@@ -1949,9 +1950,17 @@ cannot see that layer — the ufw rules it writes do not reach it.
 
 ### Where an app runs
 
-Every app has a `node_id`, backfilled to the control plane — everything
-that existed before a cluster ran where the daemon does, because there
-was nowhere else. `PATCH /apps/{ref}` with `node` moves one.
+An app runs on the machines in `app_nodes`, and **one** of them — the one
+`apps.node_id` names — is where its traffic arrives. Both were one
+column once, backfilled to the control plane, because everything that
+existed before a cluster ran where the daemon does. `PATCH /apps/{ref}`
+takes `nodes` for the set and `node` for the edge; `node` alone is the
+whole placement, which is what one machine meant before there was more
+than one.
+
+`app_nodes` is **desired and actual in one row**: the row existing means
+"run this app here", and its container columns are what is actually
+there. Two tables would have been two answers to "is it up".
 
 **The split is between deciding and doing**, and it falls where the two
 things each machine has are. The control plane resolves the image,
@@ -2000,6 +2009,89 @@ still happens here and its result is pushed rather than loaded. See
 "Building images". The check is in two places on purpose: in
 `checkPlacement`, which is a sentence in front of somebody making the
 decision, and in `buildTarget`, which is the one that cannot be skipped.
+
+**A deploy is finished when every machine has it.** `settle` is the
+rule: the row stays `pending` until every replica reports that same
+deployment running. Marking it succeeded when the first machine has it
+would report a rollout that is a third done as finished, and the two
+still pulling would look like nothing was happening. One machine
+failing fails it **at once** rather than at the end — a deploy that is
+going to be reported failed should say so while somebody is watching —
+and the machines that did start it keep what they started.
+
+**An app's status is derived from its replicas**, never stored: `running`
+when every one is serving, `down` when none is, and **`degraded`** when
+some are and some are not. That last state cannot happen to an app on one
+machine, which is why it did not exist before there was more than one.
+Reporting it as `running` would hide an outage, and as `down` would
+invent one.
+
+**Its log and its charts are per machine.** A log belongs to one
+container, so `?server=` names which and the default is the edge —
+interleaving three of them would need a clock those machines do not
+share. The charts are one series with a reading per replica in each
+bucket, so an app's chart is **the average across its replicas** and its
+peak is the busiest one's.
+
+### Spreading one name over several machines
+
+`internal/app/routing.go` is the load balancer, and it is Traefik's own
+round-robin pointed at container names.
+
+**One machine serves a name, and the reason is the certificate.** A
+machine that routes a name asks Let's Encrypt for it over TLS-ALPN on
+its own :443. A machine the record does not resolve to fails that
+challenge every time, forever, and every failure counts against a limit
+shared with everyone else under that registered domain. So the machine
+that answers for a name is the one the DNS record points at, there is
+one of it, and the balancing happens **behind** it.
+
+**A file, not labels.** Traefik's Docker provider sees the one Engine it
+is pointed at, so a machine discovers its own containers and none of the
+ones on the rest of the cluster. The only thing that knows where every
+replica is, is the control plane — so `RoutesFor` works it out and the
+machine writes it into `traefik-dynamic/apps.yml`, which its own Traefik
+is already watching. `node.WriteRoutes` is that write, called by the
+agent for a worker and by `app.RouteWriter` for the control plane, so
+the two cannot drift into rendering the same answer differently.
+
+**The backends are container names**, which resolve from any machine on
+the mesh. That is what makes this a balancer rather than a list of
+addresses that goes stale: a replica is reached by what it is called,
+and what it is called was chosen by the placement that created it —
+derived on the control plane from the app's reference and the
+deployment's id, never taken back from the machine's own report.
+
+**An app on several machines carries no router on any container.** A
+label-router names one backend, the container it is on, so two machines
+carrying the labels for one name would be two Traefiks each sending all
+of their traffic to themselves. `routedBy` is where that is decided, and
+an app on **one** machine is unchanged — its container routes its own
+name, exactly as before any of this existed.
+
+The file's routers carry an explicit **priority**, because a container
+keeps the labels it was created with: an app that has just gained a
+second machine still has a label-router for its name on its edge until
+it is redeployed, and two routers for one host is a race nobody can see
+the result of.
+
+The file is rewritten **only when it changed**, and rendered sorted, for
+one reason: Traefik reloads on every write, this runs on a timer, and a
+map's iteration order would make every pass look like a change.
+
+A replica with **no container name written down** is not a backend. An
+app that has been running since before `app_nodes` existed has one of
+those — the column did not exist — and its next deploy names one.
+Skipping it costs that replica its share of the traffic; guessing would
+cost the whole name.
+
+**Scaling back down does not take a name off the internet**, and that is
+what `app_nodes.routed` is for. The container left on the last machine
+was created while there were two, so it carries no router of its own,
+and dropping the route with the second machine would leave the name
+served by nothing until somebody happened to redeploy. The column
+remembers what the labels were, so the edge goes on routing it until a
+deploy puts them back.
 
 Its **log**, its **charts** and its **names** all work — see below.
 None of them is read from or served by this machine: the machine the app
@@ -2116,10 +2208,20 @@ calls a working name broken is worse than one that says where to look.
 
 ### What is not there yet
 
-- **A load balancer across machines.** One name reaches one box today.
-  What makes a record stop naming one is several A records or something
-  in front of them, and either way it is a decision about failure that
-  this does not make yet.
+- **More than one replica per machine.** You scale out by adding a
+  machine, not by adding containers on one — `app_nodes` is keyed by
+  machine, and a second container on one box would need a name and a
+  health check per replica rather than per app.
+- **Anything in front of the edge.** The machine an app's traffic
+  arrives at is a single point of failure for *ingress*, even though the
+  app itself now survives a replica going away. What fixes that is
+  several A records or something in front of them, and both are
+  decisions about failure — and about certificates — that this does not
+  make.
+- **Taking a failed replica out of the balancer on its own.** A replica
+  drops out when its machine says it is down, which is that machine's
+  next pass; there is no health check between the edge and a replica on
+  another box.
 
 ## Managed databases
 

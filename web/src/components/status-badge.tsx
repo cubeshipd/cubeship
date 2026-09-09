@@ -16,6 +16,12 @@ const tones: Record<string, Tone> = {
   building: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
   pending: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
   failed: { dot: "bg-destructive", text: "text-destructive", edge: "border-destructive/40" },
+  // Some of an app's machines serving and some not. Amber rather than
+  // red because the name still answers — what is lost is the headroom
+  // that was the reason for the second machine — and rather than green
+  // because something is down and nothing will notice on its own. It
+  // cannot happen to an app on one machine.
+  degraded: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40" },
   // A registry's three answers. Unauthorized is red rather than amber
   // because it is the one somebody has to act on: nothing recovers a
   // revoked key on its own, and the next deploy that pulls will fail.

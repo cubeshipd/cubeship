@@ -26,9 +26,16 @@ type App struct {
 	ID            int64
 	ProjectID     int64
 	EnvironmentID int64
-	// NodeID is the machine this app runs on. Every app has one: on an
-	// instance of a single box it is the control plane, which is where
-	// everything ran before there was anywhere else.
+	// NodeID is the machine whose edge serves this app's names — where
+	// its traffic arrives and where its certificate is. Where it *runs*
+	// is Replicas, which may be several machines and always includes
+	// this one.
+	//
+	// One machine rather than all of them, and the reason is the
+	// certificate: a machine that routes a name asks Let's Encrypt for
+	// it, and one the name does not resolve to fails that validation
+	// forever while spending a limit shared with everyone else under
+	// that domain.
 	NodeID int64
 	Name   string
 	// Description is what this app is, in a sentence. It and the slug
@@ -55,10 +62,117 @@ type App struct {
 	// SourceDockerfile is the recipe's path within that repository.
 	// Empty means "Dockerfile" at the root.
 	SourceDockerfile string
-	ContainerID      string
-	Status           string
-	Env              envvar.Map
-	CreatedAt        time.Time
+	// Replicas are the machines this app runs on, and what is running on
+	// each. One machine is the ordinary case and the shape is the same:
+	// a second is a row, not a different kind of app.
+	Replicas  []Replica
+	Env       envvar.Map
+	CreatedAt time.Time
+}
+
+// Replica is one machine an app runs on, and the container that is
+// there.
+//
+// **Name is not decoration.** It is the address every other machine
+// reaches this replica at over the mesh, and it is what the edge's load
+// balancer is built out of — so a replica whose name nothing wrote down
+// is one nothing can send traffic to. See routing.go.
+type Replica struct {
+	NodeID   int64
+	NodeSlug string
+	// Container is the id, and Name is what it is called.
+	Container string
+	Name      string
+	// Deploy is the deployment the container is running. Zero for a
+	// machine that has been given the app and not yet run it.
+	Deploy int64
+	// Routed is whether that container carries Traefik routers for the
+	// app's own names.
+	//
+	// A container keeps the labels it was created with, so this is a
+	// fact about the past nothing else can recover — and it is what
+	// stops scaling an app back down to one machine from taking its
+	// name off the internet: the container left behind routes nothing,
+	// so the edge goes on doing it. See RoutesFor.
+	Routed    bool
+	Status    string
+	UpdatedAt time.Time
+}
+
+// Running reports whether this replica is serving.
+func (r Replica) Running() bool { return r.Status == StatusRunning && r.Container != "" }
+
+// Status is the app as a whole, from its replicas.
+//
+// Derived rather than stored, for the reason every other derived status
+// here is: a column saying an app is up is only as honest as whatever
+// was supposed to update it, and with several machines writing there is
+// no one writer to trust. **Degraded is the answer that only exists
+// with more than one machine** — some of them serving and some not is a
+// real state, and reporting it as `running` hides an outage while
+// reporting it as `down` invents one.
+func (a *App) Status() string {
+	up := 0
+	for _, r := range a.Replicas {
+		if r.Running() {
+			up++
+		}
+	}
+	switch {
+	case up == 0 && !a.everRan():
+		return StatusPending
+	case up == 0:
+		return StatusDown
+	case up < len(a.Replicas):
+		return StatusDegraded
+	default:
+		return StatusRunning
+	}
+}
+
+// HasContainer reports whether anything is running this app anywhere.
+// It is what says there is a log to read and something to stop.
+func (a *App) HasContainer() bool {
+	for _, r := range a.Replicas {
+		if r.Container != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// ReplicaOn is what a machine is running, and whether it was ever given
+// the app at all.
+func (a *App) ReplicaOn(nodeID int64) (Replica, bool) {
+	for _, r := range a.Replicas {
+		if r.NodeID == nodeID {
+			return r, true
+		}
+	}
+	return Replica{}, false
+}
+
+// Nodes are the machines this app runs on, by name, in the order the
+// repository read them — which is by id, so a listing does not
+// reshuffle between two reads of the same thing.
+func (a *App) Nodes() []string {
+	out := make([]string, 0, len(a.Replicas))
+	for _, r := range a.Replicas {
+		out = append(out, r.NodeSlug)
+	}
+	return out
+}
+
+// everRan distinguishes an app nothing has ever deployed from one whose
+// container has gone. Both have nothing running; only the second is a
+// fault.
+func (a *App) everRan() bool {
+	for _, r := range a.Replicas {
+		if r.Deploy != 0 || r.Status != StatusPending {
+			return true
+		}
+	}
+	return false
 }
 
 // Deployment is one attempt to run a new image for an app. It is created
@@ -119,6 +233,10 @@ const (
 	StatusPending = "pending"
 	StatusRunning = "running"
 	StatusDown    = "down"
+	// StatusDegraded is some of an app's machines serving and some not.
+	// It cannot happen to an app on one machine, which is why it did not
+	// exist before there was more than one.
+	StatusDegraded = "degraded"
 )
 
 // ErrNoSuchNode is placing an app on a machine that is not in this

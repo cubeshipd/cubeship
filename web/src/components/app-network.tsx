@@ -89,10 +89,13 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
       <AddDomain
         base={base}
         settings={settings.data}
-        // Where the record has to point: the machine this app runs on,
-        // not the instance. Every machine is its own edge, so a name
-        // pointing here reaches nothing when the app is elsewhere — and
-        // the daemon works out which address that is rather than this
+        // Where the record has to point: the machine this app's traffic
+        // arrives at, not the instance and not every machine it runs
+        // on. Every machine is its own edge, so a name pointing here
+        // reaches nothing when the app is served elsewhere — and one
+        // pointing at all of them would make every one of them ask
+        // Let's Encrypt for a name most of them cannot prove. The
+        // daemon works out which address that is rather than this
         // deciding from the node's name.
         address={app.address ?? ""}
         node={app.node}

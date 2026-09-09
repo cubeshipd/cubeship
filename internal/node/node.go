@@ -194,6 +194,11 @@ type Desired struct {
 	// Apps are the containers this node should be running. Nothing puts
 	// anything here yet.
 	Apps []Placement `json:"apps"`
+	// Routes are the names this machine's own edge serves whose traffic
+	// is spread over several machines. Empty for a machine that runs
+	// every app it serves by itself, which is every machine on an
+	// instance where nothing has been scaled out.
+	Routes []Route `json:"routes,omitempty"`
 }
 
 // InMesh reports whether a machine is on the cluster's private network.
@@ -253,10 +258,10 @@ type Result struct {
 // Edge is how a machine serves the names the apps on it answer at.
 //
 // **Every machine is its own edge.** Traffic for an app arrives at the
-// box the app is on, terminates TLS there, and is routed to the
-// container by the same labels a container here carries — so what
-// travels is only what that Traefik has to be started with, and the
-// labels are already on the placement.
+// machine that app names, terminates TLS there, and reaches a container
+// either by the labels that container carries — when there is one — or
+// by the routes below, when there are several and the traffic has to be
+// spread across them.
 //
 // The alternative was one edge on the control plane proxying to the
 // others, and it costs more than it buys: every request would hairpin
@@ -270,6 +275,26 @@ type Edge struct {
 	// ACMEEmail is the contact Let's Encrypt registers. Optional: an
 	// account opens without one.
 	ACMEEmail string `json:"acme_email,omitempty"`
+}
+
+// Route is one name this machine serves whose backends are not its own
+// containers to discover.
+//
+// Traefik's Docker provider sees one Engine, so a machine can find the
+// containers on itself and none of the ones on the rest of the cluster.
+// An app spread over several machines is exactly that case: its edge has
+// to know where every replica is, and only the control plane does. So
+// the answer travels here and the machine writes it out as a file its
+// Traefik reads.
+//
+// **Servers are container names**, which resolve from any machine on the
+// mesh. That is what makes this a load balancer rather than a list of
+// addresses that go stale: a replica is reached by what it is called,
+// and what it is called is chosen by the placement that created it.
+type Route struct {
+	App     string   `json:"app"`
+	Host    string   `json:"host"`
+	Servers []string `json:"servers"`
 }
 
 // Reading is what one container on a machine is using, as that machine
@@ -301,6 +326,10 @@ type Apps interface {
 	Placed(ctx context.Context, nodeID int64, results []Result) error
 	// Sampled records what those containers are using.
 	Sampled(ctx context.Context, nodeID int64, readings []Reading) error
+	// RoutesFor is what this machine's edge has to serve that its own
+	// containers do not say — every app that names it and runs on more
+	// than one machine.
+	RoutesFor(ctx context.Context, nodeID int64) ([]Route, error)
 }
 
 var (
