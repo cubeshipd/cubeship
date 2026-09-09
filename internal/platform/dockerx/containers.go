@@ -42,12 +42,26 @@ type ContainerOpts struct {
 	// other than the daemon — the dashboard's Next server — where Cmd
 	// alone would be arguments to the daemon rather than a different
 	// program.
-	Entrypoint  []string
-	Binds       []string
-	Ports       []string
-	Network     string
-	HostNetwork bool
-	ExtraHosts  []string
+	Entrypoint []string
+	Binds      []string
+	Ports      []string
+	Network    string
+	// AlsoNetworks are networks the container joins besides Network.
+	//
+	// It exists for the cluster's overlay: a container that has to be
+	// reachable from another machine is on the local bridge *and* on
+	// the mesh, and the bridge is what everything on this box already
+	// resolves it by. Connected after the container is created and
+	// **before it is started**, so its process has the interface from
+	// the first instruction it runs — a server that binds or registers
+	// at startup would otherwise come up without it.
+	//
+	// Not passed to ContainerCreate as a second endpoint: an Engine
+	// older than 25 refuses more than one there, and connecting after
+	// is what every version does the same way.
+	AlsoNetworks []string
+	HostNetwork  bool
+	ExtraHosts   []string
 	// Privileged drops the container's isolation. Only BuildKit needs
 	// it, and only because building an image means running one.
 	Privileged bool
@@ -239,6 +253,9 @@ func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (strin
 		}
 	}
 
+	// One name for what goes wrong below, because a container that is
+	// created and then not fully wired has to be removed rather than
+	// left half-made.
 	resp, err := c.api.ContainerCreate(ctx,
 		&container.Config{
 			Image:        opts.Image,
@@ -260,6 +277,20 @@ func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (strin
 		networkingConfig, nil, opts.Name)
 	if err != nil {
 		return "", fmt.Errorf("create container %q: %w", opts.Name, err)
+	}
+
+	for _, name := range opts.AlsoNetworks {
+		if name == "" || name == opts.Network {
+			continue
+		}
+		if err := c.api.NetworkConnect(ctx, name, resp.ID, nil); err != nil {
+			// A container on fewer networks than it was asked for is
+			// not the container that was asked for: it would come up,
+			// pass its health check, and be unreachable from half the
+			// cluster. Removed here rather than returned running.
+			c.RemoveContainer(ctx, resp.ID)
+			return "", fmt.Errorf("connect container %q to network %q: %w", opts.Name, name, err)
+		}
 	}
 	return resp.ID, nil
 }

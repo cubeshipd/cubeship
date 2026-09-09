@@ -71,6 +71,10 @@ type Provisioner struct {
 	// the failure worth catching while somebody is still looking.
 	ReadyAttempts int
 	ReadyInterval time.Duration
+
+	// meshNetwork answers whether this instance is a cluster, and with
+	// what network. Nil until server.New wires one in.
+	meshNetwork func(context.Context) string
 }
 
 func NewProvisioner(db *database.DB, docker DockerAPI, dataDir string) *Provisioner {
@@ -106,13 +110,14 @@ func (p *Provisioner) DataDirFor(d *Datastore) string {
 // published on every interface: an exposed database is one somebody
 // means to reach from off this host, and a bind on loopback would be a
 // port that answers only to the machine that did not need it.
-func (p *Provisioner) containerOpts(d *Datastore) dockerx.ContainerOpts {
+func (p *Provisioner) containerOpts(ctx context.Context, d *Datastore) dockerx.ContainerOpts {
 	opts := dockerx.ContainerOpts{
-		Name:    ContainerName(d.Slug),
-		Image:   d.Engine.Image(d.Version),
-		Env:     d.ContainerEnv(),
-		Cmd:     d.ContainerCmd(),
-		Network: Network,
+		Name:         ContainerName(d.Slug),
+		Image:        d.Engine.Image(d.Version),
+		Env:          d.ContainerEnv(),
+		Cmd:          d.ContainerCmd(),
+		Network:      Network,
+		AlsoNetworks: p.mesh(ctx),
 		Labels: map[string]string{
 			// No Traefik labels: these speak their own wire protocol
 			// over TCP, and Traefik routes HTTP by host name. What
@@ -176,7 +181,7 @@ func (p *Provisioner) provision(ctx context.Context, d *Datastore) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	opts := p.containerOpts(d)
+	opts := p.containerOpts(ctx, d)
 
 	if dir := p.DataDirFor(d); dir != "" {
 		// Created here rather than left to Docker, which would create
@@ -339,6 +344,29 @@ func (p *Provisioner) Teardown(ctx context.Context, d *Datastore, keepData bool)
 	}
 	if err := os.RemoveAll(dir); err != nil {
 		return fmt.Errorf("remove data directory: %w", err)
+	}
+	return nil
+}
+
+// SetMeshNetwork wires in what says whether this instance is a cluster.
+//
+// It answers with the cluster overlay's name when there is one and with
+// nothing when there is not, and what it decides is one extra network
+// on every container created here — the local bridge stays, because
+// everything on this box already resolves the container there.
+//
+// A function rather than an interface because that is the whole of it,
+// and `server.New` is the only caller. See internal/mesh.
+func (p *Provisioner) SetMeshNetwork(fn func(context.Context) string) { p.meshNetwork = fn }
+
+// mesh is the network to also join, or none. Nothing is asked of the
+// Engine when nobody wired one in, which is every test.
+func (p *Provisioner) mesh(ctx context.Context) []string {
+	if p.meshNetwork == nil {
+		return nil
+	}
+	if name := p.meshNetwork(ctx); name != "" {
+		return []string{name}
 	}
 	return nil
 }

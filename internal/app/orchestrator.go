@@ -73,6 +73,10 @@ type Orchestrator struct {
 	// running tracks deploys that outlive the request that started them.
 	// Tests wait on it; the daemon does not.
 	running sync.WaitGroup
+
+	// meshNetwork answers whether this instance is a cluster, and with
+	// what network. Nil until server.New wires one in.
+	meshNetwork func(context.Context) string
 }
 
 // DeployTimeout bounds a detached deploy. It is not any client's
@@ -454,11 +458,12 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	base := resourceName(ref)
 	newName := fmt.Sprintf("%s-%d", base, time.Now().UnixNano())
 	newID, err := o.docker.CreateContainer(ctx, dockerx.ContainerOpts{
-		Name:    newName,
-		Image:   image.Ref,
-		Labels:  traefik.Labels(base, o.routing(a.Domains), values.HasTLS()),
-		Env:     envvar.Slice(env),
-		Network: Network,
+		Name:         newName,
+		Image:        image.Ref,
+		Labels:       traefik.Labels(base, o.routing(a.Domains), values.HasTLS()),
+		Env:          envvar.Slice(env),
+		Network:      Network,
+		AlsoNetworks: o.mesh(ctx),
 	})
 	if err != nil {
 		return fmt.Errorf("create container: %w", err)
@@ -634,4 +639,27 @@ func (o *Orchestrator) routing(domains []Domain) []traefik.Domain {
 		out = append(out, traefik.Domain{Host: d.Host, Port: port})
 	}
 	return out
+}
+
+// SetMeshNetwork wires in what says whether this instance is a cluster.
+//
+// It answers with the cluster overlay's name when there is one and with
+// nothing when there is not, and what it decides is one extra network
+// on every container this deploys — the local bridge stays, because
+// everything on this box already resolves the container there.
+//
+// A function rather than an interface because that is the whole of it,
+// and `server.New` is the only caller. See internal/mesh.
+func (o *Orchestrator) SetMeshNetwork(fn func(context.Context) string) { o.meshNetwork = fn }
+
+// mesh is the network to also join, or none. Nothing is asked of the
+// Engine when nobody wired one in, which is every test.
+func (o *Orchestrator) mesh(ctx context.Context) []string {
+	if o.meshNetwork == nil {
+		return nil
+	}
+	if name := o.meshNetwork(ctx); name != "" {
+		return []string{name}
+	}
+	return nil
 }

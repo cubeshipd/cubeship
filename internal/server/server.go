@@ -211,6 +211,20 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// here — the one place that knows every module exists.
 	projects.SetAppTeardown(apps)
 
+	// Every container that has to be reachable from another machine
+	// joins the cluster's overlay as well as the local bridge: an app,
+	// a database, a managed store — the three an attachment addresses
+	// by container name. The instance's own infrastructure does not:
+	// Postgres, BuildKit and the dashboard are this machine's, and
+	// Traefik is each machine's own edge.
+	//
+	// Existing containers are not touched. One joins the mesh the next
+	// time it is created, which is the rule its labels and its
+	// environment already follow.
+	apps.Orchestrator().SetMeshNetwork(nodes.MeshNetwork)
+	datastores.Provisioner().SetMeshNetwork(nodes.MeshNetwork)
+	objectStores.Provisioner().SetMeshNetwork(nodes.MeshNetwork)
+
 	// The same three modules the collector samples on behalf of, handed
 	// to the series service as well: "what is using this machine" is one
 	// question about all of them, and only they can name a subject.

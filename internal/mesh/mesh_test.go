@@ -42,6 +42,15 @@ func (f *fakeEngine) EnsureOverlayNetwork(_ context.Context, name string) error 
 	return nil
 }
 
+func (f *fakeEngine) NetworkExists(_ context.Context, name string) (bool, error) {
+	for _, made := range f.networks {
+		if made == name {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // The control plane is the manager, and the address it advertises is
 // where every other machine will try to reach it. It is the one field
 // in a swarm that cannot be corrected later without tearing the cluster

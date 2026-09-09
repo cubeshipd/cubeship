@@ -108,6 +108,10 @@ type Provisioner struct {
 	// still looking at the screen.
 	ReadyAttempts int
 	ReadyInterval time.Duration
+
+	// meshNetwork answers whether this instance is a cluster, and with
+	// what network. Nil until server.New wires one in.
+	meshNetwork func(context.Context) string
 }
 
 func NewProvisioner(db *database.DB, docker DockerAPI, dataDir string) *Provisioner {
@@ -143,7 +147,7 @@ func (p *Provisioner) DataDirFor(s *Store) string {
 
 // containerOpts is the whole configuration of a managed store's
 // container.
-func (p *Provisioner) containerOpts(s *Store) dockerx.ContainerOpts {
+func (p *Provisioner) containerOpts(ctx context.Context, s *Store) dockerx.ContainerOpts {
 	opts := dockerx.ContainerOpts{
 		Name:  ContainerName(s.Slug),
 		Image: ImageFor(s.Version),
@@ -157,7 +161,8 @@ func (p *Provisioner) containerOpts(s *Store) dockerx.ContainerOpts {
 			"MINIO_ROOT_USER=" + s.AccessKey,
 			"MINIO_ROOT_PASSWORD=" + s.SecretKey,
 		},
-		Network: Network,
+		Network:      Network,
+		AlsoNetworks: p.mesh(ctx),
 		Labels: map[string]string{
 			// No Traefik labels. A managed store answers to apps on the
 			// shared network by container name, and to anything else
@@ -217,7 +222,7 @@ func (p *Provisioner) provision(ctx context.Context, s *Store) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	opts := p.containerOpts(s)
+	opts := p.containerOpts(ctx, s)
 
 	if dir := p.DataDirFor(s); dir != "" {
 		// Created here rather than left to Docker, which would create
@@ -449,4 +454,27 @@ func randomString(alphabet string, length int) (string, error) {
 		out[i] = alphabet[n.Int64()]
 	}
 	return string(out), nil
+}
+
+// SetMeshNetwork wires in what says whether this instance is a cluster.
+//
+// It answers with the cluster overlay's name when there is one and with
+// nothing when there is not, and what it decides is one extra network
+// on every container created here — the local bridge stays, because
+// everything on this box already resolves the container there.
+//
+// A function rather than an interface because that is the whole of it,
+// and `server.New` is the only caller. See internal/mesh.
+func (p *Provisioner) SetMeshNetwork(fn func(context.Context) string) { p.meshNetwork = fn }
+
+// mesh is the network to also join, or none. Nothing is asked of the
+// Engine when nobody wired one in, which is every test.
+func (p *Provisioner) mesh(ctx context.Context) []string {
+	if p.meshNetwork == nil {
+		return nil
+	}
+	if name := p.meshNetwork(ctx); name != "" {
+		return []string{name}
+	}
+	return nil
 }

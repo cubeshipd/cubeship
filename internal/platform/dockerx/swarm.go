@@ -7,7 +7,9 @@ import (
 	"strconv"
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/swarm"
+	"github.com/docker/docker/errdefs"
 )
 
 // The Engine's own clustering, used for one thing: an **overlay
@@ -120,6 +122,21 @@ const SwarmManagerPort = 2377
 // SwarmManagerAddress is the address a worker joins at.
 func SwarmManagerAddress(host string) string {
 	return net.JoinHostPort(host, strconv.Itoa(SwarmManagerPort))
+}
+
+// NetworkExists reports whether a network is there to be joined.
+//
+// It is how the daemon decides whether to put a container on the
+// cluster's overlay: an instance of one machine has no such network,
+// and asking for it would be a container that will not start.
+func (c *Client) NetworkExists(ctx context.Context, name string) (bool, error) {
+	if _, err := c.api.NetworkInspect(ctx, name, network.InspectOptions{}); err != nil {
+		if errdefs.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("look for network %q: %w", name, err)
+	}
+	return true, nil
 }
 
 // EnsureOverlayNetwork creates the network every machine's containers

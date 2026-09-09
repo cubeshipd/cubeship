@@ -102,6 +102,7 @@ type Engine interface {
 	SwarmWorkerToken(ctx context.Context) (string, error)
 	SwarmJoin(ctx context.Context, manager, token, advertise string) error
 	EnsureOverlayNetwork(ctx context.Context, name string) error
+	NetworkExists(ctx context.Context, name string) (bool, error)
 }
 
 // Ensure brings the mesh up on the control plane and reports what a

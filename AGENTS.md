@@ -1885,6 +1885,35 @@ joins and then cannot be reached, which reads as a swarm that half
 worked. Writing a rule costs a container through `hostexec`, so both
 sides do it when the peer set changes rather than on every pass.
 
+**Three kinds of container join it, and the rest do not.** An app, a
+database and a managed object store — the three an attachment addresses
+by container name, which is exactly the set that has to mean the same
+thing from another machine. Postgres, BuildKit and the dashboard are
+this machine's own, and Traefik is each machine's own edge; putting them
+on a cluster network would be reach nobody asked for.
+
+They join it **beside** the local bridge, not instead of it: everything
+on this box already resolves them there, and `ContainerOpts.AlsoNetworks`
+is the extra. The connection is made after the container is created and
+**before it is started**, so its process has the interface from the first
+instruction it runs — a server that binds or registers at startup would
+otherwise come up without it. A container that cannot join is removed
+rather than started: one on fewer networks than it was asked for would
+come up, pass its health check, and be unreachable from half the
+cluster.
+
+`node.MeshNetwork` is what each of them asks, and it asks the **Engine**
+rather than this module's own state — the network can be removed by
+hand, an instance can be upgraded into a cluster that already exists,
+and a daemon restart forgets everything but the table. The answer is
+cached for half a minute, because it is asked once per container created
+and changes once in the life of an instance.
+
+**Existing containers are not touched.** One joins the mesh the next
+time it is created, which is the rule its labels and its environment
+already follow — so adding a machine to a cluster leaves everything
+running, and a redeploy is what puts an app on the cluster's network.
+
 **A machine behind NAT cannot be in the mesh.** The data plane is VXLAN
 between the nodes themselves, so they have to reach each other directly.
 That is the limit this design pays for everything else with, and it is
@@ -1901,10 +1930,6 @@ already asks the question on every pass, so placing an app on a machine
 is filling that in rather than inventing a way to reach the box. What
 still has to be built:
 
-- **Attaching containers to the mesh.** The overlay exists and nothing
-  is on it. Every container this instance creates has to join it as well
-  as the local bridge, which is one more network in
-  `dockerx.ContainerOpts` and a redeploy.
 - **Placement**: an app gains a node, the orchestrator resolves and
   builds here — the registry and BuildKit stay on the control plane —
   and hands the run to the agent. What travels is an image reference,

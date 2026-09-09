@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"cubeship/internal/firewall"
 	"cubeship/internal/mesh"
@@ -45,7 +46,19 @@ type Service struct {
 	// is done when the cluster changes rather than on every pass.
 	mu       sync.Mutex
 	admitted string
+	// networkAt is when the Engine was last asked whether the cluster's
+	// overlay is there. Every container this instance creates asks, and
+	// the answer changes about once in the life of an instance.
+	networkAt   time.Time
+	networkName string
 }
+
+// meshLookupTTL is how long "is there a cluster network" is believed.
+//
+// The question is asked on every container this instance creates, and
+// the answer changes when somebody adds the first machine — so it is
+// worth not asking the Engine per deploy, and not worth a subscription.
+const meshLookupTTL = 30 * time.Second
 
 func NewService(db *database.DB) *Service { return &Service{db: db} }
 
@@ -122,6 +135,36 @@ func (s *Service) mesh(ctx context.Context) (*mesh.Info, error) {
 		return nil, err
 	}
 	return &info, nil
+}
+
+// MeshNetwork is the overlay a container on this machine should join,
+// or empty when this instance is one machine.
+//
+// Every module that creates a container asks, and takes the answer as
+// an extra network rather than as a replacement for the local bridge:
+// what is on this box already resolves it there, and the overlay is
+// what the other machines resolve it on.
+//
+// The Engine is the authority rather than this module's own state. The
+// network can be removed by hand, an instance can be upgraded into a
+// cluster that already exists, and a daemon restart forgets everything
+// but the table — asking the thing that would have to answer anyway is
+// the answer that cannot drift.
+func (s *Service) MeshNetwork(ctx context.Context) string {
+	if s.engine == nil {
+		return ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if time.Since(s.networkAt) < meshLookupTTL {
+		return s.networkName
+	}
+	name := ""
+	if found, err := s.engine.NetworkExists(ctx, mesh.NetworkName); err == nil && found {
+		name = mesh.NetworkName
+	}
+	s.networkAt, s.networkName = time.Now(), name
+	return name
 }
 
 // List is the cluster, this machine included.
