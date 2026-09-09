@@ -122,6 +122,10 @@ type Agent struct {
 	// peers. Nil on a daemon with no way to reach the host, which is a
 	// machine whose firewall is somebody else's business.
 	firewall firewall.Host
+	// bootstrap starts this machine's own edge. A function rather than
+	// the package, because what it needs from the daemon — the data
+	// directory, the Engine — is what the daemon already holds.
+	bootstrap func(ctx context.Context, edge node.Edge) error
 
 	// admitted is the peer set this machine's firewall was last opened
 	// for. Each rule costs a container through hostexec, so it is
@@ -163,7 +167,7 @@ type Agent struct {
 }
 
 func New(controlPlane, token, version string, box *machine.Reader, engine Engine,
-	address HostAddress, host firewall.Host,
+	address HostAddress, host firewall.Host, edge func(context.Context, node.Edge) error,
 ) *Agent {
 	return &Agent{
 		controlPlane: strings.TrimRight(controlPlane, "/"),
@@ -173,6 +177,7 @@ func New(controlPlane, token, version string, box *machine.Reader, engine Engine
 		engine:       engine,
 		address:      address,
 		firewall:     host,
+		bootstrap:    edge,
 		client:       &http.Client{Timeout: dialTimeout},
 	}
 }
@@ -251,6 +256,12 @@ func (a *Agent) tick(ctx context.Context) (interval time.Duration, err error) {
 	// on the mesh is one that cannot reach the database it was given
 	// the address of.
 	a.pending = a.apply(work, answer.Desired.Apps, answer.Registry)
+
+	// And the edge, once there is something with a name on it to
+	// serve. After the containers rather than before: a Traefik started
+	// for an app that then failed to come up would be two ports held
+	// open for nothing.
+	a.applyEdge(work, answer.Edge, answer.Desired.Apps)
 
 	// And whatever this instance asked for while the poll was parked.
 	// Answered one at a time and in order: there is one of each of
@@ -414,6 +425,38 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 		}
 	}
 	return results
+}
+
+// applyEdge makes sure this machine can serve the names its apps
+// answer at.
+//
+// **Only when one of them has a name.** Every machine is its own edge,
+// and an edge is two published ports and a container: a worker running
+// a queue consumer has no reason to hold either. What says whether
+// there is anything to route is the placements themselves — a container
+// with a Traefik router carries `traefik.enable`, which is the label
+// Traefik itself goes by.
+//
+// It is not stopped again when the last name goes. Removing
+// infrastructure somebody's traffic may still be arriving at is a
+// different kind of act from starting it, and an idle Traefik costs a
+// container.
+func (a *Agent) applyEdge(ctx context.Context, edge *node.Edge, placements []node.Placement) {
+	if edge == nil || a.bootstrap == nil || !routesSomething(placements) {
+		return
+	}
+	if err := a.bootstrap(ctx, *edge); err != nil {
+		log.Printf("agent: starting this machine's edge: %v", err)
+	}
+}
+
+func routesSomething(placements []node.Placement) bool {
+	for _, p := range placements {
+		if p.Labels["traefik.enable"] == "true" {
+			return true
+		}
+	}
+	return false
 }
 
 // start runs one placement: pull, create, start, and watch it long

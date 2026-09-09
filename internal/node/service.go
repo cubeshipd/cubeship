@@ -47,6 +47,8 @@ type Service struct {
 	// registry answers where this instance's own registry is, so a
 	// machine knows which images it should authenticate as itself for.
 	registry func(ctx context.Context) string
+	// edge answers what a machine's own Traefik is started with.
+	edge func(ctx context.Context) Edge
 	// advertise is where the other machines reach this one. It is the
 	// instance's own public address, which settings already works out
 	// and refuses to guess badly — a bridge address here would build a
@@ -91,6 +93,21 @@ func (s *Service) SetApps(a Apps) { s.apps = a }
 // It follows the instance's domain, so it is asked rather than captured.
 func (s *Service) SetRegistryHost(fn func(context.Context) string) { s.registry = fn }
 
+// SetEdgeConfig wires in what a machine's own Traefik is started with.
+// It follows the instance's settings, so it is asked rather than
+// captured.
+func (s *Service) SetEdgeConfig(fn func(context.Context) Edge) { s.edge = fn }
+
+// EdgeConfig is what every machine's own Traefik is started with, or
+// nil on a daemon that does not know — which is a test.
+func (s *Service) EdgeConfig(ctx context.Context) *Edge {
+	if s.edge == nil {
+		return nil
+	}
+	edge := s.edge(ctx)
+	return &edge
+}
+
 // RegistryHost is the address an image pushed to this instance is
 // pulled from, or empty when there is no domain and therefore no
 // registry.
@@ -117,6 +134,27 @@ func (s *Service) Logs(ctx context.Context, nodeID int64, containerID, tail stri
 	return s.hub.Ask(ctx, nodeID, Command{
 		Kind: CommandLogs, Container: containerID, Tail: tail,
 	})
+}
+
+// Addresses is where each machine in the cluster is reached, by id.
+//
+// One query rather than one per app: what asks is a listing, and a
+// listing that resolved a machine per row would be a listing that gets
+// slower as the cluster grows. A machine that has not reported an
+// address is not in the answer at all — there is nothing to point a
+// name at, and an empty string would read as one.
+func (s *Service) Addresses(ctx context.Context) (map[int64]string, error) {
+	all, err := s.Repo().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]string, len(all))
+	for _, n := range all {
+		if n.Address != "" {
+			out[n.ID] = n.Address
+		}
+	}
+	return out, nil
 }
 
 // Wake tells a machine there is something new for it, without waiting

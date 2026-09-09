@@ -131,6 +131,10 @@ export type App = {
   // The machine in the cluster this app runs on, by name. On an
   // instance of one box it is always "control-plane".
   node: string;
+  // Where a DNS record for this app has to point: the machine it runs
+  // on, because every machine is its own edge. Absent when that machine
+  // has not reported an address — a name nothing can be pointed at yet.
+  address?: string;
 };
 
 // --- credentials ---
@@ -364,13 +368,22 @@ export type Certificate = {
 // Why a name this instance routes has no certificate. The three are
 // three different jobs: configure the instance, redeploy the app, or
 // look at what Traefik said.
-export type MissingReason = "tls_not_configured" | "not_deployed" | "pending";
+export type MissingReason =
+  | "tls_not_configured"
+  | "not_deployed"
+  | "pending"
+  // The app is on another machine in this cluster, which runs its own
+  // edge and holds its own certificate store. Nothing here can say
+  // whether that certificate exists.
+  | "another_server";
 
 export type MissingCertificate = {
   host: string;
   app?: string;
   instance?: boolean;
   reason: MissingReason;
+  // The machine that serves it, when that is not this one.
+  node?: string;
   // The last thing Traefik's log said about that name, when it said
   // anything. A quotation, not a contract.
   detail?: string;

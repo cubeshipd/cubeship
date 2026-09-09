@@ -228,12 +228,12 @@ function Placement(props: SectionProps) {
   // traffic, and an image built here, because no other machine has
   // anywhere to pull it from. The daemon still decides — this is the
   // courtesy of not making somebody press a button to be told no.
-  const stuck =
-    app.domains.length > 0
-      ? `It answers at ${app.domains[0].host}, and only the control plane routes traffic.`
-      : BUILDING_SOURCES.includes(app.source)
-        ? "It is built here, and the image is loaded into this machine's Docker rather than pushed anywhere another machine could pull it from."
-        : null;
+  // The one thing left that keeps an app here. A name no longer does:
+  // every machine runs its own edge, so an app answers at its name
+  // wherever it is — what has to follow it is the DNS record.
+  const stuck = BUILDING_SOURCES.includes(app.source)
+    ? "It is built here, and the image is loaded into this machine's Docker rather than pushed anywhere another machine could pull it from."
+    : null;
 
   return (
     <>
@@ -266,9 +266,22 @@ function Placement(props: SectionProps) {
               }}
             />
             {stuck && <Notice>{stuck} It stays on the control plane until that changes.</Notice>}
-            {!stuck && app.node !== "control-plane" && (
+            {/* The one thing moving an app does not do for you. A name
+                follows the app only once its record does, and Cubeship
+                does not know which provider serves a name it did not
+                write. */}
+            {!stuck && dirty && app.domains.length > 0 && (
+              <Notice tone="warning">
+                {app.domains.length === 1 ? "This name has" : "These names have"} to be repointed at
+                the new server afterwards: {app.domains.map((d) => d.host).join(", ")}. Until then
+                {app.domains.length === 1 ? " it reaches" : " they reach"} the machine the app is
+                leaving.
+              </Notice>
+            )}
+            {!stuck && !dirty && app.node !== "control-plane" && (
               <Notice>
-                Its log is read from that machine on demand. Its charts are not collected there yet.
+                It serves its own names there, and its charts and its log come from it through the
+                connection it keeps open to this one.
               </Notice>
             )}
             <SaveRow busy={busy} saved={saved} dirty={dirty} />

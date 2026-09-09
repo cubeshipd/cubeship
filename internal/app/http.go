@@ -10,6 +10,7 @@ import (
 
 	"cubeship/internal/envvar"
 	"cubeship/internal/metrics"
+	"cubeship/internal/node"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/project"
 	"cubeship/internal/user"
@@ -58,6 +59,15 @@ type Response struct {
 	// an instance of one box it is always the control plane, which is
 	// where everything ran before there was anywhere else.
 	Node string `json:"node"`
+	// Address is where a DNS record for this app has to point: the
+	// machine it runs on, because each machine is its own edge.
+	//
+	// It is the app's rather than the instance's for exactly that
+	// reason — a name pointing at the control plane reaches nothing
+	// when the app is on another box. Empty when the machine has not
+	// reported an address, which is a name nothing can be pointed at
+	// yet.
+	Address string `json:"address,omitempty"`
 	// SuggestedHost is a name this app could answer at, under the
 	// instance's own domain — see SuggestedHostFor. Nothing assigns it:
 	// an app with no domain is a normal app, and this is only what the
@@ -78,6 +88,7 @@ func toResponse(a *Scoped, in Instance) Response {
 		Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
 		SuggestedHost: SuggestedHostFor(ref, in.Domain),
 		Node:          a.NodeSlug,
+		Address:       addressFor(a, in),
 	}
 	switch Source(a.Source) {
 	case SourceExternal:
@@ -90,6 +101,22 @@ func toResponse(a *Scoped, in Instance) Response {
 		}
 	}
 	return r
+}
+
+// addressFor is where this app's traffic has to arrive.
+//
+// The machine it is on, and this instance's own address only for an app
+// here: a node that has not reported one has no address to point a name
+// at, and saying the control plane's would be a record that reaches the
+// wrong box.
+func addressFor(a *Scoped, in Instance) string {
+	if address, ok := in.Addresses[a.NodeID]; ok && address != "" {
+		return address
+	}
+	if a.NodeSlug == node.ControlPlaneSlug {
+		return in.PublicIP
+	}
+	return ""
 }
 
 func toResponses(apps []*Scoped, in Instance) []Response {

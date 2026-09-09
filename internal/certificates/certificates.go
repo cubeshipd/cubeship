@@ -87,6 +87,15 @@ const (
 	// normal; an hour later it is a name that does not resolve here, or
 	// a challenge that failed.
 	ReasonPending Reason = "pending"
+	// ReasonElsewhere is a name served by another machine in this
+	// cluster.
+	//
+	// Every machine is its own edge: the certificate for that name was
+	// issued on that box, into that box's store, and this one has never
+	// seen it. Calling it missing would be this report accusing a name
+	// that is working — which is the one thing a report like this must
+	// not do.
+	ReasonElsewhere Reason = "another_server"
 )
 
 // Missing is a name this instance routes with no certificate behind it.
@@ -95,7 +104,11 @@ type Missing struct {
 	// App is the app served there, empty for the instance's own names.
 	App      string `json:"app,omitempty"`
 	Instance bool   `json:"instance,omitempty"`
-	Reason   Reason `json:"reason"`
+	// Node is the machine that serves it, when that is not this one.
+	// What it is for is the reason above: this report can say where a
+	// certificate is rather than that there is none.
+	Node   string `json:"node,omitempty"`
+	Reason Reason `json:"reason"`
 	// Detail is the last thing Traefik said about this name, when it
 	// said anything. It is read out of the container's log rather than
 	// out of any API, so it is a quotation and not a contract: empty is
@@ -138,4 +151,6 @@ type ServedHost struct {
 	// its labels. A name added and not yet deployed is one Traefik has
 	// never heard of.
 	Deployed bool
+	// Node is the machine that serves it, when that is not this one.
+	Node string
 }

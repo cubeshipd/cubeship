@@ -13,16 +13,23 @@ type placedApp struct {
 	Reference string `json:"reference"`
 	Node      string `json:"node"`
 	Source    string `json:"source"`
+	Address   string `json:"address"`
 }
 
 // addServer puts a machine in the cluster. Nothing is contacted — the
 // row is a place for a box that does not exist — which is exactly what
 // these tests want: the placement decisions are the control plane's,
 // and none of them wait for a machine to answer.
-func addServer(t *testing.T, f *servertest.Fixture, name string) {
+// addServer puts a machine in the cluster and hands back the credential
+// its agent authenticates with, which is shown once and only here.
+func addServer(t *testing.T, f *servertest.Fixture, name string) string {
 	t.Helper()
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/nodes",
-		map[string]any{"name": name}, f.AdminKey), http.StatusCreated)
+	var created struct {
+		Token string `json:"token"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/nodes",
+		map[string]any{"name": name}, f.AdminKey, &created), http.StatusCreated)
+	return created.Token
 }
 
 func createExternalApp(t *testing.T, f *servertest.Fixture, name string) placedApp {
@@ -45,7 +52,7 @@ func TestAnAppIsOnTheControlPlaneUntilItIsMoved(t *testing.T) {
 		t.Errorf("a new app is on %q, want the control plane", created.Node)
 	}
 
-	addServer(t, f, "eu-1")
+	_ = addServer(t, f, "eu-1")
 	var moved placedApp
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPatch, "/apps/"+created.Reference,
 		map[string]any{"node": "eu-1"}, f.AdminKey, &moved), http.StatusOK)
@@ -62,26 +69,41 @@ func TestAnAppIsOnTheControlPlaneUntilItIsMoved(t *testing.T) {
 	}
 }
 
-// An app with a name to answer at cannot leave the control plane. Each
-// machine is its own edge and only this one routes traffic, so a moved
-// app would deploy, run, and answer nothing at the address it is
-// supposed to — which is the kind of broken nobody notices until
-// somebody complains.
-func TestAnAppWithADomainStaysWhereTheTrafficArrives(t *testing.T) {
+// An app with a name to answer at can move, and the name goes with it:
+// every machine runs its own edge, so the app is served wherever it is.
+//
+// What does not follow on its own is the DNS record — which is why the
+// app says where its traffic has to arrive rather than the instance
+// saying it once for everything.
+func TestAnAppWithADomainCanMoveAndSaysWhereItsTrafficGoes(t *testing.T) {
 	f := servertest.New(t)
-	addServer(t, f, "eu-1")
+	token := addServer(t, f, "eu-1")
 	created := createExternalApp(t, f, "web")
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps/"+created.Reference+"/domains",
 		map[string]any{"host": "web.example.com"}, f.AdminKey), http.StatusCreated)
 
-	rec := f.Do(t, http.MethodPatch, "/apps/"+created.Reference,
-		map[string]any{"node": "eu-1"}, f.AdminKey)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("moving an app with a domain: %d %s, want 409", rec.Code, rec.Body.String())
+	var moved placedApp
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPatch, "/apps/"+created.Reference,
+		map[string]any{"node": "eu-1"}, f.AdminKey, &moved), http.StatusOK)
+	if moved.Node != "eu-1" {
+		t.Fatalf("the app is on %q", moved.Node)
 	}
-	if !strings.Contains(rec.Body.String(), "web.example.com") {
-		t.Errorf("the refusal is %q, and it has to name what is in the way", rec.Body.String())
+	// The machine has never called in, so it has no address to report —
+	// and an app whose machine has no address has nothing to point a
+	// name at. Saying the instance's own would be a record reaching the
+	// box the app just left.
+	if moved.Address != "" {
+		t.Errorf("address = %q, want none until that machine reports one", moved.Address)
+	}
+
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/nodes/agent/reconcile",
+		node.AgentRequest{Cores: 2, Address: "203.0.113.9"}, token), http.StatusOK)
+
+	var after placedApp
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/apps/"+created.Reference, nil, f.AdminKey, &after), http.StatusOK)
+	if after.Address != "203.0.113.9" {
+		t.Errorf("address = %q, want the machine the app is on", after.Address)
 	}
 }
 
@@ -91,7 +113,7 @@ func TestAnAppWithADomainStaysWhereTheTrafficArrives(t *testing.T) {
 // deploy that fails on a box nobody is looking at.
 func TestAnAppBuiltHereCannotRunElsewhereYet(t *testing.T) {
 	f := servertest.New(t)
-	addServer(t, f, "eu-1")
+	_ = addServer(t, f, "eu-1")
 
 	var created placedApp
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]any{
@@ -128,7 +150,7 @@ func TestAnAppCannotBePlacedOnAMachineThatIsNotHere(t *testing.T) {
 // invisibly — the app would be pointing at a machine that is not there.
 func TestAMachineWithAppsOnItCannotJustGo(t *testing.T) {
 	f := servertest.New(t)
-	addServer(t, f, "eu-1")
+	_ = addServer(t, f, "eu-1")
 	created := createExternalApp(t, f, "api")
 	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/apps/"+created.Reference,
 		map[string]any{"node": "eu-1"}, f.AdminKey), http.StatusOK)

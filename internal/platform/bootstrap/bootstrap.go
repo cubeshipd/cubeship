@@ -551,6 +551,22 @@ func APIRouterConfigYAML(apiHost, daemonAddress string) string {
 `, apiHost, daemonAddress)
 }
 
+// EnsureTraefikDirs creates the two directories Traefik is given.
+//
+// It exists for the machines in a cluster, which run the same Traefik
+// and write nothing into either: the control plane's are made on the
+// way past by whatever writes into them, and a worker has nothing to
+// write. A file provider pointed at a directory that is not there
+// complains on every reload for the life of the container.
+func EnsureTraefikDirs(cfg *config.Config) error {
+	for _, dir := range []string{cfg.DataDir + "/letsencrypt", cfg.DataDir + "/traefik-dynamic"} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return fmt.Errorf("create %s: %w", dir, err)
+		}
+	}
+	return nil
+}
+
 // WriteAPIRouterConfig writes APIRouterConfigYAML to the path Traefik's
 // file provider watches (see the Binds entry above). Call it before
 // starting Traefik, and again any time cfg changes.

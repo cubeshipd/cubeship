@@ -229,6 +229,17 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// — its log today — reaches it through the channel that machine's
 	// own poll opens. See app.Remote.
 	apps.SetRemote(nodes)
+	// Every machine is its own edge, and what its Traefik is started
+	// with is this instance's settings — read on every poll rather than
+	// captured, because an operator sets the contact address from the
+	// dashboard and the machines have to pick it up.
+	nodes.SetEdgeConfig(func(ctx context.Context) node.Edge {
+		values, err := cfg.Load(ctx)
+		if err != nil {
+			return node.Edge{}
+		}
+		return node.Edge{TLS: values.HasTLS(), ACMEEmail: values.Get(settings.ACMEEmail)}
+	})
 	nodes.SetRegistryHost(func(ctx context.Context) string {
 		values, err := cfg.Load(ctx)
 		if err != nil {

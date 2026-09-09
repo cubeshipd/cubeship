@@ -54,6 +54,9 @@ type Service struct {
 type Remote interface {
 	Logs(ctx context.Context, nodeID int64, containerID, tail string) ([]byte, error)
 	Wake(nodeID int64)
+	// Addresses is where each machine in the cluster is reached, by
+	// node id — what a DNS record for an app on it has to point at.
+	Addresses(ctx context.Context) (map[int64]string, error)
 }
 
 // SetRemote wires it in. Called once, by server.New — and the
@@ -151,6 +154,16 @@ type Instance struct {
 	// Domain is the instance's own, which is what a suggested host for
 	// an app is built under.
 	Domain string
+	// PublicIP is where this machine is reached, and Addresses is the
+	// same for every other machine in the cluster, by node id.
+	//
+	// Both, because an app's traffic arrives at the machine the app is
+	// on: each node runs its own edge, so a name pointing at the
+	// control plane reaches nothing when the app is somewhere else.
+	// Read once per request rather than per app — a listing would
+	// otherwise be one query per row.
+	PublicIP  string
+	Addresses map[int64]string
 }
 
 // InstanceConfig reads what a response needs about the instance.
@@ -160,7 +173,17 @@ func (s *Service) InstanceConfig(ctx context.Context) Instance {
 		return Instance{}
 	}
 	domain := values.Get(settings.Domain)
-	return Instance{RegistryHost: settings.RegistryHostFor(domain), Domain: domain}
+	in := Instance{
+		RegistryHost: settings.RegistryHostFor(domain),
+		Domain:       domain,
+		PublicIP:     s.settings.PublicIP(ctx, values, ""),
+	}
+	if s.remote != nil {
+		// Empty on a daemon with no cluster, which is every instance of
+		// one machine: everything falls back to this box's own address.
+		in.Addresses, _ = s.remote.Addresses(ctx)
+	}
+	return in
 }
 
 // ImageFor returns the registry path a push to this app targets, or ""
@@ -315,7 +338,7 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 		if source != nil {
 			next = *source
 		}
-		if err := checkPlacement(*place, next, a.Domains); err != nil {
+		if err := checkPlacement(*place, next); err != nil {
 			return nil, err
 		}
 		// The container it is running now stays where it is until the
@@ -330,27 +353,25 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 }
 
 // checkPlacement is what an app has to be to run somewhere other than
-// the control plane, and each refusal is something that would otherwise
-// not work in a way nobody would notice.
+// the control plane.
 //
-// **A domain.** Nothing routes to a worker yet: each machine is its own
-// edge, and only the control plane has a Traefik and a name pointing at
-// it. An app moved with a domain would deploy, run, and answer nothing
-// at the address it is supposed to.
+// One refusal left, and it is something that would otherwise not work in
+// a way nobody would notice: **a source that builds**. The image is
+// built on the control plane and loaded into its Engine — no registry
+// has heard of it — so another machine has nowhere to pull it from.
+// What fixes it is builds that push to the instance's own registry,
+// which is its own piece of work.
 //
-// **A source that builds.** The image is built on the control plane and
-// loaded into its Engine — no registry has heard of it — so another
-// machine has nowhere to pull it from. What fixes this is builds that
-// push to the instance's own registry, which is its own piece of work.
-func checkPlacement(nodeSlug string, source Source, domains []Domain) error {
+// A **domain** is no longer one. Every machine runs its own edge, so an
+// app answers at its name wherever it is — what has to follow it is the
+// DNS record, which points at a machine rather than at an instance.
+// That is the operator's to move, and it is why the app's response
+// carries the address it should point at.
+func checkPlacement(nodeSlug string, source Source) error {
 	if nodeSlug == node.ControlPlaneSlug {
 		// Coming back to the control plane is always allowed: it is
 		// where everything works.
 		return nil
-	}
-	if len(domains) > 0 {
-		return fmt.Errorf("%w: it answers at %s, and only the control plane routes traffic — remove the name, or leave the app here",
-			ErrNotPlaceable, domains[0].Host)
 	}
 	if source.Builds() {
 		return fmt.Errorf("%w: it is built here, and the image is loaded into this machine's Docker rather than pushed anywhere another machine could pull it from. An app that runs an image from a registry can be placed anywhere",
