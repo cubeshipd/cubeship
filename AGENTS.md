@@ -1923,21 +1923,81 @@ the one thing the "workers dial out" property does not buy back.
 Hetzner and DigitalOcean filter in front of the machine, and Cubeship
 cannot see that layer — the ufw rules it writes do not reach it.
 
+### Where an app runs
+
+Every app has a `node_id`, backfilled to the control plane — everything
+that existed before a cluster ran where the daemon does, because there
+was nowhere else. `PATCH /apps/{ref}` with `node` moves one.
+
+**The split is between deciding and doing**, and it falls where the two
+things each machine has are. The control plane resolves the image,
+records what it resolved to, and stops; the machine the app is on
+creates the container. `internal/app/placement.go` is that seam:
+`PlacementsFor` builds one **complete instruction** per app — an image,
+a registry login, an environment, labels and networks — because the
+machine has no database and no way to ask a second question.
+
+**A remote deploy stays `pending` until the machine says what it did.**
+`Placed` is where it ends: the row becomes succeeded or failed and the
+app points at the container that is now serving it, which is exactly
+what a local deploy writes at the same point. Nothing here waits on it.
+
+**What a machine should run is the newest deployment that resolved to an
+image and did not fail** — not simply the newest. A deploy the machine
+rejected is one it should stop trying, and the row under it is what it
+should be running instead. Rollback falls out of asking the question
+that way rather than being a path somebody wrote.
+
+The agent's own half is two halves in one order: **start what is
+missing, then remove what is not wanted.** The reverse takes an app down
+and then finds out its replacement will not start. A container whose
+replacement is not up is left exactly where it is, which is what makes a
+failed deploy a no-op rather than an outage. What it removes is what
+carries `cubeship.app` and is not in its answer — a container with no
+such label is not this instance's to touch.
+
+A placed container is named for its **deployment id** rather than for
+the moment it was created, so a machine told the same thing twice can
+answer "am I already running this" from the name.
+
+**A worker pulls from this instance's own registry as itself.** The
+control plane cannot put that credential in a placement — it holds only
+the hash — so what travels is the registry's *host*, and the machine
+logs in as `cubeship-node` with the credential it already dials home
+with. `internal/registry` grants it **pull and nothing else**: a machine
+that decides nothing has no reason to hold a credential that could push.
+
+**Two refusals, and both are things that would otherwise not work in a
+way nobody would notice.** An app with a **domain** cannot leave the
+control plane: each machine is its own edge and only this one routes
+traffic, so it would deploy, run, and answer nothing at its address. An
+app that **builds** cannot either: its image is loaded into this
+machine's Docker rather than pushed anywhere another machine could pull
+it from.
+
+A machine with apps on it cannot be removed — `ON DELETE RESTRICT`, and
+the error says to move them. Where they should go is a decision, and
+making it by deleting a row would make it invisibly.
+
 ### What is not there yet
 
-`node.Desired` comes back empty, and the shape is the point: the loop
-already asks the question on every pass, so placing an app on a machine
-is filling that in rather than inventing a way to reach the box. What
-still has to be built:
+Three things, and the first is the one that unlocks the other two.
 
-- **Placement**: an app gains a node, the orchestrator resolves and
-  builds here — the registry and BuildKit stay on the control plane —
-  and hands the run to the agent. What travels is an image reference,
-  the environment and the labels.
+- **A channel the control plane can send a request down.** The agent's
+  loop only goes one way: it asks, and is told. So an app on another
+  machine has no readable **log** here, and no **charts** — what samples
+  a container is the daemon on the machine it is on, and only this one
+  writes to the series. Both are refused or explained rather than
+  answered wrongly. A reverse channel — a request parked on the machine's
+  own poll — is one piece of work that gives logs, exec and stats
+  together, instead of three bespoke paths.
 - **Routing.** Each node runs its own Traefik and is its own edge, with
   the app's DNS record pointing at the machine it is on. A load balancer
   across nodes is the step after, and it is what makes a record stop
   naming one box.
+- **Builds that push.** A built image is loaded into the control plane's
+  Engine, so no other machine can pull it. Exporting to the instance's
+  own registry instead is what lets a built app be placed.
 
 ## Managed databases
 

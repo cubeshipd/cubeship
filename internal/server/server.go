@@ -221,6 +221,18 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// Existing containers are not touched. One joins the mesh the next
 	// time it is created, which is the rule its labels and its
 	// environment already follow.
+	// What runs where. The module that owns apps sits above the one
+	// that owns machines, so it is handed back down here — the same
+	// seam project.AppTeardown and credential.Dependant use.
+	nodes.SetPlacer(apps)
+	nodes.SetRegistryHost(func(ctx context.Context) string {
+		values, err := cfg.Load(ctx)
+		if err != nil {
+			return ""
+		}
+		return settings.RegistryHostFor(values.Get(settings.Domain))
+	})
+
 	apps.Orchestrator().SetMeshNetwork(nodes.MeshNetwork)
 	datastores.Provisioner().SetMeshNetwork(nodes.MeshNetwork)
 	objectStores.Provisioner().SetMeshNetwork(nodes.MeshNetwork)
@@ -269,6 +281,12 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		frontend:    opts.Frontend,
 		router:      httpx.NewRouter(),
 	}
+	// The machines in this cluster pull the images this registry holds,
+	// and they authenticate as themselves: their own credential, and
+	// pull on the repository they were told to run. See
+	// registry.NodeAuth.
+	srv.Registry.SetNodeAuth(nodes)
+
 	// Garbage collection runs a command inside the registry container,
 	// which needs the Engine rather than the deploy interface. A fake in
 	// a test is not one, and the endpoint refuses rather than pretending.

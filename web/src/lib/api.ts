@@ -128,6 +128,9 @@ export type App = {
   dockerfile?: string;
   project: string;
   environment: string;
+  // The machine in the cluster this app runs on, by name. On an
+  // instance of one box it is always "control-plane".
+  node: string;
 };
 
 // --- credentials ---

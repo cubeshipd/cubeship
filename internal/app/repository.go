@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -18,7 +19,7 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, project_id, environment_id, name, description, source, source_image,
+const columns = `id, project_id, environment_id, node_id, name, description, source, source_image,
 	source_repo, source_ref, source_dockerfile, container_id, status, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
@@ -26,7 +27,7 @@ type scanner interface{ Scan(dest ...any) error }
 func scan(row scanner) (*App, error) {
 	var a App
 	var envJSON []byte
-	if err := row.Scan(&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Description,
+	if err := row.Scan(&a.ID, &a.ProjectID, &a.EnvironmentID, &a.NodeID, &a.Name, &a.Description,
 		&a.Source, &a.SourceImage, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
 		&a.ContainerID, &a.Status, &envJSON, &a.CreatedAt); err != nil {
 		return nil, err
@@ -85,9 +86,14 @@ type Origin struct {
 
 func (r *Repository) Create(ctx context.Context, projectID, environmentID int64, name, description string, source Source, origin Origin) (*App, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO apps (project_id, environment_id, name, description, source,
+		// An app is created on the machine the daemon is on, and moved
+		// afterwards if it belongs somewhere else. The subquery rather
+		// than a column default because a default would have to name a
+		// row by a number, and the control plane's is a fact about a
+		// table rather than a constant.
+		`INSERT INTO apps (project_id, environment_id, node_id, name, description, source,
 		                   source_image, source_repo, source_ref, source_dockerfile)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		 VALUES ($1, $2, (SELECT id FROM nodes WHERE control_plane), $3, $4, $5, $6, $7, $8, $9)
 		 RETURNING `+columns,
 		projectID, environmentID, name, description, string(source),
 		origin.Image, origin.Repo, origin.Ref, origin.Dockerfile)
@@ -280,6 +286,26 @@ func (r *Repository) DeploymentByID(ctx context.Context, appID, id int64) (*Depl
 	return d, nil
 }
 
+// UnscopedDeployment reads one deploy by id alone.
+//
+// Every other read of a deployment is scoped to its app, so an id from
+// another app's history resolves to nothing. This one is not, and the
+// reason is that its caller does not have an app: it is a machine
+// reporting on a deploy this instance handed it. What stands in for the
+// scope is the machine's own credential, plus the check that the app is
+// still placed there — see Service.Placed.
+func (r *Repository) UnscopedDeployment(ctx context.Context, id int64) (*Deployment, error) {
+	d, err := scanDeployment(r.q.QueryRowContext(ctx,
+		`SELECT `+deploymentColumns+` FROM deployments WHERE id = $1`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get deployment %d: %w", id, err)
+	}
+	return d, nil
+}
+
 // DeleteDeployment removes one deploy's record, and reports whether
 // there was one to remove.
 //
@@ -316,6 +342,30 @@ func (r *Repository) CurrentDeployment(ctx context.Context, appID int64) (int64,
 		return 0, false, nil
 	}
 	return id, true, nil
+}
+
+// DeploymentToRun is the one a machine should be running for an app:
+// the newest that resolved to an image and did not fail.
+//
+// Not simply the newest. A deploy that failed on the machine is one the
+// machine should stop trying — and the row under it, the last one that
+// worked, is what it should be running instead. That is a rollback, and
+// it falls out of asking the question this way rather than being a path
+// somebody has to write.
+func (r *Repository) DeploymentToRun(ctx context.Context, appID int64) (*Deployment, error) {
+	row := r.q.QueryRowContext(ctx,
+		`SELECT `+deploymentListColumns+`
+		 FROM deployments
+		 WHERE app_id = $1 AND image_ref <> '' AND status <> $2
+		 ORDER BY created_at DESC, id DESC LIMIT 1`, appID, DeploymentFailed)
+	d, err := scanDeploymentSummary(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read the deployment to run: %w", err)
+	}
+	return d, nil
 }
 
 // scanDeploymentSummary reads a row selected with
@@ -358,26 +408,32 @@ type Scoped struct {
 	App
 	ProjectSlug     string
 	EnvironmentSlug string
+	// NodeSlug is the machine this app runs on, by name. Joined rather
+	// than looked up, the same way the project and the environment are:
+	// a listing that had to ask another module per row would be three
+	// more queries per app.
+	NodeSlug string
 }
 
 // scopedQuery selects an app with its containing slugs. The column order
 // matches scanScoped.
 const scopedQuery = `
-	SELECT a.id, a.project_id, a.environment_id, a.name, a.description,
+	SELECT a.id, a.project_id, a.environment_id, a.node_id, a.name, a.description,
 	       a.source, a.source_image, a.source_repo, a.source_ref, a.source_dockerfile,
 	       a.container_id, a.status, a.env, a.created_at,
-	       p.slug, e.slug
+	       p.slug, e.slug, n.slug
 	FROM apps a
 	JOIN projects p ON p.id = a.project_id
-	JOIN environments e ON e.id = a.environment_id`
+	JOIN environments e ON e.id = a.environment_id
+	JOIN nodes n ON n.id = a.node_id`
 
 func scanScoped(row scanner) (*Scoped, error) {
 	var s Scoped
 	var envJSON []byte
-	if err := row.Scan(&s.ID, &s.ProjectID, &s.EnvironmentID, &s.Name, &s.Description,
+	if err := row.Scan(&s.ID, &s.ProjectID, &s.EnvironmentID, &s.NodeID, &s.Name, &s.Description,
 		&s.Source, &s.SourceImage, &s.SourceRepo, &s.SourceRef, &s.SourceDockerfile,
 		&s.ContainerID, &s.Status, &envJSON, &s.CreatedAt,
-		&s.ProjectSlug, &s.EnvironmentSlug); err != nil {
+		&s.ProjectSlug, &s.EnvironmentSlug, &s.NodeSlug); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &s.Env); err != nil {
@@ -457,6 +513,37 @@ func (r *Repository) ListScopedForOrgs(ctx context.Context, orgIDs []int64) ([]*
 		return nil, nil
 	}
 	return r.listScoped(ctx, scopedQuery+` WHERE a.org_id = ANY($1) ORDER BY a.id`, orgIDs)
+}
+
+// ScopedOnNode is every app placed on one machine, with what it needs
+// to be run there. Ordered by id so a node's desired state is stable
+// between passes rather than reshuffling under whatever reads it.
+func (r *Repository) ScopedOnNode(ctx context.Context, nodeID int64) ([]*Scoped, error) {
+	return r.listScoped(ctx, scopedQuery+` WHERE a.node_id = $1 ORDER BY a.id`, nodeID)
+}
+
+// SetNode moves an app to a machine, by name.
+//
+// By name rather than by id because the caller has a name — it is what
+// the API takes and what a person types — and resolving it here is one
+// statement rather than a lookup and a write that can disagree.
+// ErrNoSuchNode when there is no such machine: the subquery would
+// otherwise write NULL into a NOT NULL column and surface as a
+// constraint violation nobody can read.
+func (r *Repository) SetNode(ctx context.Context, appID int64, nodeSlug string) error {
+	res, err := r.q.ExecContext(ctx,
+		`UPDATE apps SET node_id = (SELECT id FROM nodes WHERE slug = $2) WHERE id = $1`,
+		appID, nodeSlug)
+	if err != nil {
+		// A machine that is not in the cluster leaves the subquery
+		// empty, and the column refuses it. That is the shape of the
+		// only error worth naming here.
+		return ErrNoSuchNode
+	}
+	if n, err := res.RowsAffected(); err == nil && n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // ListScoped returns every app on the instance with its containing

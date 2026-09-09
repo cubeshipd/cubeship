@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"cubeship/internal/app"
+	"cubeship/internal/node"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/platform/regauth"
 	"cubeship/internal/user"
@@ -139,18 +140,37 @@ func (h *Handler) issueToken(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	caller, _, err := h.users.Authenticate(r.Context(), key)
-	if err != nil || caller.Username != username {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
 
+	// A machine in this cluster, pulling an image it was told to run.
+	//
+	// Its own branch rather than an account with a key, because a node
+	// is not one: it holds no role, it may only pull, and the subject
+	// on the token it gets says which machine it was. See NodeUsername.
+	subject := ""
 	var access []regauth.AccessEntry
-	for _, scope := range r.URL.Query()["scope"] {
-		access = append(access, h.authorizeScope(r.Context(), caller, scope)...)
+	if username == node.RegistryUsername && h.nodes != nil {
+		name, err := h.nodes.AuthenticateNode(r.Context(), key)
+		if err != nil {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		subject = "node:" + name
+		for _, scope := range r.URL.Query()["scope"] {
+			access = append(access, nodeAccess(scope)...)
+		}
+	} else {
+		caller, _, err := h.users.Authenticate(r.Context(), key)
+		if err != nil || caller.Username != username {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		subject = caller.Username
+		for _, scope := range r.URL.Query()["scope"] {
+			access = append(access, h.authorizeScope(r.Context(), caller, scope)...)
+		}
 	}
 
-	token, err := regauth.IssueToken(h.signingKey, h.signingCert, regauth.TokenIssuer, regauth.TokenService, caller.Username, access)
+	token, err := regauth.IssueToken(h.signingKey, h.signingCert, regauth.TokenIssuer, regauth.TokenService, subject, access)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

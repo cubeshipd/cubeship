@@ -132,7 +132,12 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 	if in.Description == nil && source == nil && origin == nil {
 		return nil, Response{}, fmt.Errorf("nothing to change")
 	}
-	updated, err := t.svc.Update(ctx, t.caller, ref, in.Description, source, origin)
+	// No `node` here, deliberately: moving an app between machines is
+	// an act with a container swap on each side of it, and an agent
+	// that can do it is one that can move somebody's app to a box they
+	// were not looking at. The API and the dashboard are where that is
+	// decided.
+	updated, err := t.svc.Update(ctx, t.caller, ref, in.Description, source, origin, nil)
 	if err != nil {
 		return nil, Response{}, err
 	}

@@ -9,6 +9,7 @@ import (
 
 	"cubeship/internal/envvar"
 	"cubeship/internal/metrics"
+	"cubeship/internal/node"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/project"
 	"cubeship/internal/settings"
@@ -248,7 +249,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, en
 // decision as creating one that builds — this instance will execute
 // whatever that repository contains — so it takes the same role, checked
 // against the source being moved to rather than the one being left.
-func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, description *string, source *Source, origin *Origin) (*Scoped, error) {
+func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, description *string, source *Source, origin *Origin, place *string) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.RoleAdmin)
 	if err != nil {
 		return nil, err
@@ -281,7 +282,56 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 	if _, err := s.Repo().Update(ctx, a.ID, description, source, origin); err != nil {
 		return nil, err
 	}
+
+	// Moving an app to another machine, which is a different kind of
+	// change from the rest of this and is checked as one.
+	if place != nil && *place != a.NodeSlug {
+		next := Source(a.Source)
+		if source != nil {
+			next = *source
+		}
+		if err := checkPlacement(*place, next, a.Domains); err != nil {
+			return nil, err
+		}
+		// The container it is running now stays where it is until the
+		// machine it is leaving is told to stop it, which is that
+		// machine's next pass. Retiring it here would take the app down
+		// for as long as the new machine takes to pull an image.
+		if err := s.Repo().SetNode(ctx, a.ID, *place); err != nil {
+			return nil, err
+		}
+	}
 	return s.Resolve(ctx, caller, ref, user.RoleMember)
+}
+
+// checkPlacement is what an app has to be to run somewhere other than
+// the control plane, and each refusal is something that would otherwise
+// not work in a way nobody would notice.
+//
+// **A domain.** Nothing routes to a worker yet: each machine is its own
+// edge, and only the control plane has a Traefik and a name pointing at
+// it. An app moved with a domain would deploy, run, and answer nothing
+// at the address it is supposed to.
+//
+// **A source that builds.** The image is built on the control plane and
+// loaded into its Engine — no registry has heard of it — so another
+// machine has nowhere to pull it from. What fixes this is builds that
+// push to the instance's own registry, which is its own piece of work.
+func checkPlacement(nodeSlug string, source Source, domains []Domain) error {
+	if nodeSlug == node.ControlPlaneSlug {
+		// Coming back to the control plane is always allowed: it is
+		// where everything works.
+		return nil
+	}
+	if len(domains) > 0 {
+		return fmt.Errorf("%w: it answers at %s, and only the control plane routes traffic — remove the name, or leave the app here",
+			ErrNotPlaceable, domains[0].Host)
+	}
+	if source.Builds() {
+		return fmt.Errorf("%w: it is built here, and the image is loaded into this machine's Docker rather than pushed anywhere another machine could pull it from. An app that runs an image from a registry can be placed anywhere",
+			ErrNotPlaceable)
+	}
+	return nil
 }
 
 func (s *Service) Delete(ctx context.Context, caller *user.User, ref Reference) (*Scoped, error) {
@@ -637,6 +687,16 @@ func (s *Service) Logs(ctx context.Context, caller *user.User, ref Reference, ta
 	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
 	if err != nil {
 		return nil, err
+	}
+	// An app on another machine has a log, and it is on that machine.
+	// Reading it from here needs the control plane to be able to ask a
+	// question and wait for an answer, and the agent's loop only goes
+	// one way: it asks, and is told. Refused with what is true rather
+	// than answered with this machine's Engine saying "no such
+	// container", which is what it would say.
+	if a.NodeSlug != node.ControlPlaneSlug {
+		return nil, fmt.Errorf("%w: it runs on %s, and a machine's logs are not readable from here yet. On that box, `docker ps` finds it under %s",
+			ErrRemote, a.NodeSlug, resourceName(ReferenceOf(a)))
 	}
 	return s.orch.Logs(ctx, a.ID, tail)
 }

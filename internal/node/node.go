@@ -24,15 +24,35 @@
 package node
 
 import (
+	"context"
 	"errors"
 	"time"
 
+	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/user"
 )
 
 // ControlPlaneSlug names the row that is this machine. It is seeded by
 // the migration and is not something anybody creates.
 const ControlPlaneSlug = "control-plane"
+
+// RegistryUsername is what a machine logs in to this instance's own
+// registry as, to pull an image it was told to run.
+//
+// A fixed name rather than the machine's own, because it is not an
+// account: what identifies the caller is its credential, and Basic auth
+// merely has a field for a name. See internal/registry, which grants a
+// machine pull and nothing else.
+const RegistryUsername = "cubeship-node"
+
+// LabelApp and LabelDeploy are what a placed container carries, and
+// they are how a machine tells its own work apart from everything else
+// on the box: what app it belongs to, and which deploy of it. A
+// container with neither is not this instance's to reason about.
+const (
+	LabelApp    = "cubeship.app"
+	LabelDeploy = "cubeship.deploy"
+)
 
 // RoleToManage is what adding or removing a machine takes. An admin's:
 // a node runs other people's code on hardware somebody pays for, and
@@ -179,9 +199,68 @@ type Desired struct {
 // InMesh reports whether a machine is on the cluster's private network.
 func (n *Node) InMesh() bool { return n.MeshNodeID != "" }
 
-// Placement is one thing a node should be running. Reserved for the
-// release that places apps; nothing constructs one yet.
-type Placement struct{}
+// Placement is one app a node should be running, and everything it
+// takes to run it.
+//
+// It is a **complete instruction**, not a reference to look up: the
+// machine has no database and no way to ask a second question. What
+// travels is what `docker run` would need — an image, a login for the
+// registry it is in, an environment, labels and networks — and the
+// deployment id it belongs to, so the answer that comes back can be
+// matched to what asked for it.
+//
+// The registry login is a real credential crossing the wire. It is the
+// same one the control plane holds and it goes over the same TLS the
+// agent authenticates through; there is no way for another machine to
+// pull an image without one.
+type Placement struct {
+	// App is the full reference, for the agent's own log lines.
+	App string `json:"app"`
+	// Deploy is the deployment this placement is. The agent reports it
+	// back untouched, which is what turns "it is running" into "that
+	// deploy succeeded".
+	Deploy int64 `json:"deploy"`
+	// Container is the name to create. Chosen here so that the same
+	// placement applied twice is the same container rather than a
+	// second one — the agent asks "is this name running" and does
+	// nothing when it is.
+	Container string                `json:"container"`
+	Image     string                `json:"image"`
+	Registry  *dockerx.RegistryAuth `json:"registry,omitempty"`
+	Env       map[string]string     `json:"env"`
+	Labels    map[string]string     `json:"labels"`
+	// Networks are what the container joins: the machine's own bridge
+	// and, when there is one, the cluster's overlay.
+	Networks []string `json:"networks"`
+}
+
+// Result is what a node did with a placement.
+//
+// One per placement it acted on, and only when something changed: a
+// container that was already running is not news, and reporting it
+// every ten seconds would be a deployment marked succeeded over and
+// over for the life of the app.
+type Result struct {
+	App    string `json:"app"`
+	Deploy int64  `json:"deploy"`
+	// Container is the id the machine created. Empty on a failure.
+	Container string `json:"container_id"`
+	// Error is why it did not run, in the machine's own words. Empty on
+	// success.
+	Error string `json:"error,omitempty"`
+}
+
+// Placer is the module that knows what should be running where.
+//
+// Declared here and satisfied by `app`, the same direction
+// `metrics.Source` runs: this module owns the conversation with a
+// machine and knows nothing about what an app is.
+type Placer interface {
+	// PlacementsFor is everything one machine should be running.
+	PlacementsFor(ctx context.Context, nodeID int64) ([]Placement, error)
+	// Placed records what it did with them.
+	Placed(ctx context.Context, nodeID int64, results []Result) error
+}
 
 var (
 	// ErrNotFound is no such node.
@@ -205,6 +284,11 @@ var (
 	// advertising a bridge address — a swarm nothing can join, and no
 	// way to tell from here that it cannot.
 	ErrNoAddress = errors.New("this instance has no public address to build a cluster on: set one on the Instance screen, or give the machine a domain that resolves to it")
+
+	// ErrHasApps refuses to remove a machine something still runs on.
+	// Where those apps should go is a decision, and making it by
+	// deleting the row would make it invisibly.
+	ErrHasApps = errors.New("apps are placed on that server: move them to another one first")
 
 	// ErrUnknownToken is an agent presenting a credential that names no
 	// node. Its own error rather than ErrNotFound: one is somebody

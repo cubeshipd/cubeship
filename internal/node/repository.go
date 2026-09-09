@@ -158,6 +158,13 @@ func (r *Repository) RecordMesh(ctx context.Context, id int64, address, meshNode
 func (r *Repository) Delete(ctx context.Context, id int64) error {
 	_, err := r.q.ExecContext(ctx, `DELETE FROM nodes WHERE id = $1`, id)
 	if err != nil {
+		// Something is placed there. The foreign key is what says so —
+		// see the migration: an app pointing at a machine that does not
+		// exist, or quietly moved to nowhere, are the two things it
+		// exists to prevent.
+		if database.IsForeignKeyViolation(err) {
+			return ErrHasApps
+		}
 		return fmt.Errorf("delete node: %w", err)
 	}
 	return nil

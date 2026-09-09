@@ -11,13 +11,15 @@ import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
 import { GitHubSource } from "@/components/github-source";
 import { LoadingList } from "@/components/loading";
+import { Notice } from "@/components/notice";
 import { OptionCards } from "@/components/option-cards";
 import { PageHeader, SectionHeader } from "@/components/page-header";
+import { SearchableSelect } from "@/components/searchable-select";
 import { TextAreaField, TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
-import { type App, type AppSource, api, BUILDING_SOURCES } from "@/lib/api";
+import { type App, type AppSource, api, BUILDING_SOURCES, type ClusterServer } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // The daemon has four sources. There are only two things an app can be:
@@ -92,6 +94,7 @@ function Settings({ reference }: { reference: string }) {
           <General app={app} onSaved={setApp} onError={setError} />
           <AppNetwork app={app} onSaved={setApp} />
           <SourceSection app={app} onSaved={setApp} onError={setError} />
+          <Placement app={app} onSaved={setApp} onError={setError} />
 
           <DangerZone>
             <DangerAction
@@ -191,6 +194,84 @@ function General(props: SectionProps) {
               </p>
             </div>
 
+            <SaveRow busy={busy} saved={saved} dirty={dirty} />
+          </form>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+// Which machine in the cluster the app runs on.
+//
+// The section is only here when there is a choice to make: on an
+// instance of one box there is one machine, and a select with one
+// option is a decision nobody has.
+function Placement(props: SectionProps) {
+  const { app } = props;
+  const { busy, saved, setSaved, save } = usePatch(props);
+  const [servers, setServers] = useState<ClusterServer[] | null>(null);
+  const [node, setNode] = useState(app.node);
+
+  useEffect(() => {
+    api
+      .get<ClusterServer[]>("/nodes")
+      .then(setServers)
+      .catch(() => setServers([]));
+  }, []);
+
+  if (servers !== null && servers.length < 2) return null;
+
+  const dirty = node !== app.node;
+  // The two the daemon refuses, said here as well and before the
+  // request: a name to answer at, because only the control plane routes
+  // traffic, and an image built here, because no other machine has
+  // anywhere to pull it from. The daemon still decides — this is the
+  // courtesy of not making somebody press a button to be told no.
+  const stuck =
+    app.domains.length > 0
+      ? `It answers at ${app.domains[0].host}, and only the control plane routes traffic.`
+      : BUILDING_SOURCES.includes(app.source)
+        ? "It is built here, and the image is loaded into this machine's Docker rather than pushed anywhere another machine could pull it from."
+        : null;
+
+  return (
+    <>
+      <SectionHeader
+        title="Server"
+        sub="Which machine in this cluster runs it. Moving it starts the app on the new machine before stopping it on the old one, and takes effect within a few seconds."
+      />
+      <Card>
+        <CardContent>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              save({ node });
+            }}
+          >
+            <SearchableSelect
+              label="Server"
+              placeholder="Choose one"
+              disabled={stuck !== null}
+              choices={(servers ?? []).map((s) => ({
+                value: s.name,
+                label: s.name,
+                hint: s.control_plane ? "this machine" : s.description || undefined,
+              }))}
+              value={node}
+              onChange={(next) => {
+                setNode(next);
+                setSaved(false);
+              }}
+            />
+            {stuck && <Notice>{stuck} It stays on the control plane until that changes.</Notice>}
+            {!stuck && app.node !== "control-plane" && (
+              <Notice>
+                Its logs are not readable from here yet, and neither are its charts:{" "}
+                <code>docker logs</code> on that machine is.
+              </Notice>
+            )}
             <SaveRow busy={busy} saved={saved} dirty={dirty} />
           </form>
         </CardContent>
