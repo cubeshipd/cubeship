@@ -550,6 +550,38 @@ export type MetricSeries = {
 // The windows the daemon offers, shortest first. Kept in step with
 // metrics.Windows on the daemon, which is the side that refuses one it
 // does not know.
+// One machine in this instance's cluster, from GET /nodes.
+//
+// The control plane is in the list rather than implied: it is a machine
+// like the others, and a listing of "the other servers" is one that
+// cannot answer where something runs.
+export type ClusterServer = {
+  name: string;
+  description?: string;
+  control_plane: boolean;
+  // Derived from when the agent last called, never stored. "pending"
+  // has never connected — the installer has not been run on it yet.
+  status: "ready" | "pending" | "unreachable";
+  // Where the machine is reached from outside, as it reported it.
+  // Absent when it could not work its own out.
+  address?: string;
+  version?: string;
+  cores: number;
+  memory_total_bytes: number;
+  disk_total_bytes: number;
+  // The newest reading, absent until one has been taken.
+  cpu_percent?: number;
+  memory_bytes?: number;
+  disk_bytes?: number;
+  containers: number;
+  last_seen_at?: string;
+  created_at: string;
+};
+
+// The one answer that carries a credential, from POST /nodes. It is
+// shown once and never again — only its hash is stored.
+export type ClusterServerCreated = ClusterServer & { token: string };
+
 // What the machine itself has been doing, from GET /instance/metrics.
 //
 // A different shape from a container's series and deliberately not the

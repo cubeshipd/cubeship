@@ -6,6 +6,7 @@ import (
 	"cubeship/internal/app"
 	"cubeship/internal/datastore"
 	"cubeship/internal/machine"
+	"cubeship/internal/node"
 	"cubeship/internal/objectstore"
 	"cubeship/internal/project"
 	"cubeship/internal/user"
@@ -55,5 +56,6 @@ func (s *Server) BuildMCPServer(caller *user.User, keyHash string) *mcp.Server {
 	datastore.NewTools(s.Datastores, caller).Register(srv)
 	objectstore.NewTools(s.ObjectStores, caller).Register(srv)
 	machine.NewTools(s.Machine, caller).Register(srv)
+	node.NewTools(s.Nodes, caller).Register(srv)
 	return srv
 }

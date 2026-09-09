@@ -169,6 +169,44 @@ run_tests() {
 		printf '  ok   --local refuses without a checkout\n'
 	fi
 
+	# A worker is the same script and a different machine: it belongs to
+	# an instance that already exists, holds none of its own, and — the
+	# part worth pinning — publishes no port at all.
+	rm -f /tmp/docker.log /tmp/started
+	wait_for_join() { :; }
+	out=$(main --control-plane https://cube.example.com --token a-node-credential 2>&1) ||
+		{ printf '%s\n' "$out"; exit 1; }
+	check "a worker is told which instance it belongs to" \
+		"$(grep -c 'CUBESHIP_CONTROL_PLANE=https://cube.example.com' /tmp/docker.log)" "1"
+	check "and what to authenticate as" \
+		"$(grep -c 'CUBESHIP_NODE_TOKEN=a-node-credential' /tmp/docker.log)" "1"
+	check "a worker publishes no port" "$(grep -c '\-p 3000:3000' /tmp/docker.log)" "0"
+	check "a worker pulls only the daemon" "$(grep -c '^docker pull ' /tmp/docker.log)" "1"
+	check "a worker is told no domain" "$(grep -c 'CUBESHIP_DOMAIN' /tmp/docker.log)" "0"
+	check "and no dashboard to start" "$(grep -c 'CUBESHIP_WEB_IMAGE' /tmp/docker.log)" "0"
+	check "it still gets the Docker socket" \
+		"$(grep -c 'var/run/docker.sock:/var/run/docker.sock' /tmp/docker.log)" "1"
+	check "and says where it is managed from" \
+		"$(printf '%s' "$out" | grep -c 'https://cube.example.com')" "1"
+	WORKER=0; CONTROL_PLANE=""; NODE_TOKEN=""
+
+	# Half a worker is not a mode. Refusing here means the machine is
+	# not touched at all, rather than dialling forever with a credential
+	# it does not have.
+	if (parse_args --control-plane https://cube.example.com) >/dev/null 2>&1; then
+		printf '  FAIL an address with no credential was accepted\n'
+		FAILURES=$((FAILURES + 1))
+	else
+		printf '  ok   refuses --control-plane without --token\n'
+	fi
+	if (parse_args --token a-node-credential) >/dev/null 2>&1; then
+		printf '  FAIL a credential with nothing to dial was accepted\n'
+		FAILURES=$((FAILURES + 1))
+	else
+		printf '  ok   refuses --token without --control-plane\n'
+	fi
+	WORKER=0; CONTROL_PLANE=""; NODE_TOKEN=""
+
 	# Running it again is how an upgrade happens: the container is
 	# replaced, and nothing under the data directory is touched.
 	rm -f /tmp/docker.log

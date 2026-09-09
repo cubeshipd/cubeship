@@ -8,6 +8,9 @@ type Tone = { dot: string; text: string; edge: string; pulse?: boolean };
 
 const tones: Record<string, Tone> = {
   running: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
+  // A server in the cluster that is calling in. Green for the same
+  // reason `running` is: it is the state where nothing needs doing.
+  ready: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
   succeeded: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
   deploying: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
   building: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },

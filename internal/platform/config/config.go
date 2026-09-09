@@ -42,6 +42,20 @@ type Config struct {
 	// assumption.
 	InContainer bool
 
+	// ControlPlane is the instance this daemon is a worker of, as a
+	// base URL. Empty on the control plane itself, which is every
+	// installation until somebody adds a second machine.
+	//
+	// Set means **worker mode**, and worker mode is a different program:
+	// no database, no dashboard, no registry, no builder, and no
+	// listening socket at all. See internal/worker.
+	ControlPlane string
+
+	// NodeToken is what this machine authenticates as, minted by the
+	// control plane when the machine was added to the cluster. It is
+	// not an API key and not anybody's: a node is not an account.
+	NodeToken string
+
 	// WebImage is the image the dashboard's container runs from.
 	//
 	// It is told rather than derived. The daemon could take its own
@@ -85,16 +99,35 @@ func Load() (*Config, error) {
 		}
 	}
 
+	controlPlane := strings.TrimRight(strings.TrimSpace(os.Getenv("CUBESHIP_CONTROL_PLANE")), "/")
+	nodeToken := strings.TrimSpace(os.Getenv("CUBESHIP_NODE_TOKEN"))
+	// Half a worker is not a mode. A daemon told where its control
+	// plane is and not what to authenticate as would come up, dial, be
+	// refused forever, and look like a machine that joined — so it
+	// refuses to start and says which half is missing.
+	if controlPlane != "" && nodeToken == "" {
+		return nil, errors.New("CUBESHIP_CONTROL_PLANE is set without CUBESHIP_NODE_TOKEN: a worker needs the credential the control plane minted when the server was added")
+	}
+	if nodeToken != "" && controlPlane == "" {
+		return nil, errors.New("CUBESHIP_NODE_TOKEN is set without CUBESHIP_CONTROL_PLANE: a worker needs the address of the instance it belongs to")
+	}
+
 	return &Config{
 		Token:       token,
 		DataDir:     dataDir,
 		TokenFile:   tokenFile,
 		DatabaseURL: os.Getenv("CUBESHIP_DATABASE_URL"),
 		// Set in the image, not by whoever runs it.
-		InContainer: os.Getenv("CUBESHIP_IN_CONTAINER") == "1",
-		WebImage:    os.Getenv("CUBESHIP_WEB_IMAGE"),
+		InContainer:  os.Getenv("CUBESHIP_IN_CONTAINER") == "1",
+		WebImage:     os.Getenv("CUBESHIP_WEB_IMAGE"),
+		ControlPlane: controlPlane,
+		NodeToken:    nodeToken,
 	}, nil
 }
+
+// Worker reports whether this daemon belongs to another instance rather
+// than being one.
+func (c *Config) Worker() bool { return c.ControlPlane != "" }
 
 // SeedSettings returns the values an older release kept in the
 // environment, for a one-time write into the settings table. Empty

@@ -44,6 +44,10 @@ internal/
   machine/      what the box under all of them is doing: its CPU, its
                 memory, the disk everything is kept on, and the bytes
                 over its own interfaces
+  node/         the machines this instance is made of — the control
+                plane and the workers that dial it
+  worker/       the daemon running as somebody else's machine: the loop
+                that calls home and does what it is told
   registry/     who may docker push/pull, and the push webhook
   credential/   the secrets this instance holds — one secret, stored
                 once, named by everything that needs it
@@ -174,7 +178,8 @@ The sidebar is in sections, because its entries are not peers:
   itself, above everything that is in it.
 - **Workspace** — projects, environments, apps. What you deploy.
 - **Platform** — credentials, registries, Git providers, DNS providers,
-  certificates, the firewall, the instance itself. What the instance is wired to. Nothing in
+  certificates, the firewall, the machines this instance is made of, the
+  instance itself. What the instance is wired to. Nothing in
   it belongs to a project, and almost none of it is touched twice: a
   registry is connected once and deployed through for a year.
   **Credentials is first**, because the others stand on it.
@@ -482,6 +487,15 @@ path an operator is free to change, and getting it wrong is an instance
 whose dashboard silently never starts. The daemon's image bakes in the
 matching published version as the default; `install.sh` overrides it
 with `--local`, where neither image is published.
+
+`install.sh --control-plane <url> --token <token>` installs the same
+image as a **worker** instead of as an instance. It pulls one image
+rather than two, publishes no port, is told no domain, and waits for the
+agent's own line in the log rather than polling a health endpoint there
+is none of. Half of that pair is refused before the machine is touched:
+an address with no credential is a box that dials forever and is always
+refused, and a credential with nothing to dial is a box that does
+nothing at all.
 
 `uninstall.sh` is its counterpart, and the default is **not** the
 destructive one: it removes the containers and leaves the data
@@ -1761,6 +1775,85 @@ left edge after every restart is a point somebody reads as a fact. A
 machine whose numbers cannot be read at all — a Mac running `make dev` —
 records nothing rather than a row of zeros, and says so once in the log
 instead of every thirty seconds.
+
+## More than one machine
+
+An instance is a **control plane** and any number of **workers**. The
+control plane is the box somebody installed: the database, the
+dashboard, the registry, the builder, and every decision. A worker is a
+second box running the same image in a mode where it decides nothing.
+
+`internal/node` is the registry of machines and `internal/worker` is the
+agent. They are two modules because a worker is **not the control plane
+with features turned off** — it is a different program, and building it
+as a mode of the other would have meant every module growing a branch
+for a case where none of them run. `cmd/cubeshipd` branches on the first
+line of `run()` and the two never meet again.
+
+**The worker dials the control plane. Nothing dials a worker.** That is
+the decision everything else here follows from. A control plane that
+called into its machines would mean every one of them publishing an
+authenticated API to the internet, with a certificate and a firewall
+hole each, and a box behind NAT could not join at all. Dialling out
+costs a reconcile loop and buys a worker whose entire network presence
+is one outbound request — the same argument `internal/firewall` makes
+about published ports, from the other side. A worker publishes **no
+port**, not even a health check: `install.sh` waits for a line in its
+log instead.
+
+**A pass is a join and a heartbeat at once.** There is no handshake:
+`POST /nodes/agent/reconcile` says what the machine is and is told what
+it should be running, every ten seconds, and the first one is what
+joining means. The endpoint is `HandleInternal` — machinery between two
+daemons, like the registry's webhook — and it is behind its **own**
+middleware. A node is not an account: it holds no role, and the
+question "what could a machine reach" has one answer, which is what is
+registered behind that wrapper.
+
+**Adding a machine mints a credential and shows it once**, like an API
+key, and contacts nothing: the row is a place for a box that does not
+exist yet. Two steps that do not touch each other — the API mints, and
+somebody runs `install.sh --control-plane <url> --token <token>` there.
+Removing one is **local**: the row and its credential go, the agent is
+refused on its next call, and nothing on that machine is touched. A
+delete that reached out would be a delete that hangs on a host nobody
+can dial.
+
+**A status is derived from `last_seen_at` on every read**, never stored.
+A column saying a machine is up is only as honest as whatever was
+supposed to update it, and the moment that misses a pass the table is
+lying about a box that is gone. Three missed passes is `unreachable`, so
+one slow reconcile does not flip a healthy machine to a fault and back.
+
+The control plane is a **row in the table**, seeded by the migration.
+A listing of "the other servers" is one that cannot answer where
+something runs — and everything that will later be placed on a machine
+has to be placeable on this one.
+
+### What is not there yet
+
+`node.Desired` comes back empty, and the shape is the point: the loop
+already asks the question on every pass, so placing an app on a machine
+is filling that in rather than inventing a way to reach the box. What
+still has to be built, in the order it makes sense to build it:
+
+- **A private network between the machines.** WireGuard, keyed and
+  peered by the control plane, is the shape that fits: every node gets a
+  keypair and a subnet, and the peer list travels down the reconcile
+  loop that already exists. It is what makes `DATABASE_HOST=cubeship-db-pg`
+  keep working when the app and the database are on different boxes —
+  and note that a tunnel alone does not give that: Docker's embedded DNS
+  is per-daemon, so **name resolution across machines is its own
+  decision**, not a side effect of routing.
+- **Placement**: an app gains a node, the orchestrator resolves and
+  builds here — the registry and BuildKit stay on the control plane —
+  and hands the run to the agent. What travels is an image reference,
+  the environment and the labels, which is `dockerx.ContainerOpts` and
+  a swap.
+- **Routing.** Each node runs its own Traefik and is its own edge, with
+  the app's DNS record pointing at the machine it is on. A load balancer
+  in front of several nodes is the step after, and it is what makes a
+  record stop naming one box.
 
 ## Managed databases
 
