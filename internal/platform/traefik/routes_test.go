@@ -47,13 +47,17 @@ func TestTheBalancerOutranksAStaleLabelRouter(t *testing.T) {
 	}
 }
 
-// Nothing to serve is an empty document rather than no file. Removing
-// the file and writing it again is a window in which the machine serves
-// none of these names, and the file provider complains about a
-// directory whose file has just gone.
-func TestNothingToServeIsStillADocument(t *testing.T) {
-	if out := traefik.RoutesYAML(nil, true); !strings.Contains(out, "http:") {
-		t.Errorf("an empty answer rendered %q", out)
+// Nothing to serve renders nothing, and the caller writes no file.
+//
+// A document with `http` and nothing under it is refused by Traefik —
+// and refused as a failure to build the configuration at all, which
+// takes the whole file provider down and the daemon's own router with
+// it. An instance then stops answering at its own name while every
+// container Traefik discovered goes on working, which reads as anything
+// but a proxy that cannot see.
+func TestNothingToServeRendersNothing(t *testing.T) {
+	if out := traefik.RoutesYAML(nil, true); out != "" {
+		t.Errorf("an empty answer rendered %q, and Traefik refuses a standalone http key", out)
 	}
 }
 

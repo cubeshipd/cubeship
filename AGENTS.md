@@ -2079,6 +2079,17 @@ The file is rewritten **only when it changed**, and rendered sorted, for
 one reason: Traefik reloads on every write, this runs on a timer, and a
 map's iteration order would make every pass look like a change.
 
+**Nothing to balance is no file at all.** Traefik refuses a document
+whose `http` has nothing under it — "http cannot be a standalone
+element" — and refuses it as a failure to build the configuration *at
+all*, which takes the whole file provider down and `api.yml` with it. An
+instance then stops answering at its own name and stops issuing registry
+tokens, while every container Traefik discovered by label goes on
+working: the same shape of failure the Traefik version pin exists to
+avoid, and it is why an empty document was the wrong idea. The provider
+watches the directory, so a file that goes takes its routers with it and
+nothing else.
+
 A replica with **no container name written down** is not a backend. An
 app that has been running since before `app_nodes` existed has one of
 those — the column did not exist — and its next deploy names one.

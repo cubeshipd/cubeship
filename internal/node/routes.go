@@ -30,6 +30,31 @@ func WriteRoutes(dataDir string, routes []Route, tls bool) (bool, error) {
 		return false, err
 	}
 	path := filepath.Join(dir, RoutesFileName)
+
+	// **Nothing to serve is no file**, not an empty document.
+	//
+	// Traefik refuses a file whose `http` has nothing under it — "http
+	// cannot be a standalone element" — and it refuses it as a failure
+	// to build the configuration *at all*, which takes the whole file
+	// provider down with it. That is not this file going quiet: it is
+	// the daemon's own router disappearing too, so the instance stops
+	// answering at its own name while every container Traefik
+	// discovered goes on working. Exactly the shape of failure the
+	// pinned Traefik version exists to avoid.
+	//
+	// Removing it is safe in the way an empty document was meant to be:
+	// the provider watches the directory, so a file that goes takes its
+	// routers with it and nothing else.
+	if len(routes) == 0 {
+		if err := os.Remove(path); err != nil {
+			if os.IsNotExist(err) {
+				return false, nil
+			}
+			return false, err
+		}
+		return true, nil
+	}
+
 	next := []byte(traefik.RoutesYAML(routesToTraefik(routes), tls))
 	if current, err := os.ReadFile(path); err == nil && bytes.Equal(current, next) {
 		return false, nil

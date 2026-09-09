@@ -52,10 +52,12 @@ const RoutesPriority = 10000
 // every pass look like a change and reload Traefik every ten seconds.
 func RoutesYAML(routes []Route, tls bool) string {
 	if len(routes) == 0 {
-		// A valid document with nothing in it, rather than no file:
-		// removing the file and writing it again is a window where the
-		// machine serves none of these names.
-		return "http: {}\n"
+		// Nothing at all, and the caller writes no file rather than
+		// this one. Traefik refuses a document whose `http` has nothing
+		// under it, and refuses it as a failure to build the
+		// configuration at all — which takes the whole file provider
+		// down, the daemon's own router with it. See node.WriteRoutes.
+		return ""
 	}
 	sorted := append([]Route(nil), routes...)
 	sort.Slice(sorted, func(i, j int) bool {
