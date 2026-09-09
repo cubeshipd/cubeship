@@ -222,7 +222,7 @@ func (s externalSource) Resolve(ctx context.Context, a *Scoped, tag string, _ io
 // plan Railpack worked out — is decided further down, where the source
 // is in hand.
 type repositorySource struct {
-	build func(ctx context.Context, a *Scoped, ref string, logs io.Writer) (string, error)
+	build func(ctx context.Context, a *Scoped, ref string, logs io.Writer) (Image, error)
 }
 
 // Check confirms there is something to build. Whether the repository
@@ -245,15 +245,26 @@ func (s repositorySource) Resolve(ctx context.Context, a *Scoped, ref string, lo
 	if ref == "" {
 		ref = a.SourceRef
 	}
-	image, err := s.build(ctx, a, ref, logs)
-	if err != nil {
-		return Image{}, err
-	}
-	return Image{Ref: image, Local: true}, nil
+	// Whether the result was loaded into this machine's Engine or
+	// pushed to the instance's registry is the build's answer, not this
+	// one's: it depends on where the app runs, and only the thing doing
+	// the build knows what it did.
+	return s.build(ctx, a, ref, logs)
 }
 
-// BuildImageName is what a build's result is called in the Engine's
-// store. It is never pushed anywhere, so the name only has to be
+// BuilderUsername is who a build logs in to this instance's own
+// registry as when its result has to be pushed.
+//
+// Its own credential rather than an account's, and rather than the
+// webhook token's: what the builder may do is push and pull images on
+// this instance, which is not what any of the other secrets here mean.
+// Reusing the webhook token would widen it from "forge a push
+// notification" to "push any image", and an account's key would put a
+// person's credential inside every build.
+const BuilderUsername = "cubeship-builder"
+
+// BuildImageName is what a build's result is called when it stays on
+// this machine. It is not pushed anywhere, so the name only has to be
 // readable in `docker images` and unique per app and ref.
 func BuildImageName(a *Scoped, ref string) string {
 	if ref == "" {

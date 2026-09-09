@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"cubeship/internal/app"
 	"cubeship/internal/platform/regauth"
 	"cubeship/internal/server/servertest"
 
@@ -198,5 +199,46 @@ func TestIssuedTokensCarryTheCertificate(t *testing.T) {
 	}
 	if len(decoded.X5C) == 0 {
 		t.Fatalf("no x5c in the token header, so the registry cannot find the key that signed it: %s", raw)
+	}
+}
+
+// The builder is not a person and not a machine in the cluster: it is
+// this instance's own machinery, pushing what it just built so that the
+// machine the app runs on can pull it. Its credential is its own, and
+// what it may do is push and pull.
+func TestABuildPushesWithItsOwnCredential(t *testing.T) {
+	f := newSignedFixture(t)
+
+	access := tokenAccess(t, f, app.BuilderUsername, servertest.BuilderToken,
+		"repository:web/production/api:pull,push")
+	if len(access) != 1 {
+		t.Fatalf("expected one access entry, got %v", access)
+	}
+	if len(access[0].Actions) != 2 {
+		t.Errorf("a build got %v, and it has to be able to push what it built and pull it back", access[0].Actions)
+	}
+
+	// Delete is the one action building again does not undo, so it is
+	// not one a build is ever granted — the same line every other
+	// credential here is held to.
+	access = tokenAccess(t, f, app.BuilderUsername, servertest.BuilderToken,
+		"repository:web/production/api:pull,push,delete")
+	if len(access) != 1 || len(access[0].Actions) != 2 {
+		t.Errorf("delete survived: %v", access)
+	}
+}
+
+// The builder's name is not a way in on its own. It is a shared secret
+// compared against a shared secret, and a wrong one is nobody.
+func TestTheBuilderNameWithoutItsTokenIsNobody(t *testing.T) {
+	f := newSignedFixture(t)
+
+	req := httptestRequest(t, "/v2/token?scope=repository:web/production/api:push")
+	req.SetBasicAuth(app.BuilderUsername, "not-the-builders-token")
+	rec := newRecorder()
+	f.Server.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("a bad builder token: %d, want 401", rec.Code)
 	}
 }

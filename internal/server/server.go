@@ -83,6 +83,12 @@ type Options struct {
 	// notifications. Not anyone's API key.
 	WebhookToken string
 
+	// BuilderToken is what a build logs in to this instance's own
+	// registry with when what it builds runs on another machine. Empty
+	// on a server that does not build and push — a test — and then
+	// there is no builder login for the registry to accept.
+	BuilderToken string
+
 	// Builder turns a repository into an image. A server without one
 	// serves everything except a deploy of an app that builds, which
 	// refuses rather than panicking — which is what most tests want.
@@ -248,6 +254,11 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		return settings.RegistryHostFor(values.Get(settings.Domain))
 	})
 
+	// What a build authenticates with when its result has to be pushed
+	// rather than loaded here. The same secret reaches the registry,
+	// which is the other end of that login.
+	apps.Orchestrator().SetBuilderLogin(app.BuilderUsername, opts.BuilderToken)
+
 	apps.Orchestrator().SetMeshNetwork(nodes.MeshNetwork)
 	datastores.Provisioner().SetMeshNetwork(nodes.MeshNetwork)
 	objectStores.Provisioner().SetMeshNetwork(nodes.MeshNetwork)
@@ -301,6 +312,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// pull on the repository they were told to run. See
 	// registry.NodeAuth.
 	srv.Registry.SetNodeAuth(nodes)
+	srv.Registry.SetBuilderToken(opts.BuilderToken)
 
 	// Garbage collection runs a command inside the registry container,
 	// which needs the Engine rather than the deploy interface. A fake in

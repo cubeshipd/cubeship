@@ -144,6 +144,14 @@ const (
 	// when it initializes an empty data directory, so a password
 	// regenerated on restart would simply stop matching the database.
 	pgPasswordFileName = "postgres-password"
+
+	// builderTokenFileName holds what a build logs in to this instance's
+	// own registry as when it pushes. Generated once and kept, like
+	// every other secret here, so an operator can see what is holding a
+	// push open — and separate from the daemon's token because what it
+	// may do is different: push any image, rather than say one was
+	// pushed. See app.BuilderUsername.
+	builderTokenFileName = "builder-token"
 )
 
 // loadOrCreateSecret returns the secret stored in dataDir/name and the
@@ -433,8 +441,17 @@ func run() error {
 	// container is given. See machine.NewReader and install.sh.
 	box := machine.NewReader(cfg.DataDir, cfg.InContainer)
 
+	// What a build pushes with, when what it built has to run on
+	// another machine. Generated on first start and kept, because the
+	// registry checks it against what a build sends.
+	builderToken, _, err := loadOrCreateSecret(cfg.DataDir, builderTokenFileName)
+	if err != nil {
+		return err
+	}
+
 	srv := server.New(db, docker, server.Options{
 		WebhookToken:  cfg.Token,
+		BuilderToken:  builderToken,
 		Builder:       builder,
 		LocalRegistry: localRegistry,
 		Frontend:      bootstrap.FrontendAddress(cfg),

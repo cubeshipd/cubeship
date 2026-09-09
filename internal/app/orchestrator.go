@@ -83,6 +83,17 @@ type Orchestrator struct {
 	// remote is how a machine an app is placed on is reached. Only one
 	// thing here uses it: telling that machine a deploy is waiting.
 	remote Remote
+
+	// builderLogin is what BuildKit authenticates to this instance's own
+	// registry with, for a build that has to be pushed. Its own
+	// credential rather than anybody's: the builder is machinery, and
+	// what it may do there is push and pull.
+	builderLogin buildkit.Login
+}
+
+// SetBuilderLogin wires in that credential. Called once, by server.New.
+func (o *Orchestrator) SetBuilderLogin(username, password string) {
+	o.builderLogin = buildkit.Login{Username: username, Password: password}
 }
 
 // DeployTimeout bounds a detached deploy. It is not any client's
@@ -182,7 +193,7 @@ func (o *Orchestrator) registryCredentials(ctx context.Context, image string) (*
 }
 
 // buildFromRepository is what a building source calls. It returns the
-// name the built image was given in the Engine's store.
+// image the build produced and where it is.
 //
 // The two ways of building differ in where the recipe comes from, and
 // that difference decides everything else. A Dockerfile is in the
@@ -190,11 +201,20 @@ func (o *Orchestrator) registryCredentials(ctx context.Context, image string) (*
 // daemon's disk. Railpack has to *read* the repository to work out how
 // to build it, and that reading happens here — so the daemon clones
 // first, plans, and hands BuildKit the result.
-func (o *Orchestrator) buildFromRepository(ctx context.Context, a *Scoped, ref string, logs io.Writer) (string, error) {
+//
+// **Where the result goes depends on where the app runs.** An app here
+// takes the image into this machine's Engine, which is faster and needs
+// no registry at all. An app on another machine takes it to the
+// instance's own registry, because an image loaded here is one no other
+// machine has ever heard of — see pushTarget.
+func (o *Orchestrator) buildFromRepository(ctx context.Context, a *Scoped, ref string, logs io.Writer) (Image, error) {
 	if o.builder == nil {
-		return "", ErrNoBuilder
+		return Image{}, ErrNoBuilder
 	}
-	image := BuildImageName(a, ref)
+	image, push, err := o.buildTarget(ctx, a, ref)
+	if err != nil {
+		return Image{}, err
+	}
 
 	// A private repository needs a credential, and an organization holds
 	// one only for accounts it has connected. Nothing found means a
@@ -202,11 +222,14 @@ func (o *Orchestrator) buildFromRepository(ctx context.Context, a *Scoped, ref s
 	// refusing one that would have worked.
 	token, err := o.cloneToken(ctx, a)
 	if err != nil {
-		return "", err
+		return Image{}, err
 	}
 
 	if Source(a.Source) == SourceRailpack {
-		return image, o.buildWithRailpack(ctx, a, ref, image, token, logs)
+		if err := o.buildWithRailpack(ctx, a, ref, image, push, token, logs); err != nil {
+			return Image{}, err
+		}
+		return Image{Ref: image, Local: !push.Push}, nil
 	}
 
 	target := a.SourceRepo
@@ -219,11 +242,47 @@ func (o *Orchestrator) buildFromRepository(ctx context.Context, a *Scoped, ref s
 		Image:      image,
 		Labels:     map[string]string{"cubeship.app": ReferenceOf(a).String()},
 		GitToken:   token,
+		Push:       push.Push,
+		Registry:   push.Registry,
 	}, logs)
 	if err != nil {
-		return "", err
+		return Image{}, err
 	}
-	return image, nil
+	return Image{Ref: image, Local: !push.Push}, nil
+}
+
+// pushTarget says whether a build's result leaves this machine, and
+// with what login.
+type pushTarget struct {
+	Push     bool
+	Registry buildkit.Login
+}
+
+// buildTarget is what the result is called and where it goes.
+//
+// An app on this machine keeps the old answer: a name that only has to
+// be readable in `docker images`, and an image the Engine already
+// holds. An app anywhere else takes the app's own registry path, which
+// is the one address every machine in the cluster can pull it from.
+func (o *Orchestrator) buildTarget(ctx context.Context, a *Scoped, ref string) (string, pushTarget, error) {
+	if a.NodeSlug == node.ControlPlaneSlug {
+		return BuildImageName(a, ref), pushTarget{}, nil
+	}
+	host := o.registryHost(ctx)
+	if host == "" {
+		// Refused rather than built and then found to be unpushable:
+		// the registry follows the instance's domain, and without one
+		// there is nowhere for another machine to pull from.
+		return "", pushTarget{}, fmt.Errorf("%w: %s runs on %s, and a build has to be pushed to this instance's registry for another machine to pull it — which needs a domain",
+			ErrNoRegistry, ReferenceOf(a), a.NodeSlug)
+	}
+	tag := "latest"
+	if ref != "" {
+		tag = sanitizeTag(ref)
+	}
+	login := o.builderLogin
+	login.Host = host
+	return ReferenceOf(a).ImageFor(host) + ":" + tag, pushTarget{Push: true, Registry: login}, nil
 }
 
 // cloneToken is what authenticates a clone of a private repository, or
@@ -242,7 +301,7 @@ func (o *Orchestrator) cloneToken(ctx context.Context, a *Scoped) (string, error
 // Railpack reads it for the versions and commands a project pins, so two
 // apps on the same repository with different NODE_VERSION are two
 // different builds.
-func (o *Orchestrator) buildWithRailpack(ctx context.Context, a *Scoped, ref, image, token string, logs io.Writer) error {
+func (o *Orchestrator) buildWithRailpack(ctx context.Context, a *Scoped, ref, image string, push pushTarget, token string, logs io.Writer) error {
 	fmt.Fprintf(logs, "Fetching %s\n", a.SourceRepo)
 	dir, cleanupSource, err := buildkit.Clone(ctx, a.SourceRepo, ref, token)
 	if err != nil {
@@ -275,6 +334,8 @@ func (o *Orchestrator) buildWithRailpack(ctx context.Context, a *Scoped, ref, im
 		// Mount caches are shared, so they are keyed per app: two apps
 		// sharing one would fight over it.
 		CacheKey: ReferenceOf(a).String(),
+		Push:     push.Push,
+		Registry: push.Registry,
 	}, logs)
 }
 
