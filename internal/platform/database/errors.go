@@ -21,6 +21,22 @@ func IsUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == uniqueViolation
 }
 
+// foreignKeyViolation is Postgres' SQLSTATE for a row something else
+// still points at.
+const foreignKeyViolation = "23503"
+
+// IsForeignKeyViolation reports whether err is a row that cannot go
+// because something references it.
+//
+// Same argument as the one above: the constraint is the authority, and
+// a check before the delete is a race with whatever inserts a reference
+// a moment later. What the caller does with it is turn it into the
+// sentence its own module means — which rows, and what to do about them.
+func IsForeignKeyViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == foreignKeyViolation
+}
+
 // UniqueViolationOn is IsUniqueViolation for a table that has more than
 // one unique index, where "already exists" is a different sentence
 // depending on which column collided.

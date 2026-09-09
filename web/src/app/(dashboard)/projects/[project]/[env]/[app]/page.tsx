@@ -20,6 +20,7 @@ import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
 import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
+import { Notice } from "@/components/notice";
 import { PageHeader, SectionHeader } from "@/components/page-header";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
@@ -75,6 +76,12 @@ const stillRunning = "This deploy is still running. Wait for it to finish.";
 // that explains nothing is a control somebody clicks twice.
 const noContainer = "Nothing has run yet, so there is no log. Deploy the app first.";
 
+// The other reason the Logs tab is dead: the log is on another machine.
+// The daemon refuses it in the same words rather than answering with
+// this machine's Docker saying "no such container", which is what it
+// would say.
+const elsewhere = "This app runs on another server, and its log is not readable from here yet.";
+
 function Detail({
   reference,
   project,
@@ -119,6 +126,10 @@ function Detail({
   // Where this app came from. Built from the URL rather than from the
   // answer, so the way back is there before the answer is.
   const environment = `/projects/${project}/${env}`;
+
+  // Whether this app runs on another machine, which changes what this
+  // screen can show: its log and its charts are that machine's.
+  const remote = app !== null && app.node !== "control-plane";
 
   return (
     <>
@@ -179,14 +190,24 @@ function Detail({
                 a tab that should not have been offered. */}
             <TabsTrigger
               value="logs"
-              disabled={!app.has_container}
-              title={app.has_container ? undefined : noContainer}
+              disabled={!app.has_container || remote}
+              title={remote ? elsewhere : app.has_container ? undefined : noContainer}
             >
               Logs
             </TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview">
+            {/* Where it runs, said once and only when it is somewhere
+                else. It also explains the empty charts under it: what
+                samples a container is the daemon on the machine it is
+                on, and only this one writes to the series. */}
+            {remote && (
+              <Notice>
+                This app runs on <code className="text-foreground">{app.node}</code>. Its charts and
+                its log are on that machine — <code>docker ps</code> there finds it.
+              </Notice>
+            )}
             <MetricsSection path={path} />
             <Deployments reference={reference} deployed={deployed} onSettled={reload} />
           </TabsContent>

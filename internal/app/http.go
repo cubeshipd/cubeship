@@ -54,6 +54,10 @@ type Response struct {
 	Dockerfile  string `json:"dockerfile,omitempty"`
 	Project     string `json:"project"`
 	Environment string `json:"environment"`
+	// Node is the machine in this cluster the app runs on, by name. On
+	// an instance of one box it is always the control plane, which is
+	// where everything ran before there was anywhere else.
+	Node string `json:"node"`
 	// SuggestedHost is a name this app could answer at, under the
 	// instance's own domain — see SuggestedHostFor. Nothing assigns it:
 	// an app with no domain is a normal app, and this is only what the
@@ -73,6 +77,7 @@ func toResponse(a *Scoped, in Instance) Response {
 		Status: a.Status, HasContainer: a.ContainerID != "", Source: a.Source,
 		Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
 		SuggestedHost: SuggestedHostFor(ref, in.Domain),
+		Node:          a.NodeSlug,
 	}
 	switch Source(a.Source) {
 	case SourceExternal:
@@ -160,6 +165,13 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	case errors.Is(err, ErrDeploymentRunning):
 		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, ErrNoSuchNode):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	// Both are "not here, not yet", which is a state of this instance
+	// rather than a bad request: the same call is right once the app is
+	// somewhere else, or once the thing it needs exists.
+	case errors.Is(err, ErrNotPlaceable), errors.Is(err, ErrRemote):
+		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		project.WriteError(w, err)
 	}
@@ -211,6 +223,10 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		Repo        *string `json:"repo"`
 		Ref         *string `json:"ref"`
 		Dockerfile  *string `json:"dockerfile"`
+		// Node is which machine in this cluster the app runs on, by
+		// name. Its own field rather than part of the source group:
+		// where an app runs and what it runs are different decisions.
+		Node *string `json:"node"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -231,13 +247,13 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 			Dockerfile: deref(req.Dockerfile),
 		}
 	}
-	if req.Description == nil && source == nil && origin == nil {
+	if req.Description == nil && source == nil && origin == nil && req.Node == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
 
 	updated, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), refFrom(r),
-		req.Description, source, origin)
+		req.Description, source, origin, req.Node)
 	if err != nil {
 		WriteError(w, err)
 		return

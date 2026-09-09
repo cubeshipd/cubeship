@@ -63,6 +63,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"org":            openapi.String(""),
 				"project":        openapi.String(""),
 				"environment":    openapi.String(""),
+				"node":           openapi.String("The machine in this cluster the app runs on, by name. On an instance of one box it is always `control-plane`."),
 				"suggested_host": openapi.String("A name this app could answer at, under the instance's own domain: `<app>.<environment>.<project>.<instance domain>`. Nothing assigns it — an app with no domain is a normal app, and this is what a client offers when somebody does want one. Under a wildcard address (`settings.wildcard_domain`) it resolves the moment it is added; under a real domain it needs a record. Absent while the instance has no domain."),
 			}, "reference", "name", "description", "domains", "status", "has_container", "source", "org", "project", "environment"),
 			"AppDomain": openapi.Object(map[string]*openapi.Schema{
@@ -127,6 +128,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 							"repo":        openapi.String("For a building app: the https://, http:// or git:// repository to build."),
 							"ref":         openapi.String("For a building app: the branch, tag or commit to build."),
 							"dockerfile":  openapi.String("For a dockerfile app only: the recipe's path within the repository."),
+							"node":        openapi.String("Which machine in this cluster the app runs on, by name. Moving it takes effect on the machine's next pass: the new one starts the app before the old one stops it, so a move that fails is not an outage.\n\nTwo refusals, and both are things that would otherwise not work in a way nobody would notice. An app with a **domain** cannot leave the control plane: each machine is its own edge, and only this one routes traffic. An app that **builds** cannot either: its image is built here and loaded into this machine's Docker rather than pushed anywhere another machine could pull it from."),
 						})),
 					},
 					Responses: openapi.Responses{
@@ -134,7 +136,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"400": openapi.BadRequest,
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
-						"404": openapi.NotFound,
+						"404": openapi.TextResponse("No such app, or no server of that name is in this cluster."),
+						"409": openapi.TextResponse("This app cannot run on another machine: it has a domain, or it is built here."),
 					},
 				},
 				"get": {

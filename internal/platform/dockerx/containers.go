@@ -678,6 +678,36 @@ type PublishedPort struct {
 	Container string
 }
 
+// Running is one container this Engine has up, as the agent needs it:
+// what it is called, what id it has, and what it was labelled with.
+type Running struct {
+	ID     string
+	Name   string
+	Labels map[string]string
+}
+
+// RunningContainers is every container up on this Engine.
+//
+// Labels come with them because that is how a machine tells its own
+// work apart from everything else on the box: an app placed here
+// carries the reference it belongs to, and a container with no such
+// label is not this instance's to reason about.
+func (c *Client) RunningContainers(ctx context.Context) ([]Running, error) {
+	list, err := c.api.ContainerList(ctx, container.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+	out := make([]Running, 0, len(list))
+	for _, item := range list {
+		name := ""
+		if len(item.Names) > 0 {
+			name = strings.TrimPrefix(item.Names[0], "/")
+		}
+		out = append(out, Running{ID: item.ID, Name: name, Labels: item.Labels})
+	}
+	return out, nil
+}
+
 // RunningNames is the name of every container running on this Engine.
 //
 // Names rather than the Engine's own structures, because the one

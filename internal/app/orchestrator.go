@@ -12,6 +12,7 @@ import (
 
 	"cubeship/internal/envvar"
 	"cubeship/internal/extregistry"
+	"cubeship/internal/node"
 	"cubeship/internal/platform/buildkit"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/dockerx"
@@ -437,6 +438,20 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 		return fmt.Errorf("resolve inherited env: %w", err)
 	}
 
+	// An app placed on another machine stops here. Everything above
+	// this line is the control plane's work — resolving the image,
+	// recording what it resolved to — and everything below it is
+	// running a container, which happens where the app lives.
+	//
+	// The deploy is left `pending`: the machine picks the placement up
+	// on its next pass, runs it, and says how it went, and that is what
+	// finishes this row. Nothing is polled here — a deploy nobody is
+	// holding a connection open for does not need a second thing
+	// waiting on it.
+	if a.NodeSlug != node.ControlPlaneSlug {
+		return nil
+	}
+
 	// A built image is already in the Engine's store — this deploy is
 	// what put it there. Pulling would look for it in a registry that
 	// has never heard of it.
@@ -456,11 +471,15 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	}
 
 	base := resourceName(ref)
-	newName := fmt.Sprintf("%s-%d", base, time.Now().UnixNano())
+	// Named for the deploy it is, rather than for the moment it was
+	// created. A machine that is told to run a placement twice has to
+	// be able to answer "am I already running this", and a name with a
+	// timestamp in it can only answer "am I running something".
+	newName := containerNameFor(base, deploymentID)
 	newID, err := o.docker.CreateContainer(ctx, dockerx.ContainerOpts{
 		Name:         newName,
 		Image:        image.Ref,
-		Labels:       traefik.Labels(base, o.routing(a.Domains), values.HasTLS()),
+		Labels:       placementLabels(base, o.routing(a.Domains), values.HasTLS(), appName, deploymentID),
 		Env:          envvar.Slice(env),
 		Network:      Network,
 		AlsoNetworks: o.mesh(ctx),

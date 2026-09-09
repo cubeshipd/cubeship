@@ -37,6 +37,12 @@ type Handler struct {
 	// which is the address it pulls from — never the public name.
 	localRegistry string
 
+	// nodes authenticates the other machines in this cluster, which
+	// pull the images this registry holds. Nil on an instance with no
+	// cluster module wired in, and then a machine's credential is
+	// simply not a credential here.
+	nodes NodeAuth
+
 	// maintenance runs commands inside the registry container, which is
 	// where garbage collection lives — it is a subcommand of the
 	// registry binary, not an API. nil when the daemon has no Engine,
@@ -97,6 +103,34 @@ func (h *Handler) SetSigningKey(key *rsa.PrivateKey, certDER []byte) {
 // ever grant. Anything else a client asks for — "delete", most notably,
 // which would let a member erase another team's images — is dropped.
 var pushPullActions = map[string]bool{"pull": true, "push": true}
+
+// NodeAuth turns a machine's credential into the machine.
+//
+// Declared here and satisfied by `node`, so this module keeps knowing
+// nothing about clusters: what it needs is "is this a machine of ours",
+// and the answer is a name for the token's subject.
+type NodeAuth interface {
+	AuthenticateNode(ctx context.Context, token string) (string, error)
+}
+
+// SetNodeAuth wires in what authenticates the other machines. Called
+// once, by server.New.
+func (h *Handler) SetNodeAuth(a NodeAuth) { h.nodes = a }
+
+// nodeAccess is what a machine in this cluster may do with an image:
+// **pull, and nothing else**.
+//
+// A worker runs what it is told to run. It never builds, never pushes,
+// and never deletes — those are decisions, and a machine that decides
+// nothing has no reason to hold a credential that could make one. The
+// scope it asks for is honoured only down to pull.
+func nodeAccess(scope string) []regauth.AccessEntry {
+	parts := strings.SplitN(scope, ":", 3)
+	if len(parts) != 3 || parts[0] != "repository" {
+		return nil
+	}
+	return []regauth.AccessEntry{{Type: "repository", Name: parts[1], Actions: []string{"pull"}}}
+}
 
 // authorizeScope parses one "type:name:actions" scope string (the shape
 // the Docker client sends, e.g. "repository:acme/myapp:pull,push") and

@@ -26,7 +26,11 @@ type App struct {
 	ID            int64
 	ProjectID     int64
 	EnvironmentID int64
-	Name          string
+	// NodeID is the machine this app runs on. Every app has one: on an
+	// instance of a single box it is the control plane, which is where
+	// everything ran before there was anywhere else.
+	NodeID int64
+	Name   string
 	// Description is what this app is, in a sentence. It and the slug
 	// are all an app is created with.
 	Description string
@@ -116,6 +120,19 @@ const (
 	StatusRunning = "running"
 	StatusDown    = "down"
 )
+
+// ErrNoSuchNode is placing an app on a machine that is not in this
+// cluster.
+var ErrNoSuchNode = errors.New("no server of that name is in this cluster")
+
+// ErrRemote is something this machine cannot do for an app that runs on
+// another one. It is not a refusal of the act — it is the act not
+// reaching that far yet.
+var ErrRemote = errors.New("that app runs on another machine")
+
+// ErrNotPlaceable refuses a placement that would not work, and says
+// which half of it. See Service.checkPlacement.
+var ErrNotPlaceable = errors.New("this app cannot run on another machine yet")
 
 // DefaultPort is what a name reaches when nobody said otherwise. It is
 // the most common answer rather than a detected one — see Domain.Port.

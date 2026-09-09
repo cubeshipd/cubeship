@@ -31,11 +31,13 @@ import (
 	"strings"
 	"time"
 
+	"cubeship/internal/envvar"
 	"cubeship/internal/firewall"
 	"cubeship/internal/machine"
 	"cubeship/internal/mesh"
 	"cubeship/internal/node"
 	"cubeship/internal/platform/bootstrap"
+	"cubeship/internal/platform/dockerx"
 )
 
 // ContainerPrefix is what every container this instance creates is
@@ -61,12 +63,33 @@ type HostAddress interface {
 	Address(ctx context.Context) string
 }
 
-// Engine is what the agent needs from Docker beyond counting what is
-// running: joining the cluster's swarm. *dockerx.Client satisfies both.
+// Engine is what the agent needs from Docker: the cluster's swarm, and
+// the containers it is told to run. *dockerx.Client satisfies it.
 type Engine interface {
 	Containers
 	mesh.Engine
+
+	PullImage(ctx context.Context, ref string, auth *dockerx.RegistryAuth) error
+	CreateContainer(ctx context.Context, opts dockerx.ContainerOpts) (string, error)
+	StartContainer(ctx context.Context, id string) error
+	StopContainer(ctx context.Context, id string) error
+	RemoveContainer(ctx context.Context, id string) error
+	IsRunning(ctx context.Context, id string) (bool, error)
+	RunningContainers(ctx context.Context) ([]dockerx.Running, error)
 }
+
+// How long the agent watches a container it has just started before
+// calling it up, and how often.
+//
+// Shorter than the control plane's own health check, and deliberately:
+// what this is catching is an image that exits on its own configuration
+// in the first seconds. A container that is still up after this is one
+// the control plane's deployment row can be told about, and a container
+// that dies later is what the next pass sees.
+const (
+	healthAttempts = 10
+	healthInterval = time.Second
+)
 
 // Agent is the loop.
 type Agent struct {
@@ -100,6 +123,12 @@ type Agent struct {
 	// reported is the address this machine last worked out for itself,
 	// which is what it advertises to the swarm.
 	reported string
+
+	// pending is what this machine did since its last pass, waiting to
+	// be told to the control plane. Carried across a failed pass rather
+	// than dropped: a deploy that ran here and could not be reported is
+	// a deployment row that would sit `pending` forever.
+	pending []node.Result
 
 	// joined is whether the first successful pass has been logged.
 	// Saying it once is what the installer waits for; saying it every
@@ -159,6 +188,10 @@ func (a *Agent) tick(ctx context.Context) (interval time.Duration, err error) {
 	defer cancel()
 
 	answer, err := a.reconcile(ctx)
+	if err == nil {
+		// Reported. Anything that happens from here is this pass's.
+		a.pending = nil
+	}
 	if err != nil {
 		// Every failure here is the same shape — the control plane is
 		// not answering — and a worker whose network is down would
@@ -181,7 +214,160 @@ func (a *Agent) tick(ctx context.Context) (interval time.Duration, err error) {
 	if answer.Mesh != nil {
 		a.applyMesh(ctx, *answer.Mesh)
 	}
+	// What this machine is supposed to be running. Applied after the
+	// network, because a container that comes up before the machine is
+	// on the mesh is one that cannot reach the database it was given
+	// the address of.
+	a.pending = a.apply(ctx, answer.Desired.Apps, answer.Registry)
 	return time.Duration(answer.IntervalSeconds) * time.Second, nil
+}
+
+// apply makes this machine run what it was told to run, and reports
+// what changed.
+//
+// Two halves, in this order. **Start what is missing**, then **remove
+// what is not wanted** — the reverse would take an app down and then
+// find out its replacement will not start. A container whose
+// replacement is not up yet is left exactly where it is, which is what
+// makes a failed deploy a no-op rather than an outage.
+func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry string) []node.Result {
+	if a.engine == nil {
+		return nil
+	}
+	running, err := a.engine.RunningContainers(ctx)
+	if err != nil {
+		log.Printf("agent: listing what is running: %v", err)
+		return nil
+	}
+
+	var results []node.Result
+	wanted := make(map[string]string, len(placements))
+	for _, p := range placements {
+		wanted[p.App] = p.Container
+		if named(running, p.Container) != "" {
+			// Already running it. Not news, and reporting it every ten
+			// seconds would mark one deploy succeeded forever.
+			continue
+		}
+		id, err := a.start(ctx, p, registry)
+		result := node.Result{App: p.App, Deploy: p.Deploy, Container: id}
+		if err != nil {
+			log.Printf("agent: %s: %v", p.App, err)
+			result.Error = err.Error()
+		} else {
+			log.Printf("agent: %s is running as %s", p.App, p.Container)
+		}
+		results = append(results, result)
+	}
+
+	// Something started, so what is running has changed under the list
+	// read above — and the next half decides what to remove by it.
+	if len(results) > 0 {
+		if refreshed, err := a.engine.RunningContainers(ctx); err == nil {
+			running = refreshed
+		}
+	}
+
+	for _, c := range running {
+		app := c.Labels[node.LabelApp]
+		if app == "" {
+			// Not a container this instance placed here. The daemon
+			// itself, a database, something somebody ran by hand —
+			// none of it is this loop's to touch.
+			continue
+		}
+		want, placed := wanted[app]
+		if placed && want == c.Name {
+			continue
+		}
+		if placed && named(running, want) == "" {
+			// Its replacement is not up. Leaving the old one running is
+			// the whole point of doing this second.
+			continue
+		}
+		log.Printf("agent: removing %s, which this instance no longer runs here", c.Name)
+		if err := a.engine.StopContainer(ctx, c.ID); err != nil {
+			log.Printf("agent: stopping %s: %v", c.Name, err)
+		}
+		if err := a.engine.RemoveContainer(ctx, c.ID); err != nil {
+			log.Printf("agent: removing %s: %v", c.Name, err)
+		}
+	}
+	return results
+}
+
+// start runs one placement: pull, create, start, and watch it long
+// enough to know it did not exit on its own configuration.
+//
+// A container that will not come up is removed rather than left behind.
+// The control plane is told why, and that is what the deployment's row
+// says — so a failure here reads on the app's screen exactly like a
+// failure on the control plane does.
+func (a *Agent) start(ctx context.Context, p node.Placement, registry string) (string, error) {
+	auth := p.Registry
+	if auth == nil && registry != "" && strings.HasPrefix(p.Image, registry+"/") {
+		// The instance's own registry. Its credential is not in the
+		// placement and could not be — the control plane holds only the
+		// hash of it — so this machine authenticates as itself, with
+		// the credential it already dials home with.
+		auth = &dockerx.RegistryAuth{Username: node.RegistryUsername, Password: a.token}
+	}
+	if err := a.engine.PullImage(ctx, p.Image, auth); err != nil {
+		return "", fmt.Errorf("pull %s: %w", p.Image, err)
+	}
+
+	network, also := "", []string(nil)
+	if len(p.Networks) > 0 {
+		network, also = p.Networks[0], p.Networks[1:]
+	}
+	id, err := a.engine.CreateContainer(ctx, dockerx.ContainerOpts{
+		Name:         p.Container,
+		Image:        p.Image,
+		Labels:       p.Labels,
+		Env:          envvar.Slice(p.Env),
+		Network:      network,
+		AlsoNetworks: also,
+	})
+	if err != nil {
+		return "", fmt.Errorf("create container: %w", err)
+	}
+	if err := a.engine.StartContainer(ctx, id); err != nil {
+		a.discard(ctx, id)
+		return "", fmt.Errorf("start container: %w", err)
+	}
+	for range healthAttempts {
+		select {
+		case <-ctx.Done():
+			a.discard(ctx, id)
+			return "", ctx.Err()
+		case <-time.After(healthInterval):
+		}
+		up, err := a.engine.IsRunning(ctx, id)
+		if err != nil || !up {
+			a.discard(ctx, id)
+			return "", fmt.Errorf("it started and did not stay up")
+		}
+	}
+	return id, nil
+}
+
+// discard removes a container that should not exist. Best effort: what
+// went wrong is already the error being returned, and a container that
+// cannot be removed is a line in a log rather than a second failure.
+func (a *Agent) discard(ctx context.Context, id string) {
+	if err := a.engine.RemoveContainer(ctx, id); err != nil {
+		log.Printf("agent: removing %s after it would not run: %v", id, err)
+	}
+}
+
+// named finds a running container by name, and answers with its id.
+func named(running []dockerx.Running, name string) string {
+	for _, c := range running {
+		if c.Name == name {
+			return c.ID
+		}
+	}
+	return ""
 }
 
 // applyMesh puts this machine on the cluster's private network.
@@ -301,6 +487,7 @@ func (a *Agent) report(ctx context.Context) node.AgentRequest {
 		out.CPUPercent = &cpu
 	}
 	out.Containers = a.ours(ctx)
+	out.Results = a.pending
 	return out
 }
 

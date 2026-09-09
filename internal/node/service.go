@@ -35,6 +35,13 @@ type Service struct {
 	// host is how the cluster's ports are opened on **this** machine.
 	// The workers open their own; see internal/worker.
 	host firewall.Host
+	// placer knows what should be running where. Nil until server.New
+	// wires it in, and then a cluster is machines that report in and
+	// are told to run nothing.
+	placer Placer
+	// registry answers where this instance's own registry is, so a
+	// machine knows which images it should authenticate as itself for.
+	registry func(ctx context.Context) string
 	// advertise is where the other machines reach this one. It is the
 	// instance's own public address, which settings already works out
 	// and refuses to guess badly — a bridge address here would build a
@@ -68,6 +75,39 @@ func NewService(db *database.DB) *Service { return &Service{db: db} }
 // own address.
 func (s *Service) SetMesh(engine mesh.Engine, host firewall.Host, advertise func(context.Context) string) {
 	s.engine, s.host, s.advertise = engine, host, advertise
+}
+
+// SetPlacer wires in what knows which apps belong on which machine.
+// Called once, by server.New — the module that owns apps sits above
+// this one, so it is handed back down here.
+func (s *Service) SetPlacer(p Placer) { s.placer = p }
+
+// SetRegistryHost wires in where this instance's own registry answers.
+// It follows the instance's domain, so it is asked rather than captured.
+func (s *Service) SetRegistryHost(fn func(context.Context) string) { s.registry = fn }
+
+// RegistryHost is the address an image pushed to this instance is
+// pulled from, or empty when there is no domain and therefore no
+// registry.
+func (s *Service) RegistryHost(ctx context.Context) string {
+	if s.registry == nil {
+		return ""
+	}
+	return s.registry(ctx)
+}
+
+// AuthenticateNode turns a machine's credential into its name.
+//
+// It is the registry's seam: a worker pulls the images this instance
+// holds, and what it presents is the credential it already
+// authenticates its own loop with. Returning the name rather than the
+// node keeps the registry knowing nothing about what one is.
+func (s *Service) AuthenticateNode(ctx context.Context, token string) (string, error) {
+	n, err := s.Authenticate(ctx, token)
+	if err != nil {
+		return "", err
+	}
+	return n.Slug, nil
 }
 
 func (s *Service) Repo() *Repository { return NewRepository(s.db) }
@@ -247,9 +287,28 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*Node, error)
 // **The answer is empty in this release.** See Desired: the loop exists
 // now so that placing an app on a node is filling it in rather than
 // inventing a way to reach the machine.
-func (s *Service) Reconcile(ctx context.Context, n *Node, rep Report) (Desired, *mesh.Info, error) {
+func (s *Service) Reconcile(ctx context.Context, n *Node, rep Report, results []Result) (Desired, *mesh.Info, error) {
 	if err := s.Repo().Record(ctx, n.ID, rep); err != nil {
 		return Desired{}, nil, err
+	}
+
+	desired := Desired{Apps: []Placement{}}
+	if s.placer != nil {
+		// What the machine did comes first. A deploy it has just
+		// finished is what decides which placement it is told about
+		// next, and reading them the other way round would tell it to
+		// run the version it has already replaced.
+		if len(results) > 0 {
+			if err := s.placer.Placed(ctx, n.ID, results); err != nil {
+				log.Printf("cluster: recording what %s did: %v", n.Slug, err)
+			}
+		}
+		apps, err := s.placer.PlacementsFor(ctx, n.ID)
+		if err != nil {
+			log.Printf("cluster: working out what %s should run: %v", n.Slug, err)
+		} else if apps != nil {
+			desired.Apps = apps
+		}
 	}
 	info, err := s.mesh(ctx)
 	if err != nil {
@@ -257,15 +316,15 @@ func (s *Service) Reconcile(ctx context.Context, n *Node, rep Report) (Desired, 
 		// the network is doing. It is told nothing about the mesh this
 		// pass and asks again in ten seconds.
 		log.Printf("cluster: %v", err)
-		return Desired{Apps: []Placement{}}, nil, nil
+		return desired, nil, nil
 	}
 	if info != nil {
 		if err := s.peers(ctx, n, info); err != nil {
 			log.Printf("cluster: %v", err)
-			return Desired{Apps: []Placement{}}, nil, nil
+			return desired, nil, nil
 		}
 	}
-	return Desired{Apps: []Placement{}}, info, nil
+	return desired, info, nil
 }
 
 // peers fills in who the machine being answered has to admit, and opens

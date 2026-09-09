@@ -3,6 +3,8 @@ package node_test
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
+	"strings"
 	"testing"
 
 	"cubeship/internal/node"
@@ -234,4 +236,133 @@ func add(t *testing.T, f *servertest.Fixture, name string) string {
 		t.Fatal(err)
 	}
 	return created.Token
+}
+
+// The whole of a deploy on another machine, from both ends.
+//
+// The control plane resolves the image and stops — running a container
+// is the machine's half — so the deployment sits `pending` until the
+// machine says what it did. What this pins is that the instruction
+// carries everything a box with no database could need, and that the
+// answer is what finishes the row.
+func TestADeployOnAnotherMachineIsFinishedByThatMachine(t *testing.T) {
+	f := servertest.New(t)
+	token := add(t, f, "eu-1")
+
+	var created struct {
+		Reference string `json:"reference"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]any{
+		"name": "consumer", "project": "web",
+		"source": "external", "image": "docker.io/library/nginx",
+	}, f.AdminKey, &created), http.StatusCreated)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/apps/"+created.Reference,
+		map[string]any{"node": "eu-1"}, f.AdminKey), http.StatusOK)
+
+	var deployed struct {
+		ID int64 `json:"id"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps/"+created.Reference+"/deploy",
+		map[string]any{"tag": "1.2.3"}, f.AdminKey, &deployed), http.StatusAccepted)
+	f.Server.Apps.Orchestrator().Wait()
+
+	// The machine asks, and is told what to run.
+	var answer node.AgentResponse
+	rec := f.Do(t, http.MethodPost, "/nodes/agent/reconcile", node.AgentRequest{Cores: 2}, token)
+	servertest.RequireStatus(t, rec, http.StatusOK)
+	if err := json.Unmarshal(rec.Body.Bytes(), &answer); err != nil {
+		t.Fatal(err)
+	}
+	if len(answer.Desired.Apps) != 1 {
+		t.Fatalf("the machine was told to run %d apps, want 1", len(answer.Desired.Apps))
+	}
+	p := answer.Desired.Apps[0]
+	if p.App != created.Reference || p.Deploy != deployed.ID {
+		t.Errorf("placement is %+v, want %s at deploy %d", p, created.Reference, deployed.ID)
+	}
+	// Everything a box with no database needs, and an image with the
+	// tag the deploy asked for.
+	if !strings.HasSuffix(p.Image, ":1.2.3") {
+		t.Errorf("image %q does not carry the tag that was deployed", p.Image)
+	}
+	if p.Container == "" || len(p.Networks) == 0 {
+		t.Errorf("placement carries no container name or no network: %+v", p)
+	}
+	if p.Labels[node.LabelApp] != created.Reference {
+		t.Errorf("the container would not be labelled with whose it is: %v", p.Labels)
+	}
+
+	// Until it says otherwise, the deploy has not finished. It is the
+	// machine's to finish, and nothing here waits on it.
+	var before struct {
+		Status string `json:"status"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet,
+		"/apps/"+created.Reference+"/deployments/"+strconv.FormatInt(deployed.ID, 10), nil, f.AdminKey, &before), http.StatusOK)
+	if before.Status != "pending" {
+		t.Errorf("a deploy nobody has run yet is %q", before.Status)
+	}
+
+	// It ran it.
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/nodes/agent/reconcile", node.AgentRequest{
+		Cores:   2,
+		Results: []node.Result{{App: p.App, Deploy: p.Deploy, Container: "container-on-eu-1"}},
+	}, token), http.StatusOK)
+
+	var after struct {
+		Status string `json:"status"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet,
+		"/apps/"+created.Reference+"/deployments/"+strconv.FormatInt(deployed.ID, 10), nil, f.AdminKey, &after), http.StatusOK)
+	if after.Status != "succeeded" {
+		t.Errorf("after the machine reported success the deploy is %q", after.Status)
+	}
+	var app struct {
+		Status       string `json:"status"`
+		HasContainer bool   `json:"has_container"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/apps/"+created.Reference, nil, f.AdminKey, &app), http.StatusOK)
+	if !app.HasContainer || app.Status != "running" {
+		t.Errorf("the app is %+v, want it running on the container the machine made", app)
+	}
+}
+
+// A machine that could not run what it was told reports why, and that
+// is the deployment's error — so a failure on another box reads on the
+// app's screen exactly like a failure here.
+func TestAMachineThatCouldNotRunItSaysSo(t *testing.T) {
+	f := servertest.New(t)
+	token := add(t, f, "eu-1")
+
+	var created struct {
+		Reference string `json:"reference"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]any{
+		"name": "consumer", "project": "web",
+		"source": "external", "image": "docker.io/library/nginx",
+	}, f.AdminKey, &created), http.StatusCreated)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/apps/"+created.Reference,
+		map[string]any{"node": "eu-1"}, f.AdminKey), http.StatusOK)
+
+	var deployed struct {
+		ID int64 `json:"id"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps/"+created.Reference+"/deploy",
+		nil, f.AdminKey, &deployed), http.StatusAccepted)
+	f.Server.Apps.Orchestrator().Wait()
+
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/nodes/agent/reconcile", node.AgentRequest{
+		Cores:   2,
+		Results: []node.Result{{App: created.Reference, Deploy: deployed.ID, Error: "pull nginx: no such host"}},
+	}, token), http.StatusOK)
+
+	var after struct {
+		Status string `json:"status"`
+		Error  string `json:"error"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet,
+		"/apps/"+created.Reference+"/deployments/"+strconv.FormatInt(deployed.ID, 10), nil, f.AdminKey, &after), http.StatusOK)
+	if after.Status != "failed" || !strings.Contains(after.Error, "no such host") {
+		t.Errorf("the deploy is %q with %q, want the machine's own words", after.Status, after.Error)
+	}
 }

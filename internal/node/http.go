@@ -197,6 +197,11 @@ type AgentRequest struct {
 	// MeshNodeID is what this machine's own Engine says the swarm calls
 	// it. Empty is a machine that is not on the cluster's network.
 	MeshNodeID string `json:"mesh_node_id"`
+
+	// Results are what the machine did with what it was told to run
+	// since its last pass. Empty on a pass where nothing changed: a
+	// container that was already running is not news.
+	Results []Result `json:"results,omitempty"`
 }
 
 type AgentResponse struct {
@@ -204,6 +209,17 @@ type AgentResponse struct {
 	// on the first pass, so the box says which node it joined as.
 	Name    string  `json:"name"`
 	Desired Desired `json:"desired"`
+	// Registry is this instance's own registry, as a host — the address
+	// an image pushed here is pulled from.
+	//
+	// Sent rather than put in each placement's login, because the
+	// credential for it is the machine's own: the control plane holds
+	// only the hash of that, so what it can say is "images from here
+	// are ours" and let the machine present what it already has.
+	// Empty on an instance with no domain, which is one with no
+	// registry to pull from.
+	Registry string `json:"registry,omitempty"`
+
 	// Mesh is what this machine needs to be on the cluster's private
 	// network. Absent when there is none to be on — an instance whose
 	// Docker cannot cluster, or one that could not bring the network
@@ -232,7 +248,7 @@ func (h *Handler) reconcile(w http.ResponseWriter, r *http.Request) {
 		Cores: req.Cores, MemoryTotalBytes: req.MemoryTotalBytes, DiskTotalBytes: req.DiskTotalBytes,
 		CPUPercent: req.CPUPercent, MemoryBytes: req.MemoryBytes, DiskBytes: req.DiskBytes,
 		Containers: req.Containers, MeshNodeID: req.MeshNodeID,
-	})
+	}, req.Results)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -240,6 +256,7 @@ func (h *Handler) reconcile(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, AgentResponse{
 		Name:            n.Slug,
 		Desired:         desired,
+		Registry:        h.svc.RegistryHost(r.Context()),
 		Mesh:            meshInfo,
 		IntervalSeconds: int(Interval.Seconds()),
 	})
@@ -258,7 +275,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrControlPlane):
 		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, ErrNoAddress):
+	case errors.Is(err, ErrNoAddress), errors.Is(err, ErrHasApps):
 		http.Error(w, err.Error(), http.StatusConflict)
 
 	case errors.Is(err, ErrUnknownToken):
