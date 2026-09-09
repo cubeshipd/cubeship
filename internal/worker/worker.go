@@ -39,8 +39,6 @@ import (
 	"cubeship/internal/node"
 	"cubeship/internal/platform/bootstrap"
 	"cubeship/internal/platform/dockerx"
-
-	"github.com/docker/docker/pkg/stdcopy"
 )
 
 // ContainerPrefix is what every container this instance creates is
@@ -282,13 +280,15 @@ func (a *Agent) answer(ctx context.Context, cmd node.Command) {
 	}
 }
 
-// readLog is the tail of a container's log, demultiplexed here rather
-// than by whoever reads it.
+// readLog is the tail of a container's log, exactly as the Engine gives
+// it: stdout and stderr multiplexed behind an 8-byte frame header per
+// chunk.
 //
-// Docker returns stdout and stderr behind an 8-byte frame header per
-// chunk, and separating them is the reading end's job — doing it on the
-// machine means what crosses the wire is what a person would see, and
-// the control plane hands it on without knowing where it came from.
+// **Not demultiplexed here**, deliberately. The control plane already
+// does that to every log it serves, and doing it on this side as well
+// would mean two places that know Docker's frame format and one of them
+// deciding, per app, which had already happened. What crosses the wire
+// is what the Engine said; what a person sees is decided in one place.
 func (a *Agent) readLog(ctx context.Context, cmd node.Command) ([]byte, error) {
 	if a.engine == nil {
 		return nil, fmt.Errorf("this server has no Docker to read a log from")
@@ -298,16 +298,7 @@ func (a *Agent) readLog(ctx context.Context, cmd node.Command) ([]byte, error) {
 		return nil, err
 	}
 	defer rc.Close()
-
-	var out bytes.Buffer
-	if _, err := stdcopy.StdCopy(&out, &out, io.LimitReader(rc, node.MaxAnswerBytes)); err != nil {
-		// Whatever was read before it went wrong is still the log, and
-		// it is more useful than the error on its own.
-		if out.Len() == 0 {
-			return nil, err
-		}
-	}
-	return out.Bytes(), nil
+	return io.ReadAll(io.LimitReader(rc, node.MaxAnswerBytes))
 }
 
 // post sends one command's answer back. The body is the answer as

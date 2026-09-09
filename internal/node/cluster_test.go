@@ -1,6 +1,7 @@
 package node_test
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"net/http"
 	"strconv"
@@ -409,10 +410,12 @@ func TestAMachineIsAskedForALogThroughItsOwnPoll(t *testing.T) {
 		t.Errorf("the command is %+v, want the log of the container it reported", cmd)
 	}
 
-	// It answers, and the request that was waiting is released with
-	// what it said.
+	// It answers with what the Engine gave it: stdout and stderr behind
+	// Docker's own 8-byte frame header. Demultiplexing is the control
+	// plane's, in the one place that already does it for every log it
+	// serves — so what is posted here is deliberately not readable text.
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/nodes/agent/results/"+cmd.ID,
-		[]byte("hello from eu-1\n"), token), http.StatusNoContent)
+		dockerFrame("hello from eu-1\n"), token), http.StatusNoContent)
 
 	select {
 	case got := <-asked:
@@ -504,6 +507,13 @@ func TestAWaitingPollIsReleasedTheMomentThereIsSomethingToSay(t *testing.T) {
 	token := add(t, f, "eu-1")
 	ref := runOnNode(t, f, token, "eu-1", "consumer")
 
+	// A deploy placed on a machine wakes it, and that mark is still on
+	// the channel: one poll consumes it and comes back with nothing,
+	// which is what a wake with nothing behind it looks like. Drained
+	// here so what follows is measuring the release this test is about.
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/nodes/agent/reconcile",
+		node.AgentRequest{Cores: 2, Wait: true}, token), http.StatusOK)
+
 	parked := make(chan time.Duration, 1)
 	go func() {
 		started := time.Now()
@@ -534,4 +544,14 @@ func TestAWaitingPollIsReleasedTheMomentThereIsSomethingToSay(t *testing.T) {
 	case <-time.After(node.PollWait):
 		t.Fatal("the poll was never released")
 	}
+}
+
+// dockerFrame wraps text the way the Engine hands a log over: one
+// 8-byte header per chunk, the stream in the first byte and the length
+// in the last four.
+func dockerFrame(text string) []byte {
+	out := make([]byte, 8, 8+len(text))
+	out[0] = 1 // stdout
+	binary.BigEndian.PutUint32(out[4:], uint32(len(text)))
+	return append(out, text...)
 }
