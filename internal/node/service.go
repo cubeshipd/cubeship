@@ -40,10 +40,10 @@ type Service struct {
 	// host is how the cluster's ports are opened on **this** machine.
 	// The workers open their own; see internal/worker.
 	host firewall.Host
-	// placer knows what should be running where. Nil until server.New
+	// apps knows what should be running where. Nil until server.New
 	// wires it in, and then a cluster is machines that report in and
 	// are told to run nothing.
-	placer Placer
+	apps Apps
 	// registry answers where this instance's own registry is, so a
 	// machine knows which images it should authenticate as itself for.
 	registry func(ctx context.Context) string
@@ -82,10 +82,10 @@ func (s *Service) SetMesh(engine mesh.Engine, host firewall.Host, advertise func
 	s.engine, s.host, s.advertise = engine, host, advertise
 }
 
-// SetPlacer wires in what knows which apps belong on which machine.
+// SetApps wires in what knows which apps belong on which machine.
 // Called once, by server.New — the module that owns apps sits above
 // this one, so it is handed back down here.
-func (s *Service) SetPlacer(p Placer) { s.placer = p }
+func (s *Service) SetApps(a Apps) { s.apps = a }
 
 // SetRegistryHost wires in where this instance's own registry answers.
 // It follows the instance's domain, so it is asked rather than captured.
@@ -318,7 +318,7 @@ func (s *Service) Authenticate(ctx context.Context, token string) (*Node, error)
 // **The answer is empty in this release.** See Desired: the loop exists
 // now so that placing an app on a node is filling it in rather than
 // inventing a way to reach the machine.
-func (s *Service) Reconcile(ctx context.Context, n *Node, rep Report, results []Result) (Desired, *mesh.Info, error) {
+func (s *Service) Reconcile(ctx context.Context, n *Node, rep Report, results []Result, readings []Reading) (Desired, *mesh.Info, error) {
 	if err := s.Repo().Record(ctx, n.ID, rep); err != nil {
 		return Desired{}, nil, err
 	}
@@ -327,9 +327,19 @@ func (s *Service) Reconcile(ctx context.Context, n *Node, rep Report, results []
 	// what decides which placement it is told about next, and reading
 	// them the other way round would tell it to run the version it has
 	// already replaced.
-	if s.placer != nil && len(results) > 0 {
-		if err := s.placer.Placed(ctx, n.ID, results); err != nil {
+	if s.apps != nil && len(results) > 0 {
+		if err := s.apps.Placed(ctx, n.ID, results); err != nil {
 			log.Printf("cluster: recording what %s did: %v", n.Slug, err)
+		}
+	}
+	// What those containers are using, which is the machine's to
+	// measure: nothing here can reach its Engine. Recorded before the
+	// answer is built for the same reason the results are — being seen
+	// is a fact, and losing it because working out the next instruction
+	// failed would be losing it for nothing.
+	if s.apps != nil && len(readings) > 0 {
+		if err := s.apps.Sampled(ctx, n.ID, readings); err != nil {
+			log.Printf("cluster: recording what %s is using: %v", n.Slug, err)
 		}
 	}
 	desired := s.Desired(ctx, n)
@@ -360,10 +370,10 @@ func (s *Service) Reconcile(ctx context.Context, n *Node, rep Report, results []
 // empty pass, overwriting what it actually said with zeroes.
 func (s *Service) Desired(ctx context.Context, n *Node) Desired {
 	desired := Desired{Apps: []Placement{}}
-	if s.placer == nil {
+	if s.apps == nil {
 		return desired
 	}
-	apps, err := s.placer.PlacementsFor(ctx, n.ID)
+	apps, err := s.apps.PlacementsFor(ctx, n.ID)
 	if err != nil {
 		log.Printf("cluster: working out what %s should run: %v", n.Slug, err)
 		return desired

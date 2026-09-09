@@ -36,6 +36,7 @@ import (
 	"cubeship/internal/firewall"
 	"cubeship/internal/machine"
 	"cubeship/internal/mesh"
+	"cubeship/internal/metrics"
 	"cubeship/internal/node"
 	"cubeship/internal/platform/bootstrap"
 	"cubeship/internal/platform/dockerx"
@@ -83,6 +84,7 @@ type Engine interface {
 	mesh.Engine
 
 	PullImage(ctx context.Context, ref string, auth *dockerx.RegistryAuth) error
+	ContainerStats(ctx context.Context, id string) (dockerx.Stats, error)
 	Logs(ctx context.Context, id, tail string) (io.ReadCloser, error)
 	CreateContainer(ctx context.Context, opts dockerx.ContainerOpts) (string, error)
 	StartContainer(ctx context.Context, id string) error
@@ -137,6 +139,16 @@ type Agent struct {
 	// reported is the address this machine last worked out for itself,
 	// which is what it advertises to the swarm.
 	reported string
+
+	// stats is the last raw reading of each container this machine
+	// runs, because a CPU percentage is a difference. Keyed by
+	// container id rather than by app: a redeployed app is a new
+	// container, and comparing across the swap would produce one
+	// impossible reading.
+	stats map[string]dockerx.Stats
+	// sampledAt is when the last set of readings was taken. A machine
+	// polls far more often than a chart wants a point.
+	sampledAt time.Time
 
 	// pending is what this machine did since its last pass, waiting to
 	// be told to the control plane. Carried across a failed pass rather
@@ -600,6 +612,63 @@ func (a *Agent) report(ctx context.Context) node.AgentRequest {
 	}
 	out.Containers = a.ours(ctx)
 	out.Results = a.pending
+	out.Readings = a.readings(ctx)
+	return out
+}
+
+// readings are what the containers this machine runs are using, taken
+// on the interval the control plane samples its own on.
+//
+// **The percentage is computed here**, with the same function the
+// control plane uses, because it is a difference between two readings
+// and this is the only place both of them exist. What crosses the wire
+// is a number a chart can draw rather than counters somebody else has
+// to hold state for.
+//
+// Nothing is taken until there is something to compare against: the
+// first pass after this daemon starts records the counters and reports
+// no percentage, which is the same rule the collector on the control
+// plane follows.
+func (a *Agent) readings(ctx context.Context) []node.Reading {
+	if a.engine == nil || time.Since(a.sampledAt) < metrics.Interval {
+		return nil
+	}
+	running, err := a.engine.RunningContainers(ctx)
+	if err != nil {
+		return nil
+	}
+	a.sampledAt = time.Now()
+
+	previous := a.stats
+	a.stats = map[string]dockerx.Stats{}
+
+	var out []node.Reading
+	for _, c := range running {
+		// Only what this instance placed here. Everything else on the
+		// box — the daemon itself, whatever somebody ran by hand — is
+		// not something the control plane has a chart for.
+		if c.Labels[node.LabelApp] == "" {
+			continue
+		}
+		stats, err := a.engine.ContainerStats(ctx, c.ID)
+		if err != nil {
+			// A container that has just been removed is the common
+			// case, and it is not worth a line every half minute.
+			continue
+		}
+		a.stats[c.ID] = stats
+
+		last, seen := previous[c.ID]
+		if !seen {
+			continue
+		}
+		out = append(out, node.Reading{
+			Container:        c.ID,
+			CPUPercent:       metrics.CPUPercent(last, stats),
+			MemoryBytes:      int64(stats.MemoryBytes),
+			MemoryLimitBytes: int64(stats.MemoryLimit),
+		})
+	}
 	return out
 }
 

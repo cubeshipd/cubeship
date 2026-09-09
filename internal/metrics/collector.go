@@ -160,16 +160,30 @@ func (c *Collector) cpuPercent(containerID string, now dockerx.Stats) float64 {
 	if !ok {
 		return 0
 	}
-	// A counter that went backwards is a container that restarted under
-	// the same id, or an Engine that reset them. Either way the
-	// difference is meaningless.
-	if now.CPUTotal < prev.CPUTotal || now.CPUSystem < prev.CPUSystem {
+	return CPUPercent(prev, now)
+}
+
+// CPUPercent is the share of one core a container used between two
+// readings: 250 is two and a half cores.
+//
+// Exported because the machines in a cluster take this reading too, and
+// their charts are drawn on the same axis as this one's. One formula
+// with two callers rather than two that have to agree — see
+// internal/worker, which samples the containers it was told to run and
+// reports the percentage rather than the counters.
+//
+// Zero when there is nothing to compare against, when a counter went
+// backwards — a container that restarted under the same id, or an
+// Engine that reset them — or when no time passed. An invented number
+// is one somebody reads as a fact.
+func CPUPercent(previous, current dockerx.Stats) float64 {
+	if current.CPUTotal < previous.CPUTotal || current.CPUSystem < previous.CPUSystem {
 		return 0
 	}
-	cpuDelta := float64(now.CPUTotal - prev.CPUTotal)
-	systemDelta := float64(now.CPUSystem - prev.CPUSystem)
+	cpuDelta := float64(current.CPUTotal - previous.CPUTotal)
+	systemDelta := float64(current.CPUSystem - previous.CPUSystem)
 	if systemDelta <= 0 || cpuDelta <= 0 {
 		return 0
 	}
-	return cpuDelta / systemDelta * float64(now.OnlineCPUs) * 100
+	return cpuDelta / systemDelta * float64(current.OnlineCPUs) * 100
 }

@@ -202,8 +202,8 @@ function Detail({
                 on, and only this one writes to the series. */}
             {remote && (
               <Notice>
-                This app runs on <code className="text-foreground">{app.node}</code>. Its log is
-                read from there on demand; its charts are not collected yet.
+                This app runs on <code className="text-foreground">{app.node}</code>. Its charts and
+                its log come from that machine.
               </Notice>
             )}
             <MetricsSection path={path} />

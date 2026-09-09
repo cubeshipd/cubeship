@@ -116,6 +116,27 @@ func (s *Service) Usage(ctx context.Context) ([]Usage, error) {
 	return out, nil
 }
 
+// Record writes readings somebody else took.
+//
+// It exists for the machines in a cluster: a container on a worker is
+// sampled by the daemon on that worker — nothing here can reach its
+// Engine — and what arrives is already a Sample, because the percentage
+// is a difference and only the machine holding the previous reading can
+// take it. See metrics.CPUPercent, which both sides compute with.
+//
+// No caller and no role, like everything else here: the module handing
+// these over has already decided whose they are.
+func (s *Service) Record(ctx context.Context, kind string, ids []int64, samples []Sample) error {
+	if len(samples) == 0 {
+		return nil
+	}
+	kinds := make([]string, len(samples))
+	for i := range kinds {
+		kinds[i] = kind
+	}
+	return s.Repo().InsertMany(ctx, kinds, ids, samples)
+}
+
 // Forget drops a subject's history, for when the thing it measured is
 // deleted. Ids are sequences and do get reused across tables; a chart
 // inheriting a stranger's history would be worse than an empty one.

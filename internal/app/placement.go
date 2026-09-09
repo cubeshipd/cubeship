@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"time"
 
+	"cubeship/internal/metrics"
 	"cubeship/internal/node"
 	"cubeship/internal/platform/traefik"
 )
@@ -115,6 +117,51 @@ func (s *Service) Placed(ctx context.Context, nodeID int64, results []node.Resul
 		}
 	}
 	return nil
+}
+
+// Sampled records what the containers on a machine are using.
+//
+// The reading is matched to an app by **container id**, not by the name
+// the machine reports: a container that has since been replaced is one
+// whose reading belongs to nothing, and writing it against the app
+// anyway would draw the old version's line on the new one's chart.
+//
+// Everything else about it is the same as a local sample. The
+// percentage came from the machine because only it could take one — see
+// metrics.CPUPercent — and it lands in the same table, on the same
+// axis, pruned by the same pass.
+func (s *Service) Sampled(ctx context.Context, nodeID int64, readings []node.Reading) error {
+	if s.metrics == nil || len(readings) == 0 {
+		return nil
+	}
+	apps, err := s.Repo().ScopedOnNode(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+	byContainer := make(map[string]int64, len(apps))
+	for _, a := range apps {
+		if a.ContainerID != "" {
+			byContainer[a.ContainerID] = a.ID
+		}
+	}
+
+	now := time.Now()
+	var ids []int64
+	var samples []metrics.Sample
+	for _, r := range readings {
+		id, ours := byContainer[r.Container]
+		if !ours {
+			continue
+		}
+		ids = append(ids, id)
+		samples = append(samples, metrics.Sample{
+			At:               now,
+			CPUPercent:       r.CPUPercent,
+			MemoryBytes:      r.MemoryBytes,
+			MemoryLimitBytes: r.MemoryLimitBytes,
+		})
+	}
+	return s.metrics.Record(ctx, metrics.KindApp, ids, samples)
 }
 
 // PlacementFor is one app as an instruction another machine can act on.

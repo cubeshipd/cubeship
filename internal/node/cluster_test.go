@@ -555,3 +555,68 @@ func dockerFrame(text string) []byte {
 	binary.BigEndian.PutUint32(out[4:], uint32(len(text)))
 	return append(out, text...)
 }
+
+// A container on another machine is charted like one here.
+//
+// The reading comes from the machine, because nothing on the control
+// plane can reach its Engine — and it arrives as a percentage rather
+// than as counters, since a percentage is a difference and only the
+// machine holding the previous reading can take it. What it lands in is
+// the same table, on the same axis.
+func TestWhatAContainerOnAnotherMachineIsUsingIsCharted(t *testing.T) {
+	f := servertest.New(t)
+	token := add(t, f, "eu-1")
+	ref := runOnNode(t, f, token, "eu-1", "consumer")
+
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/nodes/agent/reconcile", node.AgentRequest{
+		Cores: 2,
+		Readings: []node.Reading{{
+			Container: "container-on-eu-1", CPUPercent: 42.5,
+			MemoryBytes: 128 << 20, MemoryLimitBytes: 2 << 30,
+		}},
+	}, token), http.StatusOK)
+
+	var series struct {
+		Samples []struct {
+			CPUPercent  float64 `json:"cpu_percent"`
+			MemoryBytes int64   `json:"memory_bytes"`
+		} `json:"samples"`
+		Collecting bool `json:"collecting"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/apps/"+ref+"/metrics", nil, f.AdminKey, &series), http.StatusOK)
+	if len(series.Samples) != 1 {
+		t.Fatalf("the app's chart has %d points, want the one its machine reported", len(series.Samples))
+	}
+	if series.Samples[0].CPUPercent != 42.5 || series.Samples[0].MemoryBytes != 128<<20 {
+		t.Errorf("the point is %+v, want what the machine said", series.Samples[0])
+	}
+	if !series.Collecting {
+		t.Error("an app running on a machine that reports readings is not being collected")
+	}
+}
+
+// A reading for a container this instance does not know is dropped.
+//
+// It is how a machine that is behind reports on a container that has
+// since been replaced, and writing it against the app anyway would draw
+// the old version's line on the new one's chart.
+func TestAReadingForAContainerNobodyKnowsIsDropped(t *testing.T) {
+	f := servertest.New(t)
+	token := add(t, f, "eu-1")
+	ref := runOnNode(t, f, token, "eu-1", "consumer")
+
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/nodes/agent/reconcile", node.AgentRequest{
+		Cores: 2,
+		Readings: []node.Reading{
+			{Container: "a-container-from-before", CPUPercent: 99, MemoryBytes: 1 << 30},
+		},
+	}, token), http.StatusOK)
+
+	var series struct {
+		Samples []map[string]any `json:"samples"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/apps/"+ref+"/metrics", nil, f.AdminKey, &series), http.StatusOK)
+	if len(series.Samples) != 0 {
+		t.Errorf("a reading for a container nobody knows was charted: %v", series.Samples)
+	}
+}
