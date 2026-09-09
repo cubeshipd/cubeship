@@ -127,8 +127,17 @@ func TestEveryMachineRunsItAndNoneOfThemRoutesItAlone(t *testing.T) {
 	if len(answer.Desired.Apps) != 1 {
 		t.Fatalf("the machine was told to run %d apps", len(answer.Desired.Apps))
 	}
-	if answer.Desired.Apps[0].Labels["traefik.enable"] != "true" {
-		t.Errorf("the only machine running it does not route it: %v", answer.Desired.Apps[0].Labels)
+	// The labels carry the name and the port behind it, not just the
+	// switch: a placement that went out without them is a machine
+	// serving none of the names of the apps it runs, and — because
+	// starting its edge is decided by looking for them — one that never
+	// starts a Traefik at all.
+	labels := answer.Desired.Apps[0].Labels
+	if labels["traefik.enable"] != "true" {
+		t.Errorf("the only machine running it does not route it: %v", labels)
+	}
+	if !strings.Contains(strings.Join(mapValues(labels), " "), "web.example.com") {
+		t.Errorf("the placement does not carry the name it has to serve: %v", labels)
 	}
 
 	// Two machines: neither does, and the edge's file is what routes.
@@ -285,4 +294,12 @@ func controlPlaneID(t *testing.T, f *servertest.Fixture) int64 {
 		t.Fatal(err)
 	}
 	return id
+}
+
+func mapValues(m map[string]string) []string {
+	out := make([]string, 0, len(m))
+	for _, v := range m {
+		out = append(out, v)
+	}
+	return out
 }

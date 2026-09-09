@@ -50,6 +50,14 @@ func (s *Service) PlacementsFor(ctx context.Context, nodeID int64) ([]node.Place
 	if err != nil {
 		return nil, err
 	}
+	// What each of them answers at, which the scoped read does not
+	// carry. Without this every placement went out with no Traefik
+	// labels on it, so a machine served none of the names of the apps
+	// it was running — and, because starting its edge is decided by
+	// looking for those labels, never started one at all.
+	if apps, err = s.withDomains(ctx, apps); err != nil {
+		return nil, err
+	}
 	out := make([]node.Placement, 0, len(apps))
 	for _, a := range apps {
 		d, err := s.Repo().DeploymentToRun(ctx, a.ID)

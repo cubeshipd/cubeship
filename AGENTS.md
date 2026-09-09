@@ -1970,6 +1970,15 @@ creates the container. `internal/app/placement.go` is that seam:
 a registry login, an environment, labels and networks — because the
 machine has no database and no way to ask a second question.
 
+Complete is the load-bearing word. A scoped read carries no domains, so
+a placement built straight off one goes out with no Traefik labels at
+all: the machine serves none of the names of the apps it runs, and
+because `applyEdge` decides whether to start a Traefik by looking for
+those labels, it never starts one. `PlacementsFor` fills them in for
+that reason, and `TestEveryMachineRunsItAndNoneOfThemRoutesItAlone`
+pins it — the failure is silent from every side, which is what made it
+worth a test rather than a comment.
+
 **A remote deploy stays `pending` until the machine says what it did.**
 `Placed` is where it ends: the row becomes succeeded or failed and the
 app points at the container that is now serving it, which is exactly
