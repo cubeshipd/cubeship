@@ -1975,22 +1975,61 @@ app that **builds** cannot either: its image is loaded into this
 machine's Docker rather than pushed anywhere another machine could pull
 it from.
 
+Its **log**, though, is readable: see below. What is not is its charts.
+
 A machine with apps on it cannot be removed — `ON DELETE RESTRICT`, and
 the error says to move them. Where they should go is a decision, and
 making it by deleting a row would make it invisibly.
 
+### Asking a machine something
+
+A worker dials the control plane and nothing dials a worker, so this
+instance cannot ask a machine anything — and a log lives on the box its
+container is on. `internal/node/commands.go` is the way round it, and it
+adds no listener anywhere: **the request is what waits.**
+
+Somebody opens a remote app's log; the request parks on the control
+plane; the machine's own poll is woken and carries the question; the
+machine posts the answer back and that releases the request. One poll
+rather than one interval, and `internal/app` does not branch on which
+machine an app is on beyond choosing that door — what comes back is the
+same bytes a local log is, demultiplexed out of Docker's frames by the
+machine that read them.
+
+**The poll parks because the machine asked it to.** `AgentRequest.Wait`
+is the agent's own flag, which is what makes it safe to add: an agent
+from before this existed does not send it, is answered at once, and goes
+on polling on its interval exactly as it did.
+
+It parks on **commands**, not on whether there is desired state to send
+— there always is, so a machine with an app on it would otherwise never
+park and never hear anything promptly again. A woken poll asks what it
+should be running a second time, because that may be what woke it, and
+it asks through `Service.Desired` rather than through `Reconcile`:
+calling that again would stamp the machine as having reported an empty
+pass and overwrite what it actually said with zeroes.
+
+**It is all in memory.** A command is a request in flight: it means
+nothing once whoever asked has gone, and a row for one would be a row to
+clean up. A machine may only answer what was sent to *it* — otherwise a
+worker's credential would be a way to feed somebody else's screen
+whatever it liked — and an answer nobody is waiting for is dropped
+without complaint.
+
+Two budgets, because they are nothing alike: `dialTimeout` on the agent
+covers a call home and has to be **longer than the control plane parks**,
+or every quiet poll is cut short by the client; `workTimeout` covers what
+a pass *does*, which includes an image pull and is minutes.
+
+A deploy placed on a machine wakes it the same way, so it starts in the
+second it was asked for rather than in the half-minute after.
+
 ### What is not there yet
 
-Three things, and the first is the one that unlocks the other two.
-
-- **A channel the control plane can send a request down.** The agent's
-  loop only goes one way: it asks, and is told. So an app on another
-  machine has no readable **log** here, and no **charts** — what samples
-  a container is the daemon on the machine it is on, and only this one
-  writes to the series. Both are refused or explained rather than
-  answered wrongly. A reverse channel — a request parked on the machine's
-  own poll — is one piece of work that gives logs, exec and stats
-  together, instead of three bespoke paths.
+- **Charts for a remote app.** What samples a container is the daemon on
+  the machine it is on, and only this one writes to the series. The
+  channel above is what it would go down — the agent already lists what
+  it runs — and it is the next thing that channel is for.
 - **Routing.** Each node runs its own Traefik and is its own edge, with
   the app's DNS record pointing at the machine it is on. A load balancer
   across nodes is the step after, and it is what makes a record stop

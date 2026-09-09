@@ -225,6 +225,10 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// that owns machines, so it is handed back down here — the same
 	// seam project.AppTeardown and credential.Dependant use.
 	nodes.SetPlacer(apps)
+	// And the other way: what only the machine an app is on can answer
+	// — its log today — reaches it through the channel that machine's
+	// own poll opens. See app.Remote.
+	apps.SetRemote(nodes)
 	nodes.SetRegistryHost(func(ctx context.Context) string {
 		values, err := cfg.Load(ctx)
 		if err != nil {

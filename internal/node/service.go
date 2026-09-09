@@ -27,6 +27,11 @@ import (
 type Service struct {
 	db *database.DB
 
+	// hub is what lets this instance ask a machine something. See
+	// commands.go: the answer to a machine's own poll is the only way
+	// in, because nothing here can dial one.
+	hub *hub
+
 	// engine is what brings the cluster's private network up on this
 	// machine. Nil on a daemon whose Docker cannot cluster and in every
 	// test, and a cluster with no mesh is exactly that: machines that
@@ -67,7 +72,7 @@ type Service struct {
 // worth not asking the Engine per deploy, and not worth a subscription.
 const meshLookupTTL = 30 * time.Second
 
-func NewService(db *database.DB) *Service { return &Service{db: db} }
+func NewService(db *database.DB) *Service { return &Service{db: db, hub: newHub()} }
 
 // SetMesh wires in what the cluster's network is made of. Called once,
 // by server.New, with whatever this daemon actually has: a Docker that
@@ -95,6 +100,32 @@ func (s *Service) RegistryHost(ctx context.Context) string {
 	}
 	return s.registry(ctx)
 }
+
+// Logs is the tail of a container's log, read on the machine it is on.
+//
+// It is the first thing that goes through the reverse channel, and the
+// shape is the point: the request parks here, the machine's next poll
+// carries the command, and its answer releases this. What comes back is
+// bytes, already demultiplexed out of Docker's frame format by the
+// machine that read them — so what a caller does with this is what it
+// does with a local log, and internal/app does not branch on which
+// machine an app is on beyond choosing this door.
+func (s *Service) Logs(ctx context.Context, nodeID int64, containerID, tail string) ([]byte, error) {
+	if containerID == "" {
+		return nil, ErrNoContainer
+	}
+	return s.hub.Ask(ctx, nodeID, Command{
+		Kind: CommandLogs, Container: containerID, Tail: tail,
+	})
+}
+
+// Wake tells a machine there is something new for it, without waiting
+// for anything back.
+//
+// What calls it is a deploy placed on that machine: the poll it releases
+// is the difference between a deploy starting now and one starting when
+// the machine next asks.
+func (s *Service) Wake(nodeID int64) { s.hub.Signal(nodeID) }
 
 // AuthenticateNode turns a machine's credential into its name.
 //
@@ -292,24 +323,16 @@ func (s *Service) Reconcile(ctx context.Context, n *Node, rep Report, results []
 		return Desired{}, nil, err
 	}
 
-	desired := Desired{Apps: []Placement{}}
-	if s.placer != nil {
-		// What the machine did comes first. A deploy it has just
-		// finished is what decides which placement it is told about
-		// next, and reading them the other way round would tell it to
-		// run the version it has already replaced.
-		if len(results) > 0 {
-			if err := s.placer.Placed(ctx, n.ID, results); err != nil {
-				log.Printf("cluster: recording what %s did: %v", n.Slug, err)
-			}
-		}
-		apps, err := s.placer.PlacementsFor(ctx, n.ID)
-		if err != nil {
-			log.Printf("cluster: working out what %s should run: %v", n.Slug, err)
-		} else if apps != nil {
-			desired.Apps = apps
+	// What the machine did comes first. A deploy it has just finished is
+	// what decides which placement it is told about next, and reading
+	// them the other way round would tell it to run the version it has
+	// already replaced.
+	if s.placer != nil && len(results) > 0 {
+		if err := s.placer.Placed(ctx, n.ID, results); err != nil {
+			log.Printf("cluster: recording what %s did: %v", n.Slug, err)
 		}
 	}
+	desired := s.Desired(ctx, n)
 	info, err := s.mesh(ctx)
 	if err != nil {
 		// A machine that called in is a machine that is up, whatever
@@ -325,6 +348,30 @@ func (s *Service) Reconcile(ctx context.Context, n *Node, rep Report, results []
 		}
 	}
 	return desired, info, nil
+}
+
+// Desired is what a machine should be running, and nothing else: no
+// report is recorded and nothing is written.
+//
+// Separate from Reconcile because a poll that parks and is then woken
+// has to ask this question again — the answer may have changed while it
+// waited, which is the whole reason it was woken — and asking it by
+// calling Reconcile again would stamp the machine as having reported an
+// empty pass, overwriting what it actually said with zeroes.
+func (s *Service) Desired(ctx context.Context, n *Node) Desired {
+	desired := Desired{Apps: []Placement{}}
+	if s.placer == nil {
+		return desired
+	}
+	apps, err := s.placer.PlacementsFor(ctx, n.ID)
+	if err != nil {
+		log.Printf("cluster: working out what %s should run: %v", n.Slug, err)
+		return desired
+	}
+	if apps != nil {
+		desired.Apps = apps
+	}
+	return desired
 }
 
 // peers fills in who the machine being answered has to admit, and opens

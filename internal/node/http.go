@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -89,6 +90,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("DELETE /nodes/{name}", auth(http.HandlerFunc(h.remove)))
 
 	r.HandleInternal("POST /nodes/agent/reconcile", h.agent(http.HandlerFunc(h.reconcile)))
+	r.HandleInternal("POST /nodes/agent/results/{id}", h.agent(http.HandlerFunc(h.result)))
 }
 
 // nodeContextKey carries the authenticated machine into the handler.
@@ -198,6 +200,17 @@ type AgentRequest struct {
 	// it. Empty is a machine that is not on the cluster's network.
 	MeshNodeID string `json:"mesh_node_id"`
 
+	// Wait asks the control plane to hold this request open when it has
+	// nothing to say, rather than answering an empty poll at once.
+	//
+	// The machine's to decide, not this instance's, and that is what
+	// makes it safe to add: an agent from before this existed does not
+	// send it, is answered immediately, and goes on polling on its own
+	// interval exactly as it did. What it buys the ones that do send it
+	// is hearing about a deploy, or being asked for a log, in the
+	// moment it happens.
+	Wait bool `json:"wait,omitempty"`
+
 	// Results are what the machine did with what it was told to run
 	// since its last pass. Empty on a pass where nothing changed: a
 	// container that was already running is not news.
@@ -209,6 +222,11 @@ type AgentResponse struct {
 	// on the first pass, so the box says which node it joined as.
 	Name    string  `json:"name"`
 	Desired Desired `json:"desired"`
+	// Commands are what this instance is asking the machine to do
+	// right now — read a log, and in time more. Empty on almost every
+	// poll: this is the channel that lets the control plane ask
+	// anything at all, and most of the time it has nothing to ask.
+	Commands []Command `json:"commands,omitempty"`
 	// Registry is this instance's own registry, as a host — the address
 	// an image pushed here is pulled from.
 	//
@@ -233,7 +251,8 @@ type AgentResponse struct {
 }
 
 func (h *Handler) reconcile(w http.ResponseWriter, r *http.Request) {
-	n, _ := r.Context().Value(nodeContextKey{}).(*Node)
+	ctx := r.Context()
+	n, _ := ctx.Value(nodeContextKey{}).(*Node)
 	if n == nil {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -243,7 +262,7 @@ func (h *Handler) reconcile(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	desired, meshInfo, err := h.svc.Reconcile(r.Context(), n, Report{
+	desired, meshInfo, err := h.svc.Reconcile(ctx, n, Report{
 		Version: req.Version, Address: req.Address,
 		Cores: req.Cores, MemoryTotalBytes: req.MemoryTotalBytes, DiskTotalBytes: req.DiskTotalBytes,
 		CPUPercent: req.CPUPercent, MemoryBytes: req.MemoryBytes, DiskBytes: req.DiskBytes,
@@ -253,13 +272,61 @@ func (h *Handler) reconcile(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, AgentResponse{
+	answer := AgentResponse{
 		Name:            n.Slug,
 		Desired:         desired,
-		Registry:        h.svc.RegistryHost(r.Context()),
+		Registry:        h.svc.RegistryHost(ctx),
 		Mesh:            meshInfo,
 		IntervalSeconds: int(Interval.Seconds()),
-	})
+		Commands:        h.svc.hub.Take(n.ID),
+	}
+
+	// Nothing being asked of it, so the request waits rather than the
+	// machine.
+	//
+	// This is what makes a channel that only goes one way feel like
+	// both: a poll held open is a machine that hears about a deploy, or
+	// is asked for a log, in the moment it happens rather than on its
+	// next interval. It parks on **commands** rather than on whether
+	// there is desired state, because there always is — a machine with
+	// an app on it would otherwise never park, and never hear anything
+	// promptly again.
+	//
+	// Waking is not the same as having something: the poll comes back
+	// either way, and an empty answer is how the next one starts.
+	if req.Wait && len(answer.Commands) == 0 {
+		if h.svc.hub.Park(ctx, n.ID) {
+			answer.Commands = h.svc.hub.Take(n.ID)
+			// Asked again, because what it should be running may be
+			// exactly what woke it.
+			answer.Desired = h.svc.Desired(ctx, n)
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, answer)
+}
+
+// result is a machine answering a command.
+//
+// The body is the answer, as bytes: a log is bytes, and a JSON string
+// would replace whatever in it is not valid UTF-8. A machine that could
+// not do what it was asked says so in `error` and sends nothing.
+func (h *Handler) result(w http.ResponseWriter, r *http.Request) {
+	n, _ := r.Context().Value(nodeContextKey{}).(*Node)
+	if n == nil {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var failed error
+	if said := r.URL.Query().Get("error"); said != "" {
+		failed = errors.New(said)
+	}
+	output, err := io.ReadAll(io.LimitReader(r.Body, MaxAnswerBytes))
+	if err != nil {
+		http.Error(w, "could not read the answer", http.StatusBadRequest)
+		return
+	}
+	h.svc.hub.Answer(n.ID, r.PathValue("id"), output, failed)
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func WriteError(w http.ResponseWriter, err error) {

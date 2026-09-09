@@ -1,6 +1,7 @@
 package app
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -37,6 +38,30 @@ type Service struct {
 	datastores DatastoreVars
 	// objectStores is the same for the buckets attached to it.
 	objectStores ObjectStoreVars
+
+	// remote reaches a machine an app is placed on, for the things only
+	// that machine has. Nil on a daemon with no cluster module wired
+	// in, and then an app is only ever here.
+	remote Remote
+}
+
+// Remote is how this module reaches the machine an app runs on.
+//
+// Declared here and satisfied by `node`, which owns the conversation
+// with a machine — the same direction DatastoreVars and AppTeardown
+// run. What it is for is the things only that machine has: its
+// containers' logs today, and whatever else the channel carries later.
+type Remote interface {
+	Logs(ctx context.Context, nodeID int64, containerID, tail string) ([]byte, error)
+	Wake(nodeID int64)
+}
+
+// SetRemote wires it in. Called once, by server.New — and the
+// orchestrator gets it too, for the one thing it does with it: waking
+// the machine a deploy was just placed on.
+func (s *Service) SetRemote(r Remote) {
+	s.remote = r
+	s.orch.remote = r
 }
 
 func NewService(db *database.DB, projects *project.Service, orch *Orchestrator,
@@ -689,16 +714,34 @@ func (s *Service) Logs(ctx context.Context, caller *user.User, ref Reference, ta
 		return nil, err
 	}
 	// An app on another machine has a log, and it is on that machine.
-	// Reading it from here needs the control plane to be able to ask a
-	// question and wait for an answer, and the agent's loop only goes
-	// one way: it asks, and is told. Refused with what is true rather
-	// than answered with this machine's Engine saying "no such
-	// container", which is what it would say.
+	// The request goes down the channel that machine's own poll opens
+	// and waits there — see internal/node — so what comes back is the
+	// same bytes a local log is, already demultiplexed, and nothing
+	// above this line knows which machine answered.
 	if a.NodeSlug != node.ControlPlaneSlug {
-		return nil, fmt.Errorf("%w: it runs on %s, and a machine's logs are not readable from here yet. On that box, `docker ps` finds it under %s",
-			ErrRemote, a.NodeSlug, resourceName(ReferenceOf(a)))
+		return s.remoteLogs(ctx, a, tail)
 	}
 	return s.orch.Logs(ctx, a.ID, tail)
+}
+
+// remoteLogs asks the machine an app is on for its log.
+//
+// Its refusals are about what is true rather than about what is
+// allowed: an app that has never run there has no container to read,
+// and a machine that does not answer is one nothing here can make
+// answer.
+func (s *Service) remoteLogs(ctx context.Context, a *Scoped, tail string) (io.ReadCloser, error) {
+	if s.remote == nil {
+		return nil, fmt.Errorf("%w: this daemon has no way to reach it", ErrRemote)
+	}
+	if a.ContainerID == "" {
+		return nil, ErrNoContainer
+	}
+	out, err := s.remote.Logs(ctx, a.NodeID, a.ContainerID, tail)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrRemote, err)
+	}
+	return io.NopCloser(bytes.NewReader(out)), nil
 }
 
 // DeployOnPush starts a deploy for every app in an organization that
