@@ -28,11 +28,12 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"memory_bytes":       openapi.Integer("The newest reading of what is spoken for."),
 				"disk_bytes":         openapi.Integer("The newest reading of what is used."),
 				"containers":         openapi.Integer("How many of this instance's containers the agent found running there."),
+				"in_mesh":            openapi.Bool("Whether this machine is on the cluster's private network — Docker's own overlay, which is what lets a container here reach, and resolve by name, a container on another machine. A server can be `ready` and not on it: it is calling in, and its containers are alone."),
 
 				"last_seen_at": {Type: "string", Format: "date-time", Description: "When the agent last called. Absent on a machine that has never connected."},
 				"created_at":   {Type: "string", Format: "date-time"},
 			}, "name", "control_plane", "status", "cores", "memory_total_bytes", "disk_total_bytes",
-				"containers", "created_at"),
+				"containers", "in_mesh", "created_at"),
 
 			"ServerCreated": openapi.Object(map[string]*openapi.Schema{
 				"token": openapi.String("What the machine's agent authenticates with. **Shown once and never again** — only its hash is stored, like an API key's. Losing it means removing the server and adding it back."),
@@ -54,7 +55,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"post": {
 					OperationID: "addServer",
 					Summary:     "Add a machine to this cluster",
-					Description: "Creates the row and mints the credential its agent will authenticate with. **Nothing is contacted**: the machine does not exist yet as far as this instance is concerned, and it stays `pending` until somebody runs the installer on it with this credential.\n\nThe token is in this answer and in no other. Requires the admin role.",
+					Description: "Creates the row and mints the credential its agent will authenticate with. **The machine is not contacted**: it does not exist yet as far as this instance is concerned, and it stays `pending` until somebody runs the installer on it with this credential.\n\nWhat this *does* do on the way is bring up the cluster's private network on this machine, if it is not up already — a Docker swarm and an overlay network, which is what the workers will join. That is done here rather than when the machine first calls because this is the moment somebody is watching: an instance with no public address to advertise cannot build a cluster, and being told so now beats a server that says `ready` and can reach nothing.\n\nThe token is in this answer and in no other. Requires the admin role.",
 					Tags:        []string{"Servers"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"name":        openapi.String("Lowercase letters, digits and dashes. Permanent."),
@@ -65,7 +66,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"400": openapi.BadRequest,
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
-						"409": openapi.TextResponse("That name is taken."),
+						"409": openapi.TextResponse("That name is taken, or this instance has no public address to build a cluster on."),
 					},
 				},
 			},

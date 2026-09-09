@@ -13,6 +13,8 @@ import (
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/registry"
+	"github.com/docker/docker/api/types/swarm"
+	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/errdefs"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -45,6 +47,7 @@ type fakeAPI struct {
 	statsJSON               string
 	loaded                  []byte
 	loadStream              string
+	swarm                   swarm.Info
 }
 
 func (f *fakeAPI) ImagePull(ctx context.Context, ref string, options image.PullOptions) (io.ReadCloser, error) {
@@ -74,6 +77,27 @@ func (f *fakeAPI) ContainerCreate(ctx context.Context, config *container.Config,
 	f.createdNetworkingConfig = networkingConfig
 	f.createdName = containerName
 	return container.CreateResponse{ID: "new-container-id"}, nil
+}
+
+// The Engine's clustering, which this fake answers for and no test here
+// exercises: the overlay network is the one thing Cubeship asks swarm
+// mode for, and proving it works needs two machines rather than a fake.
+func (f *fakeAPI) Info(context.Context) (system.Info, error) {
+	return system.Info{Swarm: f.swarm}, nil
+}
+
+func (f *fakeAPI) SwarmInit(context.Context, swarm.InitRequest) (string, error) {
+	f.swarm = swarm.Info{LocalNodeState: swarm.LocalNodeStateActive, ControlAvailable: true, NodeID: "node-1"}
+	return f.swarm.NodeID, nil
+}
+
+func (f *fakeAPI) SwarmInspect(context.Context) (swarm.Swarm, error) {
+	return swarm.Swarm{JoinTokens: swarm.JoinTokens{Worker: "a-worker-token"}}, nil
+}
+
+func (f *fakeAPI) SwarmJoin(context.Context, swarm.JoinRequest) error {
+	f.swarm = swarm.Info{LocalNodeState: swarm.LocalNodeStateActive, NodeID: "node-2"}
+	return nil
 }
 
 func (f *fakeAPI) NetworkCreate(ctx context.Context, name string, options types.NetworkCreate) (types.NetworkCreateResponse, error) {

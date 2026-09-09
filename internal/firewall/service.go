@@ -605,6 +605,35 @@ ufw status | grep -q '^Status: active' && ufw reload || true
 // UFW's refusals are sentences — "ERROR: Bad port" — and passing them
 // through is the difference between a screen that explains itself and
 // one that says the operation failed.
+// Add writes one rule through a Host, without a Service and without a
+// caller.
+//
+// It exists for `internal/mesh`, which opens the cluster's ports on
+// every machine — including the workers, where there is no Service
+// because there is no database, no operator and no screen. What it
+// keeps is the guarantee that matters: the spec is checked, so nothing
+// user-supplied reaches a command line, and `Spec.Args` builds argv
+// rather than a string.
+//
+// Idempotent, because `ufw allow` is: an identical rule is skipped
+// rather than duplicated.
+func Add(ctx context.Context, host Host, spec Spec) error {
+	if err := spec.Check(); err != nil {
+		return err
+	}
+	if host == nil || !host.Available() {
+		return hostexec.ErrUnavailable
+	}
+	res, err := host.Run(ctx, spec.Args()...)
+	if err != nil {
+		return err
+	}
+	if !res.OK() {
+		return fmt.Errorf("%s", firstLine(res.Output))
+	}
+	return nil
+}
+
 func (s *Service) run(ctx context.Context, argv ...string) error {
 	if !s.reachable() {
 		return hostexec.ErrUnavailable

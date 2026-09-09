@@ -46,6 +46,8 @@ internal/
                 over its own interfaces
   node/         the machines this instance is made of — the control
                 plane and the workers that dial it
+  mesh/         the private network those machines share, and the
+                firewall rules that let them reach each other
   worker/       the daemon running as somebody else's machine: the loop
                 that calls home and does what it is told
   registry/     who may docker push/pull, and the push webhook
@@ -1830,30 +1832,87 @@ A listing of "the other servers" is one that cannot answer where
 something runs — and everything that will later be placed on a machine
 has to be placeable on this one.
 
+### The network between them
+
+`internal/mesh` is **Docker's own overlay network, and nothing else
+about Docker Swarm**. Swarm mode is an orchestrator — a scheduler, a
+store, services, secrets — and none of that is used: Cubeship decides
+what runs where, and a second thing deciding that would be two answers
+to one question. What is used is the wire.
+
+The alternative was WireGuard, keyed and peered here: a keypair and a
+subnet per machine, peers down the reconcile loop, routes programmed on
+each box. That is a tunnel and no more. **Docker's embedded DNS is
+per-daemon**, so names would not resolve across machines and every
+address would have to be worked out here and injected — which is a
+cluster DNS or an addressing scheme, on top of the tunnel. An overlay
+gives connectivity and resolution together, so `cubeship-db-pg` means
+the same thing on every machine and none of the modules that address a
+container by name had to learn where it is.
+
+**It is a second network beside `cubeship`, not a replacement.**
+Converting a bridge in place is not something Docker can do — the
+network would have to be removed, which means disconnecting every
+container on it — so an instance that added a machine would have to take
+everything down to gain a network it is not yet using. A container joins
+the mesh the next time it is created, which is the rule its labels and
+its environment already follow.
+
+**It comes up when there is a machine to join it**, on the first
+`POST /nodes`, for the reason BuildKit starts on the first build: an
+instance that never adds a second box never becomes a swarm manager. It
+comes up *there* rather than on the first reconcile because that is the
+moment somebody is watching — an instance with no public address cannot
+build a cluster, and being refused now beats a server that says `ready`
+and can reach nothing.
+
+**What it costs is three ports open between the machines**: 2377 to
+join, which only a manager listens on; 7946 for the gossip that carries
+which container is where; 4789 for the VXLAN the traffic goes over. They
+are the host's own, so they are `host` scope and none of this needs the
+DOCKER-USER adoption an `apps` rule would. `mesh.Admit` writes them
+**scoped to the peers' own addresses** — which the control plane has,
+because every agent reports one — so a cluster port is open to the
+cluster and not to the internet. Rules are added and never removed: one
+admitting a machine that has left is a port open to an address that used
+to be here, and one removed while the cluster needs it is a machine that
+drops off the network.
+
+On each machine the order is **firewall first, swarm second**. Joining
+is an outbound call, which a firewall allows anyway; the gossip and the
+traffic that follow are inbound from the peers. Joined first, a machine
+joins and then cannot be reached, which reads as a swarm that half
+worked. Writing a rule costs a container through `hostexec`, so both
+sides do it when the peer set changes rather than on every pass.
+
+**A machine behind NAT cannot be in the mesh.** The data plane is VXLAN
+between the nodes themselves, so they have to reach each other directly.
+That is the limit this design pays for everything else with, and it is
+the one thing the "workers dial out" property does not buy back.
+
+**The firewall at the provider is still the operator's.** Contabo,
+Hetzner and DigitalOcean filter in front of the machine, and Cubeship
+cannot see that layer — the ufw rules it writes do not reach it.
+
 ### What is not there yet
 
 `node.Desired` comes back empty, and the shape is the point: the loop
 already asks the question on every pass, so placing an app on a machine
 is filling that in rather than inventing a way to reach the box. What
-still has to be built, in the order it makes sense to build it:
+still has to be built:
 
-- **A private network between the machines.** WireGuard, keyed and
-  peered by the control plane, is the shape that fits: every node gets a
-  keypair and a subnet, and the peer list travels down the reconcile
-  loop that already exists. It is what makes `DATABASE_HOST=cubeship-db-pg`
-  keep working when the app and the database are on different boxes —
-  and note that a tunnel alone does not give that: Docker's embedded DNS
-  is per-daemon, so **name resolution across machines is its own
-  decision**, not a side effect of routing.
+- **Attaching containers to the mesh.** The overlay exists and nothing
+  is on it. Every container this instance creates has to join it as well
+  as the local bridge, which is one more network in
+  `dockerx.ContainerOpts` and a redeploy.
 - **Placement**: an app gains a node, the orchestrator resolves and
   builds here — the registry and BuildKit stay on the control plane —
   and hands the run to the agent. What travels is an image reference,
-  the environment and the labels, which is `dockerx.ContainerOpts` and
-  a swap.
+  the environment and the labels.
 - **Routing.** Each node runs its own Traefik and is its own edge, with
   the app's DNS record pointing at the machine it is on. A load balancer
-  in front of several nodes is the step after, and it is what makes a
-  record stop naming one box.
+  across nodes is the step after, and it is what makes a record stop
+  naming one box.
 
 ## Managed databases
 

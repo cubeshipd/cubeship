@@ -108,6 +108,10 @@ type Node struct {
 	DiskBytes   *int64
 	// Containers is how many this instance is running there.
 	Containers int
+	// MeshNodeID is what the swarm calls this machine, as the agent
+	// last reported it. Empty means it is not on the cluster's private
+	// network — it has not joined, or it could not.
+	MeshNodeID string
 
 	LastSeenAt *time.Time
 	CreatedAt  time.Time
@@ -151,6 +155,12 @@ type Report struct {
 	// found running. It is what the control plane will later compare
 	// against what it placed there.
 	Containers int
+
+	// MeshNodeID is what the machine's own Engine says the swarm calls
+	// it. Empty is a machine that is not on the cluster's network, and
+	// the agent reports that rather than the control plane assuming it
+	// from having sent the instructions.
+	MeshNodeID string
 }
 
 // Desired is what the control plane tells a node to be running.
@@ -165,6 +175,9 @@ type Desired struct {
 	// anything here yet.
 	Apps []Placement `json:"apps"`
 }
+
+// InMesh reports whether a machine is on the cluster's private network.
+func (n *Node) InMesh() bool { return n.MeshNodeID != "" }
 
 // Placement is one thing a node should be running. Reserved for the
 // release that places apps; nothing constructs one yet.
@@ -185,6 +198,13 @@ var (
 	// worker. The control plane is not a machine this instance joined —
 	// it is the instance.
 	ErrControlPlane = errors.New("that is this machine, not a server it manages")
+
+	// ErrNoAddress refuses to build a cluster this instance has no
+	// address in. Every other machine has to reach this one, and the
+	// only thing worse than not knowing where that is would be
+	// advertising a bridge address — a swarm nothing can join, and no
+	// way to tell from here that it cannot.
+	ErrNoAddress = errors.New("this instance has no public address to build a cluster on: set one on the Instance screen, or give the machine a domain that resolves to it")
 
 	// ErrUnknownToken is an agent presenting a credential that names no
 	// node. Its own error rather than ErrNotFound: one is somebody
