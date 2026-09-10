@@ -1964,7 +1964,50 @@ An app runs on the machines in `app_nodes`. **Where its traffic arrives
 is not one of them**: every name this instance serves arrives at the
 control plane, which routes it to whichever machine runs the app. See
 "One front door". `PATCH /apps/{ref}` takes `nodes` for the set and
-`scale` for how many copies; `node` is shorthand for a set of one.
+`scale` for how many copies; `node` is shorthand for a set of one, and
+`spread` is the switch below.
+
+**An app can follow the cluster instead of naming machines.**
+`apps.spread` is that switch: on, the app runs on every machine there
+is, and is re-spread the moment one is added or taken away. It is not a
+third way of placing things — `nodes` and `scale` already say where and
+how many, and what neither can say is "wherever the cluster goes",
+which otherwise means editing every such app every time a server joins.
+Naming machines turns it off, because that is choosing by hand, and it
+is turned off rather than refused: what somebody just said is what they
+want.
+
+The seam is `node.Apps.Rebalance`, declared by `node` and satisfied by
+`app` — the same direction `PlacementsFor` runs. `node` is what knows a
+machine was added or is about to go, and what "following the cluster"
+means is `app`'s to decide. It runs **before** a machine's row is
+deleted, and is told which machine that is, so a following app leaves
+rather than standing in the way of the delete. An app somebody placed by
+hand still refuses it, and that is the difference: where that one should
+go is a decision, and making it by deleting a row would make it
+invisibly.
+
+**Scaling takes effect now, in both directions, on every machine.** A
+worker creates the copy that is missing on its next pass — woken, so
+within a second — because reconciling is what its loop is for. The
+control plane had no such loop: the same request wrote a row and left it
+without a container until somebody happened to redeploy, so one request
+meant two different things depending on which machine the app was on.
+`Orchestrator.fill` is that half, and it runs the deployment the app
+**should already be running** — `DeploymentToRun`, the same question a
+worker is answered with — so a new copy comes up on exactly the version
+its neighbours are on. Nothing is built and **no deployment row is
+written**: scaling is not a deploy, and putting a rollout in the history
+for a decision that changed no code would be one nobody made.
+
+Scaling down stops the copies at once, on this machine and on a worker
+alike. A container left behind is one nothing on the instance names any
+more — invisible on every screen, holding its memory, and answering on
+the mesh under a name the proxy no longer points at. It is not the
+outage it looks like either: the proxy is built out of the rows a
+placement rewrites, so a name loses its old backends the moment they
+stop being what should run, and keeping the container alive would keep
+nothing serving.
 
 `app_nodes` is **desired and actual in one row**: the row existing means
 "run a copy here", and its container columns are what is actually there.
@@ -2060,6 +2103,29 @@ such label is not this instance's to touch.
 A placed container is named for its **deployment id** rather than for
 the moment it was created, so a machine told the same thing twice can
 answer "am I already running this" from the name.
+
+**And it carries which copy it is**, in `cubeship.ordinal`. That is what
+makes a rolling deploy possible on a machine running several copies: an
+old container may go once **its own** replacement is up. Without it the
+agent can only ask whether some container of that app is running, which
+either retires a copy whose replacement never came or leaves every old
+copy behind. What the set of wanted containers is keyed by matters for
+the same reason: it was keyed by the *app*, which holds one entry
+however many copies were sent — so every copy but the last read as
+unwanted, was removed, was started again on the next pass, and flapped
+for the life of the instance. It could only happen on a real worker
+running a scaled-out app, which is exactly the thing nothing here had
+ever run.
+
+**A machine is told where it can actually pull from.** An app on this
+instance's own registry resolves to the registry container's name on
+this box's bridge — deliberately, since pulling the public name here
+would hairpin out to the VPS's own address and need a certificate to
+already exist. Sent to another machine that name resolves to nothing:
+the registry is this machine's own, like Postgres and the builder, and
+is not on the mesh. `Orchestrator.publicImage` is the one rewrite, and
+it only ever touches this instance's own registry — every other
+reference in a deployment already means the same thing everywhere.
 
 **The ordinal goes back untouched in the result**, and it is what says
 which copy a report is about. An agent that drops it makes every report
@@ -2372,6 +2438,75 @@ takes readings on `metrics.Interval` rather than on every pass — and
 takes none at all until it has something to compare against, which is
 the rule the collector here follows too.
 
+### What a container may take
+
+`internal/limits` is the ceiling one container runs under: a CPU quota
+in cores and a hard memory limit in bytes. Its own small package,
+beside `envvar` and `slug`, because it is one idea two modules have —
+an app's container and a database's are both a cgroup with a ceiling —
+and neither should import the other to say so.
+
+**Zero is no limit, in either half independently**, and it is what
+every container this instance has ever run has had. Nothing capped
+anything: one app with a leak could take the machine down, the daemon
+and the proxy with it, and nothing here stopped it.
+
+**It is per container, not per app.** Three replicas under a one-core
+limit may take three cores between them. That is the only arithmetic
+that survives the replica count changing, and it is what every
+scheduler with both numbers does.
+
+**It is the one part of a container the Engine can change while it
+runs.** Everything else — image, binds, ports, environment — is fixed
+at create time, which is why a new setting anywhere else means a new
+container. So raising an app's memory is a request rather than a
+redeploy: `dockerx.SetResources` writes the cgroup and the process
+inside never restarts. A database is the same, and there it is the
+difference between raising its memory and a database going away for a
+few seconds, the way publishing a port makes it.
+
+For that reason a ceiling is **left out of `bootstrap`'s configuration
+fingerprint**: a different one is not a reason to replace a container.
+Nothing infrastructure runs carries one, and
+`TestNoInfrastructureContainerIsCapped` is what fails if somebody gives
+one a ceiling `Ensure` would then quietly not apply.
+
+**Removing a limit is the one direction that waits.** The Engine merges
+an update and reads a zero in any field as "leave that one alone", so a
+container goes back to uncapped by being created again — an app's next
+deploy, a database's next start. Every surface says so where the number
+is typed.
+
+The floors are the Engine's: 6 MiB of memory, because a cgroup below it
+cannot hold the runtime that would be started in it, and a hundredth of
+a core, which is the resolution `--cpus` works to — anything smaller
+would round to zero and be read as "no limit", the opposite of what
+somebody typing a very small number asked for. Both are checked in the
+service, where the person who typed one is still watching, rather than
+found out by a container that will not start on some machine minutes
+later.
+
+`MemorySwap` is pinned to the memory limit rather than left alone,
+because Docker's own default is twice it: the same number would mean one
+thing on a host with swap and another on a host without.
+
+**On another machine the ceiling travels in the placement**, and is
+re-sent on every pass — which is what makes a limit raised here take
+effect there in the next ten seconds rather than at the next deploy. The
+agent skips the call entirely for an uncapped container, which is most
+of them, and could not lift a ceiling that way in any case.
+
+**No MCP tool sets one.** It is the line `internal/app` already draws
+around moving an app between machines, one step closer in: a memory
+ceiling below what a container is holding is an instant kill by the
+kernel, with no deploy, no confirmation and nothing to roll back to. An
+agent can read what the ceiling is — it is on every response — and
+cannot move it.
+
+There is **no autoscaling**: nothing watches what a container is using
+and changes either number. Both halves it would need are here; the
+decision is not.
+
 ### Where an app's traffic arrives
 
 **At this instance, always.** One address, one certificate store, one
@@ -2392,13 +2527,12 @@ did.
 - **A different number of copies per machine.** The count is one number
   for the app, spread evenly, so three on a big box and one on a small
   one is not representable.
-- **Scaling up on the control plane waits for a deploy.** A worker
-  creates whatever copy is missing on its next pass, because that is
-  what its loop is for. The control plane has no such loop over its own
-  replicas — its containers are made by the deploy path — so asking for
-  a third copy of an app that runs here writes three rows and leaves the
-  third without a container until somebody redeploys. On a worker the
-  same request takes effect in ten seconds.
+- **Autoscaling.** Nothing watches what a container is using and
+  changes its ceiling or its replica count. The two halves it would need
+  are both here — a ceiling that moves without a restart, and a scale
+  that takes effect without a deploy — and what is missing is the
+  decision: what to measure, over how long, and what stops a rule from
+  oscillating.
 - **Anything in front of the control plane.** Every name arrives there,
   so it is a single point of failure for *ingress* even though an app
   now survives a copy, or a whole machine, going away. What fixes it is
@@ -2577,9 +2711,14 @@ provisioning failed may have neither.
   every connection string Cubeship hands out while the database went on
   accepting only the old one.
 
-The description is what is left, which is why `PATCH` takes one field —
-and with no project above it to say where a database belongs, it is the
-only place that can.
+The description and its **limits** are what is left, which is why
+`PATCH` takes two fields. With no project above it to say where a
+database belongs, this is the only place a description can go; the
+ceiling is here because a database is the container on a box this size
+most worth capping — an app that leaks is one app, and a Postgres that
+takes every page of memory takes the daemon and the proxy with it, and
+unlike an app it is not restarted by a deploy somebody was about to do
+anyway. See "What a container may take".
 
 ### Credentials
 
