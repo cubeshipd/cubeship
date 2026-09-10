@@ -249,15 +249,22 @@ func newAppCmd() *cobra.Command {
 func newAppPlaceCmd() *cobra.Command {
 	var on []string
 	var edge string
+	var replicas int
 	cmd := &cobra.Command{
 		Use:   "place <reference>",
-		Short: "Choose which machines run an app",
+		Short: "Choose which machines run an app, and how many copies",
 		Long: "Choose which machines run an app, and which of them its traffic\n" +
 			"arrives at.\n\n" +
 			"More than one machine puts that machine's proxy in front of all\n" +
 			"of them, round-robin, over the cluster's private network. Each\n" +
 			"new machine starts the app before the ones leaving stop it, so a\n" +
 			"placement that fails is not an outage.\n\n" +
+			"--replicas is how many copies run in total, spread over those\n" +
+			"machines round-robin: four over three is 2, 1, 1. Never fewer\n" +
+			"than there are machines — a machine given nothing to run is a\n" +
+			"machine placed there for no effect. On one machine, several\n" +
+			"copies are swapped one at a time, so a deploy is a rolling one\n" +
+			"rather than a moment with none of them serving.\n\n" +
 			"--edge is one machine, not all of them, and the reason is the\n" +
 			"certificate: a machine that routes a name asks Let's Encrypt for\n" +
 			"it, and one the name does not resolve to fails that check every\n" +
@@ -270,18 +277,22 @@ func newAppPlaceCmd() *cobra.Command {
 			"address the record has to point at and leaves it there.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(on) == 0 {
-				return fmt.Errorf("say which machines run it: --on <server>[,<server>...]")
+			if len(on) == 0 && replicas == 0 && edge == "" {
+				return fmt.Errorf("nothing to change: pass --on, --replicas or --edge")
 			}
 			c, err := newAPIClient()
 			if err != nil {
 				return err
 			}
-			placed, err := c.PlaceApp(context.Background(), args[0], on, edge)
+			placed, err := c.PlaceApp(context.Background(), args[0], on, edge, replicas)
 			if err != nil {
 				return err
 			}
-			fmt.Printf("%s runs on %s.\n", placed.Reference, strings.Join(placed.Nodes, ", "))
+			copies := "1 copy"
+			if placed.Scale != 1 {
+				copies = fmt.Sprintf("%d copies", placed.Scale)
+			}
+			fmt.Printf("%s runs %s on %s.\n", placed.Reference, copies, strings.Join(placed.Nodes, ", "))
 			fmt.Printf("Its traffic arrives at %s", placed.Node)
 			if placed.Address != "" {
 				fmt.Printf(", which is %s", placed.Address)
@@ -298,6 +309,7 @@ func newAppPlaceCmd() *cobra.Command {
 	}
 	cmd.Flags().StringSliceVar(&on, "on", nil, "the machines that run it, by name")
 	cmd.Flags().StringVar(&edge, "edge", "", "which of them its traffic arrives at (default: unchanged)")
+	cmd.Flags().IntVar(&replicas, "replicas", 0, "how many copies to run in total, spread over those machines (default: unchanged)")
 	return cmd
 }
 
@@ -321,6 +333,9 @@ func serversOf(a client.App) string {
 		names = append(names, n)
 	}
 	out := strings.Join(names, ",")
+	if a.Scale > len(a.Nodes) {
+		out = fmt.Sprintf("%s (%d copies)", out, a.Scale)
+	}
 	if a.Split {
 		out += " (2 versions)"
 	}

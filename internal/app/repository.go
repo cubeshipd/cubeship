@@ -108,7 +108,7 @@ func (r *Repository) Create(ctx context.Context, projectID, environmentID int64,
 	// same machine, because there is only one until somebody adds
 	// another.
 	if _, err := r.q.ExecContext(ctx,
-		`INSERT INTO app_nodes (app_id, node_id) VALUES ($1, $2)`, a.ID, a.NodeID); err != nil {
+		`INSERT INTO app_nodes (app_id, node_id, ordinal) VALUES ($1, $2, 1)`, a.ID, a.NodeID); err != nil {
 		return nil, fmt.Errorf("create app: %w", err)
 	}
 	a.Replicas, err = r.Replicas(ctx, a.ID)
@@ -218,19 +218,19 @@ func (r *Repository) attach(ctx context.Context, apps []*App) error {
 // An upsert rather than an update: a machine reporting a container for
 // an app it was given but has never run has no row to update yet, and
 // the report is exactly the moment the row becomes true.
-func (r *Repository) UpdateContainer(ctx context.Context, appID, nodeID int64, containerID, name string, deployment int64, routed bool, status string) error {
+func (r *Repository) UpdateContainer(ctx context.Context, appID, nodeID int64, ordinal int, containerID, name string, deployment int64, routed bool, status string) error {
 	var deploy any
 	if deployment != 0 {
 		deploy = deployment
 	}
 	if _, err := r.q.ExecContext(ctx,
-		`INSERT INTO app_nodes (app_id, node_id, container_id, container_name, deployment_id, routed, status, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, now())
-		 ON CONFLICT (app_id, node_id) DO UPDATE
+		`INSERT INTO app_nodes (app_id, node_id, ordinal, container_id, container_name, deployment_id, routed, status, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+		 ON CONFLICT (app_id, node_id, ordinal) DO UPDATE
 		 SET container_id = EXCLUDED.container_id, container_name = EXCLUDED.container_name,
 		     deployment_id = EXCLUDED.deployment_id, routed = EXCLUDED.routed,
 		     status = EXCLUDED.status, updated_at = now()`,
-		appID, nodeID, containerID, name, deploy, routed, status); err != nil {
+		appID, nodeID, ordinal, containerID, name, deploy, routed, status); err != nil {
 		return fmt.Errorf("update app container: %w", err)
 	}
 	return nil
@@ -239,10 +239,11 @@ func (r *Repository) UpdateContainer(ctx context.Context, appID, nodeID int64, c
 // SetStatus changes what one machine says about an app without touching
 // which container it named. It is what the reconciler writes: it looked
 // at the container that is already recorded and found it stopped.
-func (r *Repository) SetStatus(ctx context.Context, appID, nodeID int64, status string) error {
+func (r *Repository) SetStatus(ctx context.Context, appID, nodeID int64, ordinal int, status string) error {
 	if _, err := r.q.ExecContext(ctx,
-		`UPDATE app_nodes SET status = $3, updated_at = now() WHERE app_id = $1 AND node_id = $2`,
-		appID, nodeID, status); err != nil {
+		`UPDATE app_nodes SET status = $4, updated_at = now()
+		 WHERE app_id = $1 AND node_id = $2 AND ordinal = $3`,
+		appID, nodeID, ordinal, status); err != nil {
 		return fmt.Errorf("set app status: %w", err)
 	}
 	return nil
@@ -688,12 +689,12 @@ func (r *Repository) ReplicasFor(ctx context.Context, appIDs []int64) (map[int64
 		return out, nil
 	}
 	rows, err := r.q.QueryContext(ctx, `
-		SELECT r.app_id, r.node_id, n.slug, r.container_id, r.container_name,
+		SELECT r.app_id, r.node_id, n.slug, r.ordinal, r.container_id, r.container_name,
 		       COALESCE(r.deployment_id, 0), r.routed, r.status, r.updated_at
 		FROM app_nodes r
 		JOIN nodes n ON n.id = r.node_id
 		WHERE r.app_id = ANY($1)
-		ORDER BY r.app_id, r.node_id`, appIDs)
+		ORDER BY r.app_id, r.node_id, r.ordinal`, appIDs)
 	if err != nil {
 		return nil, fmt.Errorf("list app replicas: %w", err)
 	}
@@ -702,7 +703,7 @@ func (r *Repository) ReplicasFor(ctx context.Context, appIDs []int64) (map[int64
 	for rows.Next() {
 		var appID int64
 		var rep Replica
-		if err := rows.Scan(&appID, &rep.NodeID, &rep.NodeSlug, &rep.Container,
+		if err := rows.Scan(&appID, &rep.NodeID, &rep.NodeSlug, &rep.Ordinal, &rep.Container,
 			&rep.Name, &rep.Deploy, &rep.Routed, &rep.Status, &rep.UpdatedAt); err != nil {
 			return nil, err
 		}
@@ -711,7 +712,8 @@ func (r *Repository) ReplicasFor(ctx context.Context, appIDs []int64) (map[int64
 	return out, rows.Err()
 }
 
-// SetNodes replaces the set of machines an app runs on.
+// SetNodes replaces the set of machines an app runs on, and how many
+// copies are spread over them.
 //
 // One statement per direction rather than a delete-and-insert: a
 // machine that stays keeps its row, which is what keeps the container
@@ -723,7 +725,7 @@ func (r *Repository) ReplicasFor(ctx context.Context, appIDs []int64) (map[int64
 // ErrNoSuchNode when a name is not a machine in this cluster. Refused
 // by name rather than written as a null the column would reject with a
 // message nobody can read.
-func (r *Repository) SetNodes(ctx context.Context, appID int64, nodeSlugs []string) error {
+func (r *Repository) SetNodes(ctx context.Context, appID int64, nodeSlugs []string, replicas int) error {
 	if len(nodeSlugs) == 0 {
 		return ErrNoSuchNode
 	}
@@ -752,10 +754,24 @@ func (r *Repository) SetNodes(ctx context.Context, appID int64, nodeSlugs []stri
 		`DELETE FROM app_nodes WHERE app_id = $1 AND node_id <> ALL($2)`, appID, ids); err != nil {
 		return fmt.Errorf("take an app off a machine: %w", err)
 	}
-	if _, err := r.q.ExecContext(ctx,
-		`INSERT INTO app_nodes (app_id, node_id) SELECT $1, unnest($2::bigint[])
-		 ON CONFLICT (app_id, node_id) DO NOTHING`, appID, ids); err != nil {
-		return fmt.Errorf("put an app on a machine: %w", err)
+
+	// One row per copy, and the spread decides how many land on each.
+	// Ordinals are dense from 1 so that scaling down removes the
+	// highest — the machine's answer stops naming that container and
+	// the agent removes it, which is the same path a machine that lost
+	// an app entirely goes down.
+	for i, want := range Spread(replicas, len(ids)) {
+		if _, err := r.q.ExecContext(ctx,
+			`INSERT INTO app_nodes (app_id, node_id, ordinal)
+			 SELECT $1, $2, generate_series(1, $3)
+			 ON CONFLICT (app_id, node_id, ordinal) DO NOTHING`, appID, ids[i], want); err != nil {
+			return fmt.Errorf("put an app on a machine: %w", err)
+		}
+		if _, err := r.q.ExecContext(ctx,
+			`DELETE FROM app_nodes WHERE app_id = $1 AND node_id = $2 AND ordinal > $3`,
+			appID, ids[i], want); err != nil {
+			return fmt.Errorf("take a copy off a machine: %w", err)
+		}
 	}
 	return nil
 }

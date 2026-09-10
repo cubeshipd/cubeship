@@ -1968,8 +1968,39 @@ whole placement, which is what one machine meant before there was more
 than one.
 
 `app_nodes` is **desired and actual in one row**: the row existing means
-"run this app here", and its container columns are what is actually
-there. Two tables would have been two answers to "is it up".
+"run a copy here", and its container columns are what is actually there.
+Two tables would have been two answers to "is it up".
+
+**A machine can run several copies**, and the ordinal on the row is what
+tells them apart. So the row count *is* the scale: four rows is four
+copies, and where they sit is the spread. `Spread` divides a number over
+the machines round-robin in their own order — four over three is 2, 1, 1
+— and it is deterministic because the answer decides which containers
+exist: a spread that moved between two reads would be a machine told to
+start a copy and then told to stop it.
+
+**How many is a number for the app, not one per machine.** That is how
+scale is thought about — "run four of these" — and a count per machine
+would be a third decision to keep in step with the other two by hand.
+What it gives up is a different count on machines that are not alike,
+three on the big box and one on the small one, which is not
+representable. `scale` is the number and `replicas` is the list; two
+names because they are two shapes of one fact, and sharing a name is how
+a client sends an array where a count was meant.
+
+Scaling up and scaling out are **separate acts**: sending `scale` alone
+leaves the machines as they are, and sending `nodes` alone keeps the
+count and re-spreads it. Neither silently does the other.
+
+**Never fewer copies than machines.** A machine an app was placed on and
+given nothing to run is a machine somebody put it on for no effect, so
+asking for that is asking for fewer machines, and `Spread` says so by
+raising the count rather than leaving a machine empty.
+
+**The first copy keeps the plain container name**, and only the second
+and later carry a suffix — the same trick `traefik.Labels` uses for the
+first router. An app that runs one of itself, which is every app until
+somebody asks for more, has exactly the container it always had.
 
 **The split is between deciding and doing**, and it falls where the two
 things each machine has are. The control plane resolves the image,
@@ -1998,6 +2029,15 @@ image and did not fail** — not simply the newest. A deploy the machine
 rejected is one it should stop trying, and the row under it is what it
 should be running instead. Rollback falls out of asking the question
 that way rather than being a path somebody wrote.
+
+**A deploy on one machine with several copies is a rolling one.** Each
+is brought up and proved healthy before the one it replaces is stopped,
+one at a time, which is the single-copy swap taken in a loop — an app
+with one copy takes it once and cannot tell the difference. A copy that
+will not come up stops the rest, so the ones already swapped keep the
+new version and the ones after it keep the old: a split this instance
+reports rather than hides, and better than carrying on into an app that
+is entirely the version that does not work.
 
 The agent's own half is two halves in one order: **start what is
 missing, then remove what is not wanted.** The reverse takes an app down
@@ -2332,10 +2372,9 @@ calls a working name broken is worse than one that says where to look.
 
 ### What is not there yet
 
-- **More than one replica per machine.** You scale out by adding a
-  machine, not by adding containers on one — `app_nodes` is keyed by
-  machine, and a second container on one box would need a name and a
-  health check per replica rather than per app.
+- **A different number of copies per machine.** The count is one number
+  for the app, spread evenly, so three on a big box and one on a small
+  one is not representable.
 - **Anything in front of the edge.** The machine an app's traffic
   arrives at is a single point of failure for *ingress*, even though the
   app itself now survives a replica going away. What fixes that is

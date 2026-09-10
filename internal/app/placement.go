@@ -31,8 +31,18 @@ import (
 // machine has to be able to answer "am I already running this" from the
 // name alone. A name with a timestamp in it can only answer "am I
 // running something".
-func containerNameFor(base string, deploymentID int64) string {
-	return fmt.Sprintf("%s-%d", base, deploymentID)
+func containerNameFor(base string, deploymentID int64, ordinal int) string {
+	name := fmt.Sprintf("%s-%d", base, deploymentID)
+	// **The first copy keeps the plain name.** An app that runs one of
+	// itself — which is every app until somebody asks for more — has
+	// exactly the container name it always had, so nothing about this
+	// is visible on an instance that never scales anything out. A
+	// missing ordinal is the first copy, which is what an agent from
+	// before there could be more than one reports.
+	if ordinal > 1 {
+		name = fmt.Sprintf("%s-%d", name, ordinal)
+	}
+	return name
 }
 
 // PlacementsFor is everything one machine should be running.
@@ -67,16 +77,23 @@ func (s *Service) PlacementsFor(ctx context.Context, nodeID int64) ([]node.Place
 		if d == nil {
 			continue
 		}
-		placement, err := s.orch.PlacementFor(ctx, a, d)
-		if err != nil {
-			// One app that cannot be described is not a reason to
-			// leave the machine with no answer about the others — and
-			// a machine told about fewer apps than it runs does not
-			// stop them, it only stops hearing about them.
-			log.Printf("placement %s: %v", ReferenceOf(a), err)
-			continue
+		// One placement per copy this machine should be running. The
+		// rows are what say how many — a machine with three of them has
+		// three copies — and the ordinal is what gives each its own
+		// container name, which is the whole of how they are told
+		// apart here and on the machine.
+		for _, replica := range a.ReplicasOn(nodeID) {
+			placement, err := s.orch.PlacementFor(ctx, a, d, replica.Ordinal)
+			if err != nil {
+				// One app that cannot be described is not a reason to
+				// leave the machine with no answer about the others —
+				// and a machine told about fewer apps than it runs does
+				// not stop them, it only stops hearing about them.
+				log.Printf("placement %s: %v", ReferenceOf(a), err)
+				break
+			}
+			out = append(out, placement)
 		}
-		out = append(out, placement)
 	}
 	return out, nil
 }
@@ -103,11 +120,11 @@ func (s *Service) Placed(ctx context.Context, nodeID int64, results []node.Resul
 		if err != nil {
 			continue
 		}
-		if _, ours := a.ReplicaOn(nodeID); !ours {
+		if !hasOrdinal(a.ReplicasOn(nodeID), r.Ordinal) {
 			// The app has been taken off this machine since it was told
-			// to run it. What it did is not what this instance wants any
-			// more, and the machines it is on now are the ones whose
-			// reports count.
+			// to run it, or scaled down past this copy. What it did is
+			// not what this instance wants any more, and the machines
+			// it is on now are the ones whose reports count.
 			continue
 		}
 
@@ -118,7 +135,7 @@ func (s *Service) Placed(ctx context.Context, nodeID int64, results []node.Resul
 			// say so while somebody is still watching it, and the
 			// machines that did start it keep what they started —
 			// nothing here retires a container that came up.
-			if err := s.Repo().SetStatus(ctx, a.ID, nodeID, StatusDown); err != nil {
+			if err := s.Repo().SetStatus(ctx, a.ID, nodeID, r.Ordinal, StatusDown); err != nil {
 				return err
 			}
 			if err := s.Repo().FinishDeployment(ctx, d.ID, DeploymentFailed, r.Error); err != nil {
@@ -132,8 +149,8 @@ func (s *Service) Placed(ctx context.Context, nodeID int64, results []node.Resul
 		// told to create exactly that. Taking a name back from the
 		// machine would make what the edge sends traffic to something
 		// the machine gets to decide.
-		name := containerNameFor(resourceName(ReferenceOf(a)), d.ID)
-		if err := s.Repo().UpdateContainer(ctx, a.ID, nodeID, r.Container, name, d.ID,
+		name := containerNameFor(resourceName(ReferenceOf(a)), d.ID, r.Ordinal)
+		if err := s.Repo().UpdateContainer(ctx, a.ID, nodeID, r.Ordinal, r.Container, name, d.ID,
 			len(a.Replicas) == 1, StatusRunning); err != nil {
 			return err
 		}
@@ -165,12 +182,16 @@ func (s *Service) Sampled(ctx context.Context, nodeID int64, readings []node.Rea
 	}
 	byContainer := make(map[string]int64, len(apps))
 	for _, a := range apps {
-		// The container this app has **on the machine that took the
-		// reading**. An app on three machines has three, and matching a
-		// reading to the wrong one would draw one box's line on
-		// another's chart.
-		if r, ok := a.ReplicaOn(nodeID); ok && r.Container != "" {
-			byContainer[r.Container] = a.ID
+		// Every container this app has **on the machine that took the
+		// readings**. An app on three machines has at least three, and
+		// matching a reading to the wrong one would draw one box's line
+		// on another's chart. Several copies on one machine all report
+		// against the same app, which is what makes its chart the
+		// average across them.
+		for _, r := range a.ReplicasOn(nodeID) {
+			if r.Container != "" {
+				byContainer[r.Container] = a.ID
+			}
 		}
 	}
 
@@ -200,7 +221,7 @@ func (s *Service) Sampled(ctx context.Context, nodeID int64, readings []node.Rea
 // of every level above the app, the labels are what the app's own
 // container would carry, and the networks are the machine's bridge plus
 // the cluster's overlay.
-func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deployment) (node.Placement, error) {
+func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deployment, ordinal int) (node.Placement, error) {
 	env, err := o.inheritedEnv(ctx, &a.App)
 	if err != nil {
 		return node.Placement{}, fmt.Errorf("resolve inherited env: %w", err)
@@ -226,7 +247,8 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 	return node.Placement{
 		App:       ref.String(),
 		Deploy:    d.ID,
-		Container: containerNameFor(base, d.ID),
+		Ordinal:   ordinal,
+		Container: containerNameFor(base, d.ID, ordinal),
 		Image:     d.ImageRef,
 		Registry:  auth,
 		Env:       env,
@@ -271,4 +293,16 @@ func (o *Orchestrator) routedBy(a *Scoped) []traefik.Domain {
 		return nil
 	}
 	return o.routing(a.Domains)
+}
+
+// hasOrdinal is whether a machine is still meant to be running a
+// particular copy. A report for one it has been scaled past is a report
+// about a container this instance no longer wants.
+func hasOrdinal(on []Replica, ordinal int) bool {
+	for _, r := range on {
+		if r.Ordinal == ordinal {
+			return true
+		}
+	}
+	return false
 }

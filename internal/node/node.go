@@ -225,6 +225,11 @@ type Placement struct {
 	// back untouched, which is what turns "it is running" into "that
 	// deploy succeeded".
 	Deploy int64 `json:"deploy"`
+	// Ordinal tells this copy from the others of the same app on the
+	// same machine. It starts at 1 and the machine reports it back
+	// untouched, which is how the control plane knows which of them a
+	// result is about.
+	Ordinal int `json:"ordinal,omitempty"`
 	// Container is the name to create. Chosen here so that the same
 	// placement applied twice is the same container rather than a
 	// second one — the agent asks "is this name running" and does
@@ -248,6 +253,11 @@ type Placement struct {
 type Result struct {
 	App    string `json:"app"`
 	Deploy int64  `json:"deploy"`
+	// Ordinal is which copy of the app on this machine this is, echoed
+	// back from the placement. An agent from before there could be more
+	// than one sends none, and zero is read as the first — which is the
+	// only copy such an agent can be running.
+	Ordinal int `json:"ordinal,omitempty"`
 	// Container is the id the machine created. Empty on a failure.
 	Container string `json:"container_id"`
 	// Error is why it did not run, in the machine's own words. Empty on

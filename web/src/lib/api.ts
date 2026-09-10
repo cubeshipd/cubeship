@@ -142,8 +142,13 @@ export type App = {
   // cluster's private network.
   nodes: string[];
   // What is running on each of those machines — what a "degraded"
-  // status is made of.
+  // status is made of. One entry per copy, so a machine running two
+  // appears twice.
   replicas: AppReplica[];
+  // How many copies run in total, across those machines. A number where
+  // `replicas` is the list: two shapes of the same fact, and one name
+  // for both is how a client sends an array where a count was meant.
+  scale: number;
   // Whether the machines serving this app are not all serving the same
   // deployment. Apart from `status` because the two are orthogonal: an
   // app can be degraded and split, or running and split.
@@ -172,6 +177,10 @@ export type AppReplica = {
   // deploy history is listed under. Absent for a machine that has been
   // given the app and not yet run it.
   deploy?: number;
+  // Which copy of the app on this machine this is, starting at 1.
+  // Absent on the first, which is the only one an app that has never
+  // been scaled out has.
+  ordinal?: number;
 };
 
 // --- credentials ---

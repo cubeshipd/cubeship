@@ -59,10 +59,18 @@ type Response struct {
 	// its traffic arrives, and the one address a record for it points
 	// at. On an instance of one box it is always the control plane.
 	Node string `json:"node"`
-	// Nodes are the machines it runs on, by name. One is the ordinary
-	// answer and always includes Node; several is an app whose traffic
-	// that edge spreads across them.
+	// Nodes are the machines it runs on, by name, once each. One is the
+	// ordinary answer and always includes Node; several is an app whose
+	// traffic that edge spreads across them.
 	Nodes []string `json:"nodes"`
+	// Scale is how many copies run in total, across those machines. One
+	// per machine is the ordinary answer, and it is what the spread
+	// divides: four over three machines is 2, 1, 1.
+	//
+	// A number where `replicas` is the list, because they are two
+	// shapes of the same fact and reusing one name for both is how a
+	// client ends up sending an array where a count was meant.
+	Scale int `json:"scale"`
 	// HealthPath is what Traefik asks this app for before it trusts a
 	// container with traffic. Absent is no check, which is the default.
 	HealthPath string `json:"health_path,omitempty"`
@@ -102,6 +110,10 @@ type ReplicaResponse struct {
 	// app.Replica.Name — and that difference is worth being able to see
 	// rather than reading as an even split that is not happening.
 	Serving bool `json:"serving"`
+	// Ordinal tells this copy from the others of the same app on the
+	// same machine, starting at 1. Absent on the first, which is the
+	// only one an app that has never been scaled out has.
+	Ordinal int `json:"ordinal,omitempty"`
 	// Deploy is which deployment this machine is running, by id — the
 	// same id the app's deploy history is listed under. Absent for a
 	// machine that has been given the app and not yet run it.
@@ -116,8 +128,12 @@ type ReplicaResponse struct {
 func toReplicas(a *Scoped) []ReplicaResponse {
 	out := make([]ReplicaResponse, 0, len(a.Replicas))
 	for _, r := range a.Replicas {
+		ordinal := r.Ordinal
+		if ordinal == 1 {
+			ordinal = 0
+		}
 		out = append(out, ReplicaResponse{
-			Node: r.NodeSlug, Status: r.Status, Deploy: r.Deploy,
+			Node: r.NodeSlug, Status: r.Status, Deploy: r.Deploy, Ordinal: ordinal,
 			Serving: r.Running() && (len(a.Replicas) == 1 || r.Name != ""),
 		})
 	}
@@ -137,6 +153,7 @@ func toResponse(a *Scoped, in Instance) Response {
 		SuggestedHost: SuggestedHostFor(ref, in.Domain),
 		Node:          a.NodeSlug,
 		Nodes:         a.Nodes(),
+		Scale:         len(a.Replicas),
 		HealthPath:    a.HealthPath,
 		Replicas:      toReplicas(a),
 		Split:         a.Split(),
@@ -313,6 +330,10 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		// not silently move its DNS record.
 		Node  *string   `json:"node"`
 		Nodes *[]string `json:"nodes"`
+		// Scale is how many copies run in total, spread over those
+		// machines. Left out keeps however many it has, so adding a
+		// machine does not silently change the count.
+		Scale *int `json:"scale"`
 		// HealthPath is what Traefik asks this app for to decide
 		// whether a container behind one of its names is worth
 		// traffic. Its own field for the same reason the placement is:
@@ -339,23 +360,30 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.Description == nil && source == nil && origin == nil &&
-		req.Node == nil && req.Nodes == nil && req.HealthPath == nil {
+		req.Node == nil && req.Nodes == nil && req.HealthPath == nil && req.Scale == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
 
 	var place *Placement
-	if req.Node != nil || req.Nodes != nil {
+	if req.Node != nil || req.Nodes != nil || req.Scale != nil {
 		place = &Placement{Edge: deref(req.Node)}
-		if req.Nodes != nil {
+		if req.Scale != nil {
+			place.Replicas = *req.Scale
+		}
+		switch {
+		case req.Nodes != nil:
 			place.Nodes = *req.Nodes
-		} else {
+		case req.Node != nil:
 			// `node` alone is the whole placement: put it there and
 			// serve it from there. It is what one machine meant before
 			// there was more than one, and it is still the shortest way
 			// to say "move this app".
 			place.Nodes = []string{*req.Node}
 		}
+		// And neither, which is `scale` on its own: the machines
+		// stay as they are and the new count is spread over them.
+		// Scaling up and scaling out are separate acts.
 	}
 
 	updated, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), refFrom(r),
