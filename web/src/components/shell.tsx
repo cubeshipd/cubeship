@@ -1,6 +1,5 @@
 "use client";
 
-import { SiGithub } from "@icons-pack/react-simple-icons";
 import { cn } from "cn";
 import {
   ActivityIcon,
@@ -23,6 +22,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 import { Wordmark } from "@/components/brand";
+import { GitHubLink } from "@/components/github-link";
 import { InstanceUpdate } from "@/components/instance-update";
 import { QueryProvider } from "@/components/query-provider";
 import { ReleaseNotes, useReleaseNotes } from "@/components/release-notes";
@@ -177,18 +177,10 @@ export function Shell({ children }: { children: ReactNode }) {
 
               <div className="flex items-center gap-1 border-t border-border p-2">
                 <UserMenu me={me} />
-                {/* The one link out of the instance. An icon rather than a
-                  row, because it is not a place in this dashboard. */}
-                <a
-                  href="https://github.com/cubeshipd/cubeship"
-                  target="_blank"
-                  rel="noreferrer"
-                  title="Cubeship on GitHub"
-                  className="flex size-8 shrink-0 items-center justify-center border border-transparent text-subtle-foreground transition-colors hover:border-border hover:bg-secondary hover:text-foreground"
-                >
-                  <SiGithub className="size-4" />
-                  <span className="sr-only">Cubeship on GitHub</span>
-                </a>
+                {/* The one link out of the instance, and the one place it
+                  is: it was in the menu as well, which is two doors to
+                  one room. */}
+                <GitHubLink />
               </div>
             </nav>
 
@@ -270,14 +262,6 @@ function UserMenu({ me }: { me: Me }) {
         <DropdownMenuItem onClick={releaseNotes}>
           <SparklesIcon />
           Release notes
-        </DropdownMenuItem>
-        <DropdownMenuItem
-          render={
-            <a href="https://github.com/cubeshipd/cubeship" target="_blank" rel="noreferrer" />
-          }
-        >
-          <SiGithub />
-          Cubeship on GitHub
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
