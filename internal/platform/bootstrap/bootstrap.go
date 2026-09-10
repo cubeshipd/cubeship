@@ -622,6 +622,13 @@ const ConfigHashLabel = "cubeship.config-hash"
 func configHash(opts dockerx.ContainerOpts, imageID string) string {
 	// The label itself is excluded: it holds the result.
 	opts.Labels = withoutConfigHash(opts.Labels)
+	// So is the ceiling, and for a reason rather than for tidiness: it
+	// is the one setting the Engine can change on a running container,
+	// so a different one is not a reason to replace anything. Nothing
+	// here carries one — see TestNoInfrastructureContainerIsCapped,
+	// which is what would fail if somebody gave one a ceiling this
+	// function would then quietly refuse to notice.
+	opts.Resources = dockerx.Resources{}
 
 	encoded, err := json.Marshal(struct {
 		Opts dockerx.ContainerOpts
