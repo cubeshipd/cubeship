@@ -237,7 +237,24 @@ func (s *Service) Add(ctx context.Context, caller *user.User, name, description 
 	if err != nil {
 		return nil, "", err
 	}
+	// The cluster has one more machine, so whatever follows it is due a
+	// share. A failure here is a log line rather than an undone add:
+	// the machine is in the cluster either way, and the next placement
+	// or the next add re-spreads. Refusing the add would be undoing
+	// something that worked because something else did not.
+	s.rebalance(ctx, 0, "adding "+name)
 	return created, token, nil
+}
+
+// rebalance tells the module that owns apps that the set of machines has
+// changed. Best effort and never fatal — see the callers.
+func (s *Service) rebalance(ctx context.Context, without int64, why string) {
+	if s.apps == nil {
+		return
+	}
+	if err := s.apps.Rebalance(ctx, without); err != nil {
+		log.Printf("node: re-spreading the apps that follow the cluster after %s: %v", why, err)
+	}
 }
 
 // mesh brings the cluster's private network up on this machine and
@@ -334,6 +351,13 @@ func (s *Service) Remove(ctx context.Context, caller *user.User, name string) (*
 	if n.ControlPlane {
 		return nil, ErrControlPlane
 	}
+	// Before the row goes, so that an app which follows the cluster
+	// leaves this machine rather than standing in the way of the
+	// delete. An app somebody placed here by hand still refuses the
+	// delete, and that is the difference: where it should go is a
+	// decision, and making it by deleting a row would make it
+	// invisibly.
+	s.rebalance(ctx, n.ID, "removing "+name)
 	if err := s.Repo().Delete(ctx, n.ID); err != nil {
 		return nil, err
 	}

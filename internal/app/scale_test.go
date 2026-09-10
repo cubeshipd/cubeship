@@ -78,3 +78,71 @@ func deploymentCount(t *testing.T, f *servertest.Fixture, ref string) int {
 		nil, f.AdminKey, &out), http.StatusOK)
 	return len(out)
 }
+
+// **A switch, not a third way of naming machines.** An app that follows
+// the cluster gets a share of every machine there is, including the ones
+// that join afterwards — which is the thing `nodes` and `scale` cannot
+// say however carefully they are set.
+func TestAnAppCanFollowTheCluster(t *testing.T) {
+	f := balancerFixture(t)
+	created := createExternalApp(t, f, "api")
+
+	on := place(t, f, created.Reference, map[string]any{"spread": true})
+	if len(on.Nodes) != 1 {
+		t.Fatalf("with one machine in the cluster it runs on %v", on.Nodes)
+	}
+
+	// A machine joins. Nothing is said about the app.
+	_ = addServer(t, f, "eu-1")
+
+	var after placedApp
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/apps/"+created.Reference,
+		nil, f.AdminKey, &after), http.StatusOK)
+	if len(after.Nodes) != 2 {
+		t.Errorf("after a server joined, the app runs on %v", after.Nodes)
+	}
+	if !after.Spread {
+		t.Error("the app stopped following the cluster on its own")
+	}
+}
+
+// Naming machines is choosing by hand, which is the opposite of
+// following the cluster. Turned off rather than refused: what somebody
+// just said is what they want.
+func TestNamingMachinesTurnsTheSwitchOff(t *testing.T) {
+	f := balancerFixture(t)
+	created := createExternalApp(t, f, "api")
+	place(t, f, created.Reference, map[string]any{"spread": true})
+	_ = addServer(t, f, "eu-1")
+
+	back := place(t, f, created.Reference, map[string]any{"nodes": []string{"eu-1"}})
+	if back.Spread {
+		t.Error("it still follows the cluster after being placed by hand")
+	}
+	if len(back.Nodes) != 1 || back.Nodes[0] != "eu-1" {
+		t.Errorf("it runs on %v", back.Nodes)
+	}
+}
+
+// A machine carrying an app that follows the cluster can still be
+// removed: the app leaves it as it goes. One carrying an app somebody
+// placed by hand cannot, because where that one should go is a decision
+// and making it by deleting a row would make it invisibly.
+func TestAMachineRunningAFollowingAppCanStillBeRemoved(t *testing.T) {
+	f := balancerFixture(t)
+	created := createExternalApp(t, f, "api")
+	_ = addServer(t, f, "eu-1")
+	on := place(t, f, created.Reference, map[string]any{"spread": true})
+	if len(on.Nodes) != 2 {
+		t.Fatalf("the app runs on %v", on.Nodes)
+	}
+
+	servertest.RequireStatus(t, f.Do(t, http.MethodDelete, "/nodes/eu-1", nil, f.AdminKey), http.StatusOK)
+
+	var after placedApp
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/apps/"+created.Reference,
+		nil, f.AdminKey, &after), http.StatusOK)
+	if len(after.Nodes) != 1 {
+		t.Errorf("after the server went, the app runs on %v", after.Nodes)
+	}
+}

@@ -12,6 +12,7 @@ import (
 type placedApp struct {
 	Reference string   `json:"reference"`
 	Nodes     []string `json:"nodes"`
+	Spread    bool     `json:"spread"`
 	Status    string   `json:"status"`
 	Source    string   `json:"source"`
 	Address   string   `json:"address"`

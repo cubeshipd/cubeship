@@ -443,6 +443,15 @@ type Placement struct {
 	// on and given nothing to run is a machine somebody put it on for
 	// no effect. Asking for that is asking for fewer machines.
 	Replicas int
+	// Spread makes the app follow the cluster: it runs on every machine
+	// there is, and is re-spread whenever one is added or taken away.
+	// Nil leaves the switch as it is.
+	//
+	// It is not a third way of naming machines — it is the answer to
+	// "which machines" being made once instead of every time the
+	// cluster changes shape. Naming machines alongside it turns it off,
+	// because that is choosing by hand.
+	Spread *bool
 }
 
 // replace applies a placement.
@@ -464,6 +473,27 @@ type Placement struct {
 // always had.
 func (s *Service) replace(ctx context.Context, a *Scoped, p Placement, source Source) error {
 	nodes := dedupe(p.Nodes)
+
+	// Whether it follows the cluster, decided before which machines it
+	// is on — because when it does, that is the answer.
+	spread := a.Spread
+	if p.Spread != nil {
+		spread = *p.Spread
+	}
+	if len(nodes) > 0 {
+		// Naming machines is choosing by hand, which is the opposite of
+		// following the cluster. Turned off rather than refused: what
+		// somebody just said is what they want, and a refusal here
+		// would be an error message in front of an obvious intent.
+		spread = false
+	}
+
+	if spread {
+		var err error
+		if nodes, err = s.Repo().EverySlug(ctx, 0); err != nil {
+			return err
+		}
+	}
 	if len(nodes) == 0 {
 		// Naming no machines means the ones it has. That is what
 		// changing only the count sends, and it is the difference
@@ -500,7 +530,7 @@ func (s *Service) replace(ctx context.Context, a *Scoped, p Placement, source So
 	}
 	before := a.ReplicasOn(here)
 
-	if err := s.Repo().SetNodes(ctx, a.ID, nodes, scale, copies); err != nil {
+	if err := s.Repo().SetNodes(ctx, a.ID, nodes, scale, copies, spread); err != nil {
 		return err
 	}
 

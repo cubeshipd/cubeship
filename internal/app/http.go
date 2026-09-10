@@ -66,6 +66,11 @@ type Response struct {
 	// shapes of the same fact and reusing one name for both is how a
 	// client ends up sending an array where a count was meant.
 	Scale int `json:"scale"`
+	// Spread says this app follows the cluster: it runs on every machine
+	// there is, and is re-spread whenever one is added or taken away.
+	// Absent on an app placed by hand, which is every app until
+	// somebody turns this on.
+	Spread bool `json:"spread,omitempty"`
 	// HealthPath is what Traefik asks this app for before it trusts a
 	// container with traffic. Absent is no check, which is the default.
 	HealthPath string `json:"health_path,omitempty"`
@@ -151,6 +156,7 @@ func toResponse(a *Scoped, in Instance) Response {
 		Nodes:         a.Nodes(),
 		Scale:         len(a.Replicas),
 		HealthPath:    a.HealthPath,
+		Spread:        a.Spread,
 		Limits:        a.Limits,
 		Replicas:      toReplicas(a),
 		Split:         a.Split(),
@@ -316,6 +322,11 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		// machines. Left out keeps however many it has, so adding a
 		// machine does not silently change the count.
 		Scale *int `json:"scale"`
+		// Spread makes the app follow the cluster: run on every machine
+		// there is, now and whenever one is added. Sending `nodes`
+		// alongside it turns it off — naming machines is choosing by
+		// hand, which is what this exists to stop being necessary.
+		Spread *bool `json:"spread"`
 		// HealthPath is what Traefik asks this app for to decide
 		// whether a container behind one of its names is worth
 		// traffic. Its own field for the same reason the placement is:
@@ -349,14 +360,14 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Description == nil && source == nil && origin == nil &&
 		req.Node == nil && req.Nodes == nil && req.HealthPath == nil && req.Scale == nil &&
-		req.Limits == nil {
+		req.Limits == nil && req.Spread == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
 
 	var place *Placement
-	if req.Node != nil || req.Nodes != nil || req.Scale != nil {
-		place = &Placement{}
+	if req.Node != nil || req.Nodes != nil || req.Scale != nil || req.Spread != nil {
+		place = &Placement{Spread: req.Spread}
 		if req.Scale != nil {
 			place.Replicas = *req.Scale
 		}

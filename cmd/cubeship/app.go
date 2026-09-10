@@ -250,6 +250,7 @@ func newAppCmd() *cobra.Command {
 func newAppPlaceCmd() *cobra.Command {
 	var on []string
 	var replicas int
+	var everywhere bool
 	cmd := &cobra.Command{
 		Use:   "place <reference>",
 		Short: "Choose which machines run an app, and how many copies",
@@ -264,20 +265,30 @@ func newAppPlaceCmd() *cobra.Command {
 			"machine placed there for no effect. On one machine, several\n" +
 			"copies are swapped one at a time, so a deploy is a rolling one\n" +
 			"rather than a moment with none of them serving.\n\n" +
+			"--everywhere makes the app follow the cluster: it runs on\n" +
+			"every machine there is, and on any that joins later. It is a\n" +
+			"switch rather than a third way of naming machines — --on and\n" +
+			"--replicas already say where and how many, and what they\n" +
+			"cannot say is \"wherever the cluster goes\". Passing --on\n" +
+			"turns it off again, because that is choosing by hand.\n\n" +
 			"Nothing about this touches DNS. Every name this instance\n" +
 			"serves arrives at the control plane, which routes it to\n" +
 			"whichever machine runs the app — so a record points here once\n" +
 			"and never moves again.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(on) == 0 && replicas == 0 {
-				return fmt.Errorf("nothing to change: pass --on or --replicas")
+			var spread *bool
+			if cmd.Flags().Changed("everywhere") {
+				spread = &everywhere
+			}
+			if len(on) == 0 && replicas == 0 && spread == nil {
+				return fmt.Errorf("nothing to change: pass --on, --replicas or --everywhere")
 			}
 			c, err := newAPIClient()
 			if err != nil {
 				return err
 			}
-			placed, err := c.PlaceApp(context.Background(), args[0], on, replicas)
+			placed, err := c.PlaceApp(context.Background(), args[0], on, replicas, spread)
 			if err != nil {
 				return err
 			}
@@ -285,7 +296,11 @@ func newAppPlaceCmd() *cobra.Command {
 			if placed.Scale != 1 {
 				copies = fmt.Sprintf("%d copies", placed.Scale)
 			}
-			fmt.Printf("%s runs %s on %s.\n", placed.Reference, copies, strings.Join(placed.Nodes, ", "))
+			where := strings.Join(placed.Nodes, ", ")
+			if placed.Spread {
+				where += " — every machine in the cluster, and any that joins"
+			}
+			fmt.Printf("%s runs %s on %s.\n", placed.Reference, copies, where)
 			if placed.Address != "" {
 				fmt.Printf("Its traffic arrives at this instance, %s, whichever machine runs it.\n", placed.Address)
 			}
@@ -301,6 +316,7 @@ func newAppPlaceCmd() *cobra.Command {
 	}
 	cmd.Flags().StringSliceVar(&on, "on", nil, "the machines that run it, by name")
 	cmd.Flags().IntVar(&replicas, "replicas", 0, "how many copies to run in total, spread over those machines (default: unchanged)")
+	cmd.Flags().BoolVar(&everywhere, "everywhere", false, "follow the cluster: run on every machine there is, and on any that joins")
 	return cmd
 }
 
