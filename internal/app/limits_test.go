@@ -2,6 +2,7 @@ package app_test
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -18,13 +19,18 @@ type cappingDocker struct {
 	mu      sync.Mutex
 	created []dockerx.ContainerOpts
 	capped  []dockerx.Resources
+	removed []string
+	// nextID makes every container distinct, so a test can tell one
+	// copy of an app from another.
+	nextID int
 }
 
 func (d *cappingDocker) CreateContainer(_ context.Context, opts dockerx.ContainerOpts) (string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.created = append(d.created, opts)
-	return "container-abc", nil
+	d.nextID++
+	return fmt.Sprintf("container-%d", d.nextID), nil
 }
 
 func (d *cappingDocker) SetResources(_ context.Context, _ string, r dockerx.Resources) error {
@@ -49,8 +55,19 @@ func (d *cappingDocker) createdWith() []dockerx.ContainerOpts {
 func (d *cappingDocker) PullImage(context.Context, string, *dockerx.RegistryAuth) error { return nil }
 func (d *cappingDocker) StartContainer(context.Context, string) error                   { return nil }
 func (d *cappingDocker) StopContainer(context.Context, string) error                    { return nil }
-func (d *cappingDocker) RemoveContainer(context.Context, string) error                  { return nil }
-func (d *cappingDocker) IsRunning(context.Context, string) (bool, error)                { return true, nil }
+func (d *cappingDocker) RemoveContainer(_ context.Context, id string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.removed = append(d.removed, id)
+	return nil
+}
+
+func (d *cappingDocker) removedContainers() []string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return append([]string(nil), d.removed...)
+}
+func (d *cappingDocker) IsRunning(context.Context, string) (bool, error) { return true, nil }
 func (d *cappingDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
 }
