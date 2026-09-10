@@ -135,14 +135,6 @@ export default function Servers() {
         ),
     },
     {
-      id: "containers",
-      header: "Containers",
-      width: 10,
-      align: "right",
-      sortBy: (s) => s.containers,
-      cell: (s) => <span className="font-mono text-sm">{s.containers}</span>,
-    },
-    {
       id: "actions",
       header: "",
       width: 4,

@@ -641,8 +641,6 @@ export type ClusterServer = {
   // The newest reading, absent until one has been taken.
   cpu_percent?: number;
   memory_bytes?: number;
-  disk_bytes?: number;
-  containers: number;
   // Whether this machine is on the cluster's private network — Docker's
   // own overlay, which is what lets a container here reach, and resolve
   // by name, a container on another machine. A server can be ready and

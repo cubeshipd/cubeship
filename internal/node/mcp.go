@@ -31,7 +31,7 @@ func NewTools(svc *Service, caller *user.User) *Tools {
 func (t *Tools) Register(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "list_servers",
-		Description: "List the machines this Cubeship instance is made of: the control plane — the box it was installed on, which holds the database, the dashboard, the registry and the builder — and the workers connected to it. Each carries what it last reported: its cores, memory and disk, the newest load reading, how many containers it is running, and whether it is answering. A server that has never connected is \"pending\"; one that connected and stopped is \"unreachable\", which says nothing about why.",
+		Description: "List the machines this Cubeship instance is made of: the control plane — the box it was installed on, which holds the database, the dashboard, the registry and the builder — and the workers connected to it. Each carries what it last reported: its cores, memory and disk, the newest load reading, and whether it is answering. A server that has never connected is \"pending\"; one that connected and stopped is \"unreachable\", which says nothing about why.",
 	}, t.list)
 }
 

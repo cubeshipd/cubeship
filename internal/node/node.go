@@ -126,8 +126,6 @@ type Node struct {
 	CPUPercent  *float64
 	MemoryBytes *int64
 	DiskBytes   *int64
-	// Containers is how many this instance is running there.
-	Containers int
 	// MeshNodeID is what the swarm calls this machine, as the agent
 	// last reported it. Empty means it is not on the cluster's private
 	// network — it has not joined, or it could not.
@@ -170,11 +168,6 @@ type Report struct {
 	CPUPercent  *float64
 	MemoryBytes *int64
 	DiskBytes   *int64
-
-	// Containers is how many containers of this instance's the agent
-	// found running. It is what the control plane will later compare
-	// against what it placed there.
-	Containers int
 
 	// MeshNodeID is what the machine's own Engine says the swarm calls
 	// it. Empty is a machine that is not on the cluster's network, and

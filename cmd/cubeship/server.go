@@ -72,7 +72,7 @@ func newServerListCmd() *cobra.Command {
 			}
 
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "NAME\tSTATUS\tROLE\tADDRESS\tMESH\tAPPS\tVERSION")
+			fmt.Fprintln(w, "NAME\tSTATUS\tROLE\tADDRESS\tMESH\tVERSION")
 			for _, s := range servers {
 				role := "worker"
 				if s.ControlPlane {
@@ -82,8 +82,8 @@ func newServerListCmd() *cobra.Command {
 				if s.InMesh {
 					mesh = "yes"
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%d\t%s\n",
-					s.Name, s.Status, role, dash(s.Address), mesh, s.Containers, dash(s.Version))
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
+					s.Name, s.Status, role, dash(s.Address), mesh, dash(s.Version))
 			}
 			return w.Flush()
 		},
@@ -121,7 +121,6 @@ func newServerGetCmd() *cobra.Command {
 			fmt.Fprintf(w, "Cores:\t%d\n", s.Cores)
 			fmt.Fprintf(w, "Memory:\t%s\n", bytesOr(s.MemoryTotalBytes))
 			fmt.Fprintf(w, "Disk:\t%s\n", bytesOr(s.DiskTotalBytes))
-			fmt.Fprintf(w, "Containers:\t%d\n", s.Containers)
 			return w.Flush()
 		},
 	}
