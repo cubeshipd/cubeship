@@ -234,7 +234,12 @@ run_tests() {
 	# shell variable that has to go.
 	VERSION=""
 	rm -f /tmp/docker.log /tmp/started
-	out=$(main 2>&1) || { printf '%s\n' "$out"; exit 1; }
+	out=$(main 2>&1) || {
+		printf '%s\n' "$out"
+		printf 'curl was called with:\n%s\n' "$(cat /tmp/curl.log 2>&1)"
+		printf 'the stub answers:\n%s\n' "$(curl -fsSL "$RELEASES_API" 2>&1)"
+		exit 1
+	}
 	check "the newest release is pinned to a version" \
 		"$(grep -c 'docker pull .*cubeshipd:9\.9\.9$' /tmp/docker.log)" "1"
 	check "nothing is pulled as latest" \
