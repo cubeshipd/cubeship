@@ -120,7 +120,15 @@ func (s *Service) Placed(ctx context.Context, nodeID int64, results []node.Resul
 		if err != nil {
 			continue
 		}
-		if !hasOrdinal(a.ReplicasOn(nodeID), r.Ordinal) {
+		// A missing ordinal is the first copy. An agent from before
+		// there could be more than one sends none, and the first is the
+		// only copy such an agent can be running — reading zero as
+		// "no copy at all" would drop every report it ever makes.
+		ordinal := r.Ordinal
+		if ordinal == 0 {
+			ordinal = 1
+		}
+		if !hasOrdinal(a.ReplicasOn(nodeID), ordinal) {
 			// The app has been taken off this machine since it was told
 			// to run it, or scaled down past this copy. What it did is
 			// not what this instance wants any more, and the machines
@@ -135,7 +143,7 @@ func (s *Service) Placed(ctx context.Context, nodeID int64, results []node.Resul
 			// say so while somebody is still watching it, and the
 			// machines that did start it keep what they started —
 			// nothing here retires a container that came up.
-			if err := s.Repo().SetStatus(ctx, a.ID, nodeID, r.Ordinal, StatusDown); err != nil {
+			if err := s.Repo().SetStatus(ctx, a.ID, nodeID, ordinal, StatusDown); err != nil {
 				return err
 			}
 			if err := s.Repo().FinishDeployment(ctx, d.ID, DeploymentFailed, r.Error); err != nil {
@@ -149,8 +157,8 @@ func (s *Service) Placed(ctx context.Context, nodeID int64, results []node.Resul
 		// told to create exactly that. Taking a name back from the
 		// machine would make what the edge sends traffic to something
 		// the machine gets to decide.
-		name := containerNameFor(resourceName(ReferenceOf(a)), d.ID, r.Ordinal)
-		if err := s.Repo().UpdateContainer(ctx, a.ID, nodeID, r.Ordinal, r.Container, name, d.ID,
+		name := containerNameFor(resourceName(ReferenceOf(a)), d.ID, ordinal)
+		if err := s.Repo().UpdateContainer(ctx, a.ID, nodeID, ordinal, r.Container, name, d.ID,
 			len(a.Replicas) == 1, StatusRunning); err != nil {
 			return err
 		}
