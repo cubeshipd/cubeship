@@ -55,6 +55,19 @@ export type Me = {
   // Whether this account can sign in without an API key. It is what
   // says how much revoking the last key costs — see the account screen.
   has_password: boolean;
+  // Which palette this person sees the dashboard in, absent for the
+  // default, and which ones this instance offers. The list is served
+  // rather than written here: the daemon is what refuses a name.
+  theme?: string;
+  themes?: string[];
+};
+
+// One account on the instance.
+export type InstanceUser = {
+  username: string;
+  role: "admin" | "member";
+  theme?: string;
+  created_at: string;
 };
 // None of these has a display name. The slug is the name — the rule an
 // app has always followed, now everywhere: a slug is a path component of

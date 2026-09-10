@@ -64,6 +64,181 @@
   --radius: 0px;
 }
 
+/* The palettes.
+ *
+ * **Colour only.** The layout, the type and the square corners are the
+ * product; a theme that moved those would be a second interface to keep
+ * working. Each of these sets the surfaces, the lines and the accent,
+ * and nothing else.
+ *
+ * **All of them are dark**, and that is a decision rather than an
+ * omission: this is a console for a machine, read beside a terminal,
+ * and a light one would be the only screen on that desk that is.
+ *
+ * The surfaces move with the accent rather than staying blue. A red
+ * accent on a blue-cast near-black reads as two themes fighting, which
+ * is what makes a recoloured interface look recoloured.
+ */
+
+:root[data-theme="mono"] {
+  /* Vercel's answer: no hue at all, and the accent is the paper. It is
+     the one palette here where the accent is brighter than everything
+     rather than more saturated than everything. */
+  --background: #000000;
+  --card: #0a0a0a;
+  --popover: #0e0e0e;
+  --secondary: #141414;
+  --muted: #141414;
+  --accent: #1c1c1c;
+
+  --foreground: #ededed;
+  --card-foreground: #ededed;
+  --popover-foreground: #ededed;
+  --secondary-foreground: #ededed;
+  --accent-foreground: #ededed;
+  --muted-foreground: #8f8f8f;
+  --subtle-foreground: #5a5a5a;
+
+  --border: #1f1f1f;
+  --border-strong: #2e2e2e;
+  --input: #2a2a2a;
+
+  --primary: #ededed;
+  --primary-foreground: #0a0a0a;
+  --ring: #ededed;
+  --magenta: #8f8f8f;
+}
+
+:root[data-theme="hacker"] {
+  --background: #030603;
+  --card: #070d07;
+  --popover: #0a120a;
+  --secondary: #0d160d;
+  --muted: #0d160d;
+  --accent: #132013;
+
+  --foreground: #d5ecd5;
+  --card-foreground: #d5ecd5;
+  --popover-foreground: #d5ecd5;
+  --secondary-foreground: #d5ecd5;
+  --accent-foreground: #d5ecd5;
+  --muted-foreground: #77a077;
+  --subtle-foreground: #486348;
+
+  --border: #16281a;
+  --border-strong: #234a2b;
+  --input: #1c3a22;
+
+  --primary: #3dff7a;
+  --primary-foreground: #04170b;
+  --ring: #3dff7a;
+  --magenta: #b6ff3d;
+}
+
+:root[data-theme="red"] {
+  --background: #0a0405;
+  --card: #120709;
+  --popover: #170a0d;
+  --secondary: #1c0e11;
+  --muted: #1c0e11;
+  --accent: #281317;
+
+  --foreground: #f0dcde;
+  --card-foreground: #f0dcde;
+  --popover-foreground: #f0dcde;
+  --secondary-foreground: #f0dcde;
+  --accent-foreground: #f0dcde;
+  --muted-foreground: #a8848a;
+  --subtle-foreground: #6d5158;
+
+  --border: #2c161b;
+  --border-strong: #45242c;
+  --input: #3a1d24;
+
+  --primary: #ff4d5e;
+  --primary-foreground: #1a0407;
+  --ring: #ff4d5e;
+  --magenta: #ff8a3d;
+}
+
+:root[data-theme="orange"] {
+  --background: #0a0603;
+  --card: #120c06;
+  --popover: #171009;
+  --secondary: #1c140b;
+  --muted: #1c140b;
+  --accent: #281c10;
+
+  --foreground: #f0e4d6;
+  --card-foreground: #f0e4d6;
+  --popover-foreground: #f0e4d6;
+  --secondary-foreground: #f0e4d6;
+  --accent-foreground: #f0e4d6;
+  --muted-foreground: #a8907a;
+  --subtle-foreground: #6d5b4b;
+
+  --border: #2c2015;
+  --border-strong: #453322;
+  --input: #3a2a1c;
+
+  --primary: #ff9d2e;
+  --primary-foreground: #1a0d02;
+  --ring: #ff9d2e;
+  --magenta: #ffd63d;
+}
+
+:root[data-theme="pink"] {
+  --background: #0a0409;
+  --card: #12070f;
+  --popover: #170a13;
+  --secondary: #1c0d17;
+  --muted: #1c0d17;
+  --accent: #281220;
+
+  --foreground: #f0dceb;
+  --card-foreground: #f0dceb;
+  --popover-foreground: #f0dceb;
+  --secondary-foreground: #f0dceb;
+  --accent-foreground: #f0dceb;
+  --muted-foreground: #a884a0;
+  --subtle-foreground: #6d5167;
+
+  --border: #2c1626;
+  --border-strong: #45243b;
+  --input: #3a1d32;
+
+  --primary: #ff5cb8;
+  --primary-foreground: #1a0412;
+  --ring: #ff5cb8;
+  --magenta: #b96bff;
+}
+
+:root[data-theme="purple"] {
+  --background: #07050e;
+  --card: #0d0a17;
+  --popover: #110d1d;
+  --secondary: #151023;
+  --muted: #151023;
+  --accent: #1e1732;
+
+  --foreground: #e2dcf2;
+  --card-foreground: #e2dcf2;
+  --popover-foreground: #e2dcf2;
+  --secondary-foreground: #e2dcf2;
+  --accent-foreground: #e2dcf2;
+  --muted-foreground: #9086b0;
+  --subtle-foreground: #5b5375;
+
+  --border: #221b3a;
+  --border-strong: #362c58;
+  --input: #2d2449;
+
+  --primary: #a97bff;
+  --primary-foreground: #10062a;
+  --ring: #a97bff;
+  --magenta: #ff6bd6;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

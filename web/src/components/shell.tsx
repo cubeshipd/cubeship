@@ -13,10 +13,10 @@ import {
   LogOutIcon,
   ServerCogIcon,
   ServerIcon,
+  SettingsIcon,
   ShieldCheckIcon,
   ShieldIcon,
   SparklesIcon,
-  UserRoundIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -111,10 +111,10 @@ const sections: { label?: string; items: NavItem[] }[] = [
       { href: "/settings", label: "Instance", icon: ServerCogIcon },
     ],
   },
-  {
-    label: "You",
-    items: [{ href: "/account", label: "Account", icon: UserRoundIcon }],
-  },
+  // There is no "You" section any more. It held one item, and what is
+  // yours — how you sign in, what colour you see, and who else can get
+  // in at all — is under your own name at the foot of this list rather
+  // than filed beside what the instance is made of.
 ];
 
 type NavItem = {
@@ -254,8 +254,8 @@ function UserMenu({ me }: { me: Me }) {
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link href="/account" />}>
-          <UserRoundIcon />
-          Account
+          <SettingsIcon />
+          Your settings
         </DropdownMenuItem>
         {/* Reading them again is not an event, so it opens the history
             rather than whatever is unread. */}

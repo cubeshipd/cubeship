@@ -191,7 +191,10 @@ The sidebar is in sections, because its entries are not peers:
   it belongs to a project, and almost none of it is touched twice: a
   registry is connected once and deployed through for a year.
   **Credentials is first**, because the others stand on it.
-- **You** — the account.
+There is no **You** section any more. It held one item, and what is
+yours — how you sign in, what colour you see, and who else can get into
+this instance at all — is under your own name at the foot of the
+sidebar rather than filed beside what the instance is made of.
 
 Flat, those read as one list of peers, and "Registries" sat beside
 "Projects" as though choosing between them were a normal thing to do.
@@ -436,6 +439,27 @@ expensive and the difference is a sentence rather than a word, which is
 where an app's image comes from and how it gets built. Everywhere else
 the cards were a paragraph per option in a dialog nobody reads twice.
 
+### Your settings, and the instance's
+
+`/settings` is the **instance's** — its domain, its contact address, when
+it updates itself. `/account` is **yours**, and it is tabs: how you sign
+in, what it looks like to you, and, for an admin, who else can get in at
+all. Reached from the menu under your name, not from the sidebar.
+
+The `Users` tab is the whole of managing access, and it is the one that
+was missing: every endpoint behind it — `POST /users`, `GET /users`,
+`DELETE /users/{username}`, `DELETE /users/{username}/credentials` —
+existed from the start with nothing in the dashboard reaching them. It
+is an **admin's screen, reads included**: the list says who holds a way
+in, which is not something a member needs and is exactly what somebody
+probing would want, so the tab is not offered to one.
+
+The two refusals the daemon makes are said before the click rather than
+after it: the account you are signed in as, and the last admin. Adding
+someone hands back an API key **once** — this instance keeps only its
+hash, like every other credential here — and no password, because that
+is theirs to set.
+
 ### The look
 
 Cyberpunk console: near-black surfaces with a blue cast, **every corner
@@ -480,6 +504,33 @@ and `neon-edge` utilities live there too.
 The dashboard is dark and only dark: `<html>` carries `dark` rather than
 following the system, because the shadcn primitives carry `dark:` rules
 and a visitor whose OS is light would otherwise get half of them.
+
+**There are seven palettes and every one of them is dark.** That is a
+decision rather than an omission: this is a console for a machine, read
+beside a terminal, and a light one would be the only screen on that desk
+that is. A palette changes **colour and nothing else** — the layout, the
+type and the square corners are the product, and a theme that moved
+those would be a second interface to keep working.
+
+Each one moves the surfaces with the accent rather than leaving them
+blue. A red accent on a blue-cast near-black reads as two themes
+fighting, which is what makes a recoloured interface look recoloured.
+
+The choice is a row on `users`, not a value in a browser: it is a fact
+about the person, and one admin seeing two different interfaces on a
+laptop and a desktop is the kind of small wrongness nobody reports and
+everybody notices. The browser keeps a copy, and `ThemeBoot` writes it
+onto `<html>` from an **inline script in the head** — an effect runs
+after the first paint, which is the flash it exists to prevent. The
+daemon serves the list of names it will accept, so a second list here
+could not disagree with it. And there is no username on
+`PATCH /users/me`: a preference somebody else can change is not a
+preference.
+
+The swatches on that screen are painted from **literal colours**, not
+from the CSS variables, and they have to be: all seven are drawn while
+one palette is live, and a variable would make every one of them the
+colour of the current one.
 
 ## Installing
 
