@@ -236,8 +236,10 @@ run_tests() {
 	rm -f /tmp/docker.log /tmp/started
 	out=$(main 2>&1) || {
 		printf '%s\n' "$out"
-		printf 'curl was called with:\n%s\n' "$(cat /tmp/curl.log 2>&1)"
-		printf 'the stub answers:\n%s\n' "$(curl -fsSL "$RELEASES_API" 2>&1)"
+		printf 'RELEASES_API=[%s]\n' "$RELEASES_API"
+		printf 'which curl: %s\n' "$(command -v curl)"
+		printf 'the stub is:\n%s\n' "$(cat /stub/curl)"
+		printf 'the stub answers:\n[%s]\n' "$(curl -fsSL -H 'Accept: application/vnd.github+json' "$RELEASES_API" 2>&1)"
 		exit 1
 	}
 	check "the newest release is pinned to a version" \
