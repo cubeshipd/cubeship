@@ -17,6 +17,7 @@ import {
   ShieldCheckIcon,
   ShieldIcon,
   SparklesIcon,
+  UsersIcon,
 } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -95,6 +96,12 @@ const sections: { label?: string; items: NavItem[] }[] = [
       // *through* it: a registry and a DNS account both name a
       // credential now rather than holding a secret of their own.
       { href: "/credentials", label: "Credentials", icon: KeyRoundIcon, owns: ["/credentials"] },
+      // Beside Credentials, and for the same reason it is in this
+      // section at all: who can reach this instance is a fact about
+      // the instance, the same kind as which registry it pulls from.
+      // What is *yours* — your password, the colours you see — is
+      // under your own name at the foot of this list.
+      { href: "/users", label: "Users", icon: UsersIcon, owns: ["/users"] },
       { href: "/registries", label: "Registries", icon: ContainerIcon, owns: ["/registries"] },
       { href: "/git", label: "Git Providers", icon: GitBranchIcon, owns: ["/git"] },
       { href: "/dns", label: "DNS Providers", icon: GlobeIcon, owns: ["/dns"] },

@@ -3,38 +3,32 @@
 import { KeyRoundIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { SectionHeader } from "@/components/page-header";
+import { PageHeader, SectionHeader } from "@/components/page-header";
 import { RowAction, RowActions } from "@/components/row-actions";
+import { SearchableSelect } from "@/components/searchable-select";
 import { useSession } from "@/components/session-context";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { ValueCard } from "@/components/value-card";
 import { api, type InstanceUser } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-// Users is who can reach this instance at all.
+// Who can reach this instance at all.
 //
-// **An admin's screen**, reads included: the list says who holds a way
-// in, which is not something a member needs and is exactly what
-// somebody probing would want. The tab is not offered to one.
-export function Users() {
+// **In Platform rather than under your own settings**, because it is
+// about the instance and not about you: who holds a way in is the same
+// kind of fact as which registry it pulls from and which machines it is
+// made of. Your own password and the colours you see are the other
+// thing, and they are under your name.
+//
+// An **admin's screen including the reading**. The list says who can get
+// in, which is not something a member needs and is exactly what somebody
+// probing would want — so a member is sent away rather than shown an
+// empty table.
+export default function UsersPage() {
   const me = useSession();
   const [users, setUsers] = useState<InstanceUser[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -49,90 +43,106 @@ export function Users() {
   }, []);
   useEffect(reload, [reload]);
 
+  if (me.role !== "admin") {
+    return (
+      <>
+        <PageHeader title="Users" />
+        <ErrorAlert error="Who can reach this instance is an admin's to see." />
+      </>
+    );
+  }
+
   const admins = (users ?? []).filter((u) => u.role === "admin").length;
+
+  const columns: Column<InstanceUser>[] = [
+    {
+      id: "username",
+      header: "User",
+      width: 40,
+      sortBy: (u) => u.username,
+      cell: (u) => (
+        <span className="font-mono">
+          {u.username}
+          {u.username === me.username && <span className="ml-2 text-subtle-foreground">you</span>}
+        </span>
+      ),
+    },
+    {
+      id: "role",
+      header: "Role",
+      width: 20,
+      sortBy: (u) => u.role,
+      cell: (u) => <span className="text-muted-foreground">{u.role}</span>,
+    },
+    {
+      id: "since",
+      header: "Since",
+      width: 22,
+      sortBy: (u) => u.created_at,
+      cell: (u) => (
+        <span className="text-muted-foreground">{new Date(u.created_at).toLocaleDateString()}</span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      width: 18,
+      align: "right",
+      cell: (u) => {
+        const isYou = u.username === me.username;
+        // The two refusals the daemon makes, said before the click
+        // rather than after it: the account you are signed in as, and
+        // the last admin — setup closed when the first account
+        // appeared, and nothing in the API can make an admin without
+        // one.
+        const lastAdmin = u.role === "admin" && admins <= 1;
+        return (
+          <RowActions>
+            <RowAction
+              icon={KeyRoundIcon}
+              label="Revoke credentials"
+              onClick={() => setRevoking(u)}
+            />
+            <RowAction
+              icon={Trash2Icon}
+              label="Delete"
+              danger
+              disabled={isYou || lastAdmin}
+              title={
+                isYou
+                  ? "You cannot delete the account you are signed in as."
+                  : lastAdmin
+                    ? "The last admin cannot go: nothing in the API can make another."
+                    : undefined
+              }
+              onClick={() => setRemoving(u)}
+            />
+          </RowActions>
+        );
+      },
+    },
+  ];
 
   return (
     <>
+      <PageHeader title="Users" />
+      <ErrorAlert error={error} />
+
+      {/* Adding somebody comes first, because that is what brings
+          anybody to this screen: the table is the answer to "who is
+          there", and you already know when it is only you. */}
+      <Invite onCreated={reload} onError={setError} />
+
       <SectionHeader
         title="Who has access"
         sub="An account holds a role and the credentials it signs in with. A member deploys images somebody already published; an admin also builds source on this host and configures the instance."
       />
-      <ErrorAlert error={error} />
-
-      <Card>
-        <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>User</TableHead>
-                <TableHead>Role</TableHead>
-                <TableHead>Since</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {(users ?? []).map((u) => {
-                const isYou = u.username === me.username;
-                // The two refusals the daemon makes, said before the
-                // click rather than after it: the account you are
-                // signed in as, and the last admin — setup closed when
-                // the first account appeared, and nothing in the API
-                // can make an admin without one.
-                const lastAdmin = u.role === "admin" && admins <= 1;
-                return (
-                  <TableRow key={u.username}>
-                    <TableCell className="font-mono text-xs">
-                      {u.username}
-                      {isYou && <span className="ml-2 text-subtle-foreground">you</span>}
-                    </TableCell>
-                    <TableCell className="text-muted-foreground text-xs">{u.role}</TableCell>
-                    <TableCell className="text-muted-foreground text-xs">
-                      {new Date(u.created_at).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      <RowActions>
-                        <RowAction
-                          icon={KeyRoundIcon}
-                          label="Revoke credentials"
-                          title={
-                            isYou
-                              ? "This would sign you out everywhere and revoke your own keys."
-                              : undefined
-                          }
-                          onClick={() => setRevoking(u)}
-                        />
-                        <RowAction
-                          icon={Trash2Icon}
-                          label="Delete"
-                          danger
-                          disabled={isYou || lastAdmin}
-                          title={
-                            isYou
-                              ? "You cannot delete the account you are signed in as."
-                              : lastAdmin
-                                ? "The last admin cannot go: nothing in the API can make another."
-                                : undefined
-                          }
-                          onClick={() => setRemoving(u)}
-                        />
-                      </RowActions>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-              {users?.length === 0 && (
-                <TableRow>
-                  <TableCell colSpan={4} className="text-muted-foreground text-xs">
-                    Nobody but you.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
-        </CardContent>
-      </Card>
-
-      <Invite onCreated={reload} onError={setError} />
+      <DataTable
+        columns={columns}
+        rows={users}
+        rowKey={(u) => u.username}
+        empty="Nobody but you."
+      />
 
       <ConfirmDialog
         open={removing !== null}
@@ -188,7 +198,7 @@ function Invite({
         title="Add someone"
         sub="They get an API key immediately and a password when they set one. The key is shown once — this instance keeps only its hash, the same as every other credential here."
       />
-      <Card>
+      <Card className="mb-6">
         <CardContent>
           <form
             className="space-y-4"
@@ -211,7 +221,7 @@ function Invite({
               }
             }}
           >
-            <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
+            <div className="grid gap-4 sm:grid-cols-[1fr_14rem]">
               <TextField
                 label="Username"
                 value={username}
@@ -219,25 +229,20 @@ function Invite({
                 placeholder="ana"
                 hint="Lowercase letters, numbers and dashes. It is permanent: it names them everywhere."
               />
-              <div className="space-y-1.5">
-                {/* A select, not cards: it is a choice between two
-                    named things, and the difference is a word. */}
-                <label
-                  htmlFor="role"
-                  className="block font-medium text-[11px] uppercase tracking-wide"
-                >
-                  Role
-                </label>
-                <Select value={role} onValueChange={(v) => setRole(String(v))}>
-                  <SelectTrigger id="role" className="w-40">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="member">Member</SelectItem>
-                    <SelectItem value="admin">Admin</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* The same component every other form's choice uses, so
+                  it is the same height as the field beside it — which
+                  a bare Select is not. */}
+              <SearchableSelect
+                label="Role"
+                searchable={false}
+                choices={[
+                  { value: "member", label: "Member" },
+                  { value: "admin", label: "Admin" },
+                ]}
+                value={role}
+                onChange={setRole}
+                hint="An admin also builds source here and configures the instance."
+              />
             </div>
             <Button type="submit" disabled={busy || username === ""}>
               {busy ? "Adding..." : "Add account"}
