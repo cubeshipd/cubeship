@@ -328,6 +328,22 @@ type Apps interface {
 	Placed(ctx context.Context, nodeID int64, results []Result) error
 	// Sampled records what those containers are using.
 	Sampled(ctx context.Context, nodeID int64, readings []Reading) error
+	// Rebalance is told that the cluster has changed shape, so that
+	// whatever follows it can be spread again.
+	//
+	// Declared here because this module is the one that knows when a
+	// machine is added or taken away, and it is deliberately a
+	// statement rather than a question: what "following the cluster"
+	// means is `app`'s to decide, and this module does not know that
+	// apps have a scale, an ordinal or a spread.
+	//
+	// It runs **before** a machine's row goes, which is what lets an
+	// app leave a machine that is about to be deleted rather than
+	// standing in the way of the delete — so `without` is that
+	// machine's id, and it has to be excluded here rather than read
+	// out of a table it is still in. Zero excludes nothing, which is
+	// what adding a machine sends.
+	Rebalance(ctx context.Context, without int64) error
 }
 
 var (

@@ -46,6 +46,8 @@ type App struct {
 	Nodes []string `json:"nodes"`
 	// Scale is how many copies run in total, across those machines.
 	Scale int `json:"scale"`
+	// Spread says it follows the cluster: every machine there is.
+	Spread bool `json:"spread,omitempty"`
 	// Address is where a DNS record for this app has to point, which is
 	// this instance's own whatever machine the app runs on.
 	Address string `json:"address,omitempty"`
@@ -370,13 +372,16 @@ func (c *Client) RemoveServer(ctx context.Context, name string) error {
 // it has, no scale keeps the count. Where its traffic arrives is not a
 // choice — every name this instance serves arrives at the control
 // plane, which routes it to whichever machine runs the app.
-func (c *Client) PlaceApp(ctx context.Context, ref string, nodes []string, scale int) (App, error) {
+func (c *Client) PlaceApp(ctx context.Context, ref string, nodes []string, scale int, spread *bool) (App, error) {
 	body := map[string]any{}
 	if len(nodes) > 0 {
 		body["nodes"] = nodes
 	}
 	if scale > 0 {
 		body["scale"] = scale
+	}
+	if spread != nil {
+		body["spread"] = *spread
 	}
 	return request[App](ctx, c, "place app", http.MethodPatch,
 		"/apps/"+ref, body, http.StatusOK, DefaultTimeout)

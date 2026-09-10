@@ -68,6 +68,16 @@ type App struct {
 	// running one copy on each of two leave two copies on the
 	// survivor.
 	Scale int
+	// Spread is whether this app follows the cluster: it runs on every
+	// machine there is, and is re-spread the moment one is added or
+	// taken away.
+	//
+	// A switch rather than a second way of placing things. Nodes and
+	// Scale already say where an app runs and how many of it; what they
+	// cannot say is "wherever the cluster goes", which is a decision
+	// that stops being one the moment somebody makes it. Naming
+	// machines turns it off, because that is choosing by hand.
+	Spread bool
 	// Limits is what **one copy** of this app may take from the machine
 	// it runs on. Zero in either half is no limit, which is what every
 	// app is until somebody says otherwise.

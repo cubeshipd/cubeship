@@ -451,7 +451,7 @@ func TestClientManagesTheCluster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
-	placed, err := c.PlaceApp(ctx, app.Reference, []string{"control-plane", "eu-1"}, 0)
+	placed, err := c.PlaceApp(ctx, app.Reference, []string{"control-plane", "eu-1"}, 0, nil)
 	if err != nil {
 		t.Fatalf("PlaceApp: %v", err)
 	}
@@ -466,7 +466,7 @@ func TestClientManagesTheCluster(t *testing.T) {
 
 	// And scaling up without naming machines leaves them alone: four
 	// copies over the two it has.
-	scaled, err := c.PlaceApp(ctx, app.Reference, nil, 4)
+	scaled, err := c.PlaceApp(ctx, app.Reference, nil, 4, nil)
 	if err != nil {
 		t.Fatalf("PlaceApp with only a count: %v", err)
 	}
@@ -479,7 +479,7 @@ func TestClientManagesTheCluster(t *testing.T) {
 	if err := c.RemoveServer(ctx, "eu-1"); err == nil {
 		t.Error("a machine with an app on it was removed")
 	}
-	if _, err := c.PlaceApp(ctx, app.Reference, []string{"control-plane"}, 0); err != nil {
+	if _, err := c.PlaceApp(ctx, app.Reference, []string{"control-plane"}, 0, nil); err != nil {
 		t.Fatalf("move the app back: %v", err)
 	}
 	if err := c.RemoveServer(ctx, "eu-1"); err != nil {

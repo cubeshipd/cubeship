@@ -139,3 +139,54 @@ func (o *Orchestrator) scaleLocally(appID int64) {
 		}
 	}()
 }
+
+// Rebalance re-spreads every app that follows the cluster.
+//
+// Called by `node` when a machine is added or is about to be taken away
+// — the seam is node.Apps, the same direction PlacementsFor runs, and
+// this module is the only one that knows what following the cluster
+// means: every machine there is, with the app's own scale divided over
+// them.
+//
+// An app that follows the cluster is one whose placement stopped being
+// a decision, which is what makes doing this on its behalf safe. An app
+// somebody placed by hand is not touched, and a machine with one of
+// those on it still refuses to be removed.
+func (s *Service) Rebalance(ctx context.Context, without int64) error {
+	ids, err := s.Repo().Following(ctx)
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	every, err := s.Repo().EverySlug(ctx, without)
+	if err != nil {
+		return err
+	}
+	if len(every) == 0 {
+		// No machines at all is not a state this instance can be in —
+		// the control plane is a row — so this is a table that has not
+		// been migrated rather than a cluster to spread over.
+		return nil
+	}
+
+	for _, id := range ids {
+		a, err := s.Repo().ScopedByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		// The app's own intent, unchanged: this re-spreads what was
+		// asked for over a different number of machines, and does not
+		// decide anything about how many copies there are.
+		if err := s.Repo().SetNodes(ctx, a.ID, every, a.Scale, a.Copies(len(every)), true); err != nil {
+			return err
+		}
+		if err := s.orch.settleOpen(ctx, a.ID); err != nil {
+			return err
+		}
+		s.orch.scaleLocally(a.ID)
+	}
+	s.announceRoutes()
+	return nil
+}

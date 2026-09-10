@@ -21,7 +21,7 @@ func NewRepository(q database.Queryer) *Repository {
 }
 
 const columns = `id, project_id, environment_id, name, description, source, source_image,
-	source_repo, source_ref, source_dockerfile, health_path, scale,
+	source_repo, source_ref, source_dockerfile, health_path, scale, spread,
 	cpu_limit, memory_limit, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
@@ -31,7 +31,8 @@ func scan(row scanner) (*App, error) {
 	var envJSON []byte
 	if err := row.Scan(&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Description,
 		&a.Source, &a.SourceImage, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
-		&a.HealthPath, &a.Scale, &a.Limits.CPU, &a.Limits.Memory, &envJSON, &a.CreatedAt); err != nil {
+		&a.HealthPath, &a.Scale, &a.Spread,
+		&a.Limits.CPU, &a.Limits.Memory, &envJSON, &a.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &a.Env); err != nil {
@@ -538,7 +539,7 @@ type Scoped struct {
 const scopedQuery = `
 	SELECT a.id, a.project_id, a.environment_id, a.name, a.description,
 	       a.source, a.source_image, a.source_repo, a.source_ref, a.source_dockerfile,
-	       a.health_path, a.scale, a.cpu_limit, a.memory_limit, a.env, a.created_at,
+	       a.health_path, a.scale, a.spread, a.cpu_limit, a.memory_limit, a.env, a.created_at,
 	       p.slug, e.slug
 	FROM apps a
 	JOIN projects p ON p.id = a.project_id
@@ -549,7 +550,8 @@ func scanScoped(row scanner) (*Scoped, error) {
 	var envJSON []byte
 	if err := row.Scan(&s.ID, &s.ProjectID, &s.EnvironmentID, &s.Name, &s.Description,
 		&s.Source, &s.SourceImage, &s.SourceRepo, &s.SourceRef, &s.SourceDockerfile,
-		&s.HealthPath, &s.Scale, &s.Limits.CPU, &s.Limits.Memory, &envJSON, &s.CreatedAt,
+		&s.HealthPath, &s.Scale, &s.Spread,
+		&s.Limits.CPU, &s.Limits.Memory, &envJSON, &s.CreatedAt,
 		&s.ProjectSlug, &s.EnvironmentSlug); err != nil {
 		return nil, err
 	}
@@ -707,7 +709,7 @@ func (r *Repository) ReplicasFor(ctx context.Context, appIDs []int64) (map[int64
 // ErrNoSuchNode when a name is not a machine in this cluster. Refused
 // by name rather than written as a null the column would reject with a
 // message nobody can read.
-func (r *Repository) SetNodes(ctx context.Context, appID int64, nodeSlugs []string, scale, replicas int) error {
+func (r *Repository) SetNodes(ctx context.Context, appID int64, nodeSlugs []string, scale, replicas int, spread bool) error {
 	if len(nodeSlugs) == 0 {
 		return ErrNoSuchNode
 	}
@@ -735,8 +737,14 @@ func (r *Repository) SetNodes(ctx context.Context, appID int64, nodeSlugs []stri
 	// What was asked for, kept apart from what there is: zero is "one
 	// per machine", and it is the answer that has to survive a machine
 	// being added or taken away.
+	//
+	// Whether it follows the cluster is written here too, because it is
+	// the same decision seen from one step back: what these machines
+	// are is either a set somebody chose or "all of them", and the two
+	// have to be written together or a re-spread could read a stale
+	// answer to which it was.
 	if _, err := r.q.ExecContext(ctx,
-		`UPDATE apps SET scale = $2 WHERE id = $1`, appID, scale); err != nil {
+		`UPDATE apps SET scale = $2, spread = $3 WHERE id = $1`, appID, scale, spread); err != nil {
 		return fmt.Errorf("record how many copies were asked for: %w", err)
 	}
 	if _, err := r.q.ExecContext(ctx,
@@ -763,6 +771,50 @@ func (r *Repository) SetNodes(ctx context.Context, appID int64, nodeSlugs []stri
 		}
 	}
 	return nil
+}
+
+// EverySlug is every machine in the cluster, by name, the control plane
+// included. It is what an app that follows the cluster is placed on.
+//
+// `without` is a machine to leave out, for the one caller that asks
+// before a row is deleted: an app has to leave a machine that is going
+// away, and reading the table would still find it there. Zero leaves
+// nothing out.
+func (r *Repository) EverySlug(ctx context.Context, without int64) ([]string, error) {
+	rows, err := r.q.QueryContext(ctx,
+		`SELECT slug FROM nodes WHERE id <> $1 ORDER BY id`, without)
+	if err != nil {
+		return nil, fmt.Errorf("read the cluster's machines: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			return nil, err
+		}
+		out = append(out, slug)
+	}
+	return out, rows.Err()
+}
+
+// Following is every app that follows the cluster, by id. What has to
+// be re-spread when a machine is added or taken away.
+func (r *Repository) Following(ctx context.Context) ([]int64, error) {
+	rows, err := r.q.QueryContext(ctx, `SELECT id FROM apps WHERE spread ORDER BY id`)
+	if err != nil {
+		return nil, fmt.Errorf("read the apps that follow the cluster: %w", err)
+	}
+	defer rows.Close()
+	var out []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
 }
 
 // ControlPlaneID is the machine this daemon is, by id.
