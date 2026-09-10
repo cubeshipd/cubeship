@@ -74,6 +74,48 @@ type ContainerOpts struct {
 	// For a one-shot that is read through ContainerWait, not through
 	// its logs.
 	AutoRemove bool
+	// Resources is the ceiling this container runs under.
+	Resources Resources
+}
+
+// Resources is how much of the machine a container may take: CPU quota
+// and a memory ceiling. Zero in either is no limit, which is what every
+// container Cubeship ran before this existed.
+//
+// It is the **only** part of a container's configuration the Engine can
+// change on a running container. Everything else here — image, binds,
+// ports, environment — is fixed when the container is created, which is
+// why a new setting anywhere else means a new container and a new
+// ceiling does not.
+type Resources struct {
+	// NanoCPUs is CPU quota in billionths of a core: 1_500_000_000 is a
+	// core and a half. Docker's own --cpus, which is a ceiling rather
+	// than a share — a container at its limit is throttled, not merely
+	// preferred less when the machine is busy.
+	NanoCPUs int64
+	// MemoryBytes is a hard ceiling the kernel enforces by killing the
+	// process that crosses it. Lowering one below what a container is
+	// already holding therefore kills it on the spot, which is the one
+	// thing about this setting that surprises people.
+	MemoryBytes int64
+}
+
+// Unlimited reports whether nothing is capped.
+func (r Resources) Unlimited() bool { return r.NanoCPUs == 0 && r.MemoryBytes == 0 }
+
+// resources turns a ceiling into what the Engine wants.
+//
+// MemorySwap is pinned to the memory limit rather than left alone,
+// because Docker's own default is twice it: a container told to hold
+// 512 MiB would be allowed a gigabyte of it the moment the host has
+// swap, and the same number would mean two different things on two
+// machines.
+func resources(r Resources) container.Resources {
+	out := container.Resources{NanoCPUs: r.NanoCPUs, Memory: r.MemoryBytes}
+	if r.MemoryBytes > 0 {
+		out.MemorySwap = r.MemoryBytes
+	}
+	return out
 }
 
 // RegistryAuth is a username and password for a registry Cubeship does
@@ -273,6 +315,7 @@ func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (strin
 			ExtraHosts:    opts.ExtraHosts,
 			Privileged:    opts.Privileged,
 			PidMode:       pidMode(opts),
+			Resources:     resources(opts.Resources),
 		},
 		networkingConfig, nil, opts.Name)
 	if err != nil {
@@ -387,6 +430,25 @@ func (c *Client) InspectContainerByName(ctx context.Context, name string) (Conta
 func (c *Client) StartContainer(ctx context.Context, id string) error {
 	if err := c.api.ContainerStart(ctx, id, container.StartOptions{}); err != nil {
 		return fmt.Errorf("start container %q: %w", id, err)
+	}
+	return nil
+}
+
+// SetResources changes a running container's ceiling in place.
+//
+// It is what makes raising an app's memory a request rather than a
+// redeploy: the Engine writes the new numbers to the cgroup and the
+// process inside never restarts.
+//
+// **Zero does not clear a limit.** The Engine merges an update rather
+// than replacing the whole set, and reads a zero in any field as "leave
+// that one alone" — so a container goes back to having no ceiling by
+// being created again, not by being updated with nothing. Every caller
+// here creates its containers often enough for that to be the next
+// deploy or the next start.
+func (c *Client) SetResources(ctx context.Context, id string, r Resources) error {
+	if _, err := c.api.ContainerUpdate(ctx, id, container.UpdateConfig{Resources: resources(r)}); err != nil {
+		return fmt.Errorf("set resources on container %q: %w", id, err)
 	}
 	return nil
 }

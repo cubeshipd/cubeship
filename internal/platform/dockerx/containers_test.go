@@ -32,6 +32,8 @@ type fakeAPI struct {
 	stoppedID               string
 	removedID               string
 	removeErr               error
+	updatedID               string
+	updatedResources        container.Resources
 	inspectedID             string
 	inspectedName           string
 	inspectedRunning        bool
@@ -138,6 +140,12 @@ func (f *fakeAPI) ContainerStop(ctx context.Context, id string, options containe
 func (f *fakeAPI) ContainerRemove(ctx context.Context, id string, options container.RemoveOptions) error {
 	f.removedID = id
 	return f.removeErr
+}
+
+func (f *fakeAPI) ContainerUpdate(_ context.Context, id string, cfg container.UpdateConfig) (container.ContainerUpdateOKBody, error) {
+	f.updatedID = id
+	f.updatedResources = cfg.Resources
+	return container.ContainerUpdateOKBody{}, nil
 }
 
 func (f *fakeAPI) ImageInspectWithRaw(_ context.Context, ref string) (types.ImageInspect, []byte, error) {
@@ -816,5 +824,60 @@ func TestAMissingNetworkIsAnAnswerRatherThanAnError(t *testing.T) {
 	}
 	if found {
 		t.Error("a network that is not there was found")
+	}
+}
+
+func TestACeilingReachesTheEngineOnCreate(t *testing.T) {
+	fake := &fakeAPI{}
+	c := newWithAPI(fake)
+
+	if _, err := c.CreateContainer(context.Background(), ContainerOpts{
+		Name:      "cubeship-myapp-1",
+		Image:     "myapp:latest",
+		Resources: Resources{NanoCPUs: 1_500_000_000, MemoryBytes: 512 << 20},
+	}); err != nil {
+		t.Fatalf("CreateContainer: %v", err)
+	}
+	got := fake.createdHostConfig.Resources
+	if got.NanoCPUs != 1_500_000_000 {
+		t.Errorf("the quota reached the Engine as %d", got.NanoCPUs)
+	}
+	if got.Memory != 512<<20 {
+		t.Errorf("the memory ceiling reached the Engine as %d", got.Memory)
+	}
+	// Left alone, Docker allows twice the memory limit in swap, so the
+	// number would mean one thing on a host with swap and another on a
+	// host without.
+	if got.MemorySwap != 512<<20 {
+		t.Errorf("swap is %d, want it pinned to the ceiling", got.MemorySwap)
+	}
+}
+
+func TestNoCeilingIsNoSwapSetting(t *testing.T) {
+	fake := &fakeAPI{}
+	c := newWithAPI(fake)
+
+	if _, err := c.CreateContainer(context.Background(), ContainerOpts{
+		Name: "cubeship-myapp-1", Image: "myapp:latest",
+	}); err != nil {
+		t.Fatalf("CreateContainer: %v", err)
+	}
+	if got := fake.createdHostConfig.Resources; got.Memory != 0 || got.MemorySwap != 0 || got.NanoCPUs != 0 {
+		t.Errorf("an uncapped container was given %+v", got)
+	}
+}
+
+func TestSetResourcesUpdatesTheContainerInPlace(t *testing.T) {
+	fake := &fakeAPI{}
+	c := newWithAPI(fake)
+
+	if err := c.SetResources(context.Background(), "abc123", Resources{NanoCPUs: 500_000_000, MemoryBytes: 256 << 20}); err != nil {
+		t.Fatalf("SetResources: %v", err)
+	}
+	if fake.updatedID != "abc123" {
+		t.Errorf("it updated %q", fake.updatedID)
+	}
+	if fake.updatedResources.NanoCPUs != 500_000_000 || fake.updatedResources.Memory != 256<<20 {
+		t.Errorf("it sent %+v", fake.updatedResources)
 	}
 }

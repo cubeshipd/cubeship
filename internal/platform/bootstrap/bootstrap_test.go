@@ -851,3 +851,29 @@ func TestBuildKitSocketIsReachableByAHostDaemon(t *testing.T) {
 		t.Errorf("a containerised daemon passes buildkitd flags it does not need: %v", got)
 	}
 }
+
+// TestNoInfrastructureContainerIsCapped guards the one thing configHash
+// deliberately does not look at.
+//
+// A ceiling is left out of the fingerprint because the Engine can change
+// it on a running container, so a new one is not a reason to replace
+// anything — but Ensure does not apply one either, and nothing here has
+// one to apply. Giving one of these a ceiling means teaching Ensure to
+// set it; this is the line that says so.
+func TestNoInfrastructureContainerIsCapped(t *testing.T) {
+	cfg := &config.Config{DataDir: "/var/lib/cubeship"}
+	for _, tc := range []struct {
+		name string
+		opts dockerx.ContainerOpts
+	}{
+		{"postgres", PostgresContainerOpts(cfg, "pw")},
+		{"registry", RegistryContainerOpts(cfg, "registry.example.com", true, []byte("cert"))},
+		{"buildkit", BuildKitContainerOpts(cfg)},
+		{"frontend", FrontendContainerOpts("cubeship/cubeship-frontend:v1")},
+		{"traefik", TraefikContainerOpts(cfg, true, "ops@example.com")},
+	} {
+		if !tc.opts.Resources.Unlimited() {
+			t.Errorf("%s carries a ceiling Ensure would never apply: %+v", tc.name, tc.opts.Resources)
+		}
+	}
+}
