@@ -119,11 +119,27 @@ func TestNoContainerCarriesARouter(t *testing.T) {
 		t.Error("a container lost the label that says whose it is")
 	}
 
-	// And the name is served, from the one place that knows where every
-	// copy is.
+	// Nothing is running it yet — the machine was told and has not said
+	// what it did — so there is no backend and no router. A router with
+	// no backend answers 503; none at all answers 404, which is the
+	// truer of the two for a name nothing is behind.
+	if routes := routesOf(t, f); len(routes) != 0 {
+		t.Errorf("the proxy serves %+v for an app nothing is running", routes)
+	}
+
+	// And once the machine says which container it started, the name is
+	// served — from the one place that knows where every copy is.
+	reconcile(t, f, token, node.Result{
+		App: created.Reference, Deploy: answer.Desired.Apps[0].Deploy,
+		Ordinal: answer.Desired.Apps[0].Ordinal, Container: "container-on-eu-1",
+	})
 	routes := routesOf(t, f)
 	if len(routes) != 1 || routes[0].Host != "web.example.com" {
 		t.Fatalf("the proxy serves %+v, want the app's one name", routes)
+	}
+	if len(routes[0].Servers) != 1 {
+		t.Errorf("the name has %d backends, want the one copy there is: %v",
+			len(routes[0].Servers), routes[0].Servers)
 	}
 }
 
