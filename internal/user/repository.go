@@ -48,9 +48,19 @@ func qualify(alias, list string) string {
 
 type scanner interface{ Scan(dest ...any) error }
 
-func scanUser(row scanner) (*User, error) {
+func scanUser(row scanner) (*User, error) { return scanUserWith(row) }
+
+// scanUserWith is scanUser plus whatever a query selected after the
+// user's own columns — a password hash, so far.
+//
+// One scanner rather than two, because `userColumns` is read in order
+// and a second copy of that order is a second place to forget when a
+// column moves. It already went wrong twice; this is the shape that
+// stops it going wrong a third time.
+func scanUserWith(row scanner, extra ...any) (*User, error) {
 	var u User
-	if err := row.Scan(&u.ID, &u.Username, &u.Role, &u.Theme, &u.CreatedAt); err != nil {
+	dest := []any{&u.ID, &u.Username, &u.Role, &u.Theme, &u.CreatedAt}
+	if err := row.Scan(append(dest, extra...)...); err != nil {
 		return nil, err
 	}
 	return &u, nil
@@ -286,15 +296,20 @@ func (r *Repository) SetPassword(ctx context.Context, userID int64, hash string)
 // account has one at all. An account created by an organization admin
 // has an API key immediately and a password only once it sets one.
 func (r *Repository) PasswordHash(ctx context.Context, username string) (*User, string, error) {
+	var hash string
 	row := r.q.QueryRowContext(ctx,
 		`SELECT `+userColumns+`, COALESCE(password_hash, '') FROM users WHERE username = $1`, username)
 
-	var u User
-	var hash string
-	if err := row.Scan(&u.ID, &u.Username, &u.Role, &u.CreatedAt, &hash); err != nil {
+	// Scanned through the shared function rather than by hand, with
+	// the one extra column passed in. Written out, this was the third
+	// place a `users` column had to be added and the third that was
+	// missed — and this one is the sign-in query, so what it looked
+	// like was every password on the instance being wrong.
+	u, err := scanUserWith(row, &hash)
+	if err != nil {
 		return nil, "", fmt.Errorf("get user %q: %w", username, err)
 	}
-	return &u, hash, nil
+	return u, hash, nil
 }
 
 // HasPassword reports whether an account can sign in with one.
