@@ -453,6 +453,22 @@ func (s *Service) replace(ctx context.Context, a *Scoped, p Placement, source So
 		}
 	}
 
+	// What was asked for, which is not what there is. Naming no number
+	// keeps whatever was asked for before — and for almost every app
+	// that is "one per machine", which is the answer a row count cannot
+	// hold. See App.Scale.
+	scale := p.Replicas
+	if scale == 0 {
+		scale = a.Scale
+	}
+	copies := scale
+	if copies == 0 {
+		copies = len(nodes)
+	}
+	if err := s.Repo().SetNodes(ctx, a.ID, nodes, scale, copies); err != nil {
+		return err
+	}
+
 	// The set an open deploy is waiting on has just changed, and one of
 	// the machines it was waiting for may have been what was left. A
 	// deploy is closed by a report, and no report is coming for a
@@ -477,15 +493,6 @@ func dedupe(in []string) []string {
 		out = append(out, s)
 	}
 	return out
-}
-
-func contains(in []string, want string) bool {
-	for _, s := range in {
-		if s == want {
-			return true
-		}
-	}
-	return false
 }
 
 // checkPlacement is what an app has to be to run somewhere other than
