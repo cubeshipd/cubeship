@@ -49,7 +49,7 @@ func main() {
 			b.WriteString("*Prerelease.*\n\n")
 		}
 		fmt.Fprintf(&b, "%s\n\n", n.Summary)
-		b.WriteString(n.Body)
+		b.WriteString(demote(n.Body))
 		b.WriteString("\n")
 	}
 	want := b.String()
@@ -69,6 +69,24 @@ func main() {
 		fmt.Fprintf(os.Stderr, "%s is out of date: run `make changelog`\n", path)
 		os.Exit(1)
 	}
+}
+
+// demote pushes every heading in a note down one level.
+//
+// A note is written as its own document — its sections are `##`,
+// because in the GitHub release and in the dashboard's dialog the
+// release's own name is the title above them. Here the release is a
+// heading too, so leaving them alone would make a note's sections
+// siblings of the release rather than parts of it, and a reader
+// scrolling this file could not tell where one version ends.
+func demote(body string) string {
+	lines := strings.Split(body, "\n")
+	for i, line := range lines {
+		if strings.HasPrefix(line, "#") {
+			lines[i] = "#" + line
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 func fail(err error) {

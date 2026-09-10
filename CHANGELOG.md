@@ -10,7 +10,7 @@ Every release of Cubeship, newest first.
 
 The first release. One command installs a PaaS on one VPS, and a second machine joins it.
 
-## Installing
+### Installing
 
 One command puts Cubeship on a Debian or Ubuntu box: it installs Docker
 if it is missing, pulls two images, and runs the daemon. There is nothing
@@ -24,7 +24,7 @@ page is not enough to become the admin of somebody's machine.
 one: it removes the containers and leaves the data, because somebody
 removing the software is not thereby asking to lose their database.
 
-## Apps
+### Apps
 
 An app is created empty and deploys anyway. It has no domain until you
 give it one, which is a normal state — a worker or a queue consumer has
@@ -51,7 +51,7 @@ itself. On a default install the address is an sslip.io name, and every
 name under one already resolves — so an app has a working address the
 moment you add one.
 
-## More than one machine
+### More than one machine
 
 An instance is a control plane and any number of workers. A worker runs
 the same image in a mode where it decides nothing, publishes no port, and
@@ -73,7 +73,7 @@ An app runs as many copies as you ask for, spread over the machines it is
 on — or, with one switch, over every machine there is and any that joins
 later. Scaling takes effect at once in both directions, on any machine.
 
-## Limits and autoscaling
+### Limits and autoscaling
 
 An app, a database and a managed object store can each be capped: how
 much CPU one container may use, and how much memory it may hold. Changing
@@ -85,7 +85,7 @@ the average CPU across its copies. It is damped so it settles rather than
 oscillates, and a ceiling is required: without one, a loop of requests is
 a loop of replicas.
 
-## Databases and buckets
+### Databases and buckets
 
 Postgres, MySQL, MariaDB, Redis and MongoDB, provisioned in one request
 and attached to any app in any project — a database belongs to the
@@ -97,14 +97,14 @@ holds the keys to, and everything above the connection is one screen for
 both. An attached app receives the connection details in its own
 environment, so nothing has to hold the credential itself.
 
-## What the instance can tell you
+### What the instance can tell you
 
 What every container is using, what the machine underneath them is doing,
 which certificates exist and why one is missing, and what the host's
 firewall admits — including the ports Docker publishes around it, which
 is the thing a plain `ufw status` would not show.
 
-## The API, the CLI and MCP
+### The API, the CLI and MCP
 
 Everything the dashboard does is an HTTP API with an OpenAPI document at
 `/openapi.json` and a reference at `/docs`. `cubeship` is the CLI over the
