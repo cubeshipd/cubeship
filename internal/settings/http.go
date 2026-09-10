@@ -14,6 +14,10 @@ import (
 type Response struct {
 	Domain    string `json:"domain"`
 	ACMEEmail string `json:"acme_email"`
+	// AutoUpdateAt is when this instance updates itself, as HH:MM, and
+	// AutoUpdateTimezone is what that is in. Empty is off.
+	AutoUpdateAt       string `json:"auto_update_at,omitempty"`
+	AutoUpdateTimezone string `json:"auto_update_timezone,omitempty"`
 
 	// RegistryHost is where a `docker push` goes, or empty while no
 	// domain is set.
@@ -81,6 +85,8 @@ func toResponse(v Values, publicIP string) Response {
 	r.PublicIP = publicIP
 	r.PublicIPConfigured = v.Get(PublicIP) != ""
 	r.DNSProviderID = v.Get(DNSProviderID)
+	r.AutoUpdateAt = v.Get(AutoUpdateAt)
+	r.AutoUpdateTimezone = v.Get(AutoUpdateTimezone)
 	r.GitHubAppSlug = v.Get(GitHubAppSlug)
 	r.GitHubConnected = v.HasGitHub()
 	r.GitHubOAuthReady = v.HasGitHubOAuth()
@@ -130,6 +136,11 @@ func (h *Handler) set(w http.ResponseWriter, r *http.Request) {
 		ACMEEmail     *string `json:"acme_email"`
 		PublicIP      *string `json:"public_ip"`
 		DNSProviderID *string `json:"dns_provider_id"`
+		// When this instance updates itself, and what that time is in.
+		// Empty is off, which is what every instance is until somebody
+		// says otherwise.
+		AutoUpdateAt       *string `json:"auto_update_at"`
+		AutoUpdateTimezone *string `json:"auto_update_timezone"`
 
 		// The GitHub App's registration. Write-only, and normally
 		// written once by the connect flow rather than typed.
@@ -157,6 +168,20 @@ func (h *Handler) set(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ACMEEmail != nil {
 		values[ACMEEmail] = *req.ACMEEmail
+	}
+	if req.AutoUpdateAt != nil {
+		if !ValidTimeOfDay(*req.AutoUpdateAt) {
+			http.Error(w, ErrBadTimeOfDay.Error(), http.StatusBadRequest)
+			return
+		}
+		values[AutoUpdateAt] = *req.AutoUpdateAt
+	}
+	if req.AutoUpdateTimezone != nil {
+		if !ValidTimezone(*req.AutoUpdateTimezone) {
+			http.Error(w, ErrBadTimezone.Error(), http.StatusBadRequest)
+			return
+		}
+		values[AutoUpdateTimezone] = *req.AutoUpdateTimezone
 	}
 	for key, given := range map[string]*string{
 		GitHubAppID:         req.GitHubAppID,

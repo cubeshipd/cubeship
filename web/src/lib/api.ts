@@ -356,6 +356,10 @@ export type Settings = {
   public_ip_configured: boolean;
   // The stored DNS credential that writes this instance's own records.
   dns_provider_id?: string;
+  // When this instance updates itself, as HH:MM, and what that is in.
+  // Absent is off.
+  auto_update_at?: string;
+  auto_update_timezone?: string;
   tls_enabled: boolean;
   // The GitHub App this instance acts as. Its credentials are
   // write-only: the daemon reports whether they are there, never what
@@ -990,4 +994,37 @@ export type Releases = {
   // The ones this person has not been shown. Empty is the ordinary
   // answer, and it is what the dialog reads to decide not to appear.
   unseen: Release[];
+};
+
+// What this instance is on, and what it could move to.
+export type Updates = {
+  // What it is running. Absent on a developer's build.
+  version?: string;
+  available?: {
+    version: string;
+    // What changed, in Markdown. Carried by the API because it is the
+    // one thing about a newer version this build cannot already know.
+    notes?: string;
+    published_at?: string;
+    prerelease?: boolean;
+  };
+  // Whether the lookup happened. **False with no `available` means the
+  // instance could not ask** — an instance behind a firewall is a
+  // normal instance, and telling it that it is current would be a lie.
+  checked: boolean;
+  run?: UpdateRun;
+};
+
+// One attempt to move the instance to a version.
+export type UpdateRun = {
+  version: string;
+  from?: string;
+  status: "running" | "done" | "failed";
+  // What is happening now, in words.
+  step?: string;
+  // Every step that finished, oldest first.
+  done?: string[];
+  error?: string;
+  started_at: string;
+  finished_at?: string;
 };

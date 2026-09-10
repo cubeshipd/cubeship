@@ -668,6 +668,73 @@ long tail of syntax to support. Anything it does not recognise comes out
 as a paragraph, which is the right failure — a heading that renders as
 text still reads.
 
+## Updating itself
+
+`internal/update` replaces this instance with a newer release, the
+daemon included.
+
+**The hard part is that the thing doing the work is what gets
+replaced.** The daemon is a container; updating it means stopping that
+container, which is the process running the code that asked. So the last
+step is handed to a **throwaway container started from the new image**,
+which outlives the daemon it replaces — the same door
+`internal/platform/hostexec` opens for the firewall, used once more.
+`cubeshipd -replace <name> -replace-image <ref>` is that mode, and it is
+the one way this binary runs that is not a daemon.
+
+Its options are **read back off the container being replaced**
+(`dockerx.SpecOf`), not written in the updater. They were chosen by
+whoever installed this — a port, a domain, a data directory somewhere
+unusual — and a second copy of them in the binary is one that goes stale
+the first time `install.sh` grows a flag.
+
+**The state is a file, not a row.** Everything else that remembers
+something uses Postgres and this cannot: what it has to survive is the
+daemon going away, which is exactly when nothing can answer a query.
+`<data dir>/update.json` is read by the daemon that is going, the
+throwaway updater, and the daemon that comes back — the data directory
+being mounted at the same path inside and out is what makes that one
+file. `setup-token` already works this way.
+
+**Nothing on the instance can be changed while a run is going.**
+`update.Guard` wraps the whole router and answers 503 to every write.
+The lock is the server's rather than the screen's, and that is the
+point: a browser that reloads forgets everything it knew, and the moment
+worth protecting is the one where the daemon has restarted underneath
+somebody. A run older than `StuckAfter` stops counting — an instance
+locked for ever is worse than one that decides an update is over, and
+the only way to leave one behind is the updater dying in the single
+moment nothing is left to write the file.
+
+**The other machines go first.** Once the control plane restarts it can
+tell nobody anything, so a cluster updated the other way round is one
+where every worker is a release behind and nothing is coming to move
+them. A worker replaces itself the same way — its agent starts a
+throwaway container — and **reports nothing back**, because answering
+would mean surviving what it was told to do. What says it worked is the
+version it reports on its next pass. One that does not come back is
+carried on without: a box being off must not freeze the whole cluster.
+
+**A version is named, never defaulted to "the newest".** A button that
+says what it will install and a request that decides for itself are two
+different promises, and the second one changes under somebody between
+the screen rendering and the click.
+
+`update.Scheduler` is the automatic half: a **time of day**, not an
+interval, because what is being chosen is when the instance may be
+briefly unusable — and "every 24 hours from whenever you turned it on"
+is not something anybody can plan around. It takes a timezone, because
+03:00 on a server's clock is not the middle of anybody's night. Stable
+releases only: an instance left to update itself must not wander onto a
+release candidate.
+
+**This is the one thing here that reaches the internet.** A build knows
+every release up to its own and by definition nothing about the one
+after — the changelog is carried so a dialog works behind a firewall,
+and this cannot be, because the answer did not exist when the binary was
+made. An instance that cannot ask answers `checked: false` rather than
+claiming to be current.
+
 ## The OpenAPI document
 
 Served at `/openapi.json`, with a Scalar reference at `/docs`. Both are

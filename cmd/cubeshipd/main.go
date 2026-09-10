@@ -625,6 +625,11 @@ func run() error {
 	// builds one must not thereby start scaling apps.
 	go (&app.Autoscaler{Apps: srv.Apps, Metrics: srv.Metrics}).Run(ctx)
 
+	// And the one that replaces this process. Same reason it is here:
+	// a test that builds a server must not thereby start replacing
+	// containers.
+	go (&update.Scheduler{Updates: srv.Updates, Settings: srv.Settings}).Run(ctx)
+
 	go purgeExpiredSessions(ctx, srv.Users)
 
 	needsSetup, err := srv.Setup.Needed(ctx)
