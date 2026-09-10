@@ -6,6 +6,27 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.3.3 — 2026-09-10
+
+Automatic updates accept a timezone — the daemon's image had no timezone database, so every zone name was refused.
+
+### Fixed
+
+**Scheduling an automatic update refused every timezone.** Not an
+unusual one: `America/Bahia`, `Europe/Lisbon`, any of them. The daemon
+runs on an Alpine image, Alpine ships no timezone database, and nothing
+in the daemon carried its own — so it could not recognise a single name
+and said so about each one in turn.
+
+The database is in the binary now, so it no longer matters what the
+image underneath has. Set the hour and the timezone in **Settings →
+Automatic updates** and it will hold.
+
+It is also no longer quiet about falling back to UTC. That combination —
+a name it could not load and a silent fallback — would have been an
+instance updating itself at the wrong hour for as long as nobody
+happened to be watching at the time.
+
 ## 0.3.2 — 2026-09-10
 
 Updating twice works — the container that replaces the daemon was never being cleaned up, so the second update an instance ran failed on its own leftovers.
