@@ -32,6 +32,12 @@ const columns = `id, slug, description, engine, version, username, password,
 // datastoreColumns is the same list under the alias `d`, for the one
 // query that joins a table with an `id` and a `created_at` of its own.
 //
+// That query does **not** go through scan: it reads one extra column,
+// so it has a Scan of its own — which makes it the second place a
+// column added above has to be added. Forgetting it is how adding the
+// limit columns turned every read of an app's environment into
+// "expected 16 destination arguments in Scan, not 14".
+//
 // Derived rather than written out again. Two lists to keep in step is
 // exactly what the note above warns about, and the way it went wrong
 // was the unqualified list reaching a join: `id` matched two tables and
@@ -270,7 +276,8 @@ func (r *Repository) AttachedTo(ctx context.Context, appID int64) ([]Attached, e
 		var a Attached
 		if err := rows.Scan(&a.ID, &a.Slug, &a.Description, &a.Engine, &a.Version,
 			&a.Username, &a.Password, &a.Database, &a.ExposedPort,
-			&a.ContainerID, &a.Status, &a.Error, &a.CreatedAt, &a.Prefix); err != nil {
+			&a.ContainerID, &a.Status, &a.Error,
+			&a.Limits.CPU, &a.Limits.Memory, &a.CreatedAt, &a.Prefix); err != nil {
 			return nil, err
 		}
 		out = append(out, a)

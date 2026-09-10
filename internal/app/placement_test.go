@@ -181,3 +181,35 @@ func TestAMachineWithAppsOnItCannotJustGo(t *testing.T) {
 		map[string]any{"node": node.ControlPlaneSlug}, f.AdminKey), http.StatusOK)
 	servertest.RequireStatus(t, f.Do(t, http.MethodDelete, "/nodes/eu-1", nil, f.AdminKey), http.StatusOK)
 }
+
+// **A machine cannot pull from an address only the control plane can
+// reach.** An app on this instance's own registry resolves to the
+// registry container's name on this box's bridge — deliberately, since
+// pulling the public name here would hairpin out to the VPS's own
+// address and need a certificate to already exist. Sent to another
+// machine that name resolves to nothing: the registry is this machine's
+// own, like Postgres and the builder, and is not on the mesh.
+//
+// It is the default source, which is the one the push-to-deploy flow
+// uses, so every ordinary app placed on a worker failed its pull with
+// "no such host" and stayed pending.
+func TestAMachineIsToldWhereItCanActuallyPullFrom(t *testing.T) {
+	f := balancerFixture(t)
+	token := addServer(t, f, "eu-1")
+
+	var created placedApp
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]any{
+		"name": "api", "project": "web", "source": "registry",
+	}, f.AdminKey, &created), http.StatusCreated)
+	place(t, f, created.Reference, map[string]any{"nodes": []string{"eu-1"}})
+	deploy(t, f, created.Reference)
+
+	answer := reconcile(t, f, token)
+	if len(answer.Desired.Apps) != 1 {
+		t.Fatalf("the machine was told to run %d apps", len(answer.Desired.Apps))
+	}
+	image := answer.Desired.Apps[0].Image
+	if !strings.HasPrefix(image, servertest.RegistryHost+"/") {
+		t.Errorf("it was told to pull %q, which is not a name another machine resolves", image)
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"cubeship/internal/metrics"
@@ -247,6 +248,17 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 		return node.Placement{}, fmt.Errorf("read the registry login: %w", err)
 	}
 
+	// And the image as **that machine** can reach it.
+	//
+	// An app on this instance's own registry resolves to the address
+	// the daemon pulls from, which is the registry container's name on
+	// this box's bridge network. Sent to another machine that is a name
+	// nothing there resolves: the registry is not on the mesh — it is
+	// this machine's own, like Postgres and the builder — so the pull
+	// fails with "no such host" for every app on the default source,
+	// which is the one the push-to-deploy flow uses.
+	image := o.publicImage(ctx, d.ImageRef)
+
 	ref := ReferenceOf(a)
 	base := resourceName(ref)
 	networks := append([]string{Network}, o.mesh(ctx)...)
@@ -256,7 +268,7 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 		Deploy:    d.ID,
 		Ordinal:   ordinal,
 		Container: containerNameFor(base, d.ID, ordinal),
-		Image:     d.ImageRef,
+		Image:     image,
 		Registry:  auth,
 		Env:       env,
 		// The same labels a container here would carry, which are now
@@ -271,6 +283,30 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 		// deploy.
 		Resources: a.Limits.Resources(),
 	}, nil
+}
+
+// publicImage turns an image reference this machine can pull into one
+// another machine can.
+//
+// Only this instance's own registry needs it: everything else in a
+// deployment's image reference is already a name that means the same
+// thing everywhere. The public name is where a worker's pull goes, and
+// the credential is its own — see AgentResponse.Registry.
+//
+// With no domain there is no public name, and the reference is left as
+// it is: an app that builds is refused before it can be placed
+// elsewhere on such an instance, and one on the registry has nothing to
+// pull yet either.
+func (o *Orchestrator) publicImage(ctx context.Context, ref string) string {
+	prefix := o.localRegistry + "/"
+	if o.localRegistry == "" || !strings.HasPrefix(ref, prefix) {
+		return ref
+	}
+	host := o.registryHost(ctx)
+	if host == "" {
+		return ref
+	}
+	return host + "/" + strings.TrimPrefix(ref, prefix)
 }
 
 // placementLabels say whose container this is, and nothing else.
