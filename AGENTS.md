@@ -880,7 +880,17 @@ db.WithTx(ctx, func(tx database.Queryer) error {
 ```
 
 Each table has a `columns` constant its scan function reads in order —
-change one, change both. `env` columns are `JSONB`; go through
+change one, change both. **And find the queries that spell the list
+themselves**, because that is where this actually goes wrong: a join
+needs the names qualified, so somebody writes them out, and a column
+added later leaves that one query selecting one fewer than the scan
+reads. It has bitten twice — `datastore.AttachedTo`, which turned every
+read of an app's environment into "expected 16 destination arguments in
+Scan, not 14"; and the two queries that resolve an API key and a session
+cookie to a person, which made **every request on the instance answer
+401**. Neither failure looks anything like its cause. `qualify(alias,
+list)` is the answer both modules now use: one list, aliased where a
+join needs it. `env` columns are `JSONB`; go through
 `envvar.MarshalJSONB` so a nil map becomes `{}` rather than JSON null.
 
 The daemon runs its own `cubeship-postgres` container (see

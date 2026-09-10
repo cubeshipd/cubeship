@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"cubeship/internal/platform/database"
@@ -23,6 +24,27 @@ const (
 	userColumns   = `id, username, role, theme, created_at`
 	apiKeyColumns = `id, user_id, key_hash, name, created_at, last_used_at`
 )
+
+// joinedUserColumns is userColumns under the alias `u`, for the two
+// queries that reach a user through another table.
+//
+// Derived rather than written out, and the reason is what happened when
+// they were: both spelled the list themselves, so adding a column to
+// `users` left them selecting one fewer than scanUser reads — and
+// because those two queries are how an **API key and a session cookie
+// resolve to a person**, every request on the instance answered 401.
+// A third list is a third place to forget.
+var joinedUserColumns = qualify("u", userColumns)
+
+// qualify prefixes every name in a comma-separated select list with a
+// table alias.
+func qualify(alias, list string) string {
+	names := strings.Split(list, ",")
+	for i, name := range names {
+		names[i] = alias + "." + strings.TrimSpace(name)
+	}
+	return strings.Join(names, ", ")
+}
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -173,7 +195,7 @@ func (r *Repository) CreateAPIKey(ctx context.Context, userID int64, keyHash, na
 // is the authentication query.
 func (r *Repository) ByAPIKeyHash(ctx context.Context, keyHash string) (*User, error) {
 	row := r.q.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.role, u.created_at
+		SELECT `+joinedUserColumns+`
 		FROM api_keys k
 		JOIN users u ON u.id = k.user_id
 		WHERE k.key_hash = $1`, keyHash)
@@ -306,7 +328,7 @@ func (r *Repository) CreateSession(ctx context.Context, tokenHash string, userID
 // thing that makes expiry take effect.
 func (r *Repository) UserBySession(ctx context.Context, tokenHash string) (*User, error) {
 	row := r.q.QueryRowContext(ctx, `
-		SELECT u.id, u.username, u.role, u.created_at
+		SELECT `+joinedUserColumns+`
 		FROM sessions s
 		JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = $1 AND s.expires_at > now()`, tokenHash)
