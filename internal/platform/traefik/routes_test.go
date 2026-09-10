@@ -76,3 +76,73 @@ func TestWithNoCertificatesTheRoutersStayOnPlainHTTP(t *testing.T) {
 		t.Errorf("the router is on no entrypoint at all:\n%s", out)
 	}
 }
+
+// **A dead replica costs a retry rather than a 502.** This is the half
+// of the health story that needs nothing configured: a container that
+// has gone refuses the connection, and without a retry that refusal is
+// what the visitor gets — one request in three failing on an app with
+// three replicas, for as long as it takes the machine that lost it to
+// say so.
+func TestADeadReplicaIsRetriedAgainstTheNextOne(t *testing.T) {
+	out := traefik.RoutesYAML([]traefik.Route{{
+		App: "web/production/api", Host: "api.example.com",
+		Servers: []string{"http://one:8080", "http://two:8080", "http://three:8080"},
+	}}, true)
+
+	if !strings.Contains(out, "retry:") || !strings.Contains(out, "attempts: 3") {
+		t.Errorf("no retry, so a gone replica answers 502 to its share of the traffic:\n%s", out)
+	}
+	if !strings.Contains(out, "middlewares:") {
+		t.Errorf("the retry is defined and never attached to the router:\n%s", out)
+	}
+}
+
+// One backend is nothing to retry against: attempts count the first
+// try, so a retry there is the same dead container asked twice — a
+// visitor waiting twice as long for the same 502.
+func TestOneBackendIsNotRetried(t *testing.T) {
+	out := traefik.RoutesYAML([]traefik.Route{{
+		App: "web/production/api", Host: "api.example.com",
+		Servers: []string{"http://one:8080"},
+	}}, true)
+
+	if strings.Contains(out, "retry:") {
+		t.Errorf("a single backend was given a retry against itself:\n%s", out)
+	}
+}
+
+// The other half, and the one that needs a path: a replica that is **up
+// and broken** answers the connection, so no retry ever fires for it.
+// A check is what takes that one out of rotation before a visitor
+// reaches it rather than after.
+func TestAHealthPathTakesABrokenReplicaOutOfRotation(t *testing.T) {
+	out := traefik.RoutesYAML([]traefik.Route{{
+		App: "web/production/api", Host: "api.example.com",
+		Servers: []string{"http://one:8080", "http://two:8080"},
+		Health:  "/healthz",
+	}}, true)
+
+	if !strings.Contains(out, "healthCheck:") || !strings.Contains(out, `path: "/healthz"`) {
+		t.Errorf("the path did not reach the load balancer:\n%s", out)
+	}
+	// The cadence is the cluster's own, and the timeout is deliberately
+	// not tight: marking a working container down is worse than leaving
+	// a dead one in for one more interval.
+	if !strings.Contains(out, "interval: 10s") || !strings.Contains(out, "timeout: 5s") {
+		t.Errorf("the check has no bounds on it:\n%s", out)
+	}
+}
+
+// No path is no check, which is what every app starts as. A default
+// path would be a guess, and a wrong guess here does not degrade a name
+// — it takes every replica out at once and answers 503.
+func TestNoHealthPathIsNoCheck(t *testing.T) {
+	out := traefik.RoutesYAML([]traefik.Route{{
+		App: "web/production/api", Host: "api.example.com",
+		Servers: []string{"http://one:8080", "http://two:8080"},
+	}}, true)
+
+	if strings.Contains(out, "healthCheck") {
+		t.Errorf("an app that asked for no check got one:\n%s", out)
+	}
+}

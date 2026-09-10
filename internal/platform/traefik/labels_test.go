@@ -3,7 +3,7 @@ package traefik
 import "testing"
 
 func TestLabels(t *testing.T) {
-	labels := Labels("myapp", []Domain{{Host: "myapp.example.com", Port: 8080}}, true)
+	labels := Labels("myapp", []Domain{{Host: "myapp.example.com", Port: 8080}}, true, "")
 
 	want := map[string]string{
 		"traefik.enable": "true",
@@ -30,7 +30,7 @@ func TestLabels(t *testing.T) {
 // certificate that cannot be issued would make the app unreachable
 // rather than merely unencrypted.
 func TestLabelsWithoutTLSServeOverHTTP(t *testing.T) {
-	labels := Labels("myapp", []Domain{{Host: "myapp.example.com", Port: 8080}}, false)
+	labels := Labels("myapp", []Domain{{Host: "myapp.example.com", Port: 8080}}, false, "")
 
 	if got := labels["traefik.http.routers.cubeship-myapp.entrypoints"]; got != "web" {
 		t.Errorf("entrypoint is %q, want web", got)
@@ -52,7 +52,7 @@ func TestEachDomainGetsItsOwnPort(t *testing.T) {
 	labels := Labels("myapp", []Domain{
 		{Host: "api.example.com", Port: 8080},
 		{Host: "admin.example.com", Port: 9000},
-	}, true)
+	}, true, "")
 
 	for label, want := range map[string]string{
 		"traefik.http.routers.cubeship-myapp.rule":                        "Host(`api.example.com`)",
@@ -71,7 +71,7 @@ func TestEachDomainGetsItsOwnPort(t *testing.T) {
 // about. Enabling it with no rule would leave a container Traefik knows
 // and cannot route.
 func TestNoDomainsMeansNoRouting(t *testing.T) {
-	labels := Labels("myapp", nil, true)
+	labels := Labels("myapp", nil, true, "")
 
 	if _, present := labels["traefik.enable"]; present {
 		t.Errorf("Traefik was enabled for a container with nothing to route: %v", labels)

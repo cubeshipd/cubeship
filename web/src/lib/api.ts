@@ -149,6 +149,10 @@ export type App = {
   // when that machine has not reported an address — a name nothing can
   // be pointed at yet.
   address?: string;
+  // What Traefik asks this app for before trusting a container with
+  // traffic. Absent is no check, which is the default: a wrong path
+  // does not degrade a name, it takes every replica out at once.
+  health_path?: string;
 };
 
 // One machine an app runs on.

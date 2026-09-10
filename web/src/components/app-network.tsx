@@ -104,6 +104,8 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
         onError={setError}
       />
 
+      <HealthCheck app={app} onSaved={onSaved} onError={setError} />
+
       <ConfirmDialog
         open={removing !== null}
         onOpenChange={(v) => !v && setRemoving(null)}
@@ -489,6 +491,99 @@ function AddDomain({
         confirmLabel="Overwrite"
         onConfirm={add}
       />
+    </>
+  );
+}
+
+// What Traefik asks the app for before it trusts a container with
+// traffic.
+//
+// **Off by default, and that is the only safe default.** A check needs
+// a path, the path is something only the app's author knows, and a
+// wrong one does not degrade a name by halves — Traefik marks every
+// replica down at once and the name answers 503.
+//
+// What it buys is the case a retry cannot cover. An app on several
+// machines already routes around a replica that has *gone*: the edge
+// retries against the next one and nobody sees anything. A replica that
+// is up and broken answers the connection, so no retry ever fires for
+// it, and nothing but a check takes it out.
+function HealthCheck({
+  app,
+  onSaved,
+  onError,
+}: {
+  app: App;
+  onSaved: (a: App) => void;
+  onError: (e: string | null) => void;
+}) {
+  const current = app.health_path ?? "";
+  const [path, setPath] = useState(current);
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const dirty = path !== current;
+
+  return (
+    <>
+      <SectionHeader
+        title="Health check"
+        sub="What Traefik asks this app for before sending it traffic. Leave it empty to check nothing, which is what every app starts as."
+      />
+      <Card>
+        <CardContent>
+          <form
+            className="space-y-4"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              onError(null);
+              setSaved(false);
+              try {
+                onSaved(await api.patch<App>(`/apps/${app.reference}`, { health_path: path }));
+                setSaved(true);
+              } catch (err) {
+                onError(message(err));
+              }
+              setBusy(false);
+            }}
+          >
+            <TextField
+              label="Path"
+              placeholder="/healthz"
+              value={path}
+              onChange={(e) => {
+                setPath(e.target.value);
+                setSaved(false);
+              }}
+              hint="It has to start with / and hold only what a URL path may — it goes into the proxy's own configuration. Checked every 10 seconds, with 5 seconds to answer."
+            />
+            {dirty && path !== "" && (
+              <Notice tone="warning">
+                A path this app does not answer 2xx or 3xx on takes every copy of it out of
+                rotation, and {app.domains.length > 0 ? "its names answer" : "it would answer"} 503
+                rather than degrading. Check what the app actually serves before saving.
+              </Notice>
+            )}
+            {!dirty && current !== "" && app.nodes.length > 1 && (
+              <Notice>
+                A copy of this app that stops answering <code>{current}</code> is taken out of the
+                balancer and the rest go on serving. One that has gone needs no check — the edge
+                retries against the next machine on its own.
+              </Notice>
+            )}
+            <div className="flex items-center gap-3">
+              <ActionButton type="submit" busy={busy} disabled={!dirty}>
+                Save
+              </ActionButton>
+              {saved && !dirty && (
+                <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-success">
+                  <CheckIcon className="size-3.5" /> Saved
+                </span>
+              )}
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </>
   );
 }

@@ -67,7 +67,10 @@ func (s *Service) RoutesFor(ctx context.Context, nodeID int64) ([]node.Route, er
 				// out rather than published empty.
 				continue
 			}
-			out = append(out, node.Route{App: ReferenceOf(a).String(), Host: d.Host, Servers: servers})
+			out = append(out, node.Route{
+				App: ReferenceOf(a).String(), Host: d.Host,
+				Servers: servers, Health: a.HealthPath,
+			})
 		}
 	}
 	return out, nil

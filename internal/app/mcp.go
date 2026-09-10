@@ -108,6 +108,11 @@ type updateInput struct {
 	Repo        *string `json:"repo,omitempty" jsonschema:"for a building app, the https:// Git repository to build from"`
 	Ref         *string `json:"ref,omitempty" jsonschema:"for a building app, the branch, tag or commit to build"`
 	Dockerfile  *string `json:"dockerfile,omitempty" jsonschema:"for a dockerfile app only, the recipe's path within the repository"`
+	// Safe for an agent in a way `node` is not: a wrong path takes an
+	// app's names to 503 and is undone by clearing the field, where a
+	// wrong placement moves somebody's app to a box they were not
+	// looking at.
+	HealthPath *string `json:"health_path,omitempty" jsonschema:"the path Traefik asks this app for before trusting a container with traffic, e.g. /healthz. Send empty to check nothing, which is the default; a path that the app does not answer 2xx or 3xx on takes every replica out of rotation"`
 }
 
 func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInput) (*mcp.CallToolResult, Response, error) {
@@ -129,7 +134,7 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 			Dockerfile: deref(in.Dockerfile),
 		}
 	}
-	if in.Description == nil && source == nil && origin == nil {
+	if in.Description == nil && source == nil && origin == nil && in.HealthPath == nil {
 		return nil, Response{}, fmt.Errorf("nothing to change")
 	}
 	// No `node` here, deliberately: moving an app between machines is
@@ -137,7 +142,7 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 	// that can do it is one that can move somebody's app to a box they
 	// were not looking at. The API and the dashboard are where that is
 	// decided.
-	updated, err := t.svc.Update(ctx, t.caller, ref, in.Description, source, origin, nil)
+	updated, err := t.svc.Update(ctx, t.caller, ref, in.Description, source, origin, in.HealthPath, nil)
 	if err != nil {
 		return nil, Response{}, err
 	}

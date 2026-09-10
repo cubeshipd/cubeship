@@ -617,7 +617,7 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	newID, err := o.docker.CreateContainer(ctx, dockerx.ContainerOpts{
 		Name:         newName,
 		Image:        image.Ref,
-		Labels:       placementLabels(base, o.routedBy(a), values.HasTLS(), appName, deploymentID),
+		Labels:       placementLabels(base, o.routedBy(a), values.HasTLS(), a.HealthPath, appName, deploymentID),
 		Env:          envvar.Slice(env),
 		Network:      Network,
 		AlsoNetworks: o.mesh(ctx),

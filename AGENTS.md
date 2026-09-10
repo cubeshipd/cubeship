@@ -2092,6 +2092,47 @@ The file is rewritten **only when it changed**, and rendered sorted, for
 one reason: Traefik reloads on every write, this runs on a timer, and a
 map's iteration order would make every pass look like a change.
 
+### When the edge stops trusting a replica
+
+Two mechanisms, and the split is what each can see.
+
+**A dead replica costs a retry, and that needs nothing configured.** A
+container that has gone refuses the connection, so the edge's router
+carries a `retry` middleware with one attempt per backend: the request
+goes to the next replica and the visitor sees nothing. Without it that
+refusal is what they get — one request in three failing on an app with
+three replicas, for as long as it takes the machine that lost the
+container to say so, which is that machine's next pass. It is attached
+only when there is more than one server, because attempts count the
+first try and a retry against one backend is the same dead container
+asked twice.
+
+**A replica that is up and broken needs a health check, and that needs
+a path.** It answers the connection, so no retry ever fires for it —
+nothing but an actual request tells the difference. `apps.health_path`
+is that path, `HealthInterval` and `HealthTimeout` are how hard the
+edge looks, and both the balanced service and the single container's own
+labels carry it.
+
+**No check is the default, and it is the only safe one.** A path is
+something only the app's author knows, and a wrong one does not degrade
+a name by halves: Traefik marks every replica down at once and the name
+answers 503. So a default of `/` would be this instance turning working
+apps off — most of them answer 404 there — and the field is opted into
+instead.
+
+The timeout is deliberately not tight for the mirror reason. A replica
+taking five seconds to answer is in trouble; one taking a second under
+load is not, and marking a working container down is the failure that
+takes a name off the internet rather than the one that degrades it.
+
+`ValidHealthPath` is strict because the value is interpolated into a
+Traefik dynamic document **and** into a container label: a quote, a
+newline or a colon in it is configuration somebody else wrote. Same
+argument `ValidHost` makes about `Host(`+"`%s`"+`)`, and the same answer —
+the grammar is the rule, and `?` and `#` are left out because a health
+check with a query string is not something to guess the meaning of.
+
 **Nothing to balance is no file at all.** Traefik refuses a document
 whose `http` has nothing under it — "http cannot be a standalone
 element" — and refuses it as a failure to build the configuration *at
@@ -2242,10 +2283,6 @@ calls a working name broken is worse than one that says where to look.
   several A records or something in front of them, and both are
   decisions about failure — and about certificates — that this does not
   make.
-- **Taking a failed replica out of the balancer on its own.** A replica
-  drops out when its machine says it is down, which is that machine's
-  next pass; there is no health check between the edge and a replica on
-  another box.
 
 ## Managed databases
 
@@ -2794,7 +2831,14 @@ Two mechanisms draw the line, and they are different on purpose:
 
 - **A build tag, for anything that boots a container.** Those tests live
   in `test/integration` and are not in `./...` at all — a laptop does not
-  even compile them. `internal/platform/buildkit` keeps only what needs
+  even compile them. One of them is there for a reason worth copying:
+  `TestTraefikAcceptsABalancedRoute` hands the real proxy the routes
+  file this instance writes and reads its log, because rendering a
+  document and looking at the string proves we wrote what we meant and
+  nothing about whether Traefik accepts it. Those are different
+  questions, and the difference cost an outage — a document with `http`
+  and nothing under it renders fine, parses as YAML fine, and takes the
+  whole file provider down. `internal/platform/buildkit` keeps only what needs
   nothing: the frontend version pinned against the library, the two
   refusals that never reach a builder, and a clone from a repository on
   disk.
