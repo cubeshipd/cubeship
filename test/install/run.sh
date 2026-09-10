@@ -234,7 +234,7 @@ run_tests() {
 	# shell variable that has to go.
 	VERSION=""
 	rm -f /tmp/docker.log /tmp/started
-	main >/dev/null 2>&1
+	out=$(main 2>&1) || { printf '%s\n' "$out"; exit 1; }
 	check "the newest release is pinned to a version" \
 		"$(grep -c 'docker pull .*cubeshipd:9\.9\.9$' /tmp/docker.log)" "1"
 	check "nothing is pulled as latest" \
@@ -244,7 +244,7 @@ run_tests() {
 	# whole way to install a release candidate.
 	rm -f /tmp/docker.log /tmp/started
 	VERSION=0.2.0-rc.1
-	main >/dev/null 2>&1
+	out=$(main 2>&1) || { printf '%s\n' "$out"; exit 1; }
 	check "a named release is installed as given" \
 		"$(grep -c 'docker pull .*cubeshipd:0\.2\.0-rc\.1$' /tmp/docker.log)" "1"
 
