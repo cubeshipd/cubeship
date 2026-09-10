@@ -1285,8 +1285,8 @@ Mount caches are keyed per app (`cache-key`), because two apps sharing
 one would fight over it.
 
 **Nothing prunes the build cache.** It lives in the data directory and
-grows with every build — the same shape as an app's images outliving the
-app, which also needs a garbage collection pass Cubeship does not run.
+grows with every build. The registry's own disk has a pass somebody can
+press — see "Deleting" — and this has nothing at all:
 `docker exec cubeship-buildkit buildctl prune` is the manual answer for
 now.
 
@@ -1600,8 +1600,12 @@ would leave a container running with nothing on the instance naming it.
 import it, so `server` hands the app service back up at wiring time, and
 a service with no teardown wired refuses to delete at all.
 
-Deleting an app leaves its images in the registry — reclaiming that disk
-needs a registry garbage collection pass, which Cubeship does not run.
+Deleting an app leaves its images in the registry. Reclaiming that disk
+is a registry garbage collection pass, and `internal/registry` has one —
+`registry garbage-collect` inside the registry's own container, which is
+what that module's `Maintainer` exists to run. **Nothing schedules it**:
+it is a button, not a timer, because the pass wants the registry stopped
+and that is a few seconds of every app's pushes failing.
 
 **Deleting a deployment deletes a record — except the live one, which
 takes the app down.** That is the one place in this product where a
