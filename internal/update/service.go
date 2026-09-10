@@ -307,6 +307,26 @@ const (
 	WorkerPoll    = 5 * time.Second
 )
 
+// WebImageEnv rewrites CUBESHIP_WEB_IMAGE to the version being moved to.
+//
+// The daemon's environment is read back off the container being
+// replaced, which is right for every other variable in it and wrong for
+// this one: it names the dashboard's image, and a daemon that comes back
+// still pointing at the old one puts the old dashboard back the next
+// time it starts. The update would look done and undo itself on the
+// next reboot.
+func WebImageEnv(env []string, version string) []string {
+	const key = "CUBESHIP_WEB_IMAGE="
+	out := make([]string, 0, len(env))
+	for _, kv := range env {
+		if strings.HasPrefix(kv, key) {
+			kv = key + retag(strings.TrimPrefix(kv, key), version)
+		}
+		out = append(out, kv)
+	}
+	return out
+}
+
 // replace recreates a container from the same options with a new image.
 func (s *Service) replace(ctx context.Context, name, image string) error {
 	if name == "" || image == "" {
@@ -346,6 +366,19 @@ func (s *Service) handOver(ctx context.Context, r *Run) error {
 		return err
 	}
 	image := retag(s.daemonImage, r.Version)
+
+	// Whatever is there under this name goes first, and this is not
+	// belt and braces: an updater that outlived its own exit — the
+	// Engine's removal failing, a machine rebooted mid-update — is a
+	// name already in use, and the create below would fail every
+	// update from then on. Which it did: the second update an instance
+	// ever ran stopped here, with the dashboard already replaced.
+	//
+	// Nothing here is worth keeping. Its whole job was to exit.
+	if err := s.docker.RemoveContainer(ctx, s.daemon+"-updater"); err != nil {
+		log.Printf("update: clearing the previous updater: %v", err)
+	}
+
 	id, err := s.docker.CreateContainer(ctx, dockerx.ContainerOpts{
 		Name:  s.daemon + "-updater",
 		Image: image,

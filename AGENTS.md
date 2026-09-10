@@ -688,6 +688,25 @@ whoever installed this — a port, a domain, a data directory somewhere
 unusual — and a second copy of them in the binary is one that goes stale
 the first time `install.sh` grows a flag.
 
+**The updater's own name is cleared before it is made.** `AutoRemove`
+was declared on `ContainerOpts` and never passed to the Engine, which
+nothing noticed: the only other caller that used it removes its
+container itself. The updater relied on it, so the first update left a
+stopped `cubeship-daemon-updater` behind and the **second update an
+instance ever ran failed on the name** — after the dashboard was
+replaced and before the daemon was, which reads as an instance that
+updated its own UI and then went on offering the release it is already
+showing. The flag reaches the Engine now, and the name is cleared first
+anyway: a machine rebooted mid-update would otherwise be an instance
+that can never update again.
+
+**`CUBESHIP_WEB_IMAGE` moves with the daemon.** Its environment is read
+back off the container being replaced, which is right for every
+variable in it and wrong for that one: it names the dashboard's image,
+and a daemon that comes back still pointing at the old one puts the old
+dashboard back the next time it starts — an update that looks done and
+undoes itself on a reboot.
+
 **The state is a file, not a row.** Everything else that remembers
 something uses Postgres and this cannot: what it has to survive is the
 daemon going away, which is exactly when nothing can answer a query.

@@ -122,6 +122,12 @@ func replaceDaemon(name, image string) error {
 		return err
 	}
 	spec.Image = image
+	// Every other variable is carried over as it stands. This one names
+	// the dashboard's image, and a daemon that comes back still
+	// pointing at the old one puts the old dashboard back the next time
+	// it starts — an update that looks done and undoes itself on the
+	// next reboot.
+	spec.Env = update.WebImageEnv(spec.Env, run.Version)
 
 	if err := docker.StopContainer(ctx, name); err != nil {
 		log.Printf("update: stopping %s: %v", name, err)
