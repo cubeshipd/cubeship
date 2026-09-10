@@ -89,16 +89,11 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
       <AddDomain
         base={base}
         settings={settings.data}
-        // Where the record has to point: the machine this app's traffic
-        // arrives at, not the instance and not every machine it runs
-        // on. Every machine is its own edge, so a name pointing here
-        // reaches nothing when the app is served elsewhere — and one
-        // pointing at all of them would make every one of them ask
-        // Let's Encrypt for a name most of them cannot prove. The
-        // daemon works out which address that is rather than this
-        // deciding from the node's name.
+        // Where the record has to point: this instance, whichever
+        // machine the app runs on. Every name arrives here and is
+        // routed from here over the cluster's private network, so a
+        // record is written once and does not move when an app does.
         address={app.address ?? ""}
-        node={app.node}
         suggested={app.suggested_host ?? ""}
         onSaved={onSaved}
         onError={setError}
@@ -185,18 +180,16 @@ function AddDomain({
   base,
   settings,
   address,
-  node,
   suggested,
   onSaved,
   onError,
 }: {
   base: string;
   settings: Settings | undefined;
-  // Where a record for this app has to point, and which machine that
-  // is. Empty when the machine has not reported an address — a name
-  // nothing can be pointed at yet.
+  // Where a record for this app has to point: this instance's own
+  // public address, whichever machine the app runs on. Empty when the
+  // instance does not know it — a name nothing can be pointed at yet.
   address: string;
-  node: string;
   // A name this app could answer at, under the instance's own domain.
   // The daemon works it out — it is the app's own reference under that
   // domain — so it is offered here rather than composed here. Empty
@@ -441,24 +434,6 @@ function AddDomain({
                 connect a provider
               </Link>{" "}
               and Cubeship writes the record for you.
-            </p>
-          )}
-
-          {/* Every machine is its own edge, so the address a name points
-              at is the machine's rather than the instance's. Said where
-              the name is typed, because that is where somebody would
-              otherwise use the wrong one. */}
-          {node !== "control-plane" && (
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              This app runs on <code className="text-foreground">{node}</code>, which serves its
-              names itself.{" "}
-              {address ? (
-                <>
-                  Records for it point at <code className="text-foreground">{address}</code>.
-                </>
-              ) : (
-                "That server has not reported an address yet, so there is nothing to point a name at."
-              )}
             </p>
           )}
 

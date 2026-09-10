@@ -60,6 +60,7 @@ function Settings({ name }: { name: string }) {
           answer waits for it. */}
       {!datastore && <LoadingList rows={3} />}
 
+      {datastore && <DatabaseLimits datastore={datastore} onSaved={setDatastore} />}
       {datastore && <ExternalAccess datastore={datastore} onChanged={reload} />}
 
       {datastore && (
@@ -111,6 +112,102 @@ function Settings({ name }: { name: string }) {
 // general form: this is the difference between a database on a private
 // network and a database on the internet, and the thing standing
 // between the two is a firewall rule nobody here can write for you.
+// DatabaseLimits caps what this database's container may take.
+//
+// The container on a box this size most worth capping: an app that
+// leaks is one app, and a database that takes every page of memory
+// takes the daemon and the proxy with it.
+function DatabaseLimits({
+  datastore,
+  onSaved,
+}: {
+  datastore: Datastore;
+  onSaved: (d: Datastore) => void;
+}) {
+  const [cpu, setCPU] = useState(datastore.limits.cpu ? String(datastore.limits.cpu) : "");
+  const [memory, setMemory] = useState(
+    datastore.limits.memory_bytes
+      ? String(Math.round(datastore.limits.memory_bytes / (1 << 20)))
+      : "",
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const next = { cpu: Number(cpu) || 0, memory_bytes: (Number(memory) || 0) * (1 << 20) };
+  const dirty =
+    next.cpu !== datastore.limits.cpu || next.memory_bytes !== datastore.limits.memory_bytes;
+
+  return (
+    <>
+      <SectionHeader
+        title="Limits"
+        sub="How much of the machine this database may take. Empty is no limit, which is the default. Changing one takes effect within seconds and does not replace the container the way publishing a port does; removing one waits for the next start."
+      />
+      <Card>
+        <CardContent>
+          <form
+            className="space-y-4"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setError(null);
+              try {
+                onSaved(
+                  await api.patch<Datastore>(datastorePath(datastore.name), { limits: next }),
+                );
+              } catch (err) {
+                setError(message(err));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          >
+            <ErrorAlert error={error} />
+
+            <div className="space-y-1.5">
+              <Label htmlFor="db-cpu">CPU</Label>
+              <Input
+                id="db-cpu"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="no limit"
+                value={cpu}
+                onChange={(e) => setCPU(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Cores, fractional allowed: 0.5 is half a core. A ceiling rather than a share — at
+                its limit the container is throttled, not merely preferred less.
+              </p>
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="db-memory">Memory (MiB)</Label>
+              <Input
+                id="db-memory"
+                type="number"
+                min="0"
+                placeholder="no limit"
+                value={memory}
+                onChange={(e) => setMemory(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                A hard ceiling. The kernel enforces it by killing whatever crosses it, so setting
+                one below what the database is already holding stops it there and then — which its
+                clients see as the connection going away.
+              </p>
+            </div>
+
+            <Button type="submit" disabled={busy || !dirty}>
+              {busy ? "Saving..." : "Save limits"}
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
 function ExternalAccess({ datastore, onChanged }: { datastore: Datastore; onChanged: () => void }) {
   const [port, setPort] = useState("");
   const [busy, setBusy] = useState(false);
