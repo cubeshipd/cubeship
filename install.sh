@@ -30,7 +30,13 @@ IMAGE="${CUBESHIP_IMAGE:-ghcr.io/cubeship/cubeshipd}"
 # daemon rather than by this script — so all that happens here is making
 # sure it is on the box and telling the daemon its name.
 WEB_IMAGE="${CUBESHIP_WEB_IMAGE:-ghcr.io/cubeship/cubeship-frontend}"
-VERSION="${CUBESHIP_VERSION:-latest}"
+# Empty means "the newest stable release", which is resolved to an exact
+# version below rather than pulled as `latest`. See resolve_version.
+VERSION="${CUBESHIP_VERSION:-}"
+
+# Where the newest release is looked up. Its own variable so a fork, or a
+# test, can point it somewhere else.
+RELEASES_API="${CUBESHIP_RELEASES_API:-https://api.github.com/repos/cubeship/cubeship/releases/latest}"
 
 # LOCAL builds from source instead of pulling. Set by --local.
 LOCAL=0
@@ -89,6 +95,11 @@ usage() {
 
 		  --control-plane  The instance this machine will belong to, e.g.
 		                   https://cube.example.com
+		  --version        Install this exact release, e.g. 0.1.0, or a
+		                   prerelease like 0.2.0-rc.1. Without it, the
+		                   newest stable release is looked up and pinned,
+		                   so installing again gives the same thing.
+
 		  --token          The credential that instance minted when the
 		                   server was added to it. Add the server there
 		                   first; the token is shown once.
@@ -99,7 +110,8 @@ usage() {
 		Environment:
 		  CUBESHIP_IMAGE      daemon image to pull (default $IMAGE)
 		  CUBESHIP_WEB_IMAGE  dashboard image to pull (default $WEB_IMAGE)
-		  CUBESHIP_VERSION    tag to pull (default $VERSION)
+		  CUBESHIP_VERSION    same as --version
+		  CUBESHIP_RELEASES_API where the newest release is looked up
 		  CUBESHIP_DATA_DIR   where the instance keeps its state (default $DATA_DIR)
 		  CUBESHIP_DOMAIN     same as --domain
 		  CUBESHIP_ACME_EMAIL contact address for Let's Encrypt (optional)
@@ -110,6 +122,8 @@ parse_args() {
 	while [ $# -gt 0 ]; do
 		case "$1" in
 			--local) LOCAL=1 ;;
+			--version) shift; [ $# -gt 0 ] || die "--version needs a release, like 0.1.0"; VERSION="$1" ;;
+			--version=*) VERSION="${1#--version=}" ;;
 			--domain) shift; [ $# -gt 0 ] || die "--domain needs a name"; DOMAIN="$1" ;;
 			--domain=*) DOMAIN="${1#--domain=}" ;;
 			--control-plane) shift; [ $# -gt 0 ] || die "--control-plane needs a URL"; CONTROL_PLANE="$1" ;;
@@ -201,6 +215,36 @@ build_images() {
 	say "Building $IMAGE:$VERSION from $dir…"
 	docker build --build-arg "VERSION=$VERSION" -t "$IMAGE:$VERSION" "$dir" ||
 		die "the daemon image did not build. Nothing was changed."
+}
+
+# resolve_version pins what is about to be installed to an exact release.
+#
+# **Not `latest`.** That tag moves, so a box installed today and the same
+# command run tomorrow would be two different builds with no way to tell
+# from the outside which is which — and re-running an install is what
+# somebody does when something went wrong, which is the worst moment to
+# change two variables at once.
+#
+# What it costs is one HTTPS call at install time, on a machine that is
+# about to pull two images anyway. If it fails, the install stops and
+# says to name a version: guessing `latest` after being unable to ask
+# would be doing the thing this exists to avoid, quietly.
+#
+# A version somebody named is left exactly alone, prerelease or not:
+# naming one is the whole way to install a release candidate.
+resolve_version() {
+	[ -z "$VERSION" ] || return 0
+	[ "$LOCAL" = 0 ] || { VERSION="local"; return 0; }
+
+	say "Looking up the newest release…"
+	tag=$(
+		curl -fsSL -H "Accept: application/vnd.github+json" "$RELEASES_API" 2>/dev/null |
+			sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
+			head -n 1
+	) || tag=""
+	[ -n "$tag" ] || die "could not ask $RELEASES_API which release is newest. Pass --version <release> to install a specific one."
+	VERSION="${tag#v}"
+	say "Installing $VERSION."
 }
 
 run_daemon() {
@@ -395,6 +439,7 @@ main() {
 
 	ensure_docker
 	[ "$WORKER" = 1 ] || default_domain
+	resolve_version
 	run_daemon
 
 	if [ "$WORKER" = 1 ]; then

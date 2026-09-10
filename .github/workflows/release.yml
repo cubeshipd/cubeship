@@ -1,0 +1,157 @@
+# Publishing a release.
+#
+# A tag is the whole of it. `v0.2.0` is a stable release; `v0.2.0-rc.1`
+# is a prerelease, because semver says a version with a hyphen in it is
+# one — there is no second place to say so and disagree.
+#
+# What goes out is **two images at the same version**, and nothing else
+# has to be hosted anywhere: install.sh pulls both and an upgrade is a
+# pull. Both are built for amd64 and arm64, because the cheap VPS people
+# run this on is as often one as the other.
+#
+# The notes are written by hand, in internal/release/notes, and are the
+# same text three ways: the GitHub release's body, the CHANGELOG.md in
+# the repository, and the dialog the dashboard shows after an upgrade.
+# The first job refuses a tag that has none — a release nobody wrote
+# notes for is one whose dialog would be blank.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+  # For the provenance attestation: it says this image was built from
+  # this commit by this workflow, which is a thing somebody pulling a
+  # self-hosted PaaS may reasonably want to check.
+  id-token: write
+  attestations: write
+
+env:
+  GO_VERSION: "1.27"
+  REGISTRY: ghcr.io
+
+jobs:
+  notes:
+    name: Release notes
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      prerelease: ${{ steps.read.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Read the version and its notes
+        id: read
+        run: |
+          version="${GITHUB_REF#refs/tags/v}"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          # Semver: a hyphen makes it a prerelease. GitHub is told the
+          # same thing below, and install.sh will not offer it as latest.
+          case "$version" in
+            *-*) echo "prerelease=true" >> "$GITHUB_OUTPUT" ;;
+            *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+          file="internal/release/notes/$version.md"
+          test -f "$file" || {
+            echo "::error::no release notes at $file — a release nobody wrote notes for is one whose in-app dialog is blank"
+            exit 1
+          }
+          # The body of the GitHub release is the note without its
+          # header, which is metadata for the daemon rather than
+          # something to read.
+          awk 'f {print} /^---$/ {n++; if (n==2) f=1}' "$file" > notes.md
+          test -s notes.md || { echo "::error::$file has a header and no body"; exit 1; }
+
+      # The generated file going stale is the failure worth catching
+      # here rather than after the tag exists: it is the copy people
+      # read on GitHub.
+      - name: The changelog matches the notes
+        run: go run ./cmd/changelog -check
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: notes
+          path: notes.md
+
+  images:
+    name: ${{ matrix.image }}
+    needs: notes
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: cubeshipd
+            dockerfile: Dockerfile
+          - image: cubeship-frontend
+            dockerfile: Dockerfile.web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # `latest` moves only for a stable release. Somebody who installed
+      # without naming a version must not be upgraded onto a release
+      # candidate by a tag they never asked for.
+      - name: Work out the tags
+        id: tags
+        run: |
+          repo="${REGISTRY}/${OWNER}/${IMAGE}"
+          tags="$repo:$VERSION"
+          if [ "$PRERELEASE" = "false" ]; then
+            tags="$tags,$repo:latest"
+          fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+        env:
+          OWNER: ${{ github.repository_owner }}
+          IMAGE: ${{ matrix.image }}
+          VERSION: ${{ needs.notes.outputs.version }}
+          PRERELEASE: ${{ needs.notes.outputs.prerelease }}
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          # The daemon stamps this into its own -version output and
+          # bakes the matching dashboard image into its default, which
+          # is how the two stay a pair without anybody passing both.
+          build-args: VERSION=${{ needs.notes.outputs.version }}
+          provenance: mode=max
+          sbom: true
+
+      - name: Attest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ steps.tags.outputs.repo }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
+  publish:
+    name: GitHub release
+    needs: [notes, images]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: notes
+      - uses: softprops/action-gh-release@v2
+        with:
+          body_path: notes.md
+          prerelease: ${{ needs.notes.outputs.prerelease == 'true' }}

@@ -29,6 +29,7 @@ import (
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/project"
 	"cubeship/internal/registry"
+	"cubeship/internal/release"
 	"cubeship/internal/settings"
 	"cubeship/internal/setup"
 	"cubeship/internal/user"
@@ -52,6 +53,7 @@ type Server struct {
 	Nodes       *node.Service
 	Credentials *credential.Service
 	Settings    *settings.Service
+	Releases    *release.Service
 	Certs       *certificates.Service
 	Firewall    *firewall.Service
 	Setup       *setup.Service
@@ -128,6 +130,12 @@ type Options struct {
 	// installer prints it; a zero value asks for none, which is what a
 	// test wants and what an instance already claimed has.
 	SetupToken setup.Token
+
+	// Version is what this build is, stamped at link time. Empty on a
+	// build with nothing stamped on it — `make dev`, and every test —
+	// which is an instance with no release to be on and therefore
+	// nothing to say changed.
+	Version string
 }
 
 // New wires the modules together. The dependency order here is the real
@@ -286,6 +294,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Machine:      machine.NewService(db, reader, series),
 		Nodes:        nodes,
 		Settings:     cfg,
+		Releases:     release.NewService(db, opts.Version),
 		Certs:        certificates.NewService(cfg, apps, opts.DataDir),
 		// A firewall is the host's, so a server with no way to reach the
 		// host has one that answers "not available" — which is what a
@@ -392,6 +401,7 @@ func (s *Server) routes() {
 	datastore.NewHandler(s.Datastores).Routes(s.router, auth)
 	objectstore.NewHandler(s.ObjectStores).Routes(s.router, auth)
 	machine.NewHandler(s.Machine).Routes(s.router, auth)
+	release.NewHandler(s.Releases).Routes(s.router, auth)
 	// Two surfaces on one module: the operator's behind `auth`, and the
 	// agent's behind a node's own credential, which node.Routes wires
 	// itself. A worker never reaches anything that takes a caller.
