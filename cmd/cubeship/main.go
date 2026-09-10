@@ -22,6 +22,7 @@ func main() {
 	root.AddCommand(newProjectCmd())
 	root.AddCommand(newEnvironmentCmd())
 	root.AddCommand(newDatastoreCmd())
+	root.AddCommand(newServerCmd())
 	root.AddCommand(newUserCmd())
 
 	if err := root.Execute(); err != nil {

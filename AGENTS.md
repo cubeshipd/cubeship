@@ -71,7 +71,8 @@ internal/
                 buildkit, config, authkey, regauth, hostexec, httpx
   envvar/ slug/ small shared vocabulary
 cmd/cubeshipd/  the daemon
-cmd/cubeship/   the CLI (cobra), one file per noun
+cmd/cubeship/   the CLI (cobra), one file per noun — the noun is what the
+                API's own tag calls it, so `/nodes` is `cubeship server`
 web/            the dashboard: Next.js standalone, its own image and container
 internal/apiclient, internal/clicreds — what the CLI talks to the daemon with
 ```
@@ -1845,6 +1846,10 @@ registered behind that wrapper.
 key, and contacts nothing: the row is a place for a box that does not
 exist yet. Two steps that do not touch each other — the API mints, and
 somebody runs `install.sh --control-plane <url> --token <token>` there.
+`cubeship server add` is the two put together at the one moment they
+can be: it prints that command with the address and the credential
+already in it, because the CLI is signed in to the instance being joined
+and the token will never be readable again.
 Removing one is **local**: the row and its credential go, the agent is
 refused on its next call, and nothing on that machine is touched. A
 delete that reached out would be a delete that hangs on a host nobody

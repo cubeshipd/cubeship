@@ -41,6 +41,54 @@ type App struct {
 	Status      string   `json:"status"`
 	Project     string   `json:"project"`
 	Environment string   `json:"environment"`
+	// Node is the machine whose edge serves this app's names, and Nodes
+	// are the machines it runs on. On an instance of one box both are
+	// the control plane.
+	Node  string   `json:"node"`
+	Nodes []string `json:"nodes"`
+	// Address is where a DNS record for this app has to point: the
+	// machine its traffic arrives at, because every machine is its own
+	// edge. Empty when that machine has not reported one.
+	Address string `json:"address,omitempty"`
+	// Split says the machines serving it are not all serving the same
+	// deployment.
+	Split bool `json:"split,omitempty"`
+}
+
+// Server is one machine this instance is made of.
+//
+// The control plane is one of them, and it is a row like the others:
+// "the other servers" is a list that cannot answer where something
+// runs, and everything placeable on another machine has to be placeable
+// on this one.
+type Server struct {
+	Name         string `json:"name"`
+	Description  string `json:"description,omitempty"`
+	ControlPlane bool   `json:"control_plane"`
+	// Status is derived from when the machine last called in, never
+	// stored: ready, unreachable, or pending for one that has been
+	// added and never installed.
+	Status  string `json:"status"`
+	Address string `json:"address,omitempty"`
+	Version string `json:"version,omitempty"`
+
+	Cores            int   `json:"cores"`
+	MemoryTotalBytes int64 `json:"memory_total_bytes"`
+	DiskTotalBytes   int64 `json:"disk_total_bytes"`
+	Containers       int   `json:"containers"`
+	// InMesh is whether this machine is on the cluster's private
+	// network. A machine can be calling in and not on it, and then its
+	// containers cannot reach the other machines'.
+	InMesh bool `json:"in_mesh"`
+}
+
+// AddedServer is the one answer that carries a credential, because it
+// is the only moment it exists in a form anybody can read.
+type AddedServer struct {
+	Server
+	// Token is what that machine's agent authenticates with. Shown
+	// once: only its hash is kept here.
+	Token string `json:"token"`
 }
 
 // Domain is one name an app is served at.
@@ -273,6 +321,51 @@ func (c *Client) DeleteApp(ctx context.Context, ref string) error {
 	_, err := request[noContent](ctx, c, "delete app", http.MethodDelete,
 		appPath(ref), nil, http.StatusOK, DeployTimeout)
 	return err
+}
+
+// --- the machines this instance is made of ---
+
+// ListServers is every machine in the cluster, the control plane
+// included.
+func (c *Client) ListServers(ctx context.Context) ([]Server, error) {
+	return request[[]Server](ctx, c, "list servers", http.MethodGet,
+		"/nodes", nil, http.StatusOK, DefaultTimeout)
+}
+
+func (c *Client) GetServer(ctx context.Context, name string) (Server, error) {
+	return request[Server](ctx, c, "get server", http.MethodGet,
+		"/nodes/"+segment(name), nil, http.StatusOK, DefaultTimeout)
+}
+
+// AddServer mints a machine's credential and contacts nothing. The row
+// is a place for a box that does not exist yet; installing the agent
+// there is the other half, and the two do not touch.
+func (c *Client) AddServer(ctx context.Context, name, description string) (AddedServer, error) {
+	return request[AddedServer](ctx, c, "add server", http.MethodPost, "/nodes",
+		map[string]string{"name": name, "description": description},
+		http.StatusCreated, DefaultTimeout)
+}
+
+// RemoveServer takes a machine out of the cluster. It is a local act:
+// the row and its credential go, the agent is refused on its next call,
+// and nothing on that machine is touched — a delete that reached out
+// would be one that hangs on a host nobody can dial.
+func (c *Client) RemoveServer(ctx context.Context, name string) error {
+	_, err := request[struct{}](ctx, c, "remove server", http.MethodDelete,
+		"/nodes/"+segment(name), nil, http.StatusOK, DefaultTimeout)
+	return err
+}
+
+// PlaceApp says which machines run an app and which of them its traffic
+// arrives at. An empty edge keeps the one it has when that machine is
+// still in the set, so scaling an app out does not move its DNS record.
+func (c *Client) PlaceApp(ctx context.Context, ref string, nodes []string, edge string) (App, error) {
+	body := map[string]any{"nodes": nodes}
+	if edge != "" {
+		body["node"] = edge
+	}
+	return request[App](ctx, c, "place app", http.MethodPatch,
+		"/apps/"+ref, body, http.StatusOK, DefaultTimeout)
 }
 
 func (c *Client) DeleteProject(ctx context.Context, projectSlug string) error {
