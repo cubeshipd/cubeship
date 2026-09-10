@@ -342,6 +342,12 @@ func (a *Agent) replaceSelf(ctx context.Context, version string) error {
 		return fmt.Errorf("pull %s: %w", image, err)
 	}
 
+	// Whatever is there under this name goes first: an updater that
+	// outlived its own exit is a name already in use, and every update
+	// from then on would fail on the create below.
+	if err := a.engine.RemoveContainer(ctx, bootstrap.DaemonContainerName+"-updater"); err != nil {
+		log.Printf("agent: clearing the previous updater: %v", err)
+	}
 	id, err := a.engine.CreateContainer(ctx, dockerx.ContainerOpts{
 		Name:  bootstrap.DaemonContainerName + "-updater",
 		Image: image,

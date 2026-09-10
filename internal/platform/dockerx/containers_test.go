@@ -881,3 +881,27 @@ func TestSetResourcesUpdatesTheContainerInPlace(t *testing.T) {
 		t.Errorf("it sent %+v", fake.updatedResources)
 	}
 }
+
+// **AutoRemove has to reach the Engine.** It was declared and never
+// passed, which nothing noticed: the one caller that used it removes
+// its container itself. The one that did not was the updater, and a
+// leftover updater is a name already in use — so the second update an
+// instance ever ran failed on it, after the dashboard was replaced and
+// before the daemon was.
+func TestAOneShotIsAskedToRemoveItself(t *testing.T) {
+	fake := &fakeAPI{}
+	c := newWithAPI(fake)
+
+	if _, err := c.CreateContainer(context.Background(), ContainerOpts{
+		Name: "cubeship-daemon-updater", Image: "cubeshipd:0.3.1", AutoRemove: true,
+	}); err != nil {
+		t.Fatalf("CreateContainer: %v", err)
+	}
+	if !fake.createdHostConfig.AutoRemove {
+		t.Error("the Engine was not told to remove it, so its name is taken until somebody does")
+	}
+	// And Docker refuses a restart policy alongside it.
+	if fake.createdHostConfig.RestartPolicy.Name != "" {
+		t.Errorf("it also carries a restart policy: %q", fake.createdHostConfig.RestartPolicy.Name)
+	}
+}

@@ -84,3 +84,33 @@ func TestOnlyTheTagChanges(t *testing.T) {
 		}
 	}
 }
+
+// The daemon's environment is read back off the container being
+// replaced, which is right for every variable in it but this one: it
+// names the dashboard's image, and a daemon that comes back still
+// pointing at the old one puts the old dashboard back the next time it
+// starts — an update that looks done and undoes itself on a reboot.
+func TestTheDashboardsImageMovesWithTheDaemon(t *testing.T) {
+	env := []string{
+		"PATH=/usr/local/bin",
+		"CUBESHIP_WEB_IMAGE=ghcr.io/cubeshipd/cubeship:0.3.0",
+		"CUBESHIP_DATA_DIR=/var/lib/cubeship",
+	}
+	got := WebImageEnv(env, "0.3.1")
+	want := []string{
+		"PATH=/usr/local/bin",
+		"CUBESHIP_WEB_IMAGE=ghcr.io/cubeshipd/cubeship:0.3.1",
+		"CUBESHIP_DATA_DIR=/var/lib/cubeship",
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("env[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+	// An operator pointing it at a mirror keeps the mirror: only the
+	// tag after the last colon moves.
+	mirrored := WebImageEnv([]string{"CUBESHIP_WEB_IMAGE=registry.example.com:5000/mine/cubeship:0.3.0"}, "0.3.1")
+	if mirrored[0] != "CUBESHIP_WEB_IMAGE=registry.example.com:5000/mine/cubeship:0.3.1" {
+		t.Errorf("a mirrored image came back as %q", mirrored[0])
+	}
+}

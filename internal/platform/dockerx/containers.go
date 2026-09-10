@@ -73,6 +73,13 @@ type ContainerOpts struct {
 	// AutoRemove asks the Engine to delete the container when it exits.
 	// For a one-shot that is read through ContainerWait, not through
 	// its logs.
+	//
+	// It was declared here and never passed to the Engine, which went
+	// unnoticed because the one caller that used it — RunOneShot —
+	// removes the container itself anyway. The one that relied on it
+	// was the updater, and a leftover updater is a **name already in
+	// use**: the second update an instance ever ran failed on it, with
+	// the dashboard already replaced and the daemon not.
 	AutoRemove bool
 	// Resources is the ceiling this container runs under.
 	Resources Resources
@@ -316,6 +323,7 @@ func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (strin
 			Privileged:    opts.Privileged,
 			PidMode:       pidMode(opts),
 			Resources:     resources(opts.Resources),
+			AutoRemove:    opts.AutoRemove,
 		},
 		networkingConfig, nil, opts.Name)
 	if err != nil {
