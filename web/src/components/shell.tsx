@@ -1,5 +1,6 @@
 "use client";
 
+import { SiGithub } from "@icons-pack/react-simple-icons";
 import { cn } from "cn";
 import {
   ActivityIcon,
@@ -15,6 +16,7 @@ import {
   ServerIcon,
   ShieldCheckIcon,
   ShieldIcon,
+  SparklesIcon,
   UserRoundIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -23,7 +25,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import { Wordmark } from "@/components/brand";
 import { InstanceUpdate } from "@/components/instance-update";
 import { QueryProvider } from "@/components/query-provider";
-import { ReleaseNotes } from "@/components/release-notes";
+import { ReleaseNotes, useReleaseNotes } from "@/components/release-notes";
 import { SessionProvider } from "@/components/session-context";
 import {
   DropdownMenu,
@@ -140,49 +142,63 @@ export function Shell({ children }: { children: ReactNode }) {
   return (
     <SessionProvider me={me}>
       <QueryProvider>
-        <div className="flex min-h-screen bg-background">
-          <nav className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-border bg-card">
-            {/* A link rather than a plate: the mark is the way back to
+        {/* What changed, once, after an upgrade — and on demand from
+            the menu below, which is why it wraps rather than sits
+            beside: the item that opens it is three components down. */}
+        <ReleaseNotes>
+          <div className="flex min-h-screen bg-background">
+            <nav className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-border bg-card">
+              {/* A link rather than a plate: the mark is the way back to
                 the projects grid, which is where every other product
                 puts it and where a click on it is aimed. */}
-            <Link
-              href="/"
-              className="flex h-14 items-center border-b border-border px-4 text-primary transition-opacity hover:opacity-80"
-            >
-              <Wordmark className="text-xs" markClassName="size-5" />
-            </Link>
+              <Link
+                href="/"
+                className="flex h-14 items-center border-b border-border px-4 text-primary transition-opacity hover:opacity-80"
+              >
+                <Wordmark className="text-xs" markClassName="size-5" />
+              </Link>
 
-            <div className="flex-1 p-2">
-              {sections.map((section, i) => (
-                <div key={section.label ?? "workspace"} className={i > 0 ? "mt-5" : undefined}>
-                  {/* A heading rather than a rule: a line says these
+              <div className="flex-1 p-2">
+                {sections.map((section, i) => (
+                  <div key={section.label ?? "workspace"} className={i > 0 ? "mt-5" : undefined}>
+                    {/* A heading rather than a rule: a line says these
                         are apart, a word says what the other side is. */}
-                  {section.label && (
-                    <p className="mb-1 px-3 text-[10px] font-semibold tracking-[0.18em] text-subtle-foreground uppercase">
-                      {section.label}
-                    </p>
-                  )}
-                  {section.items.map((item) => (
-                    <NavLink key={item.href} {...item} />
-                  ))}
-                </div>
-              ))}
-            </div>
+                    {section.label && (
+                      <p className="mb-1 px-3 text-[10px] font-semibold tracking-[0.18em] text-subtle-foreground uppercase">
+                        {section.label}
+                      </p>
+                    )}
+                    {section.items.map((item) => (
+                      <NavLink key={item.href} {...item} />
+                    ))}
+                  </div>
+                ))}
+              </div>
 
-            <div className="border-t border-border p-2">
-              <UserMenu me={me} />
-            </div>
-          </nav>
+              <div className="flex items-center gap-1 border-t border-border p-2">
+                <UserMenu me={me} />
+                {/* The one link out of the instance. An icon rather than a
+                  row, because it is not a place in this dashboard. */}
+                <a
+                  href="https://github.com/cubeshipd/cubeship"
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Cubeship on GitHub"
+                  className="flex size-8 shrink-0 items-center justify-center border border-transparent text-subtle-foreground transition-colors hover:border-border hover:bg-secondary hover:text-foreground"
+                >
+                  <SiGithub className="size-4" />
+                  <span className="sr-only">Cubeship on GitHub</span>
+                </a>
+              </div>
+            </nav>
 
-          {/* What changed, once, after an upgrade. It renders nothing
-              until the daemon says there is something to say. */}
-          <ReleaseNotes />
-          <InstanceUpdate />
+            <InstanceUpdate />
 
-          <main className="min-w-0 flex-1">
-            <div className="mx-auto max-w-5xl px-8 py-8">{children}</div>
-          </main>
-        </div>
+            <main className="min-w-0 flex-1">
+              <div className="mx-auto max-w-5xl px-8 py-8">{children}</div>
+            </main>
+          </div>
+        </ReleaseNotes>
       </QueryProvider>
     </SessionProvider>
   );
@@ -220,13 +236,14 @@ function NavLink({ href, label, owns = [], icon: Icon }: NavItem) {
 
 function UserMenu({ me }: { me: Me }) {
   const router = useRouter();
+  const releaseNotes = useReleaseNotes();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
           <button
             type="button"
-            className="flex w-full items-center gap-2.5 border border-transparent px-2 py-2 text-left text-sm transition-colors hover:border-border hover:bg-secondary"
+            className="flex min-w-0 flex-1 items-center gap-2.5 border border-transparent px-2 py-2 text-left text-sm transition-colors hover:border-border hover:bg-secondary"
           >
             <span className="flex size-6 shrink-0 items-center justify-center border border-primary/40 bg-primary/10 font-mono text-[11px] text-primary">
               {me.username.slice(0, 2)}
@@ -243,6 +260,25 @@ function UserMenu({ me }: { me: Me }) {
             {me.role === "admin" && <span className="ml-1.5 text-subtle-foreground">· admin</span>}
           </DropdownMenuLabel>
         </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem render={<Link href="/account" />}>
+          <UserRoundIcon />
+          Account
+        </DropdownMenuItem>
+        {/* Reading them again is not an event, so it opens the history
+            rather than whatever is unread. */}
+        <DropdownMenuItem onClick={releaseNotes}>
+          <SparklesIcon />
+          Release notes
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          render={
+            <a href="https://github.com/cubeshipd/cubeship" target="_blank" rel="noreferrer" />
+          }
+        >
+          <SiGithub />
+          Cubeship on GitHub
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={async () => {

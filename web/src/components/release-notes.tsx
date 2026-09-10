@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { api, type Release, type Releases } from "@/lib/api";
+import { api, type Releases } from "@/lib/api";
 
 // What changed, shown once after an upgrade.
 //
@@ -21,18 +21,33 @@ import { api, type Release, type Releases } from "@/lib/api";
 // Marked read when it is closed rather than when it is opened: closing
 // is the act of having finished with it, and a dialog that marks itself
 // read on the way up loses the notes to a stray refresh.
-export function ReleaseNotes() {
-  const [pending, setPending] = useState<Release[] | null>(null);
+// ReleaseNotesContext is how the sidebar opens this on purpose.
+//
+// A context rather than a prop, because the two are not near each
+// other: the dialog belongs to the shell — it has to be able to appear
+// over any page — and what opens it is an item in a menu three
+// components away.
+const ReleaseNotesContext = createContext<() => void>(() => {});
+
+/** useReleaseNotes opens the release notes on demand. */
+export function useReleaseNotes() {
+  return useContext(ReleaseNotesContext);
+}
+
+export function ReleaseNotes({ children }: { children?: ReactNode }) {
+  const [state, setState] = useState<Releases | null>(null);
   const [open, setOpen] = useState(false);
+  // **Opened by an upgrade, or opened on purpose.** The first shows
+  // what is new and marks it read; the second is the history, and
+  // reading it again is not an event.
+  const [asked, setAsked] = useState(false);
 
   useEffect(() => {
     api
       .get<Releases>("/releases")
       .then((r) => {
-        if (r.unseen.length > 0) {
-          setPending(r.unseen);
-          setOpen(true);
-        }
+        setState(r);
+        if (r.unseen.length > 0) setOpen(true);
       })
       // A dashboard whose release notes could not be read is a
       // dashboard, and nothing about this is worth an error banner over
@@ -51,54 +66,78 @@ export function ReleaseNotes() {
   // exactly the sequence somebody who just read the notes performs.
   const dismiss = useCallback(async () => {
     setOpen(false);
+    if (asked) {
+      // Somebody who opened the history has not been told anything
+      // new, so there is nothing to mark as told.
+      setAsked(false);
+      return;
+    }
     try {
       await api.post("/releases/seen", undefined);
+      setState((s) => (s ? { ...s, unseen: [] } : s));
     } catch {
       // Nothing to do about it and nothing worth saying: the worst
       // case is the same notes once more.
     }
+  }, [asked]);
+
+  const show = useCallback(() => {
+    setAsked(true);
+    setOpen(true);
   }, []);
 
-  if (!pending) return null;
+  const pending = asked ? (state?.notes ?? []) : (state?.unseen ?? []);
+  if (pending.length === 0) {
+    return <ReleaseNotesContext.Provider value={show}>{children}</ReleaseNotesContext.Provider>;
+  }
 
   const many = pending.length > 1;
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && dismiss()}>
-      {/* A column rather than the primitive's grid: the header and the
+    <ReleaseNotesContext.Provider value={show}>
+      {children}
+      <Dialog open={open} onOpenChange={(next) => !next && dismiss()}>
+        {/* A column rather than the primitive's grid: the header and the
           footer stay put and the notes scroll between them. Grid gave
           one tall box, so the button that dismisses this was below the
           fold of a long release. */}
-      <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
-        <DialogHeader className="shrink-0 border-border border-b p-4 pr-12">
-          <DialogTitle>
-            {many ? `What changed in ${pending.length} releases` : `Cubeship ${pending[0].version}`}
-          </DialogTitle>
-          <DialogDescription>
-            {many
-              ? "This instance has been upgraded past more than one release. Newest first."
-              : pending[0].summary}
-          </DialogDescription>
-        </DialogHeader>
+        <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="shrink-0 border-border border-b p-4 pr-12">
+            <DialogTitle>
+              {asked
+                ? "Release notes"
+                : many
+                  ? `What changed in ${pending.length} releases`
+                  : `Cubeship ${pending[0].version}`}
+            </DialogTitle>
+            <DialogDescription>
+              {asked
+                ? `Every release up to ${state?.version ?? "this one"}, newest first.`
+                : many
+                  ? "This instance has been upgraded past more than one release. Newest first."
+                  : pending[0].summary}
+            </DialogDescription>
+          </DialogHeader>
 
-        <div className="min-w-0 flex-1 space-y-8 overflow-y-auto p-4">
-          {pending.map((note) => (
-            <section key={note.version} className="space-y-3">
-              {many && (
-                <header className="flex items-baseline gap-3 border-border border-b pb-1">
-                  <h2 className="font-mono text-primary text-sm">{note.version}</h2>
-                  <span className="font-mono text-[11px] text-muted-foreground">{note.date}</span>
-                </header>
-              )}
-              <Notes body={note.body} />
-            </section>
-          ))}
-        </div>
+          <div className="min-w-0 flex-1 space-y-8 overflow-y-auto p-4">
+            {pending.map((note) => (
+              <section key={note.version} className="space-y-3">
+                {many && (
+                  <header className="flex items-baseline gap-3 border-border border-b pb-1">
+                    <h2 className="font-mono text-primary text-sm">{note.version}</h2>
+                    <span className="font-mono text-[11px] text-muted-foreground">{note.date}</span>
+                  </header>
+                )}
+                <Notes body={note.body} />
+              </section>
+            ))}
+          </div>
 
-        <DialogFooter className="shrink-0 border-border border-t p-4">
-          <Button onClick={dismiss}>Got it</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none border-border border-t p-4">
+            <Button onClick={dismiss}>{asked ? "Close" : "Got it"}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </ReleaseNotesContext.Provider>
   );
 }
 

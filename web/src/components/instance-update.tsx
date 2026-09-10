@@ -111,7 +111,7 @@ export function InstanceUpdate() {
             {error && <p className="pt-3 font-mono text-destructive text-xs">{error}</p>}
           </div>
 
-          <DialogFooter className="shrink-0 border-border border-t p-4">
+          <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none border-border border-t p-4">
             <Button variant="ghost" onClick={() => setDismissed(true)}>
               Not now
             </Button>
