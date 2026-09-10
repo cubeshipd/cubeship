@@ -25,8 +25,8 @@ import (
 	"testing"
 	"time"
 
-	"cubeship/internal/node"
 	"cubeship/internal/platform/bootstrap"
+	"cubeship/internal/platform/traefik"
 )
 
 // traefikRejects hands Traefik a routes file and returns whatever it
@@ -36,17 +36,17 @@ import (
 // the parse, and a router whose servers are unreachable is a working
 // router that answers 502. Traefik reports a *configuration* failure
 // separately, and that is the string this looks for.
-func traefikRejects(t *testing.T, routes []node.Route, tls bool) string {
+func traefikRejects(t *testing.T, routes []traefik.Route, tls bool) string {
 	t.Helper()
 
 	dir := t.TempDir()
-	if _, err := node.WriteRoutes(dir, routes, tls); err != nil {
+	if _, err := traefik.WriteRoutes(dir, routes, tls); err != nil {
 		t.Fatalf("write the routes file: %v", err)
 	}
 	// The daemon writes 0600 as root; this container runs as its own
 	// user and has to be able to read it.
 	_ = os.Chmod(filepath.Join(dir, "traefik-dynamic"), 0o755)
-	if path := filepath.Join(dir, "traefik-dynamic", node.RoutesFileName); fileExists(path) {
+	if path := filepath.Join(dir, "traefik-dynamic", traefik.RoutesFileName); fileExists(path) {
 		_ = os.Chmod(path, 0o644)
 	}
 
@@ -104,7 +104,7 @@ func runFor(cmd *exec.Cmd, d time.Duration) (string, error) {
 // The load balancer's own file: several backends, a retry over them and
 // a health check on the service.
 func TestTraefikAcceptsABalancedRoute(t *testing.T) {
-	if said := traefikRejects(t, []node.Route{{
+	if said := traefikRejects(t, []traefik.Route{{
 		App:     "web/production/api",
 		Host:    "api.example.com",
 		Servers: []string{"http://one:8080", "http://two:8080"},
@@ -117,7 +117,7 @@ func TestTraefikAcceptsABalancedRoute(t *testing.T) {
 // And the same without a health path, which is what every app starts
 // as: a retry and no check.
 func TestTraefikAcceptsABalancedRouteWithNoHealthCheck(t *testing.T) {
-	if said := traefikRejects(t, []node.Route{{
+	if said := traefikRejects(t, []traefik.Route{{
 		App:     "web/production/api",
 		Host:    "api.example.com",
 		Servers: []string{"http://one:8080", "http://two:8080"},

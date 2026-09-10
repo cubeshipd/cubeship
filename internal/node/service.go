@@ -91,7 +91,6 @@ func (s *Service) SetApps(a Apps) { s.apps = a }
 // It follows the instance's domain, so it is asked rather than captured.
 func (s *Service) SetRegistryHost(fn func(context.Context) string) { s.registry = fn }
 
-
 // RegistryHost is the address an image pushed to this instance is
 // pulled from, or empty when there is no domain and therefore no
 // registry.
