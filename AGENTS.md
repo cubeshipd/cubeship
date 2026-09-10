@@ -2051,6 +2051,16 @@ A placed container is named for its **deployment id** rather than for
 the moment it was created, so a machine told the same thing twice can
 answer "am I already running this" from the name.
 
+**The ordinal goes back untouched in the result**, and it is what says
+which copy a report is about. An agent that drops it makes every report
+one about a copy nothing asked for, so every remote deploy stays
+`pending` for ever, on every app, with nothing anywhere saying why —
+which is what happened when the field was added to both ends of the wire
+and filled in on only one. A missing ordinal is read as the first copy,
+because that is the only one an agent from before this could be running.
+`TestTheAgentReportsWhichCopyItRan` is the first test `internal/worker`
+ever had, and the bug is why it exists.
+
 **A worker pulls from this instance's own registry as itself.** The
 control plane cannot put that credential in a placement — it holds only
 the hash — so what travels is the registry's *host*, and the machine

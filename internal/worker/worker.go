@@ -107,6 +107,11 @@ const (
 	healthInterval = time.Second
 )
 
+// How long this agent watches a container it just started, as fields
+// rather than the constants above so a test does not have to wait ten
+// real seconds per placement. Same shape the control plane's own
+// orchestrator uses, and for the same reason.
+
 // Agent is the loop.
 type Agent struct {
 	// controlPlane is the instance this machine belongs to, as a base
@@ -126,6 +131,12 @@ type Agent struct {
 	// the package, because what it needs from the daemon — the data
 	// directory, the Engine — is what the daemon already holds.
 	bootstrap func(ctx context.Context, edge node.Edge) error
+
+	// healthAttempts and healthInterval are how long a container is
+	// watched before it counts as up. Defaults from the constants
+	// above; a test turns the interval off.
+	healthAttempts int
+	healthInterval time.Duration
 
 	// dataDir is this machine's own state directory, and the one thing
 	// the agent writes into: the routes its Traefik reads. Mounted at
@@ -175,16 +186,18 @@ func New(controlPlane, token, version, dataDir string, box *machine.Reader, engi
 	address HostAddress, host firewall.Host, edge func(context.Context, node.Edge) error,
 ) *Agent {
 	return &Agent{
-		controlPlane: strings.TrimRight(controlPlane, "/"),
-		token:        token,
-		version:      version,
-		dataDir:      dataDir,
-		machine:      box,
-		engine:       engine,
-		address:      address,
-		firewall:     host,
-		bootstrap:    edge,
-		client:       &http.Client{Timeout: dialTimeout},
+		controlPlane:   strings.TrimRight(controlPlane, "/"),
+		token:          token,
+		version:        version,
+		dataDir:        dataDir,
+		machine:        box,
+		engine:         engine,
+		address:        address,
+		firewall:       host,
+		bootstrap:      edge,
+		healthAttempts: healthAttempts,
+		healthInterval: healthInterval,
+		client:         &http.Client{Timeout: dialTimeout},
 	}
 }
 
@@ -387,7 +400,11 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 			continue
 		}
 		id, err := a.start(ctx, p, registry)
-		result := node.Result{App: p.App, Deploy: p.Deploy, Container: id}
+		// The ordinal goes back untouched. It is how the control plane
+		// knows which copy of this app on this machine the result is
+		// about, and without it every report is about a copy nothing
+		// asked for.
+		result := node.Result{App: p.App, Deploy: p.Deploy, Ordinal: p.Ordinal, Container: id}
 		if err != nil {
 			log.Printf("agent: %s: %v", p.App, err)
 			result.Error = err.Error()
@@ -524,12 +541,12 @@ func (a *Agent) start(ctx context.Context, p node.Placement, registry string) (s
 		a.discard(ctx, id)
 		return "", fmt.Errorf("start container: %w", err)
 	}
-	for range healthAttempts {
+	for range a.healthAttempts {
 		select {
 		case <-ctx.Done():
 			a.discard(ctx, id)
 			return "", ctx.Err()
-		case <-time.After(healthInterval):
+		case <-time.After(a.healthInterval):
 		}
 		up, err := a.engine.IsRunning(ctx, id)
 		if err != nil || !up {
