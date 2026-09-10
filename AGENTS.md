@@ -739,6 +739,17 @@ says what it will install and a request that decides for itself are two
 different promises, and the second one changes under somebody between
 the screen rendering and the click.
 
+**The timezone database is in the binary**, through a blank import of
+`time/tzdata` in `cmd/cubeshipd`. The image is Alpine and Alpine ships
+none, so `time.LoadLocation` found nothing and *every* zone name was
+refused — an instance told to update at 03:00 in `America/Bahia` was
+told that is not a timezone this machine knows. Embedded rather than
+`apk add tzdata`, for the reason the fonts are vendored: a binary that
+needs something from the image underneath it breaks the day somebody
+builds it on a smaller base. No test can catch this from outside the
+image — a developer's machine and the CI runner both have a system
+database — which is why the import carries the reason it exists.
+
 `update.Scheduler` is the automatic half: a **time of day**, not an
 interval, because what is being chosen is when the instance may be
 briefly unusable — and "every 24 hours from whenever you turned it on"
