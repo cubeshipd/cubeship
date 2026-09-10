@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -21,9 +22,17 @@ type fakeEngine struct {
 	removed []string
 	// capped is every SetResources call, newest last.
 	capped []dockerx.Resources
+	// createErr, when set, is what CreateContainer answers.
+	createErr error
 }
 
+// errWouldNotStart is a container the Engine refuses to make.
+var errWouldNotStart = errors.New("no")
+
 func (e *fakeEngine) CreateContainer(_ context.Context, opts dockerx.ContainerOpts) (string, error) {
+	if e.createErr != nil {
+		return "", e.createErr
+	}
 	e.created = append(e.created, opts)
 	return "id-" + opts.Name, nil
 }
@@ -187,4 +196,103 @@ func TestAnUncappedCopyIsNotAskedAboutItsCeiling(t *testing.T) {
 	if len(engine.capped) != 0 {
 		t.Errorf("it set a ceiling nobody asked for: %+v", engine.capped)
 	}
+}
+
+// **A machine running several copies of one app keeps all of them.**
+//
+// The set of containers that should be here was a map keyed by the app,
+// which holds one entry per app however many copies were sent — so the
+// second copy was the only one that read as wanted, the first was
+// removed as something this instance no longer runs, started again on
+// the next pass, and flapped for the life of the instance.
+//
+// It could only happen on a real worker running a scaled-out app, which
+// is exactly the thing nothing here has ever run.
+func TestEveryCopyOnThisMachineIsKept(t *testing.T) {
+	engine := &fakeEngine{running: []dockerx.Running{
+		{ID: "id-1", Name: "cubeship-web-production-api-7", Labels: map[string]string{
+			node.LabelApp: "web/production/api", node.LabelOrdinal: "1"}},
+		{ID: "id-2", Name: "cubeship-web-production-api-7-2", Labels: map[string]string{
+			node.LabelApp: "web/production/api", node.LabelOrdinal: "2"}},
+	}}
+	a := New("https://cubeship.example.com", "token", "test", t.TempDir(), nil, engine, nil, nil)
+	a.healthInterval = 0
+
+	a.apply(context.Background(), []node.Placement{
+		{App: "web/production/api", Deploy: 7, Ordinal: 1, Container: "cubeship-web-production-api-7", Image: "nginx"},
+		{App: "web/production/api", Deploy: 7, Ordinal: 2, Container: "cubeship-web-production-api-7-2", Image: "nginx"},
+	}, "")
+
+	if len(engine.removed) != 0 {
+		t.Errorf("it removed %v, which it was told to be running", engine.removed)
+	}
+	if len(engine.created) != 0 {
+		t.Errorf("it created %v on top of what was already there", engine.createdNames())
+	}
+}
+
+// A copy goes when **its own** replacement is up, not when some
+// container of the same app is. Otherwise a deploy that comes up on the
+// first copy and fails on the second retires the second's old container
+// anyway, and that copy is simply gone.
+func TestAnOldCopyWaitsForItsOwnReplacement(t *testing.T) {
+	engine := &fakeEngine{running: []dockerx.Running{
+		{ID: "old-1", Name: "cubeship-web-production-api-7", Labels: map[string]string{
+			node.LabelApp: "web/production/api", node.LabelOrdinal: "1"}},
+		{ID: "old-2", Name: "cubeship-web-production-api-7-2", Labels: map[string]string{
+			node.LabelApp: "web/production/api", node.LabelOrdinal: "2"}},
+		// The first copy's replacement is up. The second's is not, and
+		// is not in this list.
+		{ID: "new-1", Name: "cubeship-web-production-api-8", Labels: map[string]string{
+			node.LabelApp: "web/production/api", node.LabelOrdinal: "1"}},
+	}}
+	a := New("https://cubeship.example.com", "token", "test", t.TempDir(), nil, engine, nil, nil)
+	a.healthInterval = 0
+	// Creating the second copy's replacement fails, which is the case
+	// this is about: what happens to the container it would replace.
+	engine.createErr = errWouldNotStart
+
+	a.apply(context.Background(), []node.Placement{
+		{App: "web/production/api", Deploy: 8, Ordinal: 1, Container: "cubeship-web-production-api-8", Image: "nginx"},
+		{App: "web/production/api", Deploy: 8, Ordinal: 2, Container: "cubeship-web-production-api-8-2", Image: "nginx"},
+	}, "")
+
+	// The first copy's old container may go: its replacement is up.
+	// The second's may not.
+	if !contains(engine.removed, "old-1") {
+		t.Errorf("it kept old-1, whose replacement is running: removed %v", engine.removed)
+	}
+	if contains(engine.removed, "old-2") {
+		t.Errorf("it removed old-2, whose replacement never came up: removed %v", engine.removed)
+	}
+}
+
+// A copy that has been scaled away goes, because nothing is coming to
+// replace it.
+func TestACopyThatWasScaledAwayIsRemoved(t *testing.T) {
+	engine := &fakeEngine{running: []dockerx.Running{
+		{ID: "id-1", Name: "cubeship-web-production-api-7", Labels: map[string]string{
+			node.LabelApp: "web/production/api", node.LabelOrdinal: "1"}},
+		{ID: "id-2", Name: "cubeship-web-production-api-7-2", Labels: map[string]string{
+			node.LabelApp: "web/production/api", node.LabelOrdinal: "2"}},
+	}}
+	a := New("https://cubeship.example.com", "token", "test", t.TempDir(), nil, engine, nil, nil)
+	a.healthInterval = 0
+
+	a.apply(context.Background(), []node.Placement{
+		{App: "web/production/api", Deploy: 7, Ordinal: 1, Container: "cubeship-web-production-api-7", Image: "nginx"},
+	}, "")
+
+	if len(engine.removed) != 1 || engine.removed[0] != "id-2" {
+		t.Errorf("it removed %v, want the second copy alone", engine.removed)
+	}
+}
+
+func contains(all []string, want string) bool {
+	for _, s := range all {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }

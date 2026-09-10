@@ -369,9 +369,23 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 	}
 
 	var results []node.Result
-	wanted := make(map[string]string, len(placements))
+	// What should be running here, twice over: by container name, which
+	// is what says "keep this one", and by which copy of which app each
+	// is, which is what says whether an old one may go.
+	//
+	// **Not one entry per app.** A machine running several copies of one
+	// app has several containers, and a map keyed by the app holds only
+	// the last of them — so every other copy read as unwanted, was
+	// removed, was started again on the next pass, and flapped for the
+	// life of the instance.
+	wanted := make(map[string]bool, len(placements))
+	byCopy := make(map[copy]string, len(placements))
 	for _, p := range placements {
-		wanted[p.App] = p.Container
+		wanted[p.Container] = true
+		byCopy[copy{app: p.App, ordinal: node.OrdinalOf(p.Ordinal)}] = p.Container
+	}
+
+	for _, p := range placements {
 		if id := named(running, p.Container); id != "" {
 			// Already running it. Not news, and reporting it every ten
 			// seconds would mark one deploy succeeded forever.
@@ -421,10 +435,14 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 			// none of it is this loop's to touch.
 			continue
 		}
-		want, placed := wanted[app]
-		if placed && want == c.Name {
+		if wanted[c.Name] {
 			continue
 		}
+		// Which copy this is, so what may replace it is **its own**
+		// replacement rather than any container of the same app. An
+		// app with no entry here at all is one this machine no longer
+		// runs, and a copy with none is one that has been scaled away.
+		want, placed := byCopy[copy{app: app, ordinal: node.OrdinalFromLabels(c.Labels)}]
 		if placed && named(running, want) == "" {
 			// Its replacement is not up. Leaving the old one running is
 			// the whole point of doing this second.
@@ -439,6 +457,14 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 		}
 	}
 	return results
+}
+
+// copy names one copy of one app on this machine: an app running three
+// of itself here is three of these, and they are what a container is
+// replaced against.
+type copy struct {
+	app     string
+	ordinal int
 }
 
 // start runs one placement: pull, create, start, and watch it long

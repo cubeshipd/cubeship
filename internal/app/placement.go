@@ -262,7 +262,7 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 		// The same labels a container here would carry, which are now
 		// only the two that say whose it is: nothing on any machine
 		// routes a name any more. See placementLabels.
-		Labels:   placementLabels(ref.String(), d.ID),
+		Labels:   placementLabels(ref.String(), d.ID, ordinal),
 		Networks: networks,
 		// The ceiling this copy runs under. It travels with the
 		// placement rather than being asked for, because the machine
@@ -281,11 +281,15 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 // name" — and on a worker it would be a router no proxy ever reads.
 // What is left is the network it joins and the two labels the agent
 // removes a container it should no longer run by.
-func placementLabels(app string, deploy int64) map[string]string {
+func placementLabels(app string, deploy int64, ordinal int) map[string]string {
 	return map[string]string{
 		"traefik.docker.network": Network,
 		node.LabelApp:            app,
 		node.LabelDeploy:         strconv.FormatInt(deploy, 10),
+		// Which copy this is, so a machine running several of one app
+		// can retire an old container once **its own** replacement is
+		// up rather than once any container of that app is.
+		node.LabelOrdinal: strconv.Itoa(node.OrdinalOf(ordinal)),
 	}
 }
 
