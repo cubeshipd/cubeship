@@ -23,7 +23,7 @@ func NewRepository(q database.Queryer) *Repository { return &Repository{q: q} }
 // by value instead.
 const columns = `id, slug, description, control_plane, address, version,
 	cores, memory_total_bytes, disk_total_bytes,
-	cpu_percent, memory_bytes, disk_bytes, containers, mesh_node_id,
+	cpu_percent, memory_bytes, disk_bytes, mesh_node_id,
 	last_seen_at, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
@@ -36,7 +36,7 @@ func scan(row scanner) (*Node, error) {
 	var lastSeen sql.NullTime
 	if err := row.Scan(&n.ID, &n.Slug, &n.Description, &n.ControlPlane, &address, &version,
 		&n.Cores, &n.MemoryTotalBytes, &n.DiskTotalBytes,
-		&cpu, &memory, &disk, &n.Containers, &n.MeshNodeID, &lastSeen, &n.CreatedAt); err != nil {
+		&cpu, &memory, &disk, &n.MeshNodeID, &lastSeen, &n.CreatedAt); err != nil {
 		return nil, err
 	}
 	n.Address, n.Version = address.String, version.String
@@ -131,11 +131,11 @@ func (r *Repository) Record(ctx context.Context, id int64, rep Report) error {
 		`UPDATE nodes SET address = $2, version = $3,
 		        cores = $4, memory_total_bytes = $5, disk_total_bytes = $6,
 		        cpu_percent = $7, memory_bytes = $8, disk_bytes = $9,
-		        containers = $10, mesh_node_id = $11, last_seen_at = now()
+		        mesh_node_id = $10, last_seen_at = now()
 		 WHERE id = $1`,
 		id, rep.Address, rep.Version,
 		rep.Cores, rep.MemoryTotalBytes, rep.DiskTotalBytes,
-		rep.CPUPercent, rep.MemoryBytes, rep.DiskBytes, rep.Containers, rep.MeshNodeID)
+		rep.CPUPercent, rep.MemoryBytes, rep.DiskBytes, rep.MeshNodeID)
 	if err != nil {
 		return fmt.Errorf("record what %d reported: %w", id, err)
 	}

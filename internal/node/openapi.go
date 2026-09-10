@@ -27,13 +27,12 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"cpu_percent":        openapi.Number("The newest reading, as percent of the **whole machine**. Absent until one has been taken, because zero is a reading."),
 				"memory_bytes":       openapi.Integer("The newest reading of what is spoken for."),
 				"disk_bytes":         openapi.Integer("The newest reading of what is used."),
-				"containers":         openapi.Integer("How many of this instance's containers the agent found running there."),
 				"in_mesh":            openapi.Bool("Whether this machine is on the cluster's private network — Docker's own overlay, which is what lets a container here reach, and resolve by name, a container on another machine. A server can be `ready` and not on it: it is calling in, and its containers are alone."),
 
 				"last_seen_at": {Type: "string", Format: "date-time", Description: "When the agent last called. Absent on a machine that has never connected."},
 				"created_at":   {Type: "string", Format: "date-time"},
 			}, "name", "control_plane", "status", "cores", "memory_total_bytes", "disk_total_bytes",
-				"containers", "in_mesh", "created_at"),
+				"in_mesh", "created_at"),
 
 			"ServerCreated": openapi.Object(map[string]*openapi.Schema{
 				"token": openapi.String("What the machine's agent authenticates with. **Shown once and never again** — only its hash is stored, like an API key's. Losing it means removing the server and adding it back."),

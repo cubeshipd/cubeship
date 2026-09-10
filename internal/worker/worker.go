@@ -38,13 +38,8 @@ import (
 	"cubeship/internal/mesh"
 	"cubeship/internal/metrics"
 	"cubeship/internal/node"
-	"cubeship/internal/platform/bootstrap"
 	"cubeship/internal/platform/dockerx"
 )
-
-// ContainerPrefix is what every container this instance creates is
-// named under, on any machine in the cluster.
-const ContainerPrefix = "cubeship-"
 
 // dialTimeout bounds one call home.
 //
@@ -63,12 +58,6 @@ const dialTimeout = node.PollWait + 20*time.Second
 // number is how a pull gets killed for taking longer than a heartbeat.
 const workTimeout = 15 * time.Minute
 
-// Containers is what the agent counts on its own machine.
-// *dockerx.Client satisfies it; a test supplies a fake.
-type Containers interface {
-	RunningNames(ctx context.Context) ([]string, error)
-}
-
 // HostAddress is how the agent works out where its machine is reached
 // from outside. settings.RouteAddress satisfies it — the same door the
 // control plane finds its own address through, which is the point: a
@@ -80,7 +69,6 @@ type HostAddress interface {
 // Engine is what the agent needs from Docker: the cluster's swarm, and
 // the containers it is told to run. *dockerx.Client satisfies it.
 type Engine interface {
-	Containers
 	mesh.Engine
 
 	PullImage(ctx context.Context, ref string, auth *dockerx.RegistryAuth) error
@@ -696,7 +684,6 @@ func (a *Agent) report(ctx context.Context) node.AgentRequest {
 	if cpu, ok := a.cpu(); ok {
 		out.CPUPercent = &cpu
 	}
-	out.Containers = a.ours(ctx)
 	out.Results = a.pending
 	out.Readings = a.readings(ctx)
 	return out
@@ -756,33 +743,6 @@ func (a *Agent) readings(ctx context.Context) []node.Reading {
 		})
 	}
 	return out
-}
-
-// ours is how many of this instance's containers are running on this
-// machine.
-//
-// By name, because that is what makes a container ours — and **not
-// counting the daemon itself**: the question is what this instance put
-// here, and the agent answering it is not that. An empty worker reports
-// none rather than one, which is the true answer and the readable one.
-func (a *Agent) ours(ctx context.Context) int {
-	if a.engine == nil {
-		return 0
-	}
-	names, err := a.engine.RunningNames(ctx)
-	if err != nil {
-		return 0
-	}
-	count := 0
-	for _, name := range names {
-		if name == bootstrap.DaemonContainerName {
-			continue
-		}
-		if strings.HasPrefix(name, ContainerPrefix) {
-			count++
-		}
-	}
-	return count
 }
 
 func (a *Agent) cpu() (float64, bool) {

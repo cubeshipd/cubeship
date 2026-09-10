@@ -77,7 +77,6 @@ type Server struct {
 	Cores            int   `json:"cores"`
 	MemoryTotalBytes int64 `json:"memory_total_bytes"`
 	DiskTotalBytes   int64 `json:"disk_total_bytes"`
-	Containers       int   `json:"containers"`
 	// InMesh is whether this machine is on the cluster's private
 	// network. A machine can be calling in and not on it, and then its
 	// containers cannot reach the other machines'.

@@ -23,7 +23,6 @@ type server struct {
 	Cores        int      `json:"cores"`
 	MemoryTotal  int64    `json:"memory_total_bytes"`
 	CPUPercent   *float64 `json:"cpu_percent"`
-	Containers   int      `json:"containers"`
 	Token        string   `json:"token"`
 }
 
@@ -146,7 +145,7 @@ func TestAPassIsAJoinAndAHeartbeatAtOnce(t *testing.T) {
 	rec := f.Do(t, http.MethodPost, "/nodes/agent/reconcile", node.AgentRequest{
 		Version: "1.2.3", Address: "203.0.113.9",
 		Cores: 8, MemoryTotalBytes: 16 << 30, DiskTotalBytes: 200 << 30,
-		CPUPercent: &cpu, MemoryBytes: &memory, Containers: 3,
+		CPUPercent: &cpu, MemoryBytes: &memory,
 	}, token)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("reconcile: %d %s", rec.Code, rec.Body.String())
@@ -177,7 +176,7 @@ func TestAPassIsAJoinAndAHeartbeatAtOnce(t *testing.T) {
 	if one.Status != node.StatusReady {
 		t.Errorf("a machine that just called is %q", one.Status)
 	}
-	if one.Cores != 8 || one.MemoryTotal != 16<<30 || one.Containers != 3 {
+	if one.Cores != 8 || one.MemoryTotal != 16<<30 {
 		t.Errorf("what the machine said was not what the cluster shows: %+v", one)
 	}
 	if one.Address != "203.0.113.9" || one.Version != "1.2.3" {

@@ -38,7 +38,6 @@ type Response struct {
 	CPUPercent  *float64 `json:"cpu_percent,omitempty"`
 	MemoryBytes *int64   `json:"memory_bytes,omitempty"`
 	DiskBytes   *int64   `json:"disk_bytes,omitempty"`
-	Containers  int      `json:"containers"`
 	// InMesh is whether this machine is on the cluster's private
 	// network. A machine can be `ready` and not on it — it is calling
 	// in, and its containers cannot reach the others'.
@@ -63,7 +62,7 @@ func toResponse(n *Node) Response {
 		Status: n.Status(), Address: n.Address, Version: n.Version,
 		Cores: n.Cores, MemoryTotalBytes: n.MemoryTotalBytes, DiskTotalBytes: n.DiskTotalBytes,
 		CPUPercent: n.CPUPercent, MemoryBytes: n.MemoryBytes, DiskBytes: n.DiskBytes,
-		Containers: n.Containers, InMesh: n.InMesh(),
+		InMesh:     n.InMesh(),
 		LastSeenAt: n.LastSeenAt, CreatedAt: n.CreatedAt,
 	}
 }
@@ -195,7 +194,6 @@ type AgentRequest struct {
 	MemoryBytes *int64   `json:"memory_bytes,omitempty"`
 	DiskBytes   *int64   `json:"disk_bytes,omitempty"`
 
-	Containers int `json:"containers"`
 	// MeshNodeID is what this machine's own Engine says the swarm calls
 	// it. Empty is a machine that is not on the cluster's network.
 	MeshNodeID string `json:"mesh_node_id"`
@@ -282,7 +280,7 @@ func (h *Handler) reconcile(w http.ResponseWriter, r *http.Request) {
 		Version: req.Version, Address: req.Address,
 		Cores: req.Cores, MemoryTotalBytes: req.MemoryTotalBytes, DiskTotalBytes: req.DiskTotalBytes,
 		CPUPercent: req.CPUPercent, MemoryBytes: req.MemoryBytes, DiskBytes: req.DiskBytes,
-		Containers: req.Containers, MeshNodeID: req.MeshNodeID,
+		MeshNodeID: req.MeshNodeID,
 	}, req.Results, req.Readings)
 	if err != nil {
 		WriteError(w, err)
