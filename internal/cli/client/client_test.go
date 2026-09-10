@@ -443,7 +443,10 @@ func TestClientManagesTheCluster(t *testing.T) {
 
 	// And an app can be put on it. The edge is left out, so it stays
 	// where it was — scaling out must not move a DNS record.
-	app, err := c.CreateApp(ctx, "api", "web", "", "external")
+	// The default source, which is this instance's own registry: an
+	// external app would need the image it pulls, and what is under
+	// test here is where an app runs rather than where it comes from.
+	app, err := c.CreateApp(ctx, "api", "web", "", "")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}

@@ -84,6 +84,11 @@ type App struct {
 type Replica struct {
 	NodeID   int64
 	NodeSlug string
+	// Ordinal tells this copy from the others on the same machine. It
+	// starts at 1, and **the first one keeps the plain container name**
+	// — so an app that has always run one copy is byte-identical to
+	// what it was, and only the second and later carry a suffix.
+	Ordinal int
 	// Container is the id, and Name is what it is called.
 	Container string
 	Name      string
@@ -176,24 +181,70 @@ func (a *App) HasContainer() bool {
 	return false
 }
 
-// ReplicaOn is what a machine is running, and whether it was ever given
-// the app at all.
-func (a *App) ReplicaOn(nodeID int64) (Replica, bool) {
+// ReplicasOn is every copy a machine should be running, in ordinal
+// order.
+func (a *App) ReplicasOn(nodeID int64) []Replica {
+	var out []Replica
 	for _, r := range a.Replicas {
 		if r.NodeID == nodeID {
-			return r, true
+			out = append(out, r)
 		}
 	}
-	return Replica{}, false
+	return out
 }
 
-// Nodes are the machines this app runs on, by name, in the order the
-// repository read them — which is by id, so a listing does not
-// reshuffle between two reads of the same thing.
+// ReplicaOn is a machine's first copy, and whether it has one at all.
+// For the questions that are about the machine rather than about a
+// particular container — is this app on this box, what is its edge
+// serving.
+func (a *App) ReplicaOn(nodeID int64) (Replica, bool) {
+	on := a.ReplicasOn(nodeID)
+	if len(on) == 0 {
+		return Replica{}, false
+	}
+	return on[0], true
+}
+
+// Nodes are the machines this app runs on, by name, once each and in
+// the order the repository read them — which is by id, so a listing
+// does not reshuffle between two reads of the same thing.
 func (a *App) Nodes() []string {
 	out := make([]string, 0, len(a.Replicas))
+	seen := map[string]bool{}
 	for _, r := range a.Replicas {
+		if seen[r.NodeSlug] {
+			continue
+		}
+		seen[r.NodeSlug] = true
 		out = append(out, r.NodeSlug)
+	}
+	return out
+}
+
+// Spread divides a number of copies over a number of machines.
+//
+// Round-robin in the machines' own order, so the first few take the
+// remainder: four over three machines is 2, 1, 1. Deterministic,
+// because the answer decides which containers exist — a spread that
+// moved between two reads would be a machine told to start a copy and
+// then told to stop it.
+func Spread(replicas, machines int) []int {
+	if machines <= 0 {
+		return nil
+	}
+	if replicas < machines {
+		// Never fewer copies than machines: a machine an app was placed
+		// on and given nothing to run is a machine somebody put it on
+		// for no effect. Asking for fewer copies than machines is asking
+		// for fewer machines.
+		replicas = machines
+	}
+	out := make([]int, machines)
+	for i := range out {
+		out[i] = replicas / machines
+		if i < replicas%machines {
+			out[i]++
+		}
 	}
 	return out
 }
