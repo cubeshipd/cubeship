@@ -144,6 +144,10 @@ export type App = {
   // What is running on each of those machines — what a "degraded"
   // status is made of.
   replicas: AppReplica[];
+  // Whether the machines serving this app are not all serving the same
+  // deployment. Apart from `status` because the two are orthogonal: an
+  // app can be degraded and split, or running and split.
+  split?: boolean;
   // Where a DNS record for this app has to point: the machine its
   // traffic arrives at, because every machine is its own edge. Absent
   // when that machine has not reported an address — a name nothing can
@@ -164,6 +168,10 @@ export type AppReplica = {
   // a container from before this existed has none written down until
   // its next deploy.
   serving: boolean;
+  // Which deployment this machine is running, by id — the same id the
+  // deploy history is listed under. Absent for a machine that has been
+  // given the app and not yet run it.
+  deploy?: number;
 };
 
 // --- credentials ---
@@ -274,8 +282,15 @@ export type Deployment = {
   // without carrying it.
   has_logs: boolean;
   // Whether this record may be removed. False only for a deploy still
-  // running, which the daemon is still writing to.
+  // running, which the daemon is still writing to — a stalled one
+  // counts as not running, because nothing is writing to it any more.
   deletable: boolean;
+  // The machines this deploy is waiting for that have stopped
+  // answering. Absent on every deploy that is not waiting on one.
+  //
+  // The status stays "pending" on purpose: a machine that comes back
+  // picks a pending deploy up and finishes the rollout it missed.
+  stalled_on?: string[];
   // Whether the app is running this deploy — so deleting it takes the
   // app down. Reported apart from `deletable` because it is not a
   // refusal, it is a different act.

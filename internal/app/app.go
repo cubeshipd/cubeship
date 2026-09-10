@@ -134,6 +134,37 @@ func (a *App) Status() string {
 	}
 }
 
+// Split reports whether the machines serving this app are not all
+// serving the same deployment.
+//
+// It is a **fact, not a fault**, and it is reported apart from Status
+// because the two are orthogonal: an app can be degraded and split, or
+// running and split. Every rollout across several machines passes
+// through this state for as long as it takes the last machine to pull —
+// which is exactly why it is worth being able to see, since a rollout
+// that never finishes leaves it here for good.
+//
+// Only the replicas that are actually serving count. One that has been
+// given the app and not yet run it is an absence rather than a second
+// version, and a machine that is down is not serving anything to be
+// split across.
+func (a *App) Split() bool {
+	var first int64
+	for _, r := range a.Replicas {
+		if !r.Running() || r.Deploy == 0 {
+			continue
+		}
+		if first == 0 {
+			first = r.Deploy
+			continue
+		}
+		if r.Deploy != first {
+			return true
+		}
+	}
+	return false
+}
+
 // HasContainer reports whether anything is running this app anywhere.
 // It is what says there is a log to read and something to stop.
 func (a *App) HasContainer() bool {
@@ -257,14 +288,19 @@ type Stall struct {
 	Waiting []string
 }
 
-// StuckAfter is how long a deploy may wait on a machine before this
-// instance stops calling it "in progress".
+// StuckAfter is how long a machine has to have been silent before a
+// deploy waiting on it stops being called "in progress".
 //
-// Comfortably longer than any pull on a small box: a machine that is
-// working on a placement is still calling in every ten seconds, so
-// slowness and silence are already told apart by the machine's own
-// status. This is only the second half of that — how long the silence
-// has to have lasted before it is worth saying out loud.
+// It is the **machine's** silence, not the deploy's age: a deploy
+// started two minutes ago onto a box that died this morning is stalled
+// now, and waiting another quarter of an hour would not make that
+// truer.
+//
+// Long because the cheap answer is already taken. `unreachable` is
+// three missed passes, which is the right patience for taking a machine
+// out of a load balancer — where being wrong costs one interval of
+// traffic — and nowhere near enough here, where being wrong tells
+// somebody a rollout is never happening while the box is rebooting.
 const StuckAfter = 15 * time.Minute
 
 // Statuses an app can be in. "pending" is the initial state of an app

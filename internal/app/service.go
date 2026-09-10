@@ -58,10 +58,12 @@ type Remote interface {
 	// Addresses is where each machine in the cluster is reached, by
 	// node id — what a DNS record for an app on it has to point at.
 	Addresses(ctx context.Context) (map[int64]string, error)
-	// Unreachable is the machines this instance has stopped hearing
-	// from, by node id. What a stalled deploy is worked out from: a
-	// machine that is merely slow is still calling in.
-	Unreachable(ctx context.Context) (map[int64]bool, error)
+	// Quiet is the machines that have not called in for at least d, by
+	// node id. What a stalled deploy is worked out from: a machine that
+	// is merely slow is still calling in, and how long the silence has
+	// to have lasted is this module's judgement rather than the
+	// cluster's.
+	Quiet(ctx context.Context, d time.Duration) (map[int64]bool, error)
 }
 
 // SetRemote wires it in. Called once, by server.New — and the
@@ -876,22 +878,31 @@ func (s *Service) Deployments(ctx context.Context, caller *user.User, ref Refere
 }
 
 // markStalled fills in which of these deploys is waiting on a machine
-// that has stopped answering.
+// that has gone quiet.
 //
-// The cluster is asked once, and only when some row has been waiting
-// long enough to be worth asking about — on an instance of one box, or
-// one where every deploy finished, this costs nothing.
+// **It is the machine's silence that decides, not the deploy's age.** A
+// deploy started two minutes ago, onto a box that died this morning, is
+// stalled now — nothing about waiting another quarter of an hour would
+// make that truer. And the silence has to be long enough that a reboot
+// or a blip has had time to end: `unreachable` is three missed passes,
+// which is the right patience for taking a machine out of a load
+// balancer and nowhere near enough to conclude a rollout is never
+// happening.
+//
+// The cluster is asked once, and only when there is an unfinished
+// deploy to ask about — on an instance of one box, or one where every
+// deploy finished, this costs nothing.
 func (s *Service) markStalled(ctx context.Context, a *Scoped, history []*Deployment) error {
-	waited := false
+	open := false
 	for _, d := range history {
-		if !d.Done() && time.Since(d.CreatedAt) > StuckAfter {
-			waited = true
+		if !d.Done() {
+			open = true
 		}
 	}
-	if !waited || s.remote == nil {
+	if !open || s.remote == nil {
 		return nil
 	}
-	gone, err := s.remote.Unreachable(ctx)
+	quiet, err := s.remote.Quiet(ctx, StuckAfter)
 	if err != nil {
 		// The cluster's own state is not something a deploy history
 		// should fail on. Without it nothing is reported stalled, which
@@ -901,7 +912,7 @@ func (s *Service) markStalled(ctx context.Context, a *Scoped, history []*Deploym
 	}
 
 	for _, d := range history {
-		if d.Done() || time.Since(d.CreatedAt) <= StuckAfter {
+		if d.Done() {
 			continue
 		}
 		var waiting []string
@@ -911,7 +922,7 @@ func (s *Service) markStalled(ctx context.Context, a *Scoped, history []*Deploym
 			if r.Deploy == d.ID && r.Running() {
 				continue
 			}
-			if gone[r.NodeID] {
+			if quiet[r.NodeID] {
 				waiting = append(waiting, r.NodeSlug)
 			}
 		}

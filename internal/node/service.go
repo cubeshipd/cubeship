@@ -157,27 +157,37 @@ func (s *Service) Addresses(ctx context.Context) (map[int64]string, error) {
 	return out, nil
 }
 
-// Unreachable is the machines this instance has stopped hearing from,
-// by id.
+// Quiet is the machines that have not called in for at least d, by id.
+//
+// The caller says how patient it wants to be, because the two questions
+// are not the same: three missed passes is enough to stop *routing* to
+// a machine and nowhere near enough to conclude that something waiting
+// on it is never going to happen. `unreachable` is the first; this is
+// how the second is asked.
 //
 // Derived from last_seen_at on every read, like Node.Status itself, so
 // it cannot go stale the way a stored column would. Only the machines
-// that are actually gone are in it: a caller asking "is this one
-// answering" reads a missing key as "yes", which is what an instance
-// with no cluster should get.
+// that are actually quiet are in it: a caller reads a missing key as
+// "it is answering", which is what an instance with no cluster gets.
 //
-// The control plane is never in the answer. It cannot be unreachable
-// from itself, and a daemon that reported its own box missing would be
-// one deciding something is wrong from the only place that can be sure
-// it is not.
-func (s *Service) Unreachable(ctx context.Context) (map[int64]bool, error) {
+// A machine that has **never** called in is quiet however long d is —
+// it is a row somebody made and never installed, and something waiting
+// on it is waiting for a box that does not exist.
+//
+// The control plane is never in the answer. It cannot be out of touch
+// with itself, and a daemon reporting its own box missing would be one
+// deciding something is wrong from the only place that can be sure it
+// is not.
+func (s *Service) Quiet(ctx context.Context, d time.Duration) (map[int64]bool, error) {
 	all, err := s.Repo().List(ctx)
 	if err != nil {
 		return nil, err
 	}
 	out := map[int64]bool{}
 	for _, n := range all {
-		if n.Status() == StatusUnreachable {
+		switch {
+		case n.ControlPlane:
+		case n.LastSeenAt == nil, time.Since(*n.LastSeenAt) >= d:
 			out[n.ID] = true
 		}
 	}
