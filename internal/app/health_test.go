@@ -51,20 +51,30 @@ func TestTheAPIRefusesAHealthPathItCannotHandOver(t *testing.T) {
 	}
 
 	// And a real one is kept, and comes back.
-	var updated struct {
-		HealthPath string `json:"health_path"`
-	}
-	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPatch, "/apps/"+created.Reference,
-		map[string]any{"health_path": "/healthz"}, f.AdminKey, &updated), http.StatusOK)
-	if updated.HealthPath != "/healthz" {
-		t.Errorf("the app reports %q as its health path", updated.HealthPath)
+	if got := patchHealth(t, f, created.Reference, "/healthz"); got != "/healthz" {
+		t.Errorf("the app reports %q as its health path", got)
 	}
 
 	// Clearing it is how you turn the check off, so an empty string has
 	// to be a value rather than "leave it alone".
-	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPatch, "/apps/"+created.Reference,
-		map[string]any{"health_path": ""}, f.AdminKey, &updated), http.StatusOK)
-	if updated.HealthPath != "" {
-		t.Errorf("the check could not be turned off: %q", updated.HealthPath)
+	if got := patchHealth(t, f, created.Reference, ""); got != "" {
+		t.Errorf("the check could not be turned off: %q", got)
 	}
+}
+
+// patchHealth sets the path and returns what the app reports back.
+//
+// A fresh struct per call, deliberately. `health_path` is `omitempty`,
+// so a cleared one is *absent* from the response rather than empty —
+// and unmarshalling an absent field into a struct somebody reused
+// leaves the previous value sitting there, which reads as a field that
+// would not clear.
+func patchHealth(t *testing.T, f *servertest.Fixture, ref, path string) string {
+	t.Helper()
+	var out struct {
+		HealthPath string `json:"health_path"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPatch, "/apps/"+ref,
+		map[string]any{"health_path": path}, f.AdminKey, &out), http.StatusOK)
+	return out.HealthPath
 }
