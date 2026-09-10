@@ -447,12 +447,21 @@ type Placement struct {
 
 // replace applies a placement.
 //
-// The order is the safety: the machines go in first and the edge after,
-// so there is no moment where the app is served by a machine that has
-// been told to stop running it. The container an app is running now
-// stays where it is until the machine it is leaving asks what it should
-// run and does not find it — retiring it here would take the app down
-// for as long as the new machine takes to pull an image.
+// **It takes effect now**, on every machine: a worker is woken and
+// reconciles in the second after this, and this machine's own copies
+// are brought into line here. Before, the second half did not exist —
+// the same request meant "in ten seconds" on a worker and "whenever
+// somebody next deploys" on the control plane, which is two answers to
+// one question.
+//
+// A copy this machine no longer runs is stopped rather than left, and
+// that is not the outage it looks like. The proxy is built out of the
+// rows this rewrites, so a name loses its old backends the moment they
+// stop being what should run — keeping the container alive would keep
+// nothing serving, and would leave one holding its memory under a name
+// nothing on the instance points at. The gap while a machine gaining an
+// app pulls its image is the same gap a move between two workers has
+// always had.
 func (s *Service) replace(ctx context.Context, a *Scoped, p Placement, source Source) error {
 	nodes := dedupe(p.Nodes)
 	if len(nodes) == 0 {
@@ -482,9 +491,30 @@ func (s *Service) replace(ctx context.Context, a *Scoped, p Placement, source So
 	if copies == 0 {
 		copies = len(nodes)
 	}
+	// What this machine is running now, read before the rows are
+	// rewritten: a replica's container id is the only record of what
+	// that copy was, and rewriting the rows is what destroys it.
+	here, err := s.Repo().ControlPlaneID(ctx)
+	if err != nil {
+		return err
+	}
+	before := a.ReplicasOn(here)
+
 	if err := s.Repo().SetNodes(ctx, a.ID, nodes, scale, copies); err != nil {
 		return err
 	}
+
+	// **Scaling takes effect now, in both directions.** A worker is
+	// woken and reconciles in the second after this; before this the
+	// control plane did neither, so the same request meant "in ten
+	// seconds" on one machine and "whenever somebody next deploys" on
+	// the other.
+	after, err := s.Repo().ScopedByID(ctx, a.ID)
+	if err != nil {
+		return err
+	}
+	s.orch.retire(ctx, retired(before, after.ReplicasOn(here)))
+	s.orch.scaleLocally(a.ID)
 
 	// The set an open deploy is waiting on has just changed, and one of
 	// the machines it was waiting for may have been what was left. A
@@ -497,6 +527,22 @@ func (s *Service) replace(ctx context.Context, a *Scoped, p Placement, source So
 	// proxy should name has too.
 	s.announceRoutes()
 	return nil
+}
+
+// retired is the copies that were here and are not any more: a machine
+// taken off the app, or a scale lowered past their ordinal.
+func retired(before, after []Replica) []Replica {
+	keep := make(map[int]bool, len(after))
+	for _, r := range after {
+		keep[r.Ordinal] = true
+	}
+	var gone []Replica
+	for _, r := range before {
+		if !keep[r.Ordinal] {
+			gone = append(gone, r)
+		}
+	}
+	return gone
 }
 
 func dedupe(in []string) []string {
