@@ -6,6 +6,31 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.4.1 — 2026-09-10
+
+Users moved to Platform, where the instance's facts live, and the screen is built out of the components every other listing here uses.
+
+### Changed
+
+**Users is in the sidebar under Platform**, beside Credentials, rather
+than tucked into your own settings. Who can reach this instance is the
+same kind of fact as which registry it pulls from — your password and
+the colours you see are the other thing, and those stay under your name.
+
+A member who opens it is told it is an admin's to see, rather than shown
+an empty table.
+
+### Fixed
+
+**The screen is put together like the rest of the dashboard.** It had a
+table of its own and a bare dropdown: the table did not sort or show
+that it was loading, and the dropdown was a different height from the
+field beside it. Both are the shared components now.
+
+**Adding somebody is above the table**, because that is what brings
+anybody to the screen. The table answers "who is there", and you already
+know when it is only you.
+
 ## 0.4.0 — 2026-09-10
 
 A screen for who can reach this instance, seven palettes to see it in, and your own settings moved out from under the instance's.
