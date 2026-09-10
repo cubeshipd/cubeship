@@ -25,18 +25,18 @@ set -eu
 
 # Where releases are pulled from. Point these somewhere else to install a
 # build of your own.
-IMAGE="${CUBESHIP_IMAGE:-ghcr.io/cubeship/cubeshipd}"
+IMAGE="${CUBESHIP_IMAGE:-ghcr.io/cubeshipd/cubeshipd}"
 # The dashboard is its own image and its own container, started by the
 # daemon rather than by this script — so all that happens here is making
 # sure it is on the box and telling the daemon its name.
-WEB_IMAGE="${CUBESHIP_WEB_IMAGE:-ghcr.io/cubeship/cubeship-frontend}"
+WEB_IMAGE="${CUBESHIP_WEB_IMAGE:-ghcr.io/cubeshipd/cubeship-frontend}"
 # Empty means "the newest stable release", which is resolved to an exact
 # version below rather than pulled as `latest`. See resolve_version.
 VERSION="${CUBESHIP_VERSION:-}"
 
 # Where the newest release is looked up. Its own variable so a fork, or a
 # test, can point it somewhere else.
-RELEASES_API="${CUBESHIP_RELEASES_API:-https://api.github.com/repos/cubeship/cubeship/releases/latest}"
+RELEASES_API="${CUBESHIP_RELEASES_API:-https://api.github.com/repos/cubeshipd/cubeship/releases/latest}"
 
 # LOCAL builds from source instead of pulling. Set by --local.
 LOCAL=0
