@@ -29,7 +29,7 @@ IMAGE="${CUBESHIP_IMAGE:-ghcr.io/cubeshipd/cubeshipd}"
 # The dashboard is its own image and its own container, started by the
 # daemon rather than by this script — so all that happens here is making
 # sure it is on the box and telling the daemon its name.
-WEB_IMAGE="${CUBESHIP_WEB_IMAGE:-ghcr.io/cubeshipd/cubeship-frontend}"
+WEB_IMAGE="${CUBESHIP_WEB_IMAGE:-ghcr.io/cubeshipd/cubeship}"
 # Empty means "the newest stable release", which is resolved to an exact
 # version below rather than pulled as `latest`. See resolve_version.
 VERSION="${CUBESHIP_VERSION:-}"
@@ -200,8 +200,8 @@ build_images() {
 	[ -f "$dir/Dockerfile" ] ||
 		die "--local needs the repository. Run it from a checkout: git clone, then sudo ./install.sh --local"
 
-	IMAGE="${CUBESHIP_IMAGE:-cubeship/cubeshipd}"
-	WEB_IMAGE="${CUBESHIP_WEB_IMAGE:-cubeship/cubeship-frontend}"
+	IMAGE="${CUBESHIP_IMAGE:-cubeshipd}"
+	WEB_IMAGE="${CUBESHIP_WEB_IMAGE:-cubeship}"
 	VERSION="${CUBESHIP_VERSION:-local}"
 
 	# A worker serves no dashboard, so it does not need the image and

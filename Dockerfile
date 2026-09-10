@@ -51,7 +51,7 @@ ENV CUBESHIP_DATA_DIR=/var/lib/cubeship
 # own counterpart without being told. install.sh overrides it when it
 # builds locally, where neither image is published.
 ARG VERSION=dev
-ENV CUBESHIP_WEB_IMAGE=ghcr.io/cubeshipd/cubeship-frontend:${VERSION}
+ENV CUBESHIP_WEB_IMAGE=ghcr.io/cubeshipd/cubeship:${VERSION}
 
 EXPOSE 3000
 ENTRYPOINT ["/usr/local/bin/cubeshipd"]

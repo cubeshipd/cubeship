@@ -310,11 +310,20 @@ func (c *Client) DeleteEnvironment(ctx context.Context, projectSlug, envSlug str
 
 // CreateApp registers an app and returns it, including the registry path
 // to push to. environment may be empty, which means "production".
-func (c *Client) CreateApp(ctx context.Context, name, projectSlug, environment, source string) (App, error) {
-	return request[App](ctx, c, "create app", http.MethodPost, "/apps", map[string]string{
+// CreateApp registers an app. image is what an `external` app pulls,
+// without a tag, and is empty for every other source — the daemon
+// refuses an image on a source that derives its own, rather than
+// ignoring it.
+func (c *Client) CreateApp(ctx context.Context, name, projectSlug, environment, source, image string) (App, error) {
+	body := map[string]string{
 		"name": name, "project": projectSlug,
 		"environment": environment, "source": source,
-	}, http.StatusCreated, DefaultTimeout)
+	}
+	if image != "" {
+		body["image"] = image
+	}
+	return request[App](ctx, c, "create app", http.MethodPost, "/apps", body,
+		http.StatusCreated, DefaultTimeout)
 }
 
 // AddAppDomain gives an app a name to answer at.

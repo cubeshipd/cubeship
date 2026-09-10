@@ -81,19 +81,89 @@ jobs:
           path: notes.md
 
   images:
-    name: ${{ matrix.image }}
+    name: ${{ matrix.image }} (${{ matrix.arch }})
     needs: notes
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
+        image: [cubeshipd, cubeship]
+        arch: [amd64, arm64]
         include:
+          - arch: amd64
+            runner: ubuntu-latest
+            platform: linux/amd64
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            platform: linux/arm64
           - image: cubeshipd
             dockerfile: Dockerfile
-          - image: cubeship-frontend
+          - image: cubeship
             dockerfile: Dockerfile.web
     steps:
       - uses: actions/checkout@v4
-      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # **Each architecture on a machine of that architecture.** Building
+      # both here would mean one of them under QEMU, and a Go toolchain
+      # emulated instruction by instruction is the difference between a
+      # release taking minutes and taking most of an hour — on the one
+      # pipeline nobody can shorten by skipping.
+      #
+      # Pushed by digest, with no tag: a tag naming one architecture
+      # would be a tag that is wrong for half the machines that pull it
+      # for as long as the other build takes. The manifest that names
+      # both is written once, below, when both exist.
+      - name: Build ${{ matrix.platform }}
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          # The daemon stamps this into its own -version output and
+          # bakes the matching dashboard image into its default, which
+          # is how the two stay a pair without anybody passing both.
+          build-args: VERSION=${{ needs.notes.outputs.version }}
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          provenance: mode=max
+          sbom: true
+
+      # The digest travels to the merge job as a file named after
+      # itself: two jobs writing one artifact would race, and a name
+      # per digest cannot collide.
+      - name: Hand the digest on
+        run: |
+          mkdir -p /tmp/digests
+          touch "/tmp/digests/${DIGEST#sha256:}"
+        env:
+          DIGEST: ${{ steps.push.outputs.digest }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.image }}-${{ matrix.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  manifest:
+    name: ${{ matrix.image }}
+    needs: [notes, images]
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image: [cubeshipd, cubeship]
+    outputs:
+      digest: ${{ steps.digest.outputs.digest }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-${{ matrix.image }}-*
+          path: /tmp/digests
+          merge-multiple: true
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
         with:
@@ -104,48 +174,45 @@ jobs:
       # `latest` moves only for a stable release. Somebody who installed
       # without naming a version must not be upgraded onto a release
       # candidate by a tag they never asked for.
-      - name: Work out the tags
-        id: tags
+      - name: Name both architectures
+        working-directory: /tmp/digests
         run: |
           repo="${REGISTRY}/${OWNER}/${IMAGE}"
-          tags="$repo:$VERSION"
+          set -- -t "$repo:$VERSION"
           if [ "$PRERELEASE" = "false" ]; then
-            tags="$tags,$repo:latest"
+            set -- "$@" -t "$repo:latest"
           fi
-          echo "tags=$tags" >> "$GITHUB_OUTPUT"
-          echo "repo=$repo" >> "$GITHUB_OUTPUT"
+          for d in *; do set -- "$@" "$repo@sha256:$d"; done
+          docker buildx imagetools create "$@"
         env:
           OWNER: ${{ github.repository_owner }}
           IMAGE: ${{ matrix.image }}
           VERSION: ${{ needs.notes.outputs.version }}
           PRERELEASE: ${{ needs.notes.outputs.prerelease }}
 
-      - name: Build and push
-        id: push
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: ${{ matrix.dockerfile }}
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.tags.outputs.tags }}
-          # The daemon stamps this into its own -version output and
-          # bakes the matching dashboard image into its default, which
-          # is how the two stay a pair without anybody passing both.
-          build-args: VERSION=${{ needs.notes.outputs.version }}
-          provenance: mode=max
-          sbom: true
+      - name: Read the manifest's digest
+        id: digest
+        run: |
+          repo="${REGISTRY}/${OWNER}/${IMAGE}"
+          echo "digest=$(docker buildx imagetools inspect "$repo:$VERSION" --format '{{json .Manifest.Digest}}' | tr -d '"')" >> "$GITHUB_OUTPUT"
+        env:
+          OWNER: ${{ github.repository_owner }}
+          IMAGE: ${{ matrix.image }}
+          VERSION: ${{ needs.notes.outputs.version }}
 
+      # Attested on the manifest rather than per architecture: what
+      # somebody pulls is the manifest, and it is the thing worth being
+      # able to trace back to a commit.
       - name: Attest
         uses: actions/attest-build-provenance@v2
         with:
-          subject-name: ${{ steps.tags.outputs.repo }}
-          subject-digest: ${{ steps.push.outputs.digest }}
+          subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
+          subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: true
 
   publish:
     name: GitHub release
-    needs: [notes, images]
+    needs: [notes, manifest]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
