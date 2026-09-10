@@ -138,7 +138,7 @@ func TestDeletingTheLiveDeployTakesTheAppDownAndKeepsTheApp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := repo.UpdateContainer(ctx, scoped.ID, here, "container-abc", "container-abc", live.ID, true, app.StatusRunning); err != nil {
+	if err := repo.UpdateContainer(ctx, scoped.ID, here, 1, "container-abc", "container-abc", live.ID, true, app.StatusRunning); err != nil {
 		t.Fatal(err)
 	}
 

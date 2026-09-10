@@ -46,6 +46,8 @@ type App struct {
 	// the control plane.
 	Node  string   `json:"node"`
 	Nodes []string `json:"nodes"`
+	// Scale is how many copies run in total, across those machines.
+	Scale int `json:"scale"`
 	// Address is where a DNS record for this app has to point: the
 	// machine its traffic arrives at, because every machine is its own
 	// edge. Empty when that machine has not reported one.
@@ -356,13 +358,23 @@ func (c *Client) RemoveServer(ctx context.Context, name string) error {
 	return err
 }
 
-// PlaceApp says which machines run an app and which of them its traffic
-// arrives at. An empty edge keeps the one it has when that machine is
-// still in the set, so scaling an app out does not move its DNS record.
-func (c *Client) PlaceApp(ctx context.Context, ref string, nodes []string, edge string) (App, error) {
-	body := map[string]any{"nodes": nodes}
+// PlaceApp says which machines run an app, which of them its traffic
+// arrives at, and how many copies run in total.
+//
+// Each is left alone when it is not given: no machines keeps the ones it
+// has, no edge keeps the one it has when that machine is still in the
+// set, and no scale keeps the count — so scaling out does not move a
+// DNS record and does not change how many copies there are.
+func (c *Client) PlaceApp(ctx context.Context, ref string, nodes []string, edge string, scale int) (App, error) {
+	body := map[string]any{}
+	if len(nodes) > 0 {
+		body["nodes"] = nodes
+	}
 	if edge != "" {
 		body["node"] = edge
+	}
+	if scale > 0 {
+		body["scale"] = scale
 	}
 	return request[App](ctx, c, "place app", http.MethodPatch,
 		"/apps/"+ref, body, http.StatusOK, DefaultTimeout)

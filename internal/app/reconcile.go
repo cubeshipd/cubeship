@@ -35,24 +35,25 @@ func Reconcile(ctx context.Context, repo *Repository, d reconcileDocker) error {
 	}
 
 	for _, a := range apps {
-		mine, ok := a.ReplicaOn(here)
-		if !ok || mine.Container == "" {
-			continue
-		}
-		running, err := d.IsRunning(ctx, mine.Container)
-		if err != nil {
-			log.Printf("reconcile: app %s: inspect container %s failed: %v", a.Name, mine.Container, err)
-			running = false
-		}
+		for _, mine := range a.ReplicasOn(here) {
+			if mine.Container == "" {
+				continue
+			}
+			running, err := d.IsRunning(ctx, mine.Container)
+			if err != nil {
+				log.Printf("reconcile: app %s: inspect container %s failed: %v", a.Name, mine.Container, err)
+				running = false
+			}
 
-		want := StatusDown
-		if running {
-			want = StatusRunning
-		}
-		if want != mine.Status {
-			log.Printf("reconcile: app %s: status %s -> %s", a.Name, mine.Status, want)
-			if err := repo.SetStatus(ctx, a.ID, here, want); err != nil {
-				return err
+			want := StatusDown
+			if running {
+				want = StatusRunning
+			}
+			if want != mine.Status {
+				log.Printf("reconcile: app %s copy %d: status %s -> %s", a.Name, mine.Ordinal, mine.Status, want)
+				if err := repo.SetStatus(ctx, a.ID, here, mine.Ordinal, want); err != nil {
+					return err
+				}
 			}
 		}
 	}

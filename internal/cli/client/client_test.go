@@ -450,7 +450,7 @@ func TestClientManagesTheCluster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
-	placed, err := c.PlaceApp(ctx, app.Reference, []string{"control-plane", "eu-1"}, "")
+	placed, err := c.PlaceApp(ctx, app.Reference, []string{"control-plane", "eu-1"}, "", 0)
 	if err != nil {
 		t.Fatalf("PlaceApp: %v", err)
 	}
@@ -460,13 +460,28 @@ func TestClientManagesTheCluster(t *testing.T) {
 	if placed.Node != "control-plane" {
 		t.Errorf("adding a machine moved the app's traffic to %q", placed.Node)
 	}
+	// One copy per machine, because no count was asked for and adding a
+	// machine is not a change of count.
+	if placed.Scale != 2 {
+		t.Errorf("the app runs %d copies over 2 machines", placed.Scale)
+	}
+
+	// And scaling up without naming machines leaves them alone: four
+	// copies over the two it has.
+	scaled, err := c.PlaceApp(ctx, app.Reference, nil, "", 4)
+	if err != nil {
+		t.Fatalf("PlaceApp with only a count: %v", err)
+	}
+	if scaled.Scale != 4 || len(scaled.Nodes) != 2 {
+		t.Errorf("scaling up changed the machines: %d copies over %v", scaled.Scale, scaled.Nodes)
+	}
 
 	// A machine with apps on it cannot go: where they should run is a
 	// decision, and making it by deleting a row would make it invisibly.
 	if err := c.RemoveServer(ctx, "eu-1"); err == nil {
 		t.Error("a machine with an app on it was removed")
 	}
-	if _, err := c.PlaceApp(ctx, app.Reference, []string{"control-plane"}, ""); err != nil {
+	if _, err := c.PlaceApp(ctx, app.Reference, []string{"control-plane"}, "", 0); err != nil {
 		t.Fatalf("move the app back: %v", err)
 	}
 	if err := c.RemoveServer(ctx, "eu-1"); err != nil {

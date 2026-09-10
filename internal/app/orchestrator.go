@@ -626,15 +626,49 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	}
 
 	base := resourceName(ref)
-	// Named for the deploy it is, rather than for the moment it was
-	// created. A machine that is told to run a placement twice has to
-	// be able to answer "am I already running this", and a name with a
-	// timestamp in it can only answer "am I running something".
-	newName := containerNameFor(base, deploymentID)
+	labels := placementLabels(base, o.routedBy(a), values.HasTLS(), a.HealthPath, appName, deploymentID)
+
+	// **One copy at a time**, which is what makes several of them on one
+	// machine a rolling deploy rather than a moment with none of them
+	// serving. Each is brought up and proved healthy before the one it
+	// replaces is stopped, exactly as the single copy always was — an
+	// app that runs one of itself takes this loop once and cannot tell
+	// the difference.
+	//
+	// A copy that will not come up stops the rest. The ones already
+	// swapped keep the new version and the ones after it keep the old,
+	// which is a split this instance reports rather than hides — see
+	// App.Split — and it beats carrying on into an app that is entirely
+	// the version that does not work.
+	for _, replica := range a.ReplicasOn(here) {
+		if err := o.swap(ctx, a, replica, image, env, labels, base, deploymentID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// swap brings one copy of an app up and retires the one it replaces.
+func (o *Orchestrator) swap(ctx context.Context, a *Scoped, replica Replica, image Image,
+	env envvar.Map, labels map[string]string, base string, deploymentID int64,
+) error {
+	appName := ReferenceOf(a).String()
+	// Named for the deploy it is and the copy it is, rather than for
+	// the moment it was created. A machine that is told to run a
+	// placement twice has to be able to answer "am I already running
+	// this", and a name with a timestamp in it can only answer "am I
+	// running something".
+	newName := containerNameFor(base, deploymentID, replica.Ordinal)
+	if replica.Container != "" && replica.Name == newName {
+		// Already this deploy's container. Nothing to do, and creating
+		// one would collide on the name.
+		return nil
+	}
+
 	newID, err := o.docker.CreateContainer(ctx, dockerx.ContainerOpts{
 		Name:         newName,
 		Image:        image.Ref,
-		Labels:       placementLabels(base, o.routedBy(a), values.HasTLS(), a.HealthPath, appName, deploymentID),
+		Labels:       labels,
 		Env:          envvar.Slice(env),
 		Network:      Network,
 		AlsoNetworks: o.mesh(ctx),
@@ -653,13 +687,11 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 		return fmt.Errorf("health check timed out for container %s", newID)
 	}
 
-	previous, _ := a.ReplicaOn(here)
-	oldContainerID := previous.Container
 	// Whether this container routes the app's names is recorded with
 	// it, because a container keeps the labels it was created with and
 	// nothing else can recover that afterwards.
-	if err := o.apps.UpdateContainer(ctx, a.ID, here, newID, newName, deploymentID,
-		len(o.routedBy(a)) > 0, StatusRunning); err != nil {
+	if err := o.apps.UpdateContainer(ctx, a.ID, replica.NodeID, replica.Ordinal, newID, newName,
+		deploymentID, len(o.routedBy(a)) > 0, StatusRunning); err != nil {
 		// The new container is healthy but the database doesn't know
 		// about it, so nothing will ever retire it. Remove it rather
 		// than leave two containers answering one router.
@@ -667,11 +699,11 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 		return fmt.Errorf("update app container: %w", err)
 	}
 
-	if oldContainerID != "" && oldContainerID != newID {
-		if err := o.docker.StopContainer(ctx, oldContainerID); err != nil {
-			log.Printf("deploy %s: could not stop the previous container %s: %v", appName, oldContainerID, err)
+	if replica.Container != "" && replica.Container != newID {
+		if err := o.docker.StopContainer(ctx, replica.Container); err != nil {
+			log.Printf("deploy %s: could not stop the previous container %s: %v", appName, replica.Container, err)
 		}
-		o.removeContainer(ctx, oldContainerID, "retiring the previous container")
+		o.removeContainer(ctx, replica.Container, "retiring the previous container")
 	}
 	return nil
 }
@@ -723,22 +755,28 @@ func (o *Orchestrator) Retire(ctx context.Context, appID int64) error {
 	if err != nil {
 		return err
 	}
-	// Only this machine's own container. A replica on another machine
-	// goes when that machine next asks what it should be running and
-	// does not find this app in the answer — the row is being deleted,
-	// so it will not be. Reaching for it here would mean stopping a
-	// container through an Engine this daemon cannot see.
-	mine, ok := a.ReplicaOn(here)
-	if !ok || mine.Container == "" {
-		return nil
+	// Only this machine's own containers, and every one of them. A
+	// replica on another machine goes when that machine next asks what
+	// it should be running and does not find this app in the answer —
+	// the row is being deleted, so it will not be. Reaching for it here
+	// would mean stopping a container through an Engine this daemon
+	// cannot see.
+	for _, mine := range a.ReplicasOn(here) {
+		if mine.Container == "" {
+			continue
+		}
+		if err := o.docker.StopContainer(ctx, mine.Container); err != nil {
+			log.Printf("retiring app %d: could not stop container %s: %v", appID, mine.Container, err)
+		}
+		// Unlike the log-and-continue cases in Deploy, this one is
+		// returned: the caller is about to delete the row, and doing
+		// that while a container survives is exactly the state to
+		// avoid.
+		if err := o.docker.RemoveContainer(ctx, mine.Container); err != nil {
+			return err
+		}
 	}
-	if err := o.docker.StopContainer(ctx, mine.Container); err != nil {
-		log.Printf("retiring app %d: could not stop container %s: %v", appID, mine.Container, err)
-	}
-	// Unlike the log-and-continue cases in Deploy, this one is returned:
-	// the caller is about to delete the row, and doing that while the
-	// container survives is exactly the state to avoid.
-	return o.docker.RemoveContainer(ctx, mine.Container)
+	return nil
 }
 
 // waitHealthy reports whether a freshly started container looks healthy.

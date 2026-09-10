@@ -385,9 +385,11 @@ func TestAnAppRunningTwoVersionsSaysSo(t *testing.T) {
 type appView struct {
 	Status   string `json:"status"`
 	Split    bool   `json:"split"`
+	Scale    int    `json:"scale"`
 	Replicas []struct {
-		Node   string `json:"node"`
-		Deploy int64  `json:"deploy"`
+		Node    string `json:"node"`
+		Deploy  int64  `json:"deploy"`
+		Ordinal int    `json:"ordinal"`
 	} `json:"replicas"`
 }
 
@@ -396,4 +398,94 @@ func appOf(t *testing.T, f *servertest.Fixture, ref string) appView {
 	var out appView
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/apps/"+ref, nil, f.AdminKey, &out), http.StatusOK)
 	return out
+}
+
+// More than one copy on one machine, which is how a box with cores to
+// spare is used. The rows are what say how many, so the machine is told
+// to run each of them and each gets its own container name.
+func TestAMachineCanRunSeveralCopiesOfOneApp(t *testing.T) {
+	f := balancerFixture(t)
+	token := addServer(t, f, "eu-1")
+	created := createExternalApp(t, f, "api")
+
+	// Three copies over two machines: 2 and 1, in the machines' own
+	// order, which is the control plane first.
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/apps/"+created.Reference,
+		map[string]any{"nodes": []string{"control-plane", "eu-1"}, "scale": 3}, f.AdminKey), http.StatusOK)
+
+	got := appOf(t, f, created.Reference)
+	if got.Scale != 3 || len(got.Replicas) != 3 {
+		t.Fatalf("the app runs %d copies: %+v", got.Scale, got.Replicas)
+	}
+	perNode := map[string]int{}
+	for _, r := range got.Replicas {
+		perNode[r.Node]++
+	}
+	if perNode["control-plane"] != 2 || perNode["eu-1"] != 1 {
+		t.Errorf("three copies over two machines landed as %v, want 2 and 1", perNode)
+	}
+
+	deploy(t, f, created.Reference)
+	answer := reconcile(t, f, token)
+	if len(answer.Desired.Apps) != 1 {
+		t.Fatalf("eu-1 was told to run %d copies, want its share of one app", len(answer.Desired.Apps))
+	}
+
+	// And the machine with two is told about both, under names that
+	// differ — two containers cannot share one.
+	place(t, f, created.Reference, map[string]any{"nodes": []string{"eu-1"}, "scale": 2})
+	answer = reconcile(t, f, token)
+	if len(answer.Desired.Apps) != 2 {
+		t.Fatalf("eu-1 was told to run %d copies, want 2", len(answer.Desired.Apps))
+	}
+	first, second := answer.Desired.Apps[0], answer.Desired.Apps[1]
+	if first.Container == second.Container {
+		t.Errorf("both copies are called %q, so only one of them can exist", first.Container)
+	}
+	if first.Ordinal == second.Ordinal {
+		t.Errorf("both copies are ordinal %d, so a result cannot say which it is about", first.Ordinal)
+	}
+	// The first keeps the plain name, so an app that was never scaled
+	// out is byte-identical to what it was.
+	if strings.HasSuffix(first.Container, "-2") {
+		t.Errorf("the first copy took a suffix: %q", first.Container)
+	}
+}
+
+// Scaling down takes the highest copies off, and the machine removes
+// those containers the same way it removes an app it lost entirely:
+// they stop being in its answer.
+func TestScalingDownStopsTellingAMachineAboutTheExtraCopies(t *testing.T) {
+	f := balancerFixture(t)
+	token := addServer(t, f, "eu-1")
+	created := createExternalApp(t, f, "api")
+	place(t, f, created.Reference, map[string]any{"nodes": []string{"eu-1"}, "scale": 3})
+	deploy(t, f, created.Reference)
+
+	if n := len(reconcile(t, f, token).Desired.Apps); n != 3 {
+		t.Fatalf("eu-1 was told to run %d copies, want 3", n)
+	}
+	place(t, f, created.Reference, map[string]any{"scale": 1})
+	if n := len(reconcile(t, f, token).Desired.Apps); n != 1 {
+		t.Errorf("after scaling to 1, eu-1 is still told to run %d", n)
+	}
+	// The machines were not named, so they did not change.
+	if got := appOf(t, f, created.Reference); len(got.Replicas) != 1 || got.Replicas[0].Node != "eu-1" {
+		t.Errorf("scaling down moved the app: %+v", got.Replicas)
+	}
+}
+
+// Asking for fewer copies than machines is asking for fewer machines: a
+// machine an app was placed on and given nothing to run is a machine
+// somebody put it on for no effect.
+func TestThereIsNeverAMachineWithNothingToRun(t *testing.T) {
+	f := balancerFixture(t)
+	_ = addServer(t, f, "eu-1")
+	created := createExternalApp(t, f, "api")
+
+	place(t, f, created.Reference, map[string]any{"nodes": []string{"control-plane", "eu-1"}, "scale": 1})
+	got := appOf(t, f, created.Reference)
+	if got.Scale != 2 {
+		t.Errorf("one copy over two machines came out as %d; one of them has nothing to run", got.Scale)
+	}
 }

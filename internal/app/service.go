@@ -385,13 +385,26 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 // Edge. Conflating them would mean a name that moves every time a
 // replica is added.
 type Placement struct {
-	// Nodes are the machines it runs on, by name. At least one.
+	// Nodes are the machines it runs on, by name. Empty means the ones
+	// it already has, which is what changing only the count sends.
 	Nodes []string
 	// Edge is which of them serves its names. Empty keeps the one it
 	// has, when that is still one of Nodes, and takes the first
 	// otherwise — an edge that is no longer running the app is an edge
 	// balancing across a set it is not in.
 	Edge string
+	// Replicas is how many copies run in total, spread over Nodes.
+	//
+	// A number for the app rather than one per machine, because that is
+	// how scale is thought about — "run four of these" — and because a
+	// count per machine would be a third decision to keep in step with
+	// the other two by hand. Zero keeps however many it has, so adding
+	// a machine does not silently change the count.
+	//
+	// Never fewer than there are machines: a machine an app was placed
+	// on and given nothing to run is a machine somebody put it on for
+	// no effect. Asking for that is asking for fewer machines.
+	Replicas int
 }
 
 // replace applies a placement.
@@ -404,6 +417,12 @@ type Placement struct {
 // for as long as the new machine takes to pull an image.
 func (s *Service) replace(ctx context.Context, a *Scoped, p Placement, source Source) error {
 	nodes := dedupe(p.Nodes)
+	if len(nodes) == 0 {
+		// Naming no machines means the ones it has. That is what
+		// changing only the count sends, and it is the difference
+		// between scaling up and scaling out.
+		nodes = a.Nodes()
+	}
 	if len(nodes) == 0 {
 		return fmt.Errorf("%w: an app has to run somewhere", ErrNoSuchNode)
 	}
@@ -429,7 +448,15 @@ func (s *Service) replace(ctx context.Context, a *Scoped, p Placement, source So
 		edge = nodes[0]
 	}
 
-	if err := s.Repo().SetNodes(ctx, a.ID, nodes); err != nil {
+	replicas := p.Replicas
+	if replicas == 0 {
+		// However many it already has. Adding a machine to an app that
+		// runs four copies leaves it running four, spread differently —
+		// scaling out and scaling up are separate acts, and doing one
+		// must not quietly do the other.
+		replicas = len(a.Replicas)
+	}
+	if err := s.Repo().SetNodes(ctx, a.ID, nodes, replicas); err != nil {
 		return err
 	}
 	if edge != a.NodeSlug {
@@ -808,8 +835,13 @@ func (s *Service) DeleteDeployment(ctx context.Context, caller *user.User, ref R
 		if err != nil {
 			return err
 		}
-		if err := s.Repo().UpdateContainer(ctx, a.ID, here, "", "", 0, true, StatusDown); err != nil {
-			return err
+		// Every copy on this machine, because Retire stopped every one
+		// of them. A record left naming a container that is gone is one
+		// the next deploy would try to stop again.
+		for _, r := range a.ReplicasOn(here) {
+			if err := s.Repo().UpdateContainer(ctx, a.ID, here, r.Ordinal, "", "", 0, true, StatusDown); err != nil {
+				return err
+			}
 		}
 	}
 

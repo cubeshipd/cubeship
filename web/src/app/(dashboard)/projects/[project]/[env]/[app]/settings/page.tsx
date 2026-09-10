@@ -149,8 +149,9 @@ function usePatch({ app, onSaved, onError }: SectionProps) {
   const [saved, setSaved] = useState(false);
 
   // A patch body is one field group's worth of an app. Placement sends
-  // a list, which is why this is not a map of strings.
-  async function save(body: Record<string, string | string[]>) {
+  // a list of machines and a count, which is why this is not a map of
+  // strings.
+  async function save(body: Record<string, string | string[] | number>) {
     setBusy(true);
     onError(null);
     setSaved(false);
@@ -227,6 +228,7 @@ function Placement(props: SectionProps) {
   const [registryHost, setRegistryHost] = useState<string | null>(null);
   const [nodes, setNodes] = useState<string[]>(app.nodes);
   const [edge, setEdge] = useState(app.node);
+  const [scale, setScale] = useState(app.scale);
 
   useEffect(() => {
     api
@@ -244,7 +246,7 @@ function Placement(props: SectionProps) {
 
   if (servers !== null && servers.length < 2) return null;
 
-  const dirty = !sameSet(nodes, app.nodes) || edge !== app.node;
+  const dirty = !sameSet(nodes, app.nodes) || edge !== app.node || scale !== app.scale;
   // The one thing left that keeps an app here, said before the request
   // rather than after it. A name no longer does: every machine runs its
   // own edge, so an app answers at its name wherever it is — what has
@@ -264,6 +266,10 @@ function Placement(props: SectionProps) {
     const next = on ? [...nodes, name] : nodes.filter((n) => n !== name);
     setNodes(next);
     if (!next.includes(edge)) setEdge(next[0] ?? "");
+    // Never fewer copies than machines: the daemon refuses it, and a
+    // form that can hold a state the request is rejected for is a form
+    // that teaches people to distrust the button.
+    if (scale < next.length) setScale(next.length);
     setSaved(false);
   };
 
@@ -279,14 +285,15 @@ function Placement(props: SectionProps) {
             className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
-              save({ nodes, node: edge });
+              save({ nodes, node: edge, scale });
             }}
           >
             <div className="space-y-2">
               <Label>Runs on</Label>
               {(servers ?? []).map((s) => {
                 const on = nodes.includes(s.name);
-                const replica = app.replicas.find((r) => r.node === s.name);
+                const here = app.replicas.filter((r) => r.node === s.name);
+                const replica = here[0];
                 return (
                   <label
                     key={s.name}
@@ -301,6 +308,7 @@ function Placement(props: SectionProps) {
                     />
                     <span className="flex-1">{s.name}</span>
                     <span className="text-muted-foreground">
+                      {here.length > 1 && `${here.length} copies · `}
                       {replica ? replicaState(replica) : s.control_plane ? "this machine" : ""}
                     </span>
                   </label>
@@ -311,6 +319,18 @@ function Placement(props: SectionProps) {
                 by putting it on another first.
               </p>
             </div>
+
+            <TextField
+              label="Copies"
+              type="number"
+              min={String(nodes.length)}
+              value={String(scale)}
+              onChange={(e) => {
+                setScale(Number(e.target.value));
+                setSaved(false);
+              }}
+              hint={`How many run in total, spread over those machines round-robin: four over three is 2, 1, 1. Never fewer than the ${nodes.length} machine${nodes.length === 1 ? "" : "s"} ticked above — one given nothing to run is one placed there for no effect. Several on a machine are swapped one at a time, so a deploy rolls rather than leaving none of them serving.`}
+            />
 
             <SearchableSelect
               label="Traffic arrives at"
