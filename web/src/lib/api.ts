@@ -128,18 +128,12 @@ export type App = {
   dockerfile?: string;
   project: string;
   environment: string;
-  // The machine whose edge serves this app's names — where its traffic
-  // arrives. On an instance of one box it is always "control-plane".
+  // The machines it runs on. More than one is an app this instance's
+  // proxy spreads traffic across, over the cluster's private network.
   //
-  // One machine rather than all of them, and the reason is the
-  // certificate: a machine that routes a name asks Let's Encrypt for
-  // it, and one the name does not resolve to fails that challenge
-  // forever while spending a limit shared with everyone else under that
-  // domain.
-  node: string;
-  // The machines it runs on. Always includes `node`. More than one is
-  // an app whose edge spreads its traffic across them, over the
-  // cluster's private network.
+  // There is no machine that serves it: every name arrives at this
+  // instance and is routed from here, which is what makes moving an
+  // app not a DNS change and not a second certificate.
   nodes: string[];
   // What is running on each of those machines — what a "degraded"
   // status is made of. One entry per copy, so a machine running two
@@ -153,15 +147,34 @@ export type App = {
   // deployment. Apart from `status` because the two are orthogonal: an
   // app can be degraded and split, or running and split.
   split?: boolean;
-  // Where a DNS record for this app has to point: the machine its
-  // traffic arrives at, because every machine is its own edge. Absent
-  // when that machine has not reported an address — a name nothing can
-  // be pointed at yet.
+  // Where a DNS record for this app has to point: this instance's own
+  // public address, whichever machine the app runs on. Absent when the
+  // instance does not know it — a name nothing can be pointed at yet.
   address?: string;
+  // Whether this app follows the cluster: it runs on every machine
+  // there is, and is re-spread whenever one is added or taken away.
+  // Absent on an app placed by hand, which is every app until somebody
+  // turns this on.
+  spread?: boolean;
+  // What one copy of it may take from the machine it runs on. Zero in
+  // either half is no limit, which is the default.
+  limits: AppLimits;
   // What Traefik asks this app for before trusting a container with
   // traffic. Absent is no check, which is the default: a wrong path
   // does not degrade a name, it takes every replica out at once.
   health_path?: string;
+};
+
+// What one copy of an app may take from its machine.
+//
+// Per copy, not per app: three replicas under a one-core limit may take
+// three cores between them.
+export type AppLimits = {
+  // Cores, fractional allowed. A ceiling rather than a share.
+  cpu: number;
+  // A hard memory ceiling in bytes. The kernel enforces it by killing
+  // whatever crosses it.
+  memory_bytes: number;
 };
 
 // One machine an app runs on.
@@ -521,6 +534,9 @@ export type Datastore = {
   // not — which is the default.
   exposed_port?: number;
   external_host?: string;
+  // What its container may take from the machine. Zero in either half
+  // is no limit, which is the default.
+  limits: AppLimits;
   attachments: DatastoreAttachment[];
   created_at: string;
 };

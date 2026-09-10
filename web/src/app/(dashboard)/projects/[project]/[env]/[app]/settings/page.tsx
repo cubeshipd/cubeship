@@ -19,8 +19,10 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import {
   type App,
+  type AppLimits,
   type AppReplica,
   type AppSource,
   api,
@@ -104,6 +106,7 @@ function Settings({ reference }: { reference: string }) {
           <AppNetwork app={app} onSaved={setApp} />
           <SourceSection app={app} onSaved={setApp} onError={setError} />
           <Placement app={app} onSaved={setApp} onError={setError} />
+          <Limits app={app} onSaved={setApp} onError={setError} />
 
           <DangerZone>
             <DangerAction
@@ -150,7 +153,7 @@ function usePatch({ app, onSaved, onError }: SectionProps) {
   // A patch body is one field group's worth of an app. Placement sends
   // a list of machines and a count, which is why this is not a map of
   // strings.
-  async function save(body: Record<string, string | string[] | number>) {
+  async function save(body: Record<string, string | string[] | number | boolean | AppLimits>) {
     setBusy(true);
     onError(null);
     setSaved(false);
@@ -220,6 +223,84 @@ function General(props: SectionProps) {
 // The section is only here when there is a choice to make: on an
 // instance of one box there is one machine, and a set with one possible
 // member is a decision nobody has.
+// Limits caps what one copy of the app may take from the machine it
+// runs on.
+//
+// Its own section rather than a field in Placement, and not hidden
+// behind having a cluster: an app on one box is exactly the app most
+// worth capping, because the box it can take down is the one running
+// everything else.
+function Limits(props: SectionProps) {
+  const { app } = props;
+  const { busy, saved, setSaved, save } = usePatch(props);
+  const [cpu, setCPU] = useState(app.limits.cpu ? String(app.limits.cpu) : "");
+  const [memory, setMemory] = useState(
+    app.limits.memory_bytes ? String(Math.round(app.limits.memory_bytes / (1 << 20))) : "",
+  );
+
+  const next = { cpu: Number(cpu) || 0, memory_bytes: (Number(memory) || 0) * (1 << 20) };
+  const dirty = next.cpu !== app.limits.cpu || next.memory_bytes !== app.limits.memory_bytes;
+
+  return (
+    <>
+      <SectionHeader
+        title="Limits"
+        sub="How much of its machine one copy of this app may take. Empty is no limit, which is what every app starts as. Changing one takes effect within seconds and does not restart anything; removing one waits for the next deploy."
+      />
+      <Card>
+        <CardContent>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              save({ limits: next });
+            }}
+          >
+            <TextField
+              label="CPU"
+              type="number"
+              step="0.01"
+              min="0"
+              placeholder="no limit"
+              value={cpu}
+              onChange={(e) => {
+                setCPU(e.target.value);
+                setSaved(false);
+              }}
+              hint={`Cores, and fractional is normal here: 0.5 is half a core. It is a ceiling rather than a share — a container at its limit is throttled, not merely preferred less when the machine is busy.${
+                app.scale > 1
+                  ? ` Per copy: this app runs ${app.scale} of itself, so they may take ${app.scale} times this between them.`
+                  : ""
+              }`}
+            />
+
+            <TextField
+              label="Memory (MiB)"
+              type="number"
+              min="0"
+              placeholder="no limit"
+              value={memory}
+              onChange={(e) => {
+                setMemory(e.target.value);
+                setSaved(false);
+              }}
+              hint="A hard ceiling. The kernel enforces it by killing whatever crosses it, so setting one below what the app is already using stops it there and then."
+            />
+
+            {!dirty && app.limits.cpu === 0 && app.limits.memory_bytes === 0 && (
+              <Notice>
+                Nothing caps this app. One copy of it can take the whole machine — including from
+                the daemon, the proxy and everything else on the box.
+              </Notice>
+            )}
+            <SaveRow busy={busy} saved={saved} dirty={dirty} />
+          </form>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
 function Placement(props: SectionProps) {
   const { app } = props;
   const { busy, saved, setSaved, save } = usePatch(props);
@@ -227,6 +308,7 @@ function Placement(props: SectionProps) {
   const [registryHost, setRegistryHost] = useState<string | null>(null);
   const [nodes, setNodes] = useState<string[]>(app.nodes);
   const [scale, setScale] = useState(app.scale);
+  const [spread, setSpread] = useState(app.spread === true);
 
   useEffect(() => {
     api
@@ -244,7 +326,8 @@ function Placement(props: SectionProps) {
 
   if (servers !== null && servers.length < 2) return null;
 
-  const dirty = !sameSet(nodes, app.nodes) || scale !== app.scale;
+  const dirty =
+    !sameSet(nodes, app.nodes) || scale !== app.scale || spread !== (app.spread === true);
   // The one thing left that keeps an app here, said before the request
   // rather than after it. A name no longer does: every name arrives at
   // this instance whichever machine runs the app, so moving one is not
@@ -278,10 +361,32 @@ function Placement(props: SectionProps) {
             className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
-              save({ nodes, scale });
+              // Following the cluster is the answer to "which
+              // machines", so the tick list is not sent alongside it:
+              // sending both would turn the switch straight back off.
+              save(spread ? { spread: true, scale } : { nodes, scale, spread: false });
             }}
           >
-            <div className="space-y-2">
+            {/* A switch, not a checkbox: the ticks below pick machines
+                out of a list, and this turns a behaviour on. */}
+            <div className="flex items-start gap-3">
+              <Switch
+                id="spread"
+                checked={spread}
+                onCheckedChange={(next) => {
+                  setSpread(next === true);
+                  setSaved(false);
+                }}
+                className="mt-0.5"
+              />
+              <label htmlFor="spread" className="text-xs leading-relaxed text-muted-foreground">
+                Follow the cluster. It runs on every machine there is, and on any that joins later —
+                so a new server takes a share without this app being edited. Ticking machines below
+                turns it off again, because that is choosing by hand.
+              </label>
+            </div>
+
+            <div className={spread ? "space-y-2 opacity-50" : "space-y-2"}>
               <Label>Runs on</Label>
               {(servers ?? []).map((s) => {
                 const on = nodes.includes(s.name);
@@ -296,7 +401,7 @@ function Placement(props: SectionProps) {
                     <Checkbox
                       id={`runs-on-${s.name}`}
                       checked={on}
-                      disabled={stuck !== null || (on && nodes.length === 1)}
+                      disabled={spread || stuck !== null || (on && nodes.length === 1)}
                       onCheckedChange={(next) => toggle(s.name, next === true)}
                     />
                     <span className="flex-1">{s.name}</span>
@@ -308,15 +413,16 @@ function Placement(props: SectionProps) {
                 );
               })}
               <p className="text-xs text-muted-foreground">
-                An app has to run somewhere, so the last machine cannot be unticked. Take it off one
-                by putting it on another first.
+                {spread
+                  ? "Decided by the switch above: every machine in the cluster, and any that joins."
+                  : "An app has to run somewhere, so the last machine cannot be unticked. Take it off one by putting it on another first."}
               </p>
             </div>
 
             <TextField
               label="Copies"
               type="number"
-              min={String(nodes.length)}
+              min={String(spread ? (servers?.length ?? 1) : nodes.length)}
               value={String(scale)}
               onChange={(e) => {
                 setScale(Number(e.target.value));
