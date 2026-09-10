@@ -21,7 +21,7 @@ func NewRepository(q database.Queryer) *Repository {
 }
 
 const columns = `id, project_id, environment_id, node_id, name, description, source, source_image,
-	source_repo, source_ref, source_dockerfile, health_path, env, created_at`
+	source_repo, source_ref, source_dockerfile, health_path, scale, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -30,7 +30,7 @@ func scan(row scanner) (*App, error) {
 	var envJSON []byte
 	if err := row.Scan(&a.ID, &a.ProjectID, &a.EnvironmentID, &a.NodeID, &a.Name, &a.Description,
 		&a.Source, &a.SourceImage, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
-		&a.HealthPath, &envJSON, &a.CreatedAt); err != nil {
+		&a.HealthPath, &a.Scale, &envJSON, &a.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &a.Env); err != nil {
@@ -531,7 +531,7 @@ type Scoped struct {
 const scopedQuery = `
 	SELECT a.id, a.project_id, a.environment_id, a.node_id, a.name, a.description,
 	       a.source, a.source_image, a.source_repo, a.source_ref, a.source_dockerfile,
-	       a.health_path, a.env, a.created_at,
+	       a.health_path, a.scale, a.env, a.created_at,
 	       p.slug, e.slug, n.slug
 	FROM apps a
 	JOIN projects p ON p.id = a.project_id
@@ -543,7 +543,7 @@ func scanScoped(row scanner) (*Scoped, error) {
 	var envJSON []byte
 	if err := row.Scan(&s.ID, &s.ProjectID, &s.EnvironmentID, &s.NodeID, &s.Name, &s.Description,
 		&s.Source, &s.SourceImage, &s.SourceRepo, &s.SourceRef, &s.SourceDockerfile,
-		&s.HealthPath, &envJSON, &s.CreatedAt,
+		&s.HealthPath, &s.Scale, &envJSON, &s.CreatedAt,
 		&s.ProjectSlug, &s.EnvironmentSlug, &s.NodeSlug); err != nil {
 		return nil, err
 	}
@@ -725,7 +725,7 @@ func (r *Repository) ReplicasFor(ctx context.Context, appIDs []int64) (map[int64
 // ErrNoSuchNode when a name is not a machine in this cluster. Refused
 // by name rather than written as a null the column would reject with a
 // message nobody can read.
-func (r *Repository) SetNodes(ctx context.Context, appID int64, nodeSlugs []string, replicas int) error {
+func (r *Repository) SetNodes(ctx context.Context, appID int64, nodeSlugs []string, scale, replicas int) error {
 	if len(nodeSlugs) == 0 {
 		return ErrNoSuchNode
 	}
@@ -750,6 +750,13 @@ func (r *Repository) SetNodes(ctx context.Context, appID int64, nodeSlugs []stri
 		return ErrNoSuchNode
 	}
 
+	// What was asked for, kept apart from what there is: zero is "one
+	// per machine", and it is the answer that has to survive a machine
+	// being added or taken away.
+	if _, err := r.q.ExecContext(ctx,
+		`UPDATE apps SET scale = $2 WHERE id = $1`, appID, scale); err != nil {
+		return fmt.Errorf("record how many copies were asked for: %w", err)
+	}
 	if _, err := r.q.ExecContext(ctx,
 		`DELETE FROM app_nodes WHERE app_id = $1 AND node_id <> ALL($2)`, appID, ids); err != nil {
 		return fmt.Errorf("take an app off a machine: %w", err)

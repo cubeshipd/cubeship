@@ -66,6 +66,17 @@ type App struct {
 	// the container behind a name is worth sending traffic to. Empty is
 	// no check, and it is the default: see ValidHealthPath.
 	HealthPath string
+	// Scale is how many copies were **asked for**, which is not how
+	// many there are — that is len(Replicas), and it is what every
+	// surface reports.
+	//
+	// **Zero means one per machine**, and it is what every app is until
+	// somebody says otherwise. The distinction is load-bearing: a row
+	// count cannot express "however many machines there are", so
+	// reading the intent off it made taking a machine away from an app
+	// running one copy on each of two leave two copies on the
+	// survivor.
+	Scale int
 	// Replicas are the machines this app runs on, and what is running on
 	// each. One machine is the ordinary case and the shape is the same:
 	// a second is a row, not a different kind of app.
@@ -219,6 +230,15 @@ func (a *App) Nodes() []string {
 		out = append(out, r.NodeSlug)
 	}
 	return out
+}
+
+// Copies is how many of this app should run, given the machines it is
+// on. It is Scale, or one per machine when nobody chose a number.
+func (a *App) Copies(machines int) int {
+	if a.Scale > 0 {
+		return a.Scale
+	}
+	return machines
 }
 
 // Spread divides a number of copies over a number of machines.
