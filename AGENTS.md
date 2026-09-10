@@ -2396,6 +2396,13 @@ calls a working name broken is worse than one that says where to look.
 - **A different number of copies per machine.** The count is one number
   for the app, spread evenly, so three on a big box and one on a small
   one is not representable.
+- **Scaling up on the control plane waits for a deploy.** A worker
+  creates whatever copy is missing on its next pass, because that is
+  what its loop is for. The control plane has no such loop over its own
+  replicas — its containers are made by the deploy path — so asking for
+  a third copy of an app that runs here writes three rows and leaves the
+  third without a container until somebody redeploys. On a worker the
+  same request takes effect in ten seconds.
 - **Anything in front of the edge.** The machine an app's traffic
   arrives at is a single point of failure for *ingress*, even though the
   app itself now survives a replica going away. What fixes that is
