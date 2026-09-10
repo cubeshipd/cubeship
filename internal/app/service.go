@@ -344,7 +344,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, en
 // decision as creating one that builds — this instance will execute
 // whatever that repository contains — so it takes the same role, checked
 // against the source being moved to rather than the one being left.
-func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, description *string, source *Source, origin *Origin, health *string, limits *Limits, place *Placement) (*Scoped, error) {
+func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, description *string, source *Source, origin *Origin, health *string, limits *Limits, auto *Autoscale, place *Placement) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.RoleAdmin)
 	if err != nil {
 		return nil, err
@@ -390,7 +390,15 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 		return nil, ErrInvalidLimits
 	}
 
-	if _, err := s.Repo().Update(ctx, a.ID, description, source, origin, health, limits); err != nil {
+	// And the rule, refused here for the same reason: one without a
+	// ceiling is a loop of requests turning into a loop of replicas
+	// until the machine has nothing left, which is a worse outage than
+	// the one autoscaling was turned on to avoid.
+	if auto != nil && !auto.Valid() {
+		return nil, ErrInvalidAutoscale
+	}
+
+	if _, err := s.Repo().Update(ctx, a.ID, description, source, origin, health, limits, auto); err != nil {
 		return nil, err
 	}
 

@@ -209,3 +209,24 @@ func (s *Service) Rebalance(ctx context.Context, without int64) error {
 	s.announceRoutes()
 	return nil
 }
+
+// scaleTo is the autoscaler's hand on the same lever a person pulls.
+//
+// It goes through replace rather than writing the rows itself, which is
+// what makes an automatic change and a manual one the same event: the
+// copies are spread the same way, the machines are woken the same way,
+// this machine's own copies are brought into line the same way, and an
+// open deploy is re-asked the same way. A second path here would be a
+// second set of those to keep in step.
+//
+// **No caller.** This is the instance acting, not a person, and the
+// authorization on scaling lives in Update where a person reaches it.
+func (s *Service) scaleTo(ctx context.Context, a *Scoped, replicas int) error {
+	if err := s.replace(ctx, a, Placement{Replicas: replicas}, Source(a.Source)); err != nil {
+		return err
+	}
+	// Recorded after the change rather than before it: a cooldown is
+	// time since something happened, and stamping it for a placement
+	// that was then refused would sit the rule out for nothing.
+	return s.Repo().MarkAutoscaled(ctx, a.ID)
+}

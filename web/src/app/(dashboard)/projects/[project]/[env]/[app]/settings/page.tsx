@@ -22,6 +22,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
   type App,
+  type AppAutoscale,
   type AppLimits,
   type AppReplica,
   type AppSource,
@@ -107,6 +108,7 @@ function Settings({ reference }: { reference: string }) {
           <SourceSection app={app} onSaved={setApp} onError={setError} />
           <Placement app={app} onSaved={setApp} onError={setError} />
           <Limits app={app} onSaved={setApp} onError={setError} />
+          <AutoscaleSection app={app} onSaved={setApp} onError={setError} />
 
           <DangerZone>
             <DangerAction
@@ -153,7 +155,9 @@ function usePatch({ app, onSaved, onError }: SectionProps) {
   // A patch body is one field group's worth of an app. Placement sends
   // a list of machines and a count, which is why this is not a map of
   // strings.
-  async function save(body: Record<string, string | string[] | number | boolean | AppLimits>) {
+  async function save(
+    body: Record<string, string | string[] | number | boolean | AppLimits | AppAutoscale>,
+  ) {
     setBusy(true);
     onError(null);
     setSaved(false);
@@ -223,6 +227,119 @@ function General(props: SectionProps) {
 // The section is only here when there is a choice to make: on an
 // instance of one box there is one machine, and a set with one possible
 // member is a decision nobody has.
+// AutoscaleSection hands the replica count to the instance.
+//
+// Below Limits and below Servers, because it is the decision that only
+// makes sense once you have made those: how much one copy may take, and
+// where copies may go.
+function AutoscaleSection(props: SectionProps) {
+  const { app } = props;
+  const { busy, saved, setSaved, save } = usePatch(props);
+  const [on, setOn] = useState(app.autoscale.max > 0);
+  const [minReplicas, setMin] = useState(String(app.autoscale.min || 1));
+  const [maxReplicas, setMax] = useState(String(app.autoscale.max || ""));
+  const [cpu, setCPU] = useState(String(app.autoscale.cpu || 70));
+
+  const next: AppAutoscale = on
+    ? { min: Number(minReplicas) || 0, max: Number(maxReplicas) || 0, cpu: Number(cpu) || 0 }
+    : { min: app.autoscale.min, max: 0, cpu: app.autoscale.cpu };
+  const dirty =
+    next.max !== app.autoscale.max ||
+    (on && (next.min !== app.autoscale.min || next.cpu !== app.autoscale.cpu));
+
+  return (
+    <>
+      <SectionHeader
+        title="Autoscaling"
+        sub="Let this instance decide how many copies to run, from the average CPU across them over the last three minutes — the same reading the chart on this app's page shows."
+      />
+      <Card>
+        <CardContent>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              save({ autoscale: next });
+            }}
+          >
+            {/* A switch, not a checkbox: it turns a behaviour on. */}
+            <div className="flex items-start gap-3">
+              <Switch
+                id="autoscale"
+                checked={on}
+                onCheckedChange={(v) => {
+                  setOn(v === true);
+                  setSaved(false);
+                }}
+                className="mt-0.5"
+              />
+              <label htmlFor="autoscale" className="text-xs leading-relaxed text-muted-foreground">
+                Decide the count for me. Turning it off leaves the app at whatever it is running;
+                nothing is stopped.
+              </label>
+            </div>
+
+            {on && (
+              <>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <TextField
+                    label="Fewest copies"
+                    type="number"
+                    min="1"
+                    value={minReplicas}
+                    onChange={(e) => {
+                      setMin(e.target.value);
+                      setSaved(false);
+                    }}
+                  />
+                  <TextField
+                    label="Most copies"
+                    type="number"
+                    min="1"
+                    value={maxReplicas}
+                    onChange={(e) => {
+                      setMax(e.target.value);
+                      setSaved(false);
+                    }}
+                  />
+                </div>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  A ceiling is not a formality. Without one a loop of requests is a loop of replicas
+                  until the machine has nothing left, which is a worse outage than the one this is
+                  on to avoid.
+                </p>
+
+                <TextField
+                  label="Target CPU per copy"
+                  type="number"
+                  step="1"
+                  min="1"
+                  value={cpu}
+                  onChange={(e) => {
+                    setCPU(e.target.value);
+                    setSaved(false);
+                  }}
+                  hint="100 is one core, the same scale this app's chart is drawn on — so the number here is the number you were looking at. CPU is the only signal: adding a copy does not lower any copy's memory, so a memory rule would climb and never come back."
+                />
+
+                <Notice>
+                  It is damped, and none of that is adjustable: within 10% of target nothing moves,
+                  and after a change it waits three minutes before the next — ten before a smaller
+                  one, because an extra copy costs some memory and one copy too few costs this app
+                  its latency exactly as load comes back.
+                  {app.autoscale.at &&
+                    ` Last changed ${new Date(app.autoscale.at).toLocaleString()}.`}
+                </Notice>
+              </>
+            )}
+            <SaveRow busy={busy} saved={saved} dirty={dirty} />
+          </form>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
 // Limits caps what one copy of the app may take from the machine it
 // runs on.
 //

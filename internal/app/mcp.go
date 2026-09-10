@@ -143,12 +143,12 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 	// were not looking at. The API and the dashboard are where that is
 	// decided.
 	//
-	// No `limits` either, and it is the same line drawn one step
-	// closer: a memory ceiling below what a container is already
+	// No `limits` or `autoscale` either, and it is the same line drawn
+	// one step closer: a memory ceiling below what a container is already
 	// holding is an instant kill by the kernel, with no deploy, no
 	// confirmation and nothing to roll back to. An agent can read what
 	// the ceiling is — it is on every response — and cannot move it.
-	updated, err := t.svc.Update(ctx, t.caller, ref, in.Description, source, origin, in.HealthPath, nil, nil)
+	updated, err := t.svc.Update(ctx, t.caller, ref, in.Description, source, origin, in.HealthPath, nil, nil, nil)
 	if err != nil {
 		return nil, Response{}, err
 	}

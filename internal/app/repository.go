@@ -22,7 +22,9 @@ func NewRepository(q database.Queryer) *Repository {
 
 const columns = `id, project_id, environment_id, name, description, source, source_image,
 	source_repo, source_ref, source_dockerfile, health_path, scale, spread,
-	cpu_limit, memory_limit, env, created_at`
+	cpu_limit, memory_limit,
+	autoscale_min, autoscale_max, autoscale_cpu, autoscaled_at,
+	env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -32,7 +34,9 @@ func scan(row scanner) (*App, error) {
 	if err := row.Scan(&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Description,
 		&a.Source, &a.SourceImage, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
 		&a.HealthPath, &a.Scale, &a.Spread,
-		&a.Limits.CPU, &a.Limits.Memory, &envJSON, &a.CreatedAt); err != nil {
+		&a.Limits.CPU, &a.Limits.Memory,
+		&a.Autoscale.Min, &a.Autoscale.Max, &a.Autoscale.CPU, &a.Autoscale.At,
+		&envJSON, &a.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &a.Env); err != nil {
@@ -47,7 +51,7 @@ func scan(row scanner) (*App, error) {
 //
 // The slug is not here. It is the last component of the app's registry
 // reference, and no slug in Cubeship changes once its resource exists.
-func (r *Repository) Update(ctx context.Context, appID int64, description *string, source *Source, origin *Origin, health *string, limits *Limits) (*App, error) {
+func (r *Repository) Update(ctx context.Context, appID int64, description *string, source *Source, origin *Origin, health *string, limits *Limits, auto *Autoscale) (*App, error) {
 	var src *string
 	if source != nil {
 		s := string(*source)
@@ -68,6 +72,16 @@ func (r *Repository) Update(ctx context.Context, appID int64, description *strin
 	if limits != nil {
 		cpu, memory = &limits.CPU, &limits.Memory
 	}
+	// The rule travels whole for the same reason: zero is how it is
+	// turned off, so a nil is the only way of saying "leave it".
+	// `autoscaled_at` is not here — it belongs to the rule acting, not
+	// to somebody editing it, and clearing it on an edit would hand out
+	// a free pass through the cooldown.
+	var autoMin, autoMax *int
+	var autoCPU *float64
+	if auto != nil {
+		autoMin, autoMax, autoCPU = &auto.Min, &auto.Max, &auto.CPU
+	}
 	row := r.q.QueryRowContext(ctx,
 		`UPDATE apps SET
 		   description       = COALESCE($1, description),
@@ -78,9 +92,13 @@ func (r *Repository) Update(ctx context.Context, appID int64, description *strin
 		   source_dockerfile = COALESCE($6, source_dockerfile),
 		   health_path       = COALESCE($7, health_path),
 		   cpu_limit         = COALESCE($8, cpu_limit),
-		   memory_limit      = COALESCE($9, memory_limit)
-		 WHERE id = $10 RETURNING `+columns,
-		description, src, image, repo, ref, dockerfile, health, cpu, memory, appID)
+		   memory_limit      = COALESCE($9, memory_limit),
+		   autoscale_min     = COALESCE($10, autoscale_min),
+		   autoscale_max     = COALESCE($11, autoscale_max),
+		   autoscale_cpu     = COALESCE($12, autoscale_cpu)
+		 WHERE id = $13 RETURNING `+columns,
+		description, src, image, repo, ref, dockerfile, health, cpu, memory,
+		autoMin, autoMax, autoCPU, appID)
 	a, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("update app: %w", err)
@@ -539,7 +557,9 @@ type Scoped struct {
 const scopedQuery = `
 	SELECT a.id, a.project_id, a.environment_id, a.name, a.description,
 	       a.source, a.source_image, a.source_repo, a.source_ref, a.source_dockerfile,
-	       a.health_path, a.scale, a.spread, a.cpu_limit, a.memory_limit, a.env, a.created_at,
+	       a.health_path, a.scale, a.spread, a.cpu_limit, a.memory_limit,
+	       a.autoscale_min, a.autoscale_max, a.autoscale_cpu, a.autoscaled_at,
+	       a.env, a.created_at,
 	       p.slug, e.slug
 	FROM apps a
 	JOIN projects p ON p.id = a.project_id
@@ -551,7 +571,9 @@ func scanScoped(row scanner) (*Scoped, error) {
 	if err := row.Scan(&s.ID, &s.ProjectID, &s.EnvironmentID, &s.Name, &s.Description,
 		&s.Source, &s.SourceImage, &s.SourceRepo, &s.SourceRef, &s.SourceDockerfile,
 		&s.HealthPath, &s.Scale, &s.Spread,
-		&s.Limits.CPU, &s.Limits.Memory, &envJSON, &s.CreatedAt,
+		&s.Limits.CPU, &s.Limits.Memory,
+		&s.Autoscale.Min, &s.Autoscale.Max, &s.Autoscale.CPU, &s.Autoscale.At,
+		&envJSON, &s.CreatedAt,
 		&s.ProjectSlug, &s.EnvironmentSlug); err != nil {
 		return nil, err
 	}
@@ -769,6 +791,30 @@ func (r *Repository) SetNodes(ctx context.Context, appID int64, nodeSlugs []stri
 			appID, ids[i], want); err != nil {
 			return fmt.Errorf("take a copy off a machine: %w", err)
 		}
+	}
+	return nil
+}
+
+// Autoscaling is every app this instance decides the replica count for.
+//
+// Scoped, because acting on one means placing it — which needs its
+// project and environment to build a container name — and a listing of
+// a handful of apps is cheaper than resolving each one after.
+func (r *Repository) Autoscaling(ctx context.Context) ([]*Scoped, error) {
+	return r.listScoped(ctx, scopedQuery+` WHERE a.autoscale_max > 0 ORDER BY a.id`)
+}
+
+// MarkAutoscaled records that the rule just changed this app's count,
+// which is what its cooldown is measured from.
+//
+// A row rather than something held in memory: a daemon restart would
+// otherwise be a free pass to act again immediately, and a restart is
+// exactly what an upgrade is — which is when load is already moving
+// between machines.
+func (r *Repository) MarkAutoscaled(ctx context.Context, appID int64) error {
+	if _, err := r.q.ExecContext(ctx,
+		`UPDATE apps SET autoscaled_at = now() WHERE id = $1`, appID); err != nil {
+		return fmt.Errorf("record that the app was scaled: %w", err)
 	}
 	return nil
 }

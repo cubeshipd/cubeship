@@ -74,6 +74,32 @@ func (r *Repository) InsertMany(ctx context.Context, kinds []string, ids []int64
 //
 // date_bin's origin is fixed rather than "now", so two charts loaded a
 // few seconds apart line up instead of each having its own grid.
+// AverageCPU is one subject's mean CPU over the last d, and how many
+// readings that mean is made of.
+//
+// Unbucketed, because nothing draws this: the count is what a caller
+// checks before trusting the average, and a window holding one reading
+// is a window to wait out rather than an answer.
+//
+// For an app it is the mean **per copy**, which is what the app's chart
+// already is: every replica records against the app, on whichever
+// machine it is on.
+func (r *Repository) AverageCPU(ctx context.Context, kind string, subjectID int64, since time.Time) (float64, int, error) {
+	var avg *float64
+	var n int
+	err := r.q.QueryRowContext(ctx,
+		`SELECT avg(cpu_percent), count(*) FROM metric_samples
+		 WHERE kind = $1 AND subject_id = $2 AND at >= $3`,
+		kind, subjectID, since).Scan(&avg, &n)
+	if err != nil {
+		return 0, 0, fmt.Errorf("read the average CPU: %w", err)
+	}
+	if avg == nil {
+		return 0, 0, nil
+	}
+	return *avg, n, nil
+}
+
 func (r *Repository) Series(ctx context.Context, kind string, subjectID int64, w Window, now time.Time) ([]Sample, error) {
 	// The bucket goes into the statement rather than a parameter, and
 	// it is safe to: it comes from Windows, a fixed list in this

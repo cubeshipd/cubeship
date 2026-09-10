@@ -526,6 +526,12 @@ func run() error {
 	srv.Apps.SetRoutesChanged(routes.Wake)
 	go routes.Run(ctx)
 
+	// And the one thing that changes how many containers exist without
+	// anybody asking. Here rather than in server.New for the reason the
+	// collectors are: a server is a request handler, and a test that
+	// builds one must not thereby start scaling apps.
+	go (&app.Autoscaler{Apps: srv.Apps, Metrics: srv.Metrics}).Run(ctx)
+
 	go purgeExpiredSessions(ctx, srv.Users)
 
 	needsSetup, err := srv.Setup.Needed(ctx)

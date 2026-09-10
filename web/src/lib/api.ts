@@ -159,10 +159,31 @@ export type App = {
   // What one copy of it may take from the machine it runs on. Zero in
   // either half is no limit, which is the default.
   limits: AppLimits;
+  // When the instance decides the replica count itself. Off when `max`
+  // is zero, which is every app until somebody turns it on.
+  autoscale: AppAutoscale;
   // What Traefik asks this app for before trusting a container with
   // traffic. Absent is no check, which is the default: a wrong path
   // does not degrade a name, it takes every replica out at once.
   health_path?: string;
+};
+
+// The rule the instance scales an app by.
+//
+// CPU is the only signal, and deliberately: adding a copy does not lower
+// any copy's memory, so a memory rule would climb and never return.
+export type AppAutoscale = {
+  // The fewest copies it will leave running.
+  min: number;
+  // The most it will run. **Zero is off** — there is no separate flag
+  // to disagree with it. A ceiling is not optional: without one a loop
+  // of requests is a loop of replicas.
+  max: number;
+  // What each copy should sit at, where 100 is one core — the same
+  // scale the charts are drawn on.
+  cpu: number;
+  // When it last changed the count. Absent until it has.
+  at?: string;
 };
 
 // What one copy of an app may take from its machine.

@@ -2534,9 +2534,12 @@ kernel, with no deploy, no confirmation and nothing to roll back to. An
 agent can read what the ceiling is — it is on every response — and
 cannot move it.
 
-There is **no autoscaling**: nothing watches what a container is using
-and changes either number. Both halves it would need are here; the
-decision is not.
+There is **no vertical autoscaling**: nothing watches what a container
+is using and moves its ceiling. Raising one on its own would be safe and
+reversible; lowering one kills the container on the spot, so a rule that
+could only ever go up would be a rule that never comes back — and the
+decision about when to come down belongs to a person for now. Horizontal
+autoscaling is a different question and is below.
 
 ### Where an app's traffic arrives
 
@@ -2553,17 +2556,79 @@ writes, and it does not wait for a redeploy the way a container's labels
 did.
 
 
+### Deciding the count
+
+`internal/app/autoscale.go` is this instance changing an app's replica
+count on its own. Off on every app until somebody turns it on, and
+`autoscale_max = 0` is what off *is* — there is no separate flag that
+could disagree with it.
+
+**One signal, and it is CPU.** It is the only one where adding a copy
+changes the number: memory does not fall because there are more
+replicas — each still holds what it holds — so a memory rule would climb
+and never come back down. Requests per second would be the other honest
+signal and this instance does not measure them.
+
+The reading is the **average across the app's copies**, which is what
+its chart already is: every replica records against the app, on
+whichever machine it is on, through the same `metric_samples` table. So
+a target of `100` means one core per copy, on the same scale every
+container chart here is drawn on — deliberately, so the number somebody
+types is the number they were looking at.
+
+The arithmetic is the one every autoscaler uses, in one small function
+that can be read: `running * cpu / target`, rounded up because half a
+copy does not exist and rounding down leaves every copy above target,
+then clamped to the app's floor and ceiling.
+
+**A ceiling is not optional.** Without one a loop of requests is a loop
+of replicas until the machine has nothing left, which is a worse outage
+than the one autoscaling was turned on to avoid. The largest accepted is
+100, and that is a typo limit rather than a resource one: a ceiling of
+1000 on a box that runs a handful of containers is somebody who meant
+10, and the rule would obediently work towards it.
+
+**Everything that damps it is fixed, and each number is a way a rule
+stops settling**: a ratio within 10% of target moves nothing, or every
+pass finds the ratio is not exactly 1 and asks for a count one different
+from the one it has, for ever. A window shorter than three readings is
+waited out, because a decision from one point is a decision from noise.
+And after a change it waits — three minutes before another, **ten before
+a smaller one**. That asymmetry is the one worth having: an extra copy
+costs some memory, and one copy too few costs the app its latency at
+exactly the moment load is coming back.
+
+`autoscaled_at` is a column rather than something held in memory. A
+daemon restart would otherwise be a free pass to act again immediately,
+and a restart is exactly what an upgrade is — which is when load is
+already moving between machines. It is not cleared by somebody editing
+the rule either: the cooldown belongs to the rule *acting*.
+
+It acts through `Service.scaleTo`, which goes through `replace` like a
+person's own request does. That is what makes an automatic change and a
+manual one the same event — same spread, same wake, same local pass,
+same re-ask of an open deploy — instead of a second path with its own
+set of those to keep in step. It takes no caller, because this is the
+instance acting and the authorization on scaling lives where a person
+reaches it.
+
+The loop runs in `cmd/cubeshipd`, not in `server.New`, for the reason
+the collectors do: a server is a request handler, and a test that builds
+one must not thereby start changing how many containers exist.
+
 ### What is not there yet
 
 - **A different number of copies per machine.** The count is one number
   for the app, spread evenly, so three on a big box and one on a small
   one is not representable.
-- **Autoscaling.** Nothing watches what a container is using and
-  changes its ceiling or its replica count. The two halves it would need
-  are both here — a ceiling that moves without a restart, and a scale
-  that takes effect without a deploy — and what is missing is the
-  decision: what to measure, over how long, and what stops a rule from
-  oscillating.
+- **Autoscaling that moves a ceiling.** The replica count is decided
+  for you — see "Deciding the count" — and the ceiling is not. Raising
+  one on its own is safe and reversible; lowering one kills the
+  container on the spot, so a rule that could only go up would be one
+  that never comes back.
+- **Any signal but CPU.** Requests per second is the other honest one
+  for a web app and nothing here measures it, so an app that is busy
+  waiting rather than busy computing scales on nothing.
 - **Anything in front of the control plane.** Every name arrives there,
   so it is a single point of failure for *ingress* even though an app
   now survives a copy, or a whole machine, going away. What fixes it is
