@@ -597,3 +597,37 @@ func checkSlug(name string) error {
 	}
 	return nil
 }
+
+// Workers is every machine that is not this one, by id, with the
+// version each last reported.
+//
+// The control plane is left out because it is not something this
+// instance tells to update — it is the thing doing the updating, and it
+// goes last, by replacing itself.
+//
+// A machine that has never called in reports an empty version, which
+// reads as "not on the version we want" and so is told. It will not
+// hear, and that is fine: a machine that does not answer is carried on
+// without, and gets the new version whenever it does return.
+func (s *Service) Workers(ctx context.Context) (map[int64]string, error) {
+	all, err := s.Repo().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]string, len(all))
+	for _, n := range all {
+		if !n.ControlPlane {
+			out[n.ID] = n.Version
+		}
+	}
+	return out, nil
+}
+
+// Update tells one machine to replace itself with a version.
+//
+// It returns as soon as the machine has been told. See CommandUpdate:
+// there is no answer to wait for, because answering would mean
+// surviving the thing it was told to do.
+func (s *Service) Update(_ context.Context, nodeID int64, version string) error {
+	return s.hub.Tell(nodeID, Command{Kind: CommandUpdate, Version: version})
+}

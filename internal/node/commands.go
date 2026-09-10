@@ -65,6 +65,16 @@ const MaxAnswerBytes = 2 << 20
 const (
 	// CommandLogs asks for the tail of a container's log.
 	CommandLogs = "logs"
+
+	// CommandUpdate tells a machine to replace itself with a version.
+	//
+	// **Nothing comes back from it.** A machine replacing itself stops
+	// answering — the process holding the poll open is the one being
+	// stopped — so the answer is the version it reports on the pass
+	// after it returns, which is a thing it already sends every ten
+	// seconds. Waiting for a reply here would be waiting for a process
+	// that is about to be killed on purpose.
+	CommandUpdate = "update"
 )
 
 // Command is one thing the control plane wants a machine to do.
@@ -77,6 +87,9 @@ type Command struct {
 	// Tail is how many lines of log to read, in Docker's own spelling:
 	// a number, or "all".
 	Tail string `json:"tail,omitempty"`
+	// Version is the release to replace this machine with. Only an
+	// update carries one.
+	Version string `json:"version,omitempty"`
 }
 
 // ErrNoAnswer is a machine that did not come back in time. It says
@@ -180,6 +193,30 @@ func (h *hub) Take(nodeID int64) []Command {
 }
 
 // Ask sends one command to a machine and waits for what it says.
+// Tell queues a command and does not wait for an answer.
+//
+// One command needs this and it is the reason it exists: a machine told
+// to replace itself stops answering, because the process holding the
+// poll open is the one being stopped. Ask would wait for a reply that
+// is never coming and time out on a success.
+func (h *hub) Tell(nodeID int64, cmd Command) error {
+	id, err := commandID()
+	if err != nil {
+		return err
+	}
+	cmd.ID = id
+
+	h.mu.Lock()
+	h.queued[nodeID] = append(h.queued[nodeID], cmd)
+	h.mu.Unlock()
+
+	// Woken rather than left for the next pass: an update somebody is
+	// watching should start now, and the machine is parked on a request
+	// this releases.
+	h.Signal(nodeID)
+	return nil
+}
+
 func (h *hub) Ask(ctx context.Context, nodeID int64, cmd Command) ([]byte, error) {
 	id, err := commandID()
 	if err != nil {

@@ -37,6 +37,10 @@ func (e *fakeEngine) CreateContainer(_ context.Context, opts dockerx.ContainerOp
 	return "id-" + opts.Name, nil
 }
 
+func (e *fakeEngine) SpecOf(_ context.Context, name string) (dockerx.ContainerOpts, error) {
+	return dockerx.ContainerOpts{Name: name, Image: "ghcr.io/cubeshipd/cubeshipd:0.1.0"}, nil
+}
+
 func (e *fakeEngine) SetResources(_ context.Context, _ string, r dockerx.Resources) error {
 	e.capped = append(e.capped, r)
 	return nil
