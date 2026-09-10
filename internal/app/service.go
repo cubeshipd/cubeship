@@ -448,15 +448,21 @@ func (s *Service) replace(ctx context.Context, a *Scoped, p Placement, source So
 		edge = nodes[0]
 	}
 
-	replicas := p.Replicas
-	if replicas == 0 {
-		// However many it already has. Adding a machine to an app that
-		// runs four copies leaves it running four, spread differently —
-		// scaling out and scaling up are separate acts, and doing one
-		// must not quietly do the other.
-		replicas = len(a.Replicas)
+	// What was asked for, which is not what there is. Naming no number
+	// keeps whatever was asked for before — and for almost every app
+	// that is "one per machine", which is the answer a row count cannot
+	// hold. See App.Scale: reading the intent off the rows made taking
+	// a machine away from an app running one copy on each of two leave
+	// two copies on the survivor.
+	scale := p.Replicas
+	if scale == 0 {
+		scale = a.Scale
 	}
-	if err := s.Repo().SetNodes(ctx, a.ID, nodes, replicas); err != nil {
+	copies := scale
+	if copies == 0 {
+		copies = len(nodes)
+	}
+	if err := s.Repo().SetNodes(ctx, a.ID, nodes, scale, copies); err != nil {
 		return err
 	}
 	if edge != a.NodeSlug {

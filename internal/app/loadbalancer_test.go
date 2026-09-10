@@ -383,9 +383,10 @@ func TestAnAppRunningTwoVersionsSaysSo(t *testing.T) {
 }
 
 type appView struct {
-	Status   string `json:"status"`
-	Split    bool   `json:"split"`
-	Scale    int    `json:"scale"`
+	Status   string   `json:"status"`
+	Split    bool     `json:"split"`
+	Scale    int      `json:"scale"`
+	Nodes    []string `json:"nodes"`
 	Replicas []struct {
 		Node    string `json:"node"`
 		Deploy  int64  `json:"deploy"`
@@ -487,5 +488,59 @@ func TestThereIsNeverAMachineWithNothingToRun(t *testing.T) {
 	got := appOf(t, f, created.Reference)
 	if got.Scale != 2 {
 		t.Errorf("one copy over two machines came out as %d; one of them has nothing to run", got.Scale)
+	}
+}
+
+// Taking a machine away from an app must not leave a second copy behind
+// on the one that stays.
+//
+// The count and the intent are different facts: an app nobody scaled
+// runs one copy per machine, and there is no number to preserve when a
+// machine goes. Reading the intent off the row count made removing a
+// machine from a two-machine app silently double it up on the survivor
+// — somebody moved an app off a box and got two copies on the other.
+func TestTakingAMachineAwayDoesNotDoubleUpOnTheOneThatStays(t *testing.T) {
+	f := balancerFixture(t)
+	_ = addServer(t, f, "eu-1")
+	created := createExternalApp(t, f, "api")
+
+	place(t, f, created.Reference, map[string]any{"nodes": []string{"control-plane", "eu-1"}})
+	if got := appOf(t, f, created.Reference); len(got.Replicas) != 2 {
+		t.Fatalf("two machines, one copy each, got %+v", got.Replicas)
+	}
+
+	place(t, f, created.Reference, map[string]any{"nodes": []string{"control-plane"}})
+	got := appOf(t, f, created.Reference)
+	if len(got.Replicas) != 1 {
+		t.Errorf("one machine is left and it runs %d copies: %+v", len(got.Replicas), got.Replicas)
+	}
+}
+
+// A number somebody chose is a decision, and it survives the machines
+// changing under it — that is the whole difference from a count nobody
+// chose.
+func TestAChosenNumberOfCopiesSurvivesAMachineChange(t *testing.T) {
+	f := balancerFixture(t)
+	_ = addServer(t, f, "eu-1")
+	_ = addServer(t, f, "eu-2")
+	created := createExternalApp(t, f, "api")
+
+	place(t, f, created.Reference, map[string]any{
+		"nodes": []string{"control-plane", "eu-1"}, "scale": 4,
+	})
+	if got := appOf(t, f, created.Reference); len(got.Replicas) != 4 {
+		t.Fatalf("asked for four copies, got %d: %+v", len(got.Replicas), got.Replicas)
+	}
+
+	// A third machine re-spreads the same four rather than making six.
+	place(t, f, created.Reference, map[string]any{
+		"nodes": []string{"control-plane", "eu-1", "eu-2"},
+	})
+	got := appOf(t, f, created.Reference)
+	if len(got.Replicas) != 4 {
+		t.Errorf("adding a machine changed the count to %d: %+v", len(got.Replicas), got.Replicas)
+	}
+	if len(got.Nodes) != 3 {
+		t.Errorf("the app runs on %v", got.Nodes)
 	}
 }

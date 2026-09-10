@@ -1988,9 +1988,20 @@ representable. `scale` is the number and `replicas` is the list; two
 names because they are two shapes of one fact, and sharing a name is how
 a client sends an array where a count was meant.
 
+**What was asked for is stored, and it is not the row count.**
+`apps.scale` is the intent and **zero means one per machine**, which is
+what every app is until somebody says otherwise. The rows cannot hold
+that answer — "however many machines there are" is not a number — and
+reading the intent off them is a bug that already happened: taking a
+machine away from an app running one copy on each of two left *two*
+copies on the survivor, so somebody moved an app off a box and got a
+second copy on the other one. A chosen number survives the machines
+changing under it, because it is a decision; a count nobody chose does
+not, because it was never one.
+
 Scaling up and scaling out are **separate acts**: sending `scale` alone
 leaves the machines as they are, and sending `nodes` alone keeps the
-count and re-spreads it. Neither silently does the other.
+intent and re-spreads it. Neither silently does the other.
 
 **Never fewer copies than machines.** A machine an app was placed on and
 given nothing to run is a machine somebody put it on for no effect, so
