@@ -6,6 +6,88 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.2.0 — 2026-09-10
+
+An instance updates itself — every machine in the cluster, on a schedule if you want one — and the CLI is a download rather than a build.
+
+### Updating from the dashboard
+
+When a release is out, the dashboard says so and offers to install it.
+Taking the offer replaces the daemon, the dashboard, and **every other
+machine in this cluster**. Your apps and databases keep running
+throughout: what is being replaced is the thing that decides what runs,
+not the things it decided.
+
+Say no and it stays out of the way, with a button in the corner for
+whenever you do want it — an update offered once and never mentioned
+again is one nobody takes.
+
+**Nothing on the instance can be changed while an update runs.** Every
+write answers 503 until it finishes, including from a browser that has
+just reloaded: the moment worth protecting is exactly the one where the
+daemon has restarted underneath somebody. The dashboard covers itself
+and shows what step it is on, and comes back on its own — it goes quiet
+for a few seconds while the daemon is replaced, which is the one part
+nothing can report from the inside.
+
+### Updating on a schedule
+
+**Settings → Automatic updates.** Pick a time of day and a timezone, and
+the instance keeps itself current.
+
+A time rather than an interval, because what you are choosing is when
+the instance may be briefly unusable — and "every 24 hours from whenever
+you turned it on" is not something anybody can plan around. The timezone
+is the half that makes the number mean anything: 03:00 on a server's
+clock is not the middle of your night.
+
+Only stable releases. An instance left to update itself should not
+wander onto a release candidate at three in the morning.
+
+### The other machines
+
+They go first, and they have to: once the control plane restarts it can
+tell nobody anything, so a cluster updated the other way round is one
+where every worker is a release behind and nothing is coming to move
+them.
+
+A machine that is off is carried on without. One box being unreachable
+must not freeze the whole cluster, and it gets the new version whenever
+it comes back.
+
+### The CLI is a download now
+
+Every release carries `cubeship` as a static binary for macOS and Linux,
+Intel and ARM, with checksums beside them. Before this, installing it
+started with cloning the repository and having Go.
+
+```
+curl -fsSL https://github.com/cubeshipd/cubeship/releases/latest/download/cubeship_0.2.0_darwin_arm64.tar.gz | tar -xz
+sudo mv cubeship /usr/local/bin/
+```
+
+`cubeship app create` can also set the image an external app pulls,
+which it could not before — so creating one no longer needs the
+dashboard.
+
+### Updating **to** this release
+
+The button does not exist on 0.1.0, so this one time it is the installer
+again:
+
+```
+curl -fsSL https://raw.githubusercontent.com/cubeshipd/cubeship/master/install.sh | sh
+```
+
+From here on it is a button, or a time of day.
+
+### Underneath
+
+Releases are built on a machine of each architecture rather than one
+emulating the other, which took the pipeline from most of an hour to
+about three minutes. Nothing about an installed instance changes; the
+arm64 images are simply no longer built through QEMU.
+
 ## 0.1.0 — 2026-09-10
 
 The first release. One command installs a PaaS on one VPS, and a second machine joins it.
