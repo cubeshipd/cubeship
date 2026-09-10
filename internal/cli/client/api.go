@@ -52,6 +52,15 @@ type App struct {
 	// Split says the machines serving it are not all serving the same
 	// deployment.
 	Split bool `json:"split,omitempty"`
+	// Limits is what one copy of it may take from the machine it runs
+	// on. Zero in either half is no limit.
+	Limits Limits `json:"limits"`
+}
+
+// Limits is a container's ceiling: cores and bytes, zero meaning none.
+type Limits struct {
+	CPU    float64 `json:"cpu"`
+	Memory int64   `json:"memory_bytes"`
 }
 
 // Server is one machine this instance is made of.
@@ -371,6 +380,16 @@ func (c *Client) PlaceApp(ctx context.Context, ref string, nodes []string, scale
 	}
 	return request[App](ctx, c, "place app", http.MethodPatch,
 		"/apps/"+ref, body, http.StatusOK, DefaultTimeout)
+}
+
+// SetAppLimits caps what one copy of an app may take.
+//
+// The whole ceiling travels, both halves, because zero is a value here
+// rather than a gap: it is the only way to say "no limit", so a field
+// left out would be indistinguishable from one being removed.
+func (c *Client) SetAppLimits(ctx context.Context, ref string, limits Limits) (App, error) {
+	return request[App](ctx, c, "set app limits", http.MethodPatch,
+		"/apps/"+ref, map[string]any{"limits": limits}, http.StatusOK, DefaultTimeout)
 }
 
 func (c *Client) DeleteProject(ctx context.Context, projectSlug string) error {

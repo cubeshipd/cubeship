@@ -78,6 +78,7 @@ type Engine interface {
 	StartContainer(ctx context.Context, id string) error
 	StopContainer(ctx context.Context, id string) error
 	RemoveContainer(ctx context.Context, id string) error
+	SetResources(ctx context.Context, id string, r dockerx.Resources) error
 	IsRunning(ctx context.Context, id string) (bool, error)
 	RunningContainers(ctx context.Context) ([]dockerx.Running, error)
 }
@@ -371,9 +372,22 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 	wanted := make(map[string]string, len(placements))
 	for _, p := range placements {
 		wanted[p.App] = p.Container
-		if named(running, p.Container) != "" {
+		if id := named(running, p.Container); id != "" {
 			// Already running it. Not news, and reporting it every ten
 			// seconds would mark one deploy succeeded forever.
+			//
+			// Its ceiling is applied anyway, and every pass: it is the
+			// one setting the Engine writes to a running container, so
+			// this is what makes a limit raised on the control plane
+			// take effect here without a deploy. Skipped when there is
+			// no ceiling, which is the overwhelming majority of
+			// containers — and it could not lift one either way, since
+			// the Engine reads a zero as "leave that alone".
+			if !p.Resources.Unlimited() {
+				if err := a.engine.SetResources(ctx, id, p.Resources); err != nil {
+					log.Printf("agent: %s: applying its ceiling: %v", p.App, err)
+				}
+			}
 			continue
 		}
 		id, err := a.start(ctx, p, registry)
@@ -458,6 +472,7 @@ func (a *Agent) start(ctx context.Context, p node.Placement, registry string) (s
 		Env:          envvar.Slice(p.Env),
 		Network:      network,
 		AlsoNetworks: also,
+		Resources:    p.Resources,
 	})
 	if err != nil {
 		return "", fmt.Errorf("create container: %w", err)

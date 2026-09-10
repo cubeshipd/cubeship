@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -236,7 +237,7 @@ func newAppCmd() *cobra.Command {
 	deleteCmd.Flags().BoolVar(&deleteConfirmed, "yes", false, "confirm that the app should be deleted")
 
 	appCmd.AddCommand(createCmd, listCmd, getCmd, deployCmd, deploymentsCmd, deleteCmd, logsCmd,
-		newAppPlaceCmd(), appEnvCommands())
+		newAppPlaceCmd(), newAppLimitsCmd(), appEnvCommands())
 	return appCmd
 }
 
@@ -336,4 +337,133 @@ func hostsOf(a client.App) string {
 		hosts = append(hosts, d.Host)
 	}
 	return strings.Join(hosts, ", ")
+}
+
+// newAppLimitsCmd is `cubeship app limits`.
+func newAppLimitsCmd() *cobra.Command {
+	var cpu, memory string
+	cmd := &cobra.Command{
+		Use:   "limits <reference>",
+		Short: "Cap what one copy of an app may use",
+		Long: "Cap how much of a machine one copy of an app may take.\n\n" +
+			"--cpu is cores and may be fractional: 0.5 is half a core. It\n" +
+			"is a ceiling rather than a share — a container at its limit is\n" +
+			"throttled, not merely preferred less when the machine is busy.\n\n" +
+			"--memory takes a size: 512Mi, 2Gi, 1500M. It is enforced by\n" +
+			"the kernel killing whatever crosses it, so lowering one below\n" +
+			"what a container is already holding kills it on the spot.\n\n" +
+			"Both are per copy. An app with three replicas and --cpu 1 may\n" +
+			"take three cores between them.\n\n" +
+			"Raising or lowering one takes effect immediately, on every\n" +
+			"machine the app runs on, without a deploy: a ceiling is the\n" +
+			"one part of a container Docker can change while it runs.\n" +
+			"Removing one — passing 0 — is the exception, because Docker\n" +
+			"reads a zero as \"leave that one alone\": the app goes back to\n" +
+			"uncapped on its next deploy.\n\n" +
+			"With no flags it prints what the app is capped at now.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			if cpu == "" && memory == "" {
+				app, err := c.GetApp(context.Background(), args[0])
+				if err != nil {
+					return err
+				}
+				fmt.Println(describeLimits(app.Limits))
+				return nil
+			}
+
+			// Whatever is not being changed is sent as it stands: the
+			// ceiling travels whole, so leaving a flag off must not
+			// read as removing that half.
+			app, err := c.GetApp(context.Background(), args[0])
+			if err != nil {
+				return err
+			}
+			limits := app.Limits
+			if cpu != "" {
+				if limits.CPU, err = strconv.ParseFloat(cpu, 64); err != nil {
+					return fmt.Errorf("--cpu takes a number of cores, like 0.5 or 2: %w", err)
+				}
+			}
+			if memory != "" {
+				if limits.Memory, err = parseSize(memory); err != nil {
+					return err
+				}
+			}
+
+			capped, err := c.SetAppLimits(context.Background(), args[0], limits)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("%s: %s\n", capped.Reference, describeLimits(capped.Limits))
+			if capped.Limits.CPU == 0 || capped.Limits.Memory == 0 {
+				fmt.Println("A limit removed here takes effect on the next deploy; one changed is already in force.")
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&cpu, "cpu", "", "cores one copy may use, fractional allowed; 0 removes the limit")
+	cmd.Flags().StringVar(&memory, "memory", "", "memory one copy may hold, e.g. 512Mi or 2Gi; 0 removes the limit")
+	return cmd
+}
+
+func describeLimits(l client.Limits) string {
+	switch {
+	case l.CPU == 0 && l.Memory == 0:
+		return "no limits — one copy may take the whole machine"
+	case l.Memory == 0:
+		return fmt.Sprintf("%g cores per copy, memory uncapped", l.CPU)
+	case l.CPU == 0:
+		return fmt.Sprintf("%s per copy, CPU uncapped", formatSize(l.Memory))
+	default:
+		return fmt.Sprintf("%g cores and %s per copy", l.CPU, formatSize(l.Memory))
+	}
+}
+
+// parseSize reads a size the way everything else that takes one does:
+// a number, optionally followed by a unit. A bare number is bytes.
+//
+// Both spellings are accepted and both mean 1024 — "512M" from somebody
+// who thinks in megabytes and "512Mi" from somebody being precise about
+// it are the same request, and refusing one of them would be pedantry
+// in front of a limit.
+func parseSize(in string) (int64, error) {
+	s := strings.TrimSpace(in)
+	mult := int64(1)
+	for _, u := range []struct {
+		suffix string
+		factor int64
+	}{
+		{"Gi", 1 << 30}, {"G", 1 << 30}, {"Mi", 1 << 20}, {"M", 1 << 20},
+		{"Ki", 1 << 10}, {"K", 1 << 10}, {"B", 1},
+	} {
+		if len(s) > len(u.suffix) && strings.EqualFold(s[len(s)-len(u.suffix):], u.suffix) {
+			mult, s = u.factor, s[:len(s)-len(u.suffix)]
+			break
+		}
+	}
+	n, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+	if err != nil {
+		return 0, fmt.Errorf("%q is not a size: give bytes, or a number with Ki, Mi or Gi after it", in)
+	}
+	return int64(n * float64(mult)), nil
+}
+
+// formatSize is parseSize's counterpart, to the nearest unit that leaves
+// a short number.
+func formatSize(b int64) string {
+	switch {
+	case b >= 1<<30:
+		return fmt.Sprintf("%gGi", float64(b)/(1<<30))
+	case b >= 1<<20:
+		return fmt.Sprintf("%gMi", float64(b)/(1<<20))
+	case b >= 1<<10:
+		return fmt.Sprintf("%gKi", float64(b)/(1<<10))
+	default:
+		return fmt.Sprintf("%dB", b)
+	}
 }

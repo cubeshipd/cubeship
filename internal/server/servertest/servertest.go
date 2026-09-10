@@ -106,6 +106,9 @@ func (noDocker) CreateContainer(context.Context, dockerx.ContainerOpts) (string,
 func (noDocker) StartContainer(context.Context, string) error  { return errNoDocker }
 func (noDocker) StopContainer(context.Context, string) error   { return errNoDocker }
 func (noDocker) RemoveContainer(context.Context, string) error { return errNoDocker }
+func (noDocker) SetResources(context.Context, string, dockerx.Resources) error {
+	return errNoDocker
+}
 func (noDocker) IsRunning(context.Context, string) (bool, error) {
 	return false, errNoDocker
 }

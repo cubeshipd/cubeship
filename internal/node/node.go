@@ -184,8 +184,8 @@ type Report struct {
 // inventing a way to reach the machine. A reconcile loop that starts
 // life as a heartbeat is one that does not have to be replaced by one.
 type Desired struct {
-	// Apps are the containers this node should be running. Nothing puts
-	// anything here yet.
+	// Apps are the containers this node should be running: one entry
+	// per copy, so a machine running two of one app is told twice.
 	Apps []Placement `json:"apps"`
 }
 
@@ -230,6 +230,16 @@ type Placement struct {
 	// Networks are what the container joins: the machine's own bridge
 	// and, when there is one, the cluster's overlay.
 	Networks []string `json:"networks"`
+	// Resources is the ceiling this copy runs under: CPU quota and a
+	// memory limit, zero in either meaning none.
+	//
+	// Sent on **every** pass rather than only when it changes, because
+	// it is the one setting the Engine can write to a running
+	// container — so the machine applying it every time is what makes
+	// a limit raised on the control plane take effect here in the next
+	// ten seconds instead of at the next deploy. An agent from before
+	// this sends containers with no ceiling, which is what they had.
+	Resources dockerx.Resources `json:"resources,omitzero"`
 }
 
 // Result is what a node did with a placement.

@@ -23,6 +23,10 @@ type stubDocker struct {
 	running bool
 }
 
+func (d *stubDocker) SetResources(_ context.Context, _ string, _ dockerx.Resources) error {
+	return nil
+}
+
 func (d *stubDocker) PullImage(context.Context, string, *dockerx.RegistryAuth) error { return nil }
 func (d *stubDocker) CreateContainer(context.Context, dockerx.ContainerOpts) (string, error) {
 	return "container-1", nil

@@ -69,6 +69,11 @@ type Response struct {
 	// HealthPath is what Traefik asks this app for before it trusts a
 	// container with traffic. Absent is no check, which is the default.
 	HealthPath string `json:"health_path,omitempty"`
+	// Limits is what **one copy** of this app may take from the machine
+	// it runs on: three replicas under a one-core limit may take three
+	// cores. Zero in either half is no ceiling, which is the default
+	// and what every app had before this existed.
+	Limits Limits `json:"limits"`
 	// Replicas is what is running on each of those machines. It is what
 	// a `degraded` status is made of: which of them is serving, and
 	// which is not.
@@ -146,6 +151,7 @@ func toResponse(a *Scoped, in Instance) Response {
 		Nodes:         a.Nodes(),
 		Scale:         len(a.Replicas),
 		HealthPath:    a.HealthPath,
+		Limits:        a.Limits,
 		Replicas:      toReplicas(a),
 		Split:         a.Split(),
 		Address:       in.PublicIP,
@@ -314,6 +320,12 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		// traffic. Its own field for the same reason the placement is:
 		// it is neither what the app is nor where it runs.
 		HealthPath *string `json:"health_path"`
+		// Limits is what one copy of this app may take from the
+		// machine it runs on. Sent as an object so that clearing a
+		// ceiling is a value rather than a gap: `{"cpu":0}` removes
+		// the CPU limit, and leaving the field out entirely is what
+		// keeps whatever is there.
+		Limits *Limits `json:"limits"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -335,7 +347,8 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if req.Description == nil && source == nil && origin == nil &&
-		req.Node == nil && req.Nodes == nil && req.HealthPath == nil && req.Scale == nil {
+		req.Node == nil && req.Nodes == nil && req.HealthPath == nil && req.Scale == nil &&
+		req.Limits == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
@@ -362,7 +375,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updated, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), refFrom(r),
-		req.Description, source, origin, req.HealthPath, place)
+		req.Description, source, origin, req.HealthPath, req.Limits, place)
 	if err != nil {
 		WriteError(w, err)
 		return

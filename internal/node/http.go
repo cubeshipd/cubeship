@@ -242,9 +242,6 @@ type AgentResponse struct {
 	// registry to pull from.
 	Registry string `json:"registry,omitempty"`
 
-	// Edge is what a machine needs to serve an app's own names: each
-	// one runs its own Traefik, because a name pointing at the control
-	// plane reaches nothing when the app is somewhere else.
 	// Mesh is what this machine needs to be on the cluster's private
 	// network. Absent when there is none to be on — an instance whose
 	// Docker cannot cluster, or one that could not bring the network
