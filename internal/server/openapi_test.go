@@ -166,6 +166,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"PATCH /projects/{projectSlug}/env",
 		"PATCH /projects/{projectSlug}/environments/{envSlug}",
 		"PATCH /projects/{projectSlug}/environments/{envSlug}/env",
+		"PATCH /users/me",
 		"POST /apps",
 		"POST /apps/{project}/{env}/{name}/deploy",
 		"POST /apps/{project}/{env}/{name}/domains",

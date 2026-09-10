@@ -11,6 +11,7 @@ package user
 
 import (
 	"errors"
+	"slices"
 	"time"
 )
 
@@ -36,10 +37,38 @@ func (r Role) Valid() bool { return r == RoleAdmin || r == RoleMember }
 
 // User is one identity on this Cubeship instance.
 type User struct {
-	ID        int64
-	Username  string
-	Role      Role
+	ID       int64
+	Username string
+	Role     Role
+	// Theme is which palette this person sees the dashboard in, empty
+	// for the default. A fact about the person rather than about the
+	// machine they opened it on — see Themes.
+	Theme     string
 	CreatedAt time.Time
+}
+
+// Themes are the palettes the dashboard offers.
+//
+// **Every one of them is dark**, and every one of them changes only
+// colour: the layout, the type and the square corners are the product,
+// and a theme that moved those would be a second interface to keep
+// working. Empty is the first.
+//
+// The list is here rather than in the dashboard because it is what the
+// daemon will accept, and two lists would be one to disagree with: a
+// browser sending a name this refuses is a preference that saves and
+// then is not there.
+var Themes = []string{"cyan", "mono", "hacker", "red", "orange", "pink", "purple"}
+
+// ErrUnknownTheme is a palette this instance does not have.
+var ErrUnknownTheme = errors.New("no theme by that name")
+
+// ValidTheme reports whether s is one of them, or empty for the default.
+func ValidTheme(s string) bool {
+	if s == "" {
+		return true
+	}
+	return slices.Contains(Themes, s)
 }
 
 // Is reports whether u holds at least min. An admin satisfies both
