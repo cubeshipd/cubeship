@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"log"
+	"sync"
 	"time"
 
 	"cubeship/internal/node"
@@ -120,7 +121,13 @@ type RouteWriter struct {
 	// wake is buffered, so telling it to write when it is already
 	// writing is not a caller that blocks — and one wake is all a pass
 	// needs, since it reads everything.
-	wake chan struct{}
+	//
+	// Made once, behind a Once, because "make it if it is nil" is a
+	// read and a write of the same field from every goroutine that
+	// deploys, scales or re-spreads an app — and from Run, which starts
+	// beside them.
+	wake  chan struct{}
+	start sync.Once
 }
 
 // Wake asks for a write now. Safe from any goroutine, and safe before
@@ -134,9 +141,7 @@ func (w *RouteWriter) Wake() {
 }
 
 func (w *RouteWriter) ensure() {
-	if w.wake == nil {
-		w.wake = make(chan struct{}, 1)
-	}
+	w.start.Do(func() { w.wake = make(chan struct{}, 1) })
 }
 
 // Run writes on every tick, and whenever something says the answer has
