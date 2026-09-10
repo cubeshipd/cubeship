@@ -50,7 +50,8 @@ internal/
   mesh/         the private network those machines share, and the
                 firewall rules that let them reach each other
   worker/       the daemon running as somebody else's machine: the loop
-                that calls home and does what it is told
+                that calls home and does what it is told. It runs no
+                proxy — every name arrives at the control plane
   registry/     who may docker push/pull, and the push webhook
   credential/   the secrets this instance holds — one secret, stored
                 once, named by everything that needs it
@@ -1959,13 +1960,11 @@ cannot see that layer — the ufw rules it writes do not reach it.
 
 ### Where an app runs
 
-An app runs on the machines in `app_nodes`, and **one** of them — the one
-`apps.node_id` names — is where its traffic arrives. Both were one
-column once, backfilled to the control plane, because everything that
-existed before a cluster ran where the daemon does. `PATCH /apps/{ref}`
-takes `nodes` for the set and `node` for the edge; `node` alone is the
-whole placement, which is what one machine meant before there was more
-than one.
+An app runs on the machines in `app_nodes`. **Where its traffic arrives
+is not one of them**: every name this instance serves arrives at the
+control plane, which routes it to whichever machine runs the app. See
+"One front door". `PATCH /apps/{ref}` takes `nodes` for the set and
+`scale` for how many copies; `node` is shorthand for a set of one.
 
 `app_nodes` is **desired and actual in one row**: the row existing means
 "run a copy here", and its container columns are what is actually there.
@@ -2166,58 +2165,89 @@ share. The charts are one series with a reading per replica in each
 bucket, so an app's chart is **the average across its replicas** and its
 peak is the busiest one's.
 
-### Spreading one name over several machines
+### One front door
 
 `internal/app/routing.go` is the load balancer, and it is Traefik's own
 round-robin pointed at container names.
 
-**One machine serves a name, and the reason is the certificate.** A
-machine that routes a name asks Let's Encrypt for it over TLS-ALPN on
-its own :443. A machine the record does not resolve to fails that
-challenge every time, forever, and every failure counts against a limit
-shared with everyone else under that registered domain. So the machine
-that answers for a name is the one the DNS record points at, there is
-one of it, and the balancing happens **behind** it.
+**Every name arrives at the control plane.** Its Traefik is the proxy
+for the whole instance: one router per name, whose backends are every
+copy of that app anywhere in the cluster. A worker runs no proxy at all
+— no certificate store, no :80 and :443 held open, nothing to bootstrap.
+
+**The certificate is what decided this.** A machine that routes a name
+asks Let's Encrypt for it over TLS-ALPN on its own :443, so a machine
+the record does not resolve to fails that challenge every time, for
+ever, spending a limit shared with everyone else under that registered
+domain. An edge per app was the way round it, and it cost a DNS record
+per app — repointed by hand every time an app moved — and a certificate
+store on every box.
+
+Traefik is a load balancer. It was already the thing in front of every
+container on this machine, and this is the same job over a network that
+now exists.
+
+**What it costs, plainly:** all app traffic arrives here, so it stops
+when this box does. Before, an app on a worker outlived a dead control
+plane — at the price of a record per app, a certificate per machine, and
+an app on two machines being served entirely by whichever one its record
+happened to name. That was the trade, and it was the wrong way round.
+
+The earlier reasoning against this is worth recording because two thirds
+of it was already false when it was written: "the traffic between them
+needs a link of its own" — it has one, the mesh, built the day before —
+and "that box becomes what the cluster's uptime is", which was already
+true per app, in a form that also made DNS a chore.
 
 **A file, not labels.** Traefik's Docker provider sees the one Engine it
-is pointed at, so a machine discovers its own containers and none of the
-ones on the rest of the cluster. The only thing that knows where every
-replica is, is the control plane — so `RoutesFor` works it out and the
-machine writes it into `traefik-dynamic/apps.yml`, which its own Traefik
-is already watching. `node.WriteRoutes` is that write, called by the
-agent for a worker and by `app.RouteWriter` for the control plane, so
-the two cannot drift into rendering the same answer differently.
+is pointed at, so this machine discovers its own containers and none of
+the ones on the rest of the cluster. The control plane is the only thing
+that knows where every copy is, so it writes them out and its own
+Traefik reads them. **No container carries a Traefik router any more**,
+here or anywhere: `placementLabels` emits the network and the two labels
+that say whose container it is, and nothing else.
 
 **The backends are container names**, which resolve from any machine on
 the mesh. That is what makes this a balancer rather than a list of
-addresses that goes stale: a replica is reached by what it is called,
-and what it is called was chosen by the placement that created it —
-derived on the control plane from the app's reference and the
-deployment's id, never taken back from the machine's own report.
+addresses that goes stale: a copy is reached by what it is called, and
+what it is called was chosen by the placement that created it — derived
+on the control plane from the app's reference, the deployment's id and
+the ordinal, never taken back from the machine's own report.
 
-**An app on several machines carries no router on any container.** A
-label-router names one backend, the container it is on, so two machines
-carrying the labels for one name would be two Traefiks each sending all
-of their traffic to themselves. `routedBy` is where that is decided, and
-an app on **one** machine is unchanged — its container routes its own
-name, exactly as before any of this existed.
-
-The file's routers carry an explicit **priority**, because a container
-keeps the labels it was created with: an app that has just gained a
-second machine still has a label-router for its name on its edge until
-it is redeployed, and two routers for one host is a race nobody can see
-the result of.
+**The writer is woken, not only ticked.** A deploy swaps a container,
+and until the file is rewritten it names the one that has gone — a 502
+on every request for that name. A ticker alone would make that up to a
+full interval of them on every deploy of every app, so whatever moves
+the set of live containers says so: `Service.SetRoutesChanged` carries
+the writer's `Wake` down to the orchestrator, and the tick is the
+backstop for what nothing thought to announce.
 
 The file is rewritten **only when it changed**, and rendered sorted, for
-one reason: Traefik reloads on every write, this runs on a timer, and a
-map's iteration order would make every pass look like a change.
+one reason: Traefik reloads on every write, and a map's iteration order
+would make every pass look like a change.
 
-### When the edge stops trusting a replica
+**Nothing to serve is no file at all.** Traefik refuses a document whose
+`http` has nothing under it — "http cannot be a standalone element" —
+and refuses it as a failure to build the configuration *at all*, which
+takes the whole file provider down and `api.yml` with it. An instance
+then stops answering at its own name and stops issuing registry tokens,
+while every container Traefik discovered by label goes on working: the
+same shape of failure the Traefik version pin exists to avoid. The
+provider watches the directory, so a file that goes takes its routers
+with it and nothing else.
+
+A copy with **no container name written down** is not a backend. An app
+running since before that column existed has one, and its next deploy
+names one. Skipping it costs that copy its share of the traffic;
+guessing would cost the whole name.
+
+
+### When the proxy stops trusting a copy
 
 Two mechanisms, and the split is what each can see.
 
 **A dead replica costs a retry, and that needs nothing configured.** A
-container that has gone refuses the connection, so the edge's router
+container that has gone refuses the connection, so the router
 carries a `retry` middleware with one attempt per backend: the request
 goes to the next replica and the visitor sees nothing. Without it that
 refusal is what they get — one request in three failing on an app with
@@ -2231,8 +2261,7 @@ asked twice.
 a path.** It answers the connection, so no retry ever fires for it —
 nothing but an actual request tells the difference. `apps.health_path`
 is that path, `HealthInterval` and `HealthTimeout` are how hard the
-edge looks, and both the balanced service and the single container's own
-labels carry it.
+proxy looks, and every service in the file carries it.
 
 **No check is the default, and it is the only safe one.** A path is
 something only the app's author knows, and a wrong one does not degrade
@@ -2270,17 +2299,7 @@ those — the column did not exist — and its next deploy names one.
 Skipping it costs that replica its share of the traffic; guessing would
 cost the whole name.
 
-**Scaling back down does not take a name off the internet**, and that is
-what `app_nodes.routed` is for. The container left on the last machine
-was created while there were two, so it carries no router of its own,
-and dropping the route with the second machine would leave the name
-served by nothing until somebody happened to redeploy. The column
-remembers what the labels were, so the edge goes on routing it until a
-deploy puts them back.
 
-Its **log**, its **charts** and its **names** all work — see below.
-None of them is read from or served by this machine: the machine the app
-is on answers for its own.
 
 A machine with apps on it cannot be removed — `ON DELETE RESTRICT`, and
 the error says to move them. Where they should go is a decision, and
@@ -2355,41 +2374,18 @@ the rule the collector here follows too.
 
 ### Where an app's traffic arrives
 
-**Every machine is its own edge.** Traffic for an app arrives at the box
-the app is on, terminates TLS there, and is routed to the container by
-the same labels a container here carries — which the placement already
-sends. What the agent starts is the same Traefik with the same
-configuration, and `node.Edge` is the whole of what travels: whether
-certificates are possible, and the contact address.
+**At this instance, always.** One address, one certificate store, one
+record per name — and moving an app between machines touches none of
+them. `Response.Address` is the instance's own public address for every
+app, because that is where every record points.
 
-The alternative was one edge on the control plane proxying to the
-others. It costs more than it buys: every request hairpins through one
-box, that box becomes what the cluster's uptime is, and the traffic
-between them needs a link of its own.
+`internal/certificates` is simpler for it: there is no name served by a
+machine this one cannot see, so no `another_server` to report and no
+store to guess about. A name is routed once something is running the
+app, wherever that is — the router is a line in the file this machine
+writes, and it does not wait for a redeploy the way a container's labels
+did.
 
-A worker starts its edge **when it is first told to run something with a
-name on it** — a queue consumer has no reason to hold two ports open —
-and does not stop it again when the last name goes. Removing
-infrastructure somebody's traffic may still be arriving at is a
-different kind of act from starting it.
-
-**The DNS record is what has to follow an app**, and it points at a
-machine rather than at an instance. So an app's response carries
-`address`: where a record for *it* has to point, which is its node's,
-falling back to this instance's only for an app that is here. A node
-that has not reported an address has none, and the field is empty —
-saying the control plane's would be a record reaching the box the app
-just left.
-
-Moving an app does not repoint anything. Cubeship does not know which
-provider serves a name it did not write, so the dashboard says which
-names have to move and where to, and leaves it there.
-
-**The certificate report does not accuse a name it cannot see.** A name
-served by another machine gets `another_server` rather than `pending`:
-that certificate was issued into that box's store, and this one has
-never seen it. `internal/certificates` is a report, and a report that
-calls a working name broken is worse than one that says where to look.
 
 ### What is not there yet
 
@@ -2403,12 +2399,13 @@ calls a working name broken is worse than one that says where to look.
   a third copy of an app that runs here writes three rows and leaves the
   third without a container until somebody redeploys. On a worker the
   same request takes effect in ten seconds.
-- **Anything in front of the edge.** The machine an app's traffic
-  arrives at is a single point of failure for *ingress*, even though the
-  app itself now survives a replica going away. What fixes that is
+- **Anything in front of the control plane.** Every name arrives there,
+  so it is a single point of failure for *ingress* even though an app
+  now survives a copy, or a whole machine, going away. What fixes it is
   several A records or something in front of them, and both are
-  decisions about failure — and about certificates — that this does not
-  make.
+  decisions about failure — and about certificates, since a second
+  machine answering a name has to be able to prove it owns it — that
+  this does not make.
 
 ## Managed databases
 

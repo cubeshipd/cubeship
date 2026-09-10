@@ -159,12 +159,15 @@ func (s *Service) Placed(ctx context.Context, nodeID int64, results []node.Resul
 		// the machine gets to decide.
 		name := containerNameFor(resourceName(ReferenceOf(a)), d.ID, ordinal)
 		if err := s.Repo().UpdateContainer(ctx, a.ID, nodeID, ordinal, r.Container, name, d.ID,
-			len(a.Replicas) == 1, StatusRunning); err != nil {
+			StatusRunning); err != nil {
 			return err
 		}
 		if err := s.orch.settle(ctx, a.ID, d.ID); err != nil {
 			return err
 		}
+		// A machine has a container it did not have, which is a backend
+		// the proxy does not know about yet.
+		s.announceRoutes()
 	}
 	return nil
 }
@@ -234,10 +237,6 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 	if err != nil {
 		return node.Placement{}, fmt.Errorf("resolve inherited env: %w", err)
 	}
-	values, err := o.settings.Load(ctx)
-	if err != nil {
-		return node.Placement{}, fmt.Errorf("read instance settings: %w", err)
-	}
 	// A login for a registry this instance holds keys to. The one
 	// registry it does *not* carry is its own: a machine pulling from
 	// there authenticates as itself, with the credential it already
@@ -260,27 +259,28 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 		Image:     d.ImageRef,
 		Registry:  auth,
 		Env:       env,
-		// The same labels a container here would carry, and by the same
-		// rule: a container routes the names it serves on the machine
-		// it is on, and an app spread over several machines routes none
-		// of them from a container. See routedBy.
-		Labels:   placementLabels(base, o.routedBy(a), values.HasTLS(), a.HealthPath, ref.String(), d.ID),
+		// The same labels a container here would carry, which are now
+		// only the two that say whose it is: nothing on any machine
+		// routes a name any more. See placementLabels.
+		Labels:   placementLabels(ref.String(), d.ID),
 		Networks: networks,
 	}, nil
 }
 
-// placementLabels are Traefik's, plus the two that say whose container
-// this is.
+// placementLabels say whose container this is, and nothing else.
 //
-// The Traefik ones do nothing on another machine yet — that machine's
-// Traefik is not running and its names are not routed — and they are
-// what will make it work when it is, so a container created now is one
-// that does not have to be recreated for it.
-func placementLabels(base string, domains []traefik.Domain, tls bool, health, app string, deploy int64) map[string]string {
-	labels := traefik.Labels(base, domains, tls, health)
-	labels[node.LabelApp] = app
-	labels[node.LabelDeploy] = strconv.FormatInt(deploy, 10)
-	return labels
+// **No container carries a Traefik router any more.** Every name is
+// served by the control plane's own proxy, from the file it writes, so
+// a router on a container would be a second answer to "who serves this
+// name" — and on a worker it would be a router no proxy ever reads.
+// What is left is the network it joins and the two labels the agent
+// removes a container it should no longer run by.
+func placementLabels(app string, deploy int64) map[string]string {
+	return map[string]string{
+		"traefik.docker.network": Network,
+		node.LabelApp:            app,
+		node.LabelDeploy:         strconv.FormatInt(deploy, 10),
+	}
 }
 
 // routedBy is the names a container of this app should carry routers

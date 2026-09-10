@@ -121,14 +121,15 @@ function Detail({
   // answer, so the way back is there before the answer is.
   const environment = `/projects/${project}/${env}`;
 
-  // Whether this app runs on another machine, which changes what this
-  // screen can show: its log and its charts are that machine's.
-  const remote = app !== null && app.node !== "control-plane";
+  // Whether this app runs somewhere other than this box, which changes
+  // what this screen can show: its log and its charts are that
+  // machine's.
+  const remote = app !== null && !app.nodes.includes("control-plane");
   // And whether it runs on more than one, which changes what a log is:
   // there is one per machine and no combined one. The machine its
   // traffic arrives at goes first, because that is the one the daemon
   // answers with when nobody names one.
-  const servers = app === null ? [] : [app.node, ...app.nodes.filter((n) => n !== app.node)];
+  const servers = app === null ? [] : app.nodes;
 
   return (
     <>
@@ -227,15 +228,16 @@ function Detail({
               <Notice>
                 This app runs on {app.nodes.length} machines —{" "}
                 <code className="text-foreground">{app.nodes.join(", ")}</code> — and its traffic
-                arrives at <code className="text-foreground">{app.node}</code>, which spreads it
-                across them. The charts below are the average across its replicas; each machine
+                arrives at this instance, which spreads it across them over the cluster&apos;s
+                private network. The charts below are the average across its copies; each machine
                 keeps its own log.
               </Notice>
             ) : (
               remote && (
                 <Notice>
-                  This app runs on <code className="text-foreground">{app.node}</code>. Its charts
-                  and its log come from that machine.
+                  This app runs on <code className="text-foreground">{app.nodes.join(", ")}</code>.
+                  Its charts and its log come from there; its traffic still arrives at this
+                  instance.
                 </Notice>
               )
             )}

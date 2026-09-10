@@ -44,6 +44,12 @@ type Service struct {
 	// that machine has. Nil on a daemon with no cluster module wired
 	// in, and then an app is only ever here.
 	remote Remote
+
+	// routesChanged is told when the set of live containers moves, so
+	// the file this instance's proxy reads is rewritten now rather than
+	// on the next tick. Nil on a server with nobody listening, which is
+	// a test.
+	routesChanged func()
 }
 
 // Remote is how this module reaches the machine an app runs on.
@@ -64,6 +70,26 @@ type Remote interface {
 	// to have lasted is this module's judgement rather than the
 	// cluster's.
 	Quiet(ctx context.Context, d time.Duration) (map[int64]bool, error)
+}
+
+// SetRoutesChanged wires in what to tell when the set of live
+// containers moves — a deploy that swapped one, a machine reporting a
+// new one, a placement that changed.
+//
+// Without it the routes file is only as fresh as its ticker, and a
+// deploy leaves it naming a container that has just been removed: a 502
+// on every request for that name until the next pass. Called once, by
+// cmd/cubeshipd, with the writer's own Wake.
+func (s *Service) SetRoutesChanged(fn func()) {
+	s.routesChanged = fn
+	s.orch.routesChanged = fn
+}
+
+// routesChanged says the answer moved, when there is anybody to tell.
+func (s *Service) announceRoutes() {
+	if s.routesChanged != nil {
+		s.routesChanged()
+	}
 }
 
 // SetRemote wires it in. Called once, by server.New — and the
@@ -388,11 +414,6 @@ type Placement struct {
 	// Nodes are the machines it runs on, by name. Empty means the ones
 	// it already has, which is what changing only the count sends.
 	Nodes []string
-	// Edge is which of them serves its names. Empty keeps the one it
-	// has, when that is still one of Nodes, and takes the first
-	// otherwise — an edge that is no longer running the app is an edge
-	// balancing across a set it is not in.
-	Edge string
 	// Replicas is how many copies run in total, spread over Nodes.
 	//
 	// A number for the app rather than one per machine, because that is
@@ -432,49 +453,17 @@ func (s *Service) replace(ctx context.Context, a *Scoped, p Placement, source So
 		}
 	}
 
-	edge := p.Edge
-	if edge == "" {
-		edge = a.NodeSlug
-	}
-	if !contains(nodes, edge) {
-		// Naming a machine that is not in the set is a mistake worth
-		// refusing; falling back silently would serve the app from
-		// somewhere it does not run. The exception is the edge nobody
-		// named, which is the one it already had — that one follows the
-		// set rather than blocking a scale-out on a second decision.
-		if p.Edge != "" {
-			return fmt.Errorf("%w: %s does not run this app, so it cannot serve it", ErrNotPlaceable, p.Edge)
-		}
-		edge = nodes[0]
-	}
-
-	// What was asked for, which is not what there is. Naming no number
-	// keeps whatever was asked for before — and for almost every app
-	// that is "one per machine", which is the answer a row count cannot
-	// hold. See App.Scale: reading the intent off the rows made taking
-	// a machine away from an app running one copy on each of two leave
-	// two copies on the survivor.
-	scale := p.Replicas
-	if scale == 0 {
-		scale = a.Scale
-	}
-	copies := scale
-	if copies == 0 {
-		copies = len(nodes)
-	}
-	if err := s.Repo().SetNodes(ctx, a.ID, nodes, scale, copies); err != nil {
-		return err
-	}
-	if edge != a.NodeSlug {
-		if err := s.Repo().SetEdge(ctx, a.ID, edge); err != nil {
-			return err
-		}
-	}
 	// The set an open deploy is waiting on has just changed, and one of
 	// the machines it was waiting for may have been what was left. A
 	// deploy is closed by a report, and no report is coming for a
 	// machine that is no longer running this app.
-	return s.orch.settleOpen(ctx, a.ID)
+	if err := s.orch.settleOpen(ctx, a.ID); err != nil {
+		return err
+	}
+	// Which machines run it has just changed, so which containers the
+	// proxy should name has too.
+	s.announceRoutes()
+	return nil
 }
 
 func dedupe(in []string) []string {
@@ -845,7 +834,7 @@ func (s *Service) DeleteDeployment(ctx context.Context, caller *user.User, ref R
 		// of them. A record left naming a container that is gone is one
 		// the next deploy would try to stop again.
 		for _, r := range a.ReplicasOn(here) {
-			if err := s.Repo().UpdateContainer(ctx, a.ID, here, r.Ordinal, "", "", 0, true, StatusDown); err != nil {
+			if err := s.Repo().UpdateContainer(ctx, a.ID, here, r.Ordinal, "", "", 0, StatusDown); err != nil {
 				return err
 			}
 		}
@@ -998,17 +987,15 @@ func (s *Service) Logs(ctx context.Context, caller *user.User, ref Reference, se
 	return s.orch.Logs(ctx, a.ID, tail)
 }
 
-// pick resolves which of an app's machines a request means.
+// pick resolves which of an app's copies a request means.
 //
-// Empty is the app's edge — where its traffic arrives — when it runs
-// there, and its first machine otherwise. An edge that runs nothing is
-// possible in one moment only: between a placement being changed and
-// the machines acting on it.
+// Naming none takes the first, which is ordinal 1 on the lowest machine
+// id — an order that is stable between two reads, so "the log" means
+// the same copy twice running. Every copy is equal now that no single
+// machine is the one traffic arrives at, so there is no better first
+// than a deterministic one.
 func (a *App) pick(server string) (Replica, error) {
 	if server == "" {
-		if r, ok := a.ReplicaOn(a.NodeID); ok {
-			return r, nil
-		}
 		if len(a.Replicas) == 0 {
 			return Replica{}, ErrNoContainer
 		}

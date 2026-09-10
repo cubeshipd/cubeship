@@ -10,7 +10,6 @@ import (
 
 	"cubeship/internal/envvar"
 	"cubeship/internal/metrics"
-	"cubeship/internal/node"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/project"
 	"cubeship/internal/user"
@@ -55,10 +54,6 @@ type Response struct {
 	Dockerfile  string `json:"dockerfile,omitempty"`
 	Project     string `json:"project"`
 	Environment string `json:"environment"`
-	// Node is the machine whose edge serves this app's names — where
-	// its traffic arrives, and the one address a record for it points
-	// at. On an instance of one box it is always the control plane.
-	Node string `json:"node"`
 	// Nodes are the machines it runs on, by name, once each. One is the
 	// ordinary answer and always includes Node; several is an app whose
 	// traffic that edge spreads across them.
@@ -84,14 +79,11 @@ type Response struct {
 	// split — and absent on the overwhelming majority of apps, which
 	// run one version on one machine.
 	Split bool `json:"split,omitempty"`
-	// Address is where a DNS record for this app has to point: the
-	// machine it runs on, because each machine is its own edge.
-	//
-	// It is the app's rather than the instance's for exactly that
-	// reason — a name pointing at the control plane reaches nothing
-	// when the app is on another box. Empty when the machine has not
-	// reported an address, which is a name nothing can be pointed at
-	// yet.
+	// Address is where a DNS record for this app has to point, which is
+	// this instance's own: every name arrives at the control plane and
+	// is routed from there to whichever machine runs the app. Empty
+	// when the instance could not work out a routable address of its
+	// own — see settings.PublicIP.
 	Address string `json:"address,omitempty"`
 	// SuggestedHost is a name this app could answer at, under the
 	// instance's own domain — see SuggestedHostFor. Nothing assigns it:
@@ -151,13 +143,12 @@ func toResponse(a *Scoped, in Instance) Response {
 		Status: a.Status(), HasContainer: a.HasContainer(), Source: a.Source,
 		Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
 		SuggestedHost: SuggestedHostFor(ref, in.Domain),
-		Node:          a.NodeSlug,
 		Nodes:         a.Nodes(),
 		Scale:         len(a.Replicas),
 		HealthPath:    a.HealthPath,
 		Replicas:      toReplicas(a),
 		Split:         a.Split(),
-		Address:       addressFor(a, in),
+		Address:       in.PublicIP,
 	}
 	switch Source(a.Source) {
 	case SourceExternal:
@@ -170,22 +161,6 @@ func toResponse(a *Scoped, in Instance) Response {
 		}
 	}
 	return r
-}
-
-// addressFor is where this app's traffic has to arrive.
-//
-// The machine it is on, and this instance's own address only for an app
-// here: a node that has not reported one has no address to point a name
-// at, and saying the control plane's would be a record that reaches the
-// wrong box.
-func addressFor(a *Scoped, in Instance) string {
-	if address, ok := in.Addresses[a.NodeID]; ok && address != "" {
-		return address
-	}
-	if a.NodeSlug == node.ControlPlaneSlug {
-		return in.PublicIP
-	}
-	return ""
 }
 
 func toResponses(apps []*Scoped, in Instance) []Response {
@@ -367,7 +342,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 
 	var place *Placement
 	if req.Node != nil || req.Nodes != nil || req.Scale != nil {
-		place = &Placement{Edge: deref(req.Node)}
+		place = &Placement{}
 		if req.Scale != nil {
 			place.Replicas = *req.Scale
 		}

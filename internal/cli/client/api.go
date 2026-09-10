@@ -41,16 +41,13 @@ type App struct {
 	Status      string   `json:"status"`
 	Project     string   `json:"project"`
 	Environment string   `json:"environment"`
-	// Node is the machine whose edge serves this app's names, and Nodes
-	// are the machines it runs on. On an instance of one box both are
-	// the control plane.
-	Node  string   `json:"node"`
+	// Nodes are the machines this app runs on. On an instance of one
+	// box that is the control plane.
 	Nodes []string `json:"nodes"`
 	// Scale is how many copies run in total, across those machines.
 	Scale int `json:"scale"`
-	// Address is where a DNS record for this app has to point: the
-	// machine its traffic arrives at, because every machine is its own
-	// edge. Empty when that machine has not reported one.
+	// Address is where a DNS record for this app has to point, which is
+	// this instance's own whatever machine the app runs on.
 	Address string `json:"address,omitempty"`
 	// Split says the machines serving it are not all serving the same
 	// deployment.
@@ -357,20 +354,17 @@ func (c *Client) RemoveServer(ctx context.Context, name string) error {
 	return err
 }
 
-// PlaceApp says which machines run an app, which of them its traffic
-// arrives at, and how many copies run in total.
+// PlaceApp says which machines run an app and how many copies run in
+// total.
 //
-// Each is left alone when it is not given: no machines keeps the ones it
-// has, no edge keeps the one it has when that machine is still in the
-// set, and no scale keeps the count — so scaling out does not move a
-// DNS record and does not change how many copies there are.
-func (c *Client) PlaceApp(ctx context.Context, ref string, nodes []string, edge string, scale int) (App, error) {
+// Each is left alone when it is not given: no machines keeps the ones
+// it has, no scale keeps the count. Where its traffic arrives is not a
+// choice — every name this instance serves arrives at the control
+// plane, which routes it to whichever machine runs the app.
+func (c *Client) PlaceApp(ctx context.Context, ref string, nodes []string, scale int) (App, error) {
 	body := map[string]any{}
 	if len(nodes) > 0 {
 		body["nodes"] = nodes
-	}
-	if edge != "" {
-		body["node"] = edge
 	}
 	if scale > 0 {
 		body["scale"] = scale

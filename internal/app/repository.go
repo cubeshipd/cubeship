@@ -20,7 +20,7 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, project_id, environment_id, node_id, name, description, source, source_image,
+const columns = `id, project_id, environment_id, name, description, source, source_image,
 	source_repo, source_ref, source_dockerfile, health_path, scale, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
@@ -28,7 +28,7 @@ type scanner interface{ Scan(dest ...any) error }
 func scan(row scanner) (*App, error) {
 	var a App
 	var envJSON []byte
-	if err := row.Scan(&a.ID, &a.ProjectID, &a.EnvironmentID, &a.NodeID, &a.Name, &a.Description,
+	if err := row.Scan(&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Description,
 		&a.Source, &a.SourceImage, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
 		&a.HealthPath, &a.Scale, &envJSON, &a.CreatedAt); err != nil {
 		return nil, err
@@ -93,9 +93,9 @@ func (r *Repository) Create(ctx context.Context, projectID, environmentID int64,
 		// than a column default because a default would have to name a
 		// row by a number, and the control plane's is a fact about a
 		// table rather than a constant.
-		`INSERT INTO apps (project_id, environment_id, node_id, name, description, source,
+		`INSERT INTO apps (project_id, environment_id, name, description, source,
 		                   source_image, source_repo, source_ref, source_dockerfile)
-		 VALUES ($1, $2, (SELECT id FROM nodes WHERE control_plane), $3, $4, $5, $6, $7, $8, $9)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		 RETURNING `+columns,
 		projectID, environmentID, name, description, string(source),
 		origin.Image, origin.Repo, origin.Ref, origin.Dockerfile)
@@ -108,7 +108,8 @@ func (r *Repository) Create(ctx context.Context, projectID, environmentID int64,
 	// same machine, because there is only one until somebody adds
 	// another.
 	if _, err := r.q.ExecContext(ctx,
-		`INSERT INTO app_nodes (app_id, node_id, ordinal) VALUES ($1, $2, 1)`, a.ID, a.NodeID); err != nil {
+		`INSERT INTO app_nodes (app_id, node_id, ordinal)
+		 VALUES ($1, (SELECT id FROM nodes WHERE control_plane), 1)`, a.ID); err != nil {
 		return nil, fmt.Errorf("create app: %w", err)
 	}
 	a.Replicas, err = r.Replicas(ctx, a.ID)
@@ -218,19 +219,19 @@ func (r *Repository) attach(ctx context.Context, apps []*App) error {
 // An upsert rather than an update: a machine reporting a container for
 // an app it was given but has never run has no row to update yet, and
 // the report is exactly the moment the row becomes true.
-func (r *Repository) UpdateContainer(ctx context.Context, appID, nodeID int64, ordinal int, containerID, name string, deployment int64, routed bool, status string) error {
+func (r *Repository) UpdateContainer(ctx context.Context, appID, nodeID int64, ordinal int, containerID, name string, deployment int64, status string) error {
 	var deploy any
 	if deployment != 0 {
 		deploy = deployment
 	}
 	if _, err := r.q.ExecContext(ctx,
-		`INSERT INTO app_nodes (app_id, node_id, ordinal, container_id, container_name, deployment_id, routed, status, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, now())
+		`INSERT INTO app_nodes (app_id, node_id, ordinal, container_id, container_name, deployment_id, status, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, now())
 		 ON CONFLICT (app_id, node_id, ordinal) DO UPDATE
 		 SET container_id = EXCLUDED.container_id, container_name = EXCLUDED.container_name,
-		     deployment_id = EXCLUDED.deployment_id, routed = EXCLUDED.routed,
+		     deployment_id = EXCLUDED.deployment_id,
 		     status = EXCLUDED.status, updated_at = now()`,
-		appID, nodeID, ordinal, containerID, name, deploy, routed, status); err != nil {
+		appID, nodeID, ordinal, containerID, name, deploy, status); err != nil {
 		return fmt.Errorf("update app container: %w", err)
 	}
 	return nil
@@ -519,32 +520,26 @@ type Scoped struct {
 	App
 	ProjectSlug     string
 	EnvironmentSlug string
-	// NodeSlug is the machine this app runs on, by name. Joined rather
-	// than looked up, the same way the project and the environment are:
-	// a listing that had to ask another module per row would be three
-	// more queries per app.
-	NodeSlug string
 }
 
 // scopedQuery selects an app with its containing slugs. The column order
 // matches scanScoped.
 const scopedQuery = `
-	SELECT a.id, a.project_id, a.environment_id, a.node_id, a.name, a.description,
+	SELECT a.id, a.project_id, a.environment_id, a.name, a.description,
 	       a.source, a.source_image, a.source_repo, a.source_ref, a.source_dockerfile,
 	       a.health_path, a.scale, a.env, a.created_at,
-	       p.slug, e.slug, n.slug
+	       p.slug, e.slug
 	FROM apps a
 	JOIN projects p ON p.id = a.project_id
-	JOIN environments e ON e.id = a.environment_id
-	JOIN nodes n ON n.id = a.node_id`
+	JOIN environments e ON e.id = a.environment_id`
 
 func scanScoped(row scanner) (*Scoped, error) {
 	var s Scoped
 	var envJSON []byte
-	if err := row.Scan(&s.ID, &s.ProjectID, &s.EnvironmentID, &s.NodeID, &s.Name, &s.Description,
+	if err := row.Scan(&s.ID, &s.ProjectID, &s.EnvironmentID, &s.Name, &s.Description,
 		&s.Source, &s.SourceImage, &s.SourceRepo, &s.SourceRef, &s.SourceDockerfile,
 		&s.HealthPath, &s.Scale, &envJSON, &s.CreatedAt,
-		&s.ProjectSlug, &s.EnvironmentSlug, &s.NodeSlug); err != nil {
+		&s.ProjectSlug, &s.EnvironmentSlug); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &s.Env); err != nil {
@@ -643,30 +638,6 @@ func (r *Repository) ScopedOnNode(ctx context.Context, nodeID int64) ([]*Scoped,
 		ORDER BY a.id`, nodeID)
 }
 
-// SetEdge moves where an app's traffic arrives, by name.
-//
-// By name rather than by id because the caller has a name — it is what
-// the API takes and what a person types — and resolving it here is one
-// statement rather than a lookup and a write that can disagree.
-// ErrNoSuchNode when there is no such machine: the subquery would
-// otherwise write NULL into a NOT NULL column and surface as a
-// constraint violation nobody can read.
-func (r *Repository) SetEdge(ctx context.Context, appID int64, nodeSlug string) error {
-	res, err := r.q.ExecContext(ctx,
-		`UPDATE apps SET node_id = (SELECT id FROM nodes WHERE slug = $2) WHERE id = $1`,
-		appID, nodeSlug)
-	if err != nil {
-		// A machine that is not in the cluster leaves the subquery
-		// empty, and the column refuses it. That is the shape of the
-		// only error worth naming here.
-		return ErrNoSuchNode
-	}
-	if n, err := res.RowsAffected(); err == nil && n == 0 {
-		return ErrNotFound
-	}
-	return nil
-}
-
 // Replicas reads the machines one app runs on.
 //
 // Ordered by node id, so the list is stable between two reads of the
@@ -690,7 +661,7 @@ func (r *Repository) ReplicasFor(ctx context.Context, appIDs []int64) (map[int64
 	}
 	rows, err := r.q.QueryContext(ctx, `
 		SELECT r.app_id, r.node_id, n.slug, r.ordinal, r.container_id, r.container_name,
-		       COALESCE(r.deployment_id, 0), r.routed, r.status, r.updated_at
+		       COALESCE(r.deployment_id, 0), r.status, r.updated_at
 		FROM app_nodes r
 		JOIN nodes n ON n.id = r.node_id
 		WHERE r.app_id = ANY($1)
@@ -704,7 +675,7 @@ func (r *Repository) ReplicasFor(ctx context.Context, appIDs []int64) (map[int64
 		var appID int64
 		var rep Replica
 		if err := rows.Scan(&appID, &rep.NodeID, &rep.NodeSlug, &rep.Ordinal, &rep.Container,
-			&rep.Name, &rep.Deploy, &rep.Routed, &rep.Status, &rep.UpdatedAt); err != nil {
+			&rep.Name, &rep.Deploy, &rep.Status, &rep.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out[appID] = append(out[appID], rep)

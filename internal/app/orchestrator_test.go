@@ -381,7 +381,7 @@ func seedContainer(t *testing.T, db *database.DB, appID int64, container string)
 	if err != nil {
 		t.Fatalf("find the control plane: %v", err)
 	}
-	if err := repo.UpdateContainer(context.Background(), appID, here, 1, container, container, 0, true, StatusRunning); err != nil {
+	if err := repo.UpdateContainer(context.Background(), appID, here, 1, container, container, 0, StatusRunning); err != nil {
 		t.Fatalf("seed the previous container: %v", err)
 	}
 }

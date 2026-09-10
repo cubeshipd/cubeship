@@ -17,7 +17,6 @@ import (
 	"cubeship/internal/datastore"
 	"cubeship/internal/machine"
 	"cubeship/internal/metrics"
-	"cubeship/internal/node"
 	"cubeship/internal/objectstore"
 	"cubeship/internal/platform/authkey"
 	"cubeship/internal/platform/bootstrap"
@@ -114,20 +113,12 @@ func runWorker(cfg *config.Config) error {
 		})
 	}
 
-	// This machine's own edge, started the first time it is told to run
-	// something with a name on it. The same container the control plane
-	// runs, with the same configuration: a certificate for an app's
-	// name is issued on the box the name points at, which is the box
-	// the app is on.
-	edge := func(ctx context.Context, e node.Edge) error {
-		if err := bootstrap.EnsureTraefikDirs(cfg); err != nil {
-			return err
-		}
-		return bootstrap.Ensure(ctx, docker, bootstrap.TraefikContainerOpts(cfg, e.TLS, e.ACMEEmail))
-	}
-
+	// A worker runs no proxy at all. Every name this instance serves
+	// arrives at the control plane, which routes it here over the mesh
+	// by container name — so there is nothing on this box to terminate
+	// TLS, no certificate store, and no port to hold open.
 	log.Printf("worker mode: this machine belongs to %s and serves nothing of its own", cfg.ControlPlane)
-	worker.New(cfg.ControlPlane, cfg.NodeToken, version, cfg.DataDir, box, docker, address, host, edge).Run(ctx)
+	worker.New(cfg.ControlPlane, cfg.NodeToken, version, cfg.DataDir, box, docker, address, host).Run(ctx)
 	return nil
 }
 
@@ -515,20 +506,25 @@ func run() error {
 	// in it.
 	go machine.NewCollector(db, box).Run(ctx)
 
-	// What this machine's own edge serves that its containers do not
-	// say: the apps spread over several machines whose traffic arrives
-	// here. A worker is handed the same answer down its reconcile loop
-	// and writes the same file with the same function; this is that
-	// loop for the machine that has no loop, because it is the one
-	// being called. It runs here for the reason the collectors do.
-	go (&app.RouteWriter{
+	// Every name this instance serves, written where this machine's
+	// Traefik reads it. A worker runs no proxy: what arrives here is
+	// routed to whichever machine runs the app, over the mesh, by
+	// container name.
+	//
+	// It runs here for the reason the collectors do, and it is woken as
+	// well as ticked — a deploy that swaps a container leaves the file
+	// naming the one that has gone, which is a 502 until it is
+	// rewritten.
+	routes := &app.RouteWriter{
 		Apps:    srv.Apps,
 		DataDir: cfg.DataDir,
 		TLS: func(ctx context.Context) bool {
 			values, err := srv.Settings.Load(ctx)
 			return err == nil && values.HasTLS()
 		},
-	}).Run(ctx)
+	}
+	srv.Apps.SetRoutesChanged(routes.Wake)
+	go routes.Run(ctx)
 
 	go purgeExpiredSessions(ctx, srv.Users)
 

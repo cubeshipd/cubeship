@@ -441,8 +441,9 @@ func TestClientManagesTheCluster(t *testing.T) {
 		t.Errorf("description came back as %q", one.Description)
 	}
 
-	// And an app can be put on it. The edge is left out, so it stays
-	// where it was — scaling out must not move a DNS record.
+	// And an app can be put on it. Where its traffic arrives is not
+	// part of the question: every name arrives at the control plane
+	// whichever machine runs the app.
 	// The default source, which is this instance's own registry: an
 	// external app would need the image it pulls, and what is under
 	// test here is where an app runs rather than where it comes from.
@@ -450,15 +451,12 @@ func TestClientManagesTheCluster(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
-	placed, err := c.PlaceApp(ctx, app.Reference, []string{"control-plane", "eu-1"}, "", 0)
+	placed, err := c.PlaceApp(ctx, app.Reference, []string{"control-plane", "eu-1"}, 0)
 	if err != nil {
 		t.Fatalf("PlaceApp: %v", err)
 	}
 	if len(placed.Nodes) != 2 {
 		t.Errorf("the app runs on %v", placed.Nodes)
-	}
-	if placed.Node != "control-plane" {
-		t.Errorf("adding a machine moved the app's traffic to %q", placed.Node)
 	}
 	// One copy per machine, because no count was asked for and adding a
 	// machine is not a change of count.
@@ -468,7 +466,7 @@ func TestClientManagesTheCluster(t *testing.T) {
 
 	// And scaling up without naming machines leaves them alone: four
 	// copies over the two it has.
-	scaled, err := c.PlaceApp(ctx, app.Reference, nil, "", 4)
+	scaled, err := c.PlaceApp(ctx, app.Reference, nil, 4)
 	if err != nil {
 		t.Fatalf("PlaceApp with only a count: %v", err)
 	}
@@ -481,7 +479,7 @@ func TestClientManagesTheCluster(t *testing.T) {
 	if err := c.RemoveServer(ctx, "eu-1"); err == nil {
 		t.Error("a machine with an app on it was removed")
 	}
-	if _, err := c.PlaceApp(ctx, app.Reference, []string{"control-plane"}, "", 0); err != nil {
+	if _, err := c.PlaceApp(ctx, app.Reference, []string{"control-plane"}, 0); err != nil {
 		t.Fatalf("move the app back: %v", err)
 	}
 	if err := c.RemoveServer(ctx, "eu-1"); err != nil {

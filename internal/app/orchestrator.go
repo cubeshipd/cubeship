@@ -13,7 +13,6 @@ import (
 
 	"cubeship/internal/envvar"
 	"cubeship/internal/extregistry"
-	"cubeship/internal/node"
 	"cubeship/internal/platform/buildkit"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/dockerx"
@@ -83,6 +82,10 @@ type Orchestrator struct {
 	// remote is how a machine an app is placed on is reached. Only one
 	// thing here uses it: telling that machine a deploy is waiting.
 	remote Remote
+
+	// routesChanged is told when a deploy has moved which containers
+	// are live, so the proxy stops naming one that has just gone.
+	routesChanged func()
 
 	// builderLogin is what BuildKit authenticates to this instance's own
 	// registry with, for a build that has to be pushed. Its own
@@ -265,7 +268,11 @@ type pushTarget struct {
 // holds. An app anywhere else takes the app's own registry path, which
 // is the one address every machine in the cluster can pull it from.
 func (o *Orchestrator) buildTarget(ctx context.Context, a *Scoped, ref string) (string, pushTarget, error) {
-	if a.NodeSlug == node.ControlPlaneSlug {
+	// Every copy of it is on this machine, so the image never has to
+	// leave: loading it into this Engine is faster and needs no
+	// registry at all.
+	elsewhere := a.Elsewhere()
+	if len(elsewhere) == 0 {
 		return BuildImageName(a, ref), pushTarget{}, nil
 	}
 	host := o.registryHost(ctx)
@@ -273,8 +280,8 @@ func (o *Orchestrator) buildTarget(ctx context.Context, a *Scoped, ref string) (
 		// Refused rather than built and then found to be unpushable:
 		// the registry follows the instance's domain, and without one
 		// there is nowhere for another machine to pull from.
-		return "", pushTarget{}, fmt.Errorf("%w: %s runs on %s, and a build has to be pushed to this instance's registry for another machine to pull it — which needs a domain",
-			ErrNoRegistry, ReferenceOf(a), a.NodeSlug)
+		return "", pushTarget{}, fmt.Errorf("%w: %s also runs on %s, and a build has to be pushed to this instance's registry for another machine to pull it — which needs a domain",
+			ErrNoRegistry, ReferenceOf(a), strings.Join(elsewhere, ", "))
 	}
 	tag := "latest"
 	if ref != "" {
@@ -440,6 +447,13 @@ func (o *Orchestrator) run(ctx context.Context, appID int64, tag string, deploym
 	}
 	if err := o.settle(ctx, appID, deploymentID); err != nil {
 		log.Printf("could not record the outcome of deployment %d: %v", deploymentID, err)
+	}
+	// Whatever this did to the containers, the proxy's file is now
+	// naming the wrong ones — a swap removed the container it still
+	// points at. Said now rather than waited for, because the gap is a
+	// 502 on every request for that name.
+	if o.routesChanged != nil {
+		o.routesChanged()
 	}
 }
 
@@ -616,17 +630,8 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 		}
 	}
 
-	// Whether the app can be served over HTTPS is instance
-	// configuration, read now rather than captured at startup: an
-	// operator sets the contact address from the dashboard, and the next
-	// deploy is what picks it up.
-	values, err := o.settings.Load(ctx)
-	if err != nil {
-		return fmt.Errorf("read instance settings: %w", err)
-	}
-
 	base := resourceName(ref)
-	labels := placementLabels(base, o.routedBy(a), values.HasTLS(), a.HealthPath, appName, deploymentID)
+	labels := placementLabels(appName, deploymentID)
 
 	// **One copy at a time**, which is what makes several of them on one
 	// machine a rolling deploy rather than a moment with none of them
@@ -687,11 +692,8 @@ func (o *Orchestrator) swap(ctx context.Context, a *Scoped, replica Replica, ima
 		return fmt.Errorf("health check timed out for container %s", newID)
 	}
 
-	// Whether this container routes the app's names is recorded with
-	// it, because a container keeps the labels it was created with and
-	// nothing else can recover that afterwards.
 	if err := o.apps.UpdateContainer(ctx, a.ID, replica.NodeID, replica.Ordinal, newID, newName,
-		deploymentID, len(o.routedBy(a)) > 0, StatusRunning); err != nil {
+		deploymentID, StatusRunning); err != nil {
 		// The new container is healthy but the database doesn't know
 		// about it, so nothing will ever retire it. Remove it rather
 		// than leave two containers answering one router.

@@ -115,10 +115,6 @@ type Agent struct {
 	// peers. Nil on a daemon with no way to reach the host, which is a
 	// machine whose firewall is somebody else's business.
 	firewall firewall.Host
-	// bootstrap starts this machine's own edge. A function rather than
-	// the package, because what it needs from the daemon — the data
-	// directory, the Engine — is what the daemon already holds.
-	bootstrap func(ctx context.Context, edge node.Edge) error
 
 	// healthAttempts and healthInterval are how long a container is
 	// watched before it counts as up. Defaults from the constants
@@ -171,7 +167,7 @@ type Agent struct {
 }
 
 func New(controlPlane, token, version, dataDir string, box *machine.Reader, engine Engine,
-	address HostAddress, host firewall.Host, edge func(context.Context, node.Edge) error,
+	address HostAddress, host firewall.Host,
 ) *Agent {
 	return &Agent{
 		controlPlane:   strings.TrimRight(controlPlane, "/"),
@@ -182,7 +178,6 @@ func New(controlPlane, token, version, dataDir string, box *machine.Reader, engi
 		engine:         engine,
 		address:        address,
 		firewall:       host,
-		bootstrap:      edge,
 		healthAttempts: healthAttempts,
 		healthInterval: healthInterval,
 		client:         &http.Client{Timeout: dialTimeout},
@@ -263,12 +258,6 @@ func (a *Agent) tick(ctx context.Context) (interval time.Duration, err error) {
 	// on the mesh is one that cannot reach the database it was given
 	// the address of.
 	a.pending = a.apply(work, answer.Desired.Apps, answer.Registry)
-
-	// And the edge, once there is something with a name on it to
-	// serve. After the containers rather than before: a Traefik started
-	// for an app that then failed to come up would be two ports held
-	// open for nothing.
-	a.applyEdge(work, answer.Edge, answer.Desired)
 
 	// And whatever this instance asked for while the poll was parked.
 	// Answered one at a time and in order: there is one of each of
@@ -436,58 +425,6 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 		}
 	}
 	return results
-}
-
-// applyEdge makes sure this machine can serve the names its apps
-// answer at.
-//
-// **Only when one of them has a name.** Every machine is its own edge,
-// and an edge is two published ports and a container: a worker running
-// a queue consumer has no reason to hold either. What says whether
-// there is anything to route is the placements themselves — a container
-// with a Traefik router carries `traefik.enable`, which is the label
-// Traefik itself goes by.
-//
-// It is not stopped again when the last name goes. Removing
-// infrastructure somebody's traffic may still be arriving at is a
-// different kind of act from starting it, and an idle Traefik costs a
-// container.
-func (a *Agent) applyEdge(ctx context.Context, edge *node.Edge, desired node.Desired) {
-	if edge == nil || a.bootstrap == nil || !routesSomething(desired) {
-		return
-	}
-	// The routes go in **before** Traefik is started, and are rewritten
-	// on every pass that changes them. Before, because a file provider
-	// pointed at a directory whose file appears a moment later
-	// complains once for nothing; and a machine whose edge is already
-	// up gets the new file here, which is the whole of how a replica
-	// joins or leaves a load balancer.
-	if _, err := node.WriteRoutes(a.dataDir, desired.Routes, edge.TLS); err != nil {
-		log.Printf("agent: writing what this machine serves: %v", err)
-	}
-	if err := a.bootstrap(ctx, *edge); err != nil {
-		log.Printf("agent: starting this machine's edge: %v", err)
-	}
-}
-
-// routesSomething is whether this machine has any reason to hold :80
-// and :443 open.
-//
-// Two ways to have one, and they are the two ways a name is routed: a
-// container of its own carrying the labels, or a route it was given for
-// an app whose traffic it spreads over the cluster. A machine with
-// neither is running workers, and a Traefik on it is two ports open for
-// nothing.
-func routesSomething(desired node.Desired) bool {
-	if len(desired.Routes) > 0 {
-		return true
-	}
-	for _, p := range desired.Apps {
-		if p.Labels["traefik.enable"] == "true" {
-			return true
-		}
-	}
-	return false
 }
 
 // start runs one placement: pull, create, start, and watch it long

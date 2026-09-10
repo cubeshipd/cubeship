@@ -248,43 +248,35 @@ func newAppCmd() *cobra.Command {
 // name that moves every time a replica is added.
 func newAppPlaceCmd() *cobra.Command {
 	var on []string
-	var edge string
 	var replicas int
 	cmd := &cobra.Command{
 		Use:   "place <reference>",
 		Short: "Choose which machines run an app, and how many copies",
-		Long: "Choose which machines run an app, and which of them its traffic\n" +
-			"arrives at.\n\n" +
-			"More than one machine puts that machine's proxy in front of all\n" +
-			"of them, round-robin, over the cluster's private network. Each\n" +
-			"new machine starts the app before the ones leaving stop it, so a\n" +
-			"placement that fails is not an outage.\n\n" +
+		Long: "Choose which machines run an app, and how many copies of it.\n\n" +
+			"More than one machine puts this instance's proxy in front of\n" +
+			"every copy, round-robin, over the cluster's private network.\n" +
+			"Each new machine starts the app before the ones leaving stop\n" +
+			"it, so a placement that fails is not an outage.\n\n" +
 			"--replicas is how many copies run in total, spread over those\n" +
 			"machines round-robin: four over three is 2, 1, 1. Never fewer\n" +
 			"than there are machines — a machine given nothing to run is a\n" +
 			"machine placed there for no effect. On one machine, several\n" +
 			"copies are swapped one at a time, so a deploy is a rolling one\n" +
 			"rather than a moment with none of them serving.\n\n" +
-			"--edge is one machine, not all of them, and the reason is the\n" +
-			"certificate: a machine that routes a name asks Let's Encrypt for\n" +
-			"it, and one the name does not resolve to fails that check every\n" +
-			"time while spending a limit shared with everyone else under that\n" +
-			"domain. Left out, the edge stays where it is when that machine is\n" +
-			"still in the set — so scaling an app out does not silently move\n" +
-			"its DNS record.\n\n" +
-			"Nothing repoints DNS for you. Cubeship does not know which\n" +
-			"provider serves a name it did not write, so this reports the\n" +
-			"address the record has to point at and leaves it there.",
+			"Nothing about this touches DNS. Every name this instance\n" +
+			"serves arrives at the control plane, which routes it to\n" +
+			"whichever machine runs the app — so a record points here once\n" +
+			"and never moves again.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(on) == 0 && replicas == 0 && edge == "" {
-				return fmt.Errorf("nothing to change: pass --on, --replicas or --edge")
+			if len(on) == 0 && replicas == 0 {
+				return fmt.Errorf("nothing to change: pass --on or --replicas")
 			}
 			c, err := newAPIClient()
 			if err != nil {
 				return err
 			}
-			placed, err := c.PlaceApp(context.Background(), args[0], on, edge, replicas)
+			placed, err := c.PlaceApp(context.Background(), args[0], on, replicas)
 			if err != nil {
 				return err
 			}
@@ -293,22 +285,20 @@ func newAppPlaceCmd() *cobra.Command {
 				copies = fmt.Sprintf("%d copies", placed.Scale)
 			}
 			fmt.Printf("%s runs %s on %s.\n", placed.Reference, copies, strings.Join(placed.Nodes, ", "))
-			fmt.Printf("Its traffic arrives at %s", placed.Node)
 			if placed.Address != "" {
-				fmt.Printf(", which is %s", placed.Address)
+				fmt.Printf("Its traffic arrives at this instance, %s, whichever machine runs it.\n", placed.Address)
 			}
-			fmt.Println(".")
-			// The one thing this does not do for you, said where the
-			// decision was just made rather than left to be discovered.
+			// Said once, where the decision was just made: the record
+			// does not move when an app does, which is the whole point
+			// of one front door.
 			if len(placed.Domains) > 0 && placed.Address != "" {
-				fmt.Printf("\nPoint %s at %s — nothing here writes that record.\n",
-					hostsOf(placed), placed.Address)
+				fmt.Printf("%s already points here — moving an app does not change that.\n",
+					hostsOf(placed))
 			}
 			return nil
 		},
 	}
 	cmd.Flags().StringSliceVar(&on, "on", nil, "the machines that run it, by name")
-	cmd.Flags().StringVar(&edge, "edge", "", "which of them its traffic arrives at (default: unchanged)")
 	cmd.Flags().IntVar(&replicas, "replicas", 0, "how many copies to run in total, spread over those machines (default: unchanged)")
 	return cmd
 }
@@ -316,23 +306,15 @@ func newAppPlaceCmd() *cobra.Command {
 // serversOf renders where an app runs, for a column with room for one
 // line.
 //
-// The machine its traffic arrives at is marked, because the two are
-// different facts and only one of them is where a DNS record points. An
-// app whose machines disagree about which version to serve says so
-// here too: each replica is running *something*, so without it two
-// versions read as one healthy app.
+// No machine is marked: traffic arrives at this instance whichever one
+// runs the app. An app whose machines disagree about which version to
+// serve says so here, because each copy is running *something* and
+// without it two versions read as one healthy app.
 func serversOf(a client.App) string {
 	if len(a.Nodes) == 0 {
 		return "-"
 	}
-	names := make([]string, 0, len(a.Nodes))
-	for _, n := range a.Nodes {
-		if n == a.Node && len(a.Nodes) > 1 {
-			n += "*"
-		}
-		names = append(names, n)
-	}
-	out := strings.Join(names, ",")
+	out := strings.Join(a.Nodes, ",")
 	if a.Scale > len(a.Nodes) {
 		out = fmt.Sprintf("%s (%d copies)", out, a.Scale)
 	}
