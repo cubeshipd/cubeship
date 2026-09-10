@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { ThemeBoot } from "@/components/theme";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
 
@@ -31,12 +32,17 @@ export const metadata: Metadata = {
   description: "Self-hosted PaaS",
 };
 
-// The dashboard has one theme. `dark` is on <html> rather than left to
-// the system, because the shadcn primitives carry `dark:` rules and a
-// visitor whose OS is set to light would otherwise get half of them.
+// **Every palette is dark**, so `dark` is on <html> rather than left to
+// the system: the shadcn primitives carry `dark:` rules and a visitor
+// whose OS is set to light would otherwise get half of them. Which of
+// the palettes is on `data-theme`, written before the first paint by
+// ThemeBoot — an effect runs after it, which is the flash.
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`dark ${chakra.variable} ${jbmono.variable}`}>
+      <head>
+        <ThemeBoot />
+      </head>
       <body className="font-sans antialiased">
         {children}
         <Toaster theme="dark" position="bottom-right" />
