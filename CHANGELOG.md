@@ -6,6 +6,44 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.3.2 — 2026-09-10
+
+Updating twice works — the container that replaces the daemon was never being cleaned up, so the second update an instance ran failed on its own leftovers.
+
+### Fixed
+
+**An instance could update once.** The daemon is replaced by a throwaway
+container, and that container was asked to delete itself with a flag
+that never reached Docker — so the first update left it behind, and the
+second failed on the name being taken.
+
+It failed *between* the two halves: the dashboard had already been
+replaced and the daemon had not. So the instance looked updated, kept
+saying it was on the release before, and went on offering the one it was
+already showing you.
+
+If you are seeing that, the update below fixes it for good — but this
+instance still has the old updater in the way, so clear it first:
+
+```
+docker rm cubeship-daemon-updater
+```
+
+Then press Update. From this release on, the name is cleared before each
+update whatever happened last time: a machine rebooted mid-update should
+not be a machine that can never update again.
+
+**The dashboard could come back a version behind.** The daemon's
+environment is carried over when it is replaced, and one variable in it
+names the dashboard's image — so a daemon that came back still pointing
+at the old one would have put the old dashboard back on its next
+restart. An update that looks done and undoes itself on a reboot.
+
+### Changed
+
+The link to the repository is in one place now, beside your name in the
+sidebar, and carries the project's star count.
+
 ## 0.3.1 — 2026-09-10
 
 The release notes are reachable from the user menu now, their footer button sits inside the panel again, and there is a link to the repository.
