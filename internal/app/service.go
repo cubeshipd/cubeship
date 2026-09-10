@@ -303,15 +303,15 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, en
 //
 // Images already pushed stay in the registry. Reclaiming them needs a
 // registry garbage collection pass, which is a separate operation.
-// Update reconfigures an app: its description, the domain Traefik
-// serves it at, and where its image comes from.
+// Update reconfigures an app: its description, where its image comes
+// from, how Traefik decides it is healthy, and which machines run it.
 //
 // An app is created with almost none of that, so this is where it
 // becomes deployable. Changing the source to one that builds is the same
 // decision as creating one that builds — this instance will execute
 // whatever that repository contains — so it takes the same role, checked
 // against the source being moved to rather than the one being left.
-func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, description *string, source *Source, origin *Origin, place *Placement) (*Scoped, error) {
+func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, description *string, source *Source, origin *Origin, health *string, place *Placement) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.RoleAdmin)
 	if err != nil {
 		return nil, err
@@ -341,7 +341,16 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 		source, origin = &next, &o
 	}
 
-	if _, err := s.Repo().Update(ctx, a.ID, description, source, origin); err != nil {
+	// The health check path, which is neither a source decision nor a
+	// placement one: it is how Traefik decides a container behind a
+	// name is worth traffic. Checked rather than trusted because it is
+	// interpolated into a dynamic YAML document and a container label —
+	// see ValidHealthPath.
+	if health != nil && !ValidHealthPath(*health) {
+		return nil, ErrInvalidHealthPath
+	}
+
+	if _, err := s.Repo().Update(ctx, a.ID, description, source, origin, health); err != nil {
 		return nil, err
 	}
 

@@ -20,7 +20,7 @@ func NewRepository(q database.Queryer) *Repository {
 }
 
 const columns = `id, project_id, environment_id, node_id, name, description, source, source_image,
-	source_repo, source_ref, source_dockerfile, env, created_at`
+	source_repo, source_ref, source_dockerfile, health_path, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -29,7 +29,7 @@ func scan(row scanner) (*App, error) {
 	var envJSON []byte
 	if err := row.Scan(&a.ID, &a.ProjectID, &a.EnvironmentID, &a.NodeID, &a.Name, &a.Description,
 		&a.Source, &a.SourceImage, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
-		&envJSON, &a.CreatedAt); err != nil {
+		&a.HealthPath, &envJSON, &a.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &a.Env); err != nil {
@@ -44,7 +44,7 @@ func scan(row scanner) (*App, error) {
 //
 // The slug is not here. It is the last component of the app's registry
 // reference, and no slug in Cubeship changes once its resource exists.
-func (r *Repository) Update(ctx context.Context, appID int64, description *string, source *Source, origin *Origin) (*App, error) {
+func (r *Repository) Update(ctx context.Context, appID int64, description *string, source *Source, origin *Origin, health *string) (*App, error) {
 	var src *string
 	if source != nil {
 		s := string(*source)
@@ -64,9 +64,10 @@ func (r *Repository) Update(ctx context.Context, appID int64, description *strin
 		   source_image      = COALESCE($3, source_image),
 		   source_repo       = COALESCE($4, source_repo),
 		   source_ref        = COALESCE($5, source_ref),
-		   source_dockerfile = COALESCE($6, source_dockerfile)
-		 WHERE id = $7 RETURNING `+columns,
-		description, src, image, repo, ref, dockerfile, appID)
+		   source_dockerfile = COALESCE($6, source_dockerfile),
+		   health_path       = COALESCE($7, health_path)
+		 WHERE id = $8 RETURNING `+columns,
+		description, src, image, repo, ref, dockerfile, health, appID)
 	a, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("update app: %w", err)
@@ -484,7 +485,7 @@ type Scoped struct {
 const scopedQuery = `
 	SELECT a.id, a.project_id, a.environment_id, a.node_id, a.name, a.description,
 	       a.source, a.source_image, a.source_repo, a.source_ref, a.source_dockerfile,
-	       a.env, a.created_at,
+	       a.health_path, a.env, a.created_at,
 	       p.slug, e.slug, n.slug
 	FROM apps a
 	JOIN projects p ON p.id = a.project_id
@@ -496,7 +497,7 @@ func scanScoped(row scanner) (*Scoped, error) {
 	var envJSON []byte
 	if err := row.Scan(&s.ID, &s.ProjectID, &s.EnvironmentID, &s.NodeID, &s.Name, &s.Description,
 		&s.Source, &s.SourceImage, &s.SourceRepo, &s.SourceRef, &s.SourceDockerfile,
-		&envJSON, &s.CreatedAt,
+		&s.HealthPath, &envJSON, &s.CreatedAt,
 		&s.ProjectSlug, &s.EnvironmentSlug, &s.NodeSlug); err != nil {
 		return nil, err
 	}

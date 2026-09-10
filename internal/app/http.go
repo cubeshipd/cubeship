@@ -63,6 +63,9 @@ type Response struct {
 	// answer and always includes Node; several is an app whose traffic
 	// that edge spreads across them.
 	Nodes []string `json:"nodes"`
+	// HealthPath is what Traefik asks this app for before it trusts a
+	// container with traffic. Absent is no check, which is the default.
+	HealthPath string `json:"health_path,omitempty"`
 	// Replicas is what is running on each of those machines. It is what
 	// a `degraded` status is made of: which of them is serving, and
 	// which is not.
@@ -119,6 +122,7 @@ func toResponse(a *Scoped, in Instance) Response {
 		SuggestedHost: SuggestedHostFor(ref, in.Domain),
 		Node:          a.NodeSlug,
 		Nodes:         a.Nodes(),
+		HealthPath:    a.HealthPath,
 		Replicas:      toReplicas(a),
 		Address:       addressFor(a, in),
 	}
@@ -212,7 +216,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		errors.Is(err, ErrRepoNotSupported), errors.Is(err, ErrDockerfileNotAllowed):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrBadHost), errors.Is(err, ErrHostIsTheInstance),
-		errors.Is(err, ErrHostRequired):
+		errors.Is(err, ErrHostRequired), errors.Is(err, ErrInvalidHealthPath):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNoBuilder):
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -293,6 +297,11 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		// not silently move its DNS record.
 		Node  *string   `json:"node"`
 		Nodes *[]string `json:"nodes"`
+		// HealthPath is what Traefik asks this app for to decide
+		// whether a container behind one of its names is worth
+		// traffic. Its own field for the same reason the placement is:
+		// it is neither what the app is nor where it runs.
+		HealthPath *string `json:"health_path"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -313,7 +322,8 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 			Dockerfile: deref(req.Dockerfile),
 		}
 	}
-	if req.Description == nil && source == nil && origin == nil && req.Node == nil && req.Nodes == nil {
+	if req.Description == nil && source == nil && origin == nil &&
+		req.Node == nil && req.Nodes == nil && req.HealthPath == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
@@ -333,7 +343,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updated, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), refFrom(r),
-		req.Description, source, origin, place)
+		req.Description, source, origin, req.HealthPath, place)
 	if err != nil {
 		WriteError(w, err)
 		return

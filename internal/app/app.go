@@ -62,6 +62,10 @@ type App struct {
 	// SourceDockerfile is the recipe's path within that repository.
 	// Empty means "Dockerfile" at the root.
 	SourceDockerfile string
+	// HealthPath is what Traefik asks this app for to decide whether
+	// the container behind a name is worth sending traffic to. Empty is
+	// no check, and it is the default: see ValidHealthPath.
+	HealthPath string
 	// Replicas are the machines this app runs on, and what is running on
 	// each. One machine is the ordinary case and the shape is the same:
 	// a second is a row, not a different kind of app.
@@ -297,6 +301,56 @@ func SuggestedHostFor(ref Reference, instanceDomain string) string {
 	}
 	return host
 }
+
+// MaxHealthPathLength bounds the path. Generous for a path and far
+// short of anything that would make a label or a YAML line unwieldy.
+const MaxHealthPathLength = 255
+
+// ValidHealthPath reports whether a health check path is one this
+// instance will hand to Traefik.
+//
+// **Empty is valid, and means no check.** A health check needs a path,
+// the path is something only the app's author knows, and a wrong one
+// does not degrade anything by halves: Traefik marks every replica down
+// at once and the name answers 503. So no check is the default, and
+// turning one on is a deliberate act by somebody who knows what the app
+// answers.
+//
+// The rule is strict for the same reason ValidHost's is: this value is
+// interpolated into a Traefik dynamic YAML document *and* into a
+// container label, so a quote, a newline or a colon in it is
+// configuration somebody else wrote. A leading slash is required
+// because Traefik uses it as a request URI, and one without it silently
+// checks something else.
+func ValidHealthPath(path string) bool {
+	if path == "" {
+		return true
+	}
+	if path[0] != '/' || len(path) > MaxHealthPathLength {
+		return false
+	}
+	for i := 0; i < len(path); i++ {
+		c := path[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case strings.IndexByte("/-._~%!$&'()*+,;=:@", c) >= 0:
+			// The unreserved and sub-delimiter characters a path
+			// segment may hold, per RFC 3986, and nothing else. `?` and
+			// `#` are left out deliberately: a health check with a
+			// query string is not something this refuses to *do* so
+			// much as something it will not guess the meaning of.
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// ErrInvalidHealthPath is a path this instance will not hand to
+// Traefik. It names the two rules rather than the character, because
+// the character is usually a typo and the rule is what somebody has to
+// read.
+var ErrInvalidHealthPath = errors.New("a health check path has to start with / and hold only what a URL path may: no spaces, quotes, query strings or fragments")
 
 // MaxHostLength is what a DNS name can be, dots included.
 const MaxHostLength = 253

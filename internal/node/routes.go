@@ -65,7 +65,7 @@ func WriteRoutes(dataDir string, routes []Route, tls bool) (bool, error) {
 func routesToTraefik(routes []Route) []traefik.Route {
 	out := make([]traefik.Route, 0, len(routes))
 	for _, r := range routes {
-		out = append(out, traefik.Route{App: r.App, Host: r.Host, Servers: r.Servers})
+		out = append(out, traefik.Route{App: r.App, Host: r.Host, Servers: r.Servers, Health: r.Health})
 	}
 	return out
 }

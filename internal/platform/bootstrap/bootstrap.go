@@ -143,7 +143,7 @@ func RegistryContainerOpts(cfg *config.Config, registryHost string, tls bool, to
 	// elsewhere until there is a name for it.
 	var labels map[string]string
 	if registryHost != "" {
-		labels = traefik.Labels("registry", []traefik.Domain{{Host: registryHost, Port: registryPort}}, tls)
+		labels = traefik.Labels("registry", []traefik.Domain{{Host: registryHost, Port: registryPort}}, tls, "")
 	}
 	// The trust root goes into the container's own labels, and it has to.
 	//

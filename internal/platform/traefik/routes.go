@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // A router this machine serves that no container of its own carries the
@@ -27,7 +28,29 @@ type Route struct {
 	// balancing: what makes it work is that every one of these names
 	// resolves from this machine, over the cluster's overlay.
 	Servers []string
+	// Health is the path Traefik asks each replica for to decide
+	// whether it is worth sending traffic to. Empty is no check, which
+	// is the default: a path is a thing only the app's author knows,
+	// and a wrong one takes every replica out of rotation at once.
+	Health string
 }
+
+// How hard the edge looks at a replica before it stops trusting it.
+//
+// The interval is the cluster's own, so a dead replica leaves the
+// balancer on the same cadence everything else here moves at — and
+// checking faster would be a request per replica per second for a
+// container that is almost always fine.
+//
+// The timeout is deliberately not tight. A replica that takes five
+// seconds to answer is in trouble, and one taking one second under load
+// is not — marking a working container down is a worse outcome than
+// leaving a dead one in for one more interval, because it is the
+// failure that takes a name off the internet rather than degrading it.
+const (
+	HealthInterval = 10 * time.Second
+	HealthTimeout  = 5 * time.Second
+)
 
 // ServerURL is one replica as a backend address.
 func ServerURL(container string, port int) string {
@@ -72,7 +95,7 @@ func RoutesYAML(routes []Route, tls bool) string {
 		entrypoint = "websecure"
 	}
 
-	var routers, services strings.Builder
+	var routers, services, middlewares strings.Builder
 	for _, r := range sorted {
 		name := routerName(r.App, r.Host)
 		fmt.Fprintf(&routers, "    %s:\n", name)
@@ -82,14 +105,42 @@ func RoutesYAML(routes []Route, tls bool) string {
 		if tls {
 			routers.WriteString("      tls:\n        certResolver: letsencrypt\n")
 		}
+		// **A dead replica costs a retry rather than a 502**, and this
+		// is the half of the answer that needs nothing configured. A
+		// container that has gone refuses the connection, and without
+		// this that refusal is what the visitor gets: one request in
+		// three failing on an app with three replicas, for as long as
+		// it takes the machine that lost it to say so. With it, the
+		// request goes to the next replica and nobody sees anything.
+		//
+		// Only with something to retry *against*. Attempts count the
+		// first try, so a second server is two attempts; on one server
+		// a retry is the same dead container asked twice.
+		if len(r.Servers) > 1 {
+			fmt.Fprintf(&routers, "      middlewares:\n        - %s-retry\n", name)
+			fmt.Fprintf(&middlewares, "    %s-retry:\n      retry:\n        attempts: %d\n", name, len(r.Servers))
+		}
 		fmt.Fprintf(&routers, "      service: %s\n", name)
 
 		fmt.Fprintf(&services, "    %s:\n      loadBalancer:\n        servers:\n", name)
 		for _, s := range r.Servers {
 			fmt.Fprintf(&services, "          - url: \"%s\"\n", s)
 		}
+		// And the other half, which does need a path: a replica that is
+		// **up and broken** answers the connection, so no retry ever
+		// fires for it. A check is what takes that one out of rotation
+		// before a visitor reaches it, rather than after.
+		if r.Health != "" {
+			fmt.Fprintf(&services, "        healthCheck:\n          path: %q\n", r.Health)
+			fmt.Fprintf(&services, "          interval: %s\n          timeout: %s\n",
+				HealthInterval, HealthTimeout)
+		}
 	}
-	return "http:\n  routers:\n" + routers.String() + "  services:\n" + services.String()
+	out := "http:\n  routers:\n" + routers.String() + "  services:\n" + services.String()
+	if middlewares.Len() > 0 {
+		out += "  middlewares:\n" + middlewares.String()
+	}
+	return out
 }
 
 // routerName is a name unique per (app, host) and safe in YAML.

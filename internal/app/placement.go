@@ -234,7 +234,7 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 		// rule: a container routes the names it serves on the machine
 		// it is on, and an app spread over several machines routes none
 		// of them from a container. See routedBy.
-		Labels:   placementLabels(base, o.routedBy(a), values.HasTLS(), ref.String(), d.ID),
+		Labels:   placementLabels(base, o.routedBy(a), values.HasTLS(), a.HealthPath, ref.String(), d.ID),
 		Networks: networks,
 	}, nil
 }
@@ -246,8 +246,8 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 // Traefik is not running and its names are not routed — and they are
 // what will make it work when it is, so a container created now is one
 // that does not have to be recreated for it.
-func placementLabels(base string, domains []traefik.Domain, tls bool, app string, deploy int64) map[string]string {
-	labels := traefik.Labels(base, domains, tls)
+func placementLabels(base string, domains []traefik.Domain, tls bool, health, app string, deploy int64) map[string]string {
+	labels := traefik.Labels(base, domains, tls, health)
 	labels[node.LabelApp] = app
 	labels[node.LabelDeploy] = strconv.FormatInt(deploy, 10)
 	return labels

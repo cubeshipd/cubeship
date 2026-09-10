@@ -33,7 +33,12 @@ type Domain struct {
 // before certificates were possible stays on HTTP until it is
 // redeployed — and an app that gained a domain is not serving it until
 // then either.
-func Labels(routerName string, domains []Domain, tls bool) map[string]string {
+// health is the path Traefik asks each of this app's names for, to
+// decide whether the container behind it is worth sending traffic to.
+// Empty is no check at all, which is the default and the old
+// behaviour: a path is a thing only the app's author knows, and a wrong
+// one marks a working container down.
+func Labels(routerName string, domains []Domain, tls bool, health string) map[string]string {
 	base := "cubeship-" + routerName
 	if routerName == "" {
 		base = "cubeship"
@@ -66,6 +71,16 @@ func Labels(routerName string, domains []Domain, tls bool) map[string]string {
 		labels["traefik.http.routers."+router+".entrypoints"] = entrypoint
 		labels["traefik.http.routers."+router+".service"] = router
 		labels["traefik.http.services."+router+".loadbalancer.server.port"] = strconv.Itoa(d.Port)
+		if health != "" {
+			// One container behind this service, so the check does not
+			// move traffic anywhere — what it buys is Traefik answering
+			// 503 rather than proxying into something that is up and
+			// broken. The balanced case is where it takes a backend out
+			// of rotation; see traefik.RoutesYAML.
+			labels["traefik.http.services."+router+".loadbalancer.healthcheck.path"] = health
+			labels["traefik.http.services."+router+".loadbalancer.healthcheck.interval"] = HealthInterval.String()
+			labels["traefik.http.services."+router+".loadbalancer.healthcheck.timeout"] = HealthTimeout.String()
+		}
 		if tls {
 			labels["traefik.http.routers."+router+".tls.certresolver"] = "letsencrypt"
 		}

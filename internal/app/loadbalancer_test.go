@@ -303,3 +303,32 @@ func mapValues(m map[string]string) []string {
 	}
 	return out
 }
+
+// The health path reaches the machine that serves the app, because that
+// is the Traefik doing the checking — the replicas are on other boxes
+// and this one is the only thing in front of them.
+func TestTheHealthPathReachesTheEdgeThatBalances(t *testing.T) {
+	f := balancerFixture(t)
+	token := addServer(t, f, "eu-1")
+	created := createExternalApp(t, f, "web")
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps/"+created.Reference+"/domains",
+		map[string]any{"host": "web.example.com"}, f.AdminKey), http.StatusCreated)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/apps/"+created.Reference,
+		map[string]any{"health_path": "/healthz"}, f.AdminKey), http.StatusOK)
+
+	place(t, f, created.Reference, map[string]any{"nodes": []string{"control-plane", "eu-1"}, "node": "eu-1"})
+	deploy(t, f, created.Reference)
+	answer := reconcile(t, f, token)
+	reconcile(t, f, token, node.Result{
+		App: created.Reference, Deploy: answer.Desired.Apps[0].Deploy, Container: "container-on-eu-1",
+	})
+
+	answer = reconcile(t, f, token)
+	if len(answer.Desired.Routes) != 1 {
+		t.Fatalf("the edge was given %d routes: %+v", len(answer.Desired.Routes), answer.Desired.Routes)
+	}
+	if answer.Desired.Routes[0].Health != "/healthz" {
+		t.Errorf("the route checks %q, so a replica that is up and broken keeps its share of the traffic",
+			answer.Desired.Routes[0].Health)
+	}
+}

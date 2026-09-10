@@ -295,6 +295,10 @@ type Route struct {
 	App     string   `json:"app"`
 	Host    string   `json:"host"`
 	Servers []string `json:"servers"`
+	// Health is the path this machine's Traefik asks each replica for
+	// before trusting it with traffic. Empty is no check, which is the
+	// default — see app.ValidHealthPath.
+	Health string `json:"health,omitempty"`
 }
 
 // Reading is what one container on a machine is using, as that machine
