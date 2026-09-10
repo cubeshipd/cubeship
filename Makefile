@@ -78,7 +78,7 @@ install: ## Install the CLI into GOBIN
 # version, and install.sh pulls both. Nothing else has to be hosted
 # anywhere, and an upgrade is still a pull.
 VERSION ?= dev
-IMAGE   ?= ghcr.io/cubeship/cubeshipd
+IMAGE   ?= ghcr.io/cubeshipd/cubeshipd
 
 .PHONY: image
 image: ## Build the daemon's image, dashboard included
