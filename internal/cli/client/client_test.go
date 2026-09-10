@@ -395,3 +395,78 @@ func TestClientDeployReturnsADeploymentToFollow(t *testing.T) {
 		t.Fatalf("the history should hold exactly the deploy just made, got %v", history)
 	}
 }
+
+// The CLI's view of the cluster: adding a machine mints a credential
+// and contacts nothing, the listing shows it beside the control plane,
+// and an app can be told which machines run it.
+func TestClientManagesTheCluster(t *testing.T) {
+	c, _ := connect(t)
+	ctx := context.Background()
+
+	// An instance of one box is already a cluster of one, and the
+	// control plane is a row like any other — a listing of "the other
+	// servers" could not answer where anything runs.
+	servers, err := c.ListServers(ctx)
+	if err != nil {
+		t.Fatalf("ListServers: %v", err)
+	}
+	if len(servers) != 1 || !servers[0].ControlPlane {
+		t.Fatalf("a fresh instance lists %+v, want the control plane alone", servers)
+	}
+
+	added, err := c.AddServer(ctx, "eu-1", "the second box")
+	if err != nil {
+		t.Fatalf("AddServer: %v", err)
+	}
+	// The credential is the whole point of the answer: it exists in a
+	// form anybody can read exactly once, and the CLI prints it into
+	// the install command for that machine.
+	if added.Token == "" {
+		t.Error("no credential came back, so nothing can be installed with it")
+	}
+	if added.ControlPlane {
+		t.Error("a machine that was just added reports itself as the control plane")
+	}
+	// It has never called in, so it is pending rather than unreachable:
+	// a box nobody installed is not a box that stopped answering.
+	if added.Status != "pending" {
+		t.Errorf("a machine that has never called in is %q", added.Status)
+	}
+
+	one, err := c.GetServer(ctx, "eu-1")
+	if err != nil {
+		t.Fatalf("GetServer: %v", err)
+	}
+	if one.Description != "the second box" {
+		t.Errorf("description came back as %q", one.Description)
+	}
+
+	// And an app can be put on it. The edge is left out, so it stays
+	// where it was — scaling out must not move a DNS record.
+	app, err := c.CreateApp(ctx, "api", "web", "", "external")
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	placed, err := c.PlaceApp(ctx, app.Reference, []string{"control-plane", "eu-1"}, "")
+	if err != nil {
+		t.Fatalf("PlaceApp: %v", err)
+	}
+	if len(placed.Nodes) != 2 {
+		t.Errorf("the app runs on %v", placed.Nodes)
+	}
+	if placed.Node != "control-plane" {
+		t.Errorf("adding a machine moved the app's traffic to %q", placed.Node)
+	}
+
+	// A machine with apps on it cannot go: where they should run is a
+	// decision, and making it by deleting a row would make it invisibly.
+	if err := c.RemoveServer(ctx, "eu-1"); err == nil {
+		t.Error("a machine with an app on it was removed")
+	}
+	if _, err := c.PlaceApp(ctx, app.Reference, []string{"control-plane"}, ""); err != nil {
+		t.Fatalf("move the app back: %v", err)
+	}
+	if err := c.RemoveServer(ctx, "eu-1"); err != nil {
+		t.Errorf("RemoveServer after moving the app off: %v", err)
+	}
+}

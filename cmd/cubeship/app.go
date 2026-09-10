@@ -156,9 +156,9 @@ func newAppCmd() *cobra.Command {
 				return err
 			}
 			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "APP\tSTATUS\tDOMAIN")
+			fmt.Fprintln(w, "APP\tSTATUS\tSERVERS\tDOMAIN")
 			for _, a := range apps {
-				fmt.Fprintf(w, "%s\t%s\t%s\n", a.Reference, a.Status, hostsOf(a))
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", a.Reference, a.Status, serversOf(a), hostsOf(a))
 			}
 			return w.Flush()
 		},
@@ -235,8 +235,96 @@ func newAppCmd() *cobra.Command {
 	}
 	deleteCmd.Flags().BoolVar(&deleteConfirmed, "yes", false, "confirm that the app should be deleted")
 
-	appCmd.AddCommand(createCmd, listCmd, getCmd, deployCmd, deploymentsCmd, deleteCmd, logsCmd, appEnvCommands())
+	appCmd.AddCommand(createCmd, listCmd, getCmd, deployCmd, deploymentsCmd, deleteCmd, logsCmd,
+		newAppPlaceCmd(), appEnvCommands())
 	return appCmd
+}
+
+// newAppPlaceCmd is `cubeship app place`.
+//
+// Where an app runs and where its traffic arrives are two decisions, so
+// they are two flags. Scaling out is adding a machine to --on; moving
+// where the DNS record points is --edge. Conflating them would mean a
+// name that moves every time a replica is added.
+func newAppPlaceCmd() *cobra.Command {
+	var on []string
+	var edge string
+	cmd := &cobra.Command{
+		Use:   "place <reference>",
+		Short: "Choose which machines run an app",
+		Long: "Choose which machines run an app, and which of them its traffic\n" +
+			"arrives at.\n\n" +
+			"More than one machine puts that machine's proxy in front of all\n" +
+			"of them, round-robin, over the cluster's private network. Each\n" +
+			"new machine starts the app before the ones leaving stop it, so a\n" +
+			"placement that fails is not an outage.\n\n" +
+			"--edge is one machine, not all of them, and the reason is the\n" +
+			"certificate: a machine that routes a name asks Let's Encrypt for\n" +
+			"it, and one the name does not resolve to fails that check every\n" +
+			"time while spending a limit shared with everyone else under that\n" +
+			"domain. Left out, the edge stays where it is when that machine is\n" +
+			"still in the set — so scaling an app out does not silently move\n" +
+			"its DNS record.\n\n" +
+			"Nothing repoints DNS for you. Cubeship does not know which\n" +
+			"provider serves a name it did not write, so this reports the\n" +
+			"address the record has to point at and leaves it there.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(on) == 0 {
+				return fmt.Errorf("say which machines run it: --on <server>[,<server>...]")
+			}
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			placed, err := c.PlaceApp(context.Background(), args[0], on, edge)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("%s runs on %s.\n", placed.Reference, strings.Join(placed.Nodes, ", "))
+			fmt.Printf("Its traffic arrives at %s", placed.Node)
+			if placed.Address != "" {
+				fmt.Printf(", which is %s", placed.Address)
+			}
+			fmt.Println(".")
+			// The one thing this does not do for you, said where the
+			// decision was just made rather than left to be discovered.
+			if len(placed.Domains) > 0 && placed.Address != "" {
+				fmt.Printf("\nPoint %s at %s — nothing here writes that record.\n",
+					hostsOf(placed), placed.Address)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringSliceVar(&on, "on", nil, "the machines that run it, by name")
+	cmd.Flags().StringVar(&edge, "edge", "", "which of them its traffic arrives at (default: unchanged)")
+	return cmd
+}
+
+// serversOf renders where an app runs, for a column with room for one
+// line.
+//
+// The machine its traffic arrives at is marked, because the two are
+// different facts and only one of them is where a DNS record points. An
+// app whose machines disagree about which version to serve says so
+// here too: each replica is running *something*, so without it two
+// versions read as one healthy app.
+func serversOf(a client.App) string {
+	if len(a.Nodes) == 0 {
+		return "-"
+	}
+	names := make([]string, 0, len(a.Nodes))
+	for _, n := range a.Nodes {
+		if n == a.Node && len(a.Nodes) > 1 {
+			n += "*"
+		}
+		names = append(names, n)
+	}
+	out := strings.Join(names, ",")
+	if a.Split {
+		out += " (2 versions)"
+	}
+	return out
 }
 
 // hostsOf renders every name an app answers at, for a column that has
