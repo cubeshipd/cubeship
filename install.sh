@@ -237,12 +237,14 @@ resolve_version() {
 	[ "$LOCAL" = 0 ] || { VERSION="local"; return 0; }
 
 	say "Looking up the newest release…"
-	tag=$(
-		curl -fsSL -H "Accept: application/vnd.github+json" "$RELEASES_API" 2>/dev/null |
-			sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' |
-			head -n 1
-	) || tag=""
-	[ -n "$tag" ] || die "could not ask $RELEASES_API which release is newest. Pass --version <release> to install a specific one."
+	# The call and the reading of it are kept apart so the two failures
+	# stay distinguishable: a machine that cannot reach GitHub and an
+	# answer with no release in it are different things to be told, and
+	# one `|| tag=""` around both says neither.
+	answer=$(curl -fsSL -H "Accept: application/vnd.github+json" "$RELEASES_API" 2>/dev/null) ||
+		die "could not reach $RELEASES_API to ask which release is newest. Pass --version <release> to install a specific one."
+	tag=$(printf '%s' "$answer" | sed -n 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -n 1)
+	[ -n "$tag" ] || die "$RELEASES_API answered without naming a release. Pass --version <release> to install a specific one."
 	VERSION="${tag#v}"
 	say "Installing $VERSION."
 }
