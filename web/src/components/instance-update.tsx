@@ -2,6 +2,7 @@
 
 import { DownloadIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { Notes } from "@/components/release-notes";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -91,8 +92,12 @@ export function InstanceUpdate() {
   return (
     <>
       <Dialog open={offering} onOpenChange={(open) => !open && setDismissed(true)}>
-        <DialogContent className="max-h-[80vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
+        {/* The same column the release-notes dialog is: header and
+            footer stay put, and the notes scroll between them. A
+            release with a long body otherwise put the button that
+            starts the update below the fold. */}
+        <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+          <DialogHeader className="shrink-0 border-border border-b p-4 pr-12">
             <DialogTitle>Cubeship {available?.version} is out</DialogTitle>
             <DialogDescription>
               This instance is on {state?.version}. Updating replaces the daemon, the dashboard and
@@ -101,14 +106,12 @@ export function InstanceUpdate() {
             </DialogDescription>
           </DialogHeader>
 
-          {available?.notes && (
-            <pre className="max-h-64 overflow-y-auto whitespace-pre-wrap border border-border p-3 font-mono text-[11px] text-muted-foreground">
-              {available.notes}
-            </pre>
-          )}
-          {error && <p className="font-mono text-destructive text-xs">{error}</p>}
+          <div className="min-w-0 flex-1 overflow-y-auto p-4">
+            {available?.notes && <Notes body={available.notes} />}
+            {error && <p className="pt-3 font-mono text-destructive text-xs">{error}</p>}
+          </div>
 
-          <DialogFooter>
+          <DialogFooter className="shrink-0 border-border border-t p-4">
             <Button variant="ghost" onClick={() => setDismissed(true)}>
               Not now
             </Button>
