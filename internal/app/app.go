@@ -189,6 +189,9 @@ type Deployment struct {
 	ImageRef string
 	Status   string
 	Error    string
+	// Stalled says this deploy is waiting on a machine that has stopped
+	// answering. Derived on read; see Stall.
+	Stalled *Stall
 	// Logs is what the build printed, when the source builds. It lives
 	// here because a detached deploy has nobody on the connection to
 	// tell, and a build that failed is only explicable by its output.
@@ -228,6 +231,41 @@ const (
 func (d *Deployment) Done() bool {
 	return d.Status == DeploymentSucceeded || d.Status == DeploymentFailed
 }
+
+// Stalled is a deploy that is waiting on a machine that has stopped
+// answering, and has been for long enough that it is not a blip.
+//
+// **It is still `pending`, and deliberately so.** A pending deploy is
+// what a machine picks up when it comes back — DeploymentToRun takes
+// the newest that resolved to an image and did not *fail* — so a
+// machine that reboots finishes the rollout it missed. Marking it
+// failed instead would send that machine to the deployment below this
+// one while the machines that took it stay on this one, which is an app
+// running two versions with nothing on any screen saying so.
+//
+// So what this changes is what is *said*, not what is run: a screen can
+// name the machine everyone is waiting for instead of showing a
+// spinner, and the record can be cleared by somebody who decides the
+// rollout is not happening. That decision has a consequence — the
+// machine that returns will run the version below — and it belongs to a
+// person rather than to a timer.
+//
+// Derived on read like every other status here. Nothing writes it.
+type Stall struct {
+	// Waiting is the machines that have not taken this deploy and are
+	// not answering, by name.
+	Waiting []string
+}
+
+// StuckAfter is how long a deploy may wait on a machine before this
+// instance stops calling it "in progress".
+//
+// Comfortably longer than any pull on a small box: a machine that is
+// working on a placement is still calling in every ten seconds, so
+// slowness and silence are already told apart by the machine's own
+// status. This is only the second half of that — how long the silence
+// has to have lasted before it is worth saying out loud.
+const StuckAfter = 15 * time.Minute
 
 // Statuses an app can be in. "pending" is the initial state of an app
 // that has never had an image pushed to it.

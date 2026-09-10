@@ -477,6 +477,23 @@ func (o *Orchestrator) settle(ctx context.Context, appID, deploymentID int64) er
 	return o.apps.FinishDeployment(ctx, deploymentID, DeploymentSucceeded, "")
 }
 
+// settleOpen re-asks whether an app's unfinished deploy is finished.
+//
+// settle is otherwise only reached from the two moments that *report*
+// something — the end of a local deploy, and a machine saying what it
+// did. That leaves the case where nothing is reported and the answer
+// changes anyway: a machine the deploy was waiting on is taken off the
+// app, and what is left is already running it. Nothing was coming to
+// close that row, and a deploy that has not finished cannot even be
+// deleted, so it would have sat there for the life of the instance.
+func (o *Orchestrator) settleOpen(ctx context.Context, appID int64) error {
+	d, err := o.apps.OpenDeployment(ctx, appID)
+	if err != nil || d == nil {
+		return err
+	}
+	return o.settle(ctx, appID, d.ID)
+}
+
 // errPlaced is how deploy says "this one is somebody else's to run".
 // Not an error anybody sees: it never leaves this file, and what it
 // means is that the deployment row is deliberately left open.
