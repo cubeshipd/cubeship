@@ -1,338 +1,317 @@
+<div align="center">
+
 # Cubeship
 
-A self-hosted PaaS for a single VPS: you `docker push` an image to the
-box, and it deploys. A daemon (`cubeshipd`) runs on the server and
-manages an embedded container registry, a Traefik reverse proxy that
-terminates TLS with Let's Encrypt certificates, and one container per
-app. Pushing a tag fires a registry notification; the daemon starts a
-container from the new image, waits for it to look healthy, and only then
-retires the old one, so a bad deploy never takes down a working app. A
-CLI (`cubeship`) talks to the daemon's API from your machine.
+**A PaaS you run on your own server.** `docker push`, and it is live —
+with HTTPS, a database beside it, and a second machine when one stops
+being enough.
 
-Apps live in an environment, inside a project, inside an organization.
-Everyone gets their own API key and a role per organization.
+[Install](#install) · [First five minutes](#first-five-minutes) ·
+[Deploy an app](#deploy-an-app) · [Databases](#databases-and-storage) ·
+[More machines](#more-machines) · [Changelog](CHANGELOG.md)
 
-An app gets its image one of four ways: pushed to Cubeship's own
-registry, where the push *is* the deploy; pulled from a registry
-Cubeship does not run (Docker Hub, GitHub, DigitalOcean, ECR); built
-here from a Dockerfile in a Git repository; or built from a repository
-with no Dockerfile at all, worked out from the code. Only the first
-deploys on its own, unless you connect a GitHub account — then a push to
-a built repository deploys it too. The three that are not the embedded
-registry need no domain and no certificate, so they work the minute you
-have installed.
+</div>
 
-This is the core deploy engine: no Git-based builds, no web UI, no
-multi-node.
+---
+
+## Contents
+
+- [What you get](#what-you-get)
+- [Install](#install)
+  - [What it needs](#what-it-needs)
+  - [Installing your own build](#installing-your-own-build)
+- [First five minutes](#first-five-minutes)
+  - [Claim the instance](#claim-the-instance)
+  - [Give it a domain](#give-it-a-domain)
+- [Deploy an app](#deploy-an-app)
+  - [Push an image](#push-an-image)
+  - [Run an image from somewhere else](#run-an-image-from-somewhere-else)
+  - [Build from a Git repository](#build-from-a-git-repository)
+  - [Give it a name on the internet](#give-it-a-name-on-the-internet)
+- [Databases and storage](#databases-and-storage)
+- [More machines](#more-machines)
+- [Limits and autoscaling](#limits-and-autoscaling)
+- [The CLI](#the-cli)
+- [Upgrading](#upgrading)
+- [Uninstalling](#uninstalling)
+- [Everything else](#everything-else)
+
+## What you get
+
+One command on a fresh VPS, and the box is running:
+
+|  |  |
+| --- | --- |
+| **A dashboard** | at your instance's address, over HTTPS |
+| **A registry** | `docker push` to it and the app deploys |
+| **Zero-downtime deploys** | the new container has to look healthy before the old one goes |
+| **Certificates** | Let's Encrypt, renewed for you, nothing to configure |
+| **Databases** | Postgres, MySQL, MariaDB, Redis, MongoDB — one click, wired into the app's environment |
+| **Object storage** | a MinIO on the box, or your own S3 bucket |
+| **Builds** | from a Dockerfile, or from a repository with no Dockerfile at all |
+| **More machines** | add a second server and apps spread across both |
+| **Charts** | what every container is using, and what the machine underneath is doing |
+| **An API, a CLI and MCP** | everything the dashboard does, scriptable — and usable by an agent |
+
+Everything Cubeship runs is a container, the daemon included: Postgres,
+the registry, the proxy, the builder and every app of yours are its
+siblings on one network. Nothing else is installed on the host.
 
 ## Install
 
 On the server, as root:
 
-```sh
-curl -sSL https://cubeship.dev/install.sh | sh
+```bash
+curl -fsSL https://raw.githubusercontent.com/cubeshipd/cubeship/master/install.sh | sh
 ```
 
-To run your own code instead, put the repository on the server and build
-there — the build happens inside Docker, so the server needs no Go and no
-Node:
+It installs Docker if the box has not got it, pulls two images, starts
+the daemon, and prints the address to open and the token to claim it
+with.
 
-```sh
-git clone <your fork> cubeship && cd cubeship
+It is [one file](install.sh) — read it first if you would rather not
+pipe a script into a shell, which is a reasonable thing to prefer.
+
+**It installs an exact release**, not a moving tag: it asks which
+release is newest and pins that number, so running the same command
+again tomorrow gives you the same thing. To choose:
+
+```bash
+curl -fsSL .../install.sh | sh -s -- --version 0.1.0
+```
+
+A version with a `-rc.1` on it is a release candidate. They are
+published like any other release and are never what you get by default.
+
+### What it needs
+
+- **Linux**, x86-64 or arm64. Debian and Ubuntu are what the installer
+  knows how to put Docker on; on anything else, install Docker first and
+  the script will use it.
+- **Ports 80 and 443** free, for the proxy and for certificates.
+- **Port 3000** free on the first install — it is where you claim the
+  instance before it has a domain. The installer refuses rather than
+  fighting whatever is already there.
+- Root, because it installs Docker and writes to `/var/lib/cubeship`.
+
+### Installing your own build
+
+To run your own code instead of a published release, put the repository
+on the server and build there. The build runs inside Docker, so the
+server needs no Go and no Node:
+
+```bash
+git clone https://github.com/cubeshipd/cubeship && cd cubeship
 sudo ./install.sh --local
 ```
 
-It installs Docker if the box hasn't got it, pulls the image and runs
-it, and tells you where to open it. Running it again upgrades in place.
-It is [one file](install.sh) — read it first if you'd rather not pipe a
-script into a shell, which is a reasonable thing to prefer.
+## First five minutes
 
-Everything Cubeship runs is a container, the daemon included: Postgres,
-the registry, Traefik, the image builder and every app are its siblings
-on one network.
+### Claim the instance
 
-To remove it:
+Open the address the installer printed — `http://<your-ip>:3000` — and
+create the first account. It asks for the **setup token**, which the
+installer printed and which is also in `/var/lib/cubeship/setup-token`.
 
-```sh
-sudo ./uninstall.sh            # the containers; the instance is kept
-sudo ./uninstall.sh --purge    # and the data, permanently
-```
+That token is the point: without it, whoever reaches the page first is
+the admin of your machine. With it, claiming the instance takes access
+to the host, which is what it always meant to require. The file is
+deleted the moment setup succeeds.
 
-Nothing has to be configured for it to start. The domain and the Let's
-Encrypt contact address are set afterwards, from the dashboard — see
-[Configuring the instance](#configuring-the-instance).
+The first account is an admin, and it is the only account setup ever
+makes. Everyone after is invited from **Account → Users**.
 
-### Building it yourself
+### Give it a domain
 
-```sh
-make image          # the daemon's image, dashboard included
-make build          # bin/cubeship and bin/cubeshipd for this machine
-make dev            # the daemon on this machine, reloading on change
-make help           # everything else
-```
+Point a name at the server's IP and set it in **Settings**. From then on
+the instance answers there over HTTPS, and so does everything you deploy.
 
-`make build` builds the dashboard first, so it needs Node; `make image`
-does it inside the build. `go build` on its own still works — you get a
-daemon that serves the API and says the dashboard is missing. Point the
-installer at your own image with `CUBESHIP_IMAGE`.
-
-What the environment still holds is defaulted in
-[`internal/platform/config`](internal/platform/config/config.go) — most
-importantly `CUBESHIP_DATA_DIR` (default `/var/lib/cubeship`), which
-holds the database, the images, Traefik's `acme.json` and the build
-cache. **Back it up** — except the cache, which is only speed.
-The daemon needs the Docker socket, so it runs as root.
-
-State lives in Postgres. By default the daemon runs it for you, as a
-`cubeship-postgres` container bound to loopback with its data under the
-data dir — nothing to install. Set `CUBESHIP_DATABASE_URL` to point at an
-existing server instead, and the daemon connects without managing it.
-
-**Port 3000 is plaintext.** The daemon binds it on all interfaces so the
-registry container can reach the webhook, and it serves the dashboard and
-the API there too — bypassing Traefik's TLS. A fresh box has no domain
-and no certificate, so this is the only way in and it has to be
-reachable; a password and a session cookie cross it in the clear.
-
-Once a domain is set, everything is reachable over HTTPS at `<domain>`
-and 3000 has no remaining use from outside. Close it then, and open only
-80 and 443.
-
-The installer sets one for you: it looks up the box's public address and
-uses `<a-b-c-d>.sslip.io`, a wildcard DNS name that resolves to
-`a.b.c.d` with nothing to register, so a fresh install answers over
-HTTPS at a name a certificate can be issued for. `--domain` (or
-`CUBESHIP_DOMAIN`) uses yours instead, and `CUBESHIP_ACME_EMAIL` gives
-Let's Encrypt a contact address — optional, an account opens without
-one.
-
-## Claiming the instance
-
-Open the address the installer printed and create the account. A fresh
-instance has no account and no way to add one from outside, so this
-first page creates an admin, signs you in, and closes setup for good —
-every account after it is added from inside.
-
-**Until you do this, whoever reaches that port first owns the instance.**
-Claim it as soon as the daemon starts; it says so in its log while the
-window is open.
-
-You are signed in with a session cookie. For `cubeship login` and
-`docker login`, issue yourself an API key under Account.
-
-## Configuring the instance
-
-Until a domain is set there is no registry to push to and no
-certificates, so apps are served over plain HTTP. The installer's
-sslip.io name covers both; to move to your own, under **Instance** in
-the dashboard, or:
-
-```sh
-curl -X PUT https://example.com/api/settings \
-  -H "Authorization: Bearer $KEY" \
-  -d '{"domain":"example.com","acme_email":"admin@example.com"}'
-```
-
-Both `<domain>` and `registry.<domain>` must resolve to this host for
-certificates to issue. Applying this replaces the affected containers,
-which costs a few seconds of downtime for them; apps already running keep
-the routing they were deployed with, so **redeploy them to serve over
-HTTPS**.
+**You do not need one to start.** With no domain, Cubeship gives itself
+an [sslip.io](https://sslip.io) address — a name that resolves to your
+IP without anything being registered anywhere — so certificates and app
+names work on a box you set up five minutes ago.
 
 ## Deploy an app
 
-```sh
-cubeship login https://api.example.com <api-key>
-cubeship registry login          # logs docker in as you, with your own key
+Apps live in an environment inside a project: `myproject/production/api`
+is the whole of an app's name, and it is also its path in the registry.
 
-cubeship org create "Acme" --slug acme
-cubeship project create "Web" --org acme --slug web   # comes with a "production" environment
-cubeship app create myapp --domain myapp.example.com --org acme --project web
-# prints the push path: registry.example.com/acme/web/production/myapp
+Create one from the dashboard, or:
 
-docker build -t registry.example.com/acme/web/production/myapp:latest .
-docker push registry.example.com/acme/web/production/myapp:latest   # this deploys
+```bash
+cubeship app create api --project myproject
 ```
 
-An app is named by its reference — `<org>/<project>/<environment>/<app>`,
-which is also its registry path. Three parts means `production`:
+An app is created **empty** and deploys anyway. It has no name on the
+internet until you give it one, which is a normal thing to be: a worker
+or a queue consumer has no business answering the internet.
 
-```sh
+### Push an image
+
+The push *is* the deploy. Nothing else to press:
+
+```bash
+docker login registry.example.com          # your API key as the password
+docker push registry.example.com/myproject/production/api:latest
+```
+
+`cubeship app get api` prints the exact path to push to.
+
+### Run an image from somewhere else
+
+Docker Hub, GHCR, DigitalOcean, ECR — anything you already publish to.
+Nothing tells Cubeship when you push there, so a deploy is something you
+ask for:
+
+```bash
+cubeship app create api --project myproject --source external --image nginx
+cubeship app deploy api --tag 1.27
+```
+
+The image is given without a tag: which tag runs is a deploy's argument,
+so an app pinned to one could never be told to run another.
+
+This is the one that needs nothing configured at all: no domain, no
+certificate, no registry. It works the minute the installer finishes.
+
+### Build from a Git repository
+
+Cubeship builds it on the box, from a Dockerfile you wrote or — with no
+Dockerfile at all — by reading the code and working the build out.
+Connect a GitHub account in **Git providers** and a push deploys it.
+
+### Give it a name on the internet
+
+Add a domain to the app and point a DNS record at the server. Cubeship
+gets the certificate. Under an sslip.io address it already resolves, so
+the name works the moment you add it.
+
+An app can answer at several names, and **each name carries its own
+port** — one image exposing an API and an admin panel is two names.
+
+## Databases and storage
+
+A database belongs to the **instance**, not to a project: on one box the
+usual shape is a single Postgres serving several small apps, and those
+apps are routinely in different projects.
+
+```bash
+cubeship db create pg --engine postgres
+cubeship db attach pg --app myproject/production/api
+```
+
+The app receives `DATABASE_URL` and its parts in its own environment
+from its next deploy — nothing to copy, and no credential passing
+through your hands. A second database on one app takes a prefix.
+
+Object storage works the same way: a MinIO Cubeship runs, or an S3
+bucket you already have. An attached app gets `S3_ENDPOINT`,
+`S3_BUCKET`, the keys and the rest.
+
+**There are no backups.** Deleting a database deletes its data, and
+nothing here copies it anywhere. That is worth knowing before you put
+something you cannot lose on it.
+
+## More machines
+
+Add a server, and the instance becomes a cluster:
+
+```bash
+cubeship server add eu-1
+```
+
+It prints the command to run on the new box, address and credential
+already in it. The new machine **dials home** and nothing dials it: no
+port to open, no certificate, no firewall hole — a box behind NAT joins
+with one outbound connection.
+
+The machines share a private network, encrypted, and container names
+mean the same thing on every one of them.
+
+**Every name still arrives at your instance**, whichever machine runs
+the app. One DNS record, one certificate store, and moving an app
+between machines touches neither.
+
+```bash
+cubeship app place api --on eu-1               # move it
+cubeship app place api --replicas 4            # four copies, spread
+cubeship app place api --everywhere            # and on every machine that joins
+```
+
+Scaling takes effect at once, in both directions.
+
+## Limits and autoscaling
+
+Cap what one copy of an app — or a database, or a store — may take:
+
+```bash
+cubeship app limits api --cpu 1 --memory 512Mi
+```
+
+**Changing a limit restarts nothing.** It is the one part of a running
+container Docker can change, so raising an app's memory is a request
+rather than a redeploy.
+
+Or hand the replica count over entirely:
+
+```bash
+cubeship app autoscale api --min 2 --max 8 --cpu 70
+```
+
+It works from the average CPU across the app's copies — the number on
+the app's own chart, where 100 is one core. A maximum is required:
+without one, a loop of requests is a loop of replicas.
+
+## The CLI
+
+`cubeship` talks to the instance's API from your machine.
+
+```bash
+cubeship login https://cubeship.example.com <your-api-key>
 cubeship app list
-cubeship app get acme/web/myapp
-cubeship app logs acme/web/staging/myapp
-cubeship app deploy acme/web/myapp --tag v2   # waits, but the deploy is the daemon's
-cubeship app deployments acme/web/myapp       # how recent deploys went
+cubeship app logs api
+cubeship app env set api DATABASE_POOL=10
 ```
 
-Names only have to be unique within their environment, so the same app
-can run in `production` and `staging` at once.
+Make an API key under **Account** in the dashboard. Every noun has
+`--help`, and every command it can run is something the dashboard can
+too — they are the same API.
 
-App containers must listen on port **8080**.
+Building the CLI for your own machine, on macOS or Linux:
 
-Environment variables can be set on a project, an environment or a single
-app, and an app inherits all three — its own value winning, then its
-environment's, then its project's:
-
-```sh
-cubeship app env set acme/web/myapp DATABASE_URL=postgres://...  # adds; leaves the rest alone
-cubeship app env list acme/web/myapp        # every value, and which level set it
-cubeship app env unset acme/web/myapp OLD_FLAG
+```bash
+git clone https://github.com/cubeshipd/cubeship && cd cubeship
+make build          # bin/cubeship
 ```
 
-`cubeship --help` covers the rest: users and roles, extra environments,
-logs, manual redeploys, additional API keys.
+## Upgrading
 
-## Databases
+Run the installer again. It pulls the newest release and replaces the
+containers; nothing under the data directory is touched.
 
-Cubeship runs Postgres, MySQL, MariaDB, Redis and MongoDB for the apps
-on it. A database belongs to the **instance**, not to a project: on one host the common
-shape is a single Postgres serving several small apps, and those apps
-are routinely in different projects.
-
-```sh
-cubeship db engines                              # what this daemon can run
-cubeship db create pg --engine postgres          # prints the generated password
-cubeship db attach pg --app web/production/api   # gives that app DATABASE_URL
-cubeship app deploy web/production/api           # its container picks it up
+```bash
+curl -fsSL https://raw.githubusercontent.com/cubeshipd/cubeship/master/install.sh | sh
 ```
 
-An attached app receives `DATABASE_URL` and its parts — `DATABASE_HOST`,
-`DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD` —
-from its **next deploy** onwards: a container keeps the environment it
-was created with. An app that needs a second database takes a prefix
-(`--prefix ANALYTICS_`).
+The dashboard shows you what changed the next time you open it. What is
+in each release is in the [changelog](CHANGELOG.md).
 
-One database can serve apps in any number of projects and environments.
-Nothing separates one environment's data from another's — that is what
-the names are for:
+## Uninstalling
 
-```sh
-cubeship db create pg-production --engine postgres
-cubeship db create pg-staging --engine postgres
+```bash
+sudo ./uninstall.sh            # the containers; your data is kept
+sudo ./uninstall.sh --purge    # and the data, permanently
 ```
 
-Every app and every database has a **monitoring** section: CPU and
-memory over the last hour, six hours or day, sampled from the
-container's own counters every 30 seconds. CPU is a percentage of one
-core, so 250% is two and a half cores. Nothing is stored outside this
-instance and nothing is kept beyond a day.
+The default is deliberately not the destructive one: removing the
+software is not the same as asking to lose your database. Installing
+again brings the same instance back.
 
-```sh
-curl -H "Authorization: Bearer $KEY" \
-  https://api.example.com/api/datastores/pg/metrics?window=6h
-```
+## Everything else
 
-Nothing outside the instance can reach a database unless you say so:
-
-```sh
-cubeship db credentials pg   # the login, and the connection strings
-cubeship db logs pg          # what the engine itself has printed
-cubeship db stop pg --yes    # turn it off, keeping it and its data
-cubeship db start pg         # and back on
-cubeship db expose pg        # publish it on a host port
-```
-
-Exposing puts the database on the open internet with **no TLS** — it
-speaks its own protocol on its own port, so Traefik is not in front of
-it. The password and your firewall are what protect it. Leave it off for
-anything an app on this instance can reach.
-
-The engine and the version are permanent: a data directory written by
-one major version cannot be read by another. Deleting a database deletes
-its data, and **there are no backups** — `cubeship db delete` wants
-`--yes`, and the dashboard asks you to type the name.
-
-## Object storage
-
-**Storage** holds buckets, and they get there two ways. You can **link a
-bucket somewhere else** — S3, Cloudflare R2, DigitalOcean Spaces, or
-anything that speaks S3 — by giving the instance an access key, or you
-can **run a MinIO on this machine**, beside the databases and on the
-same disk.
-
-Both then look the same: a browser for the files, with folders you can
-go into, upload into and delete from, and a connection panel with the
-endpoint and keys to paste into an app.
-
-Which one you want depends on what the bucket is for. A backup of this
-machine kept on this machine is not a backup, so that one goes
-somewhere else; an app's uploads, a dump on its way out, or developing
-against S3 without paying for S3 are all fine here.
-
-Deleting them is not the same act, and the screen says so: deleting a
-MinIO you run removes its objects from this host with no copy anywhere,
-and deleting a link forgets an address and a key while the bucket stays
-exactly where it is.
-
-An app reaches a bucket by being **attached** to it, the same way it
-reaches a database: it receives `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`,
-`S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` and `S3_PATH_STYLE` from its
-next deploy onwards, so no key is ever copied by hand. An app that needs
-two buckets takes a prefix for the second, and the apps may be in any
-project.
-
-A MinIO here is reachable only by apps on the instance until you publish
-it on a host port. That is plain HTTP with **no TLS** — the signature
-protects the keys, not what is being transferred — so it is a firewall
-rule away from being safe, and the Firewall screen is where you write
-one.
-
-## Signing in
-
-The API takes two credentials. A key is what the CLI and MCP clients
-use; a session is what a browser uses.
-
-```sh
-curl -X POST https://api.example.com/auth/login \
-  -c cookies.txt -d '{"username":"admin","password":"..."}'
-```
-
-An account created by an organization admin has a key but no password
-until it sets one, and cannot sign in before then:
-
-```sh
-curl -X PUT https://api.example.com/users/me/password \
-  -H "Authorization: Bearer $KEY" -d '{"new_password":"..."}'
-```
-
-Changing a password ends every other session the account holds.
-
-## API reference
-
-The daemon serves a browsable reference of every endpoint at
-`https://api.<domain>/docs`, rendered from the OpenAPI document at
-`/openapi.json`. Both are unauthenticated — they describe the shape of the
-API, never any data — so block them at the proxy if you'd rather not
-advertise what runs here.
-
-## MCP
-
-The daemon serves an [MCP](https://modelcontextprotocol.io) endpoint at
-`https://api.<domain>/mcp` over streamable HTTP. Everything the CLI can do
-is available there as a tool, authorized exactly like the equivalent HTTP
-request. Give the agent a key of its own:
-
-```sh
-cubeship user api-key create mcp
-```
-
-Point the client at the endpoint with that key as its bearer token — for
-Claude Code, `claude mcp add --transport http cubeship https://api.example.com/mcp --header "Authorization: Bearer <key>"`.
-The one thing MCP can't reach is registry push/pull auth: `docker login`
-drives the Docker client on your own machine, which the daemon has no way
-to touch.
-
-## Develop
-
-```sh
-make check              # gofmt, go vet, unit tests under -race
-make test-integration   # brings up a real daemon, registry and Traefik; needs Linux
-```
-
-The unit tests need a Postgres; `make test` starts one in a container
-(`make db-up`, port 5433) and gives each test its own schema in it.
-
-See [AGENTS.md](AGENTS.md) for the conventions, and
-[docs/upgrading.md](docs/upgrading.md) when moving an existing install
-onto a newer release.
+- **API reference** — `https://your-instance/docs`, and the OpenAPI
+  document at `/openapi.json`.
+- **MCP** — `https://your-instance/mcp`, authenticated with the same API
+  key. An agent can create projects, deploy apps and wire up databases;
+  it cannot read a secret or change a container's limits.
+- **Working on Cubeship itself** — [CONTRIBUTING.md](CONTRIBUTING.md).

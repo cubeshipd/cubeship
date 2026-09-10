@@ -737,13 +737,13 @@ func TestTheTokenRealmFallsBackToThisHost(t *testing.T) {
 // which meant the dashboard's container never started on a local install.
 func TestEnsureDoesNotPullAnImageItAlreadyHas(t *testing.T) {
 	docker := &fakeDocker{
-		localImages: map[string]string{"cubeship/cubeship-frontend:local": "sha256:aaa"},
+		localImages: map[string]string{"cubeship:local": "sha256:aaa"},
 		pullErr:     errors.New("pull access denied: repository does not exist"),
 	}
 
 	err := Ensure(context.Background(), docker, dockerx.ContainerOpts{
 		Name:  "cubeship-frontend",
-		Image: "cubeship/cubeship-frontend:local",
+		Image: "cubeship:local",
 	})
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
@@ -775,12 +775,12 @@ func TestEnsurePullsAnImageItDoesNotHave(t *testing.T) {
 // container running the old one has to go.
 //
 // This is what `install.sh --local` does on every install: it rebuilds
-// `cubeship/cubeship-frontend:local`, whose ContainerOpts are identical
+// `cubeship:local`, whose ContainerOpts are identical
 // every time. A fingerprint taken from the options alone said nothing
 // had changed, so the box kept running the previous build — which looked
 // exactly like a cache and was not one.
 func TestEnsureReplacesAContainerWhoseImageWasRebuilt(t *testing.T) {
-	opts := dockerx.ContainerOpts{Name: "cubeship-frontend", Image: "cubeship/cubeship-frontend:local"}
+	opts := dockerx.ContainerOpts{Name: "cubeship-frontend", Image: "cubeship:local"}
 
 	// What the container was created from, the first time round.
 	first := &fakeDocker{localImages: map[string]string{opts.Image: "sha256:old"}}
@@ -869,7 +869,7 @@ func TestNoInfrastructureContainerIsCapped(t *testing.T) {
 		{"postgres", PostgresContainerOpts(cfg, "pw")},
 		{"registry", RegistryContainerOpts(cfg, "registry.example.com", true, []byte("cert"))},
 		{"buildkit", BuildKitContainerOpts(cfg)},
-		{"frontend", FrontendContainerOpts("cubeship/cubeship-frontend:v1")},
+		{"frontend", FrontendContainerOpts("cubeship:v1")},
 		{"traefik", TraefikContainerOpts(cfg, true, "ops@example.com")},
 	} {
 		if !tc.opts.Resources.Unlimited() {

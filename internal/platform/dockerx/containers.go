@@ -545,7 +545,7 @@ const maxExecOutput = 1 << 20
 // names, or "" when this host does not have it.
 //
 // The id rather than the reference, and that difference is the point.
-// A tag is a moving name: `docker build -t cubeship/cubeship-frontend:local`
+// A tag is a moving name: `docker build -t cubeship:local`
 // makes a *new* image under the *same* tag, and anything comparing
 // references sees no change. Comparing ids is what tells a rebuilt image
 // from the one a container is already running.

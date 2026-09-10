@@ -130,8 +130,11 @@ in the prefix. `servertest`'s `Do` prefixes for you; `DoRoot` does not.
 ## The dashboard
 
 `web/` is a Next.js app with `output: "standalone"`, built by
-`Dockerfile.web` into its own image and run as `cubeship-frontend`, a
-sibling of the daemon on the `cubeship` network.
+`Dockerfile.web` into its own image — `cubeship`, beside the daemon's
+`cubeshipd` — and run as `cubeship-frontend`, a sibling of the daemon on
+the `cubeship` network. The image and the container are named
+differently on purpose: the image is what somebody pulls, and the
+container is what `docker logs` names.
 
 **The daemon is the only thing in front of it.** It answers `/api`
 itself and proxies everything else to that container, so an instance is
@@ -589,6 +592,16 @@ one — there is no second place to say so and disagree.
 `.github/workflows/release.yml` builds both images for both
 architectures, attaches a provenance attestation saying which commit
 they came from, and creates the GitHub release.
+
+**Each architecture is built on a machine of that architecture** — amd64
+on `ubuntu-latest`, arm64 on `ubuntu-24.04-arm` — and the two are named
+by one manifest afterwards. Building both on one runner means one of
+them under QEMU, and a Go toolchain emulated instruction by instruction
+is the difference between a release taking minutes and taking most of an
+hour, on the one pipeline nobody can shorten by skipping. Each arch is
+pushed **by digest with no tag**: a tag naming one architecture is a tag
+that is wrong for half the machines pulling it, for as long as the other
+build takes.
 
 **`latest` moves only for a stable release.** Somebody who installed
 without naming a version must never be upgraded onto a release

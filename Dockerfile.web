@@ -1,6 +1,7 @@
 # The dashboard, as it ships.
 #
-# Its own image, and its own container: cubeship-frontend, a sibling of
+# Its own image — `cubeship`, beside the daemon's `cubeshipd` — and its
+# own container, `cubeship-frontend`, a sibling of
 # the daemon on the "cubeship" network. Nothing publishes its port — the
 # daemon is the only thing in front of it, serving /api itself and
 # proxying everything else here, so the instance is still one address.

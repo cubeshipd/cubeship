@@ -635,7 +635,7 @@ func configHash(opts dockerx.ContainerOpts, imageID string) string {
 		// The resolved image, not the reference in Opts.
 		//
 		// A tag is a moving name. `install.sh --local` rebuilds
-		// `cubeship/cubeship-frontend:local` on every install, and the
+		// `cubeship:local` on every install, and the
 		// options are identical every time — so a fingerprint taken from
 		// them alone said "unchanged", the container was left alone, and
 		// the box went on running the previous build. It looked exactly

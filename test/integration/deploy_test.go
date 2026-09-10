@@ -174,7 +174,7 @@ func TestDeployEndToEnd(t *testing.T) {
 		t.Fatalf("CreateProject: %v", err)
 	}
 
-	created, err := client.CreateApp(ctx, "myapp", "web", "production", "")
+	created, err := client.CreateApp(ctx, "myapp", "web", "production", "", "")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
