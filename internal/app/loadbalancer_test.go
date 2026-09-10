@@ -81,52 +81,49 @@ func TestAnAppCanRunOnSeveralMachinesAtOnce(t *testing.T) {
 	}
 }
 
-// Every machine an app runs on is told to run it, and **none of their
-// containers carries a router**: a label-router names one backend, the
-// container it is on, so two machines carrying the labels for one name
-// would be two Traefiks each sending all of the traffic to itself.
-func TestEveryMachineRunsItAndNoneOfThemRoutesItAlone(t *testing.T) {
+// **No container carries a router, on any machine, ever.**
+//
+// A label-router names one backend — the container it is on — so it can
+// only ever be right for an app that runs in exactly one place, and
+// even then it is a second answer to "who serves this name" beside the
+// file the control plane writes. A worker runs no proxy that would read
+// one anyway.
+//
+// What a placement does carry is the network it joins and the two
+// labels the agent removes a container it should no longer run by.
+func TestNoContainerCarriesARouter(t *testing.T) {
 	f := balancerFixture(t)
 	token := addServer(t, f, "eu-1")
 	created := createExternalApp(t, f, "web")
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps/"+created.Reference+"/domains",
 		map[string]any{"host": "web.example.com"}, f.AdminKey), http.StatusCreated)
 
-	// One machine: the container routes its own name, exactly as it did
-	// before any of this existed.
+	// One machine, which is the case a label-router could have served
+	// and no longer does.
 	place(t, f, created.Reference, map[string]any{"nodes": []string{"eu-1"}})
 	deploy(t, f, created.Reference)
 	answer := reconcile(t, f, token)
 	if len(answer.Desired.Apps) != 1 {
 		t.Fatalf("the machine was told to run %d apps", len(answer.Desired.Apps))
 	}
-	// The labels carry the name and the port behind it, not just the
-	// switch: a placement that went out without them is a machine
-	// serving none of the names of the apps it runs, and — because
-	// starting its edge is decided by looking for them — one that never
-	// starts a Traefik at all.
 	labels := answer.Desired.Apps[0].Labels
-	if labels["traefik.enable"] != "true" {
-		t.Errorf("the only machine running it does not route it: %v", labels)
+	if _, routes := labels["traefik.enable"]; routes {
+		t.Errorf("a container was given a router of its own: %v", labels)
 	}
-	if !strings.Contains(strings.Join(mapValues(labels), " "), "web.example.com") {
-		t.Errorf("the placement does not carry the name it has to serve: %v", labels)
-	}
-
-	// Two machines: neither does, and the edge's file is what routes.
-	place(t, f, created.Reference, map[string]any{"nodes": []string{"control-plane", "eu-1"}})
-	deploy(t, f, created.Reference)
-	answer = reconcile(t, f, token)
-	if len(answer.Desired.Apps) != 1 {
-		t.Fatalf("the machine was told to run %d apps", len(answer.Desired.Apps))
-	}
-	if _, routes := answer.Desired.Apps[0].Labels["traefik.enable"]; routes {
-		t.Errorf("a replica still carries a router of its own: %v", answer.Desired.Apps[0].Labels)
+	if strings.Contains(strings.Join(mapValues(labels), " "), "web.example.com") {
+		t.Errorf("a container was told a name it does not serve: %v", labels)
 	}
 	// It is still labelled as ours, which is what the agent removes a
 	// container it should no longer run by.
-	if answer.Desired.Apps[0].Labels[node.LabelApp] == "" {
-		t.Error("a replica lost the label that says whose it is")
+	if labels[node.LabelApp] == "" {
+		t.Error("a container lost the label that says whose it is")
+	}
+
+	// And the name is served, from the one place that knows where every
+	// copy is.
+	routes := routesOf(t, f)
+	if len(routes) != 1 || routes[0].Host != "web.example.com" {
+		t.Fatalf("the proxy serves %+v, want the app's one name", routes)
 	}
 }
 
