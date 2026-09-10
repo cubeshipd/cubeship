@@ -6,6 +6,28 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.3.1 — 2026-09-10
+
+The release notes are reachable from the user menu now, their footer button sits inside the panel again, and there is a link to the repository.
+
+### Fixed
+
+**The button in this dialog's footer** was sitting outside the panel it
+belongs to — the footer carries margins that assume the popup keeps its
+padding, and this dialog takes it off to hold the header and footer
+still while the notes scroll.
+
+### Added
+
+**Release notes are in the user menu.** They used to appear once after
+an upgrade and then be gone. Opened from the menu they are the history —
+every release up to the one this instance runs — and closing marks
+nothing, because reading them again is not an event.
+
+The menu also carries the account and a link to the repository, and the
+sidebar's foot has that link as an icon: the one thing in this dashboard
+that is not part of your instance.
+
 ## 0.3.0 — 2026-09-10
 
 Three fixes to this dialog — the button that dismisses it now actually does, it no longer scrolls sideways, and the header and footer stay put.
