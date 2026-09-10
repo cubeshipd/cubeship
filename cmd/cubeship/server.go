@@ -85,7 +85,26 @@ func newServerListCmd() *cobra.Command {
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\n",
 					s.Name, s.Status, role, dash(s.Address), mesh, dash(s.Version))
 			}
-			return w.Flush()
+			if err := w.Flush(); err != nil {
+				return err
+			}
+
+			// Said here because it is the screen somebody looks at
+			// after adding a machine, and because nothing about an
+			// unencrypted network is visible any other way. A failure
+			// to read it is not worth interrupting a listing over.
+			if m, err := c.Mesh(context.Background()); err == nil && m.Network != "" && !m.Encrypted {
+				fmt.Println()
+				fmt.Println("The private network between these machines is NOT encrypted.")
+				fmt.Println("All app traffic crosses it — TLS ends at this instance's proxy — so")
+				fmt.Println("requests, session cookies and database connections go over the wire")
+				fmt.Println("in the clear between boxes.")
+				fmt.Println()
+				fmt.Println("Docker fixes this when the network is made and cannot change it after.")
+				fmt.Printf("To fix: stop what is on it, `docker network rm %s` on this machine,\n", m.Network)
+				fmt.Println("and restart the daemon — it makes the network encrypted now.")
+			}
+			return nil
 		},
 	}
 }

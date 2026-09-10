@@ -78,6 +78,7 @@ func (e *fakeEngine) SwarmWorkerToken(context.Context) (string, error)        { 
 func (e *fakeEngine) SwarmJoin(context.Context, string, string, string) error { return nil }
 func (e *fakeEngine) EnsureOverlayNetwork(context.Context, string) error      { return nil }
 func (e *fakeEngine) NetworkExists(context.Context, string) (bool, error)     { return true, nil }
+func (e *fakeEngine) NetworkEncrypted(context.Context, string) (bool, error)  { return true, nil }
 
 // **The ordinal goes home untouched.** It is how the control plane knows
 // which copy of an app on this machine a result is about, and an agent

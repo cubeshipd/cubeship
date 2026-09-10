@@ -355,7 +355,7 @@ var (
 	ErrAlreadyExists = errors.New("a server with that name is already in this cluster")
 
 	// ErrReservedSlug is a name this module's own API answers at.
-	ErrReservedSlug = errors.New(`"agent" is reserved: it is where the workers call in`)
+	ErrReservedSlug = errors.New(`"agent" and "mesh" are reserved: one is where the workers call in, the other is what the cluster's network answers at`)
 
 	// ErrControlPlane refuses an operation that only makes sense on a
 	// worker. The control plane is not a machine this instance joined —
@@ -387,4 +387,4 @@ var (
 // reservedSlugs are the names the API's own paths take under /nodes.
 // Go's mux prefers a literal segment over a wildcard, so a node called
 // one of these would be a machine nothing could open.
-var reservedSlugs = map[string]bool{"agent": true}
+var reservedSlugs = map[string]bool{"agent": true, "mesh": true}

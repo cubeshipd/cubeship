@@ -47,6 +47,21 @@ type Response struct {
 	CreatedAt  time.Time  `json:"created_at"`
 }
 
+// MeshResponse is the cluster's private network.
+type MeshResponse struct {
+	// Network is the overlay's name. Absent on an instance with no
+	// cluster, which is one that never added a second machine.
+	Network string `json:"network,omitempty"`
+	// Encrypted is whether what crosses between machines is carried
+	// over IPsec.
+	//
+	// Reported rather than assumed. Docker fixes this when the network
+	// is created and offers no way to change it, so an instance whose
+	// mesh came up before this asked for one has a network carrying
+	// every app request between machines in the clear.
+	Encrypted bool `json:"encrypted"`
+}
+
 // CreatedResponse is the one answer that carries a credential, because
 // it is the only moment it exists in a form anybody can read.
 type CreatedResponse struct {
@@ -85,6 +100,7 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.Handle("GET /nodes", auth(http.HandlerFunc(h.list)))
 	r.Handle("POST /nodes", auth(http.HandlerFunc(h.add)))
+	r.Handle("GET /nodes/mesh", auth(http.HandlerFunc(h.mesh)))
 	r.Handle("GET /nodes/{name}", auth(http.HandlerFunc(h.get)))
 	r.Handle("DELETE /nodes/{name}", auth(http.HandlerFunc(h.remove)))
 
@@ -102,6 +118,15 @@ type nodeContextKey struct{}
 // reach an endpoint that takes a caller. Keeping the two apart means
 // the question "could a node do this" has one answer — only what is
 // registered behind this wrapper.
+func (h *Handler) mesh(w http.ResponseWriter, r *http.Request) {
+	m, err := h.svc.MeshStatus(r.Context(), user.FromContext(r.Context()))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, MeshResponse{Network: m.Network, Encrypted: m.Encrypted})
+}
+
 func (h *Handler) agent(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		const prefix = "Bearer "
