@@ -171,17 +171,36 @@ func (s *Service) Rebalance(ctx context.Context, without int64) error {
 		return nil
 	}
 
+	here, err := s.Repo().ControlPlaneID(ctx)
+	if err != nil {
+		return err
+	}
+
 	for _, id := range ids {
 		a, err := s.Repo().ScopedByID(ctx, id)
 		if err != nil {
 			return err
 		}
+		// Read before the rows are rewritten, for the same reason
+		// replace does it: a copy's container id is the only record of
+		// what that copy was, and re-spreading is what destroys it. A
+		// machine joining takes copies **away** from the ones already
+		// here — two on one box becomes one each on two — so a
+		// re-spread leaks containers unless this is done.
+		before := a.ReplicasOn(here)
+
 		// The app's own intent, unchanged: this re-spreads what was
 		// asked for over a different number of machines, and does not
 		// decide anything about how many copies there are.
 		if err := s.Repo().SetNodes(ctx, a.ID, every, a.Scale, a.Copies(len(every)), true); err != nil {
 			return err
 		}
+
+		next, err := s.Repo().ScopedByID(ctx, a.ID)
+		if err != nil {
+			return err
+		}
+		s.orch.retire(ctx, retired(before, next.ReplicasOn(here)))
 		if err := s.orch.settleOpen(ctx, a.ID); err != nil {
 			return err
 		}

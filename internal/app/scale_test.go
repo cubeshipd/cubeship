@@ -146,3 +146,32 @@ func TestAMachineRunningAFollowingAppCanStillBeRemoved(t *testing.T) {
 		t.Errorf("after the server went, the app runs on %v", after.Nodes)
 	}
 }
+
+// A machine joining takes copies **away** from the ones already there:
+// two on one box becomes one each on two. The containers those copies
+// were have to be stopped, or a re-spread leaks one per machine per
+// join — running, invisible on every screen, and answering on the mesh
+// under a name nothing points at.
+func TestARespreadStopsTheCopiesItMovedAway(t *testing.T) {
+	docker := &cappingDocker{}
+	f := servertest.NewWithDocker(t, docker)
+	created := createExternalApp(t, f, "api")
+	place(t, f, created.Reference, map[string]any{"spread": true, "scale": 2})
+	deploy(t, f, created.Reference)
+	f.Server.Apps.WaitForDeploys()
+	before := len(docker.removedContainers())
+
+	// A machine joins, so the two copies become one each.
+	_ = addServer(t, f, "eu-1")
+	f.Server.Apps.WaitForDeploys()
+
+	if len(docker.removedContainers()) == before {
+		t.Error("the copy this machine gave up is still running")
+	}
+	var after placedApp
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/apps/"+created.Reference,
+		nil, f.AdminKey, &after), http.StatusOK)
+	if len(after.Nodes) != 2 {
+		t.Errorf("the app runs on %v", after.Nodes)
+	}
+}
