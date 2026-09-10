@@ -12,22 +12,23 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Users } from "@/components/users";
 import { ValueCard } from "@/components/value-card";
 import { type ApiKey, api } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // The screen for everything that is **yours** rather than the
-// instance's: how you sign in, what it looks like to you, and — for an
-// admin — who else can get in at all.
+// instance's: how you sign in, and what it looks like to you.
 //
 // Tabs rather than one long page, and reached from the menu under your
 // name rather than from the sidebar. The sidebar is what the instance
 // is made of and what you deploy on it; your own password is neither,
-// and it sat there as a section of one item. `/settings` stays what it
-// is: the instance's, not yours.
+// and it sat there as a section of one item.
+//
+// Who else can reach the instance is *not* here — it is in Platform,
+// beside the credentials and the machines, because it is a fact about
+// the instance rather than about you. `/settings` stays the instance's
+// too.
 export default function Account() {
-  const me = useSession();
   return (
     <>
       <PageHeader title="Your settings" />
@@ -35,7 +36,6 @@ export default function Account() {
         <TabsList variant="line">
           <TabsTrigger value="account">Account</TabsTrigger>
           <TabsTrigger value="appearance">Appearance</TabsTrigger>
-          {me.role === "admin" && <TabsTrigger value="users">Users</TabsTrigger>}
         </TabsList>
 
         <TabsContent value="account">
@@ -45,11 +45,6 @@ export default function Account() {
         <TabsContent value="appearance">
           <Appearance />
         </TabsContent>
-        {me.role === "admin" && (
-          <TabsContent value="users">
-            <Users />
-          </TabsContent>
-        )}
       </Tabs>
     </>
   );

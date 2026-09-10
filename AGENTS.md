@@ -446,19 +446,32 @@ it updates itself. `/account` is **yours**, and it is tabs: how you sign
 in, what it looks like to you, and, for an admin, who else can get in at
 all. Reached from the menu under your name, not from the sidebar.
 
-The `Users` tab is the whole of managing access, and it is the one that
-was missing: every endpoint behind it — `POST /users`, `GET /users`,
-`DELETE /users/{username}`, `DELETE /users/{username}/credentials` —
-existed from the start with nothing in the dashboard reaching them. It
-is an **admin's screen, reads included**: the list says who holds a way
-in, which is not something a member needs and is exactly what somebody
-probing would want, so the tab is not offered to one.
+**Who can reach the instance is not in there.** `/users` is in
+**Platform**, beside the credentials and the machines, because it is a
+fact about the instance and the same kind as which registry it pulls
+from — your own password and the colours you see are the other thing.
+Every endpoint behind it — `POST /users`, `GET /users`, `DELETE
+/users/{username}`, `DELETE /users/{username}/credentials` — existed
+from the start with nothing in the dashboard reaching them.
+
+It is an **admin's screen, reads included**: the list says who holds a
+way in, which is not something a member needs and is exactly what
+somebody probing would want, so a member is sent away rather than shown
+an empty table. **Adding somebody is above the table**, because that is
+what brings anybody to the screen — the table answers "who is there",
+and you already know when it is only you.
 
 The two refusals the daemon makes are said before the click rather than
 after it: the account you are signed in as, and the last admin. Adding
 someone hands back an API key **once** — this instance keeps only its
 hash, like every other credential here — and no password, because that
 is theirs to set.
+
+The table is `DataTable` and the role is `SearchableSelect` with
+`searchable={false}`, which is not decoration: they are the components
+every other listing and every other choice here already uses, and a
+hand-rolled `Table` beside a bare `Select` is how one screen ends up
+with a control a different height from the field next to it.
 
 ### The look
 
