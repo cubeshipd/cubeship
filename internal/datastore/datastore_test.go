@@ -563,19 +563,41 @@ type fakeDocker struct {
 	mu      sync.Mutex
 	running map[string]bool
 	stopped []string
+	// created is every container it was asked to make, and capped is
+	// every ceiling it was asked to apply afterwards.
+	created []dockerx.ContainerOpts
+	capped  []dockerx.Resources
 }
 
 func newFakeDocker() *fakeDocker { return &fakeDocker{running: map[string]bool{}} }
 
 func (f *fakeDocker) PullImage(context.Context, string, *dockerx.RegistryAuth) error { return nil }
 
-func (f *fakeDocker) SetResources(_ context.Context, _ string, _ dockerx.Resources) error {
+func (f *fakeDocker) SetResources(_ context.Context, _ string, r dockerx.Resources) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.capped = append(f.capped, r)
 	return nil
+}
+
+// ceilings is every SetResources call, oldest first.
+func (f *fakeDocker) ceilings() []dockerx.Resources {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]dockerx.Resources(nil), f.capped...)
+}
+
+// createdWith is every container it was asked to make, oldest first.
+func (f *fakeDocker) createdWith() []dockerx.ContainerOpts {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]dockerx.ContainerOpts(nil), f.created...)
 }
 
 func (f *fakeDocker) CreateContainer(_ context.Context, opts dockerx.ContainerOpts) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.created = append(f.created, opts)
 	return opts.Name + "-id", nil
 }
 
@@ -746,4 +768,75 @@ func TestStoppingAndLoggingNeedAContainer(t *testing.T) {
 		t.Errorf("start after a failed provision: %d %s", rec.Code, rec.Body.String())
 	}
 	f.Server.Datastores.WaitForProvisioning()
+}
+
+// **A database is the container on a box this size most worth capping**,
+// and raising its ceiling must not be the same act as publishing a port:
+// that one replaces the container, which is a database going away for a
+// few seconds. This one does not.
+func TestANewCeilingReachesTheDatabaseWithoutReplacingIt(t *testing.T) {
+	f, docker := provisioned(t, "pg")
+	before := len(docker.createdWith())
+
+	var out struct {
+		Limits struct {
+			CPU    float64 `json:"cpu"`
+			Memory int64   `json:"memory_bytes"`
+		} `json:"limits"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPatch, "/datastores/pg",
+		map[string]any{"limits": map[string]any{"cpu": 2, "memory_bytes": 1 << 30}},
+		f.AdminKey, &out), http.StatusOK)
+
+	if out.Limits.CPU != 2 || out.Limits.Memory != 1<<30 {
+		t.Errorf("it reports %+v", out.Limits)
+	}
+	ceilings := docker.ceilings()
+	if len(ceilings) != 1 {
+		t.Fatalf("the Engine was asked to set %d ceilings", len(ceilings))
+	}
+	want := dockerx.Resources{NanoCPUs: 2_000_000_000, MemoryBytes: 1 << 30}
+	if ceilings[0] != want {
+		t.Errorf("it was asked for %+v", ceilings[0])
+	}
+	if now := len(docker.createdWith()); now != before {
+		t.Errorf("%d containers were created for a limit change", now-before)
+	}
+}
+
+// The stored ceiling is what the next container is created under, so a
+// database that is stopped and started does not come back uncapped.
+func TestTheDatabaseComesBackUnderItsCeiling(t *testing.T) {
+	f, docker := provisioned(t, "pg")
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/datastores/pg",
+		map[string]any{"limits": map[string]any{"cpu": 1, "memory_bytes": 512 << 20}},
+		f.AdminKey), http.StatusOK)
+
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/datastores/pg/stop", nil, f.AdminKey), http.StatusOK)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/datastores/pg/start", nil, f.AdminKey), http.StatusOK)
+	f.Server.Datastores.WaitForProvisioning()
+
+	opts := docker.createdWith()
+	if len(opts) == 0 {
+		t.Fatal("nothing was created")
+	}
+	want := dockerx.Resources{NanoCPUs: 1_000_000_000, MemoryBytes: 512 << 20}
+	if got := opts[len(opts)-1].Resources; got != want {
+		t.Errorf("it came back under %+v", got)
+	}
+}
+
+// A number the Engine would refuse is refused here, where the person who
+// typed it is still watching.
+func TestADatabaseCeilingTooSmallToMeanAnythingIsRefused(t *testing.T) {
+	f, _ := provisioned(t, "pg")
+	for _, body := range []map[string]any{
+		{"cpu": 0.001},
+		{"memory_bytes": 1 << 20},
+		{"cpu": -1},
+	} {
+		rec := f.Do(t, http.MethodPatch, "/datastores/pg",
+			map[string]any{"limits": body}, f.AdminKey)
+		servertest.RequireStatus(t, rec, http.StatusBadRequest)
+	}
 }

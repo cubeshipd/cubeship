@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -48,6 +49,7 @@ func newDatastoreCmd() *cobra.Command {
 		newDatastoreStartCmd(),
 		newDatastoreExposeCmd(),
 		newDatastoreUnexposeCmd(),
+		newDatastoreLimitsCmd(),
 		newDatastoreDeleteCmd(),
 	)
 	return dbCmd
@@ -497,5 +499,71 @@ func newDatastoreDeleteCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&confirmed, "yes", false, "confirm that the database and its data should be deleted")
+	return cmd
+}
+
+// newDatastoreLimitsCmd is `cubeship db limits`.
+func newDatastoreLimitsCmd() *cobra.Command {
+	var cpu, memory string
+	cmd := &cobra.Command{
+		Use:   "limits <name>",
+		Short: "Cap what a database may use",
+		Long: "Cap how much of the machine a database's container may take.\n\n" +
+			"--cpu is cores and may be fractional: 0.5 is half a core.\n" +
+			"--memory takes a size: 512Mi, 2Gi, 1500M. It is enforced by\n" +
+			"the kernel killing whatever crosses it, so lowering one below\n" +
+			"what the database is already holding kills it on the spot —\n" +
+			"which its clients see as the connection going away.\n\n" +
+			"This is the container on a box this size most worth capping.\n" +
+			"An app that leaks is one app; a database that takes every\n" +
+			"page of memory takes the daemon and the proxy with it.\n\n" +
+			"Changing a limit takes effect immediately and does not\n" +
+			"replace the container, unlike publishing a port. Removing\n" +
+			"one — passing 0 — waits for the next start, because Docker\n" +
+			"reads a zero as \"leave that one alone\".\n\n" +
+			"With no flags it prints what the database is capped at now.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			d, err := c.GetDatastore(context.Background(), args[0])
+			if err != nil {
+				return err
+			}
+			if cpu == "" && memory == "" {
+				fmt.Println(describeLimits(d.Limits))
+				return nil
+			}
+
+			// Whatever is not being changed is sent as it stands: the
+			// ceiling travels whole, so leaving a flag off must not
+			// read as removing that half.
+			l := d.Limits
+			if cpu != "" {
+				if l.CPU, err = strconv.ParseFloat(cpu, 64); err != nil {
+					return fmt.Errorf("--cpu takes a number of cores, like 0.5 or 2: %w", err)
+				}
+			}
+			if memory != "" {
+				if l.Memory, err = parseSize(memory); err != nil {
+					return err
+				}
+			}
+
+			capped, err := c.SetDatastoreLimits(context.Background(), args[0], l)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("%s: %s\n", capped.Name, describeLimits(capped.Limits))
+			if capped.Limits.CPU == 0 || capped.Limits.Memory == 0 {
+				fmt.Println("A limit removed here takes effect on the next start; one changed is already in force.")
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&cpu, "cpu", "", "cores it may use, fractional allowed; 0 removes the limit")
+	cmd.Flags().StringVar(&memory, "memory", "", "memory it may hold, e.g. 512Mi or 2Gi; 0 removes the limit")
 	return cmd
 }
