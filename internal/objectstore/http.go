@@ -56,6 +56,11 @@ type Response struct {
 	// ExternalEndpoint is where something off this host reaches it.
 	// Present only while it is exposed and the instance has a domain.
 	ExternalEndpoint string `json:"external_endpoint,omitempty"`
+	// Limits is how much of the machine a managed store's container may
+	// take. Zero in either half is no limit, which is the default, and
+	// both are always zero on a linked store — there is no container
+	// here to cap.
+	Limits Limits `json:"limits"`
 
 	// HasContainer says whether a container currently backs this, which
 	// is what decides whether there is a log to read or anything to
@@ -90,6 +95,7 @@ func toResponse(s *Store, domain string) Response {
 		Kind: string(s.Kind), Provider: string(s.Provider), ProviderLabel: s.Provider.Label(),
 		Endpoint: s.URL(), Region: s.Region, PathStyle: s.PathStyle, Bucket: s.Bucket,
 		CredentialID: s.CredentialID, Version: s.Version, ExposedPort: s.ExposedPort,
+		Limits:           s.Limits,
 		ExternalEndpoint: s.ExternalURL(domain),
 		HasContainer:     s.ContainerID != "", Status: s.Status, Error: s.Error,
 		Attachments: toAttachments(s.Attachments),
@@ -212,7 +218,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 
 	case errors.Is(err, ErrNotRunning), errors.Is(err, ErrExternalHasNoContainer),
-		errors.Is(err, ErrManagedFixed):
+		errors.Is(err, ErrManagedFixed), errors.Is(err, ErrLinkedHasNoContainer):
 		http.Error(w, err.Error(), http.StatusConflict)
 
 	case errors.Is(err, slug.ErrInvalid), errors.Is(err, slug.ErrReserved),
@@ -222,6 +228,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		errors.Is(err, ErrRegionRequired), errors.Is(err, ErrAccountRequired),
 		errors.Is(err, ErrEndpointRequired), errors.Is(err, ErrBadEndpoint),
 		errors.Is(err, ErrBadBucket), errors.Is(err, ErrBadKey),
+		errors.Is(err, ErrInvalidLimits),
 		errors.Is(err, ErrSingleBucket), errors.Is(err, ErrBadPrefix),
 		errors.Is(err, ErrBadPort),
 		errors.Is(err, ErrNoPortsLeft), errors.Is(err, httpx.ErrNotJSON):
@@ -335,13 +342,19 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Description  *string `json:"description"`
 		CredentialID *int64  `json:"credential_id"`
+		// Limits is how much of the machine a managed store's
+		// container may take. Sent as an object so that clearing a
+		// ceiling is a value rather than a gap, and refused outright
+		// on a linked store — there is no container here to cap.
+		Limits *Limits `json:"limits"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		WriteError(w, err)
 		return
 	}
 	ctx := r.Context()
-	store, err := h.svc.Update(ctx, user.FromContext(ctx), r.PathValue("name"), req.Description, req.CredentialID)
+	store, err := h.svc.Update(ctx, user.FromContext(ctx), r.PathValue("name"),
+		req.Description, req.CredentialID, req.Limits)
 	if err != nil {
 		WriteError(w, err)
 		return

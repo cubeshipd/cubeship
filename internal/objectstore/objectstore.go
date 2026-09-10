@@ -33,6 +33,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"cubeship/internal/limits"
 )
 
 // Kind says where a store is.
@@ -200,6 +202,10 @@ type Store struct {
 	// ExposedPort is the host port a managed store also answers on, or
 	// 0 for reachable only by its neighbours — the default.
 	ExposedPort int
+	// Limits is what a managed store's container may take from the
+	// machine. Always zero on a linked store: that is somebody else's
+	// server, so there is no container here to cap and never will be.
+	Limits limits.Limits
 
 	ContainerID string
 	Status      string
@@ -380,3 +386,19 @@ func path(key string) string {
 // FolderName is the last segment of a common prefix — what the folder
 // is called inside the folder it appears in.
 func FolderName(prefix string) string { return path(prefix) }
+
+// Limits is what a managed store's container may take. An alias, so
+// every module that caps a container means exactly the same thing by it.
+type Limits = limits.Limits
+
+// ErrInvalidLimits is a ceiling this instance will not set.
+var ErrInvalidLimits = limits.ErrInvalid
+
+// ErrLinkedHasNoContainer refuses a limit on a store this instance does
+// not run.
+//
+// Not stored and ignored: a number that does nothing is worse than a
+// refusal, because the screen would then show a ceiling on a server this
+// instance has no say over. Same shape as ErrManagedFixed, from the
+// other side — each kind refuses the setting that belongs to the other.
+var ErrLinkedHasNoContainer = errors.New("a linked store runs on somebody else's server, so there is no container here to cap")

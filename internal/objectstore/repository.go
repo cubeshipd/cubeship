@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
+	"cubeship/internal/limits"
 	"cubeship/internal/platform/database"
 )
 
@@ -25,6 +26,7 @@ const columns = `s.id, s.slug, s.description, s.kind, s.provider,
 	s.endpoint, s.region, s.secure, s.path_style, s.bucket,
 	COALESCE(s.credential_id, 0), s.version, s.access_key, s.secret_key,
 	s.exposed_port, s.container_id, s.status, s.error,
+	s.cpu_limit, s.memory_limit,
 	COALESCE(c.username, ''), COALESCE(c.password, ''),
 	s.created_at, s.updated_at`
 
@@ -49,6 +51,7 @@ func scanWith(row scanner, extra ...any) (*Store, error) {
 		&s.Endpoint, &s.Region, &s.Secure, &s.PathStyle, &s.Bucket,
 		&s.CredentialID, &s.Version, &ownKey, &ownSecret,
 		&s.ExposedPort, &s.ContainerID, &s.Status, &s.Error,
+		&s.Limits.CPU, &s.Limits.Memory,
 		&credUser, &credSecret,
 		&s.CreatedAt, &s.UpdatedAt}
 	if err := row.Scan(append(dest, extra...)...); err != nil {
@@ -126,13 +129,23 @@ func (r *Repository) List(ctx context.Context) ([]*Store, error) {
 
 // Update writes whichever field it was given. Both are pointers because
 // "leave it alone" and "set it to empty" are different requests.
-func (r *Repository) Update(ctx context.Context, id int64, description *string, credentialID *int64) (*Store, error) {
+func (r *Repository) Update(ctx context.Context, id int64, description *string, credentialID *int64, l *limits.Limits) (*Store, error) {
+	// Both halves of the ceiling travel together, and zero is a value
+	// rather than a gap: it is how a limit is removed, so a nil here
+	// has to be the only way of saying "leave it".
+	var cpu *float64
+	var memory *int64
+	if l != nil {
+		cpu, memory = &l.CPU, &l.Memory
+	}
 	res, err := r.q.ExecContext(ctx,
 		`UPDATE object_stores
 		 SET description   = COALESCE($1, description),
 		     credential_id = COALESCE($2, credential_id),
+		     cpu_limit     = COALESCE($4, cpu_limit),
+		     memory_limit  = COALESCE($5, memory_limit),
 		     updated_at    = now()
-		 WHERE id = $3`, description, credentialID, id)
+		 WHERE id = $3`, description, credentialID, id, cpu, memory)
 	if err != nil {
 		return nil, fmt.Errorf("update object store: %w", err)
 	}

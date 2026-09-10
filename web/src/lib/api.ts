@@ -839,6 +839,11 @@ export type ObjectStore = {
   version?: string;
   exposed_port?: number;
   external_endpoint?: string;
+  // What a managed store's container may take from the machine. Zero in
+  // either half is no limit, and both are always zero on a linked
+  // store: that is somebody else's server, so there is nothing here to
+  // cap.
+  limits: AppLimits;
   has_container: boolean;
   status: string;
   error?: string;

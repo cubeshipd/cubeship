@@ -62,6 +62,7 @@ function Settings({ name }: { name: string }) {
       {store && (
         <>
           <General store={store} onSaved={reload} />
+          {store.kind === "managed" && <StoreLimits store={store} onSaved={reload} />}
           {store.kind === "managed" && <Exposure store={store} onChanged={reload} />}
 
           <DangerZone>
@@ -87,6 +88,72 @@ function Settings({ name }: { name: string }) {
           </DangerZone>
         </>
       )}
+    </>
+  );
+}
+
+// StoreLimits caps what a managed store's container may take.
+//
+// Offered only for a managed store, and refused by the daemon for the
+// other kind: a linked store runs on somebody else's server, so there is
+// no container here to cap and a number on this screen would be one that
+// does nothing.
+function StoreLimits({ store, onSaved }: { store: ObjectStore; onSaved: () => void }) {
+  const [cpu, setCPU] = useState(store.limits.cpu ? String(store.limits.cpu) : "");
+  const [memory, setMemory] = useState(
+    store.limits.memory_bytes ? String(Math.round(store.limits.memory_bytes / (1 << 20))) : "",
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const next = { cpu: Number(cpu) || 0, memory_bytes: (Number(memory) || 0) * (1 << 20) };
+  const dirty = next.cpu !== store.limits.cpu || next.memory_bytes !== store.limits.memory_bytes;
+
+  return (
+    <>
+      <SectionHeader
+        title="Limits"
+        sub="How much of the machine this store's container may take. Empty is no limit, which is the default. Changing one takes effect within seconds and does not replace the container the way publishing a port does; removing one waits for the next start."
+      />
+      <ErrorAlert error={error} />
+      <div className="space-y-4">
+        <TextField
+          label="CPU"
+          type="number"
+          step="0.01"
+          min="0"
+          placeholder="no limit"
+          value={cpu}
+          onChange={(e) => setCPU(e.target.value)}
+          hint="Cores, fractional allowed: 0.5 is half a core. A ceiling rather than a share — at its limit the container is throttled, not merely preferred less."
+        />
+        <TextField
+          label="Memory (MiB)"
+          type="number"
+          min="0"
+          placeholder="no limit"
+          value={memory}
+          onChange={(e) => setMemory(e.target.value)}
+          hint="A hard ceiling. The kernel enforces it by killing whatever crosses it, so setting one below what the store is already using stops it there and then — which an upload in flight sees as the connection going away."
+        />
+        <Button
+          disabled={busy || !dirty}
+          onClick={async () => {
+            setBusy(true);
+            setError(null);
+            try {
+              await api.patch<ObjectStore>(objectStorePath(store.name), { limits: next });
+              onSaved();
+            } catch (err) {
+              setError(message(err));
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          {busy ? "Saving..." : "Save limits"}
+        </Button>
+      </div>
     </>
   );
 }

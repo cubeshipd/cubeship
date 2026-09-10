@@ -74,6 +74,7 @@ const DataPath = "/data"
 type DockerAPI interface {
 	PullImage(ctx context.Context, ref string, creds *dockerx.RegistryAuth) error
 	CreateContainer(ctx context.Context, opts dockerx.ContainerOpts) (string, error)
+	SetResources(ctx context.Context, id string, r dockerx.Resources) error
 	StartContainer(ctx context.Context, id string) error
 	StopContainer(ctx context.Context, id string) error
 	RemoveContainer(ctx context.Context, id string) error
@@ -178,7 +179,33 @@ func (p *Provisioner) containerOpts(ctx context.Context, s *Store) dockerx.Conta
 	if s.ExposedPort != 0 {
 		opts.Ports = []string{fmt.Sprintf("%d:%d", s.ExposedPort, Port)}
 	}
+	opts.Resources = s.Limits.Resources()
 	return opts
+}
+
+// Cap applies a new ceiling to the container that is already running,
+// without replacing it.
+//
+// Every other setting on a store is either permanent or, like the
+// exposed port, fixed when the container is created — publishing one
+// replaces the container. This one does not, because the Engine writes
+// it straight to the cgroup.
+//
+// **Removing a limit is the direction that waits**, and here waiting
+// means the next provision: the Engine merges an update and reads a
+// zero as "leave that one alone".
+func (p *Provisioner) Cap(ctx context.Context, s *Store) error {
+	if s.ContainerID == "" {
+		return nil
+	}
+	if err := p.docker.SetResources(ctx, s.ContainerID, s.Limits.Resources()); err != nil {
+		// The limit is stored either way — it is what the next
+		// container is created with. What failed is this one taking it
+		// now, and a cgroup the host cannot enforce is a fact about the
+		// machine rather than a transient error.
+		return fmt.Errorf("the limit is saved, and %s did not take it: %w", ContainerName(s.Slug), err)
+	}
+	return nil
 }
 
 // Start provisions s in the background and returns immediately.

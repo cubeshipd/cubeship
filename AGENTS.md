@@ -2496,6 +2496,13 @@ effect there in the next ten seconds rather than at the next deploy. The
 agent skips the call entirely for an uncapped container, which is most
 of them, and could not lift a ceiling that way in any case.
 
+**A linked object store has none, and asking is refused.** It is
+somebody else's server, so there is no container here to cap and never
+will be — and a ceiling stored on that row would be a number on a screen
+for a machine this instance has no say over. Same shape as
+`ErrManagedFixed` from the other side: each kind of store refuses the
+setting that belongs to the other.
+
 **No MCP tool sets one.** It is the line `internal/app` already draws
 around moving an app between machines, one step closer in: a memory
 ceiling below what a container is holding is an instant kill by the

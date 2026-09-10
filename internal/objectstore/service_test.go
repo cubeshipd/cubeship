@@ -817,3 +817,45 @@ func bodyOf(t *testing.T, f *servertest.Fixture, path string) string {
 	t.Helper()
 	return f.Do(t, http.MethodGet, path, nil, f.AdminKey).Body.String()
 }
+
+// **A linked store has no container here to cap**, and asking is
+// refused rather than stored and ignored. The mirror of a managed store
+// refusing a credential: each kind refuses the setting that belongs to
+// the other, instead of showing a number on a screen that does nothing.
+func TestALinkedStoreRefusesALimit(t *testing.T) {
+	f, _ := withFake(t)
+	link(t, f, "offsite", nil)
+
+	rec := f.Do(t, http.MethodPatch, "/objectstores/offsite",
+		map[string]any{"limits": map[string]any{"cpu": 1, "memory_bytes": 512 << 20}}, f.AdminKey)
+	servertest.RequireStatus(t, rec, http.StatusConflict)
+	if !strings.Contains(rec.Body.String(), "container") {
+		t.Errorf("the refusal is %q, and it has to say why there is nothing to cap", rec.Body.String())
+	}
+}
+
+// A managed store takes one, and reports it back — it is what its
+// container is created under.
+func TestAManagedStoreTakesALimit(t *testing.T) {
+	f, _ := withFake(t)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/objectstores",
+		map[string]any{"kind": "managed", "name": "files"}, f.AdminKey), http.StatusCreated)
+
+	var out struct {
+		Limits struct {
+			CPU    float64 `json:"cpu"`
+			Memory int64   `json:"memory_bytes"`
+		} `json:"limits"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPatch, "/objectstores/files",
+		map[string]any{"limits": map[string]any{"cpu": 0.5, "memory_bytes": 512 << 20}},
+		f.AdminKey, &out), http.StatusOK)
+	if out.Limits.CPU != 0.5 || out.Limits.Memory != 512<<20 {
+		t.Errorf("it reports %+v", out.Limits)
+	}
+
+	// And a number the Engine would refuse is refused here.
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/objectstores/files",
+		map[string]any{"limits": map[string]any{"memory_bytes": 1 << 20}}, f.AdminKey),
+		http.StatusBadRequest)
+}
