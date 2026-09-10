@@ -157,6 +157,33 @@ func (s *Service) Addresses(ctx context.Context) (map[int64]string, error) {
 	return out, nil
 }
 
+// Unreachable is the machines this instance has stopped hearing from,
+// by id.
+//
+// Derived from last_seen_at on every read, like Node.Status itself, so
+// it cannot go stale the way a stored column would. Only the machines
+// that are actually gone are in it: a caller asking "is this one
+// answering" reads a missing key as "yes", which is what an instance
+// with no cluster should get.
+//
+// The control plane is never in the answer. It cannot be unreachable
+// from itself, and a daemon that reported its own box missing would be
+// one deciding something is wrong from the only place that can be sure
+// it is not.
+func (s *Service) Unreachable(ctx context.Context) (map[int64]bool, error) {
+	all, err := s.Repo().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := map[int64]bool{}
+	for _, n := range all {
+		if n.Status() == StatusUnreachable {
+			out[n.ID] = true
+		}
+	}
+	return out, nil
+}
+
 // Wake tells a machine there is something new for it, without waiting
 // for anything back.
 //

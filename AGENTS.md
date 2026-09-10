@@ -2032,6 +2032,39 @@ failing fails it **at once** rather than at the end — a deploy that is
 going to be reported failed should say so while somebody is watching —
 and the machines that did start it keep what they started.
 
+**A deploy is also closed when the set it was waiting on changes.**
+`settle` is otherwise reached only from the two moments that report
+something — the end of a local deploy, and a machine saying what it did
+— which leaves the case where nothing is reported and the answer
+changes anyway: a machine the deploy was waiting for is taken off the
+app, and what is left is already running it. Nothing was coming to
+close that row, and a deploy that has not finished cannot be deleted
+either, so it sat there for the life of the instance. `settleOpen` is
+the re-ask, and `replace` is where it happens.
+
+**A deploy waiting on a machine that has stopped answering stays
+`pending`, and says who it is waiting for.** That is `Stall`, derived on
+read from the machines' own status — a machine that is merely slow is
+still calling in every ten seconds, so silence and slowness are already
+told apart before this looks.
+
+It is deliberately **not** marked failed, and the reason is what
+`DeploymentToRun` does: it takes the newest deployment that resolved to
+an image and did not *fail*, so a pending one is exactly what a machine
+picks up when it comes back, finishing the rollout it missed. Failing it
+would send that machine to the deployment below while the machines that
+took it stay on this one — an app running two versions with nothing on
+any screen saying so, because a replica running *something* reads as
+`running`.
+
+So what changes is what is said, not what is run: a screen names the
+machine instead of showing a spinner that never ends, and the record
+becomes **deletable**, because nothing is writing to it any more.
+Clearing it is a decision with a consequence — the machine that returns
+will run the version below — and it belongs to a person rather than to
+a timer, which is the same place every other irreversible act here
+lives.
+
 **An app's status is derived from its replicas**, never stored: `running`
 when every one is serving, `down` when none is, and **`degraded`** when
 some are and some are not. That last state cannot happen to an app on one
@@ -2277,6 +2310,11 @@ calls a working name broken is worse than one that says where to look.
   machine, not by adding containers on one — `app_nodes` is keyed by
   machine, and a second container on one box would need a name and a
   health check per replica rather than per app.
+- **A split-version app is not visible as one.** Every replica reports
+  which deployment it is running and nothing shows it: an app whose
+  machines are on two versions reads as `running`, because each of them
+  is. It is reachable today only by deleting a stalled deploy and having
+  the machine come back.
 - **Anything in front of the edge.** The machine an app's traffic
   arrives at is a single point of failure for *ingress*, even though the
   app itself now survives a replica going away. What fixes that is

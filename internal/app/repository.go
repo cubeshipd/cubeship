@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"cubeship/internal/envvar"
 	"cubeship/internal/platform/database"
@@ -442,6 +443,50 @@ func scanDeploymentSummary(row scanner) (*Deployment, error) {
 		return nil, err
 	}
 	return &d, nil
+}
+
+// OpenDeployment is the app's newest deploy that has not finished, or
+// nil when every one of them has.
+//
+// There is at most one worth caring about: deploys of one app are
+// serialized, so an unfinished row below a finished one is a row
+// nothing is coming for.
+func (r *Repository) OpenDeployment(ctx context.Context, appID int64) (*Deployment, error) {
+	row := r.q.QueryRowContext(ctx,
+		`SELECT `+deploymentColumns+` FROM deployments
+		 WHERE app_id = $1 AND status = $2 ORDER BY id DESC LIMIT 1`,
+		appID, DeploymentPending)
+	d, err := scanDeployment(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("find the open deployment of app %d: %w", appID, err)
+	}
+	return d, nil
+}
+
+// PendingSince is every unfinished deploy on the instance older than
+// cutoff, newest first. What the sweeper reads — see Service.Sweep.
+func (r *Repository) PendingSince(ctx context.Context, cutoff time.Time) ([]*Deployment, error) {
+	rows, err := r.q.QueryContext(ctx,
+		`SELECT `+deploymentColumns+` FROM deployments
+		 WHERE status = $1 AND created_at < $2 ORDER BY id DESC`,
+		DeploymentPending, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("list unfinished deploys: %w", err)
+	}
+	defer rows.Close()
+
+	var out []*Deployment
+	for rows.Next() {
+		d, err := scanDeployment(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
 }
 
 // ListDeployments returns an app's deploy history, newest first, with

@@ -401,8 +401,18 @@ type DeploymentResponse struct {
 	// answer without carrying it.
 	HasLogs bool `json:"has_logs"`
 	// Deletable says this record may be removed. Only a deploy still
-	// running may not be.
+	// running may not be — and one that is stalled counts as not
+	// running, because nothing is writing to it any more.
 	Deletable bool `json:"deletable"`
+	// StalledOn is the machines this deploy is waiting for that have
+	// stopped answering. Absent on every deploy that is not waiting on
+	// one, which is almost all of them.
+	//
+	// The status stays `pending`, deliberately: a machine that comes
+	// back picks a pending deploy up and finishes the rollout it
+	// missed. This says who everybody is waiting for, so a screen can
+	// name them rather than show a spinner that never ends.
+	StalledOn []string `json:"stalled_on,omitempty"`
 	// Live says the app is running this deploy — so deleting it takes
 	// the app down, which is why it is reported apart from Deletable.
 	Live      bool      `json:"live"`
@@ -413,8 +423,16 @@ func toDeploymentResponse(d *Deployment) DeploymentResponse {
 	return DeploymentResponse{
 		ID: d.ID, Status: d.Status, Image: d.ImageRef, Error: d.Error,
 		Logs: d.Logs, HasLogs: d.HasLogs, Deletable: d.Deletable, Live: d.Live,
+		StalledOn: stalledOn(d),
 		CreatedAt: d.CreatedAt,
 	}
+}
+
+func stalledOn(d *Deployment) []string {
+	if d.Stalled == nil {
+		return nil
+	}
+	return d.Stalled.Waiting
 }
 
 // deploy accepts a redeploy and answers 202 with the deployment that

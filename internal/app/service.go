@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"time"
 
 	"cubeship/internal/envvar"
 	"cubeship/internal/metrics"
@@ -57,6 +58,10 @@ type Remote interface {
 	// Addresses is where each machine in the cluster is reached, by
 	// node id — what a DNS record for an app on it has to point at.
 	Addresses(ctx context.Context) (map[int64]string, error)
+	// Unreachable is the machines this instance has stopped hearing
+	// from, by node id. What a stalled deploy is worked out from: a
+	// machine that is merely slow is still calling in.
+	Unreachable(ctx context.Context) (map[int64]bool, error)
 }
 
 // SetRemote wires it in. Called once, by server.New — and the
@@ -426,9 +431,15 @@ func (s *Service) replace(ctx context.Context, a *Scoped, p Placement, source So
 		return err
 	}
 	if edge != a.NodeSlug {
-		return s.Repo().SetEdge(ctx, a.ID, edge)
+		if err := s.Repo().SetEdge(ctx, a.ID, edge); err != nil {
+			return err
+		}
 	}
-	return nil
+	// The set an open deploy is waiting on has just changed, and one of
+	// the machines it was waiting for may have been what was left. A
+	// deploy is closed by a report, and no report is coming for a
+	// machine that is no longer running this app.
+	return s.orch.settleOpen(ctx, a.ID)
 }
 
 func dedupe(in []string) []string {
@@ -723,6 +734,13 @@ func (s *Service) Deployment(ctx context.Context, caller *user.User, ref Referen
 	if err != nil {
 		return nil, ErrDeploymentNotFound
 	}
+	// The one row somebody polls while they watch a deploy, so it is
+	// the one that has to be able to say the wait is over even though
+	// the status has not changed.
+	if err := s.markStalled(ctx, a, []*Deployment{d}); err != nil {
+		return nil, err
+	}
+	d.Deletable = d.Done() || d.Stalled != nil
 	return d, nil
 }
 
@@ -764,7 +782,16 @@ func (s *Service) DeleteDeployment(ctx context.Context, caller *user.User, ref R
 		return ErrDeploymentNotFound
 	}
 	if !d.Done() {
-		return ErrDeploymentRunning
+		// Unless nothing is coming for it. A deploy waiting on a
+		// machine that has stopped answering has nobody writing to that
+		// row, and refusing would make the record permanent — see
+		// Stall.
+		if err := s.markStalled(ctx, a, []*Deployment{d}); err != nil {
+			return err
+		}
+		if d.Stalled == nil {
+			return ErrDeploymentRunning
+		}
 	}
 
 	live, err := s.liveDeployment(ctx, a)
@@ -832,10 +859,67 @@ func (s *Service) Deployments(ctx context.Context, caller *user.User, ref Refere
 		return nil, err
 	}
 	for _, d := range history {
-		d.Deletable = d.Done()
 		d.Live = d.ID == live
 	}
+	if err := s.markStalled(ctx, a, history); err != nil {
+		return nil, err
+	}
+	for _, d := range history {
+		// A deploy that has not finished is refused for deletion,
+		// because the orchestrator is still writing to that row. A
+		// stalled one is the exception: nothing is writing to it and
+		// nothing is coming, so refusing would make the record
+		// permanent.
+		d.Deletable = d.Done() || d.Stalled != nil
+	}
 	return history, nil
+}
+
+// markStalled fills in which of these deploys is waiting on a machine
+// that has stopped answering.
+//
+// The cluster is asked once, and only when some row has been waiting
+// long enough to be worth asking about — on an instance of one box, or
+// one where every deploy finished, this costs nothing.
+func (s *Service) markStalled(ctx context.Context, a *Scoped, history []*Deployment) error {
+	waited := false
+	for _, d := range history {
+		if !d.Done() && time.Since(d.CreatedAt) > StuckAfter {
+			waited = true
+		}
+	}
+	if !waited || s.remote == nil {
+		return nil
+	}
+	gone, err := s.remote.Unreachable(ctx)
+	if err != nil {
+		// The cluster's own state is not something a deploy history
+		// should fail on. Without it nothing is reported stalled, which
+		// is the answer this had before there was one.
+		log.Printf("deployments of %s: could not read which machines are answering: %v", ReferenceOf(a), err)
+		return nil
+	}
+
+	for _, d := range history {
+		if d.Done() || time.Since(d.CreatedAt) <= StuckAfter {
+			continue
+		}
+		var waiting []string
+		for _, r := range a.Replicas {
+			// A machine that has taken this deploy is not one anybody
+			// is waiting for, whatever its state.
+			if r.Deploy == d.ID && r.Running() {
+				continue
+			}
+			if gone[r.NodeID] {
+				waiting = append(waiting, r.NodeSlug)
+			}
+		}
+		if len(waiting) > 0 {
+			d.Stalled = &Stall{Waiting: waiting}
+		}
+	}
+	return nil
 }
 
 // Logs returns an app's container output. tail limits it to that many
