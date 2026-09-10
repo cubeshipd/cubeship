@@ -229,7 +229,10 @@ run_tests() {
 	# would be two different builds with no way to tell which is which
 	# — and re-running an install is what somebody does when something
 	# went wrong, which is the worst moment to change two things.
-	unset CUBESHIP_VERSION
+	# VERSION is set once, where the installer is sourced, so unsetting
+	# the environment variable here would change nothing: it is the
+	# shell variable that has to go.
+	VERSION=""
 	rm -f /tmp/docker.log /tmp/started
 	main >/dev/null 2>&1
 	check "the newest release is pinned to a version" \
@@ -240,14 +243,15 @@ run_tests() {
 	# A version somebody named is left exactly alone — naming one is the
 	# whole way to install a release candidate.
 	rm -f /tmp/docker.log /tmp/started
-	CUBESHIP_VERSION=0.2.0-rc.1 main >/dev/null 2>&1
+	VERSION=0.2.0-rc.1
+	main >/dev/null 2>&1
 	check "a named release is installed as given" \
 		"$(grep -c 'docker pull .*cubeshipd:0\.2\.0-rc\.1$' /tmp/docker.log)" "1"
 
 	# Being unable to ask must stop the install rather than fall back to
 	# `latest`, which is the thing pinning exists to avoid — quietly.
 	touch /tmp/no-releases
-	unset CUBESHIP_VERSION
+	VERSION=""
 	rm -f /tmp/started
 	if main >/dev/null 2>&1; then
 		printf '  FAIL installs anyway when it cannot look up a release\n'
@@ -256,7 +260,7 @@ run_tests() {
 		printf '  ok   refuses to guess when it cannot look up a release\n'
 	fi
 	rm -f /tmp/no-releases
-	export CUBESHIP_VERSION="testing"
+	VERSION="testing"
 
 	printf '\n'
 	[ "$FAILURES" = 0 ] || { printf '%d failure(s)\n\n' "$FAILURES"; exit 1; }
