@@ -62,6 +62,10 @@ type Response struct {
 	ExposedPort  int    `json:"exposed_port,omitempty"`
 	ExternalHost string `json:"external_host,omitempty"`
 
+	// Limits is how much of the machine this database's container may
+	// take. Zero in either half is no limit, which is the default.
+	Limits Limits `json:"limits"`
+
 	// Attachments are the apps that receive this datastore's connection
 	// variables, in any project and any environment.
 	Attachments []AttachmentResponse `json:"attachments"`
@@ -159,6 +163,7 @@ func toResponse(d *Datastore, in Instance) Response {
 		HasContainer: d.ContainerID != "",
 		Host:         host, Port: d.Engine.Port(),
 		ExposedPort: d.ExposedPort,
+		Limits:      d.Limits,
 		Attachments: make([]AttachmentResponse, 0, len(d.Attachments)),
 		CreatedAt:   d.CreatedAt,
 	}
@@ -252,7 +257,8 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrUnknownEngine), errors.Is(err, ErrUnknownVersion),
 		errors.Is(err, ErrBadUsername), errors.Is(err, ErrFixedUsername),
 		errors.Is(err, ErrBadPrefix),
-		errors.Is(err, ErrBadPort), errors.Is(err, ErrReservedSlug):
+		errors.Is(err, ErrBadPort), errors.Is(err, ErrReservedSlug),
+		errors.Is(err, ErrInvalidLimits):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
 		app.WriteError(w, err)
@@ -338,17 +344,22 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, toResponse(d, h.instance(r)))
 }
 
-// update is PATCH: a field left out is left alone. There is one field,
-// and Service.Update says why the others cannot be among them.
+// update is PATCH: a field left out is left alone. There are two, and
+// Service.Update says why the others cannot be among them.
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Description *string `json:"description"`
+		// Limits is how much of the machine this database may take.
+		// Sent as an object so that clearing a ceiling is a value
+		// rather than a gap: leaving the field out keeps what is
+		// there, and sending zeros removes it.
+		Limits *Limits `json:"limits"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	d, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), nameFrom(r), req.Description)
+	d, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), nameFrom(r), req.Description, req.Limits)
 	if err != nil {
 		WriteError(w, err)
 		return

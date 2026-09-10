@@ -33,6 +33,10 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			Description: "A managed database — Postgres, MySQL, MariaDB, Redis or MongoDB. It belongs to the instance rather than to a project — on one host the common shape is a single Postgres serving several apps, and those apps are routinely in different projects. What connects it to anything is an attachment, which names one app and gives it the connection string as environment variables.",
 		}},
 		Schemas: withMetrics(map[string]*openapi.Schema{
+			"DatastoreLimits": openapi.Object(map[string]*openapi.Schema{
+				"cpu":          {Type: "number", Description: "Cores this database's container may use, fractional allowed. A ceiling rather than a share: a container at its limit is throttled, not merely preferred less when the machine is busy. Zero is no limit, which is the default."},
+				"memory_bytes": openapi.Integer("A hard memory ceiling in bytes. The kernel enforces it by killing the process that crosses it, so **lowering one below what the database is already holding kills it on the spot** — which for a database means its clients see the connection go. Zero is no limit, which is the default."),
+			}, "cpu", "memory_bytes"),
 			"Datastore": openapi.Object(map[string]*openapi.Schema{
 				"name":          openapi.String("Unique across the instance. It is the container's own name, which every attached app resolves, so it is permanent."),
 				"description":   openapi.String("What this database is for. With no project above it to say where it belongs, this is the only place that can."),
@@ -47,6 +51,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"host":          openapi.String("Where an app on this instance reaches it: the container's own name on the shared Docker network. Attached apps already receive this as a variable."),
 				"port":          openapi.Integer("What the engine listens on inside the network — 5432 for Postgres, 3306 for MySQL and MariaDB."),
 				"exposed_port":  openapi.Integer("The host port it also answers on from outside this instance. Absent when it does not, which is the default."),
+				"limits":        openapi.Ref("DatastoreLimits"),
 				"external_host": openapi.String("The instance's own domain, which is where an exposed datastore is reached. Absent while there is no domain, or while it is not exposed."),
 				"attachments":   openapi.Array(openapi.Ref("DatastoreAttachment")),
 				"created_at":    {Type: "string", Format: "date-time"},
@@ -145,16 +150,17 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				},
 				"patch": {
 					OperationID: "updateDatastore",
-					Summary:     "Change a database's description",
-					Description: "The description is the only editable field, and the rest is not an oversight.\n\nThe name is the container's own, which every attached app resolves on the shared network. The engine and the version are what wrote the data directory — a major version changed under an existing one is a container that will not start, with the only copy of the data inside the directory it will not read. The password is used once, when the engine initializes itself: changing this column would change every connection string Cubeship hands out while the database went on accepting only the old one.\n\nRunning a different version means creating a second datastore and moving the data with the engine's own tools.",
+					Summary:     "Change a database's description or its limits",
+					Description: "The description and the limits are the editable fields, and the rest is not an oversight.\n\nThe name is the container's own, which every attached app resolves on the shared network. The engine and the version are what wrote the data directory — a major version changed under an existing one is a container that will not start, with the only copy of the data inside the directory it will not read. The password is used once, when the engine initializes itself: changing this column would change every connection string Cubeship hands out while the database went on accepting only the old one.\n\nRunning a different version means creating a second datastore and moving the data with the engine's own tools.",
 					Tags:        []string{"Datastores"},
 					Parameters:  nameParam,
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"description": openapi.String("May be empty."),
+						"limits":      {Ref: "#/components/schemas/DatastoreLimits", Description: "How much of the machine this database's container may take.\n\n**It takes effect at once, without the container being replaced.** A ceiling is the one part of a container the Engine can change under a running process — which is the difference between raising a database's memory and a database going away for a few seconds, the way publishing a port makes it.\n\nRemoving one is the exception: the Engine reads a zero in an update as \"leave that one alone\", so a container goes back to uncapped by being created again, which is the next `start`.\n\nSend the whole object — a field left out of it is a zero, which is how a limit is removed."},
 					})),
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The updated datastore.", openapi.Ref("Datastore")),
-						"400": openapi.BadRequest,
+						"400": openapi.TextResponse("A limit smaller than the smallest one that means anything: 0.01 of a core, 6MiB of memory."),
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,

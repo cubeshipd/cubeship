@@ -262,13 +262,28 @@ func engineList() string {
 // initializes itself, and nothing reads it afterwards. Changing this
 // column would change every connection string Cubeship hands out while
 // the database went on accepting only the old one.
-func (s *Service) Update(ctx context.Context, caller *user.User, name string, description *string) (*Datastore, error) {
+func (s *Service) Update(ctx context.Context, caller *user.User, name string, description *string, l *Limits) (*Datastore, error) {
 	d, err := s.Resolve(ctx, caller, name, RoleToManage)
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.Repo().Update(ctx, d.ID, description); err != nil {
+	// Checked here rather than found out by a container that will not
+	// start, minutes later, with nobody watching.
+	if l != nil && !l.Valid() {
+		return nil, ErrInvalidLimits
+	}
+	updated, err := s.Repo().Update(ctx, d.ID, description, l)
+	if err != nil {
 		return nil, err
+	}
+	// A ceiling is the one part of a database's container that changes
+	// without the container being replaced, which is the difference
+	// between raising its memory and a database going away for a few
+	// seconds.
+	if l != nil {
+		if err := s.prov.Cap(ctx, updated); err != nil {
+			return nil, err
+		}
 	}
 	return s.Resolve(ctx, caller, name, RoleToManage)
 }

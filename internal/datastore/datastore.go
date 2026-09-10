@@ -23,6 +23,8 @@ import (
 	"errors"
 	"fmt"
 	"time"
+
+	"cubeship/internal/limits"
 )
 
 // Datastore is one database server, running in a container of its own
@@ -56,6 +58,15 @@ type Datastore struct {
 	// instance, or 0 for "reachable only by its neighbours" — the
 	// default, and the right answer for almost every database.
 	ExposedPort int
+
+	// Limits is how much of the machine this database's container may
+	// take. Zero in either half is no limit, which is what every
+	// datastore is until somebody says otherwise.
+	//
+	// The container on a box this size most worth capping: an app that
+	// leaks is one app, and a Postgres that takes every page on the
+	// machine takes the daemon and the proxy with it.
+	Limits limits.Limits
 
 	ContainerID string
 	Status      string
@@ -219,3 +230,10 @@ func PrefixTakenError(prefix, stem string) error {
 	return fmt.Errorf("%w: it already gets %s_URL and its parts from one. Give this attachment a prefix, so the two do not name the same variables",
 		ErrPrefixTaken, prefix+stem)
 }
+
+// Limits is what a datastore's container may take. An alias, so the two
+// modules that cap a container mean exactly the same thing by it.
+type Limits = limits.Limits
+
+// ErrInvalidLimits is a ceiling this instance will not set.
+var ErrInvalidLimits = limits.ErrInvalid

@@ -31,6 +31,7 @@ type DockerAPI interface {
 	StartContainer(ctx context.Context, id string) error
 	StopContainer(ctx context.Context, id string) error
 	RemoveContainer(ctx context.Context, id string) error
+	SetResources(ctx context.Context, id string, r dockerx.Resources) error
 	IsRunning(ctx context.Context, id string) (bool, error)
 	Logs(ctx context.Context, id, tail string) (io.ReadCloser, error)
 }
@@ -133,7 +134,35 @@ func (p *Provisioner) containerOpts(ctx context.Context, d *Datastore) dockerx.C
 	if d.ExposedPort != 0 {
 		opts.Ports = []string{fmt.Sprintf("%d:%d", d.ExposedPort, d.Engine.Port())}
 	}
+	opts.Resources = d.Limits.Resources()
 	return opts
+}
+
+// Cap applies a new ceiling to the container that is already running,
+// without replacing it or restarting the engine inside it.
+//
+// Every other setting on a datastore is either permanent or, like the
+// exposed port, fixed when the container is created — publishing one
+// replaces the container, which is a database going away for a few
+// seconds. This one does not, because the Engine writes it straight to
+// the cgroup.
+//
+// **Removing a limit is the direction that waits**, and here waiting
+// means the next `start`: the Engine merges an update and reads a zero
+// as "leave that one alone", so a container goes back to uncapped only
+// by being created again.
+func (p *Provisioner) Cap(ctx context.Context, d *Datastore) error {
+	if d.ContainerID == "" {
+		return nil
+	}
+	if err := p.docker.SetResources(ctx, d.ContainerID, d.Limits.Resources()); err != nil {
+		// The limit is stored either way — it is what the next
+		// container is created with. What failed is this one taking it
+		// now, and a cgroup the host cannot enforce is a fact about
+		// the machine rather than a transient error.
+		return fmt.Errorf("the limit is saved, and %s did not take it: %w", ContainerName(d.Slug), err)
+	}
+	return nil
 }
 
 // Start provisions d in the background and returns immediately.

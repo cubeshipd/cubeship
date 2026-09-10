@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"cubeship/internal/limits"
 	"cubeship/internal/platform/database"
 )
 
@@ -25,7 +26,8 @@ func NewRepository(q database.Queryer) *Repository {
 // A flat list with no joins: a datastore belongs to the instance, so
 // there is nothing above it to bring along.
 const columns = `id, slug, description, engine, version, username, password,
-	database_name, exposed_port, container_id, status, error, created_at`
+	database_name, exposed_port, container_id, status, error,
+	cpu_limit, memory_limit, created_at`
 
 // datastoreColumns is the same list under the alias `d`, for the one
 // query that joins a table with an `id` and a `created_at` of its own.
@@ -53,7 +55,8 @@ func scan(row scanner) (*Datastore, error) {
 	var d Datastore
 	if err := row.Scan(&d.ID, &d.Slug, &d.Description, &d.Engine, &d.Version,
 		&d.Username, &d.Password, &d.Database, &d.ExposedPort,
-		&d.ContainerID, &d.Status, &d.Error, &d.CreatedAt); err != nil {
+		&d.ContainerID, &d.Status, &d.Error,
+		&d.Limits.CPU, &d.Limits.Memory, &d.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &d, nil
@@ -87,15 +90,27 @@ func (r *Repository) Create(ctx context.Context, d *Datastore) (*Datastore, erro
 	return created, nil
 }
 
-// Update changes a datastore's editable field. A nil argument leaves the
-// column alone, so PATCH with nothing named cannot blank it.
+// Update changes a datastore's editable fields. A nil argument leaves
+// the column alone, so PATCH with nothing named cannot blank it.
 //
-// There is one, and that is the point: see Service.Update for what the
-// others would break.
-func (r *Repository) Update(ctx context.Context, id int64, description *string) (*Datastore, error) {
+// There are two, and the shortness of the list is the point: see
+// Service.Update for what the others would break. Neither of these is
+// data — one is a sentence about the database and the other is how much
+// of the machine it may take.
+func (r *Repository) Update(ctx context.Context, id int64, description *string, l *limits.Limits) (*Datastore, error) {
+	// Both halves of the ceiling travel together, and zero is a value
+	// rather than a gap: it is how a limit is removed, so a nil here
+	// has to be the only way of saying "leave it".
+	var cpu *float64
+	var memory *int64
+	if l != nil {
+		cpu, memory = &l.CPU, &l.Memory
+	}
 	row := r.q.QueryRowContext(ctx,
-		`UPDATE datastores SET description = COALESCE($1, description)
-		 WHERE id = $2 RETURNING `+columns, description, id)
+		`UPDATE datastores SET description = COALESCE($1, description),
+		   cpu_limit    = COALESCE($3, cpu_limit),
+		   memory_limit = COALESCE($4, memory_limit)
+		 WHERE id = $2 RETURNING `+columns, description, id, cpu, memory)
 	d, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("update datastore: %w", err)

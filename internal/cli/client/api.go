@@ -574,6 +574,9 @@ type Datastore struct {
 	ExposedPort  int                   `json:"exposed_port,omitempty"`
 	ExternalHost string                `json:"external_host,omitempty"`
 	Attachments  []DatastoreAttachment `json:"attachments"`
+	// Limits is what its container may take from the machine. Zero in
+	// either half is no limit.
+	Limits Limits `json:"limits"`
 	// Password is set only on the response to creating one.
 	Password string `json:"password,omitempty"`
 }
@@ -651,6 +654,16 @@ func (c *Client) ListDatastoreEngines(ctx context.Context) ([]DatastoreEngine, e
 func (c *Client) GetDatastore(ctx context.Context, name string) (Datastore, error) {
 	return request[Datastore](ctx, c, "get datastore", http.MethodGet,
 		datastorePath(name), nil, http.StatusOK, DefaultTimeout)
+}
+
+// SetDatastoreLimits caps what a database's container may take.
+//
+// The whole ceiling travels, both halves: zero is the only way to say
+// "no limit", so a field left out would be indistinguishable from one
+// being removed.
+func (c *Client) SetDatastoreLimits(ctx context.Context, name string, l Limits) (Datastore, error) {
+	return request[Datastore](ctx, c, "set datastore limits", http.MethodPatch,
+		datastorePath(name), map[string]any{"limits": l}, http.StatusOK, DefaultTimeout)
 }
 
 func (c *Client) DatastoreCredentials(ctx context.Context, name string) (DatastoreCredentials, error) {

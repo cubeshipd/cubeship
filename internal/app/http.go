@@ -230,7 +230,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		errors.Is(err, ErrRepoNotSupported), errors.Is(err, ErrDockerfileNotAllowed):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrBadHost), errors.Is(err, ErrHostIsTheInstance),
-		errors.Is(err, ErrHostRequired), errors.Is(err, ErrInvalidHealthPath):
+		errors.Is(err, ErrHostRequired), errors.Is(err, ErrInvalidHealthPath),
+		errors.Is(err, ErrInvalidLimits):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNoBuilder):
 		http.Error(w, err.Error(), http.StatusConflict)
