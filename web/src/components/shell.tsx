@@ -21,6 +21,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 import { Wordmark } from "@/components/brand";
+import { InstanceUpdate } from "@/components/instance-update";
 import { QueryProvider } from "@/components/query-provider";
 import { ReleaseNotes } from "@/components/release-notes";
 import { SessionProvider } from "@/components/session-context";
@@ -176,6 +177,7 @@ export function Shell({ children }: { children: ReactNode }) {
           {/* What changed, once, after an upgrade. It renders nothing
               until the daemon says there is something to say. */}
           <ReleaseNotes />
+          <InstanceUpdate />
 
           <main className="min-w-0 flex-1">
             <div className="mx-auto max-w-5xl px-8 py-8">{children}</div>

@@ -11,6 +11,7 @@ package settings
 import (
 	"errors"
 	"strings"
+	"time"
 )
 
 // Keys. Every setting is optional: the daemon runs, in a reduced form,
@@ -55,6 +56,23 @@ const (
 	// the records it writes are the instance's own and there is one
 	// right answer for them at a time.
 	DNSProviderID = "dns_provider_id"
+
+	// AutoUpdateAt is the time of day this instance updates itself,
+	// as `HH:MM` in the instance's own timezone. Empty is off, which
+	// is what every instance is until somebody says otherwise.
+	//
+	// A time rather than an interval, because what somebody is choosing
+	// is when the instance is allowed to be briefly unusable — and
+	// "every 24 hours from whenever you turned it on" is not a thing
+	// anybody can plan around.
+	AutoUpdateAt = "auto_update_at"
+
+	// AutoUpdateTimezone is what that time is in, as an IANA name. It
+	// defaults to UTC, which is what a server's clock is and what
+	// nobody means: 03:00 is chosen because it is the middle of *your*
+	// night, so the timezone is the half of the answer that makes the
+	// number mean anything.
+	AutoUpdateTimezone = "auto_update_timezone"
 
 	// ACMEEmail is the contact address Let's Encrypt registers.
 	//
@@ -106,6 +124,8 @@ var ErrSuperAdminOnly = errors.New("forbidden: only a super-admin can change ins
 var known = map[string]string{
 	Domain:              "Base domain. The dashboard and the API are served at <domain> and the registry at registry.<domain>; both must resolve to this host.",
 	ACMEEmail:           "Contact address for Let's Encrypt. Optional: certificates are issued as soon as there is a domain.",
+	AutoUpdateAt:        "When this instance updates itself, as HH:MM. Empty is off. Only stable releases, and only when there is one: an instance already on the newest does nothing.",
+	AutoUpdateTimezone:  "What auto_update_at is in, as an IANA timezone like Europe/Lisbon. Empty is UTC, which is a server's clock rather than anybody's night.",
 	PublicIP:            "What this instance's DNS records should point at. Empty means work it out — the address the dashboard is opened at, or the machine's own — which is right on a VPS and has no answer behind NAT. A private address is never the answer: one of those in a record is a domain that stops resolving.",
 	DNSProviderID:       "Which stored DNS credential writes this instance's own records. Empty means the operator keeps their DNS elsewhere and writes them by hand.",
 	GitHubAppID:         "The numeric id of the GitHub App this instance acts as.",
@@ -206,3 +226,51 @@ func ResolvesEveryName(domain string) bool {
 // /api and proxies the rest — so a second name for the same server was a
 // name that had to be explained.
 func APIHostFor(domain string) string { return domain }
+
+// ValidTimeOfDay reports whether s is `HH:MM` on a 24-hour clock, or
+// empty — which is how automatic updating is turned off.
+//
+// Checked here rather than left to the scheduler, because a time it
+// cannot parse is a setting that silently does nothing: the instance
+// would sit there never updating, and the screen would show the value
+// somebody typed.
+func ValidTimeOfDay(s string) bool {
+	if s == "" {
+		return true
+	}
+	if len(s) != 5 || s[2] != ':' {
+		return false
+	}
+	h, m := s[:2], s[3:]
+	for _, part := range []string{h, m} {
+		for i := 0; i < len(part); i++ {
+			if part[i] < '0' || part[i] > '9' {
+				return false
+			}
+		}
+	}
+	hour := int(h[0]-'0')*10 + int(h[1]-'0')
+	minute := int(m[0]-'0')*10 + int(m[1]-'0')
+	return hour < 24 && minute < 60
+}
+
+// ValidTimezone reports whether s is an IANA name this machine knows,
+// or empty — which is UTC.
+//
+// Asked of the machine rather than checked against a list: the list is
+// the tzdata on the host, and a name this daemon cannot load is one the
+// scheduler could not use whatever a table here said about it.
+func ValidTimezone(s string) bool {
+	if s == "" {
+		return true
+	}
+	_, err := time.LoadLocation(s)
+	return err == nil
+}
+
+// ErrBadTimeOfDay and ErrBadTimezone are the two ways the update
+// schedule is refused.
+var (
+	ErrBadTimeOfDay = errors.New("an update time is HH:MM on a 24-hour clock, or empty to turn it off")
+	ErrBadTimezone  = errors.New("that is not a timezone this machine knows: give an IANA name like Europe/Lisbon, or leave it empty for UTC")
+)

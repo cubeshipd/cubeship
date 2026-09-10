@@ -16,6 +16,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"public_ip":            openapi.String("What this instance's DNS records should point at — the operator's answer if they gave one, then the address this dashboard was opened at when that is an address, then the machine's own, asked of the machine.\n\n**It may be absent, and absent is an answer.** Only a globally routable address is ever reported: the daemon runs as a container, and the address on *its* interface is a bridge one that would take a domain off the internet if it were written into a record. Nothing that writes a record may proceed without this."),
 				"public_ip_configured": openapi.Bool("Whether the address above was typed rather than detected."),
 				"dns_provider_id":      openapi.String("The stored DNS credential that writes this instance's own records. Empty while its DNS is kept somewhere Cubeship cannot reach."),
+				"auto_update_at":       openapi.String("When this instance updates itself, as `HH:MM`. Empty is off, which is what it is until somebody says otherwise."),
+				"auto_update_timezone": openapi.String("What `auto_update_at` is in, as an IANA name. Empty is UTC."),
 				"registry_host":        openapi.String("Where a `docker push` goes. Absent while no domain is set — there is nowhere to push yet."),
 				"tls_enabled":          openapi.Bool("Whether certificates can be issued, which needs both a domain and a contact address. While false, apps are served over plain HTTP."),
 				"wildcard_domain":      openapi.Bool("Whether every name under the instance's domain already resolves here — true of the sslip.io address a default install takes. It is what lets an app be given a name with no record to write and no DNS provider connected."),
@@ -47,6 +49,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"domain":                openapi.String("The instance's own name, e.g. cubeship.example.com."),
 						"acme_email":            openapi.String("Contact address for Let's Encrypt. Optional."),
+						"auto_update_at":        openapi.String("Update this instance every day at this time, as `HH:MM` on a 24-hour clock. Empty turns it off.\n\nA time of day rather than an interval, because what is being chosen is when the instance may be briefly unusable — and \"every 24 hours from whenever you turned it on\" is not something anybody can plan around.\n\n**Stable releases only.** An instance left to update itself must not wander onto a release candidate at three in the morning."),
+						"auto_update_timezone":  openapi.String("What that time is in, as an IANA name like `Europe/Lisbon`. Empty is UTC — which is a server's clock rather than anybody's night, so this is the half of the answer that makes the number mean something."),
 						"github_client_id":      openapi.String("The App's OAuth client id. Written by the manifest flow; it is what proves who is connecting an installation."),
 						"github_client_secret":  openapi.String("The App's OAuth client secret. Write-only."),
 						"public_ip":             openapi.String("Override what this host believes its own address to be. Empty restores detection, which may then find nothing — a machine behind NAT has no way to work this out, and Cubeship will not guess at a private address. What is set here is not filtered: an instance served behind a split-horizon resolver may want one nothing would guess."),
