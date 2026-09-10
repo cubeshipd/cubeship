@@ -45,9 +45,22 @@ setup_stubs() {
 		esac
 		exit 0
 	EOF
-	# curl stands in for two lookups: the public address, and which
-	# release is newest. The container this runs in may have no network,
-	# and the test wants a known answer to both.
+	curl_stub
+	chmod +x /stub/systemctl /stub/docker
+	PATH="/stub:$PATH"
+	export PATH
+}
+
+# curl stands in for two lookups: the public address, and which release
+# is newest. The container this runs in may have no network, and the
+# test wants a known answer to both.
+#
+# **Its own function because a test replaces it and has to put it back.**
+# It was written inline once and overwritten by a one-liner that answered
+# only the address — so every test after that one was talking to a curl
+# with no idea what a release is, and the failure was in a test three
+# screens further down.
+curl_stub() {
 	cat > /stub/curl <<-'EOF'
 		#!/bin/sh
 		echo "curl $*" >> /tmp/curl.log
@@ -57,9 +70,7 @@ setup_stubs() {
 		  *)          echo "203.0.113.7" ;;
 		esac
 	EOF
-	chmod +x /stub/systemctl /stub/docker /stub/curl
-	PATH="/stub:$PATH"
-	export PATH
+	chmod +x /stub/curl
 }
 
 # The installer ends in `main "$@"`. Dropping that line leaves its
@@ -125,7 +136,7 @@ run_tests() {
 		"$(grep -c 'CUBESHIP_DOMAIN= ' /tmp/docker.log)" "1"
 	check "and says where to open instead" \
 		"$(printf '%s' "$out" | grep -c 'http://.*:3000')" "1"
-	printf '#!/bin/sh\necho 203.0.113.7\n' > /stub/curl
+	curl_stub
 
 	# The data directory has to be mounted at the same path inside as
 	# outside: the daemon hands these paths to the Engine for its
@@ -236,10 +247,6 @@ run_tests() {
 	rm -f /tmp/docker.log /tmp/started
 	out=$(main 2>&1) || {
 		printf '%s\n' "$out"
-		printf 'RELEASES_API=[%s]\n' "$RELEASES_API"
-		printf 'which curl: %s\n' "$(command -v curl)"
-		printf 'the stub is:\n%s\n' "$(cat /stub/curl)"
-		printf 'the stub answers:\n[%s]\n' "$(curl -fsSL -H 'Accept: application/vnd.github+json' "$RELEASES_API" 2>&1)"
 		exit 1
 	}
 	check "the newest release is pinned to a version" \
