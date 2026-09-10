@@ -6,6 +6,36 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.3.0 — 2026-09-10
+
+Three fixes to this dialog — the button that dismisses it now actually does, it no longer scrolls sideways, and the header and footer stay put.
+
+### The notes you are reading
+
+**"Got it" marks them read.** It did not: the button closed the dialog
+and told the daemon nothing, so the next reload showed the same notes
+again and only the `×` ever ended them. It is one path now, and the
+instance is told before the dialog goes — a reload a moment later was
+cancelling the request that said so.
+
+**No more sideways scroll.** A release note is full of commands, and one
+long enough to overflow was moving the whole dialog rather than itself:
+the prose went with it, and the button slid out from under the pointer.
+A command block now scrolls on its own.
+
+**The header and the button stay put** while the notes scroll between
+them. On a long release the button was below the fold, which is a poor
+place for the only thing that dismisses something.
+
+The dialog that offers an update got all three, because it is the same
+dialog showing the same kind of text.
+
+### Updating to this one
+
+This is the first release you can install from the dashboard — 0.2.0 is
+what put the button there. If this instance is on 0.2.0, the dialog
+offering 0.3.0 is the whole of it.
+
 ## 0.2.0 — 2026-09-10
 
 An instance updates itself — every machine in the cluster, on a schedule if you want one — and the CLI is a download rather than a build.
