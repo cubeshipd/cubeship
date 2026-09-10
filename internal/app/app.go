@@ -78,6 +78,10 @@ type App struct {
 	// that stops being one the moment somebody makes it. Naming
 	// machines turns it off, because that is choosing by hand.
 	Spread bool
+	// Autoscale is when this instance decides the replica count for
+	// itself. Off on every app until somebody turns it on — see
+	// Autoscale.On.
+	Autoscale Autoscale
 	// Limits is what **one copy** of this app may take from the machine
 	// it runs on. Zero in either half is no limit, which is what every
 	// app is until somebody says otherwise.

@@ -57,7 +57,24 @@ type App struct {
 	// Limits is what one copy of it may take from the machine it runs
 	// on. Zero in either half is no limit.
 	Limits Limits `json:"limits"`
+	// Autoscale is when the instance decides the count itself. Off
+	// when Max is zero, which is every app until somebody says
+	// otherwise.
+	Autoscale Autoscale `json:"autoscale"`
 }
+
+// Autoscale is the rule the instance scales an app by.
+type Autoscale struct {
+	Min int     `json:"min"`
+	Max int     `json:"max"`
+	CPU float64 `json:"cpu"`
+	// At is when it last changed the count, and what the cooldown is
+	// measured from.
+	At *time.Time `json:"at,omitempty"`
+}
+
+// On reports whether the instance is scaling this app.
+func (a Autoscale) On() bool { return a.Max > 0 }
 
 // Limits is a container's ceiling: cores and bytes, zero meaning none.
 type Limits struct {
@@ -385,6 +402,15 @@ func (c *Client) PlaceApp(ctx context.Context, ref string, nodes []string, scale
 	}
 	return request[App](ctx, c, "place app", http.MethodPatch,
 		"/apps/"+ref, body, http.StatusOK, DefaultTimeout)
+}
+
+// SetAppAutoscale hands an app's replica count to the instance.
+//
+// The whole rule travels: zero is how it is turned off, so a field left
+// out would be indistinguishable from one being cleared.
+func (c *Client) SetAppAutoscale(ctx context.Context, ref string, a Autoscale) (App, error) {
+	return request[App](ctx, c, "set app autoscaling", http.MethodPatch,
+		"/apps/"+ref, map[string]any{"autoscale": a}, http.StatusOK, DefaultTimeout)
 }
 
 // SetAppLimits caps what one copy of an app may take.

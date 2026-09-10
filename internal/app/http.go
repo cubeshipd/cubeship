@@ -79,6 +79,9 @@ type Response struct {
 	// cores. Zero in either half is no ceiling, which is the default
 	// and what every app had before this existed.
 	Limits Limits `json:"limits"`
+	// Autoscale is when this instance changes the replica count on its
+	// own. Off on every app until somebody turns it on: `max` is zero.
+	Autoscale Autoscale `json:"autoscale"`
 	// Replicas is what is running on each of those machines. It is what
 	// a `degraded` status is made of: which of them is serving, and
 	// which is not.
@@ -158,6 +161,7 @@ func toResponse(a *Scoped, in Instance) Response {
 		HealthPath:    a.HealthPath,
 		Spread:        a.Spread,
 		Limits:        a.Limits,
+		Autoscale:     a.Autoscale,
 		Replicas:      toReplicas(a),
 		Split:         a.Split(),
 		Address:       in.PublicIP,
@@ -237,7 +241,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrBadHost), errors.Is(err, ErrHostIsTheInstance),
 		errors.Is(err, ErrHostRequired), errors.Is(err, ErrInvalidHealthPath),
-		errors.Is(err, ErrInvalidLimits):
+		errors.Is(err, ErrInvalidLimits), errors.Is(err, ErrInvalidAutoscale):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNoBuilder):
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -338,6 +342,10 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		// the CPU limit, and leaving the field out entirely is what
 		// keeps whatever is there.
 		Limits *Limits `json:"limits"`
+		// Autoscale is when this instance decides the replica count
+		// for itself. Sent as an object, and `max: 0` is how it is
+		// turned off — there is no separate flag to disagree with.
+		Autoscale *Autoscale `json:"autoscale"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -360,7 +368,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Description == nil && source == nil && origin == nil &&
 		req.Node == nil && req.Nodes == nil && req.HealthPath == nil && req.Scale == nil &&
-		req.Limits == nil && req.Spread == nil {
+		req.Limits == nil && req.Spread == nil && req.Autoscale == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
@@ -387,7 +395,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updated, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), refFrom(r),
-		req.Description, source, origin, req.HealthPath, req.Limits, place)
+		req.Description, source, origin, req.HealthPath, req.Limits, req.Autoscale, place)
 	if err != nil {
 		WriteError(w, err)
 		return

@@ -128,6 +128,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"GET /instance/containers",
 		"GET /instance/metrics",
 		"GET /nodes",
+		"GET /nodes/mesh",
 		"GET /nodes/{name}",
 		"GET /objectstores",
 		"GET /objectstores/providers",

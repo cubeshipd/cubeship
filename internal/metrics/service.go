@@ -76,6 +76,18 @@ const UsageWindow = 2 * Interval
 // three of them — and the modules already hand over a name with the id
 // they hand over. A reading whose subject is not in that list is
 // dropped, which is exactly a container that has since gone.
+// AverageCPU is one subject's mean CPU over the last d, and how many
+// readings it is made of. See the repository method: the count is what
+// a caller checks before trusting the mean.
+//
+// It takes no caller and checks no role, like everything else here: the
+// module that owns the subject has already decided who may look, and
+// asking twice is two answers to one question. Its one caller is this
+// instance's own autoscaler, which is not a person.
+func (s *Service) AverageCPU(ctx context.Context, kind string, subjectID int64, d time.Duration) (float64, int, error) {
+	return s.Repo().AverageCPU(ctx, kind, subjectID, time.Now().Add(-d))
+}
+
 func (s *Service) Usage(ctx context.Context) ([]Usage, error) {
 	readings, err := s.Repo().Latest(ctx, time.Now().Add(-UsageWindow))
 	if err != nil {
