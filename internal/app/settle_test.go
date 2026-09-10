@@ -85,14 +85,16 @@ func TestADeployWaitingOnAMachineThatIsGoneSaysSoAndCanBeCleared(t *testing.T) {
 	reconcile(t, f, token)
 	d := deploy(t, f, created.Reference)
 
-	// While it is still answering, nothing is stalled: a deploy in its
-	// first minutes is a deploy in progress, and a machine that is
-	// merely slow is still calling in.
+	// While it is still answering, nothing is stalled: a machine that
+	// is merely slow — pulling an image, starting a container — is
+	// still calling in every ten seconds.
 	if got := deploymentOf(t, f, created.Reference, d); len(got.StalledOn) != 0 || got.Deletable {
 		t.Fatalf("a fresh deploy is already stalled: %+v", got)
 	}
 
-	// Now it has been gone long enough to stop being a blip.
+	// Now it has been gone long enough to stop being a reboot. The
+	// deploy is still seconds old, and that is deliberately not what
+	// decides: the box is not coming back to it.
 	silence(t, f, "eu-1", app.StuckAfter+time.Minute)
 
 	got := deploymentOf(t, f, created.Reference, d)

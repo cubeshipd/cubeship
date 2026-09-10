@@ -332,3 +332,68 @@ func TestTheHealthPathReachesTheEdgeThatBalances(t *testing.T) {
 			answer.Desired.Routes[0].Health)
 	}
 }
+
+// An app whose machines are on different deployments is running two
+// versions, and until this was reported nothing said so: a replica
+// running *something* reads as running, so two versions read as one
+// healthy app.
+//
+// It is a fact rather than a fault — every rollout passes through it —
+// which is why it is reported apart from the status rather than as one.
+func TestAnAppRunningTwoVersionsSaysSo(t *testing.T) {
+	f := balancerFixture(t)
+	token := addServer(t, f, "eu-1")
+	created := createExternalApp(t, f, "api")
+	place(t, f, created.Reference, map[string]any{"nodes": []string{"control-plane", "eu-1"}})
+
+	// A rollout both machines take: one version everywhere.
+	first := deploy(t, f, created.Reference)
+	answer := reconcile(t, f, token)
+	reconcile(t, f, token, node.Result{
+		App: created.Reference, Deploy: answer.Desired.Apps[0].Deploy, Container: "eu-1-v1",
+	})
+	if got := appOf(t, f, created.Reference); got.Split {
+		t.Fatalf("one version on both machines reads as split: %+v", got.Replicas)
+	}
+
+	// And one eu-1 never takes. This machine is on the new deployment,
+	// that one is still on the old, and both are serving.
+	second := deploy(t, f, created.Reference)
+	if second == first {
+		t.Fatalf("the second deploy is the first one: %d", second)
+	}
+	got := appOf(t, f, created.Reference)
+	if !got.Split {
+		t.Errorf("two versions read as one healthy app: %+v", got.Replicas)
+	}
+	// The status is untouched, because availability and which version
+	// is answering are different questions.
+	if got.Status != "running" {
+		t.Errorf("status = %q; every machine is serving something", got.Status)
+	}
+	// And each machine says which version it is on, so the split names
+	// itself rather than being a flag somebody has to investigate.
+	byNode := map[string]int64{}
+	for _, r := range got.Replicas {
+		byNode[r.Node] = r.Deploy
+	}
+	if byNode["control-plane"] != second || byNode["eu-1"] != first {
+		t.Errorf("the machines do not say which deploy each is running: %+v", got.Replicas)
+	}
+}
+
+type appView struct {
+	Status   string `json:"status"`
+	Split    bool   `json:"split"`
+	Replicas []struct {
+		Node   string `json:"node"`
+		Deploy int64  `json:"deploy"`
+	} `json:"replicas"`
+}
+
+func appOf(t *testing.T, f *servertest.Fixture, ref string) appView {
+	t.Helper()
+	var out appView
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/apps/"+ref, nil, f.AdminKey, &out), http.StatusOK)
+	return out
+}

@@ -69,12 +69,14 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"health_path":   openapi.String("What Traefik asks this app for before trusting a container with traffic. Absent is no check, which is the default."),
 				"replicas": arrayOf(openapi.Ref("AppReplica"),
 					"What is running on each of those machines. It is what a `degraded` status is made of: some of them serving and some not."),
+				"split":          openapi.Bool("Whether the machines serving this app are not all serving the same deployment. Reported apart from `status` because the two are orthogonal — an app can be degraded and split, or running and split.\n\nEvery rollout across several machines passes through this for as long as it takes the last machine to pull, so it is a fact rather than a fault. What makes it worth reporting is the rollout that never finishes: without it, a replica running *something* reads as running, so two versions read as one healthy app."),
 				"suggested_host": openapi.String("A name this app could answer at, under the instance's own domain: `<app>.<environment>.<project>.<instance domain>`. Nothing assigns it — an app with no domain is a normal app, and this is what a client offers when somebody does want one. Under a wildcard address (`settings.wildcard_domain`) it resolves the moment it is added; under a real domain it needs a record. Absent while the instance has no domain."),
 			}, "reference", "name", "description", "domains", "status", "has_container", "source", "org", "project", "environment"),
 			"AppReplica": openapi.Object(map[string]*openapi.Schema{
 				"node":    openapi.String("The machine, by name."),
 				"status":  {Type: "string", Enum: []string{"pending", "running", "down"}, Description: "What that machine's copy is doing."},
 				"serving": openapi.Bool("Whether the edge is sending traffic here. A replica can be running and not yet a backend: an app that gained a second machine before this release has containers whose names were never written down, and a name is the address the edge reaches a replica at. Its next deploy fixes it."),
+				"deploy":  openapi.Integer("Which deployment this machine is running, by id — the same id the deploy history is listed under. Absent for a machine that has been given the app and not yet run it."),
 			}, "node", "status", "serving"),
 			"AppDomain": openapi.Object(map[string]*openapi.Schema{
 				"id":   openapi.Integer("Identifies this domain on this app, for changing or removing it."),

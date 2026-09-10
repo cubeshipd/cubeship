@@ -70,6 +70,12 @@ type Response struct {
 	// a `degraded` status is made of: which of them is serving, and
 	// which is not.
 	Replicas []ReplicaResponse `json:"replicas"`
+	// Split says the machines serving this app are not all serving the
+	// same deployment. Reported apart from Status because the two are
+	// orthogonal — an app can be degraded and split, or running and
+	// split — and absent on the overwhelming majority of apps, which
+	// run one version on one machine.
+	Split bool `json:"split,omitempty"`
 	// Address is where a DNS record for this app has to point: the
 	// machine it runs on, because each machine is its own edge.
 	//
@@ -96,13 +102,22 @@ type ReplicaResponse struct {
 	// app.Replica.Name — and that difference is worth being able to see
 	// rather than reading as an even split that is not happening.
 	Serving bool `json:"serving"`
+	// Deploy is which deployment this machine is running, by id — the
+	// same id the app's deploy history is listed under. Absent for a
+	// machine that has been given the app and not yet run it.
+	//
+	// It is here because an app's machines can be on different ones,
+	// and until this was reported nothing said so: a replica running
+	// *something* reads as running, so two versions read as one healthy
+	// app.
+	Deploy int64 `json:"deploy,omitempty"`
 }
 
 func toReplicas(a *Scoped) []ReplicaResponse {
 	out := make([]ReplicaResponse, 0, len(a.Replicas))
 	for _, r := range a.Replicas {
 		out = append(out, ReplicaResponse{
-			Node: r.NodeSlug, Status: r.Status,
+			Node: r.NodeSlug, Status: r.Status, Deploy: r.Deploy,
 			Serving: r.Running() && (len(a.Replicas) == 1 || r.Name != ""),
 		})
 	}
@@ -124,6 +139,7 @@ func toResponse(a *Scoped, in Instance) Response {
 		Nodes:         a.Nodes(),
 		HealthPath:    a.HealthPath,
 		Replicas:      toReplicas(a),
+		Split:         a.Split(),
 		Address:       addressFor(a, in),
 	}
 	switch Source(a.Source) {

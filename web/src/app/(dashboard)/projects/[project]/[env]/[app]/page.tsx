@@ -205,6 +205,24 @@ function Detail({
                 else. It also explains the empty charts under it: what
                 samples a container is the daemon on the machine it is
                 on, and only this one writes to the series. */}
+            {/* Two versions answering at one name. It is a fact
+                rather than a fault — every rollout across several
+                machines passes through it — so it says which machine is
+                on what and lets the reader decide, rather than colouring
+                itself as an alarm. What makes it worth showing is the
+                rollout that never finishes: each replica is running
+                something, so without this the app reads as healthy. */}
+            {app?.split && (
+              <Notice tone="warning">
+                This app is answering with more than one version:{" "}
+                {app.replicas
+                  .filter((r) => r.deploy)
+                  .map((r) => `${r.node} is on #${r.deploy}`)
+                  .join(", ")}
+                . A deploy still rolling out looks like this until the last machine has it; one that
+                stopped does not, and the deploy history says which.
+              </Notice>
+            )}
             {app !== null && app.nodes.length > 1 ? (
               <Notice>
                 This app runs on {app.nodes.length} machines —{" "}
@@ -330,7 +348,21 @@ function Deployments({
       header: "Status",
       width: 16,
       sortBy: (d) => d.status,
-      cell: (d) => <StatusBadge value={d.status} />,
+      // A stalled deploy is still `pending` — that is what lets a
+      // machine that comes back finish the rollout it missed — so the
+      // badge is the truth and the sentence beside it is the rest of
+      // it: pending on its own reads as "happening", and this one is
+      // not happening.
+      cell: (d) => (
+        <div className="space-y-1">
+          <StatusBadge value={d.status} />
+          {d.stalled_on && d.stalled_on.length > 0 && (
+            <div className="font-mono text-[10px] text-warning">
+              waiting on {d.stalled_on.join(", ")}
+            </div>
+          )}
+        </div>
+      ),
     },
     {
       id: "image",
@@ -383,7 +415,9 @@ function Deployments({
               d.deletable
                 ? d.live
                   ? "This is what the app is running. Deleting it takes the app down."
-                  : undefined
+                  : d.stalled_on && d.stalled_on.length > 0
+                    ? `Nothing is coming for this: ${d.stalled_on.join(", ")} stopped answering. Deleting it means the machine that comes back runs the deploy below this one.`
+                    : undefined
                 : stillRunning
             }
             onClick={() => setDeleting(d)}

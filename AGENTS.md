@@ -2044,9 +2044,18 @@ the re-ask, and `replace` is where it happens.
 
 **A deploy waiting on a machine that has stopped answering stays
 `pending`, and says who it is waiting for.** That is `Stall`, derived on
-read from the machines' own status — a machine that is merely slow is
-still calling in every ten seconds, so silence and slowness are already
-told apart before this looks.
+read from how long the machine has been silent — one that is merely
+slow, pulling an image or starting a container, is still calling in
+every ten seconds.
+
+**The machine's silence decides, not the deploy's age.** A deploy
+started two minutes ago onto a box that died this morning is stalled
+now, and waiting another quarter of an hour would not make that truer.
+`StuckAfter` is long because the cheap answer is already taken:
+`unreachable` is three missed passes, which is the right patience for
+pulling a machine out of a load balancer — where being wrong costs one
+interval of traffic — and nowhere near enough here, where being wrong
+tells somebody a rollout is never happening while their box reboots.
 
 It is deliberately **not** marked failed, and the reason is what
 `DeploymentToRun` does: it takes the newest deployment that resolved to
@@ -2064,6 +2073,18 @@ Clearing it is a decision with a consequence — the machine that returns
 will run the version below — and it belongs to a person rather than to
 a timer, which is the same place every other irreversible act here
 lives.
+
+**Whether its machines agree on a version is a second question**, and
+`Split` is it. An app can be degraded and split, or running and split,
+so it is reported beside the status rather than as one of its values —
+and every replica carries the deployment id it is running, which is what
+turns "two versions" into "this box is on #11 and that one on #12".
+
+It is a **fact, not a fault**. Every rollout across several machines
+passes through it for as long as the last machine takes to pull. What
+makes it worth reporting is the rollout that never finishes: each
+replica is running *something*, so without this an app serving two
+versions reads as one healthy app.
 
 **An app's status is derived from its replicas**, never stored: `running`
 when every one is serving, `down` when none is, and **`degraded`** when
@@ -2310,11 +2331,6 @@ calls a working name broken is worse than one that says where to look.
   machine, not by adding containers on one — `app_nodes` is keyed by
   machine, and a second container on one box would need a name and a
   health check per replica rather than per app.
-- **A split-version app is not visible as one.** Every replica reports
-  which deployment it is running and nothing shows it: an app whose
-  machines are on two versions reads as `running`, because each of them
-  is. It is reachable today only by deleting a stalled deploy and having
-  the machine come back.
 - **Anything in front of the edge.** The machine an app's traffic
   arrives at is a single point of failure for *ingress*, even though the
   app itself now survives a replica going away. What fixes that is
