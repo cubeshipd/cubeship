@@ -29,6 +29,7 @@ import (
 	"cubeship/internal/server"
 	"cubeship/internal/settings"
 	"cubeship/internal/setup"
+	"cubeship/internal/update"
 	"cubeship/internal/user"
 	"cubeship/internal/worker"
 
@@ -58,15 +59,95 @@ var listenAddr = fmt.Sprintf(":%d", daemonPort)
 
 func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")
+	// The one mode that is not a daemon at all: a throwaway container
+	// started by the daemon it is about to replace. See replaceDaemon.
+	replace := flag.String("replace", "", "replace this container with a new image and exit")
+	replaceImage := flag.String("replace-image", "", "the image to replace it with")
 	flag.Parse()
 	if *showVersion {
 		fmt.Printf("cubeshipd %s\n", version)
 		os.Exit(0)
 	}
 
+	if *replace != "" {
+		if err := replaceDaemon(*replace, *replaceImage); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
+
 	if err := run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// replaceDaemon stops the daemon's container and starts it again from a
+// new image.
+//
+// **It is a container of its own, and it has to be**: the process it
+// stops is the one that asked for this, so nothing running inside that
+// container could see the operation through. This runs from the new
+// image, started with the Docker socket and the data directory, and
+// does one thing.
+//
+// The options are read back off the container being replaced rather
+// than written here. They were chosen by whoever installed this — a
+// port, a domain, a data directory somewhere unusual — and a second
+// copy of them in this binary would be one that goes stale the first
+// time install.sh grows a flag.
+//
+// What it cannot do is report a failure to the daemon, because there is
+// no daemon while it runs. So it writes the status file itself, which
+// is the same file a browser is reading to know to stay out of the way.
+func replaceDaemon(name, image string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), update.StuckAfter)
+	defer cancel()
+
+	store := update.Store{DataDir: config.DataDir()}
+	run := store.Read()
+	if run == nil {
+		run = &update.Run{Version: version, Status: update.StatusRunning, StartedAt: time.Now()}
+	}
+
+	docker, err := dockerx.New()
+	if err != nil {
+		store.Finish(run, err)
+		return err
+	}
+	log.Printf("update: replacing %s with %s", name, image)
+
+	spec, err := docker.SpecOf(ctx, name)
+	if err != nil {
+		store.Finish(run, fmt.Errorf("read %s's own settings: %w", name, err))
+		return err
+	}
+	spec.Image = image
+
+	if err := docker.StopContainer(ctx, name); err != nil {
+		log.Printf("update: stopping %s: %v", name, err)
+	}
+	if err := docker.RemoveContainer(ctx, name); err != nil {
+		store.Finish(run, fmt.Errorf("remove %s: %w", name, err))
+		return err
+	}
+	id, err := docker.CreateContainer(ctx, spec)
+	if err != nil {
+		// The daemon is gone and its replacement could not be made,
+		// which is the one failure here that leaves an instance down.
+		// Said as loudly as a status file can say anything.
+		store.Finish(run, fmt.Errorf("create %s again: %w — the instance is down, and `docker run` from install.sh is what brings it back", name, err))
+		return err
+	}
+	if err := docker.StartContainer(ctx, id); err != nil {
+		store.Finish(run, fmt.Errorf("start %s again: %w", name, err))
+		return err
+	}
+	// Deliberately not marked done here: what finishes this run is the
+	// daemon that comes back reporting the version it was moving to.
+	// Saying so from here would be this container's opinion about a
+	// process it has not seen start.
+	log.Printf("update: %s is running %s", name, image)
+	return nil
 }
 
 // runWorker is the whole of a worker's daemon.
@@ -451,7 +532,18 @@ func run() error {
 		Host:          host,
 		Machine:       box,
 		Version:       version,
+		// What this instance's own two containers were started from.
+		// Read back off the running container rather than derived: an
+		// operator is free to point either at a mirror, and string
+		// surgery on a registry path is how an instance updates itself
+		// to an image that does not exist.
+		DaemonImage: bootstrap.OwnImage(ctx, docker, cfg),
+		WebImage:    cfg.WebImage,
 	})
+	// A daemon that comes up on the version a running record was moving
+	// to **is** that record finishing: the container that started it has
+	// gone, and it went before this process existed.
+	srv.Updates.Settle()
 
 	// An install upgrading from the release where the domain and contact
 	// address were required environment variables keeps them, once.

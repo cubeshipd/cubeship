@@ -25,6 +25,7 @@ import (
 	"cubeship/internal/metrics"
 	"cubeship/internal/node"
 	"cubeship/internal/objectstore"
+	"cubeship/internal/platform/bootstrap"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/project"
@@ -32,6 +33,7 @@ import (
 	"cubeship/internal/release"
 	"cubeship/internal/settings"
 	"cubeship/internal/setup"
+	"cubeship/internal/update"
 	"cubeship/internal/user"
 	"cubeship/internal/web"
 )
@@ -54,6 +56,7 @@ type Server struct {
 	Credentials *credential.Service
 	Settings    *settings.Service
 	Releases    *release.Service
+	Updates     *update.Service
 	Certs       *certificates.Service
 	Firewall    *firewall.Service
 	Setup       *setup.Service
@@ -136,6 +139,19 @@ type Options struct {
 	// which is an instance with no release to be on and therefore
 	// nothing to say changed.
 	Version string
+
+	// DaemonImage and WebImage are what this instance's own two
+	// containers are pulled from. Empty on a daemon that is not a
+	// container, which cannot update itself and says so.
+	//
+	// Read back from the running container rather than derived, and
+	// passed rather than looked up here, for the same reason
+	// CUBESHIP_WEB_IMAGE is told rather than derived: an operator is
+	// free to point either at a mirror, and string surgery on a
+	// registry path is how an instance ends up updating to an image
+	// that does not exist.
+	DaemonImage string
+	WebImage    string
 }
 
 // New wires the modules together. The dependency order here is the real
@@ -239,6 +255,15 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// that owns machines, so it is handed back down here — the same
 	// seam project.AppTeardown and credential.Dependant use.
 	nodes.SetApps(apps)
+
+	// Updating replaces every machine in the cluster and then this one,
+	// so it has to be able to tell the machines. The seam runs the way
+	// every other one here does: `node` declares nothing about updates,
+	// and is handed to the module that does.
+	updates := update.NewService(opts.DataDir, updateDocker(docker), opts.Version,
+		bootstrap.DaemonContainerName, opts.DaemonImage,
+		bootstrap.FrontendContainerName, opts.WebImage)
+	updates.SetCluster(nodes)
 	// And the other way: what only the machine an app is on can answer
 	// — its log today — reaches it through the channel that machine's
 	// own poll opens. See app.Remote.
@@ -295,6 +320,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Nodes:        nodes,
 		Settings:     cfg,
 		Releases:     release.NewService(db, opts.Version),
+		Updates:      updates,
 		Certs:        certificates.NewService(cfg, apps, opts.DataDir),
 		// A firewall is the host's, so a server with no way to reach the
 		// host has one that answers "not available" — which is what a
@@ -353,8 +379,26 @@ func (s *Server) SetRegistrySigningKey(key *rsa.PrivateKey, certDER []byte) {
 	s.Registry.SetSigningKey(key, certDER)
 }
 
+// updateDocker is the Engine, if this one can read a container's own
+// settings back.
+//
+// A type assertion rather than a wider parameter, because the only
+// caller that cannot satisfy it is a test's stub — and a test that
+// builds a server has no business being able to replace the daemon.
+func updateDocker(docker app.DockerAPI) update.Docker {
+	d, _ := docker.(update.Docker)
+	return d
+}
+
 // Router returns the daemon's HTTP handler.
-func (s *Server) Router() http.Handler { return s.router }
+//
+// **Everything goes through the update guard**, which refuses to change
+// anything while this instance is replacing itself. It wraps here
+// rather than being wired per module for the reason a lock is worth
+// having at all: one place cannot be the place somebody forgot.
+func (s *Server) Router() http.Handler {
+	return update.Guard(s.Updates)(s.router)
+}
 
 // Patterns returns every route pattern registered on the server. The
 // OpenAPI parity test uses it to prove the document describes exactly
@@ -402,6 +446,7 @@ func (s *Server) routes() {
 	objectstore.NewHandler(s.ObjectStores).Routes(s.router, auth)
 	machine.NewHandler(s.Machine).Routes(s.router, auth)
 	release.NewHandler(s.Releases).Routes(s.router, auth)
+	update.NewHandler(s.Updates).Routes(s.router, auth)
 	// Two surfaces on one module: the operator's behind `auth`, and the
 	// agent's behind a node's own credential, which node.Routes wires
 	// itself. A worker never reaches anything that takes a caller.

@@ -82,11 +82,25 @@ func (c *Config) ManagedDatabase() bool {
 // those are configured from the dashboard afterwards. They are still read
 // from the environment, but only to seed an install upgrading from the
 // release where they were required — see SeedSettings.
-func Load() (*Config, error) {
-	dataDir := os.Getenv("CUBESHIP_DATA_DIR")
-	if dataDir == "" {
-		dataDir = "/var/lib/cubeship"
+
+// DataDirEnv names the one setting that cannot have a default worked
+// out later: where the instance's state is.
+const DataDirEnv = "CUBESHIP_DATA_DIR"
+
+// DataDir is where this instance keeps its state.
+//
+// Its own function because one mode of this binary reads it without
+// loading the rest of the configuration: the throwaway container that
+// replaces the daemon has a socket and a directory and no business
+// opening a database.
+func DataDir() string {
+	if dir := os.Getenv(DataDirEnv); dir != "" {
+		return dir
 	}
+	return "/var/lib/cubeship"
+}
+func Load() (*Config, error) {
+	dataDir := DataDir()
 
 	var tokenFile string
 	token := os.Getenv("CUBESHIP_TOKEN")

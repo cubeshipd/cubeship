@@ -22,6 +22,7 @@ import (
 	"cubeship/internal/project"
 	"cubeship/internal/release"
 	"cubeship/internal/settings"
+	"cubeship/internal/update"
 	"cubeship/internal/user"
 )
 
@@ -59,7 +60,8 @@ func (s *Server) OpenAPI() openapi.Document {
 		firewall.NewHandler(s.Firewall).OpenAPI(),
 		machine.NewHandler(s.Machine).OpenAPI(),
 		node.NewHandler(s.Nodes).OpenAPI(),
-		release.NewHandler(s.Releases).OpenAPI())
+		release.NewHandler(s.Releases).OpenAPI(),
+		update.NewHandler(s.Updates).OpenAPI())
 
 	return openapi.Document{
 		OpenAPI: "3.1.0",

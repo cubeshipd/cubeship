@@ -400,6 +400,76 @@ type ContainerInfo struct {
 	Image string
 }
 
+// SpecOf reads back everything needed to create this container again.
+//
+// It exists for one caller and one reason: **replacing the daemon's own
+// container with a newer image.** Nothing else here recreates a
+// container it did not describe — `bootstrap.Ensure` writes the options
+// and can therefore write them again — but the daemon's own were chosen
+// by whoever installed it, and are the one set this process does not
+// hold. Reading them back beats keeping a second copy that goes stale
+// the first time somebody adds a flag.
+//
+// What is deliberately **not** carried over is the image: the caller
+// supplies the new one, which is the whole point.
+func (c *Client) SpecOf(ctx context.Context, name string) (ContainerOpts, error) {
+	info, err := c.api.ContainerInspect(ctx, name)
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return ContainerOpts{}, ErrContainerNotFound
+		}
+		return ContainerOpts{}, fmt.Errorf("inspect container %q: %w", name, err)
+	}
+	if info.ContainerJSONBase == nil || info.Config == nil || info.HostConfig == nil {
+		return ContainerOpts{}, fmt.Errorf("inspect container %q: docker answered without its configuration", name)
+	}
+
+	opts := ContainerOpts{
+		Name:       strings.TrimPrefix(info.Name, "/"),
+		Image:      info.Config.Image,
+		Labels:     info.Config.Labels,
+		Env:        info.Config.Env,
+		Cmd:        info.Config.Cmd,
+		Entrypoint: info.Config.Entrypoint,
+		Binds:      info.HostConfig.Binds,
+		ExtraHosts: info.HostConfig.ExtraHosts,
+		Privileged: info.HostConfig.Privileged,
+		HostPID:    info.HostConfig.PidMode.IsHost(),
+		Resources: Resources{
+			NanoCPUs:    info.HostConfig.Resources.NanoCPUs,
+			MemoryBytes: info.HostConfig.Resources.Memory,
+		},
+	}
+	if info.HostConfig.NetworkMode.IsHost() {
+		opts.HostNetwork = true
+	} else if info.NetworkSettings != nil {
+		// The first network is the one the container was created on and
+		// the rest are ones it was connected to afterwards — a
+		// distinction Docker does not keep, so they are sorted for a
+		// stable answer and the first is taken as the primary. Every
+		// container this recreates is on `cubeship` and nothing else.
+		names := make([]string, 0, len(info.NetworkSettings.Networks))
+		for name := range info.NetworkSettings.Networks {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+		if len(names) > 0 {
+			opts.Network, opts.AlsoNetworks = names[0], names[1:]
+		}
+	}
+	for port, bindings := range info.HostConfig.PortBindings {
+		for _, b := range bindings {
+			spec := b.HostPort + ":" + port.Port() + "/" + port.Proto()
+			if b.HostIP != "" {
+				spec = b.HostIP + ":" + spec
+			}
+			opts.Ports = append(opts.Ports, spec)
+		}
+	}
+	sort.Strings(opts.Ports)
+	return opts, nil
+}
+
 // InspectContainerByName looks up a container by name (or ID). It returns
 // ErrContainerNotFound if no such container exists, so callers can
 // distinguish "not there yet" from "Docker is broken".

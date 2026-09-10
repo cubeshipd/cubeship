@@ -210,15 +210,63 @@ jobs:
           subject-digest: ${{ steps.digest.outputs.digest }}
           push-to-registry: true
 
+  cli:
+    name: CLI binaries
+    needs: notes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      # The CLI is what somebody drives their instance from, and it runs
+      # on their laptop rather than on the server — so it is the one
+      # thing in a release that is not a container. Cross-compiled here
+      # rather than left to `go install`, which cannot work: this module
+      # is named `cubeship`, not the path it lives at, and giving it that
+      # path would put an import rewrite through every file for a
+      # convenience a downloaded binary already covers.
+      #
+      # Static, because the alternative is a binary that depends on
+      # whatever libc the runner happened to have.
+      - name: Build
+        run: |
+          mkdir -p dist
+          for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
+            os="${target%/*}"; arch="${target#*/}"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build \
+              -ldflags "-s -w -X main.version=$VERSION" \
+              -o "dist/cubeship" ./cmd/cubeship
+            tar -czf "dist/cubeship_${VERSION}_${os}_${arch}.tar.gz" -C dist cubeship
+            rm dist/cubeship
+          done
+          (cd dist && sha256sum *.tar.gz > checksums.txt)
+        env:
+          VERSION: ${{ needs.notes.outputs.version }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli
+          path: dist/*
+          retention-days: 1
+
   publish:
     name: GitHub release
-    needs: [notes, manifest]
+    needs: [notes, manifest, cli]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: notes
+      - uses: actions/download-artifact@v4
+        with:
+          name: cli
+          path: dist
       - uses: softprops/action-gh-release@v2
         with:
           body_path: notes.md
           prerelease: ${{ needs.notes.outputs.prerelease == 'true' }}
+          # The two images are pulled; the CLI is downloaded, because it
+          # runs on a laptop rather than on the server.
+          files: dist/*

@@ -277,12 +277,18 @@ Make an API key under **Account** in the dashboard. Every noun has
 `--help`, and every command it can run is something the dashboard can
 too — they are the same API.
 
-Building the CLI for your own machine, on macOS or Linux:
+**Installing it.** It is one static binary, attached to every
+[release](https://github.com/cubeshipd/cubeship/releases) for macOS and
+Linux, Intel and ARM:
 
 ```bash
-git clone https://github.com/cubeshipd/cubeship && cd cubeship
-make build          # bin/cubeship
+curl -fsSL https://github.com/cubeshipd/cubeship/releases/latest/download/cubeship_0.1.0_darwin_arm64.tar.gz | tar -xz
+sudo mv cubeship /usr/local/bin/
 ```
+
+`checksums.txt` is beside them. There is no `go install`: this module is
+named `cubeship` rather than the path it lives at, and a downloaded
+binary covers the same ground.
 
 ## Upgrading
 

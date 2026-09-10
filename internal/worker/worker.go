@@ -38,7 +38,9 @@ import (
 	"cubeship/internal/mesh"
 	"cubeship/internal/metrics"
 	"cubeship/internal/node"
+	"cubeship/internal/platform/bootstrap"
 	"cubeship/internal/platform/dockerx"
+	"cubeship/internal/update"
 )
 
 // dialTimeout bounds one call home.
@@ -79,6 +81,7 @@ type Engine interface {
 	StopContainer(ctx context.Context, id string) error
 	RemoveContainer(ctx context.Context, id string) error
 	SetResources(ctx context.Context, id string, r dockerx.Resources) error
+	SpecOf(ctx context.Context, name string) (dockerx.ContainerOpts, error)
 	IsRunning(ctx context.Context, id string) (bool, error)
 	RunningContainers(ctx context.Context) ([]dockerx.Running, error)
 }
@@ -289,6 +292,16 @@ func (a *Agent) answer(ctx context.Context, cmd node.Command) {
 	switch cmd.Kind {
 	case node.CommandLogs:
 		output, failed = a.readLog(ctx, cmd)
+	case node.CommandUpdate:
+		// **Nothing is posted back for this one**, on purpose: what it
+		// starts is this container being stopped, so an answer would
+		// be a message from a process that is about to be killed. The
+		// control plane learns it worked from the version this machine
+		// reports on the pass after it comes back.
+		if err := a.replaceSelf(ctx, cmd.Version); err != nil {
+			log.Printf("agent: replacing this machine with %s: %v", cmd.Version, err)
+		}
+		return
 	default:
 		// A command this agent does not know is one from a control
 		// plane newer than it. Saying so is better than silence: the
@@ -298,6 +311,51 @@ func (a *Agent) answer(ctx context.Context, cmd node.Command) {
 	if err := a.post(ctx, cmd.ID, output, failed); err != nil {
 		log.Printf("agent: answering %s: %v", cmd.Kind, err)
 	}
+}
+
+// replaceSelf pulls a version and hands this machine's own container to
+// a throwaway container that replaces it.
+//
+// The same shape as the control plane's own update, and for the same
+// reason: the process doing the work is the process being stopped. What
+// differs is that there is nothing to report — a worker has no
+// database, no status file anybody reads, and no screen. It comes back
+// on the new version or it does not, and the control plane is watching
+// which.
+//
+// **The app containers are not touched.** Replacing the agent is
+// replacing the thing that decides; what it decided is already running,
+// and it is still running while this happens.
+func (a *Agent) replaceSelf(ctx context.Context, version string) error {
+	if a.engine == nil {
+		return fmt.Errorf("this server has no Docker")
+	}
+	if version == "" {
+		return fmt.Errorf("no version to replace this machine with")
+	}
+	spec, err := a.engine.SpecOf(ctx, bootstrap.DaemonContainerName)
+	if err != nil {
+		return fmt.Errorf("read this machine's own settings: %w", err)
+	}
+	image := update.Retag(spec.Image, version)
+	if err := a.engine.PullImage(ctx, image, nil); err != nil {
+		return fmt.Errorf("pull %s: %w", image, err)
+	}
+
+	id, err := a.engine.CreateContainer(ctx, dockerx.ContainerOpts{
+		Name:  bootstrap.DaemonContainerName + "-updater",
+		Image: image,
+		Cmd:   []string{"-replace", bootstrap.DaemonContainerName, "-replace-image", image},
+		Binds: []string{"/var/run/docker.sock:/var/run/docker.sock"},
+		// No network of its own: it talks to the Engine over the
+		// socket and to nothing else.
+		AutoRemove: true,
+	})
+	if err != nil {
+		return fmt.Errorf("create the updater: %w", err)
+	}
+	log.Printf("agent: replacing this machine with %s", image)
+	return a.engine.StartContainer(ctx, id)
 }
 
 // readLog is the tail of a container's log, exactly as the Engine gives
