@@ -477,7 +477,7 @@ func createError(err error) error {
 // else, which is the same reason a registry's host is fixed. What can
 // change is the account — a second AWS key, a rotated token — and that
 // is exactly what a credential is for.
-func (s *Service) Update(ctx context.Context, caller *user.User, name string, description *string, credentialID *int64) (*Store, error) {
+func (s *Service) Update(ctx context.Context, caller *user.User, name string, description *string, credentialID *int64, l *Limits) (*Store, error) {
 	store, err := s.Resolve(ctx, caller, name, RoleToManage)
 	if err != nil {
 		return nil, err
@@ -493,8 +493,29 @@ func (s *Service) Update(ctx context.Context, caller *user.User, name string, de
 			return nil, err
 		}
 	}
-	if _, err := s.Repo().Update(ctx, store.ID, description, credentialID); err != nil {
+	if l != nil {
+		if store.Kind != KindManaged {
+			// Nothing here to cap. Refused rather than stored and
+			// ignored, which is ErrManagedFixed's argument from the
+			// other side: each kind refuses the setting that belongs
+			// to the other, instead of showing a number that does
+			// nothing.
+			return nil, ErrLinkedHasNoContainer
+		}
+		if !l.Valid() {
+			return nil, ErrInvalidLimits
+		}
+	}
+	updated, err := s.Repo().Update(ctx, store.ID, description, credentialID, l)
+	if err != nil {
 		return nil, err
+	}
+	// A ceiling is the one part of the container that changes without
+	// the container being replaced, unlike publishing a port.
+	if l != nil {
+		if err := s.prov.Cap(ctx, updated); err != nil {
+			return nil, err
+		}
 	}
 	return s.Resolve(ctx, caller, name, RoleToManage)
 }

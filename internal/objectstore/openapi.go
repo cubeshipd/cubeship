@@ -46,6 +46,10 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			Description: "Buckets and the files in them, from two places at once: a MinIO this instance runs, and an S3 endpoint somewhere else it holds the keys to. Both are the same resource here — an endpoint, a login and buckets inside it — and every call below works the same way on either.\n\nThe convention for object storage is backups, and a backup of this machine kept on this machine is not one, which is why linking somewhere else exists. Running one here is for the other half: an app's uploads, a dump on its way out, developing against S3 without paying for S3.",
 		}},
 		Schemas: withMetrics(map[string]*openapi.Schema{
+			"ObjectStoreLimits": openapi.Object(map[string]*openapi.Schema{
+				"cpu":          {Type: "number", Description: "Cores a managed store's container may use, fractional allowed. A ceiling rather than a share. Zero is no limit, which is the default, and always zero on a linked store."},
+				"memory_bytes": openapi.Integer("A hard memory ceiling in bytes for a managed store's container. The kernel enforces it by killing whatever crosses it. Zero is no limit, which is the default, and always zero on a linked store."),
+			}, "cpu", "memory_bytes"),
 			"ObjectStore": openapi.Object(map[string]*openapi.Schema{
 				"name":              openapi.String("Unique across the instance. For a managed store it is the container's own name, which is the host apps connect to, so it is permanent either way."),
 				"description":       openapi.String("What this storage is for. With nothing above a store to say where it belongs, this is the only place that can."),
@@ -59,6 +63,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"credential_id":     openapi.Integer("The stored account an external store authenticates as. Absent on a managed one, whose keys are its own."),
 				"version":           openapi.String("The MinIO release a managed store runs. Permanent: a data directory belongs to the server that wrote it."),
 				"exposed_port":      openapi.Integer("The host port a managed store also answers on from outside this instance. Absent when it does not, which is the default." + exposeWarning),
+				"limits":            openapi.Ref("ObjectStoreLimits"),
 				"external_endpoint": openapi.String("Where something off this host reaches it. Present only while it is exposed and the instance has a domain to be reached at."),
 				"attachments":       openapi.Array(openapi.Ref("ObjectStoreAttachment")),
 				"has_container":     openapi.Bool("Whether a container currently backs this, which is what decides whether there is a log to read or anything to stop. The status alone cannot answer it: one whose provisioning failed may have neither."),
@@ -197,13 +202,14 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				},
 				"patch": {
 					OperationID: "updateObjectStore",
-					Summary:     "Change a store's description, or which account it uses",
+					Summary:     "Change a store's description, its limits, or which account it uses",
 					Description: "Not the name, which is the container's for a managed store and the identity for both. Not the endpoint or the provider either: an app configured against this store would silently start reaching somewhere else. What can change is the account an external store authenticates as — a second key, a different tenancy — which is what a credential is for. A managed store has no account to re-point, and asking is refused rather than ignored.\n\nRequires the admin role.",
 					Tags:        []string{"Object storage"},
 					Parameters:  nameParam,
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"description":   openapi.String("Omit to leave it alone."),
 						"credential_id": openapi.Integer("The stored account this store authenticates as. External stores only."),
+						"limits":        {Ref: "#/components/schemas/ObjectStoreLimits", Description: "How much of the machine a managed store's container may take.\n\n**Managed stores only.** A linked store runs on somebody else's server, so there is no container here to cap — asking is refused rather than stored and ignored, which would put a ceiling on a screen for a server this instance has no say over.\n\nIt takes effect at once and does not replace the container, the way publishing a port does. Removing one is the exception: the Engine reads a zero in an update as \"leave that one alone\", so it waits for the next provision.\n\nSend the whole object — a field left out of it is a zero, which is how a limit is removed."},
 					})),
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The store as it now stands.", openapi.Ref("ObjectStore")),
@@ -211,7 +217,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,
-						"409": openapi.TextResponse("A managed store's connection is this instance's own; there is nothing to re-point."),
+						"409": openapi.TextResponse("A managed store's connection is this instance's own, so there is nothing to re-point; or a limit was asked for on a linked store, which runs on somebody else's server."),
 					},
 				},
 				"delete": {
