@@ -632,7 +632,6 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	}
 
 	base := resourceName(ref)
-	labels := placementLabels(appName, deploymentID)
 
 	// **One copy at a time**, which is what makes several of them on one
 	// machine a rolling deploy rather than a moment with none of them
@@ -647,6 +646,8 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	// App.Split — and it beats carrying on into an app that is entirely
 	// the version that does not work.
 	for _, replica := range a.ReplicasOn(here) {
+		// Its own labels, because one of them says which copy it is.
+		labels := placementLabels(appName, deploymentID, replica.Ordinal)
 		if err := o.swap(ctx, a, replica, image, env, labels, base, deploymentID); err != nil {
 			return err
 		}

@@ -26,6 +26,7 @@ package node
 import (
 	"context"
 	"errors"
+	"strconv"
 	"time"
 
 	"cubeship/internal/platform/dockerx"
@@ -45,14 +46,49 @@ const ControlPlaneSlug = "control-plane"
 // machine pull and nothing else.
 const RegistryUsername = "cubeship-node"
 
-// LabelApp and LabelDeploy are what a placed container carries, and
-// they are how a machine tells its own work apart from everything else
-// on the box: what app it belongs to, and which deploy of it. A
-// container with neither is not this instance's to reason about.
+// LabelApp, LabelDeploy and LabelOrdinal are what a placed container
+// carries, and they are how a machine tells its own work apart from
+// everything else on the box: what app it belongs to, which deploy of
+// it, and which copy of that app on this machine it is. A container
+// with none of them is not this instance's to reason about.
+//
+// The ordinal is what makes a rolling deploy possible on a machine
+// running several copies: an old container may go once **its own**
+// replacement is up, and without it the agent can only ask whether some
+// container of that app is running — which either retires a copy whose
+// replacement never came, or leaves every old copy behind.
+//
+// A container from before this label carries none, and is read as the
+// first copy — the only one an agent from then could have been running.
 const (
-	LabelApp    = "cubeship.app"
-	LabelDeploy = "cubeship.deploy"
+	LabelApp     = "cubeship.app"
+	LabelDeploy  = "cubeship.deploy"
+	LabelOrdinal = "cubeship.ordinal"
 )
+
+// FirstOrdinal is the copy every app has. An ordinal that is missing or
+// zero is this one, on both ends of the wire: it is what an app that has
+// never been scaled out is running, and what a container created before
+// there could be more than one is.
+const FirstOrdinal = 1
+
+// OrdinalOf reads a copy number that may not be there.
+func OrdinalOf(n int) int {
+	if n < FirstOrdinal {
+		return FirstOrdinal
+	}
+	return n
+}
+
+// OrdinalFromLabels reads which copy a running container is, from what
+// it was created with.
+func OrdinalFromLabels(labels map[string]string) int {
+	n, err := strconv.Atoi(labels[LabelOrdinal])
+	if err != nil {
+		return FirstOrdinal
+	}
+	return OrdinalOf(n)
+}
 
 // RoleToManage is what adding or removing a machine takes. An admin's:
 // a node runs other people's code on hardware somebody pays for, and
