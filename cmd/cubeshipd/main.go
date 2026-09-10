@@ -450,6 +450,7 @@ func run() error {
 		SetupToken:    setupToken,
 		Host:          host,
 		Machine:       box,
+		Version:       version,
 	})
 
 	// An install upgrading from the release where the domain and contact

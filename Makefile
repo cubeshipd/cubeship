@@ -84,12 +84,26 @@ IMAGE   ?= ghcr.io/cubeship/cubeshipd
 image: ## Build the daemon's image, dashboard included
 	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE):$(VERSION) .
 
+# Releasing is a tag, and the rest is .github/workflows/release.yml:
+# both images for both architectures, the GitHub release with the notes
+# in it, and a provenance attestation saying which commit they came
+# from. Doing it from a laptop would be one of those steps by hand and
+# the others forgotten.
+#
+# `latest` moves only for a stable release: v0.2.0-rc.1 publishes its
+# own tag and nothing else, so somebody who installed without naming a
+# version is never upgraded onto a candidate.
 .PHONY: release
-release: ## Build and push the image for both architectures
-	docker buildx build --push \
-		--platform linux/amd64,linux/arm64 \
-		--build-arg VERSION=$(VERSION) \
-		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
+release: ## Cut a release: write the notes first, then `make release VERSION=0.2.0`
+	@test "$(VERSION)" != "dev" || { echo "usage: make release VERSION=0.2.0"; exit 1; }
+	@test -f internal/release/notes/$(VERSION).md || { \
+		echo "write internal/release/notes/$(VERSION).md first — it is the GitHub release, the CHANGELOG and the dialog the dashboard shows"; \
+		exit 1; }
+	$(MAKE) changelog
+	@git diff --quiet -- CHANGELOG.md || { echo "CHANGELOG.md changed: commit it, then run this again"; exit 1; }
+	git tag -a v$(VERSION) -m "Cubeship $(VERSION)"
+	git push origin v$(VERSION)
+	@echo "Tagged v$(VERSION). The release workflow builds and publishes it."
 
 .PHONY: ship
 ship: daemon-linux ## Upload the daemon to a VPS and restart it (HOST=user@vps)
@@ -101,7 +115,7 @@ ship: daemon-linux ## Upload the daemon to a VPS and restart it (HOST=user@vps)
 		&& sudo systemctl --no-pager status cubeshipd'
 
 .PHONY: check
-check: fmt-check vet sh-check test ## Everything that must pass before a commit
+check: fmt-check vet sh-check changelog-check test ## Everything that must pass before a commit
 
 # Postgres has no in-memory mode, so the unit tests need a real server.
 # Each test gets its own schema in this one container (see
@@ -182,6 +196,17 @@ cover: ## Unit test coverage, opened as HTML
 
 # The integration test sits behind a build tag, so a plain `go vet ./...`
 # never compiles it. Vet it explicitly or it rots.
+.PHONY: changelog
+changelog: ## Write CHANGELOG.md from the release notes
+	go run ./cmd/changelog
+
+# The generated file going stale is the failure worth catching: a note
+# added without this following it leaves two answers to what a release
+# said, and the next person to look cannot tell which is the copy.
+.PHONY: changelog-check
+changelog-check: ## Fail if CHANGELOG.md is not what the release notes say
+	go run ./cmd/changelog -check
+
 .PHONY: sh-check
 sh-check: ## Syntax-check the shell scripts
 	@for f in install.sh uninstall.sh test/install/run.sh test/install/uninstall.sh; do \

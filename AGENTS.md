@@ -485,6 +485,20 @@ pulls the images and runs the daemon. **The release is two images** —
 the daemon and the dashboard, at the same version — and nothing else has
 to be hosted anywhere. An upgrade is still a pull.
 
+**What it installs is an exact release, not `latest`.** With no
+`--version` it asks GitHub which release is newest and pins that number.
+That tag moves, so a box installed today and the same command run
+tomorrow would be two different builds with no way to tell from the
+outside which is which — and re-running an install is what somebody does
+when something has gone wrong, which is the worst moment to change two
+variables at once. It costs one HTTPS call on a machine that is about to
+pull two images anyway, and **being unable to ask stops the install**
+rather than falling back to `latest`, which would be doing the thing
+this avoids, quietly.
+
+`--version 0.2.0-rc.1` is the whole of installing a prerelease. A
+version somebody named is left exactly alone.
+
 The daemon starts the dashboard's container, so it has to know which
 image: `CUBESHIP_WEB_IMAGE`. It is *told* rather than deriving it from
 its own reference, because deriving means string surgery on a registry
@@ -566,6 +580,80 @@ Desktop, where the Engine runs in a VM.
 with Docker replaced by a recording stub. It sources the script minus its
 last line — `main "$@"` — so the script itself carries no hook for the
 test.
+
+## Releasing
+
+A tag, and nothing else. `v0.2.0` is a stable release and `v0.2.0-rc.1`
+is a prerelease, because semver says a version with a hyphen in it is
+one — there is no second place to say so and disagree.
+`.github/workflows/release.yml` builds both images for both
+architectures, attaches a provenance attestation saying which commit
+they came from, and creates the GitHub release.
+
+**`latest` moves only for a stable release.** Somebody who installed
+without naming a version must never be upgraded onto a release
+candidate by a tag they did not ask for.
+
+### The notes are a product artifact
+
+They are written by hand in `internal/release/notes/<version>.md`, one
+file per release, and they are the same text three ways: the GitHub
+release's body, `CHANGELOG.md` in the repository, and the dialog the
+dashboard shows after an upgrade. **The release workflow refuses a tag
+that has no note**, because a release nobody wrote notes for is one
+whose dialog is blank.
+
+Generated changelogs were the obvious alternative and are the wrong
+shape here. Conventional commits exist to be parsed, and this
+repository's commit subjects already say what changed in words somebody
+would read — `Cap what an app may take from its machine` against
+`feat(app): add container limits`. Turning those into a bulleted list of
+commits would be *less* than what is there, and it would be less in the
+one place it becomes product: nobody reads `chore(deps): bump x` in a
+dialog.
+
+One file per release rather than one document with headings in it: a
+parser that finds a release by heading breaks the first time somebody
+writes a heading differently, and this is a file a person edits by hand
+every few weeks. `CHANGELOG.md` is **generated** from them by
+`cmd/changelog`, and `make check` fails when it is stale — two answers
+to what a release said is one to disagree with.
+
+### The dialog
+
+`internal/release` is what version this instance is and what changed in
+it. **The notes are in the binary, not fetched.** Cubeship runs on
+somebody's own VPS, which may be behind a firewall and shares an address
+with whoever else the provider put on it — so a dialog that asks GitHub
+what changed is one that is sometimes empty and sometimes rate-limited,
+which is worse than not having it. And there is nothing to fetch: the
+notes for the version running are known when it is built.
+
+What that buys is the property that keeps it honest: **an instance can
+only ever show notes up to the version it is on.** A build carrying
+notes for a version ahead of it — which is what a release branch looks
+like mid-flight — would otherwise advertise something nobody can use.
+
+`release_seen` is **per person, not per instance**: two admins on one
+box should each read the notes once, rather than whichever opened the
+dashboard first taking the notice away from the other. It is its own
+table because a column on `users` would make the module that sits at the
+bottom and knows about nothing else carry a fact about the changelog.
+And it only ever moves forward — a second tab, or a request that arrives
+late, would otherwise write an older version over a newer one and show
+the same notes again.
+
+A build with **no version stamped on it** — `make dev`, and every test —
+has nothing to say changed. The history is still readable; the dialog
+stays away.
+
+The dashboard renders the notes with a small hand-written Markdown
+subset rather than a library, and the reason is what the input is: these
+files ship inside the daemon's own binary and are written by whoever
+cuts the release. There is no user content, no HTML to sanitize and no
+long tail of syntax to support. Anything it does not recognise comes out
+as a paragraph, which is the right failure — a heading that renders as
+text still reads.
 
 ## The OpenAPI document
 

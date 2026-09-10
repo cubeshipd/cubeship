@@ -20,6 +20,7 @@ import (
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/platform/openapi"
 	"cubeship/internal/project"
+	"cubeship/internal/release"
 	"cubeship/internal/settings"
 	"cubeship/internal/user"
 )
@@ -57,7 +58,8 @@ func (s *Server) OpenAPI() openapi.Document {
 		certificates.NewHandler(s.Certs).OpenAPI(),
 		firewall.NewHandler(s.Firewall).OpenAPI(),
 		machine.NewHandler(s.Machine).OpenAPI(),
-		node.NewHandler(s.Nodes).OpenAPI())
+		node.NewHandler(s.Nodes).OpenAPI(),
+		release.NewHandler(s.Releases).OpenAPI())
 
 	return openapi.Document{
 		OpenAPI: "3.1.0",

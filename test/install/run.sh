@@ -45,12 +45,17 @@ setup_stubs() {
 		esac
 		exit 0
 	EOF
-	# curl stands in for the public-address lookup: the container this
-	# runs in may have no network, and the test wants a known answer.
+	# curl stands in for two lookups: the public address, and which
+	# release is newest. The container this runs in may have no network,
+	# and the test wants a known answer to both.
 	cat > /stub/curl <<-'EOF'
 		#!/bin/sh
 		echo "curl $*" >> /tmp/curl.log
-		echo "203.0.113.7"
+		case "$*" in
+		  *releases*) [ -f /tmp/no-releases ] && exit 1
+		              echo '{"tag_name": "v9.9.9", "name": "9.9.9"}' ;;
+		  *)          echo "203.0.113.7" ;;
+		esac
 	EOF
 	chmod +x /stub/systemctl /stub/docker /stub/curl
 	PATH="/stub:$PATH"
@@ -218,6 +223,40 @@ run_tests() {
 		"$(grep -c '^docker rm -f cubeship-daemon' /tmp/docker.log)" "1"
 	check "an upgrade does not touch the data directory" \
 		"$(stat -c '%a' /var/lib/cubeship)" "700"
+
+	# **What is installed is an exact release, not `latest`.** That tag
+	# moves, so a box installed today and the same command run tomorrow
+	# would be two different builds with no way to tell which is which
+	# — and re-running an install is what somebody does when something
+	# went wrong, which is the worst moment to change two things.
+	unset CUBESHIP_VERSION
+	rm -f /tmp/docker.log /tmp/started
+	main >/dev/null 2>&1
+	check "the newest release is pinned to a version" \
+		"$(grep -c 'docker pull .*cubeshipd:9\.9\.9$' /tmp/docker.log)" "1"
+	check "nothing is pulled as latest" \
+		"$(grep -c 'docker pull .*:latest$' /tmp/docker.log)" "0"
+
+	# A version somebody named is left exactly alone — naming one is the
+	# whole way to install a release candidate.
+	rm -f /tmp/docker.log /tmp/started
+	CUBESHIP_VERSION=0.2.0-rc.1 main >/dev/null 2>&1
+	check "a named release is installed as given" \
+		"$(grep -c 'docker pull .*cubeshipd:0\.2\.0-rc\.1$' /tmp/docker.log)" "1"
+
+	# Being unable to ask must stop the install rather than fall back to
+	# `latest`, which is the thing pinning exists to avoid — quietly.
+	touch /tmp/no-releases
+	unset CUBESHIP_VERSION
+	rm -f /tmp/started
+	if main >/dev/null 2>&1; then
+		printf '  FAIL installs anyway when it cannot look up a release\n'
+		FAILURES=$((FAILURES + 1))
+	else
+		printf '  ok   refuses to guess when it cannot look up a release\n'
+	fi
+	rm -f /tmp/no-releases
+	export CUBESHIP_VERSION="testing"
 
 	printf '\n'
 	[ "$FAILURES" = 0 ] || { printf '%d failure(s)\n\n' "$FAILURES"; exit 1; }

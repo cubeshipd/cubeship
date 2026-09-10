@@ -963,3 +963,31 @@ export async function uploadObject(
 export function downloadURL(store: string, bucket: string, key: string): string {
   return `/api${bucketPath(store, bucket)}/download?key=${encodeURIComponent(key)}`;
 }
+
+// One release of Cubeship.
+//
+// The notes are in the daemon's own binary rather than fetched from
+// anywhere: an instance on somebody's own VPS may be behind a firewall,
+// and a changelog that is sometimes empty is worse than none. So an
+// instance can only ever describe releases up to the one it is on,
+// which is the question somebody has after an upgrade.
+export type Release = {
+  version: string;
+  date: string;
+  // One sentence, for a list where the body would be too much.
+  summary: string;
+  // The notes, in Markdown.
+  body: string;
+  prerelease?: boolean;
+};
+
+export type Releases = {
+  // What this instance is running. Absent on a developer's build, which
+  // has nothing stamped on it and therefore nothing to show.
+  version?: string;
+  // Every release up to that version, newest first.
+  notes: Release[];
+  // The ones this person has not been shown. Empty is the ordinary
+  // answer, and it is what the dialog reads to decide not to appear.
+  unseen: Release[];
+};
