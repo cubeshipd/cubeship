@@ -40,6 +40,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("POST /users", auth(http.HandlerFunc(h.add)))
 	r.Handle("GET /users", auth(http.HandlerFunc(h.list)))
 	r.Handle("GET /users/me", auth(http.HandlerFunc(h.whoAmI)))
+	r.Handle("PATCH /users/me", auth(http.HandlerFunc(h.setPreferences)))
 	// Someone leaves, or a laptop does. Neither had an answer here
 	// before, and "go and delete the rows yourself" is not one.
 	r.Handle("DELETE /users/{username}", auth(http.HandlerFunc(h.remove)))
@@ -185,6 +186,16 @@ type WhoAmIResponse struct {
 	// Not a secret: it is the caller's own account, and it is the same
 	// fact the sign-in page discovers by being used.
 	HasPassword bool `json:"has_password"`
+	// Theme is which palette this person sees the dashboard in, absent
+	// for the default. It is on this response rather than on one of
+	// its own because the dashboard already waits for this before it
+	// renders anything — a second request would be a second thing to
+	// wait for, and waiting is what a flash of the wrong colours is.
+	Theme string `json:"theme,omitempty"`
+	// Themes are the palettes this instance offers. Served rather than
+	// compiled into the dashboard: the daemon is what refuses a name,
+	// and a second list is one to disagree with.
+	Themes []string `json:"themes,omitempty"`
 }
 
 // APIKeyResponse is one key's metadata. The key value itself appears
@@ -308,15 +319,53 @@ func (h *Handler) whoAmI(w http.ResponseWriter, r *http.Request) {
 	has, _ := h.svc.HasPassword(r.Context(), u)
 	httpx.WriteJSON(w, http.StatusOK, WhoAmIResponse{
 		Username: u.Username, Role: u.Role, HasPassword: has,
+		Theme: u.Theme, Themes: Themes,
 	})
 }
 
 // UserResponse is one account as the API returns it. Never a hash, and
 // never a key: those are shown once, at creation.
 type UserResponse struct {
-	Username  string    `json:"username"`
-	Role      Role      `json:"role"`
+	Username string `json:"username"`
+	Role     Role   `json:"role"`
+	// Theme is which palette this person sees the dashboard in. Absent
+	// for the default one.
+	Theme     string    `json:"theme,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+// setPreferences changes what the caller has chosen about their own
+// view of the instance.
+//
+// **The caller's own, and no path parameter to say otherwise.** A
+// preference somebody else can change is not a preference, and an
+// admin has no business deciding what colour another person's screen
+// is.
+func (h *Handler) setPreferences(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		// Theme is one of the names in GET /users/me/themes. An empty
+		// string is the default palette, which is how it is turned off
+		// rather than a second field saying so.
+		Theme *string `json:"theme"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	if req.Theme == nil {
+		http.Error(w, "nothing to change", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	updated, err := h.svc.SetTheme(ctx, FromContext(ctx), *req.Theme)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, UserResponse{
+		Username: updated.Username, Role: updated.Role,
+		Theme: updated.Theme, CreatedAt: updated.CreatedAt,
+	})
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
@@ -443,7 +492,7 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrCannotRemoveYourself), errors.Is(err, ErrLastAdmin):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrInvalidRole), errors.Is(err, ErrPasswordTooShort),
-		errors.Is(err, slug.ErrReserved):
+		errors.Is(err, ErrUnknownTheme), errors.Is(err, slug.ErrReserved):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, slug.ErrInvalid):
 		http.Error(w, "username "+slug.ErrInvalid.Error(), http.StatusBadRequest)

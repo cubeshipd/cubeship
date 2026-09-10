@@ -455,3 +455,23 @@ func (s *Service) HasPassword(ctx context.Context, u *User) (bool, error) {
 	}
 	return s.Repo().HasPassword(ctx, u.ID)
 }
+
+// SetTheme records which palette the caller sees the dashboard in.
+//
+// **The caller's own, and nobody else's.** There is no username here on
+// purpose: a preference somebody else can change is not a preference,
+// and an admin has no business deciding what colour another person's
+// screen is.
+func (s *Service) SetTheme(ctx context.Context, caller *User, theme string) (*User, error) {
+	if caller == nil {
+		return nil, ErrUnauthenticated
+	}
+	if !ValidTheme(theme) {
+		return nil, ErrUnknownTheme
+	}
+	if err := s.Repo().SetTheme(ctx, caller.ID, theme); err != nil {
+		return nil, err
+	}
+	caller.Theme = theme
+	return caller, nil
+}

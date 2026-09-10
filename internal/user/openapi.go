@@ -21,10 +21,13 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"username":     openapi.String("The account this API key belongs to."),
 				"role":         openapi.String("Either `admin` or `member`."),
 				"has_password": openapi.Bool("Whether this account can sign in without an API key. It matters where a key is revoked: revoking the last one is allowed, and this is what says whether that leaves a way in."),
+				"theme":        openapi.String("Which palette this person sees the dashboard in. Absent for the default."),
+				"themes":       openapi.Array(openapi.String("A palette's name.")),
 			}, "username", "role", "has_password"),
 			"User": openapi.Object(map[string]*openapi.Schema{
 				"username":   openapi.String("The account."),
 				"role":       openapi.String("Either `admin` or `member`."),
+				"theme":      openapi.String("Which palette this person sees the dashboard in. Absent for the default."),
 				"created_at": openapi.String("RFC 3339."),
 			}, "username", "role", "created_at"),
 			"Users": openapi.Object(map[string]*openapi.Schema{
@@ -110,6 +113,20 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Tags:        []string{"Identity"},
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The caller's identity.", openapi.Ref("WhoAmI")),
+						"401": openapi.Unauthorized,
+					},
+				},
+				"patch": {
+					OperationID: "setPreferences",
+					Summary:     "Change what the caller has chosen about their own view",
+					Description: "**The caller's own, and there is no path parameter to say otherwise.** A preference somebody else can change is not a preference, and an admin has no business deciding what colour another person's screen is.",
+					Tags:        []string{"Identity"},
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"theme": openapi.String("One of the palettes in `themes` on `GET /users/me`. An empty string is the default one, which is how it is turned off rather than a second field saying so.\n\nEvery palette is dark and every one changes only colour: the layout, the type and the square corners are the product, and a theme that moved those would be a second interface to keep working."),
+					})),
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The account as it now stands.", openapi.Ref("User")),
+						"400": openapi.TextResponse("Nothing to change, or no theme by that name."),
 						"401": openapi.Unauthorized,
 					},
 				},

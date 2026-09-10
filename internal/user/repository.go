@@ -20,7 +20,7 @@ func NewRepository(q database.Queryer) *Repository {
 }
 
 const (
-	userColumns   = `id, username, role, created_at`
+	userColumns   = `id, username, role, theme, created_at`
 	apiKeyColumns = `id, user_id, key_hash, name, created_at, last_used_at`
 )
 
@@ -28,10 +28,19 @@ type scanner interface{ Scan(dest ...any) error }
 
 func scanUser(row scanner) (*User, error) {
 	var u User
-	if err := row.Scan(&u.ID, &u.Username, &u.Role, &u.CreatedAt); err != nil {
+	if err := row.Scan(&u.ID, &u.Username, &u.Role, &u.Theme, &u.CreatedAt); err != nil {
 		return nil, err
 	}
 	return &u, nil
+}
+
+// SetTheme records which palette this person sees the dashboard in.
+func (r *Repository) SetTheme(ctx context.Context, userID int64, theme string) error {
+	if _, err := r.q.ExecContext(ctx,
+		`UPDATE users SET theme = $2 WHERE id = $1`, userID, theme); err != nil {
+		return fmt.Errorf("record the theme: %w", err)
+	}
+	return nil
 }
 
 func scanAPIKey(row scanner) (*APIKey, error) {
