@@ -103,6 +103,24 @@ type Engine interface {
 	SwarmJoin(ctx context.Context, manager, token, advertise string) error
 	EnsureOverlayNetwork(ctx context.Context, name string) error
 	NetworkExists(ctx context.Context, name string) (bool, error)
+	NetworkEncrypted(ctx context.Context, name string) (bool, error)
+}
+
+// Encrypted reports whether the cluster's network carries its traffic
+// over IPsec.
+//
+// Asked of the Engine rather than remembered, because the flag belongs
+// to the network and the network outlives this process: a daemon
+// restart forgets everything, and the overlay can be removed and made
+// again by hand.
+//
+// **False is a fact worth surfacing rather than a default.** Docker
+// fixes the flag when the network is created and offers no way to
+// change it, so an instance whose mesh came up before this asked for it
+// has one that carries every app request between machines in the clear
+// — and nothing about that is visible from the outside.
+func Encrypted(ctx context.Context, engine Engine) (bool, error) {
+	return engine.NetworkEncrypted(ctx, NetworkName)
 }
 
 // Ensure brings the mesh up on the control plane and reports what a

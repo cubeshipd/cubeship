@@ -13,6 +13,10 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			Description: "The machines this instance is made of: the control plane — the box Cubeship was installed on, which holds the database, the dashboard, the registry and the builder — and any number of workers.\n\nA worker runs the same daemon in a mode where it decides nothing. **It dials the control plane; nothing dials it.** That is what lets a worker sit behind NAT with no inbound port at all, and it is why adding one is two steps that do not touch each other: this API mints a credential, and somebody runs the installer on the machine with it.\n\nThe agent's own endpoint is not documented here. It is machinery between two daemons, like the registry's webhook, and nothing else is meant to call it.",
 		}},
 		Schemas: map[string]*openapi.Schema{
+			"Mesh": openapi.Object(map[string]*openapi.Schema{
+				"network":   openapi.String("The overlay's name. Absent on an instance with no cluster."),
+				"encrypted": openapi.Bool("Whether what crosses between machines is carried over IPsec. Fixed when the network is created; Docker offers no way to change it after."),
+			}, "encrypted"),
 			"Server": openapi.Object(map[string]*openapi.Schema{
 				"name":          openapi.String("Unique across the cluster and permanent, like every other name here."),
 				"description":   openapi.String("What this machine is for."),
@@ -66,6 +70,19 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"409": openapi.TextResponse("That name is taken, or this instance has no public address to build a cluster on."),
+					},
+				},
+			},
+			"/nodes/mesh": {
+				"get": {
+					OperationID: "getMesh",
+					Summary:     "The private network between the machines",
+					Description: "Docker's own overlay: what every container that has to be reachable from another machine is attached to, and what makes a container name mean the same thing on every box.\n\n`encrypted` says whether what crosses between machines is carried over IPsec, and it is worth reading rather than assuming. **All app traffic crosses this network**: every name arrives at the control plane and is proxied to a container that may be elsewhere, and TLS ends at the proxy — so what goes over the wire is plain HTTP with its Authorization headers and session cookies, plus every connection an app makes to a database on another machine.\n\nDocker fixes the flag when the network is created and offers no way to change it. An instance whose cluster came up before this asked for encryption keeps an unencrypted network until that network is removed, which takes every container off the cluster's network until each is created again.\n\nAbsent `network` is an instance with no cluster: one that never added a second machine.",
+					Tags:        []string{"Servers"},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The cluster's network.", openapi.Ref("Mesh")),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
 					},
 				},
 			},

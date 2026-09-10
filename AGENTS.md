@@ -1901,6 +1901,30 @@ moment somebody is watching — an instance with no public address cannot
 build a cluster, and being refused now beats a server that says `ready`
 and can reach nothing.
 
+**The network is encrypted**, and that is not a precaution about
+internal traffic — it *is* the traffic. Every name arrives at the
+control plane and is proxied to a container that may be on another
+machine, and TLS ends at the proxy: what crosses the wire between two
+boxes is plain HTTP with its Authorization headers and its session
+cookies in it, plus every connection an app on one machine makes to a
+database on another. Between two VPS that is the provider's network and
+quite possibly the open internet.
+
+What it costs is small enough to name so nobody has to guess: IPsec ESP
+with AES-GCM, in the kernel, on hardware with AES-NI — every server CPU
+of the last fifteen years. The cost is proportional to bytes rather than
+to packets, and the VXLAN encapsulation it rides on already costs more
+per packet than encrypting the contents does.
+
+**Docker fixes the flag when the network is created and offers no way to
+change it.** So an instance whose mesh came up before this asked for one
+keeps an unencrypted network, and `GET /nodes/mesh` is what says so —
+`cubeship server list` prints it under the table, because nothing about
+it is visible any other way and the fix is not something to do behind
+somebody's back: removing the overlay takes every container off the
+cluster's network until each is created again. `mesh` is reserved as a
+machine name for that endpoint, the way `agent` is.
+
 **What it costs is three ports open between the machines**: 2377 to
 join, which only a manager listens on; 7946 for the gossip that carries
 which container is where; 4789 for the VXLAN the traffic goes over. They

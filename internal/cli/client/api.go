@@ -397,6 +397,21 @@ func (c *Client) SetAppLimits(ctx context.Context, ref string, limits Limits) (A
 		"/apps/"+ref, map[string]any{"limits": limits}, http.StatusOK, DefaultTimeout)
 }
 
+// Mesh is the cluster's private network.
+type Mesh struct {
+	// Network is the overlay's name, empty on an instance with no
+	// cluster.
+	Network string `json:"network,omitempty"`
+	// Encrypted is whether what crosses between machines is carried
+	// over IPsec.
+	Encrypted bool `json:"encrypted"`
+}
+
+func (c *Client) Mesh(ctx context.Context) (Mesh, error) {
+	return request[Mesh](ctx, c, "read the cluster's network", http.MethodGet,
+		"/nodes/mesh", nil, http.StatusOK, DefaultTimeout)
+}
+
 func (c *Client) DeleteProject(ctx context.Context, projectSlug string) error {
 	_, err := request[noContent](ctx, c, "delete project", http.MethodDelete,
 		"/projects/"+segment(projectSlug), nil, http.StatusOK, DefaultTimeout)

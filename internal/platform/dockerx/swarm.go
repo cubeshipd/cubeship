@@ -124,6 +124,22 @@ func SwarmManagerAddress(host string) string {
 	return net.JoinHostPort(host, strconv.Itoa(SwarmManagerPort))
 }
 
+// NetworkEncrypted reports whether an overlay carries its traffic over
+// IPsec. False for a network that does not exist, and for one created
+// before this instance asked for it — the flag is set when the network
+// is made and Docker offers no way to change it after.
+func (c *Client) NetworkEncrypted(ctx context.Context, name string) (bool, error) {
+	n, err := c.api.NetworkInspect(ctx, name, network.InspectOptions{})
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("inspect network %q: %w", name, err)
+	}
+	_, on := n.Options["encrypted"]
+	return on, nil
+}
+
 // NetworkExists reports whether a network is there to be joined.
 //
 // It is how the daemon decides whether to put a container on the
@@ -150,10 +166,34 @@ func (c *Client) NetworkExists(ctx context.Context, name string) (bool, error) {
 // It can only be created on a manager. The workers do not create it and
 // do not have to: an overlay reaches a machine when a container there
 // attaches to it.
+//
+// **Encrypted**, and that is not a precaution about internal traffic —
+// it is the traffic. Every name this instance serves arrives at the
+// control plane and is proxied to a container that may be on another
+// machine, and TLS ends at the proxy: what crosses the wire between two
+// boxes is plain HTTP with its Authorization headers and its session
+// cookies in it, plus every connection an app on one machine makes to a
+// database on another. Between two VPS that is the provider's network
+// and quite possibly the open internet.
+//
+// What it costs is small and worth naming so nobody has to guess: IPsec
+// ESP with AES-GCM, in the kernel, on hardware with AES-NI — which is
+// every server CPU of the last fifteen years. The cost is proportional
+// to bytes rather than to packets, and the VXLAN encapsulation this
+// rides on already costs more per packet than encrypting its contents
+// does.
+//
+// **It is fixed when the network is created.** Docker has no way to
+// turn it on for an overlay that exists, so an instance whose mesh came
+// up before this keeps an unencrypted one until that network is
+// removed — see mesh.Status, which is what says so rather than leaving
+// somebody to assume.
 func (c *Client) EnsureOverlayNetwork(ctx context.Context, name string) error {
 	if _, err := c.api.NetworkCreate(ctx, name, types.NetworkCreate{
 		Driver:     "overlay",
 		Attachable: true,
+		// Docker reads the presence of the key, not its value.
+		Options: map[string]string{"encrypted": ""},
 	}); err != nil {
 		if isAlreadyExists(err) {
 			return nil

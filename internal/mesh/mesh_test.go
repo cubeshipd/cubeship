@@ -19,6 +19,10 @@ type fakeEngine struct {
 	withToken string
 	networks  []string
 	token     string
+	// unencrypted names the networks this fake made before the flag
+	// existed, so a test can put the mesh in the state an instance
+	// upgraded into this has.
+	unencrypted map[string]bool
 }
 
 func (f *fakeEngine) Swarm(context.Context) (dockerx.SwarmState, error) { return f.state, nil }
@@ -40,6 +44,11 @@ func (f *fakeEngine) SwarmJoin(_ context.Context, manager, token, advertise stri
 func (f *fakeEngine) EnsureOverlayNetwork(_ context.Context, name string) error {
 	f.networks = append(f.networks, name)
 	return nil
+}
+
+func (f *fakeEngine) NetworkEncrypted(_ context.Context, name string) (bool, error) {
+	made, _ := f.NetworkExists(context.Background(), name)
+	return made && !f.unencrypted[name], nil
 }
 
 func (f *fakeEngine) NetworkExists(_ context.Context, name string) (bool, error) {
@@ -256,5 +265,46 @@ func TestEveryRuleSaysWhatItIsFor(t *testing.T) {
 		if err := spec.Check(); err != nil {
 			t.Errorf("port %d builds a rule the firewall refuses: %v", port.Number, err)
 		}
+	}
+}
+
+// **The cluster's network is encrypted.** Every name this instance
+// serves arrives at the control plane and is proxied to a container
+// that may be on another machine, and TLS ends at the proxy — so what
+// crosses the wire between boxes is plain HTTP with its Authorization
+// headers and its session cookies in it, plus every connection an app
+// makes to a database elsewhere.
+func TestTheClusterNetworkCarriesItsTrafficEncrypted(t *testing.T) {
+	engine := &fakeEngine{}
+	if _, err := Ensure(context.Background(), engine, "203.0.113.9"); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	on, err := Encrypted(context.Background(), engine)
+	if err != nil {
+		t.Fatalf("Encrypted: %v", err)
+	}
+	if !on {
+		t.Error("the mesh was created carrying its traffic in the clear")
+	}
+}
+
+// A network made before this instance asked for encryption stays as it
+// is: Docker fixes the flag when the network is created and offers no
+// way to change it. Reported rather than assumed, because nothing about
+// it is visible from outside.
+func TestAMeshFromBeforeThisIsReportedAsItIs(t *testing.T) {
+	engine := &fakeEngine{
+		networks:    []string{NetworkName},
+		unencrypted: map[string]bool{NetworkName: true},
+	}
+	if _, err := Ensure(context.Background(), engine, "203.0.113.9"); err != nil {
+		t.Fatalf("Ensure: %v", err)
+	}
+	on, err := Encrypted(context.Background(), engine)
+	if err != nil {
+		t.Fatalf("Encrypted: %v", err)
+	}
+	if on {
+		t.Error("an overlay that exists was reported as encrypted, which Ensure cannot make it")
 	}
 }

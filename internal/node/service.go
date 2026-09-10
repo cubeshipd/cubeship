@@ -313,6 +313,48 @@ func (s *Service) MeshNetwork(ctx context.Context) string {
 	return name
 }
 
+// MeshStatus is what the cluster's private network is, and whether it
+// carries its traffic encrypted.
+//
+// Its own answer rather than a field on every machine, because it is a
+// fact about the network and not about any box on it.
+//
+// **Unencrypted is worth reporting rather than assuming.** Docker fixes
+// the flag when the overlay is created and offers no way to change it,
+// so an instance whose mesh came up before this instance asked for one
+// has a network that carries every app request between machines in the
+// clear — and nothing about that is visible from outside. What fixes it
+// is removing the network, which is not something to do behind
+// somebody's back: every container on it loses the cluster's network
+// until it is created again.
+func (s *Service) MeshStatus(ctx context.Context, caller *user.User) (Mesh, error) {
+	if err := user.Require(caller, RoleToRead); err != nil {
+		return Mesh{}, err
+	}
+	if s.engine == nil {
+		return Mesh{}, nil
+	}
+	found, err := s.engine.NetworkExists(ctx, mesh.NetworkName)
+	if err != nil || !found {
+		return Mesh{}, err
+	}
+	encrypted, err := mesh.Encrypted(ctx, s.engine)
+	if err != nil {
+		return Mesh{}, err
+	}
+	return Mesh{Network: mesh.NetworkName, Encrypted: encrypted}, nil
+}
+
+// Mesh is the cluster's private network as this instance finds it.
+type Mesh struct {
+	// Network is the overlay's name, empty on an instance that has no
+	// cluster — which is one that never added a second machine.
+	Network string
+	// Encrypted is whether what crosses between machines is carried
+	// over IPsec. Always false when there is no network.
+	Encrypted bool
+}
+
 // List is the cluster, this machine included.
 func (s *Service) List(ctx context.Context, caller *user.User) ([]*Node, error) {
 	if err := user.Require(caller, RoleToRead); err != nil {
