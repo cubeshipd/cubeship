@@ -81,9 +81,19 @@ func (s *Scheduler) when(ctx context.Context) (string, *time.Location) {
 	if at == "" {
 		return "", time.UTC
 	}
-	in, err := time.LoadLocation(values[settings.AutoUpdateTimezone])
-	if err != nil || values[settings.AutoUpdateTimezone] == "" {
-		in = time.UTC
+	zone := values[settings.AutoUpdateTimezone]
+	if zone == "" {
+		return at, time.UTC
+	}
+	in, err := time.LoadLocation(zone)
+	if err != nil {
+		// Refused at the door by settings.ValidTimezone, so reaching
+		// here means the machine stopped knowing a name it knew when
+		// it was written — and running at UTC without saying so is an
+		// instance updating itself at the wrong hour for ever, which
+		// is exactly the kind of quiet nobody catches.
+		log.Printf("auto-update: %q is not a timezone this machine knows; using UTC", zone)
+		return at, time.UTC
 	}
 	return at, in
 }

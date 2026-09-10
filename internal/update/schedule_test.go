@@ -21,3 +21,23 @@ func TestTheHourIsReadInTheChosenTimezone(t *testing.T) {
 		t.Errorf("06:00 UTC read as %s in São Paulo, so an instance told 03:00 would update at the wrong hour", got)
 	}
 }
+
+// **The timezone database is in the binary.** The image is Alpine, which
+// ships none, so `time.LoadLocation` found nothing there and every zone
+// name was refused — an instance told to update at 03:00 in
+// America/Bahia was told that is not a timezone this machine knows.
+//
+// This test passes on a developer's machine either way, because macOS
+// and the CI runner both have a system database. What it pins is the
+// zone names this instance promises to accept; what makes it true
+// inside the image is the blank import in cmd/cubeshipd, and nothing
+// here can see that from the outside.
+func TestTheZonesAnInstanceAccepts(t *testing.T) {
+	for _, zone := range []string{
+		"America/Bahia", "America/Sao_Paulo", "Europe/Lisbon", "Asia/Tokyo", "UTC",
+	} {
+		if _, err := time.LoadLocation(zone); err != nil {
+			t.Errorf("%s: %v", zone, err)
+		}
+	}
+}

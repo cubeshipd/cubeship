@@ -12,6 +12,19 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	// The timezone database, in the binary.
+	//
+	// **The image is Alpine and Alpine ships none**, so
+	// time.LoadLocation found nothing and every zone name was refused:
+	// an instance told to update itself at 03:00 in America/Bahia was
+	// told that is not a timezone this machine knows. Which it is.
+	//
+	// Embedded rather than `apk add tzdata`, for the reason the fonts
+	// are vendored: a binary that needs something from the image
+	// underneath it is one that breaks the day somebody builds it on a
+	// smaller base, and finding that out costs somebody an evening.
+	// About 450KB, once.
+	_ "time/tzdata"
 
 	"cubeship/internal/app"
 	"cubeship/internal/datastore"
