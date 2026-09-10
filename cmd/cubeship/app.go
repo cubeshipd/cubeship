@@ -284,6 +284,12 @@ func newAppPlaceCmd() *cobra.Command {
 			if len(on) == 0 && replicas == 0 && spread == nil {
 				return fmt.Errorf("nothing to change: pass --on, --replicas or --everywhere")
 			}
+			// Two answers to "which machines". The daemon would take
+			// the named ones and turn the switch off, which is the
+			// right reading of `--on` alone and a silent one of both.
+			if len(on) > 0 && everywhere {
+				return fmt.Errorf("--on and --everywhere are two answers to which machines: --everywhere is every machine there is, and naming some is choosing by hand")
+			}
 			c, err := newAPIClient()
 			if err != nil {
 				return err
