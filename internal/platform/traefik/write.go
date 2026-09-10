@@ -1,11 +1,9 @@
-package node
+package traefik
 
 import (
 	"bytes"
 	"os"
 	"path/filepath"
-
-	"cubeship/internal/platform/traefik"
 )
 
 // RoutesFileName is what the file is called in Traefik's dynamic
@@ -55,17 +53,9 @@ func WriteRoutes(dataDir string, routes []Route, tls bool) (bool, error) {
 		return true, nil
 	}
 
-	next := []byte(traefik.RoutesYAML(routesToTraefik(routes), tls))
+	next := []byte(RoutesYAML(routes, tls))
 	if current, err := os.ReadFile(path); err == nil && bytes.Equal(current, next) {
 		return false, nil
 	}
 	return true, os.WriteFile(path, next, 0o600)
-}
-
-func routesToTraefik(routes []Route) []traefik.Route {
-	out := make([]traefik.Route, 0, len(routes))
-	for _, r := range routes {
-		out = append(out, traefik.Route{App: r.App, Host: r.Host, Servers: r.Servers, Health: r.Health})
-	}
-	return out
 }

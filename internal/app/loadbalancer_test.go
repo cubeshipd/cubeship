@@ -9,6 +9,7 @@ import (
 
 	"cubeship/internal/app"
 	"cubeship/internal/node"
+	"cubeship/internal/platform/traefik"
 	"cubeship/internal/server/servertest"
 )
 
@@ -78,34 +79,6 @@ func TestAnAppCanRunOnSeveralMachinesAtOnce(t *testing.T) {
 	if len(moved.Nodes) != 2 {
 		t.Fatalf("the app runs on %v", moved.Nodes)
 	}
-	// The edge nobody named is the one it already had. Scaling an app
-	// out must not silently move the machine its DNS record points at.
-	if moved.Node != node.ControlPlaneSlug {
-		t.Errorf("adding a machine moved the app's traffic to %q", moved.Node)
-	}
-}
-
-// Where an app runs and where its traffic arrives are two decisions, and
-// the second is constrained by the first: an edge that does not run the
-// app would be balancing across a set it is not in.
-func TestTheMachineThatServesAnAppHasToRunIt(t *testing.T) {
-	f := balancerFixture(t)
-	_ = addServer(t, f, "eu-1")
-	_ = addServer(t, f, "eu-2")
-	created := createExternalApp(t, f, "api")
-
-	rec := f.Do(t, http.MethodPatch, "/apps/"+created.Reference,
-		map[string]any{"nodes": []string{"eu-1"}, "node": "eu-2"}, f.AdminKey)
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("serving an app from a machine that does not run it: %d %s", rec.Code, rec.Body.String())
-	}
-
-	// And an edge that is dropped from the set follows it rather than
-	// being left pointing at a machine that has been told to stop.
-	moved := place(t, f, created.Reference, map[string]any{"nodes": []string{"eu-1"}})
-	if moved.Node != "eu-1" {
-		t.Errorf("the app is served from %q, which is not one of %v", moved.Node, moved.Nodes)
-	}
 }
 
 // Every machine an app runs on is told to run it, and **none of their
@@ -157,19 +130,17 @@ func TestEveryMachineRunsItAndNoneOfThemRoutesItAlone(t *testing.T) {
 	}
 }
 
-// The load balancer itself: the machine an app's traffic arrives at is
-// given every replica as a backend, addressed by container name — which
-// is what resolves from any machine on the mesh.
-func TestTheEdgeIsGivenEveryReplicaAsABackend(t *testing.T) {
+// The load balancer itself: this instance's own proxy is given every
+// copy of an app as a backend, wherever it runs, addressed by container
+// name — which is what resolves from any machine on the mesh.
+func TestTheProxyIsGivenEveryReplicaAsABackend(t *testing.T) {
 	f := balancerFixture(t)
 	token := addServer(t, f, "eu-1")
 	created := createExternalApp(t, f, "web")
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps/"+created.Reference+"/domains",
 		map[string]any{"host": "web.example.com", "port": 3000}, f.AdminKey), http.StatusCreated)
 
-	// Served from eu-1 and running on both, so eu-1 is the machine with
-	// the routes and the control plane has none.
-	place(t, f, created.Reference, map[string]any{"nodes": []string{"control-plane", "eu-1"}, "node": "eu-1"})
+	place(t, f, created.Reference, map[string]any{"nodes": []string{"control-plane", "eu-1"}})
 	deploy(t, f, created.Reference)
 
 	// Nothing is a backend until it is actually running something. The
@@ -182,13 +153,15 @@ func TestTheEdgeIsGivenEveryReplicaAsABackend(t *testing.T) {
 	placement := answer.Desired.Apps[0]
 
 	// And now it has.
-	answer = reconcile(t, f, token, node.Result{
-		App: created.Reference, Deploy: placement.Deploy, Container: "container-on-eu-1",
+	reconcile(t, f, token, node.Result{
+		App: created.Reference, Deploy: placement.Deploy, Ordinal: placement.Ordinal,
+		Container: "container-on-eu-1",
 	})
-	if len(answer.Desired.Routes) != 1 {
-		t.Fatalf("the edge was given %d routes, want the one name it serves: %+v", len(answer.Desired.Routes), answer.Desired.Routes)
+	routes := routesOf(t, f)
+	if len(routes) != 1 {
+		t.Fatalf("the proxy was given %d routes, want the one name it serves: %+v", len(routes), routes)
 	}
-	route := answer.Desired.Routes[0]
+	route := routes[0]
 	if route.Host != "web.example.com" {
 		t.Errorf("the route is for %q", route.Host)
 	}
@@ -254,10 +227,10 @@ func TestOneMachineFailingFailsTheDeploy(t *testing.T) {
 	}
 }
 
-// Scaling back down must not take a name off the internet. The
-// container left behind was created while the app was on two machines,
-// so it carries no router of its own — the edge goes on routing it
-// until a deploy puts the labels back.
+// Scaling back down must not take a name off the internet, and must
+// stop naming the machine that left — a backend pointing at a container
+// that is being removed is a share of the traffic answering 502 until
+// somebody notices.
 func TestScalingBackDownKeepsTheNameServed(t *testing.T) {
 	f := balancerFixture(t)
 	token := addServer(t, f, "eu-1")
@@ -269,31 +242,18 @@ func TestScalingBackDownKeepsTheNameServed(t *testing.T) {
 	deploy(t, f, created.Reference)
 	answer := reconcile(t, f, token)
 	reconcile(t, f, token, node.Result{
-		App: created.Reference, Deploy: answer.Desired.Apps[0].Deploy, Container: "container-on-eu-1",
+		App: created.Reference, Deploy: answer.Desired.Apps[0].Deploy,
+		Ordinal: answer.Desired.Apps[0].Ordinal, Container: "container-on-eu-1",
 	})
 
-	// Back to this machine alone. Its container routes nothing, so the
-	// edge still has to.
 	place(t, f, created.Reference, map[string]any{"nodes": []string{"control-plane"}})
-	routes, err := f.Server.Apps.RoutesFor(t.Context(), controlPlaneID(t, f))
-	if err != nil {
-		t.Fatal(err)
-	}
+	routes := routesOf(t, f)
 	if len(routes) != 1 {
-		t.Fatalf("the edge serves %d names after scaling down: %+v", len(routes), routes)
+		t.Fatalf("the proxy serves %d names after scaling down: %+v", len(routes), routes)
 	}
 	if len(routes[0].Servers) != 1 {
 		t.Errorf("the route still names the machine that left: %v", routes[0].Servers)
 	}
-}
-
-func controlPlaneID(t *testing.T, f *servertest.Fixture) int64 {
-	t.Helper()
-	id, err := app.NewRepository(f.DB).ControlPlaneID(t.Context())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return id
 }
 
 func mapValues(m map[string]string) []string {
@@ -304,10 +264,10 @@ func mapValues(m map[string]string) []string {
 	return out
 }
 
-// The health path reaches the machine that serves the app, because that
+// The health path reaches the proxy, because that
 // is the Traefik doing the checking — the replicas are on other boxes
 // and this one is the only thing in front of them.
-func TestTheHealthPathReachesTheEdgeThatBalances(t *testing.T) {
+func TestTheHealthPathReachesTheProxyThatBalances(t *testing.T) {
 	f := balancerFixture(t)
 	token := addServer(t, f, "eu-1")
 	created := createExternalApp(t, f, "web")
@@ -316,21 +276,32 @@ func TestTheHealthPathReachesTheEdgeThatBalances(t *testing.T) {
 	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/apps/"+created.Reference,
 		map[string]any{"health_path": "/healthz"}, f.AdminKey), http.StatusOK)
 
-	place(t, f, created.Reference, map[string]any{"nodes": []string{"control-plane", "eu-1"}, "node": "eu-1"})
+	place(t, f, created.Reference, map[string]any{"nodes": []string{"control-plane", "eu-1"}})
 	deploy(t, f, created.Reference)
 	answer := reconcile(t, f, token)
 	reconcile(t, f, token, node.Result{
-		App: created.Reference, Deploy: answer.Desired.Apps[0].Deploy, Container: "container-on-eu-1",
+		App: created.Reference, Deploy: answer.Desired.Apps[0].Deploy,
+		Ordinal: answer.Desired.Apps[0].Ordinal, Container: "container-on-eu-1",
 	})
 
-	answer = reconcile(t, f, token)
-	if len(answer.Desired.Routes) != 1 {
-		t.Fatalf("the edge was given %d routes: %+v", len(answer.Desired.Routes), answer.Desired.Routes)
+	routes := routesOf(t, f)
+	if len(routes) != 1 {
+		t.Fatalf("the proxy was given %d routes: %+v", len(routes), routes)
 	}
-	if answer.Desired.Routes[0].Health != "/healthz" {
+	if routes[0].Health != "/healthz" {
 		t.Errorf("the route checks %q, so a replica that is up and broken keeps its share of the traffic",
-			answer.Desired.Routes[0].Health)
+			routes[0].Health)
 	}
+}
+
+// routesOf is what this instance's own proxy would be told to serve.
+func routesOf(t *testing.T, f *servertest.Fixture) []traefik.Route {
+	t.Helper()
+	routes, err := f.Server.Apps.Routes(t.Context())
+	if err != nil {
+		t.Fatalf("work out the routes: %v", err)
+	}
+	return routes
 }
 
 // An app whose machines are on different deployments is running two

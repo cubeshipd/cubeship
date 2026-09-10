@@ -11,7 +11,6 @@ import (
 
 type placedApp struct {
 	Reference string   `json:"reference"`
-	Node      string   `json:"node"`
 	Nodes     []string `json:"nodes"`
 	Status    string   `json:"status"`
 	Source    string   `json:"source"`
@@ -50,62 +49,53 @@ func createExternalApp(t *testing.T, f *servertest.Fixture, name string) placedA
 func TestAnAppIsOnTheControlPlaneUntilItIsMoved(t *testing.T) {
 	f := servertest.New(t)
 	created := createExternalApp(t, f, "api")
-	if created.Node != node.ControlPlaneSlug {
-		t.Errorf("a new app is on %q, want the control plane", created.Node)
+	if len(created.Nodes) != 1 || created.Nodes[0] != node.ControlPlaneSlug {
+		t.Errorf("a new app runs on %v, want the control plane alone", created.Nodes)
 	}
 
 	_ = addServer(t, f, "eu-1")
 	var moved placedApp
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPatch, "/apps/"+created.Reference,
 		map[string]any{"node": "eu-1"}, f.AdminKey, &moved), http.StatusOK)
-	if moved.Node != "eu-1" {
-		t.Errorf("after moving it, the app is on %q", moved.Node)
+	if len(moved.Nodes) != 1 || moved.Nodes[0] != "eu-1" {
+		t.Errorf("after moving it, the app runs on %v", moved.Nodes)
 	}
 
 	// And back, which is always allowed: the control plane is where
 	// everything works.
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPatch, "/apps/"+created.Reference,
 		map[string]any{"node": node.ControlPlaneSlug}, f.AdminKey, &moved), http.StatusOK)
-	if moved.Node != node.ControlPlaneSlug {
-		t.Errorf("the app came back to %q", moved.Node)
+	if len(moved.Nodes) != 1 || moved.Nodes[0] != node.ControlPlaneSlug {
+		t.Errorf("the app came back to %v", moved.Nodes)
 	}
 }
 
-// An app with a name to answer at can move, and the name goes with it:
-// every machine runs its own edge, so the app is served wherever it is.
-//
-// What does not follow on its own is the DNS record — which is why the
-// app says where its traffic has to arrive rather than the instance
-// saying it once for everything.
-func TestAnAppWithADomainCanMoveAndSaysWhereItsTrafficGoes(t *testing.T) {
+// An app with a name to answer at can move, and **the record does not
+// move with it**. That is the whole of what one front door buys: every
+// name arrives at the control plane, which routes it to whichever
+// machine runs the app, so moving an app is not a DNS change and not a
+// second certificate.
+func TestMovingAnAppDoesNotMoveWhereItsTrafficArrives(t *testing.T) {
 	f := servertest.New(t)
-	token := addServer(t, f, "eu-1")
+	_ = addServer(t, f, "eu-1")
 	created := createExternalApp(t, f, "web")
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps/"+created.Reference+"/domains",
 		map[string]any{"host": "web.example.com"}, f.AdminKey), http.StatusCreated)
 
+	var before placedApp
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/apps/"+created.Reference,
+		nil, f.AdminKey, &before), http.StatusOK)
+
 	var moved placedApp
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPatch, "/apps/"+created.Reference,
 		map[string]any{"node": "eu-1"}, f.AdminKey, &moved), http.StatusOK)
-	if moved.Node != "eu-1" {
-		t.Fatalf("the app is on %q", moved.Node)
+	if len(moved.Nodes) != 1 || moved.Nodes[0] != "eu-1" {
+		t.Fatalf("the app runs on %v", moved.Nodes)
 	}
-	// The machine has never called in, so it has no address to report —
-	// and an app whose machine has no address has nothing to point a
-	// name at. Saying the instance's own would be a record reaching the
-	// box the app just left.
-	if moved.Address != "" {
-		t.Errorf("address = %q, want none until that machine reports one", moved.Address)
-	}
-
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/nodes/agent/reconcile",
-		node.AgentRequest{Cores: 2, Address: "203.0.113.9"}, token), http.StatusOK)
-
-	var after placedApp
-	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/apps/"+created.Reference, nil, f.AdminKey, &after), http.StatusOK)
-	if after.Address != "203.0.113.9" {
-		t.Errorf("address = %q, want the machine the app is on", after.Address)
+	if moved.Address != before.Address {
+		t.Errorf("the record moved from %q to %q; nothing about where an app runs should touch DNS",
+			before.Address, moved.Address)
 	}
 }
 
@@ -132,8 +122,8 @@ func TestAnAppThatBuildsCanBePlacedOnceThereIsARegistry(t *testing.T) {
 	var moved placedApp
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPatch, "/apps/"+created.Reference,
 		map[string]any{"node": "eu-1"}, f.AdminKey, &moved), http.StatusOK)
-	if moved.Node != "eu-1" {
-		t.Errorf("an app that builds is on %q, want the machine it was placed on", moved.Node)
+	if len(moved.Nodes) != 1 || moved.Nodes[0] != "eu-1" {
+		t.Errorf("an app that builds runs on %v, want the machine it was placed on", moved.Nodes)
 	}
 }
 

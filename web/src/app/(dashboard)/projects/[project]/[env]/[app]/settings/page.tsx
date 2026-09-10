@@ -14,7 +14,6 @@ import { LoadingList } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { OptionCards } from "@/components/option-cards";
 import { PageHeader, SectionHeader } from "@/components/page-header";
-import { SearchableSelect } from "@/components/searchable-select";
 import { TextAreaField, TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -227,7 +226,6 @@ function Placement(props: SectionProps) {
   const [servers, setServers] = useState<ClusterServer[] | null>(null);
   const [registryHost, setRegistryHost] = useState<string | null>(null);
   const [nodes, setNodes] = useState<string[]>(app.nodes);
-  const [edge, setEdge] = useState(app.node);
   const [scale, setScale] = useState(app.scale);
 
   useEffect(() => {
@@ -246,11 +244,11 @@ function Placement(props: SectionProps) {
 
   if (servers !== null && servers.length < 2) return null;
 
-  const dirty = !sameSet(nodes, app.nodes) || edge !== app.node || scale !== app.scale;
+  const dirty = !sameSet(nodes, app.nodes) || scale !== app.scale;
   // The one thing left that keeps an app here, said before the request
-  // rather than after it. A name no longer does: every machine runs its
-  // own edge, so an app answers at its name wherever it is — what has
-  // to follow it is the DNS record. What an app that builds needs is
+  // rather than after it. A name no longer does: every name arrives at
+  // this instance whichever machine runs the app, so moving one is not
+  // a DNS change. What an app that builds needs is
   // somewhere to push to, and that is the instance's own registry,
   // which exists once there is a domain.
   const stuck =
@@ -258,14 +256,9 @@ function Placement(props: SectionProps) {
       ? "It is built here, and a build reaches another machine only through this instance's own registry — which needs a domain."
       : null;
 
-  // Ticking a machine off the list takes the edge with it when the edge
-  // was that machine: an app cannot be served from somewhere it does not
-  // run, and the daemon refuses it. Picked here so the form never holds
-  // a state the request would be rejected for.
   const toggle = (name: string, on: boolean) => {
     const next = on ? [...nodes, name] : nodes.filter((n) => n !== name);
     setNodes(next);
-    if (!next.includes(edge)) setEdge(next[0] ?? "");
     // Never fewer copies than machines: the daemon refuses it, and a
     // form that can hold a state the request is rejected for is a form
     // that teaches people to distrust the button.
@@ -277,7 +270,7 @@ function Placement(props: SectionProps) {
     <>
       <SectionHeader
         title="Servers"
-        sub="Which machines in this cluster run it, and which of them its traffic arrives at. More than one puts that machine's proxy in front of all of them, over the cluster's private network. Changes take effect within a few seconds: each new machine starts the app before the ones leaving stop it."
+        sub="Which machines in this cluster run it, and how many copies. More than one puts this instance's proxy in front of every copy, over the cluster's private network. Where its traffic arrives never changes — every name arrives here. Changes take effect within a few seconds: each new machine starts the app before the ones leaving stop it."
       />
       <Card>
         <CardContent>
@@ -285,7 +278,7 @@ function Placement(props: SectionProps) {
             className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
-              save({ nodes, node: edge, scale });
+              save({ nodes, scale });
             }}
           >
             <div className="space-y-2">
@@ -332,51 +325,22 @@ function Placement(props: SectionProps) {
               hint={`How many run in total, spread over those machines round-robin: four over three is 2, 1, 1. Never fewer than the ${nodes.length} machine${nodes.length === 1 ? "" : "s"} ticked above — one given nothing to run is one placed there for no effect. Several on a machine are swapped one at a time, so a deploy rolls rather than leaving none of them serving.`}
             />
 
-            <SearchableSelect
-              label="Traffic arrives at"
-              placeholder="Choose one"
-              disabled={stuck !== null || nodes.length < 2}
-              choices={nodes.map((name) => ({ value: name, label: name }))}
-              value={edge}
-              onChange={(next) => {
-                setEdge(next);
-                setSaved(false);
-              }}
-            />
-            <p className="text-xs text-muted-foreground">
-              One machine, not all of them, and the reason is the certificate: a machine that routes
-              a name asks Let&apos;s Encrypt for it, and one the name does not resolve to fails that
-              check every time while spending a limit shared with everyone else under that domain.
-              So the record points at one machine and the balancing happens behind it.
-            </p>
-
             {stuck && (
               <Notice>
                 {stuck} It stays on this machine until one is set in the instance settings.
               </Notice>
             )}
-            {/* The one thing changing this does not do for you. A name
-                follows the app only once its record does, and Cubeship
-                does not know which provider serves a name it did not
-                write. */}
-            {!stuck && edge !== app.node && app.domains.length > 0 && (
-              <Notice tone="warning">
-                {app.domains.length === 1 ? "This name has" : "These names have"} to be repointed at{" "}
-                <code>{edge}</code> afterwards: {app.domains.map((d) => d.host).join(", ")}. Until
-                then {app.domains.length === 1 ? "it reaches" : "they reach"} the machine the app is
-                leaving.
-              </Notice>
-            )}
             {!stuck && !dirty && app.nodes.length > 1 && (
               <Notice>
-                Its traffic arrives at <code>{app.node}</code> and is spread across{" "}
-                {app.nodes.length} machines from there. Each keeps its own log and its own charts;
-                the app&apos;s are the average across them.
+                Its traffic arrives at this instance and is spread across {app.nodes.length}{" "}
+                machines from there, over the cluster&apos;s private network. Each copy keeps its
+                own log and its own charts; the app&apos;s are the average across them.
               </Notice>
             )}
-            {!stuck && !dirty && app.nodes.length === 1 && app.node !== "control-plane" && (
+            {!stuck && !dirty && app.nodes.length === 1 && app.nodes[0] !== "control-plane" && (
               <Notice>
-                It serves its own names there, and its charts and its log come from it through the
+                Its traffic still arrives at this instance and is routed there over the cluster's
+                private network. Its charts and its log come from that machine through the
                 connection it keeps open to this one.
               </Notice>
             )}

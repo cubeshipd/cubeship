@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"cubeship/internal/envvar"
+	"cubeship/internal/node"
 )
 
 // App is one deployable service: a name, the domain Traefik routes to
@@ -26,18 +27,7 @@ type App struct {
 	ID            int64
 	ProjectID     int64
 	EnvironmentID int64
-	// NodeID is the machine whose edge serves this app's names — where
-	// its traffic arrives and where its certificate is. Where it *runs*
-	// is Replicas, which may be several machines and always includes
-	// this one.
-	//
-	// One machine rather than all of them, and the reason is the
-	// certificate: a machine that routes a name asks Let's Encrypt for
-	// it, and one the name does not resolve to fails that validation
-	// forever while spending a limit shared with everyone else under
-	// that domain.
-	NodeID int64
-	Name   string
+	Name          string
 	// Description is what this app is, in a sentence. It and the slug
 	// are all an app is created with.
 	Description string
@@ -105,16 +95,7 @@ type Replica struct {
 	Name      string
 	// Deploy is the deployment the container is running. Zero for a
 	// machine that has been given the app and not yet run it.
-	Deploy int64
-	// Routed is whether that container carries Traefik routers for the
-	// app's own names.
-	//
-	// A container keeps the labels it was created with, so this is a
-	// fact about the past nothing else can recover — and it is what
-	// stops scaling an app back down to one machine from taking its
-	// name off the internet: the container left behind routes nothing,
-	// so the edge goes on doing it. See RoutesFor.
-	Routed    bool
+	Deploy    int64
 	Status    string
 	UpdatedAt time.Time
 }
@@ -224,6 +205,26 @@ func (a *App) Nodes() []string {
 	seen := map[string]bool{}
 	for _, r := range a.Replicas {
 		if seen[r.NodeSlug] {
+			continue
+		}
+		seen[r.NodeSlug] = true
+		out = append(out, r.NodeSlug)
+	}
+	return out
+}
+
+// Elsewhere is the machines this app runs on that are not the control
+// plane, by name.
+//
+// What it answers is whether the image has to leave this box: a build
+// loaded into this Engine is one no other machine has heard of. It is
+// the replicas that decide, not where the traffic arrives — that is one
+// machine for every app now.
+func (a *App) Elsewhere() []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, r := range a.Replicas {
+		if r.NodeSlug == node.ControlPlaneSlug || seen[r.NodeSlug] {
 			continue
 		}
 		seen[r.NodeSlug] = true

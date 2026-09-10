@@ -47,8 +47,6 @@ type Service struct {
 	// registry answers where this instance's own registry is, so a
 	// machine knows which images it should authenticate as itself for.
 	registry func(ctx context.Context) string
-	// edge answers what a machine's own Traefik is started with.
-	edge func(ctx context.Context) Edge
 	// advertise is where the other machines reach this one. It is the
 	// instance's own public address, which settings already works out
 	// and refuses to guess badly — a bridge address here would build a
@@ -93,20 +91,6 @@ func (s *Service) SetApps(a Apps) { s.apps = a }
 // It follows the instance's domain, so it is asked rather than captured.
 func (s *Service) SetRegistryHost(fn func(context.Context) string) { s.registry = fn }
 
-// SetEdgeConfig wires in what a machine's own Traefik is started with.
-// It follows the instance's settings, so it is asked rather than
-// captured.
-func (s *Service) SetEdgeConfig(fn func(context.Context) Edge) { s.edge = fn }
-
-// EdgeConfig is what every machine's own Traefik is started with, or
-// nil on a daemon that does not know — which is a test.
-func (s *Service) EdgeConfig(ctx context.Context) *Edge {
-	if s.edge == nil {
-		return nil
-	}
-	edge := s.edge(ctx)
-	return &edge
-}
 
 // RegistryHost is the address an image pushed to this instance is
 // pulled from, or empty when there is no domain and therefore no
@@ -456,17 +440,6 @@ func (s *Service) Desired(ctx context.Context, n *Node) Desired {
 	if apps != nil {
 		desired.Apps = apps
 	}
-	// What its edge serves that its own containers do not say. A
-	// machine that cannot be told this still runs everything on it —
-	// the containers and their labels are the other half of the answer
-	// and are already above — so a failure here is logged and the pass
-	// goes on rather than leaving the machine with nothing.
-	routes, err := s.apps.RoutesFor(ctx, n.ID)
-	if err != nil {
-		log.Printf("cluster: working out what %s should serve: %v", n.Slug, err)
-		return desired
-	}
-	desired.Routes = routes
 	return desired
 }
 

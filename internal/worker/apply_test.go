@@ -58,7 +58,7 @@ func (e *fakeEngine) NetworkExists(context.Context, string) (bool, error)     { 
 // which is why it took a full CI run to find.
 func TestTheAgentReportsWhichCopyItRan(t *testing.T) {
 	engine := &fakeEngine{}
-	a := New("https://cubeship.example.com", "token", "test", t.TempDir(), nil, engine, nil, nil, nil)
+	a := New("https://cubeship.example.com", "token", "test", t.TempDir(), nil, engine, nil, nil)
 	// The real watch is ten seconds a container, and what is under test
 	// is what comes back rather than how long it waited.
 	a.healthInterval = 0
