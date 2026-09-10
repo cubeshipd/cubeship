@@ -182,6 +182,12 @@ func newFixture(t testing.TB, docker app.DockerAPI, domain string) *Fixture {
 	// this the goroutine outlives the test and races the temporary data
 	// directory being removed under it.
 	t.Cleanup(srv.Datastores.WaitForProvisioning)
+	// And so does bringing this machine's copies of an app into line,
+	// which every placement now starts — scaling takes effect without
+	// waiting for a deploy. A goroutine still querying when dbtest
+	// drops the schema deadlocks against the drop, which reads as a
+	// failure in whichever test happened to place something last.
+	t.Cleanup(srv.Apps.WaitForDeploys)
 
 	admin, adminKey := CreateUser(t, db, "admin", user.RoleAdmin)
 	p, env, err := srv.Projects.Create(ctx, admin, "web")
