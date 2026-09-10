@@ -267,7 +267,10 @@ run_tests() {
 	touch /tmp/no-releases
 	VERSION=""
 	rm -f /tmp/started
-	if main >/dev/null 2>&1; then
+	# In a subshell, like every other test that expects a refusal: `die`
+	# is an `exit`, and a function that exits takes the test script with
+	# it rather than returning to it.
+	if (main) >/dev/null 2>&1; then
 		printf '  FAIL installs anyway when it cannot look up a release\n'
 		FAILURES=$((FAILURES + 1))
 	else
