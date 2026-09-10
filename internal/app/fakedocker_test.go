@@ -31,7 +31,10 @@ type fakeDocker struct {
 	startedIDs  []string
 	stoppedIDs  []string
 	removedIDs  []string
-	logOutput   string
+	// capped is what SetResources was asked to apply, per container id,
+	// in the order it was asked.
+	capped    []cappedContainer
+	logOutput string
 
 	pullErr   error
 	createErr error
@@ -58,6 +61,18 @@ func (f *fakeDocker) CreateContainer(_ context.Context, opts dockerx.ContainerOp
 	}
 	f.createdOpts = append(f.createdOpts, opts)
 	return f.nextCreateID, nil
+}
+
+type cappedContainer struct {
+	id string
+	r  dockerx.Resources
+}
+
+func (f *fakeDocker) SetResources(_ context.Context, id string, r dockerx.Resources) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.capped = append(f.capped, cappedContainer{id: id, r: r})
+	return nil
 }
 
 func (f *fakeDocker) StartContainer(_ context.Context, id string) error {

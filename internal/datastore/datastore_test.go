@@ -569,6 +569,10 @@ func newFakeDocker() *fakeDocker { return &fakeDocker{running: map[string]bool{}
 
 func (f *fakeDocker) PullImage(context.Context, string, *dockerx.RegistryAuth) error { return nil }
 
+func (f *fakeDocker) SetResources(_ context.Context, _ string, _ dockerx.Resources) error {
+	return nil
+}
+
 func (f *fakeDocker) CreateContainer(_ context.Context, opts dockerx.ContainerOpts) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

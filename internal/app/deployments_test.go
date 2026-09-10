@@ -252,6 +252,8 @@ func deploymentsOf(t *testing.T, f *servertest.Fixture) map[int64]deploymentFlag
 // would make every one of them a failure to stop a container.
 type quietDocker struct{}
 
+func (quietDocker) SetResources(context.Context, string, dockerx.Resources) error { return nil }
+
 func (quietDocker) PullImage(context.Context, string, *dockerx.RegistryAuth) error { return nil }
 func (quietDocker) CreateContainer(context.Context, dockerx.ContainerOpts) (string, error) {
 	return "container-abc", nil

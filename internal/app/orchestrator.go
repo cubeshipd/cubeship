@@ -29,6 +29,7 @@ type DockerAPI interface {
 	StartContainer(ctx context.Context, id string) error
 	StopContainer(ctx context.Context, id string) error
 	RemoveContainer(ctx context.Context, id string) error
+	SetResources(ctx context.Context, id string, r dockerx.Resources) error
 	IsRunning(ctx context.Context, id string) (bool, error)
 	Logs(ctx context.Context, id, tail string) (io.ReadCloser, error)
 }
@@ -677,6 +678,7 @@ func (o *Orchestrator) swap(ctx context.Context, a *Scoped, replica Replica, ima
 		Env:          envvar.Slice(env),
 		Network:      Network,
 		AlsoNetworks: o.mesh(ctx),
+		Resources:    a.Limits.Resources(),
 	})
 	if err != nil {
 		return fmt.Errorf("create container: %w", err)
@@ -898,6 +900,48 @@ func (o *Orchestrator) mesh(ctx context.Context) []string {
 	}
 	if name := o.meshNetwork(ctx); name != "" {
 		return []string{name}
+	}
+	return nil
+}
+
+// cap applies a new ceiling to every copy of an app that is already
+// running, without restarting any of them.
+//
+// A ceiling is the one part of a container the Engine can change under
+// a running process, which is what makes raising an app's memory a
+// request rather than a redeploy. Nothing is pulled and nothing swaps.
+//
+// A copy on another machine is capped by that machine — the ceiling
+// travels in its placement — so all there is to do here is wake it, the
+// same way a deploy does.
+//
+// **Removing a limit is the one direction that waits.** The Engine
+// merges an update and reads a zero as "leave that one alone", so a
+// container goes back to uncapped by being created again, which is the
+// app's next deploy. Until then it keeps the ceiling it has.
+func (o *Orchestrator) cap(ctx context.Context, a *App, limits Limits) error {
+	here, err := o.apps.ControlPlaneID(ctx)
+	if err != nil {
+		return err
+	}
+	for _, r := range a.Replicas {
+		if r.NodeID != here {
+			if o.remote != nil {
+				o.remote.Wake(r.NodeID)
+			}
+			continue
+		}
+		if r.Container == "" {
+			continue
+		}
+		if err := o.docker.SetResources(ctx, r.Container, limits.Resources()); err != nil {
+			// The limit is stored either way — it is what the next
+			// container is created with. What failed is the running
+			// one taking it now, and that is worth saying rather than
+			// logging: a cgroup the host cannot enforce is a fact
+			// about the machine, not a transient error.
+			return fmt.Errorf("the limit is saved, and %s did not take it: %w", r.Name, err)
+		}
 	}
 	return nil
 }

@@ -21,7 +21,8 @@ func NewRepository(q database.Queryer) *Repository {
 }
 
 const columns = `id, project_id, environment_id, name, description, source, source_image,
-	source_repo, source_ref, source_dockerfile, health_path, scale, env, created_at`
+	source_repo, source_ref, source_dockerfile, health_path, scale,
+	cpu_limit, memory_limit, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -30,7 +31,7 @@ func scan(row scanner) (*App, error) {
 	var envJSON []byte
 	if err := row.Scan(&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Description,
 		&a.Source, &a.SourceImage, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
-		&a.HealthPath, &a.Scale, &envJSON, &a.CreatedAt); err != nil {
+		&a.HealthPath, &a.Scale, &a.Limits.CPU, &a.Limits.Memory, &envJSON, &a.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &a.Env); err != nil {
@@ -45,7 +46,7 @@ func scan(row scanner) (*App, error) {
 //
 // The slug is not here. It is the last component of the app's registry
 // reference, and no slug in Cubeship changes once its resource exists.
-func (r *Repository) Update(ctx context.Context, appID int64, description *string, source *Source, origin *Origin, health *string) (*App, error) {
+func (r *Repository) Update(ctx context.Context, appID int64, description *string, source *Source, origin *Origin, health *string, limits *Limits) (*App, error) {
 	var src *string
 	if source != nil {
 		s := string(*source)
@@ -58,6 +59,14 @@ func (r *Repository) Update(ctx context.Context, appID int64, description *strin
 	if origin != nil {
 		image, repo, ref, dockerfile = &origin.Image, &origin.Repo, &origin.Ref, &origin.Dockerfile
 	}
+	// Both halves of the ceiling travel together, and zero is a value
+	// rather than a gap: it is how a limit is *removed*, so a nil here
+	// has to be the only way of saying "leave it".
+	var cpu *float64
+	var memory *int64
+	if limits != nil {
+		cpu, memory = &limits.CPU, &limits.Memory
+	}
 	row := r.q.QueryRowContext(ctx,
 		`UPDATE apps SET
 		   description       = COALESCE($1, description),
@@ -66,9 +75,11 @@ func (r *Repository) Update(ctx context.Context, appID int64, description *strin
 		   source_repo       = COALESCE($4, source_repo),
 		   source_ref        = COALESCE($5, source_ref),
 		   source_dockerfile = COALESCE($6, source_dockerfile),
-		   health_path       = COALESCE($7, health_path)
-		 WHERE id = $8 RETURNING `+columns,
-		description, src, image, repo, ref, dockerfile, health, appID)
+		   health_path       = COALESCE($7, health_path),
+		   cpu_limit         = COALESCE($8, cpu_limit),
+		   memory_limit      = COALESCE($9, memory_limit)
+		 WHERE id = $10 RETURNING `+columns,
+		description, src, image, repo, ref, dockerfile, health, cpu, memory, appID)
 	a, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("update app: %w", err)
@@ -527,7 +538,7 @@ type Scoped struct {
 const scopedQuery = `
 	SELECT a.id, a.project_id, a.environment_id, a.name, a.description,
 	       a.source, a.source_image, a.source_repo, a.source_ref, a.source_dockerfile,
-	       a.health_path, a.scale, a.env, a.created_at,
+	       a.health_path, a.scale, a.cpu_limit, a.memory_limit, a.env, a.created_at,
 	       p.slug, e.slug
 	FROM apps a
 	JOIN projects p ON p.id = a.project_id
@@ -538,7 +549,7 @@ func scanScoped(row scanner) (*Scoped, error) {
 	var envJSON []byte
 	if err := row.Scan(&s.ID, &s.ProjectID, &s.EnvironmentID, &s.Name, &s.Description,
 		&s.Source, &s.SourceImage, &s.SourceRepo, &s.SourceRef, &s.SourceDockerfile,
-		&s.HealthPath, &s.Scale, &envJSON, &s.CreatedAt,
+		&s.HealthPath, &s.Scale, &s.Limits.CPU, &s.Limits.Memory, &envJSON, &s.CreatedAt,
 		&s.ProjectSlug, &s.EnvironmentSlug); err != nil {
 		return nil, err
 	}

@@ -264,6 +264,12 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 		// routes a name any more. See placementLabels.
 		Labels:   placementLabels(ref.String(), d.ID),
 		Networks: networks,
+		// The ceiling this copy runs under. It travels with the
+		// placement rather than being asked for, because the machine
+		// has no database — and it is re-sent on every pass, which is
+		// what makes a limit changed here take effect there without a
+		// deploy.
+		Resources: a.Limits.Resources(),
 	}, nil
 }
 

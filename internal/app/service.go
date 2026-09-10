@@ -344,7 +344,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, en
 // decision as creating one that builds — this instance will execute
 // whatever that repository contains — so it takes the same role, checked
 // against the source being moved to rather than the one being left.
-func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, description *string, source *Source, origin *Origin, health *string, place *Placement) (*Scoped, error) {
+func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, description *string, source *Source, origin *Origin, health *string, limits *Limits, place *Placement) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.RoleAdmin)
 	if err != nil {
 		return nil, err
@@ -383,8 +383,25 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 		return nil, ErrInvalidHealthPath
 	}
 
-	if _, err := s.Repo().Update(ctx, a.ID, description, source, origin, health); err != nil {
+	// The ceiling, checked here because a number the Engine refuses
+	// would otherwise be found out one container at a time, on whatever
+	// machine tried it, minutes after somebody typed it.
+	if limits != nil && !limits.Valid() {
+		return nil, ErrInvalidLimits
+	}
+
+	if _, err := s.Repo().Update(ctx, a.ID, description, source, origin, health, limits); err != nil {
 		return nil, err
+	}
+
+	// A ceiling is the one thing about a container the Engine can
+	// change while it runs, so it takes effect now rather than on the
+	// next deploy. Every other setting on this screen is baked into a
+	// container at create time and waits for one.
+	if limits != nil {
+		if err := s.orch.cap(ctx, &a.App, *limits); err != nil {
+			return nil, err
+		}
 	}
 
 	// Where it runs and where its traffic arrives, which are a
