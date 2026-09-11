@@ -378,40 +378,51 @@ func TestAPrefixHasToMakeALegalVariableName(t *testing.T) {
 	}
 }
 
-// Every engine this instance runs can be backed up, one way or the
-// other, and which way is the engine's own answer rather than something
-// the backup module works out.
+// Which engines are backed up is a decision listed here, not whatever
+// the zero value happens to be.
 //
-// Listed rather than derived so that adding an engine is a decision
-// about this: an engine with neither a dump command nor a file is one
-// whose databases quietly cannot be backed up, and the screen offering
-// the button would be the only thing that ever said otherwise.
-func TestEveryEngineCanBeBackedUpOneWayOrTheOther(t *testing.T) {
+// Redis is the one that is not, deliberately: taking a dump is easy and
+// putting one back means stopping the server, because an RDB is read
+// once at startup. Adding an engine without deciding this would be a
+// database quietly holding nothing but a screen offering the button.
+func TestWhichEnginesAreBackedUp(t *testing.T) {
+	want := map[Engine]bool{
+		EnginePostgres: true,
+		EngineMySQL:    true,
+		EngineMariaDB:  true,
+		EngineMongoDB:  true,
+		EngineRedis:    false,
+	}
 	for _, e := range Engines() {
-		if !e.CanBackUp() {
-			t.Errorf("%s has neither a dump command nor a file to copy", e)
+		backed, listed := want[e]
+		if !listed {
+			t.Errorf("%s can be provisioned and nothing here decides whether it is backed up", e)
+			continue
 		}
-		if e.Consistency() == "" {
-			t.Errorf("%s says nothing about what its dump promises, which is the one thing somebody has to know before relying on it", e)
+		if e.CanBackUp() != backed {
+			t.Errorf("%s reports CanBackUp=%v, want %v", e, e.CanBackUp(), backed)
 		}
 
 		d := &Datastore{Engine: e, Username: "app", Password: "secret", Database: "app_db"}
 		cmd, _, hasDump := d.Dump()
+		_, _, hasRestore := d.Restore()
+		if !backed {
+			if hasDump || hasRestore {
+				t.Errorf("%s is not backed up here but still carries a dump or a restore", e)
+			}
+			continue
+		}
+
+		// Both halves, because a backup that can be taken and not put
+		// back is not one.
 		if !hasDump || len(cmd) == 0 {
 			t.Errorf("%s has no command that produces a dump", e)
 		}
-
-		// Restoring is the half that differs: a running server is fed
-		// the dump, or the file it reads at startup is replaced while
-		// it is stopped. Exactly one, because a backup that can be
-		// taken and not put back is not one.
-		_, _, hasRestore := d.Restore()
-		byFile := d.DumpFile() != ""
-		if hasRestore == byFile {
-			t.Errorf("%s restores by command=%v and by file=%v, and it has to be exactly one", e, hasRestore, byFile)
+		if !hasRestore {
+			t.Errorf("%s can be dumped and not restored", e)
 		}
-		if byFile != e.RestoreStops() {
-			t.Errorf("%s restores by file=%v but reports stopping=%v, and the screen is told the second", e, byFile, e.RestoreStops())
+		if e.Consistency() == "" {
+			t.Errorf("%s says nothing about what its dump promises, which is the one thing somebody has to know before relying on it", e)
 		}
 	}
 }

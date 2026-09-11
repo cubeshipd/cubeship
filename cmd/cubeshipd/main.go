@@ -27,6 +27,7 @@ import (
 	_ "time/tzdata"
 
 	"cubeship/internal/app"
+	"cubeship/internal/backup"
 	"cubeship/internal/certificates"
 	"cubeship/internal/datastore"
 	"cubeship/internal/machine"
@@ -660,6 +661,11 @@ func run() error {
 	// configuration changes and at no other moment, so a name whose
 	// first attempt failed would otherwise never get a second one.
 	go (&certificates.Retrier{Certs: srv.Certs, DataDir: cfg.DataDir}).Run(ctx)
+
+	// And the backups nobody asked for. Here for the reason every other
+	// loop is: a server is a request handler, and a test that builds one
+	// must not thereby start dumping databases.
+	go (&backup.Scheduler{Backups: srv.Backups}).Run(ctx)
 
 	go purgeExpiredSessions(ctx, srv.Users)
 

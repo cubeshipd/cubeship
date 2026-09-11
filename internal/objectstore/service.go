@@ -1167,3 +1167,31 @@ func (s *Service) VarsForApp(ctx context.Context, appID int64) (envvar.Map, erro
 	}
 	return vars, nil
 }
+
+// --- what backups need, and nothing more ---
+
+// ClientForID opens a client for one store by its id, with no caller.
+//
+// **It authorizes nothing, deliberately**, and that is safe because of
+// who calls it: `internal/backup`, which has already settled whether
+// somebody may back this database up before it gets here — and the
+// scheduler, where there is no caller to ask about at all. The same
+// shape `metrics.Service` has: asking twice is two answers to a
+// question with one.
+//
+// By id rather than by slug because a backup names where it went with a
+// foreign key. A slug is what somebody types; an id is what survives
+// them renaming nothing, since a store's slug never changes anyway —
+// what it survives is this instance holding two answers to which store
+// a five-month-old dump is in.
+func (s *Service) ClientForID(ctx context.Context, id int64) (*Store, Client, error) {
+	store, err := s.Repo().ByID(ctx, id)
+	if err != nil {
+		return nil, nil, ErrNotFound
+	}
+	c, err := s.connect.Connect(ctx, store)
+	if err != nil {
+		return nil, nil, err
+	}
+	return store, c, nil
+}
