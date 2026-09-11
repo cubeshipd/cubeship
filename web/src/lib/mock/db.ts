@@ -9,6 +9,19 @@
 // **It is mutable on purpose.** Creating a project in the preview adds
 // a row here, so the screens behave rather than just render. Nothing is
 // persisted; a reload is a fresh instance.
+//
+// **The answers that have a type wear it.** A fixture is a claim about
+// what the daemon sends, and a wrong claim is a preview that lies —
+// which it did three times before these annotations: a certificate
+// report keyed on `domain` instead of `host` rendered a table of blank
+// names, a firewall missing `available` rendered the sentence for a
+// daemon that cannot read one, and a bucket listing with bare strings
+// for folders rendered rows React could not key. All three compile-time
+// errors now. The rows that handlers mutate stay loose on purpose:
+// `Object.assign` against a strict type is a fight for no gain in a
+// file whose whole job is to be edited.
+
+import type { ApiKey, CertificateReport, ClusterServer, Firewall, Me } from "@/lib/api";
 
 const now = Date.now();
 const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
@@ -23,7 +36,7 @@ export const db = {
     role: "admin" as const,
     has_password: true,
     themes: ["cyan", "magenta", "amber", "lime", "violet", "rose", "slate"],
-  },
+  } as Me,
 
   users: [
     { username: "lucas", role: "admin", created_at: ago(60 * 24 * 90) },
@@ -39,7 +52,7 @@ export const db = {
       current_key: true,
     },
     { id: 2, name: "ci", created_at: ago(60 * 24 * 8), current_key: false },
-  ],
+  ] as ApiKey[],
 
   settings: {
     domain: "cubeship.example.com",
@@ -400,7 +413,7 @@ export const db = {
       { host: "api.staging.example.com", app: "web/staging/api", reason: "not_deployed" },
     ],
     traefik_says: ["too many certificates already issued for example.com"],
-  },
+  } as CertificateReport,
 
   firewall: {
     available: true,
@@ -458,7 +471,7 @@ export const db = {
         allowed: true,
       },
     ],
-  },
+  } as Firewall,
 
   nodes: [
     {
@@ -491,7 +504,7 @@ export const db = {
       last_seen_at: ago(0),
       created_at: ago(60 * 24 * 30),
     },
-  ] as Row[],
+  ] as ClusterServer[],
 
   mesh: { up: true, encrypted: true },
 

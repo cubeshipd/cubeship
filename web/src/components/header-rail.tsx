@@ -14,6 +14,7 @@ import {
 import {
   type App,
   api,
+  type Bucket,
   type Datastore,
   type Environment,
   type ObjectStore,
@@ -93,7 +94,7 @@ export function HeaderRail({ children }: { children: ReactNode }) {
 // siblings says what a crumb can be swapped for. Absent is a crumb that
 // names something with no peers worth offering — a section, a settings
 // screen.
-type Siblings = "project" | "environment" | "app" | "datastore" | "objectstore";
+type Siblings = "project" | "environment" | "app" | "datastore" | "objectstore" | "bucket";
 
 type CrumbSpec = {
   key: string;
@@ -195,14 +196,38 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
       mono: true,
     },
   ];
-  // Everything below one item — a zone, a record, a settings screen —
-  // is a word rather than something with peers to offer.
+
+  // A bucket is the one thing below a named item that has peers, and it
+  // gets a menu **whether or not there is a second one**. The control
+  // being in the same place every time is what makes it a control; one
+  // that appears only once a store has two buckets is one nobody learns
+  // is there, and the count is not something you know before you look.
+  if (section === "storage" && tail[0] === "buckets" && tail[1]) {
+    out.push({ key: "t:buckets", label: title("buckets") });
+    out.push({
+      key: `b:${tail[1]}`,
+      label: decodeURIComponent(tail[1]),
+      href: tail.length > 2 ? `/storage/${name}/buckets/${tail[1]}` : undefined,
+      siblings: "bucket",
+      scope: name,
+      mono: true,
+    });
+    for (const word of tail.slice(2)) out.push({ key: `t:${word}`, label: title(word) });
+    return out;
+  }
+
+  // Everything else below one item — a zone, a record, a settings
+  // screen — is a word rather than something with peers to offer.
   for (const word of tail) out.push({ key: `t:${word}`, label: title(word) });
   return out;
 }
 
 function title(word: string): string {
-  const known: Record<string, string> = { settings: "Settings", zones: "Zones" };
+  const known: Record<string, string> = {
+    settings: "Settings",
+    zones: "Zones",
+    buckets: "Buckets",
+  };
   return known[word] ?? decodeURIComponent(word);
 }
 
@@ -301,6 +326,8 @@ async function siblingsOf(kind: Siblings, scope: string): Promise<string[]> {
       return (await api.get<Datastore[]>("/datastores")).map((d) => d.name);
     case "objectstore":
       return (await api.get<ObjectStore[]>("/objectstores")).map((s) => s.name);
+    case "bucket":
+      return (await api.get<Bucket[]>(`/objectstores/${above}/buckets`)).map((b) => b.name);
   }
 }
 
@@ -323,6 +350,8 @@ function hrefFor(kind: Siblings | undefined, scope: string, name: string): strin
       return `/databases/${name}`;
     case "objectstore":
       return `/storage/${name}`;
+    case "bucket":
+      return `/storage/${above}/buckets/${encodeURIComponent(name)}`;
     default:
       return "/";
   }

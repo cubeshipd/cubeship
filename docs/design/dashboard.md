@@ -365,8 +365,13 @@ the title would have had to swallow the buttons beside it too.
 the path here rather than in a page. Reading `web/production/api` tells
 you where you are; opening `production` and landing in `staging` is the
 trip back through two screens you no longer take. Projects,
-environments, apps, databases and stores have them; a section and a
-`settings` do not.
+environments, apps, databases, stores and **buckets** have them; a
+section and a `settings` do not.
+
+The bucket's is there **whether or not the store has a second one**. A
+control that appears only once there is something to switch to is one
+nobody learns is there — and how many buckets a store holds is not
+something you know before you look.
 
 Two decisions inside that:
 
