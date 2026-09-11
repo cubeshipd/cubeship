@@ -347,7 +347,8 @@ func complaints(r io.Reader) []string {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1<<20)
 	for scanner.Scan() {
-		line := strings.TrimSpace(strings.Map(printable, scanner.Text()))
+		raw := ansi.ReplaceAllString(string(unframe(scanner.Bytes())), "")
+		line := strings.TrimSpace(strings.Map(printable, raw))
 		lower := strings.ToLower(line)
 		about := strings.Contains(lower, "acme") || strings.Contains(lower, "certificate") ||
 			strings.Contains(lower, "provider")
@@ -393,7 +394,32 @@ func about(lines []string, host string) string {
 	return ""
 }
 
-// printable drops the frame header's control bytes, which would
+// ansi matches one terminal colour escape.
+//
+// Traefik colours its own log whether or not anything is reading it as
+// a terminal, and dropping the escape byte on its own is worse than
+// leaving it: what follows it is ordinary text, so `\x1b[31mERR` came
+// out as `[31mERR` and the one field on the page that explains a
+// failure read as line noise. The whole sequence goes.
+var ansi = regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]`)
+
+// unframe drops Docker's stream header: a stream byte, three zeros, and
+// a big-endian length. It sits in front of a *frame* rather than in
+// front of every line, so it lands at the start of one and nowhere
+// else.
+//
+// Taken off by its shape rather than left to `printable`, because the
+// length's low byte is itself printable for any line between 32 and 126
+// bytes long — which is most of them. That is a stray character in
+// front of the sentence somebody is trying to read.
+func unframe(b []byte) []byte {
+	if len(b) >= 8 && b[0] <= 2 && b[1] == 0 && b[2] == 0 && b[3] == 0 {
+		return b[8:]
+	}
+	return b
+}
+
+// printable drops whatever control bytes are left, which would
 // otherwise land in a JSON string somebody reads.
 func printable(r rune) rune {
 	if r < 32 || r == 127 {
