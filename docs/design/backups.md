@@ -209,7 +209,10 @@ bucket's contents.
 
 The database's **Backups tab** is where the dumps are: the schedule,
 "back up now", and that database's own history, polling while one is in
-flight.
+flight. It is under that database's **Settings**, and it is the first
+tab there — the other two are set once, and whether last night's dump
+happened is a question somebody has again every week. The instance's own
+is in the same place for the same reason, under `/settings`.
 
 `/backups` in Platform is the other question, and it is **not a list of
 backups**. It was one for a release, and a list of every dump on the box

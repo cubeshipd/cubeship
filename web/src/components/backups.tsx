@@ -100,7 +100,11 @@ export function Backups({
 
   return (
     <>
-      <Schedule database={database} onChanged={load} />
+      <Schedule
+        path={`${path}/schedule`}
+        label="Back this database up every day"
+        onChanged={load}
+      />
 
       <SectionHeader
         title="Backups"
@@ -127,6 +131,84 @@ export function Backups({
         }
       />
       <ErrorAlert error={error} />
+      <BackupTable rows={rows} onChanged={load} showDatabase={false} />
+    </>
+  );
+}
+
+// The instance backing itself up.
+//
+// **What this is a copy of is Cubeship, not what is on it**: its own
+// database — every account, project, app, credential and attachment —
+// and the handful of files beside it that cannot be worked out again.
+// The data is deliberately out, and each database and store has its own
+// Backups for that.
+//
+// It reuses the schedule form and the table, because a backup of the
+// instance is the same four answers and the same rows as a backup of
+// anything else. What it does not reuse is Restore, and the table's own
+// button stays disabled for these: putting an instance back means a
+// fresh install, a stopped daemon and a `psql`, because the thing being
+// replaced is the database the button would be running on.
+export function InstanceBackups() {
+  const [rows, setRows] = useState<Backup[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const path = "/instance/backups";
+  const load = useCallback(() => {
+    api
+      .get<Backup[]>(path)
+      .then(setRows)
+      .catch((e) => setError(message(e)));
+  }, []);
+  useEffect(load, [load]);
+
+  const running = (rows ?? []).some((b) => b.status === "taking");
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(load, POLL);
+    return () => clearInterval(timer);
+  }, [running, load]);
+
+  return (
+    <>
+      <Schedule
+        path={`${path}/schedule`}
+        label="Back this instance up every day"
+        onChanged={load}
+      />
+
+      <SectionHeader
+        title="Instance backups"
+        sub="The instance's own database and the files beside it that nothing else has a copy of — the certificate store, and the pictures on projects. Not the data in your databases or buckets: each of those has its own, and folding them in would make the one thing small enough to take nightly the one too big to take at all."
+        actions={
+          <ActionButton
+            busy={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await api.post(path, {});
+                load();
+              } catch (e) {
+                setError(message(e));
+              }
+              setBusy(false);
+            }}
+          >
+            Back up now
+          </ActionButton>
+        }
+      />
+      <ErrorAlert error={error} />
+      <Notice>
+        <strong>There is no restore button, and that is deliberate.</strong> The thing being
+        replaced is the database this dashboard is running on. Putting an instance back is a fresh
+        install, the daemon stopped, the dump loaded with <code>psql</code> and the files put back —
+        download the archive and keep it somewhere you would still have it if this machine were
+        gone.
+      </Notice>
       <BackupTable rows={rows} onChanged={load} showDatabase={false} />
     </>
   );
@@ -236,11 +318,13 @@ export function BackupTable({
           <RowAction
             icon={RotateCcwIcon}
             label="Restore"
-            disabled={b.status !== "succeeded" || !b.database_exists}
+            disabled={b.status !== "succeeded" || !b.database_exists || b.kind === "instance"}
             title={
-              b.database_exists
-                ? undefined
-                : "The database this came from has been deleted, and choosing where to put it is not something this release does."
+              b.kind === "instance"
+                ? "An instance backup is put back by hand: the thing being replaced is the database this dashboard is running on."
+                : b.database_exists
+                  ? undefined
+                  : "The database this came from has been deleted, and choosing where to put it is not something this release does."
             }
             onClick={() => setRestoring(b)}
           />
@@ -320,7 +404,22 @@ export function BackupTable({
 // Schedule is the half nobody watches: when, where, and how many to
 // keep. Off is the absence of a schedule, which is why the switch is
 // what creates and removes one rather than a field on it.
-function Schedule({ database, onChanged }: { database: string; onChanged: () => void }) {
+//
+// **It takes the path rather than a database**, because the instance
+// backs itself up on exactly the same four answers — a time, a zone, a
+// destination and how many to hold. A second copy of this form for the
+// one caller that is not a database would be a second place for the
+// warning about a store on this machine to go missing.
+export function Schedule({
+  path,
+  label,
+  onChanged,
+}: {
+  path: string;
+  // What the switch says it will back up.
+  label: string;
+  onChanged: () => void;
+}) {
   const [schedule, setSchedule] = useState<BackupSchedule | null>(null);
   const [on, setOn] = useState(false);
   const [at, setAt] = useState("03:00");
@@ -338,8 +437,6 @@ function Schedule({ database, onChanged }: { database: string; onChanged: () => 
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const path = `${datastorePath(database)}/backups/schedule`;
 
   useEffect(() => {
     api
@@ -433,12 +530,12 @@ function Schedule({ database, onChanged }: { database: string; onChanged: () => 
             <div className="space-y-1">
               <Label htmlFor="scheduled">
                 <ClockIcon className="mr-1 inline size-3.5" />
-                Back this database up every day
+                {label}
               </Label>
               <p className="max-w-prose text-xs text-muted-foreground">
-                A time of day rather than an interval, because what you are choosing is when the
-                database may be busy. A window this instance was down for runs late rather than
-                being skipped.
+                A time of day rather than an interval, because what you are choosing is when it may
+                be busy and slow. A window this instance was down for runs late rather than being
+                skipped.
                 {schedule?.last_run_at && ` Last run ${when(schedule.last_run_at)}.`}
               </p>
             </div>

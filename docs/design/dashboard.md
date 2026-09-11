@@ -121,7 +121,7 @@ and Source.
 A database's two were *not* one thing and had no business sharing a
 column: where it can be reached from, and how much of the machine it may
 take. A managed store's are General, Access and Resources; the instance's
-are its Domain and when it replaces itself.
+are its Domain, when it replaces itself, and backing itself up.
 
 **Danger is a tab.** A delete belongs behind something you did on
 purpose — which is why these screens exist at all rather than being a

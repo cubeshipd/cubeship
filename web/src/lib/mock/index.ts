@@ -308,6 +308,51 @@ const routes: [string, string, Handler][] = [
   // silently, which is the one place a wrong answer looks finished.
   ["GET", "/backups/coverage", () => coverage()],
   ["GET", "/backups/orphans", () => db.backups.filter((b) => !b.database_exists)],
+
+  // --- the instance backing itself up ---
+  ["GET", "/instance/backups", () => db.instanceBackups],
+  [
+    "POST",
+    "/instance/backups",
+    () => {
+      const row = {
+        id: 900 + db.instanceBackups.length,
+        kind: "instance",
+        database: "cubeship",
+        database_exists: true,
+        engine: "postgres",
+        version: "16",
+        store: "offsite",
+        bucket: "dumps",
+        key: `cubeship/cubeship/${new Date().toISOString()}.dump`,
+        off_machine: true,
+        size_bytes: 2_140_882,
+        status: "succeeded",
+        scheduled: false,
+        started_at: new Date().toISOString(),
+        finished_at: new Date().toISOString(),
+      };
+      db.instanceBackups.unshift(row);
+      return row;
+    },
+  ],
+  ["GET", "/instance/backups/schedule", () => db.instanceSchedule ?? notFound()],
+  [
+    "PUT",
+    "/instance/backups/schedule",
+    (_p, body) => {
+      db.instanceSchedule = { ...(body as Row), last_run_at: undefined };
+      return db.instanceSchedule;
+    },
+  ],
+  [
+    "DELETE",
+    "/instance/backups/schedule",
+    () => {
+      db.instanceSchedule = null;
+      return null;
+    },
+  ],
   [
     "DELETE",
     "/backups/:id",

@@ -13,7 +13,6 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
-import { Backups } from "@/components/backups";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ContainerLogs } from "@/components/container-logs";
 import { CopyField } from "@/components/copy-field";
@@ -63,7 +62,7 @@ import { message } from "@/lib/errors";
 // So the page opens on what is short and always wanted, and what is
 // long, or is somewhere you go rather than something you read, is a tab
 // beside it.
-const TABS = ["overview", "apps", "backups", "logs"] as const;
+const TABS = ["overview", "apps", "logs"] as const;
 type Tab = (typeof TABS)[number];
 
 // Why the Logs tab is dead. Said on hover, because a disabled control
@@ -171,10 +170,6 @@ function Detail({ name }: { name: string }) {
             <TabsList variant="line">
               <TabsTrigger value="overview">Overview</TabsTrigger>
               <TabsTrigger value="apps">Apps</TabsTrigger>
-              {/* Left out entirely for an engine this instance does not
-                  back up, rather than offered and disabled: a tab that
-                  could never hold anything is not a tab. */}
-              {datastore.can_back_up && <TabsTrigger value="backups">Backups</TabsTrigger>}
               {/* Nothing has printed anything until there is a container.
                   The daemon refuses this endpoint with a 409 in that
                   state, and a tab whose whole content is that refusal is
@@ -196,15 +191,6 @@ function Detail({ name }: { name: string }) {
 
           <TabsContent value="apps">
             <Attachments datastore={datastore} onChanged={reload} />
-          </TabsContent>
-
-          <TabsContent value="backups">
-            <Backups
-              database={datastore.name}
-              canBackUp={datastore.can_back_up ?? false}
-              consistency={datastore.backup_consistency}
-              hasContainer={datastore.has_container}
-            />
           </TabsContent>
 
           <TabsContent value="logs">

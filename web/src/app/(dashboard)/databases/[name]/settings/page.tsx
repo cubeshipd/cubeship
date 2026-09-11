@@ -2,6 +2,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
+import { Backups } from "@/components/backups";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
@@ -22,7 +23,7 @@ export default function DatastoreSettingsPage({ params }: PageProps<"/databases/
   return <Settings name={name} />;
 }
 
-const TABS = ["access", "resources", "danger"] as const;
+const TABS = ["backups", "access", "resources", "danger"] as const;
 type Tab = (typeof TABS)[number];
 
 function Settings({ name }: { name: string }) {
@@ -33,7 +34,7 @@ function Settings({ name }: { name: string }) {
   // hydrates to the first tab and keeps it.
   const asked = useSearchParams().get("tab");
   const [tab, setTab] = useState<Tab>(() =>
-    TABS.includes(asked as Tab) ? (asked as Tab) : "access",
+    TABS.includes(asked as Tab) ? (asked as Tab) : "backups",
   );
   const router = useRouter();
   const path = datastorePath(name);
@@ -52,6 +53,8 @@ function Settings({ name }: { name: string }) {
 
   if (error && !datastore) return <ErrorAlert error={error} />;
 
+  const open = tab === "backups" && !datastore?.can_back_up ? "access" : tab;
+
   return (
     <>
       {" "}
@@ -67,14 +70,42 @@ function Settings({ name }: { name: string }) {
               it may take. Neither is the other, and a screen that
               scrolls past one to get to the other is a screen you read
               to find the thing you came for. */}
-          <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="subrail-page">
+          {/* **What is open falls back, and what was asked for does
+              not.** Backups is the first tab and Redis does not have
+              one, so a screen opening on it showed a strip of three
+              tabs with nothing under any of them — the value was a tab
+              that is not there. Resolved at render rather than in the
+              initial state, because whether this engine can be backed
+              up is not known until the database has loaded. */}
+          <Tabs value={open} onValueChange={(v) => setTab(v as Tab)} className="subrail-page">
             <RailTabs>
               <TabsList variant="line">
+                {/* **First, because it is the only one you come back
+                    to.** Where a database can be reached from and what
+                    it may take are set once; whether last night's dump
+                    happened is a question somebody has again every
+                    week.
+
+                    Left out entirely for an engine this instance does
+                    not back up rather than offered and disabled: a tab
+                    that could never hold anything is not a tab. */}
+                {datastore.can_back_up && <TabsTrigger value="backups">Backups</TabsTrigger>}
                 <TabsTrigger value="access">Access</TabsTrigger>
                 <TabsTrigger value="resources">Resources</TabsTrigger>
                 <TabsTrigger value="danger">Danger</TabsTrigger>
               </TabsList>
             </RailTabs>
+
+            {datastore.can_back_up && (
+              <TabsContent value="backups">
+                <Backups
+                  database={datastore.name}
+                  canBackUp={datastore.can_back_up ?? false}
+                  consistency={datastore.backup_consistency}
+                  hasContainer={datastore.has_container}
+                />
+              </TabsContent>
+            )}
 
             <TabsContent value="access">
               <ExternalAccess datastore={datastore} onChanged={reload} />
