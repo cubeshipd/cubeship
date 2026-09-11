@@ -96,7 +96,7 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
   // Measured after the list is on screen, never before it: it is one
   // call per repository at the far end, and there can be hundreds.
   useEffect(() => {
-    if (!own || !repos || repos.length === 0) return;
+    if (own || !repos || repos.length === 0) return;
     api
       .get<RegistryUsage>(`${base}/usage`)
       .then(setUsage)
@@ -150,6 +150,7 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
   const [pickedTags, setPickedTags] = useState<Set<string>>(new Set());
   const [bulk, setBulk] = useState<"repos" | "tags" | null>(null);
 
+  const [collecting, setCollecting] = useState(false);
   const [deletingRepo, setDeletingRepo] = useState<string | null>(null);
   // `ref` is a tag, or "@<digest>" for an image that has none.
   const [deletingTag, setDeletingTag] = useState<{ repo: string; ref: string } | null>(null);
@@ -306,7 +307,12 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
         literal={!own}
         icon={<Icon className="size-5 shrink-0 text-muted-foreground" />}
         actions={
-          !own && (
+          own ? (
+            <Button variant="outline" onClick={() => setCollecting(true)}>
+              <Trash2Icon />
+              Reclaim disk
+            </Button>
+          ) : (
             <Button
               variant="outline"
               nativeButton={false}
@@ -400,6 +406,32 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
         onConfirm={() => deletePicked(bulk ?? "repos")}
       />
 
+      {/* Deleting a tag makes it unpullable and frees nothing: a
+          registry:2 unlinks the manifest and leaves the layers, which
+          is what a collection pass reclaims. So this is the other half
+          of every delete above it, and it is a button rather than a
+          timer because the pass wants the registry stopped — for a few
+          seconds, during which a push fails. */}
+      <ConfirmDialog
+        open={collecting}
+        onOpenChange={setCollecting}
+        title="Reclaim the disk?"
+        description={
+          <>
+            Deleting a tag unlinks it and leaves its layers behind; this is what actually frees
+            them. The registry stops for a few seconds while it runs, so a <code>docker push</code>{" "}
+            landing in that window fails and has to be run again. Nothing still referred to by a tag
+            is touched.
+          </>
+        }
+        confirmLabel="Reclaim"
+        onConfirm={async () => {
+          await api.post(`${base}/garbage-collect`, {});
+          setCollecting(false);
+          load();
+        }}
+      />
+
       <ConfirmDialog
         open={deletingRepo !== null}
         onOpenChange={(open) => !open && setDeletingRepo(null)}
@@ -456,7 +488,7 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
         </Card>
       )}
 
-      {(pickedRepos.size > 0 || looseTags.length > 0) && !own && (
+      {(pickedRepos.size > 0 || looseTags.length > 0) && (
         <SelectionBar
           repos={pickedRepos.size}
           tags={looseTags.length}
@@ -499,12 +531,12 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
                   name={repo.name}
                   host={registryHost}
                   usage={byRepo[repo.name]}
-                  onDelete={own ? undefined : () => setDeletingRepo(repo.name)}
-                  onDeleteTag={own ? undefined : (ref) => setDeletingTag({ repo: repo.name, ref })}
+                  onDelete={() => setDeletingRepo(repo.name)}
+                  onDeleteTag={(ref) => setDeletingTag({ repo: repo.name, ref })}
                   open={open.has(repo.name)}
                   images={images[repo.name]}
                   onToggle={() => toggle(repo.name)}
-                  selectable={!own}
+                  selectable
                   picked={pickedRepos.has(repo.name)}
                   onPick={() => setRepoPicked(repo.name, !pickedRepos.has(repo.name))}
                   tagPicked={tagPicked}
@@ -647,7 +679,6 @@ function RepoRows({
   // button rather than a button that fails.
   onDelete?: () => void;
   onDeleteTag?: (ref: string) => void;
-  // Absent on Cubeship's own registry, which nothing here deletes from.
   selectable: boolean;
   picked: boolean;
   onPick: () => void;

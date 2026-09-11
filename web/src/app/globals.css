@@ -59,6 +59,30 @@
   --destructive: #ff2e5b;
   --destructive-foreground: #ffffff;
 
+  /* The terminal's own eight, for a log that arrives coloured.
+     Deliberately NOT per palette, which every other colour here is: an
+     app writes red because something failed, and a red that came out
+     pink under one theme would be the interface overruling what the
+     program meant. They are the one set of colours in this product that
+     belong to somebody else. Tuned for a black panel, which is the only
+     place they are used. */
+  --ansi-black: #2b3038;
+  --ansi-red: #ff5f6b;
+  --ansi-green: #8dff5a;
+  --ansi-yellow: #ffb020;
+  --ansi-blue: #56a0ff;
+  --ansi-magenta: #ff2e88;
+  --ansi-cyan: #2de2e6;
+  --ansi-white: #c8d1dc;
+  --ansi-bright-black: #6b7684;
+  --ansi-bright-red: #ff8a93;
+  --ansi-bright-green: #b4ff8f;
+  --ansi-bright-yellow: #ffd166;
+  --ansi-bright-blue: #8cc0ff;
+  --ansi-bright-magenta: #ff74b0;
+  --ansi-bright-cyan: #7ff0f3;
+  --ansi-bright-white: #ffffff;
+
   /* Square. Every corner in the interface is 90°; the only round things
      left are status dots, which read as indicator lamps. */
   --radius: 0px;
