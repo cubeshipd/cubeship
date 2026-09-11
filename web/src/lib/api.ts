@@ -11,7 +11,29 @@ export class ApiError extends Error {
   }
 }
 
+// PREVIEW is the dashboard standing on invented data with no daemon
+// behind it — `make web-preview`.
+//
+// The import is dynamic and behind the flag, and that alone is not
+// enough: the chunk is emitted whether or not the branch can run. What
+// keeps the fixtures out of the image is the alias in next.config.ts,
+// which resolves them to a stub in every build that is not the preview.
+const PREVIEW = process.env.NEXT_PUBLIC_CUBESHIP_MOCK === "1";
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  if (PREVIEW) {
+    const { handle } = await import("@/lib/mock");
+    try {
+      return (await handle(method, path, body)) as T;
+    } catch (err) {
+      // Rethrown as the error every screen already knows how to show,
+      // so a gap in the preview reads like a refusal from the daemon
+      // rather than a crash.
+      const status = (err as { status?: number }).status ?? 500;
+      throw new ApiError(status, (err as Error).message);
+    }
+  }
+
   const res = await fetch(PREFIX + path, {
     method,
     // The session is a cookie the daemon set. Sending it is the whole
