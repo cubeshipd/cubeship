@@ -323,6 +323,7 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
         // control, and a ring around only the middle of it looks
         // like a mistake.
         <SearchBar
+          className="mb-4"
           value={query}
           onChange={setQuery}
           placeholder="Filter repositories"

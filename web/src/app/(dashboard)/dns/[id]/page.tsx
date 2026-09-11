@@ -81,6 +81,7 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
       </RailPortal>
       {zones && zones.length > 0 && (
         <SearchBar
+          className="mb-4"
           value={query}
           onChange={setQuery}
           placeholder="Filter zones"
