@@ -125,7 +125,7 @@ func NewEmpty(t testing.TB) *Fixture {
 	dataDir := t.TempDir()
 	return &Fixture{
 		Server: server.New(db, noDocker{}, server.Options{
-			WebhookToken: WebhookToken, BuilderToken: BuilderToken, LocalRegistry: LocalRegistry, DataDir: dataDir,
+			WebhookToken: WebhookToken, BuilderToken: BuilderToken, LocalRegistry: LocalRegistry, PullRegistry: LocalRegistry, DataDir: dataDir,
 		}),
 		DB:      db,
 		DataDir: dataDir,
@@ -141,7 +141,7 @@ func NewUnclaimed(t testing.TB, token setup.Token) *Fixture {
 	dataDir := t.TempDir()
 	return &Fixture{
 		Server: server.New(db, noDocker{}, server.Options{
-			WebhookToken: WebhookToken, BuilderToken: BuilderToken, LocalRegistry: LocalRegistry,
+			WebhookToken: WebhookToken, BuilderToken: BuilderToken, LocalRegistry: LocalRegistry, PullRegistry: LocalRegistry,
 			SetupToken: token, DataDir: dataDir,
 		}),
 		DB:      db,
@@ -170,7 +170,7 @@ func newFixture(t testing.TB, docker app.DockerAPI, domain string) *Fixture {
 
 	dataDir := t.TempDir()
 	srv := server.New(db, docker, server.Options{
-		WebhookToken: WebhookToken, BuilderToken: BuilderToken, LocalRegistry: LocalRegistry, DataDir: dataDir,
+		WebhookToken: WebhookToken, BuilderToken: BuilderToken, LocalRegistry: LocalRegistry, PullRegistry: LocalRegistry, DataDir: dataDir,
 	})
 	if domain != "" {
 		if err := srv.Settings.SeedFromEnv(ctx, map[string]string{settings.Domain: domain}); err != nil {
