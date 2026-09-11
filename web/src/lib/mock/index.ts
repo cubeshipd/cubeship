@@ -19,6 +19,9 @@
 
 import type {
   Bucket,
+  DNSProviderKind,
+  DNSRecord,
+  DNSZone,
   ObjectListing,
   RegistryImage,
   RegistryRepository,
@@ -271,7 +274,11 @@ const routes: [string, string, Handler][] = [
   ["GET", "/registries/:id/images", () => images],
   ["GET", "/registries/:id/usage", () => usage],
   ["GET", "/credentials", () => db.credentials],
+  // `/dns/providers` before `/dns/:id`: the literal wins, which is the
+  // same order Go's mux resolves them in on the daemon.
+  ["GET", "/dns/providers", () => dnsKinds],
   ["GET", "/dns", () => db.dnsProviders],
+  ["GET", "/dns/:id/status", () => ({ state: "available" })],
   ["GET", "/dns/:id/zones", () => zones],
   ["GET", "/dns/:id/records", () => records],
   ["GET", "/certificates", () => db.certificates],
@@ -561,11 +568,47 @@ const usage: RegistryUsage = {
   ],
 };
 
-const zones = [{ id: "z1", name: "example.com" }];
+const dnsKinds: DNSProviderKind[] = [
+  {
+    provider: "cloudflare",
+    name: "Cloudflare",
+    password_label: "API token",
+    hint: "A token with Zone:Read and DNS:Edit on the zones this instance should write.",
+  },
+  {
+    provider: "route53",
+    name: "Route 53",
+    username_label: "Access key ID",
+    password_label: "Secret access key",
+    hint: "An IAM key with route53:ChangeResourceRecordSets on the hosted zones.",
+  },
+];
 
-const records = [
-  { id: "r1", type: "A", name: "api.example.com", content: "203.0.113.42", ttl: 300 },
-  { id: "r2", type: "A", name: "docs.example.com", content: "203.0.113.42", ttl: 300 },
+const zones: DNSZone[] = [
+  { id: "z1", name: "example.com" },
+  { id: "z2", name: "example.net" },
+];
+
+// A record is a list of values at both providers: two A records for one
+// name are one record here.
+const records: DNSRecord[] = [
+  {
+    id: "r1",
+    type: "A",
+    name: "api.example.com",
+    values: ["203.0.113.42"],
+    ttl: 300,
+    proxied: false,
+  },
+  {
+    id: "r2",
+    type: "A",
+    name: "docs.example.com",
+    values: ["203.0.113.42"],
+    ttl: 300,
+    proxied: true,
+  },
+  { id: "r3", type: "TXT", name: "example.com", values: ["v=spf1 -all"], ttl: 3600 },
 ];
 
 const githubRepos = [
