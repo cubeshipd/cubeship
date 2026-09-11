@@ -671,6 +671,28 @@ and saying so beats a build that fails on a missing Dockerfile.
 Traefik, BuildKit, the dashboard and every app on the `cubeship`
 network. Each finds the others by container name.
 
+**The Engine is not one of the things an address follows.** It is the
+host's daemon whatever Cubeship is, and it is on no user-defined
+network — so an image reference beginning `cubeship-registry:5000` is
+one it looks up through the *host's* resolver and never finds. Container
+names live in Docker's embedded DNS, which only containers on that
+network can ask. `bootstrap.LocalRegistryAddress` is where the **daemon**
+reaches the registry's API and follows `InContainer`;
+`bootstrap.PullRegistryAddress` is where the **Engine** pulls and is
+loopback always, because the registry's port is published on the host
+either way.
+
+They were one value, and the Engine got the container's name. Every
+deploy of an app on this instance's own registry failed with `lookup
+cubeship-registry on 127.0.0.53:53: server misbehaving` — which reads as
+a broken registry and is a name that was never going to resolve where it
+was sent. It survived because the other way an app gets an image never
+pulls: a build is loaded straight into the Engine (`Image.Local`), so an
+instance that only builds never meets it. The pull address is also the
+key `SetRegistryTokenSigner` is registered under, so the two are one
+string: a token minted for one host is not attached to a pull from
+another.
+
 **`config.InContainer` is what decides every address**, and it is set in
 the image rather than by whoever runs it. A daemon on the host is still
 supported — that is what `make dev` runs — and reaches the same things

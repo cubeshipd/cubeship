@@ -99,10 +99,17 @@ type Options struct {
 	// refuses rather than panicking — which is what most tests want.
 	Builder app.ImageBuilder
 
-	// LocalRegistry is where the daemon pulls an app's own image from.
-	// It depends on whether the daemon is a container or a host process,
-	// which only the daemon knows.
+	// LocalRegistry is where the daemon reaches the registry's own API —
+	// the catalogue, a delete, a garbage-collection pass. It depends on
+	// whether the daemon is a container or a host process, which only
+	// the daemon knows.
 	LocalRegistry string
+
+	// PullRegistry is where the *Engine* pulls an app's image from, and
+	// it is a different address for a reason worth reading once:
+	// bootstrap.PullRegistryAddress. Using LocalRegistry here is a
+	// reference the Engine cannot resolve.
+	PullRegistry string
 
 	// Frontend is where the dashboard's server answers. The daemon is
 	// the only thing in front of it, so this is the address of a
@@ -190,7 +197,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// three kinds of container.
 	series := metrics.NewService(db)
 	apps := app.NewService(db, projects,
-		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gh, opts.LocalRegistry),
+		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gh, opts.PullRegistry),
 		cfg, series)
 
 	// Datastores sit above apps: an attachment names one, so this module

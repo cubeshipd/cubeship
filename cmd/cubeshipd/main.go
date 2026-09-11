@@ -483,7 +483,12 @@ func run() error {
 	// pull-only token for exactly the repository being pulled, fresh
 	// every time (tokens expire in regauth.TokenTTL).
 	localRegistry := bootstrap.LocalRegistryAddress(cfg)
-	docker.SetRegistryTokenSigner(localRegistry, func(repository string) (string, error) {
+	// Registered under the address the *Engine* will use, because that
+	// is the host a pull's credentials are looked up by. The daemon's
+	// own address for the registry is a different string and is not
+	// what any image reference carries.
+	pullRegistry := bootstrap.PullRegistryAddress()
+	docker.SetRegistryTokenSigner(pullRegistry, func(repository string) (string, error) {
 		return regauth.IssueToken(registrySigningKey, registryCertDER, regauth.TokenIssuer, regauth.TokenService, "cubeshipd",
 			[]regauth.AccessEntry{{Type: "repository", Name: repository, Actions: []string{"pull"}}})
 	})
@@ -546,6 +551,7 @@ func run() error {
 		BuilderToken:  builderToken,
 		Builder:       builder,
 		LocalRegistry: localRegistry,
+		PullRegistry:  pullRegistry,
 		Frontend:      bootstrap.FrontendAddress(cfg),
 		DataDir:       cfg.DataDir,
 		SetupToken:    setupToken,

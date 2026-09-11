@@ -90,14 +90,45 @@ func DaemonAddress(cfg *config.Config, port int) string {
 	return fmt.Sprintf("host.docker.internal:%d", port)
 }
 
-// LocalRegistryAddress is where the daemon pulls an app's image from.
+// LocalRegistryAddress is where **the daemon** reaches the registry's own
+// API: the catalogue, a delete, a garbage-collection pass.
+//
 // Never the public name: that would hairpin out to this host's own
 // address and need a certificate to already exist, which must not be
-// what a deploy waits on.
+// what a deploy waits on. The daemon is a container on the `cubeship`
+// bridge, so the registry's container name is what resolves for it —
+// through Docker's embedded DNS, which only containers on that network
+// can ask.
+//
+// **That last sentence is why PullRegistryAddress exists.** See it
+// before using this for anything that ends up in an image reference.
 func LocalRegistryAddress(cfg *config.Config) string {
 	if cfg.InContainer {
 		return fmt.Sprintf("%s:%d", RegistryContainerName, registryPort)
 	}
+	return fmt.Sprintf("127.0.0.1:%d", registryPort)
+}
+
+// PullRegistryAddress is where **the Engine** pulls an app's image from,
+// and it is not the same answer.
+//
+// An image reference is resolved by the Engine, which is the host's
+// daemon and is on no user-defined network. Container names live in
+// Docker's embedded DNS, which only containers on that network can ask
+// — so a reference beginning `cubeship-registry:5000` is one the Engine
+// looks up through the *host's* resolver and never finds. The pull
+// fails with "server misbehaving", which reads as a broken registry and
+// is a name that was never going to resolve where it was sent.
+//
+// So this is loopback whatever the daemon is, because the published
+// port is on the host either way and the Engine is always the host's.
+// Docker trusts 127.0.0.0/8 as insecure by default, which is what keeps
+// this from needing a certificate or a daemon.json entry.
+//
+// The address is also the key the daemon's own token signer is
+// registered under, so the two have to be the same string: a token
+// minted for one host is not attached to a pull from another.
+func PullRegistryAddress() string {
 	return fmt.Sprintf("127.0.0.1:%d", registryPort)
 }
 

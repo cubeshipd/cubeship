@@ -625,10 +625,10 @@ func TestAddressesFollowWhereTheDaemonRuns(t *testing.T) {
 		t.Errorf("a contained daemon connects to %q, want the container name", got)
 	}
 	if got := LocalRegistryAddress(host); got != "127.0.0.1:5000" {
-		t.Errorf("a host daemon pulls from %q", got)
+		t.Errorf("a host daemon reads the registry at %q", got)
 	}
 	if got := LocalRegistryAddress(contained); got != RegistryContainerName+":5000" {
-		t.Errorf("a contained daemon pulls from %q", got)
+		t.Errorf("a contained daemon reads the registry at %q", got)
 	}
 
 	// And the reach back: a container calling the daemon cannot use
@@ -875,5 +875,44 @@ func TestNoInfrastructureContainerIsCapped(t *testing.T) {
 		if !tc.opts.Resources.Unlimited() {
 			t.Errorf("%s carries a ceiling Ensure would never apply: %+v", tc.name, tc.opts.Resources)
 		}
+	}
+}
+
+// Where the daemon reads the registry and where the Engine pulls from
+// are two questions, and for a containerized daemon they have different
+// answers.
+//
+// They were one value, and the Engine got the container's name. An
+// image reference is resolved by the Engine — the host's daemon, on no
+// user-defined network — and container names live in Docker's embedded
+// DNS, which only containers on that network can ask. So every deploy
+// of an app on this instance's own registry failed with `lookup
+// cubeship-registry on 127.0.0.53:53: server misbehaving`, which reads
+// as a broken registry and is a name that was never going to resolve
+// where it was sent.
+//
+// Nothing but a real Engine can catch that, which is why the property
+// worth pinning is the one above it: the address that becomes an image
+// reference is never a container's name.
+func TestTheEngineIsGivenAnAddressItCanResolve(t *testing.T) {
+	pull := PullRegistryAddress()
+	if !strings.HasPrefix(pull, "127.0.0.1:") {
+		t.Errorf("the Engine is told to pull from %q, which is not the host's loopback", pull)
+	}
+	if strings.Contains(pull, RegistryContainerName) {
+		t.Errorf("the Engine is told to pull from %q, a name only containers on the bridge resolve", pull)
+	}
+
+	// And it does not follow the daemon, which is the whole distinction:
+	// the published port is on the host either way.
+	contained := testConfig()
+	contained.InContainer = true
+	if pull == LocalRegistryAddress(contained) {
+		t.Error("a contained daemon hands the Engine its own address for the registry")
+	}
+	host := testConfig()
+	host.InContainer = false
+	if pull != LocalRegistryAddress(host) {
+		t.Errorf("on a host daemon the two disagree: %q and %q", pull, LocalRegistryAddress(host))
 	}
 }
