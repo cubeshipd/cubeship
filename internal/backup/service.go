@@ -73,6 +73,11 @@ type Service struct {
 	stores  Stores
 	dataDir string
 
+	// instance is this daemon's own machinery, for backing the
+	// instance itself up. Wired by `server`, and nil in a test that
+	// does not need it — which is what ErrNoInstanceDatabase answers.
+	instance Instance
+
 	// running tracks dumps that outlive the request that asked for
 	// one. Tests wait on it; the daemon does not.
 	running sync.WaitGroup
@@ -81,6 +86,11 @@ type Service struct {
 func NewService(db *database.DB, dbs Databases, stores Stores, dataDir string) *Service {
 	return &Service{db: db, dbs: dbs, stores: stores, dataDir: dataDir}
 }
+
+// SetInstance wires what it takes to back the instance itself up.
+// Called once, at startup, by the only package that knows every module
+// exists — the same seam every other pair here meets at.
+func (s *Service) SetInstance(i Instance) { s.instance = i }
 
 func (s *Service) Repo() *Repository { return NewRepository(s.db) }
 
@@ -316,11 +326,7 @@ func (s *Service) dump(ctx context.Context, d *datastore.Datastore, row *Backup)
 	case closeErr != nil:
 		return 0, fmt.Errorf("store the dump: %w", closeErr)
 	case counted.n == 0:
-		// An empty dump is never right — every engine writes a header
-		// even for an empty database — and it is the shape a silent
-		// failure takes. Better a backup that says it failed than one
-		// that restores to nothing.
-		return 0, errors.New("the dump was empty, which no engine produces even for an empty database")
+		return 0, ErrEmptyDump
 	}
 	return counted.n, nil
 }
@@ -620,6 +626,16 @@ func (s *Service) resolve(ctx context.Context, caller *user.User, name string) (
 
 func (s *Service) scheduleOrNothing(ctx context.Context, datastoreID int64) (*Schedule, error) {
 	schedule, err := s.Repo().ScheduleFor(ctx, datastoreID)
+	if errors.Is(err, database.ErrNotFound) {
+		return nil, nil
+	}
+	return schedule, err
+}
+
+// instanceScheduleOrNothing is the same for the instance's own, whose
+// absence is likewise not an error: no row is what off is.
+func (s *Service) instanceScheduleOrNothing(ctx context.Context) (*Schedule, error) {
+	schedule, err := s.Repo().InstanceSchedule(ctx)
 	if errors.Is(err, database.ErrNotFound) {
 		return nil, nil
 	}

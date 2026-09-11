@@ -40,8 +40,25 @@ func (s *Service) SetSchedule(ctx context.Context, caller *user.User, name, stor
 	if !d.Engine.CanBackUp() {
 		return nil, fmt.Errorf("%w: %s", ErrNoDump, d.Engine)
 	}
-	if _, _, err := ParseTimeOfDay(in.At); err != nil {
+	if err := s.checkSchedule(ctx, store, &in); err != nil {
 		return nil, err
+	}
+
+	in.DatastoreID = d.ID
+	return s.Repo().SetSchedule(ctx, &in)
+}
+
+// checkSchedule is every refusal a schedule can earn, in one copy.
+//
+// It was written out inside SetSchedule, and the instance's own needs
+// exactly the same four questions asked exactly the same way — a second
+// copy is a second place for the timezone check or the store probe to
+// quietly not happen. It normalises `in` as it goes, which is why it
+// takes a pointer: an empty timezone becomes UTC, and a store named by
+// slug becomes the id the row holds.
+func (s *Service) checkSchedule(ctx context.Context, store string, in *Schedule) error {
+	if _, _, err := ParseTimeOfDay(in.At); err != nil {
+		return err
 	}
 	if in.Timezone == "" {
 		in.Timezone = "UTC"
@@ -51,31 +68,30 @@ func (s *Service) SetSchedule(ctx context.Context, caller *user.User, name, stor
 	// that out when the timer fires means a schedule that silently
 	// never runs.
 	if _, err := time.LoadLocation(in.Timezone); err != nil {
-		return nil, fmt.Errorf("%w: %q", ErrUnknownTimezone, in.Timezone)
+		return fmt.Errorf("%w: %q", ErrUnknownTimezone, in.Timezone)
 	}
 	if in.Keep < 0 || in.Keep > MaxKeep {
-		return nil, ErrBadKeep
+		return ErrBadKeep
 	}
-	if store != "" {
-		if in.Bucket == "" {
-			return nil, ErrNoBucket
-		}
-		in.StoreID, err = s.stores.IDForName(ctx, store)
-		if err != nil {
-			return nil, err
-		}
-		// Opened now, so a schedule cannot be written against a store
-		// this instance cannot reach — which would be a row that fires
-		// nightly and fails nightly, in a log nobody reads.
-		if _, _, err := s.stores.ClientForID(ctx, in.StoreID); err != nil {
-			return nil, err
-		}
-	} else {
+	if store == "" {
 		in.StoreID, in.Bucket = 0, ""
+		return nil
 	}
-
-	in.DatastoreID = d.ID
-	return s.Repo().SetSchedule(ctx, &in)
+	if in.Bucket == "" {
+		return ErrNoBucket
+	}
+	id, err := s.stores.IDForName(ctx, store)
+	if err != nil {
+		return err
+	}
+	in.StoreID = id
+	// Opened now, so a schedule cannot be written against a store this
+	// instance cannot reach — which would be a row that fires nightly
+	// and fails nightly, in a log nobody reads.
+	if _, _, err := s.stores.ClientForID(ctx, in.StoreID); err != nil {
+		return err
+	}
+	return nil
 }
 
 // UnsetSchedule turns it off by removing the row, which is what off is.
@@ -164,6 +180,15 @@ func (s *Scheduler) Once(ctx context.Context) {
 		log.Printf("backup: reading the schedules: %v", err)
 		return
 	}
+	// The instance's own is one more schedule, read from its own table
+	// and appended here. Everything below this point treats the two the
+	// same, because what a schedule *is* does not differ between them:
+	// a time of day, a place to put it, and how many to keep.
+	if own, err := s.Backups.instanceScheduleOrNothing(ctx); err != nil {
+		log.Printf("backup: reading the instance schedule: %v", err)
+	} else if own != nil {
+		schedules = append(schedules, own)
+	}
 	now := time.Now()
 	for _, schedule := range schedules {
 		if !Due(schedule, now) {
@@ -181,6 +206,18 @@ func (s *Scheduler) Once(ctx context.Context) {
 // instance that had just restarted would take one backup per minute
 // until it finished.
 func (s *Service) RunScheduled(ctx context.Context, schedule *Schedule, at time.Time) {
+	if schedule.Kind() == KindInstance {
+		// Marked before the dump starts, for the reason below.
+		if err := s.Repo().MarkInstanceRun(ctx, at); err != nil {
+			log.Printf("backup: marking the instance schedule: %v", err)
+			return
+		}
+		if _, err := s.startInstance(ctx, schedule.StoreID, schedule.Bucket, true); err != nil {
+			log.Printf("backup: starting one for the instance: %v", err)
+		}
+		return
+	}
+
 	d, err := s.dbs.ByID(ctx, schedule.DatastoreID)
 	if err != nil {
 		log.Printf("backup: the database for a schedule is gone: %v", err)
@@ -195,6 +232,45 @@ func (s *Service) RunScheduled(ctx context.Context, schedule *Schedule, at time.
 	}
 }
 
+// InstanceSchedule reads the instance's own, or ErrNotFound — which is
+// what off is, because the row existing is the whole of it.
+func (s *Service) InstanceSchedule(ctx context.Context, caller *user.User) (*Schedule, error) {
+	if err := user.Require(caller, manageRole); err != nil {
+		return nil, err
+	}
+	schedule, err := s.Repo().InstanceSchedule(ctx)
+	if errors.Is(err, database.ErrNotFound) {
+		return nil, ErrNotFound
+	}
+	return schedule, err
+}
+
+// SetInstanceSchedule turns the instance's own on, or moves it.
+//
+// The same refusals a database's gets, in the same place — where the
+// person who typed it is still watching, rather than at three in the
+// morning in a log nobody reads.
+func (s *Service) SetInstanceSchedule(ctx context.Context, caller *user.User, store string, in Schedule) (*Schedule, error) {
+	if err := user.Require(caller, manageRole); err != nil {
+		return nil, err
+	}
+	if s.instance == nil || !s.instance.OwnsDatabase() {
+		return nil, ErrNoInstanceDatabase
+	}
+	if err := s.checkSchedule(ctx, store, &in); err != nil {
+		return nil, err
+	}
+	return s.Repo().SetInstanceSchedule(ctx, &in)
+}
+
+// UnsetInstanceSchedule turns it off, which is the row going.
+func (s *Service) UnsetInstanceSchedule(ctx context.Context, caller *user.User) error {
+	if err := user.Require(caller, manageRole); err != nil {
+		return err
+	}
+	return s.Repo().DeleteInstanceSchedule(ctx)
+}
+
 // Prune removes what retention says is past, newest kept first.
 //
 // **Only successful backups are counted**, which is the decision worth
@@ -207,7 +283,7 @@ func (s *Service) Prune(ctx context.Context, schedule *Schedule) {
 	if schedule.Keep <= 0 {
 		return
 	}
-	expired, err := s.Repo().Expired(ctx, schedule.DatastoreID, schedule.Keep)
+	expired, err := s.Repo().Expired(ctx, schedule.Kind(), schedule.DatastoreID, schedule.Keep)
 	if err != nil {
 		log.Printf("backup: working out what to prune: %v", err)
 		return

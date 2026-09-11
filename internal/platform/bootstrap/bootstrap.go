@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/url"
 	"os"
@@ -150,6 +151,54 @@ func PostgresContainerOpts(cfg *config.Config, password string) dockerx.Containe
 		Binds:   []string{cfg.DataDir + "/postgres:/var/lib/postgresql/data"},
 		Network: "cubeship",
 	}
+}
+
+// PostgresMajor is the major version this instance's own database
+// runs, read off the image tag so the two cannot disagree.
+func PostgresMajor() string {
+	_, tag, ok := strings.Cut(PostgresImage, ":")
+	if !ok {
+		return ""
+	}
+	major, _, _ := strings.Cut(tag, "-")
+	return major
+}
+
+// DumpPostgres streams a logical dump of Cubeship's own database.
+//
+// **Through the container, because the daemon has no `pg_dump`.** Its
+// image is Alpine with one binary in it; Postgres's own image has the
+// tool, is already running, and is already the thing that would have to
+// be reachable for this to mean anything.
+//
+// **The password is read inside the container, not passed in.** It is
+// already in that container's environment — the image was started with
+// it — so the command is a fixed string with nothing interpolated into
+// it, which is the rule `firewall.Spec.Args` keeps for the same reason.
+// A secret on an argv is a secret in `ps`.
+//
+// Plain SQL rather than the custom format: what this is for is an
+// operator putting an instance back, and `psql < cubeship.sql` is a
+// thing somebody can do at three in the morning without reading a
+// manual. It compresses on the way into the archive anyway.
+func DumpPostgres(ctx context.Context, docker PostgresDumper, w io.Writer) (string, error) {
+	stderr, code, err := docker.ExecStream(ctx, PostgresContainerName,
+		[]string{"sh", "-c",
+			`PGPASSWORD="$POSTGRES_PASSWORD" pg_dump --no-owner --no-privileges ` +
+				`-U "$POSTGRES_USER" -d "$POSTGRES_DB"`},
+		nil, w)
+	if err != nil {
+		return stderr, err
+	}
+	if code != 0 {
+		return stderr, fmt.Errorf("pg_dump exited %d", code)
+	}
+	return stderr, nil
+}
+
+// PostgresDumper is the one thing DumpPostgres needs of the Engine.
+type PostgresDumper interface {
+	ExecStream(ctx context.Context, container string, cmd []string, r io.Reader, w io.Writer) (stderr string, exitCode int, err error)
 }
 
 // EnsurePostgresDataDir creates the bind-mount source before the

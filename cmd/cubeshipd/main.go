@@ -548,6 +548,10 @@ func run() error {
 	}
 
 	srv := server.New(db, docker, server.Options{
+		// An instance that was pointed at somebody else's Postgres has
+		// no container here to dump, so it cannot back itself up — and
+		// says so rather than writing an archive with a hole in it.
+		OwnDatabase:   cfg.DatabaseURL == "",
 		WebhookToken:  cfg.Token,
 		BuilderToken:  builderToken,
 		Builder:       builder,

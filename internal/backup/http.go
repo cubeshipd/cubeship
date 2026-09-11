@@ -103,6 +103,12 @@ func (h *Handler) SetStoreNames(names func(id int64) string) { h.names = names }
 
 const databasePath = "/datastores/{name}/backups"
 
+// instancePath is where the instance's own backups are. Under
+// `/instance`, beside its metrics and its containers, because that is
+// the address for facts about the box rather than about something on
+// it.
+const instancePath = "/instance/backups"
+
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.Handle("GET /backups", auth(http.HandlerFunc(h.list)))
 	// Before the {id} routes in the file and irrelevant to the mux,
@@ -110,6 +116,11 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	// order — but a reader should not have to know that.
 	r.Handle("GET /backups/coverage", auth(http.HandlerFunc(h.coverage)))
 	r.Handle("GET /backups/orphans", auth(http.HandlerFunc(h.orphans)))
+	r.Handle("GET "+instancePath, auth(http.HandlerFunc(h.instanceList)))
+	r.Handle("POST "+instancePath, auth(http.HandlerFunc(h.instanceTake)))
+	r.Handle("GET "+instancePath+"/schedule", auth(http.HandlerFunc(h.instanceSchedule)))
+	r.Handle("PUT "+instancePath+"/schedule", auth(http.HandlerFunc(h.setInstanceSchedule)))
+	r.Handle("DELETE "+instancePath+"/schedule", auth(http.HandlerFunc(h.unsetInstanceSchedule)))
 	r.Handle("GET "+databasePath, auth(http.HandlerFunc(h.forDatabase)))
 	r.Handle("POST "+databasePath, auth(http.HandlerFunc(h.take)))
 	r.Handle("GET "+databasePath+"/schedule", auth(http.HandlerFunc(h.schedule)))
@@ -175,6 +186,64 @@ func (h *Handler) orphans(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, h.toResponses(rows))
 }
 
+// instanceList is every backup of the instance itself.
+func (h *Handler) instanceList(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	rows, err := h.svc.ListInstance(ctx, user.FromContext(ctx))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, h.toResponses(rows))
+}
+
+// instanceTake starts one now.
+func (h *Handler) instanceTake(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	row, err := h.svc.TakeInstance(ctx, user.FromContext(ctx))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusAccepted, h.toResponse(row))
+}
+
+func (h *Handler) instanceSchedule(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	schedule, err := h.svc.InstanceSchedule(ctx, user.FromContext(ctx))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, h.toScheduleResponse(schedule))
+}
+
+func (h *Handler) setInstanceSchedule(w http.ResponseWriter, r *http.Request) {
+	var req scheduleRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	schedule, err := h.svc.SetInstanceSchedule(ctx, user.FromContext(ctx), req.Store, Schedule{
+		At: req.At, Timezone: req.Timezone, Keep: req.Keep, Bucket: req.Bucket,
+	})
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, h.toScheduleResponse(schedule))
+}
+
+func (h *Handler) unsetInstanceSchedule(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := h.svc.UnsetInstanceSchedule(ctx, user.FromContext(ctx)); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) forDatabase(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rows, err := h.svc.ForDatabase(ctx, user.FromContext(ctx), r.PathValue("name"))
@@ -207,19 +276,24 @@ func (h *Handler) schedule(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, h.toScheduleResponse(s))
 }
 
+// scheduleRequest is what both schedules are written with. One shape,
+// because a schedule is the same four answers whether it is a
+// database's or the instance's.
+type scheduleRequest struct {
+	At       string `json:"at"`
+	Timezone string `json:"timezone"`
+	// Keep is how many to hold on to. Zero keeps every one, which is a
+	// decision rather than a gap — so a body that leaves it out is
+	// asking for that, and the screen says what it costs.
+	Keep int `json:"keep"`
+	// Store is the object store by name, the way every surface in this
+	// product addresses one. Empty is this machine's own disk.
+	Store  string `json:"store"`
+	Bucket string `json:"bucket"`
+}
+
 func (h *Handler) setSchedule(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		At       string `json:"at"`
-		Timezone string `json:"timezone"`
-		// Keep is how many to hold on to. Zero keeps every one, which
-		// is a decision rather than a gap — so a body that leaves it
-		// out is asking for that, and the screen says what it costs.
-		Keep int `json:"keep"`
-		// Store is the object store by name, the way every surface in
-		// this product addresses one. Empty is this machine's own disk.
-		Store  string `json:"store"`
-		Bucket string `json:"bucket"`
-	}
+	var req scheduleRequest
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		WriteError(w, err)
 		return
@@ -355,6 +429,12 @@ func WriteError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
+
+	// An instance that does not run its own database cannot back itself
+	// up. 409 rather than 400: nothing about the request is wrong, and
+	// nothing the caller can change about it would help.
+	case errors.Is(err, ErrNoInstanceDatabase):
+		http.Error(w, err.Error(), http.StatusConflict)
 
 	case errors.Is(err, ErrStillRunning), errors.Is(err, ErrNotDone),
 		errors.Is(err, ErrEngineMismatch), errors.Is(err, ErrNoDump):

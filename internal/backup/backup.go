@@ -47,6 +47,38 @@ const (
 	StatusFailed = "failed"
 )
 
+// ErrEmptyDump is the shape a silent failure takes.
+//
+// No engine writes nothing, even for an empty database — every one of
+// them emits a header — so zero bytes is a dump that did not happen.
+// Better a backup that says it failed than one that restores to
+// nothing.
+var ErrEmptyDump = errors.New(
+	"the dump was empty, which no engine produces even for an empty database")
+
+// Kind is what a backup is a copy of.
+//
+// **Two, and the second is why this module sits where it does.** A
+// datastore's dump is one database somebody asked this instance to run;
+// the instance's is Cubeship itself — every account, project, app and
+// credential, plus the few files on disk that cannot be worked out
+// again. A module inside `datastore` could never have reached the
+// second one.
+type Kind string
+
+const (
+	KindDatastore Kind = "datastore"
+	KindInstance  Kind = "instance"
+)
+
+// InstanceName is what an instance backup is filed under, in the column
+// a datastore's dump puts its database's name in.
+//
+// A name rather than an empty string, because that column is what every
+// screen prints and what a key is built from — and `cubeship` is what
+// the database is actually called.
+const InstanceName = "cubeship"
+
 // Backup is one copy of one database, and what it says about itself
 // outlives the database it came from.
 //
@@ -57,6 +89,9 @@ const (
 // anywhere.
 type Backup struct {
 	ID int64
+	// Kind says whether this is a database somebody runs here or the
+	// instance itself.
+	Kind Kind
 	// DatastoreID is zero once the database is gone. The backup is not.
 	DatastoreID   int64
 	DatastoreName string
@@ -108,6 +143,10 @@ func (b *Backup) OffMachine() bool { return b.Off }
 // **the row existing is what "scheduled" means**. There is no separate
 // flag that could say off while a time sat beside it.
 type Schedule struct {
+	// DatastoreID is zero for the instance's own, which lives in a
+	// table of its own — there is one instance, and it has no database
+	// row to be keyed by. Everything above this reads the two as one
+	// list, because what a schedule *is* does not differ between them.
 	DatastoreID int64
 	// At is a time of day, "03:00", in Timezone.
 	//
@@ -134,6 +173,15 @@ type Schedule struct {
 	StoreID   int64
 	Bucket    string
 	LastRunAt *time.Time
+}
+
+// Kind says what this schedule backs up, from the one field that can
+// tell: a schedule with no database is the instance's.
+func (s *Schedule) Kind() Kind {
+	if s == nil || s.DatastoreID == 0 {
+		return KindInstance
+	}
+	return KindDatastore
 }
 
 var (
