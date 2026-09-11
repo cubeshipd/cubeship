@@ -553,3 +553,67 @@ func checkNamespace(ctx context.Context, s *Service, caller *user.User, id int64
 	}
 	return namespace, nil
 }
+
+// RepositoryOf reduces an image reference to what a registry's own API
+// calls a repository: the part after the host, with Docker Hub's
+// `library/` put back for an official image.
+//
+// `nginx` is the case that needs it. The reference has no host and one
+// path component, and Docker Hub's v2 API has no such repository — the
+// image is `library/nginx` there, and asking for `nginx` is a 404 that
+// reads as "no such image" rather than as a missing prefix.
+func RepositoryOf(image string) string {
+	image = strings.TrimSpace(image)
+	if i := strings.Index(image, "/"); i >= 0 {
+		if first := image[:i]; strings.ContainsAny(first, ".:") || first == "localhost" {
+			image = image[i+1:]
+		}
+	}
+	if HostOf(image) == DockerHub && !strings.Contains(image, "/") && image != "" {
+		return "library/" + image
+	}
+	return image
+}
+
+// TagsFor lists the tags one image reference could be deployed at,
+// whether or not this instance holds a login for where it lives.
+//
+// It exists because the registries an app can pull from are not the
+// same set as the registries this instance has rows for: a public image
+// needs no credential, which is what makes running one the single thing
+// a fresh install can do. Asking through a credential id could not
+// describe that case at all.
+//
+// **A member's, unlike listing what a stored registry holds.** That
+// listing is the instance's inventory — what secrets it holds and what
+// is behind them — and this is one repository somebody already named.
+// Anyone who may configure an app's source may already deploy any tag
+// from it, so refusing to enumerate them would hide nothing and only
+// make the field a guess.
+func (s *Service) TagsFor(ctx context.Context, caller *user.User, image string) ([]Image, error) {
+	if err := user.Require(caller, user.RoleMember); err != nil {
+		return nil, err
+	}
+	repository := RepositoryOf(image)
+	if repository == "" {
+		return nil, fmt.Errorf("name the image to list tags for")
+	}
+
+	c, found, err := s.ForImage(ctx, image)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		// No login, which is not a failure: a public repository answers
+		// an anonymous token request, and the v2 client already asks
+		// for one when it holds no password.
+		c = &Credential{Host: HostOf(image), Provider: ProviderGeneric}
+	}
+	switch c.Provider {
+	case ProviderAWS:
+		return listECRImages(ctx, s.client, c, repository)
+	case ProviderDigitalOcean:
+		return listDOImages(ctx, s.client, c, repository)
+	}
+	return listV2Images(ctx, s.client, c, repository)
+}

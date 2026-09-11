@@ -41,7 +41,7 @@ func newAppCmd() *cobra.Command {
 
 	var domain, project, environment, source string
 	var port int
-	var image string
+	var image, createTag string
 	createCmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Register a new app and get its registry image path",
@@ -52,7 +52,7 @@ func newAppCmd() *cobra.Command {
 				return err
 			}
 			ctx := context.Background()
-			created, err := c.CreateApp(ctx, args[0], project, environment, source, image)
+			created, err := c.CreateApp(ctx, args[0], project, environment, source, image, createTag)
 			if err != nil {
 				return err
 			}
@@ -74,7 +74,8 @@ func newAppCmd() *cobra.Command {
 	createCmd.MarkFlagRequired("project")
 	createCmd.Flags().StringVar(&environment, "env", "", `environment slug within the project (default "production")`)
 	createCmd.Flags().StringVar(&source, "source", "", `where the image comes from: "registry" (the default) means one you push to Cubeship`)
-	createCmd.Flags().StringVar(&image, "image", "", `for --source external: the image it pulls, without a tag — the tag is a deploy's argument`)
+	createCmd.Flags().StringVar(&image, "image", "", `for --source external: the image it pulls, without a tag — the tag is its own flag`)
+	createCmd.Flags().StringVar(&createTag, "tag", "", `the tag to run; leave it out to follow the registry, which on Cubeship's own means a push deploys the app`)
 
 	var tag string
 	var detach bool

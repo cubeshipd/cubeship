@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"cubeship/internal/credential"
@@ -62,6 +63,10 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("POST /registries", auth(http.HandlerFunc(h.create)))
 	r.Handle("PUT /registries/{id}", auth(http.HandlerFunc(h.update)))
 	r.Handle("DELETE /registries/{id}", auth(http.HandlerFunc(h.delete)))
+	// Before the {id} routes, and a literal either way: Go's mux prefers
+	// a literal segment, and this one is not about a stored registry at
+	// all — it answers for an image wherever it lives.
+	r.Handle("GET /registries/tags", auth(http.HandlerFunc(h.tags)))
 	r.Handle("GET /registries/{id}/repositories", auth(http.HandlerFunc(h.repositories)))
 	r.Handle("GET /registries/{id}/images", auth(http.HandlerFunc(h.images)))
 	r.Handle("GET /registries/{id}/status", auth(http.HandlerFunc(h.status)))
@@ -231,6 +236,23 @@ func (h *Handler) images(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	images, err := h.svc.Images(ctx, user.FromContext(ctx), id, repository)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, images)
+}
+
+// tags answers what one image could be deployed at, for a registry this
+// instance may hold no login for.
+func (h *Handler) tags(w http.ResponseWriter, r *http.Request) {
+	image := strings.TrimSpace(r.URL.Query().Get("image"))
+	if image == "" {
+		http.Error(w, "name the image with ?image=", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	images, err := h.svc.TagsFor(ctx, user.FromContext(ctx), image)
 	if err != nil {
 		WriteError(w, err)
 		return

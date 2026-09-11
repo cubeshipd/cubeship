@@ -155,6 +155,70 @@ func TestAPushDoesNotDeployAnExternalApp(t *testing.T) {
 	}
 }
 
+// An app pinned to a tag is one somebody decided should run that tag.
+// Moving it because a push arrived — even a push of the tag it is
+// pinned to — is this instance overruling that decision from a
+// notification nobody saw.
+//
+// Which is also the whole of the autodeploy switch: it is on for the app
+// that has not been pinned, and there is no second flag that could say
+// otherwise.
+func TestAPushDoesNotDeployAnAppPinnedToATag(t *testing.T) {
+	f := servertest.New(t)
+
+	push := func(t *testing.T, reference, tag string) int {
+		t.Helper()
+		req := httptestPost(t, "/hooks/registry",
+			`{"events":[{"action":"push","target":{"repository":"`+reference+`","tag":"`+tag+`"}}]}`)
+		req.Header.Set("Authorization", "Bearer "+servertest.WebhookToken)
+		rec := newRecorder()
+		f.Server.Router().ServeHTTP(rec, req)
+		servertest.RequireStatus(t, rec, http.StatusOK)
+		f.Server.Registry.WaitForDeploys()
+
+		var history []struct{ ID int64 }
+		servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet,
+			"/apps/"+reference+"/deployments", nil, f.AdminKey, &history), http.StatusOK)
+		return len(history)
+	}
+
+	var created struct {
+		Reference  string `json:"reference"`
+		Tag        string `json:"tag"`
+		Autodeploy bool   `json:"autodeploy"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/apps", map[string]string{
+		"name": "myapp", "project": "web",
+	}, f.AdminKey, &created), http.StatusCreated)
+	if !created.Autodeploy {
+		t.Fatal("a new app on this instance's registry does not follow it, which is what every app has always done")
+	}
+	following := push(t, created.Reference, "latest")
+	if following == 0 {
+		t.Fatal("a push did not deploy an app that follows the registry")
+	}
+
+	var pinned struct {
+		Tag        string `json:"tag"`
+		Autodeploy bool   `json:"autodeploy"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPatch, "/apps/"+created.Reference,
+		map[string]string{"tag": "v1.0"}, f.AdminKey, &pinned), http.StatusOK)
+	if pinned.Tag != "v1.0" || pinned.Autodeploy {
+		t.Fatalf("pinning left tag=%q autodeploy=%v", pinned.Tag, pinned.Autodeploy)
+	}
+
+	// Two pushes, and neither may move it: a tag it is not pinned to,
+	// and the one it is.
+	if unpinned := push(t, created.Reference, "v2.0"); unpinned != following {
+		t.Errorf("a push of another tag deployed a pinned app: %d deploys, was %d", unpinned, following)
+	}
+	before := following
+	if after := push(t, created.Reference, "v1.0"); after != before {
+		t.Errorf("a push of the pinned tag deployed it: %d deploys, was %d", after, before)
+	}
+}
+
 // Every token the daemon hands out has to carry the certificate that
 // vouches for the key it was signed with.
 //

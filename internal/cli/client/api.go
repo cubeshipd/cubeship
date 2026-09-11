@@ -316,13 +316,16 @@ func (c *Client) DeleteEnvironment(ctx context.Context, projectSlug, envSlug str
 // without a tag, and is empty for every other source — the daemon
 // refuses an image on a source that derives its own, rather than
 // ignoring it.
-func (c *Client) CreateApp(ctx context.Context, name, projectSlug, environment, source, image string) (App, error) {
+func (c *Client) CreateApp(ctx context.Context, name, projectSlug, environment, source, image, tag string) (App, error) {
 	body := map[string]string{
 		"name": name, "project": projectSlug,
 		"environment": environment, "source": source,
 	}
 	if image != "" {
 		body["image"] = image
+	}
+	if tag != "" {
+		body["tag"] = tag
 	}
 	return request[App](ctx, c, "create app", http.MethodPost, "/apps", body,
 		http.StatusCreated, DefaultTimeout)

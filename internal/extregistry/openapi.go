@@ -146,6 +146,24 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
+			"/registries/tags": {
+				"get": {
+					OperationID: "listImageTags",
+					Summary:     "List the tags an image could be deployed at",
+					Description: "Takes the image reference rather than a registry, because the registries an app may pull from are not the ones this instance has rows for: a public image needs no login at all, which is what makes running one the single thing a fresh install can do. A stored login is used when this instance holds one for that host, and an anonymous token when it does not.\n\nNewest first, by the date each image was built.\n\nA member's, unlike listing what a stored registry holds — that is the instance's inventory, and this is one repository somebody already named.",
+					Tags:        []string{"Registries"},
+					Parameters: []openapi.Parameter{
+						openapi.QueryParam("image", "The image, without a tag: `nginx`, `ghcr.io/acme/api`."),
+					},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The tags.", openapi.Array(openapi.Ref("RegistryImage"))),
+						"400": openapi.TextResponse("No image was named."),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.TextResponse("That registry has no such repository."),
+					},
+				},
+			},
 			"/registries/{id}/images": {
 				"delete": {
 					OperationID: "deleteRegistryImage",

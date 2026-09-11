@@ -144,6 +144,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"GET /projects/{projectSlug}/environments",
 		"GET /projects/{projectSlug}/environments/{envSlug}/env",
 		"GET /registries",
+		"GET /registries/tags",
 		"GET /registries/{id}/images",
 		"GET /registries/{id}/repositories",
 		"GET /registries/{id}/status",

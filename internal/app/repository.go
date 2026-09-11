@@ -21,7 +21,7 @@ func NewRepository(q database.Queryer) *Repository {
 }
 
 const columns = `id, project_id, environment_id, name, description, source, source_image,
-	source_repo, source_ref, source_dockerfile, health_path, scale, spread,
+	source_tag, source_repo, source_ref, source_dockerfile, health_path, scale, spread,
 	cpu_limit, memory_limit,
 	autoscale_min, autoscale_max, autoscale_cpu, autoscaled_at,
 	env, created_at`
@@ -32,7 +32,7 @@ func scan(row scanner) (*App, error) {
 	var a App
 	var envJSON []byte
 	if err := row.Scan(&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Description,
-		&a.Source, &a.SourceImage, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
+		&a.Source, &a.SourceImage, &a.SourceTag, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
 		&a.HealthPath, &a.Scale, &a.Spread,
 		&a.Limits.CPU, &a.Limits.Memory,
 		&a.Autoscale.Min, &a.Autoscale.Max, &a.Autoscale.CPU, &a.Autoscale.At,
@@ -60,9 +60,10 @@ func (r *Repository) Update(ctx context.Context, appID int64, description *strin
 	// The origin fields travel with the source: changing one without
 	// the other would leave an app naming an image its source ignores.
 	// Passing them as one nil means "leave all four".
-	var image, repo, ref, dockerfile *string
+	var image, tag, repo, ref, dockerfile *string
 	if origin != nil {
-		image, repo, ref, dockerfile = &origin.Image, &origin.Repo, &origin.Ref, &origin.Dockerfile
+		image, tag = &origin.Image, &origin.Tag
+		repo, ref, dockerfile = &origin.Repo, &origin.Ref, &origin.Dockerfile
 	}
 	// Both halves of the ceiling travel together, and zero is a value
 	// rather than a gap: it is how a limit is *removed*, so a nil here
@@ -87,17 +88,18 @@ func (r *Repository) Update(ctx context.Context, appID int64, description *strin
 		   description       = COALESCE($1, description),
 		   source            = COALESCE($2, source),
 		   source_image      = COALESCE($3, source_image),
-		   source_repo       = COALESCE($4, source_repo),
-		   source_ref        = COALESCE($5, source_ref),
-		   source_dockerfile = COALESCE($6, source_dockerfile),
-		   health_path       = COALESCE($7, health_path),
-		   cpu_limit         = COALESCE($8, cpu_limit),
-		   memory_limit      = COALESCE($9, memory_limit),
-		   autoscale_min     = COALESCE($10, autoscale_min),
-		   autoscale_max     = COALESCE($11, autoscale_max),
-		   autoscale_cpu     = COALESCE($12, autoscale_cpu)
-		 WHERE id = $13 RETURNING `+columns,
-		description, src, image, repo, ref, dockerfile, health, cpu, memory,
+		   source_tag        = COALESCE($4, source_tag),
+		   source_repo       = COALESCE($5, source_repo),
+		   source_ref        = COALESCE($6, source_ref),
+		   source_dockerfile = COALESCE($7, source_dockerfile),
+		   health_path       = COALESCE($8, health_path),
+		   cpu_limit         = COALESCE($9, cpu_limit),
+		   memory_limit      = COALESCE($10, memory_limit),
+		   autoscale_min     = COALESCE($11, autoscale_min),
+		   autoscale_max     = COALESCE($12, autoscale_max),
+		   autoscale_cpu     = COALESCE($13, autoscale_cpu)
+		 WHERE id = $14 RETURNING `+columns,
+		description, src, image, tag, repo, ref, dockerfile, health, cpu, memory,
 		autoMin, autoMax, autoCPU, appID)
 	a, err := scan(row)
 	if err != nil {
@@ -110,7 +112,16 @@ func (r *Repository) Update(ctx context.Context, appID int64, description *strin
 // says which of these fields mean anything. Passing them as one value
 // keeps Create from growing an argument per source.
 type Origin struct {
-	Image      string
+	Image string
+	// Tag is the one this app runs, and empty is a decision rather than
+	// a gap: on Cubeship's own registry it means "whatever is pushed",
+	// which is the push-deploys-it behaviour every app has had; on any
+	// other registry it means `latest`.
+	//
+	// It is the whole of the autodeploy switch. A tag beside a flag
+	// saying to follow every push is two settings that can contradict
+	// each other, and one of them would have to lose silently.
+	Tag        string
 	Repo       string
 	Ref        string
 	Dockerfile string
@@ -124,11 +135,11 @@ func (r *Repository) Create(ctx context.Context, projectID, environmentID int64,
 		// row by a number, and the control plane's is a fact about a
 		// table rather than a constant.
 		`INSERT INTO apps (project_id, environment_id, name, description, source,
-		                   source_image, source_repo, source_ref, source_dockerfile)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		                   source_image, source_tag, source_repo, source_ref, source_dockerfile)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		 RETURNING `+columns,
 		projectID, environmentID, name, description, string(source),
-		origin.Image, origin.Repo, origin.Ref, origin.Dockerfile)
+		origin.Image, origin.Tag, origin.Repo, origin.Ref, origin.Dockerfile)
 	a, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("create app: %w", err)

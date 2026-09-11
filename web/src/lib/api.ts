@@ -126,6 +126,15 @@ export type App = {
   suggested_host?: string;
   // For a registry app, where to push; for an external one, what it pulls.
   image?: string;
+  // The tag this app runs. Absent means it follows the registry: on
+  // this instance's own that is a push deploying it, and anywhere else
+  // it is `latest`.
+  tag?: string;
+  // Whether a push to this instance's registry deploys this app. True
+  // exactly when it is on that registry and pinned to no tag — derived
+  // from those two, so nothing can claim it is on while a tag says
+  // otherwise.
+  autodeploy?: boolean;
   status: string;
   // Whether a container currently backs this app, which is what decides
   // whether there is a log to read. The status cannot answer it: an app

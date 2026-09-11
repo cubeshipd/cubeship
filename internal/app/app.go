@@ -45,6 +45,14 @@ type App struct {
 	// SourceImage is the image an external app pulls, without a tag.
 	// Empty for every other source.
 	SourceImage string
+	// SourceTag is the tag this app runs, and empty means two things
+	// that are one idea: on Cubeship's own registry, whatever is pushed
+	// — the push is the deploy — and anywhere else, `latest`.
+	//
+	// Setting it is how an app is pinned, and it is therefore also how
+	// autodeploy is turned off. There is no second flag, because a flag
+	// and a tag can disagree and this cannot.
+	SourceTag string
 	// SourceRepo and SourceRef are the repository a building app builds
 	// from, and which commit-ish of it. An empty ref means the
 	// repository's default branch.
