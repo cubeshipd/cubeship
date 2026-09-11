@@ -118,6 +118,10 @@ export type InstanceUser = {
   email?: string;
   // Always present, like Me's: there is no account with no face.
   avatar: string;
+  // When this account was shut out, absent while it is not. One field
+  // rather than a flag and a date — the two would be one fact with two
+  // places to disagree about it.
+  blocked_at?: string;
   created_at: string;
 };
 // None of these has a display name. The slug is the name — the rule an
