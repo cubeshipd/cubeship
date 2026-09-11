@@ -29,7 +29,7 @@ func ran(s string) *time.Time {
 // No database and no Docker — this is arithmetic against a clock the
 // test chooses, which is exactly why it is a function rather than a
 // branch inside the loop.
-func TestWhenASchedduleIsDue(t *testing.T) {
+func TestWhenAScheduleIsDue(t *testing.T) {
 	cases := []struct {
 		name     string
 		schedule backup.Schedule
