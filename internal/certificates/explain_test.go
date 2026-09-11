@@ -91,3 +91,39 @@ func TestAProviderThatCannotReadTheEngineIsAComplaint(t *testing.T) {
 		}
 	}
 }
+
+// Traefik colours its own log, and Docker puts a binary header in front
+// of every frame. Neither is something to show somebody.
+//
+// This is what the certificates page actually rendered: `r[90m2026-...`
+// — the `r` is the frame length's low byte, printable for any line of
+// about that size, and the rest is a colour escape with its own escape
+// byte already dropped. The field that exists to explain a failure was
+// unreadable, which is the whole of what it is for.
+func TestTheLogIsReadableByTheTimeItReachesThePage(t *testing.T) {
+	line := "\x01\x00\x00\x00\x00\x00\x00\x72" +
+		"\x1b[90m2026-09-10T23:57:50Z\x1b[0m \x1b[31mERR\x1b[0m " +
+		"\x1b[1mUnable to obtain ACME certificate for domains\x1b[0m " +
+		"\x1b[36merror=\x1b[0mtimeout for api.example.com"
+
+	lines := complaints(strings.NewReader(line))
+	if len(lines) != 1 {
+		t.Fatalf("kept %d lines: %v", len(lines), lines)
+	}
+	got := lines[0]
+
+	if strings.ContainsAny(got, "\x1b\x00\x01") {
+		t.Errorf("a control byte came through: %q", got)
+	}
+	for _, junk := range []string{"[90m", "[31m", "[0m", "[1m", "[36m"} {
+		if strings.Contains(got, junk) {
+			t.Errorf("a colour escape came through as text (%s): %q", junk, got)
+		}
+	}
+	if !strings.HasPrefix(got, "2026-09-10T23:57:50Z") {
+		t.Errorf("the line does not start with what Traefik printed first: %q", got)
+	}
+	if !strings.Contains(got, "Unable to obtain ACME certificate") {
+		t.Errorf("the sentence itself did not survive: %q", got)
+	}
+}
