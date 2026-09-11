@@ -91,15 +91,19 @@ func (u *User) Blocked() bool { return u != nil && u.BlockedAt != nil }
 // of colours would be one to keep in step by hand, and there is nothing
 // to gain by calling the same red something else here.
 //
-// **Sharing the vocabulary is not the same as being the same list**, and
-// this is where that shows: `blue` is a palette with no face, because a
-// face is an image somebody has to draw and a palette is twenty lines of
-// CSS. Nothing here requires the two to match — `Themes` and this are
-// read for different questions, and a face missing for a palette costs
-// somebody on that palette a choice, not a broken screen. Which is why
-// there is no test tying them together: it would fail for a reason that
-// is not a fault.
-var Avatars = []string{"blue", "cyan", "hacker", "mono", "orange", "pink", "purple", "red"}
+// **Sharing the vocabulary is not the same as being the same list.**
+// Every palette happens to have a face today, and nothing here requires
+// that: a face is an image somebody has to draw and a palette is twenty
+// lines of CSS, so the two move at different speeds and `blue` went a
+// release with a palette and no face. They are read for different
+// questions, and a face missing for a palette costs somebody on that
+// palette a choice rather than a broken screen — which is why there is
+// no test tying them together, unlike `Themes` and the stylesheet,
+// where disagreeing *is* a fault. One here would fail for a reason that
+// is not one.
+var Avatars = []string{
+	"blue", "cyan", "hacker", "helix", "mono", "orange", "pink", "purple", "red",
+}
 
 // ErrUnknownAvatar is a face this instance does not ship.
 var ErrUnknownAvatar = errors.New("no avatar by that name")

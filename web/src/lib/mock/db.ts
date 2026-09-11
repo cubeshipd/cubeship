@@ -49,7 +49,7 @@ export const db = {
     display_name: "Lucas",
     email: "lucas@example.com",
     avatar: "cyan",
-    avatars: ["blue", "cyan", "hacker", "mono", "orange", "pink", "purple", "red"],
+    avatars: ["blue", "cyan", "hacker", "helix", "mono", "orange", "pink", "purple", "red"],
   } as Me,
 
   users: [
