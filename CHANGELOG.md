@@ -6,6 +6,35 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.5.1 — 2026-09-11
+
+Deploying an app from this instance's own registry failed on a name Docker could not look up — the pull was sent to an address only the daemon can reach.
+
+### Fixed
+
+**An app that pulls from this instance's own registry could not be
+deployed.** It failed with:
+
+```
+lookup cubeship-registry on 127.0.0.53:53: server misbehaving
+```
+
+which reads as a broken registry and is nothing of the kind. The
+reference the pull was given began with the registry's *container name*,
+and a container name is only resolvable by other containers on the same
+Docker network. The pull is performed by Docker itself, which is not on
+that network — so the name was never going to resolve, and the registry
+it names was up and answering the whole time.
+
+Pulls now use the registry's address on the host, which is published
+either way and works whatever else is running. Nothing to change: push
+and deploy as before.
+
+It only ever affected apps whose image is **pulled**. An app Cubeship
+builds — from a Dockerfile or with Railpack — has its image handed
+straight to Docker with no pull at all, so an instance that only builds
+never met this.
+
 ## 0.5.0 — 2026-09-11
 
 An app that runs a published image is now configured by choosing a registry, an image and a tag, each from a list — and pinning a tag is how deploy-on-push is turned off.
