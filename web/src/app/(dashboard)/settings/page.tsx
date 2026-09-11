@@ -1,7 +1,9 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailTabs } from "@/components/header-rail";
 import { InstanceDomain } from "@/components/instance-domain";
 import { Notice } from "@/components/notice";
 import { SectionHeader } from "@/components/section-header";
@@ -9,6 +11,7 @@ import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, type Settings } from "@/lib/api";
 import { message } from "@/lib/errors";
 
@@ -20,7 +23,17 @@ export default function Instance() {
   );
 }
 
+const TABS = ["domain", "updates"] as const;
+type Tab = (typeof TABS)[number];
+
 function Body() {
+  // Linkable, like every other tab strip here, and read through
+  // `useSearchParams` rather than `window` because this page renders on
+  // the server first.
+  const asked = useSearchParams().get("tab");
+  const [tab, setTab] = useState<Tab>(() =>
+    TABS.includes(asked as Tab) ? (asked as Tab) : "domain",
+  );
   const [current, setCurrent] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -44,17 +57,36 @@ function Body() {
         </Notice>
       )}
 
-      <SectionHeader
-        title="Domain"
-        sub="The instance's own name. The dashboard and the API are served at it, the registry at registry.<domain>, and anything Cubeship grows later underneath — which is why a subdomain you hand over whole beats your apex."
-      />
-      <InstanceDomain settings={current} onSaved={setCurrent} />
+      {/* Where the instance lives and when it replaces itself are two
+          unrelated decisions that happened to share a column. The
+          warning above stays outside them: it is about the instance
+          rather than about either tab, and on the Updates tab it would
+          be missing exactly when somebody is about to schedule a
+          replacement of something with no certificate. */}
+      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="subrail-page">
+        <RailTabs>
+          <TabsList variant="line">
+            <TabsTrigger value="domain">Domain</TabsTrigger>
+            <TabsTrigger value="updates">Updates</TabsTrigger>
+          </TabsList>
+        </RailTabs>
 
-      <SectionHeader
-        title="Automatic updates"
-        sub="Update this instance every day at a time you choose. It replaces the daemon, the dashboard and every other machine in this cluster; your apps and databases keep running, and nothing can be changed here for the minute or so it takes."
-      />
-      <AutoUpdate settings={current} onSaved={setCurrent} />
+        <TabsContent value="domain">
+          <SectionHeader
+            title="Domain"
+            sub="The instance's own name. The dashboard and the API are served at it, the registry at registry.<domain>, and anything Cubeship grows later underneath — which is why a subdomain you hand over whole beats your apex."
+          />
+          <InstanceDomain settings={current} onSaved={setCurrent} />
+        </TabsContent>
+
+        <TabsContent value="updates">
+          <SectionHeader
+            title="Automatic updates"
+            sub="Update this instance every day at a time you choose. It replaces the daemon, the dashboard and every other machine in this cluster; your apps and databases keep running, and nothing can be changed here for the minute or so it takes."
+          />
+          <AutoUpdate settings={current} onSaved={setCurrent} />
+        </TabsContent>
+      </Tabs>
     </>
   );
 }

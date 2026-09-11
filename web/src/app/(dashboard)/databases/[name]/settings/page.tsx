@@ -1,10 +1,11 @@
 "use client";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailTabs } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { SectionHeader } from "@/components/section-header";
@@ -12,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, type Datastore, datastorePath } from "@/lib/api";
 import { message } from "@/lib/errors";
 
@@ -20,7 +22,19 @@ export default function DatastoreSettingsPage({ params }: PageProps<"/databases/
   return <Settings name={name} />;
 }
 
+const TABS = ["access", "resources", "danger"] as const;
+type Tab = (typeof TABS)[number];
+
 function Settings({ name }: { name: string }) {
+  // Linkable, like a database's own tabs: "the limits on this" is a
+  // thing somebody sends somebody else. Through `useSearchParams`
+  // rather than `window`, because this page renders on the server
+  // first — a `useState` initializer reading a window that is not there
+  // hydrates to the first tab and keeps it.
+  const asked = useSearchParams().get("tab");
+  const [tab, setTab] = useState<Tab>(() =>
+    TABS.includes(asked as Tab) ? (asked as Tab) : "access",
+  );
   const router = useRouter();
   const path = datastorePath(name);
 
@@ -46,21 +60,42 @@ function Settings({ name }: { name: string }) {
           the note on the database's own page. Only what needs the
           answer waits for it. */}
       {!datastore && <LoadingList rows={3} />}
-      {datastore && <DatabaseLimits datastore={datastore} onSaved={setDatastore} />}
-      {datastore && <ExternalAccess datastore={datastore} onChanged={reload} />}
       {datastore && (
         <>
-          <DangerZone className="mt-10">
-            <DangerAction
-              title="Delete this database"
-              description="Stops the container and removes the data directory from the host. There is no backup, and this cannot be undone."
-              action={
-                <Button variant="destructive" onClick={() => setDeleting(true)}>
-                  Delete
-                </Button>
-              }
-            />
-          </DangerZone>
+          {/* Two different things were stacked in one column: where the
+              database can be reached from, and how much of the machine
+              it may take. Neither is the other, and a screen that
+              scrolls past one to get to the other is a screen you read
+              to find the thing you came for. */}
+          <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="subrail-page">
+            <RailTabs>
+              <TabsList variant="line">
+                <TabsTrigger value="access">Access</TabsTrigger>
+                <TabsTrigger value="resources">Resources</TabsTrigger>
+                <TabsTrigger value="danger">Danger</TabsTrigger>
+              </TabsList>
+            </RailTabs>
+
+            <TabsContent value="access">
+              <ExternalAccess datastore={datastore} onChanged={reload} />
+            </TabsContent>
+            <TabsContent value="resources">
+              <DatabaseLimits datastore={datastore} onSaved={setDatastore} />
+            </TabsContent>
+            <TabsContent value="danger">
+              <DangerZone>
+                <DangerAction
+                  title="Delete this database"
+                  description="Stops the container and removes the data directory from the host. There is no backup, and this cannot be undone."
+                  action={
+                    <Button variant="destructive" onClick={() => setDeleting(true)}>
+                      Delete
+                    </Button>
+                  }
+                />
+              </DangerZone>
+            </TabsContent>
+          </Tabs>
 
           <ConfirmDialog
             open={deleting}

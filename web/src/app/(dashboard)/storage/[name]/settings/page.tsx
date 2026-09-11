@@ -1,19 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyField } from "@/components/copy-field";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailTabs } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { SearchableSelect } from "@/components/searchable-select";
 import { SectionHeader } from "@/components/section-header";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, type Credential, type ObjectStore, objectStorePath } from "@/lib/api";
 import { message } from "@/lib/errors";
 
@@ -29,7 +31,17 @@ export default function ObjectStoreSettingsPage({ params }: PageProps<"/storage/
   return <Settings name={name} />;
 }
 
+const TABS = ["general", "access", "resources", "danger"] as const;
+type Tab = (typeof TABS)[number];
+
 function Settings({ name }: { name: string }) {
+  // Linkable, like every other tab strip here. Through
+  // `useSearchParams` rather than `window`: this page renders on the
+  // server first, where there is none.
+  const asked = useSearchParams().get("tab");
+  const [tab, setTab] = useState<Tab>(() =>
+    TABS.includes(asked as Tab) ? (asked as Tab) : "general",
+  );
   const router = useRouter();
   const [store, setStore] = useState<ObjectStore | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -43,38 +55,68 @@ function Settings({ name }: { name: string }) {
   }, [path]);
   useEffect(reload, [reload]);
 
+  // A managed store is a MinIO this instance runs; a linked one is
+  // somebody else's server. Which it is decides half this screen.
+  const managed = store?.kind === "managed";
+
   return (
     <>
-      {" "}
       <ErrorAlert error={error} />
       {!store && !error && <LoadingList rows={3} />}
       {store && (
         <>
-          <General store={store} onSaved={reload} />
-          {store.kind === "managed" && <StoreLimits store={store} onSaved={reload} />}
-          {store.kind === "managed" && <Exposure store={store} onChanged={reload} />}
+          {/* **A linked store is offered two of the four**, and the
+              other two are left out rather than shown empty: its
+              container is on somebody else's server, so there is
+              nothing here to cap and no port here to publish. A tab
+              that could never hold anything is not a tab. */}
+          <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="subrail-page">
+            <RailTabs>
+              <TabsList variant="line">
+                <TabsTrigger value="general">General</TabsTrigger>
+                {managed && <TabsTrigger value="access">Access</TabsTrigger>}
+                {managed && <TabsTrigger value="resources">Resources</TabsTrigger>}
+                <TabsTrigger value="danger">Danger</TabsTrigger>
+              </TabsList>
+            </RailTabs>
 
-          <DangerZone className="mt-10">
-            <DangerAction
-              title="Delete this store"
-              description={
-                store.kind === "managed" ? (
-                  <>
-                    Its container is removed and{" "}
-                    <strong>every object on this host goes with it</strong>. There is no backup and
-                    nothing to restore it from.
-                  </>
-                ) : (
-                  <>
-                    This instance forgets the address and the account it uses.{" "}
-                    <strong>Nothing in the bucket is touched</strong> — it stays exactly where it
-                    is, and linking it again brings it back.
-                  </>
-                )
-              }
-              action={<DeleteButton store={store} onDeleted={() => router.push("/storage")} />}
-            />
-          </DangerZone>
+            <TabsContent value="general">
+              <General store={store} onSaved={reload} />
+            </TabsContent>
+            {managed && (
+              <TabsContent value="access">
+                <Exposure store={store} onChanged={reload} />
+              </TabsContent>
+            )}
+            {managed && (
+              <TabsContent value="resources">
+                <StoreLimits store={store} onSaved={reload} />
+              </TabsContent>
+            )}
+            <TabsContent value="danger">
+              <DangerZone>
+                <DangerAction
+                  title="Delete this store"
+                  description={
+                    managed ? (
+                      <>
+                        Its container is removed and{" "}
+                        <strong>every object on this host goes with it</strong>. There is no backup
+                        and nothing to restore it from.
+                      </>
+                    ) : (
+                      <>
+                        This instance forgets the address and the account it uses.{" "}
+                        <strong>Nothing in the bucket is touched</strong> — it stays exactly where
+                        it is, and linking it again brings it back.
+                      </>
+                    )
+                  }
+                  action={<DeleteButton store={store} onDeleted={() => router.push("/storage")} />}
+                />
+              </DangerZone>
+            </TabsContent>
+          </Tabs>
         </>
       )}
     </>
