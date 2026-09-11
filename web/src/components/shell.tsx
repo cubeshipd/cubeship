@@ -268,7 +268,15 @@ function UserMenu({ me }: { me: Me }) {
           </button>
         }
       />
-      <DropdownMenuContent align="start" className="w-52">
+      {/* Out to the side, not up over the sidebar.
+          
+          The trigger is the last thing in a full-height column, so a
+          menu below it has nowhere to go and Base UI flips it upward —
+          over the navigation, which is the one part of the screen that
+          is supposed to stay put. To the right it opens into the page,
+          and `align="end"` keeps its own bottom on the trigger's so it
+          grows away from the edge rather than into it. */}
+      <DropdownMenuContent side="right" align="end" className="w-52">
         {/* GroupLabel is a Base UI group part and throws outside a Group. */}
         <DropdownMenuGroup>
           <DropdownMenuLabel className="font-mono text-xs">
