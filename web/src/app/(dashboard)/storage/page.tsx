@@ -93,7 +93,7 @@ export default function StoragePage() {
   return (
     <>
       <PageHeader
-        title="Storage"
+        title="Object storage"
         actions={
           <Button onClick={() => setAdding(true)}>
             <PlusIcon />

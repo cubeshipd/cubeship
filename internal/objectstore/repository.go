@@ -129,7 +129,7 @@ func (r *Repository) List(ctx context.Context) ([]*Store, error) {
 
 // Update writes whichever field it was given. Both are pointers because
 // "leave it alone" and "set it to empty" are different requests.
-func (r *Repository) Update(ctx context.Context, id int64, description *string, credentialID *int64, l *limits.Limits) (*Store, error) {
+func (r *Repository) Update(ctx context.Context, id int64, description *string, credentialID *int64, bucket *string, l *limits.Limits) (*Store, error) {
 	// Both halves of the ceiling travel together, and zero is a value
 	// rather than a gap: it is how a limit is removed, so a nil here
 	// has to be the only way of saying "leave it".
@@ -138,14 +138,17 @@ func (r *Repository) Update(ctx context.Context, id int64, description *string, 
 	if l != nil {
 		cpu, memory = &l.CPU, &l.Memory
 	}
+	// The bucket is the same shape: empty is how a store is unpinned,
+	// so a nil is the only way of saying "leave it where it is".
 	res, err := r.q.ExecContext(ctx,
 		`UPDATE object_stores
 		 SET description   = COALESCE($1, description),
 		     credential_id = COALESCE($2, credential_id),
+		     bucket        = COALESCE($6, bucket),
 		     cpu_limit     = COALESCE($4, cpu_limit),
 		     memory_limit  = COALESCE($5, memory_limit),
 		     updated_at    = now()
-		 WHERE id = $3`, description, credentialID, id, cpu, memory)
+		 WHERE id = $3`, description, credentialID, id, cpu, memory, bucket)
 	if err != nil {
 		return nil, fmt.Errorf("update object store: %w", err)
 	}

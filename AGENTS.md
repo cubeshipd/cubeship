@@ -3549,6 +3549,26 @@ one somebody believes is pinned, with every screen disagreeing. The
 providers endpoint reports `scopes_by_bucket`, so the form and the
 daemon cannot hold different opinions about where the field belongs.
 
+**And it moves afterwards, from the store's settings.** `PATCH
+/objectstores/{name}` takes `bucket`, and empty is what **unpins** —
+a value rather than a gap, so leaving the field out is the only way of
+saying "as it is" and saving a description cannot unpin a store by
+omission.
+
+Unpinning is accepted whatever the provider is, and that asymmetry is
+deliberate: pinning narrows a store and keeps the rule above, while
+unpinning only hands the question back to the endpoint. It is also the
+only way out for a store pinned before that rule existed, which
+otherwise had to be linked again.
+
+Pinning is refused when **an attached app names a different bucket**
+(`ErrAttachedElsewhere`, 409, with the app references). The app itself
+is unaffected — its keys reach the endpoint directly and `S3_BUCKET`
+comes from the attachment — so what would break is the screen: a store
+claiming to be one bucket while an attachment names another, and no way
+to browse the bucket an app is actively using. Refused with the names,
+the same shape as deleting a credential something stands on.
+
 ### The role, and where the line is
 
 Managing a store is an admin's. So is **everything inside one**, and

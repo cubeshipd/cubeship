@@ -162,6 +162,7 @@ function StoreLimits({ store, onSaved }: { store: ObjectStore; onSaved: () => vo
 function General({ store, onSaved }: { store: ObjectStore; onSaved: () => void }) {
   const [description, setDescription] = useState(store.description ?? "");
   const [credentialId, setCredentialId] = useState(String(store.credential_id ?? ""));
+  const [bucket, setBucket] = useState(store.bucket ?? "");
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -185,6 +186,10 @@ function General({ store, onSaved }: { store: ObjectStore; onSaved: () => void }
         ...(store.kind === "external" && credentialId
           ? { credential_id: Number(credentialId) }
           : {}),
+        // Sent only when it moved, because empty is a value here — it
+        // is how a store is unpinned — and sending it unasked would
+        // unpin one on every save of the description.
+        ...(store.kind === "external" && bucket !== (store.bucket ?? "") ? { bucket } : {}),
       });
       setSaved(true);
       onSaved();
@@ -234,6 +239,25 @@ function General({ store, onSaved }: { store: ObjectStore; onSaved: () => void }
             onChange={setCredentialId}
             choices={credentials.map((c) => ({ value: String(c.id), label: c.label }))}
             hint="Rotating the secret itself is one edit under Credentials, and every store on that account follows it."
+          />
+        )}
+
+        {/* Offered whenever the store is pinned, whatever its provider,
+            because clearing it is the direction that can never be
+            wrong — including for a store pinned before the field was
+            narrowed to the providers whose logins are issued per
+            bucket. Setting one is the daemon's to refuse. */}
+        {store.kind === "external" && (store.bucket || store.scopes_by_bucket) && (
+          <TextField
+            label="Bucket"
+            value={bucket}
+            spellCheck={false}
+            onChange={(e) => setBucket(e.target.value)}
+            hint={
+              store.bucket
+                ? "This store is pinned to this one bucket: it is the only one listed, and creating or reaching another is refused. Clear the field to hand that question back to the endpoint."
+                : "Only for a key issued for one bucket. Naming one here is the store giving up every other bucket in it, including making new ones."
+            }
           />
         )}
 

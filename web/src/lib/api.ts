@@ -884,6 +884,11 @@ export type ObjectStore = {
   endpoint: string;
   region: string;
   path_style: boolean;
+  // Whether this store's provider issues logins for a single bucket,
+  // which is where pinning one is accepted. From the daemon: a second
+  // list of which providers those are is one that disagrees with it the
+  // first time one is added.
+  scopes_by_bucket?: boolean;
   // The one bucket this store is pinned to, when its login reaches
   // exactly one and cannot list them.
   bucket?: string;

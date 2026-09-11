@@ -345,6 +345,13 @@ var (
 	// the whole store's listing for a limit the login does not have.
 	ErrBucketNotScoped = errors.New("this provider's logins are not scoped to one bucket, so naming one would only take the rest away")
 
+	// ErrAttachedElsewhere refuses pinning a store to a bucket that is
+	// not the one an attached app is pointed at. The store would claim
+	// to be one bucket while an attachment named another, and the
+	// screen would stop being able to show the bucket an app is
+	// actively using.
+	ErrAttachedElsewhere = errors.New("an app is attached to another bucket in this store")
+
 	// ErrSingleBucket refuses reaching past the one bucket a store was
 	// pinned to.
 	ErrSingleBucket = errors.New("this store is one bucket, and that is not it")

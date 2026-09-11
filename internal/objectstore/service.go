@@ -483,10 +483,28 @@ func createError(err error) error {
 // else, which is the same reason a registry's host is fixed. What can
 // change is the account — a second AWS key, a rotated token — and that
 // is exactly what a credential is for.
-func (s *Service) Update(ctx context.Context, caller *user.User, name string, description *string, credentialID *int64, l *Limits) (*Store, error) {
+// Update changes what a store is allowed to change about itself: its
+// description, which stored account it authenticates as, its ceiling,
+// and which bucket it is pinned to — including to none.
+//
+// `bucket` is a pointer because empty is a value here rather than a gap:
+// it is how a store is **unpinned**, which is the direction that can
+// never be wrong. Pinning narrows the store and is refused where the
+// provider's logins are not issued that way; unpinning only hands the
+// question back to the endpoint, so it is accepted whatever the
+// provider is — which matters for a store pinned before that rule
+// existed and has no other way out.
+func (s *Service) Update(ctx context.Context, caller *user.User, name string, description *string, credentialID *int64, bucket *string, l *Limits) (*Store, error) {
 	store, err := s.Resolve(ctx, caller, name, RoleToManage)
 	if err != nil {
 		return nil, err
+	}
+	if bucket != nil {
+		trimmed := strings.TrimSpace(*bucket)
+		bucket = &trimmed
+		if err := s.checkRepin(ctx, store, trimmed); err != nil {
+			return nil, err
+		}
 	}
 	if credentialID != nil {
 		if store.Kind == KindManaged {
@@ -512,7 +530,7 @@ func (s *Service) Update(ctx context.Context, caller *user.User, name string, de
 			return nil, ErrInvalidLimits
 		}
 	}
-	updated, err := s.Repo().Update(ctx, store.ID, description, credentialID, l)
+	updated, err := s.Repo().Update(ctx, store.ID, description, credentialID, bucket, l)
 	if err != nil {
 		return nil, err
 	}
@@ -987,6 +1005,48 @@ func (s *Service) DeleteFolder(ctx context.Context, caller *user.User, name, buc
 		return 0, ErrBadKey
 	}
 	return c.RemoveAll(ctx, bucket, clean)
+}
+
+// checkRepin decides whether a store may be pinned to `bucket`, or
+// unpinned when it is empty.
+//
+// Three refusals, and the third is the one worth reading. A managed
+// store is this instance's own MinIO and lists its own buckets, so
+// pinning it is a limit invented out of nothing. A provider whose
+// logins reach the account is the rule Link already keeps. And a bucket
+// that is not the one an attached app is pointed at would leave the
+// store claiming to be one bucket while an attachment names another —
+// the app keeps working, because its keys reach the endpoint directly,
+// and the dashboard stops being able to show the bucket it is using.
+// Refused with the names, the way deleting a credential something
+// stands on is.
+func (s *Service) checkRepin(ctx context.Context, store *Store, bucket string) error {
+	if bucket == "" {
+		return nil
+	}
+	if store.Kind == KindManaged {
+		return ErrManagedFixed
+	}
+	if !store.Provider.ScopesByBucket() {
+		return ErrBucketNotScoped
+	}
+	if err := CheckBucketName(bucket); err != nil {
+		return err
+	}
+	attached, err := s.Repo().Attachments(ctx, store.ID)
+	if err != nil {
+		return err
+	}
+	var elsewhere []string
+	for _, a := range attached {
+		if a.Bucket != bucket {
+			elsewhere = append(elsewhere, a.AppRef+" \u2192 "+a.Bucket)
+		}
+	}
+	if len(elsewhere) > 0 {
+		return fmt.Errorf("%w: %s", ErrAttachedElsewhere, strings.Join(elsewhere, ", "))
+	}
+	return nil
 }
 
 // checkBucket refuses reaching past the one bucket a store was pinned

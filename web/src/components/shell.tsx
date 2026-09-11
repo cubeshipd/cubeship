@@ -86,7 +86,10 @@ const sections: { label?: string; items: NavItem[] }[] = [
       // here even when the store itself is somebody else's — where the
       // bytes are is not what decides which half of the sidebar a
       // screen belongs in.
-      { href: "/storage", label: "Storage", icon: HardDriveIcon, owns: ["/storage"] },
+      // "Object storage" rather than "Storage", which said nothing:
+      // beside Databases in the same section it read as the place disks
+      // are, and the URL stays /storage because a label is not a route.
+      { href: "/storage", label: "Object storage", icon: HardDriveIcon, owns: ["/storage"] },
     ],
   },
   {

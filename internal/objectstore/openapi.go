@@ -203,13 +203,14 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				},
 				"patch": {
 					OperationID: "updateObjectStore",
-					Summary:     "Change a store's description, its limits, or which account it uses",
-					Description: "Not the name, which is the container's for a managed store and the identity for both. Not the endpoint or the provider either: an app configured against this store would silently start reaching somewhere else. What can change is the account an external store authenticates as — a second key, a different tenancy — which is what a credential is for. A managed store has no account to re-point, and asking is refused rather than ignored.\n\nRequires the admin role.",
+					Summary:     "Change a store's description, its limits, which account it uses, or which bucket it is pinned to",
+					Description: "Not the name, which is the container's for a managed store and the identity for both. Not the endpoint or the provider either: an app configured against this store would silently start reaching somewhere else. What can change is the account an external store authenticates as — a second key, a different tenancy — which is what a credential is for. A managed store has no account to re-point, and asking is refused rather than ignored.\n\n**And the bucket it is pinned to, including to none.** Unpinning is the direction that can never be wrong — it hands the question back to the endpoint — so it is accepted whatever the provider is, which is the only way out for a store pinned before pinning was narrowed to the providers whose logins are issued per bucket.\n\nRequires the admin role.",
 					Tags:        []string{"Object storage"},
 					Parameters:  nameParam,
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"description":   openapi.String("Omit to leave it alone."),
 						"credential_id": openapi.Integer("The stored account this store authenticates as. External stores only."),
+						"bucket":        openapi.String("The one bucket this store is pinned to. **Empty unpins it**, which is a value rather than a gap — leaving the field out entirely is the only way of saying \"as it is\", so saving a description cannot unpin a store by omission.\n\nSetting one keeps the rule linking keeps: refused where the provider's logins reach the account (`scopes_by_bucket`), on a managed store, and where an attached app names a different bucket — the store would claim to be one bucket while an attachment said otherwise, and the screen would stop being able to show the bucket that app is using."),
 						"limits":        {Ref: "#/components/schemas/ObjectStoreLimits", Description: "How much of the machine a managed store's container may take.\n\n**Managed stores only.** A linked store runs on somebody else's server, so there is no container here to cap — asking is refused rather than stored and ignored, which would put a ceiling on a screen for a server this instance has no say over.\n\nIt takes effect at once and does not replace the container, the way publishing a port does. Removing one is the exception: the Engine reads a zero in an update as \"leave that one alone\", so it waits for the next provision.\n\nSend the whole object — a field left out of it is a zero, which is how a limit is removed."},
 					})),
 					Responses: openapi.Responses{
@@ -218,7 +219,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,
-						"409": openapi.TextResponse("A managed store's connection is this instance's own, so there is nothing to re-point; or a limit was asked for on a linked store, which runs on somebody else's server."),
+						"409": openapi.TextResponse("A managed store's connection is this instance's own, so there is nothing to re-point; a limit was asked for on a linked store, which runs on somebody else's server; or the store was to be pinned to a bucket an attached app is not the one pointed at — the answer names the apps."),
 					},
 				},
 				"delete": {
