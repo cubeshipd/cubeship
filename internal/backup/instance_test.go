@@ -95,7 +95,11 @@ func TestTheInstancesBackupsDoNotCrowdOutADatabases(t *testing.T) {
 	f := newFixture(t)
 	f.Server.Backups.SetInstance(&ownPostgres{owned: true, dump: "-- cubeship\n"})
 	f.database(t, "pg", "postgres")
-	f.schedule(t, "pg", map[string]any{"at": "03:00", "timezone": "UTC", "keep": 1})
+	if code := f.schedule(t, "pg", map[string]any{
+		"at": "03:00", "timezone": "UTC", "keep": 1,
+	}); code != http.StatusOK {
+		t.Fatalf("set a schedule: %d", code)
+	}
 	f.take(t, "pg")
 	f.take(t, "pg")
 

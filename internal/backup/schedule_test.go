@@ -164,8 +164,17 @@ func TestWhatCountsAsATimeOfDay(t *testing.T) {
 // padded and in UTC.
 func TestABackupIsNamedSoAListingSortsItself(t *testing.T) {
 	pg := backup.KeyFor("pg", at("2026-09-11T02:05:09Z"))
-	if pg != "cubeship/pg/2026-09-11T020509Z.dump" {
+	if pg != "cubeship/pg/2026-09-11T020509.000Z.dump" {
 		t.Fatalf("KeyFor = %q", pg)
+	}
+
+	// **Two dumps of one database in the same second are two keys.** At
+	// second resolution they were one, and what that cost depended on
+	// where the dump was going: the local path refused the name and
+	// recorded a failed backup, a bucket silently replaced the object.
+	same := at("2026-09-11T02:05:09Z")
+	if backup.KeyFor("pg", same) == backup.KeyFor("pg", same.Add(time.Millisecond)) {
+		t.Error("two dumps a millisecond apart share a key, so one of them lands on the other")
 	}
 
 	keys := []string{
