@@ -114,14 +114,28 @@ export function StatusBadge({ value, className }: { value: string; className?: s
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center gap-1.5 border bg-background px-2 font-mono text-[10px] tracking-[0.14em] uppercase",
+        "inline-flex h-5 items-center gap-1.5 border bg-background px-2 font-mono text-[10px] uppercase",
         t.edge,
         t.text,
         className,
       )}
     >
       <StatusDot value={value} />
-      {value}
+      {/* Centred by eye rather than by box, which is not the same thing
+          for a line of capitals.
+          
+          `items-center` centres the text's *line box*, and that box
+          holds descender room no capital uses — so the ink sat about a
+          pixel above the dot beside it, which is exactly where the eye
+          looks for the difference. `leading-none` takes the slack out
+          and the nudge spends what is left.
+          
+          The negative margin is the other half of the same problem:
+          letter-spacing is applied after the last character too, so a
+          tracked word inside equal padding is not equally padded. */}
+      <span className="-mr-[0.14em] translate-y-[0.5px] leading-none tracking-[0.14em]">
+        {value}
+      </span>
     </span>
   );
 }

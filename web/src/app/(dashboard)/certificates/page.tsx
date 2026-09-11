@@ -115,11 +115,13 @@ export default function Certificates() {
             <DialogTitle className="font-mono text-sm break-all">{why?.host}</DialogTitle>
           </DialogHeader>
           <p className="text-sm leading-relaxed text-muted-foreground">{why?.why}</p>
-          {/* Traefik's own words, when it said any. It is the only place
-              an ACME refusal is written down, and it scrolls rather than
-              wraps because a log line is one long line by nature. */}
+          {/* Traefik's own words, when it said any — the only place an
+              ACME refusal is written down. It wraps: a dialog is already
+              a thing you opened to read one short thing, and a scrollbar
+              inside it is a second place to look for the end of a
+              sentence. */}
           {why?.detail && (
-            <p className="overflow-x-auto whitespace-nowrap font-mono text-[11px] text-warning">
+            <p className="font-mono text-[11px] break-all whitespace-pre-wrap text-warning">
               {why.detail}
             </p>
           )}
