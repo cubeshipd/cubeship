@@ -1,5 +1,7 @@
 "use client";
 
+import { cn } from "cn";
+
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { Appearance } from "@/components/appearance";
@@ -10,10 +12,11 @@ import { useSession } from "@/components/session-context";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ValueCard } from "@/components/value-card";
-import { type ApiKey, api } from "@/lib/api";
+import { type ApiKey, api, avatarSrc } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // The screen for everything that is **yours** rather than the
@@ -54,37 +57,159 @@ export default function Account() {
   );
 }
 
-// Who you are on this instance.
+// Who you are on this instance, and the four things you can say about
+// it.
 //
-// **Read-only, and all three of them are facts nothing here can
-// change.** A username is the identity every session, key and audit
-// line is written against; a role is an admin's to grant, and an admin
-// editing their own here would be a lock with the key taped to it. The
-// third is not a setting either — it is what says what revoking your
-// last key costs, which is the question the keys tab asks.
-//
-// It is a tab of facts, which is the thing a *settings* screen should
-// not be — the slug came off the project and environment screens for
-// exactly that reason. The difference is what the screen is for: those
-// are for configuring a resource, and a fact filed among its fields
-// reads as a field that will not take. This screen is your account, and
-// the first thing an account screen answers is which account.
+// **The username is here and nowhere else in this product.** Every
+// other identifier is permanent, because renaming one silently moves
+// things other people configured against it — a project's slug is a
+// path component of every app's registry reference underneath it. A
+// username is written against this account's own rows, and sessions and
+// keys are held by id, so both survive. The one thing it breaks belongs
+// to whoever is doing it, which is why the field says so rather than
+// the field not existing.
 function General() {
   const me = useSession();
+  const [displayName, setDisplayName] = useState(me.display_name ?? "");
+  const [username, setUsername] = useState(me.username);
+  const [email, setEmail] = useState(me.email ?? "");
+  const [avatar, setAvatar] = useState(me.avatar ?? "");
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const dirty =
+    displayName !== (me.display_name ?? "") ||
+    username !== me.username ||
+    email !== (me.email ?? "") ||
+    avatar !== (me.avatar ?? "");
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await api.patch("/users/me", {
+        display_name: displayName,
+        username,
+        email,
+        avatar,
+      });
+      // The shell resolved this account once and hands it down; a name
+      // or a face changed here has to reach the sidebar, and reloading
+      // is the honest way to say "everything that read it reads it
+      // again" without a second source of truth for who you are.
+      window.location.reload();
+    } catch (err) {
+      setError(message(err));
+      setBusy(false);
+    }
+  }
+
   return (
     <>
       <SectionHeader title="You" />
-      <ValueCard label="Username" value={me.username} />
-      <ValueCard label="Role" value={me.role} />
-      <ValueCard
-        label="Signing in"
-        value={
-          me.has_password
-            ? "A password, and API keys for the CLI"
-            : "API keys only — this account has no password"
-        }
-      />
+      <Card>
+        <CardContent>
+          <ErrorAlert error={error} />
+          <form onSubmit={save} className="space-y-4">
+            <TextField
+              label="Display name"
+              hint="What you are called, which a username often is not. Empty is fine — your username stands in."
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder={me.username}
+            />
+            <TextField
+              label="Username"
+              hint="Lowercase letters, digits, dot, dash or underscore. Sessions and API keys survive a change; `docker login` does not — it sends this alongside the key, so log in again after."
+              value={username}
+              spellCheck={false}
+              onChange={(e) => setUsername(e.target.value)}
+              className="font-mono"
+            />
+            <TextField
+              label="Email"
+              type="email"
+              hint="Nothing here sends mail. It is so whoever runs this box can tell whose account is whose, and it is never a second way to sign in."
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+
+            <Faces chosen={avatar} onChoose={setAvatar} offered={me.avatars ?? []} />
+
+            <div className="flex items-center gap-3">
+              <ActionButton type="submit" busy={busy} disabled={!dirty}>
+                Save
+              </ActionButton>
+              {saved && !dirty && <span className="text-xs text-muted-foreground">Saved.</span>}
+            </div>
+          </form>
+        </CardContent>
+      </Card>
     </>
+  );
+}
+
+// The faces this instance ships, offered as themselves.
+//
+// A grid of the actual images rather than a select of their names: what
+// somebody is choosing is a picture, and a dropdown reading "blue"
+// makes them pick one to find out what it looks like. The same argument
+// the theme swatches make one tab over.
+//
+// **"None" is one of the choices**, not a separate clear button. It is
+// a state the account can be in — most are — and a control that can
+// reach every state but the default is one that needs a second control
+// beside it.
+function Faces({
+  chosen,
+  onChoose,
+  offered,
+}: {
+  chosen: string;
+  onChoose: (name: string) => void;
+  offered: string[];
+}) {
+  return (
+    <div className="space-y-2">
+      <Label className="text-xs text-muted-foreground">Icon</Label>
+      <div className="flex flex-wrap gap-3">
+        <button
+          type="button"
+          onClick={() => onChoose("")}
+          aria-pressed={chosen === ""}
+          className={cn(
+            "flex size-12 shrink-0 items-center justify-center border text-[10px] tracking-[0.14em] uppercase transition-colors",
+            chosen === ""
+              ? "border-primary text-primary"
+              : "border-border text-subtle-foreground hover:border-border-strong",
+          )}
+        >
+          None
+        </button>
+        {offered.map((name) => (
+          <button
+            key={name}
+            type="button"
+            onClick={() => onChoose(name)}
+            aria-label={name}
+            aria-pressed={chosen === name}
+            className={cn(
+              "size-12 shrink-0 overflow-hidden border transition-colors",
+              chosen === name ? "border-primary" : "border-border hover:border-border-strong",
+            )}
+          >
+            {/* A plain <img>: next/image wants a loader and a build-time
+                size for something that is four fixed files in this
+                image's own public directory. */}
+            {/* biome-ignore lint/performance/noImgElement: four static files, no loader worth configuring */}
+            <img src={avatarSrc(name)} alt="" className="size-full object-cover" />
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

@@ -11,7 +11,9 @@ package user
 
 import (
 	"errors"
+	"regexp"
 	"slices"
+	"strings"
 	"time"
 )
 
@@ -43,8 +45,85 @@ type User struct {
 	// Theme is which palette this person sees the dashboard in, empty
 	// for the default. A fact about the person rather than about the
 	// machine they opened it on — see Themes.
-	Theme     string
+	Theme string
+	// DisplayName is what the person is called, which a username often
+	// is not: `lgs` is an address, "Lucas" is a name. Empty is normal —
+	// the username stands in wherever it is shown.
+	DisplayName string
+	// Email is somewhere to reach whoever holds this account. **Nothing
+	// on this instance sends mail**, and it is stored anyway for the
+	// same reason a description was once kept: an operator handing a
+	// box to somebody else should be able to find out whose account is
+	// whose. It is not a second way to sign in and never becomes one.
+	Email string
+	// Avatar is a name from Avatars, never a path or a URL — see there.
+	Avatar    string
 	CreatedAt time.Time
+}
+
+// Avatars are the faces the dashboard ships, by name.
+//
+// The list is here for the reason Themes is: it is what the daemon will
+// accept, and a second list in the browser would be one to disagree
+// with. The files are `web/public/profiles/<name>.png`, which is the
+// dashboard's half of one fact — a name here with no file there is a
+// broken image, and a file there with no name here cannot be chosen.
+var Avatars = []string{"blue", "green", "pink", "yellow"}
+
+// ErrUnknownAvatar is a face this instance does not ship.
+var ErrUnknownAvatar = errors.New("no avatar by that name")
+
+// ErrBadEmail refuses something that is not an address. The check is
+// deliberately shallow — one @ with something either side — because
+// the only thing that proves an address is sending to it, and nothing
+// here sends.
+var ErrBadEmail = errors.New("that is not an email address")
+
+// ErrBadDisplayName refuses one long enough to break a layout. It is a
+// name rather than an identifier, so nothing else about it is this
+// instance's business.
+var ErrBadDisplayName = errors.New("a display name is at most 60 characters")
+
+// ErrBadUsername refuses a name that cannot be one.
+var ErrBadUsername = errors.New(
+	"a username is 1-32 characters of lowercase letters, digits, dot, dash or underscore, starting with a letter or a digit")
+
+// usernamePattern is what a username may be.
+//
+// **There was no rule at all until a username became editable**, and
+// the unique index was the only thing refusing anything — so a name
+// with a slash in it was accepted and then addressed nothing:
+// `/users/{username}` would never match it, and neither would the
+// registry's basic auth. Applied to creating an account as well as to
+// renaming one, because the two produce the same column.
+var usernamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,31}$`)
+
+// ValidUsername reports whether a name may be used, or says why not.
+func ValidUsername(s string) error {
+	if !usernamePattern.MatchString(s) {
+		return ErrBadUsername
+	}
+	return nil
+}
+
+// ValidAvatar reports whether s is one of them, or empty for none.
+func ValidAvatar(s string) bool {
+	if s == "" {
+		return true
+	}
+	return slices.Contains(Avatars, s)
+}
+
+// ValidEmail is one @ with something either side and no spaces.
+func ValidEmail(s string) bool {
+	if s == "" {
+		return true
+	}
+	if strings.ContainsAny(s, " \t\r\n") {
+		return false
+	}
+	local, domain, found := strings.Cut(s, "@")
+	return found && local != "" && domain != "" && strings.Contains(domain, ".")
 }
 
 // Themes are the palettes the dashboard offers.
