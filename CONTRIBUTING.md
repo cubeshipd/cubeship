@@ -108,10 +108,12 @@ call one service method, and render the result — a rule that lives in a
 handler is a rule the MCP surface does not have, which is exactly how
 the two drifted apart before this layout.
 
-**[AGENTS.md](AGENTS.md) is the long version**, and it is worth reading
-before a first change: every decision in this codebase is written down
-there with the reason it was made, including the ones that were made
-twice.
+**[AGENTS.md](AGENTS.md) is the conventions every change follows**, and
+it is worth reading before a first one. The long version is
+[docs/design/](docs/design), one file per area: every decision in this
+codebase is written down there with the reason it was made, including
+the ones that were made twice. AGENTS.md indexes them, and says which to
+open for what you are about to touch.
 
 ## Commits and pull requests
 
