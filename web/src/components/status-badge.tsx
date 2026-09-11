@@ -95,10 +95,21 @@ export function statusTone(value: string): Tone {
 
 // The lamp on its own, for places that count states rather than name
 // one — a project card summarising the apps inside it.
-export function StatusDot({ value, className }: { value: string; className?: string }) {
+export function StatusDot({
+  value,
+  className,
+  // What it means, on hover. A lamp on its own says a colour; where the
+  // word is not beside it, this is what carries the word.
+  title,
+}: {
+  value: string;
+  className?: string;
+  title?: string;
+}) {
   const t = statusTone(value);
   return (
     <span
+      title={title}
       className={cn(
         "size-1.5 shrink-0 rounded-full shadow-[0_0_6px_currentColor]",
         t.dot,

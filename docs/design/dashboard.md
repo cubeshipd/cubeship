@@ -144,6 +144,24 @@ scripting in it.
 grid makes one request per project and, on an instance where nobody has
 chosen a picture, every one of them answers 404.
 
+### What an app card carries
+
+The same shape as a project's, and the same reasoning. It was two zones
+with a rule between them and a footer strip reading `cubeship registry`
+— four cards deep, that is the same two words four times, which is a
+legend rather than a fact about any one card.
+
+**What it is made of is the mark now**, in the place you already look
+and at no cost in lines: this instance's own registry, somebody else's,
+a Dockerfile, Railpack. The words are on hover, because an icon says
+what it does only to somebody who already knows.
+
+**And the status is the lamp, not the badge.** A badge is a bordered box
+with a word in it, which is right where there is one of them and wrong
+on a card whose whole job is to be scanned beside eleven others. The
+word is on the app's own page, where there is room to say `degraded` and
+room to say what it means.
+
 `settings` is refused as a slug for any of them (`slug.Reserved`).
 Next.js resolves a static segment before a dynamic one, so an app
 actually called `settings` would be a resource nothing could open — the
@@ -595,12 +613,19 @@ live in `globals.css` because that is where what they need is declared:
 
 **Tabs come in two looks, and which one is not a preference.** The
 generated default is a filled box with a lighter box inside it for the
-tab that is on, and it is right for the environment switcher inside a
-project: a row of slugs beside a `+` and a gear, which is a control
-rather than a heading. `variant="line"` is the other, styled unlayered
+tab that is on. `variant="line"` is the other, styled unlayered
 in `globals.css`, and it is for tabs that stand above sections and name
 them, like an app's. A filled box there drew more of itself than the
 thing it was switching.
+
+**The environments are tabs too**, and the same ones. They were the
+filled switcher above, inside the page's content — a row of slugs beside
+a `+` and a gear, argued for as a control rather than a heading. That
+was the wrong reading: an environment is a level of the same hierarchy
+the crumbs spell out, switching one changes the address, and a thing
+that changes the address is what a tab is here. The `+` sits at the end
+of them, where a browser puts it, and the environment's own settings at
+the far right of the strip.
 
 **Those hang off the rail rather than sitting in the page.** They are
 what a screen *is* — Overview, Environment, Logs — and inside the page's

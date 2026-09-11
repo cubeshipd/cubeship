@@ -586,6 +586,11 @@
   gap: 0;
   height: 100%;
   align-items: stretch;
+  /* The line variant fills its row, which is right for a list with
+     nothing beside it and wrong here: the environment strip puts a `+`
+     after its tabs, and a full-width list pushed it to the far side of
+     the screen with a gap where the tabs stopped. */
+  width: auto;
   /* The strip carries the line, and each tab decides whether to break
      it. A border here as well would be a second line under the open
      one, which is the whole thing this look is built to avoid. */

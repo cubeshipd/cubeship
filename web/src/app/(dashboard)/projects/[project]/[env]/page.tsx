@@ -1,13 +1,14 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { PlusIcon, SettingsIcon, SlidersHorizontalIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useCallback, useEffect, useState } from "react";
+import { startTransition, use, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { AppCard } from "@/components/app-card";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
+import { RailPortal, RailTabs } from "@/components/header-rail";
 import { SlugField } from "@/components/slug-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,29 +40,31 @@ const DEFAULT_ENV = "production";
 function Detail({ project, env: wanted }: { project: string; env: string }) {
   const router = useRouter();
 
-  const [envs, setEnvs] = useState<Environment[] | null>(null);
-  const [apps, setApps] = useState<App[] | null>(null);
   const [adding, setAdding] = useState(false);
   const [creatingApp, setCreatingApp] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const path = `/projects/${project}`;
-  const reloadEnvs = useCallback(() => {
-    if (!project) return;
-    api
-      .get<Environment[]>(`${path}/environments`)
-      .then(setEnvs)
-      .catch((e) => setError(message(e)));
-  }, [path, project]);
-  useEffect(reloadEnvs, [reloadEnvs]);
 
-  const reloadApps = useCallback(() => {
-    api
-      .get<App[]>("/apps")
-      .then(setApps)
-      .catch((e) => setError(message(e)));
-  }, []);
-  useEffect(reloadApps, [reloadApps]);
+  // **Through the query cache, and that is what stops the blink.**
+  //
+  // The environment is a path segment, so switching one is a navigation
+  // — and this page reads its segments with `use(params)`, a promise
+  // that is new every time, which suspends and takes the component
+  // down with it. On the way back up a hand-rolled `useState(null)` is
+  // null again and the fetch starts over, so the grid emptied for as
+  // long as the round trip took: a blank frame between two lists that
+  // are mostly the same apps.
+  //
+  // A cached query comes back holding what it had. Nothing needed
+  // refetching anyway — `/apps` is every app on the instance, and the
+  // environment only decides which of them are drawn.
+  const envs = useQuery({
+    queryKey: ["environments", project],
+    queryFn: () => api.get<Environment[]>(`${path}/environments`),
+    enabled: Boolean(project),
+  });
+  const apps = useQuery({ queryKey: ["apps"], queryFn: () => api.get<App[]>("/apps") });
+  const error = envs.error ?? apps.error;
 
   if (!project) {
     return (
@@ -75,17 +78,22 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
     );
   }
 
-  const known = envs?.map((e) => e.slug) ?? [];
+  const known = envs.data?.map((e) => e.slug) ?? [];
   const env = known.includes(wanted)
     ? wanted
     : known.includes(DEFAULT_ENV)
       ? DEFAULT_ENV
       : (known[0] ?? "");
 
-  const shown = apps?.filter((a) => a.project === project && a.environment === env);
+  const shown = apps.data?.filter((a) => a.project === project && a.environment === env);
 
+  // In a transition, so React keeps the screen it has while the new
+  // route resolves rather than swapping in a suspense fallback. The
+  // cache above is what makes there be something to keep.
   function goTo(next: string) {
-    router.replace(`/projects/${project}/${next}`, { scroll: false });
+    startTransition(() => {
+      router.replace(`/projects/${project}/${next}`, { scroll: false });
+    });
   }
 
   return (
@@ -110,42 +118,49 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
           </>
         }
       </RailPortal>
-      <ErrorAlert error={error} />
+      <ErrorAlert error={error ? message(error) : null} />
 
-      <div className="mb-5 flex items-center gap-2">
-        <Tabs value={env} onValueChange={(v) => goTo(String(v))}>
-          <TabsList>
+      {/* **The environments are the rail's tabs, not the page's.**
+          They are a level of the same hierarchy the crumbs above them
+          spell out, and switching one changes the address — which is
+          what a tab is here and what a row of buttons in the page never
+          quite read as. They were a filled switcher inside the content,
+          which put the thing that says *where you are* below the thing
+          that says what you are looking at.
+
+          The `+` sits at the end of them, where a browser puts it. */}
+      <RailTabs>
+        <Tabs value={env} onValueChange={(v) => goTo(String(v))} className="contents">
+          <TabsList variant="line">
             {known.map((slug) => (
-              <TabsTrigger key={slug} value={slug} className="px-3 font-mono text-xs">
+              <TabsTrigger key={slug} value={slug}>
                 {slug}
               </TabsTrigger>
             ))}
           </TabsList>
         </Tabs>
 
-        <Button
-          variant="ghost"
-          size="icon-sm"
+        <button
+          type="button"
           aria-label="New environment"
+          title="New environment"
           onClick={() => setAdding(true)}
+          className="flex shrink-0 items-center px-3 text-subtle-foreground transition-colors hover:bg-secondary hover:text-foreground"
         >
-          <PlusIcon />
-        </Button>
+          <PlusIcon className="size-3.5" />
+        </button>
 
         {env && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
+          <Link
+            href={`/projects/${project}/${env}/settings`}
             aria-label={`Settings for ${env}`}
-            nativeButton={false}
-            render={
-              <Link href={`/projects/${project}/${env}/settings`}>
-                <SlidersHorizontalIcon />
-              </Link>
-            }
-          />
+            title={`Settings for ${env}`}
+            className="ml-auto flex shrink-0 items-center px-3 text-subtle-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          >
+            <SlidersHorizontalIcon className="size-3.5" />
+          </Link>
         )}
-      </div>
+      </RailTabs>
 
       {shown?.length === 0 && (
         <Card>
@@ -181,7 +196,7 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
         open={adding}
         onOpenChange={setAdding}
         onCreated={(slug) => {
-          reloadEnvs();
+          envs.refetch();
           goTo(slug);
         }}
       />
@@ -232,7 +247,7 @@ function NewEnvironmentDialog({
           </DialogHeader>
 
           <div className="space-y-4 py-5">
-            <ErrorAlert error={error} />
+            <ErrorAlert error={error ? message(error) : null} />
             <SlugField autoFocus value={slug} onChange={setSlug} placeholder="staging" />
           </div>
 
@@ -304,7 +319,7 @@ function NewAppDialog({
           </DialogHeader>
 
           <div className="space-y-4 py-5">
-            <ErrorAlert error={error} />
+            <ErrorAlert error={error ? message(error) : null} />
             <SlugField autoFocus value={slug} onChange={setSlug} placeholder="gateway" />
           </div>
 
