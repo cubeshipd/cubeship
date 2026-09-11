@@ -56,7 +56,8 @@ type User struct {
 	// box to somebody else should be able to find out whose account is
 	// whose. It is not a second way to sign in and never becomes one.
 	Email string
-	// Avatar is a name from Avatars, never a path or a URL — see there.
+	// Avatar is a name from Avatars, never a path or a URL, and never
+	// empty — see DefaultAvatar.
 	Avatar    string
 	CreatedAt time.Time
 }
@@ -82,12 +83,14 @@ type User struct {
 // of colours would be one to keep in step by hand, and there is nothing
 // to gain by calling the same red something else here.
 //
-// **Sharing the vocabulary is not the same as being the same list.**
-// Nothing requires a palette to have a face or a face to have a
-// palette: they are read for different questions, and a face missing
-// for a palette would cost somebody on it a choice rather than break a
-// screen. They happen to line up, and no test says they must — one
-// would fail for something that is not a fault.
+// **Sharing the vocabulary is not the same as being the same list**, and
+// this is where that shows: `blue` is a palette with no face, because a
+// face is an image somebody has to draw and a palette is twenty lines of
+// CSS. Nothing here requires the two to match — `Themes` and this are
+// read for different questions, and a face missing for a palette costs
+// somebody on that palette a choice, not a broken screen. Which is why
+// there is no test tying them together: it would fail for a reason that
+// is not a fault.
 var Avatars = []string{"blue", "cyan", "hacker", "mono", "orange", "pink", "purple", "red"}
 
 // ErrUnknownAvatar is a face this instance does not ship.
@@ -126,11 +129,26 @@ func ValidUsername(s string) error {
 	return nil
 }
 
-// ValidAvatar reports whether s is one of them, or empty for none.
+// DefaultAvatar is the face an account arrives with.
+//
+// **There is no "no face".** It was an answer for one release — the
+// picker offered it first and the sidebar drew two letters of the
+// username instead — and it was the answer almost every account had,
+// because it was what an account was made with. So the ordinary state
+// of the feature was its own fallback, and the fallback was a second
+// thing the same row could be, drawn by a second branch on every
+// screen.
+//
+// Cyan because it is the interface's own accent and the palette an
+// account already starts on: a new account looks like this instance
+// rather than like one nobody has finished setting up. See migration
+// 00048, which is what makes it true of the accounts that already
+// exist.
+const DefaultAvatar = "cyan"
+
+// ValidAvatar reports whether s is one of them. Empty is not one: see
+// DefaultAvatar.
 func ValidAvatar(s string) bool {
-	if s == "" {
-		return true
-	}
 	return slices.Contains(Avatars, s)
 }
 

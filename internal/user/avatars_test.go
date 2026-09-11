@@ -85,11 +85,15 @@ func TestAFaceIsNamedAndNotAddressed(t *testing.T) {
 		}
 	}
 	for _, bad := range []string{"../secret", "/etc/passwd", "https://evil.example", "blue.png", ""} {
-		if bad != "" && ValidAvatar(bad) {
+		if ValidAvatar(bad) {
 			t.Errorf("ValidAvatar(%q) = true", bad)
 		}
 	}
-	if !ValidAvatar("") {
-		t.Error("empty is no face at all, which is what most accounts have")
+	// Empty is in that list on purpose. It used to be the one value
+	// that was not a name and was accepted anyway, and what made it
+	// worth removing is that it was what almost every account held —
+	// see DefaultAvatar.
+	if !ValidAvatar(DefaultAvatar) {
+		t.Errorf("the default face %q is not one this instance ships", DefaultAvatar)
 	}
 }
