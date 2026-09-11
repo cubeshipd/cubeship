@@ -132,13 +132,17 @@ func (s *Service) Status(ctx context.Context, caller *user.User) (*Status, error
 		published, err := s.ports.PublishedPorts(ctx)
 		if err == nil {
 			for _, p := range published {
-				status.Published = append(status.Published, Published{
-					Port: p.Port, Protocol: p.Protocol, Container: p.Container,
-					// A published port is admitted by a *routed* rule.
-					// A host rule for the same number governs traffic
-					// that never reaches this container.
-					Allowed: allowsAny(status.Rules, ScopeApps, []int{p.Port}),
-				})
+				out := Published{
+					Port: p.Port, Inside: p.Inside,
+					Protocol: p.Protocol, Container: p.Container,
+				}
+				// A published port is admitted by a *routed* rule, and
+				// by one naming the port the container is on rather
+				// than the one somebody typed. A host rule for either
+				// number governs traffic that never reaches this
+				// container.
+				out.Allowed = allowsAny(status.Rules, ScopeApps, []int{admits(out)})
+				status.Published = append(status.Published, out)
 			}
 		}
 	}
@@ -319,11 +323,17 @@ type Request struct {
 }
 
 // Specs is the rules this request comes to.
-func (r Request) Specs() []Spec {
+//
+// `inside` is what the published port becomes once Docker has
+// translated it, and is empty when the two are the same or when the
+// port is not published at all. See Spec.Inside: a forwarded rule is
+// consulted after the translation, so it is the only number that can
+// match.
+func (r Request) Specs(inside string) []Spec {
 	one := func(from string) Spec {
 		return Spec{
 			Scope: r.Scope, Action: r.Action, Protocol: r.Protocol,
-			Port: r.Port, From: from, Comment: r.Comment,
+			Port: r.Port, Inside: inside, From: from, Comment: r.Comment,
 		}
 	}
 	if len(r.Sources) == 0 {
@@ -346,6 +356,36 @@ func (r Request) Specs() []Spec {
 	return specs
 }
 
+// insideOf is the container port behind a published one, or empty when
+// nothing publishes it or the two are the same.
+//
+// Empty rather than the same number, so a rule about a port nothing
+// publishes — one written ahead of the thing it is for — comes out
+// exactly as it did before this existed.
+// admits is the port a forwarded rule has to name to let this one
+// through: the container's, whenever Docker is translating.
+func admits(p Published) int {
+	if p.Inside != 0 {
+		return p.Inside
+	}
+	return p.Port
+}
+
+func insideOf(published []Published, port string) string {
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		// A range. Nothing published maps a range, and guessing at one
+		// would be writing a rule for ports nobody asked about.
+		return ""
+	}
+	for _, p := range published {
+		if p.Port == n && p.Inside != 0 && p.Inside != p.Port {
+			return strconv.Itoa(p.Inside)
+		}
+	}
+	return ""
+}
+
 // AddRule writes the rules a request comes to.
 //
 // Every one is checked before any is written. A request half applied is
@@ -362,7 +402,12 @@ func (s *Service) AddRule(ctx context.Context, caller *user.User, req Request) (
 	if !status.Installed {
 		return nil, ErrNotInstalled
 	}
-	specs := req.Specs()
+	// **The number somebody types is the one they can see**, which is
+	// the published port — and the rule has to be written for the one
+	// the packet carries by the time the forward chain looks at it.
+	// Asking them for the second would be asking them to know how
+	// Docker translates a port.
+	specs := req.Specs(insideOf(status.Published, req.Port))
 	for _, spec := range specs {
 		if err := spec.Check(); err != nil {
 			return nil, err
@@ -415,7 +460,7 @@ func (s *Service) ReplaceRule(ctx context.Context, caller *user.User, index int,
 		return nil, KeepsYouInError(*found)
 	}
 
-	specs := req.Specs()
+	specs := req.Specs(insideOf(status.Published, req.Port))
 	for _, spec := range specs {
 		if err := spec.Check(); err != nil {
 			return nil, err
@@ -541,7 +586,9 @@ func (s *Service) AdoptDocker(ctx context.Context, caller *user.User, allow []in
 	for _, port := range append([]int{80, 443}, allow...) {
 		spec := Spec{
 			Scope: ScopeApps, Action: ActionAllow, Protocol: ProtocolTCP,
-			Port: strconv.Itoa(port), Comment: "cubeship",
+			Port:    strconv.Itoa(port),
+			Inside:  insideOf(status.Published, strconv.Itoa(port)),
+			Comment: "cubeship",
 		}
 		if err := spec.Check(); err != nil {
 			return nil, err

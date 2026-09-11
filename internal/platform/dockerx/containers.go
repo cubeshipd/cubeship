@@ -813,7 +813,16 @@ func demux(b []byte) []byte {
 // PublishedPort is a host port some container is answering on, and
 // which one.
 type PublishedPort struct {
-	Port      int
+	Port int
+	// Inside is the port the container itself listens on, which is not
+	// always the published one: a datastore is published on 15000-15999
+	// and listens on 5432 or 6379.
+	//
+	// It matters for exactly one caller and it is the whole of a bug
+	// that had to be found by reading iptables counters — a firewall
+	// rule for forwarded traffic matches the port **after** Docker's
+	// DNAT, which is this one. See internal/firewall.
+	Inside    int
 	Protocol  string
 	Container string
 }
@@ -909,7 +918,8 @@ func (c *Client) PublishedPorts(ctx context.Context) ([]PublishedPort, error) {
 			}
 			seen[key] = true
 			out = append(out, PublishedPort{
-				Port: int(p.PublicPort), Protocol: p.Type, Container: name,
+				Port: int(p.PublicPort), Inside: int(p.PrivatePort),
+				Protocol: p.Type, Container: name,
 			})
 		}
 	}

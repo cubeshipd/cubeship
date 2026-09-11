@@ -266,6 +266,9 @@ export default function FirewallPage() {
                         >
                           <span>
                             {p.port}/{p.protocol}
+                            {p.inside ? (
+                              <span className="text-muted-foreground"> &rarr; {p.inside}</span>
+                            ) : null}
                           </span>
                           <span className="text-muted-foreground">{p.container}</span>
                         </li>
@@ -472,6 +475,9 @@ function AdoptDialog({
                 />
                 <span className="flex-1">
                   {p.port}/{p.protocol}
+                  {p.inside ? (
+                    <span className="text-muted-foreground"> &rarr; {p.inside}</span>
+                  ) : null}
                 </span>
                 <span className="text-muted-foreground">{p.container}</span>
               </label>
@@ -517,7 +523,7 @@ function RuleDialog({
   // dialog for both because they ask for exactly the same things —
   // editing *is* a delete and an add, so it could hardly ask for less.
   rule?: FirewallRule | null;
-  published: { port: number; container: string }[];
+  published: { port: number; inside?: number; container: string }[];
   yourIP?: string;
   onOpenChange: (v: boolean) => void;
   onSaved: (f: Firewall) => void;
@@ -583,6 +589,8 @@ function RuleDialog({
   }
 
   const apps = scope === "apps";
+  // The published port somebody has typed, when Docker translates it.
+  const translated = published.find((p) => p.inside && String(p.port) === port.trim());
 
   return (
     <Dialog open={scope !== null} onOpenChange={onOpenChange}>
@@ -634,20 +642,33 @@ function RuleDialog({
             />
 
             {apps && published.length > 0 && (
-              <div className="flex flex-wrap gap-1">
-                {published.map((p) => (
-                  <Button
-                    key={p.port}
-                    type="button"
-                    variant="outline"
-                    size="xs"
-                    className="font-mono"
-                    onClick={() => setPort(String(p.port))}
-                  >
-                    {p.port}
-                  </Button>
-                ))}
-              </div>
+              <>
+                <div className="flex flex-wrap gap-1">
+                  {published.map((p) => (
+                    <Button
+                      key={p.port}
+                      type="button"
+                      variant="outline"
+                      size="xs"
+                      className="font-mono"
+                      onClick={() => setPort(String(p.port))}
+                    >
+                      {p.port}
+                    </Button>
+                  ))}
+                </div>
+                {translated ? (
+                  // Docker rewrites the port before the forward chain
+                  // sees the packet, so the rule has to name what the
+                  // container is on. The number in the table will be
+                  // that one, and somebody who typed 15000 should know
+                  // why before they go looking for it.
+                  <p className="text-xs text-muted-foreground">
+                    {translated.port} reaches {translated.inside} inside {translated.container}, so
+                    the rule is written for {translated.inside}.
+                  </p>
+                ) : null}
+              </>
             )}
 
             <div className="space-y-2">

@@ -141,9 +141,27 @@ type Spec struct {
 	Action   Action
 	Protocol Protocol
 	// Port is a single port, or a range as UFW spells one: "15000:15999".
+	//
+	// For an `apps` rule this is the **published** port — the number
+	// somebody sees and types. What the rule is actually written for
+	// is Inside.
 	Port string
-	// From is a source address or CIDR. Empty means anywhere, which is
-	// what most rules mean.
+	// Inside is the port the packet carries once Docker has translated
+	// it, which for a forwarded rule is the only one that can match.
+	//
+	// **This is the whole of a bug that shipped.** `ufw route allow`
+	// runs in the FORWARD chain, which is *after* nat/PREROUTING — so a
+	// packet to a published 15000 arrives there with a destination port
+	// of 5432, and a rule written for 15000 never matches. It went
+	// unnoticed because everything Cubeship publishes itself uses the
+	// same number inside and out — 80, 443, 3000 — and the only things
+	// that do not are exactly the ones an operator exposes: a database
+	// on 15000-15999 listening on 5432, a store on 16000-16999
+	// listening on 9000. Every one of those was dropped.
+	//
+	// Empty means the same as Port, which is right for a host rule and
+	// for the identity case.
+	Inside  string
 	From    string
 	Comment string
 }
@@ -239,7 +257,14 @@ func (s Spec) Args() []string {
 	} else {
 		args = append(args, "from", "any")
 	}
-	args = append(args, "to", "any", "port", s.Port)
+	// The port the packet will carry when the rule is consulted. For a
+	// forwarded rule that is the container's own, because Docker has
+	// already translated it — see Spec.Inside.
+	to := s.Port
+	if s.Scope == ScopeApps && s.Inside != "" {
+		to = s.Inside
+	}
+	args = append(args, "to", "any", "port", to)
 
 	if s.Comment != "" {
 		args = append(args, "comment", s.Comment)
