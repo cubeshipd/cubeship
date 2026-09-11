@@ -28,15 +28,41 @@ const columns = `id, project_id, environment_id, name, description, source, sour
 
 type scanner interface{ Scan(dest ...any) error }
 
-func scan(row scanner) (*App, error) {
-	var a App
-	var envJSON []byte
-	if err := row.Scan(&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Description,
+// dests is where every column in `columns` lands, in that order.
+//
+// **One list, read by both scans.** The scoped query below joins, so it
+// has to qualify the names — and the moment those are written out a
+// second time, a column added to one and not the other is a value that
+// silently comes back empty. `source_tag` did exactly that: the scoped
+// read never selected it, so every app reported no tag, every pinned
+// app reported `autodeploy`, and the registry webhook redeployed apps
+// somebody had pinned to a version. Nothing failed; it just stopped
+// being true.
+func dests(a *App, envJSON *[]byte) []any {
+	return []any{
+		&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Description,
 		&a.Source, &a.SourceImage, &a.SourceTag, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
 		&a.HealthPath, &a.Scale, &a.Spread,
 		&a.Limits.CPU, &a.Limits.Memory,
 		&a.Autoscale.Min, &a.Autoscale.Max, &a.Autoscale.CPU, &a.Autoscale.At,
-		&envJSON, &a.CreatedAt); err != nil {
+		envJSON, &a.CreatedAt,
+	}
+}
+
+// qualify prefixes every name in a column list with a table alias, so a
+// join selects the same list the scan reads rather than a copy of it.
+func qualify(alias, list string) string {
+	names := strings.Split(list, ",")
+	for i, name := range names {
+		names[i] = alias + "." + strings.TrimSpace(name)
+	}
+	return strings.Join(names, ", ")
+}
+
+func scan(row scanner) (*App, error) {
+	var a App
+	var envJSON []byte
+	if err := row.Scan(dests(&a, &envJSON)...); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &a.Env); err != nil {
@@ -563,15 +589,10 @@ type Scoped struct {
 	EnvironmentSlug string
 }
 
-// scopedQuery selects an app with its containing slugs. The column order
-// matches scanScoped.
-const scopedQuery = `
-	SELECT a.id, a.project_id, a.environment_id, a.name, a.description,
-	       a.source, a.source_image, a.source_repo, a.source_ref, a.source_dockerfile,
-	       a.health_path, a.scale, a.spread, a.cpu_limit, a.memory_limit,
-	       a.autoscale_min, a.autoscale_max, a.autoscale_cpu, a.autoscaled_at,
-	       a.env, a.created_at,
-	       p.slug, e.slug
+// scopedQuery selects an app with its containing slugs, from the same
+// column list `scan` reads — aliased rather than spelled out again.
+var scopedQuery = `
+	SELECT ` + qualify("a", columns) + `, p.slug, e.slug
 	FROM apps a
 	JOIN projects p ON p.id = a.project_id
 	JOIN environments e ON e.id = a.environment_id`
@@ -579,13 +600,8 @@ const scopedQuery = `
 func scanScoped(row scanner) (*Scoped, error) {
 	var s Scoped
 	var envJSON []byte
-	if err := row.Scan(&s.ID, &s.ProjectID, &s.EnvironmentID, &s.Name, &s.Description,
-		&s.Source, &s.SourceImage, &s.SourceRepo, &s.SourceRef, &s.SourceDockerfile,
-		&s.HealthPath, &s.Scale, &s.Spread,
-		&s.Limits.CPU, &s.Limits.Memory,
-		&s.Autoscale.Min, &s.Autoscale.Max, &s.Autoscale.CPU, &s.Autoscale.At,
-		&envJSON, &s.CreatedAt,
-		&s.ProjectSlug, &s.EnvironmentSlug); err != nil {
+	into := append(dests(&s.App, &envJSON), &s.ProjectSlug, &s.EnvironmentSlug)
+	if err := row.Scan(into...); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &s.Env); err != nil {
