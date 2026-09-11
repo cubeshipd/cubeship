@@ -197,7 +197,7 @@ const WHY: Record<MissingReason, string> = {
   not_deployed:
     "Nothing is running with this name in its labels. A container keeps the routing it was created with, so Traefik has never been told about it — redeploy the app and it will be.",
   pending:
-    "Traefik knows the name and has not got a certificate for it. Normal for a minute after a deploy; after that, check the name resolves to this host.",
+    "Traefik knows the name and has not got a certificate for it. Normal for a minute after a deploy. This instance asks again every half hour, so a name that has started resolving here gets one without anything being redeployed \u2014 if it stays on this list, check that it does.",
   // Not a problem, and the only entry here that is not: the certificate
   // is on the machine the app runs on, which is where it has to be.
   another_server:

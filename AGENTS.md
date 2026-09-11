@@ -1250,6 +1250,46 @@ spends one of a weekly limit shared with everyone else using the same
 registered domain. That is a decision to make deliberately, not a button
 beside a table.
 
+### Asking again
+
+**Traefik asks a CA for a certificate when its configuration changes and
+at no other moment.** It walks the routers on each configuration it is
+handed and resolves what it has not got; between two of those there is
+no timer and no API. So the first attempt for a name was, on a settled
+instance, the only one it ever got — a record written a minute too late,
+or an hour when Let's Encrypt's remote vantage points could not reach
+the nameservers, left a name with no certificate for the life of the
+instance. Nothing was trying, nothing said so, and the way out was
+redeploying an app with nothing wrong with it.
+
+`certificates.Retrier` is what asks again, every `RetryInterval`, for as
+long as any name is `pending`. The other reasons are left alone on
+purpose: no domain at all, an app not deployed since the name was added,
+and a name on another machine are three things for a person to do, and
+asking a CA would move none of them.
+
+**The lever is a file beside the routes that nothing refers to.**
+`traefik.RetryCertificates` writes and removes
+`traefik-dynamic/retry.yml`, which holds one `serversTransport` no
+service names — a genuine change to the document Traefik builds and no
+change to anything served. The routes themselves could not be the lever:
+rewriting them identically is a configuration Traefik skips, and
+rewriting them in two steps is a moment with a router missing, which is
+a name off the internet. Presence is the whole state, so nothing has to
+be remembered across a restart — whichever way the file is, the other
+way is a change.
+
+Half an hour is a rate limit rather than a preference. Every attempt
+asks for **every** name that is missing one, and Let's Encrypt allows
+five failed validations per hostname per hour; two of those leaves room
+for the deploys and the by-hand retries of whoever is fixing it. The
+first tick is a whole interval away because Traefik resolves everything
+it is missing when it starts, which is what an install, an upgrade or a
+reboot already is.
+
+This does not make the module read-write. Traefik still owns
+`acme.json`; what is spent is attempts.
+
 ## The firewall
 
 `internal/firewall` is the host's UFW: whether it is on, what it admits,
