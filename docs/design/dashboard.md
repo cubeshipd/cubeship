@@ -107,6 +107,43 @@ because an app only means something inside an environment — a top-level
 a screen of its own, so there is one page for "a project's apps" instead
 of two that have to stay identical.
 
+### What a project card carries
+
+**A picture, a name, and a ring.** It used to carry three more things
+and was worse for all of them. The environments were badges, which put
+`production` on every card on the screen — a word true of everything
+says nothing about anything. The app count was a line of its own, and
+the states were a row of lamps each with a number beside it, which is a
+legend you read rather than a picture you glance at.
+
+`StatusRing` is what replaced the lamps: a thin donut with the count in
+the middle, whose colours come from `statusTone` so a ring cannot
+disagree with the badge on the screen behind it. Whole and green is
+everything, and a bite out of it is the thing to open. A project with
+nothing in it is the bare track and a zero, which is a state rather than
+an absence.
+
+**A project can wear a picture**, chosen on its settings screen, and
+wears a mark until it does. One mark rather than a tint per project: a
+colour derived from a slug would mean nothing on an interface where
+green, amber and red already mean state, and the thing that tells two
+projects apart is the picture.
+
+The bytes are the daemon's — `PUT /projects/{slug}/image`, stored under
+the data directory and served back at the same address — and **the
+browser is what scales them**. It has the file decoded to show a
+preview, so it crops a square and sends a few tens of kilobytes;
+nothing on the daemon resizes, and the 512 KiB ceiling is what makes
+that safe rather than a hope. What arrives is sniffed rather than
+believed: the stored type is what the instance serves from its own
+origin, beside the session cookie, so a caller who could name it would
+be choosing that. No SVG, for the same reason — it is a document with
+scripting in it.
+
+`has_image` on the project is what says whether to ask. Without it a
+grid makes one request per project and, on an instance where nobody has
+chosen a picture, every one of them answers 404.
+
 `settings` is refused as a slug for any of them (`slug.Reserved`).
 Next.js resolves a static segment before a dynamic one, so an app
 actually called `settings` would be a resource nothing could open — the

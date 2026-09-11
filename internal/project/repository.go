@@ -16,14 +16,14 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, slug, env, created_at`
+const columns = `id, slug, env, image, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
 func scan(row scanner) (*Project, error) {
 	var p Project
 	var envJSON []byte
-	if err := row.Scan(&p.ID, &p.Slug, &envJSON, &p.CreatedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.Slug, &envJSON, &p.Image, &p.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &p.Env); err != nil {
@@ -49,6 +49,17 @@ func (r *Repository) BySlug(ctx context.Context, slug string) (*Project, error) 
 		return nil, fmt.Errorf("get project %q: %w", slug, err)
 	}
 	return p, nil
+}
+
+// SetImage records the media type of the picture a project wears, or
+// clears it. The bytes are the service's to write — this only says
+// what the row believes is on disk.
+func (r *Repository) SetImage(ctx context.Context, id int64, mediaType string) error {
+	_, err := r.q.ExecContext(ctx, `UPDATE projects SET image = $1 WHERE id = $2`, mediaType, id)
+	if err != nil {
+		return fmt.Errorf("set project image: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) ByID(ctx context.Context, id int64) (*Project, error) {

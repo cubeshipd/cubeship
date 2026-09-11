@@ -96,6 +96,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"DELETE /objectstores/{name}/expose",
 		"DELETE /projects/{projectSlug}",
 		"DELETE /projects/{projectSlug}/environments/{envSlug}",
+		"DELETE /projects/{projectSlug}/image",
 		"DELETE /registries/{id}",
 		"DELETE /registries/{id}/images",
 		"DELETE /registries/{id}/repositories",
@@ -151,6 +152,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"GET /projects/{projectSlug}/env",
 		"GET /projects/{projectSlug}/environments",
 		"GET /projects/{projectSlug}/environments/{envSlug}/env",
+		"GET /projects/{projectSlug}/image",
 		"GET /registries",
 		"GET /registries/tags",
 		"GET /registries/{id}/images",
@@ -217,6 +219,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"PUT /objectstores/{name}/buckets/{bucket}/objects",
 		"PUT /projects/{projectSlug}/env",
 		"PUT /projects/{projectSlug}/environments/{envSlug}/env",
+		"PUT /projects/{projectSlug}/image",
 		"PUT /registries/{id}",
 		"PUT /settings",
 	}
