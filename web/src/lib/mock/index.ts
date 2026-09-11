@@ -95,6 +95,29 @@ const routes: [string, string, Handler][] = [
 
   // --- projects, environments, apps ---
   ["GET", "/projects", () => db.projects],
+  // The picture is the one thing the preview cannot invent: there are
+  // no bytes to serve and nothing to upload them to. Accepting the
+  // write and remembering the flag is what the screen is actually
+  // about — whether a project wears one, and what it looks like when it
+  // does not.
+  [
+    "PUT",
+    "/projects/:slug/image",
+    (p) => {
+      const project = db.projects.find((x) => x.slug === p[0]);
+      if (project) project.has_image = true;
+      return null;
+    },
+  ],
+  [
+    "DELETE",
+    "/projects/:slug/image",
+    (p) => {
+      const project = db.projects.find((x) => x.slug === p[0]);
+      if (project) project.has_image = false;
+      return null;
+    },
+  ],
   [
     "POST",
     "/projects",

@@ -18,7 +18,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { type App, api, type Environment, type Project } from "@/lib/api";
+import { type App, api, type Project } from "@/lib/api";
 import { message } from "@/lib/errors";
 import { useOpenOnArrival } from "@/lib/open-on-arrival";
 
@@ -40,7 +40,6 @@ export default function ProjectsPage() {
 // which environment is a choice you make after opening the project.
 function Projects() {
   const [projects, setProjects] = useState<Project[] | null>(null);
-  const [envs, setEnvs] = useState<Record<string, string[]>>({});
   const [apps, setApps] = useState<App[]>([]);
   const [creating, setCreating] = useState(false);
   useOpenOnArrival("new", setCreating);
@@ -63,24 +62,6 @@ function Projects() {
       .then(setApps)
       .catch(() => setApps([]));
   }, []);
-
-  // Environments come one project at a time; a card that showed none
-  // until you opened it would be the wrong shape of empty.
-  useEffect(() => {
-    if (!projects) return;
-    let live = true;
-    Promise.all(
-      projects.map((p) =>
-        api
-          .get<Environment[]>(`/projects/${p.slug}/environments`)
-          .then((list) => [p.slug, list.map((e) => e.slug)] as const)
-          .catch(() => [p.slug, []] as const),
-      ),
-    ).then((pairs) => live && setEnvs(Object.fromEntries(pairs)));
-    return () => {
-      live = false;
-    };
-  }, [projects]);
 
   const needle = query.trim().toLowerCase();
   const shown = (projects ?? []).filter((p) => p.slug.toLowerCase().includes(needle));
@@ -145,7 +126,7 @@ function Projects() {
             <ProjectCard
               key={p.slug}
               slug={p.slug}
-              environments={envs[p.slug] ?? p.environments ?? []}
+              hasImage={p.has_image}
               apps={apps.filter((a) => a.project === p.slug)}
             />
           ))}

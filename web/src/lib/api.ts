@@ -59,6 +59,31 @@ export const api = {
   put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
+
+  // The one request that is not JSON either way: a file, sent as
+  // itself. There is one value and no others, and a multipart envelope
+  // around a single value is a form where there is no form.
+  //
+  // The Content-Type is the browser's guess about the blob and the
+  // daemon decides nothing by it — it sniffs the bytes, because the
+  // header is a claim and what it stores is what it serves back from
+  // its own origin.
+  putBytes: async (path: string, blob: Blob): Promise<void> => {
+    if (PREVIEW) {
+      const { handle } = await import("@/lib/mock");
+      await handle("PUT", path, blob);
+      return;
+    }
+    const res = await fetch(PREFIX + path, {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: { "Content-Type": blob.type || "application/octet-stream" },
+      body: blob,
+    });
+    if (!res.ok) {
+      throw new ApiError(res.status, (await res.text()).trim() || res.statusText);
+    }
+  },
 };
 
 // token_required says the claim has to carry the token the installer
@@ -146,9 +171,44 @@ export type InstanceUser = {
 // every registry reference underneath it, so it is the identifier that
 // cannot change and the one everybody reads.
 export type Org = { slug: string };
+
+// projectImageSrc is where a project's picture is.
+//
+// Served by the daemon rather than from the dashboard's own files: it
+// is somebody's upload, kept in the data directory, and the request
+// carries the session cookie like every other read here. `has_image` on
+// the project says whether to ask at all — without it a grid makes one
+// request per project and, on an instance where nobody has chosen one,
+// every single one answers 404.
+export function projectImageSrc(slug: string): string {
+  // **The preview has no bytes to serve.** Everything else there goes
+  // through `handle`, which an <img> does not — so without this the one
+  // screen the picture is for shows an empty frame, and a screen that
+  // looks broken in the preview is one somebody reviews as broken.
+  // A stand-in drawn from the slug, so two projects differ the way two
+  // real pictures would.
+  if (PREVIEW) return previewImage(slug);
+  return `/api/projects/${encodeURIComponent(slug)}/image`;
+}
+
+function previewImage(slug: string): string {
+  let hash = 0;
+  for (const ch of slug) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  const hue = hash % 360;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">` +
+    `<rect width="64" height="64" fill="hsl(${hue} 70% 12%)"/>` +
+    `<circle cx="32" cy="32" r="17" fill="none" stroke="hsl(${hue} 90% 60%)" stroke-width="3"/>` +
+    `<rect x="24" y="24" width="16" height="16" fill="hsl(${(hue + 140) % 360} 90% 60%)"/>` +
+    `</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
 export type Project = {
   slug: string;
   environments?: string[];
+  // Whether this project wears a picture. Absent for one that does not,
+  // which is what every project starts as — see projectImageSrc.
+  has_image?: boolean;
 };
 export type Environment = { slug: string };
 

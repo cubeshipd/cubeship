@@ -91,7 +91,9 @@ export const db = {
     auto_update_timezone: "America/Sao_Paulo",
   } as Settings,
 
-  projects: [{ slug: "web" }, { slug: "internal" }] as Row[],
+  // One with a picture and one without, so the grid shows both halves
+  // of the rule rather than a row of identical marks.
+  projects: [{ slug: "web", has_image: true }, { slug: "internal" }] as Row[],
 
   environments: {
     web: [{ slug: "production" }, { slug: "staging" }],
