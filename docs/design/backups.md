@@ -127,11 +127,57 @@ somebody who may take one may read everything it holds, and a restore
 replaces all of it — the line `objectstore` already draws around a
 bucket's contents.
 
-`/backups` in Platform is every backup on the instance, and it exists
-for the one row a database's own tab can never show: the ones whose
-database is gone. The database's **Backups tab** is the other half — the
-schedule, "back up now", and that database's own history — and it polls
-while one is in flight.
+The database's **Backups tab** is where the dumps are: the schedule,
+"back up now", and that database's own history, polling while one is in
+flight.
+
+`/backups` in Platform is the other question, and it is **not a list of
+backups**. It was one for a release, and a list of every dump on the box
+is a log — nobody reads a log to find out whether they are covered, and
+that one could not answer the question anyway. Built from the backups,
+it cannot contain the row that matters most: **a database nobody has
+ever backed up appears in no list of dumps.** On an instance where
+nothing was scheduled it showed an empty table and no hint that anything
+was wrong.
+
+So it is one row per **database**, from `GET /backups/coverage`, which
+is built from the databases instead — every one of them is a row,
+whether or not it has ever been dumped. Five states, worst first,
+because a report sorted by name makes you read every row to find the one
+that needs you:
+
+```
+never backed up   nothing exists                        ← worst
+failing           the last attempt did not succeed
+on this machine   a dump exists and goes with the disk
+protected         restorable, and somewhere else
+not backed up here   an engine this instance does not dump
+```
+
+**`protected` is two facts and needs both**, because either alone is
+something somebody acts on and should not: a dump beside the database it
+came from goes with the disk, and a schedule that has never produced one
+is a plan rather than a backup. **`failing` is not its opposite** — last
+week's dump can sit safely in a bucket while every night since has
+failed, and that is exactly the case worth saying out loud, so both are
+reported and both are rows.
+
+An engine with no dump is a **row rather than an omission**: a database
+missing from a coverage report reads as one nobody checked.
+
+Every row links to that database's own Backups tab, which is where you
+act — `?tab=backups`, read through `useSearchParams` rather than
+`window`, because this page renders on the server first and a `useState`
+initializer reading a window that is not there hydrates to "overview"
+and keeps it.
+
+The **orphans** — backups whose database has been deleted — are the
+second half of the screen and their own table, from `GET
+/backups/orphans`. Kept on purpose, since deleting a database is exactly
+when its backups matter, and reachable nowhere else. Separate rather
+than mixed in because **none of them can be restored**: where to put one
+is a decision this release does not make, and a table where some rows
+can be restored and some cannot is one somebody reads wrong.
 
 **Every surface names an object store by its name**, never its id; the
 service resolves between them (`objectstore.IDForName`, `NameForID`).

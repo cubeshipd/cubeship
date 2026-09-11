@@ -184,3 +184,59 @@ func ParseTimeOfDay(at string) (hour, minute int, err error) {
 	}
 	return t.Hour(), t.Minute(), nil
 }
+
+// Coverage is one database's backup situation, which is a different
+// question from a list of its dumps.
+//
+// **The row that matters most is the one a list of backups cannot
+// contain.** `/backups` answers "what has been taken", so a database
+// that has never been dumped — the one somebody most needs to find out
+// about — appears in it nowhere at all. This is built from the
+// databases rather than from the backups, which is the whole of why it
+// exists.
+type Coverage struct {
+	Database string
+	Engine   string
+	Version  string
+	// CanBackUp is false for an engine this instance does not dump,
+	// which is Redis. Reported rather than left out: a database missing
+	// from a coverage report reads as one nobody checked.
+	CanBackUp bool
+
+	// Schedule is the one it holds, nil for none. Its presence is what
+	// "scheduled" means — see Schedule. Where it sends them is on it,
+	// and what that store is *called* is resolved once where every
+	// other schedule's is: the HTTP surface.
+	Schedule *Schedule
+
+	// Last is the newest attempt whatever it did, and LastGood the
+	// newest that succeeded. **Two, because they answer different
+	// questions**: one says whether backups are working, the other says
+	// what you could actually put back. A database backed up nightly
+	// and failing for a week has both, and reporting only the first
+	// would say it is fine while reporting only the second would say
+	// nothing is wrong.
+	Last     *Backup
+	LastGood *Backup
+	// Count is how many rows it has at all, so a screen can link to
+	// them rather than guess whether there is anything to show.
+	Count int
+}
+
+// Protected reports whether there is something to put back, somewhere
+// other than this machine.
+//
+// Both halves, because either alone is a lie somebody acts on: a dump
+// beside the database it came from goes with the disk, and a schedule
+// that has never produced one is a plan rather than a backup.
+func (c *Coverage) Protected() bool {
+	return c.LastGood != nil && c.LastGood.OffMachine()
+}
+
+// Failing reports a database whose most recent attempt did not succeed.
+// It is not the opposite of Protected: last week's dump may be sitting
+// safely in a bucket while every night since has failed, and that is
+// the case worth saying out loud.
+func (c *Coverage) Failing() bool {
+	return c.Last != nil && c.Last.Status == StatusFailed
+}

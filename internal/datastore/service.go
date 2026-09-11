@@ -725,6 +725,17 @@ func (s *Service) BySlug(ctx context.Context, slug string) (*Datastore, error) {
 	return s.Repo().BySlug(ctx, slug)
 }
 
+// All is every database on the instance, for the coverage report.
+//
+// It reads the rows and nothing else — no attachments, no containers,
+// which List assembles for the screen that shows them. What backups
+// need is which databases exist, and the one question the report is for
+// is about the ones with no backup at all: a database that has never
+// been dumped appears in no list of dumps.
+func (s *Service) All(ctx context.Context) ([]*Datastore, error) {
+	return s.Repo().List(ctx)
+}
+
 // Exec runs a command inside a database's container, streaming stdin in
 // and stdout out.
 //
