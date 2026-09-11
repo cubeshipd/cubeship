@@ -190,7 +190,14 @@ type Status struct {
 
 // Published is one host port a container answers on.
 type Published struct {
-	Port      int    `json:"port"`
+	Port int `json:"port"`
+	// Inside is the port the container itself listens on. It differs
+	// from Port for everything an operator exposes — a database
+	// published on 15000 listens on 5432 — and a rule about forwarded
+	// traffic has to be written for **this** one, because Docker has
+	// already translated the packet by the time the forward chain sees
+	// it. See Spec.Inside.
+	Inside    int    `json:"inside,omitempty"`
 	Protocol  string `json:"protocol"`
 	Container string `json:"container"`
 	// Allowed is whether a rule already admits it, so the screen can

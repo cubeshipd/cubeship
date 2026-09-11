@@ -1276,6 +1276,25 @@ leaves and never rewrites. Until that stanza is there, an `apps` rule is
 **refused rather than written**, because a rule that governs nothing is
 the exact lie this module exists to avoid.
 
+**An `apps` rule is written for the port *inside* the container, not the
+one somebody typed.** The forward chain is consulted after
+nat/PREROUTING, so by the time UFW sees a packet sent to a published
+15000 it is addressed to 5432 — and a rule naming 15000 matches nothing,
+for ever, while reading as correct on every screen. `Spec.Inside` is the
+translated port and `Status.Published` is where it comes from: Docker
+reports both halves of every mapping, so the number is read off what is
+running rather than guessed at.
+
+It shipped wrong, and the reason it went unnoticed is worth keeping:
+everything Cubeship publishes for itself uses one number inside and out
+— Traefik's 80 and 443, the daemon's 3000 — and the only mappings that
+translate are exactly the ones an operator exposes, a database on
+15000-15999 listening on 5432 and a store on 16000-16999 listening on
+9000. So the feature worked for every port the product opens and for no
+port anybody opens themselves. A rule for a port nothing publishes is
+written unchanged, which is what keeps a rule added ahead of the thing
+it is for from becoming a rule for a number nobody chose.
+
 **A firewall at the provider is a third layer, and it is not visible
 here.** Contabo, Hetzner, DigitalOcean and AWS all filter in front of
 the machine, and that layer does *not* have the Docker problem: it drops

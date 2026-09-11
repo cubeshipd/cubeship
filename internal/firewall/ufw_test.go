@@ -184,6 +184,57 @@ func TestTheCommandEachScopeBuilds(t *testing.T) {
 	}
 }
 
+// A forwarded rule is consulted after Docker has rewritten the
+// destination port, so the number it has to name is the container's own.
+//
+// This is a bug that shipped: every rule for an exposed database was
+// written for the published port — 15000 — and matched nothing, because
+// by the time UFW's forward chain saw the packet it was addressed to
+// 5432. It went unnoticed for as long as it did because everything
+// Cubeship publishes for itself uses one number inside and out.
+func TestAForwardedRuleNamesThePortInsideTheContainer(t *testing.T) {
+	exposed := Spec{
+		Scope: ScopeApps, Action: ActionAllow, Protocol: ProtocolTCP,
+		Port: "15000", Inside: "5432", Comment: "cubeship",
+	}.Args()
+	want := "ufw route allow proto tcp from any to any port 5432 comment cubeship"
+	if strings.Join(exposed, " ") != want {
+		t.Errorf("exposed database: %v", exposed)
+	}
+
+	// A host rule is delivered to the machine, never translated, so the
+	// inside port is not its business even when one is carried.
+	host := Spec{
+		Scope: ScopeHost, Action: ActionAllow, Protocol: ProtocolTCP,
+		Port: "15000", Inside: "5432",
+	}.Args()
+	if strings.Join(host, " ") != "ufw allow proto tcp from any to any port 15000" {
+		t.Errorf("host rule: %v", host)
+	}
+}
+
+// What the published port is translated to is read off what is running,
+// and the answer is empty for everything that is not translated — so a
+// rule for a port nothing publishes comes out exactly as it did before
+// any of this existed.
+func TestThePortARuleIsWrittenForComesFromWhatIsPublished(t *testing.T) {
+	published := []Published{
+		{Port: 15000, Inside: 5432, Container: "cubeship-db-pg"},
+		{Port: 443, Inside: 443, Container: "cubeship-traefik"},
+	}
+	cases := []struct{ port, want string }{
+		{"15000", "5432"},
+		{"443", ""},
+		{"9000", ""},
+		{"16000:16999", ""},
+	}
+	for _, c := range cases {
+		if got := insideOf(published, c.port); got != c.want {
+			t.Errorf("insideOf(%q) = %q, want %q", c.port, got, c.want)
+		}
+	}
+}
+
 // A firewall that is off reports no rules at all — `ufw status` answers
 // "inactive" and stops — while the rules somebody added sit in its file
 // waiting to be applied.
@@ -241,7 +292,7 @@ func TestOneRequestBecomesOneRulePerSource(t *testing.T) {
 		Scope: ScopeHost, Action: ActionAllow, Protocol: ProtocolTCP, Port: "22",
 		Sources: []string{"203.0.113.4", "10.0.0.0/8", "203.0.113.4"},
 	}
-	specs := req.Specs()
+	specs := req.Specs("")
 	if len(specs) != 2 {
 		t.Fatalf("came to %d rules: %+v", len(specs), specs)
 	}
@@ -259,12 +310,12 @@ func TestOneRequestBecomesOneRulePerSource(t *testing.T) {
 		Scope: ScopeHost, Action: ActionAllow, Port: "22",
 		Sources: []string{"203.0.113.4", ""},
 	}
-	if specs := wide.Specs(); len(specs) != 1 || specs[0].From != "" {
+	if specs := wide.Specs(""); len(specs) != 1 || specs[0].From != "" {
 		t.Errorf("anywhere did not absorb the rest: %+v", specs)
 	}
 
 	// And no sources at all is the usual rule.
-	if specs := (Request{Port: "22"}).Specs(); len(specs) != 1 || specs[0].From != "" {
+	if specs := (Request{Port: "22"}).Specs(""); len(specs) != 1 || specs[0].From != "" {
 		t.Errorf("no source came to %+v", specs)
 	}
 }

@@ -816,6 +816,11 @@ export type FirewallRule = {
 // of machine is what is actually exposed.
 export type FirewallPublishedPort = {
   port: number;
+  // What the port becomes once Docker has translated it — a database
+  // published on 15000 is listening on 5432. Absent when the two are
+  // the same, and it is the number a rule for this port is written
+  // for: a forwarded rule is consulted after the translation.
+  inside?: number;
   protocol: string;
   container: string;
   allowed: boolean;
