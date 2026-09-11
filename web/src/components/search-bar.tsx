@@ -18,6 +18,16 @@ export const FieldRowIcon = "size-[38px]";
 // A filter field: a mark, a field, and whatever the caller wants on the
 // right — usually how much of the list survived.
 //
+// **It carries no margin, and a filter above a table needs one.** The
+// gap is between two things rather than a property of either, and this
+// one is used in three shapes: standing above a table, inside a
+// popover over the list it filters, and in a row of controls above a
+// log. A bottom margin baked in here would be right for the first and
+// wrong for the other two. Above a table it is `mb-4` — the filter and
+// the table are two things, where a heading and its table are one, and
+// flush against the border the filter reads as the table's own first
+// row.
+//
 // It uses a bare <input> rather than the Input primitive on purpose.
 // That one carries its own border, its own background and its own focus
 // ring, and this control needs the ring on the whole thing: the mark and

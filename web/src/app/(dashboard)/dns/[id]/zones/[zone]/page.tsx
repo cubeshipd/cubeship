@@ -171,6 +171,7 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
       </RailPortal>
       {all && all.length > 0 && (
         <SearchBar
+          className="mb-4"
           value={query}
           onChange={setQuery}
           placeholder="Filter by name, type or value"

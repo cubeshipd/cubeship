@@ -714,7 +714,7 @@ function EnvVars({ reference }: { reference: string }) {
         value={filter}
         onChange={setFilter}
         placeholder="Filter by name"
-        className="mb-3"
+        className="mb-4"
         trailing={
           all && rows ? (
             <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
