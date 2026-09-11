@@ -8,6 +8,7 @@ import { Appearance } from "@/components/appearance";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailTabs } from "@/components/header-rail";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
 import { SectionHeader } from "@/components/section-header";
@@ -42,13 +43,15 @@ import { message } from "@/lib/errors";
 // too.
 export default function Account() {
   return (
-    <Tabs defaultValue="general">
-      <TabsList variant="line">
-        <TabsTrigger value="general">General</TabsTrigger>
-        <TabsTrigger value="appearance">Appearance</TabsTrigger>
-        <TabsTrigger value="security">Security</TabsTrigger>
-        <TabsTrigger value="keys">API keys</TabsTrigger>
-      </TabsList>
+    <Tabs defaultValue="general" className="subrail-page">
+      <RailTabs>
+        <TabsList variant="line">
+          <TabsTrigger value="general">General</TabsTrigger>
+          <TabsTrigger value="appearance">Appearance</TabsTrigger>
+          <TabsTrigger value="security">Security</TabsTrigger>
+          <TabsTrigger value="keys">API keys</TabsTrigger>
+        </TabsList>
+      </RailTabs>
 
       <TabsContent value="general">
         <General />

@@ -19,7 +19,7 @@ import { ContainerLogs } from "@/components/container-logs";
 import { CopyField } from "@/components/copy-field";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
+import { RailPortal, RailTabs } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
 import { Notice } from "@/components/notice";
@@ -166,26 +166,28 @@ function Detail({ name }: { name: string }) {
         </Card>
       )}
       {datastore && (
-        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-          <TabsList variant="line">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="apps">Apps</TabsTrigger>
-            {/* Left out entirely for an engine this instance does not
-                back up, rather than offered and disabled: a tab that
-                could never hold anything is not a tab. */}
-            {datastore.can_back_up && <TabsTrigger value="backups">Backups</TabsTrigger>}
-            {/* Nothing has printed anything until there is a container.
-                The daemon refuses this endpoint with a 409 in that
-                state, and a tab whose whole content is that refusal is
-                a tab that should not have been offered. */}
-            <TabsTrigger
-              value="logs"
-              disabled={!datastore.has_container}
-              title={datastore.has_container ? undefined : noContainer}
-            >
-              Logs
-            </TabsTrigger>
-          </TabsList>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="subrail-page">
+          <RailTabs>
+            <TabsList variant="line">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="apps">Apps</TabsTrigger>
+              {/* Left out entirely for an engine this instance does not
+                  back up, rather than offered and disabled: a tab that
+                  could never hold anything is not a tab. */}
+              {datastore.can_back_up && <TabsTrigger value="backups">Backups</TabsTrigger>}
+              {/* Nothing has printed anything until there is a container.
+                  The daemon refuses this endpoint with a 409 in that
+                  state, and a tab whose whole content is that refusal is
+                  a tab that should not have been offered. */}
+              <TabsTrigger
+                value="logs"
+                disabled={!datastore.has_container}
+                title={datastore.has_container ? undefined : noContainer}
+              >
+                Logs
+              </TabsTrigger>
+            </TabsList>
+          </RailTabs>
 
           <TabsContent value="overview">
             <MetricsSection path={path} />

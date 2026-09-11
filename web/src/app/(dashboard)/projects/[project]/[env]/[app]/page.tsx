@@ -17,7 +17,7 @@ import { ContainerLogs, LogView } from "@/components/container-logs";
 import { CopyButton } from "@/components/copy-button";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
+import { RailPortal, RailTabs } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
 import { Notice } from "@/components/notice";
@@ -167,29 +167,31 @@ function Detail({
       </RailPortal>
       {!app && <LoadingList rows={5} />}
       {app && (
-        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="subrail-page">
           {/* The line variant: labels on a rule with the live one lit,
               rather than a filled box that draws more of itself than
               what it switches. See globals.css. */}
-          <TabsList variant="line">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="environment">Environment</TabsTrigger>
-            {/* Nothing has printed anything until something has run.
-                The daemon refuses this endpoint with a 409 in that
-                state, and a tab whose whole content is that refusal is
-                a tab that should not have been offered. */}
-            {/* An app on another machine has a readable log like any
-                other: the request is parked here and that machine's own
-                poll carries the question. What differs is the second it
-                takes, not whether it works. */}
-            <TabsTrigger
-              value="logs"
-              disabled={!app.has_container}
-              title={app.has_container ? undefined : noContainer}
-            >
-              Logs
-            </TabsTrigger>
-          </TabsList>
+          <RailTabs>
+            <TabsList variant="line">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="environment">Environment</TabsTrigger>
+              {/* Nothing has printed anything until something has run.
+                  The daemon refuses this endpoint with a 409 in that
+                  state, and a tab whose whole content is that refusal is
+                  a tab that should not have been offered. */}
+              {/* An app on another machine has a readable log like any
+                  other: the request is parked here and that machine's own
+                  poll carries the question. What differs is the second it
+                  takes, not whether it works. */}
+              <TabsTrigger
+                value="logs"
+                disabled={!app.has_container}
+                title={app.has_container ? undefined : noContainer}
+              >
+                Logs
+              </TabsTrigger>
+            </TabsList>
+          </RailTabs>
 
           <TabsContent value="overview">
             {/* Where it runs, said once and only when it is somewhere

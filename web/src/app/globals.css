@@ -559,6 +559,79 @@
   box-shadow: 0 0 8px var(--primary);
 }
 
+/* The sub-rail: a detail screen's tabs, attached to the header rail
+ * rather than floating in the page's padding.
+ *
+ * **A browser's tab strip, read for a dark console.** The one that is
+ * open is the page — same background, no line under it, so it reads as
+ * the surface you are looking at rather than a control above it. The
+ * closed ones sit on the strip, which is a step *lighter* than the
+ * page: on a near-black interface there is nothing darker than the
+ * background to recede into, so what recedes is the thing that is not
+ * the page.
+ *
+ * UNLAYERED and keyed off `.subrail`, like every other house rule here.
+ * It overrides the line variant rather than being a third variant in
+ * `ui/tabs.tsx`, because that file is generated and a re-run of
+ * `shadcn add` would take a variant with it.
+ */
+
+/* No tabs portaled in, no strip. Without this every screen without them
+   carries an empty 40px band under its rail. */
+.subrail:empty {
+  display: none;
+}
+
+.subrail [data-slot="tabs-list"][data-variant="line"] {
+  gap: 0;
+  height: 100%;
+  align-items: stretch;
+  /* The strip carries the line, and each tab decides whether to break
+     it. A border here as well would be a second line under the open
+     one, which is the whole thing this look is built to avoid. */
+  border-bottom: 0;
+}
+
+.subrail [data-slot="tabs-list"][data-variant="line"] [data-slot="tabs-trigger"] {
+  /* **One pixel taller than the strip, and that pixel is the whole
+     merge.** An open tab's own background has to paint over the
+     strip's bottom border — a descendant paints above an ancestor's
+     border — so that the line stops where the tab is and the page
+     underneath reads as coming out of it.
+     `margin-bottom: -1px` alone does not do this: a negative margin
+     moves what follows, it does not make the box taller, so the tab
+     stopped one pixel short and the line ran straight under it. The
+     height grows and the margin takes the growth back out of the
+     strip's own layout. */
+  height: calc(100% + 1px);
+  margin-bottom: -1px;
+  padding: 0 1.15rem;
+  border: 1px solid transparent;
+  border-bottom: 0;
+  color: var(--subtle-foreground);
+}
+
+.subrail [data-slot="tabs-list"][data-variant="line"] [data-slot="tabs-trigger"]:hover {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+
+.subrail [data-slot="tabs-list"][data-variant="line"] [data-slot="tabs-trigger"][data-active],
+.subrail
+  [data-slot="tabs-list"][data-variant="line"]
+  [data-slot="tabs-trigger"][data-active]:hover {
+  background: var(--background);
+  border-color: var(--border);
+  color: var(--primary);
+}
+
+/* The accent moves to the top edge. On the bottom it would be a line
+   under the open tab, which is what an open tab does not have. */
+.subrail [data-slot="tabs-list"][data-variant="line"] [data-slot="tabs-trigger"]::after {
+  top: -1px;
+  bottom: auto;
+}
+
 /* A tab panel starts at the top of itself.
  *
  * Its first section carries the margin that separates one section from
@@ -576,6 +649,13 @@
  * heading itself, or a fragment around it. */
 [data-slot="tabs-content"] > :first-child {
   margin-top: 0;
+}
+
+/* With the tabs out of the page, the gap that used to separate them
+   from the panel is the page's own top padding, and the panel's would
+   be a second one. */
+.subrail-page [data-slot="tabs-content"] {
+  padding-top: 0;
 }
 
 /* The switch, as a panel toggle rather than a pill.
