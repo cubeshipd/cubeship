@@ -41,7 +41,7 @@ export default function DatabasesPage() {
     {
       id: "name",
       header: "Name",
-      width: 40,
+      width: 54,
       sortBy: (d) => d.name,
       cell: (d) => <span className="font-mono text-sm">{d.name}</span>,
     },
@@ -62,22 +62,6 @@ export default function DatabasesPage() {
       width: 20,
       sortBy: (d) => d.status,
       cell: (d) => <StatusBadge value={d.status} />,
-    },
-    {
-      id: "exposed",
-      header: "Exposed",
-      width: 14,
-      align: "right",
-      sortBy: (d) => d.exposed_port ?? 0,
-      cell: (d) =>
-        d.exposed_port ? (
-          // The one fact about a database worth carrying in a column you
-          // only glance at: the difference between something on a
-          // private network and something on the internet.
-          <span className="font-mono text-xs text-warning">{d.exposed_port}</span>
-        ) : (
-          <span className="text-xs text-subtle-foreground">—</span>
-        ),
     },
   ];
 
