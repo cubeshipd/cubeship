@@ -344,6 +344,28 @@ filter over the raw bytes answers "no line matches" for a word plainly
 on the screen, and a downloaded file full of escapes is one an editor
 cannot show. The panel is the only place the colour is real.
 
+### One table, and a reason behind a button
+
+`/certificates` was two tables — "Issued" above "Waiting" — and that
+split the list by an answer rather than by a question. What somebody
+comes here to find out is whether a name is served, which is a column:
+split, a name moved between tables the moment it got a certificate, and
+a name in neither was one you had to notice was absent.
+
+One `DataTable` now, every name this instance routes, state in a column
+(`valid`, `expiring`, `expired`, `unused`, `waiting`, `elsewhere`).
+
+**The explanation is behind a row action, and only on the rows that have
+one.** Each reason used to be a paragraph in a table cell, which is a
+paragraph nobody reads on a screen they opened to find out whether
+something is wrong — and it was in every row of a table where most rows
+had nothing to explain. Behind a button it can be a sentence and the
+button itself is the signal: this row has an answer the others do not.
+
+What the sentence says is what to do, and then stops. Traefik's own line
+goes under it when there is one, because it is the only place an ACME
+refusal is written down.
+
 ### The rail above every screen
 
 `components/header-rail.tsx` is the strip the Shell puts above every
