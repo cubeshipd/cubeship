@@ -25,6 +25,7 @@ import type {
   ApiKey,
   CertificateReport,
   ClusterServer,
+  DNSProvider,
   Firewall,
   InstanceUser,
   Me,
@@ -384,8 +385,26 @@ export const db = {
   ] as Row[],
 
   dnsProviders: [
-    { id: 1, provider: "cloudflare", credential_id: 1, credential_label: "Cloudflare" },
-  ] as Row[],
+    {
+      id: 1,
+      provider: "cloudflare",
+      provider_name: "Cloudflare",
+      credential_id: 1,
+      label: "Cloudflare",
+      created_at: ago(60 * 24 * 40),
+      updated_at: ago(60 * 24 * 40),
+    },
+    {
+      id: 3,
+      provider: "route53",
+      provider_name: "Route 53",
+      credential_id: 3,
+      label: "AWS",
+      username: "AKIAEXAMPLE",
+      created_at: ago(60 * 24 * 9),
+      updated_at: ago(60 * 24 * 9),
+    },
+  ] as DNSProvider[],
 
   certificates: {
     tls_enabled: true,
