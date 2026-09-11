@@ -125,8 +125,15 @@ export function Backups({
   );
 }
 
-// BackupTable is shared between a database's tab and the instance-wide
-// screen, which differ in one column and nothing else.
+// BackupTable is the dumps themselves: a database's own tab, and the
+// listing of the ones whose database has been deleted. They differ in
+// one column and nothing else.
+//
+// The instance-wide screen is **not** one of these any more. A list of
+// every dump on the box is a log, and the question people open that
+// screen with — am I covered — is one a list of backups cannot answer:
+// a database nobody has ever dumped is in no such list. See
+// `/backups`.
 export function BackupTable({
   rows,
   onChanged,
@@ -148,14 +155,12 @@ export function BackupTable({
             header: "Database",
             width: 20,
             sortBy: (b: Backup) => b.database,
-            cell: (b: Backup) => (
-              <span className="font-mono">
-                {b.database}
-                {!b.database_exists && (
-                  <span className="ml-2 text-muted-foreground">(deleted)</span>
-                )}
-              </span>
-            ),
+            // No "(deleted)" marker any more. This column is only ever
+            // shown on the orphan listing, where every row's database
+            // is gone and the heading above says so — so the marker was
+            // on every row, saying nothing, and truncating the one
+            // thing the column is for.
+            cell: (b: Backup) => <span className="truncate font-mono">{b.database}</span>,
           },
         ]
       : []),

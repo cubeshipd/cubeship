@@ -10,7 +10,7 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { Backups } from "@/components/backups";
@@ -63,7 +63,8 @@ import { message } from "@/lib/errors";
 // So the page opens on what is short and always wanted, and what is
 // long, or is somewhere you go rather than something you read, is a tab
 // beside it.
-type Tab = "overview" | "apps" | "backups" | "logs";
+const TABS = ["overview", "apps", "backups", "logs"] as const;
+type Tab = (typeof TABS)[number];
 
 // Why the Logs tab is dead. Said on hover, because a disabled control
 // that explains nothing is a control somebody clicks twice.
@@ -75,9 +76,28 @@ export default function DatastorePage({ params }: PageProps<"/databases/[name]">
 }
 
 function Detail({ name }: { name: string }) {
+  // Which tab is open is view state rather than an identity, so it is
+  // not a segment — but it is linkable, because the Backups screen's
+  // whole job is "this one is not protected" and landing somebody on
+  // Overview to hunt for the tab is the papercut that makes a report
+  // not worth opening.
+  //
+  // **Through `useSearchParams` rather than `window`**, and the
+  // difference is not style: this page renders on the server first,
+  // where there is no window, so a `useState` initializer reading one
+  // produces "overview" — and React keeps the state it hydrated with
+  // rather than re-running the initializer, so the parameter was read
+  // and silently thrown away. This hook is the one thing that has the
+  // same answer on both sides.
+  const asked = useSearchParams().get("tab");
+  const [initial] = useState<Tab>(() =>
+    TABS.includes(asked as Tab) ? (asked as Tab) : "overview",
+  );
   const [datastore, setDatastore] = useState<Datastore | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("overview");
+  // Only the arrival decides it. After that the tab row does, and a
+  // stale parameter must not drag somebody back when they click away.
+  const [tab, setTab] = useState<Tab>(initial);
 
   const path = datastorePath(name);
   const reload = useCallback(() => {

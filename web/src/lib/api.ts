@@ -1105,6 +1105,26 @@ export type BackupSchedule = {
   last_run_at?: string;
 };
 
+// One database's backup situation, which is a different question from
+// a list of its dumps: this is built from the databases, so a database
+// nobody has ever backed up — the row that matters most — is in it.
+export type BackupCoverage = {
+  database: string;
+  engine: string;
+  version?: string;
+  can_back_up: boolean;
+  schedule?: BackupSchedule;
+  // There is something to restore and it is not on this machine's own
+  // disk. Both halves, because either alone is a lie somebody acts on.
+  protected: boolean;
+  // The most recent attempt failed. Not the opposite of `protected`: a
+  // good dump can sit in a bucket while every night since has failed.
+  failing: boolean;
+  last_good?: Backup;
+  last?: Backup;
+  count: number;
+};
+
 export function downloadURL(store: string, bucket: string, key: string): string {
   return `/api${bucketPath(store, bucket)}/download?key=${encodeURIComponent(key)}`;
 }

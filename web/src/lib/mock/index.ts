@@ -279,6 +279,12 @@ const routes: [string, string, Handler][] = [
 
   // --- backups, instance-wide ---
   ["GET", "/backups", () => db.backups],
+  // **Derived rather than written out.** A hand-written coverage
+  // fixture is a second answer to what the backups say, and it goes
+  // stale the first time somebody edits one of them — in a preview,
+  // silently, which is the one place a wrong answer looks finished.
+  ["GET", "/backups/coverage", () => coverage()],
+  ["GET", "/backups/orphans", () => db.backups.filter((b) => !b.database_exists)],
   [
     "DELETE",
     "/backups/:id",
@@ -382,6 +388,29 @@ export class MockGap extends Error {
   constructor(route: string) {
     super(`preview has no mock for ${route} — add it in src/lib/mock/index.ts`);
   }
+}
+
+// coverage mirrors what the daemon builds: one row per database, from
+// the databases — so a database nobody has ever backed up is in it.
+function coverage(): Row[] {
+  return db.datastores.map((d) => {
+    const name = d.name as string;
+    const mine = db.backups.filter((b) => b.database === name && b.database_exists);
+    const last = mine[0];
+    const lastGood = mine.find((b) => b.status === "succeeded");
+    return {
+      database: name,
+      engine: d.engine,
+      version: d.version,
+      can_back_up: d.can_back_up,
+      schedule: db.backupSchedules[name],
+      protected: Boolean(lastGood?.off_machine),
+      failing: last?.status === "failed",
+      last_good: lastGood,
+      last,
+      count: mine.length,
+    };
+  });
 }
 
 function match(pattern: string, parts: string[]): string[] | null {
