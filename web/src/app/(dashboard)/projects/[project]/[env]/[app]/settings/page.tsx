@@ -95,7 +95,7 @@ function Settings({ reference }: { reference: string }) {
           <Limits app={app} onSaved={setApp} onError={setError} />
           <AutoscaleSection app={app} onSaved={setApp} onError={setError} />
 
-          <DangerZone>
+          <DangerZone className="mt-10">
             <DangerAction
               title="Delete this app"
               description="Its container is stopped first. Images already pushed stay in the registry — reclaiming that disk needs a garbage collection pass Cubeship does not run."

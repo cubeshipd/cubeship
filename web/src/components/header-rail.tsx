@@ -119,9 +119,7 @@ export function HeaderRail({ children }: { children: ReactNode }) {
                 )}
                 <Crumb
                   crumb={
-                    i === crumbs.length - 1 && title !== null
-                      ? { ...crumb, label: title, mono: false }
-                      : crumb
+                    i === crumbs.length - 1 && title !== null ? { ...crumb, label: title } : crumb
                   }
                   last={i === crumbs.length - 1}
                 />
@@ -157,28 +155,22 @@ type CrumbSpec = {
   // `crumbsFor` runs on every render, and an array would be a new one
   // each time — a callback that is never the same twice.
   scope?: string;
-  mono?: boolean;
 };
 
-// The first segment's name, which is the sidebar's word for it. Written
-// out rather than derived, because "storage" is called "Object storage"
-// and "settings" is called "Instance".
-const sections: Record<string, string> = {
-  projects: "Projects",
-  databases: "Databases",
-  storage: "Object storage",
-  credentials: "Credentials",
-  users: "Users",
-  registries: "Registries",
-  git: "Git Providers",
-  dns: "DNS Providers",
-  certificates: "Certificates",
-  backups: "Backups",
-  firewall: "Firewall",
-  servers: "Servers",
-  settings: "Instance",
-  account: "Your settings",
-};
+// The segments under /projects that name a screen rather than a
+// resource. `slug.Reserved` on the daemon refuses these as names for
+// the same reason, so the two lists say the same thing from opposite
+// ends: nothing here can be called `settings`, and nothing called
+// `settings` here is a thing.
+const STATIC_SEGMENTS = new Set(["settings"]);
+
+// The path as the URL writes it, and the URL is already the reference.
+//
+// There was a table here turning `storage` into "Object storage" and
+// `settings` into "Instance" — the sidebar's words, kept in step with
+// the sidebar by hand. What it bought was a nicer noun in one place and
+// a second list to forget to update; what it cost was a crumb that did
+// not match the address it names.
 
 export function crumbsFor(pathname: string): CrumbSpec[] {
   const parts = pathname.split("/").filter(Boolean);
@@ -187,7 +179,7 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
   const [section, ...rest] = parts;
   const head: CrumbSpec = {
     key: section,
-    label: sections[section] ?? section,
+    label: section,
     href: rest.length > 0 ? `/${section}` : undefined,
   };
   if (rest.length === 0) return [head];
@@ -195,7 +187,20 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
   // The three-level hierarchy is the one worth switching inside, and
   // the only place a crumb has more than one kind of sibling.
   if (section === "projects") {
-    const [project, env, app, ...tail] = rest;
+    // **A trailing `settings` is a screen, not a slug.** Next resolves
+    // a static segment before a dynamic one, which is exactly why
+    // `slug.Reserved` refuses the name at creation — and reading the
+    // path positionally makes `/projects/web/settings` a project called
+    // `web` in an *environment* called `settings`, which then offers a
+    // menu of the environments it might be swapped for. It was one, and
+    // it said "Nothing else here."
+    const words = rest.slice();
+    const trailing: string[] = [];
+    while (words.length > 0 && STATIC_SEGMENTS.has(words[words.length - 1])) {
+      trailing.unshift(words.pop() as string);
+    }
+    const [project, env, app] = words;
+    const tail = trailing;
     const out: CrumbSpec[] = [head];
     out.push({
       key: `p:${project}`,
@@ -203,7 +208,6 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
       href: env ? `/projects/${project}` : undefined,
       siblings: "project",
       scope: "",
-      mono: true,
     });
     if (env) {
       out.push({
@@ -212,7 +216,6 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
         href: app ? `/projects/${project}/${env}` : undefined,
         siblings: "environment",
         scope: project,
-        mono: true,
       });
     }
     if (app) {
@@ -222,7 +225,6 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
         href: tail.length > 0 ? `/projects/${project}/${env}/${app}` : undefined,
         siblings: "app",
         scope: `${project}/${env}`,
-        mono: true,
       });
     }
     for (const word of tail) out.push({ key: `t:${word}`, label: title(word) });
@@ -240,7 +242,6 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
       href: tail.length > 0 ? `/${section}/${name}` : undefined,
       siblings,
       scope: "",
-      mono: true,
     },
   ];
 
@@ -257,7 +258,6 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
       href: tail.length > 2 ? `/storage/${name}/buckets/${tail[1]}` : undefined,
       siblings: "bucket",
       scope: name,
-      mono: true,
     });
     for (const word of tail.slice(2)) out.push({ key: `t:${word}`, label: title(word) });
     return out;
@@ -269,37 +269,29 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
   return out;
 }
 
+// Every segment reads as the URL writes it — see the crumb's own note.
+// Capitalising `settings` into "Settings" was the last of the two lists
+// that had to agree with each other.
 function title(word: string): string {
-  const known: Record<string, string> = {
-    settings: "Settings",
-    zones: "Zones",
-    buckets: "Buckets",
-  };
-  return known[word] ?? decodeURIComponent(word);
+  return decodeURIComponent(word);
 }
 
-// The last crumb is the screen's title, not a step in a path.
+// One crumb, and every crumb looks like it.
 //
-// **It is the whole of the title now.** There was a PageHeader under
-// this saying the same thing in a larger face — and of the thirty-one
-// it drew, almost every one was either the section the sidebar already
-// highlights or the last word of this path. Two places saying it is one
-// place too many; what mattered was that it be said with weight, which
-// is what this does.
+// It did not, for a day: the section was uppercase, the slugs were mono
+// lowercase, and the last one was half again as large because it was
+// standing in for a page title. Three typographic systems in one line,
+// which reads as three different kinds of thing rather than as one
+// path — and the largest of them was often the least informative word
+// on the screen.
 //
-// Mono for a name and uppercase for a word, which is the rule the rest
-// of the product keeps: a slug is read character by character and
-// shouting it makes it harder, not louder. The pages used to fight the
-// old header's uppercase default with a span of their own to get here.
+// So: mono throughout, one size, written the way the URL writes it.
+// The only thing that separates the last crumb is that it is lit and
+// the rest are not, which is what a breadcrumb has always done, and it
+// is enough to say which of them you are standing on.
 function Crumb({ crumb, last }: { crumb: CrumbSpec; last: boolean }) {
-  const text = last
-    ? crumb.mono
-      ? "font-mono text-base text-foreground"
-      : "text-sm font-semibold tracking-[0.14em] text-foreground uppercase"
-    : crumb.mono
-      ? "font-mono text-[11px]"
-      : "text-[11px] tracking-wide uppercase";
-  const tone = last ? "" : "text-muted-foreground";
+  const text = "font-mono text-sm";
+  const tone = last ? "text-foreground" : "text-muted-foreground";
 
   if (crumb.siblings) {
     return <CrumbMenu crumb={crumb} className={`${text} ${tone}`} />;

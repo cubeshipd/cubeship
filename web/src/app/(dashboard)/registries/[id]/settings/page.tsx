@@ -320,7 +320,7 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
           </form>
         </CardContent>
       </Card>
-      <DangerZone>
+      <DangerZone className="mt-10">
         <DangerAction
           title="Delete this registry"
           description={
