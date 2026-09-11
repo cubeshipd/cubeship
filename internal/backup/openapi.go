@@ -33,6 +33,18 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"finished_at":     openapi.String("RFC 3339. Absent while it is still running."),
 			}, "id", "database", "database_exists", "engine", "version", "key", "off_machine", "size_bytes", "status", "scheduled", "started_at"),
 
+			"BackupCoverage": openapi.Object(map[string]*openapi.Schema{
+				"database":    openapi.String("The database, by name."),
+				"engine":      openapi.String("The engine it runs."),
+				"version":     openapi.String("And its major version."),
+				"can_back_up": openapi.Bool("Whether this instance dumps this engine at all. False for Redis — a cache whose own append-only file already survives a restart, and whose restore has no good answer to what it would be restored *to*. Reported rather than left out: a database missing from a coverage report reads as one nobody checked."),
+				"schedule":    openapi.Ref("BackupSchedule"),
+				"protected":   openapi.Bool("**The report in one field**: there is a backup that can be restored, and it is not on this machine's own disk. Both halves, because either alone is something somebody acts on and should not — a dump beside the database it came from goes with the disk, and a schedule that has never produced one is a plan rather than a backup."),
+				"failing":     openapi.Bool("The most recent attempt did not succeed. **Not the opposite of `protected`**: last week's dump may be sitting safely in a bucket while every night since has failed, which is exactly the case worth saying out loud."),
+				"last_good":   openapi.Ref("Backup"),
+				"last":        openapi.Ref("Backup"),
+				"count":       openapi.Integer("How many backups this database has at all."),
+			}, "database", "engine", "can_back_up", "protected", "failing", "count"),
 			"BackupSchedule": openapi.Object(map[string]*openapi.Schema{
 				"at":          openapi.String(`A time of day, "03:00", on a 24-hour clock.`),
 				"timezone":    openapi.String("An IANA name. 03:00 on a server's clock is not the middle of anybody's night."),
@@ -51,6 +63,32 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Tags:        []string{"Backups"},
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The backups.", openapi.Array(openapi.Ref("Backup"))),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+					},
+				},
+			},
+			"/backups/coverage": {
+				"get": {
+					OperationID: "backupCoverage",
+					Summary:     "Say whether each database is protected",
+					Description: "One row per **database**, not per dump, and that is the whole of why it is a second endpoint.\n\n`GET /backups` answers \"what has been taken\", so a database that has never been backed up — the one somebody most needs to find out about — appears in it nowhere at all. This is built from the databases instead: every one of them is a row, whether or not it has ever been dumped.\n\nRequires the admin role.",
+					Tags:        []string{"Backups"},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("Every database and where it stands.", openapi.Array(openapi.Ref("BackupCoverage"))),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+					},
+				},
+			},
+			"/backups/orphans": {
+				"get": {
+					OperationID: "listOrphanBackups",
+					Summary:     "List the backups whose database is gone",
+					Description: "Kept on purpose — deleting a database is exactly the moment its backups matter — and reachable nowhere else, since the database's own screen went with it.\n\nThey can be downloaded and deleted and **not restored**: where to put one is a decision, and this release does not make it. Requires the admin role.",
+					Tags:        []string{"Backups"},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The orphaned backups, newest first.", openapi.Array(openapi.Ref("Backup"))),
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 					},

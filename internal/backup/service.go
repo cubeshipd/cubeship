@@ -40,6 +40,10 @@ const Timeout = 2 * time.Hour
 type Databases interface {
 	ByID(ctx context.Context, id int64) (*datastore.Datastore, error)
 	BySlug(ctx context.Context, slug string) (*datastore.Datastore, error)
+	// All is every database there is, for the coverage report — which
+	// is about the ones with no backups, so it cannot be built from
+	// the backups.
+	All(ctx context.Context) ([]*datastore.Datastore, error)
 	// Exec runs a command in the database's container, with stdin and
 	// stdout streamed rather than collected. It reports what the
 	// command wrote to stderr, which is the only place an engine
@@ -88,6 +92,96 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Backup, error
 		return nil, err
 	}
 	return s.Repo().List(ctx)
+}
+
+// Coverage answers "is this instance protected", which is the one
+// question a list of backups cannot.
+//
+// **It is built from the databases, not from the backups.** A database
+// that has never been dumped is the row somebody most needs to see and
+// it appears in no list of dumps — so the screen that listed every
+// backup on the instance was, on an instance with two unprotected
+// databases, showing nothing at all about either.
+//
+// Three reads and a join in memory rather than one query: the databases
+// are another module's table and this one does not reach into it. It is
+// a handful of rows on a box that runs a handful of databases, and the
+// alternative is a query that would have to know a schema `datastore`
+// owns.
+func (s *Service) Coverage(ctx context.Context, caller *user.User) ([]*Coverage, error) {
+	if err := user.Require(caller, manageRole); err != nil {
+		return nil, err
+	}
+
+	databases, err := s.dbs.All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list databases: %w", err)
+	}
+	backups, err := s.Repo().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	schedules, err := s.Repo().Schedules(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	byDatastore := make(map[int64]*Schedule, len(schedules))
+	for _, sc := range schedules {
+		byDatastore[sc.DatastoreID] = sc
+	}
+
+	out := make([]*Coverage, 0, len(databases))
+	index := make(map[int64]*Coverage, len(databases))
+	for _, d := range databases {
+		c := &Coverage{
+			Database:  d.Slug,
+			Engine:    string(d.Engine),
+			Version:   d.Version,
+			CanBackUp: d.Engine.CanBackUp(),
+			Schedule:  byDatastore[d.ID],
+		}
+		out = append(out, c)
+		index[d.ID] = c
+	}
+
+	// The listing is newest first, so the first of each kind seen is
+	// the newest of it.
+	for _, b := range backups {
+		c := index[b.DatastoreID]
+		if c == nil {
+			continue // its database is gone; it is reported on its own
+		}
+		c.Count++
+		if c.Last == nil {
+			c.Last = b
+		}
+		if c.LastGood == nil && b.Status == StatusDone {
+			c.LastGood = b
+		}
+	}
+	return out, nil
+}
+
+// Orphans are the backups whose database has been deleted.
+//
+// They are kept on purpose — deleting a database is exactly the moment
+// its backups matter — and they are the other half of what the instance
+// screen shows, separately rather than mixed in: a row whose database
+// is gone cannot be restored, and a table where some rows can and some
+// cannot is one somebody reads wrong.
+func (s *Service) Orphans(ctx context.Context, caller *user.User) ([]*Backup, error) {
+	all, err := s.List(ctx, caller)
+	if err != nil {
+		return nil, err
+	}
+	out := []*Backup{}
+	for _, b := range all {
+		if b.DatastoreID == 0 {
+			out = append(out, b)
+		}
+	}
+	return out, nil
 }
 
 // ForDatabase is one database's backups.

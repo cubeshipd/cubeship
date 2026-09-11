@@ -52,6 +52,42 @@ type ScheduleResponse struct {
 	LastRun  string `json:"last_run_at,omitempty"`
 }
 
+// CoverageResponse is one database's backup situation.
+//
+// **It is the answer a list of backups cannot give**, because it is
+// built from the databases: a database that has never been dumped is
+// the row somebody most needs and it appears in no list of dumps.
+type CoverageResponse struct {
+	Database string `json:"database"`
+	Engine   string `json:"engine"`
+	Version  string `json:"version"`
+	// CanBackUp is false for an engine this instance does not dump.
+	// Reported rather than left out — a database missing from a
+	// coverage report reads as one nobody checked.
+	CanBackUp bool `json:"can_back_up"`
+
+	// Schedule is absent when there is none, which is what "not
+	// scheduled" is.
+	Schedule *ScheduleResponse `json:"schedule,omitempty"`
+
+	// Protected is the whole report in one field: there is something to
+	// put back, and it is not on this machine's own disk. Both halves,
+	// because either alone is a lie somebody acts on.
+	Protected bool `json:"protected"`
+	// Failing says the most recent attempt did not succeed. Not the
+	// opposite of Protected: last week's dump may be sitting safely in
+	// a bucket while every night since has failed.
+	Failing bool `json:"failing"`
+
+	// LastGood is the newest backup that can actually be restored, and
+	// Last the newest attempt whatever it did. Both, because one says
+	// what you could put back and the other says whether backups are
+	// working.
+	LastGood *Response `json:"last_good,omitempty"`
+	Last     *Response `json:"last,omitempty"`
+	Count    int       `json:"count"`
+}
+
 type Handler struct {
 	svc *Service
 	// stores answers what a store is called, so a listing can say where
@@ -69,6 +105,11 @@ const databasePath = "/datastores/{name}/backups"
 
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.Handle("GET /backups", auth(http.HandlerFunc(h.list)))
+	// Before the {id} routes in the file and irrelevant to the mux,
+	// which prefers a literal segment over a wildcard whatever the
+	// order — but a reader should not have to know that.
+	r.Handle("GET /backups/coverage", auth(http.HandlerFunc(h.coverage)))
+	r.Handle("GET /backups/orphans", auth(http.HandlerFunc(h.orphans)))
 	r.Handle("GET "+databasePath, auth(http.HandlerFunc(h.forDatabase)))
 	r.Handle("POST "+databasePath, auth(http.HandlerFunc(h.take)))
 	r.Handle("GET "+databasePath+"/schedule", auth(http.HandlerFunc(h.schedule)))
@@ -82,6 +123,51 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	rows, err := h.svc.List(ctx, user.FromContext(ctx))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, h.toResponses(rows))
+}
+
+// coverage is one row per database rather than one per dump.
+func (h *Handler) coverage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	rows, err := h.svc.Coverage(ctx, user.FromContext(ctx))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	out := make([]CoverageResponse, 0, len(rows))
+	for _, c := range rows {
+		item := CoverageResponse{
+			Database: c.Database, Engine: c.Engine, Version: c.Version,
+			CanBackUp: c.CanBackUp,
+			Protected: c.Protected(), Failing: c.Failing(),
+			Count: c.Count,
+		}
+		if c.Schedule != nil {
+			sched := h.toScheduleResponse(c.Schedule)
+			item.Schedule = &sched
+		}
+		if c.LastGood != nil {
+			good := h.toResponse(c.LastGood)
+			item.LastGood = &good
+		}
+		if c.Last != nil {
+			last := h.toResponse(c.Last)
+			item.Last = &last
+		}
+		out = append(out, item)
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+// orphans is the backups whose database has been deleted — the rows
+// nothing else on the instance can reach.
+func (h *Handler) orphans(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	rows, err := h.svc.Orphans(ctx, user.FromContext(ctx))
 	if err != nil {
 		WriteError(w, err)
 		return
