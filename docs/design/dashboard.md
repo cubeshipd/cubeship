@@ -887,16 +887,51 @@ re-run of `shadcn add` overwrite those files without taking the house
 style with it. The `hud-frame`, `bg-grid`, `bg-scanlines`, `text-glow`
 and `neon-edge` utilities live there too.
 
-The dashboard is dark and only dark: `<html>` carries `dark` rather than
-following the system, because the shadcn primitives carry `dark:` rules
-and a visitor whose OS is light would otherwise get half of them.
+`<html>` carries `dark` rather than following the system, because the
+shadcn primitives carry `dark:` rules and a visitor whose OS is light
+would otherwise get half of them. **It carries it under `helix` too**,
+which is the light palette, and that is not an oversight: every `dark:`
+rule in `ui/` reaches for a token `globals.css` defines, so under that
+palette they resolve to its values and render light with everything
+else. Making the class conditional would switch the primitives' own
+light defaults on for one theme, which is a second set of colours to
+keep honest — the thing carrying the class unconditionally avoids.
 
-**There are eight palettes and every one of them is dark.** That is a
-decision rather than an omission: this is a console for a machine, read
-beside a terminal, and a light one would be the only screen on that desk
-that is. A palette changes **colour and nothing else** — the layout, the
-type and the square corners are the product, and a theme that moved
-those would be a second interface to keep working.
+**There are nine palettes and all of them are dark but one.** That was
+the whole decision for a long time, and the reason still holds: this is
+a console for a machine, read beside a terminal. `helix` is the
+exception, offered because a console read in daylight is a real desk
+and not a hypothesis — and it is **one exception rather than a
+light/dark axis over the other eight**, which would have been nine more
+palettes to keep honest for the same screens. A palette changes
+**colour and nothing else** — the layout, the type and the square
+corners are the product, and a theme that moved those would be a second
+interface to keep working.
+
+**Helix is Mono read the other way up**, which is what it is named for:
+the page is the extreme, the card is four percent off it, and the accent
+is the page's opposite rather than a hue. Two things did not mirror, and
+both are worth knowing before a second light palette is attempted.
+
+The **text levels** are matched by contrast, not by hex. `#8f8f8f` is
+7.2:1 on black and 3.2:1 on white, so inverting mono's numbers would
+have flattened the three levels — a label, a value and a hint — that a
+dense screen is read by.
+
+The **status colours** could not be mirrored at all, and `helix` is the
+only palette that touches them: green, amber and red mean running,
+deploying and failed, and the versions tuned for a near-black page are
+not colours on a white one. The terminal's own eight are *not*
+re-picked, because the log panel is `bg-black` in every theme — which
+is the whole reason those were declared once and never per palette. The
+panel's own default text moved to `--ansi-green` for the same reason:
+it was `--success`, which this palette darkens for paper, and one
+screen's readability is not worth dimming every log on the instance.
+
+The glow needed no special case, and that is the test it passed. Every
+depth effect in the stylesheet is `var(--primary)` at low opacity, so on
+paper the same rules render as ink bleed and a soft shadow instead of
+neon.
 
 Each one moves the surfaces with the accent rather than leaving them
 blue. A red accent on a blue-cast near-black reads as two themes

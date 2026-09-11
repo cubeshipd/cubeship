@@ -32,11 +32,17 @@ export const metadata: Metadata = {
   description: "Self-hosted PaaS",
 };
 
-// **Every palette is dark**, so `dark` is on <html> rather than left to
-// the system: the shadcn primitives carry `dark:` rules and a visitor
-// whose OS is set to light would otherwise get half of them. Which of
-// the palettes is on `data-theme`, written before the first paint by
-// ThemeBoot — an effect runs after it, which is the flash.
+// `dark` is on <html> rather than left to the system: the shadcn
+// primitives carry `dark:` rules and a visitor whose OS is set to light
+// would otherwise get half of them. Which of the palettes is on
+// `data-theme`, written before the first paint by ThemeBoot — an effect
+// runs after it, which is the flash.
+//
+// **It stays on for `helix` too, which is the light one.** Every
+// `dark:` rule in `ui/` resolves a token this app's stylesheet defines,
+// so under that palette they render light along with everything else;
+// taking the class off would turn the primitives' own light defaults on
+// for one theme and nothing else.
 //
 // **`suppressHydrationWarning` is that script's other half.** It runs
 // between the server's HTML and React reaching it, which is the whole

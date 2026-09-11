@@ -235,7 +235,7 @@ const routes: [string, string, Handler][] = [
       return row;
     },
   ],
-  ["GET", "/apps/:a/:b/:c/logs", () => ({ logs: sampleLog })],
+  ["GET", "/apps/:a/:b/:c/logs", () => sampleLog],
   ["GET", "/apps/:a/:b/:c/metrics", () => containerSeries(24, 512 * 1024 * 1024)],
   ["GET", "/apps/:a/:b/:c/domains", (p) => appOr404(p.join("/")).domains],
   [
@@ -283,7 +283,7 @@ const routes: [string, string, Handler][] = [
   ["GET", "/datastores/:name", (p) => row(db.datastores, "name", p[0])],
   ["GET", "/datastores/:name/credentials", (p) => credentialsFor(p[0])],
   ["GET", "/datastores/:name/attachments", (p) => row(db.datastores, "name", p[0]).attachments],
-  ["GET", "/datastores/:name/logs", () => ({ logs: sampleLog })],
+  ["GET", "/datastores/:name/logs", () => sampleLog],
   ["GET", "/datastores/:name/metrics", () => containerSeries(24, 2 * 1024 * 1024 * 1024)],
   ["GET", "/datastores/:name/backups", (p) => db.backups.filter((b) => b.database === p[0])],
   [
@@ -409,7 +409,7 @@ const routes: [string, string, Handler][] = [
     "/objectstores/:name/credentials",
     () => ({ access_key: "AKIAPREVIEW", secret_key: "s3cr3t-preview" }),
   ],
-  ["GET", "/objectstores/:name/logs", () => ({ logs: sampleLog })],
+  ["GET", "/objectstores/:name/logs", () => sampleLog],
   ["GET", "/objectstores/:name/metrics", () => containerSeries(24, 1024 * 1024 * 1024)],
 
   // --- platform ---

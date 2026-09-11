@@ -21,6 +21,10 @@ const PALETTES: Record<string, { label: string; note: string; bg: string; fg: st
   pink: { label: "Pink", note: "", bg: "#0a0409", fg: "#ff5cb8" },
   purple: { label: "Purple", note: "", bg: "#07050e", fg: "#a97bff" },
   blue: { label: "Blue", note: "Blue on navy", bg: "#03060f", fg: "#4d8dff" },
+  // The one light one, and the swatch is the only place in the
+  // picker where the accent is darker than the surface behind it —
+  // which is the whole of what it is.
+  helix: { label: "Helix", note: "Mono, the other way up", bg: "#ffffff", fg: "#0a0a0a" },
 };
 
 // Appearance is the palette this person sees the dashboard in.
@@ -41,7 +45,7 @@ export function Appearance() {
     <>
       <SectionHeader
         title="Theme"
-        sub="Colour only, and every one of them dark. This is a console read beside a terminal — the layout, the type and the square corners are the same whichever you pick, and they are what the product is."
+        sub="Colour only, and all of them dark but Helix. This is a console read beside a terminal — the layout, the type and the square corners are the same whichever you pick, and they are what the product is."
       />
       <Card>
         <CardContent>

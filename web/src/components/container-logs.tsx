@@ -17,13 +17,17 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { api } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // What a container has printed.
 //
-// Fetched with `fetch` rather than through `api`, because the daemon
+// Through `api.getText` rather than `api.get`, because the daemon
 // answers this as text/plain — it is the log, not a document about the
-// log — and the shared client decodes JSON.
+// log — and the shared client decodes JSON. It was a bare `fetch` here
+// for the same reason, which made this the one screen in the dashboard
+// that reached past the seam the preview replaces: three screens that
+// answered 500 with no daemon behind them.
 //
 // One component for an app, a database and an object store, the same way
 // the monitoring section is one: the endpoints differ in their address
@@ -70,12 +74,8 @@ export function ContainerLogs({
     setBusy(true);
     try {
       const where = server ? `&server=${encodeURIComponent(server)}` : "";
-      const res = await fetch(`/api${path}/logs?tail=${tail}${where}`, {
-        credentials: "same-origin",
-      });
-      const body = (await res.text()).trim();
-      if (!res.ok) throw new Error(body || res.statusText);
-      setText(body);
+      const body = await api.getText(`${path}/logs?tail=${tail}${where}`);
+      setText(body.trim());
       setError(null);
     } catch (e) {
       setError(message(e));
@@ -269,7 +269,11 @@ export function LogView({
       <pre
         ref={view}
         className={cn(
-          "overflow-auto border border-border bg-black p-3 font-mono text-xs break-all whitespace-pre-wrap text-success/90",
+          // The terminal's own green rather than the status one. This
+          // panel is black in every palette and `--success` is not:
+          // `helix` darkens it for white paper, which would have dimmed
+          // every log on the instance to serve one screen.
+          "overflow-auto border border-border bg-black p-3 font-mono text-xs break-all whitespace-pre-wrap text-[color:var(--ansi-green)]/90",
           tall ? "h-[60vh]" : "max-h-[420px]",
         )}
       >

@@ -60,6 +60,27 @@ export const api = {
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
   del: <T>(path: string) => request<T>("DELETE", path),
 
+  // A log, which the daemon answers as text/plain — it is the log, not
+  // a document about the log — so it cannot go through `request`.
+  //
+  // It is **here** rather than a bare `fetch` in the component for one
+  // reason: that is the seam the preview replaces. The log screen was
+  // the only one in the dashboard that reached past it, so it was the
+  // only one the preview answered with a 500 — on every app, every
+  // database and every store, which is three screens nobody could look
+  // at while changing how they look.
+  getText: async (path: string): Promise<string> => {
+    if (PREVIEW) {
+      const { handle } = await import("@/lib/mock");
+      return (await handle("GET", path)) as string;
+    }
+    const res = await fetch(PREFIX + path, { credentials: "same-origin" });
+    if (!res.ok) {
+      throw new ApiError(res.status, (await res.text()).trim() || res.statusText);
+    }
+    return res.text();
+  },
+
   // The one request that is not JSON either way: a file, sent as
   // itself. There is one value and no others, and a multipart envelope
   // around a single value is a form where there is no form.
