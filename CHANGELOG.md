@@ -6,6 +6,63 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.5.0 — 2026-09-11
+
+An app that runs a published image is now configured by choosing a registry, an image and a tag, each from a list — and pinning a tag is how deploy-on-push is turned off.
+
+### Changed
+
+**Where a Docker image comes from is three choices, not two cards.** It
+was "Cubeship's registry" or "Another registry", above a box you typed a
+reference into. The second was never one thing: it is however many
+registries you have connected, and picking it told you nothing about
+which.
+
+Now you pick the registry, then the image, then the tag — and each is a
+list this instance fetches:
+
+- **The registry** is Cubeship's own, every registry you have connected,
+  and Docker Hub. Docker Hub is there whether or not you have connected
+  it, because a public image needs no login.
+- **The image** comes from that registry's own catalogue. Docker Hub has
+  no public catalogue, so you type the image there and the tag is still
+  listed; a registry that will not list what it holds behaves the same
+  way.
+- **The tag** is newest first, and the newest is already chosen.
+
+On Cubeship's own registry there is no image to choose: it is this app's
+own path, shown and locked. A push is matched to an app by its
+reference, so pointing one app at another's path would deploy the wrong
+app every time somebody pushed.
+
+### Added
+
+**An app can be pinned to a tag**, and that is how deploy-on-push is
+turned off.
+
+Until now an app on this instance's registry deployed on every push and
+there was no way to say otherwise. Choose a tag and it runs that one,
+deployed when you ask for it — a push is ignored from then on, including
+a push of the very tag it is pinned to. An app pinned to `v1.0` is one
+somebody decided should run `v1.0`, and moving it because a notification
+arrived would undo that decision with nobody watching.
+
+The switch and the tag are the same setting seen twice, which is why the
+screen hides one when you use the other: an app cannot both follow every
+push and be pinned, so there is no way to set them to disagree.
+
+**Nothing changes for an app you already have.** Every app starts
+unpinned, which is exactly what it does today: a push to this instance's
+registry deploys it, and an app pulling from anywhere else runs
+`latest`.
+
+For the API and the CLI, `tag` joins `image` on `POST /apps` and `PATCH
+/apps/{ref}`, `autodeploy` is reported beside it, and `cubeship app
+create` gained `--tag`. `cubeship app deploy --tag` is unchanged and
+still wins over whatever is pinned — what you asked for beats what was
+configured, and the deployment history records the tag that actually
+ran.
+
 ## 0.4.3 — 2026-09-11
 
 On the Certificates screen, the reason a certificate had not been issued was printed as line noise instead of as a sentence.
