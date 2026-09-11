@@ -35,6 +35,7 @@ being enough.
 - [Upgrading](#upgrading)
 - [Uninstalling](#uninstalling)
 - [Everything else](#everything-else)
+- [License](#license)
 
 ## What you get
 
@@ -326,3 +327,18 @@ again brings the same instance back.
   key. An agent can create projects, deploy apps and wire up databases;
   it cannot read a secret or change a container's limits.
 - **Working on Cubeship itself** — [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Found a security problem?** [SECURITY.md](SECURITY.md) — report it
+  privately rather than in an issue.
+
+## License
+
+[Apache-2.0](LICENSE). Use it, run it, modify it, run your company on it,
+sell what you build on top of it — the same terms
+[Coolify](https://github.com/coollabsio/coolify) and
+[Dokploy](https://github.com/Dokploy/dokploy) are under, and a patent grant
+comes with it.
+
+The name is the one thing that is not in the grant — Apache-2.0 section 6
+excludes trademarks, deliberately — and
+[TRADEMARK.md](TRADEMARK.md) says what that means: a public fork gets its
+own name.
