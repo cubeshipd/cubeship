@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"net/url"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -373,6 +374,71 @@ func TestAPrefixHasToMakeALegalVariableName(t *testing.T) {
 	for _, bad := range []string{"analytics_", "ANALYTICS", "_ANALYTICS_", "2_", "AN-ALYTICS_"} {
 		if err := CheckPrefix(bad); err == nil {
 			t.Errorf("%q was accepted, and would not be a variable name", bad)
+		}
+	}
+}
+
+// Every engine this instance runs can be backed up, one way or the
+// other, and which way is the engine's own answer rather than something
+// the backup module works out.
+//
+// Listed rather than derived so that adding an engine is a decision
+// about this: an engine with neither a dump command nor a file is one
+// whose databases quietly cannot be backed up, and the screen offering
+// the button would be the only thing that ever said otherwise.
+func TestEveryEngineCanBeBackedUpOneWayOrTheOther(t *testing.T) {
+	for _, e := range Engines() {
+		if !e.CanBackUp() {
+			t.Errorf("%s has neither a dump command nor a file to copy", e)
+		}
+		if e.Consistency() == "" {
+			t.Errorf("%s says nothing about what its dump promises, which is the one thing somebody has to know before relying on it", e)
+		}
+
+		d := &Datastore{Engine: e, Username: "app", Password: "secret", Database: "app_db"}
+		cmd, _, hasDump := d.Dump()
+		if !hasDump || len(cmd) == 0 {
+			t.Errorf("%s has no command that produces a dump", e)
+		}
+
+		// Restoring is the half that differs: a running server is fed
+		// the dump, or the file it reads at startup is replaced while
+		// it is stopped. Exactly one, because a backup that can be
+		// taken and not put back is not one.
+		_, _, hasRestore := d.Restore()
+		byFile := d.DumpFile() != ""
+		if hasRestore == byFile {
+			t.Errorf("%s restores by command=%v and by file=%v, and it has to be exactly one", e, hasRestore, byFile)
+		}
+		if byFile != e.RestoreStops() {
+			t.Errorf("%s restores by file=%v but reports stopping=%v, and the screen is told the second", e, byFile, e.RestoreStops())
+		}
+	}
+}
+
+// The password reaches the engine's tools through the environment
+// wherever they read one, because argv is in the host's process list
+// while the command runs.
+//
+// Mongo is the exception and it is deliberate: its tools read no such
+// variable. Pinned here so that the exception stays one engine rather
+// than becoming the habit.
+func TestOnlyMongoPutsThePasswordInArgv(t *testing.T) {
+	for _, e := range Engines() {
+		d := &Datastore{Engine: e, Username: "app", Password: "s3cr3t-unique", Database: "app_db"}
+		cmd, _, ok := d.Dump()
+		if !ok {
+			continue
+		}
+		inArgv := slices.Contains(cmd, d.Password)
+		if e == EngineMongoDB {
+			if !inArgv {
+				t.Errorf("mongo no longer needs the password in argv — take the exception out of the comment too")
+			}
+			continue
+		}
+		if inArgv {
+			t.Errorf("%s puts the password on the command line, where the host's process list shows it: %v", e, cmd)
 		}
 	}
 }

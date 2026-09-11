@@ -72,6 +72,12 @@ func (d *cappingDocker) Logs(context.Context, string, string) (io.ReadCloser, er
 	return io.NopCloser(strings.NewReader("")), nil
 }
 
+// Declared because app.DockerAPI is one view of the Engine for every
+// module. Nothing in this package execs.
+func (d *cappingDocker) ExecStream(context.Context, string, []string, io.Reader, io.Writer) (string, int, error) {
+	return "", 0, nil
+}
+
 // **Raising a limit is a request, not a redeploy.** A ceiling is the one
 // part of a container the Engine can change under a running process, so
 // an app that needs more memory gets it without its container being

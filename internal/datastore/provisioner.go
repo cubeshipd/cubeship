@@ -34,6 +34,11 @@ type DockerAPI interface {
 	SetResources(ctx context.Context, id string, r dockerx.Resources) error
 	IsRunning(ctx context.Context, id string) (bool, error)
 	Logs(ctx context.Context, id, tail string) (io.ReadCloser, error)
+	// ExecStream is what a backup rides on: a dump is written to stdout
+	// and a restore read from stdin, both streamed rather than
+	// collected — the largest database this instance could copy would
+	// otherwise be whatever it has left of memory.
+	ExecStream(ctx context.Context, id string, cmd []string, in io.Reader, out io.Writer) (string, int, error)
 }
 
 // ProvisionTimeout bounds a detached provision. It is nobody's request

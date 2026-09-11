@@ -567,6 +567,12 @@ type fakeDocker struct {
 	// every ceiling it was asked to apply afterwards.
 	created []dockerx.ContainerOpts
 	capped  []dockerx.Resources
+
+	// execOutput is what a dump "produces", execCode its exit status,
+	// and restored collects what was fed back in.
+	execOutput string
+	execCode   int
+	restored   []string
 }
 
 func newFakeDocker() *fakeDocker { return &fakeDocker{running: map[string]bool{}} }
@@ -627,6 +633,33 @@ func (f *fakeDocker) IsRunning(_ context.Context, id string) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.running[id], nil
+}
+
+// ExecStream stands in for a dump: it writes whatever the test put in
+// `execOutput` to stdout and reports success, so a backup can be taken
+// end to end without a database anywhere.
+func (f *fakeDocker) ExecStream(_ context.Context, _ string, _ []string, in io.Reader, out io.Writer) (string, int, error) {
+	f.mu.Lock()
+	output, code, restored := f.execOutput, f.execCode, f.restored != nil
+	f.mu.Unlock()
+
+	if in != nil {
+		// A restore feeds stdin. Reading it to EOF is what the real
+		// command does, and not doing it would leave the writer on the
+		// other side blocked forever.
+		read, _ := io.ReadAll(in)
+		if restored {
+			f.mu.Lock()
+			f.restored = append(f.restored, string(read))
+			f.mu.Unlock()
+		}
+	}
+	if out != nil {
+		if _, err := io.WriteString(out, output); err != nil {
+			return "", 0, err
+		}
+	}
+	return "", code, nil
 }
 
 func (f *fakeDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {

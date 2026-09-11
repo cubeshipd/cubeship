@@ -32,6 +32,11 @@ type DockerAPI interface {
 	SetResources(ctx context.Context, id string, r dockerx.Resources) error
 	IsRunning(ctx context.Context, id string) (bool, error)
 	Logs(ctx context.Context, id, tail string) (io.ReadCloser, error)
+	// Not used here. It is declared so that one Docker client satisfies
+	// every module's view of the Engine, which is what lets `server`
+	// hand the same value to all of them — the alternative is an
+	// adapter per module whose only job is to widen an interface.
+	ExecStream(ctx context.Context, id string, cmd []string, in io.Reader, out io.Writer) (string, int, error)
 }
 
 // Orchestrator runs deploys: it is the only thing in Cubeship that

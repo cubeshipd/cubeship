@@ -91,6 +91,36 @@ type spec struct {
 	// checkUsername refuses a login this engine will not create, beyond
 	// the shape every engine requires.
 	checkUsername func(name string) error
+
+	// dump is the command that writes this engine's contents to stdout,
+	// and restore is the one that reads them back from stdin. Both run
+	// inside the container.
+	//
+	// The password goes in the environment wherever the engine's tools
+	// read one — PGPASSWORD, MYSQL_PWD — because argv is visible in the
+	// host's process list while the command runs. **Mongo's tools have
+	// no such variable**, so there it is on the command line and this
+	// comment says so rather than implying otherwise. It costs little
+	// in practice: that password is already in the container's own
+	// environment, where `docker inspect` reads it.
+	//
+	// Nil for an engine with no logical dump at all, which is Redis:
+	// what it has is a file, and dumpFile names it.
+	dump    func(d *Datastore) (cmd []string, env []string)
+	restore func(d *Datastore) (cmd []string, env []string)
+
+	// dumpFile is the file, relative to the data directory, that a
+	// restore has to replace for an engine with no restore command.
+	// Redis's RDB. Empty for every engine that can be restored by
+	// feeding a stream to a running server.
+	dumpFile string
+
+	// consistency says what a dump of this engine actually promises,
+	// and it is on the screen rather than only in a comment: two of
+	// these give a real snapshot, one gives one per collection and
+	// cannot do better without a replica set, and one is a file copied
+	// after a fork.
+	consistency string
 }
 
 // postgresDataPath is where Postgres keeps its files inside the
@@ -149,6 +179,19 @@ var specs = map[Engine]spec{
 				"PGDATA=" + postgresDataPath,
 			}
 		},
+		// --clean --if-exists so a restore over a database that already
+		// has tables replaces them rather than failing on every CREATE.
+		// Without it the only restore that works is into an empty
+		// database, which is not the one anybody needs.
+		dump: func(d *Datastore) ([]string, []string) {
+			return []string{"pg_dump", "--clean", "--if-exists", "-U", d.Username, d.Database},
+				[]string{"PGPASSWORD=" + d.Password}
+		},
+		restore: func(d *Datastore) ([]string, []string) {
+			return []string{"psql", "-U", d.Username, "-d", d.Database},
+				[]string{"PGPASSWORD=" + d.Password}
+		},
+		consistency: "One transaction, so the dump is the database as it was at a single moment.",
 	},
 	EngineMySQL: {
 		image:       "mysql",
@@ -173,6 +216,19 @@ var specs = map[Engine]spec{
 			}
 		},
 		checkUsername: refuseRoot,
+		// --single-transaction is what makes this a snapshot, and it
+		// only works for InnoDB, which is every table anybody creates
+		// without asking for otherwise. A MyISAM table in there is
+		// dumped as it was read rather than as it was at the start.
+		dump: func(d *Datastore) ([]string, []string) {
+			return []string{"mysqldump", "--single-transaction", "-u", d.Username, d.Database},
+				[]string{"MYSQL_PWD=" + d.Password}
+		},
+		restore: func(d *Datastore) ([]string, []string) {
+			return []string{"mysql", "-u", d.Username, d.Database},
+				[]string{"MYSQL_PWD=" + d.Password}
+		},
+		consistency: "One transaction, which covers InnoDB tables. A MyISAM table is dumped as it was read rather than as it was when the dump began.",
 	},
 	EngineMariaDB: {
 		image:    "mariadb",
@@ -194,6 +250,15 @@ var specs = map[Engine]spec{
 			}
 		},
 		checkUsername: refuseRoot,
+		dump: func(d *Datastore) ([]string, []string) {
+			return []string{"mariadb-dump", "--single-transaction", "-u", d.Username, d.Database},
+				[]string{"MYSQL_PWD=" + d.Password}
+		},
+		restore: func(d *Datastore) ([]string, []string) {
+			return []string{"mariadb", "-u", d.Username, d.Database},
+				[]string{"MYSQL_PWD=" + d.Password}
+		},
+		consistency: "One transaction, which covers InnoDB tables. A MyISAM table is dumped as it was read rather than as it was when the dump began.",
 	},
 	EngineRedis: {
 		image:    "redis",
@@ -228,6 +293,26 @@ var specs = map[Engine]spec{
 				"--appendonly", "yes",
 			}
 		},
+		// `--rdb -` is the replica-sync path pointed at stdout: it asks
+		// the server to save and streams the file as it is written, so
+		// there is no second step waiting for a BGSAVE to land.
+		//
+		// REDISCLI_AUTH rather than `-a`, which redis-cli itself warns
+		// about: the password would be in the host's process list.
+		dump: func(d *Datastore) ([]string, []string) {
+			return []string{"redis-cli", "--rdb", "-"},
+				[]string{"REDISCLI_AUTH=" + d.Password}
+		},
+		// **And no restore command, because Redis has none.** An RDB is
+		// read once, at startup — there is nothing to stream it into.
+		// Putting one back means stopping the server, replacing the
+		// file and starting it again, which this module can do without
+		// the container's help: the data directory is a host bind
+		// mount. dumpFile is that file, named from inside the
+		// container so it reads like the rest of the spec; what the
+		// daemon writes is the same name under the mount.
+		dumpFile:    "dump.rdb",
+		consistency: "A fork of the server's memory at the moment the save began, which is the only snapshot Redis has.",
 	},
 	EngineMongoDB: {
 		image:    "mongo",
@@ -250,6 +335,32 @@ var specs = map[Engine]spec{
 				"MONGO_INITDB_DATABASE=" + d.Database,
 			}
 		},
+		// The password is in argv here, which is the one engine where
+		// that is true: mongodump and mongorestore read no environment
+		// variable for it. See the note on `dump` above.
+		//
+		// --archive writes one stream instead of a directory tree,
+		// which is what makes this a file that can be shipped to a
+		// bucket. --drop on the way back, for the reason Postgres takes
+		// --clean.
+		dump: func(d *Datastore) ([]string, []string) {
+			return []string{
+				"mongodump", "--archive", "--quiet",
+				"-u", d.Username, "-p", d.Password,
+				"--authenticationDatabase", "admin", "--db", d.Database,
+			}, nil
+		},
+		restore: func(d *Datastore) ([]string, []string) {
+			return []string{
+				"mongorestore", "--archive", "--drop", "--quiet",
+				"-u", d.Username, "-p", d.Password,
+				"--authenticationDatabase", "admin",
+			}, nil
+		},
+		// Said plainly because it cannot be fixed here: a standalone
+		// mongod has no oplog, and --oplog is what a consistent dump
+		// across collections needs.
+		consistency: "Each collection as it was read, not all of them at one moment: a consistent snapshot needs a replica set, which a single server is not.",
 	},
 }
 
@@ -465,3 +576,55 @@ const GeneratedPasswordLength = authkey.PasswordLength
 // database without a strong password is not something anyone can create
 // by leaving a box empty.
 func GeneratePassword() (string, error) { return authkey.Password() }
+
+// Dump is the command and environment that write this datastore's
+// contents to stdout, and whether it has one at all.
+//
+// An engine with no dump command has a file instead — see DumpFile —
+// and a caller has to ask which it is before it can back one up.
+func (d *Datastore) Dump() (cmd []string, env []string, ok bool) {
+	build := specs[d.Engine].dump
+	if build == nil {
+		return nil, nil, false
+	}
+	cmd, env = build(d)
+	return cmd, env, true
+}
+
+// Restore is the command and environment that read a dump back from
+// stdin.
+func (d *Datastore) Restore() (cmd []string, env []string, ok bool) {
+	build := specs[d.Engine].restore
+	if build == nil {
+		return nil, nil, false
+	}
+	cmd, env = build(d)
+	return cmd, env, true
+}
+
+// DumpFile is the file inside the data directory that a restore has to
+// replace, for an engine with no restore command — Redis's RDB. Empty
+// for every engine that can be restored by feeding a running server.
+func (d *Datastore) DumpFile() string { return specs[d.Engine].dumpFile }
+
+// Consistency says what a dump of this engine actually promises, in a
+// sentence meant for the screen.
+//
+// It is served rather than left in a comment because it is the one
+// thing about a backup somebody has to know before they rely on it, and
+// it differs per engine in a way no general wording can cover: one of
+// these cannot give a snapshot across collections at all.
+func (e Engine) Consistency() string { return specs[e].consistency }
+
+// CanBackUp reports whether this release knows how to take a dump of
+// this engine at all.
+func (e Engine) CanBackUp() bool { return specs[e].dump != nil }
+
+// RestoreStops reports an engine that cannot be restored into while it
+// runs: its backup is a file read once at startup, so putting one back
+// means stopping the server, replacing it, and starting again.
+//
+// It is on the screen before the button, because it is the difference
+// between a restore that is invisible to everything connected and one
+// that takes the database away for a few seconds.
+func (e Engine) RestoreStops() bool { return specs[e].restore == nil }
