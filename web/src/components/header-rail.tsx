@@ -3,8 +3,10 @@
 import {
   BoxIcon,
   ChevronDownIcon,
+  ContainerIcon,
   DatabaseIcon,
   FolderTreeIcon,
+  GlobeIcon,
   HardDriveIcon,
   LayersIcon,
   PackageIcon,
@@ -32,9 +34,11 @@ import {
   api,
   type Bucket,
   type Datastore,
+  type DNSProvider,
   type Environment,
   type ObjectStore,
   type Project,
+  type RegistryCredential,
 } from "@/lib/api";
 
 // The strip above every screen: where you are, and what this screen
@@ -58,11 +62,8 @@ import {
 // tells you where you are, and being able to open `production` and land
 // in `staging` is the trip back through two screens you no longer take.
 
-type RailContext = {
-  slot: HTMLElement | null;
-  setTitle: (title: ReactNode | null) => void;
-};
-const Rail = createContext<RailContext>({ slot: null, setTitle: () => {} });
+type RailContext = { slot: HTMLElement | null };
+const Rail = createContext<RailContext>({ slot: null });
 
 // RailPortal puts a screen's own controls in the rail, on the right.
 //
@@ -76,36 +77,12 @@ export function RailPortal({ children }: { children: ReactNode }) {
   return createPortal(children, slot);
 }
 
-// RailTitle renames the last crumb, for a screen the URL cannot name.
-//
-// Most of them it can: an app, a database, a bucket and a zone are all
-// addressed by the thing they are called. A registry and a DNS provider
-// are addressed by a **credential's numeric id**, so the path segment
-// is `4` — and a page whose title is `4` is a page with no title. It
-// takes a node rather than a string so those two can keep the provider
-// mark they had beside the name.
-export function RailTitle({ children }: { children: ReactNode }) {
-  const { setTitle } = useContext(Rail);
-  useEffect(() => {
-    setTitle(children);
-  }, [children, setTitle]);
-  return null;
-}
-
 export function HeaderRail({ children }: { children: ReactNode }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
-  const [title, setTitle] = useState<ReactNode | null>(null);
   const pathname = usePathname() ?? "/";
   const crumbs = crumbsFor(pathname);
 
-  // A title set by the page belongs to that page. Without clearing it
-  // the next screen wears the last one's name for as long as its own
-  // fetch takes — and the screens that set one are exactly the screens
-  // that have to fetch to know it.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: clearing is what changing page means
-  useEffect(() => setTitle(null), [pathname]);
-
-  const value = useMemo(() => ({ slot, setTitle }), [slot]);
+  const value = useMemo(() => ({ slot }), [slot]);
 
   return (
     <Rail.Provider value={value}>
@@ -130,12 +107,7 @@ export function HeaderRail({ children }: { children: ReactNode }) {
                     /
                   </span>
                 )}
-                <Crumb
-                  crumb={
-                    i === crumbs.length - 1 && title !== null ? { ...crumb, label: title } : crumb
-                  }
-                  last={i === crumbs.length - 1}
-                />
+                <Crumb crumb={crumb} last={i === crumbs.length - 1} />
               </div>
             ))}
           </nav>
@@ -152,7 +124,24 @@ export function HeaderRail({ children }: { children: ReactNode }) {
 // siblings says what a crumb can be swapped for. Absent is a crumb that
 // names something with no peers worth offering — a section, a settings
 // screen.
-type Siblings = "project" | "environment" | "app" | "datastore" | "objectstore" | "bucket";
+type Siblings =
+  | "project"
+  | "environment"
+  | "app"
+  | "datastore"
+  | "objectstore"
+  | "bucket"
+  | "registry"
+  | "dnsprovider";
+
+// An option in a crumb's menu: what it is called, and what goes in the
+// path.
+//
+// **They are not always the same.** A project, an app and a bucket are
+// addressed by their own name, so the two are one string — but a
+// registry and a DNS provider are addressed by a credential's numeric
+// id, and a menu offering `4` and `7` is a menu nobody can read.
+type Option = { label: string; value: string };
 
 // A mark for each kind, worn by the rows inside the menu.
 //
@@ -173,6 +162,26 @@ const MARKS: Record<Siblings, typeof BoxIcon> = {
   datastore: DatabaseIcon,
   objectstore: HardDriveIcon,
   bucket: PackageIcon,
+  registry: ContainerIcon,
+  dnsprovider: GlobeIcon,
+};
+
+// The kinds whose path segment is an id rather than a name, so the
+// crumb has to be told what it is called before it can say anything.
+//
+// It is the one case that loads without being opened: everywhere else
+// the crumb reads its own label straight off the URL and the list is
+// only wanted once somebody asks for it.
+const NAMED_BY_ID = new Set<Siblings>(["registry", "dnsprovider"]);
+
+// What the thing under a section is, where it is something with peers.
+// Credentials, users and the rest are lists with no page under them, so
+// they are absent rather than mapped to nothing.
+const SECTION_SIBLINGS: Record<string, Siblings | undefined> = {
+  databases: "datastore",
+  storage: "objectstore",
+  registries: "registry",
+  dns: "dnsprovider",
 };
 
 type CrumbSpec = {
@@ -182,6 +191,10 @@ type CrumbSpec = {
   // on a word that names no page.
   href?: string;
   siblings?: Siblings;
+  // What this crumb is, as the path spells it — which is the label
+  // everywhere but the two kinds addressed by an id, where the label
+  // has to be looked up and this is what to look it up by.
+  value?: string;
   // The path above this crumb, which a sibling lookup needs: an app's
   // peers are the apps in *this* environment.
   //
@@ -208,7 +221,11 @@ const STATIC_SEGMENTS = new Set(["settings"]);
 
 export function crumbsFor(pathname: string): CrumbSpec[] {
   const parts = pathname.split("/").filter(Boolean);
-  if (parts.length === 0) return [{ key: "overview", label: "Overview" }];
+  // The root has no segment to read, and `overview` is what the sidebar
+  // calls it. Lowercase like every other crumb: it was the one word here
+  // wearing a capital, which is exactly the kind of exception that reads
+  // as a mistake rather than as a rule.
+  if (parts.length === 0) return [{ key: "overview", label: "overview" }];
 
   const [section, ...rest] = parts;
   const head: CrumbSpec = {
@@ -239,6 +256,7 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
     out.push({
       key: `p:${project}`,
       label: project,
+      value: project,
       href: env ? `/projects/${project}` : undefined,
       siblings: "project",
       scope: "",
@@ -247,6 +265,7 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
       out.push({
         key: `e:${env}`,
         label: env,
+        value: env,
         href: app ? `/projects/${project}/${env}` : undefined,
         siblings: "environment",
         scope: project,
@@ -256,6 +275,7 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
       out.push({
         key: `a:${app}`,
         label: app,
+        value: app,
         href: tail.length > 0 ? `/projects/${project}/${env}/${app}` : undefined,
         siblings: "app",
         scope: `${project}/${env}`,
@@ -266,13 +286,13 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
   }
 
   const [name, ...tail] = rest;
-  const siblings =
-    section === "databases" ? "datastore" : section === "storage" ? "objectstore" : undefined;
+  const siblings = SECTION_SIBLINGS[section];
   const out: CrumbSpec[] = [
     head,
     {
       key: `n:${name}`,
       label: name,
+      value: name,
       href: tail.length > 0 ? `/${section}/${name}` : undefined,
       siblings,
       scope: "",
@@ -289,6 +309,7 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
     out.push({
       key: `b:${tail[1]}`,
       label: decodeURIComponent(tail[1]),
+      value: decodeURIComponent(tail[1]),
       href: tail.length > 2 ? `/storage/${name}/buckets/${tail[1]}` : undefined,
       siblings: "bucket",
       scope: name,
@@ -345,18 +366,23 @@ function Crumb({ crumb, last }: { crumb: CrumbSpec; last: boolean }) {
 
 // CrumbMenu is a crumb you can open.
 //
-// **The list is fetched when it is opened, never before.** The rail is
-// on every screen and most of the time nobody touches it, so loading
-// every project, environment and app on every navigation would be a
-// request per screen for a menu that stays shut.
+// **The list is fetched when it is opened**, because the rail is on
+// every screen and most of the time nobody touches it: loading every
+// project, environment and app on every navigation would be a request
+// per screen for a menu that stays shut.
+//
+// The exception is a crumb whose path segment is an id. It cannot say
+// what it is called without the list, so there it loads on sight — and
+// what the URL holds (`4`) is never what the crumb shows.
 function CrumbMenu({ crumb, className }: { crumb: CrumbSpec; className: string }) {
   const router = useRouter();
-  const [options, setOptions] = useState<string[] | null>(null);
+  const [options, setOptions] = useState<Option[] | null>(null);
   const [open, setOpen] = useState(false);
 
   const scope = crumb.scope ?? "";
   const kind = crumb.siblings;
   const Mark = kind ? MARKS[kind] : null;
+  const byID = kind !== undefined && NAMED_BY_ID.has(kind);
 
   const load = useCallback(() => {
     if (!kind) return;
@@ -369,15 +395,20 @@ function CrumbMenu({ crumb, className }: { crumb: CrumbSpec; className: string }
   }, [kind, scope]);
 
   useEffect(() => {
-    if (open && options === null) load();
-  }, [open, options, load]);
+    if ((open || byID) && options === null) load();
+  }, [open, byID, options, load]);
+
+  // What the crumb is standing on, so the menu can mark it and — where
+  // the path is an id — so the crumb has a word to show at all.
+  const here = options?.find((o) => o.value === crumb.value);
+  const label = byID ? (here?.label ?? "…") : crumb.label;
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger
         className={`${className} flex min-w-0 items-center gap-1 truncate transition-colors hover:text-primary focus-visible:text-primary focus-visible:outline-none`}
       >
-        <span className="truncate">{crumb.label}</span>
+        <span className="truncate">{label}</span>
         <ChevronDownIcon aria-hidden="true" className="size-3 shrink-0 opacity-60" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-80 min-w-44 overflow-y-auto">
@@ -387,15 +418,15 @@ function CrumbMenu({ crumb, className }: { crumb: CrumbSpec; className: string }
         {options?.length === 0 && (
           <div className="px-2 py-1.5 text-[11px] text-muted-foreground">Nothing else here.</div>
         )}
-        {options?.map((name) => (
+        {options?.map((option) => (
           <DropdownMenuItem
-            key={name}
+            key={option.value}
             className="gap-2 font-mono text-[11px]"
-            onClick={() => router.push(hrefFor(kind, scope, name))}
+            onClick={() => router.push(hrefFor(kind, scope, option.value))}
           >
             {Mark && <Mark aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />}
-            {name}
-            {name === crumb.label && <span className="ml-auto text-primary">●</span>}
+            {option.label}
+            {option.value === crumb.value && <span className="ml-auto text-primary">●</span>}
           </DropdownMenuItem>
         ))}
       </DropdownMenuContent>
@@ -403,25 +434,47 @@ function CrumbMenu({ crumb, className }: { crumb: CrumbSpec; className: string }
   );
 }
 
-async function siblingsOf(kind: Siblings, scope: string): Promise<string[]> {
+async function siblingsOf(kind: Siblings, scope: string): Promise<Option[]> {
   const [above, env] = scope.split("/");
+  const same = (name: string): Option => ({ label: name, value: name });
   switch (kind) {
     case "project":
-      return (await api.get<Project[]>("/projects")).map((p) => p.slug);
+      return (await api.get<Project[]>("/projects")).map((p) => same(p.slug));
     case "environment":
-      return (await api.get<Environment[]>(`/projects/${scope[0]}/environments`)).map(
-        (e) => e.slug,
+      // `above`, not `scope[0]`: scope became a string when it had to be
+      // a dependency, and indexing it took the first *character* — so
+      // this asked a project called `w` for its environments and every
+      // environment menu came back empty.
+      return (await api.get<Environment[]>(`/projects/${above}/environments`)).map((e) =>
+        same(e.slug),
       );
     case "app":
       return (await api.get<App[]>("/apps"))
         .filter((a) => a.project === above && a.environment === env)
-        .map((a) => a.name);
+        .map((a) => same(a.name));
     case "datastore":
-      return (await api.get<Datastore[]>("/datastores")).map((d) => d.name);
+      return (await api.get<Datastore[]>("/datastores")).map((d) => same(d.name));
     case "objectstore":
-      return (await api.get<ObjectStore[]>("/objectstores")).map((s) => s.name);
+      return (await api.get<ObjectStore[]>("/objectstores")).map((s) => same(s.name));
     case "bucket":
-      return (await api.get<Bucket[]>(`/objectstores/${above}/buckets`)).map((b) => b.name);
+      return (await api.get<Bucket[]>(`/objectstores/${above}/buckets`)).map((b) => same(b.name));
+    case "registry": {
+      // `GET /registries` is the logins for registries Cubeship does
+      // **not** run, so its own is not in the answer — it has no
+      // credential to be a row of. It is prepended here for the reason
+      // the list screen puts it first: it is the one every instance
+      // has, and `cubeship` is its reserved id.
+      const linked = await api.get<RegistryCredential[]>("/registries");
+      return [
+        { label: "Cubeship registry", value: "cubeship" },
+        ...linked.map((r) => ({ label: r.host, value: String(r.id) })),
+      ];
+    }
+    case "dnsprovider":
+      return (await api.get<DNSProvider[]>("/dns")).map((p) => ({
+        label: p.provider_name,
+        value: String(p.id),
+      }));
   }
 }
 
@@ -446,6 +499,10 @@ function hrefFor(kind: Siblings | undefined, scope: string, name: string): strin
       return `/storage/${name}`;
     case "bucket":
       return `/storage/${above}/buckets/${encodeURIComponent(name)}`;
+    case "registry":
+      return `/registries/${name}`;
+    case "dnsprovider":
+      return `/dns/${name}`;
     default:
       return "/";
   }

@@ -309,6 +309,16 @@
     border-color: var(--border);
   }
 
+  /* The scrollbar's space is reserved whether or not there is one.
+     Without this the only long page — the Overview — is the only page
+     whose column is a scrollbar narrower, and since the rail and the
+     content are both centred in it, the whole screen moves inward by
+     half a scrollbar the moment you land there. A layout that shifts
+     between pages reads as a layout that is wrong on one of them. */
+  html {
+    scrollbar-gutter: stable;
+  }
+
   body {
     background: var(--background);
     color: var(--foreground);

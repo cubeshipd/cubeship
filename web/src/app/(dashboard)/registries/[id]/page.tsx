@@ -6,7 +6,7 @@ import { use, useCallback, useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyButton } from "@/components/copy-button";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal, RailTitle } from "@/components/header-rail";
+import { RailPortal } from "@/components/header-rail";
 import { LoadingList, LoadingNote } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { RowAction } from "@/components/row-actions";
@@ -294,12 +294,6 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
 
   return (
     <>
-      <RailTitle>
-        <span className="flex items-center gap-2">
-          <Icon className="size-5 shrink-0 text-muted-foreground" />
-          {own ? "Cubeship registry" : host}
-        </span>
-      </RailTitle>
       <RailPortal>
         {own ? (
           <Button variant="outline" onClick={() => setCollecting(true)}>
