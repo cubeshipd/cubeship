@@ -90,7 +90,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrUnknownProvider), errors.Is(err, ErrHostRequired),
 		errors.Is(err, ErrUsernameRequired), errors.Is(err, ErrPasswordRequired),
-		errors.Is(err, ErrNamespaceRequired), errors.Is(err, ErrRegionRequired):
+		errors.Is(err, ErrNamespaceRequired), errors.Is(err, ErrRegionRequired),
+		errors.Is(err, ErrInvalidRegion):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, user.ErrUnauthenticated):
 		http.Error(w, "unauthorized", http.StatusUnauthorized)

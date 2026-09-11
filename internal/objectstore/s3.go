@@ -329,6 +329,35 @@ func (s *Store) ExternalURL(domain string) string {
 // it becomes part of a hostname.
 var bucketName = regexp.MustCompile(`^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$`)
 
+// ValidHostLabel reports whether a value may be interpolated into an
+// endpoint's hostname.
+//
+// A region and an R2 account id are each one label of the templates in
+// describeEndpoint — `s3.<region>.amazonaws.com`,
+// `<account>.r2.cloudflarestorage.com` — so anything that can end the
+// host early, a `#` or a `/` or a `:` or an `@`, points this store at a
+// server nobody chose and sends it a signed request. The endpoint is
+// stored, so the value would go on being wrong long after whoever typed
+// it had gone.
+//
+// Refused where somebody typed it rather than where it is used, which
+// is the rule CheckBucketName below already keeps, for the same reason.
+func ValidHostLabel(value string) bool {
+	if value == "" || len(value) > 63 {
+		return false
+	}
+	for i := 0; i < len(value); i++ {
+		c := value[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+		case c == '-' && i > 0 && i < len(value)-1:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // CheckBucketName refuses a name the endpoint would refuse, here, where
 // the refusal can be a sentence rather than an XML fault.
 func CheckBucketName(name string) error {

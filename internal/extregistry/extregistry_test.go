@@ -319,3 +319,28 @@ func TestDigitalOceansTokenIsALoginWithoutBecomingAUsername(t *testing.T) {
 		t.Errorf("a generic registry's username became the password: %q", user)
 	}
 }
+
+// A region becomes part of a hostname this daemon then signs a request
+// to — `api.ecr.<region>.amazonaws.com`. A value carrying a `#`, a `/`,
+// a `:` or an `@` ends the host early, so the request goes to whatever
+// follows, with the account's access key id in the Authorization
+// header. One DNS label is the rule, and this is where it is pinned.
+func TestARegionCannotRedirectTheRequestItIsSignedInto(t *testing.T) {
+	for _, region := range []string{
+		"us-east-1", "eu-central-1", "ap-southeast-2", "us-gov-west-1", "cn-north-1",
+	} {
+		if !extregistry.ValidRegion(region) {
+			t.Errorf("ValidRegion(%q) = false, and that is a region AWS has", region)
+		}
+	}
+
+	for _, region := range []string{
+		"", " ", "US-EAST-1", "us_east_1",
+		"evil.com#", "evil.com", "x/../y", "x:80", "user@evil.com",
+		"-leading", "trailing-", "a b", strings.Repeat("a", 64),
+	} {
+		if extregistry.ValidRegion(region) {
+			t.Errorf("ValidRegion(%q) = true; it reaches a hostname this daemon connects to", region)
+		}
+	}
+}

@@ -126,6 +126,9 @@ func (s *Service) Create(ctx context.Context, caller *user.User, in Credential, 
 		if in.Region = strings.TrimSpace(in.Region); in.Region == "" {
 			return nil, ErrRegionRequired
 		}
+		if !ValidRegion(in.Region) {
+			return nil, ErrInvalidRegion
+		}
 		// The host carries the account id, so it is discovered rather
 		// than asked for — and discovering it is the same call that
 		// proves the key can read a registry at all. A key that cannot

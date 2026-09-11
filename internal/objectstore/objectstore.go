@@ -316,6 +316,8 @@ var (
 	ErrCredentialRequired = errors.New("no login: pick the account this store authenticates as, or type an access key and secret")
 
 	ErrRegionRequired   = errors.New("a region is required: this provider's endpoint is derived from it")
+	ErrInvalidRegion    = errors.New(`a region is a name like "eu-central-1": lowercase letters, digits and hyphens`)
+	ErrInvalidAccount   = errors.New("an account id is letters, digits and hyphens — it is the first part of your R2 endpoint")
 	ErrAccountRequired  = errors.New("the Cloudflare account id is required — it is what R2's endpoint is named after")
 	ErrEndpointRequired = errors.New("an endpoint is required, e.g. s3.eu-central-1.wasabisys.com")
 	ErrBadEndpoint      = errors.New("that endpoint is not a host: give a hostname, optionally with a port")

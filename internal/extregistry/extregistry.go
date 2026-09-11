@@ -129,9 +129,37 @@ var (
 	ErrPasswordRequired   = errors.New("password is required")
 	ErrNamespaceRequired  = errors.New("the registry name is required — it is what follows registry.digitalocean.com/ in an image path")
 	ErrRegionRequired     = errors.New("an AWS region is required: an ECR registry lives in one, and it cannot be guessed")
+	ErrInvalidRegion      = errors.New(`an AWS region is a name like "eu-central-1": lowercase letters, digits and hyphens`)
 	ErrHostTaken          = errors.New("this organization already has a credential for that registry")
 	ErrNotFound           = errors.New("no such registry credential")
 )
+
+// ValidRegion reports whether a region is one, and it is checked
+// because of where it ends up: `ecrEndpoint` builds
+// `api.ecr.<region>.amazonaws.com` out of it, so anything that can end
+// the host early — a `#`, a `/`, a `:`, an `@` — makes this daemon sign
+// a request with the account's access key id and send it somewhere
+// nobody chose. A region is one DNS label, and saying so is the whole
+// of the fix.
+//
+// Refused where somebody typed it rather than where it is
+// interpolated, which is the rule `firewall.Spec.Check` and
+// `objectstore.CheckBucketName` already keep.
+func ValidRegion(region string) bool {
+	if region == "" || len(region) > 63 {
+		return false
+	}
+	for i := 0; i < len(region); i++ {
+		c := region[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
+		case c == '-' && i > 0 && i < len(region)-1:
+		default:
+			return false
+		}
+	}
+	return true
+}
 
 // NormalizeHost reduces what someone types to the host an image
 // reference actually carries, so a credential entered as

@@ -17,6 +17,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Nothing here writes anything back: it checks out, builds and runs
+# tests. Said explicitly because the default token is granted write on a
+# push to this repository's own branches, and a workflow that runs code
+# from a pull request should not be holding one.
+permissions:
+  contents: read
+
 env:
   GO_VERSION: "1.27"
 

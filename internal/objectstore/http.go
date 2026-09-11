@@ -236,6 +236,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		errors.Is(err, ErrUnknownProvider), errors.Is(err, ErrUnknownVersion),
 		errors.Is(err, ErrTwoLogins), errors.Is(err, ErrCredentialRequired),
 		errors.Is(err, ErrRegionRequired), errors.Is(err, ErrAccountRequired),
+		errors.Is(err, ErrInvalidRegion), errors.Is(err, ErrInvalidAccount),
 		errors.Is(err, ErrEndpointRequired), errors.Is(err, ErrBadEndpoint),
 		errors.Is(err, ErrBadBucket), errors.Is(err, ErrBadKey),
 		errors.Is(err, ErrInvalidLimits),
