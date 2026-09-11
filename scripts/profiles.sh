@@ -30,6 +30,10 @@
 # Run with no argument it re-derives the thumbnails from what is already
 # committed, which is the idempotent case: the masters are already at
 # the size below, so resizing them again changes nothing.
+#
+# The faces themselves are drawn by `scripts/faces.py`, which is where
+# to go to change one. It writes SVG; rasterise that at 256 with a real
+# SVG engine and point this at the result.
 set -eu
 
 here=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
@@ -37,9 +41,10 @@ profiles="$here/web/public/profiles"
 source_dir="${1:-$profiles}"
 
 # The master is the largest anything asks for, doubled and rounded up.
-# It is also all there is: the originals are not in this repository,
-# because a megabyte of PNG per face is a megabyte in every clone for
-# ever, and nothing here will ever draw one at 2048.
+# No larger raster is kept: a megabyte of PNG per face is a megabyte in
+# every clone for ever, and nothing here will ever draw one at 2048. The
+# source that can be re-cut at any size is `scripts/faces.py`, which is
+# a few hundred lines of paths rather than nine binaries.
 master=256
 thumb=64
 
