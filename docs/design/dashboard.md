@@ -642,12 +642,29 @@ from the start with nothing in the dashboard reaching them.
 It is an **admin's screen, reads included**: the list says who holds a
 way in, which is not something a member needs and is exactly what
 somebody probing would want, so a member is sent away rather than shown
-an empty table. **Adding somebody is above the table**, because that is
-what brings anybody to the screen — the table answers "who is there",
-and you already know when it is only you.
+an empty table. **The screen is the table**, and adding somebody is the
+rail's button like every other screen's one act. It was a card above the
+table for a release, on the grounds that adding is what brings anybody
+here — true, and still the wrong shape: a form taking the top third
+pushed the thing the screen is named after below the fold.
 
-The two refusals the daemon makes are said before the click rather than
-after it: the account you are signed in as, and the last admin.
+**Everything else is in the row's own menu**, which is where the five
+acts an admin has over somebody else's account live: change their role,
+issue them a password, block them, revoke their credentials, delete the
+account. Five icons is a puzzle rather than a row of buttons — an icon
+says what it does only to somebody who already knows — so `RowMenu` is
+the answer beside `RowActions`, and they are words again behind one
+trigger.
+
+**Blocking asks and unblocking does not.** One takes somebody's way in
+and the other gives it back; a confirmation in front of the harmless
+direction is one people learn to click through on the other. The same
+reading decides the rest: issuing a password asks, because it ends every
+session they hold, and deleting asks for the account's own name.
+
+The refusals the daemon makes are said before the click rather than
+after it: your own role, the account you are signed in as, and the last
+admin.
 
 **Adding someone hands back a password**, once — this instance keeps
 only its hash, like every other credential here — and no API key. It was

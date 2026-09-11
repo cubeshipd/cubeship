@@ -44,6 +44,49 @@ const routes: [string, string, Handler][] = [
   ["GET", "/users/me", () => db.me],
   ["PATCH", "/users/me", (_p, body) => Object.assign(db.me, body as Row)],
   ["GET", "/users", () => ({ users: db.users })],
+  [
+    "POST",
+    "/users",
+    (_p, body) => {
+      const b = body as Row;
+      const created = {
+        username: b.username as string,
+        role: (b.role as "admin" | "member") ?? "member",
+        avatar: "mono",
+        created_at: new Date().toISOString(),
+      };
+      db.users.push(created);
+      return { ...created, password: "correct-horse-battery-staple" };
+    },
+  ],
+  [
+    "PATCH",
+    "/users/:username",
+    (p, body) => {
+      const b = body as Row;
+      const u = db.users.find((x) => x.username === p[0]);
+      if (!u) return null;
+      if (typeof b.role === "string") u.role = b.role as "admin" | "member";
+      if (typeof b.blocked === "boolean") {
+        u.blocked_at = b.blocked ? new Date().toISOString() : undefined;
+      }
+      return u;
+    },
+  ],
+  [
+    "POST",
+    "/users/:username/password",
+    (p) => ({ username: p[0], password: "correct-horse-battery-staple" }),
+  ],
+  [
+    "DELETE",
+    "/users/:username",
+    (p) => {
+      db.users = db.users.filter((u) => u.username !== p[0]);
+      return null;
+    },
+  ],
+  ["DELETE", "/users/:username/credentials", () => ({ api_keys: 2, sessions: 1 })],
   ["GET", "/users/me/api-keys", () => db.apiKeys],
   ["GET", "/settings", () => db.settings],
   ["PATCH", "/settings", (_p, body) => Object.assign(db.settings, body as Row)],
@@ -311,7 +354,14 @@ export async function handle(method: string, path: string, body?: unknown): Prom
   for (const [m, pattern, fn] of routes) {
     if (m !== method) continue;
     const captured = match(pattern, parts);
-    if (captured) return fn(captured, body);
+    // **Copied, because a network gives you a copy.** The handlers
+    // return rows out of `db` directly, so without this a caller holds
+    // the very object the next write mutates — and React, handed the
+    // same array identity it already has, skips the render. A row
+    // edited in place then changed nothing on screen until something
+    // else happened to re-render, which is a bug that exists only in
+    // the preview and looks exactly like one in the product.
+    if (captured) return structuredClone(fn(captured, body));
   }
 
   // **Loud rather than empty.** A mock that answered `[]` for a path it
