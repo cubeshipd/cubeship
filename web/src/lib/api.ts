@@ -1142,6 +1142,11 @@ export async function uploadObject(
 // One copy of one database, and what it says about itself outlives the
 // database it came from.
 export type Backup = {
+  // What this is a copy of. `instance` is Cubeship itself rather than
+  // a database somebody asked it to run — and it is the one kind with
+  // no restore, because what it would replace is the database doing the
+  // replacing.
+  kind?: "datastore" | "instance";
   id: number;
   database: string;
   // Whether that database is still here, which is what decides whether

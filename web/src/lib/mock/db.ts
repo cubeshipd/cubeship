@@ -464,6 +464,31 @@ export const db = {
     },
   ] as Row[],
 
+  // The instance's own. One taken, and no schedule — so the tab shows
+  // both halves: what a backup of the whole box looks like, and the
+  // switch that is off until somebody turns it on.
+  instanceBackups: [
+    {
+      id: 900,
+      kind: "instance",
+      database: "cubeship",
+      database_exists: true,
+      engine: "postgres",
+      version: "16",
+      store: "offsite",
+      bucket: "dumps",
+      key: "cubeship/cubeship/2026-09-11T030000Z.dump",
+      off_machine: true,
+      size_bytes: 2_098_441,
+      status: "succeeded",
+      scheduled: false,
+      started_at: ago(300),
+      finished_at: ago(299),
+    },
+  ] as Row[],
+
+  instanceSchedule: null as Row | null,
+
   backupSchedules: {
     pg: {
       at: "03:00",

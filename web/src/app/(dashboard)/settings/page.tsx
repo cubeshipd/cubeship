@@ -2,6 +2,7 @@
 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
+import { InstanceBackups } from "@/components/backups";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailTabs } from "@/components/header-rail";
 import { InstanceDomain } from "@/components/instance-domain";
@@ -23,7 +24,7 @@ export default function Instance() {
   );
 }
 
-const TABS = ["domain", "updates"] as const;
+const TABS = ["domain", "updates", "backups"] as const;
 type Tab = (typeof TABS)[number];
 
 function Body() {
@@ -68,6 +69,7 @@ function Body() {
           <TabsList variant="line">
             <TabsTrigger value="domain">Domain</TabsTrigger>
             <TabsTrigger value="updates">Updates</TabsTrigger>
+            <TabsTrigger value="backups">Backups</TabsTrigger>
           </TabsList>
         </RailTabs>
 
@@ -85,6 +87,13 @@ function Body() {
             sub="Update this instance every day at a time you choose. It replaces the daemon, the dashboard and every other machine in this cluster; your apps and databases keep running, and nothing can be changed here for the minute or so it takes."
           />
           <AutoUpdate settings={current} onSaved={setCurrent} />
+        </TabsContent>
+
+        {/* The instance backing itself up. Here rather than under
+            Backups in Platform, which is about the databases on this
+            box: this is about the box. */}
+        <TabsContent value="backups">
+          <InstanceBackups />
         </TabsContent>
       </Tabs>
     </>

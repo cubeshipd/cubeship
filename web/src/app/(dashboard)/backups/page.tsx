@@ -131,8 +131,8 @@ export default function BackupsPage() {
         rowKey={(c) => c.database}
         search={{ placeholder: "Filter databases", by: (c) => [c.database, c.engine] }}
         // Straight to the tab that acts on it, rather than to the
-        // database's Overview and a second click to find Backups.
-        onRowClick={(c) => router.push(`/databases/${c.database}?tab=backups`)}
+        // database's Overview and two more clicks to find Backups.
+        onRowClick={(c) => router.push(`/databases/${c.database}/settings?tab=backups`)}
         empty="This instance runs no databases."
       />
 

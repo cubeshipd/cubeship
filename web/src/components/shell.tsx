@@ -126,7 +126,7 @@ export const sections: { label?: string; items: NavItem[] }[] = [
       // something you deploy *to* yet — when it is, this may well
       // belong beside Projects rather than here.
       { href: "/servers", label: "Servers", icon: ServerIcon, owns: ["/servers"] },
-      { href: "/settings", label: "Instance", icon: ServerCogIcon },
+      { href: "/settings", label: "Settings", icon: ServerCogIcon },
     ],
   },
   // There is no "You" section any more. It held one item, and what is
