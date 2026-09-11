@@ -11,8 +11,20 @@ import type { ReactNode } from "react";
 // weight, and what used to sit beside it goes through `RailPortal`.
 //
 // The heading for a section inside a page — the second level, above a
-// card or a table rather than above the page. The accent tick is what
-// separates it from the page title at a glance.
+// card or a table. The accent tick is what separates it from the crumb
+// in the rail at a glance.
+//
+// **The gap above it is between sections, so the first one has none.**
+// `mt-9` is the distance from whatever the section before it ended
+// with; at the top of a page there is nothing before it, and the page
+// already has its own padding — which read as an inexplicable band of
+// empty across the top of every screen that opens on a section. It was
+// invisible while a page header sat above filling it.
+//
+// `first:mt-0` rather than a prop, because the caller does not know: a
+// section is first when nothing above it rendered, and the things above
+// it — an error alert with no error, a notice that does not apply —
+// decide that at run time.
 export function SectionHeader({
   title,
   sub,
@@ -23,7 +35,7 @@ export function SectionHeader({
   actions?: ReactNode;
 }) {
   return (
-    <div className="mt-9 mb-3 flex items-end justify-between gap-4">
+    <div className="mt-9 mb-3 flex items-end justify-between gap-4 first:mt-0">
       <div className="min-w-0">
         <h2 className="flex items-center gap-2 text-xs font-semibold tracking-[0.16em] uppercase">
           <span
