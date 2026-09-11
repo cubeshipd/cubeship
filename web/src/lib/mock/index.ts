@@ -14,9 +14,16 @@
 // below rather than an empty array.
 //
 // Turned on by NEXT_PUBLIC_CUBESHIP_MOCK=1, which `make web-preview`
-// sets. The import in lib/api.ts is dynamic and inside that branch, so
-// none of this reaches a normal build.
+// sets. next.config.ts aliases this module to a stub in every other
+// build, which is what keeps the fixtures out of the image people run.
 
+import type {
+  Bucket,
+  ObjectListing,
+  RegistryImage,
+  RegistryRepository,
+  RegistryUsage,
+} from "@/lib/api";
 import { db, type Row, series } from "./db";
 
 // Latency, so the loading states are things you can see rather than
@@ -489,31 +496,42 @@ const providers = {
   versions: ["RELEASE.2025-04-22T22-12-26Z"],
 };
 
-const buckets = [
+const buckets: Bucket[] = [
   { name: "dumps", created_at: new Date(Date.now() - 86_400_000 * 40).toISOString() },
   { name: "uploads", created_at: new Date(Date.now() - 86_400_000 * 12).toISOString() },
 ];
 
-const listing = {
+// A folder is `{prefix, name}` and an object carries `name` and
+// `modified_at` beside its key — the shapes in ObjectListing. Written
+// loosely the first time (bare strings for folders, `last_modified` for
+// the date) it rendered a table whose rows had no React key and whose
+// dates were blank: the preview being wrong about the daemon, rather
+// than the dashboard being wrong about anything.
+const listing: ObjectListing = {
   prefix: "",
-  folders: ["2026/"],
+  folders: [{ prefix: "2026/", name: "2026" }],
   objects: [
     {
       key: "readme.txt",
+      name: "readme.txt",
       size: 812,
-      last_modified: new Date(Date.now() - 86_400_000).toISOString(),
+      modified_at: new Date(Date.now() - 86_400_000).toISOString(),
     },
     {
       key: "logo.png",
+      name: "logo.png",
       size: 48_120,
-      last_modified: new Date(Date.now() - 86_400_000 * 3).toISOString(),
+      modified_at: new Date(Date.now() - 86_400_000 * 3).toISOString(),
     },
   ],
 };
 
-const repositories = [{ name: "web/production/api" }, { name: "web/staging/api" }];
+const repositories: RegistryRepository[] = [
+  { name: "web/production/api" },
+  { name: "web/staging/api" },
+];
 
-const images = [
+const images: RegistryImage[] = [
   {
     tag: "latest",
     digest: "sha256:9f2a…c104",
@@ -534,7 +552,7 @@ const images = [
   },
 ];
 
-const usage = {
+const usage: RegistryUsage = {
   total_bytes: 402_113_440,
   counts_shared_layers: true,
   repositories: [
