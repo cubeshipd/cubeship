@@ -254,7 +254,7 @@ func (r *Repository) Schedules(ctx context.Context) ([]*Schedule, error) {
 func (r *Repository) InstanceSchedule(ctx context.Context) (*Schedule, error) {
 	row := r.q.QueryRowContext(ctx,
 		`SELECT at, timezone, keep, COALESCE(object_store_id, 0), bucket, last_run_at
-		 FROM instance_backup_schedule WHERE only`)
+		 FROM instance_backup_schedule WHERE singleton`)
 	out, err := scanInstanceSchedule(row)
 	if err != nil {
 		return nil, fmt.Errorf("get the instance backup schedule: %w", err)
@@ -281,9 +281,9 @@ func (r *Repository) SetInstanceSchedule(ctx context.Context, s *Schedule) (*Sch
 		storeID = s.StoreID
 	}
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO instance_backup_schedule (only, at, timezone, keep, object_store_id, bucket)
+		`INSERT INTO instance_backup_schedule (singleton, at, timezone, keep, object_store_id, bucket)
 		 VALUES (true, $1, $2, $3, $4, $5)
-		 ON CONFLICT (only) DO UPDATE SET
+		 ON CONFLICT (singleton) DO UPDATE SET
 		   at = EXCLUDED.at, timezone = EXCLUDED.timezone, keep = EXCLUDED.keep,
 		   object_store_id = EXCLUDED.object_store_id, bucket = EXCLUDED.bucket,
 		   updated_at = now()
@@ -297,7 +297,7 @@ func (r *Repository) SetInstanceSchedule(ctx context.Context, s *Schedule) (*Sch
 }
 
 func (r *Repository) DeleteInstanceSchedule(ctx context.Context) error {
-	_, err := r.q.ExecContext(ctx, `DELETE FROM instance_backup_schedule WHERE only`)
+	_, err := r.q.ExecContext(ctx, `DELETE FROM instance_backup_schedule WHERE singleton`)
 	if err != nil {
 		return fmt.Errorf("delete the instance schedule: %w", err)
 	}
@@ -307,7 +307,7 @@ func (r *Repository) DeleteInstanceSchedule(ctx context.Context) error {
 // MarkInstanceRun records that the timer fired, before the dump starts.
 func (r *Repository) MarkInstanceRun(ctx context.Context, at time.Time) error {
 	_, err := r.q.ExecContext(ctx,
-		`UPDATE instance_backup_schedule SET last_run_at = $1 WHERE only`, at)
+		`UPDATE instance_backup_schedule SET last_run_at = $1 WHERE singleton`, at)
 	if err != nil {
 		return fmt.Errorf("mark the instance schedule: %w", err)
 	}
