@@ -42,7 +42,7 @@ func newDeployFixture(t *testing.T, docker DockerAPI) (*Orchestrator, *database.
 		t.Fatalf("create project: %v", err)
 	}
 
-	a, err := NewRepository(db).Create(ctx, p.ID, env.ID, "myapp", "", SourceRegistry, Origin{})
+	a, err := NewRepository(db).Create(ctx, p.ID, env.ID, "myapp", SourceRegistry, Origin{})
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -351,7 +351,7 @@ func TestAnAppWithNoDomainDeploysWithoutRouting(t *testing.T) {
 
 	// A second app in the same environment, left with no name to answer
 	// at — the state every app is created in.
-	worker, err := NewRepository(db).Create(ctx, a.ProjectID, a.EnvironmentID, "worker", "", SourceRegistry, Origin{})
+	worker, err := NewRepository(db).Create(ctx, a.ProjectID, a.EnvironmentID, "worker", SourceRegistry, Origin{})
 	if err != nil {
 		t.Fatalf("create the app: %v", err)
 	}

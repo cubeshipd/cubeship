@@ -186,9 +186,23 @@ The derivation is what settled it. `slug.Title` turned `public-api` into
 `Public Api`, deliberately dumb because anything cleverer would be a
 dictionary — so the name was, almost always, the slug spelled worse.
 
-What survives is the **description**, which says something a name never
-could. `name` is gone from every create body, every PATCH, every MCP
-tool and the CLI, where the positional argument is now the slug.
+The **description** survived that cut and has now gone the same way.
+It was kept on the grounds that it says something a name never could,
+which is true and was not enough: it is optional, asked for once at
+creation, read by somebody who already knows what the thing is, and the
+only screen that ever showed one was a project card. What stood behind
+it was a settings section per level whose reason to exist was editing
+it — three forms, three PATCH bodies, three MCP arguments — for a
+paragraph nobody writes twice.
+
+So `name` and `description` are both gone from every create body, every
+PATCH, every MCP tool and the CLI, where the positional argument is the
+slug. **A project and an environment now have nothing that can be
+changed at all**, which is why neither has a PATCH endpoint any more:
+their slugs are fixed, their variables have their own endpoints, and an
+endpoint that can change nothing is a promise to whoever calls it that
+something can be. An app keeps its PATCH — its source, its ceiling and
+where it runs are all still decisions.
 
 **No slug is editable after its resource exists** — project,
 environment or app. Every one of them is a path component of an
@@ -199,15 +213,15 @@ and images already pushed would be stranded where nothing looks for them
 again and no garbage collection reclaims them. The identifier is the one
 promise the daemon makes to whatever is configured against it.
 
-A name and a description are editable; the slug is shown beside them,
-read-only, with that reason. `PATCH` accepts no `slug` field at any
-level, so the rule holds for the API and the MCP tools too — not just
-for the screen.
+The slug is **not shown read-only on a settings screen** either. It was,
+with that reason under it, and a value you cannot edit on a page you
+opened to edit something teaches people that settings screens are where
+facts live. It is in the URL and in the header of every page under it.
 
 ### An app is created empty
 
-Creating an app asks for a slug and a description, in a modal, like
-every other resource. It arrives with **no domain and nothing chosen**,
+Creating an app asks for a slug, in a modal, like every other
+resource. It arrives with **no domain and nothing chosen**,
 and it deploys anyway.
 
 **An app with no domain is a normal app**, not a half-finished one. A

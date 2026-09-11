@@ -27,9 +27,8 @@ const DefaultLogTail = "500"
 type Response struct {
 	// Reference is the app's canonical identifier,
 	// org/project/environment/name — also its registry repository path.
-	Reference   string `json:"reference"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Reference string `json:"reference"`
+	Name      string `json:"name"`
 	// Domains are every name this app answers at, each with the port
 	// behind it.
 	Domains []DomainResponse `json:"domains"`
@@ -162,7 +161,7 @@ func toResponse(a *Scoped, in Instance) Response {
 	ref := ReferenceOf(a)
 	r := Response{
 		Reference: ref.String(),
-		Name:      a.Name, Description: a.Description, Domains: toDomains(a.Domains),
+		Name:      a.Name, Domains: toDomains(a.Domains),
 		Status: a.Status(), HasContainer: a.HasContainer(), Source: a.Source,
 		Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
 		SuggestedHost: SuggestedHostFor(ref, in.Domain),
@@ -307,7 +306,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	created, err := h.svc.Create(r.Context(), user.FromContext(r.Context()),
-		req.Project, req.Environment, req.Name, req.Description, Source(req.Source),
+		req.Project, req.Environment, req.Name, Source(req.Source),
 		Origin{Image: req.Image, Tag: req.Tag, Repo: req.Repo, Ref: req.Ref, Dockerfile: req.Dockerfile})
 	if err != nil {
 		WriteError(w, err)
@@ -324,13 +323,12 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 // settings the new source would ignore, is what the service refuses.
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Description *string `json:"description"`
-		Source      *string `json:"source"`
-		Image       *string `json:"image"`
-		Tag         *string `json:"tag"`
-		Repo        *string `json:"repo"`
-		Ref         *string `json:"ref"`
-		Dockerfile  *string `json:"dockerfile"`
+		Source     *string `json:"source"`
+		Image      *string `json:"image"`
+		Tag        *string `json:"tag"`
+		Repo       *string `json:"repo"`
+		Ref        *string `json:"ref"`
+		Dockerfile *string `json:"dockerfile"`
 		// Node is which machine serves this app's names, and Nodes are
 		// the machines it runs on. Their own fields rather than part of
 		// the source group: where an app runs and what it runs are
@@ -387,7 +385,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 			Dockerfile: deref(req.Dockerfile),
 		}
 	}
-	if req.Description == nil && source == nil && origin == nil &&
+	if source == nil && origin == nil &&
 		req.Node == nil && req.Nodes == nil && req.HealthPath == nil && req.Scale == nil &&
 		req.Limits == nil && req.Spread == nil && req.Autoscale == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
@@ -416,7 +414,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 
 	updated, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), refFrom(r),
-		req.Description, source, origin, req.HealthPath, req.Limits, req.Autoscale, place)
+		source, origin, req.HealthPath, req.Limits, req.Autoscale, place)
 	if err != nil {
 		WriteError(w, err)
 		return

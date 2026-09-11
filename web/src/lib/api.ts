@@ -76,10 +76,9 @@ export type InstanceUser = {
 export type Org = { slug: string };
 export type Project = {
   slug: string;
-  description: string;
   environments?: string[];
 };
-export type Environment = { slug: string; description: string };
+export type Environment = { slug: string };
 
 // registry and external run a published image; dockerfile and railpack
 // build one from a Git repository, which is why they need an admin.
@@ -115,7 +114,6 @@ export function hostsOf(app: { domains: AppDomain[] }): string {
 export type App = {
   reference: string;
   name: string;
-  description: string;
   // Every name this app answers at, each with the port behind it. Empty
   // is a normal state: an app nothing outside the instance should reach
   // deploys with none, and its neighbours reach it by container name.

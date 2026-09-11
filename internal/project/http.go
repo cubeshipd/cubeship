@@ -12,14 +12,12 @@ import (
 // Response is one project as both the API and the MCP tools report it.
 type Response struct {
 	Slug         string   `json:"slug"`
-	Description  string   `json:"description"`
 	Environments []string `json:"environments,omitempty"`
 }
 
 // EnvironmentResponse is one environment, likewise shared.
 type EnvironmentResponse struct {
-	Slug        string `json:"slug"`
-	Description string `json:"description"`
+	Slug string `json:"slug"`
 }
 
 func toResponses(projects []*Project) []Response {
@@ -31,7 +29,7 @@ func toResponses(projects []*Project) []Response {
 }
 
 func toResponse(p *Project) Response {
-	return Response{Slug: p.Slug, Description: p.Description}
+	return Response{Slug: p.Slug}
 }
 
 func toEnvironmentResponses(envs []*Environment) []EnvironmentResponse {
@@ -43,7 +41,7 @@ func toEnvironmentResponses(envs []*Environment) []EnvironmentResponse {
 }
 
 func toEnvironmentResponse(e *Environment) EnvironmentResponse {
-	return EnvironmentResponse{Slug: e.Slug, Description: e.Description}
+	return EnvironmentResponse{Slug: e.Slug}
 }
 
 type Handler struct {
@@ -55,7 +53,6 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.Handle("POST /projects", auth(http.HandlerFunc(h.create)))
 	r.Handle("GET /projects", auth(http.HandlerFunc(h.list)))
-	r.Handle("PATCH /projects/{projectSlug}", auth(http.HandlerFunc(h.update)))
 	r.Handle("DELETE /projects/{projectSlug}", auth(http.HandlerFunc(h.delete)))
 	r.Handle("GET /projects/{projectSlug}/env", auth(http.HandlerFunc(h.getEnv)))
 	r.Handle("PUT /projects/{projectSlug}/env", auth(http.HandlerFunc(h.setEnv)))
@@ -65,7 +62,6 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET /projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.getEnvironmentEnv)))
 	r.Handle("PUT /projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.setEnvironmentEnv)))
 	r.Handle("PATCH /projects/{projectSlug}/environments/{envSlug}/env", auth(http.HandlerFunc(h.mergeEnvironmentEnv)))
-	r.Handle("PATCH /projects/{projectSlug}/environments/{envSlug}", auth(http.HandlerFunc(h.updateEnvironment)))
 	r.Handle("DELETE /projects/{projectSlug}/environments/{envSlug}", auth(http.HandlerFunc(h.deleteEnvironment)))
 }
 
@@ -97,32 +93,8 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusCreated, Response{Slug: p.Slug, Description: p.Description, Environments: []string{env.Slug}})
+	httpx.WriteJSON(w, http.StatusCreated, Response{Slug: p.Slug, Environments: []string{env.Slug}})
 }
-
-// update is PATCH: a field left out of the body is left alone, which is
-// what lets the dashboard save one edit without sending the other back.
-// The slug is not a field — see Service.Update.
-func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Description *string `json:"description"`
-	}
-	if err := httpx.DecodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
-		return
-	}
-	if req.Description == nil {
-		http.Error(w, "give a description", http.StatusBadRequest)
-		return
-	}
-	p, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), r.PathValue("projectSlug"), req.Description)
-	if err != nil {
-		WriteError(w, err)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, toResponse(p))
-}
-
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	projects, err := h.svc.List(r.Context(), user.FromContext(r.Context()))
 	if err != nil {
@@ -235,31 +207,6 @@ func (h *Handler) createEnvironment(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.WriteJSON(w, http.StatusCreated, toEnvironmentResponse(env))
 }
-
-// updateEnvironment is PATCH: a field left out of the body is left
-// alone. The slug is not among them — it is the third component of
-// every app reference in the environment.
-func (h *Handler) updateEnvironment(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Description *string `json:"description"`
-	}
-	if err := httpx.DecodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
-		return
-	}
-	if req.Description == nil {
-		http.Error(w, "give a description", http.StatusBadRequest)
-		return
-	}
-	env, err := h.svc.UpdateEnvironment(r.Context(), user.FromContext(r.Context()), r.PathValue("projectSlug"), r.PathValue("envSlug"),
-		req.Description)
-	if err != nil {
-		WriteError(w, err)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, toEnvironmentResponse(env))
-}
-
 func (h *Handler) listEnvironments(w http.ResponseWriter, r *http.Request) {
 	envs, err := h.svc.ListEnvironments(r.Context(), user.FromContext(r.Context()), r.PathValue("projectSlug"))
 	if err != nil {

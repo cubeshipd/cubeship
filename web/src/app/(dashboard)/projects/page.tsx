@@ -115,7 +115,6 @@ function Projects() {
             <ProjectCard
               key={p.slug}
               slug={p.slug}
-              description={p.description}
               environments={envs[p.slug] ?? p.environments ?? []}
               apps={apps.filter((a) => a.project === p.slug)}
             />

@@ -27,7 +27,7 @@ func externalFixture(t *testing.T, image string) (*Orchestrator, *fakeDocker, *S
 		t.Fatal(err)
 	}
 	created, err := NewRepository(db).Create(ctx, p.ID, env.ID,
-		"myapp", "", SourceExternal, Origin{Image: image})
+		"myapp", SourceExternal, Origin{Image: image})
 	if err != nil {
 		t.Fatal(err)
 	}

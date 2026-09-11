@@ -66,7 +66,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.deployments)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "update_app",
-		Description: "Reconfigure an app: its description and where its image comes from. Its domains are added and removed one at a time — an app can answer at several, each with its own port — so they are not here. A field you leave out is left as it was. The source and its settings travel together — naming a source without what it needs, or settings the source would ignore, is refused. Moving an app to a source that builds requires the admin role. The app's name cannot be changed.",
+		Description: "Reconfigure an app: where its image comes from. Its domains are added and removed one at a time — an app can answer at several, each with its own port — so they are not here. A field you leave out is left as it was. The source and its settings travel together — naming a source without what it needs, or settings the source would ignore, is refused. Moving an app to a source that builds requires the admin role. The app's name cannot be changed.",
 	}, t.update)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_app",
@@ -82,7 +82,6 @@ type createInput struct {
 	Project     string `json:"project" jsonschema:"project slug"`
 	Environment string `json:"environment,omitempty" jsonschema:"environment slug (default \"production\")"`
 	Name        string `json:"name" jsonschema:"app name: lowercase letters, digits and dashes — becomes part of its registry image path. Permanent"`
-	Description string `json:"description,omitempty" jsonschema:"what this app is, in a sentence"`
 	Source      string `json:"source,omitempty" jsonschema:"where the image comes from: \"registry\" (the default) for an image you push to Cubeship, \"external\" for one in a registry Cubeship does not run, \"dockerfile\" to build a Dockerfile from a Git repository, or \"railpack\" to build from a Git repository with no Dockerfile. Building requires the admin role."`
 	Image       string `json:"image,omitempty" jsonschema:"for an external app, the image it pulls, without a tag — e.g. \"registry.digitalocean.com/acme/api\". Leave empty otherwise."`
 	Tag         string `json:"tag,omitempty" jsonschema:"the tag to run. Leave empty to follow the registry: on this instance's own that means a push deploys the app, and on any other it means latest. A building app has no tag \u2014 it names a ref."`
@@ -93,7 +92,7 @@ type createInput struct {
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
 	created, err := t.svc.Create(ctx, t.caller, in.Project, in.Environment,
-		in.Name, in.Description, Source(in.Source),
+		in.Name, Source(in.Source),
 		Origin{Image: in.Image, Tag: in.Tag, Repo: in.Repo, Ref: in.Ref, Dockerfile: in.Dockerfile})
 	if err != nil {
 		return nil, Response{}, err
@@ -102,14 +101,13 @@ func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInp
 }
 
 type updateInput struct {
-	Reference   string  `json:"reference" jsonschema:"the app's reference: org/project/environment/name"`
-	Description *string `json:"description,omitempty" jsonschema:"what this app is; leave out to keep it, send empty to clear it"`
-	Source      *string `json:"source,omitempty" jsonschema:"registry, external, dockerfile or railpack. Send the settings the new source needs alongside it"`
-	Image       *string `json:"image,omitempty" jsonschema:"for an external app, the image it pulls, without a tag"`
-	Tag         *string `json:"tag,omitempty" jsonschema:"the tag to run; send empty to follow the registry, which on this instance's own means a push deploys the app"`
-	Repo        *string `json:"repo,omitempty" jsonschema:"for a building app, the https:// Git repository to build from"`
-	Ref         *string `json:"ref,omitempty" jsonschema:"for a building app, the branch, tag or commit to build"`
-	Dockerfile  *string `json:"dockerfile,omitempty" jsonschema:"for a dockerfile app only, the recipe's path within the repository"`
+	Reference  string  `json:"reference" jsonschema:"the app's reference: org/project/environment/name"`
+	Source     *string `json:"source,omitempty" jsonschema:"registry, external, dockerfile or railpack. Send the settings the new source needs alongside it"`
+	Image      *string `json:"image,omitempty" jsonschema:"for an external app, the image it pulls, without a tag"`
+	Tag        *string `json:"tag,omitempty" jsonschema:"the tag to run; send empty to follow the registry, which on this instance's own means a push deploys the app"`
+	Repo       *string `json:"repo,omitempty" jsonschema:"for a building app, the https:// Git repository to build from"`
+	Ref        *string `json:"ref,omitempty" jsonschema:"for a building app, the branch, tag or commit to build"`
+	Dockerfile *string `json:"dockerfile,omitempty" jsonschema:"for a dockerfile app only, the recipe's path within the repository"`
 	// Safe for an agent in a way `node` is not: a wrong path takes an
 	// app's names to 503 and is undone by clearing the field, where a
 	// wrong placement moves somebody's app to a box they were not
@@ -137,7 +135,7 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 			Dockerfile: deref(in.Dockerfile),
 		}
 	}
-	if in.Description == nil && source == nil && origin == nil && in.HealthPath == nil {
+	if source == nil && origin == nil && in.HealthPath == nil {
 		return nil, Response{}, fmt.Errorf("nothing to change")
 	}
 	// No `node` here, deliberately: moving an app between machines is
@@ -151,7 +149,7 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 	// holding is an instant kill by the kernel, with no deploy, no
 	// confirmation and nothing to roll back to. An agent can read what
 	// the ceiling is — it is on every response — and cannot move it.
-	updated, err := t.svc.Update(ctx, t.caller, ref, in.Description, source, origin, in.HealthPath, nil, nil, nil)
+	updated, err := t.svc.Update(ctx, t.caller, ref, source, origin, in.HealthPath, nil, nil, nil)
 	if err != nil {
 		return nil, Response{}, err
 	}

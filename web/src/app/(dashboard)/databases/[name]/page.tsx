@@ -668,7 +668,6 @@ function AttachDialog({
                   choices={candidates.map((a) => ({
                     value: a.name,
                     label: a.name,
-                    hint: a.description || undefined,
                   }))}
                   value={appName}
                   onChange={setAppName}

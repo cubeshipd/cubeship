@@ -29,10 +29,6 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Description: "List the projects in an organization.",
 	}, t.list)
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "update_project",
-		Description: "Change a project's description. A field you leave out is left as it was. The slug cannot be changed — no slug in Cubeship can, once the resource exists, because it is a path component of every app's registry reference. Requires admin role in the organization.",
-	}, t.update)
-	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_project",
 		Description: "Delete a project, the environments inside it and every app in those — each app's container is stopped and removed first. Requires admin role in the organization, and cannot be undone.",
 	}, t.delete)
@@ -61,10 +57,6 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Description: "Add, change or remove environment variables shared by every app in one environment. Only the keys you name are touched. Requires admin role in the organization.",
 	}, t.setEnvironmentEnv)
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "update_environment",
-		Description: "Change an environment's description. A field you leave out is left as it was. The slug cannot be changed — it is part of every app reference in the environment. Requires admin role in the organization.",
-	}, t.updateEnvironment)
-	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_environment",
 		Description: `Delete an environment and every app deployed in it. Refused for the "production" environment, which every project must keep. Requires admin role in the organization, and cannot be undone.`,
 	}, t.deleteEnvironment)
@@ -79,7 +71,7 @@ func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInp
 	if err != nil {
 		return nil, Response{}, err
 	}
-	return nil, Response{Slug: p.Slug, Description: p.Description, Environments: []string{env.Slug}}, nil
+	return nil, Response{Slug: p.Slug, Environments: []string{env.Slug}}, nil
 }
 
 type orgScopedInput struct {
@@ -105,23 +97,6 @@ func (t *Tools) getEnv(ctx context.Context, _ *mcp.CallToolRequest, in projectSc
 	}
 	return nil, envOutput{Vars: vars}, nil
 }
-
-type updateInput struct {
-	Project     string  `json:"project" jsonschema:"project slug"`
-	Description *string `json:"description,omitempty" jsonschema:"what the project is for; leave out to keep it, send empty to clear it"`
-}
-
-func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInput) (*mcp.CallToolResult, Response, error) {
-	if in.Description == nil {
-		return nil, Response{}, fmt.Errorf("give name, description, or both")
-	}
-	p, err := t.svc.Update(ctx, t.caller, in.Project, in.Description)
-	if err != nil {
-		return nil, Response{}, err
-	}
-	return nil, toResponse(p), nil
-}
-
 func (t *Tools) delete(ctx context.Context, _ *mcp.CallToolRequest, in projectScopedInput) (*mcp.CallToolResult, user.ActionResult, error) {
 	p, err := t.svc.Delete(ctx, t.caller, in.Project)
 	if err != nil {
@@ -201,23 +176,6 @@ func (t *Tools) setEnvironmentEnv(ctx context.Context, _ *mcp.CallToolRequest, i
 type environmentScopedInput struct {
 	Project     string `json:"project" jsonschema:"project slug"`
 	Environment string `json:"environment" jsonschema:"environment slug"`
-}
-
-type updateEnvironmentInput struct {
-	Project     string  `json:"project" jsonschema:"project slug"`
-	Environment string  `json:"environment" jsonschema:"environment slug"`
-	Description *string `json:"description,omitempty" jsonschema:"what this stage is for; leave out to keep it, send empty to clear it"`
-}
-
-func (t *Tools) updateEnvironment(ctx context.Context, _ *mcp.CallToolRequest, in updateEnvironmentInput) (*mcp.CallToolResult, EnvironmentResponse, error) {
-	if in.Description == nil {
-		return nil, EnvironmentResponse{}, fmt.Errorf("give name, description, or both")
-	}
-	e, err := t.svc.UpdateEnvironment(ctx, t.caller, in.Project, in.Environment, in.Description)
-	if err != nil {
-		return nil, EnvironmentResponse{}, err
-	}
-	return nil, toEnvironmentResponse(e), nil
 }
 
 func (t *Tools) deleteEnvironment(ctx context.Context, _ *mcp.CallToolRequest, in environmentScopedInput) (*mcp.CallToolResult, user.ActionResult, error) {

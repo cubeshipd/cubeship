@@ -52,7 +52,6 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			"App": openapi.Object(map[string]*openapi.Schema{
 				"reference":     openapi.String("The app's identifier, org/project/environment/name — also its registry repository path."),
 				"name":          openapi.String("Unique within its environment, not across the instance. Permanent."),
-				"description":   openapi.String("What this app is. Empty unless someone set it."),
 				"domains":       openapi.Array(openapi.Ref("AppDomain")),
 				"image":         openapi.String("For a registry app, the path to push to — a push there deploys. For an external app, the image it pulls."),
 				"tag":           openapi.String("The tag this app runs. Absent means it follows the registry: on this instance's own that is whatever is pushed — see `autodeploy` — and anywhere else it is `latest`."),
@@ -76,7 +75,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					"What is running on each of those machines. It is what a `degraded` status is made of: some of them serving and some not."),
 				"split":          openapi.Bool("Whether the machines serving this app are not all serving the same deployment. Reported apart from `status` because the two are orthogonal — an app can be degraded and split, or running and split.\n\nEvery rollout across several machines passes through this for as long as it takes the last machine to pull, so it is a fact rather than a fault. What makes it worth reporting is the rollout that never finishes: without it, a replica running *something* reads as running, so two versions read as one healthy app."),
 				"suggested_host": openapi.String("A name this app could answer at, under the instance's own domain: `<app>.<environment>.<project>.<instance domain>`. Nothing assigns it — an app with no domain is a normal app, and this is what a client offers when somebody does want one. Under a wildcard address (`settings.wildcard_domain`) it resolves the moment it is added; under a real domain it needs a record. Absent while the instance has no domain."),
-			}, "reference", "name", "description", "domains", "status", "has_container", "source", "org", "project", "environment"),
+			}, "reference", "name", "domains", "status", "has_container", "source", "org", "project", "environment"),
 			"AppAutoscale": openapi.Object(map[string]*openapi.Schema{
 				"min": openapi.Integer("The fewest copies the instance will leave running. At least 1 while autoscaling is on."),
 				"max": openapi.Integer("The most it will run. **Zero is off**, which is what every app is until somebody turns it on — there is no separate flag to disagree with it.\n\nA ceiling is not optional. Without one a loop of requests is a loop of replicas until the machine has nothing left, which is a worse outage than the one autoscaling was turned on to avoid. The largest accepted is 100, which is a typo limit rather than a resource one."),
@@ -109,7 +108,6 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Tags:        []string{"Apps"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"name":        openapi.String("Lowercase letters, digits and dashes — it becomes a path component of the registry image. Permanent."),
-						"description": openapi.String("What this app is. Optional."),
 						"org":         openapi.String("Organization slug."),
 						"project":     openapi.String("Project slug."),
 						"environment": openapi.String(`Environment slug. Defaults to "production".`),
@@ -144,14 +142,13 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"patch": {
 					OperationID: "updateApp",
 					Summary:     "Reconfigure an app",
-					Description: "Changes the description, the domain, and where the image comes from. **A field you leave out is left as it was.**\n\nAn app is created with almost none of this, so this is what makes one deployable. The source and its settings are judged together: naming a source without what it needs, or settings the source would ignore, is refused the same way it is at creation. Moving an app to a source that builds requires the admin role, because it decides that this instance will execute whatever that repository contains. The app's name is not editable.",
+					Description: "Changes the domain and where the image comes from. **A field you leave out is left as it was.**\n\nAn app is created with almost none of this, so this is what makes one deployable. The source and its settings are judged together: naming a source without what it needs, or settings the source would ignore, is refused the same way it is at creation. Moving an app to a source that builds requires the admin role, because it decides that this instance will execute whatever that repository contains. The app's name is not editable.",
 					Tags:        []string{"Apps"},
 					Parameters:  refParams,
 					RequestBody: &openapi.RequestBody{
 						Required:    true,
 						Description: "Any of the fields below. Omit one to leave it alone.",
 						Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
-							"description": openapi.String("May be empty."),
 							"source":      {Type: "string", Enum: []string{"registry", "external", "dockerfile", "railpack"}, Description: "Send the settings the new source needs alongside it."},
 							"image":       openapi.String("For an external app: the image it pulls, without a tag."),
 							"tag":         openapi.String("Which tag to run. Send empty to follow the registry, which on this instance's own means a push deploys the app — pinning a tag is how that is turned off."),

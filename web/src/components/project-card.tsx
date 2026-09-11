@@ -8,12 +8,10 @@ import type { App } from "@/lib/api";
 // and whether any of them is unhappy.
 export function ProjectCard({
   slug,
-  description,
   environments,
   apps,
 }: {
   slug: string;
-  description?: string;
   environments: string[];
   apps: App[];
 }) {
@@ -33,11 +31,6 @@ export function ProjectCard({
             <h3 className="truncate font-mono text-sm font-semibold group-hover:text-primary">
               {slug}
             </h3>
-            {description && (
-              <p className="mt-2.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
-                {description}
-              </p>
-            )}
           </div>
         </div>
 
