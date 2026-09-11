@@ -73,6 +73,66 @@ still why every sign-in failure — unknown username, wrong password, no
 password at all — is the same answer, and why an unknown username still
 pays for a hash verification.
 
+### Shutting somebody out, and letting them back
+
+**Blocking is the reversible half of deleting.** Deleting takes the
+account, its keys and its sessions in one transaction and cannot be
+undone — the username is free for anybody to claim again, and nothing
+remembers what the account was. Somebody suspended for a week, or an
+account being looked into, needed a door that closes and opens, and the
+only answer before this was to delete and make it again.
+
+So **nothing is revoked**. A blocked account keeps its password, its
+keys and the sessions it is signed in on, and every one of them is
+refused at the door instead: `Login`, `Authenticate` and
+`AuthenticateSession` all answer `ErrBlocked`. Revoking would make
+unblocking a half-undo — the account would come back with nothing to
+come back with, and an admin who blocked the wrong person for a minute
+would have cost them every key on every machine they own.
+
+`blocked_at` is a timestamp rather than a flag, because when it happened
+is the first thing anybody asks and a boolean costs the same to store.
+Null is not blocked, which is every account that existed before it.
+
+**`ErrBlocked` is deliberately not `ErrInvalidCredentials`**, and it is
+answered *after* the password is verified. The credential is fine and
+the account is not — telling somebody their password is wrong when it is
+right sends them to reset the one thing that was never the problem —
+and checking it after the hash keeps a wrong password on a blocked
+account from saying the account exists, which every other failure here
+is shaped to avoid.
+
+### Resetting somebody else's password
+
+`POST /users/{username}/password` issues one and returns it **once**,
+for an admin to hand over. This box sends no mail, so there is no reset
+link and an account that has forgotten its password has nothing else to
+try; what people did instead was delete the account and make it again,
+losing its keys and its history to recover a secret.
+
+**The API keys are not touched**, which is the whole difference between
+it and `DELETE /users/{username}/credentials`. A forgotten password is
+not a lost laptop: the keys on somebody's machine are still theirs, and
+taking them as well turns a two-minute fix into a morning of logging
+back into everything. Whoever wants both asks for both.
+
+Every session ends, because the password changed — the same rule an
+account changing its own follows.
+
+### One rule, three acts
+
+Deleting an account, demoting it and blocking it are three ways of
+taking the last admin off an instance, so they ask one question:
+`Repository.refuseIfLastAdmin`, counted **inside** the transaction.
+
+Sequentially it is unreachable, and that is worth knowing rather than
+discovering: only an admin may do any of these, so the only way to
+target the last admin is to be them — at which point the refusal that
+fires is the one about your own account. What the count is for is the
+case no single request can show, two admins taking each other's role in
+the same moment, where a check made outside the transaction lets both
+through.
+
 ## Claiming an instance
 
 `internal/setup` is the first-run flow, and it exists because the daemon

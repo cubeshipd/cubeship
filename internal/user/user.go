@@ -58,9 +58,17 @@ type User struct {
 	Email string
 	// Avatar is a name from Avatars, never a path or a URL, and never
 	// empty — see DefaultAvatar.
-	Avatar    string
+	Avatar string
+	// BlockedAt is when somebody shut this account out, nil while it is
+	// not. Every door checks it — see ErrBlocked — and nothing about the
+	// account is destroyed, which is the whole difference between this
+	// and deleting one.
+	BlockedAt *time.Time
 	CreatedAt time.Time
 }
+
+// Blocked reports whether this account may authenticate at all.
+func (u *User) Blocked() bool { return u != nil && u.BlockedAt != nil }
 
 // Avatars are the faces the dashboard ships, by name.
 //
@@ -257,9 +265,34 @@ var (
 	// mistake nothing on the instance can undo.
 	ErrCannotRemoveYourself = errors.New("you cannot delete the account you are signed in as")
 
-	// ErrLastAdmin refuses removing or demoting the only admin. An
-	// instance with no admin can never configure itself again, and
-	// nothing in the API could put one back — setup is closed the
-	// moment the first account exists.
+	// ErrLastAdmin refuses removing, demoting or blocking the only
+	// admin. An instance with no admin can never configure itself
+	// again, and nothing in the API could put one back — setup is
+	// closed the moment the first account exists.
 	ErrLastAdmin = errors.New("this is the only admin on the instance")
+
+	// ErrCannotBlockYourself refuses shutting out the account making
+	// the request, for the reason deleting it is refused: an admin who
+	// blocks themselves is refused by the very door they would have to
+	// come back through.
+	ErrCannotBlockYourself = errors.New("you cannot block the account you are signed in as")
+
+	// ErrCannotChangeYourOwnRole refuses an admin demoting themselves.
+	// There may be another admin to put it back and there may not, and
+	// which it is cannot be known from inside the request — an instance
+	// whose last admin made themselves a member is one nothing can
+	// configure again. Somebody else does it, the same as leaving.
+	ErrCannotChangeYourOwnRole = errors.New("you cannot change your own role")
+
+	// ErrBlocked is an account that has been shut out. It is answered
+	// to every way in — a password, an API key, a session cookie — and
+	// it is deliberately **not** ErrInvalidCredentials: the credential
+	// is fine and the account is not, and telling somebody their
+	// password is wrong when it is right sends them to reset a password
+	// that was never the problem.
+	//
+	// It says nothing about who blocked them or when. That is the
+	// instance's business, and this is the one message an account that
+	// should not be here still gets to read.
+	ErrBlocked = errors.New("this account has been blocked on this instance")
 )
