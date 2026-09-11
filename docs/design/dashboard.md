@@ -462,10 +462,16 @@ first, so the two lists say one thing from opposite ends.
 **The mark is on the options, not on the crumb.** The path is a line of
 words and stays one; what an icon per row buys is an edge to read down,
 so a menu of slugs reads as a list of *buckets* rather than four bare
-words under a chevron. Projects, databases and stores wear the sidebar's
-own icon because they are the same things it lists; an environment, an
-app and a bucket are not in the sidebar and are chosen to sit apart from
-it.
+words under a chevron.
+
+They come from `components/marks.tsx`, which is **one map for the whole
+product** — the rail and both halves of the palette. Two lists of the
+same facts is one list that goes stale, and the day a kind is added to
+one of them the other keeps a different opinion about what a bucket
+looks like. Where the sidebar already lists a thing it is the sidebar's
+own icon, because a second mark for it would be a second name for it;
+the four that have no sidebar entry — an environment, an app, a bucket,
+a zone — are chosen to sit apart from the ones that do.
 
 **A crumb with siblings is a menu**, and that is the point of putting
 the path here rather than in a page. Reading `web/production/api` tells

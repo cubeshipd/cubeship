@@ -139,7 +139,9 @@ export const sections: { label?: string; items: NavItem[] }[] = [
 // palette goes to. Derived rather than written again: a page added to
 // the list above would otherwise be missing here, and this is the half
 // nobody notices is missing.
-const SCREENS = sections.flatMap((s) => s.items.map((i) => ({ label: i.label, href: i.href })));
+const SCREENS = sections.flatMap((s) =>
+  s.items.map((i) => ({ label: i.label, href: i.href, icon: i.icon })),
+);
 
 type NavItem = {
   href: string;

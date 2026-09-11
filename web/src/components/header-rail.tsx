@@ -1,17 +1,6 @@
 "use client";
 
-import {
-  BoxIcon,
-  ChevronDownIcon,
-  ContainerIcon,
-  DatabaseIcon,
-  FolderTreeIcon,
-  GlobeIcon,
-  HardDriveIcon,
-  LayersIcon,
-  NetworkIcon,
-  PackageIcon,
-} from "lucide-react";
+import { ChevronDownIcon, type BoxIcon as MarkIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -24,6 +13,7 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { MARKS as SHARED } from "@/components/marks";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -146,28 +136,20 @@ type Siblings =
 // id, and a menu offering `4` and `7` is a menu nobody can read.
 type Option = { label: string; value: string };
 
-// A mark for each kind, worn by the rows inside the menu.
-//
-// **On the options, not on the crumb.** The path is a line of words and
-// wants to stay one; what the mark does is give the menu that opens out
-// of it an edge to read down, so a list of slugs reads as a list of
-// *buckets* rather than as four bare words floating under a chevron.
-//
-// Projects, databases and stores wear the sidebar's own icon, because
-// they are the same things it lists. The three that are not in the
-// sidebar are chosen to sit apart from it: an environment is layers, an
-// app is a box, a bucket is a package — none of them the container the
-// registries entry already owns.
-const MARKS: Record<Siblings, typeof BoxIcon> = {
-  project: FolderTreeIcon,
-  environment: LayersIcon,
-  app: BoxIcon,
-  datastore: DatabaseIcon,
-  objectstore: HardDriveIcon,
-  bucket: PackageIcon,
-  registry: ContainerIcon,
-  dnsprovider: GlobeIcon,
-  zone: NetworkIcon,
+// The mark a menu's rows wear, from the one map the rail and the
+// palette share — see components/marks.tsx. On the options rather than
+// on the crumb: the path is a line of words and stays one, and what an
+// icon per row buys is an edge to read down.
+const MARKS: Record<Siblings, typeof MarkIcon> = {
+  project: SHARED.project,
+  environment: SHARED.environment,
+  app: SHARED.app,
+  datastore: SHARED.database,
+  objectstore: SHARED.store,
+  bucket: SHARED.bucket,
+  registry: SHARED.registry,
+  dnsprovider: SHARED.dns,
+  zone: SHARED.zone,
 };
 
 // The kinds whose path segment is an id rather than a name, so the
