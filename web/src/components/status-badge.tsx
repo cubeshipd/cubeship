@@ -62,6 +62,17 @@ const tones: Record<string, Tone> = {
     text: "text-muted-foreground",
     edge: "border-border-strong",
   },
+  // A name routed here with no certificate behind it. Amber and not
+  // red: it is the ordinary state for the minute after a deploy, and
+  // the row carries the reason for when it is not.
+  waiting: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40" },
+  // Served by another machine in the cluster, which holds its own. Not
+  // a problem, and the only entry in the missing half that is not.
+  elsewhere: {
+    dot: "bg-subtle-foreground",
+    text: "text-muted-foreground",
+    edge: "border-border-strong",
+  },
   // A certificate nothing answers at any more. Grey rather than amber:
   // it is still valid and still renewing, and the only thing wrong with
   // it is that it is spending a weekly allowance on a name nobody uses.
