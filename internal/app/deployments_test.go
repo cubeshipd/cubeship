@@ -268,3 +268,9 @@ func (quietDocker) IsRunning(context.Context, string) (bool, error) {
 func (quietDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
 }
+
+// Declared because app.DockerAPI is one view of the Engine for every
+// module. Nothing in this package execs.
+func (quietDocker) ExecStream(context.Context, string, []string, io.Reader, io.Writer) (string, int, error) {
+	return "", 0, nil
+}

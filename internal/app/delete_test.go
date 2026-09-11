@@ -46,6 +46,12 @@ func (d *stubDocker) Logs(context.Context, string, string) (io.ReadCloser, error
 	return io.NopCloser(strings.NewReader("")), nil
 }
 
+// Declared because app.DockerAPI is one view of the Engine for every
+// module. Nothing in this package execs.
+func (d *stubDocker) ExecStream(context.Context, string, []string, io.Reader, io.Writer) (string, int, error) {
+	return "", 0, nil
+}
+
 func TestDeletingAnAppStopsItsContainerFirst(t *testing.T) {
 	docker := &stubDocker{running: true}
 	f := servertest.NewWithDocker(t, docker)

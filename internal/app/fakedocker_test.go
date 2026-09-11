@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"sync"
@@ -123,6 +124,12 @@ func (f *fakeDocker) IsRunning(_ context.Context, _ string) (bool, error) {
 
 func (f *fakeDocker) Logs(_ context.Context, _, _ string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(f.logOutput)), nil
+}
+
+// ExecStream is declared on app.DockerAPI so that one client satisfies
+// every module's view of the Engine. Nothing in this package calls it.
+func (f *fakeDocker) ExecStream(context.Context, string, []string, io.Reader, io.Writer) (string, int, error) {
+	return "", 0, errors.New("this fake does not exec")
 }
 
 // PulledRefs is what was pulled, in order.

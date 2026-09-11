@@ -17,6 +17,7 @@ import (
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/jsonmessage"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
 )
 
@@ -925,4 +926,86 @@ func (c *Client) PublishedPorts(ctx context.Context) ([]PublishedPort, error) {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Port < out[j].Port })
 	return out, nil
+}
+
+// ExecStream runs a command inside a running container and moves its
+// bytes rather than collecting them: stdin from r, stdout to w.
+//
+// It exists beside Exec because the two are different jobs. Exec hands
+// back a transcript and caps it, which is right for a maintenance
+// command somebody reads. A database dump is gigabytes and is being
+// written to a bucket as it is produced — holding it in memory first
+// would make the largest database this instance can back up whatever it
+// has left of RAM.
+//
+// **stderr is kept apart**, which Exec deliberately does not do. Mixed
+// into stdout it would land in the middle of the dump, and a dump with
+// `pg_dump: warning:` a third of the way through is one that restores
+// into a syntax error. `Tty: false` is what makes the Engine frame the
+// two streams; stdcopy is what separates them again.
+//
+// A nil r attaches no stdin at all. A command told to read one and given
+// nothing waits for an EOF that never comes.
+func (c *Client) ExecStream(ctx context.Context, containerID string, cmd []string, r io.Reader, w io.Writer) (stderr string, exitCode int, err error) {
+	created, err := c.api.ContainerExecCreate(ctx, containerID, container.ExecOptions{
+		Cmd:          cmd,
+		AttachStdin:  r != nil,
+		AttachStdout: true,
+		AttachStderr: true,
+	})
+	if err != nil {
+		return "", 0, fmt.Errorf("create exec: %w", err)
+	}
+
+	attached, err := c.api.ContainerExecAttach(ctx, created.ID, container.ExecAttachOptions{})
+	if err != nil {
+		return "", 0, fmt.Errorf("attach exec: %w", err)
+	}
+	defer attached.Close()
+
+	// Written on its own goroutine, and the write half is closed after:
+	// a restore's command reads until EOF, and nothing else produces
+	// one. Errors here are left to the exit status — a command that
+	// stopped reading is one that already failed, and reporting the
+	// broken pipe instead of what it said would replace the reason with
+	// its consequence.
+	if r != nil {
+		go func() {
+			_, _ = io.Copy(attached.Conn, r)
+			_ = attached.CloseWrite()
+		}()
+	}
+
+	// Read to EOF before inspecting: the command has not finished until
+	// its output stream closes, and asking sooner reports it running.
+	var errs strings.Builder
+	if _, err := stdcopy.StdCopy(w, &limited{w: &errs, left: maxExecOutput}, attached.Reader); err != nil {
+		return errs.String(), 0, fmt.Errorf("read exec output: %w", err)
+	}
+
+	inspected, err := c.api.ContainerExecInspect(ctx, created.ID)
+	if err != nil {
+		return errs.String(), 0, fmt.Errorf("inspect exec: %w", err)
+	}
+	return errs.String(), inspected.ExitCode, nil
+}
+
+// limited is a writer that keeps the first n bytes and swallows the
+// rest, for stderr: a command that fails per row explains itself in its
+// first lines and then repeats itself for as long as the dump is long.
+type limited struct {
+	w    io.Writer
+	left int
+}
+
+func (l *limited) Write(p []byte) (int, error) {
+	if l.left <= 0 {
+		return len(p), nil
+	}
+	if len(p) > l.left {
+		p = p[:l.left]
+	}
+	n, err := l.w.Write(p)
+	l.left -= n
+	return len(p), err
 }

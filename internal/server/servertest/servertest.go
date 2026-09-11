@@ -117,6 +117,10 @@ func (noDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {
 	return nil, errNoDocker
 }
 
+func (noDocker) ExecStream(context.Context, string, []string, io.Reader, io.Writer) (string, int, error) {
+	return "", 0, errNoDocker
+}
+
 // NewEmpty is a server with no account at all — the state an instance is
 // in between installing and someone claiming it.
 func NewEmpty(t testing.TB) *Fixture {
