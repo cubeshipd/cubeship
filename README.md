@@ -334,9 +334,8 @@ again brings the same instance back.
 
 [Apache-2.0](LICENSE). Use it, run it, modify it, run your company on it,
 sell what you build on top of it — the same terms
-[Coolify](https://github.com/coollabsio/coolify) and
-[Dokploy](https://github.com/Dokploy/dokploy) are under, and a patent grant
-comes with it.
+[Coolify](https://github.com/coollabsio/coolify) is under, and a patent
+grant comes with it.
 
 The name is the one thing that is not in the grant — Apache-2.0 section 6
 excludes trademarks, deliberately — and
