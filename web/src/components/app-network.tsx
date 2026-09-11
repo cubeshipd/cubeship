@@ -1,18 +1,27 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { CheckIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { CheckIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
-import { RowAction } from "@/components/row-actions";
+import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchableSelect } from "@/components/searchable-select";
 import { SectionHeader } from "@/components/section-header";
 import { TextField } from "@/components/text-field";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -49,9 +58,19 @@ const INSTANCE_DOMAIN = "instance";
 // Each name carries its own port, and that is the whole reason this is a
 // list rather than a field. An image can expose several; api.example.com
 // and admin.example.com on one container are two of them.
+//
+// **The list is the screen and adding is a dialog**, which is the shape
+// every other list here has. The form used to sit open under the names
+// permanently — a DNS provider, a zone, a subdomain and a port, on a
+// screen somebody opens to read what an app answers at far more often
+// than to add another one. Four empty fields below a list is the list
+// saying its real subject is the form.
 export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => void }) {
   const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<AppDomain | null>(null);
+  const [editing, setEditing] = useState<AppDomain | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [added, setAdded] = useState(false);
 
   const settings = useQuery({
     queryKey: ["settings"],
@@ -60,34 +79,94 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
 
   const base = `/apps/${app.reference}`;
 
+  const columns: Column<AppDomain>[] = [
+    {
+      id: "host",
+      header: "Domain",
+      width: 58,
+      sortBy: (d) => d.host,
+      cell: (d) => <span className="font-mono text-xs">{d.host}</span>,
+    },
+    {
+      id: "port",
+      header: "Port",
+      width: 26,
+      sortBy: (d) => d.port || DEFAULT_PORT,
+      // A row with no port of its own is served on the default, so that
+      // is what it says — the number the container is reached on, not a
+      // blank cell somebody has to know the meaning of.
+      cell: (d) =>
+        d.port ? (
+          <span className="font-mono text-xs">{d.port}</span>
+        ) : (
+          <span className="font-mono text-xs text-muted-foreground" title="This app's default port">
+            {DEFAULT_PORT}
+          </span>
+        ),
+    },
+    {
+      id: "actions",
+      header: "",
+      width: 16,
+      align: "right",
+      cell: (d) => (
+        <RowActions>
+          <RowAction
+            icon={PencilIcon}
+            label={`Change the port for ${d.host}`}
+            onClick={() => setEditing(d)}
+          />
+          <RowAction
+            icon={Trash2Icon}
+            label={`Remove ${d.host}`}
+            danger
+            onClick={() => setRemoving(d)}
+          />
+        </RowActions>
+      ),
+    },
+  ];
+
   return (
     <>
       <SectionHeader
         title="Network"
         sub="Every name this app answers at, and what each one reaches inside the container. A container keeps the routing it was deployed with — redeploy to pick up a change here."
+        actions={
+          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+            <PlusIcon />
+            Add domain
+          </Button>
+        }
       />
 
       <ErrorAlert error={error} />
 
-      {app.domains.length > 0 && (
-        <Card className="mb-4 py-0">
-          <div className="divide-y divide-border">
-            {app.domains.map((d) => (
-              <DomainRow
-                key={d.id}
-                base={base}
-                domain={d}
-                onSaved={onSaved}
-                onError={setError}
-                onRemove={() => setRemoving(d)}
-              />
-            ))}
-          </div>
-        </Card>
+      <DataTable
+        columns={columns}
+        rows={app.domains}
+        rowKey={(d) => String(d.id)}
+        search={{ placeholder: "Filter domains", by: (d) => [d.host, String(d.port)] }}
+        empty="This app answers at no name yet."
+      />
+
+      {/* Said here rather than in the dialog, because the dialog closes
+          on success and this is the part that is still outstanding: the
+          name is routed once the app is deployed again. */}
+      {added && (
+        <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-success">
+          <CheckIcon className="size-3.5" />
+          Added. Redeploy to serve it.
+        </p>
       )}
 
-      <AddDomain
+      <AddDomainDialog
         base={base}
+        open={adding}
+        onOpenChange={(v) => {
+          setAdding(v);
+          if (v) setAdded(false);
+        }}
         settings={settings.data}
         // Where the record has to point: this instance, whichever
         // machine the app runs on. Every name arrives here and is
@@ -95,8 +174,17 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
         // record is written once and does not move when an app does.
         address={app.address ?? ""}
         suggested={app.suggested_host ?? ""}
+        onSaved={(a) => {
+          onSaved(a);
+          setAdded(true);
+        }}
+      />
+
+      <PortDialog
+        base={base}
+        domain={editing}
+        onOpenChange={(v) => !v && setEditing(null)}
         onSaved={onSaved}
-        onError={setError}
       />
 
       <HealthCheck app={app} onSaved={onSaved} onError={setError} />
@@ -118,56 +206,77 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
   );
 }
 
-// One name, and the port behind it.
-function DomainRow({
+// The port behind one name, and nothing else.
+//
+// Its own dialog rather than a field in the row: a table cell with an
+// input in it is a control nobody expects to find there, and every other
+// list in the dashboard edits a row the same way.
+function PortDialog({
   base,
   domain,
+  onOpenChange,
   onSaved,
-  onError,
-  onRemove,
 }: {
   base: string;
-  domain: AppDomain;
+  // The domain being edited, or null when nothing is.
+  domain: AppDomain | null;
+  onOpenChange: (v: boolean) => void;
   onSaved: (a: App) => void;
-  onError: (e: string | null) => void;
-  onRemove: () => void;
 }) {
-  const [port, setPort] = useState(domain.port ? String(domain.port) : "");
+  const [port, setPort] = useState("");
   const [busy, setBusy] = useState(false);
-  const dirty = (Number(port) || 0) !== domain.port;
+  const [error, setError] = useState<string | null>(null);
 
-  async function save() {
+  useEffect(() => {
+    if (!domain) return;
+    setPort(domain.port ? String(domain.port) : "");
+    setError(null);
+  }, [domain]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!domain) return;
     setBusy(true);
-    onError(null);
+    setError(null);
     try {
       onSaved(await api.patch<App>(`${base}/domains/${domain.id}`, { port: Number(port) || 0 }));
+      onOpenChange(false);
     } catch (err) {
-      onError(message(err));
+      setError(message(err));
     }
     setBusy(false);
   }
 
   return (
-    <div className="flex items-center gap-4 px-4 py-3">
-      <span className="min-w-0 flex-1 truncate font-mono text-xs">{domain.host}</span>
-
-      <div className="flex shrink-0 items-center gap-2">
-        <Input
-          aria-label={`Port for ${domain.host}`}
-          className="h-9 w-28 px-3 text-sm"
-          placeholder="8080"
-          spellCheck={false}
-          value={port}
-          onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))}
-        />
-        {dirty && (
-          <ActionButton size="sm" busy={busy} onClick={save}>
-            Save
-          </ActionButton>
-        )}
-        <RowAction icon={Trash2Icon} label={`Remove ${domain.host}`} danger onClick={onRemove} />
-      </div>
-    </div>
+    <Dialog open={domain !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <form onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>Port for {domain?.host}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-5">
+            <ErrorAlert error={error} />
+            <TextField
+              label="Port"
+              autoFocus
+              spellCheck={false}
+              placeholder={String(DEFAULT_PORT)}
+              value={port}
+              onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))}
+              hint={`What this name reaches inside the container. Leave it empty to serve it on ${DEFAULT_PORT}. The app keeps the routing it was deployed with until it is deployed again.`}
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <ActionButton type="submit" busy={busy}>
+              Save
+            </ActionButton>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -176,15 +285,18 @@ function DomainRow({
 // The provider path writes the record and adds the name in one act, in
 // that order: adding a name Cubeship then cannot resolve would be an app
 // that says it is served somewhere nothing answers.
-function AddDomain({
+function AddDomainDialog({
   base,
+  open,
+  onOpenChange,
   settings,
   address,
   suggested,
   onSaved,
-  onError,
 }: {
   base: string;
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
   settings: Settings | undefined;
   // Where a record for this app has to point: this instance's own
   // public address, whichever machine the app runs on. Empty when the
@@ -196,7 +308,6 @@ function AddDomain({
   // while the instance has no domain to build one under.
   suggested: string;
   onSaved: (a: App) => void;
-  onError: (e: string | null) => void;
 }) {
   const [providerID, setProviderID] = useState("");
   const [zoneID, setZoneID] = useState("");
@@ -207,7 +318,7 @@ function AddDomain({
   // placeholder somebody has to accept.
   const [port, setPort] = useState(String(DEFAULT_PORT));
   const [busy, setBusy] = useState(false);
-  const [done, setDone] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // The instance already knows which provider writes its own records and
   // what its address is. An app is on the same host, so both are the
@@ -234,12 +345,13 @@ function AddDomain({
   const providers = useQuery({
     queryKey: ["dns"],
     queryFn: () => api.get<DNSProvider[]>("/dns"),
+    enabled: open,
   });
 
   const zones = useQuery({
     queryKey: ["dns", providerID, "zones"],
     queryFn: () => api.get<DNSZone[]>(`/dns/${providerID}/zones`),
-    enabled: automatic,
+    enabled: open && automatic,
   });
 
   const zone = zones.data?.find((z) => z.id === zoneID) ?? null;
@@ -253,7 +365,7 @@ function AddDomain({
   const records = useQuery({
     queryKey: ["dns", providerID, "records", zoneID],
     queryFn: () => api.get<DNSRecord[]>(`/dns/${providerID}/records?zone=${zoneID}`),
-    enabled: automatic && Boolean(zoneID),
+    enabled: open && automatic && Boolean(zoneID),
   });
 
   // Anything already answering at that name, of any type: a CNAME where
@@ -266,8 +378,7 @@ function AddDomain({
 
   async function add() {
     setBusy(true);
-    onError(null);
-    setDone(false);
+    setError(null);
     try {
       // The record first. A name added here that does not resolve is an
       // app claiming to be served somewhere nothing answers — which is
@@ -286,158 +397,171 @@ function AddDomain({
       setSubdomain("");
       setManualHost("");
       setPort(String(DEFAULT_PORT));
-      setDone(true);
+      setConfirming(false);
+      onOpenChange(false);
     } catch (err) {
-      onError(message(err));
+      setError(message(err));
+      setConfirming(false);
     }
     setBusy(false);
-    setConfirming(false);
   }
 
   return (
     <>
-      <Card>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-12 items-start gap-4">
-            <SearchableSelect
-              label="DNS provider"
-              fieldClassName="col-span-6"
-              placeholder="My DNS is elsewhere"
-              empty="No DNS providers connected yet."
-              value={providerID}
-              onChange={(v) => {
-                setProviderID(v);
-                setZoneID("");
-              }}
-              busy={providers.isLoading}
-              choices={[
-                ...(suggested
-                  ? [
-                      {
-                        value: INSTANCE_DOMAIN,
-                        label: "This instance's domain",
-                        hint: settings?.wildcard_domain
-                          ? "Resolves here already"
-                          : "Needs a wildcard record",
-                      },
-                    ]
-                  : []),
-                ...(providers.data ?? []).map((p) => ({
-                  value: String(p.id),
-                  label: p.provider_name,
-                  hint: p.label,
-                  icon: providerIcon(p.provider),
-                })),
-              ]}
-            />
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Add domain</DialogTitle>
+          </DialogHeader>
 
-            {onInstanceDomain ? (
-              <div className="col-span-6 space-y-2">
-                <Label className="text-xs text-muted-foreground">Name</Label>
-                <div className="flex h-10 items-center overflow-x-auto border border-border bg-secondary/40 px-3 font-mono text-sm text-muted-foreground">
-                  {suggested}
-                </div>
-              </div>
-            ) : automatic ? (
+          <div className="space-y-4 py-5">
+            <ErrorAlert error={error} />
+
+            <div className="grid grid-cols-12 items-start gap-4">
               <SearchableSelect
-                label="Zone"
-                fieldClassName="col-span-6"
-                placeholder="Pick a domain"
-                empty="This credential reaches no zones."
-                value={zoneID}
-                onChange={setZoneID}
-                busy={zones.isLoading}
-                choices={(zones.data ?? []).map((z) => ({ value: z.id, label: z.name }))}
+                label="DNS provider"
+                fieldClassName="col-span-12"
+                placeholder="My DNS is elsewhere"
+                empty="No DNS providers connected yet."
+                value={providerID}
+                onChange={(v) => {
+                  setProviderID(v);
+                  setZoneID("");
+                }}
+                busy={providers.isLoading}
+                choices={[
+                  ...(suggested
+                    ? [
+                        {
+                          value: INSTANCE_DOMAIN,
+                          label: "This instance's domain",
+                          hint: settings?.wildcard_domain
+                            ? "Resolves here already"
+                            : "Needs a wildcard record",
+                        },
+                      ]
+                    : []),
+                  ...(providers.data ?? []).map((p) => ({
+                    value: String(p.id),
+                    label: p.provider_name,
+                    hint: p.label,
+                    icon: providerIcon(p.provider),
+                  })),
+                ]}
               />
-            ) : (
-              <TextField
-                label="Domain"
-                fieldClassName="col-span-6"
-                spellCheck={false}
-                placeholder="app.example.com"
-                value={manualHost}
-                onChange={(e) => setManualHost(e.target.value)}
-              />
-            )}
 
-            {automatic && zone && (
-              <div className="col-span-6 space-y-2">
-                <Label className="text-xs text-muted-foreground">Name</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    aria-label="Subdomain"
-                    className="h-10 flex-1 px-3 text-sm"
-                    spellCheck={false}
-                    placeholder="app"
-                    value={subdomain}
-                    onChange={(e) => setSubdomain(e.target.value)}
-                  />
-                  <span className="shrink-0 font-mono text-sm text-muted-foreground">
-                    .{zone.name}
-                  </span>
+              {onInstanceDomain ? (
+                <div className="col-span-12 space-y-2">
+                  <Label className="text-xs text-muted-foreground">Name</Label>
+                  <div className="flex h-10 items-center overflow-x-auto border border-border bg-secondary/40 px-3 font-mono text-sm text-muted-foreground">
+                    {suggested}
+                  </div>
                 </div>
+              ) : automatic ? (
+                <SearchableSelect
+                  label="Zone"
+                  fieldClassName="col-span-12"
+                  placeholder="Pick a domain"
+                  empty="This credential reaches no zones."
+                  value={zoneID}
+                  onChange={setZoneID}
+                  busy={zones.isLoading}
+                  choices={(zones.data ?? []).map((z) => ({ value: z.id, label: z.name }))}
+                />
+              ) : (
+                <TextField
+                  label="Domain"
+                  fieldClassName="col-span-12"
+                  spellCheck={false}
+                  placeholder="app.example.com"
+                  value={manualHost}
+                  onChange={(e) => setManualHost(e.target.value)}
+                />
+              )}
+
+              {automatic && zone && (
+                <div className="col-span-12 space-y-2">
+                  <Label className="text-xs text-muted-foreground">Name</Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      aria-label="Subdomain"
+                      className="h-10 flex-1 px-3 text-sm"
+                      spellCheck={false}
+                      placeholder="app"
+                      value={subdomain}
+                      onChange={(e) => setSubdomain(e.target.value)}
+                    />
+                    <span className="shrink-0 font-mono text-sm text-muted-foreground">
+                      .{zone.name}
+                    </span>
+                  </div>
+                </div>
+              )}
+
+              <TextField
+                label="Port"
+                fieldClassName="col-span-4"
+                spellCheck={false}
+                placeholder="8080"
+                value={port}
+                onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))}
+              />
+            </div>
+
+            {host && !onInstanceDomain && (
+              <div className="border border-border px-3 py-2 font-mono text-xs">
+                <span className="w-8 shrink-0 text-muted-foreground">A</span>
+                <span className="ml-4">{host}</span>
+                <span className="ml-4 text-muted-foreground">{ip || "—"}</span>
+                {occupied.length > 0 && (
+                  <span className="ml-4 text-warning">
+                    now {occupied[0].type} {occupied[0].values.join(", ")}
+                  </span>
+                )}
               </div>
             )}
 
-            <TextField
-              label="Port"
-              fieldClassName="col-span-3"
-              spellCheck={false}
-              placeholder="8080"
-              value={port}
-              onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))}
-            />
+            {/* No address, no record — and no domain either, rather than a
+                name added here that resolves nowhere. It used to write the
+                name and skip the record, which reported success for an app
+                that answered at nothing. */}
+            {automatic && !ip && (
+              <Notice tone="warning" className="mb-0">
+                This instance does not know its own public address, so there is nothing to point the
+                record at. Set it under{" "}
+                <Link href="/settings" className="underline underline-offset-4">
+                  Settings
+                </Link>{" "}
+                — it is the address the world reaches this machine at, not one on its private
+                network.
+              </Notice>
+            )}
+
+            {onInstanceDomain && (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {settings?.wildcard_domain
+                  ? "Every name under this instance's domain already resolves to this host, so there is no record to write and nothing to wait for."
+                  : "This needs a wildcard record for the instance's domain pointing at this host. Without one the name will not resolve, whatever is added here."}
+              </p>
+            )}
+
+            {!automatic && !onInstanceDomain && (
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                Point that name at{" "}
+                {address ? <code className="text-foreground">{address}</code> : "this host"}{" "}
+                yourself, wherever your DNS lives — or{" "}
+                <Link href="/dns" className="text-foreground underline underline-offset-4">
+                  connect a provider
+                </Link>{" "}
+                and Cubeship writes the record for you.
+              </p>
+            )}
           </div>
 
-          {host && !onInstanceDomain && (
-            <div className="border border-border px-3 py-2 font-mono text-xs">
-              <span className="w-8 shrink-0 text-muted-foreground">A</span>
-              <span className="ml-4">{host}</span>
-              <span className="ml-4 text-muted-foreground">{ip || "—"}</span>
-              {occupied.length > 0 && (
-                <span className="ml-4 text-warning">
-                  now {occupied[0].type} {occupied[0].values.join(", ")}
-                </span>
-              )}
-            </div>
-          )}
-
-          {/* No address, no record — and no domain either, rather than a
-              name added here that resolves nowhere. It used to write the
-              name and skip the record, which reported success for an app
-              that answered at nothing. */}
-          {automatic && !ip && (
-            <Notice tone="warning">
-              This instance does not know its own public address, so there is nothing to point the
-              record at. Set it under{" "}
-              <Link href="/settings" className="underline underline-offset-4">
-                Instance
-              </Link>{" "}
-              — it is the address the world reaches this machine at, not one on its private network.
-            </Notice>
-          )}
-
-          {onInstanceDomain && (
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              {settings?.wildcard_domain
-                ? "Every name under this instance's domain already resolves to this host, so there is no record to write and nothing to wait for."
-                : "This needs a wildcard record for the instance's domain pointing at this host. Without one the name will not resolve, whatever is added here."}
-            </p>
-          )}
-
-          {!automatic && !onInstanceDomain && (
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              Point that name at{" "}
-              {address ? <code className="text-foreground">{address}</code> : "this host"} yourself,
-              wherever your DNS lives — or{" "}
-              <Link href="/dns" className="text-foreground underline underline-offset-4">
-                connect a provider
-              </Link>{" "}
-              and Cubeship writes the record for you.
-            </p>
-          )}
-
-          <div className="flex items-center gap-3">
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
             <ActionButton
               busy={busy}
               disabled={!host || (automatic && (!zoneID || !ip))}
@@ -447,15 +571,9 @@ function AddDomain({
               <PlusIcon />
               {occupied.length > 0 ? "Overwrite and add" : "Add domain"}
             </ActionButton>
-            {done && (
-              <span className="inline-flex items-center gap-1.5 text-xs text-success">
-                <CheckIcon className="size-3.5" />
-                Added. Redeploy to serve it.
-              </span>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <ConfirmDialog
         open={confirming}

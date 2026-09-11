@@ -238,6 +238,40 @@ const routes: [string, string, Handler][] = [
   ["GET", "/apps/:a/:b/:c/logs", () => ({ logs: sampleLog })],
   ["GET", "/apps/:a/:b/:c/metrics", () => containerSeries(24, 512 * 1024 * 1024)],
   ["GET", "/apps/:a/:b/:c/domains", (p) => appOr404(p.join("/")).domains],
+  [
+    "POST",
+    "/apps/:a/:b/:c/domains",
+    (p, body) => {
+      const b = body as Row;
+      const app = appOr404(p.join("/"));
+      const domains = app.domains as Row[];
+      domains.push({
+        id: Math.floor(Math.random() * 900) + 100,
+        host: b.host as string,
+        port: Number(b.port) || 0,
+      });
+      return app;
+    },
+  ],
+  [
+    "PATCH",
+    "/apps/:a/:b/:c/domains/:id",
+    (p, body) => {
+      const app = appOr404(p.slice(0, 3).join("/"));
+      const domain = (app.domains as Row[]).find((d) => String(d.id) === p[3]);
+      if (domain) domain.port = Number((body as Row).port) || 0;
+      return app;
+    },
+  ],
+  [
+    "DELETE",
+    "/apps/:a/:b/:c/domains/:id",
+    (p) => {
+      const app = appOr404(p.slice(0, 3).join("/"));
+      app.domains = (app.domains as Row[]).filter((d) => String(d.id) !== p[3]);
+      return app;
+    },
+  ],
 
   // --- the instance itself ---
   ["GET", "/instance/metrics", () => instanceSeries()],

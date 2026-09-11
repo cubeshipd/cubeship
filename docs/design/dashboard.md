@@ -137,6 +137,21 @@ would be the opposite of what tabs are for here.
 The strips are `RailTabs` like every other, and linkable: "the limits on
 this app" is a thing somebody sends somebody else.
 
+**A list on one of those tabs is a `DataTable`, and adding to it is a
+dialog.** An app's Network tab was the names it answers at and then, at
+the foot of the screen and always open, the four fields that add another
+one — a DNS provider, a zone, a subdomain and a port. A form sitting
+under a list says the list's real subject is the form, and this one is
+opened to read what an app answers at far more often than to add
+another. The names are a table like every other list here, with the
+filter and the counts that come with it, and the whole form is behind
+**Add domain**.
+
+Editing a row goes the same way, for the same reason the env table does
+it: a table cell with an input in it is a control nobody expects to find
+there. Changing a name's port is a row action and a small dialog, not a
+field that appears in the row with a Save beside it.
+
 ### What a project card carries
 
 **A picture, a name, and a ring.** It used to carry three more things
