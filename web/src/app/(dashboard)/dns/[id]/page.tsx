@@ -4,7 +4,7 @@ import { ChevronRightIcon, KeyRoundIcon } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal, RailTitle } from "@/components/header-rail";
+import { RailPortal } from "@/components/header-rail";
 import { LoadingList, LoadingNote } from "@/components/loading";
 import { SearchBar } from "@/components/search-bar";
 import { Button } from "@/components/ui/button";
@@ -62,12 +62,6 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
 
   return (
     <>
-      <RailTitle>
-        <span className="flex items-center gap-2">
-          <Icon className="size-5 shrink-0 text-muted-foreground" />
-          {provider?.provider_name || "DNS provider"}
-        </span>
-      </RailTitle>
       <RailPortal>
         {
           <Button

@@ -25,6 +25,7 @@ import type {
   ObjectListing,
   RegistryImage,
   RegistryRepository,
+  RegistryStatus,
   RegistryUsage,
 } from "@/lib/api";
 import { db, type Row, series } from "./db";
@@ -273,6 +274,7 @@ const routes: [string, string, Handler][] = [
   ["GET", "/registries/:id/repositories", () => repositories],
   ["GET", "/registries/:id/images", () => images],
   ["GET", "/registries/:id/usage", () => usage],
+  ["GET", "/registries/:id/status", () => ({ state: "available" }) as RegistryStatus],
   ["GET", "/credentials", () => db.credentials],
   // `/dns/providers` before `/dns/:id`: the literal wins, which is the
   // same order Go's mux resolves them in on the daemon.

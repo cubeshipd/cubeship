@@ -426,10 +426,14 @@ something you know before you look.
 
 Two decisions inside that:
 
-- **The list is fetched when the menu is opened, never before.** The
-  rail is on every screen and most of the time nobody touches it, so
-  loading every project, environment and app on every navigation would
-  be a request per screen for a menu that stays shut.
+- **The list is fetched when the menu is opened, never before** — with
+  one exception. The rail is on every screen and most of the time nobody
+  touches it, so loading every project, environment and app on every
+  navigation would be a request per screen for a menu that stays shut.
+  The exception is a crumb whose path segment is an **id**: a registry
+  and a DNS provider are addressed by a credential's number, so the
+  crumb cannot say what it is called without the list and loads on
+  sight. What the URL holds is never what it shows.
 - **Switching lands on that level, not on the deep path you were on.**
   Picking another project while looking at an app does not go looking
   for an app of the same name in it — that app may not exist, and a menu

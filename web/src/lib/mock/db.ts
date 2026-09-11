@@ -29,6 +29,7 @@ import type {
   Firewall,
   InstanceUser,
   Me,
+  RegistryCredential,
   Settings,
 } from "@/lib/api";
 
@@ -362,10 +363,20 @@ export const db = {
     },
   } as Record<string, Row>,
 
+  // `GET /registries` answers the logins for registries this instance
+  // does not run. Its own is not among them — it has no credential — and
+  // every screen that shows it puts it there itself.
   registries: [
-    { id: "cubeship", provider: "cubeship", host: "registry.cubeship.example.com", own: true },
-    { id: "4", provider: "generic", host: "ghcr.io", credential_id: 2, credential_label: "GHCR" },
-  ] as Row[],
+    {
+      id: 4,
+      credential_id: 2,
+      provider: "generic",
+      host: "ghcr.io",
+      username: "acme-bot",
+      created_at: ago(60 * 24 * 20),
+      updated_at: ago(60 * 24 * 20),
+    },
+  ] as RegistryCredential[],
 
   credentials: [
     {
