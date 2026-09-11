@@ -1,10 +1,8 @@
 package datastore
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
-	"math/big"
 	"net"
 	"net/url"
 	"regexp"
@@ -12,6 +10,7 @@ import (
 	"strings"
 
 	"cubeship/internal/envvar"
+	"cubeship/internal/platform/authkey"
 )
 
 // Engine says which database server a datastore runs.
@@ -452,33 +451,17 @@ func (d *Datastore) Vars(prefix, host string, port int) envvar.Map {
 	return vars
 }
 
-// passwordAlphabet is letters and digits and nothing else.
+// GeneratedPasswordLength is how long a generated one is.
 //
-// Not because a symbol would be unsafe — URI escapes whatever it is
-// given — but because a generated password is read aloud, retyped into a
-// psql prompt and pasted into a client's config box, and every one of
-// those is a place a quote or a backslash becomes somebody's afternoon.
-// A chosen password may contain anything.
-const passwordAlphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-
-// GeneratedPasswordLength is 24 characters of that alphabet — around
-// 143 bits, which is far past anything that can be guessed at a
-// database's connection rate.
-const GeneratedPasswordLength = 24
+// It and the generator live in authkey now: this instance invents a
+// password in two places — here and an account an admin opens for
+// somebody else — and two generators would be two answers to what one
+// looks like. The names stay because a datastore's password is what
+// everything here calls it.
+const GeneratedPasswordLength = authkey.PasswordLength
 
 // GeneratePassword returns a password for a datastore nobody chose one
 // for. It is what the API fills in when a request omits the field, so a
 // database without a strong password is not something anyone can create
 // by leaving a box empty.
-func GeneratePassword() (string, error) {
-	limit := big.NewInt(int64(len(passwordAlphabet)))
-	out := make([]byte, GeneratedPasswordLength)
-	for i := range out {
-		n, err := rand.Int(rand.Reader, limit)
-		if err != nil {
-			return "", errors.New("generate password: " + err.Error())
-		}
-		out[i] = passwordAlphabet[n.Int64()]
-	}
-	return string(out), nil
-}
+func GeneratePassword() (string, error) { return authkey.Password() }

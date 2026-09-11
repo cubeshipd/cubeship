@@ -40,15 +40,15 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			"NewUser": openapi.Object(map[string]*openapi.Schema{
 				"username": openapi.String("The account that was created."),
 				"role":     openapi.String("Either `admin` or `member`."),
-				"api_key":  openapi.String("The key it authenticates with, shown exactly once."),
-			}, "username", "role", "api_key"),
+				"password": openapi.String("The password it signs in with, shown exactly once. Generated unless the request named one; this instance keeps only its hash, so there is nothing to read it back from."),
+			}, "username", "role", "password"),
 		},
 		Paths: map[string]openapi.PathItem{
 			"/users": {
 				"get": {
 					OperationID: "listUsers",
 					Summary:     "List the accounts on this instance",
-					Description: "Who can reach this instance at all. There is one instance and no tenant boundary, so this is the whole roster.\n\nAdmin only. Never returns a key or a hash: a key is shown once, when the account is created.",
+					Description: "Who can reach this instance at all. There is one instance and no tenant boundary, so this is the whole roster.\n\nAdmin only. Never returns a credential of any kind: the password is shown once, when the account is created, and keys are their owner's business.",
 					Tags:        []string{"Identity"},
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The accounts.", openapi.Ref("Users")),
@@ -59,14 +59,15 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"post": {
 					OperationID: "createUser",
 					Summary:     "Create an account",
-					Description: "Creates an account and returns the API key it authenticates with, **shown exactly once**. There is no second endpoint that reveals it, and no password: an account gets one when it sets one.\n\nAdmin only. An account is a way into this instance, so handing out the ability to mint them would hand out the instance.",
+					Description: "Creates an account and returns the password it signs in with, **shown exactly once**. There is no second endpoint that reveals it — this instance keeps only the hash — so an account whose password is lost before it is handed over is deleted and made again.\n\n**A password rather than an API key**, because a key is what a CLI or an MCP client carries and the dashboard wants a session: an account handed a key and no password could not sign in anywhere it was given the address of, and nothing here lets somebody set a first one. Keys are self-service, made by whoever wants one.\n\nAdmin only. An account is a way into this instance, so handing out the ability to mint them would hand out the instance.",
 					Tags:        []string{"Identity"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"username": openapi.String("Lowercase letters, digits and dashes. Also the account's docker login user."),
 						"role":     openapi.String("`admin` or `member`. Defaults to `member`."),
+						"password": openapi.String("Optional, and generated when it is not given — a field somebody has to fill in is a field somebody fills in badly. At least 12 characters."),
 					}, "username")),
 					Responses: openapi.Responses{
-						"201": openapi.JSONResponse("The account and its key.", openapi.Ref("NewUser")),
+						"201": openapi.JSONResponse("The account and its password.", openapi.Ref("NewUser")),
 						"400": openapi.BadRequest,
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,

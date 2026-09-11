@@ -156,19 +156,21 @@ func (c *Client) WhoAmI(ctx context.Context) (string, error) {
 	return out.Username, err
 }
 
-// --- organizations ---
-
-// AddUser creates an account and returns the API key it authenticates
-// with, shown exactly once.
-func (c *Client) AddUser(ctx context.Context, username, role string) (string, error) {
+// AddUser creates an account and returns the password it signs in with,
+// shown exactly once. A password is named rather than generated when it
+// is not empty.
+func (c *Client) AddUser(ctx context.Context, username, role, password string) (string, error) {
+	body := map[string]string{"username": username, "role": role}
+	if password != "" {
+		body["password"] = password
+	}
 	out, err := request[struct {
-		APIKey string `json:"api_key"`
-	}](ctx, c, "add user", http.MethodPost, "/users",
-		map[string]string{"username": username, "role": role}, http.StatusCreated, DefaultTimeout)
+		Password string `json:"password"`
+	}](ctx, c, "add user", http.MethodPost, "/users", body, http.StatusCreated, DefaultTimeout)
 	if err != nil {
 		return "", err
 	}
-	return out.APIKey, nil
+	return out.Password, nil
 }
 
 // User is one account on the instance.

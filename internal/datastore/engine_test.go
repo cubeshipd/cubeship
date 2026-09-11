@@ -377,31 +377,6 @@ func TestAPrefixHasToMakeALegalVariableName(t *testing.T) {
 	}
 }
 
-// The generated password is what stands between an exposed database and
-// the internet, so it has to be long, random, and free of the
-// characters that make a password painful to retype.
-func TestAGeneratedPasswordIsLongRandomAndTypeable(t *testing.T) {
-	a, err := GeneratePassword()
-	if err != nil {
-		t.Fatalf("GeneratePassword: %v", err)
-	}
-	b, err := GeneratePassword()
-	if err != nil {
-		t.Fatalf("GeneratePassword: %v", err)
-	}
-	if a == b {
-		t.Fatal("two calls produced the same password")
-	}
-	if len(a) != GeneratedPasswordLength {
-		t.Fatalf("password is %d characters, want %d", len(a), GeneratedPasswordLength)
-	}
-	for _, c := range a {
-		if !strings.ContainsRune(passwordAlphabet, c) {
-			t.Fatalf("password contains %q, which is outside the alphabet", c)
-		}
-	}
-}
-
 // A datastore's container name must not be able to collide with an
 // app's. People name things the same way in both, and two containers
 // under one name is one that will not start.

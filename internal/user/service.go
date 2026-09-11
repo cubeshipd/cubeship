@@ -20,29 +20,52 @@ func NewService(db *database.DB) *Service {
 	return &Service{db: db}
 }
 
-// Add creates an account and its first API key, and is the only way one
-// is made after setup. Admin only: an account is a way into this
-// instance, so handing out the ability to mint them would hand out the
-// instance.
+// Add creates an account and the password it signs in with, and is the
+// only way one is made after setup. Admin only: an account is a way into
+// this instance, so handing out the ability to mint them would hand out
+// the instance.
 //
-// The key is shown exactly once, here. There is no second endpoint that
-// reveals it, and no password: an account gets one when it sets one.
+// **A password, not an API key.** It used to be the other way round, and
+// that account could not sign in at all: a key is what a CLI or an MCP
+// client carries, the dashboard wants a session, and nothing anywhere
+// let a new person set a first password — there is no invite mail on a
+// box like this and no reset flow. So an admin created somebody an
+// account, handed them a credential, and the credential opened nothing
+// they had been given the address of.
 //
-// One transaction for both halves. A user created without a key would
-// hold their username forever with no way to finish or undo it through
-// the API.
-func (s *Service) Add(ctx context.Context, caller *User, username string, role Role) (*User, string, error) {
+// It is the same answer setup already gives the first account, for the
+// same reason: the way in is the password, and a key nobody is ever
+// shown would be a live credential lying around for nothing. Keys are
+// self-service, made from the account screen by whoever wants one.
+//
+// The password is generated when the caller names none, so an account
+// with a weak one is not something anybody gets by leaving a box empty,
+// and it is returned exactly once — this instance keeps only its hash,
+// like every other credential here. Whoever it belongs to changes it
+// from their own account screen, which ends every session but the one
+// they are changing it from.
+//
+// One transaction for both halves. A user created without a password
+// would hold their username forever with no way to finish or undo it
+// through the API.
+func (s *Service) Add(ctx context.Context, caller *User, username, password string, role Role) (*User, string, error) {
 	if err := Require(caller, RoleAdmin); err != nil {
 		return nil, "", err
 	}
 	if !role.Valid() {
 		return nil, "", ErrInvalidRole
 	}
+	if password == "" {
+		generated, err := authkey.Password()
+		if err != nil {
+			return nil, "", err
+		}
+		password = generated
+	}
 
 	var created *User
-	var key string
 	err := s.db.WithTx(ctx, func(tx database.Queryer) error {
-		u, k, err := s.CreateWithAPIKey(ctx, tx, username, role)
+		u, err := s.CreateWithPassword(ctx, tx, username, password, role)
 		if database.IsUniqueViolation(err) {
 			// Another request took this username between the caller
 			// typing it and here. Both cannot own it; the loser is told
@@ -52,13 +75,13 @@ func (s *Service) Add(ctx context.Context, caller *User, username string, role R
 		if err != nil {
 			return err
 		}
-		created, key = u, k
+		created = u
 		return nil
 	})
 	if err != nil {
 		return nil, "", err
 	}
-	return created, key, nil
+	return created, password, nil
 }
 
 // List returns every account on the instance. An admin's, because it is
@@ -280,30 +303,6 @@ func (s *Service) RevokeAPIKey(ctx context.Context, u *User, id int64) error {
 		return database.ErrNotFound
 	}
 	return s.Repo().RevokeAPIKeyByID(ctx, id, u.ID)
-}
-
-// CreateWithAPIKey creates a user and issues their first key in one
-// transaction, returning the plaintext key. A user that exists with no
-// key would hold their username forever with no way to finish or undo it
-// through the API.
-//
-// It takes a Queryer so a caller already inside a transaction — adding a
-// user to an organization, which must also write a membership — can make
-// the whole thing atomic. Pass s.db to run it standalone.
-func (s *Service) CreateWithAPIKey(ctx context.Context, q database.Queryer, username string, role Role) (*User, string, error) {
-	repo := NewRepository(q)
-	u, err := repo.Create(ctx, username, role)
-	if err != nil {
-		return nil, "", err
-	}
-	key, err := authkey.Generate()
-	if err != nil {
-		return nil, "", err
-	}
-	if _, err := repo.CreateAPIKey(ctx, u.ID, authkey.Hash(key), DefaultAPIKeyName); err != nil {
-		return nil, "", err
-	}
-	return u, key, nil
 }
 
 // DB exposes the connection pool for a module that has to open a

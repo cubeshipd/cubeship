@@ -189,14 +189,14 @@ function Invite({
 }) {
   const [username, setUsername] = useState("");
   const [role, setRole] = useState("member");
-  const [issued, setIssued] = useState<{ username: string; key: string } | null>(null);
+  const [issued, setIssued] = useState<{ username: string; password: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   return (
     <>
       <SectionHeader
         title="Add someone"
-        sub="They get an API key immediately and a password when they set one. The key is shown once — this instance keeps only its hash, the same as every other credential here."
+        sub="They get a password to sign in with, shown once — this instance keeps only its hash, the same as every other credential here. Hand it over and they change it on their own account screen. API keys are theirs to make, from the same place."
       />
       <Card className="mb-6">
         <CardContent>
@@ -207,11 +207,11 @@ function Invite({
               setBusy(true);
               onError(null);
               try {
-                const created = await api.post<{ username: string; api_key: string }>("/users", {
+                const created = await api.post<{ username: string; password: string }>("/users", {
                   username,
                   role,
                 });
-                setIssued({ username: created.username, key: created.api_key });
+                setIssued({ username: created.username, password: created.password });
                 setUsername("");
                 onCreated();
               } catch (err) {
@@ -253,8 +253,8 @@ function Invite({
             <div className="pt-4">
               <ValueCard
                 className="ring-primary/40"
-                label={`${issued.username}'s API key — copy it now, it is not shown again`}
-                value={issued.key}
+                label={`${issued.username}'s password — copy it now, it is not shown again`}
+                value={issued.password}
               />
             </div>
           )}
