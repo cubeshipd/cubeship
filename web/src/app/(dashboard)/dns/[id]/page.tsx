@@ -4,8 +4,8 @@ import { ChevronRightIcon, KeyRoundIcon } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailPortal, RailTitle } from "@/components/header-rail";
 import { LoadingList, LoadingNote } from "@/components/loading";
-import { PageHeader } from "@/components/page-header";
 import { SearchBar } from "@/components/search-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -62,11 +62,14 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
 
   return (
     <>
-      {" "}
-      <PageHeader
-        title={provider?.provider_name || "DNS provider"}
-        icon={<Icon className="size-5 shrink-0 text-muted-foreground" />}
-        actions={
+      <RailTitle>
+        <span className="flex items-center gap-2">
+          <Icon className="size-5 shrink-0 text-muted-foreground" />
+          {provider?.provider_name || "DNS provider"}
+        </span>
+      </RailTitle>
+      <RailPortal>
+        {
           <Button
             variant="outline"
             nativeButton={false}
@@ -81,22 +84,19 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
             }
           />
         }
-        below={
-          zones &&
-          zones.length > 0 && (
-            <SearchBar
-              value={query}
-              onChange={setQuery}
-              placeholder="Filter zones"
-              trailing={
-                <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                  {filtered.length}/{zones.length}
-                </span>
-              }
-            />
-          )
-        }
-      />
+      </RailPortal>
+      {zones && zones.length > 0 && (
+        <SearchBar
+          value={query}
+          onChange={setQuery}
+          placeholder="Filter zones"
+          trailing={
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+              {filtered.length}/{zones.length}
+            </span>
+          }
+        />
+      )}
       <ErrorAlert error={error} />
       {zones === null && !error && (
         <div>

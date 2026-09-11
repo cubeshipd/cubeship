@@ -8,10 +8,11 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailPortal } from "@/components/header-rail";
 import { LoadingNote } from "@/components/loading";
 import { Notice } from "@/components/notice";
-import { PageHeader, SectionHeader } from "@/components/page-header";
 import { SearchableSelect } from "@/components/searchable-select";
+import { SectionHeader } from "@/components/section-header";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -178,12 +179,7 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
       {/* Back to the registry, not to the list: this screen is reached
           from that one, and a settings screen that returns you two
           levels up loses your place. */}{" "}
-      <PageHeader
-        title={credential?.host || "Registry"}
-        literal
-        icon={<Icon className="size-5 shrink-0 text-muted-foreground" />}
-        actions={<StatusBadge value={status?.state ?? "checking"} />}
-      />
+      <RailPortal>{<StatusBadge value={status?.state ?? "checking"} />}</RailPortal>
       <ErrorAlert error={error} />
       {!status && !error && <LoadingNote>Checking this login against the registry</LoadingNote>}
       {status?.state === "unauthorized" && (

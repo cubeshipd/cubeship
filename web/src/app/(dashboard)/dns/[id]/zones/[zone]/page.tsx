@@ -7,8 +7,8 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailPortal } from "@/components/header-rail";
 import { Notice } from "@/components/notice";
-import { PageHeader } from "@/components/page-header";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
 import { SearchableSelect } from "@/components/searchable-select";
@@ -161,33 +161,26 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
   return (
     <>
       {" "}
-      <PageHeader
-        title={name}
-        literal
-        actions={
-          zone && (
-            <Button onClick={() => setEditing({})}>
-              <PlusIcon />
-              New record
-            </Button>
-          )
-        }
-        below={
-          all &&
-          all.length > 0 && (
-            <SearchBar
-              value={query}
-              onChange={setQuery}
-              placeholder="Filter by name, type or value"
-              trailing={
-                <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                  {filtered?.length ?? 0}/{all.length}
-                </span>
-              }
-            />
-          )
-        }
-      />
+      <RailPortal>
+        {zone && (
+          <Button onClick={() => setEditing({})}>
+            <PlusIcon />
+            New record
+          </Button>
+        )}
+      </RailPortal>
+      {all && all.length > 0 && (
+        <SearchBar
+          value={query}
+          onChange={setQuery}
+          placeholder="Filter by name, type or value"
+          trailing={
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+              {filtered?.length ?? 0}/{all.length}
+            </span>
+          }
+        />
+      )}
       <ErrorAlert error={error ? message(error) : null} />
       {missing && (
         <Notice tone="warning">

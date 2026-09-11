@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { InstanceDomain } from "@/components/instance-domain";
 import { Notice } from "@/components/notice";
-import { PageHeader, SectionHeader } from "@/components/page-header";
+import { SectionHeader } from "@/components/section-header";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -15,7 +15,6 @@ import { message } from "@/lib/errors";
 export default function Instance() {
   return (
     <>
-      <PageHeader title="Instance" />
       <Body />
     </>
   );

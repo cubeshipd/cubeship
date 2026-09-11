@@ -10,7 +10,6 @@ import { GitHubAppCard } from "@/components/github-app-card";
 import { ConnectGitHub } from "@/components/github-connect";
 import { GitHubIcon } from "@/components/icons";
 import { Notice } from "@/components/notice";
-import { PageHeader } from "@/components/page-header";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { useSession } from "@/components/session-context";
 import { StatusBadge } from "@/components/status-badge";
@@ -144,8 +143,6 @@ export default function GitProviders() {
 
   return (
     <>
-      <PageHeader title="Git Providers" />
-
       <ErrorAlert error={connections.error ? message(connections.error) : null} />
 
       {/* An App registered before Cubeship asked for OAuth on install

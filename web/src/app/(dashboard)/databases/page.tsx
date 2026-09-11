@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailPortal } from "@/components/header-rail";
 import { NewDatastoreDialog } from "@/components/new-datastore-dialog";
-import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { api, type Datastore, datastoreLabel } from "@/lib/api";
@@ -83,16 +83,14 @@ export default function DatabasesPage() {
 
   return (
     <>
-      <PageHeader
-        title="Databases"
-        actions={
+      <RailPortal>
+        {
           <Button onClick={() => setCreating(true)}>
             <PlusIcon />
             New database
           </Button>
         }
-      />
-
+      </RailPortal>
       <ErrorAlert error={error} />
 
       <DataTable

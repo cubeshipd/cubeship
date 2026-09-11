@@ -14,7 +14,7 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { PageHeader } from "@/components/page-header";
+import { RailPortal } from "@/components/header-rail";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -216,9 +216,8 @@ function Browser({ store, bucket }: { store: string; bucket: string }) {
   return (
     <>
       {" "}
-      <PageHeader
-        title={<Breadcrumbs bucket={bucket} prefix={prefix} onGo={go} />}
-        actions={
+      <RailPortal>
+        {
           <>
             <Button variant="outline" onClick={() => setCreatingFolder(true)}>
               <FolderPlusIcon />
@@ -237,7 +236,7 @@ function Browser({ store, bucket }: { store: string; bucket: string }) {
             />
           </>
         }
-      />
+      </RailPortal>
       <ErrorAlert error={error} />
       <DataTable
         columns={columns}

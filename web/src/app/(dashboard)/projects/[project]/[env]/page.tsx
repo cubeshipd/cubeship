@@ -7,7 +7,7 @@ import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { AppCard } from "@/components/app-card";
 import { ErrorAlert } from "@/components/error-alert";
-import { PageHeader } from "@/components/page-header";
+import { RailPortal } from "@/components/header-rail";
 import { SlugField } from "@/components/slug-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -90,9 +90,8 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
 
   return (
     <>
-      <PageHeader
-        title={project}
-        actions={
+      <RailPortal>
+        {
           <>
             <Button onClick={() => setCreatingApp(true)}>
               <PlusIcon />
@@ -110,8 +109,7 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
             />
           </>
         }
-      />
-
+      </RailPortal>
       <ErrorAlert error={error} />
 
       <div className="mb-5 flex items-center gap-2">

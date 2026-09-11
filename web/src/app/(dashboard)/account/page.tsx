@@ -5,7 +5,7 @@ import { ActionButton } from "@/components/action-button";
 import { Appearance } from "@/components/appearance";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
-import { PageHeader, SectionHeader } from "@/components/page-header";
+import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -31,7 +31,6 @@ import { message } from "@/lib/errors";
 export default function Account() {
   return (
     <>
-      <PageHeader title="Your settings" />
       <Tabs defaultValue="account">
         <TabsList variant="line">
           <TabsTrigger value="account">Account</TabsTrigger>

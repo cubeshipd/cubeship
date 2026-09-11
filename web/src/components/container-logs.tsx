@@ -8,8 +8,8 @@ import { ActionButton } from "@/components/action-button";
 import { Ansi, strip } from "@/components/ansi";
 import { copyText } from "@/components/copy-button";
 import { ErrorAlert } from "@/components/error-alert";
-import { SectionHeader } from "@/components/page-header";
 import { FieldRow, FieldRowIcon, SearchBar } from "@/components/search-bar";
+import { SectionHeader } from "@/components/section-header";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,

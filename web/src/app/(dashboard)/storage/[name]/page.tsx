@@ -10,12 +10,13 @@ import { ContainerLogs } from "@/components/container-logs";
 import { CopyField } from "@/components/copy-field";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailPortal } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
 import { Notice } from "@/components/notice";
-import { PageHeader, SectionHeader } from "@/components/page-header";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchableSelect } from "@/components/searchable-select";
+import { SectionHeader } from "@/components/section-header";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -99,26 +100,23 @@ function Detail({ name }: { name: string }) {
       {" "}
       {/* The title does not wait on the fetch: its name is in the URL,
           because we are here having asked for this store by name. */}
-      <PageHeader
-        title={<span className="font-mono text-lg tracking-normal normal-case">{name}</span>}
-        actions={
-          store && (
-            <>
-              {store.kind === "managed" && <PowerButton store={store} onChanged={reload} />}
-              <Button
-                variant="outline"
-                nativeButton={false}
-                render={
-                  <Link href={`/storage/${store.name}/settings`}>
-                    <SettingsIcon />
-                    Settings
-                  </Link>
-                }
-              />
-            </>
-          )
-        }
-      />
+      <RailPortal>
+        {store && (
+          <>
+            {store.kind === "managed" && <PowerButton store={store} onChanged={reload} />}
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={
+                <Link href={`/storage/${store.name}/settings`}>
+                  <SettingsIcon />
+                  Settings
+                </Link>
+              }
+            />
+          </>
+        )}
+      </RailPortal>
       <ErrorAlert error={error} />
       {!store && <LoadingList rows={5} />}
       {/* Why it did not come up is the tail of what MinIO printed, and

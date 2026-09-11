@@ -6,9 +6,9 @@ import { use, useCallback, useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyButton } from "@/components/copy-button";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailPortal, RailTitle } from "@/components/header-rail";
 import { LoadingList, LoadingNote } from "@/components/loading";
 import { Notice } from "@/components/notice";
-import { PageHeader } from "@/components/page-header";
 import { RowAction } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
 import { Button } from "@/components/ui/button";
@@ -294,60 +294,57 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
 
   return (
     <>
-      {" "}
-      <PageHeader
-        title={own ? "Cubeship registry" : host}
-        literal={!own}
-        icon={<Icon className="size-5 shrink-0 text-muted-foreground" />}
-        actions={
-          own ? (
-            <Button variant="outline" onClick={() => setCollecting(true)}>
-              <Trash2Icon />
-              Reclaim disk
-            </Button>
-          ) : (
-            <Button
-              variant="outline"
-              nativeButton={false}
-              render={
-                <Link href={`/registries/${id}/settings`}>
-                  <SettingsIcon />
-                  Settings
-                </Link>
-              }
-            />
-          )
-        }
-        below={
-          repos &&
-          repos.length > 0 && (
-            // Above the separator, because it filters the page rather
-            // than the table: what it hides is gone from everything
-            // below.
-            //
-            // One surface, and the focus ring on it rather than on the
-            // field: the mark and the count are part of the same
-            // control, and a ring around only the middle of it looks
-            // like a mistake.
-            <SearchBar
-              value={query}
-              onChange={setQuery}
-              placeholder="Filter repositories"
-              trailing={
-                <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                  {filtered.length}/{repos.length}
-                  {usage && (
-                    <span title="Layers shared between images are counted once per image, so this is an upper bound.">
-                      {" · ~"}
-                      {bytes(usage.total_bytes)}
-                    </span>
-                  )}
+      <RailTitle>
+        <span className="flex items-center gap-2">
+          <Icon className="size-5 shrink-0 text-muted-foreground" />
+          {own ? "Cubeship registry" : host}
+        </span>
+      </RailTitle>
+      <RailPortal>
+        {own ? (
+          <Button variant="outline" onClick={() => setCollecting(true)}>
+            <Trash2Icon />
+            Reclaim disk
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={
+              <Link href={`/registries/${id}/settings`}>
+                <SettingsIcon />
+                Settings
+              </Link>
+            }
+          />
+        )}
+      </RailPortal>
+      {repos && repos.length > 0 && (
+        // Above the separator, because it filters the page rather
+        // than the table: what it hides is gone from everything
+        // below.
+        //
+        // One surface, and the focus ring on it rather than on the
+        // field: the mark and the count are part of the same
+        // control, and a ring around only the middle of it looks
+        // like a mistake.
+        <SearchBar
+          value={query}
+          onChange={setQuery}
+          placeholder="Filter repositories"
+          trailing={
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+              {filtered.length}/{repos.length}
+              {usage && (
+                <span title="Layers shared between images are counted once per image, so this is an upper bound.">
+                  {" · ~"}
+                  {bytes(usage.total_bytes)}
                 </span>
-              }
-            />
-          )
-        }
-      />
+              )}
+            </span>
+          }
+        />
+      )}
       <ErrorAlert error={error} />
       {/* The catalogue is a live call to someone else's registry, so
           this is a wait worth naming rather than an empty page. */}
