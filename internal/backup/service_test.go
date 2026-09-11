@@ -647,7 +647,7 @@ func TestAnEngineWithNoDumpIsRefusedWithTheReason(t *testing.T) {
 // Every refusal a schedule can carry happens while the person who typed
 // it is still watching, rather than at three in the morning in a log
 // nobody reads.
-func TestASchedduleIsRefusedBeforeTheTimerCanFailOnIt(t *testing.T) {
+func TestAScheduleIsRefusedBeforeTheTimerCanFailOnIt(t *testing.T) {
 	f := newFixture(t)
 	f.database(t, "pg", "postgres")
 	f.linkStore(t, "offsite")
