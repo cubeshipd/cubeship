@@ -473,6 +473,37 @@ func TestLinkingTakesAStoredAccountOrTypedKeysAndNotBoth(t *testing.T) {
 // and Go's mux prefers the literal — so a store called that would be a
 // resource nothing could open. It is refused while the person who typed
 // it is still there.
+// And the refusal is the daemon's, not the form's: a bucket named for a
+// provider whose logins reach the account is refused rather than
+// dropped. A store that silently ignored the field would be one
+// somebody believes is pinned, with every screen disagreeing.
+func TestABucketIsRefusedWhereTheLoginIsNotScopedToOne(t *testing.T) {
+	f := servertest.New(t)
+
+	link := func(slug, provider string, extra map[string]any) int {
+		body := map[string]any{
+			"kind": "external", "name": slug, "provider": provider,
+			"new_access_key": "AKIAEXAMPLE", "new_secret_key": "s3cr3t-example",
+			"bucket": "one-bucket",
+		}
+		for k, v := range extra {
+			body[k] = v
+		}
+		return f.Do(t, http.MethodPost, "/objectstores", body, f.AdminKey).Code
+	}
+
+	// Cloudflare's tokens are issued per bucket, so naming one is the
+	// case this exists for.
+	if got := link("r2", "cloudflare", map[string]any{"account": "abc123"}); got != http.StatusCreated {
+		t.Errorf("linking R2 with a bucket answered %d, want %d", got, http.StatusCreated)
+	}
+	// An IAM key reaches the account. Pinning here would take the rest
+	// of the store away for a limit the login does not have.
+	if got := link("s3", "aws", map[string]any{"region": "eu-central-1"}); got != http.StatusBadRequest {
+		t.Errorf("linking S3 with a bucket answered %d, want %d", got, http.StatusBadRequest)
+	}
+}
+
 func TestAStoreCannotBeCalledProviders(t *testing.T) {
 	f, _ := withFake(t)
 	rec := f.Do(t, http.MethodPost, "/objectstores", map[string]any{

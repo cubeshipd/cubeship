@@ -3524,10 +3524,30 @@ which are 403 and 403 and mean entirely different things to whoever
 reads them.
 
 A store may be **pinned to one bucket**, for a login that reaches one
-and cannot list them — an R2 token scoped to a bucket. It is pinned in
-both directions: that bucket is reported without asking the endpoint,
-and reaching any other is refused here rather than by a provider's
-access-denied that nobody can act on.
+and cannot list them. It is pinned in both directions: that bucket is
+reported without asking the endpoint, and reaching any other is refused
+here rather than by a provider's access-denied that nobody can act on.
+
+**It is asked for where the provider's own logins are issued that way,
+and nowhere else.** `Provider.ScopesByBucket` is that answer — R2's
+tokens and a Space's access keys, both of which their consoles offer per
+bucket as the ordinary choice. An IAM policy can be narrowed to one and
+a compatible endpoint can do anything, but neither is the normal case,
+and a field offered everywhere is one somebody fills in because it is
+there: naming a bucket gives up listing, creating and deleting for the
+*whole store*, and nothing on the screen ties those two together.
+
+The field was very nearly removed outright for that reason, which would
+have been the mirror mistake — Spaces and R2 hand out per-bucket keys
+routinely, and a store linked with one and no way to say so has nothing
+to show. The providers are already told apart; this is one more thing
+they differ in.
+
+Named where it is not accepted, it is **refused rather than dropped**
+(`ErrBucketNotScoped`). A store that silently ignored the field would be
+one somebody believes is pinned, with every screen disagreeing. The
+providers endpoint reports `scopes_by_bucket`, so the form and the
+daemon cannot hold different opinions about where the field belongs.
 
 ### The role, and where the line is
 

@@ -229,7 +229,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		errors.Is(err, ErrEndpointRequired), errors.Is(err, ErrBadEndpoint),
 		errors.Is(err, ErrBadBucket), errors.Is(err, ErrBadKey),
 		errors.Is(err, ErrInvalidLimits),
-		errors.Is(err, ErrSingleBucket), errors.Is(err, ErrBadPrefix),
+		errors.Is(err, ErrSingleBucket), errors.Is(err, ErrBucketNotScoped),
+		errors.Is(err, ErrBadPrefix),
 		errors.Is(err, ErrBadPort),
 		errors.Is(err, ErrNoPortsLeft), errors.Is(err, httpx.ErrNotJSON):
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -399,13 +400,18 @@ func (h *Handler) providers(w http.ResponseWriter, r *http.Request) {
 		Provider string `json:"provider"`
 		Label    string `json:"label"`
 		Asks     string `json:"asks"`
+		// ScopesByBucket says a form should offer the optional bucket
+		// field for this provider, because its logins are commonly
+		// issued for one.
+		ScopesByBucket bool `json:"scopes_by_bucket"`
 	}
 	out := struct {
 		Providers []provider `json:"providers"`
 		Versions  []string   `json:"versions"`
 	}{Versions: Versions()}
 	for _, p := range Providers() {
-		out.Providers = append(out.Providers, provider{string(p), p.Label(), string(p.Asks())})
+		out.Providers = append(out.Providers,
+			provider{string(p), p.Label(), string(p.Asks()), p.ScopesByBucket()})
 	}
 	httpx.WriteJSON(w, http.StatusOK, out)
 }
