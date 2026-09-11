@@ -370,7 +370,7 @@ function Deployments({
         <>
           <div className="font-mono text-xs break-all text-muted-foreground">{d.image}</div>
           {d.error && (
-            <div className="mt-1.5 text-xs leading-relaxed break-words text-destructive">
+            <div className="mt-1.5 text-xs leading-relaxed wrap-break-word text-destructive">
               {d.error}
             </div>
           )}
@@ -561,7 +561,7 @@ function DeploymentDialog({
           )}
 
           {shown?.error && (
-            <div className="border-l-2 border-destructive bg-destructive/8 px-3 py-2 text-xs leading-relaxed break-words text-destructive">
+            <div className="border-l-2 border-destructive bg-destructive/8 px-3 py-2 text-xs leading-relaxed wrap-break-word text-destructive">
               {shown.error}
             </div>
           )}

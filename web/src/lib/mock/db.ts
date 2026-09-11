@@ -21,7 +21,15 @@
 // `Object.assign` against a strict type is a fight for no gain in a
 // file whose whole job is to be edited.
 
-import type { ApiKey, CertificateReport, ClusterServer, Firewall, Me } from "@/lib/api";
+import type {
+  ApiKey,
+  CertificateReport,
+  ClusterServer,
+  Firewall,
+  InstanceUser,
+  Me,
+  Settings,
+} from "@/lib/api";
 
 const now = Date.now();
 const ago = (minutes: number) => new Date(now - minutes * 60_000).toISOString();
@@ -41,7 +49,7 @@ export const db = {
   users: [
     { username: "lucas", role: "admin", created_at: ago(60 * 24 * 90) },
     { username: "ci", role: "member", created_at: ago(60 * 24 * 12) },
-  ] as Row[],
+  ] as InstanceUser[],
 
   apiKeys: [
     {
@@ -56,13 +64,18 @@ export const db = {
 
   settings: {
     domain: "cubeship.example.com",
-    contact_email: "ops@example.com",
+    acme_email: "ops@example.com",
+    registry_host: "registry.cubeship.example.com",
     public_ip: "203.0.113.42",
+    public_ip_configured: false,
+    tls_enabled: true,
     wildcard_domain: false,
     github_connected: true,
-    update_at: "03:00",
-    update_timezone: "America/Sao_Paulo",
-  },
+    github_app_slug: "cubeship-example",
+    github_oauth_ready: true,
+    auto_update_at: "03:00",
+    auto_update_timezone: "America/Sao_Paulo",
+  } as Settings,
 
   projects: [{ slug: "web" }, { slug: "internal" }] as Row[],
 

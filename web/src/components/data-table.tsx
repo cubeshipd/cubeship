@@ -81,7 +81,17 @@ export function DataTable<T extends object>({
   columns: Column<T>[];
   // null means still loading, which is not the same as loaded-and-empty
   // and must not look the same.
-  rows: T[] | null;
+  // Null is "not loaded yet", which is what draws the skeleton.
+  //
+  // Undefined is read the same way rather than crashing, and that is
+  // not defensiveness for its own sake: every table here is handed a
+  // field off a response, so a daemon a version ahead or behind — or a
+  // key renamed — arrives as `undefined` at exactly this line. A whole
+  // screen replaced by a stack trace is a worse answer to that than a
+  // table that keeps waiting, and the one that told us was a fixture
+  // claiming `/users` answers an array when it answers an object with
+  // an array in it.
+  rows: T[] | null | undefined;
   empty?: ReactNode;
   loadingRows?: number;
   rowKey?: (row: T, index: number) => string;
@@ -111,7 +121,7 @@ export function DataTable<T extends object>({
     onSortingChange: setSorting,
   });
 
-  if (rows !== null && rows.length === 0 && empty) {
+  if (rows != null && rows.length === 0 && empty) {
     return (
       <Card>
         <CardContent className="py-2 text-sm text-muted-foreground">{empty}</CardContent>
@@ -175,7 +185,7 @@ export function DataTable<T extends object>({
           </TableHeader>
 
           <TableBody>
-            {rows === null && <LoadingRows rows={loadingRows} columns={columns.length} />}
+            {rows == null && <LoadingRows rows={loadingRows} columns={columns.length} />}
 
             {table.getRowModel().rows.map((row, index) => (
               <TableRow
