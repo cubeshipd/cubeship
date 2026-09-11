@@ -34,6 +34,7 @@ being enough.
 - [The CLI](#the-cli)
 - [Upgrading](#upgrading)
 - [Uninstalling](#uninstalling)
+- [What reaches the internet](#what-reaches-the-internet)
 - [Everything else](#everything-else)
 - [License](#license)
 
@@ -323,6 +324,32 @@ sudo ./uninstall.sh --purge    # and the data, permanently
 The default is deliberately not the destructive one: removing the
 software is not the same as asking to lose your database. Installing
 again brings the same instance back.
+
+## What reaches the internet
+
+**There is no telemetry.** Nothing reports what you deploy, how much you
+deploy, or that this instance exists. There is no analytics in the
+dashboard and no account with anybody.
+
+Three things leave the box, and all three are yours to look at:
+
+- **Installing and upgrading** pulls two images from `ghcr.io`, and asks
+  GitHub which release is newest so it can pin an exact one.
+- **The running daemon asks GitHub which releases exist** — when an admin
+  opens the update screen, and when the automatic update timer comes
+  round. It is a plain `GET` on the public releases API with no
+  credential and nothing about your instance in it
+  ([the whole of it](internal/update/releases.go)). An instance that
+  cannot reach GitHub simply never offers an update and says so, rather
+  than claiming to be current.
+- **Let's Encrypt**, for certificates — and only once you have given the
+  instance a domain.
+
+After that it does what you ask it to: pull the images you named, clone
+the repositories you connected, write the DNS records you configured.
+
+A build with no version stamped on it — which is what `make dev` is —
+never checks for a release at all.
 
 ## Everything else
 

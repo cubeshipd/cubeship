@@ -1,0 +1,57 @@
+name: Bug report
+description: Something Cubeship does that it should not, or does not do that it should.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **A security problem goes in a [private advisory](https://github.com/cubeshipd/cubeship/security/advisories/new)
+        instead** — see [SECURITY.md](https://github.com/cubeshipd/cubeship/blob/master/SECURITY.md).
+
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: "`cubeship version`, or the Settings screen in the dashboard."
+      placeholder: "0.5.1"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: shape
+    attributes:
+      label: How many machines
+      options:
+        - One — just the box I installed on
+        - A control plane and one or more workers
+    validations:
+      required: true
+
+  - type: input
+    id: host
+    attributes:
+      label: The host
+      description: Distribution and architecture, and the provider if it is one of the known ones.
+      placeholder: "Ubuntu 24.04, arm64, Hetzner"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected instead
+      description: |
+        The steps that get there, if they are not obvious. If it involves an
+        app, say where its image comes from — a push to this instance's
+        registry, an image elsewhere, or a build from a repository.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: What the logs say
+      description: |
+        `docker logs cubeship-daemon` is the daemon's. A failed deploy keeps
+        its output on the deployment itself, in the dashboard.
+      render: shell
