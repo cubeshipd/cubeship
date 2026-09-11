@@ -30,21 +30,60 @@ import { message } from "@/lib/errors";
 // too.
 export default function Account() {
   return (
-    <>
-      <Tabs defaultValue="account">
-        <TabsList variant="line">
-          <TabsTrigger value="account">Account</TabsTrigger>
-          <TabsTrigger value="appearance">Appearance</TabsTrigger>
-        </TabsList>
+    <Tabs defaultValue="general">
+      <TabsList variant="line">
+        <TabsTrigger value="general">General</TabsTrigger>
+        <TabsTrigger value="appearance">Appearance</TabsTrigger>
+        <TabsTrigger value="security">Security</TabsTrigger>
+        <TabsTrigger value="keys">API keys</TabsTrigger>
+      </TabsList>
 
-        <TabsContent value="account">
-          <Keys />
-          <Password />
-        </TabsContent>
-        <TabsContent value="appearance">
-          <Appearance />
-        </TabsContent>
-      </Tabs>
+      <TabsContent value="general">
+        <General />
+      </TabsContent>
+      <TabsContent value="appearance">
+        <Appearance />
+      </TabsContent>
+      <TabsContent value="security">
+        <Password />
+      </TabsContent>
+      <TabsContent value="keys">
+        <Keys />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+// Who you are on this instance.
+//
+// **Read-only, and all three of them are facts nothing here can
+// change.** A username is the identity every session, key and audit
+// line is written against; a role is an admin's to grant, and an admin
+// editing their own here would be a lock with the key taped to it. The
+// third is not a setting either — it is what says what revoking your
+// last key costs, which is the question the keys tab asks.
+//
+// It is a tab of facts, which is the thing a *settings* screen should
+// not be — the slug came off the project and environment screens for
+// exactly that reason. The difference is what the screen is for: those
+// are for configuring a resource, and a fact filed among its fields
+// reads as a field that will not take. This screen is your account, and
+// the first thing an account screen answers is which account.
+function General() {
+  const me = useSession();
+  return (
+    <>
+      <SectionHeader title="You" />
+      <ValueCard label="Username" value={me.username} />
+      <ValueCard label="Role" value={me.role} />
+      <ValueCard
+        label="Signing in"
+        value={
+          me.has_password
+            ? "A password, and API keys for the CLI"
+            : "API keys only — this account has no password"
+        }
+      />
     </>
   );
 }
