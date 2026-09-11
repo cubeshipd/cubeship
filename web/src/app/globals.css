@@ -263,6 +263,40 @@
   --magenta: #ff6bd6;
 }
 
+/* The one palette that had to be pushed away from the default rather
+   than simply chosen. Cubeship's own is cyan on a near-black with a
+   blue cast, so a blue accent laid on those same surfaces would have
+   been the default with the accent nudged — two entries in the picker
+   that are hard to tell apart is worse than six. So the surfaces go
+   properly navy, which is what every other palette here does with its
+   own hue, and the accent is an azure far enough from #2de2e6 to be a
+   different answer to the same question. */
+:root[data-theme="blue"] {
+  --background: #03060f;
+  --card: #070d1a;
+  --popover: #0a1120;
+  --secondary: #0d1626;
+  --muted: #0d1626;
+  --accent: #142036;
+
+  --foreground: #dbe4f7;
+  --card-foreground: #dbe4f7;
+  --popover-foreground: #dbe4f7;
+  --secondary-foreground: #dbe4f7;
+  --accent-foreground: #dbe4f7;
+  --muted-foreground: #8494b8;
+  --subtle-foreground: #53608a;
+
+  --border: #182740;
+  --border-strong: #26395c;
+  --input: #1e3050;
+
+  --primary: #4d8dff;
+  --primary-foreground: #030d20;
+  --ring: #4d8dff;
+  --magenta: #2de2e6;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

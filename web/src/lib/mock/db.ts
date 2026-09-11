@@ -45,7 +45,7 @@ export const db = {
     username: "lucas",
     role: "admin" as const,
     has_password: true,
-    themes: ["cyan", "mono", "hacker", "red", "orange", "pink", "purple"],
+    themes: ["cyan", "mono", "hacker", "red", "orange", "pink", "purple", "blue"],
     display_name: "Lucas",
     email: "lucas@example.com",
     avatar: "cyan",
