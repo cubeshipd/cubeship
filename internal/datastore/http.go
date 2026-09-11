@@ -36,7 +36,18 @@ type Response struct {
 	// nothing keeps a second copy of the engine table — and so a
 	// client can say what an attachment will actually be called.
 	VarStem string `json:"var_stem"`
-	Status  string `json:"status"`
+	// CanBackUp says this instance knows how to back this engine up.
+	// False for Redis, deliberately — see its entry in `specs` — and
+	// the screen leaves the tab out rather than offering one that could
+	// never hold anything.
+	CanBackUp bool `json:"can_back_up"`
+	// BackupConsistency is what a dump of this engine actually
+	// promises, in a sentence. It differs per engine in a way no
+	// general wording covers: one of them cannot give a snapshot across
+	// collections at all, and that is the thing somebody has to know
+	// before relying on a backup rather than after.
+	BackupConsistency string `json:"backup_consistency,omitempty"`
+	Status            string `json:"status"`
 	// Error is why provisioning failed, when it did.
 	Error string `json:"error,omitempty"`
 
@@ -157,8 +168,9 @@ func toResponse(d *Datastore, in Instance) Response {
 	r := Response{
 		Name: d.Slug, Description: d.Description,
 		Engine: string(d.Engine), Version: d.Version,
-		VarStem: d.Engine.VarStem(),
-		Status:  d.Status, Error: d.Error,
+		VarStem:   d.Engine.VarStem(),
+		CanBackUp: d.Engine.CanBackUp(), BackupConsistency: d.Engine.Consistency(),
+		Status: d.Status, Error: d.Error,
 		Username: d.Username, Database: d.Database,
 		HasContainer: d.ContainerID != "",
 		Host:         host, Port: d.Engine.Port(),

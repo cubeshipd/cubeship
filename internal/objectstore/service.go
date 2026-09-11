@@ -1184,6 +1184,30 @@ func (s *Service) VarsForApp(ctx context.Context, appID int64) (envvar.Map, erro
 // them renaming nothing, since a store's slug never changes anyway —
 // what it survives is this instance holding two answers to which store
 // a five-month-old dump is in.
+// IDForName is how a module that stores a foreign key gets one from
+// what a person typed. Every surface in this product addresses a store
+// by its name; a row that points at one holds its id, because a slug
+// somebody could have reused is not a key.
+//
+// Caller-free for the reason ClientForID is.
+func (s *Service) IDForName(ctx context.Context, name string) (int64, error) {
+	store, err := s.Repo().BySlug(ctx, name)
+	if err != nil {
+		return 0, ErrNotFound
+	}
+	return store.ID, nil
+}
+
+// NameForID is the other direction, for a listing that has the key and
+// wants what to print.
+func (s *Service) NameForID(ctx context.Context, id int64) string {
+	store, err := s.Repo().ByID(ctx, id)
+	if err != nil {
+		return ""
+	}
+	return store.Slug
+}
+
 func (s *Service) ClientForID(ctx context.Context, id int64) (*Store, Client, error) {
 	store, err := s.Repo().ByID(ctx, id)
 	if err != nil {

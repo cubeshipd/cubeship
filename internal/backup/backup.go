@@ -32,13 +32,19 @@ import (
 
 // Status is where one backup got to.
 const (
-	// StatusRunning is a dump in flight. The row is written before the
+	// StatusTaking is a dump in flight. The row is written before the
 	// work starts, for the reason a deployment row is: nobody is
 	// holding the connection, so where the outcome goes has to exist
 	// before there is one.
-	StatusRunning = "running"
-	StatusDone    = "succeeded"
-	StatusFailed  = "failed"
+	//
+	// **"taking" rather than "running"**, which is already a word in
+	// this product and means the opposite of what it would mean here:
+	// `running` is a container that is healthy, and StatusBadge paints
+	// it green. A dump in flight shown in the same green as one that
+	// finished is a screen saying a backup exists before it does.
+	StatusTaking = "taking"
+	StatusDone   = "succeeded"
+	StatusFailed = "failed"
 )
 
 // Backup is one copy of one database, and what it says about itself
@@ -74,7 +80,7 @@ type Backup struct {
 
 // Running reports a dump still in flight, which is the one state a
 // backup cannot be restored from or deleted in.
-func (b *Backup) Running() bool { return b.Status == StatusRunning }
+func (b *Backup) Running() bool { return b.Status == StatusTaking }
 
 // OffMachine reports whether this copy is somewhere other than the disk
 // it was taken from.
@@ -107,6 +113,10 @@ type Schedule struct {
 	// StoreID and Bucket are where they go. Zero is this machine's own
 	// disk: it works the minute the instance is installed, and it is
 	// not a backup.
+	//
+	// The id rather than the name, because this is a row pointing at
+	// another row — every *surface* speaks the name, and the service
+	// resolves between them.
 	StoreID   int64
 	Bucket    string
 	LastRunAt *time.Time

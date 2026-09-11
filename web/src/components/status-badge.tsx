@@ -15,6 +15,11 @@ const tones: Record<string, Tone> = {
   deploying: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
   building: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
   pending: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
+  // A dump in flight. Amber and pulsing rather than green, because a
+  // backup that is still being taken is not one yet — and `running`,
+  // which would be the natural word, is already a healthy container
+  // here and is painted green.
+  taking: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
   failed: { dot: "bg-destructive", text: "text-destructive", edge: "border-destructive/40" },
   // Some of an app's machines serving and some not. Amber rather than
   // red because the name still answers — what is lost is the headroom

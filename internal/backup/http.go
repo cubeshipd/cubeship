@@ -47,7 +47,7 @@ type ScheduleResponse struct {
 	At       string `json:"at"`
 	Timezone string `json:"timezone"`
 	Keep     int    `json:"keep"`
-	StoreID  int64  `json:"store_id,omitempty"`
+	Store    string `json:"store,omitempty"`
 	Bucket   string `json:"bucket,omitempty"`
 	LastRun  string `json:"last_run_at,omitempty"`
 }
@@ -118,7 +118,7 @@ func (h *Handler) schedule(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, toScheduleResponse(s))
+	httpx.WriteJSON(w, http.StatusOK, h.toScheduleResponse(s))
 }
 
 func (h *Handler) setSchedule(w http.ResponseWriter, r *http.Request) {
@@ -128,24 +128,25 @@ func (h *Handler) setSchedule(w http.ResponseWriter, r *http.Request) {
 		// Keep is how many to hold on to. Zero keeps every one, which
 		// is a decision rather than a gap — so a body that leaves it
 		// out is asking for that, and the screen says what it costs.
-		Keep    int    `json:"keep"`
-		StoreID int64  `json:"store_id"`
-		Bucket  string `json:"bucket"`
+		Keep int `json:"keep"`
+		// Store is the object store by name, the way every surface in
+		// this product addresses one. Empty is this machine's own disk.
+		Store  string `json:"store"`
+		Bucket string `json:"bucket"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		WriteError(w, err)
 		return
 	}
 	ctx := r.Context()
-	s, err := h.svc.SetSchedule(ctx, user.FromContext(ctx), r.PathValue("name"), Schedule{
-		At: req.At, Timezone: req.Timezone, Keep: req.Keep,
-		StoreID: req.StoreID, Bucket: req.Bucket,
+	s, err := h.svc.SetSchedule(ctx, user.FromContext(ctx), r.PathValue("name"), req.Store, Schedule{
+		At: req.At, Timezone: req.Timezone, Keep: req.Keep, Bucket: req.Bucket,
 	})
 	if err != nil {
 		WriteError(w, err)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, toScheduleResponse(s))
+	httpx.WriteJSON(w, http.StatusOK, h.toScheduleResponse(s))
 }
 
 func (h *Handler) unsetSchedule(w http.ResponseWriter, r *http.Request) {
@@ -250,10 +251,12 @@ func (h *Handler) toResponses(rows []*Backup) []Response {
 	return out
 }
 
-func toScheduleResponse(s *Schedule) ScheduleResponse {
+func (h *Handler) toScheduleResponse(s *Schedule) ScheduleResponse {
 	out := ScheduleResponse{
-		At: s.At, Timezone: s.Timezone, Keep: s.Keep,
-		StoreID: s.StoreID, Bucket: s.Bucket,
+		At: s.At, Timezone: s.Timezone, Keep: s.Keep, Bucket: s.Bucket,
+	}
+	if s.StoreID != 0 && h.names != nil {
+		out.Store = h.names(s.StoreID)
 	}
 	if s.LastRunAt != nil {
 		out.LastRun = s.LastRunAt.UTC().Format(time.RFC3339)

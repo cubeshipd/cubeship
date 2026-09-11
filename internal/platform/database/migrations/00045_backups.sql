@@ -24,11 +24,14 @@ CREATE TABLE backups (
     object_key      TEXT NOT NULL,
     size_bytes      BIGINT NOT NULL DEFAULT 0,
 
-    -- running, succeeded, failed. A row is written before the dump
+    -- taking, succeeded, failed. A row is written before the dump
     -- starts, for the reason a deployment row is: the work is detached,
     -- nobody is on the connection, and where the outcome goes has to
     -- exist before there is one.
-    status    TEXT NOT NULL DEFAULT 'running',
+    --
+    -- "taking" rather than "running", which already means a healthy
+    -- container everywhere else here and is painted green.
+    status    TEXT NOT NULL DEFAULT 'taking',
     error     TEXT NOT NULL DEFAULT '',
     scheduled BOOLEAN NOT NULL DEFAULT FALSE,
 

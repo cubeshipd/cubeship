@@ -3,6 +3,7 @@
 import { cn } from "cn";
 import {
   ActivityIcon,
+  ArchiveIcon,
   ContainerIcon,
   DatabaseIcon,
   FolderTreeIcon,
@@ -109,6 +110,11 @@ const sections: { label?: string; items: NavItem[] }[] = [
       { href: "/git", label: "Git Providers", icon: GitBranchIcon, owns: ["/git"] },
       { href: "/dns", label: "DNS Providers", icon: GlobeIcon, owns: ["/dns"] },
       { href: "/certificates", label: "Certificates", icon: ShieldCheckIcon },
+      // Here rather than beside Databases: what is on this screen is not
+      // about any one database, and half of it is about databases that
+      // no longer exist — which is the one thing a database's own tab
+      // can never show.
+      { href: "/backups", label: "Backups", icon: ArchiveIcon, owns: ["/backups"] },
       // Next to Certificates rather than under Instance: both are about
       // how the outside reaches this machine, and both are read far
       // more often than they are changed.
