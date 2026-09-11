@@ -107,6 +107,36 @@ because an app only means something inside an environment — a top-level
 a screen of its own, so there is one page for "a project's apps" instead
 of two that have to stay identical.
 
+### A settings screen with more than one thing on it is tabs
+
+**And the test is whether they answer different questions.** An app's
+was five sections in one column — network, source, placement, limits,
+autoscaling — and you scrolled it looking for the one you came to
+change. Three of the five were the same decision asked three ways: how
+much machine this app gets is where it runs, what it may take, and
+whether it picks its own count, and reading one without the others tells
+you a third of it. They are one **Resources** tab now, beside Network
+and Source.
+
+A database's two were *not* one thing and had no business sharing a
+column: where it can be reached from, and how much of the machine it may
+take. A managed store's are General, Access and Resources; the instance's
+are its Domain and when it replaces itself.
+
+**Danger is a tab.** A delete belongs behind something you did on
+purpose — which is why these screens exist at all rather than being a
+button in a header — and at the foot of whichever tab happened to be
+open it is behind nothing.
+
+**A screen that configures one thing keeps its column.** A project's is
+its picture, an environment's is nothing at all, and a registry's three
+sections are one decision seen from three sides — which credential it
+logs in as, what that credential is, and rotating it. Splitting those
+would be the opposite of what tabs are for here.
+
+The strips are `RailTabs` like every other, and linkable: "the limits on
+this app" is a thing somebody sends somebody else.
+
 ### What a project card carries
 
 **A picture, a name, and a ring.** It used to carry three more things

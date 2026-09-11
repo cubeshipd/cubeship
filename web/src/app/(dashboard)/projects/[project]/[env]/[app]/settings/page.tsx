@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { AppNetwork } from "@/components/app-network";
@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
 import { GitHubSource } from "@/components/github-source";
+import { RailTabs } from "@/components/header-rail";
 import { CUBESHIP, ImageSource, type ImageSourceValue } from "@/components/image-source";
 import { LoadingList } from "@/components/loading";
 import { Notice } from "@/components/notice";
@@ -20,6 +21,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   type App,
   type AppAutoscale,
@@ -49,8 +51,20 @@ export default function AppSettingsPage({
   return <Settings reference={`${project}/${env}/${app}`} />;
 }
 
+const TABS = ["network", "source", "resources", "danger"] as const;
+type Tab = (typeof TABS)[number];
+
 function Settings({ reference }: { reference: string }) {
   const router = useRouter();
+  // Linkable, the way a database's tabs are: "the limits on this app"
+  // is a thing somebody sends somebody else. Read through
+  // `useSearchParams` rather than off `window`, because this page
+  // renders on the server first and a `useState` initializer reading a
+  // window that is not there hydrates to the first tab and keeps it.
+  const asked = useSearchParams().get("tab");
+  const [tab, setTab] = useState<Tab>(() =>
+    TABS.includes(asked as Tab) ? (asked as Tab) : "network",
+  );
   const [app, setApp] = useState<App | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -89,23 +103,60 @@ function Settings({ reference }: { reference: string }) {
       {!app && <LoadingList rows={4} />}
       {app && (
         <>
-          <AppNetwork app={app} onSaved={setApp} />
-          <SourceSection app={app} onSaved={setApp} onError={setError} />
-          <Placement app={app} onSaved={setApp} onError={setError} />
-          <Limits app={app} onSaved={setApp} onError={setError} />
-          <AutoscaleSection app={app} onSaved={setApp} onError={setError} />
+          {/* **Five sections became four tabs, grouped by the question
+              they answer.** As one column it was a screen you scrolled
+              through looking for the thing you came to change, and two
+              of the five were about the same decision from opposite
+              ends: how much machine this app gets is its limits, its
+              placement and whether it scales itself, and reading one
+              without the others tells you a third of it.
 
-          <DangerZone className="mt-10">
-            <DangerAction
-              title="Delete this app"
-              description="Its container is stopped first. Images already pushed stay in the registry — reclaiming that disk needs a garbage collection pass Cubeship does not run."
-              action={
-                <Button variant="destructive" onClick={() => setDeleting(true)}>
-                  Delete app
-                </Button>
-              }
-            />
-          </DangerZone>
+              Danger is a tab rather than the foot of one of them. A
+              delete belongs behind something you did on purpose — that
+              is why this screen exists at all — and at the bottom of
+              whichever tab happened to be open it would be behind
+              nothing. */}
+          <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="subrail-page">
+            <RailTabs>
+              <TabsList variant="line">
+                <TabsTrigger value="network">Network</TabsTrigger>
+                <TabsTrigger value="source">Source</TabsTrigger>
+                <TabsTrigger value="resources">Resources</TabsTrigger>
+                <TabsTrigger value="danger">Danger</TabsTrigger>
+              </TabsList>
+            </RailTabs>
+
+            <TabsContent value="network">
+              <AppNetwork app={app} onSaved={setApp} />
+            </TabsContent>
+
+            <TabsContent value="source">
+              <SourceSection app={app} onSaved={setApp} onError={setError} />
+            </TabsContent>
+
+            {/* Where it runs, how much of the machine it may take, and
+                whether it decides its own count. One decision asked
+                three ways. */}
+            <TabsContent value="resources">
+              <Placement app={app} onSaved={setApp} onError={setError} />
+              <Limits app={app} onSaved={setApp} onError={setError} />
+              <AutoscaleSection app={app} onSaved={setApp} onError={setError} />
+            </TabsContent>
+
+            <TabsContent value="danger">
+              <DangerZone>
+                <DangerAction
+                  title="Delete this app"
+                  description="Its container is stopped first. Images already pushed stay in the registry — reclaiming that disk needs a garbage collection pass Cubeship does not run."
+                  action={
+                    <Button variant="destructive" onClick={() => setDeleting(true)}>
+                      Delete app
+                    </Button>
+                  }
+                />
+              </DangerZone>
+            </TabsContent>
+          </Tabs>
 
           <ConfirmDialog
             open={deleting}
