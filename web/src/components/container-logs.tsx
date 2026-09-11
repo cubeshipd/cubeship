@@ -273,8 +273,8 @@ export function LogView({
           // panel is black in every palette and `--success` is not:
           // `helix` darkens it for white paper, which would have dimmed
           // every log on the instance to serve one screen.
-          "overflow-auto border border-border bg-black p-3 font-mono text-xs break-all whitespace-pre-wrap text-[color:var(--ansi-green)]/90",
-          tall ? "h-[60vh]" : "max-h-[420px]",
+          "overflow-auto border border-border bg-black p-3 font-mono text-xs break-all whitespace-pre-wrap text-(--ansi-green)/90",
+          tall ? "h-[60vh]" : "max-h-105",
         )}
       >
         {lines.length > 0 ? (
