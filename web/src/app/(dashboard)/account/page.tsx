@@ -1,19 +1,28 @@
 "use client";
 
 import { cn } from "cn";
-
-import { useCallback, useEffect, useState } from "react";
+import { PlusIcon, Trash2Icon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { Appearance } from "@/components/appearance";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { RowAction, RowActions } from "@/components/row-actions";
+import { SearchBar } from "@/components/search-bar";
 import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ValueCard } from "@/components/value-card";
 import { type ApiKey, api, avatarSrc } from "@/lib/api";
@@ -213,6 +222,15 @@ function Faces({
   );
 }
 
+// The keys this account authenticates a CLI or an MCP client with.
+//
+// **The same shape as an app's Environment tab**, and deliberately: a
+// header with the one action that brings anybody here, a filter, and a
+// table. It was a bare `Table` inside a `Card` with a "New key" form
+// stuck underneath, which is the arrangement every other listing here
+// stopped using — the row actions were a text button rather than the
+// icons every other table ends in, and the form below the table meant
+// the thing you came to do was the last thing on the screen.
 function Keys() {
   // Whether this account can sign in without a key is what says how
   // much revoking the last one costs. The shell has already resolved
@@ -221,9 +239,9 @@ function Keys() {
   const me = useSession();
   const [keys, setKeys] = useState<ApiKey[] | null>(null);
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
-  const [name, setName] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [filter, setFilter] = useState("");
   const [issued, setIssued] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
@@ -234,75 +252,140 @@ function Keys() {
   }, []);
   useEffect(reload, [reload]);
 
+  const rows = useMemo(() => {
+    if (keys === null) return null;
+    const needle = filter.trim().toLowerCase();
+    if (!needle) return keys;
+    return keys.filter((k) => k.name.toLowerCase().includes(needle));
+  }, [keys, filter]);
+
   const last = (keys?.length ?? 0) <= 1;
 
-  async function create(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      const created = await api.post<{ api_key: string }>("/users/me/api-keys", { name });
-      setIssued(created.api_key);
-      setName("");
-      reload();
-    } catch (err) {
-      setError(message(err));
-    }
-    setBusy(false);
-  }
+  const columns: Column<ApiKey>[] = [
+    {
+      id: "name",
+      header: "Name",
+      width: 36,
+      sortBy: (k) => k.name,
+      cell: (k) => (
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="truncate font-mono text-xs">{k.name}</span>
+          {/* Which of these is the one you are holding. It is the row
+              where revoking has a consequence you feel immediately, and
+              nothing else on the screen could tell you which. */}
+          {k.current_key && (
+            <span className="shrink-0 text-[11px] text-muted-foreground">this session</span>
+          )}
+        </span>
+      ),
+    },
+    {
+      id: "created",
+      header: "Created",
+      width: 26,
+      sortBy: (k) => k.created_at,
+      cell: (k) => (
+        <span className="text-xs text-muted-foreground">
+          {new Date(k.created_at).toLocaleDateString()}
+        </span>
+      ),
+    },
+    {
+      id: "used",
+      header: "Last used",
+      width: 28,
+      // A key never used sorts below every key that has been, rather
+      // than above them: it is the one you are most likely looking for
+      // a reason to revoke.
+      sortBy: (k) => k.last_used_at ?? "",
+      cell: (k) => (
+        <span className="text-xs text-muted-foreground">
+          {k.last_used_at ? new Date(k.last_used_at).toLocaleString() : "never"}
+        </span>
+      ),
+    },
+    {
+      id: "actions",
+      header: "",
+      width: 10,
+      align: "right",
+      cell: (k) => (
+        <RowActions>
+          <RowAction
+            icon={Trash2Icon}
+            label={`Revoke ${k.name}`}
+            danger
+            onClick={() => setRevoking(k)}
+          />
+        </RowActions>
+      ),
+    },
+  ];
 
   return (
     <>
-      <SectionHeader title="API keys" />
+      <SectionHeader
+        title="API keys"
+        sub="What the CLI and an MCP client carry. Docker takes one too, alongside your username, when you push to this instance."
+        actions={
+          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+            <PlusIcon />
+            New key
+          </Button>
+        }
+      />
       <ErrorAlert error={error} />
 
+      {/* Above the filter, not inside the dialog that made it. The
+          dialog is closed by the time this matters, and a value shown
+          once belongs where it cannot be dismissed by the next click. */}
       {issued && (
         <ValueCard
-          className="ring-primary/40"
+          className="mb-4 ring-primary/40"
           label="Copy this now — it is not shown again."
           value={issued}
         />
       )}
 
-      <Card className="mb-4 py-0">
-        <Table>
-          <TableBody>
-            {keys?.map((k) => (
-              <TableRow key={k.id}>
-                <TableCell className="px-4 py-2.5">
-                  {k.name}
-                  {k.current_key && (
-                    <span className="ml-2 text-xs text-muted-foreground">this session</span>
-                  )}
-                </TableCell>
-                <TableCell className="px-4 py-2.5 text-xs text-muted-foreground">
-                  {k.last_used_at
-                    ? `last used ${new Date(k.last_used_at).toLocaleString()}`
-                    : "never used"}
-                </TableCell>
-                <TableCell className="px-4 py-2.5 text-right">
-                  <Button
-                    variant="ghost"
-                    size="xs"
-                    className="text-muted-foreground hover:text-destructive"
-                    onClick={() => setRevoking(k)}
-                  >
-                    Revoke
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-            {keys?.length === 0 && (
-              <TableRow className="hover:bg-transparent">
-                <TableCell className="px-4 py-3 text-sm text-muted-foreground">
-                  No keys. You need one for <code>cubeship login</code> and{" "}
-                  <code>docker login</code>.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </Card>
+      <SearchBar
+        value={filter}
+        onChange={setFilter}
+        placeholder="Filter by name"
+        className="mb-4"
+        trailing={
+          keys && rows ? (
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+              {rows.length === keys.length ? keys.length : `${rows.length}/${keys.length}`}
+            </span>
+          ) : undefined
+        }
+      />
+
+      <DataTable
+        columns={columns}
+        rows={rows}
+        rowKey={(k) => String(k.id)}
+        loadingRows={3}
+        empty={
+          filter.trim() ? (
+            "Nothing matches."
+          ) : (
+            <>
+              No keys. You need one for <code>cubeship login</code> and <code>docker login</code>.
+            </>
+          )
+        }
+        className="mb-4"
+      />
+
+      <NewKeyDialog
+        open={adding}
+        onOpenChange={setAdding}
+        onIssued={(key) => {
+          setIssued(key);
+          reload();
+        }}
+      />
 
       {/* Revoking the last key is allowed — a leaked key has to be able
           to go now, not after you have made a replacement. What stands
@@ -337,21 +420,78 @@ function Keys() {
           reload();
         }}
       />
-
-      <form className="flex items-end gap-2" onSubmit={create}>
-        <TextField
-          label="New key"
-          fieldClassName="flex-1"
-          className="h-8"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="laptop"
-        />
-        <ActionButton type="submit" busy={busy} variant="outline">
-          Create
-        </ActionButton>
-      </form>
     </>
+  );
+}
+
+// Issuing one, in the dialog every other "add a row" here opens.
+//
+// **The key is handed back to the screen rather than shown in here.**
+// A dialog is dismissed by clicking anywhere, and this is the one value
+// on the instance that cannot be asked for again.
+function NewKeyDialog({
+  open,
+  onOpenChange,
+  onIssued,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  onIssued: (key: string) => void;
+}) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setName("");
+    setError(null);
+  }, [open]);
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const created = await api.post<{ api_key: string }>("/users/me/api-keys", { name });
+      onIssued(created.api_key);
+      onOpenChange(false);
+    } catch (err) {
+      setError(message(err));
+    }
+    setBusy(false);
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <form onSubmit={submit}>
+          <DialogHeader>
+            <DialogTitle>New API key</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-5">
+            <ErrorAlert error={error} />
+            <TextField
+              label="Name"
+              value={name}
+              autoFocus
+              spellCheck={false}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="laptop"
+              hint="For you, so a key you no longer recognise is one you can revoke. Name it after the machine or the tool holding it."
+            />
+          </div>
+          <DialogFooter>
+            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <ActionButton type="submit" busy={busy} disabled={!name.trim()}>
+              Create
+            </ActionButton>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 
