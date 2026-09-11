@@ -184,6 +184,20 @@ func link(t *testing.T, f *servertest.Fixture, name string, extra map[string]any
 	return out
 }
 
+// linkScoped links a store pinned to one bucket.
+//
+// It is a Space rather than the generic endpoint every other test uses,
+// and that is the rule rather than a detail: a bucket is asked for only
+// where the provider's own logins are issued for one — R2's tokens and
+// a Space's access keys — so `generic` refuses the field outright. See
+// Provider.ScopesByBucket.
+func linkScoped(t *testing.T, f *servertest.Fixture, name, bucket string) map[string]any {
+	t.Helper()
+	return link(t, f, name, map[string]any{
+		"provider": "digitalocean", "region": "nyc3", "endpoint": "", "bucket": bucket,
+	})
+}
+
 func withFake(t *testing.T, buckets ...string) (*servertest.Fixture, *fakeStore) {
 	t.Helper()
 	f := servertest.New(t)
@@ -357,7 +371,7 @@ func TestAnEmptyFolderIsAMarkerThatDoesNotShowUpAsAFile(t *testing.T) {
 // provider that nobody can act on.
 func TestAStorePinnedToOneBucketReachesNoOther(t *testing.T) {
 	f, fake := withFake(t, "backups", "somebody-elses")
-	link(t, f, "scoped", map[string]any{"bucket": "backups"})
+	linkScoped(t, f, "scoped", "backups")
 
 	var buckets []objectstore.BucketResponse
 	get(t, f, "/objectstores/scoped/buckets", &buckets)
@@ -865,7 +879,7 @@ func TestAMemberCannotAttachAnAppToABucket(t *testing.T) {
 // here rather than an access-denied from the provider later.
 func TestAPinnedStoreOnlyAttachesItsOwnBucket(t *testing.T) {
 	f, _ := withFake(t, "backups", "somebody-elses")
-	link(t, f, "scoped", map[string]any{"bucket": "backups"})
+	linkScoped(t, f, "scoped", "backups")
 	createApp(t, f, "web", "production", "api")
 
 	if rec := attach(t, f, "scoped", map[string]any{
