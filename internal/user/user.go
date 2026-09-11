@@ -74,7 +74,14 @@ type User struct {
 // than shipping: a name here with no file there is a broken image on
 // somebody's account, and a file there with no name here is a face
 // nobody can choose and nobody knows is missing. See avatars_test.go.
-var Avatars = []string{"blue", "green", "pink", "yellow"}
+// `scripts/profiles.sh` prepares the files and prints this line.
+//
+// **They are the palettes' own names**, because they are the same seven
+// colours: somebody on the red theme picking the red face is the whole
+// of why there are seven. A second vocabulary for one set of colours
+// would be one to keep in step by hand, and there is nothing to gain by
+// calling the same red something else here.
+var Avatars = []string{"cyan", "hacker", "mono", "orange", "pink", "purple", "red"}
 
 // ErrUnknownAvatar is a face this instance does not ship.
 var ErrUnknownAvatar = errors.New("no avatar by that name")

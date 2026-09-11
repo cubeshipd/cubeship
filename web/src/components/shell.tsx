@@ -282,7 +282,7 @@ function UserMenu({ me }: { me: Me }) {
             {me.avatar ? (
               // biome-ignore lint/performance/noImgElement: a static file in this image's own public directory
               <img
-                src={avatarSrc(me.avatar)}
+                src={avatarSrc(me.avatar, "small")}
                 alt=""
                 className="size-6 shrink-0 border border-primary/40 object-cover"
               />

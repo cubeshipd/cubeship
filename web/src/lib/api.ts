@@ -97,8 +97,15 @@ export type Me = {
 // avatarSrc is where a face's file is. The name is one of `avatars`,
 // which the daemon checked — never a path and never a URL, so there is
 // nothing here to escape.
-export function avatarSrc(name: string): string {
-  return `/profiles/${name}.png`;
+//
+// **There are two sizes and the small one is not an optimisation.** The
+// face beside a username is drawn on every screen of the dashboard, and
+// the file behind it is the first image the browser asks for; the
+// picker on the account screen is one screen, drawn once, at twice the
+// size. 8 KB against 88 KB, from `scripts/profiles.sh`, which writes
+// both from the same source.
+export function avatarSrc(name: string, size: "full" | "small" = "full"): string {
+  return `/profiles/${name}${size === "small" ? "-sm" : ""}.png`;
 }
 
 // One account on the instance.
