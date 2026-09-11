@@ -40,7 +40,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { api, avatarSrc, type Me } from "@/lib/api";
+import { api, avatarSrc, type Me, personName } from "@/lib/api";
 
 // The two layers, and what separates them.
 //
@@ -286,7 +286,7 @@ function UserMenu({ me }: { me: Me }) {
               alt=""
               className="size-6 shrink-0 border border-primary/40 object-cover"
             />
-            <span className="truncate font-mono text-xs">{me.display_name || me.username}</span>
+            <span className="truncate text-xs">{personName(me)}</span>
           </button>
         }
       />
@@ -301,9 +301,16 @@ function UserMenu({ me }: { me: Me }) {
       <DropdownMenuContent side="right" align="end" className="w-52">
         {/* GroupLabel is a Base UI group part and throws outside a Group. */}
         <DropdownMenuGroup>
-          <DropdownMenuLabel className="font-mono text-xs">
-            {me.username}
-            {me.role === "admin" && <span className="ml-1.5 text-subtle-foreground">· admin</span>}
+          {/* The name on top and the address under it. A username is
+              what a confirmation asks you to type and what `docker
+              login` sends, so it stays visible and stays mono — but it
+              is not what somebody is called. */}
+          <DropdownMenuLabel className="text-xs">
+            <span className="block truncate">{personName(me)}</span>
+            <span className="block truncate font-mono text-[11px] text-subtle-foreground">
+              {me.username}
+              {me.role === "admin" && <span className="ml-1.5">· admin</span>}
+            </span>
           </DropdownMenuLabel>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />

@@ -688,6 +688,23 @@ says what it does only to somebody who already knows — so `RowMenu` is
 the answer beside `RowActions`, and they are words again behind one
 trigger.
 
+**A person is called what they are called, and `personName` is the one
+place that decides it.** The display name, falling back to the username
+when there is none — a username is an address, not a name: it is the
+path segment, what `docker login` sends, and what a confirmation asks
+you to type. Written out per screen as `display_name || username` it
+would be one screen showing `lgs` where every other shows "Lucas".
+
+**This table is the one place both appear**, in two columns, because it
+is the screen where the address is the thing you act on. The
+confirmations still ask for the username — `ConfirmDialog` prints the
+word it wants, so there is nothing to guess.
+
+**And "Active" rather than a blank.** An empty cell is a fact the screen
+did not have, and here it means the opposite; a column blank for
+everybody who is fine also makes "Blocked" read as the only value it
+ever takes.
+
 **Blocking asks and unblocking does not.** One takes somebody's way in
 and the other gives it back; a confirmation in front of the harmless
 direction is one people learn to click through on the other. The same

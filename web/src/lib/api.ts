@@ -95,6 +95,23 @@ export type Me = {
   avatars?: string[];
 };
 
+// personName is what to call somebody on screen.
+//
+// **The display name, and the username only when there is none.** A
+// username is an address — it is the path segment, what `docker login`
+// sends, and what a confirmation asks you to type — and a person is
+// called something else. `lgs` and "Lucas" are both true and only one
+// of them is a name.
+//
+// One function rather than `u.display_name || u.username` written out
+// per screen, because the day somebody is shown by their username
+// somewhere is the day two screens disagree about who that row is.
+// The Users table is the one place both appear, and there they are two
+// columns: it is the screen where the address is the point.
+export function personName(u: { display_name?: string; username: string }): string {
+  return u.display_name?.trim() || u.username;
+}
+
 // avatarSrc is where a face's file is. The name is one of `avatars`,
 // which the daemon checked — never a path and never a URL, so there is
 // nothing here to escape.
