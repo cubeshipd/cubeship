@@ -63,11 +63,17 @@ type User struct {
 
 // Avatars are the faces the dashboard ships, by name.
 //
-// The list is here for the reason Themes is: it is what the daemon will
-// accept, and a second list in the browser would be one to disagree
-// with. The files are `web/public/profiles/<name>.png`, which is the
-// dashboard's half of one fact — a name here with no file there is a
-// broken image, and a file there with no name here cannot be chosen.
+// The list is here for the reason Themes is: the daemon is what refuses
+// a name, and a second list in the browser would be one to disagree
+// with it. The files are `web/public/profiles/<name>.png`.
+//
+// **Adding one is two edits — the file, and this line — and they cannot
+// be derived from each other**: the images are in the dashboard's
+// image and this runs in the daemon's, which are two containers. What
+// makes two edits safe is that forgetting either fails a test rather
+// than shipping: a name here with no file there is a broken image on
+// somebody's account, and a file there with no name here is a face
+// nobody can choose and nobody knows is missing. See avatars_test.go.
 var Avatars = []string{"blue", "green", "pink", "yellow"}
 
 // ErrUnknownAvatar is a face this instance does not ship.
