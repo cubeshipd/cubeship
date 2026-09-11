@@ -612,9 +612,24 @@ the cards were a paragraph per option in a dialog nobody reads twice.
 ### Your settings, and the instance's
 
 `/settings` is the **instance's** — its domain, its contact address, when
-it updates itself. `/account` is **yours**, and it is tabs: how you sign
-in, what it looks like to you, and, for an admin, who else can get in at
-all. Reached from the menu under your name, not from the sidebar.
+it updates itself. `/account` is **yours**, reached from the menu under
+your name rather than from the sidebar, and it is four tabs: **General**,
+**Appearance**, **Security**, **API keys**.
+
+Four rather than the two it was, because "Account" had become the tab
+for whatever was not a colour: a list of keys above a password form,
+which are two different questions asked in one place — what this machine
+can do as me, and how I get in.
+
+**General is read-only, and that is not the mistake it looks like.** A
+username is the identity every session and key is written against; a
+role is an admin's to grant, and an admin editing their own would be a
+lock with the key taped to it. The slug came off the project and
+environment settings screens for being a fact among fields — the
+difference is what a screen is for. Those configure a resource, and a
+fact filed among its settings reads as a setting that will not take.
+This screen is your account, and the first thing an account screen
+answers is which account.
 
 **Who can reach the instance is not in there.** `/users` is in
 **Platform**, beside the credentials and the machines, because it is a
