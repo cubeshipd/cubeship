@@ -1,6 +1,13 @@
 "use client";
 
-import { ClockIcon, DownloadIcon, RotateCcwIcon, Trash2Icon } from "lucide-react";
+import {
+  ClockIcon,
+  CloudIcon,
+  DownloadIcon,
+  RotateCcwIcon,
+  ServerIcon,
+  Trash2Icon,
+} from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -463,6 +470,14 @@ function Schedule({ database, onChanged }: { database: string; onChanged: () => 
                 />
               </div>
 
+              {/* **The destinations are S3, and the list says which of
+                  them is actually somewhere else.** A managed store is
+                  a MinIO container this instance runs, with its objects
+                  on this same disk — so it is grouped with the local
+                  disk by its icon rather than with the endpoints
+                  elsewhere, and the hint names the provider a linked
+                  one speaks. Reading the list, the two that are not a
+                  backup look like each other. */}
               <SearchableSelect
                 label="Where they go"
                 searchable={stores.length > 8}
@@ -472,13 +487,26 @@ function Schedule({ database, onChanged }: { database: string; onChanged: () => 
                   setBucket("");
                 }}
                 choices={[
-                  { value: "", label: "This machine's disk" },
-                  ...stores.map((s) => ({ value: s.name, label: s.name })),
+                  {
+                    value: "",
+                    label: "This machine's disk",
+                    icon: ServerIcon,
+                    hint: "not a backup",
+                  },
+                  ...stores.map((s) => ({
+                    value: s.name,
+                    label: s.name,
+                    icon: s.kind === "managed" ? ServerIcon : CloudIcon,
+                    hint:
+                      s.kind === "managed"
+                        ? `${s.provider_label} on this machine`
+                        : s.provider_label,
+                  })),
                 ]}
-                hint="Somewhere else is the point: a dump on this disk goes with the machine."
+                hint="An S3 bucket, on a provider this instance is connected to. Somewhere else is the whole point: a dump on this disk goes with the machine."
               />
 
-              {chosen ? (
+              {chosen && (
                 <SearchableSelect
                   label="Bucket"
                   value={bucket}
@@ -487,11 +515,27 @@ function Schedule({ database, onChanged }: { database: string; onChanged: () => 
                   choices={(buckets ?? []).map((b) => ({ value: b.name, label: b.name }))}
                   empty="That store holds no buckets yet."
                 />
-              ) : (
+              )}
+
+              {/* **The same warning for two destinations, because they
+                  are the same disk.** A managed store is a MinIO this
+                  instance runs, with its objects in a bind mount under
+                  the data directory — so picking one is not sending the
+                  dumps anywhere, and it used to read as though it were.
+                  Only a linked store is somewhere else. */}
+              {!chosen && (
                 <Notice tone="warning">
-                  With no store chosen these land beside the database, on this machine's own disk.
-                  That survives somebody dropping a table and nothing else — not the disk, not the
-                  box. Link an object store under Object storage and pick it here.
+                  With no store chosen these land beside the database, on this machine&rsquo;s own
+                  disk. That survives somebody dropping a table and nothing else — not the disk, not
+                  the box. Link an S3 bucket under Object storage and pick it here.
+                </Notice>
+              )}
+              {chosen?.kind === "managed" && (
+                <Notice tone="warning">
+                  <strong>{chosen.name} runs on this machine.</strong> It is a MinIO this instance
+                  started, and its objects sit on the same disk as the database — so these dumps go
+                  no further than a local one does. Link an S3 bucket somewhere else to have a
+                  backup that survives the box.
                 </Notice>
               )}
             </div>
