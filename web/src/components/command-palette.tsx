@@ -1,8 +1,9 @@
 "use client";
 
-import { CornerDownLeftIcon, SearchIcon } from "lucide-react";
+import { CornerDownLeftIcon, type BoxIcon as MarkIcon, SearchIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { MARKS } from "@/components/marks";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
   type App,
@@ -43,25 +44,80 @@ const NAV_KIND = "screen";
 // there and asks it to open, through `useOpenOnArrival`. The palette
 // owning a second copy of seven forms would be seven things to keep in
 // step for no gain.
+// Each wears the mark of what it makes rather than a shared "command"
+// glyph: every one of these opens a create form, so one icon for all of
+// them would say the only thing they already have in common.
 const COMMANDS: Entry[] = [
-  { id: "c:project", label: "New project", kind: "command", href: "/projects?new=1" },
-  { id: "c:database", label: "New database", kind: "command", href: "/databases?new=1" },
-  { id: "c:store", label: "Link object storage", kind: "command", href: "/storage?new=1" },
-  { id: "c:registry", label: "Connect a registry", kind: "command", href: "/registries?new=1" },
-  { id: "c:dns", label: "Connect a DNS provider", kind: "command", href: "/dns?new=1" },
-  { id: "c:credential", label: "New credential", kind: "command", href: "/credentials?new=1" },
-  { id: "c:server", label: "Add a server", kind: "command", href: "/servers?new=1" },
+  {
+    id: "c:project",
+    label: "New project",
+    icon: MARKS.project,
+    kind: "command",
+    href: "/projects?new=1",
+  },
+  {
+    id: "c:database",
+    label: "New database",
+    icon: MARKS.database,
+    kind: "command",
+    href: "/databases?new=1",
+  },
+  {
+    id: "c:store",
+    label: "Link object storage",
+    icon: MARKS.store,
+    kind: "command",
+    href: "/storage?new=1",
+  },
+  {
+    id: "c:registry",
+    label: "Connect a registry",
+    icon: MARKS.registry,
+    kind: "command",
+    href: "/registries?new=1",
+  },
+  {
+    id: "c:dns",
+    label: "Connect a DNS provider",
+    icon: MARKS.dns,
+    kind: "command",
+    href: "/dns?new=1",
+  },
+  {
+    id: "c:credential",
+    label: "New credential",
+    icon: MARKS.credential,
+    kind: "command",
+    href: "/credentials?new=1",
+  },
+  {
+    id: "c:server",
+    label: "Add a server",
+    icon: MARKS.server,
+    kind: "command",
+    href: "/servers?new=1",
+  },
   // No "New app": an app is created inside an environment, and from
   // here there is no environment to create it in. Offering it would
   // mean picking one on somebody's behalf or landing them on a screen
   // to choose — which is the projects grid, one keystroke away in the
   // other half of this box.
-  { id: "c:account", label: "Add someone to this instance", kind: "command", href: "/users" },
+  {
+    id: "c:account",
+    label: "Add someone to this instance",
+    icon: MARKS.user,
+    kind: "command",
+    href: "/users",
+  },
 ];
 
 type Entry = {
   id: string;
   label: string;
+  // What the row is, before it is read. A screen wears the sidebar's
+  // own icon — it *is* that entry — and everything else wears its
+  // kind's, from the map the rail shares.
+  icon: typeof MarkIcon;
   detail?: string;
   kind: string;
   href: string;
@@ -78,7 +134,11 @@ type Entry = {
 
 type Mode = "command" | "search";
 
-export function CommandPalette({ screens }: { screens: { label: string; href: string }[] }) {
+export function CommandPalette({
+  screens,
+}: {
+  screens: { label: string; href: string; icon: typeof MarkIcon }[];
+}) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("search");
@@ -151,6 +211,7 @@ export function CommandPalette({ screens }: { screens: { label: string; href: st
             ...screens.map((s) => ({
               id: `nav:${s.href}`,
               label: s.label,
+              icon: s.icon,
               kind: NAV_KIND,
               href: s.href,
             })),
@@ -244,6 +305,7 @@ export function CommandPalette({ screens }: { screens: { label: string; href: st
               onClick={() => go(entry)}
               className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors data-[picked=true]:bg-secondary"
             >
+              <entry.icon aria-hidden="true" className="size-4 shrink-0 text-subtle-foreground" />
               <span className="min-w-0 flex-1 truncate font-mono text-sm">{entry.label}</span>
               {entry.detail && (
                 <span className="shrink-0 truncate font-mono text-[11px] text-muted-foreground">
@@ -285,12 +347,14 @@ async function catalogue(): Promise<Entry[]> {
       label: a.name,
       detail: `${a.project}/${a.environment}`,
       match: a.reference,
+      icon: MARKS.app,
       kind: "app",
       href: `/projects/${a.reference}`,
     })),
     ...projects.map((p) => ({
       id: `project:${p.slug}`,
       label: p.slug,
+      icon: MARKS.project,
       kind: "project",
       href: `/projects/${p.slug}`,
     })),
@@ -298,6 +362,7 @@ async function catalogue(): Promise<Entry[]> {
       id: `db:${d.name}`,
       label: d.name,
       detail: `${d.engine} ${d.version}`,
+      icon: MARKS.database,
       kind: "database",
       href: `/databases/${d.name}`,
     })),
@@ -305,12 +370,14 @@ async function catalogue(): Promise<Entry[]> {
       id: `store:${s.name}`,
       label: s.name,
       detail: s.provider,
+      icon: MARKS.store,
       kind: "store",
       href: `/storage/${s.name}`,
     })),
     ...registries.map((r) => ({
       id: `registry:${r.id}`,
       label: r.host,
+      icon: MARKS.registry,
       kind: "registry",
       href: `/registries/${r.id}`,
     })),
@@ -318,6 +385,7 @@ async function catalogue(): Promise<Entry[]> {
       id: `dns:${p.id}`,
       label: p.provider_name,
       detail: p.label,
+      icon: MARKS.dns,
       kind: "dns",
       href: `/dns/${p.id}`,
     })),
