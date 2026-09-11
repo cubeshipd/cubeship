@@ -57,7 +57,14 @@ export function RailPortal({ children }: { children: ReactNode }) {
 export function HeaderRail({ children }: { children: ReactNode }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const pathname = usePathname() ?? "/";
-  const crumbs = crumbsFor(pathname);
+  const all = crumbsFor(pathname);
+  // **One crumb is no path.** On a top-level screen the only crumb is
+  // the section, and the page's own title under it is the same word —
+  // "Certificates" above "CERTIFICATES", which reads as a mistake even
+  // though it is not. The bar stays, because it still holds whatever
+  // the screen puts on the right and because a strip that appears and
+  // disappears is worse than an empty one.
+  const crumbs = all.length > 1 ? all : [];
 
   return (
     <Rail.Provider value={{ slot }}>
