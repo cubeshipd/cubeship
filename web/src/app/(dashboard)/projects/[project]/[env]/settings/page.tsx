@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { use, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
-import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 
@@ -47,7 +46,6 @@ function Settings({ project, env }: { project: string; env: string }) {
   return (
     <>
       {" "}
-      <PageHeader title="Environment settings" />
       <DangerZone>
         <DangerAction
           title="Delete this environment"

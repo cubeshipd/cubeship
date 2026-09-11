@@ -4,7 +4,7 @@ import { PlusIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
-import { PageHeader } from "@/components/page-header";
+import { RailPortal } from "@/components/header-rail";
 import { ProjectCard } from "@/components/project-card";
 import { SlugField } from "@/components/slug-field";
 import { Button } from "@/components/ui/button";
@@ -80,16 +80,14 @@ function Projects() {
 
   return (
     <>
-      <PageHeader
-        title="Projects"
-        actions={
+      <RailPortal>
+        {
           <Button onClick={() => setCreating(true)}>
             <PlusIcon />
             New project
           </Button>
         }
-      />
-
+      </RailPortal>
       <ErrorAlert error={error} />
 
       {projects?.length === 0 && (

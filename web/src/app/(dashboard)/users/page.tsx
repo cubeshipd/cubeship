@@ -5,9 +5,9 @@ import { useCallback, useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { PageHeader, SectionHeader } from "@/components/page-header";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchableSelect } from "@/components/searchable-select";
+import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -46,7 +46,6 @@ export default function UsersPage() {
   if (me.role !== "admin") {
     return (
       <>
-        <PageHeader title="Users" />
         <ErrorAlert error="Who can reach this instance is an admin's to see." />
       </>
     );
@@ -125,7 +124,6 @@ export default function UsersPage() {
 
   return (
     <>
-      <PageHeader title="Users" />
       <ErrorAlert error={error} />
 
       {/* Adding somebody comes first, because that is what brings

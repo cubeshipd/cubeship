@@ -17,12 +17,13 @@ import { ContainerLogs, LogView } from "@/components/container-logs";
 import { CopyButton } from "@/components/copy-button";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailPortal } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
 import { Notice } from "@/components/notice";
-import { PageHeader, SectionHeader } from "@/components/page-header";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
+import { SectionHeader } from "@/components/section-header";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -138,9 +139,8 @@ function Detail({
           blanked the content area on every route change and then
           filled it — a page that disappears before it appears reads as
           slow however fast the request was. */}
-      <PageHeader
-        title={<span className="font-mono text-lg tracking-normal normal-case">{name}</span>}
-        actions={
+      <RailPortal>
+        {
           <>
             <DeployButton
               reference={reference}
@@ -164,7 +164,7 @@ function Detail({
             />
           </>
         }
-      />
+      </RailPortal>
       {!app && <LoadingList rows={5} />}
       {app && (
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>

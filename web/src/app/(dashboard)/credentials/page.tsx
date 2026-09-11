@@ -6,7 +6,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CredentialDialog } from "@/components/credential-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { PageHeader } from "@/components/page-header";
+import { RailPortal } from "@/components/header-rail";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { Button } from "@/components/ui/button";
 import { api, type Credential } from "@/lib/api";
@@ -91,16 +91,14 @@ export default function Credentials() {
 
   return (
     <>
-      <PageHeader
-        title="Credentials"
-        actions={
+      <RailPortal>
+        {
           <Button onClick={() => setAdding(true)}>
             <PlusIcon />
             New credential
           </Button>
         }
-      />
-
+      </RailPortal>
       <ErrorAlert error={error} />
 
       <DataTable columns={columns} rows={creds} rowKey={(c) => String(c.id)} />

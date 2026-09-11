@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { use, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
-import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 
@@ -44,7 +43,6 @@ function Settings({ project }: { project: string }) {
   return (
     <>
       {" "}
-      <PageHeader title="Project settings" />
       <DangerZone>
         <DangerAction
           title="Delete this project"

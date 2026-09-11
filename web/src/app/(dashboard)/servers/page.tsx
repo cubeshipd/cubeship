@@ -7,8 +7,8 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyField } from "@/components/copy-field";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailPortal } from "@/components/header-rail";
 import { Notice } from "@/components/notice";
-import { PageHeader } from "@/components/page-header";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SlugField } from "@/components/slug-field";
 import { StatusBadge } from "@/components/status-badge";
@@ -159,16 +159,14 @@ export default function Servers() {
 
   return (
     <>
-      <PageHeader
-        title="Servers"
-        actions={
+      <RailPortal>
+        {
           <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
             <PlusIcon />
             Add a server
           </Button>
         }
-      />
-
+      </RailPortal>
       <ErrorAlert error={error} />
 
       <DataTable

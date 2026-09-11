@@ -5,7 +5,6 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
-import { PageHeader } from "@/components/page-header";
 import { api, type GitHubInstallation } from "@/lib/api";
 import { message } from "@/lib/errors";
 
@@ -70,7 +69,6 @@ function Landing() {
 
   return (
     <>
-      <PageHeader title="Connecting GitHub" />
       {state === "working" && (
         <p className="text-sm text-muted-foreground">Recording the installation…</p>
       )}

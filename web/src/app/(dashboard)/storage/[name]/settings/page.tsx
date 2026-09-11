@@ -10,8 +10,8 @@ import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
 import { LoadingList } from "@/components/loading";
 import { Notice } from "@/components/notice";
-import { PageHeader, SectionHeader } from "@/components/page-header";
 import { SearchableSelect } from "@/components/searchable-select";
+import { SectionHeader } from "@/components/section-header";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { api, type Credential, type ObjectStore, objectStorePath } from "@/lib/api";
@@ -46,7 +46,6 @@ function Settings({ name }: { name: string }) {
   return (
     <>
       {" "}
-      <PageHeader title="Settings" />
       <ErrorAlert error={error} />
       {!store && !error && <LoadingList rows={3} />}
       {store && (

@@ -3,7 +3,7 @@
 import { cn } from "cn";
 import { useCallback, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
-import { SectionHeader } from "@/components/page-header";
+import { SectionHeader } from "@/components/section-header";
 import { TimeSeries } from "@/components/time-series";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";

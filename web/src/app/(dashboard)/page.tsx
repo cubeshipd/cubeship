@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { type Column, DataTable } from "@/components/data-table";
 import { InstanceMetrics } from "@/components/instance-metrics";
 import { Notice } from "@/components/notice";
-import { PageHeader, SectionHeader } from "@/components/page-header";
+import { SectionHeader } from "@/components/section-header";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   type App,
@@ -64,8 +64,6 @@ export default function Overview() {
 
   return (
     <>
-      <PageHeader title="Overview" />
-
       <Stats projects={projects} apps={apps} datastores={datastores} stores={stores} />
       <InstanceMetrics />
       <Containers />

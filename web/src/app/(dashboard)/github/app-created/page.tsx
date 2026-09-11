@@ -5,7 +5,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
-import { PageHeader } from "@/components/page-header";
 import { api, type Settings } from "@/lib/api";
 import { message } from "@/lib/errors";
 
@@ -74,7 +73,6 @@ function Exchange() {
 
   return (
     <>
-      <PageHeader title="Registering the GitHub App" />
       {state === "working" && (
         <p className="text-sm text-muted-foreground">Exchanging the code with GitHub…</p>
       )}

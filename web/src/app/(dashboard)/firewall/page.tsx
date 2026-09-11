@@ -6,11 +6,12 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailPortal } from "@/components/header-rail";
 import { LoadingControl, LoadingNote } from "@/components/loading";
 import { Notice } from "@/components/notice";
-import { PageHeader, SectionHeader } from "@/components/page-header";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchableSelect } from "@/components/searchable-select";
+import { SectionHeader } from "@/components/section-header";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -140,25 +141,21 @@ export default function FirewallPage() {
 
   return (
     <>
-      <PageHeader
-        title="Firewall"
-        actions={
-          !data && !error ? (
-            <LoadingControl className="h-8 w-[94px]" />
-          ) : data?.installed ? (
-            <ActionButton
-              busy={busy}
-              variant={data.enabled ? "outline" : "default"}
-              onClick={() =>
-                act(() => api.post<Firewall>(`/firewall/${data.enabled ? "disable" : "enable"}`))
-              }
-            >
-              {data.enabled ? "Turn off" : "Turn on"}
-            </ActionButton>
-          ) : undefined
-        }
-      />
-
+      <RailPortal>
+        {!data && !error ? (
+          <LoadingControl className="h-8 w-[94px]" />
+        ) : data?.installed ? (
+          <ActionButton
+            busy={busy}
+            variant={data.enabled ? "outline" : "default"}
+            onClick={() =>
+              act(() => api.post<Firewall>(`/firewall/${data.enabled ? "disable" : "enable"}`))
+            }
+          >
+            {data.enabled ? "Turn off" : "Turn on"}
+          </ActionButton>
+        ) : undefined}
+      </RailPortal>
       <ErrorAlert error={error} />
 
       {!data && !error && <Skeleton columns={columns} />}

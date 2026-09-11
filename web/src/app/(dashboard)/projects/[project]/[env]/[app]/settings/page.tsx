@@ -13,7 +13,7 @@ import { CUBESHIP, ImageSource, type ImageSourceValue } from "@/components/image
 import { LoadingList } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { OptionCards } from "@/components/option-cards";
-import { PageHeader, SectionHeader } from "@/components/page-header";
+import { SectionHeader } from "@/components/section-header";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -81,7 +81,6 @@ function Settings({ reference }: { reference: string }) {
   return (
     <>
       {" "}
-      <PageHeader title="App settings" />
       <ErrorAlert error={error} />
       {/* The heading above says the same thing for every app and comes
           from the URL, so it does not wait — see the app's own page for

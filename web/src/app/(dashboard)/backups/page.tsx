@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import { BackupTable } from "@/components/backups";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
-import { PageHeader } from "@/components/page-header";
 import { api, type Backup } from "@/lib/api";
 import { message } from "@/lib/errors";
 
@@ -36,7 +35,6 @@ export default function BackupsPage() {
 
   return (
     <>
-      <PageHeader title="Backups" />
       <ErrorAlert error={error} />
 
       {onMachine > 0 && (

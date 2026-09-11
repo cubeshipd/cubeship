@@ -443,11 +443,24 @@ rather than by whoever writes the next table. `danger` is the only
 colour a row action spends, which is what makes it mean something when
 it appears.
 
-**A page title carries no paragraph under it.** `PageHeader` has no
-`sub`: a title says what you are looking at, the screen itself is what
-explains it, and a paragraph repeated on every visit is a paragraph
-nobody reads twice. `SectionHeader` keeps one, because a section's
-subtitle is about the specific thing under it.
+**There is no page header any more.** The rail above every screen is
+it: the last crumb is the title, and what used to sit beside the title
+goes through `RailPortal`. Of the thirty-one titles the old
+`PageHeader` drew, almost every one was either the section the sidebar
+already highlights or the last word of the path the rail carries —
+said twice, in two faces, thirty pixels apart.
+
+Two things came with it. `RailTitle` is how a screen the URL cannot
+name says what it is called: a registry and a DNS provider are
+addressed by a credential's numeric id, so the path segment is `4`, and
+a page whose title is `4` has no title. And a `below` filter is no
+longer header furniture — it filters the page, so it is the first thing
+on the page.
+
+**A title carries no paragraph under it.** `SectionHeader` keeps one,
+because a section's subtitle is about the specific thing under it; the
+page's own title never had one, and what explains a screen is the
+screen.
 
 **A choice between named things is a select**, not a grid of cards —
 which provider, which engine, which credential. `OptionCards` is for

@@ -7,7 +7,7 @@ import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
 import { LoadingList } from "@/components/loading";
 import { Notice } from "@/components/notice";
-import { PageHeader, SectionHeader } from "@/components/page-header";
+import { SectionHeader } from "@/components/section-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -41,7 +41,6 @@ function Settings({ name }: { name: string }) {
   return (
     <>
       {" "}
-      <PageHeader title="Database settings" />
       <ErrorAlert error={error} />
       {/* The header above is drawn from the URL and does not wait — see
           the note on the database's own page. Only what needs the

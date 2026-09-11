@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailPortal } from "@/components/header-rail";
 import { NewObjectStoreDialog } from "@/components/new-object-store-dialog";
-import { PageHeader } from "@/components/page-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { api, type ObjectStore } from "@/lib/api";
@@ -92,16 +92,14 @@ export default function StoragePage() {
 
   return (
     <>
-      <PageHeader
-        title="Object storage"
-        actions={
+      <RailPortal>
+        {
           <Button onClick={() => setAdding(true)}>
             <PlusIcon />
             Add storage
           </Button>
         }
-      />
-
+      </RailPortal>
       <ErrorAlert error={error} />
 
       <DataTable

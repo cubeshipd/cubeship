@@ -5,8 +5,8 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailPortal } from "@/components/header-rail";
 import { LoadingRows } from "@/components/loading";
-import { PageHeader } from "@/components/page-header";
 import { SearchableSelect } from "@/components/searchable-select";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
@@ -138,16 +138,14 @@ export default function Registries() {
 
   return (
     <>
-      <PageHeader
-        title="Registries"
-        actions={
+      <RailPortal>
+        {
           <Button onClick={() => setAdding(true)}>
             <PlusIcon />
             New registry
           </Button>
         }
-      />
-
+      </RailPortal>
       <ErrorAlert error={error} />
 
       {

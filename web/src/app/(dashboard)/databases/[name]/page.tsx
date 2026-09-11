@@ -19,12 +19,13 @@ import { ContainerLogs } from "@/components/container-logs";
 import { CopyField } from "@/components/copy-field";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailPortal } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
 import { Notice } from "@/components/notice";
-import { PageHeader, SectionHeader } from "@/components/page-header";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchableSelect } from "@/components/searchable-select";
+import { SectionHeader } from "@/components/section-header";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -110,26 +111,23 @@ function Detail({ name }: { name: string }) {
           every navigation blanked the content area and then filled it.
           A page that disappears before it appears reads as slow however
           fast the request was. */}
-      <PageHeader
-        title={<span className="font-mono text-lg tracking-normal normal-case">{name}</span>}
-        actions={
-          datastore && (
-            <>
-              <PowerButton datastore={datastore} onChanged={reload} />
-              <Button
-                variant="outline"
-                nativeButton={false}
-                render={
-                  <Link href={`/databases/${datastore.name}/settings`}>
-                    <SettingsIcon />
-                    Settings
-                  </Link>
-                }
-              />
-            </>
-          )
-        }
-      />
+      <RailPortal>
+        {datastore && (
+          <>
+            <PowerButton datastore={datastore} onChanged={reload} />
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={
+                <Link href={`/databases/${datastore.name}/settings`}>
+                  <SettingsIcon />
+                  Settings
+                </Link>
+              }
+            />
+          </>
+        )}
+      </RailPortal>
       <ErrorAlert error={error} />
       {!datastore && <LoadingList rows={5} />}
       {/* The reason a database did not come up is the tail of what the

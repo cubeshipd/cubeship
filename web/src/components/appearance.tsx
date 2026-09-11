@@ -1,7 +1,7 @@
 "use client";
 
 import { CheckIcon } from "lucide-react";
-import { SectionHeader } from "@/components/page-header";
+import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { useTheme } from "@/components/theme";
 import { Card, CardContent } from "@/components/ui/card";

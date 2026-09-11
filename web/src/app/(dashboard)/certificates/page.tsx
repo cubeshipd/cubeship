@@ -5,7 +5,7 @@ import Link from "next/link";
 import { ErrorAlert } from "@/components/error-alert";
 import { LoadingRows } from "@/components/loading";
 import { Notice } from "@/components/notice";
-import { PageHeader, SectionHeader } from "@/components/page-header";
+import { SectionHeader } from "@/components/section-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Card } from "@/components/ui/card";
 import {
@@ -36,8 +36,6 @@ export default function Certificates() {
 
   return (
     <>
-      <PageHeader title="Certificates" />
-
       {report.error && <ErrorAlert error={message(report.error)} />}
 
       {data && !data.tls_enabled && (

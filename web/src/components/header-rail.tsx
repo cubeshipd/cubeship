@@ -3,7 +3,15 @@
 import { ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import {
   DropdownMenu,
@@ -30,17 +38,23 @@ import {
 // differently on every one of them, or not at all. The Shell is the one
 // place that can answer it once.
 //
-// It does not replace the page's own header. `PageHeader` keeps the
-// title and the actions, and on a settings screen the two say different
-// things: the path is the app, the title is "App settings".
+// **It is the page's header now.** There was a second one under it, a
+// `PageHeader` per screen — and of the thirty-one titles it drew,
+// almost every one was either the section the sidebar already
+// highlights or the last word of this path. Two places saying it is one
+// too many, so the last crumb wears the weight and the buttons that
+// sat beside it come through `RailPortal`.
 //
 // **A crumb with siblings is a menu.** That is the whole point of
 // putting it here rather than in a page: reading `web/production/api`
 // tells you where you are, and being able to open `production` and land
 // in `staging` is the trip back through two screens you no longer take.
 
-type RailContext = { slot: HTMLElement | null };
-const Rail = createContext<RailContext>({ slot: null });
+type RailContext = {
+  slot: HTMLElement | null;
+  setTitle: (title: ReactNode | null) => void;
+};
+const Rail = createContext<RailContext>({ slot: null, setTitle: () => {} });
 
 // RailPortal puts a screen's own controls in the rail, on the right.
 //
@@ -54,25 +68,44 @@ export function RailPortal({ children }: { children: ReactNode }) {
   return createPortal(children, slot);
 }
 
+// RailTitle renames the last crumb, for a screen the URL cannot name.
+//
+// Most of them it can: an app, a database, a bucket and a zone are all
+// addressed by the thing they are called. A registry and a DNS provider
+// are addressed by a **credential's numeric id**, so the path segment
+// is `4` — and a page whose title is `4` is a page with no title. It
+// takes a node rather than a string so those two can keep the provider
+// mark they had beside the name.
+export function RailTitle({ children }: { children: ReactNode }) {
+  const { setTitle } = useContext(Rail);
+  useEffect(() => {
+    setTitle(children);
+  }, [children, setTitle]);
+  return null;
+}
+
 export function HeaderRail({ children }: { children: ReactNode }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
+  const [title, setTitle] = useState<ReactNode | null>(null);
   const pathname = usePathname() ?? "/";
-  const all = crumbsFor(pathname);
-  // **One crumb is no path.** On a top-level screen the only crumb is
-  // the section, and the page's own title under it is the same word —
-  // "Certificates" above "CERTIFICATES", which reads as a mistake even
-  // though it is not. The bar stays, because it still holds whatever
-  // the screen puts on the right and because a strip that appears and
-  // disappears is worse than an empty one.
-  const crumbs = all.length > 1 ? all : [];
+  const crumbs = crumbsFor(pathname);
+
+  // A title set by the page belongs to that page. Without clearing it
+  // the next screen wears the last one's name for as long as its own
+  // fetch takes — and the screens that set one are exactly the screens
+  // that have to fetch to know it.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: clearing is what changing page means
+  useEffect(() => setTitle(null), [pathname]);
+
+  const value = useMemo(() => ({ slot, setTitle }), [slot]);
 
   return (
-    <Rail.Provider value={{ slot }}>
+    <Rail.Provider value={value}>
       {/* Sticky, because the reason it exists is to be reachable — and
           the screens where switching saves the most are the long ones:
           a log, fifty environment variables, a deploy history. */}
       <div className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur">
-        <div className="mx-auto flex h-11 max-w-5xl items-center justify-between gap-4 px-8">
+        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-8">
           <nav
             aria-label="Breadcrumb"
             className="flex min-w-0 items-center gap-1.5 overflow-hidden"
@@ -84,7 +117,14 @@ export function HeaderRail({ children }: { children: ReactNode }) {
                     /
                   </span>
                 )}
-                <Crumb crumb={crumb} last={i === crumbs.length - 1} />
+                <Crumb
+                  crumb={
+                    i === crumbs.length - 1 && title !== null
+                      ? { ...crumb, label: title, mono: false }
+                      : crumb
+                  }
+                  last={i === crumbs.length - 1}
+                />
               </div>
             ))}
           </nav>
@@ -105,7 +145,7 @@ type Siblings = "project" | "environment" | "app" | "datastore" | "objectstore" 
 
 type CrumbSpec = {
   key: string;
-  label: string;
+  label: ReactNode;
   // Where clicking the crumb itself goes. Absent on the last one, and
   // on a word that names no page.
   href?: string;
@@ -238,9 +278,28 @@ function title(word: string): string {
   return known[word] ?? decodeURIComponent(word);
 }
 
+// The last crumb is the screen's title, not a step in a path.
+//
+// **It is the whole of the title now.** There was a PageHeader under
+// this saying the same thing in a larger face — and of the thirty-one
+// it drew, almost every one was either the section the sidebar already
+// highlights or the last word of this path. Two places saying it is one
+// place too many; what mattered was that it be said with weight, which
+// is what this does.
+//
+// Mono for a name and uppercase for a word, which is the rule the rest
+// of the product keeps: a slug is read character by character and
+// shouting it makes it harder, not louder. The pages used to fight the
+// old header's uppercase default with a span of their own to get here.
 function Crumb({ crumb, last }: { crumb: CrumbSpec; last: boolean }) {
-  const text = crumb.mono ? "font-mono text-[11px]" : "text-[11px] tracking-wide uppercase";
-  const tone = last ? "text-foreground" : "text-muted-foreground";
+  const text = last
+    ? crumb.mono
+      ? "font-mono text-base text-foreground"
+      : "text-sm font-semibold tracking-[0.14em] text-foreground uppercase"
+    : crumb.mono
+      ? "font-mono text-[11px]"
+      : "text-[11px] tracking-wide uppercase";
+  const tone = last ? "" : "text-muted-foreground";
 
   if (crumb.siblings) {
     return <CrumbMenu crumb={crumb} className={`${text} ${tone}`} />;
