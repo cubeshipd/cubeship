@@ -562,6 +562,7 @@ func (a *Agent) start(ctx context.Context, p node.Placement, registry string) (s
 		Env:          envvar.Slice(p.Env),
 		Network:      network,
 		AlsoNetworks: also,
+		Aliases:      p.Aliases,
 		Resources:    p.Resources,
 	})
 	if err != nil {

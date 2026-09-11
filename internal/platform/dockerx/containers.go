@@ -61,8 +61,20 @@ type ContainerOpts struct {
 	// older than 25 refuses more than one there, and connecting after
 	// is what every version does the same way.
 	AlsoNetworks []string
-	HostNetwork  bool
-	ExtraHosts   []string
+	// Aliases are extra names this container answers to on every
+	// network it joins — Network and each of AlsoNetworks.
+	//
+	// It exists because a container's *name* is not always an address.
+	// An app's carries the deployment that created it, so that a
+	// machine can answer "am I already running this" from the name
+	// alone — and that makes it a name which changes under anything
+	// that wrote it down. An alias is the part that does not change,
+	// and Docker's embedded DNS answers it with **every** container
+	// that holds it, so the copies of a scaled-out app are balanced
+	// over without anything here doing the balancing.
+	Aliases     []string
+	HostNetwork bool
+	ExtraHosts  []string
 	// Privileged drops the container's isolation. Only BuildKit needs
 	// it, and only because building an image means running one.
 	Privileged bool
@@ -297,7 +309,7 @@ func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (strin
 		if opts.Network != "" {
 			networkingConfig = &network.NetworkingConfig{
 				EndpointsConfig: map[string]*network.EndpointSettings{
-					opts.Network: {},
+					opts.Network: {Aliases: opts.Aliases},
 				},
 			}
 		}
@@ -335,7 +347,15 @@ func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (strin
 		if name == "" || name == opts.Network {
 			continue
 		}
-		if err := c.api.NetworkConnect(ctx, name, resp.ID, nil); err != nil {
+		// The same aliases on every network it joins. A name that
+		// resolves on the bridge and not on the mesh is one that works
+		// until the app it addresses moves machine, which is the worst
+		// of the three possible answers.
+		var settings *network.EndpointSettings
+		if len(opts.Aliases) > 0 {
+			settings = &network.EndpointSettings{Aliases: opts.Aliases}
+		}
+		if err := c.api.NetworkConnect(ctx, name, resp.ID, settings); err != nil {
 			// A container on fewer networks than it was asked for is
 			// not the container that was asked for: it would come up,
 			// pass its health check, and be unreachable from half the

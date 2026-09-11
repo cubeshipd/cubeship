@@ -186,6 +186,7 @@ func newAppCmd() *cobra.Command {
 			for _, row := range [][2]string{
 				{"App", a.Reference}, {"Project", a.Project},
 				{"Environment", a.Environment}, {"Domains", hostsOf(a)},
+				{"Internal host", a.InternalHost},
 				{"Source", a.Source}, {"Status", a.Status}, {"Push to", a.Image},
 			} {
 				fmt.Fprintf(w, "%s:\t%s\n", row[0], row[1])

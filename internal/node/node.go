@@ -272,6 +272,13 @@ type Placement struct {
 	// Networks are what the container joins: the machine's own bridge
 	// and, when there is one, the cluster's overlay.
 	Networks []string `json:"networks"`
+	// Aliases are the names the container answers to on each of those,
+	// beside the one it is created under. One entry today: the app's
+	// internal host, which is its container name without the deployment
+	// id — see app.InternalHost. An agent from before this creates a
+	// container with none, which is what every container had, and the
+	// app's next deploy gives it one.
+	Aliases []string `json:"aliases,omitempty"`
 	// Resources is the ceiling this copy runs under: CPU quota and a
 	// memory limit, zero in either meaning none.
 	//

@@ -51,6 +51,11 @@ type App struct {
 	// Address is where a DNS record for this app has to point, which is
 	// this instance's own whatever machine the app runs on.
 	Address string `json:"address,omitempty"`
+	// InternalHost is where another app on this instance reaches this
+	// one, on the app's own port. A public name cannot do that job from
+	// inside the box — the request leaves it for a record pointing back
+	// at it.
+	InternalHost string `json:"internal_host,omitempty"`
 	// Split says the machines serving it are not all serving the same
 	// deployment.
 	Split bool `json:"split,omitempty"`

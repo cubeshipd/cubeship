@@ -113,6 +113,12 @@ type Response struct {
 	// dashboard offers when somebody does want one. Empty while the
 	// instance has no domain to build it under.
 	SuggestedHost string `json:"suggested_host,omitempty"`
+	// InternalHost is where another app on this instance reaches this
+	// one — see InternalHost. Always present: it is derived from the
+	// reference, so every app has one whether or not it answers at any
+	// public name, and a worker with no domain at all is exactly the
+	// app most likely to be called this way.
+	InternalHost string `json:"internal_host"`
 }
 
 // ReplicaResponse is one machine an app runs on.
@@ -165,6 +171,7 @@ func toResponse(a *Scoped, in Instance) Response {
 		Status: a.Status(), HasContainer: a.HasContainer(), Source: a.Source,
 		Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
 		SuggestedHost: SuggestedHostFor(ref, in.Domain),
+		InternalHost:  InternalHost(ref),
 		Nodes:         a.Nodes(),
 		Scale:         len(a.Replicas),
 		HealthPath:    a.HealthPath,

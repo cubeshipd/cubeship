@@ -160,6 +160,14 @@ and a daemon restart forgets everything but the table. The answer is
 cached for half a minute, because it is asked once per container created
 and changes once in the life of an instance.
 
+**An app is on the mesh under a name that outlives its deploy.** Its
+container carries the deployment's id, so the address one app holds for
+another is a `ContainerOpts.Aliases` entry — `cubeship-<project>-<env>-<app>`
+— attached to the bridge and the overlay alike. Attached to both or it
+is worse than absent: a name that resolves here and not there works
+until the app it addresses is placed on another machine. See
+[networking.md](networking.md).
+
 **Existing containers are not touched.** One joins the mesh the next
 time it is created, which is the rule its labels and its environment
 already follow — so adding a machine to a cluster leaves everything

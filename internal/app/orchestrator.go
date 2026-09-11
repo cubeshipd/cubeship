@@ -692,7 +692,11 @@ func (o *Orchestrator) swap(ctx context.Context, a *Scoped, replica Replica, ima
 		Env:          envvar.Slice(env),
 		Network:      Network,
 		AlsoNetworks: o.mesh(ctx),
-		Resources:    a.Limits.Resources(),
+		// base is the container's name without this deploy's id on the
+		// end, and it is the one address another app can hold on to.
+		// See app.InternalHost.
+		Aliases:   []string{base},
+		Resources: a.Limits.Resources(),
 	})
 	if err != nil {
 		return fmt.Errorf("create container: %w", err)

@@ -78,3 +78,33 @@ func resourceName(ref Reference) string {
 	return "cubeship-" + strings.Join(
 		[]string{ref.Project, ref.Environment, ref.Name}, "-")
 }
+
+// InternalHost is the name every container on this instance reaches
+// this app at — whichever machine it runs on, and however many copies
+// of it are running.
+//
+// **A container's name is not an address here, and that is the whole
+// reason this exists.** An app's carries the deployment that created it
+// — `cubeship-web-production-api-1421` — because a machine has to be
+// able to answer "am I already running this deployment" from the name
+// alone. Anything that wrote that down would be pointing at a container
+// that stops existing on the next deploy. So the stable part of it is
+// attached to the container as a network **alias**, on the local bridge
+// and on the mesh both, and that is what one app calls another by.
+//
+// It is the shape `cubeship-db-pg` and `cubeship-s3-media` already
+// have, and for the same reason: an app reaching a database, a store or
+// another app is one thing somebody learns, not three.
+//
+// **This is what a public name cannot do from inside.** An app that
+// asks for its neighbour's domain is a request leaving the box for a
+// record that points back at it, and a host that does not hairpin its
+// own NAT answers nothing at all — which is a failure that looks like
+// the other app being down.
+//
+// The port is the app's own: this is DNS and nothing else, so there is
+// no proxy in the path, no TLS terminated for it and no health check
+// taken into account. Every copy of the app holds the alias and the
+// Engine's DNS answers with all of them, so a scaled-out app is spread
+// over without anything here balancing it.
+func InternalHost(ref Reference) string { return resourceName(ref) }
