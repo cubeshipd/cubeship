@@ -87,7 +87,8 @@ export type Me = {
   // identifies somebody here, and these are what it cannot carry.
   display_name?: string;
   email?: string;
-  avatar?: string;
+  // Always present: there is no account with no face.
+  avatar: string;
   // Which faces this instance ships, served for the reason `themes` is:
   // the daemon is what refuses a name, and a second list here would be
   // one to disagree with it.
@@ -115,7 +116,8 @@ export type InstanceUser = {
   theme?: string;
   display_name?: string;
   email?: string;
-  avatar?: string;
+  // Always present, like Me's: there is no account with no face.
+  avatar: string;
   created_at: string;
 };
 // None of these has a display name. The slug is the name — the rule an

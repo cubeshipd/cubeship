@@ -49,12 +49,12 @@ export const db = {
     display_name: "Lucas",
     email: "lucas@example.com",
     avatar: "cyan",
-    avatars: ["cyan", "hacker", "mono", "orange", "pink", "purple", "red"],
+    avatars: ["blue", "cyan", "hacker", "mono", "orange", "pink", "purple", "red"],
   } as Me,
 
   users: [
-    { username: "lucas", role: "admin", created_at: ago(60 * 24 * 90) },
-    { username: "ci", role: "member", created_at: ago(60 * 24 * 12) },
+    { username: "lucas", role: "admin", avatar: "cyan", created_at: ago(60 * 24 * 90) },
+    { username: "ci", role: "member", avatar: "hacker", created_at: ago(60 * 24 * 12) },
   ] as InstanceUser[],
 
   apiKeys: [

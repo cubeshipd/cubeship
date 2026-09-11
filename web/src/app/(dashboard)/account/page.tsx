@@ -82,7 +82,7 @@ function General() {
   const [displayName, setDisplayName] = useState(me.display_name ?? "");
   const [username, setUsername] = useState(me.username);
   const [email, setEmail] = useState(me.email ?? "");
-  const [avatar, setAvatar] = useState(me.avatar ?? "");
+  const [avatar, setAvatar] = useState(me.avatar);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +91,7 @@ function General() {
     displayName !== (me.display_name ?? "") ||
     username !== me.username ||
     email !== (me.email ?? "") ||
-    avatar !== (me.avatar ?? "");
+    avatar !== me.avatar;
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -168,10 +168,11 @@ function General() {
 // makes them pick one to find out what it looks like. The same argument
 // the theme swatches make one tab over.
 //
-// **"None" is one of the choices**, not a separate clear button. It is
-// a state the account can be in — most are — and a control that can
-// reach every state but the default is one that needs a second control
-// beside it.
+// **There is no "none".** It was the first choice here for a release,
+// and it was what almost every account held — so the picker's ordinary
+// state was the one that showed no picture, and the sidebar drew two
+// letters of a username instead. An account arrives on one of these
+// now; see user.DefaultAvatar.
 function Faces({
   chosen,
   onChoose,
@@ -185,19 +186,6 @@ function Faces({
     <div className="space-y-2">
       <Label className="text-xs text-muted-foreground">Icon</Label>
       <div className="flex flex-wrap gap-3">
-        <button
-          type="button"
-          onClick={() => onChoose("")}
-          aria-pressed={chosen === ""}
-          className={cn(
-            "flex size-12 shrink-0 items-center justify-center border text-[10px] tracking-[0.14em] uppercase transition-colors",
-            chosen === ""
-              ? "border-primary text-primary"
-              : "border-border text-subtle-foreground hover:border-border-strong",
-          )}
-        >
-          None
-        </button>
         {offered.map((name) => (
           <button
             key={name}
@@ -211,9 +199,9 @@ function Faces({
             )}
           >
             {/* A plain <img>: next/image wants a loader and a build-time
-                size for something that is four fixed files in this
-                image's own public directory. */}
-            {/* biome-ignore lint/performance/noImgElement: four static files, no loader worth configuring */}
+                size for a handful of fixed files in this image's own
+                public directory. */}
+            {/* biome-ignore lint/performance/noImgElement: static files, no loader worth configuring */}
             <img src={avatarSrc(name)} alt="" className="size-full object-cover" />
           </button>
         ))}

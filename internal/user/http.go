@@ -196,11 +196,17 @@ type WhoAmIResponse struct {
 	// compiled into the dashboard: the daemon is what refuses a name,
 	// and a second list is one to disagree with.
 	Themes []string `json:"themes,omitempty"`
-	// What this account says about the person holding it. Absent when
-	// nothing was set, which is the normal state for all three.
+	// What this account says about the person holding it. The first two
+	// are absent when nothing was set, which is their normal state.
+	//
+	// **The face is always here**, because there is no account without
+	// one — see user.DefaultAvatar. Sent even when it is the default so
+	// the dashboard has one answer to draw rather than an answer and a
+	// fallback, which is a second place the default would be written
+	// down.
 	DisplayName string `json:"display_name,omitempty"`
 	Email       string `json:"email,omitempty"`
-	Avatar      string `json:"avatar,omitempty"`
+	Avatar      string `json:"avatar"`
 	// Avatars is which faces this instance ships, for the same reason
 	// Themes is served: the daemon is what refuses a name.
 	Avatars []string `json:"avatars,omitempty"`
@@ -345,7 +351,7 @@ type UserResponse struct {
 	// here, and these are what a username cannot carry.
 	DisplayName string    `json:"display_name,omitempty"`
 	Email       string    `json:"email,omitempty"`
-	Avatar      string    `json:"avatar,omitempty"`
+	Avatar      string    `json:"avatar"`
 	CreatedAt   time.Time `json:"created_at"`
 }
 
