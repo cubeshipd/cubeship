@@ -239,6 +239,14 @@ jobs:
               -ldflags "-s -w -X main.version=$VERSION" \
               -o "dist/cubeship" ./cmd/cubeship
             tar -czf "dist/cubeship_${VERSION}_${os}_${arch}.tar.gz" -C dist cubeship
+            # And the same tarball under a name with no version in it.
+            # `releases/latest/download/<name>` needs the name to be
+            # known in advance, so without this the README's install
+            # command has to carry a version number — which is a number
+            # that goes stale the next release and 404s for whoever
+            # copies it.
+            cp "dist/cubeship_${VERSION}_${os}_${arch}.tar.gz" \
+               "dist/cubeship_${os}_${arch}.tar.gz"
             rm dist/cubeship
           done
           (cd dist && sha256sum *.tar.gz > checksums.txt)
