@@ -133,6 +133,17 @@ func (r *Repository) BySlug(ctx context.Context, slug string) (*Datastore, error
 	return d, nil
 }
 
+// ByID is how a backup finds the database it came from: a slug is what
+// somebody types and an id is what a foreign key holds.
+func (r *Repository) ByID(ctx context.Context, id int64) (*Datastore, error) {
+	row := r.q.QueryRowContext(ctx, `SELECT `+columns+` FROM datastores WHERE id = $1`, id)
+	d, err := scan(row)
+	if err != nil {
+		return nil, fmt.Errorf("get datastore %d: %w", id, err)
+	}
+	return d, nil
+}
+
 func (r *Repository) List(ctx context.Context) ([]*Datastore, error) {
 	rows, err := r.q.QueryContext(ctx, `SELECT `+columns+` FROM datastores ORDER BY slug`)
 	if err != nil {

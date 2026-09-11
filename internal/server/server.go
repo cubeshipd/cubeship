@@ -13,6 +13,7 @@ import (
 	"net/http"
 
 	"cubeship/internal/app"
+	"cubeship/internal/backup"
 	"cubeship/internal/certificates"
 	"cubeship/internal/credential"
 	"cubeship/internal/datastore"
@@ -45,6 +46,7 @@ type Server struct {
 	Apps         *app.Service
 	Datastores   *datastore.Service
 	ObjectStores *objectstore.Service
+	Backups      *backup.Service
 	Metrics      *metrics.Service
 	// Machine is what the box itself is doing, which belongs to no
 	// module below: there is one of it, and nothing here configures it.
@@ -329,6 +331,11 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Releases:     release.NewService(db, opts.Version),
 		Updates:      updates,
 		Certs:        certificates.NewService(cfg, apps, opts.DataDir),
+		// Above both of the modules it needs, the way certificates sits
+		// above apps and settings: a backup is a database's dump put
+		// somewhere that is not this machine, and neither module could
+		// own both halves of that sentence.
+		Backups: backup.NewService(db, datastores, objectStores, opts.DataDir),
 		// A firewall is the host's, so a server with no way to reach the
 		// host has one that answers "not available" — which is what a
 		// test wants, and what `make dev` is.
@@ -442,6 +449,19 @@ func (s *Server) routes() {
 	project.NewHandler(s.Projects).Routes(s.router, auth)
 	settings.NewHandler(s.Settings).Routes(s.router, auth)
 	certificates.NewHandler(s.Certs).Routes(s.router, auth)
+	backups := backup.NewHandler(s.Backups)
+	// What a store is called, so a listing of backups can say where one
+	// is without the dashboard joining two lists itself. Wired here for
+	// the reason every seam between two modules is: `server` is the one
+	// package that knows both exist.
+	backups.SetStoreNames(func(id int64) string {
+		store, err := s.ObjectStores.Repo().ByID(context.Background(), id)
+		if err != nil {
+			return ""
+		}
+		return store.Slug
+	})
+	backups.Routes(s.router, auth)
 	firewall.NewHandler(s.Firewall).Routes(s.router, auth)
 	credential.NewHandler(s.Credentials).Routes(s.router, auth)
 	extregistry.NewHandler(s.Registries).Routes(s.router, auth)

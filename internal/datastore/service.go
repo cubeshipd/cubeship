@@ -707,3 +707,69 @@ func Reconcile(ctx context.Context, repo *Repository, d interface {
 	}
 	return nil
 }
+
+// --- what backups need, and nothing more ---
+
+// ByID and BySlug answer which database, with no caller.
+//
+// **They authorize nothing, deliberately.** `internal/backup` has
+// already settled whether somebody may back this database up before it
+// asks which one — and the scheduler has no caller to ask about at all.
+// Same shape `metrics.Service` has: asking twice is two answers to a
+// question with one.
+func (s *Service) ByID(ctx context.Context, id int64) (*Datastore, error) {
+	return s.Repo().ByID(ctx, id)
+}
+
+func (s *Service) BySlug(ctx context.Context, slug string) (*Datastore, error) {
+	return s.Repo().BySlug(ctx, slug)
+}
+
+// Exec runs a command inside a database's container, streaming stdin in
+// and stdout out.
+//
+// It is here rather than in `backup` because the container is this
+// module's: which one a datastore is running, and whether it is running
+// at all, is a fact it owns. What the command *is* comes from the
+// engine's spec, which is also here; what it is *for* is the caller's.
+func (s *Service) Exec(ctx context.Context, d *Datastore, cmd, env []string, in io.Reader, out io.Writer) (string, error) {
+	if d.ContainerID == "" {
+		return "", ErrNotRunning
+	}
+	running, err := s.prov.docker.IsRunning(ctx, d.ContainerID)
+	if err != nil || !running {
+		// A dump against a stopped database is not a smaller dump, it
+		// is a connection refused several seconds later — said here
+		// instead, where it is the reason rather than the symptom.
+		return "", ErrNotRunning
+	}
+
+	// The engine's own environment is carried alongside the command's:
+	// `docker exec` starts a process with the container's environment,
+	// and these are the two or three variables the tools read for a
+	// password.
+	full := append([]string{}, cmd...)
+	stderr, code, err := s.prov.docker.ExecStream(ctx, d.ContainerID, withEnv(full, env), in, out)
+	if err != nil {
+		return stderr, err
+	}
+	if code != 0 {
+		return stderr, fmt.Errorf("%s exited with status %d", cmd[0], code)
+	}
+	return stderr, nil
+}
+
+// withEnv wraps a command so it runs with extra variables set.
+//
+// `env` is a POSIX utility rather than a shell builtin, so this is argv
+// and never a string: nothing here is parsed, quoted or split, and a
+// password containing a space, a quote or a semicolon reaches the tool
+// exactly as it is stored. A `sh -c` with the same values interpolated
+// would be a shell reading somebody's password as syntax.
+func withEnv(cmd, env []string) []string {
+	if len(env) == 0 {
+		return cmd
+	}
+	out := append([]string{"env"}, env...)
+	return append(out, cmd...)
+}
