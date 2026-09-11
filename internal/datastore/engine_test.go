@@ -190,8 +190,12 @@ func keysOf(m envvar.Map) []string {
 // The mount point *is* the data directory. Then the entrypoint chowns
 // the mount, and everything below inherits an owner that can read it.
 func TestNoEngineMovesItsDataBelowTheMount(t *testing.T) {
-	// The variables each image reads to relocate its data. Setting any
-	// of them is the mistake; there is no correct value.
+	// The variables each image reads to relocate its data. The mount
+	// point is the one correct value: these images chown their data
+	// directory *and below* to the unprivileged user they drop to, so
+	// anything deeper leaves the mount root-owned and 0700 — the mode
+	// the daemon creates it with — and the engine's own user cannot
+	// traverse into the directory the container just prepared.
 	relocators := []string{"PGDATA", "MYSQL_DATADIR", "MONGO_DATA_DIR"}
 
 	for _, e := range Engines() {
@@ -199,9 +203,12 @@ func TestNoEngineMovesItsDataBelowTheMount(t *testing.T) {
 		told := append(d.ContainerEnv(), d.ContainerCmd()...)
 		for _, line := range told {
 			for _, name := range relocators {
-				if strings.HasPrefix(line, name+"=") {
-					t.Errorf("%s sets %s. Its data must live at the mount point, or the engine's own user cannot reach it: %q",
-						e, name, line)
+				if !strings.HasPrefix(line, name+"=") {
+					continue
+				}
+				if got := strings.TrimPrefix(line, name+"="); got != d.DataPath() {
+					t.Errorf("%s points %s at %q, which is not its mount point %q. The engine's own user cannot reach anything below the mount.",
+						e, name, got, d.DataPath())
 				}
 			}
 		}
@@ -209,6 +216,34 @@ func TestNoEngineMovesItsDataBelowTheMount(t *testing.T) {
 		if d.DataPath() == "" {
 			t.Errorf("%s has no data path, so nothing it writes would survive a restart", e)
 		}
+	}
+}
+
+// Where Postgres puts its data is this instance's decision, not the
+// image's.
+//
+// 18 is why. The image's default moved to
+// /var/lib/postgresql/<major>/docker, one level below the volume it now
+// declares, so a datastore that let the image choose would come up
+// working with its data somewhere this instance does not name: in no
+// backup of the data directory, and orphaned the next time the
+// container is replaced — which is what publishing a port does. A tag
+// added to the list without this is a database that quietly loses
+// everything.
+func TestPostgresSaysWhereItsDataGoes(t *testing.T) {
+	d := &Datastore{Engine: EnginePostgres, Username: "app", Password: "secret", Database: "app_db"}
+
+	var said string
+	for _, line := range d.ContainerEnv() {
+		if v, ok := strings.CutPrefix(line, "PGDATA="); ok {
+			said = v
+		}
+	}
+	if said == "" {
+		t.Fatal("postgres leaves PGDATA to the image, which moved it in 18 to a directory outside the mount")
+	}
+	if said != d.DataPath() {
+		t.Errorf("PGDATA is %q and the mount is %q", said, d.DataPath())
 	}
 }
 

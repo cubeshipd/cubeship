@@ -3091,10 +3091,22 @@ Postgres is where this bit. Its image documents pointing `PGDATA` at a
 subdirectory when the data lives on a bind mount, and following that
 advice broke every Postgres this module provisioned — `Permission
 denied` on a restart loop, from a container that had been root a moment
-earlier. The daemon's own Postgres never had the problem because it
-never set `PGDATA`; `bootstrap.PostgresContainerOpts` is the same image
-on the same kind of directory, and it works. `TestNoEngineMovesItsDataBelowTheMount`
-is what keeps the advice from being taken again.
+earlier. `TestNoEngineMovesItsDataBelowTheMount` is what keeps the
+advice from being taken again: it does not forbid the variable, it
+requires the mount point as its value.
+
+**And the value is said rather than left to the image.** Not setting
+`PGDATA` was the rule for as long as the image's own default *was* the
+mount, and 18 ended that: its default moved to
+`/var/lib/postgresql/<major>/docker`, with the volume declared one level
+above at `/var/lib/postgresql`. Left alone, a Postgres 18 datastore
+comes up, works, and keeps its data in an anonymous volume nothing on
+this instance names — so it is in no backup of the data directory and it
+is orphaned the next time the container is replaced, which is what
+publishing a port does. `postgresDataPath` is both the bind mount and
+`PGDATA`, one fact rather than two, and `TestPostgresSaysWhereItsDataGoes`
+is there because adding a tag to the list is exactly the edit that would
+otherwise lose somebody's database in silence.
 
 Two smaller ones worth knowing: Redis is started with `--appendonly
 yes`, because otherwise it snapshots on its own schedule and a restart
