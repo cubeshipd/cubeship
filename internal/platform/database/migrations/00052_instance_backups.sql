@@ -26,7 +26,14 @@ CREATE TABLE instance_backup_schedule (
     -- Always true, so a second row cannot exist. The alternative is a
     -- unique index on a constant expression, which says the same thing
     -- less plainly.
-    only            BOOLEAN PRIMARY KEY DEFAULT true CHECK (only),
+    --
+    -- **Not called `only`**, which is what it was and which Postgres
+    -- reserves for `FROM ONLY parent` — a column of that name parses as
+    -- a syntax error at CREATE TABLE, so the migration could not apply
+    -- at all and every test on the instance failed to build a schema.
+    -- Quoting it would work and would mean quoting it in every query
+    -- that ever touches it.
+    singleton       BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton),
     at              TEXT NOT NULL,
     timezone        TEXT NOT NULL,
     keep            INT NOT NULL DEFAULT 7,
