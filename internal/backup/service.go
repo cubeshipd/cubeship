@@ -28,7 +28,7 @@ const manageRole = user.RoleAdmin
 
 // Timeout bounds one dump or one restore. It is nobody's request
 // timeout — a backup is detached the moment it is asked for — it only
-// stops a wedged command from holding a row in `running` for ever.
+// stops a wedged command from holding a row in `taking` for ever.
 const Timeout = 2 * time.Hour
 
 // Databases is the little of `datastore` this module needs: which
@@ -48,8 +48,15 @@ type Databases interface {
 }
 
 // Stores is the little of `objectstore` this module needs.
+//
+// Names and ids both, because they answer different questions: a
+// schedule is written with the name somebody picked, and the row that
+// records where a five-month-old dump went holds a key — a slug
+// somebody could reuse is not one.
 type Stores interface {
 	ClientForID(ctx context.Context, id int64) (*objectstore.Store, objectstore.Client, error)
+	IDForName(ctx context.Context, name string) (int64, error)
+	NameForID(ctx context.Context, id int64) string
 }
 
 type Service struct {

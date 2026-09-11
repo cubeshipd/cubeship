@@ -49,7 +49,7 @@ func (r *Repository) Start(ctx context.Context, b *Backup) (*Backup, error) {
 		`INSERT INTO backups
 		   (datastore_id, datastore_name, engine, version,
 		    object_store_id, bucket, object_key, status, scheduled)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,'running',$8)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,'taking',$8)
 		 RETURNING `+columns,
 		datastoreID, b.DatastoreName, b.Engine, b.Version,
 		storeID, b.Bucket, b.Key, b.Scheduled)

@@ -32,7 +32,7 @@ func (s *Service) Schedule(ctx context.Context, caller *user.User, name string) 
 // a time that is not one, a zone this machine does not know, a count
 // that is negative, and a store named with no bucket to put anything
 // in.
-func (s *Service) SetSchedule(ctx context.Context, caller *user.User, name string, in Schedule) (*Schedule, error) {
+func (s *Service) SetSchedule(ctx context.Context, caller *user.User, name, store string, in Schedule) (*Schedule, error) {
 	d, err := s.resolve(ctx, caller, name)
 	if err != nil {
 		return nil, err
@@ -56,16 +56,22 @@ func (s *Service) SetSchedule(ctx context.Context, caller *user.User, name strin
 	if in.Keep < 0 || in.Keep > MaxKeep {
 		return nil, ErrBadKeep
 	}
-	if in.StoreID != 0 && in.Bucket == "" {
-		return nil, ErrNoBucket
-	}
-	if in.StoreID != 0 {
-		// Checked now, so a schedule cannot be written against a store
-		// this instance cannot open — which would be a row that fires
-		// nightly and fails nightly.
+	if store != "" {
+		if in.Bucket == "" {
+			return nil, ErrNoBucket
+		}
+		in.StoreID, err = s.stores.IDForName(ctx, store)
+		if err != nil {
+			return nil, err
+		}
+		// Opened now, so a schedule cannot be written against a store
+		// this instance cannot reach — which would be a row that fires
+		// nightly and fails nightly, in a log nobody reads.
 		if _, _, err := s.stores.ClientForID(ctx, in.StoreID); err != nil {
 			return nil, err
 		}
+	} else {
+		in.StoreID, in.Bucket = 0, ""
 	}
 
 	in.DatastoreID = d.ID

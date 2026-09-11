@@ -455,11 +455,7 @@ func (s *Server) routes() {
 	// the reason every seam between two modules is: `server` is the one
 	// package that knows both exist.
 	backups.SetStoreNames(func(id int64) string {
-		store, err := s.ObjectStores.Repo().ByID(context.Background(), id)
-		if err != nil {
-			return ""
-		}
-		return store.Slug
+		return s.ObjectStores.NameForID(context.Background(), id)
 	})
 	backups.Routes(s.router, auth)
 	firewall.NewHandler(s.Firewall).Routes(s.router, auth)

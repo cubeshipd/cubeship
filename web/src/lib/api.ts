@@ -564,6 +564,13 @@ export type Datastore = {
   // here keeps a second copy of the engine table, and it is what says
   // whether two attachments would collide.
   var_stem: string;
+  // Whether this instance knows how to back this engine up. False for
+  // Redis, deliberately, and the screen leaves the tab out rather than
+  // offering one that could never hold anything.
+  can_back_up?: boolean;
+  // What a dump of this engine actually promises, in a sentence. It
+  // differs per engine in a way no general wording covers.
+  backup_consistency?: string;
   status: string;
   // Why provisioning failed, when it did.
   error?: string;
@@ -1002,6 +1009,49 @@ export async function uploadObject(
 // downloadURL is where a file is fetched from. A plain link, because
 // the session cookie is what authenticates it and a GET is safe — see
 // httpx.SameOrigin, which lets every read through.
+// One copy of one database, and what it says about itself outlives the
+// database it came from.
+export type Backup = {
+  id: number;
+  database: string;
+  // Whether that database is still here, which is what decides whether
+  // this can be restored at all. False is a backup that can be
+  // downloaded and deleted and not put back: where to put it is a
+  // decision this release does not make.
+  database_exists: boolean;
+  engine: string;
+  version: string;
+  store?: string;
+  bucket?: string;
+  key: string;
+  // Whether it is somewhere other than the disk it was taken from.
+  // **False is not a backup** in the sense that matters — it survives
+  // somebody dropping a table and not the machine — so every row says
+  // so rather than the screen claiming otherwise.
+  off_machine: boolean;
+  size_bytes: number;
+  status: "taking" | "succeeded" | "failed";
+  error?: string;
+  scheduled: boolean;
+  started_at: string;
+  finished_at?: string;
+};
+
+// When a database is backed up without anybody asking. Absent entirely
+// when it is not: the row existing is what scheduled means, so nothing
+// can say off while a time sits beside it.
+export type BackupSchedule = {
+  at: string;
+  timezone: string;
+  // How many to hold on to, newest first. Zero keeps every one.
+  keep: number;
+  // The object store they go to, by name — which is how every surface
+  // here addresses one. Absent for this machine's own disk.
+  store?: string;
+  bucket?: string;
+  last_run_at?: string;
+};
+
 export function downloadURL(store: string, bucket: string, key: string): string {
   return `/api${bucketPath(store, bucket)}/download?key=${encodeURIComponent(key)}`;
 }
