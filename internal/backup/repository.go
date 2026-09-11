@@ -16,7 +16,7 @@ func NewRepository(q database.Queryer) *Repository { return &Repository{q: q} }
 // columns is the list every scan below reads in order. Change one,
 // change both — and mind the queries that spell it out for a join,
 // which is where this has gone wrong elsewhere.
-const columns = `id, COALESCE(datastore_id, 0), datastore_name, engine, version,
+const columns = `id, kind, COALESCE(datastore_id, 0), datastore_name, engine, version,
 	COALESCE(object_store_id, 0), bucket, object_key, size_bytes, off_machine,
 	status, error, scheduled, started_at, finished_at`
 
@@ -25,7 +25,7 @@ type scanner interface{ Scan(dest ...any) error }
 func scan(row scanner) (*Backup, error) {
 	var b Backup
 	var finished sql.NullTime
-	if err := row.Scan(&b.ID, &b.DatastoreID, &b.DatastoreName, &b.Engine, &b.Version,
+	if err := row.Scan(&b.ID, &b.Kind, &b.DatastoreID, &b.DatastoreName, &b.Engine, &b.Version,
 		&b.StoreID, &b.Bucket, &b.Key, &b.Size, &b.Off,
 		&b.Status, &b.Error, &b.Scheduled, &b.StartedAt, &finished); err != nil {
 		return nil, err
@@ -42,16 +42,20 @@ func (r *Repository) Start(ctx context.Context, b *Backup) (*Backup, error) {
 	if b.DatastoreID != 0 {
 		datastoreID = b.DatastoreID
 	}
+	kind := b.Kind
+	if kind == "" {
+		kind = KindDatastore
+	}
 	if b.StoreID != 0 {
 		storeID = b.StoreID
 	}
 	row := r.q.QueryRowContext(ctx,
 		`INSERT INTO backups
-		   (datastore_id, datastore_name, engine, version,
+		   (kind, datastore_id, datastore_name, engine, version,
 		    object_store_id, bucket, object_key, off_machine, status, scheduled)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'taking',$9)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'taking',$10)
 		 RETURNING `+columns,
-		datastoreID, b.DatastoreName, b.Engine, b.Version,
+		kind, datastoreID, b.DatastoreName, b.Engine, b.Version,
 		storeID, b.Bucket, b.Key, b.Off, b.Scheduled)
 	created, err := scan(row)
 	if err != nil {
@@ -100,7 +104,14 @@ func (r *Repository) Delete(ctx context.Context, id int64) error {
 // ForDatastore lists one database's backups, newest first.
 func (r *Repository) ForDatastore(ctx context.Context, datastoreID int64) ([]*Backup, error) {
 	return r.list(ctx, `SELECT `+columns+` FROM backups
-		WHERE datastore_id = $1 ORDER BY started_at DESC`, datastoreID)
+		WHERE kind = $1 AND datastore_id = $2 ORDER BY started_at DESC`,
+		KindDatastore, datastoreID)
+}
+
+// ForInstance is the instance's own, newest first.
+func (r *Repository) ForInstance(ctx context.Context) ([]*Backup, error) {
+	return r.list(ctx, `SELECT `+columns+` FROM backups
+		WHERE kind = $1 ORDER BY started_at DESC`, KindInstance)
 }
 
 // List is every backup on the instance, newest first — including the
@@ -117,13 +128,22 @@ func (r *Repository) List(ctx context.Context) ([]*Backup, error) {
 // otherwise push the last good dump out of the window, which is the one
 // moment retention must not be the thing that loses it. A failed row is
 // kept regardless — it is the evidence that a schedule is not working.
-func (r *Repository) Expired(ctx context.Context, datastoreID int64, keep int) ([]*Backup, error) {
+func (r *Repository) Expired(ctx context.Context, kind Kind, datastoreID int64, keep int) ([]*Backup, error) {
 	if keep <= 0 {
 		return nil, nil
 	}
+	// **Counted within one kind.** An instance backup and a database's
+	// dump share this table and share nothing else: without the kind,
+	// a nightly copy of the instance would push somebody's database
+	// out of its own window of seven.
+	if kind == KindInstance {
+		return r.list(ctx, `SELECT `+columns+` FROM backups
+			WHERE kind = $1 AND status = $2
+			ORDER BY started_at DESC OFFSET $3`, KindInstance, StatusDone, keep)
+	}
 	return r.list(ctx, `SELECT `+columns+` FROM backups
-		WHERE datastore_id = $1 AND status = $2
-		ORDER BY started_at DESC OFFSET $3`, datastoreID, StatusDone, keep)
+		WHERE kind = $1 AND datastore_id = $2 AND status = $3
+		ORDER BY started_at DESC OFFSET $4`, KindDatastore, datastoreID, StatusDone, keep)
 }
 
 func (r *Repository) list(ctx context.Context, query string, args ...any) ([]*Backup, error) {
@@ -229,6 +249,71 @@ func (r *Repository) Schedules(ctx context.Context) ([]*Schedule, error) {
 // Written before the work rather than after it, so a dump that takes an
 // hour — or a daemon that dies during one — cannot make the schedule
 // fire again the moment it comes back.
+// InstanceSchedule reads the instance's own, or ErrNotFound when there
+// is none — which is what off is here as everywhere else.
+func (r *Repository) InstanceSchedule(ctx context.Context) (*Schedule, error) {
+	row := r.q.QueryRowContext(ctx,
+		`SELECT at, timezone, keep, COALESCE(object_store_id, 0), bucket, last_run_at
+		 FROM instance_backup_schedule WHERE only`)
+	out, err := scanInstanceSchedule(row)
+	if err != nil {
+		return nil, fmt.Errorf("get the instance backup schedule: %w", err)
+	}
+	return out, nil
+}
+
+func scanInstanceSchedule(row scanner) (*Schedule, error) {
+	var s Schedule
+	var lastRun sql.NullTime
+	if err := row.Scan(&s.At, &s.Timezone, &s.Keep, &s.StoreID, &s.Bucket, &lastRun); err != nil {
+		return nil, err
+	}
+	if lastRun.Valid {
+		s.LastRunAt = &lastRun.Time
+	}
+	return &s, nil
+}
+
+// SetInstanceSchedule writes the one row, or replaces it.
+func (r *Repository) SetInstanceSchedule(ctx context.Context, s *Schedule) (*Schedule, error) {
+	var storeID any
+	if s.StoreID != 0 {
+		storeID = s.StoreID
+	}
+	row := r.q.QueryRowContext(ctx,
+		`INSERT INTO instance_backup_schedule (only, at, timezone, keep, object_store_id, bucket)
+		 VALUES (true, $1, $2, $3, $4, $5)
+		 ON CONFLICT (only) DO UPDATE SET
+		   at = EXCLUDED.at, timezone = EXCLUDED.timezone, keep = EXCLUDED.keep,
+		   object_store_id = EXCLUDED.object_store_id, bucket = EXCLUDED.bucket,
+		   updated_at = now()
+		 RETURNING at, timezone, keep, COALESCE(object_store_id, 0), bucket, last_run_at`,
+		s.At, s.Timezone, s.Keep, storeID, s.Bucket)
+	out, err := scanInstanceSchedule(row)
+	if err != nil {
+		return nil, fmt.Errorf("set the instance schedule: %w", err)
+	}
+	return out, nil
+}
+
+func (r *Repository) DeleteInstanceSchedule(ctx context.Context) error {
+	_, err := r.q.ExecContext(ctx, `DELETE FROM instance_backup_schedule WHERE only`)
+	if err != nil {
+		return fmt.Errorf("delete the instance schedule: %w", err)
+	}
+	return nil
+}
+
+// MarkInstanceRun records that the timer fired, before the dump starts.
+func (r *Repository) MarkInstanceRun(ctx context.Context, at time.Time) error {
+	_, err := r.q.ExecContext(ctx,
+		`UPDATE instance_backup_schedule SET last_run_at = $1 WHERE only`, at)
+	if err != nil {
+		return fmt.Errorf("mark the instance schedule: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) MarkRun(ctx context.Context, datastoreID int64, at time.Time) error {
 	_, err := r.q.ExecContext(ctx,
 		`UPDATE backup_schedules SET last_run_at = $1 WHERE datastore_id = $2`, at, datastoreID)

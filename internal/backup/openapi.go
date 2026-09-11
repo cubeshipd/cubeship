@@ -17,6 +17,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 		Schemas: map[string]*openapi.Schema{
 			"Backup": openapi.Object(map[string]*openapi.Schema{
 				"id":              openapi.Integer(""),
+				"kind":            {Type: "string", Enum: []string{"datastore", "instance"}, Description: "What this is a copy of. `instance` is Cubeship itself — its own database and the few files beside it — rather than a database somebody asked it to run."},
 				"database":        openapi.String("The database it was taken from, by name. Written down rather than joined, because a backup outlives the database — deleting one is exactly when its backups matter."),
 				"database_exists": openapi.Bool("Whether that database is still here. False means this can be downloaded and deleted but not restored: where to put it is a decision, and this release does not make it."),
 				"engine":          openapi.String("The engine that produced it."),
@@ -89,6 +90,76 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Tags:        []string{"Backups"},
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The orphaned backups, newest first.", openapi.Array(openapi.Ref("Backup"))),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+					},
+				},
+			},
+			"/instance/backups": {
+				"get": {
+					OperationID: "listInstanceBackups",
+					Summary:     "List the backups of the instance itself",
+					Description: "Newest first. Requires the admin role.",
+					Tags:        []string{"Backups"},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The backups.", openapi.Array(openapi.Ref("Backup"))),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+					},
+				},
+				"post": {
+					OperationID: "backUpInstance",
+					Summary:     "Back the instance itself up, now",
+					Description: "**What this is a copy of is Cubeship, not what is on it.** The archive is a logical dump of the instance's own database — every account, project, app, credential and attachment — plus the few files under the data directory that cannot be worked out again: the certificate store, and the pictures on projects.\n\n**The data is deliberately not in it.** A datastore's directory and a managed object store's contents are the two largest things on the box by orders of magnitude, and each already has a backup of its own that can be sent somewhere else. Folding them in would make the one artifact that has to be small enough to take every night the one that is too big to take at all.\n\nA `.tar.gz`, taken detached like every other backup here: the row is written first and says how it went. It goes wherever the instance's schedule says, or to this machine's own disk when there is none — which is not a backup, and every screen showing one says so.\n\n**There is no restore.** Putting an instance back means a fresh install, a stopped daemon, `psql` and the files — an operator's procedure, not a button, because the thing being replaced is the database the button is running on. Requires the admin role.",
+					Tags:        []string{"Backups"},
+					Responses: openapi.Responses{
+						"202": openapi.JSONResponse("The row it will report into.", openapi.Ref("Backup")),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"409": openapi.TextResponse("This instance was pointed at a database it does not run, so there is no container here to dump."),
+					},
+				},
+			},
+			"/instance/backups/schedule": {
+				"get": {
+					OperationID: "getInstanceBackupSchedule",
+					Summary:     "Read the instance's backup schedule",
+					Description: "404 when there is none, which is what off is: the row existing is the whole of it. Requires the admin role.",
+					Tags:        []string{"Backups"},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The schedule.", openapi.Ref("BackupSchedule")),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.TextResponse("Not scheduled."),
+					},
+				},
+				"put": {
+					OperationID: "setInstanceBackupSchedule",
+					Summary:     "Back the instance up every day",
+					Description: "A time of day and a timezone, for the reason every schedule here takes one: what is being chosen is when the instance may be briefly busy, and \"every 24 hours from whenever you turned it on\" is not something anybody can plan around.\n\nRetention counts the instance's own backups alone — a nightly copy of the instance must not push somebody's database out of its window of seven. Requires the admin role.",
+					Tags:        []string{"Backups"},
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"at":       openapi.String(`A time of day, "03:00".`),
+						"timezone": openapi.String("An IANA name. Defaults to UTC."),
+						"keep":     openapi.Integer("How many to hold on to, newest first. **Zero keeps every one**, and only successful ones are counted."),
+						"store":    openapi.String("The object store they go to, by name. Empty is this machine's own disk, which is not a backup of it."),
+						"bucket":   openapi.String("The bucket in that store. Required when one is named."),
+					}, "at")),
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The schedule.", openapi.Ref("BackupSchedule")),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"409": openapi.TextResponse("This instance does not run its own database."),
+					},
+				},
+				"delete": {
+					OperationID: "unsetInstanceBackupSchedule",
+					Summary:     "Stop backing the instance up on a timer",
+					Description: "The row goes, which is what off is. Backups already taken are left alone. Requires the admin role.",
+					Tags:        []string{"Backups"},
+					Responses: openapi.Responses{
+						"204": openapi.Empty("Not scheduled any more."),
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 					},

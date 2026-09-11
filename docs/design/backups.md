@@ -142,6 +142,64 @@ deleted can be **downloaded and not restored** — where it should go is a
 choice this release does not offer, and picking one on somebody's behalf
 would be the wrong database quietly replaced.
 
+### Backing the instance up
+
+This module was built above `datastore` rather than inside it for
+exactly this: **the most valuable database on the box is Cubeship's own
+Postgres**, which holds every account, project, app, credential and
+attachment and is not a datastore at all. A module that could never
+reach it would have been the wrong module.
+
+**What the archive is a copy of is Cubeship, not what is on it.** A
+logical dump of that database, plus the two things under the data
+directory that cannot be worked out again: `letsencrypt/acme.json`,
+which is every certificate and its private key — losing it is not fatal
+but asking again spends a weekly allowance shared with everyone under
+the same registered domain — and the pictures on projects.
+
+**The data is deliberately out.** A datastore's directory and a managed
+store's objects are the two largest things on the box by orders of
+magnitude, and each already has a backup of its own that can go
+somewhere else. Folding them in would make the one artifact that has to
+be small enough to take every night the one that is too big to take at
+all. The build cache is a cache, the setup token is spent, and
+`traefik-dynamic` is written from the rows on every start.
+
+`kind` is what tells the two apart, and it is a column rather than
+"`datastore_id IS NULL`" because that already means something else: the
+foreign key is `ON DELETE SET NULL`, so a null there is a dump whose
+database was deleted. **Retention counts within one kind** — without
+that, a nightly copy of the instance pushes somebody's database out of
+its own window of seven.
+
+**It is staged on disk, and a datastore's dump is not.** Every other
+dump here is a pipe from the engine straight into a multipart upload,
+because a database larger than the disk under it is the ordinary case on
+a small VPS. A tar entry has to declare its size before its bytes, so
+the same trick is unavailable — and unnecessary: what is in here is rows
+about projects and apps rather than anybody's data.
+
+**Through the Postgres container, because the daemon has no `pg_dump`.**
+Its image is Alpine with one binary in it. The password is read from
+inside that container rather than passed in — it is already in its
+environment — so the command is a fixed string with nothing
+interpolated, which is the rule `firewall.Spec.Args` keeps for the same
+reason. An instance pointed at somebody else's database with
+`CUBESHIP_DATABASE_URL` has no container to exec into and is **refused
+with that sentence** rather than handed an archive with a hole in it.
+
+**There is no restore.** The thing being replaced is the database the
+button would be running on. Putting an instance back is a fresh install,
+the daemon stopped, the dump loaded with `psql` and the files put back —
+an operator's procedure, and the screen says so where the button would
+be rather than leaving somebody to find out.
+
+The instance's schedule is a **table of its own with one row**, because
+`backup_schedules` is keyed by the datastore it belongs to and this has
+none. Everything above the repository reads the two as one list: a
+schedule is the same four answers either way, and `Schedule.Kind()`
+derives which from the one field that can tell.
+
 ### The role, and the surfaces
 
 An **admin's**, all of it. A dump is every row in the database, so

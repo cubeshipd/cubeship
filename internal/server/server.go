@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/rsa"
 	"fmt"
+	"io"
 	"net/http"
 
 	"cubeship/internal/app"
@@ -89,6 +90,14 @@ type Options struct {
 	// WebhookToken is the shared secret on the registry's push
 	// notifications. Not anyone's API key.
 	WebhookToken string
+
+	// OwnDatabase says this instance runs the Postgres it stores
+	// everything in, rather than having been pointed at somebody
+	// else's with CUBESHIP_DATABASE_URL. It is what decides whether the
+	// instance can back *itself* up: there is no container here to dump
+	// through otherwise, and `backup` refuses with that sentence rather
+	// than producing an archive with a hole in it.
+	OwnDatabase bool
 
 	// BuilderToken is what a build logs in to this instance's own
 	// registry with when what it builds runs on another machine. Empty
@@ -369,6 +378,16 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		srv.Certs.SetEngine(e)
 	}
 
+	// What it takes to back the instance itself up: an Engine that can
+	// exec into this daemon's own Postgres, and the fact that there is
+	// one to exec into. A test's Docker is a stub that cannot, and a
+	// server pointed at somebody else's database has no container — in
+	// either case `backup` refuses with the reason rather than writing
+	// an archive with a hole where the database should be.
+	if e, ok := docker.(bootstrap.PostgresDumper); ok {
+		srv.Backups.SetInstance(&instanceDatabase{docker: e, owned: opts.OwnDatabase})
+	}
+
 	srv.routes()
 	return srv
 }
@@ -392,6 +411,29 @@ func (s *Server) WaitForGitHubDeploys() {
 func (s *Server) SetRegistrySigningKey(key *rsa.PrivateKey, certDER []byte) {
 	s.Registry.SetSigningKey(key, certDER)
 }
+
+// instanceDatabase is how `backup` reaches this daemon's own Postgres.
+//
+// Wired here because this is the package that knows both that the
+// instance runs one and how to talk to the Engine — the same seam
+// `project.AppTeardown` and `credential.Dependant` meet at, and for the
+// same reason: the module that needs the answer sits below the one that
+// has it.
+type instanceDatabase struct {
+	docker bootstrap.PostgresDumper
+	owned  bool
+}
+
+func (i *instanceDatabase) OwnsDatabase() bool { return i.owned }
+
+func (i *instanceDatabase) DumpDatabase(ctx context.Context, w io.Writer) (string, error) {
+	return bootstrap.DumpPostgres(ctx, i.docker, w)
+}
+
+// Version is the major this instance runs, taken from the image tag
+// rather than asked of the server: it is what a restore would have to
+// load into, and the image is what decides that.
+func (i *instanceDatabase) Version() string { return bootstrap.PostgresMajor() }
 
 // updateDocker is the Engine, if this one can read a container's own
 // settings back.
