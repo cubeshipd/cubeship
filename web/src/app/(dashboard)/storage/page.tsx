@@ -105,6 +105,7 @@ export default function StoragePage() {
       <DataTable
         columns={columns}
         rows={stores}
+        search={{ placeholder: "Filter stores", by: (s) => [s.name, s.provider, s.kind] }}
         rowKey={(s) => s.name}
         onRowClick={(s) => router.push(`/storage/${s.name}`)}
         empty={

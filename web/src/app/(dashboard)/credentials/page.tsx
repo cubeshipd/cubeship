@@ -101,7 +101,12 @@ export default function Credentials() {
       </RailPortal>
       <ErrorAlert error={error} />
 
-      <DataTable columns={columns} rows={creds} rowKey={(c) => String(c.id)} />
+      <DataTable
+        columns={columns}
+        rows={creds}
+        rowKey={(c) => String(c.id)}
+        search={{ placeholder: "Filter credentials", by: (c) => [c.label, c.username] }}
+      />
 
       <CredentialDialog open={adding} onOpenChange={setAdding} onSaved={reload} />
 

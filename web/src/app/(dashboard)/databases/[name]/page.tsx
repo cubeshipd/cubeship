@@ -403,6 +403,7 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
       <DataTable
         columns={attachmentColumns((app) => setDetaching(app))}
         rows={datastore.attachments}
+        search={{ placeholder: "Filter apps", by: (a) => [a.app, a.prefix] }}
         rowKey={(a) => a.app}
         onRowClick={(a) => router.push(`/projects/${a.app}`)}
         empty="Nothing is attached yet."

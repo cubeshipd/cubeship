@@ -80,6 +80,7 @@ export default function DatabasesPage() {
       <DataTable
         columns={columns}
         rows={datastores}
+        search={{ placeholder: "Filter databases", by: (d) => [d.name, d.engine, d.version] }}
         rowKey={(d) => d.name}
         onRowClick={(d) => router.push(`/databases/${d.name}`)}
         empty={

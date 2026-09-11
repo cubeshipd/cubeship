@@ -6,6 +6,7 @@ import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
 import { ProjectCard } from "@/components/project-card";
+import { SearchBar } from "@/components/search-bar";
 import { SlugField } from "@/components/slug-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -41,6 +42,7 @@ function Projects() {
   const [envs, setEnvs] = useState<Record<string, string[]>>({});
   const [apps, setApps] = useState<App[]>([]);
   const [creating, setCreating] = useState(false);
+  const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
@@ -78,6 +80,9 @@ function Projects() {
     };
   }, [projects]);
 
+  const needle = query.trim().toLowerCase();
+  const shown = (projects ?? []).filter((p) => p.slug.toLowerCase().includes(needle));
+
   return (
     <>
       <RailPortal>
@@ -107,9 +112,34 @@ function Projects() {
         </Card>
       )}
 
+      {/* The grid is not a DataTable, so the filter is written out
+          here — the same control, the same gap, and the same rule about
+          what it filters: the page, not one card. */}
       {projects && projects.length > 0 && (
+        <SearchBar
+          className="mb-4"
+          value={query}
+          onChange={setQuery}
+          placeholder="Filter projects"
+          trailing={
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+              {shown.length}/{projects.length}
+            </span>
+          }
+        />
+      )}
+
+      {projects && projects.length > 0 && shown.length === 0 && (
+        <Card>
+          <CardContent className="py-2 text-sm text-muted-foreground">
+            Nothing matches that.
+          </CardContent>
+        </Card>
+      )}
+
+      {shown.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {projects.map((p) => (
+          {shown.map((p) => (
             <ProjectCard
               key={p.slug}
               slug={p.slug}

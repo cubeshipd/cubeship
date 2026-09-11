@@ -480,8 +480,11 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
           <Table>
             <TableHeader>
               <TableRow>
+                {/* No padding on the right of the box: the name's own
+                    `px-4` is the gap, and two paddings put the box a
+                    column away from the thing it selects. */}
                 {!own && (
-                  <TableHead className="w-10 px-4">
+                  <TableHead className="w-10 pr-0 pl-4">
                     <Checkbox
                       aria-label="Select every repository shown"
                       checked={allShownPicked}
@@ -670,7 +673,7 @@ function RepoRows({
           // swallows the event rather than the box alone: the box's own
           // hit area is deliberately larger than the box.
           <TableCell
-            className="w-10 px-4 py-2.5"
+            className="w-10 py-2.5 pr-0 pl-4"
             onClick={(e) => e.stopPropagation()}
             onKeyDown={(e) => e.stopPropagation()}
           >

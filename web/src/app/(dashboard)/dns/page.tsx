@@ -159,6 +159,7 @@ export default function DNSProviders() {
       <DataTable
         columns={columns}
         rows={providers}
+        search={{ placeholder: "Filter providers", by: (p) => [p.provider_name, p.label] }}
         rowKey={(p) => String(p.id)}
         onRowClick={(p) => router.push(`/dns/${p.id}`)}
       />
