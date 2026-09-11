@@ -20,7 +20,7 @@ import { sanitize } from "@/lib/slug";
 // a container name — so changing one would break whatever was pointed
 // at the old one.
 const HINT =
-  "Lowercase letters, digits and dashes, and permanent: it becomes part of an address other things are configured against. A description carries whatever the name cannot.";
+  "Lowercase letters, digits and dashes, and permanent: it becomes part of an address other things are configured against.";
 
 export function SlugField({
   label = "Slug",

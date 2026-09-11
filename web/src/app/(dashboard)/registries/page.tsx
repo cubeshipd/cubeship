@@ -38,6 +38,7 @@ import {
 } from "@/lib/api";
 import { providerIcon } from "@/lib/credentials";
 import { message } from "@/lib/errors";
+import { useOpenOnArrival } from "@/lib/open-on-arrival";
 
 // What a registry asks for beyond the credential it logs in with.
 //
@@ -74,6 +75,7 @@ export default function Registries() {
   const [creds, setCreds] = useState<RegistryCredential[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  useOpenOnArrival("new", setAdding);
   const [query, setQuery] = useState("");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [accounts, setAccounts] = useState<Credential[]>([]);

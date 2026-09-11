@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { api, type ObjectStore } from "@/lib/api";
 import { message } from "@/lib/errors";
+import { useOpenOnArrival } from "@/lib/open-on-arrival";
 
 // Every object store this instance can reach, both kinds in one table.
 //
@@ -24,6 +25,7 @@ export default function StoragePage() {
   const router = useRouter();
   const [stores, setStores] = useState<ObjectStore[] | null>(null);
   const [adding, setAdding] = useState(false);
+  useOpenOnArrival("new", setAdding);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {

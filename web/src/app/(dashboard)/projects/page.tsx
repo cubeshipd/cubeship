@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dialog";
 import { type App, api, type Environment, type Project } from "@/lib/api";
 import { message } from "@/lib/errors";
+import { useOpenOnArrival } from "@/lib/open-on-arrival";
 
 // An unclaimed instance is not this page's problem: the shell above
 // sends anyone it cannot identify to sign in, and sign-in is where an
@@ -42,6 +43,7 @@ function Projects() {
   const [envs, setEnvs] = useState<Record<string, string[]>>({});
   const [apps, setApps] = useState<App[]>([]);
   const [creating, setCreating] = useState(false);
+  useOpenOnArrival("new", setCreating);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
 
