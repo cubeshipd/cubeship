@@ -9,8 +9,9 @@ import {
 } from "@tanstack/react-table";
 import { cn } from "cn";
 import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { LoadingRows } from "@/components/loading";
+import { SearchBar } from "@/components/search-bar";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -72,6 +73,7 @@ export function DataTable<T extends object>({
   columns,
   rows,
   empty,
+  search,
   loadingRows = 6,
   rowKey,
   onRowClick,
@@ -93,6 +95,20 @@ export function DataTable<T extends object>({
   // an array in it.
   rows: T[] | null | undefined;
   empty?: ReactNode;
+  // search puts a filter above the table and answers it here.
+  //
+  // **In the table rather than beside it**, because it was beside it
+  // four times and came out four ways: three with no gap under it and
+  // one with a smaller gap than the rest, each with its own `useState`,
+  // its own count and its own word for "no match". A filter over a list
+  // is the same control every time; what differs is which of a row's
+  // words it looks at, which is all a caller says.
+  search?: {
+    placeholder?: string;
+    // The row's text, in parts so a caller does not have to join them.
+    // Undefined entries are skipped, which is what an absent field is.
+    by: (row: T) => (string | undefined)[];
+  };
   loadingRows?: number;
   rowKey?: (row: T, index: number) => string;
   onRowClick?: (row: T) => void;
@@ -106,10 +122,22 @@ export function DataTable<T extends object>({
   maxHeight?: string;
 }) {
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [query, setQuery] = useState("");
+
+  // Matched here rather than by the caller, over the parts it named.
+  // Case-insensitive substring, which is what somebody typing three
+  // letters of a name means — no tokens, no ranking, nothing to learn.
+  const matched = useMemo(() => {
+    if (!rows || !search || query.trim() === "") return rows ?? null;
+    const needle = query.trim().toLowerCase();
+    return rows.filter((row) =>
+      search.by(row).some((part) => part !== undefined && part.toLowerCase().includes(needle)),
+    );
+  }, [rows, search, query]);
 
   const table = useTable({
     features,
-    data: rows ?? NO_ROWS,
+    data: matched ?? NO_ROWS,
     columns: columns.map((c) => ({
       id: c.id,
       header: () => c.header,
@@ -121,6 +149,24 @@ export function DataTable<T extends object>({
     onSortingChange: setSorting,
   });
 
+  // The filter is offered once there is something to filter: while the
+  // rows are still coming there is nothing to type against, and on an
+  // empty list it is a control that can only ever return the same
+  // nothing.
+  const filter = search && rows != null && rows.length > 0 && (
+    <SearchBar
+      className="mb-4"
+      value={query}
+      onChange={setQuery}
+      placeholder={search.placeholder ?? "Filter"}
+      trailing={
+        <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+          {matched?.length ?? 0}/{rows.length}
+        </span>
+      }
+    />
+  );
+
   if (rows != null && rows.length === 0 && empty) {
     return (
       <Card>
@@ -129,93 +175,112 @@ export function DataTable<T extends object>({
     );
   }
 
+  // A filter that matched nothing is a different sentence from a list
+  // with nothing in it, and saying the second here would read as the
+  // list having emptied itself.
+  if (matched != null && matched.length === 0) {
+    return (
+      <>
+        {filter}
+        <Card>
+          <CardContent className="py-2 text-sm text-muted-foreground">
+            Nothing matches that.
+          </CardContent>
+        </Card>
+      </>
+    );
+  }
+
   return (
-    <Card className={cn("py-0", className)}>
-      {/* The scroll container is here rather than on the page, so a
+    <>
+      {filter}
+      <Card className={cn("py-0", className)}>
+        {/* The scroll container is here rather than on the page, so a
           table that is genuinely wider than the pane scrolls inside its
           own card and the page body never does. */}
-      <div
-        className={cn("w-full overflow-x-auto", maxHeight && "overflow-y-auto")}
-        style={maxHeight ? { maxHeight } : undefined}
-      >
-        <Table className="w-full table-fixed">
-          <TableHeader>
-            {table.getHeaderGroups().map((group) => (
-              <TableRow key={group.id}>
-                {group.headers.map((header) => {
-                  const column = columns.find((c) => c.id === header.column.id);
-                  if (!column) return null;
-                  const direction = header.column.getIsSorted?.();
-                  return (
-                    <TableHead
-                      key={header.id}
+        <div
+          className={cn("w-full overflow-x-auto", maxHeight && "overflow-y-auto")}
+          style={maxHeight ? { maxHeight } : undefined}
+        >
+          <Table className="w-full table-fixed">
+            <TableHeader>
+              {table.getHeaderGroups().map((group) => (
+                <TableRow key={group.id}>
+                  {group.headers.map((header) => {
+                    const column = columns.find((c) => c.id === header.column.id);
+                    if (!column) return null;
+                    const direction = header.column.getIsSorted?.();
+                    return (
+                      <TableHead
+                        key={header.id}
+                        className={cn(
+                          "px-4",
+                          column.align === "right" && "text-right",
+                          maxHeight && "sticky top-0 z-10 bg-card",
+                        )}
+                        style={{ width: `${column.width}%` }}
+                      >
+                        {column.sortBy ? (
+                          // The slot is what globals.css styles it
+                          // through. A button is one of the two elements
+                          // Tailwind's preflight resets `text-transform`
+                          // on, and an explicit rule beats what the
+                          // header cell would otherwise pass down — so a
+                          // sortable column's heading came out in mixed
+                          // case beside its uppercase neighbours.
+                          <button
+                            type="button"
+                            data-slot="table-head-sort"
+                            onClick={header.column.getToggleSortingHandler?.()}
+                            className="inline-flex items-center gap-1.5 hover:text-foreground"
+                          >
+                            {column.header}
+                            {direction === "asc" && <ArrowUpIcon className="size-3" />}
+                            {direction === "desc" && <ArrowDownIcon className="size-3" />}
+                          </button>
+                        ) : (
+                          column.header
+                        )}
+                      </TableHead>
+                    );
+                  })}
+                </TableRow>
+              ))}
+            </TableHeader>
+
+            <TableBody>
+              {rows == null && <LoadingRows rows={loadingRows} columns={columns.length} />}
+
+              {table.getRowModel().rows.map((row, index) => (
+                <TableRow
+                  key={rowKey ? rowKey(row.original, index) : row.id}
+                  className={cn("select-none", onRowClick && "cursor-pointer")}
+                  onClick={onRowClick ? () => onRowClick(row.original) : undefined}
+                >
+                  {columns.map((column) => (
+                    <TableCell
+                      key={column.id}
                       className={cn(
-                        "px-4",
+                        "px-4 py-2.5",
+                        // whitespace-normal is not decoration: the cell
+                        // primitive carries `whitespace-nowrap`, so
+                        // `break-words` on its own never wrapped anything
+                        // and every column that asked to wrap quietly ran
+                        // off the side instead — a build's error, a DKIM
+                        // record's value, a store's endpoint.
+                        column.wrap ? "wrap-break-word whitespace-normal" : "truncate",
                         column.align === "right" && "text-right",
-                        maxHeight && "sticky top-0 z-10 bg-card",
                       )}
-                      style={{ width: `${column.width}%` }}
                     >
-                      {column.sortBy ? (
-                        // The slot is what globals.css styles it
-                        // through. A button is one of the two elements
-                        // Tailwind's preflight resets `text-transform`
-                        // on, and an explicit rule beats what the
-                        // header cell would otherwise pass down — so a
-                        // sortable column's heading came out in mixed
-                        // case beside its uppercase neighbours.
-                        <button
-                          type="button"
-                          data-slot="table-head-sort"
-                          onClick={header.column.getToggleSortingHandler?.()}
-                          className="inline-flex items-center gap-1.5 hover:text-foreground"
-                        >
-                          {column.header}
-                          {direction === "asc" && <ArrowUpIcon className="size-3" />}
-                          {direction === "desc" && <ArrowDownIcon className="size-3" />}
-                        </button>
-                      ) : (
-                        column.header
-                      )}
-                    </TableHead>
-                  );
-                })}
-              </TableRow>
-            ))}
-          </TableHeader>
-
-          <TableBody>
-            {rows == null && <LoadingRows rows={loadingRows} columns={columns.length} />}
-
-            {table.getRowModel().rows.map((row, index) => (
-              <TableRow
-                key={rowKey ? rowKey(row.original, index) : row.id}
-                className={cn("select-none", onRowClick && "cursor-pointer")}
-                onClick={onRowClick ? () => onRowClick(row.original) : undefined}
-              >
-                {columns.map((column) => (
-                  <TableCell
-                    key={column.id}
-                    className={cn(
-                      "px-4 py-2.5",
-                      // whitespace-normal is not decoration: the cell
-                      // primitive carries `whitespace-nowrap`, so
-                      // `break-words` on its own never wrapped anything
-                      // and every column that asked to wrap quietly ran
-                      // off the side instead — a build's error, a DKIM
-                      // record's value, a store's endpoint.
-                      column.wrap ? "break-words whitespace-normal" : "truncate",
-                      column.align === "right" && "text-right",
-                    )}
-                  >
-                    {column.cell(row.original)}
-                  </TableCell>
-                ))}
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-    </Card>
+                      {column.cell(row.original)}
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </div>
+      </Card>
+    </>
   );
 }

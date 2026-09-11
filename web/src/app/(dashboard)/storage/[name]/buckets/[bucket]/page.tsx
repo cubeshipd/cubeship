@@ -241,6 +241,7 @@ function Browser({ store, bucket }: { store: string; bucket: string }) {
       <DataTable
         columns={columns}
         rows={listing === null ? null : entries}
+        search={{ placeholder: "Filter this folder", by: (e) => [e.name] }}
         rowKey={(e) => (e.kind === "folder" ? e.prefix : e.object.key)}
         // Opening a row is opening the thing in it: a folder is
         // somewhere to go, a file is something to save. Leaving files

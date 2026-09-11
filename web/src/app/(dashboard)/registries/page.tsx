@@ -7,6 +7,7 @@ import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
 import { LoadingRows } from "@/components/loading";
+import { SearchBar } from "@/components/search-bar";
 import { SearchableSelect } from "@/components/searchable-select";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
@@ -73,6 +74,7 @@ export default function Registries() {
   const [creds, setCreds] = useState<RegistryCredential[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState("");
   const [settings, setSettings] = useState<Settings | null>(null);
   const [accounts, setAccounts] = useState<Credential[]>([]);
   const [statuses, setStatuses] = useState<Record<number, RegistryStatus>>({});
@@ -136,6 +138,12 @@ export default function Registries() {
     }
   }, [creds]);
 
+  const needle = query.trim().toLowerCase();
+  const matches = (...parts: (string | undefined)[]) =>
+    parts.some((p) => p !== undefined && p.toLowerCase().includes(needle));
+  const shown = (creds ?? []).filter((c) => matches(c.host, c.namespace, c.provider, c.username));
+  const ownShown = matches(settings?.registry_host, "cubeship");
+
   return (
     <>
       <RailPortal>
@@ -147,6 +155,25 @@ export default function Registries() {
         }
       </RailPortal>
       <ErrorAlert error={error} />
+
+      {/* Hand-written rather than the DataTable's own, because this
+          table is: Cubeship's own registry is a row with no credential
+          behind it, always first, and it is matched here too — a filter
+          that could not hide the row you are looking for is a filter
+          that lies about the count. */}
+      {creds && creds.length > 0 && (
+        <SearchBar
+          className="mb-4"
+          value={query}
+          onChange={setQuery}
+          placeholder="Filter registries"
+          trailing={
+            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
+              {shown.length + (ownShown ? 1 : 0)}/{creds.length + 1}
+            </span>
+          }
+        />
+      )}
 
       {
         <Card className="py-0">
@@ -164,32 +191,34 @@ export default function Registries() {
               {/* Cubeship's own, always, and always first. It is not a
                   credential — each user authenticates with their own API
                   key — so there is nothing here to add or replace. */}
-              <TableRow
-                className="cursor-pointer select-none"
-                onClick={() => router.push("/registries/cubeship")}
-              >
-                <TableCell className="px-4 py-2.5 font-mono text-xs">
-                  {settings?.registry_host ?? "not reachable until a domain is set"}
-                </TableCell>
-                <TableCell className="px-4 py-2.5">
-                  <span className="inline-flex items-center gap-2 text-sm">
-                    <BoxIcon className="size-4 shrink-0 text-primary" />
-                    Cubeship
-                  </span>
-                </TableCell>
-                {/* Cubeship's own takes no credential and lives in no
+              {ownShown && (
+                <TableRow
+                  className="cursor-pointer select-none"
+                  onClick={() => router.push("/registries/cubeship")}
+                >
+                  <TableCell className="px-4 py-2.5 font-mono text-xs">
+                    {settings?.registry_host ?? "not reachable until a domain is set"}
+                  </TableCell>
+                  <TableCell className="px-4 py-2.5">
+                    <span className="inline-flex items-center gap-2 text-sm">
+                      <BoxIcon className="size-4 shrink-0 text-primary" />
+                      Cubeship
+                    </span>
+                  </TableCell>
+                  {/* Cubeship's own takes no credential and lives in no
                     region: each user authenticates with their own API
                     key. */}
-                <TableCell className="px-4 py-2.5 text-xs text-muted-foreground">—</TableCell>
-                <TableCell className="px-4 py-2.5 text-xs text-muted-foreground">—</TableCell>
-                <TableCell className="px-4 py-2.5">
-                  <StatusBadge value="running" />
-                </TableCell>
-              </TableRow>
+                  <TableCell className="px-4 py-2.5 text-xs text-muted-foreground">—</TableCell>
+                  <TableCell className="px-4 py-2.5 text-xs text-muted-foreground">—</TableCell>
+                  <TableCell className="px-4 py-2.5">
+                    <StatusBadge value="running" />
+                  </TableCell>
+                </TableRow>
+              )}
 
               {creds === null && <LoadingRows rows={2} columns={5} />}
 
-              {creds?.map((c) => (
+              {shown.map((c) => (
                 <TableRow key={c.id} className="cursor-pointer select-none" onClick={() => open(c)}>
                   <TableCell className="px-4 py-2.5 font-mono text-xs">
                     {c.host}

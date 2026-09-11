@@ -450,6 +450,30 @@ It is **sticky**, because being reachable is the whole reason it exists,
 and the screens where switching saves the most are the long ones: a log,
 fifty environment variables, a deploy history.
 
+### A filter belongs to the table, not to the page
+
+`DataTable` takes a `search`: a placeholder and which of a row's words
+to match. It holds the query, renders the field above itself with the
+gap, answers the count, and says "nothing matches that" — which is a
+different sentence from an empty list and must not be the same one.
+
+It is there because it was written out beside the table four times and
+came out four ways: three with no gap under the field and one with a
+smaller gap than the rest, each with its own state, its own count and
+its own word for no result. A filter over a list is the same control
+every time; the only thing that differs is which of a row's words it
+looks at, and that is all a caller says now.
+
+**Flush against the table a filter reads as its first row.** It is a
+control over the page — what it hides is gone from everything below —
+and the gap is what says so.
+
+Two listings write it out by hand, and both for a reason. The projects
+grid is cards rather than a table. The registries table carries a row
+with no data behind it — Cubeship's own, always first — which the filter
+has to match too, because a filter that cannot hide the row you are
+looking for is one that lies about its own count.
+
 ### The components
 
 `src/components/ui/` is [shadcn/ui](https://ui.shadcn.com) over Base UI,

@@ -349,6 +349,7 @@ function Buckets({ store }: { store: ObjectStore }) {
       <DataTable
         columns={columns}
         rows={buckets}
+        search={{ placeholder: "Filter buckets", by: (b) => [b.name] }}
         rowKey={(b) => b.name}
         onRowClick={(b) =>
           router.push(`/storage/${store.name}/buckets/${encodeURIComponent(b.name)}`)
@@ -538,6 +539,7 @@ function Attachments({ store, onChanged }: { store: ObjectStore; onChanged: () =
       <DataTable
         columns={columns}
         rows={store.attachments}
+        search={{ placeholder: "Filter apps", by: (a) => [a.app, a.bucket, a.prefix] }}
         rowKey={(a) => `${a.app}:${a.bucket}`}
         onRowClick={(a) => router.push(`/projects/${a.app}`)}
         empty="Nothing is attached yet."

@@ -172,6 +172,7 @@ export default function Servers() {
       <DataTable
         columns={columns}
         rows={servers}
+        search={{ placeholder: "Filter servers", by: (s) => [s.name, s.address, s.version] }}
         rowKey={(s) => s.name}
         loadingRows={2}
         empty="No servers yet."

@@ -105,6 +105,7 @@ export default function Certificates() {
       <DataTable
         columns={columns}
         rows={rows}
+        search={{ placeholder: "Filter names", by: (r) => [r.host, r.state, r.issuer] }}
         rowKey={(r) => r.host}
         empty="Nothing yet. The first is asked for when an app is first reached at a name this instance serves."
       />
