@@ -40,7 +40,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { api, type Me } from "@/lib/api";
+import { api, avatarSrc, type Me } from "@/lib/api";
 
 // The two layers, and what separates them.
 //
@@ -276,10 +276,22 @@ function UserMenu({ me }: { me: Me }) {
             type="button"
             className="flex w-full min-w-0 items-center gap-2.5 border border-transparent px-2 py-2 text-left text-sm transition-colors hover:border-border hover:bg-secondary"
           >
-            <span className="flex size-6 shrink-0 items-center justify-center border border-primary/40 bg-primary/10 font-mono text-[11px] text-primary">
-              {me.username.slice(0, 2)}
-            </span>
-            <span className="truncate font-mono text-xs">{me.username}</span>
+            {/* The face when there is one, the first two letters when
+                there is not — same square either way, so the row does
+                not change shape with the choice. */}
+            {me.avatar ? (
+              // biome-ignore lint/performance/noImgElement: a static file in this image's own public directory
+              <img
+                src={avatarSrc(me.avatar)}
+                alt=""
+                className="size-6 shrink-0 border border-primary/40 object-cover"
+              />
+            ) : (
+              <span className="flex size-6 shrink-0 items-center justify-center border border-primary/40 bg-primary/10 font-mono text-[11px] text-primary">
+                {me.username.slice(0, 2)}
+              </span>
+            )}
+            <span className="truncate font-mono text-xs">{me.display_name || me.username}</span>
           </button>
         }
       />

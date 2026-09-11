@@ -21,7 +21,7 @@ func NewRepository(q database.Queryer) *Repository {
 }
 
 const (
-	userColumns   = `id, username, role, theme, created_at`
+	userColumns   = `id, username, role, theme, display_name, email, avatar, created_at`
 	apiKeyColumns = `id, user_id, key_hash, name, created_at, last_used_at`
 )
 
@@ -59,11 +59,34 @@ func scanUser(row scanner) (*User, error) { return scanUserWith(row) }
 // stops it going wrong a third time.
 func scanUserWith(row scanner, extra ...any) (*User, error) {
 	var u User
-	dest := []any{&u.ID, &u.Username, &u.Role, &u.Theme, &u.CreatedAt}
+	dest := []any{
+		&u.ID, &u.Username, &u.Role, &u.Theme,
+		&u.DisplayName, &u.Email, &u.Avatar, &u.CreatedAt,
+	}
 	if err := row.Scan(append(dest, extra...)...); err != nil {
 		return nil, err
 	}
 	return &u, nil
+}
+
+// UpdateProfile writes what an account says about its holder, the
+// username included.
+//
+// One statement with every field, because they are saved from one form
+// and a partial write would be a form that half took. The username is
+// in here rather than in a method of its own for the same reason — it
+// is a field on that form, and the rule that makes it special is the
+// service's to apply, not this one's.
+func (r *Repository) UpdateProfile(ctx context.Context, userID int64, u *User) (*User, error) {
+	row := r.q.QueryRowContext(ctx,
+		`UPDATE users SET username = $2, display_name = $3, email = $4, avatar = $5
+		 WHERE id = $1 RETURNING `+userColumns,
+		userID, u.Username, u.DisplayName, u.Email, u.Avatar)
+	updated, err := scanUser(row)
+	if err != nil {
+		return nil, fmt.Errorf("update profile: %w", err)
+	}
+	return updated, nil
 }
 
 // SetTheme records which palette this person sees the dashboard in.

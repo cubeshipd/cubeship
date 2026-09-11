@@ -82,13 +82,33 @@ export type Me = {
   // rather than written here: the daemon is what refuses a name.
   theme?: string;
   themes?: string[];
+  // What the account says about the person holding it. Absent when
+  // unset, which is the normal state for all three: a username is what
+  // identifies somebody here, and these are what it cannot carry.
+  display_name?: string;
+  email?: string;
+  avatar?: string;
+  // Which faces this instance ships, served for the reason `themes` is:
+  // the daemon is what refuses a name, and a second list here would be
+  // one to disagree with it.
+  avatars?: string[];
 };
+
+// avatarSrc is where a face's file is. The name is one of `avatars`,
+// which the daemon checked — never a path and never a URL, so there is
+// nothing here to escape.
+export function avatarSrc(name: string): string {
+  return `/profiles/${name}.png`;
+}
 
 // One account on the instance.
 export type InstanceUser = {
   username: string;
   role: "admin" | "member";
   theme?: string;
+  display_name?: string;
+  email?: string;
+  avatar?: string;
   created_at: string;
 };
 // None of these has a display name. The slug is the name — the rule an

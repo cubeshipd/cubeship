@@ -196,6 +196,14 @@ type WhoAmIResponse struct {
 	// compiled into the dashboard: the daemon is what refuses a name,
 	// and a second list is one to disagree with.
 	Themes []string `json:"themes,omitempty"`
+	// What this account says about the person holding it. Absent when
+	// nothing was set, which is the normal state for all three.
+	DisplayName string `json:"display_name,omitempty"`
+	Email       string `json:"email,omitempty"`
+	Avatar      string `json:"avatar,omitempty"`
+	// Avatars is which faces this instance ships, for the same reason
+	// Themes is served: the daemon is what refuses a name.
+	Avatars []string `json:"avatars,omitempty"`
 }
 
 // APIKeyResponse is one key's metadata. The key value itself appears
@@ -320,6 +328,7 @@ func (h *Handler) whoAmI(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, WhoAmIResponse{
 		Username: u.Username, Role: u.Role, HasPassword: has,
 		Theme: u.Theme, Themes: Themes,
+		DisplayName: u.DisplayName, Email: u.Email, Avatar: u.Avatar, Avatars: Avatars,
 	})
 }
 
@@ -330,8 +339,14 @@ type UserResponse struct {
 	Role     Role   `json:"role"`
 	// Theme is which palette this person sees the dashboard in. Absent
 	// for the default one.
-	Theme     string    `json:"theme,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	Theme string `json:"theme,omitempty"`
+	// What the account says about its holder. Absent when unset, which
+	// is the normal state — a username is what identifies somebody
+	// here, and these are what a username cannot carry.
+	DisplayName string    `json:"display_name,omitempty"`
+	Email       string    `json:"email,omitempty"`
+	Avatar      string    `json:"avatar,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 // setPreferences changes what the caller has chosen about their own
@@ -343,28 +358,58 @@ type UserResponse struct {
 // is.
 func (h *Handler) setPreferences(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		// Theme is one of the names in GET /users/me/themes. An empty
-		// string is the default palette, which is how it is turned off
-		// rather than a second field saying so.
+		// Theme is one of the names in the themes list on GET
+		// /users/me. An empty string is the default palette, which is
+		// how it is turned off rather than a second field saying so.
 		Theme *string `json:"theme"`
+		// The rest is what the account says about its holder. Every one
+		// of them is a pointer: an absent field is left alone, and an
+		// empty one clears it — which is the only way to say "no
+		// display name" that a form can send.
+		Username    *string `json:"username"`
+		DisplayName *string `json:"display_name"`
+		Email       *string `json:"email"`
+		Avatar      *string `json:"avatar"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
-	if req.Theme == nil {
+	profile := req.Username != nil || req.DisplayName != nil || req.Email != nil ||
+		req.Avatar != nil
+	if req.Theme == nil && !profile {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
+
 	ctx := r.Context()
-	updated, err := h.svc.SetTheme(ctx, FromContext(ctx), *req.Theme)
-	if err != nil {
-		WriteError(w, err)
-		return
+	updated := FromContext(ctx)
+	var err error
+	// The theme first, because it is the one that cannot fail on
+	// anything the rest might: a body carrying both should not leave a
+	// palette applied and a name refused, and this order at least
+	// leaves the two writes in the order the caller reads them back.
+	if req.Theme != nil {
+		updated, err = h.svc.SetTheme(ctx, updated, *req.Theme)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+	}
+	if profile {
+		updated, err = h.svc.UpdateProfile(ctx, updated, Profile{
+			Username: req.Username, DisplayName: req.DisplayName,
+			Email: req.Email, Avatar: req.Avatar,
+		})
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, UserResponse{
 		Username: updated.Username, Role: updated.Role,
 		Theme: updated.Theme, CreatedAt: updated.CreatedAt,
+		DisplayName: updated.DisplayName, Email: updated.Email, Avatar: updated.Avatar,
 	})
 }
 
@@ -485,6 +530,10 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	case errors.Is(err, ErrForbidden):
 		http.Error(w, err.Error(), http.StatusForbidden)
+	case errors.Is(err, ErrBadUsername), errors.Is(err, ErrBadEmail),
+		errors.Is(err, ErrBadDisplayName), errors.Is(err, ErrUnknownAvatar):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+
 	case errors.Is(err, ErrUsernameTaken):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrNoSuchUser):

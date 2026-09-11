@@ -2,6 +2,7 @@ package user
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"cubeship/internal/platform/authkey"
@@ -54,6 +55,9 @@ func (s *Service) Add(ctx context.Context, caller *User, username, password stri
 	}
 	if !role.Valid() {
 		return nil, "", ErrInvalidRole
+	}
+	if err := ValidUsername(username); err != nil {
+		return nil, "", err
 	}
 	if password == "" {
 		generated, err := authkey.Password()
@@ -453,6 +457,79 @@ func (s *Service) HasPassword(ctx context.Context, u *User) (bool, error) {
 		return false, ErrUnauthenticated
 	}
 	return s.Repo().HasPassword(ctx, u.ID)
+}
+
+// Profile is what an account says about its holder. A nil field is one
+// the caller did not send, which is left as it was.
+type Profile struct {
+	Username    *string
+	DisplayName *string
+	Email       *string
+	Avatar      *string
+}
+
+// UpdateProfile changes the caller's own account, the username
+// included.
+//
+// **The caller's own, and nobody else's**, for the reason SetTheme is:
+// a name and a face are the person's, and an admin renaming somebody
+// else is not administration, it is impersonation with extra steps.
+//
+// **A username is editable here and nowhere else in this product**, and
+// the difference from a slug is worth saying. A project's slug is a
+// path component of every app's registry reference underneath it, so
+// renaming one silently moves things other people have configured
+// against it. A username is written against *this account's own* rows —
+// sessions and keys are by id, so both survive — and the one thing it
+// breaks belongs to the person doing it: `docker login` sends the
+// username with the key, so a push keeps being refused until they log
+// in again. That is a consequence to state, which the screen does, not
+// a reason to refuse.
+func (s *Service) UpdateProfile(ctx context.Context, caller *User, in Profile) (*User, error) {
+	if caller == nil {
+		return nil, ErrUnauthenticated
+	}
+
+	next := *caller
+	if in.Username != nil {
+		name := strings.TrimSpace(*in.Username)
+		if err := ValidUsername(name); err != nil {
+			return nil, err
+		}
+		next.Username = name
+	}
+	if in.DisplayName != nil {
+		name := strings.TrimSpace(*in.DisplayName)
+		if len([]rune(name)) > 60 {
+			return nil, ErrBadDisplayName
+		}
+		next.DisplayName = name
+	}
+	if in.Email != nil {
+		address := strings.TrimSpace(*in.Email)
+		if !ValidEmail(address) {
+			return nil, ErrBadEmail
+		}
+		next.Email = address
+	}
+	if in.Avatar != nil {
+		if !ValidAvatar(*in.Avatar) {
+			return nil, ErrUnknownAvatar
+		}
+		next.Avatar = *in.Avatar
+	}
+
+	updated, err := s.Repo().UpdateProfile(ctx, caller.ID, &next)
+	if database.IsUniqueViolation(err) {
+		// The unique index decides, not a lookup before it: two people
+		// renaming to one name in the same second would both pass a
+		// check and one would still have to lose.
+		return nil, ErrUsernameTaken
+	}
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
 }
 
 // SetTheme records which palette the caller sees the dashboard in.
