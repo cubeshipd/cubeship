@@ -10,6 +10,7 @@ Everything a person installing Cubeship needs is in the
 - [Before you commit](#before-you-commit)
 - [Tests](#tests)
 - [How the code is laid out](#how-the-code-is-laid-out)
+- [The license your contribution carries](#the-license-your-contribution-carries)
 - [Commits and pull requests](#commits-and-pull-requests)
 - [Cutting a release](#cutting-a-release)
 
@@ -114,6 +115,18 @@ it is worth reading before a first one. The long version is
 codebase is written down there with the reason it was made, including
 the ones that were made twice. AGENTS.md indexes them, and says which to
 open for what you are about to touch.
+
+## The license your contribution carries
+
+Cubeship is [Apache-2.0](LICENSE), and what comes in goes out under the
+same terms: opening a pull request is offering your change under that
+license, which is what lets it be released with the rest. There is no
+separate agreement to sign.
+
+The name is the exception, as it is for everybody — see
+[TRADEMARK.md](TRADEMARK.md).
+
+And there is a [code of conduct](CODE_OF_CONDUCT.md).
 
 ## Commits and pull requests
 

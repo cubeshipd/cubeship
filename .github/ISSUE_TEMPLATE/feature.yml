@@ -1,0 +1,23 @@
+name: Feature request
+description: Something Cubeship should be able to do and cannot.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What you are trying to do
+      description: The situation rather than the feature — what the missing thing is in the way of.
+    validations:
+      required: true
+
+  - type: textarea
+    id: today
+    attributes:
+      label: What you do about it today
+      description: The workaround, if there is one, or what you use instead.
+
+  - type: textarea
+    id: shape
+    attributes:
+      label: What you would expect it to look like
+      description: Optional. A guess is useful even when it turns out to be the wrong shape.
