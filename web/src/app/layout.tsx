@@ -37,9 +37,23 @@ export const metadata: Metadata = {
 // whose OS is set to light would otherwise get half of them. Which of
 // the palettes is on `data-theme`, written before the first paint by
 // ThemeBoot — an effect runs after it, which is the flash.
+//
+// **`suppressHydrationWarning` is that script's other half.** It runs
+// between the server's HTML and React reaching it, which is the whole
+// point, so `data-theme` is by construction an attribute the two
+// disagree about — and React says so on every load of every screen. It
+// changes nothing either way: the warning is not a repair, the value
+// the script wrote is the one that stays. What it costs is the console,
+// and a console with a permanent error in it is one nobody reads the
+// next error in. It reaches this element's own attributes and no
+// deeper, which is exactly the mismatch.
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`dark ${chakra.variable} ${jbmono.variable}`}>
+    <html
+      lang="en"
+      className={`dark ${chakra.variable} ${jbmono.variable}`}
+      suppressHydrationWarning
+    >
       <head>
         <ThemeBoot />
       </head>
