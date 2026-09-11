@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { CopyField } from "@/components/copy-field";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
@@ -187,6 +188,8 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
         onSaved={onSaved}
       />
 
+      <InternalAddress app={app} />
+
       <HealthCheck app={app} onSaved={onSaved} onError={setError} />
 
       <ConfirmDialog
@@ -204,6 +207,64 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
       />
     </>
   );
+}
+
+// Where another app on this instance reaches this one.
+//
+// **It is here because the public name does not work from inside.** An
+// app that calls its neighbour at the name the world uses sends the
+// request out of the box, to a record that points back at it — and a
+// host that does not hairpin its own NAT answers nothing at all, which
+// reads as the other app being down rather than as the wrong address.
+//
+// A copy field rather than a line of prose: it is a string somebody
+// pastes into an environment variable, and the whole reason it exists
+// is that it must be exact.
+function InternalAddress({ app }: { app: App }) {
+  return (
+    <>
+      <SectionHeader
+        title="Internal address"
+        sub="Where another app, a job or a container on this instance reaches this one. It resolves from every machine in the cluster and to every copy of the app, and it does not change when the app is deployed."
+      />
+      <Card>
+        <CardContent className="space-y-4">
+          <CopyField
+            label="Host"
+            value={app.internal_host}
+            hint={
+              <>
+                Reach it on the port the app listens on — {portHint(app)}. Nothing proxies this, so
+                there is no TLS to terminate and the health check below does not apply: it is the
+                container, directly.
+              </>
+            }
+          />
+          {/* The alias is attached when the container is created, so an
+              app whose container predates this instance's upgrade does
+              not answer to it. Said always rather than detected,
+              because detecting it would mean asking the Engine about
+              every app on every settings screen — and being told once
+              is cheaper than a name that quietly resolves to nothing. */}
+          <Notice className="mb-0">
+            A container answers to this name from the moment it is created, so an app that has not
+            been deployed since this instance was updated does not answer to it yet. Deploy it once
+            and it is live.
+          </Notice>
+        </CardContent>
+      </Card>
+    </>
+  );
+}
+
+// What to suggest for the port. Cubeship knows it only when a name
+// routes to it: a worker declares its port to nobody, so the honest
+// answer there is that the app knows and this screen does not.
+function portHint(app: App): string {
+  const ports = [...new Set(app.domains.map((d) => d.port || DEFAULT_PORT))];
+  if (ports.length === 0) return `${DEFAULT_PORT} unless it was built to listen elsewhere`;
+  if (ports.length === 1) return `${ports[0]}, which is where its names route`;
+  return `one of ${ports.join(", ")}, which are where its names route`;
 }
 
 // The port behind one name, and nothing else.

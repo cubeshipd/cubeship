@@ -185,6 +185,36 @@ func TestDeployAppliesInheritedEnvInPrecedenceOrder(t *testing.T) {
 	}
 }
 
+// A deployed container carries the app's internal name as an alias, so
+// another app can address it by something that outlives this deploy.
+//
+// The container's own name cannot be that address — it has the
+// deployment's id on it, by design — so if this is not attached at
+// creation there is no address at all. Nothing about the app looks
+// wrong when it is missing: it deploys, it serves its public names, and
+// only a call from another container fails.
+func TestADeployedContainerAnswersToTheAppsInternalName(t *testing.T) {
+	docker := &fakeDocker{nextCreateID: "new-container", running: true}
+	orch, db, a := newDeployFixture(t, docker)
+
+	if d := runDeploy(t, orch, db, a.ID, "v1"); d.Status != DeploymentSucceeded {
+		t.Fatalf("deploy ended %q: %s", d.Status, d.Error)
+	}
+
+	created, _, _, _ := docker.snapshot()
+	if len(created) != 1 {
+		t.Fatalf("expected one container to be created, got %d", len(created))
+	}
+	want := InternalHost(Reference{Project: "web", Environment: "production", Name: a.Name})
+	if !slices.Contains(created[0].Aliases, want) {
+		t.Fatalf("container aliases %v do not include %q, so nothing on this instance can reach the app by name",
+			created[0].Aliases, want)
+	}
+	if created[0].Name == want {
+		t.Fatalf("the container is named %q, which is the alias: one of the two has stopped carrying the deploy", want)
+	}
+}
+
 // waitHealthy has to honour the deploy's own deadline. Nothing else
 // stops a deploy whose container never comes up from holding its lock
 // for the full run of attempts.

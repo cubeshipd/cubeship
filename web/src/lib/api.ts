@@ -248,12 +248,17 @@ export type App = {
   name: string;
   // Every name this app answers at, each with the port behind it. Empty
   // is a normal state: an app nothing outside the instance should reach
-  // deploys with none, and its neighbours reach it by container name.
+  // deploys with none, and its neighbours reach it at `internal_host`.
   domains: AppDomain[];
   // A name this app could answer at, under the instance's own domain.
   // Only ever offered — nothing assigns it. Absent while the instance
   // has no domain to build one under.
   suggested_host?: string;
+  // Where another app on this instance reaches this one, on whatever
+  // port the app listens on. Always present — it is derived from the
+  // reference, so an app with no public name at all still has one, and
+  // that is exactly the app most likely to be called this way.
+  internal_host: string;
   // For a registry app, where to push; for an external one, what it pulls.
   image?: string;
   // The tag this app runs. Absent means it follows the registry: on

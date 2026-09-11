@@ -51,6 +51,51 @@ configured, which is why the field is always offered.
 A container keeps the labels it was created with, so adding or removing
 a name changes nothing until the app is redeployed.
 
+## Where an app answers from *inside* the instance
+
+Everything above is about the world reaching an app. An app reaching its
+neighbour is a different question, and the public name is the **wrong
+answer to it**: the request leaves the box for a record that points back
+at the box, and a host that does not hairpin its own NAT answers
+nothing at all. What that looks like from the calling app is the other
+app being down — never a wrong address — which is why this is worth a
+name of its own rather than a line in a FAQ.
+
+`app.InternalHost` is that name: `cubeship-<project>-<environment>-<app>`,
+the shape `cubeship-db-pg` and `cubeship-s3-media` already have, so
+reaching a database, a bucket and an app is one thing to learn rather
+than three. The app's response carries it as `internal_host`, always —
+it is derived from the reference, so an app with no public name at all
+still has one, and a worker with no domain is exactly the app most
+likely to be called this way.
+
+**It is a network alias, not the container's name**, and that is the
+whole mechanism. A container is named for the deployment that created
+it — `cubeship-web-production-api-1421` — because a machine has to be
+able to answer "am I already running this deployment" from the name
+alone (see `containerNameFor`). Anything that wrote *that* down would be
+addressing a container that stops existing on the next deploy. The alias
+is the stable half, attached at creation on the local bridge and on the
+mesh both, so the address means the same thing from another machine.
+
+Two things fall out of it for free, and neither is code here:
+
+- **Every copy of the app holds it**, and Docker's embedded DNS answers
+  with all of them — so a scaled-out app is spread over without this
+  being a second load balancer beside Traefik's.
+- **Nothing is in the path.** No proxy, so no TLS is terminated for it,
+  the health check does not apply, and the port is the app's own rather
+  than the one a name routes to. That is worth saying on the screen,
+  because "it works publicly and not internally" and "it works
+  internally and not publicly" have completely different causes.
+
+The one edge is upgrade: a container picks the alias up when it is
+created, so an app that has not deployed since the instance gained this
+does not answer to it yet. The dashboard says so rather than detecting
+it — detecting it means asking the Engine about every app on every
+settings screen, and being told once is cheaper than a name that
+quietly resolves to nothing.
+
 ## Certificates
 
 `internal/certificates` reports what this instance holds and what it is

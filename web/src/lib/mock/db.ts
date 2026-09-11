@@ -112,6 +112,7 @@ export const db = {
       status: "running",
       has_container: true,
       domains: [{ id: 1, host: "api.example.com", port: 3000 }],
+      internal_host: "cubeship-web-production-api",
       suggested_host: "api.production.web.cubeship.example.com",
       nodes: ["control-plane"],
       replicas: [
@@ -142,6 +143,7 @@ export const db = {
       status: "down",
       has_container: false,
       domains: [],
+      internal_host: "cubeship-web-production-worker",
       nodes: ["control-plane"],
       replicas: [],
       scale: 1,
@@ -163,6 +165,7 @@ export const db = {
       status: "running",
       has_container: true,
       domains: [{ id: 2, host: "api.staging.example.com", port: 3000 }],
+      internal_host: "cubeship-web-staging-api",
       nodes: ["control-plane"],
       replicas: [
         {
@@ -190,6 +193,7 @@ export const db = {
       status: "running",
       has_container: true,
       domains: [{ id: 3, host: "docs.example.com", port: 80 }],
+      internal_host: "cubeship-internal-production-docs",
       nodes: ["worker-1"],
       replicas: [
         {
