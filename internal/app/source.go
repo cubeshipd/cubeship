@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"path"
+	"regexp"
 	"strings"
 
 	"cubeship/internal/platform/dockerx"
@@ -112,9 +113,17 @@ var ErrImageRequired = errors.New("an external app needs the image it pulls, wit
 // its own.
 var ErrImageNotAllowed = errors.New("only an external app names its image; a registry app derives one from its reference")
 
+// ErrTagNotAllowed reports a tag on a source that has no tags to pick
+// from. A building app's version is its ref, and a tag beside it would
+// be a second answer to the same question.
+var ErrTagNotAllowed = errors.New("only an app that runs a published image names a tag; a building app names a ref")
+
+// ErrInvalidTag reports something Docker would not accept as one.
+var ErrInvalidTag = errors.New(`a tag is letters, digits, dots, dashes and underscores, up to 128 of them`)
+
 // ErrImageCarriesTag reports an image pinned to a tag. Which tag to run
 // is what a deploy chooses.
-var ErrImageCarriesTag = errors.New("give the image without a tag; the tag is chosen when you deploy")
+var ErrImageCarriesTag = errors.New("give the image without a tag; the tag is its own field")
 
 // ImageSource produces something the daemon can run.
 //
@@ -316,6 +325,7 @@ func (o *Orchestrator) sourceFor(a *Scoped) (ImageSource, error) {
 // with nobody watching — is the alternative.
 func checkOrigin(source Source, o *Origin) error {
 	o.Image = strings.TrimSpace(o.Image)
+	o.Tag = strings.TrimSpace(o.Tag)
 	o.Repo = strings.TrimSpace(o.Repo)
 	o.Ref = strings.TrimSpace(o.Ref)
 	o.Dockerfile = strings.TrimSpace(o.Dockerfile)
@@ -327,13 +337,25 @@ func checkOrigin(source Source, o *Origin) error {
 		if strings.ContainsAny(o.Image, " \t") || strings.Contains(o.Image, "://") {
 			return ErrImageRequired
 		}
-		// The tag is the deploy's argument, not the app's identity: an
-		// app pinned to one tag could never be told to run another.
+		// The tag has a field of its own, so a second one inside the
+		// reference is two places to say the same thing — and the two
+		// can differ, which makes one of them a lie on every screen
+		// that shows it.
 		if _, tag, found := strings.Cut(path.Base(o.Image), ":"); found && tag != "" {
 			return ErrImageCarriesTag
 		}
 	} else if o.Image != "" {
 		return ErrImageNotAllowed
+	}
+
+	// A tag belongs to an app that runs something published. A build
+	// produces its own image and names the version with a ref.
+	if source.Builds() {
+		if o.Tag != "" {
+			return ErrTagNotAllowed
+		}
+	} else if o.Tag != "" && !ValidTag(o.Tag) {
+		return ErrInvalidTag
 	}
 
 	if source.Builds() {
@@ -370,3 +392,15 @@ func checkOrigin(source Source, o *Origin) error {
 	}
 	return nil
 }
+
+// tagPattern is Docker's own rule for a tag: a letter, digit or
+// underscore, then up to 127 more of those plus dots and dashes.
+var tagPattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$`)
+
+// ValidTag reports whether a tag is one a registry would accept.
+//
+// Checked here rather than found out by a pull, because the value is
+// also interpolated into an image reference — and because a refusal
+// while somebody is looking at the field beats a deployment that fails
+// minutes later with nobody watching.
+func ValidTag(tag string) bool { return tagPattern.MatchString(tag) }

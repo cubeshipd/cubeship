@@ -37,8 +37,18 @@ type Response struct {
 	// comes from: for a registry app, where a push should go — empty
 	// while the instance has no domain, because there is nowhere to push
 	// yet — and for an external app, what it pulls.
-	Image  string `json:"image,omitempty"`
-	Status string `json:"status"`
+	Image string `json:"image,omitempty"`
+	// Tag is the tag this app runs, and absent means the default for
+	// where it pulls from: on Cubeship's own registry, whatever is
+	// pushed — which is what `autodeploy` reports — and anywhere else,
+	// `latest`.
+	Tag string `json:"tag,omitempty"`
+	// Autodeploy says a push to this instance's registry deploys this
+	// app. Derived rather than stored: it is true exactly when the app
+	// is on that registry and pinned to no tag, so the two cannot
+	// disagree about what happens when something is pushed.
+	Autodeploy bool   `json:"autodeploy,omitempty"`
+	Status     string `json:"status"`
 	// HasContainer says whether a container currently backs this app,
 	// which is what decides whether there is a log to read. The status
 	// alone cannot answer it: an app that has never been deployed and
@@ -168,13 +178,17 @@ func toResponse(a *Scoped, in Instance) Response {
 	}
 	switch Source(a.Source) {
 	case SourceExternal:
-		r.Image = a.SourceImage
+		r.Image, r.Tag = a.SourceImage, a.SourceTag
 	case SourceDockerfile, SourceRailpack:
 		r.Repo, r.Ref, r.Dockerfile = a.SourceRepo, a.SourceRef, a.SourceDockerfile
 	default:
 		if in.RegistryHost != "" {
 			r.Image = ref.ImageFor(in.RegistryHost)
 		}
+		// The push is the deploy for exactly the app that has not been
+		// pinned. Derived here rather than stored, so there is no flag
+		// that could say one thing while the tag says the other.
+		r.Tag, r.Autodeploy = a.SourceTag, a.SourceTag == ""
 	}
 	return r
 }
@@ -236,6 +250,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrUnknownSource), errors.Is(err, ErrImageRequired),
 		errors.Is(err, ErrImageNotAllowed), errors.Is(err, ErrImageCarriesTag),
+		errors.Is(err, ErrTagNotAllowed), errors.Is(err, ErrInvalidTag),
 		errors.Is(err, ErrRepoRequired), errors.Is(err, ErrRepoNotAllowed),
 		errors.Is(err, ErrRepoNotSupported), errors.Is(err, ErrDockerfileNotAllowed):
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -274,6 +289,10 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		Source      string `json:"source"`
 		// Image is where an external app pulls from, without a tag.
 		Image string `json:"image"`
+		// Tag is which one to run. Empty follows the registry: on this
+		// instance's own that means a push deploys the app, and on any
+		// other it means `latest`.
+		Tag string `json:"tag"`
 		// Repo, Ref and Dockerfile are where a building app builds from.
 		Repo       string `json:"repo"`
 		Ref        string `json:"ref"`
@@ -289,7 +308,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	}
 	created, err := h.svc.Create(r.Context(), user.FromContext(r.Context()),
 		req.Project, req.Environment, req.Name, req.Description, Source(req.Source),
-		Origin{Image: req.Image, Repo: req.Repo, Ref: req.Ref, Dockerfile: req.Dockerfile})
+		Origin{Image: req.Image, Tag: req.Tag, Repo: req.Repo, Ref: req.Ref, Dockerfile: req.Dockerfile})
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -308,6 +327,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		Description *string `json:"description"`
 		Source      *string `json:"source"`
 		Image       *string `json:"image"`
+		Tag         *string `json:"tag"`
 		Repo        *string `json:"repo"`
 		Ref         *string `json:"ref"`
 		Dockerfile  *string `json:"dockerfile"`
@@ -358,9 +378,10 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		source = &s
 	}
 	var origin *Origin
-	if req.Image != nil || req.Repo != nil || req.Ref != nil || req.Dockerfile != nil {
+	if req.Image != nil || req.Tag != nil || req.Repo != nil || req.Ref != nil || req.Dockerfile != nil {
 		origin = &Origin{
 			Image:      deref(req.Image),
+			Tag:        deref(req.Tag),
 			Repo:       deref(req.Repo),
 			Ref:        deref(req.Ref),
 			Dockerfile: deref(req.Dockerfile),

@@ -390,6 +390,14 @@ func (o *Orchestrator) Start(ctx context.Context, appID int64, tag string) (*Dep
 	if err := source.Check(ctx, a); err != nil {
 		return nil, err
 	}
+	// What was asked for wins, and the app's own tag is what "no
+	// argument" means. Resolved here rather than inside each source, so
+	// the deployment row records the tag that actually ran: a history
+	// whose rows all say "whatever was configured" cannot answer which
+	// version an app was on last Tuesday.
+	if tag == "" {
+		tag = a.SourceTag
+	}
 
 	deployment, err := o.apps.StartDeployment(ctx, appID, tag)
 	if err != nil {

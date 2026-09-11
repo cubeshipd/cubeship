@@ -61,10 +61,16 @@ func TestWhatEachSourceMayBeGiven(t *testing.T) {
 		{"registry needs nothing", SourceRegistry, Origin{}, nil},
 		{"registry refuses an image", SourceRegistry, Origin{Image: "nginx"}, ErrImageNotAllowed},
 		{"registry refuses a repository", SourceRegistry, Origin{Repo: "https://x/y.git"}, ErrRepoNotAllowed},
+		// A tag is how an app on this instance's own registry is taken
+		// off "deploy whatever is pushed", so it is the one thing a
+		// registry app may be given.
+		{"registry takes a tag", SourceRegistry, Origin{Tag: "v1.4.2"}, nil},
+		{"registry refuses a tag Docker would not", SourceRegistry, Origin{Tag: "v1 4"}, ErrInvalidTag},
 
 		{"external needs an image", SourceExternal, Origin{}, ErrImageRequired},
 		{"external refuses a tag", SourceExternal, Origin{Image: "nginx:1"}, ErrImageCarriesTag},
 		{"external refuses a repository", SourceExternal, Origin{Image: "nginx", Repo: "https://x/y.git"}, ErrRepoNotAllowed},
+		{"external takes a tag", SourceExternal, Origin{Image: "nginx", Tag: "1.27-alpine"}, nil},
 
 		{"dockerfile needs a repository", SourceDockerfile, Origin{}, ErrRepoRequired},
 		{"dockerfile takes https", SourceDockerfile, Origin{Repo: "https://github.com/acme/api.git"}, nil},
@@ -80,6 +86,11 @@ func TestWhatEachSourceMayBeGiven(t *testing.T) {
 			Origin{Repo: "https://github.com/acme/api.git#main"}, ErrRepoNotSupported},
 		{"dockerfile refuses an image", SourceDockerfile,
 			Origin{Repo: "https://github.com/acme/api.git", Image: "nginx"}, ErrImageNotAllowed},
+
+		// A build produces its own image and names the version with a
+		// ref, so a tag beside it is a second answer to one question.
+		{"dockerfile refuses a tag", SourceDockerfile,
+			Origin{Repo: "https://github.com/acme/api.git", Tag: "v1"}, ErrTagNotAllowed},
 
 		{"railpack needs a repository", SourceRailpack, Origin{}, ErrRepoRequired},
 		{"railpack takes one", SourceRailpack,

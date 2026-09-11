@@ -364,8 +364,8 @@ already built — and the four are two answers to a second question:
 ```
 GitHub          ─┬─ Railpack     railpack
                  └─ Dockerfile   dockerfile
-Docker image    ─┬─ Cubeship's registry   registry
-                 └─ Another registry      external
+Docker image    ──  which registry?  ──  Cubeship's → registry
+                                         anything else → external
 ```
 
 Flattening them into one list of four put "how it is built" beside "what
@@ -377,6 +377,53 @@ an external image, an `ssh://` repository, a `#ref` in the URL — so a
 mistake is a sentence under the field rather than a rejected submit. It
 is a courtesy, not the rule: the daemon still checks, and it is the one
 that decides.
+
+### Which registry, which image, which tag
+
+`components/image-source.tsx` is the Docker-image half, and it is three
+questions in the order somebody answers them rather than a choice
+between two named things.
+
+It was a pair of cards — Cubeship's registry or another one — above a
+field you typed a reference into. The pair was the *model* showing
+through rather than a decision anybody has: "another registry" is not
+one thing, it is however many this instance is connected to, and picking
+it told you nothing about which. `external` is still what the daemon
+stores for every one of them, because the only thing it has ever needed
+to know is whether it runs the registry itself.
+
+**Every one of the three is listed.** The registry from `GET
+/registries`, the image from that registry's own catalogue, and the tag
+from the repository — newest first, and the newest **chosen**, because
+an empty tag is not a neutral state: it means `latest`, which is a
+different decision from the one somebody is in the middle of making.
+
+Two places it degrades, and both are ordinary rather than broken:
+
+- **Docker Hub has no public catalogue**, so the image is typed there
+  and only the tag is listed. It is in the selector whether or not
+  anything is connected — a public image needs no login, which is the
+  one thing a fresh install can run, and a selector that could not
+  express that would have taken the feature away.
+- **A registry may refuse its own catalogue** (`ErrNoListing`, 501).
+  Same shape, same fallback.
+
+`GET /registries/tags?image=` is what makes the first of those work: it
+takes the reference rather than a registry id, because the registries an
+app may pull from are not the set this instance has rows for. It is a
+**member's**, unlike listing what a stored registry holds — that is the
+instance's inventory of what it is wired to, and this is one repository
+somebody already named.
+
+**On Cubeship's own registry there is no image to pick.** It is the
+app's own path, shown and disabled with that reason: a push is matched
+to an app by its reference and nothing else, so pointing one app at
+another's path would deploy the wrong app on every push.
+
+**And the tag is the autodeploy switch.** See "Where an app's image
+comes from" — `source_tag` empty is what "deploy on push" *is*, so the
+switch and the tag field cannot both be answered, and the form hides the
+second when the first is on.
 
 ### The components
 
@@ -1509,6 +1556,29 @@ because it has nothing to derive one from. The tag is the deploy's
 argument, so an image given with one is refused: an app pinned to a tag
 could never be told to run another. A registry app naming an image is
 refused too, rather than silently ignored.
+
+**Which tag an app runs is `source_tag`, and empty is a decision.** On
+Cubeship's own registry it means "whatever is pushed" — the push is the
+deploy, which is what every app has done since there were apps — and on
+any other registry it means `latest`. A tag in it is the app pinned:
+deploys happen when somebody asks, and a push is ignored even when it
+carries that very tag, because an app pinned to `v1.0` is one somebody
+decided should run `v1.0` and moving it from a notification nobody saw
+would overrule that invisibly.
+
+So **autodeploy is not a column**. It is `source_tag == ""` on an app
+whose source is `registry`, reported as `autodeploy` on every response
+and derived on read. A flag beside the tag would be two settings that
+can contradict each other, and one of them would have to lose in
+silence; this is the same shape as `autoscale_max = 0` being what
+autoscaling off is. A building app has no tag at all — its version is
+its ref — and `checkOrigin` refuses one.
+
+The deploy's own argument still wins over it, which is what `cubeship
+app deploy --tag` is: what was asked for beats what was configured, and
+the deployment row records the tag that actually ran rather than "the
+one configured at the time", so the history can still answer which
+version was live last Tuesday.
 
 A push under an external app's name does not deploy it — the webhook
 checks the source. Our registry will accept the push, since the

@@ -85,6 +85,7 @@ type createInput struct {
 	Description string `json:"description,omitempty" jsonschema:"what this app is, in a sentence"`
 	Source      string `json:"source,omitempty" jsonschema:"where the image comes from: \"registry\" (the default) for an image you push to Cubeship, \"external\" for one in a registry Cubeship does not run, \"dockerfile\" to build a Dockerfile from a Git repository, or \"railpack\" to build from a Git repository with no Dockerfile. Building requires the admin role."`
 	Image       string `json:"image,omitempty" jsonschema:"for an external app, the image it pulls, without a tag — e.g. \"registry.digitalocean.com/acme/api\". Leave empty otherwise."`
+	Tag         string `json:"tag,omitempty" jsonschema:"the tag to run. Leave empty to follow the registry: on this instance's own that means a push deploys the app, and on any other it means latest. A building app has no tag \u2014 it names a ref."`
 	Repo        string `json:"repo,omitempty" jsonschema:"for a building app, the https:// Git repository to build from. Leave empty otherwise."`
 	Ref         string `json:"ref,omitempty" jsonschema:"for a building app, the branch, tag or commit to build. Defaults to the repository's default branch."`
 	Dockerfile  string `json:"dockerfile,omitempty" jsonschema:"for a dockerfile app only, the recipe's path within the repository. Defaults to \"Dockerfile\" at the root."`
@@ -93,7 +94,7 @@ type createInput struct {
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
 	created, err := t.svc.Create(ctx, t.caller, in.Project, in.Environment,
 		in.Name, in.Description, Source(in.Source),
-		Origin{Image: in.Image, Repo: in.Repo, Ref: in.Ref, Dockerfile: in.Dockerfile})
+		Origin{Image: in.Image, Tag: in.Tag, Repo: in.Repo, Ref: in.Ref, Dockerfile: in.Dockerfile})
 	if err != nil {
 		return nil, Response{}, err
 	}
@@ -105,6 +106,7 @@ type updateInput struct {
 	Description *string `json:"description,omitempty" jsonschema:"what this app is; leave out to keep it, send empty to clear it"`
 	Source      *string `json:"source,omitempty" jsonschema:"registry, external, dockerfile or railpack. Send the settings the new source needs alongside it"`
 	Image       *string `json:"image,omitempty" jsonschema:"for an external app, the image it pulls, without a tag"`
+	Tag         *string `json:"tag,omitempty" jsonschema:"the tag to run; send empty to follow the registry, which on this instance's own means a push deploys the app"`
 	Repo        *string `json:"repo,omitempty" jsonschema:"for a building app, the https:// Git repository to build from"`
 	Ref         *string `json:"ref,omitempty" jsonschema:"for a building app, the branch, tag or commit to build"`
 	Dockerfile  *string `json:"dockerfile,omitempty" jsonschema:"for a dockerfile app only, the recipe's path within the repository"`
@@ -126,9 +128,10 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 		source = &s
 	}
 	var origin *Origin
-	if in.Image != nil || in.Repo != nil || in.Ref != nil || in.Dockerfile != nil {
+	if in.Image != nil || in.Tag != nil || in.Repo != nil || in.Ref != nil || in.Dockerfile != nil {
 		origin = &Origin{
 			Image:      deref(in.Image),
+			Tag:        deref(in.Tag),
 			Repo:       deref(in.Repo),
 			Ref:        deref(in.Ref),
 			Dockerfile: deref(in.Dockerfile),

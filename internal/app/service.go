@@ -361,7 +361,10 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 		if !next.Valid() {
 			return nil, ErrUnknownSource
 		}
-		o := Origin{Image: a.SourceImage, Repo: a.SourceRepo, Ref: a.SourceRef, Dockerfile: a.SourceDockerfile}
+		o := Origin{
+			Image: a.SourceImage, Tag: a.SourceTag,
+			Repo: a.SourceRepo, Ref: a.SourceRef, Dockerfile: a.SourceDockerfile,
+		}
 		if origin != nil {
 			o = *origin
 		}

@@ -263,6 +263,14 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) {
 		if app.Source(a.Source) != app.SourceRegistry {
 			continue
 		}
+		// And only for one following the registry rather than pinned to
+		// a tag. An app pinned to v1.0 is one somebody decided should
+		// run v1.0; moving it because a push arrived — even a push of
+		// v1.0 — is this instance overruling that decision from a
+		// notification nobody saw.
+		if a.SourceTag != "" {
+			continue
+		}
 		// Start returns as soon as the deploy is recorded; the registry's
 		// notification client gives up after 5s, and a real deploy takes
 		// far longer. Which image that tag resolves to is the app

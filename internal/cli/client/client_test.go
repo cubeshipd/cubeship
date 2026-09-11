@@ -50,7 +50,7 @@ func TestClientRoundTripsTheWholeHierarchy(t *testing.T) {
 		t.Fatalf("expected only production, got %v", envs)
 	}
 
-	created, err := c.CreateApp(ctx, "myapp", "web", "", "", "")
+	created, err := c.CreateApp(ctx, "myapp", "web", "", "", "", "")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -128,11 +128,11 @@ func TestErrorsCarryTheDaemonsMessage(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	if _, err := c.CreateApp(ctx, "myapp", "web", "", "", ""); err != nil {
+	if _, err := c.CreateApp(ctx, "myapp", "web", "", "", "", ""); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 
-	_, err := c.CreateApp(ctx, "myapp", "web", "", "", "")
+	_, err := c.CreateApp(ctx, "myapp", "web", "", "", "", "")
 	if err == nil {
 		t.Fatal("expected the duplicate name to be refused")
 	}
@@ -245,7 +245,7 @@ func TestLogsOnAnAppThatWasNeverDeployed(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	if _, err := c.CreateApp(ctx, "myapp", "web", "", "", ""); err != nil {
+	if _, err := c.CreateApp(ctx, "myapp", "web", "", "", "", ""); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 
@@ -276,7 +276,7 @@ func TestClientMergeEnvKeepsOtherVariables(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	if _, err := c.CreateApp(ctx, "myapp", "web", "", "", ""); err != nil {
+	if _, err := c.CreateApp(ctx, "myapp", "web", "", "", "", ""); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 
@@ -355,7 +355,7 @@ func TestClientDeployReturnsADeploymentToFollow(t *testing.T) {
 	c, _ := connect(t)
 	ctx := context.Background()
 
-	created, err := c.CreateApp(ctx, "myapp", "web", "", "", "")
+	created, err := c.CreateApp(ctx, "myapp", "web", "", "", "", "")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -447,7 +447,7 @@ func TestClientManagesTheCluster(t *testing.T) {
 	// The default source, which is this instance's own registry: an
 	// external app would need the image it pulls, and what is under
 	// test here is where an app runs rather than where it comes from.
-	app, err := c.CreateApp(ctx, "api", "web", "", "", "")
+	app, err := c.CreateApp(ctx, "api", "web", "", "", "", "")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}

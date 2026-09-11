@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
 import { GitHubSource } from "@/components/github-source";
+import { CUBESHIP, ImageSource, type ImageSourceValue } from "@/components/image-source";
 import { LoadingList } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { OptionCards } from "@/components/option-cards";
@@ -40,10 +41,7 @@ import { message } from "@/lib/errors";
 // registries an image comes from — is the next question down.
 type Origin = "github" | "image";
 
-const SOURCE: Record<Origin, Record<string, AppSource>> = {
-  github: { railpack: "railpack", dockerfile: "dockerfile" },
-  image: { cubeship: "registry", external: "external" },
-};
+const SOURCE: Record<string, AppSource> = { railpack: "railpack", dockerfile: "dockerfile" };
 
 export default function AppSettingsPage({
   params,
@@ -597,15 +595,25 @@ function SourceSection(props: SectionProps) {
   const [buildWith, setBuildWith] = useState(
     app.source === "dockerfile" ? "dockerfile" : "railpack",
   );
-  const [imageFrom, setImageFrom] = useState(app.source === "external" ? "external" : "cubeship");
   const [repo, setRepo] = useState(app.repo ?? "");
   const [gitRef, setGitRef] = useState(app.ref ?? "");
   const [dockerfile, setDockerfile] = useState(app.dockerfile ?? "");
-  const [image, setImage] = useState(app.image ?? "");
+  // Which registry, which image and which tag are one value: changing
+  // the registry invalidates the other two, and a form that held them
+  // apart would let them disagree between one render and the next.
+  const [from, setFrom] = useState<ImageSourceValue>({
+    registry: app.source === "external" ? hostOf(app.image ?? "") : CUBESHIP,
+    image: app.source === "external" ? (app.image ?? "") : "",
+    tag: app.tag ?? "",
+  });
 
-  const source = SOURCE[origin][origin === "github" ? buildWith : imageFrom];
+  // A registry that is not this instance's own is the external source,
+  // whichever one it is. The dashboard shows the registry; the daemon
+  // has always cared only whether it runs it.
+  const source: AppSource =
+    origin === "github" ? SOURCE[buildWith] : from.registry === CUBESHIP ? "registry" : "external";
   const nowBuilds = origin === "github";
-  const problem = originProblem(source, { repo, image });
+  const problem = originProblem(source, { repo, image: from.image });
 
   const touch = () => setSaved(false);
 
@@ -623,7 +631,8 @@ function SourceSection(props: SectionProps) {
               // would ignore.
               save({
                 source,
-                image: source === "external" ? image.trim() : "",
+                image: source === "external" ? from.image.trim() : "",
+                tag: nowBuilds ? "" : from.tag.trim(),
                 repo: nowBuilds ? repo.trim() : "",
                 ref: nowBuilds ? gitRef.trim() : "",
                 dockerfile: source === "dockerfile" ? dockerfile.trim() : "",
@@ -706,40 +715,15 @@ function SourceSection(props: SectionProps) {
               </div>
             ) : (
               <div className="space-y-5 border-l-2 border-primary/40 pl-4">
-                <OptionCards
-                  label="Where the image comes from"
-                  value={imageFrom}
-                  onChange={(v) => {
-                    setImageFrom(v);
+                <ImageSource
+                  value={from}
+                  pushPath={app.source === "registry" ? app.image : undefined}
+                  appReference={app.reference}
+                  onChange={(next) => {
+                    setFrom(next);
                     touch();
                   }}
-                  options={[
-                    {
-                      value: "cubeship",
-                      title: "Cubeship's registry",
-                      body: "Pushing to it is the deploy. Needs an instance domain before there is anywhere to push.",
-                    },
-                    {
-                      value: "external",
-                      title: "Another registry",
-                      body: "Nothing tells Cubeship when it is pushed to, so you deploy when you want to.",
-                    },
-                  ]}
                 />
-
-                {imageFrom === "external" && (
-                  <TextField
-                    label="Image"
-                    hint="Without a tag — the tag is the deploy's argument, and an app pinned to one could never be told to run another. A private registry needs a login under Registries."
-                    spellCheck={false}
-                    value={image}
-                    onChange={(e) => {
-                      setImage(e.target.value);
-                      touch();
-                    }}
-                    placeholder="registry.digitalocean.com/acme/api"
-                  />
-                )}
               </div>
             )}
 
@@ -774,7 +758,7 @@ function originProblem(source: AppSource, o: { repo: string; image: string }): s
       return "That is an image reference, not a URL — registry.example.com/acme/api.";
     }
     if ((image.split("/").pop() ?? "").includes(":")) {
-      return "Leave the tag off. Which tag to run is what a deploy chooses, and an app pinned to one could never be told to run another.";
+      return "Leave the tag off the image. The tag has a field of its own, and two places to say it is one that can contradict the other.";
     }
     return null;
   }
@@ -790,4 +774,14 @@ function originProblem(source: AppSource, o: { repo: string; image: string }): s
     }
   }
   return null;
+}
+
+// hostOf is which registry an image reference names, in the spelling the
+// daemon uses: a reference with no registry in it at all is Docker Hub's.
+function hostOf(image: string): string {
+  const first = image.split("/")[0] ?? "";
+  if (!image.includes("/") || (!/[.:]/.test(first) && first !== "localhost")) {
+    return "index.docker.io";
+  }
+  return first.toLowerCase();
 }

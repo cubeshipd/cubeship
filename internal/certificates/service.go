@@ -371,6 +371,12 @@ func complaints(r io.Reader) []string {
 		seen[key] = true
 		out = append(out, line)
 	}
+	// A log too long for one line, or a stream that stopped mid-read, is
+	// not a reason to report nothing: what was read up to the failure is
+	// still the reason somebody is looking for. The report carries a
+	// missing tail the same way it carries a missing log — silently,
+	// because there is no certificate fact in it either way.
+	_ = scanner.Err()
 	return out
 }
 
