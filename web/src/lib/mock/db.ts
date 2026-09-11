@@ -48,8 +48,8 @@ export const db = {
     themes: ["cyan", "mono", "hacker", "red", "orange", "pink", "purple"],
     display_name: "Lucas",
     email: "lucas@example.com",
-    avatar: "blue",
-    avatars: ["blue", "green", "pink", "yellow"],
+    avatar: "cyan",
+    avatars: ["cyan", "hacker", "mono", "orange", "pink", "purple", "red"],
   } as Me,
 
   users: [
