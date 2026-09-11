@@ -9,7 +9,6 @@ import { AppCard } from "@/components/app-card";
 import { ErrorAlert } from "@/components/error-alert";
 import { PageHeader } from "@/components/page-header";
 import { SlugField } from "@/components/slug-field";
-import { TextAreaField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -253,8 +252,8 @@ function NewEnvironmentDialog({
   );
 }
 
-// An app is created with a slug and a description, and nothing else.
-// What it runs and where it is served are decisions with consequences —
+// An app is created with a slug and nothing else. What it runs and
+// where it is served are decisions with consequences —
 // a build executes a repository on this host; a domain has to resolve
 // here — so they are made inside the app, with the reasons in front of
 // you, rather than guessed at in the moment you name it.
@@ -272,7 +271,6 @@ function NewAppDialog({
   onCreated: (reference: string) => void;
 }) {
   const [slug, setSlug] = useState("");
-  const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -285,10 +283,8 @@ function NewAppDialog({
         project,
         environment,
         name: slug,
-        description,
       });
       setSlug("");
-      setDescription("");
       onOpenChange(false);
       onCreated(created.reference);
     } catch (err) {
@@ -312,13 +308,6 @@ function NewAppDialog({
           <div className="space-y-4 py-5">
             <ErrorAlert error={error} />
             <SlugField autoFocus value={slug} onChange={setSlug} placeholder="gateway" />
-            <TextAreaField
-              label="Description"
-              hint="What this app is. Empty is fine."
-              rows={3}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-            />
           </div>
 
           <DialogFooter>

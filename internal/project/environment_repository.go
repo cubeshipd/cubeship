@@ -18,12 +18,12 @@ func NewEnvironmentRepository(q database.Queryer) *EnvironmentRepository {
 	return &EnvironmentRepository{q: q}
 }
 
-const environmentColumns = `id, project_id, slug, description, env, created_at`
+const environmentColumns = `id, project_id, slug, env, created_at`
 
 func scanEnvironment(row scanner) (*Environment, error) {
 	var e Environment
 	var envJSON []byte
-	if err := row.Scan(&e.ID, &e.ProjectID, &e.Slug, &e.Description, &envJSON, &e.CreatedAt); err != nil {
+	if err := row.Scan(&e.ID, &e.ProjectID, &e.Slug, &envJSON, &e.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &e.Env); err != nil {
@@ -42,23 +42,6 @@ func (r *EnvironmentRepository) Create(ctx context.Context, projectID int64, slu
 	}
 	return e, nil
 }
-
-// Update changes an environment's editable fields. A nil argument
-// leaves the column alone, so PATCH with one field named cannot blank
-// the other — and it stays one statement rather than a
-// read-modify-write.
-func (r *EnvironmentRepository) Update(ctx context.Context, environmentID int64, description *string) (*Environment, error) {
-	row := r.q.QueryRowContext(ctx,
-		`UPDATE environments SET description = COALESCE($1, description)
-		 WHERE id = $2 RETURNING `+environmentColumns,
-		description, environmentID)
-	e, err := scanEnvironment(row)
-	if err != nil {
-		return nil, fmt.Errorf("update environment: %w", err)
-	}
-	return e, nil
-}
-
 func (r *EnvironmentRepository) BySlug(ctx context.Context, projectID int64, slug string) (*Environment, error) {
 	row := r.q.QueryRowContext(ctx,
 		`SELECT `+environmentColumns+` FROM environments WHERE project_id = $1 AND slug = $2`, projectID, slug)

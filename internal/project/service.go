@@ -96,24 +96,18 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug str
 	return created, env, nil
 }
 
-// Update changes a project's description. A nil field is left
-// as it was.
+// **A project has nothing to change.** Its slug is fixed — no slug in
+// Cubeship is editable after the resource exists, because every one of
+// them is a path component of an app's registry reference, which is
+// derived on read rather than stored, so renaming one would silently
+// move every app under it. Its variables have their own endpoints. The
+// description was the last editable thing on it and is gone, so there
+// is no Update here and no PATCH in front of one: an endpoint that can
+// change nothing is a promise to whoever calls it that something can be
+// changed.
 //
-// Not the slug. No slug in Cubeship is editable after the resource is
-// created — project, environment or app — because every
-// one of them is a path component of an app's registry reference, which
-// is derived on read rather than stored. Renaming one would silently
-// move every app under it: pushes configured against the old path would
-// start failing and images already pushed would be stranded where
-// nothing looks for them again. The identifier is the one promise the
-// daemon makes to whatever is configured against it.
-func (s *Service) Update(ctx context.Context, caller *user.User, projectSlug string, description *string) (*Project, error) {
-	p, err := s.Resolve(ctx, caller, projectSlug, user.RoleAdmin)
-	if err != nil {
-		return nil, err
-	}
-	return s.Repo().Update(ctx, p.ID, description)
-}
+// The same is true of an environment. An app is the level where there
+// is still a decision to make, and it keeps its PATCH.
 
 func (s *Service) List(ctx context.Context, caller *user.User) ([]*Project, error) {
 	if err := user.Require(caller, user.RoleMember); err != nil {
@@ -251,14 +245,6 @@ func (s *Service) MergeEnvironmentEnv(ctx context.Context, caller *user.User, pr
 // with a warning, an environment's slug is the third component of every
 // app reference under it and there is no equivalent screen for it yet.
 // A nil field is left as it was.
-func (s *Service) UpdateEnvironment(ctx context.Context, caller *user.User, projectSlug, envSlug string, description *string) (*Environment, error) {
-	e, err := s.ResolveEnvironment(ctx, caller, projectSlug, envSlug, user.RoleAdmin)
-	if err != nil {
-		return nil, err
-	}
-	return s.EnvironmentRepo().Update(ctx, e.ID, description)
-}
-
 // DeleteEnvironment removes an environment and everything deployed in
 // it. production is the one refusal left: it is created with the project
 // and every app assumes it exists.

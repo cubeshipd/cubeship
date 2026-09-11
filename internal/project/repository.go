@@ -16,14 +16,14 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, slug, description, env, created_at`
+const columns = `id, slug, env, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
 func scan(row scanner) (*Project, error) {
 	var p Project
 	var envJSON []byte
-	if err := row.Scan(&p.ID, &p.Slug, &p.Description, &envJSON, &p.CreatedAt); err != nil {
+	if err := row.Scan(&p.ID, &p.Slug, &envJSON, &p.CreatedAt); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &p.Env); err != nil {
@@ -41,24 +41,6 @@ func (r *Repository) Create(ctx context.Context, slug string) (*Project, error) 
 	}
 	return p, nil
 }
-
-// Update changes a project's editable fields. A nil argument leaves the
-// column alone, so PATCH with one field named cannot blank the other —
-// and it stays one statement rather than a read-modify-write.
-//
-// The slug is not among them, here or anywhere: see Service.Update.
-func (r *Repository) Update(ctx context.Context, projectID int64, description *string) (*Project, error) {
-	row := r.q.QueryRowContext(ctx,
-		`UPDATE projects SET description = COALESCE($1, description)
-		 WHERE id = $2 RETURNING `+columns,
-		description, projectID)
-	p, err := scan(row)
-	if err != nil {
-		return nil, fmt.Errorf("update project: %w", err)
-	}
-	return p, nil
-}
-
 func (r *Repository) BySlug(ctx context.Context, slug string) (*Project, error) {
 	row := r.q.QueryRowContext(ctx,
 		`SELECT `+columns+` FROM projects WHERE slug = $1`, slug)

@@ -29,9 +29,6 @@ type App struct {
 	ProjectID     int64
 	EnvironmentID int64
 	Name          string
-	// Description is what this app is, in a sentence. It and the slug
-	// are all an app is created with.
-	Description string
 	// Domains are every name Traefik serves this app at, each with the
 	// port behind it.
 	//

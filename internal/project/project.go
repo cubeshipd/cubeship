@@ -22,14 +22,10 @@ import (
 // change and the one everybody reads. A second, editable name was a
 // second idea for one thing.
 type Project struct {
-	ID   int64
-	Slug string
-	// Description is what the project is for, in a sentence or two. The
-	// slug cannot say it — it is a path component — so this is where
-	// anything beyond the name goes.
-	Description string
-	Env         envvar.Map
-	CreatedAt   time.Time
+	ID        int64
+	Slug      string
+	Env       envvar.Map
+	CreatedAt time.Time
 }
 
 var (

@@ -22,12 +22,8 @@ type Environment struct {
 	ID        int64
 	ProjectID int64
 	Slug      string
-	// Description is what this stage of the project's lifecycle is for.
-	// The slug cannot say it — it is a path component — so this is where
-	// anything beyond the name goes.
-	Description string
-	Env         envvar.Map
-	CreatedAt   time.Time
+	Env       envvar.Map
+	CreatedAt time.Time
 }
 
 // ProductionEnvSlug is the environment every project is created with. It

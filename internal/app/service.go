@@ -280,7 +280,7 @@ func (s *Service) ResolveString(ctx context.Context, caller *user.User, ref stri
 
 // Create registers an app in a project's environment and returns it,
 // including the registry path a push should target.
-func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, envSlug, name, description string, source Source, origin Origin) (*Scoped, error) {
+func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, envSlug, name string, source Source, origin Origin) (*Scoped, error) {
 	if envSlug == "" {
 		envSlug = project.ProductionEnvSlug
 	}
@@ -318,7 +318,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, en
 		return nil, project.ErrEnvironmentNotFound
 	}
 	ref := Reference{Project: p.Slug, Environment: env.Slug, Name: name}
-	if _, err := s.Repo().Create(ctx, p.ID, env.ID, name, description, source, origin); err != nil {
+	if _, err := s.Repo().Create(ctx, p.ID, env.ID, name, source, origin); err != nil {
 		// The unique index is the authority, not a preceding lookup:
 		// two concurrent creates of the same name would both pass a
 		// check and the loser would surface as a 500.
@@ -336,7 +336,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, en
 //
 // Images already pushed stay in the registry. Reclaiming them needs a
 // registry garbage collection pass, which is a separate operation.
-// Update reconfigures an app: its description, where its image comes
+// Update reconfigures an app: where its image comes
 // from, how Traefik decides it is healthy, and which machines run it.
 //
 // An app is created with almost none of that, so this is where it
@@ -344,7 +344,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, en
 // decision as creating one that builds — this instance will execute
 // whatever that repository contains — so it takes the same role, checked
 // against the source being moved to rather than the one being left.
-func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, description *string, source *Source, origin *Origin, health *string, limits *Limits, auto *Autoscale, place *Placement) (*Scoped, error) {
+func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, source *Source, origin *Origin, health *string, limits *Limits, auto *Autoscale, place *Placement) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.RoleAdmin)
 	if err != nil {
 		return nil, err
@@ -401,7 +401,7 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 		return nil, ErrInvalidAutoscale
 	}
 
-	if _, err := s.Repo().Update(ctx, a.ID, description, source, origin, health, limits, auto); err != nil {
+	if _, err := s.Repo().Update(ctx, a.ID, source, origin, health, limits, auto); err != nil {
 		return nil, err
 	}
 

@@ -20,7 +20,7 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const columns = `id, project_id, environment_id, name, description, source, source_image,
+const columns = `id, project_id, environment_id, name, source, source_image,
 	source_tag, source_repo, source_ref, source_dockerfile, health_path, scale, spread,
 	cpu_limit, memory_limit,
 	autoscale_min, autoscale_max, autoscale_cpu, autoscaled_at,
@@ -40,7 +40,7 @@ type scanner interface{ Scan(dest ...any) error }
 // being true.
 func dests(a *App, envJSON *[]byte) []any {
 	return []any{
-		&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Name, &a.Description,
+		&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Name,
 		&a.Source, &a.SourceImage, &a.SourceTag, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
 		&a.HealthPath, &a.Scale, &a.Spread,
 		&a.Limits.CPU, &a.Limits.Memory,
@@ -77,7 +77,7 @@ func scan(row scanner) (*App, error) {
 //
 // The slug is not here. It is the last component of the app's registry
 // reference, and no slug in Cubeship changes once its resource exists.
-func (r *Repository) Update(ctx context.Context, appID int64, description *string, source *Source, origin *Origin, health *string, limits *Limits, auto *Autoscale) (*App, error) {
+func (r *Repository) Update(ctx context.Context, appID int64, source *Source, origin *Origin, health *string, limits *Limits, auto *Autoscale) (*App, error) {
 	var src *string
 	if source != nil {
 		s := string(*source)
@@ -111,21 +111,20 @@ func (r *Repository) Update(ctx context.Context, appID int64, description *strin
 	}
 	row := r.q.QueryRowContext(ctx,
 		`UPDATE apps SET
-		   description       = COALESCE($1, description),
-		   source            = COALESCE($2, source),
-		   source_image      = COALESCE($3, source_image),
-		   source_tag        = COALESCE($4, source_tag),
-		   source_repo       = COALESCE($5, source_repo),
-		   source_ref        = COALESCE($6, source_ref),
-		   source_dockerfile = COALESCE($7, source_dockerfile),
-		   health_path       = COALESCE($8, health_path),
-		   cpu_limit         = COALESCE($9, cpu_limit),
-		   memory_limit      = COALESCE($10, memory_limit),
-		   autoscale_min     = COALESCE($11, autoscale_min),
-		   autoscale_max     = COALESCE($12, autoscale_max),
-		   autoscale_cpu     = COALESCE($13, autoscale_cpu)
-		 WHERE id = $14 RETURNING `+columns,
-		description, src, image, tag, repo, ref, dockerfile, health, cpu, memory,
+		   source            = COALESCE($1, source),
+		   source_image      = COALESCE($2, source_image),
+		   source_tag        = COALESCE($3, source_tag),
+		   source_repo       = COALESCE($4, source_repo),
+		   source_ref        = COALESCE($5, source_ref),
+		   source_dockerfile = COALESCE($6, source_dockerfile),
+		   health_path       = COALESCE($7, health_path),
+		   cpu_limit         = COALESCE($8, cpu_limit),
+		   memory_limit      = COALESCE($9, memory_limit),
+		   autoscale_min     = COALESCE($10, autoscale_min),
+		   autoscale_max     = COALESCE($11, autoscale_max),
+		   autoscale_cpu     = COALESCE($12, autoscale_cpu)
+		 WHERE id = $13 RETURNING `+columns,
+		src, image, tag, repo, ref, dockerfile, health, cpu, memory,
 		autoMin, autoMax, autoCPU, appID)
 	a, err := scan(row)
 	if err != nil {
@@ -153,18 +152,18 @@ type Origin struct {
 	Dockerfile string
 }
 
-func (r *Repository) Create(ctx context.Context, projectID, environmentID int64, name, description string, source Source, origin Origin) (*App, error) {
+func (r *Repository) Create(ctx context.Context, projectID, environmentID int64, name string, source Source, origin Origin) (*App, error) {
 	row := r.q.QueryRowContext(ctx,
 		// An app is created on the machine the daemon is on, and moved
 		// afterwards if it belongs somewhere else. The subquery rather
 		// than a column default because a default would have to name a
 		// row by a number, and the control plane's is a fact about a
 		// table rather than a constant.
-		`INSERT INTO apps (project_id, environment_id, name, description, source,
+		`INSERT INTO apps (project_id, environment_id, name, source,
 		                   source_image, source_tag, source_repo, source_ref, source_dockerfile)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		 RETURNING `+columns,
-		projectID, environmentID, name, description, string(source),
+		projectID, environmentID, name, string(source),
 		origin.Image, origin.Tag, origin.Repo, origin.Ref, origin.Dockerfile)
 	a, err := scan(row)
 	if err != nil {

@@ -15,7 +15,7 @@ import { LoadingList } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { OptionCards } from "@/components/option-cards";
 import { PageHeader, SectionHeader } from "@/components/page-header";
-import { TextAreaField, TextField } from "@/components/text-field";
+import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -101,7 +101,6 @@ function Settings({ reference }: { reference: string }) {
 
       {app && (
         <>
-          <General app={app} onSaved={setApp} onError={setError} />
           <AppNetwork app={app} onSaved={setApp} />
           <SourceSection app={app} onSaved={setApp} onError={setError} />
           <Placement app={app} onSaved={setApp} onError={setError} />
@@ -169,54 +168,6 @@ function usePatch({ app, onSaved, onError }: SectionProps) {
   }
 
   return { busy, saved, setSaved, save };
-}
-
-function General(props: SectionProps) {
-  const { app } = props;
-  const { busy, saved, setSaved, save } = usePatch(props);
-  const [description, setDescription] = useState(app.description ?? "");
-  const dirty = description !== (app.description ?? "");
-
-  return (
-    <>
-      <SectionHeader title="General" />
-      <Card>
-        <CardContent>
-          <form
-            className="space-y-4"
-            onSubmit={(e) => {
-              e.preventDefault();
-              save({ description });
-            }}
-          >
-            <TextAreaField
-              label="Description"
-              hint="What this app is. Empty is fine."
-              rows={3}
-              value={description}
-              onChange={(e) => {
-                setDescription(e.target.value);
-                setSaved(false);
-              }}
-            />
-
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Reference</Label>
-              <div className="flex h-10 items-center border border-border bg-secondary/40 px-3 font-mono text-sm text-muted-foreground">
-                {app.reference}
-              </div>
-              <p className="text-xs text-subtle-foreground">
-                Not editable. It is this app&apos;s registry repository path and the basis of its
-                container and router names.
-              </p>
-            </div>
-
-            <SaveRow busy={busy} saved={saved} dirty={dirty} />
-          </form>
-        </CardContent>
-      </Card>
-    </>
-  );
 }
 
 // Which machines in the cluster run the app, and which of them its

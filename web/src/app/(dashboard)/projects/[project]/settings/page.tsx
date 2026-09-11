@@ -3,49 +3,32 @@
 import { ChevronLeftIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { use, useEffect, useState } from "react";
-import { ActionButton } from "@/components/action-button";
+import { use, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
-import { ErrorAlert } from "@/components/error-alert";
-import { PageHeader, SectionHeader } from "@/components/page-header";
-import { TextAreaField } from "@/components/text-field";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Label } from "@/components/ui/label";
-import { api, type Project } from "@/lib/api";
-import { message } from "@/lib/errors";
+import { api } from "@/lib/api";
 
 export default function ProjectSettingsPage({ params }: PageProps<"/projects/[project]/settings">) {
   return <Settings {...use(params)} />;
 }
 
+// A project's settings, which is one irreversible act and nothing else.
+//
+// There was a General section above it whose whole content was the
+// description, plus the slug shown read-only. Both are gone — the
+// description everywhere, and the slug because a value you cannot edit,
+// on a page you opened to edit something, is a field that teaches people
+// settings screens are where facts live. The slug is in the URL and in
+// the header of every page under it.
+//
+// The page stays rather than becoming a delete button in the project's
+// header, for the reason it always existed: destroying a thing belongs
+// at the bottom of a page you went to on purpose.
 function Settings({ project }: { project: string }) {
   const router = useRouter();
-
-  const [current, setCurrent] = useState<Project | null>(null);
-  const [description, setDescription] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const path = `/projects/${project}`;
-
-  // There is no "get one project" endpoint — the list is the read, and
-  // on a single-VPS install it is a handful of rows.
-  useEffect(() => {
-    if (!project) return;
-    api
-      .get<Project[]>(`/projects`)
-      .then((list) => {
-        const found = list.find((p) => p.slug === project);
-        if (!found) throw new Error("project not found");
-        setCurrent(found);
-        setDescription(found.description ?? "");
-      })
-      .catch((e) => setError(message(e)));
-  }, [project]);
 
   if (!project) {
     return (
@@ -59,24 +42,6 @@ function Settings({ project }: { project: string }) {
     );
   }
 
-  const dirty = !!current && description !== (current.description ?? "");
-
-  async function save(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    setSaved(false);
-    try {
-      // PATCH, so sending both is a statement about both and neither is
-      // cleared by having been left off the form.
-      setCurrent(await api.patch<Project>(path, { description }));
-      setSaved(true);
-    } catch (err) {
-      setError(message(err));
-    }
-    setBusy(false);
-  }
-
   return (
     <>
       <Link
@@ -88,44 +53,6 @@ function Settings({ project }: { project: string }) {
       </Link>
 
       <PageHeader title="Project settings" />
-
-      <ErrorAlert error={error} />
-
-      <SectionHeader title="General" />
-      <Card>
-        <CardContent>
-          <form onSubmit={save} className="space-y-4">
-            <TextAreaField
-              label="Description"
-              hint="Shown on the project's card. Empty is fine."
-              rows={3}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              disabled={!current}
-              placeholder="What this project holds, and who it is for."
-            />
-
-            <div className="space-y-2">
-              <Label className="text-xs text-muted-foreground">Slug</Label>
-              <div className="flex h-10 items-center border border-border bg-secondary/40 px-3 font-mono text-sm text-muted-foreground">
-                {project}
-              </div>
-              <p className="text-xs text-subtle-foreground">
-                Not editable. It is a path component of every app&apos;s registry reference under
-                this project, so renaming it would move every app in it — breaking pushes configured
-                against the old path and stranding images already pushed there.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-3">
-              <ActionButton type="submit" busy={busy} disabled={!dirty}>
-                Save
-              </ActionButton>
-              {saved && !dirty && <span className="text-xs text-muted-foreground">Saved.</span>}
-            </div>
-          </form>
-        </CardContent>
-      </Card>
 
       <DangerZone>
         <DangerAction
@@ -152,7 +79,7 @@ function Settings({ project }: { project: string }) {
         confirmWord={project}
         confirmLabel="Delete project"
         onConfirm={async () => {
-          await api.del(path);
+          await api.del(`/projects/${project}`);
           router.push("/projects");
         }}
       />
