@@ -53,7 +53,15 @@ export const db = {
   } as Me,
 
   users: [
-    { username: "lucas", role: "admin", avatar: "cyan", created_at: ago(60 * 24 * 90) },
+    {
+      username: "lucas",
+      display_name: "Lucas",
+      role: "admin",
+      avatar: "cyan",
+      created_at: ago(60 * 24 * 90),
+    },
+    // No display name, which is the ordinary state: the username
+    // stands in, and the preview shows both halves of that rule.
     { username: "ci", role: "member", avatar: "hacker", created_at: ago(60 * 24 * 12) },
   ] as InstanceUser[],
 

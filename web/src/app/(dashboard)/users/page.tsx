@@ -28,7 +28,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ValueCard } from "@/components/value-card";
-import { api, avatarSrc, type InstanceUser } from "@/lib/api";
+import { api, avatarSrc, type InstanceUser, personName } from "@/lib/api";
 import { message } from "@/lib/errors";
 import { useOpenOnArrival } from "@/lib/open-on-arrival";
 
@@ -94,45 +94,64 @@ export default function UsersPage() {
 
   const columns: Column<InstanceUser>[] = [
     {
-      id: "username",
+      id: "name",
       header: "User",
-      width: 38,
-      sortBy: (u) => u.username,
+      width: 28,
+      sortBy: (u) => personName(u),
       cell: (u) => (
         <span className="flex min-w-0 items-center gap-2.5">
           {/* biome-ignore lint/performance/noImgElement: a static file in this image's own public directory */}
           <img src={avatarSrc(u.avatar, "small")} alt="" className={cnFace(u)} />
-          <span className="truncate font-mono">{u.username}</span>
-          {u.username === me.username && <span className="text-subtle-foreground">you</span>}
+          <span className="truncate">{personName(u)}</span>
+          {u.username === me.username && (
+            <span className="shrink-0 text-subtle-foreground">you</span>
+          )}
         </span>
       ),
     },
     {
+      // **The one screen where the address is a column of its own.**
+      // Everywhere else a person is called what they are called; here
+      // the username is the thing you act on — it is the path segment,
+      // what `docker login` sends, and what the confirmations below ask
+      // you to type.
+      id: "username",
+      header: "Username",
+      width: 20,
+      sortBy: (u) => u.username,
+      cell: (u) => <span className="truncate font-mono text-xs">{u.username}</span>,
+    },
+    {
       id: "role",
       header: "Role",
-      width: 16,
+      width: 14,
       sortBy: (u) => u.role,
       cell: (u) => <span className="text-muted-foreground">{u.role}</span>,
     },
     {
       id: "status",
       header: "Status",
-      width: 18,
+      width: 14,
       sortBy: (u) => (u.blocked_at ? "blocked" : "active"),
       // Not a StatusBadge: that colours what a container is doing, and
       // painting a person green for existing would say a great deal
       // less than the one row it needs to pick out.
+      //
+      // **"Active" rather than a dash.** An empty cell is a fact this
+      // screen did not have, and what it means here is the opposite: a
+      // column that is blank for everybody who is fine makes the word
+      // "Blocked" read as the only value the column ever takes.
       cell: (u) =>
         u.blocked_at ? (
           <span className="text-destructive text-xs uppercase tracking-wide">Blocked</span>
         ) : (
-          <span className="text-subtle-foreground text-xs">—</span>
+          <span className="text-muted-foreground text-xs uppercase tracking-wide">Active</span>
         ),
     },
     {
       id: "since",
       header: "Since",
-      width: 18,
+      width: 14,
       sortBy: (u) => u.created_at,
       cell: (u) => (
         <span className="text-muted-foreground">{new Date(u.created_at).toLocaleDateString()}</span>
@@ -152,7 +171,7 @@ export default function UsersPage() {
         const mine = "This is the account you are signed in as.";
         return (
           <RowActions>
-            <RowMenu label={`Actions for ${u.username}`}>
+            <RowMenu label={`Actions for ${personName(u)}`}>
               <RowMenuItem
                 icon={ShieldIcon}
                 disabled={isYou}
@@ -220,7 +239,10 @@ export default function UsersPage() {
         columns={columns}
         rows={users}
         rowKey={(u) => u.username}
-        search={{ placeholder: "Filter users", by: (u) => [u.username, u.role] }}
+        search={{
+          placeholder: "Filter users",
+          by: (u) => [u.display_name, u.username, u.role],
+        }}
         empty="Nobody but you."
       />
 
@@ -242,7 +264,7 @@ export default function UsersPage() {
       <ConfirmDialog
         open={blocking !== null}
         onOpenChange={(open) => !open && setBlocking(null)}
-        title={`Block ${blocking?.username}?`}
+        title={`Block ${blocking ? personName(blocking) : ""}?`}
         confirmLabel="Block"
         description="Every way in is refused from the next request — their password, their keys and the sessions they are signed in on. Nothing is revoked: unblocking puts them back exactly where they were, with what they already had. Anything they deployed keeps running."
         onConfirm={async () => {
@@ -255,7 +277,7 @@ export default function UsersPage() {
       <ConfirmDialog
         open={resetting !== null}
         onOpenChange={(open) => !open && setResetting(null)}
-        title={`Issue a new password for ${resetting?.username}?`}
+        title={`Issue a new password for ${resetting ? personName(resetting) : ""}?`}
         confirmLabel="Issue password"
         description="You get it once, to hand over — this instance keeps only its hash, and nothing here sends mail. Their API keys are untouched: a forgotten password is not a lost laptop. Every session they hold ends, because the password changed."
         onConfirm={async () => {
@@ -437,7 +459,7 @@ function RoleDialog({
       <DialogContent className="sm:max-w-lg">
         <form onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>{user?.username}&rsquo;s role</DialogTitle>
+            <DialogTitle>{user ? personName(user) : ""}&rsquo;s role</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-5">
             <ErrorAlert error={error} />
