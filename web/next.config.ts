@@ -16,11 +16,23 @@ import type { NextConfig } from "next";
 // toolchain that built it.
 const dev = process.env.NODE_ENV === "development";
 
+// The dashboard can stand on invented data with no daemon behind it —
+// `make web-preview`, which sets this. See src/lib/mock.
+const preview = process.env.NEXT_PUBLIC_CUBESHIP_MOCK === "1";
+
 const nextConfig: NextConfig = {
   output: dev ? undefined : "standalone",
   devIndicators: false,
   turbopack: {
     root: dev ? process.cwd() : undefined,
+    // **The fixtures are aliased away unless the preview asked for
+    // them.** The import in lib/api.ts is dynamic and behind a flag, so
+    // nothing ever loads it in a normal build — and a dead branch is
+    // not the same promise as an absent file: the chunk was emitted
+    // anyway, which put an invented instance, invented hostnames and
+    // things shaped like keys inside the image people run. This is what
+    // makes "not in the build" true rather than nearly true.
+    resolveAlias: preview ? undefined : { "@/lib/mock": "./src/lib/mock/absent.ts" },
   },
 
   // The daemon is in front of this in every mode — it serves /api and

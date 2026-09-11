@@ -68,6 +68,10 @@ dev: db-up ## Run the daemon with live reload, rebuilding on every Go change
 web-dev: ## Run the dashboard for `make dev`, with hot reload
 	cd $(WEBDIR) && $(PNPM) run dev
 
+.PHONY: web-preview
+web-preview: ## Run the dashboard on invented data, with no daemon behind it
+	cd $(WEBDIR) && NEXT_PUBLIC_CUBESHIP_MOCK=1 $(PNPM) run dev
+
 .PHONY: install
 install: ## Install the CLI into GOBIN
 	$(GO) install ./cmd/cubeship
