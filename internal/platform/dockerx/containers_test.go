@@ -15,6 +15,7 @@ import (
 	"github.com/docker/docker/api/types/registry"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/api/types/system"
+	"github.com/docker/docker/client"
 	"github.com/docker/docker/errdefs"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
@@ -64,7 +65,7 @@ func (f *fakeAPI) ImagePull(ctx context.Context, ref string, options image.PullO
 	return io.NopCloser(strings.NewReader(f.pullStream)), nil
 }
 
-func (f *fakeAPI) ImageLoad(_ context.Context, r io.Reader, _ bool) (image.LoadResponse, error) {
+func (f *fakeAPI) ImageLoad(_ context.Context, r io.Reader, _ ...client.ImageLoadOption) (image.LoadResponse, error) {
 	loaded, err := io.ReadAll(r)
 	f.loaded = loaded
 	if err != nil {
@@ -120,11 +121,11 @@ func (f *fakeAPI) NetworkInspect(_ context.Context, name string, _ network.Inspe
 	return network.Inspect{}, errdefs.NotFound(errors.New("no such network"))
 }
 
-func (f *fakeAPI) NetworkCreate(ctx context.Context, name string, options types.NetworkCreate) (types.NetworkCreateResponse, error) {
+func (f *fakeAPI) NetworkCreate(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error) {
 	if f.networkCreateErr != nil {
-		return types.NetworkCreateResponse{}, f.networkCreateErr
+		return network.CreateResponse{}, f.networkCreateErr
 	}
-	return types.NetworkCreateResponse{ID: "net-1"}, nil
+	return network.CreateResponse{ID: "net-1"}, nil
 }
 
 func (f *fakeAPI) ContainerStart(ctx context.Context, id string, options container.StartOptions) error {
