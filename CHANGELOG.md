@@ -6,6 +6,85 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.4.2 — 2026-09-10
+
+A firewall rule for an exposed database admitted nothing — it was written for the port you published, and Docker has already changed that number by the time the firewall sees the packet.
+
+### Fixed
+
+**A firewall rule for an exposed database or object store never admitted
+anything.** If you published a Postgres on 15000 and allowed 15000, the
+rule was written, listed, and matched no packet ever: rules about
+forwarded traffic are consulted after Docker has rewritten the
+destination, so what arrives is addressed to 5432 and a rule naming
+15000 cannot see it.
+
+It survived this long because the only ports that get rewritten are the
+ones you open yourself. Everything Cubeship publishes for itself —
+Traefik's 80 and 443, the dashboard's 3000 — is the same number inside
+and out, so the feature worked for every port the product opens and for
+none of yours.
+
+Rules are now written for the port the container is actually on, and the
+Firewall screen shows the translation: `15000/tcp → 5432`.
+
+**If you have already put your published ports behind the firewall**,
+the rules you wrote for a database are the old, inert kind. After
+updating, that port shows as admitted by nothing — add the rule again,
+and delete the old one, which is doing nothing and only makes the list
+harder to read.
+
+**A certificate that failed to issue was never asked for again.**
+Traefik asks a certificate authority only when its configuration
+changes, so a name whose first attempt failed — a DNS record written a
+minute too late, an hour when Let's Encrypt could not reach your
+nameservers — stayed without one until something unrelated happened to
+change the routes. On a settled instance that could be never, and the
+only way out was redeploying an app with nothing wrong with it.
+
+This instance now asks again every half hour, for as long as any name is
+waiting, so a name that starts resolving here gets its certificate
+without you doing anything. Only names Traefik is actually waiting on:
+an instance with no domain, or an app not redeployed since the name was
+added, are still things for you to do, and asking would not move either.
+
+### Added
+
+**Postgres 18** is on the list of versions a new database can run.
+
+It needed more than the number. Postgres 18's image moved where it keeps
+its data and declared its volume somewhere else, so a database created
+on it would have come up, worked, and kept everything in a place this
+instance does not know about — in no backup of the data directory, and
+thrown away the next time the container was replaced. Cubeship now says
+where the data goes rather than letting the image decide.
+
+Existing databases are untouched: a datastore's version is fixed for its
+life, which is what keeps a data directory readable by the server that
+wrote it.
+
+### Changed
+
+**Creating an account hands back a password, not an API key.** The
+account it used to make could not sign in anywhere: a key is what the
+CLI and MCP clients carry, the dashboard wants a password, and nothing
+here lets a new person set a first one — there is no invite mail and no
+reset flow. So you created somebody an account, handed them a
+credential, and it opened nothing you had given them the address of.
+
+The password is shown once — this instance keeps only its hash — and
+whoever it belongs to changes it from their own account screen. API keys
+stay self-service, made by the person who wants one.
+
+**This changes the response**, so anything scripted against it needs a
+look: `POST /users` returns `password` where it returned `api_key`, and
+takes an optional `password` of your own. `cubeship user create` prints
+the password and gained `--password`.
+
+**The `revoke_api_key` tool told agents the last key cannot be
+revoked.** It can, deliberately — a leaked key has to be able to go
+now — and the description says so, along with what revoking it costs.
+
 ## 0.4.1 — 2026-09-10
 
 Users moved to Platform, where the instance's facts live, and the screen is built out of the components every other listing here uses.
