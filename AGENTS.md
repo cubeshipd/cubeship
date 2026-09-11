@@ -425,6 +425,37 @@ comes from" — `source_tag` empty is what "deploy on push" *is*, so the
 switch and the tag field cannot both be answered, and the form hides the
 second when the first is on.
 
+### A log is coloured, and the colour is the program's
+
+`components/ansi.tsx` reads the terminal escapes an app writes and
+renders them, rather than printing the codes that produce them. Without
+it the line somebody is trying to read arrives as
+`[2m2026-…[0m [32m INFO[0m`, which is the one field on the screen made
+unreadable by the thing that was meant to make it clearer.
+
+Stripping them was the other answer and it throws away a decision the
+author made: in a log the colour of the level is half of how it is read.
+So the sequences are parsed, and what is not understood is **dropped
+rather than printed** — an unknown code is noise either way, and noise
+nobody can see is the better kind.
+
+**The eight colours do not follow the palette**, and they are the only
+ones here that do not. `--ansi-*` is defined once in `globals.css`: an
+app writes red because something failed, and a red that came out pink
+under the pink theme would be the interface overruling what the program
+meant.
+
+It reads SGR and nothing else. A log is a stream of lines rather than a
+screen to be addressed, so cursor movement and erasure would mean
+nothing here even if they were honoured — they are consumed and
+discarded, which is what keeps a stray one from being printed in the
+middle of a word.
+
+**The filter and the download see the text with the codes taken out.** A
+filter over the raw bytes answers "no line matches" for a word plainly
+on the screen, and a downloaded file full of escapes is one an editor
+cannot show. The panel is the only place the colour is real.
+
 ### The components
 
 `src/components/ui/` is [shadcn/ui](https://ui.shadcn.com) over Base UI,
@@ -2043,10 +2074,19 @@ a service with no teardown wired refuses to delete at all.
 
 Deleting an app leaves its images in the registry. Reclaiming that disk
 is a registry garbage collection pass, and `internal/registry` has one —
-`registry garbage-collect` inside the registry's own container, which is
-what that module's `Maintainer` exists to run. **Nothing schedules it**:
-it is a button, not a timer, because the pass wants the registry stopped
-and that is a few seconds of every app's pushes failing.
+`registry garbage-collect --delete-untagged` inside the registry's own
+container, which is what that module's `Maintainer` exists to run.
+**Nothing schedules it**: it is a button, not a timer, because the pass
+wants the registry stopped and that is a few seconds of every app's
+pushes failing.
+
+**And it is the other half of every delete beside it.** A `registry:2`
+delete unlinks a manifest and leaves the layers, so a screen that offers
+deleting without offering this is one where somebody clears a repository
+and watches the disk not move. The two live together on Cubeship's own
+registry page, which until recently offered neither: the endpoints were
+there from the start and the dashboard hid them, so the one registry
+this instance runs was the one you could not tidy up.
 
 **Deleting a deployment deletes a record — except the live one, which
 takes the app down.** That is the one place in this product where a

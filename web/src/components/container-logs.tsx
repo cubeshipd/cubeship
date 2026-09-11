@@ -5,6 +5,7 @@ import { CopyIcon, DownloadIcon, RefreshCwIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ActionButton } from "@/components/action-button";
+import { Ansi, strip } from "@/components/ansi";
 import { copyText } from "@/components/copy-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { SectionHeader } from "@/components/page-header";
@@ -216,8 +217,18 @@ export function LogView({
     const all = text.split("\n");
     if (!filter.trim()) return all;
     const needle = filter.toLowerCase();
-    return all.filter((line) => line.toLowerCase().includes(needle));
+    // Matched against the line with its colour codes taken out. A
+    // filter over the raw bytes answers "no line matches" for a word
+    // plainly on the screen, because what sits between the cursor and
+    // the word is an escape nobody typed and nobody can see.
+    return all.filter((line) => strip(line).toLowerCase().includes(needle));
   }, [text, filter]);
+
+  // What the download button writes, and it is the readable text rather
+  // than the bytes: a file full of escapes is one somebody opens in an
+  // editor and cannot read. A terminal shows it correctly and an editor
+  // does not, and the file is for the second.
+  const plain = useMemo(() => strip(lines.join("\n")), [lines]);
 
   // A log is read from the end. Going there on the first answer saves
   // the scroll everybody does anyway, and going there on every answer
@@ -252,7 +263,7 @@ export function LogView({
           }
         />
         {trailing}
-        <TakeAway name={name} text={lines.join("\n")} />
+        <TakeAway name={name} text={plain} />
       </div>
 
       <pre
@@ -262,13 +273,15 @@ export function LogView({
           tall ? "h-[60vh]" : "max-h-[420px]",
         )}
       >
-        {lines.length > 0
-          ? lines.join("\n")
-          : busy
-            ? ""
-            : filter.trim()
-              ? "No line matches."
-              : empty}
+        {lines.length > 0 ? (
+          <Ansi text={lines.join("\n")} />
+        ) : busy ? (
+          ""
+        ) : filter.trim() ? (
+          "No line matches."
+        ) : (
+          empty
+        )}
       </pre>
     </div>
   );
