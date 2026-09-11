@@ -187,10 +187,10 @@ func link(t *testing.T, f *servertest.Fixture, name string, extra map[string]any
 // linkScoped links a store pinned to one bucket.
 //
 // It is a Space rather than the generic endpoint every other test uses,
-// and that is the rule rather than a detail: a bucket is asked for only
-// where the provider's own logins are issued for one — R2's tokens and
-// a Space's access keys — so `generic` refuses the field outright. See
-// Provider.ScopesByBucket.
+// which is the shape somebody actually arrives in: a Space's access
+// keys are routinely issued for one bucket, so it is where the field is
+// the expected answer. Any provider takes it — see
+// TestABucketMayBeNamedOnAnyProvider.
 func linkScoped(t *testing.T, f *servertest.Fixture, name, bucket string) map[string]any {
 	t.Helper()
 	return link(t, f, name, map[string]any{
@@ -487,11 +487,19 @@ func TestLinkingTakesAStoredAccountOrTypedKeysAndNotBoth(t *testing.T) {
 // and Go's mux prefers the literal — so a store called that would be a
 // resource nothing could open. It is refused while the person who typed
 // it is still there.
-// And the refusal is the daemon's, not the form's: a bucket named for a
-// provider whose logins reach the account is refused rather than
-// dropped. A store that silently ignored the field would be one
-// somebody believes is pinned, with every screen disagreeing.
-func TestABucketIsRefusedWhereTheLoginIsNotScopedToOne(t *testing.T) {
+// Naming a bucket is accepted on every provider.
+//
+// It was refused everywhere but R2 and Spaces for a release, on the
+// grounds that those are the ones whose logins are routinely issued per
+// bucket — and that was a guess about somebody else's credential. An
+// IAM policy can be narrowed to one and a compatible endpoint can be
+// anything, so a login that reaches exactly one is a thing somebody can
+// hold on any of them, and a store linked with one had nothing to show.
+//
+// What survives is `scopes_by_bucket`, which now decides what the form
+// *says* rather than what the daemon takes. See the provider table in
+// objectstore_test.go.
+func TestABucketMayBeNamedOnAnyProvider(t *testing.T) {
 	f := servertest.New(t)
 
 	link := func(slug, provider string, extra map[string]any) int {
@@ -506,15 +514,31 @@ func TestABucketIsRefusedWhereTheLoginIsNotScopedToOne(t *testing.T) {
 		return f.Do(t, http.MethodPost, "/objectstores", body, f.AdminKey).Code
 	}
 
-	// Cloudflare's tokens are issued per bucket, so naming one is the
-	// case this exists for.
-	if got := link("r2", "cloudflare", map[string]any{"account": "abc123"}); got != http.StatusCreated {
-		t.Errorf("linking R2 with a bucket answered %d, want %d", got, http.StatusCreated)
+	linked := []struct {
+		slug, provider string
+		extra          map[string]any
+	}{
+		// The case the field was built for: a token issued for one
+		// bucket, which cannot list the others anyway.
+		{"r2", "cloudflare", map[string]any{"account": "abc123"}},
+		{"spaces", "digitalocean", map[string]any{"region": "nyc3"}},
+		// And the two it used to refuse. An IAM policy narrowed to one
+		// bucket is ordinary, and what a compatible endpoint's key
+		// reaches is nobody here's guess to make.
+		{"s3", "aws", map[string]any{"region": "eu-central-1"}},
+		{"wasabi", "generic", map[string]any{"endpoint": "https://s3.wasabisys.com"}},
 	}
-	// An IAM key reaches the account. Pinning here would take the rest
-	// of the store away for a limit the login does not have.
-	if got := link("s3", "aws", map[string]any{"region": "eu-central-1"}); got != http.StatusBadRequest {
-		t.Errorf("linking S3 with a bucket answered %d, want %d", got, http.StatusBadRequest)
+	for _, c := range linked {
+		if got := link(c.slug, c.provider, c.extra); got != http.StatusCreated {
+			t.Errorf("linking %s with a bucket answered %d, want %d", c.provider, got, http.StatusCreated)
+		}
+	}
+
+	// A name S3 would refuse is still refused, wherever it is typed.
+	if got := link("bad", "generic", map[string]any{
+		"endpoint": "https://s3.wasabisys.com", "bucket": "Not A Bucket",
+	}); got != http.StatusBadRequest {
+		t.Errorf("linking with an impossible bucket name answered %d, want 400", got)
 	}
 }
 

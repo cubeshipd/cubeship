@@ -326,12 +326,15 @@ func (s *Service) Link(ctx context.Context, caller *user.User, spec LinkSpec, lo
 		Bucket: strings.TrimSpace(spec.Bucket), Status: StatusLinked,
 	}
 	if store.Bucket != "" {
-		// Refused rather than ignored: a store that quietly dropped the
-		// bucket would be one somebody believes is pinned, and every
-		// screen would disagree with them.
-		if !store.Provider.ScopesByBucket() {
-			return nil, ErrBucketNotScoped
-		}
+		// Accepted whatever the provider is. It was refused for a
+		// while everywhere but R2 and Spaces, on the grounds that those
+		// are the ones whose logins are routinely issued per bucket —
+		// and that was one step too far. An IAM policy can be narrowed
+		// to a single bucket and a compatible endpoint can be anything
+		// at all, so a login that reaches exactly one is a thing
+		// somebody can have on any provider here. What the field costs
+		// is worth *saying*, which the form does, rather than refusing
+		// on a guess about somebody else's credential.
 		if err := CheckBucketName(store.Bucket); err != nil {
 			return nil, err
 		}
@@ -1019,25 +1022,23 @@ func (s *Service) DeleteFolder(ctx context.Context, caller *user.User, name, buc
 // checkRepin decides whether a store may be pinned to `bucket`, or
 // unpinned when it is empty.
 //
-// Three refusals, and the third is the one worth reading. A managed
+// Two refusals, and the second is the one worth reading. A managed
 // store is this instance's own MinIO and lists its own buckets, so
-// pinning it is a limit invented out of nothing. A provider whose
-// logins reach the account is the rule Link already keeps. And a bucket
-// that is not the one an attached app is pointed at would leave the
-// store claiming to be one bucket while an attachment names another —
-// the app keeps working, because its keys reach the endpoint directly,
-// and the dashboard stops being able to show the bucket it is using.
-// Refused with the names, the way deleting a credential something
-// stands on is.
+// pinning it is a limit invented out of nothing. And a bucket that is
+// not the one an attached app is pointed at would leave the store
+// claiming to be one bucket while an attachment names another — the app
+// keeps working, because its keys reach the endpoint directly, and the
+// dashboard stops being able to show the bucket it is using. Refused
+// with the names, the way deleting a credential something stands on is.
+//
+// The provider is not one of them. Any login here may have been issued
+// for a single bucket, so pinning is accepted wherever linking is.
 func (s *Service) checkRepin(ctx context.Context, store *Store, bucket string) error {
 	if bucket == "" {
 		return nil
 	}
 	if store.Kind == KindManaged {
 		return ErrManagedFixed
-	}
-	if !store.Provider.ScopesByBucket() {
-		return ErrBucketNotScoped
 	}
 	if err := CheckBucketName(bucket); err != nil {
 		return err

@@ -256,15 +256,24 @@ export function NewObjectStoreDialog({
                     filled in because it was there, and naming one gives
                     up listing, creating and deleting for the whole
                     store. */}
-                {scoped && (
-                  <TextField
-                    label="Bucket"
-                    value={bucket}
-                    spellCheck={false}
-                    onChange={(e) => setBucket(e.target.value)}
-                    hint="Optional, and only for a key issued for one bucket. Leave it empty for a key that reaches the account — naming one here is the store giving up every other bucket, including making new ones."
-                  />
-                )}
+                {/* Offered on every provider, because a key issued for
+                    one bucket is a thing somebody can hold anywhere —
+                    an R2 token, a Space's access key, an IAM policy
+                    narrowed to one. What changes with the provider is
+                    the hint: where logins are normally scoped that way
+                    this is the expected answer, and everywhere else it
+                    is the unusual one and says what it gives up. */}
+                <TextField
+                  label="Bucket"
+                  value={bucket}
+                  spellCheck={false}
+                  onChange={(e) => setBucket(e.target.value)}
+                  hint={
+                    scoped
+                      ? "Optional. Name it if this key was issued for one bucket, which is how this provider usually issues them — it cannot list the others anyway. Leave it empty for a key that reaches the account."
+                      : "Optional, and usually empty here: a key for this provider normally reaches the whole account. Name one only if this key was narrowed to it — the store then gives up every other bucket, including making new ones. You can undo it later in the store's settings."
+                  }
+                />
               </>
             )}
 

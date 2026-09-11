@@ -242,12 +242,11 @@ function General({ store, onSaved }: { store: ObjectStore; onSaved: () => void }
           />
         )}
 
-        {/* Offered whenever the store is pinned, whatever its provider,
-            because clearing it is the direction that can never be
-            wrong — including for a store pinned before the field was
-            narrowed to the providers whose logins are issued per
-            bucket. Setting one is the daemon's to refuse. */}
-        {store.kind === "external" && (store.bucket || store.scopes_by_bucket) && (
+        {/* Every linked store, pinned or not. Clearing the field is the
+            direction that can never be wrong, and setting one is
+            accepted wherever linking accepts it — a managed store is
+            the only refusal, and it has no section here. */}
+        {store.kind === "external" && (
           <TextField
             label="Bucket"
             value={bucket}

@@ -42,7 +42,8 @@ type Response struct {
 	Region    string `json:"region"`
 	PathStyle bool   `json:"path_style"`
 	// ScopesByBucket says this store's provider issues logins for a
-	// single bucket, which is where pinning one is accepted. Served
+	// single bucket, which is what decides how a form phrases the
+	// optional bucket field rather than whether it offers one. Served
 	// rather than derived in the dashboard for the reason ProviderLabel
 	// is: a second list of which providers those are is a list that
 	// disagrees with the daemon the first time one is added.
@@ -240,7 +241,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		errors.Is(err, ErrEndpointRequired), errors.Is(err, ErrBadEndpoint),
 		errors.Is(err, ErrBadBucket), errors.Is(err, ErrBadKey),
 		errors.Is(err, ErrInvalidLimits),
-		errors.Is(err, ErrSingleBucket), errors.Is(err, ErrBucketNotScoped),
+		errors.Is(err, ErrSingleBucket),
 		errors.Is(err, ErrBadPrefix),
 		errors.Is(err, ErrBadPort),
 		errors.Is(err, ErrNoPortsLeft), errors.Is(err, httpx.ErrNotJSON):
@@ -416,9 +417,10 @@ func (h *Handler) providers(w http.ResponseWriter, r *http.Request) {
 		Provider string `json:"provider"`
 		Label    string `json:"label"`
 		Asks     string `json:"asks"`
-		// ScopesByBucket says a form should offer the optional bucket
-		// field for this provider, because its logins are commonly
-		// issued for one.
+		// ScopesByBucket says this provider's logins are commonly
+		// issued for one bucket, so naming one is the expected answer
+		// here and the unusual answer everywhere else. Every provider
+		// accepts the field; this is what a form says about it.
 		ScopesByBucket bool `json:"scopes_by_bucket"`
 	}
 	out := struct {
