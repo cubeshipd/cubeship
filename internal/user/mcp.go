@@ -29,7 +29,7 @@ func NewTools(svc *Service, caller *User, keyHash string) *Tools {
 func (t *Tools) Register(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "whoami",
-		Description: "Report the identity (username, super-admin status) of the API key this MCP session is using.",
+		Description: "Report who the API key this MCP session is using belongs to: the username, and the role it holds on this instance — `admin` or `member`.",
 	}, t.whoAmI)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "create_api_key",
@@ -41,7 +41,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.listAPIKeys)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "revoke_api_key",
-		Description: "Revoke one of your own API keys by id. Refused if it's your only remaining key.",
+		Description: "Revoke one of your own API keys by id. **Never refused, including your last one**: a key that has leaked has to be able to go now, and being made to mint a replacement first would keep the leaked one live for as long as that took.\n\nSo what it costs is yours to weigh before calling it. Revoking the key this session is authenticating with stops this session at once — the next call fails. Revoking the last one leaves the account with no key at all, and whether that leaves a way in depends on whether it has a password, which this surface does not tell you.",
 	}, t.revokeAPIKey)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "rotate_my_api_key",
