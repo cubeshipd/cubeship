@@ -222,12 +222,17 @@ cubeship server add eu-1
 ```
 
 It prints the command to run on the new box, address and credential
-already in it. The new machine **dials home** and nothing dials it: no
-port to open, no certificate, no firewall hole — a box behind NAT joins
-with one outbound connection.
+already in it. The new machine **dials home** and nothing dials it: it
+publishes no port to the internet, serves no dashboard and needs no
+certificate of its own.
 
 The machines share a private network, encrypted, and container names
-mean the same thing on every one of them.
+mean the same thing on every one of them. That network is the part that
+needs them to reach **each other**: Cubeship opens the three cluster
+ports on each machine, restricted to the other machines' addresses. So a
+box behind NAT can report in and be told what to run, and cannot be on
+that network — which is what an app on it would need to reach a database
+on another machine.
 
 **Every name still arrives at your instance**, whichever machine runs
 the app. One DNS record, one certificate store, and moving an app

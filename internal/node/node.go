@@ -12,10 +12,16 @@
 // That is the load-bearing decision here and it is worth stating: a
 // control plane that called into its workers would mean every one of
 // them publishing an authenticated API to the internet, with a
-// certificate and a firewall hole each, and a box behind NAT could not
-// join at all. Dialling out costs a reconcile loop and buys a worker
-// with no inbound port whatsoever — which is the same argument
-// internal/firewall makes about published ports, from the other side.
+// certificate and a firewall hole each. Dialling out costs a reconcile
+// loop and buys a worker that publishes nothing to the internet — which
+// is the same argument internal/firewall makes about published ports,
+// from the other side.
+//
+// It does not buy a worker with no inbound port at all, and that is
+// worth not overstating: the mesh those machines share is VXLAN between
+// the machines themselves, so internal/mesh opens three ports on each
+// of them, scoped to the peers. A box behind NAT reports in perfectly
+// well and cannot be on that network.
 //
 // So this module is two surfaces that share a table. One is the
 // operator's — list the cluster, add a machine to it, remove one — and
