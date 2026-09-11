@@ -112,8 +112,13 @@ export function HeaderRail({ children }: { children: ReactNode }) {
       {/* Sticky, because the reason it exists is to be reachable — and
           the screens where switching saves the most are the long ones:
           a log, fifty environment variables, a deploy history. */}
-      <div className="sticky top-0 z-30 border-b border-border bg-background/85 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-5xl items-center justify-between gap-4 px-8">
+      {/* The height is on the element that carries the border, so the
+          border is inside it — `h-14` is border-box. With the height on
+          the inner div instead, this strip came to 57px against the
+          sidebar header's 56, and the line across the top of the
+          instance was two lines a pixel apart. */}
+      <div className="sticky top-0 z-30 flex h-14 border-b border-border bg-background/85 backdrop-blur">
+        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-8">
           <nav
             aria-label="Breadcrumb"
             className="flex min-w-0 items-center gap-1.5 overflow-hidden"
