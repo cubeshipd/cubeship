@@ -149,14 +149,12 @@ export function HeaderRail({ children }: { children: ReactNode }) {
 // screen.
 type Siblings = "project" | "environment" | "app" | "datastore" | "objectstore" | "bucket";
 
-// A mark for each kind, on every crumb that opens.
+// A mark for each kind, worn by the rows inside the menu.
 //
-// **Every selector has one, and only selectors do.** The chevron says a
-// crumb can be opened and says nothing about what is behind it; three
-// of them in a row on `web / production / api` are three identical
-// invitations. The mark is what makes them tell each other apart before
-// you read the word — and it is why a crumb that is only a step in the
-// path has none, so the ones that do stand out for a reason.
+// **On the options, not on the crumb.** The path is a line of words and
+// wants to stay one; what the mark does is give the menu that opens out
+// of it an edge to read down, so a list of slugs reads as a list of
+// *buckets* rather than as four bare words floating under a chevron.
 //
 // Projects, databases and stores wear the sidebar's own icon, because
 // they are the same things it lists. The three that are not in the
@@ -374,7 +372,6 @@ function CrumbMenu({ crumb, className }: { crumb: CrumbSpec; className: string }
       <DropdownMenuTrigger
         className={`${className} flex min-w-0 items-center gap-1 truncate transition-colors hover:text-primary focus-visible:text-primary focus-visible:outline-none`}
       >
-        {Mark && <Mark aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />}
         <span className="truncate">{crumb.label}</span>
         <ChevronDownIcon aria-hidden="true" className="size-3 shrink-0 opacity-60" />
       </DropdownMenuTrigger>
@@ -388,9 +385,10 @@ function CrumbMenu({ crumb, className }: { crumb: CrumbSpec; className: string }
         {options?.map((name) => (
           <DropdownMenuItem
             key={name}
-            className="font-mono text-[11px]"
+            className="gap-2 font-mono text-[11px]"
             onClick={() => router.push(hrefFor(kind, scope, name))}
           >
+            {Mark && <Mark aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />}
             {name}
             {name === crumb.label && <span className="ml-auto text-primary">●</span>}
           </DropdownMenuItem>
