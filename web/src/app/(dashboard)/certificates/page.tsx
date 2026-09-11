@@ -53,16 +53,12 @@ export default function Certificates() {
 
       {data && data.missing.length > 0 && (
         <>
-          <SectionHeader
-            title="Waiting"
-            sub="Names this instance routes with no certificate behind them."
-          />
+          <SectionHeader title="Waiting" sub="Names routed here with no certificate yet." />
           <Card className="mb-8 py-0">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Serves</TableHead>
                   <TableHead>Why</TableHead>
                 </TableRow>
               </TableHeader>
@@ -71,11 +67,6 @@ export default function Certificates() {
                   <TableRow key={m.host}>
                     <TableCell className="font-mono text-xs">
                       <div className="max-w-[20rem] whitespace-normal break-all">{m.host}</div>
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      <div className="max-w-[14rem] whitespace-normal break-all">
-                        <Serves app={m.app} instance={m.instance} />
-                      </div>
                     </TableCell>
                     {/* Bounded so the sentence wraps rather than pushing the
                         table sideways, and the quotation scrolls inside
@@ -100,51 +91,25 @@ export default function Certificates() {
         </>
       )}
 
-      {data?.traefik_says && data.traefik_says.length > 0 && (
-        <>
-          <SectionHeader
-            title="What Traefik says"
-            sub="The last distinct things it logged while trying to get certificates. This is the only place an ACME refusal is written down."
-          />
-          <Card className="mb-8">
-            <div className="space-y-2 p-4">
-              {data.traefik_says.map((line) => (
-                <p
-                  key={line}
-                  className="overflow-x-auto whitespace-nowrap font-mono text-[11px] text-warning"
-                >
-                  {line}
-                </p>
-              ))}
-            </div>
-          </Card>
-        </>
-      )}
-
-      <SectionHeader
-        title="Issued"
-        sub={
-          data?.acme_email
-            ? `Let's Encrypt has ${data.acme_email} as the contact for this instance.`
-            : "Renewal is automatic, thirty days before expiry."
-        }
-      />
+      <SectionHeader title="Issued" sub="Renewed automatically, thirty days before expiry." />
       <Card className="py-0">
-        {report.isLoading ? (
-          <LoadingRows />
-        ) : data && data.certificates.length > 0 ? (
+        {report.isLoading || (data && data.certificates.length > 0) ? (
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>Serves</TableHead>
                 <TableHead>Issuer</TableHead>
                 <TableHead>Expires</TableHead>
                 <TableHead>State</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {data.certificates.map((c) => (
+              {/* Inside the table, which is where a <tr> can legally
+                  go: rendered bare in the Card it was a hydration
+                  error, and the point of the placeholder is to keep the
+                  header from shifting when the rows land. */}
+              {report.isLoading && <LoadingRows columns={4} />}
+              {data?.certificates.map((c) => (
                 <TableRow key={c.host}>
                   <TableCell className="font-mono text-xs">
                     <div className="max-w-[22rem] whitespace-normal break-all">
@@ -152,11 +117,6 @@ export default function Certificates() {
                       {c.sans && c.sans.length > 0 && (
                         <span className="ml-2 text-muted-foreground">+ {c.sans.join(", ")}</span>
                       )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    <div className="max-w-[16rem] whitespace-normal break-all">
-                      <Serves app={c.app} instance={c.instance} orphan={c.orphan} />
                     </div>
                   </TableCell>
                   <TableCell className="font-mono text-xs text-muted-foreground">
@@ -175,61 +135,44 @@ export default function Certificates() {
           </Table>
         ) : (
           <p className="p-6 text-sm text-muted-foreground">
-            Nothing issued yet. A certificate is asked for the first time somebody reaches an app at
-            a name this instance serves.
+            Nothing yet. The first one is asked for when an app is first reached at a name this
+            instance serves.
           </p>
         )}
       </Card>
-
-      <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-        Traefik issues and renews these on its own, thirty days before expiry, and keeps them in its
-        own store — there is nothing to press here. A name stuck waiting is usually one that does
-        not resolve to this host, or an app that has not been deployed since the name was added.
-      </p>
     </>
   );
 }
 
-// Why each missing name is missing, in the words the reason is worth
-// reading in: what to do about it.
+// Why each missing name is missing — what to do about it, and then
+// nothing. The long version of each of these was a paragraph in a table
+// cell, which is a paragraph nobody reads on a screen they opened to
+// find out whether something is wrong.
 const WHY: Record<MissingReason, string> = {
-  tls_not_configured: "This instance has no domain, so no certificate is asked for at all.",
-  not_deployed:
-    "Nothing is running with this name in its labels. A container keeps the routing it was created with, so Traefik has never been told about it — redeploy the app and it will be.",
+  tls_not_configured: "No domain on this instance, so nothing is asked for.",
+  not_deployed: "Added since the app's last deploy. Redeploy it.",
   pending:
-    "Traefik knows the name and has not got a certificate for it. Normal for a minute after a deploy. This instance asks again every half hour, so a name that has started resolving here gets one without anything being redeployed \u2014 if it stays on this list, check that it does.",
-  // Not a problem, and the only entry here that is not: the certificate
-  // is on the machine the app runs on, which is where it has to be.
-  another_server:
-    "This app runs on another server in the cluster, which serves the name itself and holds its own certificate for it. Nothing here can see that store.",
+    "Asked for and not answered yet. Retried every half hour — if it stays here, check that the name resolves to this host.",
+  // Not a problem, and the only entry here that is not.
+  another_server: "Served by another machine, which holds its own.",
 };
 
 // The registry is not an app, so "redeploy it" is not the answer: its
 // container is the instance's own, and the daemon replaces it when the
 // domain changes.
 const WHY_REGISTRY_NOT_DEPLOYED =
-  "The registry's container is not running with this name in its labels — it was made before the instance had a domain, or it is not running at all. Setting the domain again under Instance rebuilds it.";
-
-// Who a name belongs to. An app is a link, because the next thing
-// somebody does about it is open the app.
-function Serves({ app, instance, orphan }: { app?: string; instance?: boolean; orphan?: boolean }) {
-  if (orphan) {
-    return <span className="text-muted-foreground">nothing — unused</span>;
-  }
-  if (instance) {
-    return <span className="text-muted-foreground">this instance</span>;
-  }
-  if (!app) return <span className="text-muted-foreground">—</span>;
-  return (
-    <Link href={`/projects/${app}`} className="font-mono underline underline-offset-4">
-      {app}
-    </Link>
-  );
-}
+  "The registry was built before this instance had a domain. Save the domain again under Instance to rebuild it.";
 
 // Traefik renews thirty days out, so a certificate still inside two
 // weeks is one whose renewal is not working.
+//
+// **Unused comes first**, before any of that. A certificate nothing
+// answers at is not expiring in any sense worth a warning — and it is
+// the one thing the "Serves" column said that the rest of the row does
+// not, which is why it moved here when that column went: a state
+// belongs in the state, and it costs no column.
 function state(c: Certificate): string {
+  if (c.orphan) return "unused";
   const days = daysLeft(c.not_after);
   if (days < 0) return "expired";
   if (days < 14) return "expiring";

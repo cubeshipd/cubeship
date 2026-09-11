@@ -62,6 +62,14 @@ const tones: Record<string, Tone> = {
     text: "text-muted-foreground",
     edge: "border-border-strong",
   },
+  // A certificate nothing answers at any more. Grey rather than amber:
+  // it is still valid and still renewing, and the only thing wrong with
+  // it is that it is spending a weekly allowance on a name nobody uses.
+  unused: {
+    dot: "bg-subtle-foreground",
+    text: "text-muted-foreground",
+    edge: "border-border-strong",
+  },
 };
 
 const unknown: Tone = {
