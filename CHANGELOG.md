@@ -6,6 +6,280 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.6.0 — 2026-09-11
+
+Databases can be backed up on a schedule, the instance can back itself up including its own database, and the dashboard was rebuilt around where you are rather than what page you opened. Plus the fix for an app pinned to a tag redeploying on every push.
+
+### Breaking
+
+**The description is gone from projects, environments and apps, and the
+text goes with it.** Upgrading drops the column. Nothing copies it
+anywhere first, and the migration's Down adds an empty column back —
+whatever was typed is not recoverable. **If you have descriptions you
+want to keep, read them before upgrading.**
+
+It was optional, asked for once at creation, read by whoever already
+knew what the thing was, and shown on exactly one screen. Behind it sat
+a settings section per level whose only reason to exist was editing it.
+What names something here is its slug, which is in the URL, in the
+container's name and in the registry path.
+
+**`PATCH /projects/{slug}` and `PATCH /projects/{slug}/environments/{env}`
+are gone with it.** Neither had anything left to change — slugs are
+fixed and variables have their own endpoints — and an endpoint that can
+change nothing promises a caller that something can. An app keeps its
+PATCH, which still carries its source, its ceiling and where it runs.
+
+### Added
+
+**Your databases can be backed up.** Postgres, MySQL, MariaDB and
+MongoDB, each dumped the way its own tools do it, with a Backups tab
+inside the database's settings.
+
+- **On a schedule, or now.** Pick a time of day and a timezone — 03:00
+  on a server's clock is not the middle of anybody's night — and say how
+  many to keep. Or press the button.
+- **Somewhere that is not this machine.** Point it at an object store
+  you have linked and the dump streams straight into the bucket without
+  ever landing on this box's disk, so a database larger than the disk
+  under it is still a backup. With nothing linked it writes locally,
+  which works the minute the instance is installed and is not a backup —
+  every screen showing one says so.
+- **Restored from the same screen**, into the database it came from,
+  after typing that database's name.
+- **They outlive the database.** Deleting one keeps its backups, which
+  is the moment they matter most. Those live at **Backups** under
+  Platform, and can be downloaded.
+
+Retention counts only the dumps that worked. A week of failures will
+never push out the last good one, and a failed run is kept — it is the
+evidence that a schedule is not working.
+
+**Redis is not in the list, on purpose.** It is a cache and a queue on a
+box this size, it already survives a restart on its own, and what a
+nightly copy of one would be restored *to* is a question with no good
+answer. Its page offers no Backups tab rather than an empty one.
+
+**The instance can back itself up, database included.** Under
+**Settings → Backups**: Cubeship's own Postgres — every account,
+project, app, credential and attachment — plus the Let's Encrypt store
+and the project pictures, in one archive on the same schedule machinery
+the databases use. It is the most valuable database on the box and it is
+not a datastore, which is why backups was built as a module above them
+rather than inside.
+
+**Backups answers "am I covered" instead of listing every dump.** The
+instance-wide screen was every dump on the box, newest first, which is a
+log — and built from the dumps, it could not report the database nobody
+has ever backed up, which is the row that matters most. It is one row
+per database now, worst first: never backed up, failing, on this
+machine, protected. An instance with nothing wrong is one you can stop
+reading after a glance.
+
+It reports two facts rather than one, because neither is the other's
+opposite: whether there is something to restore that is not on this
+machine, and whether the last attempt failed. Last week's dump can sit
+safely in a bucket while every night since has failed.
+
+**An app has an internal address.** `cubeship-<project>-<env>-<app>`,
+shown on the app's Network tab, is where another app on this instance
+reaches it — from any machine in the cluster, to whichever copies are
+running, on the app's own port.
+
+A public name cannot do that job from inside the box: the request leaves
+it for a DNS record pointing back at it, and a host that does not
+hairpin its own NAT answers nothing at all, which reads as the other app
+being down. The name is a network alias rather than the container's own,
+so it survives a deploy — **an app has to be deployed once after
+upgrading before it answers to it.**
+
+**An account says who is behind it.** A display name, an email, a face,
+and the username itself. Everywhere a person is named the dashboard now
+shows the display name and falls back to the username; the Users table
+keeps both, because there the address is the thing you act on.
+
+A username is editable here and nowhere else in this product. Sessions
+and API keys are held by id and survive it. The one thing it breaks is
+yours: `docker login` sends the username with the key, so a push keeps
+being refused until you log in again.
+
+Nothing on this instance sends mail, and the email field says so where
+it is typed.
+
+**An admin can block an account, change its role, or issue it a new
+password.** Deleting was the only answer before, and it is the wrong one
+for everything but somebody leaving for good.
+
+- **Blocking revokes nothing.** The account keeps its password, its keys
+  and its sessions, and all three are refused at the door instead — so
+  unblocking puts somebody back exactly where they were.
+- **A new password leaves the API keys alone**, which is what separates
+  it from revoking credentials. A forgotten password is not a lost
+  laptop, and this box sends no mail, so an account that had forgotten
+  one had nothing to try.
+- The last admin cannot be deleted, demoted or blocked, counted inside
+  the transaction so two admins cannot take each other's role in the
+  same moment.
+
+**A project can wear a picture**, chosen on its settings screen, with a
+mark until it does. The dashboard crops and scales before sending; the
+daemon bounds it at 512 KiB and decides the type from the bytes rather
+than the header. PNG, JPEG and WebP — no SVG, which is a document with
+scripting in it.
+
+**Two new palettes, and a face for every one of them.** `blue` is navy
+rather than the default with the accent nudged. **`helix` is the first
+light one** — Mono the other way up, black ink on paper, for a console
+read in daylight. The faces are nine different people rather than one in
+nine colours, and the source they are drawn from is in the repository.
+
+**`cubeship version` answers.** It never did — `-X main.version=` was
+writing to a constant, so every CLI released so far reports `dev`. Yours
+will say the real number once you upgrade it.
+
+### Changed
+
+**The dashboard tells you where you are.** Thirteen screens rendered
+their own "back to the thing above" link and the rest rendered nothing.
+There is one rail across the top of every screen now, built from the
+URL, and it replaced the page header under it rather than sitting above
+one — almost every title it drew was either the section the sidebar
+already highlights or the last word of the path.
+
+- **A crumb with siblings is a menu.** Opening `production` to land in
+  `staging` is the trip back through two screens you no longer take.
+  Projects, environments, apps, databases, stores, buckets, zones,
+  registries and DNS providers all switch from the rail.
+- **A screen's tabs hang off the rail as a strip of their own**, like a
+  browser's: the open one is the page, the closed ones sit on the strip.
+- **A screen's one action lives in the rail** — Add user, Add domain,
+  New project — instead of in a card above the list it acts on.
+
+**A settings screen that configures more than one thing is tabs**, and
+the test is whether they answer different questions. An app's five
+sections became Network, Source, Resources and Danger — how much machine
+an app gets is where it runs, what it may take and whether it picks its
+own count, and reading one without the others tells you a third of it.
+Databases, object stores and the instance's own settings split the same
+way. **Danger is a tab**, because at the foot of whichever tab happened
+to be open a delete is behind nothing.
+
+**Every listing is a table with a filter**, from one place: projects,
+databases, object storage and its buckets and files, credentials,
+certificates, servers, DNS providers, registries, users, API keys and an
+app's domains. It was written out beside a table four times before this
+and came out four ways.
+
+**The project cards carry a picture, a name and a ring.** The
+environments were badges, which put `production` on every card on the
+screen; the app count had a line of its own; and the states were a row
+of lamps with numbers beside them, which is a legend you read rather
+than a picture you glance at. The ring is a thin donut with the count in
+the middle — whole and green is everything, a bite out of it is the
+thing to open.
+
+**Environments are tabs in the rail** rather than a switcher inside the
+page. An environment is a level of the hierarchy the crumbs already
+spell out, and switching one changes the address.
+
+**Certificates are one table**, not Issued above Waiting — what you come
+to find out is whether a name is served, and that is a column. Each
+reason is a row action on the rows that have one, rather than a
+paragraph in every cell.
+
+**The command palette split in two.** `Cmd+K` finds things, `Cmd+Shift+P`
+runs commands, and `>` switches between them. "New database" and the
+database called `pg` sat beside each other under `d`, and picking the
+wrong one is either a form you did not want or a screen you did not
+want. Nothing irreversible is reachable from either: every command opens
+a form.
+
+**A store's bucket can be moved or cleared from its settings.** Until
+now the only way out of a store pinned to one bucket was linking it
+again. Clearing the field hands the question back to the endpoint. The
+field is offered for every provider, with a line saying what pinning
+gives up, rather than only where a per-bucket key is the usual choice.
+
+**"Storage" in the sidebar is "Object storage"**, and **"Instance" is
+"Settings"**. The routes are unchanged.
+
+**The databases list drops the exposed port.** Three columns: what it is
+called, what it runs, whether it is up. The port is on the database's own
+page under External access, which is the only place that can also say
+there is no TLS in front of it.
+
+### Fixed
+
+**An app pinned to a tag was redeployed by every push.** This is the one
+worth upgrading for. Pinning an app to `v1.0` is how deploy-on-push is
+turned off, and it silently did nothing: a push of any tag to this
+instance's registry deployed the app anyway. Every screen also reported
+such an app as following the registry.
+
+The tag was missing from the query behind every read of an app, so the
+daemon saw an empty one everywhere and read that as "not pinned".
+Nothing needs changing on your side — a pinned app stops moving on the
+next push.
+
+**A backup into this instance's own MinIO was reported as protected.**
+"Off the machine" was "has an object store", and a managed store is a
+container this instance runs with its objects in a bind mount under the
+data directory — the same disk as the database and as a local dump.
+Nothing about it looked broken: the dump succeeded, the object was
+written, and the row read exactly like one that went to another
+continent. It is recorded per dump now, so a store deleted later cannot
+take the answer with it.
+
+**Logs are readable again when a program writes colour.** Lines from
+anything that colours its output arrived as `[2m2026-…[0m [32m INFO[0m`
+— the escape codes printed instead of applied, which made the one field
+you were trying to read the least readable thing on screen. They are
+rendered now, in the colours the program chose. Filtering and
+downloading see the text with the codes taken out, so a search matches
+what you can see and a saved file opens in an editor.
+
+**Cubeship's own registry can be tidied up like any other.** Deleting a
+tag or a repository was offered for every registry you connect and not
+for the one this instance runs, which is the one filling your disk.
+There is a **Reclaim disk** button beside it: deleting a tag unlinks the
+manifest and leaves the layers, so without a garbage collection pass you
+clear a repository and watch the disk not move. No repository anywhere
+showed a size, either.
+
+**Switching environments blanked the grid.** The page took itself down
+for a round trip between two lists that are mostly the same apps.
+
+**The users list answered without the face or the name** it exists to
+show — it was building a three-field response of its own.
+
+**A table no longer takes the screen down** when a field arrives as
+undefined, which is the shape of an ordinary disagreement between a
+daemon and a dashboard a version apart. It keeps drawing its skeleton.
+
+**The certificates page crashed while it loaded**, and a lone crumb no
+longer repeats the title under it.
+
+### Security
+
+**A region can no longer point an endpoint somewhere else.** The region
+typed when connecting an ECR registry or an S3, Spaces or R2 store is
+built into a hostname this daemon then connects to, and it was accepted
+as-is. A value carrying a `#`, a `/`, a `:` or an `@` could end that
+hostname early and send the request — signed, for ECR — to a server
+nobody chose. Only an admin could set one. Regions and account ids are
+now checked when they are typed.
+
+The Docker SDK moves to 28.5.2 and containerd to 2.3.5. The advisories
+those close are in the Docker daemon rather than in Cubeship, which
+embeds only the client — the Docker on your machine is what carries a
+fix for them, and `get.docker.com` installs a current one.
+
+Cubeship is under **Apache-2.0** as of this release, with the name
+reserved (`TRADEMARK.md`) and a `SECURITY.md` that says what is not a
+vulnerability as carefully as what is. There is no telemetry: the only
+thing the daemon sends on its own is a plain GET asking GitHub which
+release is newest.
+
 ## 0.5.1 — 2026-09-11
 
 Deploying an app from this instance's own registry failed on a name Docker could not look up — the pull was sent to an address only the daemon can reach.
