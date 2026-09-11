@@ -382,6 +382,16 @@ and said "Nothing else here". `slug.Reserved` on the daemon refuses that
 name at creation for the same reason Next resolves a static segment
 first, so the two lists say one thing from opposite ends.
 
+**A selector always carries a mark, and only a selector does.** The
+chevron says a crumb can be opened and says nothing about what is behind
+it — three of them on `web / production / api` are three identical
+invitations. The icon is what tells them apart before the word is read,
+and a crumb that is only a step in the path has none, so the ones that
+do stand out for a reason. Projects, databases and stores wear the
+sidebar's own icon because they are the same things it lists; an
+environment, an app and a bucket are not in the sidebar and are chosen
+to sit apart from it.
+
 **A crumb with siblings is a menu**, and that is the point of putting
 the path here rather than in a page. Reading `web/production/api` tells
 you where you are; opening `production` and landing in `staging` is the

@@ -1,6 +1,14 @@
 "use client";
 
-import { ChevronDownIcon } from "lucide-react";
+import {
+  BoxIcon,
+  ChevronDownIcon,
+  DatabaseIcon,
+  FolderTreeIcon,
+  HardDriveIcon,
+  LayersIcon,
+  PackageIcon,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -140,6 +148,29 @@ export function HeaderRail({ children }: { children: ReactNode }) {
 // names something with no peers worth offering — a section, a settings
 // screen.
 type Siblings = "project" | "environment" | "app" | "datastore" | "objectstore" | "bucket";
+
+// A mark for each kind, on every crumb that opens.
+//
+// **Every selector has one, and only selectors do.** The chevron says a
+// crumb can be opened and says nothing about what is behind it; three
+// of them in a row on `web / production / api` are three identical
+// invitations. The mark is what makes them tell each other apart before
+// you read the word — and it is why a crumb that is only a step in the
+// path has none, so the ones that do stand out for a reason.
+//
+// Projects, databases and stores wear the sidebar's own icon, because
+// they are the same things it lists. The three that are not in the
+// sidebar are chosen to sit apart from it: an environment is layers, an
+// app is a box, a bucket is a package — none of them the container the
+// registries entry already owns.
+const MARKS: Record<Siblings, typeof BoxIcon> = {
+  project: FolderTreeIcon,
+  environment: LayersIcon,
+  app: BoxIcon,
+  datastore: DatabaseIcon,
+  objectstore: HardDriveIcon,
+  bucket: PackageIcon,
+};
 
 type CrumbSpec = {
   key: string;
@@ -322,6 +353,7 @@ function CrumbMenu({ crumb, className }: { crumb: CrumbSpec; className: string }
 
   const scope = crumb.scope ?? "";
   const kind = crumb.siblings;
+  const Mark = kind ? MARKS[kind] : null;
 
   const load = useCallback(() => {
     if (!kind) return;
@@ -342,6 +374,7 @@ function CrumbMenu({ crumb, className }: { crumb: CrumbSpec; className: string }
       <DropdownMenuTrigger
         className={`${className} flex min-w-0 items-center gap-1 truncate transition-colors hover:text-primary focus-visible:text-primary focus-visible:outline-none`}
       >
+        {Mark && <Mark aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />}
         <span className="truncate">{crumb.label}</span>
         <ChevronDownIcon aria-hidden="true" className="size-3 shrink-0 opacity-60" />
       </DropdownMenuTrigger>
