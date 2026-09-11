@@ -54,8 +54,8 @@ import {
 // tells you where you are, and being able to open `production` and land
 // in `staging` is the trip back through two screens you no longer take.
 
-type RailContext = { slot: HTMLElement | null };
-const Rail = createContext<RailContext>({ slot: null });
+type RailContext = { slot: HTMLElement | null; tabs: HTMLElement | null };
+const Rail = createContext<RailContext>({ slot: null, tabs: null });
 
 // RailPortal puts a screen's own controls in the rail, on the right.
 //
@@ -69,12 +69,40 @@ export function RailPortal({ children }: { children: ReactNode }) {
   return createPortal(children, slot);
 }
 
+// RailTabs hangs a screen's tabs off the rail as a strip of their own.
+//
+// **They were part of the page**, inside its padding, floating under
+// the rail with a gap above them — so the row that says what a screen
+// *is* read as the first piece of content on it. Attached, they are
+// what they are: a second level of the same header, and the one that
+// is open is the page.
+//
+// It is a portal for the reason RailPortal is: the page owns the tab
+// state and the panels, and threading the list up through the layout
+// would mean passing it through every component between.
+//
+// The strip disappears when nothing is portaled into it — `:empty` in
+// globals.css — so a screen with no tabs has no empty band under its
+// rail.
+export function RailTabs({ children }: { children: ReactNode }) {
+  const { tabs } = useContext(Rail);
+  if (!tabs) return null;
+  return createPortal(
+    // The same container the rail and the page use, so a tab's left
+    // edge lines up with the first crumb above it and the first card
+    // below.
+    <div className="mx-auto flex w-full max-w-5xl items-stretch px-8">{children}</div>,
+    tabs,
+  );
+}
+
 export function HeaderRail({ children }: { children: ReactNode }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
+  const [tabs, setTabs] = useState<HTMLElement | null>(null);
   const pathname = usePathname() ?? "/";
   const crumbs = crumbsFor(pathname);
 
-  const value = useMemo(() => ({ slot }), [slot]);
+  const value = useMemo(() => ({ slot, tabs }), [slot, tabs]);
 
   return (
     <Rail.Provider value={value}>
@@ -106,6 +134,13 @@ export function HeaderRail({ children }: { children: ReactNode }) {
           <div ref={setSlot} className="flex shrink-0 items-center gap-2" />
         </div>
       </div>
+      {/* Under the rail and stuck to it, so scrolling a long screen
+          keeps both. Below it in the stacking order as well as on the
+          page: a menu opened from the rail has to pass over this. */}
+      <div
+        ref={setTabs}
+        className="subrail sticky top-14 z-20 flex h-10 border-b border-border bg-card"
+      />
       {children}
     </Rail.Provider>
   );

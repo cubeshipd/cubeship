@@ -561,10 +561,40 @@ generated default is a filled box with a lighter box inside it for the
 tab that is on, and it is right for the environment switcher inside a
 project: a row of slugs beside a `+` and a gear, which is a control
 rather than a heading. `variant="line"` is the other, styled unlayered
-in `globals.css` — uppercase labels on a 1px rule with the live one lit
-cyan — and it is for tabs that stand above sections and name them, like
-an app's. A filled box there drew more of itself than the thing it was
-switching.
+in `globals.css`, and it is for tabs that stand above sections and name
+them, like an app's. A filled box there drew more of itself than the
+thing it was switching.
+
+**Those hang off the rail rather than sitting in the page.** They are
+what a screen *is* — Overview, Environment, Logs — and inside the page's
+padding, under the rail with a gap above them, they read as the first
+piece of content on it instead. `RailTabs` portals the list into a strip
+stuck under the rail, the same way `RailPortal` puts a screen's buttons
+in the rail itself, and for the same reason: the page owns the tab state
+and the panels, and threading the list up through the layout would mean
+passing it through every component between.
+
+**The look is a browser's tab strip, read for a dark console.** The open
+one is the page — the same background, and no line under it, so it is
+the surface you are looking at rather than a control above it. The
+closed ones sit on the strip, which is a step *lighter* than the page:
+on a near-black interface there is nothing darker than the background to
+recede into, so what recedes is the thing that is not the page. The
+merge is one pixel of overlap — the tabs are a pixel taller than the
+strip, so an open one's own background paints over the strip's bottom
+border and the line stops where the tab is. `margin-bottom: -1px` alone
+does not do that: a negative margin moves what follows and does not make
+the box taller, so the tab stopped a pixel short and the line ran
+straight under it. The height grows and the margin takes the growth back
+out of the strip's layout. The cyan mark moves to the tab's top edge, because on the bottom
+it would be a line under the open tab, which is what an open tab does
+not have.
+
+It is keyed off `.subrail` in `globals.css` rather than being a third
+variant in `ui/tabs.tsx`: that file is generated, and a re-run of
+`shadcn add` would take a variant with it. The strip disappears when
+nothing is portaled into it (`:empty`), so a screen with no tabs has no
+empty band under its rail.
 
 `src/components/` is the layer above it, in the vocabulary of this
 product rather than of a component library: `Shell`, `PageHeader`,

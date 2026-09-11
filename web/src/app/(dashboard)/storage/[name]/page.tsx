@@ -10,7 +10,7 @@ import { ContainerLogs } from "@/components/container-logs";
 import { CopyField } from "@/components/copy-field";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
+import { RailPortal, RailTabs } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
 import { Notice } from "@/components/notice";
@@ -135,21 +135,23 @@ function Detail({ name }: { name: string }) {
         </Card>
       )}
       {store && (
-        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
-          <TabsList variant="line">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="buckets">Buckets</TabsTrigger>
-            <TabsTrigger value="apps">Apps</TabsTrigger>
-            {store.kind === "managed" && (
-              <TabsTrigger
-                value="logs"
-                disabled={!store.has_container}
-                title={store.has_container ? undefined : noContainer}
-              >
-                Logs
-              </TabsTrigger>
-            )}
-          </TabsList>
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="subrail-page">
+          <RailTabs>
+            <TabsList variant="line">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="buckets">Buckets</TabsTrigger>
+              <TabsTrigger value="apps">Apps</TabsTrigger>
+              {store.kind === "managed" && (
+                <TabsTrigger
+                  value="logs"
+                  disabled={!store.has_container}
+                  title={store.has_container ? undefined : noContainer}
+                >
+                  Logs
+                </TabsTrigger>
+              )}
+            </TabsList>
+          </RailTabs>
 
           <TabsContent value="overview">
             {/* Only for a store this instance runs. A linked one is
