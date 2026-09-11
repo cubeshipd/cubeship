@@ -593,18 +593,10 @@
 }
 
 .subrail [data-slot="tabs-list"][data-variant="line"] [data-slot="tabs-trigger"] {
-  /* **One pixel taller than the strip, and that pixel is the whole
-     merge.** An open tab's own background has to paint over the
-     strip's bottom border — a descendant paints above an ancestor's
-     border — so that the line stops where the tab is and the page
-     underneath reads as coming out of it.
-     `margin-bottom: -1px` alone does not do this: a negative margin
-     moves what follows, it does not make the box taller, so the tab
-     stopped one pixel short and the line ran straight under it. The
-     height grows and the margin takes the growth back out of the
-     strip's own layout. */
-  height: calc(100% + 1px);
-  margin-bottom: -1px;
+  /* A closed tab stops at the strip's border and never covers it: it
+     is on the strip, not in the page. The pixel that breaks the line
+     belongs to the open one alone — see below. */
+  height: 100%;
   padding: 0 1.15rem;
   border: 1px solid transparent;
   border-bottom: 0;
@@ -623,6 +615,20 @@
   background: var(--background);
   border-color: var(--border);
   color: var(--primary);
+  /* **One pixel taller than the strip, and that pixel is the whole
+     merge.** The open tab's own background paints over the strip's
+     bottom border — a descendant paints above an ancestor's border — so
+     the line stops where the tab is and the page below reads as coming
+     out of it.
+     `margin-bottom: -1px` alone does not do it: a negative margin moves
+     what follows and does not make the box taller, so the tab stopped a
+     pixel short and the line ran straight under it. The height grows
+     and the margin takes that growth back out of the strip's layout.
+     **It is on `[data-active]` and not on every tab**, because hover
+     paints a background too — and a closed tab a pixel too tall broke
+     the line under whichever one the pointer happened to be over. */
+  height: calc(100% + 1px);
+  margin-bottom: -1px;
 }
 
 /* The accent moves to the top edge. On the bottom it would be a line
