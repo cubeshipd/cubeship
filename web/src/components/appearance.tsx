@@ -20,13 +20,14 @@ const PALETTES: Record<string, { label: string; note: string; bg: string; fg: st
   orange: { label: "Orange", note: "", bg: "#0a0603", fg: "#ff9d2e" },
   pink: { label: "Pink", note: "", bg: "#0a0409", fg: "#ff5cb8" },
   purple: { label: "Purple", note: "", bg: "#07050e", fg: "#a97bff" },
+  blue: { label: "Blue", note: "Blue on navy", bg: "#03060f", fg: "#4d8dff" },
 };
 
 // Appearance is the palette this person sees the dashboard in.
 //
 // **The swatches are painted from literal colours, not from the CSS
 // variables**, and they have to be: every one of these is drawn while a
-// different palette is live, and a variable would make all seven the
+// different palette is live, and a variable would make every one of them the
 // same colour as the current one.
 export function Appearance() {
   const me = useSession();

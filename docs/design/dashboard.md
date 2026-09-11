@@ -718,7 +718,7 @@ The dashboard is dark and only dark: `<html>` carries `dark` rather than
 following the system, because the shadcn primitives carry `dark:` rules
 and a visitor whose OS is light would otherwise get half of them.
 
-**There are seven palettes and every one of them is dark.** That is a
+**There are eight palettes and every one of them is dark.** That is a
 decision rather than an omission: this is a console for a machine, read
 beside a terminal, and a light one would be the only screen on that desk
 that is. A palette changes **colour and nothing else** — the layout, the
@@ -741,6 +741,20 @@ could not disagree with it. And there is no username on
 preference.
 
 The swatches on that screen are painted from **literal colours**, not
-from the CSS variables, and they have to be: all seven are drawn while
-one palette is live, and a variable would make every one of them the
-colour of the current one.
+from the CSS variables, and they have to be: every one of them is drawn
+while a different palette is live, and a variable would make all of them
+the colour of the current one.
+
+**`blue` is the one that had to be pushed away from the default rather
+than simply chosen.** Cubeship's own is cyan on a near-black with a blue
+cast, so a blue accent on those same surfaces would have been the
+default with the accent nudged — and two entries in the picker that are
+hard to tell apart is worse than not offering the second. Its surfaces
+are properly navy, which is what every other palette here does with its
+own hue.
+
+**The account faces are named after these** — see `user.Avatars` — and
+they share a vocabulary rather than a list. Nothing requires a palette
+to have a face or a face to have a palette: they happen to line up, and
+no test says they must, because one would fail for something that is
+not a fault.

@@ -76,12 +76,19 @@ type User struct {
 // nobody can choose and nobody knows is missing. See avatars_test.go.
 // `scripts/profiles.sh` prepares the files and prints this line.
 //
-// **They are the palettes' own names**, because they are the same seven
-// colours: somebody on the red theme picking the red face is the whole
-// of why there are seven. A second vocabulary for one set of colours
-// would be one to keep in step by hand, and there is nothing to gain by
-// calling the same red something else here.
-var Avatars = []string{"cyan", "hacker", "mono", "orange", "pink", "purple", "red"}
+// **They are the palettes' own names**, because they are drawn in the
+// same colours: somebody on the red theme picking the red face is the
+// whole of why there is more than one. A second vocabulary for one set
+// of colours would be one to keep in step by hand, and there is nothing
+// to gain by calling the same red something else here.
+//
+// **Sharing the vocabulary is not the same as being the same list.**
+// Nothing requires a palette to have a face or a face to have a
+// palette: they are read for different questions, and a face missing
+// for a palette would cost somebody on it a choice rather than break a
+// screen. They happen to line up, and no test says they must — one
+// would fail for something that is not a fault.
+var Avatars = []string{"blue", "cyan", "hacker", "mono", "orange", "pink", "purple", "red"}
 
 // ErrUnknownAvatar is a face this instance does not ship.
 var ErrUnknownAvatar = errors.New("no avatar by that name")
@@ -150,7 +157,7 @@ func ValidEmail(s string) bool {
 // daemon will accept, and two lists would be one to disagree with: a
 // browser sending a name this refuses is a preference that saves and
 // then is not there.
-var Themes = []string{"cyan", "mono", "hacker", "red", "orange", "pink", "purple"}
+var Themes = []string{"cyan", "mono", "hacker", "red", "orange", "pink", "purple", "blue"}
 
 // ErrUnknownTheme is a palette this instance does not have.
 var ErrUnknownTheme = errors.New("no theme by that name")
