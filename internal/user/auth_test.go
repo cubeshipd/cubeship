@@ -88,19 +88,84 @@ func TestFailedSignInsAreIndistinguishable(t *testing.T) {
 	}
 }
 
-// An account created by an organization admin has an API key and no
-// password. It must not be possible to sign in as one — least of all
-// with an empty password.
+// An account can exist with no password at all — one made before this
+// instance had them, one made straight through the repository — and it
+// must not be possible to sign in as one, least of all with an empty
+// password.
 func TestAnAccountWithNoPasswordCannotSignIn(t *testing.T) {
 	f := servertest.New(t)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/users",
-		map[string]string{"username": "employee", "role": "member"}, f.AdminKey), http.StatusCreated)
+	f.AddMember(t, "employee", user.RoleMember)
 
 	for _, password := range []string{"", " ", goodPassword} {
 		rec := f.Do(t, http.MethodPost, "/auth/login",
 			map[string]string{"username": "employee", "password": password}, "")
 		servertest.RequireStatus(t, rec, http.StatusUnauthorized)
 	}
+}
+
+// And the account an admin actually creates can sign in, which is the
+// whole point of it: the dashboard wants a session, an API key does not
+// make one, and nothing here lets somebody set a first password. For one
+// release this endpoint handed back a key instead, and every account it
+// made could reach nothing it had been given the address of.
+func TestAnAccountAnAdminCreatesCanSignIn(t *testing.T) {
+	f := servertest.New(t)
+
+	var created struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+		APIKey   string `json:"api_key"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/users",
+		map[string]string{"username": "employee", "role": "member"}, f.AdminKey, &created),
+		http.StatusCreated)
+
+	if created.Password == "" {
+		t.Fatal("creating an account handed back no password, so nobody can sign in as it")
+	}
+	if created.APIKey != "" {
+		t.Error("creating an account minted an API key nobody asked for: keys are self-service")
+	}
+	if f.Login(t, "employee", created.Password) == nil {
+		t.Fatal("no session for the password the instance just handed out")
+	}
+
+	// And it is the only one that works, which is what makes the
+	// hand-over meaningful.
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/auth/login",
+		map[string]string{"username": "employee", "password": goodPassword}, ""),
+		http.StatusUnauthorized)
+}
+
+// A password the caller names is the one the account gets: an instance
+// being seeded from a script has somewhere to put the credential it
+// already chose.
+func TestAnAdminMayNameThePassword(t *testing.T) {
+	f := servertest.New(t)
+
+	var created struct {
+		Password string `json:"password"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/users", map[string]string{
+		"username": "employee", "role": "member", "password": goodPassword,
+	}, f.AdminKey, &created), http.StatusCreated)
+
+	if created.Password != goodPassword {
+		t.Errorf("the account was given %q rather than the password the request named", created.Password)
+	}
+	if f.Login(t, "employee", goodPassword) == nil {
+		t.Fatal("no session for the password the request named")
+	}
+
+	// Too short is refused where the person who typed it is still
+	// watching, and leaves no account behind to collide with the name
+	// they are about to try again.
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/users", map[string]string{
+		"username": "second", "role": "member", "password": "short",
+	}, f.AdminKey), http.StatusBadRequest)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/users",
+		map[string]string{"username": "second", "role": "member"}, f.AdminKey),
+		http.StatusCreated)
 }
 
 func TestLoggingOutEndsTheSession(t *testing.T) {

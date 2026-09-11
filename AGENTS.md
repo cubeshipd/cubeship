@@ -462,10 +462,25 @@ what brings anybody to the screen — the table answers "who is there",
 and you already know when it is only you.
 
 The two refusals the daemon makes are said before the click rather than
-after it: the account you are signed in as, and the last admin. Adding
-someone hands back an API key **once** — this instance keeps only its
-hash, like every other credential here — and no password, because that
-is theirs to set.
+after it: the account you are signed in as, and the last admin.
+
+**Adding someone hands back a password**, once — this instance keeps
+only its hash, like every other credential here — and no API key. It was
+the other way round for a release, and the account it made could not
+sign in anywhere: a key is what a CLI or an MCP client carries, the
+dashboard wants a session, and nothing here lets a new person set a
+first password. There is no invite mail on a box like this and no reset
+flow, so an admin created somebody an account, handed them a credential,
+and the credential opened nothing they had been given the address of.
+
+It is the answer setup already gives the first account, for the reason
+given there: the way in is the password, and a key nobody is ever shown
+is a live credential lying around for nothing. Keys stay self-service.
+The password is generated unless the request names one — a field
+somebody has to fill in is a field somebody fills in badly, which is the
+bargain a datastore's password already makes — and whoever it belongs to
+changes it from their own account screen, which ends every other session
+it holds.
 
 The table is `DataTable` and the role is `SearchableSelect` with
 `searchable={false}`, which is not decoration: they are the components
@@ -1017,9 +1032,10 @@ shape as every other irreversible act here: `/users/me` carries
 costs — the CLI until you make another, or the way in — and ask. A
 confirmation in front of it, not a refusal to work around.
 
-An account can exist with no password. One an admin creates gets an API
-key immediately and a password only when it sets one, which
-is why every sign-in failure — unknown username, wrong password, no
+An account can exist with no password — one made before this instance
+issued them, or made straight through the repository, which is what
+every test does. Nothing in the API produces one any more. That case is
+still why every sign-in failure — unknown username, wrong password, no
 password at all — is the same answer, and why an unknown username still
 pays for a hash verification.
 

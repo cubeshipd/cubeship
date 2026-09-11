@@ -293,8 +293,9 @@ func (r *Repository) SetPassword(ctx context.Context, userID int64, hash string)
 }
 
 // PasswordHash returns the stored hash for a username, and whether the
-// account has one at all. An account created by an organization admin
-// has an API key immediately and a password only once it sets one.
+// account has one at all. Every account made through the API has one
+// from the moment it exists; an account with none is one made before
+// this instance issued them, or straight through this repository.
 func (r *Repository) PasswordHash(ctx context.Context, username string) (*User, string, error) {
 	var hash string
 	row := r.q.QueryRowContext(ctx,

@@ -501,18 +501,27 @@ func WriteError(w http.ResponseWriter, err error) {
 	}
 }
 
-// AddResponse is a newly created account and the key it authenticates
+// AddResponse is a newly created account and the password it signs in
 // with, shown exactly once.
+//
+// Once, because this instance keeps only the hash: there is no endpoint
+// that reads it back, and an account whose password is lost before it is
+// handed over is deleted and made again.
 type AddResponse struct {
 	Username string `json:"username"`
 	Role     Role   `json:"role"`
-	APIKey   string `json:"api_key"`
+	Password string `json:"password"`
 }
 
 func (h *Handler) add(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Username string `json:"username"`
 		Role     string `json:"role"`
+		// Password is optional, and generated when it is not given —
+		// the same bargain a datastore's makes, for the same reason: a
+		// field somebody has to fill in is a field somebody fills in
+		// badly.
+		Password string `json:"password"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil || req.Username == "" {
 		http.Error(w, "username is required", http.StatusBadRequest)
@@ -526,12 +535,13 @@ func (h *Handler) add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, key, err := h.svc.Add(r.Context(), FromContext(r.Context()), req.Username, Role(req.Role))
+	created, password, err := h.svc.Add(r.Context(), FromContext(r.Context()),
+		req.Username, req.Password, Role(req.Role))
 	if err != nil {
 		WriteError(w, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, AddResponse{
-		Username: created.Username, Role: created.Role, APIKey: key,
+		Username: created.Username, Role: created.Role, Password: password,
 	})
 }

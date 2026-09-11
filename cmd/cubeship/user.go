@@ -11,29 +11,32 @@ import (
 func newUserCmd() *cobra.Command {
 	userCmd := &cobra.Command{Use: "user", Short: "Manage Cubeship users"}
 
-	var role string
+	var role, password string
 	createCmd := &cobra.Command{
 		Use:   "create <username>",
-		Short: "Create an account and print its API key",
+		Short: "Create an account and print its password",
 		Long: "Create an account on this instance.\n\n" +
-			"The API key is printed once, here, and never again. There is no\n" +
-			"password: an account gets one when it sets one.",
+			"The password is printed once, here, and never again: this instance\n" +
+			"keeps only its hash. Hand it over, and they change it on their own\n" +
+			"account screen. API keys are theirs to make.\n\n" +
+			"One is generated unless --password names it.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := newAPIClient()
 			if err != nil {
 				return err
 			}
-			key, err := c.AddUser(context.Background(), args[0], role)
+			issued, err := c.AddUser(context.Background(), args[0], role, password)
 			if err != nil {
 				return err
 			}
 			fmt.Printf("Created user %q (role: %s)\n", args[0], role)
-			fmt.Printf("API key (shown once, save it now): %s\n", key)
+			fmt.Printf("Password (shown once, save it now): %s\n", issued)
 			return nil
 		},
 	}
 	createCmd.Flags().StringVar(&role, "role", "member", "admin or member")
+	createCmd.Flags().StringVar(&password, "password", "", "the password to give them; generated when empty")
 
 	apiKeyCmd := &cobra.Command{Use: "api-key", Short: "Manage your own API keys"}
 	rotateCmd := &cobra.Command{
