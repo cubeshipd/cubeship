@@ -31,6 +31,7 @@ import {
   type Settings,
 } from "@/lib/api";
 import { message } from "@/lib/errors";
+import { useOpenOnArrival } from "@/lib/open-on-arrival";
 
 // How often the cluster is re-read. Matched to the agents' own cadence:
 // asking faster than the machines call in is two requests for one
@@ -48,6 +49,7 @@ export default function Servers() {
   const [servers, setServers] = useState<ClusterServer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  useOpenOnArrival("new", setAdding);
   const [removing, setRemoving] = useState<ClusterServer | null>(null);
 
   const reload = useCallback(() => {

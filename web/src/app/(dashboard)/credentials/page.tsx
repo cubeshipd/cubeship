@@ -11,6 +11,7 @@ import { RowAction, RowActions } from "@/components/row-actions";
 import { Button } from "@/components/ui/button";
 import { api, type Credential } from "@/lib/api";
 import { message } from "@/lib/errors";
+import { useOpenOnArrival } from "@/lib/open-on-arrival";
 
 // The secrets this instance holds.
 //
@@ -24,6 +25,7 @@ import { message } from "@/lib/errors";
 export default function Credentials() {
   const [creds, setCreds] = useState<Credential[] | null>(null);
   const [adding, setAdding] = useState(false);
+  useOpenOnArrival("new", setAdding);
   const [editing, setEditing] = useState<Credential | null>(null);
   const [deleting, setDeleting] = useState<Credential | null>(null);
   const [error, setError] = useState<string | null>(null);

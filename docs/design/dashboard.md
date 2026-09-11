@@ -366,6 +366,61 @@ What the sentence says is what to do, and then stops. Traefik's own line
 goes under it when there is one, because it is the only place an ACME
 refusal is written down.
 
+### Two halves of one box
+
+`components/command-palette.tsx` is both: **`Cmd/Ctrl+Shift+P` is what
+to do, `Cmd/Ctrl+K` is what to open.** They are different questions and
+their answers do not belong in one list — "New database" and the
+database called `pg` would sit beside each other under `d`, and picking
+the wrong one is either a form you did not want or a screen you did not
+want. `>` at the front of the query switches to commands, which is the
+convention and costs one character.
+
+**Search** is every destination: a screen, a project, an app, a
+database, a store, a registry, a DNS provider.
+
+**A command opens a form, and never does anything irreversible.**
+Nothing in it deploys, deletes or provisions — a fuzzy search with an
+irreversible act at the end is a way to press the wrong button quickly,
+and everything irreversible here is deliberately behind a screen you
+went to and a word you typed.
+
+**A command is a link.** Every create form lives on the screen its
+result lands on, holds that screen's state and closes back onto that
+screen's list, so the command navigates with `?new=1` and
+`useOpenOnArrival` has the screen open what it already has. The
+parameter is stripped as it is read: left in the URL it would be a link
+that reopens the dialog every visit, and a URL is the thing people
+bookmark and send. Owning a second copy of seven forms would be seven
+things to keep in step for nothing.
+
+There is no **New app**, and that is the one absence worth stating: an
+app is created inside an environment, and from a palette there is no
+environment to create it in. Offering it would mean choosing one on
+somebody's behalf.
+
+**Its screens come from the sidebar's own list**, flattened. A page
+added to one would otherwise be missing from the other, and the palette
+is the half nobody notices is missing.
+
+**The whole catalogue is fetched when it opens** and matched in memory —
+one VPS, a handful of each thing, six requests in parallel, and a
+failure is an absence rather than an error: a palette that will not open
+because the DNS list timed out is slower than the sidebar.
+
+**Subsequence, not substring**, which is the difference between a
+palette and a filter: `wpa` finds `web/production/api` and nobody types
+the slashes. The score puts the intended answer on top — letters in a
+run beat the same letters scattered, a letter after a separator beats
+one mid-word, and a short name beats a long one that matched the same
+letters. What is matched is not always what is shown: an app reads as
+`api` beside `web/production` and matches on its whole reference,
+because the letters have to be in one string and in that order.
+
+The shortcut is read off `event.code`, the physical key. With Shift
+held, `key` is the shifted character, and on another layout it is not
+`P` at all.
+
 ### The rail above every screen
 
 `components/header-rail.tsx` is the strip the Shell puts above every

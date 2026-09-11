@@ -131,7 +131,7 @@ export function DataTable<T extends object>({
     if (!rows || !search || query.trim() === "") return rows ?? null;
     const needle = query.trim().toLowerCase();
     return rows.filter((row) =>
-      search.by(row).some((part) => part !== undefined && part.toLowerCase().includes(needle)),
+      search.by(row).some((part) => part?.toLowerCase().includes(needle)),
     );
   }, [rows, search, query]);
 

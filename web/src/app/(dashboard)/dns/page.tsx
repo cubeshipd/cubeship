@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import { providerIcon } from "@/lib/credentials";
 import { message } from "@/lib/errors";
+import { useOpenOnArrival } from "@/lib/open-on-arrival";
 
 // The providers this instance manages records through.
 //
@@ -39,6 +40,7 @@ export default function DNSProviders() {
   const [kinds, setKinds] = useState<DNSProviderKind[]>([]);
   const [credentials, setCredentials] = useState<Credential[]>([]);
   const [adding, setAdding] = useState(false);
+  useOpenOnArrival("new", setAdding);
   const [editing, setEditing] = useState<DNSProvider | null>(null);
   const [deleting, setDeleting] = useState<DNSProvider | null>(null);
   const [error, setError] = useState<string | null>(null);

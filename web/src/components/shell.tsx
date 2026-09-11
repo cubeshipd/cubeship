@@ -24,6 +24,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 import { Wordmark } from "@/components/brand";
+import { CommandPalette } from "@/components/command-palette";
 import { GitHubStar } from "@/components/github-star";
 import { HeaderRail } from "@/components/header-rail";
 import { InstanceUpdate } from "@/components/instance-update";
@@ -62,7 +63,7 @@ import { api, type Me } from "@/lib/api";
 // page — a project, an environment and an app all live under it, and
 // all four keep it lit. Adding a page under one is an edit here, not a
 // new special case in the component below.
-const sections: { label?: string; items: NavItem[] }[] = [
+export const sections: { label?: string; items: NavItem[] }[] = [
   {
     items: [
       // The address you land on, and the one thing on this instance
@@ -134,6 +135,12 @@ const sections: { label?: string; items: NavItem[] }[] = [
   // than filed beside what the instance is made of.
 ];
 
+// Every destination the sidebar offers, flattened — what the command
+// palette goes to. Derived rather than written again: a page added to
+// the list above would otherwise be missing here, and this is the half
+// nobody notices is missing.
+const SCREENS = sections.flatMap((s) => s.items.map((i) => ({ label: i.label, href: i.href })));
+
 type NavItem = {
   href: string;
   label: string;
@@ -204,6 +211,12 @@ export function Shell({ children }: { children: ReactNode }) {
             </nav>
 
             <InstanceUpdate />
+
+            {/* Its screens come from the sidebar's own list rather than
+                a copy: a page added to one would otherwise be missing
+                from the other, and the one it goes missing from is the
+                one nobody notices. */}
+            <CommandPalette screens={SCREENS} />
 
             <main className="min-w-0 flex-1">
               {/* The rail is the Shell's, not the page's: where you are

@@ -11,6 +11,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { api, type Datastore, datastoreLabel } from "@/lib/api";
 import { message } from "@/lib/errors";
+import { useOpenOnArrival } from "@/lib/open-on-arrival";
 
 // Every database this instance runs.
 //
@@ -27,6 +28,7 @@ export default function DatabasesPage() {
   const router = useRouter();
   const [datastores, setDatastores] = useState<Datastore[] | null>(null);
   const [creating, setCreating] = useState(false);
+  useOpenOnArrival("new", setCreating);
   const [error, setError] = useState<string | null>(null);
 
   const reload = useCallback(() => {
