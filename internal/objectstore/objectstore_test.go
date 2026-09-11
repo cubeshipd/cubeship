@@ -289,3 +289,29 @@ func TestTheAutomaticPortRangeCannotCollideWithADatabase(t *testing.T) {
 			PortRangeStart, PortRangeEnd, datastoreStart, datastoreEnd)
 	}
 }
+
+// A region and an R2 account id are each one label of an endpoint this
+// instance stores and then connects to. A value that can end the host
+// early — `#`, `/`, `:`, `@` — points the store at a server nobody
+// chose, and it stays pointed there, because the endpoint is derived
+// once and written down.
+func TestWhatMayBeInterpolatedIntoAnEndpointsHostname(t *testing.T) {
+	for _, value := range []string{
+		"eu-central-1", "nyc3", "sfo3", "auto", "abc123",
+		"0123456789abcdef0123456789abcdef",
+	} {
+		if !ValidHostLabel(value) {
+			t.Errorf("ValidHostLabel(%q) = false, and that is a region or account somebody has", value)
+		}
+	}
+
+	for _, value := range []string{
+		"", " ", "EU-CENTRAL-1", "eu_central_1",
+		"evil.com#", "evil.com", "x/../y", "x:443", "user@evil.com",
+		"-leading", "trailing-", "a b", strings.Repeat("a", 64),
+	} {
+		if ValidHostLabel(value) {
+			t.Errorf("ValidHostLabel(%q) = true; it reaches a hostname this instance connects to", value)
+		}
+	}
+}

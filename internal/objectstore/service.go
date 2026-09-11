@@ -396,6 +396,9 @@ func describeEndpoint(store *Store, spec LinkSpec) error {
 		if region == "" {
 			return ErrRegionRequired
 		}
+		if !ValidHostLabel(region) {
+			return ErrInvalidRegion
+		}
 		store.Endpoint = "s3." + region + ".amazonaws.com"
 		store.Region = region
 		store.Secure = true
@@ -409,6 +412,9 @@ func describeEndpoint(store *Store, spec LinkSpec) error {
 		if region == "" {
 			return ErrRegionRequired
 		}
+		if !ValidHostLabel(region) {
+			return ErrInvalidRegion
+		}
 		store.Endpoint = region + ".digitaloceanspaces.com"
 		store.Region = region
 		store.Secure = true
@@ -418,6 +424,9 @@ func describeEndpoint(store *Store, spec LinkSpec) error {
 		account := strings.TrimSpace(spec.Account)
 		if account == "" {
 			return ErrAccountRequired
+		}
+		if !ValidHostLabel(account) {
+			return ErrInvalidAccount
 		}
 		store.Endpoint = account + ".r2.cloudflarestorage.com"
 		// R2 has one region and its name is the literal "auto". A
