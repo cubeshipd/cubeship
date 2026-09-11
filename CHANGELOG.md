@@ -6,6 +6,28 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.4.3 — 2026-09-11
+
+On the Certificates screen, the reason a certificate had not been issued was printed as line noise instead of as a sentence.
+
+### Fixed
+
+**"What Traefik says" was unreadable.** A name waiting on a certificate
+showed something like `r[90m2026-09-10T23:57:50Z[0m [31mERR[0m` where
+the reason was meant to be, and that field is the only place an ACME
+refusal is written down at all.
+
+Two things overlapped. Traefik colours its own log whether or not
+anything is reading it as a terminal, and the escape byte was being
+dropped on its own — which leaves the rest of each colour code sitting
+in the text. And the binary header Docker puts in front of each chunk of
+a log was being removed by discarding its unprintable bytes, which the
+length byte is not for any line of ordinary length.
+
+Both come off properly now, so the field reads as what it is:
+`2026-09-10T23:57:50Z ERR Unable to obtain ACME certificate for
+domains…`, timestamp included.
+
 ## 0.4.2 — 2026-09-10
 
 A firewall rule for an exposed database admitted nothing — it was written for the port you published, and Docker has already changed that number by the time the firewall sees the packet.
