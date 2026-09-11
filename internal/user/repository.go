@@ -21,7 +21,7 @@ func NewRepository(q database.Queryer) *Repository {
 }
 
 const (
-	userColumns   = `id, username, role, theme, display_name, email, avatar, created_at`
+	userColumns   = `id, username, role, theme, display_name, email, avatar, blocked_at, created_at`
 	apiKeyColumns = `id, user_id, key_hash, name, created_at, last_used_at`
 )
 
@@ -61,7 +61,7 @@ func scanUserWith(row scanner, extra ...any) (*User, error) {
 	var u User
 	dest := []any{
 		&u.ID, &u.Username, &u.Role, &u.Theme,
-		&u.DisplayName, &u.Email, &u.Avatar, &u.CreatedAt,
+		&u.DisplayName, &u.Email, &u.Avatar, &u.BlockedAt, &u.CreatedAt,
 	}
 	if err := row.Scan(append(dest, extra...)...); err != nil {
 		return nil, err
@@ -170,6 +170,70 @@ func (r *Repository) CountByRole(ctx context.Context, role Role) (int, error) {
 // Delete removes an account. Its keys and sessions reference it, so they
 // go first — see Service.Delete, which does all three in one
 // transaction.
+// refuseIfLastAdmin is the one rule three different acts ask for.
+//
+// Deleting an account, demoting it and blocking it are three ways of
+// taking the last admin off an instance, and an instance with no admin
+// can never configure itself again — setup closed the moment the first
+// account existed, so nothing in the API can put one back. Deleting was
+// the only one that existed and it counted admins inline; the other two
+// would have been two more copies of the same count with two more
+// chances to get the boundary wrong.
+//
+// `loses` is whether the act being asked for costs the instance this
+// admin. Demoting to member does, promoting does not, and blocking is
+// the same question read the other way — which is why the caller says
+// so rather than this guessing from what it is handed.
+//
+// Counted here rather than before the transaction, because two requests
+// each taking one of the last two admins would both pass a check made
+// outside one.
+func (r *Repository) refuseIfLastAdmin(ctx context.Context, target *User, loses bool) error {
+	if !loses || target.Role != RoleAdmin {
+		return nil
+	}
+	admins, err := r.CountByRole(ctx, RoleAdmin)
+	if err != nil {
+		return err
+	}
+	if admins <= 1 {
+		return ErrLastAdmin
+	}
+	return nil
+}
+
+// SetRole moves an account between admin and member. Which roles may
+// be set, and whether this one may lose the last admin, is the
+// service's to decide — this writes what it was told.
+func (r *Repository) SetRole(ctx context.Context, id int64, role Role) error {
+	_, err := r.q.ExecContext(ctx, `UPDATE users SET role = $1 WHERE id = $2`, string(role), id)
+	if err != nil {
+		return fmt.Errorf("set role: %w", err)
+	}
+	return nil
+}
+
+// SetBlocked shuts an account out, or lets it back in.
+//
+// The timestamp is the database's own rather than one this process
+// computed: the daemon and Postgres are two containers with two clocks,
+// and every other moment recorded here comes from the same place.
+func (r *Repository) SetBlocked(ctx context.Context, id int64, blocked bool) error {
+	var err error
+	if blocked {
+		// Written only when it is not already set, so blocking an
+		// account twice does not move the date the first one happened.
+		_, err = r.q.ExecContext(ctx,
+			`UPDATE users SET blocked_at = now() WHERE id = $1 AND blocked_at IS NULL`, id)
+	} else {
+		_, err = r.q.ExecContext(ctx, `UPDATE users SET blocked_at = NULL WHERE id = $1`, id)
+	}
+	if err != nil {
+		return fmt.Errorf("set blocked: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) Delete(ctx context.Context, id int64) error {
 	res, err := r.q.ExecContext(ctx, `DELETE FROM users WHERE id = $1`, id)
 	if err != nil {

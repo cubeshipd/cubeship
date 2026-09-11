@@ -43,6 +43,8 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("PATCH /users/me", auth(http.HandlerFunc(h.setPreferences)))
 	// Someone leaves, or a laptop does. Neither had an answer here
 	// before, and "go and delete the rows yourself" is not one.
+	r.Handle("PATCH /users/{username}", auth(http.HandlerFunc(h.updateUser)))
+	r.Handle("POST /users/{username}/password", auth(http.HandlerFunc(h.resetPassword)))
 	r.Handle("DELETE /users/{username}", auth(http.HandlerFunc(h.remove)))
 	r.Handle("DELETE /users/{username}/credentials", auth(http.HandlerFunc(h.revokeCredentials)))
 	r.HandleInternal("POST /users/me/api-key/rotate", auth(http.HandlerFunc(h.rotateAPIKey)))
@@ -349,10 +351,32 @@ type UserResponse struct {
 	// What the account says about its holder. Absent when unset, which
 	// is the normal state — a username is what identifies somebody
 	// here, and these are what a username cannot carry.
-	DisplayName string    `json:"display_name,omitempty"`
-	Email       string    `json:"email,omitempty"`
-	Avatar      string    `json:"avatar"`
-	CreatedAt   time.Time `json:"created_at"`
+	DisplayName string `json:"display_name,omitempty"`
+	Email       string `json:"email,omitempty"`
+	Avatar      string `json:"avatar"`
+	// BlockedAt is when this account was shut out, absent while it is
+	// not. **One field rather than a flag and a date**: the two would
+	// be one fact with two places to disagree about it, and when it
+	// happened is the first thing anybody asks. Its credentials are all
+	// still there — see Service.SetBlocked.
+	BlockedAt *time.Time `json:"blocked_at,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+// userResponseFor is the whole of an account, and it is one function
+// because there is one shape.
+//
+// The listing used to build its own with three fields in it, so
+// `/users` answered without the face, the name or whether the account
+// was blocked — every one of which is a column on the screen that
+// listing is for. A second literal of the same struct is a second
+// answer to what an account is.
+func userResponseFor(u *User) UserResponse {
+	return UserResponse{
+		Username: u.Username, Role: u.Role, Theme: u.Theme,
+		DisplayName: u.DisplayName, Email: u.Email, Avatar: u.Avatar,
+		BlockedAt: u.BlockedAt, CreatedAt: u.CreatedAt,
+	}
 }
 
 // setPreferences changes what the caller has chosen about their own
@@ -428,7 +452,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]UserResponse, 0, len(users))
 	for _, u := range users {
-		out = append(out, UserResponse{Username: u.Username, Role: u.Role, CreatedAt: u.CreatedAt})
+		out = append(out, userResponseFor(u))
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"users": out})
 }
@@ -441,6 +465,84 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// updateUser changes what an admin decides about somebody else's
+// account: what they may do, and whether they may get in at all.
+//
+// **One endpoint for both, because they are the same kind of act** —
+// an admin deciding about an account that is not theirs — and both are
+// a field on the same row. Neither is a preference: what is the
+// account holder's own is on PATCH /users/me, and there is no path
+// parameter there for exactly this reason.
+//
+// Each field is a pointer, so leaving one out is "as it is" rather than
+// a zero: `blocked: false` has to be able to mean unblock, which it
+// could not if absent meant the same thing.
+func (h *Handler) updateUser(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Role    *Role `json:"role"`
+		Blocked *bool `json:"blocked"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+
+	ctx := r.Context()
+	caller := FromContext(ctx)
+	username := r.PathValue("username")
+
+	// Nothing asked for is not an error and not a write. It is what a
+	// form submitted with nothing changed sends.
+	updated, err := h.svc.Repo().ByUsername(ctx, username)
+	if err != nil {
+		WriteError(w, ErrNoSuchUser)
+		return
+	}
+	if err := Require(caller, RoleAdmin); err != nil {
+		WriteError(w, err)
+		return
+	}
+
+	// The role first: an account being blocked in the same request is
+	// still the account whose role this is about, and the two refusals
+	// are independent.
+	if req.Role != nil {
+		updated, err = h.svc.SetRole(ctx, caller, username, *req.Role)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+	}
+	if req.Blocked != nil {
+		updated, err = h.svc.SetBlocked(ctx, caller, username, *req.Blocked)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+	}
+	httpx.WriteJSON(w, http.StatusOK, userResponseFor(updated))
+}
+
+// resetPassword issues a new password for somebody else's account and
+// returns it once, for an admin to hand over.
+//
+// **The API keys are untouched**, which is what separates this from
+// DELETE /users/{username}/credentials: a forgotten password is not a
+// lost laptop. Every session ends, because the password changed.
+func (h *Handler) resetPassword(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	username := r.PathValue("username")
+	password, err := h.svc.ResetPassword(ctx, FromContext(ctx), username)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
+		"username": username,
+		"password": password,
+	})
 }
 
 // revokeCredentials ends every session and key an account holds without
@@ -544,7 +646,8 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrNoSuchUser):
 		http.Error(w, err.Error(), http.StatusNotFound)
-	case errors.Is(err, ErrCannotRemoveYourself), errors.Is(err, ErrLastAdmin):
+	case errors.Is(err, ErrCannotRemoveYourself), errors.Is(err, ErrLastAdmin),
+		errors.Is(err, ErrCannotBlockYourself), errors.Is(err, ErrCannotChangeYourOwnRole):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrInvalidRole), errors.Is(err, ErrPasswordTooShort),
 		errors.Is(err, ErrUnknownTheme), errors.Is(err, slug.ErrReserved):

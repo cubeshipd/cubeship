@@ -117,17 +117,8 @@ func (s *Service) Delete(ctx context.Context, caller *User, username string) err
 
 	return s.db.WithTx(ctx, func(tx database.Queryer) error {
 		repo := NewRepository(tx)
-		if target.Role == RoleAdmin {
-			// Counted inside the transaction: two requests each
-			// deleting one of the last two admins would otherwise both
-			// pass a check taken outside it and leave none.
-			admins, err := repo.CountByRole(ctx, RoleAdmin)
-			if err != nil {
-				return err
-			}
-			if admins <= 1 {
-				return ErrLastAdmin
-			}
+		if err := repo.refuseIfLastAdmin(ctx, target, true); err != nil {
+			return err
 		}
 		if _, err := repo.DeleteSessions(ctx, target.ID); err != nil {
 			return err
@@ -179,6 +170,157 @@ func (s *Service) RevokeCredentials(ctx context.Context, caller *User, username 
 	return out, err
 }
 
+// SetRole moves an account between admin and member.
+//
+// **The last admin cannot be demoted, and nobody may demote
+// themselves.** The first is the rule ErrLastAdmin has always named:
+// an instance with no admin can never configure itself again, and
+// setup closed the moment the first account existed. The second is the
+// same shape as not being able to delete yourself — whether there is
+// another admin to put it back is not knowable from inside the
+// request, and the mistake is one the person making it cannot undo.
+//
+// Nothing about the account's credentials is touched. A role is what
+// somebody may do, not who they are: their sessions and keys go on
+// being theirs and start being refused for what the new role does not
+// reach, on the next request.
+func (s *Service) SetRole(ctx context.Context, caller *User, username string, role Role) (*User, error) {
+	if err := Require(caller, RoleAdmin); err != nil {
+		return nil, err
+	}
+	if !role.Valid() {
+		return nil, ErrInvalidRole
+	}
+	target, err := s.Repo().ByUsername(ctx, username)
+	if err != nil {
+		return nil, ErrNoSuchUser
+	}
+	if caller.ID == target.ID {
+		return nil, ErrCannotChangeYourOwnRole
+	}
+	if target.Role == role {
+		return target, nil
+	}
+
+	var updated *User
+	err = s.db.WithTx(ctx, func(tx database.Queryer) error {
+		repo := NewRepository(tx)
+		if err := repo.refuseIfLastAdmin(ctx, target, role != RoleAdmin); err != nil {
+			return err
+		}
+		if err := repo.SetRole(ctx, target.ID, role); err != nil {
+			return err
+		}
+		updated, err = repo.ByID(ctx, target.ID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
+// SetBlocked shuts an account out of the instance, or lets it back in.
+//
+// **It is the reversible half of deleting somebody.** Deleting takes
+// the account, its keys and its sessions in one transaction and cannot
+// be undone; this closes the door and leaves everything behind it
+// exactly as it was, so letting somebody back in is one click and they
+// sign in with what they already had.
+//
+// So **nothing is revoked**. A blocked account's sessions and keys
+// stay, and every one of them is refused at the door instead — see
+// ErrBlocked, which Login, Authenticate and AuthenticateSession all
+// answer. Revoking here would make unblocking a half-undo: the account
+// would come back with nothing to come back with, and an admin who
+// blocked the wrong person for a minute would have cost them every key
+// on every machine they own.
+//
+// The two refusals are the ones that would shut the instance itself:
+// the account making the request, and the only admin.
+func (s *Service) SetBlocked(ctx context.Context, caller *User, username string, blocked bool) (*User, error) {
+	if err := Require(caller, RoleAdmin); err != nil {
+		return nil, err
+	}
+	target, err := s.Repo().ByUsername(ctx, username)
+	if err != nil {
+		return nil, ErrNoSuchUser
+	}
+	if caller.ID == target.ID {
+		return nil, ErrCannotBlockYourself
+	}
+	if target.Blocked() == blocked {
+		return target, nil
+	}
+
+	var updated *User
+	err = s.db.WithTx(ctx, func(tx database.Queryer) error {
+		repo := NewRepository(tx)
+		if err := repo.refuseIfLastAdmin(ctx, target, blocked); err != nil {
+			return err
+		}
+		if err := repo.SetBlocked(ctx, target.ID, blocked); err != nil {
+			return err
+		}
+		updated, err = repo.ByID(ctx, target.ID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
+// ResetPassword issues a new password for somebody else's account and
+// returns it once, for the admin to hand over.
+//
+// **There is no other way back in.** This box sends no mail, so there
+// is no reset link, and an account that has forgotten its password has
+// nothing else to try — which used to mean the account was deleted and
+// made again, losing its keys and its history to recover a secret.
+//
+// **The API keys are not touched**, and that is the difference between
+// this and RevokeCredentials. A forgotten password is not a compromised
+// machine: the keys on somebody's laptop are still theirs, and taking
+// them as well would make the fix for a forgotten password a morning of
+// logging back into everything. Whoever wants both asks for both.
+//
+// Every session ends, because the password changed — the same rule
+// SetPassword follows for an account changing its own. Whoever knew the
+// old one should not still be signed in, and this is the case where
+// somebody else might.
+func (s *Service) ResetPassword(ctx context.Context, caller *User, username string) (string, error) {
+	if err := Require(caller, RoleAdmin); err != nil {
+		return "", err
+	}
+	target, err := s.Repo().ByUsername(ctx, username)
+	if err != nil {
+		return "", ErrNoSuchUser
+	}
+
+	password, err := authkey.Password()
+	if err != nil {
+		return "", err
+	}
+	hash, err := HashPassword(password)
+	if err != nil {
+		return "", err
+	}
+
+	err = s.db.WithTx(ctx, func(tx database.Queryer) error {
+		repo := NewRepository(tx)
+		if err := repo.SetPassword(ctx, target.ID, hash); err != nil {
+			return err
+		}
+		_, err := repo.DeleteSessions(ctx, target.ID)
+		return err
+	})
+	if err != nil {
+		return "", err
+	}
+	return password, nil
+}
+
 // Repo returns a repository over the shared pool, for callers that only
 // need to read.
 func (s *Service) Repo() *Repository {
@@ -194,6 +336,9 @@ func (s *Service) Authenticate(ctx context.Context, key string) (*User, string, 
 	u, err := s.Repo().ByAPIKeyHash(ctx, keyHash)
 	if err != nil {
 		return nil, "", err
+	}
+	if u.Blocked() {
+		return nil, "", ErrBlocked
 	}
 	// Best effort: a caller whose last_used_at could not be written is
 	// still authenticated. Failing the request over a bookkeeping write
@@ -338,6 +483,15 @@ func (s *Service) Login(ctx context.Context, username, password string) (string,
 	if !VerifyPassword(hash, password) {
 		return "", nil, ErrInvalidCredentials
 	}
+	// Checked after the password, deliberately. Answering "blocked" to
+	// a wrong password would tell whoever is guessing that the account
+	// exists, which is the one thing every other failure here is
+	// shaped to avoid — and answering "wrong password" to the person
+	// whose password is right sends them to reset the one thing that
+	// was never the problem.
+	if u.Blocked() {
+		return "", nil, ErrBlocked
+	}
 
 	return s.StartSession(ctx, u)
 }
@@ -373,6 +527,12 @@ func (s *Service) AuthenticateSession(ctx context.Context, token string) (*User,
 	u, err := s.Repo().UserBySession(ctx, tokenHash)
 	if err != nil {
 		return nil, "", ErrNoSession
+	}
+	// A session started before the block is refused from the next
+	// request onwards. Nothing had to be deleted for that — which is
+	// what makes unblocking put somebody back exactly where they were.
+	if u.Blocked() {
+		return nil, "", ErrBlocked
 	}
 	// Best effort, like the API key's: a caller whose last_used_at could
 	// not be written is still signed in.
