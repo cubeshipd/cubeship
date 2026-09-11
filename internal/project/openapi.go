@@ -71,6 +71,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			"Project": openapi.Object(map[string]*openapi.Schema{
 				"slug":         openapi.String(""),
 				"environments": openapi.Array(openapi.String("Environment slug. Only returned when the project is created.")),
+				"has_image":    openapi.Bool("Whether this project wears a picture, at `GET /projects/{projectSlug}/image`. Absent for one that does not, which is what every project starts as — so a grid knows whether to ask rather than making a request per project that mostly answers 404."),
 			}, "slug"),
 
 			"Environment": openapi.Object(map[string]*openapi.Schema{
@@ -118,6 +119,56 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Parameters:  []openapi.Parameter{orgParam, projectParam},
 					Responses: openapi.Responses{
 						"200": openapi.Empty("The project, its environments and its apps are gone."),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+					},
+				},
+			},
+			"/projects/{projectSlug}/image": {
+				"get": {
+					OperationID: "getProjectImage",
+					Summary:     "Fetch a project's picture",
+					Description: "The bytes, with the media type they were stored as. 404 when the project wears none, which is what every project starts as — `has_image` on the project itself is what to check rather than asking and being refused.\n\nA **member's**: it is drawn on the projects grid, which every member opens.",
+					Tags:        []string{"Projects & environments"},
+					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					Responses: openapi.Responses{
+						"200": {Description: "The picture.", Content: map[string]openapi.MediaType{
+							"image/png": {Schema: &openapi.Schema{Type: "string", Format: "binary"}},
+						}},
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.TextResponse("No such project, or it wears no picture."),
+					},
+				},
+				"put": {
+					OperationID: "setProjectImage",
+					Summary:     "Give a project a picture",
+					Description: "The body is the image itself, raw — not a multipart form. There is one value and no others, and an envelope around a single value is a form where there is no form.\n\n**The bytes decide the type, not the header.** What arrives is sniffed, and that is what is stored and what it is served back as: a caller who could name the type would be choosing what this instance serves from its own origin, beside the session cookie. PNG, JPEG and WebP; no SVG, which is a document with scripting in it.\n\n**Nothing here resizes.** The ceiling is 512 KiB and the dashboard sends something it has already scaled to a square — the browser has the file decoded to show a preview, so it is the one place that can. Larger is refused rather than shrunk, while whoever chose it still has it.\n\nRequires the admin role.",
+					Tags:        []string{"Projects & environments"},
+					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					RequestBody: &openapi.RequestBody{Required: true, Content: map[string]openapi.MediaType{
+						"image/png":  {Schema: &openapi.Schema{Type: "string", Format: "binary"}},
+						"image/jpeg": {Schema: &openapi.Schema{Type: "string", Format: "binary"}},
+						"image/webp": {Schema: &openapi.Schema{Type: "string", Format: "binary"}},
+					}},
+					Responses: openapi.Responses{
+						"204": openapi.Empty("The project wears it now."),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"413": openapi.TextResponse("Larger than 512 KiB."),
+						"415": openapi.TextResponse("Not a PNG, a JPEG or a WebP."),
+					},
+				},
+				"delete": {
+					OperationID: "clearProjectImage",
+					Summary:     "Take a project's picture off",
+					Description: "The project goes back to the mark the dashboard draws for one with no picture. A project that wears none already is not an error — asking for the state it is in is not a mistake.\n\nRequires the admin role.",
+					Tags:        []string{"Projects & environments"},
+					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					Responses: openapi.Responses{
+						"204": openapi.Empty("It wears none now."),
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,

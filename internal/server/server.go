@@ -167,7 +167,7 @@ type Options struct {
 // one: users authorize everything, and apps sit at the bottom.
 func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	users := user.NewService(db)
-	projects := project.NewService(db)
+	projects := project.NewService(db, opts.DataDir)
 	cfg := settings.NewService(db)
 	// What this instance's DNS records should point at cannot be read
 	// from inside the daemon's own container — what it finds there is a

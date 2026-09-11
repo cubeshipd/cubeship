@@ -1,8 +1,12 @@
 package project
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"net/http"
+	"time"
 
 	"cubeship/internal/envvar"
 	"cubeship/internal/platform/httpx"
@@ -13,6 +17,10 @@ import (
 type Response struct {
 	Slug         string   `json:"slug"`
 	Environments []string `json:"environments,omitempty"`
+	// HasImage says whether this project wears a picture, so a grid can
+	// ask for one or draw its own mark without a request per project
+	// that mostly 404s.
+	HasImage bool `json:"has_image,omitempty"`
 }
 
 // EnvironmentResponse is one environment, likewise shared.
@@ -29,7 +37,7 @@ func toResponses(projects []*Project) []Response {
 }
 
 func toResponse(p *Project) Response {
-	return Response{Slug: p.Slug}
+	return Response{Slug: p.Slug, HasImage: p.HasImage()}
 }
 
 func toEnvironmentResponses(envs []*Environment) []EnvironmentResponse {
@@ -54,6 +62,9 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("POST /projects", auth(http.HandlerFunc(h.create)))
 	r.Handle("GET /projects", auth(http.HandlerFunc(h.list)))
 	r.Handle("DELETE /projects/{projectSlug}", auth(http.HandlerFunc(h.delete)))
+	r.Handle("GET /projects/{projectSlug}/image", auth(http.HandlerFunc(h.image)))
+	r.Handle("PUT /projects/{projectSlug}/image", auth(http.HandlerFunc(h.setImage)))
+	r.Handle("DELETE /projects/{projectSlug}/image", auth(http.HandlerFunc(h.clearImage)))
 	r.Handle("GET /projects/{projectSlug}/env", auth(http.HandlerFunc(h.getEnv)))
 	r.Handle("PUT /projects/{projectSlug}/env", auth(http.HandlerFunc(h.setEnv)))
 	r.Handle("PATCH /projects/{projectSlug}/env", auth(http.HandlerFunc(h.mergeEnv)))
@@ -75,9 +86,63 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrProductionUndeletable):
 		http.Error(w, err.Error(), http.StatusForbidden)
+	case errors.Is(err, ErrNoImage):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, ErrImageType):
+		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
+	case errors.Is(err, ErrImageTooLarge):
+		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
 	default:
 		user.WriteError(w, err)
 	}
+}
+
+// image serves a project's picture.
+//
+// **Cached against the media type rather than for a fixed time.** A
+// picture is drawn on the projects grid, so without a cache header it
+// is a request per project on every visit; with a fixed one, replacing
+// it leaves the old one on screen until that expires. `no-cache` is the
+// pair that gets both: the browser keeps the bytes and asks every time
+// whether they are still current, and the answer is a 304 with no body.
+func (h *Handler) image(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	data, mediaType, err := h.svc.Image(ctx, user.FromContext(ctx), r.PathValue("projectSlug"))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.Header().Set("Content-Type", mediaType)
+	w.Header().Set("Cache-Control", "private, no-cache")
+	// The bytes are their own version: replacing the picture changes
+	// the tag, and nothing else has to be invalidated by hand.
+	w.Header().Set("ETag", `"`+fmt.Sprintf("%x", sha256.Sum256(data))[:16]+`"`)
+	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
+}
+
+// setImage replaces the picture, from the raw body.
+//
+// **Raw rather than multipart**, because there is one field and nothing
+// else: what the dashboard sends is a Blob it has already scaled, and a
+// multipart envelope around a single value is a form where there is no
+// form. The header it arrives with decides nothing — see
+// Service.SetImage.
+func (h *Handler) setImage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := h.svc.SetImage(ctx, user.FromContext(ctx), r.PathValue("projectSlug"), r.Body); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) clearImage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := h.svc.ClearImage(ctx, user.FromContext(ctx), r.PathValue("projectSlug")); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {

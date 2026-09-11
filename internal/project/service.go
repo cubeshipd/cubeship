@@ -15,13 +15,17 @@ import (
 type Service struct {
 	db *database.DB
 
+	// dataDir is where this daemon keeps what is not a row. A project's
+	// picture lives under it — see image.go.
+	dataDir string
+
 	// apps is how deleting a project or an environment reaches the
 	// containers running inside it. See AppTeardown.
 	apps AppTeardown
 }
 
-func NewService(db *database.DB) *Service {
-	return &Service{db: db}
+func NewService(db *database.DB, dataDir string) *Service {
+	return &Service{db: db, dataDir: dataDir}
 }
 
 // SetAppTeardown wires the app module in. Called once, at startup, by

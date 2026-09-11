@@ -31,7 +31,7 @@ func newDeployFixture(t *testing.T, docker DockerAPI) (*Orchestrator, *database.
 	ctx := context.Background()
 	db := dbtest.New(t)
 
-	projects := project.NewService(db)
+	projects := project.NewService(db, t.TempDir())
 
 	admin, err := user.NewRepository(db).Create(ctx, "admin", user.RoleAdmin)
 	if err != nil {

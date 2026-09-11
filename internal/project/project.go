@@ -22,11 +22,18 @@ import (
 // change and the one everybody reads. A second, editable name was a
 // second idea for one thing.
 type Project struct {
-	ID        int64
-	Slug      string
-	Env       envvar.Map
+	ID   int64
+	Slug string
+	Env  envvar.Map
+	// Image is the media type of the picture this project wears, empty
+	// for none — which is what every project starts as. The bytes are a
+	// file under the data directory; see Service.SetImage.
+	Image     string
 	CreatedAt time.Time
 }
+
+// HasImage reports whether somebody has given this project a picture.
+func (p *Project) HasImage() bool { return p != nil && p.Image != "" }
 
 var (
 	// ErrNotFound covers both "no such project" and "not yours to see",
