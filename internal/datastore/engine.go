@@ -94,6 +94,11 @@ type spec struct {
 	checkUsername func(name string) error
 }
 
+// postgresDataPath is where Postgres keeps its files inside the
+// container. It is the bind mount and it is PGDATA, which is one fact
+// rather than two — see the env below for why saying so matters.
+const postgresDataPath = "/var/lib/postgresql/data"
+
 // specs is the whole of what Cubeship knows about running a database.
 //
 // TestEveryEngineHasASpec pins it against Engines(), so adding an engine
@@ -101,9 +106,9 @@ type spec struct {
 var specs = map[Engine]spec{
 	EnginePostgres: {
 		image:       "postgres",
-		versions:    []string{"17", "16", "15"},
+		versions:    []string{"18", "17", "16", "15"},
 		port:        5432,
-		dataPath:    "/var/lib/postgresql/data",
+		dataPath:    postgresDataPath,
 		scheme:      "postgresql",
 		query:       "sslmode=disable",
 		stem:        "DATABASE",
@@ -114,24 +119,35 @@ var specs = map[Engine]spec{
 				"POSTGRES_USER=" + d.Username,
 				"POSTGRES_PASSWORD=" + d.Password,
 				"POSTGRES_DB=" + d.Database,
-				// No PGDATA. The image's own advice is to point it at a
-				// subdirectory of the mount, and following it broke
-				// every Postgres this ever provisioned.
+				// PGDATA is the mount itself, and both halves of that
+				// are load-bearing.
 				//
-				// The entrypoint chowns PGDATA *and below* to the
-				// postgres user, and nothing above it. With PGDATA a
-				// subdirectory, the mount itself stayed root-owned and
-				// 0700 — the mode the daemon creates it with — and the
-				// postgres user could not traverse into its own data
-				// directory. Permission denied, on a loop, from a
-				// container running as root a moment earlier.
+				// **Not below it.** The image's own advice is to point
+				// PGDATA at a subdirectory when the data is on a bind
+				// mount, and following that broke every Postgres this
+				// module provisioned. The entrypoint chowns PGDATA and
+				// below to the postgres user and nothing above it, so
+				// the mount stayed root-owned and 0700 — the mode the
+				// daemon creates it with — and the postgres user could
+				// not traverse into its own data directory. Permission
+				// denied, on a loop, from a container that was root a
+				// moment earlier.
 				//
-				// Left alone, PGDATA is the mount, the entrypoint
-				// chowns the mount, and it works. That is what the
-				// daemon's own Postgres has always done — see
-				// bootstrap.PostgresContainerOpts, which is the same
-				// image on the same kind of directory and has never had
-				// this problem.
+				// **And said rather than left to the image**, which is
+				// what 18 changed: its default moved to
+				// /var/lib/postgresql/<major>/docker, with the declared
+				// volume one level up at /var/lib/postgresql. Silent,
+				// and the worst kind — the container comes up, the
+				// database works, and none of it is in the bind mount.
+				// It is in an anonymous volume nothing on this instance
+				// names, so it is in no backup of the data directory
+				// and it is orphaned the next time the container is
+				// replaced, which is what publishing a port does.
+				//
+				// Saying it is a no-op on 15 through 17, where it is
+				// already the default, and is the whole of what makes
+				// 18 keep its data where this instance keeps it.
+				"PGDATA=" + postgresDataPath,
 			}
 		},
 	},
