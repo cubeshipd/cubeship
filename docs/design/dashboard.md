@@ -586,7 +586,9 @@ border and the line stops where the tab is. `margin-bottom: -1px` alone
 does not do that: a negative margin moves what follows and does not make
 the box taller, so the tab stopped a pixel short and the line ran
 straight under it. The height grows and the margin takes the growth back
-out of the strip's layout. The cyan mark moves to the tab's top edge, because on the bottom
+out of the strip's layout. It is on the open tab alone and not on every
+one of them: hover paints a background too, so a closed tab a pixel too
+tall broke the line under whichever one the pointer was over. The cyan mark moves to the tab's top edge, because on the bottom
 it would be a line under the open tab, which is what an open tab does
 not have.
 
