@@ -174,16 +174,31 @@ func ValidEmail(s string) bool {
 
 // Themes are the palettes the dashboard offers.
 //
-// **Every one of them is dark**, and every one of them changes only
-// colour: the layout, the type and the square corners are the product,
-// and a theme that moved those would be a second interface to keep
-// working. Empty is the first.
+// **All of them are dark but `helix`**, and every one of them changes
+// only colour: the layout, the type and the square corners are the
+// product, and a theme that moved those would be a second interface to
+// keep working. Empty is the first.
 //
 // The list is here rather than in the dashboard because it is what the
 // daemon will accept, and two lists would be one to disagree with: a
 // browser sending a name this refuses is a preference that saves and
 // then is not there.
-var Themes = []string{"cyan", "mono", "hacker", "red", "orange", "pink", "purple", "blue"}
+var Themes = []string{
+	"cyan", "mono", "hacker", "red", "orange", "pink", "purple", "blue", "helix",
+}
+
+// DefaultTheme is the palette an account sees until it picks one, and
+// it is the one name in Themes with no block of its own in the
+// stylesheet: `:root` **is** cyan, and the other palettes are what
+// override it. So `""` and `"cyan"` paint the same interface, and the
+// picker offers the first — two entries somebody cannot tell apart is
+// worse than one.
+//
+// It is named here rather than only in the CSS because the list above
+// has to be able to say which of its entries is the one that needs no
+// block. See themes_test.go, which is what would otherwise read a
+// working default as a broken palette.
+const DefaultTheme = "cyan"
 
 // ErrUnknownTheme is a palette this instance does not have.
 var ErrUnknownTheme = errors.New("no theme by that name")

@@ -1,11 +1,18 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* The dashboard is dark, and only dark. It is an infrastructure
-   console: it is read next to a terminal, for hours, and a light theme
-   would be a second palette to keep honest for no one who asked. The
-   `dark` variant is still wired to a class, because the shadcn
-   primitives carry `dark:` rules and <html> carries the class. */
+/* The dashboard is dark but for one palette. It is an infrastructure
+   console: it is read next to a terminal, for hours, and that is why
+   there is one light theme rather than a light/dark axis over all of
+   them.
+
+   The `dark` variant is wired to a class and <html> always carries it,
+   `helix` included — which sounds wrong and is not. Every `dark:` rule
+   in `ui/` reaches for a token this file defines (`input/30`,
+   `muted/50`, `destructive/40`), so under `helix` they resolve to that
+   palette's own values and render light. Making the class conditional
+   would turn the shadcn defaults back on for exactly one theme, which
+   is a second set of colours to keep honest — the thing this avoids. */
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* What the Base UI primitives mean by `data-horizontal:` — which is
@@ -95,9 +102,11 @@
  * working. Each of these sets the surfaces, the lines and the accent,
  * and nothing else.
  *
- * **All of them are dark**, and that is a decision rather than an
- * omission: this is a console for a machine, read beside a terminal,
- * and a light one would be the only screen on that desk that is.
+ * **All of them are dark but one**, and that was the decision for a
+ * long time: this is a console for a machine, read beside a terminal,
+ * and a light one is the only screen on that desk that is. `helix` is
+ * the exception, and it is one on purpose rather than the start of a
+ * light/dark axis — see the block at the end of this list.
  *
  * The surfaces move with the accent rather than staying blue. A red
  * accent on a blue-cast near-black reads as two themes fighting, which
@@ -295,6 +304,66 @@
   --primary-foreground: #030d20;
   --ring: #4d8dff;
   --magenta: #2de2e6;
+}
+
+/* Helix: the inverse of Mono.
+ *
+ * **Black ink on paper**, where mono is white light on black — the same
+ * palette read the other way up, which is why it is named for the
+ * strand that runs the opposite direction rather than for being light.
+ * Every step is the mirror of mono's: the page is the extreme, the card
+ * is four percent off it, and the accent is the page's opposite rather
+ * than a hue.
+ *
+ * **The glow does not need a special case, and that is the test it
+ * passed.** Every depth effect in this file is `var(--primary)` at low
+ * opacity, so on paper the same rules render as ink bleed and a soft
+ * shadow instead of neon — which is what a light console does with the
+ * same geometry. Nothing about the layout, the lines or the corners
+ * moved, exactly as for the other seven.
+ *
+ * **The status colours are the one thing that could not be mirrored.**
+ * Green, amber and red mean running, deploying and failed, and the
+ * bright versions tuned for a near-black page are unreadable on this
+ * one — a lime `#8dff5a` on white is not a colour, it is a blank cell.
+ * So they are re-picked here rather than inverted, which makes this the
+ * only palette that touches them. The terminal's own eight are *not*
+ * re-picked: the log panel is `bg-black` in every theme, which is the
+ * whole reason those were declared once and never per palette.
+ */
+:root[data-theme="helix"] {
+  --background: #ffffff;
+  --card: #f7f7f7;
+  --popover: #f2f2f2;
+  --secondary: #ededed;
+  --muted: #ededed;
+  --accent: #e3e3e3;
+
+  --foreground: #0a0a0a;
+  --card-foreground: #0a0a0a;
+  --popover-foreground: #0a0a0a;
+  --secondary-foreground: #0a0a0a;
+  --accent-foreground: #0a0a0a;
+  /* Matched to mono's contrast against its own page rather than to its
+     hex: #8f8f8f is 7.2:1 on black and 3.2:1 on white, so mirroring the
+     number would have flattened the two text levels this interface is
+     built on. These carry the same ratios the other way. */
+  --muted-foreground: #595959;
+  --subtle-foreground: #878787;
+
+  --border: #dedede;
+  --border-strong: #c4c4c4;
+  --input: #cdcdcd;
+
+  --primary: #0a0a0a;
+  --primary-foreground: #fafafa;
+  --ring: #0a0a0a;
+  --magenta: #595959;
+
+  --success: #1a7f37;
+  --warning: #9a6700;
+  --destructive: #cf222e;
+  --destructive-foreground: #ffffff;
 }
 
 @theme inline {
