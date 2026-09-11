@@ -50,7 +50,7 @@ function Settings({ name }: { name: string }) {
       {datastore && <ExternalAccess datastore={datastore} onChanged={reload} />}
       {datastore && (
         <>
-          <DangerZone>
+          <DangerZone className="mt-10">
             <DangerAction
               title="Delete this database"
               description="Stops the container and removes the data directory from the host. There is no backup, and this cannot be undone."

@@ -361,6 +361,27 @@ where they are, and on a settings screen the two say different things:
 the path is the app, the title is "App settings". A rail that swallowed
 the title would have had to swallow the buttons beside it too.
 
+**Every crumb looks like every other crumb**: mono, one size, written
+the way the URL writes it, with the last one lit and the rest not. It
+was three systems in one line for a day — the section uppercase, the
+slugs mono, and the last one half again as large because it was
+standing in for a page title — which reads as three kinds of thing
+rather than as one path. Being lit is enough to say where you are
+standing.
+
+That is also why there is no table of friendly names any more. `storage`
+was rendered "Object storage" and `settings` "Instance", the sidebar's
+words kept in step with the sidebar by hand; what it bought was a nicer
+noun in one place and a second list to forget, and what it cost was a
+crumb that did not match the address it names.
+
+**A trailing `settings` is a screen, not a slug.** Read positionally,
+`/projects/web/settings` is a project in an environment called
+`settings` — which duly offered a menu of environments to swap it for,
+and said "Nothing else here". `slug.Reserved` on the daemon refuses that
+name at creation for the same reason Next resolves a static segment
+first, so the two lists say one thing from opposite ends.
+
 **A crumb with siblings is a menu**, and that is the point of putting
 the path here rather than in a page. Reading `web/production/api` tells
 you where you are; opening `production` and landing in `staging` is the

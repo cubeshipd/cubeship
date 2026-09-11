@@ -54,7 +54,7 @@ function Settings({ name }: { name: string }) {
           {store.kind === "managed" && <StoreLimits store={store} onSaved={reload} />}
           {store.kind === "managed" && <Exposure store={store} onChanged={reload} />}
 
-          <DangerZone>
+          <DangerZone className="mt-10">
             <DangerAction
               title="Delete this store"
               description={
