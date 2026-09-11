@@ -179,3 +179,43 @@ func TestTheOrphansAreListedApartFromTheRest(t *testing.T) {
 		t.Error("the database that is still here is missing from the report")
 	}
 }
+
+// **A managed store is this machine**, and a backup sent to one has not
+// left it.
+//
+// It was reported as though it had, because "off the machine" was
+// spelled `object_store_id IS NOT NULL` — and a managed store is a
+// MinIO container this instance runs with its objects in a bind mount
+// under the data directory, on the same disk as the database and the
+// same disk as a local dump. So the coverage report called such a
+// database protected, which is the single lie that screen exists to
+// prevent, and the failure is invisible from every side: the dump
+// succeeds, the object is written, and the row reads exactly like one
+// that went to another continent.
+func TestADumpIntoThisInstancesOwnMinIOHasNotLeftTheMachine(t *testing.T) {
+	f := newFixture(t)
+	f.database(t, "pg", "postgres")
+
+	rec := f.Do(t, http.MethodPost, "/objectstores",
+		map[string]any{"kind": "managed", "name": "local"}, f.AdminKey)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("create a managed store: %d %s", rec.Code, rec.Body.String())
+	}
+	f.Server.ObjectStores.WaitForProvisioning()
+	f.schedule(t, "pg", map[string]any{
+		"at": "03:00", "timezone": "UTC", "keep": 7, "store": "local", "bucket": "dumps",
+	})
+
+	row := f.take(t, "pg")
+	if row.Status != "succeeded" {
+		t.Fatalf("the dump did not succeed: %+v", row)
+	}
+	if row.OffMachine {
+		t.Error("a dump into this instance's own MinIO reports itself off the machine")
+	}
+
+	c := coverage(t, f)["pg"]
+	if c.Protected {
+		t.Error("a database whose backups are on this disk reports itself protected")
+	}
+}

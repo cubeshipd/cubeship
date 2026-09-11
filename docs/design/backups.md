@@ -46,6 +46,28 @@ there because it works the minute the instance is installed, before
 anybody has linked a bucket, and being unable to take a backup at all
 until they have is worse.
 
+**And "an object store" is not the same as "off the machine".** A
+*managed* store is a MinIO container this instance runs, with its
+objects in a bind mount under the data directory — the same disk as the
+database, the same disk as a local dump. `OffMachine` was
+`object_store_id IS NOT NULL` and therefore said yes to it, so an
+instance backing up into its own MinIO was reported as protected, which
+is the one thing the coverage report exists to prevent. The failure is
+invisible from every side: the dump succeeds, the object is written, and
+the row reads exactly like one that went to another continent.
+
+`objectstore.LeavesThisMachine` is the question now, asked once when the
+dump starts, and **the answer is a column**. Worked out on read it would
+be a join through `ON DELETE SET NULL` — so a store deleted a month
+later would take the answer with it, at exactly the moment somebody is
+trying to find out what they still have. What was true when the dump
+was taken stays true about it, which is the rule the engine and the
+version already follow.
+
+The schedule form says so where it is chosen: a managed store carries
+the same warning the local disk does, and the destinations are listed
+with the two that are on this machine sharing an icon.
+
 The key is `cubeship/<database>/<timestamp>.dump`, built by `KeyFor` so
 the row and the object cannot disagree about where it went.
 

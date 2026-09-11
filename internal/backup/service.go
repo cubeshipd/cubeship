@@ -61,6 +61,10 @@ type Stores interface {
 	ClientForID(ctx context.Context, id int64) (*objectstore.Store, objectstore.Client, error)
 	IDForName(ctx context.Context, name string) (int64, error)
 	NameForID(ctx context.Context, id int64) string
+	// LeavesThisMachine separates a store somewhere else from the
+	// MinIO this instance runs on its own disk. Asked once, when the
+	// dump starts, and written on the row — see Backup.OffMachine.
+	LeavesThisMachine(ctx context.Context, id int64) bool
 }
 
 type Service struct {
@@ -221,10 +225,14 @@ func (s *Service) start(ctx context.Context, d *datastore.Datastore, storeID int
 		return nil, fmt.Errorf("%w: %s", ErrNoDump, d.Engine)
 	}
 
+	// Asked here rather than on read, because the store can be deleted
+	// and the row has to go on saying where this dump stands.
+	off := storeID != 0 && s.stores.LeavesThisMachine(ctx, storeID)
+
 	row, err := s.Repo().Start(ctx, &Backup{
 		DatastoreID: d.ID, DatastoreName: d.Slug,
 		Engine: string(d.Engine), Version: d.Version,
-		StoreID: storeID, Bucket: bucket,
+		StoreID: storeID, Bucket: bucket, Off: off,
 		Key:       KeyFor(d.Slug, time.Now().UTC()),
 		Scheduled: scheduled,
 	})

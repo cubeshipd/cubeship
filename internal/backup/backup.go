@@ -69,6 +69,9 @@ type Backup struct {
 	Bucket  string
 	Key     string
 	Size    int64
+	// Off is whether this copy actually left the machine, recorded when
+	// the dump was taken — see OffMachine, and migration 00050.
+	Off bool
 
 	Status string
 	Error  string
@@ -88,7 +91,18 @@ func (b *Backup) Running() bool { return b.Status == StatusTaking }
 // The distinction is the point of the feature. A dump beside the
 // database it came from survives somebody dropping a table and nothing
 // else — not the disk, not the machine, not the provider.
-func (b *Backup) OffMachine() bool { return b.StoreID != 0 }
+//
+// **It is not "went to an object store", which is what it used to
+// be.** A *managed* store is a MinIO container this instance runs, with
+// its objects in a bind mount under the data directory — the same disk
+// as the database and the same disk as a local dump. Backing up to one
+// was reported as leaving the machine, and the coverage report called
+// such a database protected: the one lie that screen exists to prevent.
+//
+// Recorded on the row rather than worked out on read, because the
+// store it points at can be deleted — ON DELETE SET NULL — and that is
+// exactly the moment somebody needs to know what they still have.
+func (b *Backup) OffMachine() bool { return b.Off }
 
 // Schedule is when a database is backed up without anybody asking, and
 // **the row existing is what "scheduled" means**. There is no separate
