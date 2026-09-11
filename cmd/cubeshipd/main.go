@@ -27,6 +27,7 @@ import (
 	_ "time/tzdata"
 
 	"cubeship/internal/app"
+	"cubeship/internal/certificates"
 	"cubeship/internal/datastore"
 	"cubeship/internal/machine"
 	"cubeship/internal/metrics"
@@ -648,6 +649,11 @@ func run() error {
 	// a test that builds a server must not thereby start replacing
 	// containers.
 	go (&update.Scheduler{Updates: srv.Updates, Settings: srv.Settings}).Run(ctx)
+
+	// Traefik asks Let's Encrypt for a certificate when its
+	// configuration changes and at no other moment, so a name whose
+	// first attempt failed would otherwise never get a second one.
+	go (&certificates.Retrier{Certs: srv.Certs, DataDir: cfg.DataDir}).Run(ctx)
 
 	go purgeExpiredSessions(ctx, srv.Users)
 

@@ -38,16 +38,30 @@ import (
 // separately, and that is the string this looks for.
 func traefikRejects(t *testing.T, routes []traefik.Route, tls bool) string {
 	t.Helper()
+	return traefikRejectsWith(t, routes, tls, false)
+}
+
+// traefikRejectsWith is the same, and `retry` also writes the file this
+// daemon uses to ask for a certificate again.
+func traefikRejectsWith(t *testing.T, routes []traefik.Route, tls, retry bool) string {
+	t.Helper()
 
 	dir := t.TempDir()
 	if _, err := traefik.WriteRoutes(dir, routes, tls); err != nil {
 		t.Fatalf("write the routes file: %v", err)
 	}
+	if retry {
+		if _, err := traefik.RetryCertificates(dir); err != nil {
+			t.Fatalf("write the retry file: %v", err)
+		}
+	}
 	// The daemon writes 0600 as root; this container runs as its own
 	// user and has to be able to read it.
 	_ = os.Chmod(filepath.Join(dir, "traefik-dynamic"), 0o755)
-	if path := filepath.Join(dir, "traefik-dynamic", traefik.RoutesFileName); fileExists(path) {
-		_ = os.Chmod(path, 0o644)
+	for _, name := range []string{traefik.RoutesFileName, traefik.RetryFileName} {
+		if path := filepath.Join(dir, "traefik-dynamic", name); fileExists(path) {
+			_ = os.Chmod(path, 0o644)
+		}
 	}
 
 	cmd := exec.Command("docker", "run", "--rm",
@@ -132,5 +146,33 @@ func TestTraefikAcceptsABalancedRouteWithNoHealthCheck(t *testing.T) {
 func TestTraefikAcceptsAMachineWithNothingToBalance(t *testing.T) {
 	if said := traefikRejects(t, nil, false); said != "" {
 		t.Errorf("Traefik refused a machine with nothing to balance:\n%s", said)
+	}
+}
+
+// The file this instance writes to ask Traefik to try again for a
+// certificate. It carries a transport nothing refers to, which is the
+// whole idea — a real difference to the configuration Traefik builds
+// and no difference to anything served.
+//
+// It is here rather than only in a unit test because the file provider
+// assembles the whole directory into one document: a file Traefik
+// refuses does not go quiet on its own, it takes the routers beside it
+// down and the daemon's own name with them. Which is exactly the
+// failure this whole test file exists for.
+func TestTraefikAcceptsTheCertificateRetryFile(t *testing.T) {
+	if said := traefikRejectsWith(t, []traefik.Route{{
+		App:     "web/production/api",
+		Host:    "api.example.com",
+		Servers: []string{"http://one:8080"},
+	}}, true, true); said != "" {
+		t.Errorf("Traefik refused the certificate retry file:\n%s", said)
+	}
+}
+
+// And on its own, which is what an instance serving nothing yet looks
+// like: the routes file is absent and this is the only one there.
+func TestTraefikAcceptsTheRetryFileWithNoRoutes(t *testing.T) {
+	if said := traefikRejectsWith(t, nil, true, true); said != "" {
+		t.Errorf("Traefik refused the retry file on its own:\n%s", said)
 	}
 }

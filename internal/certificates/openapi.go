@@ -28,7 +28,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"instance": openapi.Bool("The name is the dashboard's or the registry's."),
 				"reason": openapi.String("`tls_not_configured` — the instance has no domain, so Traefik asks for nothing. " +
 					"`not_deployed` — nothing is running with that name in its labels: an app not deployed since the name was added, or the registry's container made before the instance had a domain. A container keeps the labels it was created with, so Traefik has never been told about it. " +
-					"`pending` — Traefik knows the name and has not produced a certificate: normal for a minute after a deploy, and after that a name that does not resolve here or a challenge that failed. " +
+					"`pending` — Traefik knows the name and has not produced a certificate: normal for a minute after a deploy, and after that a name that does not resolve here or a challenge that failed. Traefik asks a CA only when its configuration changes, so this instance asks it again every half hour for as long as anything is on this list — a name whose first attempt failed is retried without a redeploy. " +
 					"`another_server` — the app is on another machine in this cluster, which runs its own edge and holds its own store. Nothing here can say whether that certificate exists; `node` names where to look."),
 				"node":   openapi.String("The machine in this cluster that serves it, when that is not this one."),
 				"detail": openapi.String("The last thing Traefik's log said about that name, when it said anything. A quotation, not a contract."),

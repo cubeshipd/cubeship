@@ -69,7 +69,22 @@ func (s *Service) Report(ctx context.Context, caller *user.User) (Report, error)
 	if err := user.Require(caller, user.RoleAdmin); err != nil {
 		return Report{}, err
 	}
+	report, err := s.report(ctx)
+	if err != nil {
+		return Report{}, err
+	}
+	report.TraefikSays = s.explain(ctx, report.Missing)
+	return report, nil
+}
 
+// report is the same picture without the quotations out of Traefik's
+// log, and without asking who wants it.
+//
+// Both of those belong to somebody reading a screen. This instance
+// reads the same thing to decide whether to ask Traefik to try again —
+// see Retrier — and there is no caller there to check, nor any use for
+// a log line it is not going to show anybody.
+func (s *Service) report(ctx context.Context) (Report, error) {
 	values, err := s.settings.Load(ctx)
 	if err != nil {
 		return Report{}, err
@@ -92,8 +107,29 @@ func (s *Service) Report(ctx context.Context, caller *user.User) (Report, error)
 	report.ACMEEmail = email
 
 	report.Certificates, report.Missing = reconcile(certs, served, report.TLSEnabled)
-	report.TraefikSays = s.explain(ctx, report.Missing)
 	return report, nil
+}
+
+// Pending is every name this instance routes that Traefik knows about,
+// could get a certificate for, and has not got one for.
+//
+// The other reasons are deliberately not in it, because none of them is
+// waiting on Traefik: a name with no TLS configured at all, one on an
+// app that has not been deployed since it was added, and one served by
+// another machine are three things for a person to do, and asking Let's
+// Encrypt again would not move any of them.
+func (s *Service) Pending(ctx context.Context) ([]Missing, error) {
+	report, err := s.report(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var out []Missing
+	for _, m := range report.Missing {
+		if m.Reason == ReasonPending {
+			out = append(out, m)
+		}
+	}
+	return out, nil
 }
 
 // reconcile is the whole of the comparison, kept apart from where the
