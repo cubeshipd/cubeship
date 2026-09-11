@@ -41,6 +41,12 @@ type Response struct {
 	Endpoint  string `json:"endpoint"`
 	Region    string `json:"region"`
 	PathStyle bool   `json:"path_style"`
+	// ScopesByBucket says this store's provider issues logins for a
+	// single bucket, which is where pinning one is accepted. Served
+	// rather than derived in the dashboard for the reason ProviderLabel
+	// is: a second list of which providers those are is a list that
+	// disagrees with the daemon the first time one is added.
+	ScopesByBucket bool `json:"scopes_by_bucket"`
 	// Bucket is the one this store is pinned to, when it is. Absent for
 	// a store that lists its own.
 	Bucket string `json:"bucket,omitempty"`
@@ -93,7 +99,8 @@ func toResponse(s *Store, domain string) Response {
 	return Response{
 		Name: s.Slug, Description: s.Description,
 		Kind: string(s.Kind), Provider: string(s.Provider), ProviderLabel: s.Provider.Label(),
-		Endpoint: s.URL(), Region: s.Region, PathStyle: s.PathStyle, Bucket: s.Bucket,
+		Endpoint: s.URL(), Region: s.Region, PathStyle: s.PathStyle,
+		Bucket: s.Bucket, ScopesByBucket: s.Provider.ScopesByBucket(),
 		CredentialID: s.CredentialID, Version: s.Version, ExposedPort: s.ExposedPort,
 		Limits:           s.Limits,
 		ExternalEndpoint: s.ExternalURL(domain),
@@ -218,7 +225,10 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 
 	case errors.Is(err, ErrNotRunning), errors.Is(err, ErrExternalHasNoContainer),
-		errors.Is(err, ErrManagedFixed), errors.Is(err, ErrLinkedHasNoContainer):
+		errors.Is(err, ErrManagedFixed), errors.Is(err, ErrLinkedHasNoContainer),
+		// Nothing about the request is malformed: something else on the
+		// instance stands in the way, and the answer names it.
+		errors.Is(err, ErrAttachedElsewhere):
 		http.Error(w, err.Error(), http.StatusConflict)
 
 	case errors.Is(err, slug.ErrInvalid), errors.Is(err, slug.ErrReserved),
@@ -343,6 +353,11 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Description  *string `json:"description"`
 		CredentialID *int64  `json:"credential_id"`
+		// Bucket moves the pin, and empty is how a store is unpinned —
+		// a value rather than a gap, so leaving the field out is the
+		// only way of saying "as it is". Unpinning is accepted on any
+		// provider; pinning follows the same rule linking does.
+		Bucket *string `json:"bucket"`
 		// Limits is how much of the machine a managed store's
 		// container may take. Sent as an object so that clearing a
 		// ceiling is a value rather than a gap, and refused outright
@@ -355,7 +370,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	store, err := h.svc.Update(ctx, user.FromContext(ctx), r.PathValue("name"),
-		req.Description, req.CredentialID, req.Limits)
+		req.Description, req.CredentialID, req.Bucket, req.Limits)
 	if err != nil {
 		WriteError(w, err)
 		return

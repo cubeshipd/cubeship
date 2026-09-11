@@ -504,6 +504,43 @@ func TestABucketIsRefusedWhereTheLoginIsNotScopedToOne(t *testing.T) {
 	}
 }
 
+// Unpinning is the direction that can never be wrong, so it is accepted
+// on any provider — including one whose logins are not issued per
+// bucket, which is the only way out for a store pinned before that rule
+// existed. Pinning keeps the rule linking keeps.
+func TestAStoreCanBeUnpinnedWhateverItsProvider(t *testing.T) {
+	f := servertest.New(t)
+
+	var store map[string]any
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/objectstores", map[string]any{
+		"kind": "external", "name": "r2", "provider": "cloudflare", "account": "abc123",
+		"new_access_key": "AKIAEXAMPLE", "new_secret_key": "s3cr3t-example",
+		"bucket": "one-bucket",
+	}, f.AdminKey, &store), http.StatusCreated)
+	if store["bucket"] != "one-bucket" {
+		t.Fatalf("the store was not pinned: %+v", store)
+	}
+
+	var cleared map[string]any
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPatch, "/objectstores/r2",
+		map[string]any{"bucket": ""}, f.AdminKey, &cleared), http.StatusOK)
+	if cleared["bucket"] != nil && cleared["bucket"] != "" {
+		t.Errorf("the store is still pinned to %v", cleared["bucket"])
+	}
+
+	// And saving something else does not silently unpin it: the field
+	// is a value rather than a gap, so leaving it out is the only way
+	// of saying "as it is".
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/objectstores/r2",
+		map[string]any{"bucket": "one-bucket"}, f.AdminKey), http.StatusOK)
+	var described map[string]any
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPatch, "/objectstores/r2",
+		map[string]any{"description": "offsite"}, f.AdminKey, &described), http.StatusOK)
+	if described["bucket"] != "one-bucket" {
+		t.Errorf("saving a description unpinned the store: %+v", described["bucket"])
+	}
+}
+
 func TestAStoreCannotBeCalledProviders(t *testing.T) {
 	f, _ := withFake(t)
 	rec := f.Do(t, http.MethodPost, "/objectstores", map[string]any{
