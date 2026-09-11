@@ -1,7 +1,4 @@
 "use client";
-
-import { ChevronLeftIcon } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
@@ -43,26 +40,15 @@ function Settings({ name }: { name: string }) {
 
   return (
     <>
-      <Link
-        href={`/databases/${name}`}
-        className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
-      >
-        <ChevronLeftIcon className="size-3.5" />
-        {name}
-      </Link>
-
+      {" "}
       <PageHeader title="Database settings" />
-
       <ErrorAlert error={error} />
-
       {/* The header above is drawn from the URL and does not wait — see
           the note on the database's own page. Only what needs the
           answer waits for it. */}
       {!datastore && <LoadingList rows={3} />}
-
       {datastore && <DatabaseLimits datastore={datastore} onSaved={setDatastore} />}
       {datastore && <ExternalAccess datastore={datastore} onChanged={reload} />}
-
       {datastore && (
         <>
           <DangerZone>

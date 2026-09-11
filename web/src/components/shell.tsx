@@ -25,6 +25,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 import { Wordmark } from "@/components/brand";
 import { GitHubLink } from "@/components/github-link";
+import { HeaderRail } from "@/components/header-rail";
 import { InstanceUpdate } from "@/components/instance-update";
 import { QueryProvider } from "@/components/query-provider";
 import { ReleaseNotes, useReleaseNotes } from "@/components/release-notes";
@@ -203,7 +204,12 @@ export function Shell({ children }: { children: ReactNode }) {
             <InstanceUpdate />
 
             <main className="min-w-0 flex-1">
-              <div className="mx-auto max-w-5xl px-8 py-8">{children}</div>
+              {/* The rail is the Shell's, not the page's: where you are
+                  is a question every screen has and half of them used
+                  to answer with a hand-written "back" link. */}
+              <HeaderRail>
+                <div className="mx-auto max-w-5xl px-8 py-8">{children}</div>
+              </HeaderRail>
             </main>
           </div>
         </ReleaseNotes>

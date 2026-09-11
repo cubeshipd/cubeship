@@ -1,6 +1,5 @@
 "use client";
 
-import { ChevronLeftIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
@@ -81,24 +80,14 @@ function Settings({ reference }: { reference: string }) {
 
   return (
     <>
-      <Link
-        href={`/projects/${reference}`}
-        className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
-      >
-        <ChevronLeftIcon className="size-3.5" />
-        {reference}
-      </Link>
-
+      {" "}
       <PageHeader title="App settings" />
-
       <ErrorAlert error={error} />
-
       {/* The heading above says the same thing for every app and comes
           from the URL, so it does not wait — see the app's own page for
           why returning null until the answer lands made every
           navigation blink. */}
       {!app && <LoadingList rows={4} />}
-
       {app && (
         <>
           <AppNetwork app={app} onSaved={setApp} />

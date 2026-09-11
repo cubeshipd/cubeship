@@ -1,14 +1,6 @@
 "use client";
 
-import {
-  ChevronLeftIcon,
-  PlayIcon,
-  PlugIcon,
-  PlusIcon,
-  PowerIcon,
-  SettingsIcon,
-  Trash2Icon,
-} from "lucide-react";
+import { PlayIcon, PlugIcon, PlusIcon, PowerIcon, SettingsIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
@@ -104,14 +96,7 @@ function Detail({ name }: { name: string }) {
 
   return (
     <>
-      <Link
-        href="/storage"
-        className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
-      >
-        <ChevronLeftIcon className="size-3.5" />
-        storage
-      </Link>
-
+      {" "}
       {/* The title does not wait on the fetch: its name is in the URL,
           because we are here having asked for this store by name. */}
       <PageHeader
@@ -134,11 +119,8 @@ function Detail({ name }: { name: string }) {
           )
         }
       />
-
       <ErrorAlert error={error} />
-
       {!store && <LoadingList rows={5} />}
-
       {/* Why it did not come up is the tail of what MinIO printed, and
           it appears nowhere else — the container it came from has been
           removed. */}
@@ -154,7 +136,6 @@ function Detail({ name }: { name: string }) {
           </CardContent>
         </Card>
       )}
-
       {store && (
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
           <TabsList variant="line">

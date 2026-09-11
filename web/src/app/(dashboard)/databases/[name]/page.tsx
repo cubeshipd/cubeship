@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ChevronLeftIcon,
   EyeIcon,
   EyeOffIcon,
   PlayIcon,
@@ -101,14 +100,7 @@ function Detail({ name }: { name: string }) {
 
   return (
     <>
-      <Link
-        href="/databases"
-        className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
-      >
-        <ChevronLeftIcon className="size-3.5" />
-        databases
-      </Link>
-
+      {" "}
       {/* The header does not wait. Its name is in the URL — we are on
           this page because somebody asked for this database by name —
           so rendering it needs no round trip, and the page has a title
@@ -138,11 +130,8 @@ function Detail({ name }: { name: string }) {
           )
         }
       />
-
       <ErrorAlert error={error} />
-
       {!datastore && <LoadingList rows={5} />}
-
       {/* The reason a database did not come up is the tail of what the
           engine printed, and it appears nowhere else — the container it
           came from has been removed. */}
@@ -158,7 +147,6 @@ function Detail({ name }: { name: string }) {
           </CardContent>
         </Card>
       )}
-
       {datastore && (
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
           <TabsList variant="line">

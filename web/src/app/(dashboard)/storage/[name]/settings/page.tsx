@@ -1,6 +1,5 @@
 "use client";
 
-import { ChevronLeftIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
@@ -46,19 +45,10 @@ function Settings({ name }: { name: string }) {
 
   return (
     <>
-      <Link
-        href={`/storage/${name}`}
-        className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
-      >
-        <ChevronLeftIcon className="size-3.5" />
-        {name}
-      </Link>
-
+      {" "}
       <PageHeader title="Settings" />
       <ErrorAlert error={error} />
-
       {!store && !error && <LoadingList rows={3} />}
-
       {store && (
         <>
           <General store={store} onSaved={reload} />

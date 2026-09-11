@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeftIcon, ChevronRightIcon, KeyRoundIcon } from "lucide-react";
+import { ChevronRightIcon, KeyRoundIcon } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
@@ -62,14 +62,7 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
 
   return (
     <>
-      <Link
-        href="/dns"
-        className="mb-4 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-      >
-        <ChevronLeftIcon className="size-3.5" />
-        DNS Providers
-      </Link>
-
+      {" "}
       <PageHeader
         title={provider?.provider_name || "DNS provider"}
         icon={<Icon className="size-5 shrink-0 text-muted-foreground" />}
@@ -104,16 +97,13 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
           )
         }
       />
-
       <ErrorAlert error={error} />
-
       {zones === null && !error && (
         <div>
           <LoadingList rows={4} />
           <LoadingNote>Asking the provider which zones it holds</LoadingNote>
         </div>
       )}
-
       {zones?.length === 0 && (
         <Card>
           <CardContent className="py-2 text-sm text-muted-foreground">
@@ -122,7 +112,6 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
           </CardContent>
         </Card>
       )}
-
       {zones && zones.length > 0 && filtered.length === 0 && (
         <Card>
           <CardContent className="py-2 text-sm text-muted-foreground">
@@ -130,7 +119,6 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
           </CardContent>
         </Card>
       )}
-
       {filtered.length > 0 && (
         <Card className="py-0">
           <Table>

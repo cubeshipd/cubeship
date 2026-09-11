@@ -1,8 +1,7 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronLeftIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
-import Link from "next/link";
+import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { use, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -161,14 +160,7 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
 
   return (
     <>
-      <Link
-        href={`/dns/${id}`}
-        className="mb-4 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-      >
-        <ChevronLeftIcon className="size-3.5" />
-        {provider?.provider_name || "Zones"}
-      </Link>
-
+      {" "}
       <PageHeader
         title={name}
         literal
@@ -196,16 +188,13 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
           )
         }
       />
-
       <ErrorAlert error={error ? message(error) : null} />
-
       {missing && (
         <Notice tone="warning">
           This credential does not reach <code>{name}</code>. Either the zone is gone, or the token
           was scoped to a different one.
         </Notice>
       )}
-
       {!missing && (
         <DataTable
           columns={columns}
@@ -218,7 +207,6 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
           }
         />
       )}
-
       {editing && zone && (
         <RecordDialog
           base={base}
@@ -232,7 +220,6 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
           }}
         />
       )}
-
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(v) => !v && setDeleting(null)}

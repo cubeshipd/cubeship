@@ -1,6 +1,5 @@
 "use client";
 
-import { ChevronLeftIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useState } from "react";
@@ -47,16 +46,8 @@ function Settings({ project, env }: { project: string; env: string }) {
 
   return (
     <>
-      <Link
-        href={`/projects/${project}/${env}`}
-        className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
-      >
-        <ChevronLeftIcon className="size-3.5" />
-        {project}/{env}
-      </Link>
-
+      {" "}
       <PageHeader title="Environment settings" />
-
       <DangerZone>
         <DangerAction
           title="Delete this environment"
@@ -80,7 +71,6 @@ function Settings({ project, env }: { project: string; env: string }) {
           }
         />
       </DangerZone>
-
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}
