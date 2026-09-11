@@ -10,11 +10,11 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/registry"
+	"github.com/docker/docker/client"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/pkg/stdcopy"
@@ -253,7 +253,7 @@ func (c *Client) authForRef(ref string) (registry.AuthConfig, bool, error) {
 // without a registry in between. On one VPS the image never has to leave
 // the box.
 func (c *Client) LoadImage(ctx context.Context, r io.Reader) error {
-	resp, err := c.api.ImageLoad(ctx, r, true)
+	resp, err := c.api.ImageLoad(ctx, r, client.ImageLoadWithQuiet(true))
 	if err != nil {
 		return fmt.Errorf("load image: %w", err)
 	}
@@ -371,7 +371,7 @@ func pidMode(opts ContainerOpts) container.PidMode {
 // genuinely broken Docker setup until it resurfaces as a much more
 // confusing error at container-create time.
 func (c *Client) EnsureNetwork(ctx context.Context, name string) error {
-	if _, err := c.api.NetworkCreate(ctx, name, types.NetworkCreate{}); err != nil {
+	if _, err := c.api.NetworkCreate(ctx, name, network.CreateOptions{}); err != nil {
 		if isAlreadyExists(err) {
 			return nil
 		}

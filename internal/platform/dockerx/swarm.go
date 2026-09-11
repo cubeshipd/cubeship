@@ -6,7 +6,6 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/errdefs"
@@ -189,7 +188,7 @@ func (c *Client) NetworkExists(ctx context.Context, name string) (bool, error) {
 // removed — see mesh.Status, which is what says so rather than leaving
 // somebody to assume.
 func (c *Client) EnsureOverlayNetwork(ctx context.Context, name string) error {
-	if _, err := c.api.NetworkCreate(ctx, name, types.NetworkCreate{
+	if _, err := c.api.NetworkCreate(ctx, name, network.CreateOptions{
 		Driver:     "overlay",
 		Attachable: true,
 		// Docker reads the presence of the key, not its value.
