@@ -1218,6 +1218,25 @@ func (s *Service) NameForID(ctx context.Context, id int64) string {
 	return store.Slug
 }
 
+// LeavesThisMachine reports whether writing to this store puts the
+// bytes anywhere but the disk the daemon is running on.
+//
+// **A managed store does not.** It is a MinIO container this instance
+// runs, and its objects are a bind mount under the data directory — the
+// same disk as everything else here. Callers that care about durability
+// rather than about tidiness have to tell the two apart, and "it went
+// to an object store" is not the same question.
+//
+// A store that is gone answers false: whatever it held is unreachable,
+// which is not somewhere safe by any reading.
+func (s *Service) LeavesThisMachine(ctx context.Context, id int64) bool {
+	store, err := s.Repo().ByID(ctx, id)
+	if err != nil {
+		return false
+	}
+	return store.Kind == KindExternal
+}
+
 func (s *Service) ClientForID(ctx context.Context, id int64) (*Store, Client, error) {
 	store, err := s.Repo().ByID(ctx, id)
 	if err != nil {

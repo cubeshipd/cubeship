@@ -17,7 +17,7 @@ func NewRepository(q database.Queryer) *Repository { return &Repository{q: q} }
 // change both — and mind the queries that spell it out for a join,
 // which is where this has gone wrong elsewhere.
 const columns = `id, COALESCE(datastore_id, 0), datastore_name, engine, version,
-	COALESCE(object_store_id, 0), bucket, object_key, size_bytes,
+	COALESCE(object_store_id, 0), bucket, object_key, size_bytes, off_machine,
 	status, error, scheduled, started_at, finished_at`
 
 type scanner interface{ Scan(dest ...any) error }
@@ -26,7 +26,7 @@ func scan(row scanner) (*Backup, error) {
 	var b Backup
 	var finished sql.NullTime
 	if err := row.Scan(&b.ID, &b.DatastoreID, &b.DatastoreName, &b.Engine, &b.Version,
-		&b.StoreID, &b.Bucket, &b.Key, &b.Size,
+		&b.StoreID, &b.Bucket, &b.Key, &b.Size, &b.Off,
 		&b.Status, &b.Error, &b.Scheduled, &b.StartedAt, &finished); err != nil {
 		return nil, err
 	}
@@ -48,11 +48,11 @@ func (r *Repository) Start(ctx context.Context, b *Backup) (*Backup, error) {
 	row := r.q.QueryRowContext(ctx,
 		`INSERT INTO backups
 		   (datastore_id, datastore_name, engine, version,
-		    object_store_id, bucket, object_key, status, scheduled)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,'taking',$8)
+		    object_store_id, bucket, object_key, off_machine, status, scheduled)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'taking',$9)
 		 RETURNING `+columns,
 		datastoreID, b.DatastoreName, b.Engine, b.Version,
-		storeID, b.Bucket, b.Key, b.Scheduled)
+		storeID, b.Bucket, b.Key, b.Off, b.Scheduled)
 	created, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("start backup: %w", err)
