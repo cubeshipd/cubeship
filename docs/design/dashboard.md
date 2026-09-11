@@ -344,6 +344,52 @@ filter over the raw bytes answers "no line matches" for a word plainly
 on the screen, and a downloaded file full of escapes is one an editor
 cannot show. The panel is the only place the colour is real.
 
+### The rail above every screen
+
+`components/header-rail.tsx` is the strip the Shell puts above every
+page: where you are on the left, and whatever the screen wants there on
+the right.
+
+**The path came out of the pages.** Thirteen screens each rendered their
+own `‹ databases` link above the title, and the rest rendered nothing —
+so "where am I, and what is next to me" was answered differently on
+every one of them, or not at all. The Shell is the one place that can
+answer it once, from the URL, which is already the reference.
+
+It does **not** replace `PageHeader`. The title and the actions stay
+where they are, and on a settings screen the two say different things:
+the path is the app, the title is "App settings". A rail that swallowed
+the title would have had to swallow the buttons beside it too.
+
+**A crumb with siblings is a menu**, and that is the point of putting
+the path here rather than in a page. Reading `web/production/api` tells
+you where you are; opening `production` and landing in `staging` is the
+trip back through two screens you no longer take. Projects,
+environments, apps, databases and stores have them; a section and a
+`settings` do not.
+
+Two decisions inside that:
+
+- **The list is fetched when the menu is opened, never before.** The
+  rail is on every screen and most of the time nobody touches it, so
+  loading every project, environment and app on every navigation would
+  be a request per screen for a menu that stays shut.
+- **Switching lands on that level, not on the deep path you were on.**
+  Picking another project while looking at an app does not go looking
+  for an app of the same name in it — that app may not exist, and a menu
+  that sometimes 404s is one nobody trusts twice. An app's own peers are
+  the exception, because that list is already scoped to the environment
+  you are in.
+
+`RailPortal` is how a screen puts its own controls up there. A portal
+rather than a prop threaded down from the layout: what wants the rail is
+usually several components deep — a tab's toolbar, a table's filter —
+and a prop would have to pass through every one of them to arrive.
+
+It is **sticky**, because being reachable is the whole reason it exists,
+and the screens where switching saves the most are the long ones: a log,
+fifty environment variables, a deploy history.
+
 ### The components
 
 `src/components/ui/` is [shadcn/ui](https://ui.shadcn.com) over Base UI,

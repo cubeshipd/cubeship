@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ChevronLeftIcon,
   DownloadIcon,
   FileIcon,
   FolderIcon,
@@ -9,7 +8,6 @@ import {
   Trash2Icon,
   UploadIcon,
 } from "lucide-react";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, use, useCallback, useEffect, useRef, useState } from "react";
 import { ActionButton } from "@/components/action-button";
@@ -217,14 +215,7 @@ function Browser({ store, bucket }: { store: string; bucket: string }) {
 
   return (
     <>
-      <Link
-        href={`/storage/${store}`}
-        className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
-      >
-        <ChevronLeftIcon className="size-3.5" />
-        {store}
-      </Link>
-
+      {" "}
       <PageHeader
         title={<Breadcrumbs bucket={bucket} prefix={prefix} onGo={go} />}
         actions={
@@ -247,9 +238,7 @@ function Browser({ store, bucket }: { store: string; bucket: string }) {
           </>
         }
       />
-
       <ErrorAlert error={error} />
-
       <DataTable
         columns={columns}
         rows={listing === null ? null : entries}
@@ -261,7 +250,6 @@ function Browser({ store, bucket }: { store: string; bucket: string }) {
         onRowClick={(e) => (e.kind === "folder" ? go(e.prefix) : download(e.object))}
         empty={prefix ? "This folder is empty." : "This bucket is empty."}
       />
-
       {/* One page at a time, because a bucket has no size worth
           rendering all of. The cursor is the store's own, not an
           offset: pages of a listing that is being written to do not
@@ -290,7 +278,6 @@ function Browser({ store, bucket }: { store: string; bucket: string }) {
           </Button>
         </div>
       )}
-
       <NewFolderDialog
         store={store}
         bucket={bucket}
@@ -299,7 +286,6 @@ function Browser({ store, bucket }: { store: string; bucket: string }) {
         onOpenChange={setCreatingFolder}
         onCreated={reload}
       />
-
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}

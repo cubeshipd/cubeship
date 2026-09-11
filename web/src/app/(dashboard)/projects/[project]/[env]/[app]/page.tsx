@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  ChevronLeftIcon,
   EyeIcon,
   EyeOffIcon,
   PencilIcon,
@@ -119,7 +118,7 @@ function Detail({
 
   // Where this app came from. Built from the URL rather than from the
   // answer, so the way back is there before the answer is.
-  const environment = `/projects/${project}/${env}`;
+  const _environment = `/projects/${project}/${env}`;
 
   // Whether this app runs somewhere other than this box, which changes
   // what this screen can show: its log and its charts are that
@@ -133,14 +132,7 @@ function Detail({
 
   return (
     <>
-      <Link
-        href={environment}
-        className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
-      >
-        <ChevronLeftIcon className="size-3.5" />
-        {project}/{env}
-      </Link>
-
+      {" "}
       {/* Drawn from the URL, so it is on screen the moment you navigate
           here. This used to return null until the app arrived, which
           blanked the content area on every route change and then
@@ -173,9 +165,7 @@ function Detail({
           </>
         }
       />
-
       {!app && <LoadingList rows={5} />}
-
       {app && (
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
           {/* The line variant: labels on a rule with the live one lit,

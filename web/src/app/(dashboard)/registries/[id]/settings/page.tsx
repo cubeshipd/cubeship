@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeftIcon, KeyRoundIcon, Trash2Icon } from "lucide-react";
+import { KeyRoundIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
@@ -177,26 +177,15 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
     <>
       {/* Back to the registry, not to the list: this screen is reached
           from that one, and a settings screen that returns you two
-          levels up loses your place. */}
-      <Link
-        href={`/registries/${id}`}
-        className="mb-4 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-      >
-        <ChevronLeftIcon className="size-3.5" />
-        {credential?.host ?? "Registry"}
-      </Link>
-
+          levels up loses your place. */}{" "}
       <PageHeader
         title={credential?.host || "Registry"}
         literal
         icon={<Icon className="size-5 shrink-0 text-muted-foreground" />}
         actions={<StatusBadge value={status?.state ?? "checking"} />}
       />
-
       <ErrorAlert error={error} />
-
       {!status && !error && <LoadingNote>Checking this login against the registry</LoadingNote>}
-
       {status?.state === "unauthorized" && (
         <Notice tone="warning">
           This registry is refusing the stored login: {status.detail}. Nothing pulls through it
@@ -209,7 +198,6 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
           there may be nothing to fix here.
         </Notice>
       )}
-
       {digitalocean && (
         <>
           <SectionHeader
@@ -243,7 +231,6 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
           </Card>
         </>
       )}
-
       <SectionHeader
         title="Credential"
         sub={
@@ -252,7 +239,6 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
             : "The account this registry logs in as, stored once and used by everything else on the same provider."
         }
       />
-
       <Card>
         <CardContent>
           <form onSubmit={save} className="max-w-md space-y-4">
@@ -285,7 +271,6 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
           </form>
         </CardContent>
       </Card>
-
       <SectionHeader
         title="Login"
         sub={
@@ -339,7 +324,6 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
           </form>
         </CardContent>
       </Card>
-
       <DangerZone>
         <DangerAction
           title="Delete this registry"
@@ -357,7 +341,6 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
           }
         />
       </DangerZone>
-
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}

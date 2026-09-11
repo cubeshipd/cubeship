@@ -1,6 +1,5 @@
 "use client";
 
-import { ChevronLeftIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useState } from "react";
@@ -44,16 +43,8 @@ function Settings({ project }: { project: string }) {
 
   return (
     <>
-      <Link
-        href={`/projects/${project}`}
-        className="mb-4 inline-flex items-center gap-1.5 font-mono text-[11px] text-muted-foreground transition-colors hover:text-primary"
-      >
-        <ChevronLeftIcon className="size-3.5" />
-        {project}
-      </Link>
-
+      {" "}
       <PageHeader title="Project settings" />
-
       <DangerZone>
         <DangerAction
           title="Delete this project"
@@ -70,7 +61,6 @@ function Settings({ project }: { project: string }) {
           }
         />
       </DangerZone>
-
       <ConfirmDialog
         open={deleting}
         onOpenChange={setDeleting}

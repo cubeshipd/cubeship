@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeftIcon, ChevronRightIcon, SettingsIcon, Trash2Icon } from "lucide-react";
+import { ChevronRightIcon, SettingsIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -294,14 +294,7 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
 
   return (
     <>
-      <Link
-        href="/registries"
-        className="mb-4 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-      >
-        <ChevronLeftIcon className="size-3.5" />
-        Registries
-      </Link>
-
+      {" "}
       <PageHeader
         title={own ? "Cubeship registry" : host}
         literal={!own}
@@ -355,9 +348,7 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
           )
         }
       />
-
       <ErrorAlert error={error} />
-
       {/* The catalogue is a live call to someone else's registry, so
           this is a wait worth naming rather than an empty page. */}
       {repos === null && !error && !unsupported && (
@@ -366,14 +357,12 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
           <LoadingNote>Asking the registry what it holds</LoadingNote>
         </div>
       )}
-
       {unsupported && (
         <Notice>
           This registry does not list what it holds. Docker Hub and GitHub&apos;s disable the
           catalogue the Registry v2 API defines — that is their answer, not a failure here.
         </Notice>
       )}
-
       {repos?.length === 0 && !unsupported && (
         <Card>
           <CardContent className="py-2 text-sm text-muted-foreground">
@@ -381,7 +370,6 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
           </CardContent>
         </Card>
       )}
-
       {/* One dialog for both, because the question is the same shape
           and the count is what makes it dangerous. Typing "delete" is
           the guard rather than a name — there is no one name to type. */}
@@ -405,7 +393,6 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
         confirmWord={bulk === "repos" ? "delete my repositories" : "delete my tags"}
         onConfirm={() => deletePicked(bulk ?? "repos")}
       />
-
       {/* Deleting a tag makes it unpullable and frees nothing: a
           registry:2 unlinks the manifest and leaves the layers, which
           is what a collection pass reclaims. So this is the other half
@@ -431,7 +418,6 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
           load();
         }}
       />
-
       <ConfirmDialog
         open={deletingRepo !== null}
         onOpenChange={(open) => !open && setDeletingRepo(null)}
@@ -451,7 +437,6 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
           load();
         }}
       />
-
       <ConfirmDialog
         open={deletingTag !== null}
         onOpenChange={(open) => !open && setDeletingTag(null)}
@@ -479,7 +464,6 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
           setDeletingTag(null);
         }}
       />
-
       {repos && repos.length > 0 && filtered.length === 0 && (
         <Card>
           <CardContent className="py-2 text-sm text-muted-foreground">
@@ -487,7 +471,6 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
           </CardContent>
         </Card>
       )}
-
       {(pickedRepos.size > 0 || looseTags.length > 0) && (
         <SelectionBar
           repos={pickedRepos.size}
@@ -500,7 +483,6 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
           onDeleteTags={() => setBulk("tags")}
         />
       )}
-
       {filtered.length > 0 && (
         <Card className="py-0">
           <Table>
