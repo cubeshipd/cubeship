@@ -9,6 +9,7 @@ import {
   GlobeIcon,
   HardDriveIcon,
   LayersIcon,
+  NetworkIcon,
   PackageIcon,
 } from "lucide-react";
 import Link from "next/link";
@@ -35,6 +36,7 @@ import {
   type Bucket,
   type Datastore,
   type DNSProvider,
+  type DNSZone,
   type Environment,
   type ObjectStore,
   type Project,
@@ -132,7 +134,8 @@ type Siblings =
   | "objectstore"
   | "bucket"
   | "registry"
-  | "dnsprovider";
+  | "dnsprovider"
+  | "zone";
 
 // An option in a crumb's menu: what it is called, and what goes in the
 // path.
@@ -164,6 +167,7 @@ const MARKS: Record<Siblings, typeof BoxIcon> = {
   bucket: PackageIcon,
   registry: ContainerIcon,
   dnsprovider: GlobeIcon,
+  zone: NetworkIcon,
 };
 
 // The kinds whose path segment is an id rather than a name, so the
@@ -304,6 +308,26 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
   // being in the same place every time is what makes it a control; one
   // that appears only once a store has two buckets is one nobody learns
   // is there, and the count is not something you know before you look.
+  // A zone under a DNS provider, which is the bucket's twin: a named
+  // thing one level below a named thing, with peers worth switching to.
+  //
+  // It is addressed by its **name** rather than by the provider's id
+  // for it — a name is what somebody recognises in a link they were
+  // sent — so the label and the path are one string here.
+  if (section === "dns" && tail[0] === "zones" && tail[1]) {
+    out.push({ key: "t:zones", label: title("zones") });
+    out.push({
+      key: `z:${tail[1]}`,
+      label: decodeURIComponent(tail[1]),
+      value: decodeURIComponent(tail[1]),
+      href: tail.length > 2 ? `/dns/${name}/zones/${tail[1]}` : undefined,
+      siblings: "zone",
+      scope: name,
+    });
+    for (const word of tail.slice(2)) out.push({ key: `t:${word}`, label: title(word) });
+    return out;
+  }
+
   if (section === "storage" && tail[0] === "buckets" && tail[1]) {
     out.push({ key: "t:buckets", label: title("buckets") });
     out.push({
@@ -318,8 +342,8 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
     return out;
   }
 
-  // Everything else below one item — a zone, a record, a settings
-  // screen — is a word rather than something with peers to offer.
+  // Everything else below one item — a record, a settings screen — is a
+  // word rather than something with peers to offer.
   for (const word of tail) out.push({ key: `t:${word}`, label: title(word) });
   return out;
 }
@@ -475,6 +499,8 @@ async function siblingsOf(kind: Siblings, scope: string): Promise<Option[]> {
         label: p.provider_name,
         value: String(p.id),
       }));
+    case "zone":
+      return (await api.get<DNSZone[]>(`/dns/${above}/zones`)).map((z) => same(z.name));
   }
 }
 
@@ -503,6 +529,8 @@ function hrefFor(kind: Siblings | undefined, scope: string, name: string): strin
       return `/registries/${name}`;
     case "dnsprovider":
       return `/dns/${name}`;
+    case "zone":
+      return `/dns/${above}/zones/${encodeURIComponent(name)}`;
     default:
       return "/";
   }
