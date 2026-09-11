@@ -108,40 +108,42 @@ and cannot list them. It is pinned in both directions: that bucket is
 reported without asking the endpoint, and reaching any other is refused
 here rather than by a provider's access-denied that nobody can act on.
 
-**It is asked for where the provider's own logins are issued that way,
-and nowhere else.** `Provider.ScopesByBucket` is that answer — R2's
-tokens and a Space's access keys, both of which their consoles offer per
-bucket as the ordinary choice. An IAM policy can be narrowed to one and
-a compatible endpoint can do anything, but neither is the normal case,
-and a field offered everywhere is one somebody fills in because it is
-there: naming a bucket gives up listing, creating and deleting for the
-*whole store*, and nothing on the screen ties those two together.
+**It is offered on every provider**, and the form is what changes.
+`Provider.ScopesByBucket` says where a per-bucket login is the ordinary
+kind — R2's tokens and a Space's access keys, both of which their
+consoles hand out that way — and there the field is the expected answer.
+Everywhere else it is the unusual one, and the hint says what it costs:
+naming a bucket gives up listing, creating and deleting for the *whole
+store*.
 
-The field was very nearly removed outright for that reason, which would
-have been the mirror mistake — Spaces and R2 hand out per-bucket keys
-routinely, and a store linked with one and no way to say so has nothing
-to show. The providers are already told apart; this is one more thing
-they differ in.
+**That was a refusal for one release, and the refusal was wrong.** The
+field was accepted only where `ScopesByBucket` was true, on the grounds
+that a field offered everywhere is one somebody fills in because it is
+there. What it actually did was decide, on somebody else's behalf, what
+their credential can reach: an IAM policy narrowed to one bucket is
+ordinary, a compatible endpoint can be anything at all, and a store
+linked with such a key and no way to say so has nothing to show. It also
+bought nothing where the field *was* offered — the cost was never
+mentioned there.
 
-Named where it is not accepted, it is **refused rather than dropped**
-(`ErrBucketNotScoped`). A store that silently ignored the field would be
-one somebody believes is pinned, with every screen disagreeing. The
-providers endpoint reports `scopes_by_bucket`, so the form and the
-daemon cannot hold different opinions about where the field belongs.
+Saying what it costs and taking the answer is the same trade this
+product makes about revoking a last API key: **knowing rather than
+refusing**, with the way back one click away.
+
+Two things it is still not. A **managed** store lists its own buckets,
+so pinning one is a limit invented out of nothing (`ErrManagedFixed`).
+And a bucket name S3 itself would reject is refused where it is typed,
+by `CheckBucketName`, like every other value here that becomes part of a
+request.
 
 **And it moves afterwards, from the store's settings.** `PATCH
 /objectstores/{name}` takes `bucket`, and empty is what **unpins** —
 a value rather than a gap, so leaving the field out is the only way of
 saying "as it is" and saving a description cannot unpin a store by
-omission.
+omission. That is what makes the field safe to offer: pinning is a
+decision somebody can take back without re-linking anything.
 
-Unpinning is accepted whatever the provider is, and that asymmetry is
-deliberate: pinning narrows a store and keeps the rule above, while
-unpinning only hands the question back to the endpoint. It is also the
-only way out for a store pinned before that rule existed, which
-otherwise had to be linked again.
-
-Pinning is refused when **an attached app names a different bucket**
+Pinning is also refused when **an attached app names a different bucket**
 (`ErrAttachedElsewhere`, 409, with the app references). The app itself
 is unaffected — its keys reach the endpoint directly and `S3_BUCKET`
 comes from the attachment — so what would break is the screen: a store

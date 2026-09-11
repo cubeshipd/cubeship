@@ -130,21 +130,27 @@ func (p Provider) Asks() Asks {
 }
 
 // ScopesByBucket reports whether this provider's own credentials are
-// routinely issued for a single bucket, which is what makes naming one
-// while linking worth asking about.
+// routinely issued for a single bucket.
 //
 // R2's tokens and a Space's access keys are both commonly made that way
 // — the provider's console offers "this bucket" as the ordinary choice
 // — and a key like that cannot list, so a store linked with one has to
 // be told which bucket it is or it has nothing to show.
 //
-// **The other two are not asked, and that is the point.** An IAM policy
-// can be narrowed to one bucket and an S3-compatible endpoint can do
-// anything, but neither is the normal case, and a field offered
-// everywhere is one somebody fills in because it is there — giving up
-// listing, creating and deleting for the whole store on the strength of
-// something typed once. Where it is not offered, what a login may reach
-// is the endpoint's answer, which is how everything else here works.
+// **It decides what the form says, not what it accepts.** Naming a
+// bucket is allowed on every provider, because an IAM policy can be
+// narrowed to one and a compatible endpoint can be anything — a login
+// that reaches exactly one is a thing somebody can hold anywhere. For a
+// release it was refused instead, which made this a rule rather than a
+// hint, and the rule was wrong in both directions: it blocked a real
+// case and it said nothing about the cost where the field *was*
+// offered.
+//
+// The cost is what the hint is for. Pinning gives up listing, creating
+// and deleting every other bucket in the store, so where a login
+// normally reaches the account the field is the unusual answer and the
+// form says so; where logins are issued per bucket it is the expected
+// one.
 func (p Provider) ScopesByBucket() bool {
 	return p == ProviderCloudflare || p == ProviderDigitalOcean
 }
@@ -342,10 +348,6 @@ var (
 	// ErrBadKey is a key that would escape the prefix it is being
 	// written under, or one that is empty.
 	ErrBadKey = errors.New("invalid object key")
-	// ErrBucketNotScoped refuses a bucket named for a provider whose
-	// credentials are not issued per bucket. Naming one there gives up
-	// the whole store's listing for a limit the login does not have.
-	ErrBucketNotScoped = errors.New("this provider's logins are not scoped to one bucket, so naming one would only take the rest away")
 
 	// ErrAttachedElsewhere refuses pinning a store to a bucket that is
 	// not the one an attached app is pointed at. The store would claim
