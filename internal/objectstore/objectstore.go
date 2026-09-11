@@ -129,6 +129,26 @@ func (p Provider) Asks() Asks {
 	return AsksNothing
 }
 
+// ScopesByBucket reports whether this provider's own credentials are
+// routinely issued for a single bucket, which is what makes naming one
+// while linking worth asking about.
+//
+// R2's tokens and a Space's access keys are both commonly made that way
+// — the provider's console offers "this bucket" as the ordinary choice
+// — and a key like that cannot list, so a store linked with one has to
+// be told which bucket it is or it has nothing to show.
+//
+// **The other two are not asked, and that is the point.** An IAM policy
+// can be narrowed to one bucket and an S3-compatible endpoint can do
+// anything, but neither is the normal case, and a field offered
+// everywhere is one somebody fills in because it is there — giving up
+// listing, creating and deleting for the whole store on the strength of
+// something typed once. Where it is not offered, what a login may reach
+// is the endpoint's answer, which is how everything else here works.
+func (p Provider) ScopesByBucket() bool {
+	return p == ProviderCloudflare || p == ProviderDigitalOcean
+}
+
 // Label is the provider's name as a person writes it.
 func (p Provider) Label() string {
 	switch p {
@@ -320,6 +340,11 @@ var (
 	// ErrBadKey is a key that would escape the prefix it is being
 	// written under, or one that is empty.
 	ErrBadKey = errors.New("invalid object key")
+	// ErrBucketNotScoped refuses a bucket named for a provider whose
+	// credentials are not issued per bucket. Naming one there gives up
+	// the whole store's listing for a limit the login does not have.
+	ErrBucketNotScoped = errors.New("this provider's logins are not scoped to one bucket, so naming one would only take the rest away")
+
 	// ErrSingleBucket refuses reaching past the one bucket a store was
 	// pinned to.
 	ErrSingleBucket = errors.New("this store is one bucket, and that is not it")

@@ -179,6 +179,36 @@ func TestTheOneFieldAProviderNeedsIsRefusedWhenMissing(t *testing.T) {
 	}
 }
 
+// Naming a bucket while linking gives up listing, creating and deleting
+// every other bucket in the store, so it is asked for only where the
+// provider's own logins are issued that way — R2 tokens and a Space's
+// access keys, which their consoles offer per bucket as the ordinary
+// choice.
+//
+// Offered everywhere, it is a field somebody fills in because it is
+// there, and the store is narrowed for a limit its login does not have.
+// Every provider is listed rather than only the two, so adding one is a
+// decision about this rather than whatever the zero value happens to be.
+func TestOnlyTheProvidersWhoseLoginsAreScopedAskForABucket(t *testing.T) {
+	want := map[Provider]bool{
+		ProviderCloudflare:   true,
+		ProviderDigitalOcean: true,
+		ProviderAWS:          false,
+		ProviderGeneric:      false,
+		ProviderMinIO:        false,
+	}
+	for provider, scoped := range want {
+		if got := provider.ScopesByBucket(); got != scoped {
+			t.Errorf("%s scopes by bucket = %v, want %v", provider, got, scoped)
+		}
+	}
+	for _, p := range Providers() {
+		if _, listed := want[p]; !listed {
+			t.Errorf("%s can be linked and nothing here decides whether it asks for a bucket", p)
+		}
+	}
+}
+
 // A managed store's endpoint is derived from its own container name, so
 // it stays correct through anything that changes about the network and
 // there is no column that can drift from it.

@@ -326,6 +326,12 @@ func (s *Service) Link(ctx context.Context, caller *user.User, spec LinkSpec, lo
 		Bucket: strings.TrimSpace(spec.Bucket), Status: StatusLinked,
 	}
 	if store.Bucket != "" {
+		// Refused rather than ignored: a store that quietly dropped the
+		// bucket would be one somebody believes is pinned, and every
+		// screen would disagree with them.
+		if !store.Provider.ScopesByBucket() {
+			return nil, ErrBucketNotScoped
+		}
 		if err := CheckBucketName(store.Bucket); err != nil {
 			return nil, err
 		}

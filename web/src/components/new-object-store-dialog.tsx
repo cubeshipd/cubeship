@@ -91,7 +91,9 @@ export function NewObjectStoreDialog({
       .catch(() => setCredentials([]));
   }, [open]);
 
-  const asks = catalogue?.providers.find((p) => p.provider === provider)?.asks;
+  const chosen = catalogue?.providers.find((p) => p.provider === provider);
+  const asks = chosen?.asks;
+  const scoped = chosen?.scopes_by_bucket ?? false;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -249,13 +251,20 @@ export function NewObjectStoreDialog({
                   </>
                 )}
 
-                <TextField
-                  label="Bucket"
-                  value={bucket}
-                  spellCheck={false}
-                  onChange={(e) => setBucket(e.target.value)}
-                  hint="Only for a key that reaches one bucket and may not list them. Naming one pins the store to it."
-                />
+                {/* Only where the provider's own logins are issued per
+                    bucket. Offered everywhere it was a field somebody
+                    filled in because it was there, and naming one gives
+                    up listing, creating and deleting for the whole
+                    store. */}
+                {scoped && (
+                  <TextField
+                    label="Bucket"
+                    value={bucket}
+                    spellCheck={false}
+                    onChange={(e) => setBucket(e.target.value)}
+                    hint="Optional, and only for a key issued for one bucket. Leave it empty for a key that reaches the account — naming one here is the store giving up every other bucket, including making new ones."
+                  />
+                )}
               </>
             )}
 

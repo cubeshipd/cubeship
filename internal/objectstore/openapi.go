@@ -59,7 +59,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"endpoint":          openapi.String("Where this answers, as a client dials it. For a managed store it is its own container's name on the shared Docker network — which is exactly why it is reachable from an app on this instance and from nowhere else."),
 				"region":            openapi.String("What a request's signature is computed for. Every S3 signature carries one whether the provider has regions or not."),
 				"path_style":        openapi.Bool("Whether the bucket goes in the path rather than in the hostname. Half the S3 clients need telling and the other half guess wrong, so it is reported."),
-				"bucket":            openapi.String("The one bucket this store is pinned to, for a login that reaches exactly one and cannot list them. Absent for a store that lists its own."),
+				"bucket":            openapi.String("The one bucket this store is pinned to, for a login that reaches exactly one and cannot list them. Absent for a store that lists its own, which is the normal case — see `scopes_by_bucket` on the providers list for where naming one is even accepted."),
 				"credential_id":     openapi.Integer("The stored account an external store authenticates as. Absent on a managed one, whose keys are its own."),
 				"version":           openapi.String("The MinIO release a managed store runs. Permanent: a data directory belongs to the server that wrote it."),
 				"exposed_port":      openapi.Integer("The host port a managed store also answers on from outside this instance. Absent when it does not, which is the default." + exposeWarning),
@@ -96,10 +96,11 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			}, "providers", "versions"),
 
 			"ObjectStoreProvider": openapi.Object(map[string]*openapi.Schema{
-				"provider": openapi.String(""),
-				"label":    openapi.String("The provider's name as a person writes it."),
-				"asks":     {Type: "string", Enum: []string{"region", "account", "endpoint"}, Description: "The one field this provider needs beyond the login, because its endpoint is a template with one variable in it. `endpoint` means the whole address is typed."},
-			}, "provider", "label", "asks"),
+				"provider":         openapi.String(""),
+				"label":            openapi.String("The provider's name as a person writes it."),
+				"asks":             {Type: "string", Enum: []string{"region", "account", "endpoint"}, Description: "The one field this provider needs beyond the login, because its endpoint is a template with one variable in it. `endpoint` means the whole address is typed."},
+				"scopes_by_bucket": openapi.Bool("Whether this provider's own logins are commonly issued for a single bucket — R2's tokens, a Space's access keys. A form should offer the optional `bucket` field where it is true and nowhere else: elsewhere a login reaches the account, and naming a bucket pins the store for a limit it does not have. `POST /objectstores/link` refuses one for a provider where this is false."),
+			}, "provider", "label", "asks", "scopes_by_bucket"),
 
 			"Bucket": openapi.Object(map[string]*openapi.Schema{
 				"name":       openapi.String(""),
@@ -158,7 +159,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"region":   openapi.String("external: required for `aws` and `digitalocean`, whose endpoints are derived from it. Optional for `generic`."),
 						"account":  openapi.String("external: required for `cloudflare` — R2's endpoint is named after the account id."),
 						"endpoint": openapi.String("external: required for `generic`. A URL is accepted and taken apart, because that is what a provider's console shows: `https://s3.eu-central-1.wasabisys.com`."),
-						"bucket":   openapi.String("external: pin this store to one bucket, for a login that reaches exactly one and cannot list them — an R2 token scoped to a bucket, an IAM policy without ListAllMyBuckets. Omit for the normal case."),
+						"bucket":   openapi.String("external: pin this store to one bucket, for a login that was issued for exactly one and cannot list them — an R2 token, a Space's access key. Omit for the normal case, which is a login that reaches the account.\n\n**Accepted only where the provider's logins work that way**, which `scopes_by_bucket` on `GET /objectstores/providers` reports; anywhere else it is refused rather than ignored, because pinning a store gives up listing, creating and deleting every other bucket in it and a store that silently dropped the field would be one somebody believes is pinned."),
 
 						"credential_id":  openapi.Integer("external: the stored account this store authenticates as, whose username is the access key id and whose secret is the secret key."),
 						"new_access_key": openapi.String("external: an access key id typed here instead of choosing a stored account. A credential is a convenience, not a prerequisite — the account is created from these in the same transaction and turns up under credentials afterwards, ready to be picked for the next store. Refused together with `credential_id`."),

@@ -919,6 +919,12 @@ export type ObjectStoreProviderInfo = {
   provider: ObjectStoreProvider;
   label: string;
   asks: "region" | "account" | "endpoint";
+  // Whether this provider's own logins are commonly issued for a single
+  // bucket — R2's tokens, a Space's access keys. The link form offers
+  // the optional bucket field only where it is true: everywhere else a
+  // login reaches the account, and naming a bucket would take the rest
+  // of the store away for a limit it does not have.
+  scopes_by_bucket: boolean;
 };
 
 export type ObjectStoreProviders = {
