@@ -24,7 +24,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useEffect, useState } from "react";
 import { Wordmark } from "@/components/brand";
-import { GitHubLink } from "@/components/github-link";
+import { GitHubStar } from "@/components/github-star";
 import { HeaderRail } from "@/components/header-rail";
 import { InstanceUpdate } from "@/components/instance-update";
 import { QueryProvider } from "@/components/query-provider";
@@ -192,12 +192,14 @@ export function Shell({ children }: { children: ReactNode }) {
                 ))}
               </div>
 
-              <div className="flex items-center gap-1 border-t border-border p-2">
+              {/* The account button and nothing beside it. The link to
+                  the repository shared this row as an icon and a
+                  number, which is a link nobody reads as an invitation
+                  taking width from the one control down here that
+                  people use — it is an item in the menu now, where it
+                  can ask. */}
+              <div className="border-t border-border p-2">
                 <UserMenu me={me} />
-                {/* The one link out of the instance, and the one place it
-                  is: it was in the menu as well, which is two doors to
-                  one room. */}
-                <GitHubLink />
               </div>
             </nav>
 
@@ -257,7 +259,7 @@ function UserMenu({ me }: { me: Me }) {
         render={
           <button
             type="button"
-            className="flex min-w-0 flex-1 items-center gap-2.5 border border-transparent px-2 py-2 text-left text-sm transition-colors hover:border-border hover:bg-secondary"
+            className="flex w-full min-w-0 items-center gap-2.5 border border-transparent px-2 py-2 text-left text-sm transition-colors hover:border-border hover:bg-secondary"
           >
             <span className="flex size-6 shrink-0 items-center justify-center border border-primary/40 bg-primary/10 font-mono text-[11px] text-primary">
               {me.username.slice(0, 2)}
@@ -285,6 +287,7 @@ function UserMenu({ me }: { me: Me }) {
           <SparklesIcon />
           Release notes
         </DropdownMenuItem>
+        <GitHubStar />
         <DropdownMenuSeparator />
         <DropdownMenuItem
           onClick={async () => {
