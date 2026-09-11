@@ -461,12 +461,25 @@ func (c *counter) Write(p []byte) (int, error) {
 // KeyFor is what a backup is called where it lands.
 //
 // The database's name and the moment, in a path a person reading a
-// bucket listing can sort and recognise. The timestamp is UTC and
-// second-resolution: two backups of one database in the same second is
-// somebody pressing a button twice, and the second one failing on the
-// name is better than it overwriting the first.
+// bucket listing can sort and recognise. UTC and zero-padded, so
+// sorting the listing lexically puts the oldest first.
+//
+// **To the millisecond, because a second is not fine enough to be an
+// identity.** It was seconds, on the reasoning that two dumps of one
+// database in the same second is somebody pressing a button twice and
+// that the second one failing on the name beats it overwriting the
+// first. Both halves of that were wrong. Only the local path failed —
+// it opens with O_EXCL — while a bucket took the second object straight
+// over the first, so the same act had two outcomes depending on where
+// the dump was going. And the "failure" is recorded as a failed backup:
+// indistinguishable on screen from the engine refusing, and never
+// pruned, because a failed row is kept as evidence that a schedule is
+// broken.
+//
+// There was a third answer neither half considered, which is to make
+// the name unique. Nothing overwrites and nothing fails.
 func KeyFor(datastore string, at time.Time) string {
-	return fmt.Sprintf("cubeship/%s/%s.dump", datastore, at.Format("2006-01-02T150405Z"))
+	return fmt.Sprintf("cubeship/%s/%s.dump", datastore, at.Format("2006-01-02T150405.000Z"))
 }
 
 // Restore loads a backup back into the database it came from.

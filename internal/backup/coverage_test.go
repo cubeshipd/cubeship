@@ -83,10 +83,12 @@ func TestADumpOnThisMachineIsNotBeingProtected(t *testing.T) {
 	}
 
 	// The same dump, sent somewhere else.
-	f.linkStore(t, "dumps")
-	f.schedule(t, "pg", map[string]any{
-		"at": "03:00", "timezone": "UTC", "keep": 7, "store": "dumps", "bucket": "backups",
-	})
+	f.linkStore(t, "offsite")
+	if code := f.schedule(t, "pg", map[string]any{
+		"at": "03:00", "timezone": "UTC", "keep": 7, "store": "offsite", "bucket": "dumps",
+	}); code != http.StatusOK {
+		t.Fatalf("set a schedule: %d", code)
+	}
 	f.take(t, "pg")
 
 	row = coverage(t, f)["pg"]
@@ -103,10 +105,15 @@ func TestADumpOnThisMachineIsNotBeingProtected(t *testing.T) {
 func TestADatabaseCanBeProtectedAndFailingAtOnce(t *testing.T) {
 	f := newFixture(t)
 	f.database(t, "pg", "postgres")
-	f.linkStore(t, "dumps")
-	f.schedule(t, "pg", map[string]any{
-		"at": "03:00", "timezone": "UTC", "keep": 0, "store": "dumps", "bucket": "backups",
-	})
+	f.linkStore(t, "offsite")
+	// keep 0 is "prune nothing", which this test needs: it is about a
+	// good dump and a failed one being reported apart, and retention
+	// would be a second thing deciding which rows are there.
+	if code := f.schedule(t, "pg", map[string]any{
+		"at": "03:00", "timezone": "UTC", "keep": 0, "store": "offsite", "bucket": "dumps",
+	}); code != http.StatusOK {
+		t.Fatalf("set a schedule: %d", code)
+	}
 	f.take(t, "pg")
 
 	// And then the engine starts refusing.
@@ -155,7 +162,7 @@ func TestTheOrphansAreListedApartFromTheRest(t *testing.T) {
 	f.take(t, "other")
 
 	rec := f.Do(t, http.MethodDelete, "/datastores/pg", nil, f.AdminKey)
-	if rec.Code != http.StatusNoContent {
+	if rec.Code != http.StatusOK {
 		t.Fatalf("delete pg: %d %s", rec.Code, rec.Body.String())
 	}
 
@@ -202,9 +209,11 @@ func TestADumpIntoThisInstancesOwnMinIOHasNotLeftTheMachine(t *testing.T) {
 		t.Fatalf("create a managed store: %d %s", rec.Code, rec.Body.String())
 	}
 	f.Server.ObjectStores.WaitForProvisioning()
-	f.schedule(t, "pg", map[string]any{
+	if code := f.schedule(t, "pg", map[string]any{
 		"at": "03:00", "timezone": "UTC", "keep": 7, "store": "local", "bucket": "dumps",
-	})
+	}); code != http.StatusOK {
+		t.Fatalf("set a schedule: %d", code)
+	}
 
 	row := f.take(t, "pg")
 	if row.Status != "succeeded" {
