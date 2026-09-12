@@ -30,13 +30,17 @@ export function fail(error: unknown): Response {
   );
 }
 
-// context is optional so a test can call a handler with a Request alone.
-type Handler = (
+// Params is a generic so a catch-all segment (string[]) types the same
+// way a plain one (string) does. context is optional so a test can call
+// a handler with a Request alone.
+type Handler<Params extends Record<string, string | string[]> = Record<string, string>> = (
   request: Request,
-  context?: { params: Promise<Record<string, string>> },
+  context?: { params: Promise<Params> },
 ) => Promise<Response>;
 
-export function route(handler: Handler): Handler {
+export function route<Params extends Record<string, string | string[]> = Record<string, string>>(
+  handler: Handler<Params>,
+): Handler<Params> {
   return async (request, context) => {
     try {
       return await handler(request, context);
