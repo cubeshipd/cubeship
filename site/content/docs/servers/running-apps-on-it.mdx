@@ -1,0 +1,70 @@
+---
+title: Running apps on it
+description: What changes about an app once there is more than one machine — and what does not.
+---
+
+Everything about placing an app — machines, copies, spread, autoscaling
+— is in [Placement](/docs/apps/placement). This page is what is
+different about a cluster from the app's point of view.
+
+## One front door
+
+**Every name arrives at the control plane.** Its proxy is the load
+balancer for the whole instance: one router per name whose backends are
+every copy of that app, anywhere. A worker runs no proxy at all — no
+certificate store, no :80 and :443 held open.
+
+The certificate decided this. A machine that routes a name asks Let's
+Encrypt for it on its own :443, so a machine the DNS record does not
+point at fails that challenge every time, for ever, spending a limit
+shared with everyone under the same registered domain. One door means
+one record per name, one certificate store, and an app that moves
+without touching either.
+
+What it costs, plainly: all app traffic arrives at one box, so it stops
+when that box does — while an app survives a copy, or a whole worker,
+going away.
+
+## The backends are names
+
+The proxy's backends are container names, which resolve from any
+machine on the mesh. A copy that has gone refuses the connection, so a
+request is retried once on the next copy and the visitor sees nothing.
+A copy that is up and broken is what a [health check](/docs/apps/health-checks)
+is for.
+
+## Deploys
+
+The control plane resolves the image and stops; each machine the app is
+on creates its own container and reports back. A deploy is `pending`
+until every machine has it, fails at once if any machine fails, and
+stays pending — naming the machine — if one has gone silent. Rolling
+across the copies on one machine, one at a time. See
+[Deploys](/docs/apps/deploys#on-more-than-one-machine).
+
+A worker pulls a registry app's image from the instance's registry as
+itself, with a credential that can pull and nothing else. A built image
+reaches a worker the same way, which is why an app that builds can only
+leave the control plane once the instance has a domain.
+
+## Logs and charts are per machine
+
+A log belongs to one container. `cubeship app logs shop/api --server
+eu-1` names which, and the Logs tab has a picker; the default is the
+control plane. The request waits for the machine's next poll — about a
+second — and the same bytes come back.
+
+A chart is one series with a reading per copy in each bucket: the line
+is the average across the app's copies and the peak is the busiest
+one's.
+
+## Ceilings travel
+
+A [limit](/docs/apps/limits) set here reaches a copy on a worker within
+ten seconds, on the running container, without a redeploy.
+
+## Status
+
+`degraded` — some copies serving and some not — only exists with more
+than one machine, and **split** — machines not all on the same
+deployment — is reported beside the status. See [Apps](/docs/apps#status).

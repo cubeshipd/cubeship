@@ -1,0 +1,68 @@
+---
+title: Adding a server
+description: Two steps that do not touch each other — the instance mints a credential, and you run the installer on the new box with it.
+---
+
+## 1. Add it here
+
+```bash
+cubeship server add eu-1
+cubeship server add eu-1 --description "Hetzner CX32, Falkenstein"
+```
+
+Or **Add server** on the Servers screen. The name is permanent — it is
+how every screen and every placement refers to the machine — and is a
+slug like everything else.
+
+This **mints a credential and contacts nothing**. The row is a place
+for a machine that does not exist yet. The credential is shown once;
+only its hash is kept, so a machine whose token was lost is removed and
+added again.
+
+What comes back is the other half:
+
+```bash
+curl -fsSL https://cubeship.dev/install.sh | sh -s -- \
+  --control-plane https://cubeship.example.com --token <token>
+```
+
+## 2. Run that on the new box
+
+As root, on a fresh Debian or Ubuntu with ports it can reach the
+control plane from. The installer:
+
+- installs Docker if the box has not got it;
+- pulls the daemon's image — and not the dashboard's, which a worker
+  never serves;
+- starts the daemon as a worker, with the control plane's address and
+  the credential;
+- waits for the line in its log that says the first reconcile went
+  through, because a worker has no port to poll.
+
+`--control-plane` without `--token`, or the reverse, is refused: half a
+worker is not a mode.
+
+## 3. Watch it join
+
+```bash
+cubeship server list
+```
+
+The machine goes from `pending` to `ready` on its first call, within
+ten seconds of the daemon starting. The `MESH` column says whether it
+made it onto the cluster's network, which is the thing that can fail
+while the call home succeeds — see [The mesh](/docs/servers/the-mesh).
+
+## The instance needs a public address
+
+The mesh comes up on the first `server add`, and it needs the control
+plane to have an address the new machine can dial. An instance with no
+domain — not even its sslip.io one — is refused there, with the reason,
+rather than producing a server that says `ready` and can reach nothing.
+
+## A second machine to build on
+
+Builds always happen on the control plane, wherever the app runs. An app
+that builds can be placed on a worker
+[once the instance has a domain](/docs/apps/source-git#where-the-build-happens),
+because the image reaches the worker through the instance's registry.
