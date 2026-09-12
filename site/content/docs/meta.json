@@ -1,6 +1,7 @@
 {
   "title": "Docs",
   "pages": [
+    "index",
     "getting-started",
     "projects",
     "apps",
