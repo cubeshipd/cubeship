@@ -1,0 +1,30 @@
+---
+title: First five minutes
+description: Claim the instance with the setup token, then give it a domain — or don't, and let it name itself.
+---
+
+## Claim the instance
+
+Open the address the installer printed — `http://<your-ip>:3000` — and
+create the first account. It asks for the **setup token**, which the
+installer printed and which is also in `/var/lib/cubeship/setup-token`.
+
+That token is the point: without it, whoever reaches the page first is
+the admin of your machine. With it, claiming the instance takes access
+to the host, which is what it always meant to require. The file is
+deleted the moment setup succeeds.
+
+The first account is an admin, and it is the only account setup ever
+makes. Everyone after is invited from **Account → Users**.
+
+## Give it a domain
+
+Point a name at the server's IP and set it in **Settings**. From then on
+the instance answers there over HTTPS, and so does everything you deploy.
+
+<Callout title="You do not need one to start">
+With no domain, Cubeship gives itself an [sslip.io](https://sslip.io)
+address — a name that resolves to your IP without anything being
+registered anywhere — so certificates and app names work on a box you
+set up five minutes ago.
+</Callout>

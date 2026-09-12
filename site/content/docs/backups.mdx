@@ -1,0 +1,39 @@
+---
+title: Backups
+description: Postgres, MySQL, MariaDB and MongoDB dumped on a schedule into a bucket off the machine, and restored from the same screen.
+---
+
+Postgres, MySQL, MariaDB and MongoDB are dumped the way their own tools
+do it, on a schedule or on demand, from the **Backups** tab of the
+database's settings.
+
+- **A time of day, a timezone, and how many to keep.** Retention counts
+  only the dumps that worked: a week of failures never pushes out the
+  last good one.
+- **Into a bucket, off the machine.** Link an object store and the dump
+  streams straight into it without landing on this box's disk — a
+  database larger than the disk under it is still a backup. With nothing
+  linked it is written locally, which is a copy on the same disk as the
+  database, and every screen showing one says so.
+- **Restored from the same screen**, into the database it came from,
+  after typing that database's name.
+- **Kept when the database is deleted**, which is the moment they
+  matter. **Backups** under Platform says what every database is covered
+  by, worst first, and holds the dumps whose database is gone.
+
+<Callout title="Redis is not in the list, on purpose">
+It is a cache and a queue on a box this size, and there is no good
+answer to what a nightly copy of one would be restored *to*.
+</Callout>
+
+## The instance itself
+
+**The instance backs itself up the same way** — its own Postgres, with
+every account, project, app, credential and attachment in it, plus the
+certificate store and the project pictures — under **Settings →
+Backups**.
+
+There is no button to put that one back, because the thing it would
+replace is the database the button runs on. Restoring an instance is a
+fresh install, the daemon stopped, the dump loaded and the files put in
+place — and the screen says so where the button would be.

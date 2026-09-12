@@ -1,0 +1,18 @@
+{
+  "title": "Docs",
+  "pages": [
+    "index",
+    "install",
+    "first-five-minutes",
+    "deploy-an-app",
+    "databases-and-storage",
+    "backups",
+    "more-machines",
+    "limits-and-autoscaling",
+    "cli",
+    "mcp",
+    "upgrading",
+    "uninstalling",
+    "what-reaches-the-internet"
+  ]
+}

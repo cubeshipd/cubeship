@@ -1,0 +1,31 @@
+---
+title: Databases and storage
+description: A database belongs to the instance, not to a project. Attach it and the app gets its URL from the next deploy.
+---
+
+A database belongs to the **instance**, not to a project: on one box the
+usual shape is a single Postgres serving several small apps, and those
+apps are routinely in different projects.
+
+```bash
+cubeship db create pg --engine postgres
+cubeship db attach pg --app myproject/production/api
+```
+
+The app receives `DATABASE_URL` and its parts in its own environment
+from its next deploy — nothing to copy, and no credential passing
+through your hands. A second database on one app takes a prefix.
+
+Object storage works the same way: a MinIO Cubeship runs, or an S3
+bucket you already have. An attached app gets `S3_ENDPOINT`,
+`S3_BUCKET`, the keys and the rest.
+
+## Environment variables
+
+Variables are set at three levels, and an app inherits all of them:
+project, then environment, then the app's own, each overriding the last.
+An attached database contributes a fourth layer nobody types, between the
+environment's and the app's own — more specific than the environment it
+is in, and still beaten by an app's own variable, which is how you point
+an app somewhere else without detaching anything. The environment screen
+says where every value came from.

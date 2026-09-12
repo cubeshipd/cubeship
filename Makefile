@@ -72,6 +72,10 @@ web-dev: ## Run the dashboard for `make dev`, with hot reload
 web-preview: ## Run the dashboard on invented data, with no daemon behind it
 	cd $(WEBDIR) && NEXT_PUBLIC_CUBESHIP_MOCK=1 $(PNPM) run dev
 
+.PHONY: site-dev
+site-dev: ## Run cubeship.dev — the landing page and the docs — with hot reload
+	cd site && $(PNPM) run dev
+
 .PHONY: install
 install: ## Install the CLI into GOBIN
 	$(GO) install ./cmd/cubeship

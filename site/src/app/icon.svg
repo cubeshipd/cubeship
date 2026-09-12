@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+<title>Cubeship</title>
+<rect width="100" height="100" fill="#05070a"/>
+<polygon points="50.00,16.00 79.44,33.00 50.00,50.00 20.56,33.00" fill="#2de2e6" fill-opacity=".16"/>
+<polygon points="20.56,33.00 50.00,50.00 50.00,84.00 20.56,67.00" fill="#2de2e6" fill-opacity=".08"/>
+<polygon points="79.44,33.00 79.44,67.00 50.00,84.00 50.00,50.00" fill="#2de2e6" fill-opacity=".04"/>
+<polygon points="50.00,16.00 79.44,33.00 79.44,67.00 50.00,84.00 20.56,67.00 20.56,33.00" stroke="#2de2e6" stroke-width="7" fill="none" stroke-linejoin="miter"/><path d="M20.56 33.00 L50.00 50.00 M50.00 50.00 L79.44 33.00" stroke="#2de2e6" stroke-width="7" fill="none"/><path d="M50.00 50.00 L50.00 84.00" stroke="#2de2e6" stroke-width="7" fill="none"/>
+</svg>

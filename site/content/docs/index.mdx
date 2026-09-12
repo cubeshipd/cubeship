@@ -1,0 +1,41 @@
+---
+title: What Cubeship is
+description: A PaaS you run on your own server — one VPS, or a cluster when one stops being enough.
+---
+
+Cubeship is a PaaS you run on your own server. `docker push`, and the app
+is live — with HTTPS, a database beside it, backups, and a second
+machine when one stops being enough. Everything it does is an HTTP API,
+so the dashboard, the CLI and an agent over MCP are three doors into the
+same building.
+
+## What you get
+
+One command on a fresh VPS, and the box is running:
+
+| | |
+| --- | --- |
+| **A dashboard** | at your instance's address, over HTTPS |
+| **A registry** | `docker push` to it and the app deploys |
+| **Zero-downtime deploys** | the new container has to look healthy before the old one goes |
+| **Certificates** | Let's Encrypt, renewed for you, nothing to configure |
+| **Databases** | Postgres, MySQL, MariaDB, Redis, MongoDB — one click, wired into the app's environment |
+| **Object storage** | a MinIO on the box, or your own S3 bucket |
+| **Backups** | every database dumped on a schedule into a bucket off the machine, and restored from the same screen |
+| **Builds** | from a Dockerfile, or from a repository with no Dockerfile at all |
+| **More machines** | add a second server and apps spread across both |
+| **Charts** | what every container is using, and what the machine underneath is doing |
+| **An API, a CLI and MCP** | everything the dashboard does, scriptable — and an endpoint an agent drives directly |
+
+Everything Cubeship runs is a container, the daemon included: Postgres,
+the registry, the proxy, the builder and every app of yours are its
+siblings on one network. Nothing else is installed on the host.
+
+## Where to start
+
+<Cards>
+  <Card title="Install" href="/docs/install" description="One command on the server, as root." />
+  <Card title="First five minutes" href="/docs/first-five-minutes" description="Claim the instance and give it a domain." />
+  <Card title="Deploy an app" href="/docs/deploy-an-app" description="Push an image, run one from anywhere, or build from Git." />
+  <Card title="MCP" href="/docs/mcp" description="Point an agent at the same API." />
+</Cards>

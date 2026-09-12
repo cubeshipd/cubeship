@@ -1,0 +1,51 @@
+---
+title: Install
+description: One command on the server, as root. It installs Docker, pulls two images, and prints the address to open.
+---
+
+On the server, as root:
+
+```bash
+curl -fsSL https://cubeship.dev/install.sh | sh
+```
+
+It installs Docker if the box has not got it, pulls two images, starts
+the daemon, and prints the address to open and the token to claim it
+with.
+
+It is [one file](https://github.com/cubeshipd/cubeship/blob/master/install.sh)
+— read it first if you would rather not pipe a script into a shell,
+which is a reasonable thing to prefer.
+
+**It installs an exact release**, not a moving tag: it asks which
+release is newest and pins that number, so running the same command
+again tomorrow gives you the same thing. To choose:
+
+```bash
+curl -fsSL https://cubeship.dev/install.sh | sh -s -- --version 0.6.0
+```
+
+A version with a `-rc.1` on it is a release candidate. They are
+published like any other release and are never what you get by default.
+
+## What it needs
+
+- **Linux**, x86-64 or arm64. Debian and Ubuntu are what the installer
+  knows how to put Docker on; on anything else, install Docker first and
+  the script will use it.
+- **Ports 80 and 443** free, for the proxy and for certificates.
+- **Port 3000** free on the first install — it is where you claim the
+  instance before it has a domain. The installer refuses rather than
+  fighting whatever is already there.
+- Root, because it installs Docker and writes to `/var/lib/cubeship`.
+
+## Installing your own build
+
+To run your own code instead of a published release, put the repository
+on the server and build there. The build runs inside Docker, so the
+server needs no Go and no Node:
+
+```bash
+git clone https://github.com/cubeshipd/cubeship && cd cubeship
+sudo ./install.sh --local
+```
