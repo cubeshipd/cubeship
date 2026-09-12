@@ -1,0 +1,77 @@
+---
+title: The mesh
+description: The private network between the machines — Docker's overlay, encrypted, three ports, and the one thing it cannot do.
+---
+
+The machines share a private network on which container names mean the
+same thing everywhere: `cubeship-db-pg` reaches the database from a
+worker exactly as it does from the control plane, and an app's
+[internal address](/docs/apps/internal-address) reaches it wherever its
+copies are.
+
+## What it is
+
+Docker's own **overlay network**, and nothing else about Docker Swarm.
+Swarm's scheduler, its store, its services and secrets are not used —
+Cubeship decides what runs where, and a second thing deciding that would
+be two answers to one question. What is used is the wire, and with it
+the embedded DNS that makes a name resolve on every machine.
+
+It is a second network beside the local `cubeship` bridge, not a
+replacement: a container joins it the next time it is created, so
+adding a machine leaves everything running, and **a redeploy is what
+puts an app on the cluster's network**.
+
+Three kinds of container join it: apps, databases and managed object
+stores — the three an attachment addresses by name. Postgres, the
+builder and the dashboard are the control plane's own, and the proxy is
+each machine's own edge.
+
+## Encrypted
+
+**The network is encrypted, and that is the traffic.** TLS ends at the
+control plane's proxy; what crosses the wire between two boxes is plain
+HTTP with its Authorization headers and session cookies in it, plus
+every connection an app makes to a database on another machine. Between
+two VPS that is the provider's network and quite possibly the internet.
+
+The cost is IPsec in the kernel with AES-GCM, on hardware that has
+accelerated it for fifteen years — proportional to bytes, and less per
+packet than the VXLAN encapsulation it rides on.
+
+Docker fixes encryption when the network is created. An instance whose
+mesh came up on a release before this asked for it keeps an unencrypted
+one; `cubeship server list` says so under the table, and `GET
+/nodes/mesh` is the API for it. The fix — removing the overlay and
+letting it come up again — takes every container off the cluster's
+network until each is created again, so it is not done behind your
+back.
+
+## Three ports
+
+| Port | For |
+| --- | --- |
+| `2377` | joining — only the control plane listens |
+| `7946` | the gossip that carries which container is where |
+| `4789` | the VXLAN the traffic goes over |
+
+They are opened on each machine's own [firewall](/docs/networking/firewall)
+**scoped to the other machines' addresses**, so a cluster port is open
+to the cluster and not to the internet. Firewall first, then join, on
+every machine: joined first, a machine joins and then cannot be reached.
+
+Rules are added when the peer set changes and never removed on their
+own.
+
+## What it cannot do
+
+**A machine behind NAT cannot be on the mesh.** The data plane is VXLAN
+between the nodes themselves, so they have to reach each other
+directly. Such a machine still joins, reports and runs what it is told
+— its containers just cannot reach the other machines'. That is the
+limit the design pays for everything else with.
+
+**A firewall at your provider is still yours.** Hetzner, DigitalOcean,
+Contabo and AWS filter in front of the machine, and the rules Cubeship
+writes do not reach that layer. Open the three ports there, between the
+machines, as well.

@@ -1,0 +1,41 @@
+---
+title: Removing a server
+description: A local act. The row and its credential go, the agent is refused, and nothing on the box is touched.
+---
+
+```bash
+cubeship app place shop/api --on control-plane    # move what is on it first
+cubeship server remove eu-1 --yes
+```
+
+Or the row action on the Servers screen.
+
+## What it does
+
+The row and its credential go, and the agent is refused the next time
+it calls home. **Nothing on that machine is touched**: the containers it
+is running keep running until you stop them, and uninstalling the
+daemon there is a separate thing you do on the box:
+
+```bash
+sudo ./uninstall.sh          # on the worker
+```
+
+A delete that reached out would be one that hangs on a host nobody can
+dial.
+
+## What is refused
+
+A machine with apps placed on it. Where those apps should go is a
+decision, and making it by deleting a row would make it invisibly —
+`cubeship app place` them elsewhere first. An app that
+[follows the cluster](/docs/apps/placement#machines-count-spread)
+leaves on its own.
+
+## The firewall rules stay
+
+The three mesh ports opened towards the machine's address are not
+removed: a rule admitting an address that used to be a peer is harmless,
+and one removed while the cluster still needs it is a machine dropping
+off the network. Tidy them on the [Firewall](/docs/networking/firewall)
+screen if you want them gone.
