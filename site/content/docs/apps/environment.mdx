@@ -1,0 +1,64 @@
+---
+title: Environment variables
+description: An app inherits its project's variables, then its environment's, then an attached database's, then its own — each overriding the last. The screen says where every value came from.
+---
+
+An app's container runs with the merge of four layers, each overriding
+the last:
+
+```
+project           shared by every environment and app in the project
+  environment     shared by every app in this environment
+    datastore     what an attached database contributes — DATABASE_URL and its parts
+      app         the app's own
+```
+
+Set the first two on the project's and the environment's settings; the
+third comes from [attaching a database](/docs/databases/attaching); the
+fourth is the app's **Environment** tab.
+
+The datastore layer sits **above the environment and below the app**:
+more specific than the environment it is in, still beaten by the app's
+own variable — which is how you point an app at another database without
+detaching anything.
+
+## Where a value came from
+
+The Environment tab shows the effective set the container runs with and
+labels each value with the level that won it: `project`, `environment`,
+`datastore` or `app`. So "where did `DATABASE_URL` come from" has an
+answer on the screen.
+
+```bash
+cubeship app env list shop/api        # the same, with sources
+```
+
+## Changing them
+
+```bash
+cubeship app env set shop/api LOG_LEVEL=debug WORKERS=4
+cubeship app env unset shop/api LOG_LEVEL
+```
+
+**Set merges; replace replaces.** Setting a key touches that key and
+nothing else, as one statement, so two people setting different keys at
+once cannot lose each other's. `cubeship app env replace --yes` is the
+other thing — delete everything not listed — and the MCP tools do not
+offer it at all.
+
+A change takes effect on the app's **next deploy**: a container's
+environment is fixed when it is created.
+
+## Who may write
+
+A member writes an app's variables — except on an app that
+[builds from a repository](/docs/apps/source-git#who-may-build), where
+the environment is build input and writing it is an admin's.
+
+## Secrets
+
+Variables are stored on the instance and shown to whoever can read the
+app. There is no separate secret store: a database password arrives
+through the datastore layer, and a credential for a registry or a DNS
+provider lives in [Credentials](/docs/credentials), never in an app's
+environment.

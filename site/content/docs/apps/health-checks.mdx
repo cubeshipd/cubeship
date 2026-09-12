@@ -1,0 +1,56 @@
+---
+title: Health checks
+description: A path the proxy asks each copy for, to stop sending traffic to a copy that is up and broken. Off by default, on purpose.
+---
+
+Two things stand between a visitor and a broken copy of an app, and
+they see different failures.
+
+**A copy that has gone costs one retry, and needs nothing configured.**
+A container that is not there refuses the connection, so the proxy
+retries the request on the next copy and the visitor sees nothing. This
+is attached whenever an app has more than one copy.
+
+**A copy that is up and broken needs a health check.** It accepts the
+connection, so no retry fires — only an actual request tells the
+difference. The health path is that request.
+
+## The path
+
+Set it on the app's **Network** tab, as a path the app answers `2xx`
+on:
+
+```
+/healthz
+```
+
+The proxy asks every copy for it every **10 seconds**, with a
+**5-second** timeout, and stops sending traffic to a copy that fails
+until it answers again.
+
+The timeout is deliberately not tight: a copy taking five seconds to
+answer is in trouble, one taking a second under load is not, and
+marking a working container down is the failure that takes a name off
+the internet rather than the one that degrades it.
+
+## Off is the default
+
+A path is something only the app's author knows, and a wrong one does
+not degrade a name by halves: the proxy marks **every** copy down at
+once and the name answers 503. A default of `/` would be the instance
+turning working apps off — most answer 404 there. So no check is the
+default, and turning one on is a deliberate act.
+
+## Rules
+
+A leading `/`, no `?` and no `#`, ordinary URL characters, at most 255
+of them. The value is written into the proxy's configuration and a
+container label, so the grammar is strict.
+
+## What it is not
+
+It is not the check a [deploy](/docs/apps/deploys) makes before
+retiring the old container — that one only asks whether the new
+container is running — and it does not apply to the
+[internal address](/docs/apps/internal-address), where nothing is in
+the path.

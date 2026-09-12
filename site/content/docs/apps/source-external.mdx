@@ -1,0 +1,48 @@
+---
+title: Source · an image from anywhere
+description: Docker Hub, GHCR, ECR, DigitalOcean — anything you already publish to. Nothing tells Cubeship when you push there, so a deploy is something you ask for.
+---
+
+An external app pulls an image from a registry Cubeship does not run.
+It is the one source that needs nothing configured at all: no domain,
+no certificate, no registry of its own. It works the minute the
+installer finishes.
+
+```bash
+cubeship app create api --project shop --source external --image nginx
+cubeship app deploy shop/api --tag 1.27
+```
+
+## The image has no tag
+
+The image is stored **without a tag**, because which tag runs is the
+deploy's argument. An image given with one is refused: an app pinned to
+`nginx:1.27` could never be told to run `1.28`.
+
+With no tag on the deploy and no tag on the app, `latest` is what runs.
+Set a tag on the app to pin it, the same way a
+[registry app](/docs/apps/source-registry#which-tag-runs) is pinned.
+
+## There is no autodeploy
+
+Nothing notifies Cubeship when an image lands on Docker Hub. A deploy is
+something you ask for — from the dashboard, with `cubeship app deploy`,
+or through the `deploy_app` tool, which is exactly what a CI job does
+after it pushes.
+
+## Private images
+
+A private image needs a login, which is an
+[external registry](/docs/registries) connected to the instance with a
+[credential](/docs/credentials). Docker Hub, GHCR, ECR and DigitalOcean's
+registry are the ones the dashboard knows how to browse; ECR logins are
+minted from the credential on every pull, since its tokens expire.
+
+The dashboard picks the image from the registry's own catalogue when it
+has one. Docker Hub has no public catalogue, so an image there is typed.
+
+## What it costs
+
+An image is pulled from the internet on every deploy that needs it, on
+whichever machine runs the app. A build source keeps the image on the
+box; an external one does not.

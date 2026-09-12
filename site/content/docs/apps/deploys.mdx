@@ -1,0 +1,106 @@
+---
+title: Deploys
+description: What happens between an image and a running container — detached, health-checked, zero-downtime, and recorded so you can find out how it went.
+---
+
+A deploy is one attempt to run a new image for an app. It is recorded
+as a **deployment** the moment it is accepted, and finished — succeeded
+or failed — when it ends.
+
+## It runs detached
+
+Nothing that asks for a deploy holds it up. `POST …/deploy` answers 202
+with the deployment row and the work carries on: a client that times
+out, hangs up or presses Ctrl-C stops *waiting*, not deploying. The push
+webhook and a GitHub delivery go through the same door.
+
+How it went lives in the row, because nobody is on the connection to be
+told. The dashboard polls it; `cubeship app deploy` waits on it and
+prints the outcome; `?wait=true` does the same over HTTP; the
+`deploy_app` tool waits and, if the call times out first, tells you to
+check with `get_app_deployments`.
+
+## What a deploy does
+
+1. **Resolve the image.** A registry or external app is a pull; a
+   building app is a [build](/docs/apps/source-git). A source that is
+   misconfigured is refused *before* a row exists, so the caller sees
+   it rather than a failure minutes later with nobody watching.
+2. **Read the port**, off the image's `EXPOSE`, for every name whose
+   port is not set by hand. See [Domains](/docs/apps/domains#ports).
+3. **Start the new container**, on the `cubeship` network, with the
+   merged [environment](/docs/apps/environment), the app's
+   [ceiling](/docs/apps/limits) and its
+   [internal address](/docs/apps/internal-address).
+4. **Wait for it to look healthy**: the container has to be observed
+   running three times in a row, half a second apart, within ten
+   observations.
+5. **Only then retire the previous container.** The proxy is pointed at
+   the new one the moment it swaps, so a name is never left pointing at
+   a container that has gone.
+
+A container that never comes up fails the deploy and the previous one
+is left exactly where it was: a failed deploy is a no-op, not an outage.
+
+An app with several copies on one machine is deployed **rolling**: each
+copy is brought up and proved healthy before the one it replaces is
+stopped, one at a time. A copy that will not come up stops the rest —
+the ones already swapped keep the new version, the ones after keep the
+old, and the app is reported [split](/docs/apps#status) rather than
+carried on into a version that does not work.
+
+## On more than one machine
+
+The control plane resolves the image and stops; the machine the app is
+on creates the container. A deploy stays `pending` until **every**
+machine reports the same deployment running — marking it succeeded when
+the first has it would report a rollout a third done as finished. One
+machine failing fails it at once, and the machines that did start it
+keep what they started.
+
+A deploy waiting on a machine that has stopped answering stays
+`pending` and **says who it is waiting for**, after fifteen minutes of
+that machine's silence. It is deliberately not failed: a pending deploy
+is what the machine picks up when it comes back, finishing the rollout
+it missed. What it becomes is *deletable* — clearing it is a decision
+with a consequence (the machine that returns will run the version
+below), and it belongs to a person.
+
+## Rollback
+
+There is no rollback command, because the question is asked the other
+way: **what a machine should run is the newest deployment that resolved
+to an image and did not fail.** A deploy the machine rejected is one it
+stops trying, and the row under it is what runs. Redeploying an older
+tag is the way to go back on purpose:
+
+```bash
+cubeship app deploy shop/api --tag v1.0
+```
+
+## The history
+
+The app's Overview tab lists deployments newest first: status, the
+image that ran, when, and why it failed if it did. `cubeship app
+deployments shop/api` prints the same.
+
+The **live** row is the one the app is running — derived, not stored:
+the newest succeeded row on an app that has a container.
+
+## The build log
+
+A building app's deployment carries what the build printed, written
+while it runs and capped at 256 KiB keeping the tail. A listing says
+whether a row *has* a log; opening the row fetches it.
+
+## Deleting a deployment
+
+Deleting a row deletes a record — except the live one, which **takes
+the app down**: the container is stopped and removed, the app goes to
+`down`, and the app itself stays, with its domains, its variables and
+its attachments, coming back on the next deploy. That is for the image
+that has to go *now*, without losing everything around it. The dialog
+asks for the app's name.
+
+One row is refused: a deploy that has not finished, because the
+orchestrator is still writing to it.

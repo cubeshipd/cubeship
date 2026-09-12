@@ -1,0 +1,89 @@
+---
+title: Apps
+description: What an app is on Cubeship — its name, where it lives, what it runs, and the four states it can be in.
+---
+
+An app is one deployable service: a name, the image it runs, the names
+it answers at, and whichever containers are currently serving it.
+
+## The reference
+
+An app is named by its **reference**, `project/environment/app`:
+
+```
+shop/production/api
+```
+
+That is the whole of its identity. It is also the app's path in the
+instance's registry (`registry.example.com/shop/production/api`), the
+basis of its container names (`cubeship-shop-production-api-…`) and its
+[internal address](/docs/apps/internal-address)
+(`cubeship-shop-production-api`).
+
+Two parts is shorthand for production — `shop/api` means
+`shop/production/api` — everywhere a reference is typed: the CLI, the
+API, MCP.
+
+A bare name identifies nothing. `api` is unique inside one environment
+and nowhere else; `shop/production/api` and `shop/staging/api` are two
+apps that happen to share a name, which is the point of environments.
+
+Every part is a **slug**: lowercase letters, digits and hyphens. The
+rule is Docker's, because the reference becomes a registry path and a
+container name, and Docker refuses anything else.
+
+## Where it lives
+
+```
+project
+└── environment            production always exists; add staging, preview, …
+    └── app                api, worker, admin, …
+```
+
+A project holds environments and an environment holds apps. Variables
+are set at each level and an app inherits all three — see
+[Environment variables](/docs/apps/environment).
+
+An app is created **empty** and that is a normal state. It has no name
+on the internet until you give it one, and plenty of apps should never
+have one: a worker, a queue consumer, a cron runner. Those are reached
+by their [internal address](/docs/apps/internal-address) or not at all.
+
+## What it runs
+
+Every app has a **source**, which says where its image comes from:
+
+| Source | Where the image comes from | When it deploys |
+| --- | --- | --- |
+| [`registry`](/docs/apps/source-registry) | pushed to the instance's own registry | on every push, unless pinned to a tag |
+| [`external`](/docs/apps/source-external) | a registry Cubeship does not run — Docker Hub, GHCR, ECR, … | when you ask |
+| [`dockerfile`](/docs/apps/source-git) | built here, from a Dockerfile in a Git repository | on push, once GitHub is connected |
+| [`railpack`](/docs/apps/source-git) | built here, from a repository with no Dockerfile | on push, once GitHub is connected |
+
+## Status
+
+An app's status is derived from its replicas on every read, never
+stored. A column saying an app is up is only as honest as whatever was
+supposed to update it.
+
+| Status | Meaning |
+| --- | --- |
+| `pending` | created, never deployed — nothing has ever run |
+| `running` | every copy is serving |
+| `down` | it ran once, and nothing is serving now |
+| `degraded` | some copies are serving and some are not — only possible on [more than one machine](/docs/apps/placement) |
+
+Beside the status, an app can be **split**: its machines are not all
+running the same deployment. Every rollout across several machines
+passes through that state for as long as the last machine takes to
+pull; what makes it worth showing is the rollout that never finishes.
+A fact, not a fault — an app can be running and split.
+
+## Where to go
+
+<Cards>
+  <Card title="Creating an app" href="/docs/apps/creating" />
+  <Card title="Deploys" href="/docs/apps/deploys" description="What happens between an image and a running container." />
+  <Card title="Domains and ports" href="/docs/apps/domains" description="Giving it a name on the internet." />
+  <Card title="Placement" href="/docs/apps/placement" description="Which machines, how many copies." />
+</Cards>

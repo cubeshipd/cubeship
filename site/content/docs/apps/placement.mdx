@@ -1,0 +1,73 @@
+---
+title: Placement
+description: Which machines an app runs on and how many copies. One machine is the ordinary case; a second is a row, not a different kind of app.
+---
+
+An app runs on the machines it is placed on. Until the instance has a
+[second server](/docs/servers) there is one, and nothing here applies.
+With one, every app can be moved, copied and spread:
+
+```bash
+cubeship app place shop/api --on eu-1               # move it
+cubeship app place shop/api --on eu-1 --on eu-2     # both
+cubeship app place shop/api --replicas 4            # four copies, spread
+cubeship app place shop/api --everywhere            # on every machine, now and later
+```
+
+**Where its traffic arrives is not one of those machines.** Every name
+this instance serves arrives at the control plane, which routes it to
+whichever machines run the app — one DNS record, one certificate store,
+and moving an app touches neither.
+
+## Machines, count, spread
+
+Three settings, and they are separate acts:
+
+- **Machines** (`--on`) — the set the app runs on. Sending it alone
+  keeps the count and re-spreads.
+- **Copies** (`--replicas`) — how many of the app, as one number for
+  the app, spread round-robin over its machines in their own order:
+  four over three is 2, 1, 1. Sending it alone leaves the machines as
+  they are. **Zero means one per machine**, which is what every app is
+  until somebody says otherwise.
+- **Everywhere** (`--everywhere`) — the app follows the cluster: it
+  runs on every machine there is, and is re-spread the moment one is
+  added or taken away. Naming machines turns it off, because that is
+  choosing by hand.
+
+**Never fewer copies than machines.** A machine an app was placed on and
+given nothing to run is a machine somebody put it on for no effect, so
+asking for two copies on three machines gives you three.
+
+A different count per machine — three on the big box, one on the small
+one — is not representable. The count is one number for the app.
+
+## Scaling takes effect at once
+
+In both directions, on every machine. A missing copy is started within
+a second, on exactly the version its neighbours run — nothing is built
+and **no deployment is recorded**, because scaling is not a deploy. An
+unwanted copy is stopped at once.
+
+## The first copy keeps its name
+
+`cubeship-shop-production-api-41` for the first, `…-41-2` for the
+second and later. An app running one of itself, which is every app
+until somebody asks for more, has exactly the container it always had.
+
+## What cannot move yet
+
+An app that [builds from a repository](/docs/apps/source-git) can only
+leave the control plane **once the instance has a domain**: the build
+still happens here, and its image reaches another machine only through
+the instance's registry, which follows the domain. The refusal says so.
+
+A machine with apps on it cannot be removed; move them first. An app
+that follows the cluster leaves on its own.
+
+## What a copy is called elsewhere
+
+A copy's container name is what every other machine reaches it at, and
+what the proxy's load balancer is built from. It is decided on the
+control plane from the reference, the deployment and the ordinal, so a
+name is never something a machine reported back.

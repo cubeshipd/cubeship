@@ -1,0 +1,45 @@
+---
+title: Deleting an app
+description: Deleting takes everything under it, after you type its name. What stays behind, and how to reclaim it.
+---
+
+```bash
+cubeship app delete shop/api --yes
+```
+
+Or **Danger** on the app's settings, which asks for the app's name.
+
+## What goes
+
+The app's containers, on every machine it runs on, stopped and removed
+first; then the app, its domains, its variables and its attachments.
+The proxy drops its names the moment the rows go.
+
+The order — containers, then rows — is deliberate, and outside the
+transaction, because Docker has no rollback. A failure halfway leaves
+the containers gone and the app still listed, which a second delete
+finishes; the reverse would leave a container running with nothing
+naming it.
+
+## What stays
+
+- **Its images**, in the instance's registry. Deleting a tag there
+  unlinks a manifest and leaves the layers; **Reclaim disk** on the
+  [registry's page](/docs/registries) is the pass that frees space.
+- **The build cache**, for an app that built. Nothing prunes it.
+- **A database it was attached to.** Deleting an app detaches it and
+  touches no data.
+
+## Deleting the level above
+
+Deleting an environment takes every app in it; deleting a project takes
+its environments and their apps. Each asks for the thing's own name.
+The one refusal is `production`: it is created with its project and
+goes when the project does, never before.
+
+## Taking an app down without deleting it
+
+Delete its **live deployment**. The container is stopped and removed,
+the app goes to `down`, and everything around it stays — domains,
+variables, attachments — coming back on the next deploy. See
+[Deploys](/docs/apps/deploys#deleting-a-deployment).

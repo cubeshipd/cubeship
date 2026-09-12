@@ -1,0 +1,65 @@
+---
+title: Creating an app
+description: From the dashboard, the CLI or an agent. An app is created empty, in a project's environment, with a source it will deploy from.
+---
+
+An app needs three things at creation: a name, a project, and a source.
+Everything else — a domain, variables, a database, a ceiling — is added
+afterwards, in its own settings.
+
+## From the dashboard
+
+Open the project, pick the environment, and **New app**. The form asks
+for the name and the source; for an external image it asks for the
+image, for a repository it asks for the URL.
+
+## From the CLI
+
+```bash
+cubeship app create api --project shop
+cubeship app create api --project shop --environment staging
+cubeship app create api --project shop --source external --image nginx
+cubeship app create api --project shop --source dockerfile --repo https://github.com/you/api
+```
+
+`--environment` defaults to `production`. `cubeship app get shop/api`
+prints what the create returned, including the exact path to push to.
+
+Every flag is in the [CLI reference](/docs/cli/app).
+
+## From an agent
+
+The `create_app` tool takes the same fields — see the
+[tool reference](/docs/mcp/tools#create_app).
+
+## What is refused
+
+- **A source the instance cannot act on.** A registry app given an
+  image, an external app given none, a repository that is not `https://`,
+  `http://` or `git://` — refused at creation rather than accepted as an
+  app that can never deploy.
+- **An external image with a tag in it.** Which tag runs is a
+  [deploy's argument](/docs/apps/source-external), so an image pinned to
+  one could never be told to run another.
+- **A name that is not a slug**, or one already used in that
+  environment.
+- **A building source by a member.** Turning source into an image
+  executes whatever the repository contains, on this host, so it takes
+  an admin — see [who may build](/docs/apps/source-git#who-may-build).
+
+## What you get back
+
+The app's response carries what you will need next:
+
+- `push_path` — where to `docker push` for a registry app.
+- `suggested_host` — a name under the instance's own domain,
+  `api.production.shop.<instance domain>`, that works the moment it is
+  added if the instance runs under an sslip.io address. Nothing assigns
+  it; see [Domains](/docs/apps/domains).
+- `internal_host` — `cubeship-shop-production-api`, the
+  [internal address](/docs/apps/internal-address), which exists from the
+  moment the app does.
+
+An app with an external source works the minute the installer finishes:
+no domain, no certificate, no registry. Deploy it with a tag and it is
+live.

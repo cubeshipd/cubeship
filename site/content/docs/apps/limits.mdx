@@ -1,0 +1,54 @@
+---
+title: Limits
+description: What one copy may take from the machine it runs on — a CPU quota and a memory ceiling — and the one thing about it that surprises people.
+---
+
+Cap what one copy of an app may take:
+
+```bash
+cubeship app limits shop/api --cpu 1 --memory 512Mi
+cubeship app limits shop/api --cpu 0.5
+cubeship app limits shop/api --memory 0        # no memory ceiling
+```
+
+Or on the app's **Resources** tab.
+
+- **Per copy, not per app.** Three copies under a one-core limit may
+  take three cores between them. It is the only arithmetic that survives
+  the copy count changing.
+- **Zero is no limit**, in either half independently — capping memory
+  and leaving CPU alone is an ordinary thing to want. It is what every
+  app is until somebody says otherwise.
+- **CPU is a ceiling, not a share.** A copy at its limit is throttled,
+  not merely preferred less. Fractional is fine: half a core is an
+  ordinary answer on a box this size.
+
+## Changing one restarts nothing
+
+The ceiling is the one part of a running container the Engine can
+change, so raising an app's memory is a request rather than a redeploy.
+On another machine it takes effect within ten seconds.
+
+## Lowering memory can kill the container
+
+The kernel enforces a memory ceiling by killing the process that
+crosses it. **Lowering one below what a copy is already holding kills
+it on the spot** — no deploy, no confirmation, nothing to roll back to.
+That is why no MCP tool sets a ceiling: an agent can read the limit,
+which is on every response, and cannot move it.
+
+## Removing one waits
+
+The Engine reads a zero in an update as "leave that alone", so a copy
+goes back to uncapped by being created again — the app's next deploy.
+The field says so.
+
+## Floors
+
+At least **0.01** of a core and **6 MiB** of memory: below that Docker
+rounds a CPU to nothing and a cgroup cannot hold a runtime. Both are
+checked while the person who typed them is still watching.
+
+There is no vertical autoscaling — nothing moves a ceiling for you.
+Raising one alone would be safe; lowering one kills, so a rule that
+could only go up would never come back down.

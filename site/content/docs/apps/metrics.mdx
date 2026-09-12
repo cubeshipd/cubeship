@@ -1,0 +1,34 @@
+---
+title: Metrics
+description: What each copy is using, sampled every 30 seconds and kept for a day. 100 is one core.
+---
+
+The app's **Overview** tab charts CPU and memory for the last hour, six
+hours or a day.
+
+- **Sampled every 30 seconds, kept for a day.** No downsampling behind
+  that; what a day buys is the question people ask, which is what
+  happened overnight.
+- **100% is one core.** 250 is two and a half. Not rescaled to the
+  machine, so a busy container looks busy whatever the host's size.
+  (The machine's own charts on the Overview are the other way round:
+  there 100% is the whole box, and each chart says which.)
+- **Memory is usage minus reclaimable page cache**, what `docker stats`
+  shows. Without the subtraction every container looks about to run
+  out.
+
+An app with several copies is charted as the **average across them**,
+and the peak shown is the busiest copy's. Each copy records against the
+app from whichever machine it is on.
+
+The reading is taken by the daemon that can reach the container's
+cgroup, so a copy on another machine is sampled there and reported on
+its poll — on the same scale, into the same table.
+
+```bash
+cubeship app get shop/api      # the newest reading is on the app
+```
+
+The `instance_metrics` and `instance_containers` tools give an agent
+the machine and the heaviest containers on it; an app's own series is
+`GET /apps/{ref}/metrics`.
