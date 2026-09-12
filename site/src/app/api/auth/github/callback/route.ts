@@ -14,7 +14,10 @@ export const GET = route(async (request) => {
   const stored = jar.get(STATE_COOKIE)?.value;
   jar.delete(STATE_COOKIE);
 
-  const [expected, next = "/templates"] = (stored ?? "").split(":");
+  // Split on the first colon only: "next" is a path and may carry its own.
+  const separator = (stored ?? "").indexOf(":");
+  const expected = separator === -1 ? (stored ?? "") : (stored ?? "").slice(0, separator);
+  const next = separator === -1 ? "/templates" : (stored ?? "").slice(separator + 1);
   // A mismatch is somebody else starting the flow, not a slip.
   if (!code || !state || !expected || state !== expected) {
     throw new HttpError(400, "bad_state", "that sign-in did not start here; try again");
