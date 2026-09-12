@@ -660,8 +660,20 @@ export const db = {
       },
     ],
     published: [
-      { port: 80, protocol: "tcp", container: "cubeship-traefik", allowed: true },
-      { port: 443, protocol: "tcp", container: "cubeship-traefik", allowed: true },
+      {
+        port: 80,
+        protocol: "tcp",
+        container: "cubeship-traefik",
+        allowed: true,
+        allowed_by: "rule",
+      },
+      {
+        port: 443,
+        protocol: "tcp",
+        container: "cubeship-traefik",
+        allowed: true,
+        allowed_by: "rule",
+      },
       { port: 3000, protocol: "tcp", container: "cubeship-daemon", allowed: false },
       {
         port: 15000,
@@ -669,6 +681,19 @@ export const db = {
         protocol: "tcp",
         container: "cubeship-db-pg",
         allowed: true,
+        allowed_by: "rule",
+      },
+      // Kept open the other way: no rule admits 9000, only the stanza's
+      // conntrack line for this bucket's own published port. Deliberately
+      // a different inside port than the rule above, so the two rows
+      // cannot be read as the same case reasoned about twice.
+      {
+        port: 16000,
+        inside: 9000,
+        protocol: "tcp",
+        container: "cubeship-store-minio",
+        allowed: true,
+        allowed_by: "exposed",
       },
     ],
   } as Firewall,

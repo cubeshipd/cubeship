@@ -90,6 +90,10 @@ export default function FirewallPage() {
   const hostRules = rules.filter((r) => r.scope === "host");
   const appRules = rules.filter((r) => r.scope === "apps");
   const exposed = (data?.published ?? []).filter((p) => !p.allowed);
+  // Admitted by the stanza rather than a rule: it never shows up in
+  // `appRules` above, so without this a database kept open by being
+  // exposed looks like a port nothing admits at all.
+  const admittedByStanza = (data?.published ?? []).filter((p) => p.allowed_by === "exposed");
 
   const columns: Column<FirewallRule>[] = [
     {
@@ -267,7 +271,14 @@ export default function FirewallPage() {
                               <span className="text-muted-foreground"> &rarr; {p.inside}</span>
                             ) : null}
                           </span>
-                          <span className="text-muted-foreground">{p.container}</span>
+                          <span className="flex items-center gap-2 text-muted-foreground">
+                            {p.allowed_by && (
+                              <span className="text-[10px] text-subtle-foreground uppercase tracking-wide">
+                                {p.allowed_by === "exposed" ? "exposed" : "rule"}
+                              </span>
+                            )}
+                            {p.container}
+                          </span>
                         </li>
                       ))}
                     </ul>
@@ -288,6 +299,16 @@ export default function FirewallPage() {
                   {exposed.length === 1 ? "is" : "are"} published and admitted by no rule, so
                   nothing outside this host can reach {exposed.length === 1 ? "it" : "them"} any
                   more.
+                </Notice>
+              )}
+              {admittedByStanza.length > 0 && (
+                <Notice>
+                  {admittedByStanza
+                    .map((p) => `${p.port}/${p.protocol} (${p.container})`)
+                    .join(", ")}{" "}
+                  {admittedByStanza.length === 1 ? "stays" : "stay"} open because{" "}
+                  {admittedByStanza.length === 1 ? "it is" : "they are"} an exposed database or
+                  bucket, not by a rule below — it will not appear in the table.
                 </Notice>
               )}
               <DataTable
@@ -420,13 +441,21 @@ function AdoptDialog({
   useEffect(() => {
     if (!open) return;
     setError(null);
-    setKeep(published.map((p) => p.port));
+    setKeep(published.filter((p) => p.allowed_by !== "exposed").map((p) => p.port));
   }, [open, published]);
 
   // 80 and 443 are Traefik, which is every app and this page. The
   // daemon allows them whatever arrives, so offering to untick them
   // would be offering something that does not happen.
   const fixed = (port: number) => port === 80 || port === 443;
+
+  // Kept open by the stanza already, not by a rule this dialog writes —
+  // ticking one and sending it back as `allow_ports` would write a rule
+  // for the port *inside* the container, which is the rule every
+  // database of that engine shares. Offered nowhere below, so it can
+  // never end up in `keep`.
+  const offerable = published.filter((p) => p.allowed_by !== "exposed");
+  const alreadyExposed = published.filter((p) => p.allowed_by === "exposed");
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -454,7 +483,7 @@ function AdoptDialog({
 
           <div className="-mx-2 max-h-[60vh] space-y-2 overflow-y-auto px-2 py-5">
             <ErrorAlert error={error} />
-            {published.map((p) => (
+            {offerable.map((p) => (
               <label
                 key={`${p.port}/${p.protocol}`}
                 htmlFor={`keep-${p.port}-${p.protocol}`}
@@ -478,6 +507,26 @@ function AdoptDialog({
                 </span>
                 <span className="text-muted-foreground">{p.container}</span>
               </label>
+            ))}
+            {alreadyExposed.map((p) => (
+              // No checkbox: this one is kept open by the stanza, not by
+              // a rule `allow_ports` writes. Ticking it would send it
+              // back and write a rule for the port *inside* the
+              // container instead, opening every database of that
+              // engine — the bug this exclusion exists to not repeat.
+              <div
+                key={`${p.port}/${p.protocol}`}
+                className="flex items-center gap-3 border border-border bg-secondary/40 px-3 py-2 font-mono text-xs text-muted-foreground"
+              >
+                <span className="flex-1">
+                  {p.port}/{p.protocol}
+                  {p.inside ? <span> &rarr; {p.inside}</span> : null}
+                </span>
+                <span>{p.container}</span>
+                <span className="text-[10px] text-subtle-foreground uppercase tracking-wide">
+                  kept open, exposed
+                </span>
+              </div>
             ))}
             <p className="text-xs text-muted-foreground">
               80 and 443 stay open whatever you choose — they are Traefik, which is every app and

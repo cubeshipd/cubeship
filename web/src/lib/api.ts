@@ -995,6 +995,11 @@ export type FirewallPublishedPort = {
   protocol: string;
   container: string;
   allowed: boolean;
+  // What admits it, when `allowed` is true: a ufw rule, or the stanza
+  // Cubeship keeps for a datastore or object store it exposed — a line
+  // that matches the port as it was published, which a ufw rule cannot.
+  // Absent when nothing does.
+  allowed_by?: "rule" | "exposed";
 };
 
 export type Firewall = {
