@@ -1,0 +1,37 @@
+version: 1
+minCubeship: "0.6.0"
+project: umami            # suggested slug; the installer may change it
+
+inputs:                   # what the template cannot know
+  - key: domain
+    type: domain
+    label: Where the dashboard answers
+  - key: appSecret
+    type: secret
+    label: The app's session secret
+    generate: 32          # the instance generates it and shows it once
+
+databases:
+  - key: db               # template-local; what references name
+    name: umami-db        # suggested instance name, renamable at install
+    engine: postgres
+    version: "18"
+    database: umami       # the password is generated, never written here
+
+apps:
+  - key: web
+    name: web
+    image: ghcr.io/umami-software/umami
+    tag: postgresql-v2
+    port: 3000
+    health: /api/heartbeat
+    domains:
+      - host: ${input.domain}
+    attach:
+      - database: db      # contributes DATABASE_URL and friends
+        prefix: ""
+    limits: { cpu: 1, memory: 1Gi }
+    scale: 1
+    env:
+      APP_SECRET: ${input.appSecret}
+      DATABASE_TYPE: postgresql
