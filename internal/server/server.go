@@ -216,15 +216,20 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// a datastore belongs to the instance, so deleting a project takes
 	// no database with it, and an attachment to a deleted app is
 	// removed by the foreign key.
+	//
+	// opts.Host travels straight here rather than through the firewall
+	// module below: what an exposed datastore needs is the host, the
+	// same door mesh.Admit already opens ports through, and not a
+	// Service that would ask for a caller neither of these have.
 	datastores := datastore.NewService(db, apps,
-		datastore.NewProvisioner(db, docker, opts.DataDir), cfg, series)
+		datastore.NewProvisioner(db, docker, opts.DataDir), cfg, series, opts.Host)
 
 	// Object storage is the instance's too, and sits beside the
 	// databases rather than under them: it depends on credential, for
 	// the login an external store authenticates as, and on nothing
 	// else. Nothing below it knows it exists.
 	objectStores := objectstore.NewService(db, creds, apps,
-		objectstore.NewProvisioner(db, docker, opts.DataDir), cfg, series)
+		objectstore.NewProvisioner(db, docker, opts.DataDir), cfg, series, opts.Host)
 
 	// The box itself, which sits beside all of them rather than under
 	// any: one machine, no configuration, and the only module here that

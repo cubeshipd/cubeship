@@ -616,6 +616,15 @@ func run() error {
 		return fmt.Errorf("reconcile object stores: %w", err)
 	}
 
+	// The firewall rules for whatever is already exposed. A one-shot,
+	// not a loop, and it only adds — see Service.AdmitExposed on each.
+	// This is what repairs an instance where a datastore or a managed
+	// store was exposed before this existed: it gets its rule the next
+	// time the daemon starts, here, rather than waiting for somebody to
+	// expose it again.
+	srv.Datastores.AdmitExposed(ctx)
+	srv.ObjectStores.AdmitExposed(ctx)
+
 	srv.SetRegistrySigningKey(registrySigningKey, registryCertDER)
 
 	// What every container is using, sampled on a timer. It runs here
