@@ -41,7 +41,7 @@ export function Section({
 // A block of terminal, the way the README shows one.
 export function Terminal({ children, title }: { children: ReactNode; title?: string }) {
   return (
-    <div className="hud-frame border border-border bg-card">
+    <div className="hud-frame min-w-0 border border-border bg-card">
       {title ? (
         <div className="label border-border border-b px-4 py-2 text-subtle-foreground">{title}</div>
       ) : null}

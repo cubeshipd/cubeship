@@ -1,6 +1,5 @@
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
-import { CubeMark } from "@/components/brand";
 import { InstallCommand } from "@/components/install-command";
 import { githubUrl } from "@/lib/shared";
 
@@ -9,8 +8,7 @@ export function Hero() {
     <section className="relative overflow-hidden border-border border-b">
       <div className="bg-grid absolute inset-0 [mask-image:radial-gradient(ellipse_at_center,black_20%,transparent_75%)]" />
       <div className="relative mx-auto flex max-w-6xl flex-col items-center px-6 pt-24 pb-20 text-center">
-        <CubeMark className="size-28 drop-shadow-[0_0_28px_var(--color-primary)]" />
-        <p className="label mt-10 text-primary">
+        <p className="label text-primary">
           self-hosted <span className="text-magenta">·</span> one VPS or a whole cluster{" "}
           <span className="text-magenta">·</span> run by you or your agent
         </p>
@@ -21,7 +19,7 @@ export function Hero() {
           Push an image and it is live, with HTTPS and a database beside it. Add a second machine
           and it is a cluster. Hand the API key to an agent and it runs the whole thing.
         </p>
-        <div className="mt-10">
+        <div className="mt-10 w-full max-w-xl">
           <InstallCommand />
         </div>
         <p className="mt-3 text-subtle-foreground text-xs">
