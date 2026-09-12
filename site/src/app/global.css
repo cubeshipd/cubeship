@@ -171,3 +171,9 @@ body {
   text-transform: uppercase;
   color: var(--color-subtle-foreground);
 }
+
+/* Callouts carry a shadow from the preset; depth here is lines and
+   glow. The style attribute is the one hook the component leaves. */
+[style*="--callout-color"] {
+  box-shadow: none;
+}
