@@ -12,7 +12,7 @@ export type ValidationResult = {
 };
 
 export type { Diagnostic } from "./diagnostics";
-export type { NormalizedManifest } from "./normalize";
+export type { NormalizedApp, NormalizedManifest } from "./normalize";
 export { SCHEMA_VERSION } from "./normalize";
 
 // Each layer runs only when the one before it left something to work
