@@ -1,4 +1,4 @@
-import { relations } from "drizzle-orm";
+import { relations, sql } from "drizzle-orm";
 import {
   type AnyPgColumn,
   bigint,
@@ -11,6 +11,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 
 export const users = pgTable("users", {
@@ -114,19 +115,29 @@ export const comments = pgTable(
   (table) => [index("comments_template_idx").on(table.templateId)],
 );
 
-export const reports = pgTable("reports", {
-  id: serial("id").primaryKey(),
-  subjectType: text("subject_type").notNull(),
-  subjectId: integer("subject_id").notNull(),
-  reporterId: integer("reporter_id")
-    .notNull()
-    .references(() => users.id),
-  reason: text("reason").notNull(),
-  note: text("note"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
-  resolution: text("resolution"),
-});
+export const reports = pgTable(
+  "reports",
+  {
+    id: serial("id").primaryKey(),
+    subjectType: text("subject_type").notNull(),
+    subjectId: integer("subject_id").notNull(),
+    reporterId: integer("reporter_id")
+      .notNull()
+      .references(() => users.id),
+    reason: text("reason").notNull(),
+    note: text("note"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolution: text("resolution"),
+  },
+  (table) => [
+    // A person may report one subject once — but only while that report
+    // is still open, so a resolved one does not block reporting it again.
+    uniqueIndex("reports_one_per_person")
+      .on(table.subjectType, table.subjectId, table.reporterId)
+      .where(sql`${table.resolvedAt} is null`),
+  ],
+);
 
 export const templateRelations = relations(templates, ({ one, many }) => ({
   author: one(users, { fields: [templates.authorId], references: [users.id] }),

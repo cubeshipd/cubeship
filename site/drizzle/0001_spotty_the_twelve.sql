@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "reports_one_per_person" ON "reports" USING btree ("subject_type","subject_id","reporter_id") WHERE "reports"."resolved_at" is null;

@@ -1,6 +1,7 @@
-import { and, asc, eq, gte, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, isNull, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { db } from "@/db/client";
-import { comments, likes, templates, users } from "@/db/schema";
+import { comments, likes, reports, sessions, templates, users } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/session";
 import { HttpError } from "@/lib/http";
 
@@ -188,4 +189,218 @@ export async function deleteComment(user: SessionUser, id: number): Promise<void
   }
 
   await db().update(comments).set({ deletedAt: new Date() }).where(eq(comments.id, id));
+}
+
+const REPORT_REASONS = ["spam", "malware", "abuse", "other"] as const;
+export type ReportReason = (typeof REPORT_REASONS)[number];
+
+export type ReportRow = {
+  id: number;
+  subjectType: string;
+  subjectId: number;
+  reason: string;
+  note: string | null;
+  createdAt: Date;
+  reporter: { login: string };
+  // What the link on the admin page points at; slug is set only for a
+  // template report, since setTemplateStatus takes a slug, not an id.
+  // authorLogin is who blockUser would act on, distinct from the
+  // reporter above.
+  subject: { label: string; href: string; slug: string | null; authorLogin: string | null };
+};
+
+function requireAdminRole(admin: SessionUser): void {
+  if (admin.role !== "admin") throw new HttpError(403, "forbidden", "this is for administrators");
+}
+
+export async function report(
+  user: SessionUser,
+  input: { subjectType: "template" | "comment"; subjectId: number; reason: string; note?: string },
+): Promise<void> {
+  if (!REPORT_REASONS.includes(input.reason as ReportReason)) {
+    throw new HttpError(
+      422,
+      "invalid_reason",
+      `reason must be one of ${REPORT_REASONS.join(", ")}`,
+    );
+  }
+
+  const inserted = await db()
+    .insert(reports)
+    .values({
+      subjectType: input.subjectType,
+      subjectId: input.subjectId,
+      reporterId: user.id,
+      reason: input.reason,
+      note: input.note ?? null,
+    })
+    // Mirrors reports_one_per_person: the same target and the same
+    // partial predicate, so Postgres can infer the index and no-op
+    // instead of raising 23505 for us to translate by hand.
+    .onConflictDoNothing({
+      target: [reports.subjectType, reports.subjectId, reports.reporterId],
+      where: sql`${reports.resolvedAt} is null`,
+    })
+    .returning({ id: reports.id });
+
+  if (inserted.length === 0) {
+    throw new HttpError(409, "already_reported", "you already reported this, and it is still open");
+  }
+}
+
+// Trusts its own admin check rather than only the route calling it, the
+// same way ownedTemplate answers its own question about ownership.
+export async function openReports(admin: SessionUser): Promise<ReportRow[]> {
+  requireAdminRole(admin);
+
+  const rows = await db()
+    .select({
+      id: reports.id,
+      subjectType: reports.subjectType,
+      subjectId: reports.subjectId,
+      reason: reports.reason,
+      note: reports.note,
+      createdAt: reports.createdAt,
+      login: users.login,
+    })
+    .from(reports)
+    .innerJoin(users, eq(users.id, reports.reporterId))
+    .where(isNull(reports.resolvedAt))
+    .orderBy(asc(reports.createdAt));
+
+  const templateIds = rows
+    .filter((row) => row.subjectType === "template")
+    .map((row) => row.subjectId);
+  const commentIds = rows
+    .filter((row) => row.subjectType === "comment")
+    .map((row) => row.subjectId);
+
+  // A second alias for users: the reporter is already joined above, and
+  // a subject's author is a different row from the same table.
+  const author = alias(users, "report_subject_author");
+
+  const templateRows = templateIds.length
+    ? await db()
+        .select({
+          id: templates.id,
+          slug: templates.slug,
+          name: templates.name,
+          authorLogin: author.login,
+        })
+        .from(templates)
+        .innerJoin(author, eq(author.id, templates.authorId))
+        .where(inArray(templates.id, templateIds))
+    : [];
+  const commentRows = commentIds.length
+    ? await db()
+        .select({
+          id: comments.id,
+          body: comments.body,
+          slug: templates.slug,
+          authorLogin: author.login,
+        })
+        .from(comments)
+        .innerJoin(templates, eq(templates.id, comments.templateId))
+        .innerJoin(author, eq(author.id, comments.authorId))
+        .where(inArray(comments.id, commentIds))
+    : [];
+
+  const templateById = new Map(templateRows.map((row) => [row.id, row]));
+  const commentById = new Map(commentRows.map((row) => [row.id, row]));
+
+  return rows.map((row) => {
+    if (row.subjectType === "template") {
+      const found = templateById.get(row.subjectId);
+      return {
+        id: row.id,
+        subjectType: row.subjectType,
+        subjectId: row.subjectId,
+        reason: row.reason,
+        note: row.note,
+        createdAt: row.createdAt,
+        reporter: { login: row.login },
+        subject: found
+          ? {
+              label: found.name,
+              href: `/templates/${found.slug}`,
+              slug: found.slug,
+              authorLogin: found.authorLogin,
+            }
+          : { label: "a deleted template", href: "#", slug: null, authorLogin: null },
+      };
+    }
+
+    const found = commentById.get(row.subjectId);
+    return {
+      id: row.id,
+      subjectType: row.subjectType,
+      subjectId: row.subjectId,
+      reason: row.reason,
+      note: row.note,
+      createdAt: row.createdAt,
+      reporter: { login: row.login },
+      subject: found
+        ? {
+            label: `comment: “${(found.body ?? "").slice(0, 60)}”`,
+            href: `/templates/${found.slug}`,
+            slug: null,
+            authorLogin: found.authorLogin,
+          }
+        : { label: "a deleted comment", href: "#", slug: null, authorLogin: null },
+    };
+  });
+}
+
+export async function resolveReport(
+  admin: SessionUser,
+  id: number,
+  resolution: string,
+): Promise<void> {
+  requireAdminRole(admin);
+
+  await db().update(reports).set({ resolvedAt: new Date(), resolution }).where(eq(reports.id, id));
+}
+
+export async function setTemplateStatus(
+  admin: SessionUser,
+  slug: string,
+  status: "draft" | "published" | "unlisted" | "removed",
+): Promise<void> {
+  requireAdminRole(admin);
+
+  const [template] = await db().select().from(templates).where(eq(templates.slug, slug)).limit(1);
+  if (!template) throw new HttpError(404, "not_found", "no template of that name");
+
+  await db()
+    .update(templates)
+    .set({ status, updatedAt: new Date() })
+    .where(eq(templates.id, template.id));
+}
+
+export async function blockUser(
+  admin: SessionUser,
+  login: string,
+  blocked: boolean,
+): Promise<void> {
+  requireAdminRole(admin);
+
+  const [user] = await db().select().from(users).where(eq(users.login, login)).limit(1);
+  if (!user) throw new HttpError(404, "not_found", "no user with that login");
+
+  await db().transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({ blockedAt: blocked ? new Date() : null })
+      .where(eq(users.id, user.id));
+
+    // Unblocking only lets them sign in again; it does not relist what
+    // blocking took down, which stays a deliberate admin decision.
+    if (blocked) {
+      await tx.delete(sessions).where(eq(sessions.userId, user.id));
+      await tx
+        .update(templates)
+        .set({ status: "unlisted", updatedAt: new Date() })
+        .where(eq(templates.authorId, user.id));
+    }
+  });
 }

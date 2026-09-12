@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { Comments } from "@/components/templates/comments";
 import { LikeButton } from "@/components/templates/like-button";
 import { Preview } from "@/components/templates/preview";
+import { ReportButton } from "@/components/templates/report-button";
 import { SourceBlock } from "@/components/templates/source-block";
 import { currentUser } from "@/lib/auth/session";
 import { publicUrl } from "@/lib/env";
@@ -64,8 +65,9 @@ export default async function TemplateDetailPage(props: PageProps<"/templates/[s
             {author.login}
           </Link>
         </p>
-        <div className="mt-4">
+        <div className="mt-4 flex items-center gap-4">
           <LikeButton slug={slug} initialCount={template.likesCount} initialLiked={liked} />
+          <ReportButton subjectType="template" subjectId={template.id} />
         </div>
       </div>
 
