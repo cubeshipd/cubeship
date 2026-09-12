@@ -8,7 +8,8 @@ being enough.
 
 [Install](#install) · [First five minutes](#first-five-minutes) ·
 [Deploy an app](#deploy-an-app) · [Databases](#databases-and-storage) ·
-[More machines](#more-machines) · [Changelog](CHANGELOG.md)
+[Backups](#backups) · [More machines](#more-machines) · [MCP](#mcp) ·
+[Changelog](CHANGELOG.md)
 
 </div>
 
@@ -28,10 +29,13 @@ being enough.
   - [Run an image from somewhere else](#run-an-image-from-somewhere-else)
   - [Build from a Git repository](#build-from-a-git-repository)
   - [Give it a name on the internet](#give-it-a-name-on-the-internet)
+  - [Reach it from another app](#reach-it-from-another-app)
 - [Databases and storage](#databases-and-storage)
+- [Backups](#backups)
 - [More machines](#more-machines)
 - [Limits and autoscaling](#limits-and-autoscaling)
 - [The CLI](#the-cli)
+- [MCP](#mcp)
 - [Upgrading](#upgrading)
 - [Uninstalling](#uninstalling)
 - [What reaches the internet](#what-reaches-the-internet)
@@ -50,10 +54,11 @@ One command on a fresh VPS, and the box is running:
 | **Certificates** | Let's Encrypt, renewed for you, nothing to configure |
 | **Databases** | Postgres, MySQL, MariaDB, Redis, MongoDB — one click, wired into the app's environment |
 | **Object storage** | a MinIO on the box, or your own S3 bucket |
+| **Backups** | every database dumped on a schedule into a bucket off the machine, and restored from the same screen |
 | **Builds** | from a Dockerfile, or from a repository with no Dockerfile at all |
 | **More machines** | add a second server and apps spread across both |
 | **Charts** | what every container is using, and what the machine underneath is doing |
-| **An API, a CLI and MCP** | everything the dashboard does, scriptable — and usable by an agent |
+| **An API, a CLI and MCP** | everything the dashboard does, scriptable — and an endpoint an agent drives directly |
 
 Everything Cubeship runs is a container, the daemon included: Postgres,
 the registry, the proxy, the builder and every app of yours are its
@@ -191,6 +196,20 @@ the name works the moment you add it.
 An app can answer at several names, and **each name carries its own
 port** — one image exposing an API and an admin panel is two names.
 
+### Reach it from another app
+
+Inside the instance every app answers at
+`cubeship-<project>-<environment>-<app>`, on the port it listens on. It
+is on the app's **Network** tab, and it is the address to put in another
+app's environment: it survives deploys, spreads over every copy of a
+scaled app, and means the same thing from every machine in the cluster —
+so a worker with no domain at all is still reachable.
+
+The public name cannot do that job from inside the box. The request
+leaves for a DNS record pointing back at the same machine, and a host
+that does not route its own traffic back in answers nothing, which reads
+as the other app being down.
+
 ## Databases and storage
 
 A database belongs to the **instance**, not to a project: on one box the
@@ -210,9 +229,37 @@ Object storage works the same way: a MinIO Cubeship runs, or an S3
 bucket you already have. An attached app gets `S3_ENDPOINT`,
 `S3_BUCKET`, the keys and the rest.
 
-**There are no backups.** Deleting a database deletes its data, and
-nothing here copies it anywhere. That is worth knowing before you put
-something you cannot lose on it.
+## Backups
+
+Postgres, MySQL, MariaDB and MongoDB are dumped the way their own tools
+do it, on a schedule or on demand, from the **Backups** tab of the
+database's settings.
+
+- **A time of day, a timezone, and how many to keep.** Retention counts
+  only the dumps that worked: a week of failures never pushes out the
+  last good one.
+- **Into a bucket, off the machine.** Link an object store and the dump
+  streams straight into it without landing on this box's disk — a
+  database larger than the disk under it is still a backup. With nothing
+  linked it is written locally, which is a copy on the same disk as the
+  database, and every screen showing one says so.
+- **Restored from the same screen**, into the database it came from,
+  after typing that database's name.
+- **Kept when the database is deleted**, which is the moment they
+  matter. **Backups** under Platform says what every database is covered
+  by, worst first, and holds the dumps whose database is gone.
+
+Redis is not in the list, on purpose: it is a cache and a queue on a box
+this size, and there is no good answer to what a nightly copy of one
+would be restored *to*.
+
+**The instance backs itself up the same way** — its own Postgres, with
+every account, project, app, credential and attachment in it, plus the
+certificate store and the project pictures — under **Settings →
+Backups**. There is no button to put that one back, because the thing it
+would replace is the database the button runs on: restoring an instance
+is a fresh install, the daemon stopped, the dump loaded and the files
+put in place, and the screen says so.
 
 ## More machines
 
@@ -302,6 +349,32 @@ beside them.
 There is no `go install`: this module is named `cubeship` rather than the
 path it lives at, and a downloaded binary covers the same ground.
 
+## MCP
+
+`https://your-instance/mcp` is the same API for an agent, authenticated
+with the same key. Point Claude Code, Cursor or whatever you run at it:
+
+```json
+{
+  "mcpServers": {
+    "cubeship": {
+      "type": "http",
+      "url": "https://cubeship.example.com/mcp",
+      "headers": { "Authorization": "Bearer <your-api-key>" }
+    }
+  }
+}
+```
+
+From there it can create a project, deploy an app, read the logs and how
+the last deploy ended, attach a database and set the variables — the
+work of the dashboard, without the dashboard. It is stateless on
+purpose: every call carries the key, so nothing an agent opened can be
+picked up by another.
+
+Two lines are deliberately not crossed: **no tool reads a secret, and no
+tool sets a container's ceiling.** Those stay with a person.
+
 ## Upgrading
 
 Run the installer again. It pulls the newest release and replaces the
@@ -355,9 +428,6 @@ never checks for a release at all.
 
 - **API reference** — `https://your-instance/docs`, and the OpenAPI
   document at `/openapi.json`.
-- **MCP** — `https://your-instance/mcp`, authenticated with the same API
-  key. An agent can create projects, deploy apps and wire up databases;
-  it cannot read a secret or change a container's limits.
 - **Working on Cubeship itself** — [CONTRIBUTING.md](CONTRIBUTING.md).
 - **Found a security problem?** [SECURITY.md](SECURITY.md) — report it
   privately rather than in an issue.
