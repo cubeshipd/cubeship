@@ -112,6 +112,7 @@ export function Preview({ manifest }: { manifest: NormalizedManifest }) {
             <p key={input.key} className="px-4 py-3 text-fd-muted-foreground text-sm">
               <span className="font-mono text-fd-foreground">{input.label}</span> — {input.type}
               {input.required === false ? ", optional" : ""}
+              {input.help ? <span className="mt-1 block text-xs">{input.help}</span> : null}
             </p>
           ))}
         </Block>

@@ -49,12 +49,12 @@ export default async function TemplateDetailPage(props: PageProps<"/templates/[s
 
   return (
     <div className="mx-auto max-w-4xl px-6 py-12">
-      <div className="aspect-video overflow-hidden border border-fd-border bg-grid">
-        {template.imageKey ? (
-          // biome-ignore lint/performance/noImgElement: served from our own path, re-encoded on upload — not a remote domain next/image needs configured for.
+      {template.imageKey ? (
+        <div className="aspect-video overflow-hidden border border-fd-border bg-grid">
+          {/* biome-ignore lint/performance/noImgElement: served from our own path, re-encoded on upload — not a remote domain next/image needs configured for. */}
           <img src={`/i/${template.imageKey}`} alt="" className="h-full w-full object-cover" />
-        ) : null}
-      </div>
+        </div>
+      ) : null}
 
       <div className="mt-6">
         <h1 className="font-semibold text-2xl text-fd-foreground tracking-tight">
@@ -90,27 +90,6 @@ export default async function TemplateDetailPage(props: PageProps<"/templates/[s
         <div className="mt-10">
           <p className="label mb-3 text-primary">What this creates</p>
           <Preview manifest={manifest} />
-        </div>
-      ) : null}
-
-      {manifest && manifest.inputs.length > 0 ? (
-        <div className="mt-10">
-          <p className="label mb-3 text-primary">What you will be asked</p>
-          <div className="hud-frame divide-y divide-fd-border border border-fd-border">
-            {manifest.inputs.map((input) => (
-              <div key={input.key} className="px-4 py-3 text-sm">
-                <p className="text-fd-foreground">
-                  {input.label}
-                  {input.required === false ? (
-                    <span className="text-fd-muted-foreground"> — optional</span>
-                  ) : null}
-                </p>
-                {input.help ? (
-                  <p className="mt-1 text-fd-muted-foreground text-xs">{input.help}</p>
-                ) : null}
-              </div>
-            ))}
-          </div>
         </div>
       ) : null}
 

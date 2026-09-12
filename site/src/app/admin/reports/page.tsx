@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { requireAdmin } from "@/lib/auth/guard";
+import { notFound, redirect } from "next/navigation";
+import { currentUser } from "@/lib/auth/session";
 import { openReports } from "@/lib/templates/social";
 import { ReportRowActions } from "./report-actions";
 
@@ -10,7 +11,11 @@ export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "Reports" };
 
 export default async function AdminReportsPage() {
-  const admin = await requireAdmin();
+  // Not requireAdmin: that throws the API's HttpError, which only a route
+  // handler turns into a response. On a page it is an unhandled crash.
+  const admin = await currentUser();
+  if (!admin) redirect("/api/auth/github?next=/admin/reports");
+  if (admin.role !== "admin") notFound();
   const rows = await openReports(admin);
 
   return (
