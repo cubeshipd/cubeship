@@ -2,6 +2,8 @@
   "title": "Getting started",
   "pages": [
     "install",
-    "first-five-minutes"
+    "first-five-minutes",
+    "concepts",
+    "what-runs-on-the-box"
   ]
 }

@@ -1,0 +1,43 @@
+---
+title: Projects
+description: A project holds environments, and an environment holds apps. Variables at each level, a picture on the card.
+---
+
+```bash
+cubeship project create shop
+cubeship project list
+cubeship project delete shop --yes
+```
+
+Or **Projects → New project**. A project is a slug and nothing else at
+creation; it comes with a `production` environment, which every project
+has and cannot lose.
+
+## What a project holds
+
+- **Environments** — `production`, and any you add. See
+  [Environments](/docs/projects/environments).
+- **Variables** shared by every environment and app in it. See
+  [Variables](/docs/projects/variables).
+- **A picture**, chosen on its settings screen, with the mark until it
+  has one. PNG, JPEG or WebP, at most 512 KiB after the dashboard has
+  cropped and scaled it; the daemon decides the type from the bytes.
+
+## The cards
+
+The Projects screen is cards: a picture, a name, and a ring — a thin
+donut with the app count in the middle, whole and green when everything
+runs, a bite out of it for the thing to open. Open a project and it
+lands on `production`; the environments are tabs in the rail.
+
+## Deleting
+
+Deleting a project takes its environments and every app in them — each
+app's containers stopped and removed — after you type the project's
+name. It touches no database and no store: those are the instance's,
+and their attachments to the deleted apps simply go.
+
+## Roles
+
+Creating and deleting a project is an **admin's**. Reading is a
+member's.

@@ -1,0 +1,42 @@
+---
+title: Environments
+description: production always exists. Add staging, preview, whatever you stage on — each is a set of apps and a layer of variables.
+---
+
+```bash
+cubeship environment create staging --project shop
+cubeship environment list --project shop
+cubeship environment delete staging --project shop --yes
+```
+
+Or from the project's page, where the environments are tabs in the
+rail. Switching one changes the address: `/projects/shop/staging`.
+
+## production
+
+Created with the project, and the one refusal: it cannot be deleted,
+because every app assumes it exists and two-part references
+(`shop/api`) mean it. It goes when the project does.
+
+## The same name twice
+
+`shop/production/api` and `shop/staging/api` are two apps. A name is
+unique inside its environment and nowhere else — which is what
+environments are for. A database is not inside an environment, so
+`pg-production` and `pg-staging` are told apart by their names alone.
+
+## Variables
+
+An environment carries variables shared by every app in it, layered
+over the project's. See [Variables](/docs/projects/variables).
+
+## Deleting
+
+Takes every app in it, containers first, after the environment's name is
+typed. Nothing under a database is touched.
+
+## Roles
+
+An **admin's** to create and delete. There is no rename: a slug is
+permanent because it is in every reference, container name and registry
+path.

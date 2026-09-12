@@ -1,0 +1,70 @@
+---
+title: Users and access
+description: Accounts on the instance, the two roles, and the admin's answers to somebody leaving, forgetting a password, or losing a laptop.
+---
+
+The first account is made by [setup](/docs/getting-started/first-five-minutes)
+and is an admin. Everyone after is added under **Users**, by an admin,
+with a password shown once to hand over. This box sends no mail.
+
+```bash
+cubeship user create alice --role member
+cubeship user list
+```
+
+## The two roles
+
+| | member | admin |
+| --- | --- | --- |
+| see projects, apps, databases, stores, servers, charts, logs | ✓ | ✓ |
+| deploy published images, write variables, place and scale apps | ✓ | ✓ |
+| build from a repository | | ✓ |
+| create and delete projects and environments | | ✓ |
+| create, attach, expose, back up and delete databases and stores | | ✓ |
+| read a bucket's contents, a database's credentials | | ✓ |
+| registries, DNS, credentials, firewall, servers, settings, users | | ✓ |
+
+The line is drawn at two things: **executing source on the host** and
+**reading data**. A member deploys what somebody published and never
+reads a row of a database or a file in a bucket. See
+[Roles](/docs/users/roles) for the reasoning.
+
+## What an admin can do to an account
+
+On the Users screen, per account:
+
+- **Change the role.**
+- **Block.** The account keeps its password, keys and sessions, and
+  every one of them is refused at the door — so unblocking puts
+  somebody back exactly where they were. The reversible half of
+  deleting.
+- **Issue a new password**, shown once. The API keys are untouched: a
+  forgotten password is not a lost laptop.
+- **Revoke credentials.** Every session ended and every API key
+  revoked, the account left standing — the answer to the laptop that
+  walked off. The password is not touched; it is in somebody's head,
+  not on the machine.
+- **Delete.** The account, its keys and its sessions, in one
+  transaction. The username is free again and nothing remembers it.
+
+## The last admin
+
+Deleting, demoting or blocking the last admin is refused, counted
+inside the transaction so two admins cannot take each other's role in
+the same moment. You also cannot delete the account you are signed in
+as.
+
+## 401 and 403
+
+- **401** — nobody is signed in.
+- **403** — somebody is, and lacks the role. Said plainly: a member can
+  see the instance's projects, so hiding one would only confuse them.
+
+There is no 404-instead-of-403: with one instance and no tenants there
+is nothing to enumerate that a caller cannot already list.
+
+<Cards>
+  <Card title="Roles" href="/docs/users/roles" />
+  <Card title="API keys" href="/docs/users/api-keys" />
+  <Card title="Sessions" href="/docs/users/sessions" />
+</Cards>

@@ -1,0 +1,44 @@
+---
+title: Sessions
+description: What the browser signs in with, how long it lasts, and what ends it.
+---
+
+The dashboard signs in with a username and a password and holds a
+**session**: a row on the instance and a cookie in the browser. The API
+key is tried first on every request, so a request carrying both meant
+the key.
+
+## What ends a session
+
+- **Signing out.**
+- **Changing your password** ends every other session the account
+  holds.
+- **An admin revoking your credentials** ends every session and every
+  key.
+- **An admin issuing you a new password** ends every session, and
+  leaves the keys.
+- **Being blocked** refuses the session at the door and keeps it, so
+  unblocking puts you back.
+
+Sessions are rows rather than signed cookies precisely so they can be
+ended.
+
+## Cross-site protection
+
+An app deployed here answers at `app.example.com` while the dashboard
+is at `example.com`, and to a browser those are *same-site* — so the
+cookie alone is not enough for a request that changes anything. The
+daemon also requires the request to come from the dashboard's own
+origin and to declare its body as JSON, which is what stops a page
+somebody deployed from acting as whoever visits it.
+
+## Passwords
+
+Chosen by people, so they go through Argon2id. Every sign-in failure —
+unknown username, wrong password, blocked account after a correct
+password — is answered so that none of them says whether the account
+exists.
+
+On a fresh install reached at `http://<ip>:3000` the cookie is not
+marked secure, because it could not be sent back over plain HTTP if it
+were; once the instance has a domain and answers over HTTPS, it is.

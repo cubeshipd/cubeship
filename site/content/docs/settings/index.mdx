@@ -1,0 +1,41 @@
+---
+title: Instance settings
+description: The domain, the contact address, the public IP, the DNS provider that writes the instance's own records — and the tabs beside them.
+---
+
+**Settings** is the instance's own configuration. Everything here is
+an admin's, and everything is a row the daemon reads live — Cubeship is
+installed with one command, reached by IP, and configured from here,
+with nothing to restart.
+
+## General
+
+| Setting | What it does |
+| --- | --- |
+| **Domain** | where the instance answers, and the registry at `registry.<domain>`. Empty keeps the sslip.io address the install gave itself. |
+| **Contact email** | the Let's Encrypt account's address. Optional: TLS follows the domain alone. |
+| **Public IP** | what DNS records written by the instance point at. Detected when empty — see below. |
+| **DNS provider** | which [connected provider](/docs/networking/dns-providers) writes the instance's own records and is offered first when adding an app's name. |
+
+**Setting a domain** brings the registry up and makes certificates
+possible. Point a record at the server first — the instance answers
+there over HTTPS the moment the certificate lands. An app deployed
+before the domain existed keeps its labels until it is redeployed, so
+an app that predates HTTPS stays on HTTP until then.
+
+**The public IP** is the address records point at, best answer first:
+what you typed; the address the dashboard was opened at when it was an
+IP; the machine's own, asked on the host; never a private address.
+When none of those is a routable answer, the field is empty and every
+screen that would write a record says so instead of writing a wrong
+one.
+
+## The other tabs
+
+- **Updates** — the version running, the newest available, and the
+  automatic update time. See [Updates](/docs/settings/updates).
+- **Backups** — the [instance's own backup](/docs/backups/instance).
+- **GitHub** — the GitHub App the instance builds through. See
+  [GitHub](/docs/settings/github).
+
+Through the API: `GET /settings` and `PUT /settings`.

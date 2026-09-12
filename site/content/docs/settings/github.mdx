@@ -1,0 +1,51 @@
+---
+title: GitHub
+description: One GitHub App per instance, so private repositories can be built and a push deploys. Registered from the dashboard, installed on the accounts whose code the instance may build.
+---
+
+An app that [builds from a repository](/docs/apps/source-git) needs two
+things from GitHub: a way to clone private code, and a delivery when
+somebody pushes. Both come from a **GitHub App** the instance registers
+for itself.
+
+## Registering the App
+
+**Settings → GitHub → Create the App** sends you to GitHub with a
+manifest — the App's name, its permissions, its webhook address — and
+GitHub sends you back with the App created and its credentials handed
+to the instance. The private key and the webhook secret are stored and
+never shown again; the screen says only that the App is connected.
+
+The App is **public**, so it can be installed on a GitHub organization
+and not only on the account that made it. What pays for that is that
+connecting an installation is verified: GitHub sends the installer back
+with a code as well as an installation id, and the instance refuses an
+id the person coming back does not administer.
+
+Replacing the App — registering a new one — breaks every installation
+on the old one, and the flow says so before GitHub is involved.
+
+## Installing it
+
+**Git providers → Connect GitHub** installs the App on an account or an
+organization and lets you choose which repositories it may see. Each
+installation is a row; the instance builds what it has been given
+access to and nothing else. **Configure on GitHub** widens or narrows
+that; **Disconnect** removes the row.
+
+## What a push does
+
+A delivery names an installation this instance connected, is checked
+against the webhook secret, and deploys every app on that repository
+whose ref matches — or every app with no ref, on a push to any branch.
+A tag is never a branch. See [Deploying on push](/docs/apps/source-git#deploying-on-push).
+
+A delivery with no secret configured is refused, not trusted.
+
+## Cloning private code
+
+A token is minted per build from the App's private key, cached until
+shortly before it expires, and handed to the builder as a secret —
+never in a URL, so it never appears in a build log or a deployment.
+A public repository needs none, and no installation found is not an
+error.

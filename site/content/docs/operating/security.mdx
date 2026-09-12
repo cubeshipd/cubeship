@@ -1,0 +1,49 @@
+---
+title: Security
+description: What protects an instance, what an admin is, and where to report a problem.
+---
+
+## Claiming the instance takes the host
+
+The daemon starts with no account and a **setup token** in the data
+directory, printed by the installer. Without it whoever reached the
+page first would be the admin of your machine; with it, claiming the
+instance takes access to the host, which is what it always meant to
+require. The token is deleted the moment setup succeeds.
+
+## An admin is an admin of the machine
+
+The daemon holds the Docker socket, which is root on the box by another
+name. An admin can build source on the host, write firewall rules and
+expose databases; the role exists so that a member — the ordinary
+deployer, a CI job — cannot.
+
+## What is never returned
+
+A password, an API key after it is shown, a credential's secret, a
+GitHub App's private key. Keys and sessions are stored as hashes;
+passwords through Argon2id. A database's password is the one secret an
+admin can read back, because an app has to be handed the real one.
+
+## What is on the network
+
+- Every name arrives at the proxy over HTTPS with a Let's Encrypt
+  certificate. Plain HTTP redirects.
+- The instance's own network is private to its containers; between
+  machines of a cluster it is [encrypted](/docs/servers/the-mesh).
+- An [exposed database or store](/docs/databases/external-access) is a
+  plain port with no TLS, protected by its password and a firewall rule
+  you write.
+- The daemon's Postgres is on loopback only.
+
+## What leaves the box
+
+Nothing but what you configured. See
+[What reaches the internet](/docs/operating/what-reaches-the-internet).
+
+## Reporting a problem
+
+Privately, following
+[SECURITY.md](https://github.com/cubeshipd/cubeship/blob/master/SECURITY.md),
+which also says what is not a vulnerability — an admin being able to do
+what an admin can do is the design.

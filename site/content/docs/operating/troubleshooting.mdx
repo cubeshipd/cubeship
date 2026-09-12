@@ -1,0 +1,80 @@
+---
+title: Troubleshooting
+description: The things that go wrong on a first install, and where each one is written down.
+---
+
+## The installer refuses port 3000
+
+Something else is listening. The daemon publishes 3000 until the
+instance has a domain, and the installer refuses rather than fighting
+whatever is there. Free the port, or install with another.
+
+## A name has no certificate
+
+**Certificates** under Platform says why, per name:
+
+- **not deployed** — the name was added after the app's last deploy.
+  Redeploy.
+- **pending** — the proxy asked and Let's Encrypt has not answered
+  yet, or refused; the proxy's own complaint is quoted. A record
+  written late is retried every half hour on its own. A rate limit on
+  `sslip.io` waits, or takes a domain of your own.
+- **no domain** — set one in Settings.
+
+## A deploy failed
+
+Open the deployment on the app's Overview tab. A build carries its own
+output, tail kept; a container that never came up says so. The previous
+container is still serving — a failed deploy is a no-op.
+
+## An app cannot reach another app
+
+Use the [internal address](/docs/apps/internal-address), not the
+public name: from inside the box the public name leaves for a record
+pointing back at the machine, which most hosts do not route. An app that
+has not deployed since the instance gained internal addresses does not
+answer to its own yet.
+
+## `docker push` is refused
+
+- The username with the key must be your current username; a renamed
+  account logs in again.
+- The registry follows the instance's domain; with no domain there is
+  nowhere to push.
+- A member's key can push; a worker's or the builder's cannot.
+
+## A database is `failed`
+
+`error` on it says what the engine printed. **Start** retries. The
+commonest cause is a login the engine refuses — `root` on MySQL, a user
+other than `default` on Redis — which is refused earlier now.
+
+## Redis has no Backups tab
+
+On purpose. See [Engines](/docs/databases/engines#redis).
+
+## A worker says `pending` for ever
+
+The daemon on it never called home. Check the box reaches the control
+plane's address on 443, and that the token was the one minted for that
+row — a token is shown once, and a lost one means removing and adding
+the server again.
+
+## A worker is `ready` and not on the mesh
+
+The three mesh ports are blocked between the machines — at the
+provider's firewall, which Cubeship cannot see — or the machine is
+behind NAT. See [The mesh](/docs/servers/the-mesh).
+
+## The dashboard shows an error after an upgrade
+
+The daemon is restarting underneath it; every write answers 503 until
+the new one is up. Reload in a minute.
+
+## Where the logs are
+
+```bash
+docker logs cubeship-daemon
+docker logs cubeship-traefik      # ACME refusals are here and nowhere else
+docker logs cubeship-postgres
+```

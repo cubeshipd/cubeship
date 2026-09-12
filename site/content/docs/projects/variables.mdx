@@ -1,0 +1,42 @@
+---
+title: Variables
+description: Set on the project, the environment, or the app. An app inherits all three, plus what its databases and stores contribute.
+---
+
+```
+project           shared by every environment and app in the project
+  environment     shared by every app in this environment
+    datastore     what an attached database or store contributes
+      app         the app's own
+```
+
+Each level overrides the one above it. The
+[app's Environment tab](/docs/apps/environment) shows the effective set
+its container runs with, and labels each value with the level that won.
+
+## Where to set them
+
+| Level | Dashboard | CLI |
+| --- | --- | --- |
+| project | the project's settings | `cubeship project` — see the [reference](/docs/cli/project) |
+| environment | the environment's settings | `cubeship environment` — see the [reference](/docs/cli/environment) |
+| app | the app's Environment tab | `cubeship app env set` |
+
+## Merge, or replace
+
+**PATCH merges, PUT replaces.** Setting a key touches that key and
+nothing else, as one statement, so two people setting different keys at
+once cannot lose each other's. Replacing — delete everything not listed
+— is a separate act: the CLI hides it behind `env replace --yes`, and
+the MCP tools do not offer it at all.
+
+## When it applies
+
+A container's environment is fixed when it is created, so a change at
+any level reaches an app on its **next deploy**.
+
+## Who may write
+
+A member writes project, environment and app variables — except on an
+app that [builds from a repository](/docs/apps/source-git#who-may-build),
+whose environment is build input and an admin's.

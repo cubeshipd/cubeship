@@ -1,0 +1,58 @@
+---
+title: The API
+description: Everything the dashboard does is an HTTP API with an OpenAPI document. The CLI, the dashboard and MCP are three clients of it.
+---
+
+The API lives under `/api` on the instance's own address, and describes
+itself:
+
+| Address | What |
+| --- | --- |
+| `https://your-instance/openapi.json` | the OpenAPI document |
+| `https://your-instance/docs` | a reference rendered from it |
+
+Both are public — the reference fetches the document from the browser
+with no credential to offer.
+
+## Authentication
+
+```bash
+curl -H "Authorization: Bearer $KEY" https://cubeship.example.com/api/apps
+```
+
+An [API key](/docs/users/api-keys) as a bearer token. The key has its
+owner's role; **401** is nobody signed in, **403** is somebody without
+the role, **404** is a thing that does not exist.
+
+## Shape
+
+- Bodies are JSON and must say so (`Content-Type: application/json`);
+  a form-encoded or `text/plain` body is refused, because those are
+  what a browser sends cross-site without asking.
+- Errors are `text/plain` with the reason in the body.
+- Slugs are path segments: `/api/apps/shop/production/api`.
+- **PATCH merges, PUT replaces**, wherever both exist.
+- Long work is detached: a deploy answers `202` with the record to
+  poll, and `?wait=true` waits for it on the connection.
+
+## What the document leaves out
+
+The document is the product's API, not an inventory of routes. Left out
+on purpose: the daemon's own machinery (`/healthz`, `/openapi.json`,
+`/docs`, `/mcp`), the registry's token and webhook endpoints, sign-in
+and sign-out, and API-key self-service — which the CLI and the account
+screen do. A test pins the two lists, so moving a route between them is
+an edit somebody made on purpose.
+
+## The same API, three ways
+
+```bash
+cubeship app deploy shop/api --tag v1.1                      # the CLI
+curl -X POST -H "Authorization: Bearer $KEY" \
+  https://cubeship.example.com/api/apps/shop/production/api/deploy \
+  -H 'Content-Type: application/json' -d '{"tag":"v1.1"}'     # the API
+# deploy_app {"app": "shop/production/api", "tag": "v1.1"}    # MCP
+```
+
+Everything the dashboard can do is a call here, and nothing the
+dashboard does bypasses it.

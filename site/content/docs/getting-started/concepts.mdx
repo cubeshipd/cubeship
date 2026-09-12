@@ -1,0 +1,50 @@
+---
+title: Concepts
+description: The vocabulary — instance, project, environment, app, database, store, server — and how the pieces refer to each other.
+---
+
+| Word | What it is |
+| --- | --- |
+| **Instance** | One Cubeship: the box you installed, its database, its dashboard, its registry, and everything deployed on it. There is one, and it has no tenants. |
+| **Project** | A folder for apps: `shop`, `blog`, `internal`. Holds environments and shared variables; wears a picture. |
+| **Environment** | A stage inside a project: `production`, which every project has and cannot lose, and any you add — `staging`, `preview`. Holds apps and its own variables. |
+| **App** | One deployable service, named `project/environment/app`. Has a source, names on the internet, an internal address, copies on machines. |
+| **Database** | A Postgres, MySQL, MariaDB, Redis or MongoDB the instance runs. Belongs to the instance and is *attached* to apps in any project. |
+| **Object store** | A MinIO the instance runs, or an S3 bucket elsewhere it holds keys to. Attached to apps the same way. |
+| **Server** | A machine in the cluster: the control plane, or a worker that dials it. |
+| **Registry** | The instance's own, where a push deploys; or one elsewhere it pulls from. |
+| **Credential** | A secret the instance holds — an AWS key, a Cloudflare token — named by whatever uses it. |
+| **User** | An account with a role: admin or member. Signs in with a password, and holds API keys for the CLI and agents. |
+
+## How they refer to each other
+
+```
+instance
+├── projects/shop
+│   ├── production                 apps: api, worker
+│   └── staging                    apps: api
+├── databases: pg, cache           attached to shop/production/api, shop/staging/api
+├── object stores: media           attached to shop/production/api
+├── servers: control plane, eu-1   shop/production/api runs on both
+└── users: lucas (admin), ci (member)
+```
+
+An app is always named in full. A database or a store is named by its
+slug alone, because it is the instance's. A server is named by its
+slug. A credential by its label.
+
+## Names
+
+Every slug — project, environment, app, database, store, server — is
+lowercase letters, digits and hyphens, because it becomes a container
+name, a registry path or a hostname, and Docker refuses anything else.
+`settings` is refused everywhere, and `engines` for a database, because
+those are addresses the dashboard and the API already answer at.
+
+## What deploys, and what is provisioned
+
+An app **deploys**: it has an image that changes, a history of
+deployments, a zero-downtime swap. A database and a managed store are
+**provisioned**: created once and then running, with no image to push
+and no deploy to roll back. The distinction is why they are different
+things in the sidebar and the API.

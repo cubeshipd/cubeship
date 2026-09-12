@@ -1,0 +1,8 @@
+{
+  "title": "Users and access",
+  "pages": [
+    "roles",
+    "api-keys",
+    "sessions"
+  ]
+}
