@@ -92,6 +92,10 @@ IMAGE   ?= ghcr.io/cubeshipd/cubeshipd
 image: ## Build the daemon's image, dashboard included
 	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE):$(VERSION) .
 
+.PHONY: site-image
+site-image: ## Build cubeship.dev's image
+	docker build -f Dockerfile.site -t cubeship-site:$(VERSION) .
+
 # Releasing is a tag, and the rest is .github/workflows/release.yml:
 # both images for both architectures, the GitHub release with the notes
 # in it, and a provenance attestation saying which commit they came
