@@ -1,7 +1,4 @@
 {
   "title": "Your account",
-  "pages": [
-    "themes",
-    "command-palette"
-  ]
+  "pages": ["themes", "command-palette"]
 }
