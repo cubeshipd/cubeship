@@ -18,9 +18,7 @@ export function TemplateCard({ template }: { template: CatalogRow }) {
     >
       <div className="aspect-video overflow-hidden border-border border-b bg-grid">
         {template.imageKey ? (
-          // A photo the author uploaded, re-encoded and served from our
-          // own path — not a remote domain next/image needs configured for.
-          // eslint-disable-next-line @next/next/no-img-element
+          // biome-ignore lint/performance/noImgElement: a photo the author uploaded, re-encoded and served from our own path — not a remote domain next/image needs configured for.
           <img
             src={`/i/${template.imageKey}`}
             alt=""

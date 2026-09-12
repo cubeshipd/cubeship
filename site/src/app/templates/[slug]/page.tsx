@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { LikeButton } from "@/components/templates/like-button";
 import { Preview } from "@/components/templates/preview";
 import { SourceBlock } from "@/components/templates/source-block";
 import { currentUser } from "@/lib/auth/session";
 import { publicUrl } from "@/lib/env";
 import type { NormalizedManifest } from "@/lib/template";
 import { currentVersion, templateWithAuthor, versionsOf, visibleTo } from "@/lib/templates/queries";
+import { hasLiked } from "@/lib/templates/social";
 
 // Reads the session and the database, so this page can never be static.
 export const dynamic = "force-dynamic";
@@ -30,9 +32,10 @@ export default async function TemplateDetailPage(props: PageProps<"/templates/[s
   if (!row || !visibleTo(row.template, viewer)) notFound();
 
   const { template, author } = row;
-  const [version, versions] = await Promise.all([
+  const [version, versions, liked] = await Promise.all([
     currentVersion(template.id),
     versionsOf(template.id),
+    viewer ? hasLiked(viewer.id, template.id) : Promise.resolve(false),
   ]);
 
   // Stored as jsonb, so the column carries no static type of its own.
@@ -43,9 +46,7 @@ export default async function TemplateDetailPage(props: PageProps<"/templates/[s
     <div className="mx-auto max-w-4xl px-6 py-12">
       <div className="aspect-video overflow-hidden border border-fd-border bg-grid">
         {template.imageKey ? (
-          // Served from our own path, re-encoded on upload — not a remote
-          // domain next/image needs configured for.
-          // eslint-disable-next-line @next/next/no-img-element
+          // biome-ignore lint/performance/noImgElement: served from our own path, re-encoded on upload — not a remote domain next/image needs configured for.
           <img src={`/i/${template.imageKey}`} alt="" className="h-full w-full object-cover" />
         ) : null}
       </div>
@@ -61,6 +62,9 @@ export default async function TemplateDetailPage(props: PageProps<"/templates/[s
             {author.login}
           </Link>
         </p>
+        <div className="mt-4">
+          <LikeButton slug={slug} initialCount={template.likesCount} initialLiked={liked} />
+        </div>
       </div>
 
       {template.tags.length > 0 ? (
