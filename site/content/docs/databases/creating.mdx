@@ -1,0 +1,67 @@
+---
+title: Creating a database
+description: An engine, a version, a login. Four things are fixed the moment it exists, and each for a reason.
+---
+
+```bash
+cubeship db create pg --engine postgres
+cubeship db create pg --engine postgres --version 16 --username shop --database shop
+cubeship db create cache --engine redis
+cubeship db engines                       # what this release can run
+```
+
+Or **New database** on the Databases screen, which offers the same
+fields and generates the password for you.
+
+Provisioning runs detached from the request: the row appears as
+`provisioning`, the image is pulled, the container started, and the
+status follows. A database that failed to come up is `failed` with the
+reason on it, and **Start** retries it.
+
+## The fields
+
+| Field | Default | Notes |
+| --- | --- | --- |
+| `name` | — | a slug, unique on the instance; it becomes `cubeship-db-<name>` |
+| `engine` | — | `postgres`, `mysql`, `mariadb`, `redis`, `mongodb` |
+| `version` | the newest offered | see [Engines](/docs/databases/engines) for the list |
+| `username` | `cubeship` | Redis has one login, `default`, and refuses another; MySQL and MariaDB refuse `root` |
+| `password` | generated | 32 characters when left empty, so a weak one is never the default |
+| `database` | the name | the database created on first start; Redis has none |
+
+The default login is `cubeship` rather than the engine's own:
+`postgres` and `root` are the two names every scanner on the internet
+tries first.
+
+## Fixed after creation
+
+- **The name.** It is the container's, which every attached app
+  resolves.
+- **The engine and the version.** A data directory written by one major
+  version is not readable by another. A database that "changed version"
+  would be a container that will not start, with the only copy of the
+  data inside a directory it will not read. Running a new version is a
+  second database and the engine's own migration tools — or a
+  [backup](/docs/backups) restored into it.
+- **The password.** It is used once, when the engine initialises
+  itself, and nothing reads the column afterwards. Changing it would
+  change every connection string handed out while the database went on
+  accepting the old one. Rotating one is an `ALTER USER` inside the
+  database, by you.
+
+What can change is the description and the
+[ceiling](/docs/databases/running#limits).
+
+## Where the data lives
+
+A host directory under the data directory, `<data dir>/datastores/<id>`,
+mounted into the container. Anything in a container's writable layer is
+destroyed when its configuration changes — publishing a port is such a
+change — so the data is outside it, and survives.
+
+## Through an agent
+
+`create_datastore`, `list_datastore_engines` and the rest are in the
+[tool reference](/docs/mcp/tools#databases). No tool reads or sets a
+password, and none exposes a database: an agent can provision one and
+attach an app without ever holding the credential.

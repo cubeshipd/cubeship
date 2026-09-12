@@ -1,4 +1,12 @@
 {
   "title": "Databases",
-  "pages": ["index"]
+  "pages": [
+    "creating",
+    "engines",
+    "attaching",
+    "external-access",
+    "credentials",
+    "running",
+    "deleting"
+  ]
 }

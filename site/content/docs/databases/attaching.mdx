@@ -1,0 +1,76 @@
+---
+title: Attaching apps
+description: An attachment gives an app the database's connection string as environment variables, from its next deploy. It may cross projects.
+---
+
+```bash
+cubeship db attach pg --app shop/production/api
+cubeship db detach pg --app shop/production/api
+```
+
+Or the **Apps** tab on the database's page. The app is named by its
+**full reference** — a database is not inside an environment, so `api`
+alone identifies nothing here, and two apps called `api` in two projects
+may both be attached to one database.
+
+## What the app receives
+
+The variables sit in the app's environment as their own layer — above
+the environment's, below the app's own — and the app's Environment tab
+labels each one `datastore`:
+
+| Variable | Postgres example |
+| --- | --- |
+| `DATABASE_URL` | `postgresql://shop:…@cubeship-db-pg:5432/shop?sslmode=disable` |
+| `DATABASE_HOST` | `cubeship-db-pg` |
+| `DATABASE_PORT` | `5432` |
+| `DATABASE_USER` | `shop` |
+| `DATABASE_PASSWORD` | `…` |
+| `DATABASE_NAME` | `shop` |
+
+Redis uses `REDIS_` and has no `_NAME`; MongoDB uses `MONGO_`. The host
+is the container's name on the shared network, and the port is the
+engine's own — this connection never leaves the instance and never
+touches the [exposed port](/docs/databases/external-access).
+
+The password is escaped in the URL, so one containing `@` or `/` parses
+as a password rather than as a different host.
+
+## From the next deploy
+
+A container keeps the environment it was created with. An attachment
+made after the app's last deploy is picked up on the next one — the
+same rule that makes a domain take effect on redeploy. The variables
+are read fresh at every deploy, never copied onto the app.
+
+## A second database on one app
+
+Two attachments collide when they would name the same variables. The
+name is the prefix plus the engine's stem, so:
+
+- A Postgres **and** a Redis on one app take nothing: `DATABASE_URL` and
+  `REDIS_URL` cannot overwrite each other.
+- A second Postgres takes a **prefix** — `ANALYTICS_` gives
+  `ANALYTICS_DATABASE_URL` and the rest:
+
+```bash
+cubeship db attach analytics --app shop/production/api --prefix ANALYTICS_
+```
+
+A prefix is uppercase letters, digits and underscores, ending in `_`.
+The refusal for a collision names the variables, because an app may hold
+several databases and be colliding with exactly one.
+
+## Pointing an app elsewhere
+
+The datastore layer is beaten by the app's own variable. Set
+`DATABASE_URL` on the app and it wins over the attachment, without
+detaching anything — the way to point one app at a database somewhere
+else while the attachment stays for the day you point it back.
+
+## Deleting around it
+
+Deleting an app removes its attachments and touches no data. Deleting a
+project takes its apps and no database. A database outliving the apps
+that used it is the point: it is the instance's, and deleting an app is
+not a decision about anybody's data.

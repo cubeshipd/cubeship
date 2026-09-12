@@ -1,0 +1,52 @@
+---
+title: Running it
+description: Stopping and starting, logs, charts, and the ceiling — the container on a box this size most worth capping.
+---
+
+## Stop and start
+
+```bash
+cubeship db stop pg
+cubeship db start pg
+```
+
+Stopping stops the container and **leaves it** with its data, so the
+log survives — what somebody wants right after turning a database off
+is usually the reason they turned it off. The status becomes `stopped`,
+distinct from `down`: one is a decision, the other a fault, and it stays
+off across reboots until somebody starts it.
+
+Starting provisions again rather than resuming — one path, and the data
+being outside the container, a recreate does not touch it. It is also
+how a database whose provisioning `failed` is retried.
+
+## Logs
+
+```bash
+cubeship db logs pg
+```
+
+The container's output, on the **Logs** tab, the same viewer as an
+app's. A stopped database still has one.
+
+## Charts
+
+The **Overview** tab charts CPU and memory the way an app's does:
+sampled every 30 seconds, kept for a day, 100 is one core. See
+[Metrics](/docs/apps/metrics).
+
+## Limits
+
+```bash
+cubeship db limits pg --cpu 2 --memory 2Gi
+```
+
+Or **Resources** in the settings. The same ceiling an app has — per
+container, zero is none, changed without a restart, and **lowering
+memory below what the database holds kills it on the spot**. See
+[Limits](/docs/apps/limits) for the rules.
+
+A database is the container most worth capping on a box this size: an
+app that leaks is one app, and a Postgres that takes every page of
+memory takes the daemon and the proxy with it — and unlike an app it is
+not restarted by a deploy somebody was about to do anyway.

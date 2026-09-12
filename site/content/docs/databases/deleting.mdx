@@ -1,0 +1,32 @@
+---
+title: Deleting a database
+description: The container and its data go. Its backups stay, which is the moment they matter.
+---
+
+```bash
+cubeship db delete pg --yes
+```
+
+Or **Danger** in the database's settings, which asks for the database's
+name.
+
+## What goes
+
+The container, the data directory under `<data dir>/datastores/`, the
+attachments to every app, and the database's metrics history. An app
+that was attached keeps running on the variables its container was
+created with until its next deploy, and gets none after.
+
+## What stays
+
+**Its backups.** Deleting a database is exactly when they matter, so
+every dump it took is kept, listed under **Backups of deleted
+databases** on the Backups screen, and can be downloaded or deleted from
+there. See [Backups](/docs/backups).
+
+## What cannot be undone
+
+Everything above. There is no soft delete: a database that has to come
+back is a new database with the same engine and a
+[restore](/docs/backups/restoring) of the last dump — into a database
+whose name may be the old one, since the name is free again.
