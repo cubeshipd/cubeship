@@ -1,0 +1,112 @@
+---
+title: cubeship user
+description: "Manage Cubeship users"
+---
+
+{/* Generated from the CLI by `cubeship docs` — run `make reference`. Editing this file is editing the copy rather than the thing. */}
+
+Manage Cubeship users
+
+## cubeship user api-key
+
+Manage your own API keys
+
+## cubeship user api-key create
+
+Issue an additional API key for yourself, alongside any key you
+already hold. This is how an MCP client (Claude Code, say) gets its
+own credential, separate from the one your terminal uses — revoking
+or rotating one never touches the other. Point the MCP client at
+this daemon's /mcp endpoint with this key as its bearer token.
+
+```bash
+cubeship user api-key create <name>
+```
+
+## cubeship user api-key list
+
+List your own API keys
+
+```bash
+cubeship user api-key list
+```
+
+## cubeship user api-key revoke
+
+Revoke one of your own API keys by id (from "api-key list")
+
+```bash
+cubeship user api-key revoke <id>
+```
+
+## cubeship user api-key rotate
+
+Replace the API key this command is currently authenticating with.
+
+Only that one key is affected — any other key you hold (one issued
+to an MCP client via "api-key create", say) keeps working.
+
+```bash
+cubeship user api-key rotate
+```
+
+## cubeship user create
+
+Create an account on this instance.
+
+The password is printed once, here, and never again: this instance
+keeps only its hash. Hand it over, and they change it on their own
+account screen. API keys are theirs to make.
+
+One is generated unless --password names it.
+
+```bash
+cubeship user create <username> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--password` |  | the password to give them; generated when empty |
+| `--role` | `member` | admin or member |
+
+## cubeship user delete
+
+Delete an account. Every API key and every session it holds go
+with it, in one transaction.
+
+Refused for the account you are signed in as, and for the only
+admin on the instance — nothing here could put one back.
+
+```bash
+cubeship user delete <username> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--yes` |  | confirm that the account should be deleted |
+
+## cubeship user list
+
+List the accounts on this instance
+
+```bash
+cubeship user list
+```
+
+## cubeship user revoke
+
+End every session and revoke every API key an account holds.
+
+This is what a lost laptop needs: what was on it stops working
+everywhere at once, and the account survives. The password is not
+touched — it is not what was on the machine — so signing in again
+is how the account comes back.
+
+```bash
+cubeship user revoke <username> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--yes` |  | confirm that the credentials should be revoked |
+

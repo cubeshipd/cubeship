@@ -127,7 +127,7 @@ ship: daemon-linux ## Upload the daemon to a VPS and restart it (HOST=user@vps)
 		&& sudo systemctl --no-pager status cubeshipd'
 
 .PHONY: check
-check: fmt-check vet sh-check changelog-check test ## Everything that must pass before a commit
+check: fmt-check vet sh-check changelog-check reference-check test ## Everything that must pass before a commit
 
 # Postgres has no in-memory mode, so the unit tests need a real server.
 # Each test gets its own schema in this one container (see
@@ -218,6 +218,19 @@ changelog: ## Write CHANGELOG.md from the release notes
 .PHONY: changelog-check
 changelog-check: ## Fail if CHANGELOG.md is not what the release notes say
 	go run ./cmd/changelog -check
+
+# The site's CLI and MCP references are written from the CLI and the
+# daemon, so a flag or a tool added without its page is a stale page,
+# and `check` refuses it the way it refuses a stale changelog.
+.PHONY: reference
+reference: ## Write the CLI and MCP references into the site's docs
+	go run ./cmd/cubeship docs site/content/docs/cli
+	go run ./cmd/sitedocs site/content/docs/mcp/tools.mdx
+
+.PHONY: reference-check
+reference-check: ## Fail if the site's references are not what the code says
+	go run ./cmd/cubeship docs --check site/content/docs/cli
+	go run ./cmd/sitedocs -check site/content/docs/mcp/tools.mdx
 
 .PHONY: sh-check
 sh-check: ## Syntax-check the shell scripts

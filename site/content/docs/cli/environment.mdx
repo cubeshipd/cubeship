@@ -1,0 +1,98 @@
+---
+title: cubeship environment
+description: "Manage environments within a project"
+---
+
+{/* Generated from the CLI by `cubeship docs` — run `make reference`. Editing this file is editing the copy rather than the thing. */}
+
+Manage environments within a project
+
+## cubeship environment create
+
+Create a new environment within a project
+
+```bash
+cubeship environment create <slug> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--project` |  | project slug |
+
+## cubeship environment delete
+
+Delete an environment and every app deployed in it — each
+app's container is stopped and removed first.
+
+The "production" environment can never be deleted.
+
+```bash
+cubeship environment delete <slug> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--project` |  | project slug |
+| `--yes` |  | confirm the deletion |
+
+## cubeship environment env
+
+Read and change the environment's environment variables
+
+## cubeship environment env list
+
+Show the variables set on this environment.
+
+Where the level inherits from another, the effective set is shown
+instead, with the level each value came from.
+
+```bash
+cubeship environment env list <env-slug>
+```
+
+## cubeship environment env replace
+
+Replace the whole set of variables at this level.
+
+Anything not listed is DELETED. With no pairs at all, every
+variable at this level is removed. Requires --yes, because this
+is the command that can lose configuration.
+
+```bash
+cubeship environment env replace <env-slug> [KEY=VALUE...] [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--yes` |  | confirm that variables you don't list should be deleted |
+
+## cubeship environment env set
+
+Add or change variables. Anything you don't name keeps the value
+it has — use "env unset" to remove one, or "env replace" to
+overwrite the whole set.
+
+```bash
+cubeship environment env set <env-slug> KEY=VALUE [KEY=VALUE...]
+```
+
+## cubeship environment env unset
+
+Remove environment variables, leaving the rest alone
+
+```bash
+cubeship environment env unset <env-slug> KEY [KEY...]
+```
+
+## cubeship environment list
+
+List environments in a project
+
+```bash
+cubeship environment list [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--project` |  | project slug |
+

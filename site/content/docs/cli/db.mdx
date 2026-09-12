@@ -1,0 +1,254 @@
+---
+title: cubeship db
+description: "Manage the databases Cubeship runs"
+---
+
+{/* Generated from the CLI by `cubeship docs` — run `make reference`. Editing this file is editing the copy rather than the thing. */}
+
+Manage the databases Cubeship runs for the apps on this instance.
+
+A database belongs to the instance rather than to a project: on
+one host, one Postgres serving several small apps is the normal
+shape, and those apps are routinely in different projects. Its
+name is unique across the instance and is the whole of how it is
+addressed.
+
+Apps reach it by being attached to it: `db attach` gives an app
+DATABASE_URL and its parts, from its next deploy onwards. The app
+is named by its full reference, and may be in any project.
+
+Nothing separates one environment's data from another's any more
+— that is what the names are for: pg-production, pg-staging.
+
+## cubeship db attach
+
+Attach an app to a database.
+
+The app's container is given DATABASE_URL and its parts from its
+next deploy onwards — a container keeps the environment it was
+created with, so nothing changes until you deploy it.
+
+The app is named by its full reference, project/environment/app,
+and may be in any project. Use --prefix when one app needs a
+second database.
+
+```bash
+cubeship db attach <name> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--app` |  | the app's full reference: project/environment/app |
+| `--prefix` |  | name the variables under a prefix, e.g. "ANALYTICS_" |
+
+## cubeship db create
+
+Provision a database.
+
+The password is generated unless you give one, and it is printed
+here once — after this, `db credentials` is where to read it.
+
+The container is pulled and started after this command returns,
+so the database comes back as "provisioning". `db get` says how
+it went.
+
+```bash
+cubeship db create <name> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--database` |  | the database to create inside the server (default: the name, with underscores) |
+| `--description` |  | what this database is for |
+| `--engine` |  | postgres, mysql or mariadb — see `db engines` |
+| `--expose` |  | publish on a host port; 0 picks one. Off unless the flag is given — see `db expose` |
+| `--password` |  | the password to set (default: generated) |
+| `--username` |  | the login to create (default "cubeship") |
+| `--version` |  | a version the daemon offers for that engine (default: the newest). Permanent |
+
+## cubeship db credentials
+
+Print a database's login.
+
+This writes a password to your terminal, and to your shell's
+history if you pipe it somewhere. It needs the admin role.
+
+```bash
+cubeship db credentials <name> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--uri` |  | print only the connection string, for piping into a client |
+
+## cubeship db delete
+
+Delete a database.
+
+The container is stopped and removed, and the data directory on
+the host goes with it. There is no backup and this cannot be
+undone.
+
+The apps attached to it keep running: a container holds the
+environment it was created with, so they only lose DATABASE_URL
+the next time they are deployed.
+
+```bash
+cubeship db delete <name> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--yes` |  | confirm that the database and its data should be deleted |
+
+## cubeship db detach
+
+Detach an app from a database.
+
+Its container keeps the variables it was created with until it is
+deployed again, so this is not how you cut an app off in a hurry.
+
+```bash
+cubeship db detach <name> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--app` |  | the app's full reference: project/environment/app |
+
+## cubeship db engines
+
+List the engines this daemon can run.
+
+Read this rather than guessing a version: a version is permanent
+once a database runs it, so the daemon only offers the ones it
+will keep running.
+
+```bash
+cubeship db engines
+```
+
+## cubeship db expose
+
+Publish a database on a host port, so something that is not an app
+on this instance can connect to it.
+
+There is no TLS in front of it. A database speaks its own protocol
+on its own port, so an exposed one is a password on the open
+internet — what makes that safe is the password and a firewall
+rule, which is yours to write.
+
+The container is replaced to pick the port up. The data is a bind
+mount on the host and survives that untouched.
+
+```bash
+cubeship db expose <name> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--port` |  | which host port to publish on; 0 takes the next free one from 15000-15999 |
+
+## cubeship db get
+
+Show one database, and which apps are attached to it
+
+```bash
+cubeship db get <name>
+```
+
+## cubeship db limits
+
+Cap how much of the machine a database's container may take.
+
+--cpu is cores and may be fractional: 0.5 is half a core.
+--memory takes a size: 512Mi, 2Gi, 1500M. It is enforced by
+the kernel killing whatever crosses it, so lowering one below
+what the database is already holding kills it on the spot —
+which its clients see as the connection going away.
+
+This is the container on a box this size most worth capping.
+An app that leaks is one app; a database that takes every
+page of memory takes the daemon and the proxy with it.
+
+Changing a limit takes effect immediately and does not
+replace the container, unlike publishing a port. Removing
+one — passing 0 — waits for the next start, because Docker
+reads a zero as "leave that one alone".
+
+With no flags it prints what the database is capped at now.
+
+```bash
+cubeship db limits <name> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--cpu` |  | cores it may use, fractional allowed; 0 removes the limit |
+| `--memory` |  | memory it may hold, e.g. 512Mi or 2Gi; 0 removes the limit |
+
+## cubeship db list
+
+List the databases on this instance
+
+```bash
+cubeship db list
+```
+
+## cubeship db logs
+
+Print a database's own log.
+
+The first place to look when it refuses connections or will
+not start. It carries no credential — the engine prints its own
+startup, not what Cubeship configured it with.
+
+```bash
+cubeship db logs <name> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--tail` |  | number of trailing lines, or "all" (default: the daemon's own limit) |
+
+## cubeship db start
+
+Turn a database back on.
+
+It is provisioned again — the container is recreated from the
+same settings, and the data is a directory on the host that a
+recreate does not touch. This is also how a database whose
+provisioning failed is retried.
+
+```bash
+cubeship db start <name>
+```
+
+## cubeship db stop
+
+Turn a database off.
+
+The container stops and stays, so its log survives and its data
+is untouched. `db start` brings it back.
+
+Every attached app keeps running and starts failing to connect,
+which is why this asks.
+
+```bash
+cubeship db stop <name> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--yes` |  | confirm that the database should be turned off |
+
+## cubeship db unexpose
+
+Take a database off its host port.
+
+Apps on this instance are unaffected — they never used it.
+
+```bash
+cubeship db unexpose <name>
+```
+

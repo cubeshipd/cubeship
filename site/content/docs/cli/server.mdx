@@ -1,0 +1,93 @@
+---
+title: cubeship server
+description: "Manage the machines this instance is made of"
+---
+
+{/* Generated from the CLI by `cubeship docs` — run `make reference`. Editing this file is editing the copy rather than the thing. */}
+
+Manage the machines this instance is made of.
+
+An instance is a control plane and any number of workers. The
+control plane is the box you installed — the database, the
+dashboard, the registry, the builder, and every decision. A
+worker is a second box running the same image in a mode where it
+decides nothing: it dials home every ten seconds, is told what to
+run, and publishes no port of its own.
+
+Adding one here mints a credential and contacts nothing. The row
+is a place for a machine that does not exist yet; installing the
+agent on it is the other half, and `server add` prints the command
+to run there.
+
+## cubeship server add
+
+Add a machine to this cluster.
+
+This mints the credential its agent authenticates with and
+contacts nothing: the row is a place for a machine that does not
+exist yet. What comes back is the command to run on that box,
+which is the other half and the only one that touches it.
+
+The credential is shown once. Only its hash is kept here, so
+nothing can hand it back — a machine whose token was lost is
+removed and added again.
+
+The name is permanent: it is how every screen and every
+placement refers to the machine.
+
+```bash
+cubeship server add <name> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--description` |  | what this machine is for |
+
+## cubeship server get
+
+Show one machine
+
+```bash
+cubeship server get <name>
+```
+
+## cubeship server list
+
+List the machines in this cluster, the control plane first.
+
+A status is worked out from when the machine last called in,
+never stored: `ready` is one that called within the last few
+passes, `unreachable` is one that has missed three, and `pending`
+is a machine that was added here and never installed.
+
+MESH says whether the machine is on the cluster's private
+network. One can be calling in and not on it, and then its
+containers cannot reach the other machines'.
+
+```bash
+cubeship server list
+```
+
+## cubeship server remove
+
+Take a machine out of this cluster.
+
+A local act: the row and its credential go, and the agent is
+refused the next time it calls. **Nothing on that machine is
+touched** — the containers it is running keep running, and
+uninstalling the daemon there is a separate thing you do on the
+box. A delete that reached out would be one that hangs on a host
+nobody can dial.
+
+A machine with apps on it is refused. Where those apps should go
+is a decision, and making it by deleting a row would make it
+invisibly — move them with `app place` first.
+
+```bash
+cubeship server remove <name> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--yes` |  | confirm that the machine should leave the cluster |
+
