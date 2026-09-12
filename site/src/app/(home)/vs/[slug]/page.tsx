@@ -43,7 +43,7 @@ export default async function ComparePage(props: PageProps<"/vs/[slug]">) {
           <p className="hud-frame mx-auto mt-8 inline-block border border-border bg-card px-5 py-3 font-mono text-sm">
             <span className="text-success">Cubeship is 100% free.</span>{" "}
             <span className="text-muted-foreground">
-              Every feature, every server, every user. Apache-2.0, no plans, no cloud — ever.
+              Every feature, every server, every user. No plans, no cloud.
             </span>
           </p>
           <p className="mt-4 text-muted-foreground text-sm">{c.cost}</p>
