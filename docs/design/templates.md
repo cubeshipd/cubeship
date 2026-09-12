@@ -65,6 +65,7 @@ inputs:                   # what the template cannot know
     label: Where the dashboard answers
   - key: appSecret
     type: secret
+    label: The app's session secret
     generate: 32          # the instance generates it and shows it once
 
 databases:
