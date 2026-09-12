@@ -1,0 +1,67 @@
+---
+title: Internal address
+description: cubeship-<project>-<environment>-<app> is where another app, a job or a container on this instance reaches this one. It survives deploys and means the same thing on every machine.
+---
+
+Inside the instance every app answers at
+
+```
+cubeship-<project>-<environment>-<app>
+cubeship-shop-production-api
+```
+
+on the port the app itself listens on. It is on the app's **Network**
+tab and in every response as `internal_host`, and it exists from the
+moment the app does — an app with no public name at all still has one,
+and a worker with no domain is exactly the app most likely to be called
+this way.
+
+It is the same shape a database (`cubeship-db-pg`) and a managed store
+(`cubeship-s3-media`) have, so reaching a database, a bucket and an app
+is one thing to learn rather than three.
+
+## Why not the public name
+
+From inside the box the public name is the wrong answer. The request
+leaves for a DNS record that points back at the same machine, and a
+host that does not route its own traffic back in — most VPS do not —
+answers nothing at all. What that looks like from the calling app is
+the other app being *down*, never a wrong address, which is why this
+is a name of its own rather than a line in a FAQ.
+
+## What it is, mechanically
+
+A **network alias** on the app's containers, not the container's name.
+A container is named for the deployment that created it and stops
+existing on the next deploy; the alias is the stable half, attached on
+the local bridge and on the [cluster's network](/docs/servers) both, so
+it means the same thing from another machine.
+
+Two things follow:
+
+- **Every copy of the app holds it.** Docker's own DNS answers with all
+  of them, so a scaled-out app is spread over without a second load
+  balancer.
+- **Nothing is in the path.** No proxy, so no TLS is terminated, the
+  [health check](/docs/apps/health-checks) does not apply, and the port
+  is the app's own rather than the one a public name routes to. "It
+  works publicly and not internally" and the reverse have completely
+  different causes.
+
+## After an upgrade
+
+A container picks the alias up when it is created, so an app that has
+not deployed since the instance gained this does not answer to it yet.
+Deploy it once.
+
+## Putting it in another app
+
+Set it where a URL goes:
+
+```
+API_URL=http://cubeship-shop-production-api:8080
+```
+
+`http`, because nothing terminates TLS on this path. If the app reads a
+port from its environment, use the one it listens on — the ports its
+names route to are on the same tab.

@@ -1,0 +1,87 @@
+---
+title: Source · the instance's registry
+description: docker push to the instance's own registry and the app deploys. Pin a tag to turn that off.
+---
+
+The default source. The instance runs a registry of its own, and an
+app's path in it is the app's reference:
+
+```bash
+docker login registry.example.com          # your API key as the password
+docker push registry.example.com/shop/production/api:latest
+```
+
+**The push is the deploy.** The registry notifies the daemon, the daemon
+starts a deploy, and nothing else has to be pressed. `cubeship app get
+shop/api` prints the exact path.
+
+The registry lives at `registry.<instance domain>`, so a registry app
+needs the instance to have a domain before there is anywhere to push.
+An instance that kept its sslip.io address has one already.
+
+## Logging in
+
+The username is your username and the password is an
+[API key](/docs/users/api-keys). What a key may do at the registry
+follows your role: a member pushes and pulls, and nobody deletes
+through `docker` — tidying up is the registry's own screen.
+
+If your username changes, `docker login` keeps failing until you log in
+again: the registry sees the username with the key.
+
+## Which tag runs
+
+An app carries a **tag**, and empty is a decision:
+
+- **Empty** — whatever is pushed. Every push under the app's path
+  deploys it, whatever the tag on the push. This is what every app is
+  until somebody says otherwise, and it is what the dashboard reports
+  as *autodeploy*.
+- **A tag, say `v1.0`** — the app is **pinned**. It deploys when
+  somebody asks, and a push is ignored even when it carries that very
+  tag: an app pinned to `v1.0` is one somebody decided should run
+  `v1.0`, and moving it from a notification nobody saw would overrule
+  that invisibly.
+
+There is no separate autodeploy switch. A flag and a tag can disagree
+and this cannot, so `autodeploy` on every response is derived from the
+tag being empty.
+
+Set the tag on the app's **Source** tab, with `cubeship app`, or with
+the `update_app` tool.
+
+## Deploying by hand
+
+```bash
+cubeship app deploy shop/api               # the configured tag, or latest
+cubeship app deploy shop/api --tag v1.1    # this one, whatever is configured
+```
+
+What was asked for beats what was configured, and the
+[deployment](/docs/apps/deploys) records the tag that actually ran —
+so the history can still say which version was live last Tuesday.
+
+## What a push does not do
+
+A push under an **external** app's name does not deploy it. The registry
+accepts the push — the repository path exists either way — but the
+daemon checks the source before acting, because running an image because
+something unrelated landed under that name would deploy a version nobody
+asked for.
+
+## Pulling on another machine
+
+A registry app placed on a [second server](/docs/apps/placement) is
+pulled from the instance's registry by that machine, as itself, with a
+credential that can pull and nothing else. On the control plane the
+image is fetched by the registry container's own name on the local
+bridge, so pulling never hairpins out through the public address.
+
+## Reclaiming disk
+
+Deleting an app leaves its images in the registry, and deleting a tag
+unlinks a manifest and leaves the layers. **Reclaim disk** on the
+registry's own page is the garbage collection pass that actually frees
+space; it is a button rather than a timer because the pass wants the
+registry stopped, which is a few seconds of every push failing. See
+[Registries](/docs/registries).

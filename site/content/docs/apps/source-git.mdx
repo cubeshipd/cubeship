@@ -1,0 +1,111 @@
+---
+title: Source · built from a repository
+description: From a Dockerfile you wrote, or from a repository with no Dockerfile at all. Connect GitHub and a push deploys it.
+---
+
+Cubeship builds on the box. Two sources, and they differ in where the
+recipe comes from:
+
+- **`dockerfile`** — a Dockerfile in the repository. BuildKit clones and
+  builds; nothing touches the daemon's disk.
+- **`railpack`** — no Dockerfile. [Railpack](https://railpack.com) reads
+  the code, works out the language, the install, the build and the
+  start command, and hands BuildKit a plan.
+
+```bash
+cubeship app create api --project shop --source dockerfile \
+  --repo https://github.com/you/api --ref main --dockerfile deploy/Dockerfile
+cubeship app create web --project shop --source railpack \
+  --repo https://github.com/you/web
+```
+
+`--ref` is a branch, a tag or a commit; empty means the repository's
+default branch. `--dockerfile` is the path inside the repository; empty
+means `Dockerfile` at the root.
+
+## The repository
+
+It must be `https://`, `http://` or `git://`. The rule is about what the
+builder can fetch unaided: SSH needs a key this instance does not have,
+and a clone failing on a host key deep inside a build explains nothing.
+
+A private repository needs the instance's **GitHub App** installed on
+the account that owns it — see [Git providers](/docs/apps/source-git#deploying-on-push).
+A token is minted per build and never appears in a URL, a log or a
+deployment row.
+
+## Deploying on push
+
+Connect a GitHub account under **Git providers** and every push to the
+repository builds and deploys the app:
+
+- An app with **no ref** deploys on a push to any branch.
+- An app with a ref deploys on a push to that branch — naming one is
+  how you opt out of the others.
+- A tag is never a branch. Pushing a tag deploys nothing.
+
+Until GitHub is connected, and for a repository anywhere else, a deploy
+is something you ask for:
+
+```bash
+cubeship app deploy shop/api                # the configured ref
+cubeship app deploy shop/api --tag feature  # this branch, this once
+```
+
+The tag argument of a deploy overrides the stored ref, which is how
+"deploy this branch" works. The deployment records what actually built.
+
+## What Railpack reads
+
+A Railpack build reads the app's **environment variables**, not only
+the container. Versions and commands a project pins go there:
+
+| Variable | What it does |
+| --- | --- |
+| `RAILPACK_NODE_VERSION`, `RAILPACK_PYTHON_VERSION`, … | pin a runtime |
+| `RAILPACK_INSTALL_CMD` | replace the install step |
+| `RAILPACK_BUILD_CMD` | replace the build step |
+| `RAILPACK_START_CMD` | what the container runs |
+
+Two apps on one repository with different environments are two
+different builds. A repository Railpack cannot plan — no start command
+it can find, say — fails the deploy with Railpack's own explanation in
+the [deployment's log](/docs/apps/deploys#the-build-log).
+
+## The build log
+
+A build is the one part of a deploy long enough that watching it is the
+point. Its output is written to the deployment **while it runs**, capped
+at 256 KiB keeping the tail — the reason a build failed is at the end
+of what it printed. Open the deployment on the app's Overview tab.
+
+## Where the build happens
+
+Always on the control plane, wherever the app runs. The builder
+(`cubeship-buildkit`) starts on the first build and not before: an
+instance that only runs images it is given never runs a privileged
+container it does not need.
+
+- An app on this machine gets the image loaded straight into the local
+  Engine. It never leaves the box.
+- An app placed on [another machine](/docs/apps/placement) gets it
+  pushed to the instance's registry, and that machine pulls it. So a
+  building app can only be placed elsewhere **once the instance has a
+  domain** — the registry follows the domain — and is refused with that
+  reason otherwise.
+
+Build caches are per app, in the data directory, and **nothing prunes
+them**. `docker exec cubeship-buildkit buildctl prune` is the manual
+answer for now.
+
+## Who may build
+
+Running an image somebody already published is a **member's** job.
+Turning source into an image is an **admin's**: a build executes
+whatever the repository contains, on this host, with the builder's
+privileges, which is a different kind of act.
+
+That binds three things: creating a building app, deploying one, and
+**writing its environment** — because for a Railpack app the
+environment is build input, and `RAILPACK_BUILD_CMD` is a command the
+build runs. Reading stays a member's.

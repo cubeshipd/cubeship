@@ -1,0 +1,86 @@
+---
+title: Domains and ports
+description: An app answers at any number of names, each carrying its own port. Certificates come from Let's Encrypt, and an sslip.io instance needs no DNS at all.
+---
+
+Add a domain to the app on its **Network** tab, point a DNS record at
+the server, and Cubeship gets the certificate. Under an sslip.io
+instance the name already resolves, so it works the moment it is added.
+
+## A name carries a port
+
+An app is served at any number of names, and **each name has its own
+port**. One image exposing an API on 8080 and an admin panel on 9090 is
+two names:
+
+| Host | Port |
+| --- | --- |
+| `api.example.com` | 8080 |
+| `admin.example.com` | 9090 |
+
+The proxy gets one router and one service per name, which is what
+makes the ports independent.
+
+A host is unique across the **instance**, not per app: the proxy routes
+by host and nothing else, and two apps claiming one name would give it
+two answers.
+
+## Ports
+
+Port **0** means "read it from the image", and it is the normal answer.
+`EXPOSE` ends up in an image's config, so the deploy reads it there —
+the Dockerfile is not always around, and never is for an image somebody
+else built. An image exposing nothing, or several, falls back to
+**8080**; a number on the name is you overruling that.
+
+The image is inspected inside the deploy, because that is the first
+moment it certainly exists. So a port cannot be detected when the app
+is configured, and the field is always offered.
+
+## The suggested name
+
+Every app is offered a name under the instance's own domain:
+
+```
+<app>.<environment>.<project>.<instance domain>
+api.production.shop.203-0-113-7.sslip.io
+```
+
+It is a suggestion, never assigned — plenty of apps should not answer
+on the internet. Under an sslip.io address every name resolves to the
+same host with nothing registered anywhere, so it works at once. Under
+a real domain it needs a wildcard record, or a
+[DNS provider](/docs/networking/dns-providers) that writes the
+instance's records.
+
+## Certificates
+
+Each name is its own Let's Encrypt certificate, issued by the proxy over
+TLS-ALPN on the instance's own :443 and renewed for you. The
+[Certificates](/docs/networking/certificates) screen says which name
+has one, which is waiting, and why.
+
+Two things worth knowing:
+
+- **Let's Encrypt rate-limits per registered domain**, and `sslip.io` is
+  one registered domain shared with everyone using it. A busy week can
+  hit the limit; a domain of your own does not share its allowance.
+- A name that failed once is **asked for again every half hour** for as
+  long as it is pending. A record written a minute late is not a name
+  lost for the life of the instance.
+
+## A change takes a redeploy
+
+A container keeps the labels it was created with, so adding or removing
+a name, or changing a port, changes nothing until the app is
+**redeployed**. The screen says so.
+
+## From the CLI
+
+```bash
+cubeship app get shop/api          # every name, with its port
+```
+
+Names are added and removed on the dashboard; the API has
+`POST /apps/{ref}/domains`, `PATCH …/domains/{id}` for the port and
+`DELETE …/domains/{id}`.

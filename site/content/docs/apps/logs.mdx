@@ -1,0 +1,37 @@
+---
+title: Logs
+description: The container's own output, per copy, coloured the way the program wrote it.
+---
+
+The **Logs** tab reads the app's container output — what `docker logs`
+shows — with the last 500 lines by default and a **Follow** switch that
+keeps reading.
+
+```bash
+cubeship app logs shop/api
+cubeship app logs shop/api --tail 2000
+```
+
+## Per machine
+
+A log belongs to one container. On an app running on several machines,
+`--server` (and the tab's picker) names which; the default is the
+control plane. Interleaving three machines' logs would need a clock
+they do not share.
+
+A log on another machine is read by that machine on its next poll —
+the request waits for it, about a second — and arrives as the same bytes
+a local log is.
+
+## Colour
+
+A program that colours its output arrives coloured: the terminal escape
+codes are rendered, in the colours the program chose, rather than
+printed. Filtering and downloading see the text with the codes taken
+out, so a search matches what you can see and a saved file opens in an
+editor.
+
+## Through an agent
+
+`get_app_logs` returns the tail — 200 lines by default, at most 100 KB
+— because a log pasted whole into a model's context is mostly waste.

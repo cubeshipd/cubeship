@@ -1,0 +1,57 @@
+---
+title: Autoscaling
+description: Hand the copy count to the instance. One signal, CPU, on the same scale as the chart, with a ceiling that is not optional.
+---
+
+```bash
+cubeship app autoscale shop/api --min 2 --max 8 --cpu 70
+cubeship app autoscale shop/api            # prints the rule
+cubeship app autoscale shop/api --off      # hands the count back
+```
+
+Or on the app's **Resources** tab. Off on every app until somebody turns
+it on.
+
+## The signal
+
+**CPU, averaged across the app's copies** — the number on the app's own
+chart, where 100 is one core. So a target of `70` is each copy sitting
+at seventy percent of a core, and the number you type is the number you
+were looking at.
+
+It is the only signal, on purpose. Adding a copy does not lower any
+copy's memory — each still holds what it holds — so a memory rule would
+climb and never come back. Requests per second would be the other honest
+signal, and this instance does not measure them.
+
+## The arithmetic
+
+`running × cpu ÷ target`, rounded up, clamped to `--min` and `--max`.
+Rounded up because half a copy does not exist and rounding down leaves
+every copy above target.
+
+**A maximum is required.** Without one a loop of requests is a loop of
+replicas until the machine has nothing left, which is a worse outage
+than the one this was turned on to avoid. The largest accepted is 100 —
+a typo limit, not a resource one.
+
+## Damping
+
+None of it is adjustable, and each number is a way a rule stops
+settling:
+
+- Within **10%** of target nothing moves.
+- Fewer than **three readings** — a minute and a half — is waited out;
+  a decision from one point is a decision from noise.
+- After a change it waits **three minutes** before another, and **ten
+  before a smaller one**. An extra copy costs some memory; one copy too
+  few costs the app its latency at exactly the moment load comes back.
+
+The cooldown survives a daemon restart, which is what an upgrade is.
+
+## What it changes
+
+The copy count, through the same path a person's `--replicas` takes:
+same spread over the app's machines, same immediate effect, no
+deployment recorded. Setting `--replicas` by hand while a rule is on is
+the rule's next decision to overrule.
