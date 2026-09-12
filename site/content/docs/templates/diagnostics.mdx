@@ -108,9 +108,10 @@ attributes.
 
 *Error.* A `domains.host` is not exactly one reference to an
 [input of type `domain`](/docs/templates/inputs) — a literal hostname,
-several references, surrounding text, or a reference to an input of a
-different type. A domain that could only ever mean one host would make
-the template installable exactly once.
+several references, extra text around one, a reference to something
+other than an input, or a reference to an input that is not of type
+`domain`. A domain that could only ever mean one host would make the
+template installable exactly once.
 
 ## Attachments
 
@@ -169,8 +170,8 @@ databases (Redis). It has no effect.
 
 ### `source.missing`
 
-*Error.* An app has neither `image` nor enough to build — no `repo`, or
-`repo` with no `build`.
+*Error.* An app has neither `image` nor `repo` — nothing to run at all
+— or has `build` set with no `repo` to build.
 
 ### `source.conflict`
 

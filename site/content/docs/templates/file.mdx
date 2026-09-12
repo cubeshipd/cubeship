@@ -101,7 +101,7 @@ would be a template that could steal one.
 | --- | --- | --- |
 | `key` | — | Required. What `attach` names. |
 | `name` | the key | The suggested instance name. |
-| `version` | the newest offered | The MinIO version. |
+| `version` | none | The MinIO version, unvalidated here — the instance decides what a missing one means. |
 | `buckets` | `[]` | The buckets to create inside it. |
 | `limits` | none | See [Limits](#limits-and-scaling). |
 
@@ -152,11 +152,12 @@ naming its `key`:
 | `bucket` | — | Required with `store`: which bucket the app gets. |
 | `prefix` | `""` | Upper case, ending in `_`, like `ANALYTICS_`. Distinguishes two attachments that would otherwise write the same variable names. |
 
-A database attachment contributes `<PREFIX>DATABASE_URL`,
-`_HOST`, `_PORT`, `_USER`, `_PASSWORD`, and `_NAME` unless the engine
-has no named databases. A store attachment contributes
-`<PREFIX>S3_ENDPOINT`, `_REGION`, `_BUCKET`, `_ACCESS_KEY_ID`,
-`_SECRET_ACCESS_KEY`, `_PATH_STYLE`.
+A database attachment contributes `<PREFIX><STEM>_URL`, `_HOST`,
+`_PORT`, `_USER`, `_PASSWORD`, and `_NAME` unless the engine has no
+named databases — `STEM` is `DATABASE` for postgres, mysql and
+mariadb, `REDIS` for redis, `MONGO` for mongodb. A store attachment
+contributes `<PREFIX>S3_ENDPOINT`, `_REGION`, `_BUCKET`,
+`_ACCESS_KEY_ID`, `_SECRET_ACCESS_KEY`, `_PATH_STYLE`.
 
 ### Environment
 
@@ -173,7 +174,7 @@ above.
 | --- | --- | --- |
 | `limits.cpu` | none | Cores, at least `0.01`. |
 | `limits.memory` | none | A size — `512Mi`, `2Gi`, `1500M` — at least `6Mi`. |
-| `scale` | the instance's default | How many copies. |
+| `scale` | none | How many copies, at least `1`. |
 | `spread` | `false` | Spread copies across machines rather than pack them onto one. |
 | `autoscale.min` | `1` | The floor, at least `1` and at most `max`. |
 | `autoscale.max` | — | Required with `autoscale`. At most `100`. |
