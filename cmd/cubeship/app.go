@@ -33,8 +33,8 @@ func newAppCmd() *cobra.Command {
 		Use:   "app",
 		Short: "Manage Cubeship apps",
 		Long: "Manage Cubeship apps.\n\n" +
-			"An app is named by its reference: org/project/environment/app.\n" +
-			"Three parts — org/project/app — means the production environment.\n" +
+			"An app is named by its reference: project/environment/app.\n" +
+			"Two parts — project/app — means the production environment.\n" +
 			"App names only have to be unique inside their environment, so the\n" +
 			"same name can exist in production and staging at once.",
 	}
