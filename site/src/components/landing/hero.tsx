@@ -1,19 +1,31 @@
 import { ArrowRight } from "lucide-react";
 import Link from "next/link";
+import { FaultyTerminal } from "@/components/faulty-terminal";
 import { InstallCommand } from "@/components/install-command";
 import { githubUrl } from "@/lib/shared";
 
 export function Hero() {
   return (
     <section className="relative overflow-hidden border-border border-b">
-      <div className="bg-grid absolute inset-0 [mask-image:radial-gradient(ellipse_at_center,black_20%,transparent_75%)]" />
+      <FaultyTerminal
+        className="absolute inset-0 [mask-image:radial-gradient(ellipse_at_center,black_10%,transparent_72%)]"
+        tint="#2de2e6"
+        brightness={0.32}
+        scale={1.6}
+        digitSize={1.2}
+        timeScale={0.35}
+        scanlineIntensity={0.5}
+        glitchAmount={0.6}
+        flickerAmount={0.5}
+        mouseStrength={0.12}
+      />
       <div className="relative mx-auto flex max-w-6xl flex-col items-center px-6 pt-24 pb-20 text-center">
         <p className="label text-primary">
           self-hosted <span className="text-magenta">·</span> one VPS or a whole cluster{" "}
           <span className="text-magenta">·</span> run by you or your agent
         </p>
         <h1 className="mt-5 max-w-3xl font-semibold text-4xl leading-tight tracking-tight sm:text-6xl">
-          A PaaS you run on your own servers.
+          The PaaS that runs on your servers and answers to your agent.
         </h1>
         <p className="mt-6 max-w-2xl text-lg text-muted-foreground leading-relaxed">
           Push an image and it is live, with HTTPS and a database beside it. Add a second machine
