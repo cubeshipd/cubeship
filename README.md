@@ -69,7 +69,7 @@ siblings on one network. Nothing else is installed on the host.
 On the server, as root:
 
 ```bash
-curl -fsSL https://cubeship.dev/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/cubeshipd/cubeship/master/install.sh | sh
 ```
 
 It installs Docker if the box has not got it, pulls two images, starts
@@ -381,7 +381,7 @@ Run the installer again. It pulls the newest release and replaces the
 containers; nothing under the data directory is touched.
 
 ```bash
-curl -fsSL https://cubeship.dev/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/cubeshipd/cubeship/master/install.sh | sh
 ```
 
 The dashboard shows you what changed the next time you open it. What is
