@@ -1,0 +1,87 @@
+---
+title: cubeship project
+description: "Manage Cubeship projects"
+---
+
+{/* Generated from the CLI by `cubeship docs` — run `make reference`. Editing this file is editing the copy rather than the thing. */}
+
+Manage Cubeship projects
+
+## cubeship project create
+
+Create a new project (comes with a "production" environment)
+
+```bash
+cubeship project create <slug>
+```
+
+## cubeship project delete
+
+Delete a project, every environment inside it and every app in
+those — each app's container is stopped and removed first.
+
+```bash
+cubeship project delete <project-slug> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--yes` |  | confirm that the project should be deleted |
+
+## cubeship project env
+
+Read and change the project's environment variables
+
+## cubeship project env list
+
+Show the variables set on this project.
+
+Where the level inherits from another, the effective set is shown
+instead, with the level each value came from.
+
+```bash
+cubeship project env list <project-slug>
+```
+
+## cubeship project env replace
+
+Replace the whole set of variables at this level.
+
+Anything not listed is DELETED. With no pairs at all, every
+variable at this level is removed. Requires --yes, because this
+is the command that can lose configuration.
+
+```bash
+cubeship project env replace <project-slug> [KEY=VALUE...] [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--yes` |  | confirm that variables you don't list should be deleted |
+
+## cubeship project env set
+
+Add or change variables. Anything you don't name keeps the value
+it has — use "env unset" to remove one, or "env replace" to
+overwrite the whole set.
+
+```bash
+cubeship project env set <project-slug> KEY=VALUE [KEY=VALUE...]
+```
+
+## cubeship project env unset
+
+Remove project variables, leaving the rest alone
+
+```bash
+cubeship project env unset <project-slug> KEY [KEY...]
+```
+
+## cubeship project list
+
+List projects
+
+```bash
+cubeship project list
+```
+

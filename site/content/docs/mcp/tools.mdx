@@ -1,0 +1,443 @@
+---
+title: Tool reference
+description: Every tool /mcp offers, with what each one takes — generated from the daemon.
+---
+
+{/* Generated from the daemon's MCP tools by cmd/sitedocs — run `make reference`.
+    Editing this file is editing the copy rather than the thing. */}
+
+Every tool an agent finds at `/mcp`, grouped the way the daemon
+registers them. A tool answers as the API key that called it: a member's
+key deploys and reads, an admin's also configures the instance. What a
+tool needs is in its inputs; what it refuses to do is in [MCP](/docs/mcp).
+
+## Account
+
+### create_api_key
+
+Issue an additional, independent API key for yourself under a given name (e.g. "mcp", "laptop") — it coexists with every key you already hold.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `name` * | string | a label to recognize this key by later, e.g. "mcp" or "laptop" |
+
+\* required
+
+### list_api_keys
+
+List metadata for every API key you hold (id, name, timestamps). Key values are never shown again after creation.
+
+Takes no input.
+
+### revoke_api_key
+
+Revoke one of your own API keys by id. **Never refused, including your last one**: a key that has leaked has to be able to go now, and being made to mint a replacement first would keep the leaked one live for as long as that took.
+
+So what it costs is yours to weigh before calling it. Revoking the key this session is authenticating with stops this session at once — the next call fails. Revoking the last one leaves the account with no key at all, and whether that leaves a way in depends on whether it has a password, which this surface does not tell you.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `id` * | integer | the key's id, from list_api_keys |
+
+\* required
+
+### rotate_my_api_key
+
+Replace the API key this MCP session is currently using with a freshly generated one. WARNING: the key authenticating this very session stops working immediately — this session's next call will fail. Every other key you hold is unaffected.
+
+Takes no input.
+
+### whoami
+
+Report who the API key this MCP session is using belongs to: the username, and the role it holds on this instance — `admin` or `member`.
+
+Takes no input.
+
+## Projects and environments
+
+### create_environment
+
+Create an additional environment within a project. Requires the admin role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `project` * | string | project slug |
+| `slug` * | string | short identifier used in URLs and as the environment name apps request. Permanent - it cannot be changed later |
+
+\* required
+
+### create_project
+
+Create a project. Comes with a "production" environment, which can never be deleted. Requires the admin role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `slug` * | string | short identifier used in URLs: lowercase letters, digits and dashes. Permanent - it cannot be changed later |
+
+\* required
+
+### delete_environment
+
+Delete an environment and every app deployed in it. Refused for the "production" environment, which every project must keep. Requires the admin role, and cannot be undone.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `environment` * | string | environment slug |
+| `project` * | string | project slug |
+
+\* required
+
+### delete_project
+
+Delete a project, the environments inside it and every app in those — each app's container is stopped and removed first. Requires the admin role, and cannot be undone.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `project` * | string | project slug |
+
+\* required
+
+### get_environment_env
+
+Read the environment variables set on one environment, plus the effective set an app there inherits (the project's, overridden by this environment's) with the source of every value.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `environment` * | string | environment slug |
+| `project` * | string | project slug |
+
+\* required
+
+### get_project_env
+
+Read the environment variables set on a project. Every environment and every app below inherits them.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `project` * | string | project slug |
+
+\* required
+
+### list_environments
+
+List the environments in a project.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `project` * | string | project slug |
+
+\* required
+
+### list_projects
+
+List the projects on this instance.
+
+Takes no input.
+
+### set_environment_env
+
+Add, change or remove environment variables shared by every app in one environment. Only the keys you name are touched. Requires the admin role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `environment` * | string | environment slug |
+| `project` * | string | project slug |
+| `set` | object | variables to add or overwrite |
+| `unset` | array | names of variables to remove |
+
+\* required
+
+### set_project_env
+
+Add, change or remove environment variables shared by every environment (and every app) in a project. Only the keys you name are touched. Requires the admin role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `project` * | string | project slug |
+| `set` | object | variables to add or overwrite |
+| `unset` | array | names of variables to remove |
+
+\* required
+
+## Apps
+
+### create_app
+
+Register a new app in a project and get its registry push path. environment defaults to "production" when omitted. Requires the member role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `dockerfile` | string | for a dockerfile app only, the recipe's path within the repository. Defaults to "Dockerfile" at the root. |
+| `environment` | string | environment slug (default "production") |
+| `image` | string | for an external app, the image it pulls, without a tag — e.g. "registry.digitalocean.com/acme/api". Leave empty otherwise. |
+| `name` * | string | app name: lowercase letters, digits and dashes — becomes part of its registry image path. Permanent |
+| `project` * | string | project slug |
+| `ref` | string | for a building app, the branch, tag or commit to build. Defaults to the repository's default branch. |
+| `repo` | string | for a building app, the https:// Git repository to build from. Leave empty otherwise. |
+| `source` | string | where the image comes from: "registry" (the default) for an image you push to Cubeship, "external" for one in a registry Cubeship does not run, "dockerfile" to build a Dockerfile from a Git repository, or "railpack" to build from a Git repository with no Dockerfile. Building requires the admin role. |
+| `tag` | string | the tag to run. Leave empty to follow the registry: on this instance's own that means a push deploys the app, and on any other it means latest. A building app has no tag — it names a ref. |
+
+\* required
+
+### delete_app
+
+Delete an app and stop the container serving it. Images already pushed stay in the registry. This cannot be undone. Requires the member role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | app reference: project/environment/app, or project/app for production |
+
+\* required
+
+### deploy_app
+
+Manually redeploy an app from an image tag already pushed to its registry path (no tag means "latest" for an image, or the stored ref for a source that builds). Waits for the deploy to finish and reports the outcome; if this call times out first, the deploy carries on regardless — check it with get_app_deployments. Requires the member role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | app reference: project/environment/app, or project/app for production |
+| `tag` | string | image tag already pushed to the app's registry path (default "latest") |
+
+\* required
+
+### get_app
+
+Get one app by reference: its domain, registry push path, status, and which project and environment it lives in.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | app reference: project/environment/app, or project/app for production |
+
+\* required
+
+### get_app_deployments
+
+List an app's recent deploys, newest first: whether each succeeded, and why it failed if it did. A deploy runs detached from the call that started it, so this is how you find out how one ended.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | app reference: project/environment/app, or project/app for production |
+
+\* required
+
+### get_app_env
+
+Read an app's environment variables: the ones set on the app itself, and the effective set its container runs with (project, then environment, then app — each overriding the last), with the source of every value. Read this before changing anything.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | app reference: project/environment/app, or project/app for production |
+
+\* required
+
+### get_app_logs
+
+Get an app's recent container log output (stdout and stderr combined).
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | app reference: project/environment/app, or project/app for production |
+| `server` | string | which server's copy to read, for an app that runs on more than one; defaults to the one serving its names |
+| `tail` | string | number of trailing lines to return, e.g. "500", or "all" for the full log (default "200") |
+
+\* required
+
+### list_apps
+
+List every app you can see, on this instance.
+
+Takes no input.
+
+### set_app_env
+
+Add, change or remove an app's own environment variables. Only the keys you name are touched — variables you don't mention are left alone. These are layered on top of (and override) the app's environment's and project's variables. Requires the member role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | app reference: project/environment/app, or project/app for production |
+| `set` | object | variables to add or overwrite |
+| `unset` | array | names of variables to remove |
+
+\* required
+
+### update_app
+
+Reconfigure an app: where its image comes from. Its domains are added and removed one at a time — an app can answer at several, each with its own port — so they are not here. A field you leave out is left as it was. The source and its settings travel together — naming a source without what it needs, or settings the source would ignore, is refused. Moving an app to a source that builds requires the admin role. The app's name cannot be changed.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `dockerfile` | string | for a dockerfile app only, the recipe's path within the repository |
+| `health_path` | string | the path Traefik asks this app for before trusting a container with traffic, e.g. /healthz. Send empty to check nothing, which is the default; a path that the app does not answer 2xx or 3xx on takes every replica out of rotation |
+| `image` | string | for an external app, the image it pulls, without a tag |
+| `ref` | string | for a building app, the branch, tag or commit to build |
+| `reference` * | string | the app's reference: project/environment/name |
+| `repo` | string | for a building app, the https:// Git repository to build from |
+| `source` | string | registry, external, dockerfile or railpack. Send the settings the new source needs alongside it |
+| `tag` | string | the tag to run; send empty to follow the registry, which on this instance's own means a push deploys the app |
+
+\* required
+
+## Databases
+
+### attach_datastore
+
+Wire an app to a database: the app's container is given DATABASE_URL and its parts — REDIS_URL for a Redis, MONGO_URL for a MongoDB — from its next deploy onwards. The app is named by its full reference, project/environment/name, and may be in any project. Use a prefix like "ANALYTICS_" when one app needs a second database of the same kind; a cache beside a database needs none, since the two name different variables. Requires the admin role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | the app's full reference: project/environment/name, or project/name for production |
+| `datastore` * | string | the database's name on this instance |
+| `prefix` | string | what the injected variables are named under, e.g. "ANALYTICS_". Leave empty for DATABASE_URL, REDIS_URL or MONGO_URL — whichever this engine writes. Only needed when two attachments would name the same variables. Uppercase, ending in an underscore |
+
+\* required
+
+### create_datastore
+
+Provision a managed database on this instance. It belongs to the instance, not to a project — one database can serve apps in several. It comes up with a generated password, which is never returned: attach an app to it and the app receives the connection string as environment variables. Requires the admin role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `database` | string | the database to create inside the server. Defaults to the name with dashes turned into underscores |
+| `description` | string | what this database is for, in a sentence |
+| `engine` * | string | which server to run: postgres, mysql or mariadb. Call list_datastore_engines for what this release offers |
+| `name` * | string | the database's name, unique on the instance: lowercase letters, digits and dashes. It is the container's name and is permanent |
+| `username` | string | the login to create. Defaults to "cubeship". MySQL and MariaDB will not accept "root" |
+| `version` | string | a version this release offers for that engine. Defaults to the newest. Permanent — a major version cannot be changed under an existing data directory |
+
+\* required
+
+### delete_datastore
+
+Delete a managed database, stop its container and remove its data from disk. This cannot be undone and there is no backup. Requires the admin role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `datastore` * | string | the database's name on this instance |
+
+\* required
+
+### detach_datastore
+
+Unwire an app from a database. Its container keeps the variables it was created with until it is deployed again, so this is not how you cut an app off in a hurry. Requires the admin role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | the app's full reference: project/environment/name |
+| `datastore` * | string | the database's name on this instance |
+
+\* required
+
+### get_datastore
+
+Get one managed database by reference: its engine, version, status, the address apps reach it at, and what each attached app receives. Passwords are not reported.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `datastore` * | string | the database's name on this instance |
+
+\* required
+
+### list_datastore_engines
+
+List the database engines this Cubeship release can run and the versions it offers for each. Call this before create_datastore rather than guessing a version.
+
+Takes no input.
+
+### list_datastores
+
+List every managed database on this instance: which engine and version each runs, whether it is up, and which apps are attached to it.
+
+Takes no input.
+
+## Object storage
+
+### attach_object_store
+
+Wire an app to a bucket: the app's container is given S3_ENDPOINT, S3_REGION, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY and S3_PATH_STYLE from its next deploy onwards. The app is named by its full reference, project/environment/name, and may be in any project. Use a prefix like "BACKUPS_" when one app needs a second bucket, since two attachments would otherwise name the same variables. The keys are never reported here — the app receives them. Requires the admin role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | the app's full reference: project/environment/name, or project/name for production |
+| `bucket` * | string | which bucket in that store the app is pointed at |
+| `prefix` | string | what the injected variables are named under, e.g. "BACKUPS_". Leave empty for S3_ENDPOINT and its parts. Only needed when one app is attached to two buckets. Uppercase, ending in an underscore |
+| `store` * | string | the object store's name on this instance |
+
+\* required
+
+### detach_object_store
+
+Unwire an app from a bucket. Its container keeps the variables it was created with until it is deployed again, so this is not how you cut an app off in a hurry — rotating the credential is. Requires the admin role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | the app's full reference: project/environment/name |
+| `bucket` * | string | which bucket to unwire it from |
+| `store` * | string | the object store's name on this instance |
+
+\* required
+
+### get_object_store
+
+Get one object store by name: where it answers, which provider it is, and — for one this instance runs — whether it is up. Keys are never reported.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `store` * | string | the object store's name on this instance |
+
+\* required
+
+### list_buckets
+
+List the buckets in one object store. Requires the admin role, like everything about a store's contents.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `store` * | string | the object store's name on this instance |
+
+\* required
+
+### list_object_stores
+
+List the object storage this instance can reach: the MinIO servers it runs and the S3 endpoints it holds keys for. Each carries the endpoint an app on this instance connects to, so this is how you find out where an app should write. Keys are never reported.
+
+Takes no input.
+
+### list_objects
+
+List one level of one bucket: the folders directly under a prefix and the files directly in it, with their sizes and when each was last written. Names and sizes only — no tool here reads what is in a file. Requires the admin role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `bucket` * | string | the bucket to look in |
+| `cursor` | string | continue a listing that reported one. Omit for the first page |
+| `prefix` | string | the folder to list, e.g. "backups/2026/". Empty for the root of the bucket |
+| `store` * | string | the object store's name on this instance |
+
+\* required
+
+## The machine
+
+### instance_containers
+
+List what every container on this instance is using right now — apps, databases and managed object stores together — heaviest CPU first. Each carries the name that identifies it: an app's full project/environment/name reference, a database's or a store's name. The CPU convention here is the container one: 100 is one core, unlike instance_metrics, where 100 is the whole machine. This is what answers "what is eating this box" without opening every app in turn.
+
+Takes no input.
+
+### instance_metrics
+
+Read what the machine this Cubeship instance runs on has been doing: how much of its CPU is busy (100 is every core, unlike an app's series where 100 is one core), how much of its memory is spoken for, how full the disk everything is kept on is, and how fast bytes are moving over its own interfaces. Samples are 30 seconds apart and a day is kept. A measurement this daemon cannot take comes back under `unavailable` with the reason, rather than as a number that is wrong.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `window` | string | how much of the past to cover: 1h, 6h or 24h. Defaults to 1h |
+
+\* required
+
+## Servers
+
+### list_servers
+
+List the machines this Cubeship instance is made of: the control plane — the box it was installed on, which holds the database, the dashboard, the registry and the builder — and the workers connected to it. Each carries what it last reported: its cores, memory and disk, the newest load reading, and whether it is answering. A server that has never connected is "pending"; one that connected and stopped is "unreachable", which says nothing about why.
+
+Takes no input.
+

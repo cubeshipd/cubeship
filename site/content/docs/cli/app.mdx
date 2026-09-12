@@ -1,0 +1,259 @@
+---
+title: cubeship app
+description: "Manage Cubeship apps"
+---
+
+{/* Generated from the CLI by `cubeship docs` — run `make reference`. Editing this file is editing the copy rather than the thing. */}
+
+Manage Cubeship apps.
+
+An app is named by its reference: project/environment/app.
+Two parts — project/app — means the production environment.
+App names only have to be unique inside their environment, so the
+same name can exist in production and staging at once.
+
+## cubeship app autoscale
+
+Hand an app's replica count to this instance.
+
+It reads the average CPU across the app's copies over the
+last three minutes — what the app's own chart shows — and
+works towards --cpu on each of them. 100 is one core, the
+same scale the charts are drawn on, so the number you type
+is the number you were looking at.
+
+--max is required and is not a formality: without a ceiling
+a loop of requests is a loop of replicas until the machine
+has nothing left, which is a worse outage than the one this
+was turned on to avoid.
+
+It is damped and none of that is adjustable: within 10% of
+target nothing moves, fewer than three readings is waited
+out, and after a change it waits three minutes before the
+next — ten before a smaller one, because an extra copy costs
+some memory and one copy too few costs the app its latency
+exactly as load comes back.
+
+CPU is the only signal. Adding a copy does not lower any
+copy's memory, so a memory rule would climb and never return.
+
+--off hands the count back. With no flags it prints the rule.
+
+```bash
+cubeship app autoscale <reference> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--cpu` |  | CPU each copy should sit at, where 100 is one core |
+| `--max` |  | most copies to run — required, and there is no unlimited |
+| `--min` |  | fewest copies to leave running (default 1) |
+| `--off` |  | hand the count back: the app stays where it is |
+
+## cubeship app create
+
+Register a new app and get its registry image path
+
+```bash
+cubeship app create <name> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--domain` |  | a domain to serve the app on; add more with `app domain add` |
+| `--env` |  | environment slug within the project (default "production") |
+| `--image` |  | for --source external: the image it pulls, without a tag — the tag is its own flag |
+| `--port` |  | what that domain reaches inside the container; 0 reads it from the image |
+| `--project` |  | project slug this app belongs to |
+| `--source` |  | where the image comes from: "registry" (the default) means one you push to Cubeship |
+| `--tag` |  | the tag to run; leave it out to follow the registry, which on Cubeship's own means a push deploys the app |
+
+## cubeship app delete
+
+Delete an app.
+
+The container serving it is stopped and removed first. Images you
+already pushed stay in the registry. This cannot be undone.
+
+```bash
+cubeship app delete <app> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--yes` |  | confirm that the app should be deleted |
+
+## cubeship app deploy
+
+Redeploy an app from a tag already pushed to its registry path.
+
+The deploy runs on the daemon, not in this command — pressing
+Ctrl-C, or losing the connection, stops the waiting, not the
+deploy. Use "app deployments" to catch up on one you stopped
+watching.
+
+```bash
+cubeship app deploy <app> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--detach` |  | start the deploy and return without waiting for it |
+| `--tag` | `latest` | image tag to deploy |
+
+## cubeship app deployments
+
+Show an app's recent deploys and how each one went
+
+```bash
+cubeship app deployments <app>
+```
+
+## cubeship app env
+
+Read and change the app's environment variables
+
+## cubeship app env list
+
+Show the variables set on this app.
+
+Where the level inherits from another, the effective set is shown
+instead, with the level each value came from.
+
+```bash
+cubeship app env list <name>
+```
+
+## cubeship app env replace
+
+Replace the whole set of variables at this level.
+
+Anything not listed is DELETED. With no pairs at all, every
+variable at this level is removed. Requires --yes, because this
+is the command that can lose configuration.
+
+```bash
+cubeship app env replace <name> [KEY=VALUE...] [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--yes` |  | confirm that variables you don't list should be deleted |
+
+## cubeship app env set
+
+Add or change variables. Anything you don't name keeps the value
+it has — use "env unset" to remove one, or "env replace" to
+overwrite the whole set.
+
+```bash
+cubeship app env set <name> KEY=VALUE [KEY=VALUE...]
+```
+
+## cubeship app env unset
+
+Remove app variables, leaving the rest alone
+
+```bash
+cubeship app env unset <name> KEY [KEY...]
+```
+
+## cubeship app get
+
+Show one app, including its registry push path
+
+```bash
+cubeship app get <app>
+```
+
+## cubeship app limits
+
+Cap how much of a machine one copy of an app may take.
+
+--cpu is cores and may be fractional: 0.5 is half a core. It
+is a ceiling rather than a share — a container at its limit is
+throttled, not merely preferred less when the machine is busy.
+
+--memory takes a size: 512Mi, 2Gi, 1500M. It is enforced by
+the kernel killing whatever crosses it, so lowering one below
+what a container is already holding kills it on the spot.
+
+Both are per copy. An app with three replicas and --cpu 1 may
+take three cores between them.
+
+Raising or lowering one takes effect immediately, on every
+machine the app runs on, without a deploy: a ceiling is the
+one part of a container Docker can change while it runs.
+Removing one — passing 0 — is the exception, because Docker
+reads a zero as "leave that one alone": the app goes back to
+uncapped on its next deploy.
+
+With no flags it prints what the app is capped at now.
+
+```bash
+cubeship app limits <reference> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--cpu` |  | cores one copy may use, fractional allowed; 0 removes the limit |
+| `--memory` |  | memory one copy may hold, e.g. 512Mi or 2Gi; 0 removes the limit |
+
+## cubeship app list
+
+List the apps you can see
+
+```bash
+cubeship app list
+```
+
+## cubeship app logs
+
+Print an app's recent container logs
+
+```bash
+cubeship app logs <app> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--tail` |  | number of trailing lines, or "all" (default: the daemon's own limit) |
+
+## cubeship app place
+
+Choose which machines run an app, and how many copies of it.
+
+More than one machine puts this instance's proxy in front of
+every copy, round-robin, over the cluster's private network.
+Each new machine starts the app before the ones leaving stop
+it, so a placement that fails is not an outage.
+
+--replicas is how many copies run in total, spread over those
+machines round-robin: four over three is 2, 1, 1. Never fewer
+than there are machines — a machine given nothing to run is a
+machine placed there for no effect. On one machine, several
+copies are swapped one at a time, so a deploy is a rolling one
+rather than a moment with none of them serving.
+
+--everywhere makes the app follow the cluster: it runs on
+every machine there is, and on any that joins later. It is a
+switch rather than a third way of naming machines — --on and
+--replicas already say where and how many, and what they
+cannot say is "wherever the cluster goes". Passing --on
+turns it off again, because that is choosing by hand.
+
+Nothing about this touches DNS. Every name this instance
+serves arrives at the control plane, which routes it to
+whichever machine runs the app — so a record points here once
+and never moves again.
+
+```bash
+cubeship app place <reference> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--everywhere` |  | follow the cluster: run on every machine there is, and on any that joins |
+| `--on` |  | the machines that run it, by name |
+| `--replicas` |  | how many copies to run in total, spread over those machines (default: unchanged) |
+

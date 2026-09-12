@@ -31,6 +31,7 @@ func main() {
 	root.AddCommand(newServerCmd())
 	root.AddCommand(newUserCmd())
 	root.AddCommand(newVersionCmd())
+	root.AddCommand(newDocsCmd(root))
 
 	if err := root.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
