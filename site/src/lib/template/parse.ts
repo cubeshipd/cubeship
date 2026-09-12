@@ -25,6 +25,13 @@ function mergeErrorSpans(errors: readonly YamlError[]): YamlError[] {
   return merged;
 }
 
+// yaml embeds its own "at line X, column Y" position and a caret snippet
+// in the message. range is the single source of position now, so a
+// message and a range that each name a different line would disagree.
+function stripPosition(message: string): string {
+  return message.replace(/\s*at line \d+, column \d+:[\s\S]*$/, "");
+}
+
 function rangeOf(
   counter: LineCounter,
   node: { range?: [number, number, number] | null },
@@ -77,7 +84,7 @@ export function parseSource(source: string): {
     return {
       severity: "error" as const,
       code: "yaml.syntax",
-      message: error.message,
+      message: stripPosition(error.message),
       path: [],
       range: { start: point, end: point },
     };

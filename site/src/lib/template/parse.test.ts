@@ -18,6 +18,21 @@ describe("parseSource", () => {
     expect(diagnostics[0].range?.start.line).toBe(2);
   });
 
+  it("strips yaml's own position and caret snippet from the message", () => {
+    const { diagnostics } = parseSource("project: [oops\n");
+
+    expect(diagnostics[0].message).not.toMatch(/line/i);
+    expect(diagnostics[0].message).not.toMatch(/\^/);
+    expect(diagnostics[0].range?.start.line).toBe(2);
+  });
+
+  it("keeps two independent syntax errors as two diagnostics", () => {
+    const { diagnostics } = parseSource("a: 1\na: 2\nb: 1\nb: 2\n");
+
+    expect(diagnostics.length).toBe(2);
+    expect(diagnostics[0].range?.start.line).not.toBe(diagnostics[1].range?.start.line);
+  });
+
   it("locates a value by path", () => {
     const { locate } = parseSource("apps:\n  - name: web\n    port: 3000\n");
     const range = locate(["apps", 0, "port"]);
