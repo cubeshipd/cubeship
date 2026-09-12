@@ -1,0 +1,46 @@
+---
+title: Restoring
+description: Into the database it came from, after typing that database's name. It replaces what is there and cannot be undone.
+---
+
+On the database's **Settings → Backups** tab, every successful dump has
+**Restore**. It asks for the database's own name first, because what
+follows replaces every table and cannot be undone.
+
+## What it does
+
+Streams the dump back into the engine's own restore tool inside the
+container: `psql`, `mysql`, `mariadb`, `mongorestore --drop`. Postgres
+dumps carry `--clean --if-exists`, so restoring over a database that
+already has tables replaces them rather than failing on the first
+`CREATE`.
+
+**It does not stop the database.** An app writing during a restore
+produces a state that is neither the backup nor what was there, and the
+screen says so rather than pretending otherwise. Stop the apps, or
+[stop the database](/docs/databases/running) and start it again first,
+if that matters for the database in question.
+
+## What is refused
+
+- A dump still `taking`, or one that `failed`.
+- A dump from **another engine or another major version**. The name,
+  the engine and the version are stored on every backup for exactly this
+  check; a dump that could not say what produced it is one nobody can
+  safely load anywhere.
+- A dump whose **database has been deleted**. It can be downloaded and
+  not restored: where it should go is a choice this release does not
+  offer, and picking one on somebody's behalf would be the wrong database
+  quietly replaced. Create a database with the same engine and major
+  version, and load the downloaded file with the engine's own tool.
+
+## Restoring somewhere else
+
+A downloaded dump is the engine's own format, and loads anywhere that
+engine runs:
+
+```bash
+psql "$DATABASE_URL" < shop-2026-09-11.dump
+mysql -u shop -p shop < shop-2026-09-11.dump
+mongorestore --archive=shop-2026-09-11.dump --drop --uri "$MONGO_URL"
+```

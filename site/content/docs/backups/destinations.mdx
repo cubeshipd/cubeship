@@ -1,0 +1,45 @@
+---
+title: Destinations
+description: A bucket off the machine, or this disk. What "off the machine" means, and why the instance's own MinIO is not it.
+---
+
+A dump goes to one of two places, and every backup remembers which.
+
+## A linked object store
+
+An S3-compatible bucket somewhere else — Amazon S3, Cloudflare R2,
+DigitalOcean Spaces, anything you have [linked](/docs/object-storage)
+with a credential. The dump is an `io.Pipe` from the engine's own
+command straight into a multipart upload: **it never touches this
+machine's disk on the way out**, so a database larger than the disk
+under it — the ordinary case on a small VPS — is still a backup.
+
+The object is `cubeship/<database>/<timestamp>.dump` in the bucket you
+chose, and the row on the instance records the same key.
+
+## This machine
+
+With no store linked, dumps are written under the data directory. That
+works the minute the instance is installed and is **not a backup**: a
+dump beside the database it came from survives somebody dropping a
+table and nothing else — not the disk, not the box, not the provider.
+Every screen showing one says so, and
+[coverage](/docs/backups/coverage) reports the database as *on this
+machine*.
+
+## A managed store is this machine
+
+An object store the instance runs is a MinIO container with its objects
+under the same data directory — the same disk as the database and as a
+local dump. Choosing it as a destination is choosing this machine, and
+the schedule form says so with the same warning. Cubeship records
+whether a dump actually left the box **at the moment it was taken**, so
+a store deleted a month later cannot change the answer.
+
+## Downloading
+
+Any successful dump can be downloaded from the database's Backups tab,
+and from the Backups screen for a database that has been deleted —
+`GET /backups/{id}/download` through the API. What you get is the
+engine's own format: SQL for Postgres and the MySQL family, an archive
+for MongoDB.

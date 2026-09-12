@@ -1,0 +1,52 @@
+---
+title: The instance's own backup
+description: Cubeship's own database — every account, project, app, credential and attachment — plus the two files that cannot be worked out again, on the same schedule machinery.
+---
+
+The most valuable database on the box is Cubeship's own Postgres, which
+holds every user, project, app, credential and attachment and is not a
+datastore at all. **Settings → Backups** backs it up the way a
+database's tab does: a schedule, a destination, a retention, and **Back
+up now**.
+
+## What the archive holds
+
+A gzipped tar with three things in it:
+
+| Entry | What it is |
+| --- | --- |
+| `cubeship.sql` | a plain-SQL `pg_dump` of the instance's database |
+| `letsencrypt/acme.json` | every certificate the instance holds, with its private keys |
+| `projects/` | the pictures chosen for projects |
+
+The certificate store is in because losing it is not fatal — the proxy
+asks again — but asking again spends a weekly allowance Let's Encrypt
+shares across everyone under the same registered domain, and on a
+default install that domain is `sslip.io`.
+
+## What is deliberately out
+
+**The data.** A datastore's directory and a managed store's objects are
+the two largest things on the box by orders of magnitude, and each has a
+backup of its own that can go somewhere else. Folding them in would make
+the one artifact that has to be small enough to take every night the one
+that is too big to take at all. The build cache is a cache, the setup
+token is spent, and the proxy's routes are written from the rows on
+every start.
+
+## Retention counts within a kind
+
+The instance's dumps and a database's are two windows: a nightly copy
+of the instance never pushes somebody's database out of its own seven.
+
+## An instance on somebody else's database
+
+An instance started with `CUBESHIP_DATABASE_URL` pointing at a Postgres
+it does not run has no container to dump through, and is **refused with
+that sentence** — back that server up where it lives.
+
+## There is no restore button
+
+The thing it would replace is the database the button runs on. Putting
+an instance back is an operator's procedure, and the screen says so
+where the button would be: [Putting an instance back](/docs/backups/putting-an-instance-back).

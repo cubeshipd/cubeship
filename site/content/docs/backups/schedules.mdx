@@ -1,0 +1,49 @@
+---
+title: Schedules
+description: A time of day and a timezone, a destination, and how many to keep. The schedule existing is what "scheduled" means.
+---
+
+On the database's **Settings → Backups** tab:
+
+| Field | What it is |
+| --- | --- |
+| **At** | a time of day, `03:00` |
+| **Timezone** | the one that time is in — 03:00 on a server's clock is not the middle of anybody's night |
+| **Destination** | a linked object store and a bucket, or this machine |
+| **Keep** | how many successful dumps to hold; `0` keeps every one |
+
+A time of day rather than an interval, because what is being chosen is
+when the database may be busy and slow, and "every 24 hours from
+whenever you turned it on" is not something anybody can plan around.
+
+The schedule row existing is what *scheduled* means. There is no
+separate switch that could say off while a time sat there; removing the
+schedule is turning it off.
+
+## Back up now
+
+The same tab has a button, and it takes a dump to the schedule's
+destination — or to this machine, with the warning, when there is no
+schedule. Through the API it is `POST /backups/databases/{name}`.
+
+## Retention
+
+**Retention counts only the dumps that succeeded.** A week of failures
+would otherwise push the last good dump out of the window, which is the
+one moment retention must not be the thing that loses it. Failed rows
+are kept regardless.
+
+Pruning runs after each successful dump, so what is held is the newest
+*keep* good ones. `0` holds every one — a decision, and the screen says
+what it costs on a disk.
+
+## When it fires
+
+The timer marks the schedule as run **before** the dump starts, so a
+dump that takes an hour, or a daemon that dies during one, cannot make
+the schedule fire again the moment it comes back.
+
+## The instance's own
+
+The same four answers, under **Settings → Backups**. See
+[The instance](/docs/backups/instance).

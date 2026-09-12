@@ -1,39 +1,67 @@
 ---
 title: Backups
-description: Postgres, MySQL, MariaDB and MongoDB dumped on a schedule into a bucket off the machine, and restored from the same screen.
+description: A logical dump of a database, taken on a schedule or on demand, put somewhere that is not this machine, and put back from the same screen.
 ---
 
-Postgres, MySQL, MariaDB and MongoDB are dumped the way their own tools
-do it, on a schedule or on demand, from the **Backups** tab of the
-database's settings.
+Cubeship backs up the databases it runs — Postgres, MySQL, MariaDB and
+MongoDB — and the instance itself. Redis is
+[left out on purpose](/docs/databases/engines#redis).
 
-- **A time of day, a timezone, and how many to keep.** Retention counts
-  only the dumps that worked: a week of failures never pushes out the
-  last good one.
-- **Into a bucket, off the machine.** Link an object store and the dump
-  streams straight into it without landing on this box's disk — a
-  database larger than the disk under it is still a backup. With nothing
-  linked it is written locally, which is a copy on the same disk as the
-  database, and every screen showing one says so.
-- **Restored from the same screen**, into the database it came from,
-  after typing that database's name.
-- **Kept when the database is deleted**, which is the moment they
-  matter. **Backups** under Platform says what every database is covered
-  by, worst first, and holds the dumps whose database is gone.
+## What a backup is
 
-<Callout title="Redis is not in the list, on purpose">
-It is a cache and a queue on a box this size, and there is no good
-answer to what a nightly copy of one would be restored *to*.
-</Callout>
+A **logical dump**, and only that: `pg_dump`, `mysqldump`,
+`mariadb-dump`, `mongodump`, each run inside the database's own
+container. It is the one kind of copy that works the same across the
+engines, survives a major version changing under it, and comes out as a
+single stream that can be sent somewhere else — the only property that
+makes any of this a backup.
 
-## The instance itself
+What it is not: a copy of the data directory (fast to restore, pinned to
+the exact version, and corrupt if taken while the engine runs) or
+continuous archiving (WAL, binlog — a different product). Each engine's
+page says what its dump [promises](/docs/databases/engines): Postgres
+and the MySQL family give one transaction, MongoDB one collection at a
+time.
 
-**The instance backs itself up the same way** — its own Postgres, with
-every account, project, app, credential and attachment in it, plus the
-certificate store and the project pictures — under **Settings →
-Backups**.
+## Where it goes
 
-There is no button to put that one back, because the thing it would
-replace is the database the button runs on. Restoring an instance is a
-fresh install, the daemon stopped, the dump loaded and the files put in
-place — and the screen says so where the button would be.
+An [object store](/docs/backups/destinations) you have linked, streamed
+straight into the bucket without landing on this box's disk — or, with
+nothing linked, this machine's own disk, which works the minute the
+instance is installed and **is not a backup**. Every screen showing a
+local dump says so.
+
+## Statuses
+
+| Status | Meaning |
+| --- | --- |
+| `taking` | in flight — cannot be restored from or deleted |
+| `succeeded` | restorable |
+| `failed` | kept, with the engine's own explanation — the evidence that a schedule is not working |
+
+A failure keeps the row. A backup that did not happen is the thing
+somebody most needs to find out about, and a row that vanished on
+failure would be a schedule that looks like it is working.
+
+## Where it is on the dashboard
+
+- The database's **Settings → Backups** tab: the schedule, **Back up
+  now**, and that database's own history, polling while one is in
+  flight. Restore and download live here.
+- **Backups** under Platform: [coverage](/docs/backups/coverage) — one
+  row per database, worst first — and the backups of deleted databases.
+- **Settings → Backups**: the [instance's own](/docs/backups/instance).
+
+## Roles
+
+All of it is an **admin's**. A dump is every row in the database, so
+somebody who may take one may read everything it holds, and a restore
+replaces all of it. There are no MCP tools and no CLI commands for
+backups in this release; the API is under `/backups`.
+
+<Cards>
+  <Card title="Schedules" href="/docs/backups/schedules" description="A time of day, a timezone, how many to keep." />
+  <Card title="Destinations" href="/docs/backups/destinations" description="What counts as off the machine." />
+  <Card title="Restoring" href="/docs/backups/restoring" />
+  <Card title="Putting an instance back" href="/docs/backups/putting-an-instance-back" />
+</Cards>

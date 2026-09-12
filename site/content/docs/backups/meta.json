@@ -1,4 +1,11 @@
 {
   "title": "Backups",
-  "pages": []
+  "pages": [
+    "schedules",
+    "destinations",
+    "restoring",
+    "coverage",
+    "instance",
+    "putting-an-instance-back"
+  ]
 }
