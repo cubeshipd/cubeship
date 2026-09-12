@@ -309,6 +309,77 @@ func TestTheReportSaysWhichPublishedPortsAreOpen(t *testing.T) {
 	}
 }
 
+// Remove is Add's counterpart, for the same callers: internal/datastore
+// and internal/objectstore withdraw a rule with no Service and no caller
+// to ask, exactly the shape internal/mesh already admits one in.
+func TestRemoveDeletesTheRuleARequestNames(t *testing.T) {
+	host := &fakeHost{}
+	spec := Spec{Scope: ScopeApps, Action: ActionAllow, Protocol: ProtocolTCP, Port: "5432", Comment: "cubeship"}
+	if err := Remove(context.Background(), host, spec); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if len(host.ran) != 2 {
+		t.Fatalf("ran %v", host.ran)
+	}
+	for _, cmd := range host.ran {
+		if cmd != "ufw route delete allow proto tcp from any to any port 5432 comment cubeship" {
+			t.Errorf("wrong delete: %q", cmd)
+		}
+	}
+}
+
+// The instance the bug was found on had exactly this: an IPv4 rule long
+// gone and an IPv6 twin still sitting there. One delete only ever
+// clears one of the two, so ufw's refusal for a rule that is not there
+// has to be success rather than a failure — twice, since either attempt
+// may be the one that finds nothing.
+func TestRemoveTreatsANonExistentRuleAsSuccess(t *testing.T) {
+	host := &fakeHost{fail: map[string]string{"ufw": "ERROR: Could not delete non-existent rule"}}
+	spec := Spec{Scope: ScopeHost, Action: ActionAllow, Port: "22"}
+	if err := Remove(context.Background(), host, spec); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if len(host.ran) != 2 {
+		t.Errorf("did not try twice: %v", host.ran)
+	}
+}
+
+// A real refusal is still a refusal, and it stops the second attempt
+// rather than trying blindly a third time past it.
+func TestRemoveStopsOnARealRefusal(t *testing.T) {
+	host := &fakeHost{fail: map[string]string{"ufw": "ERROR: Bad port"}}
+	spec := Spec{Scope: ScopeHost, Action: ActionAllow, Port: "22"}
+	err := Remove(context.Background(), host, spec)
+	if err == nil || !strings.Contains(err.Error(), "Bad port") {
+		t.Fatalf("remove: %v", err)
+	}
+	if len(host.ran) != 1 {
+		t.Errorf("tried again after a real refusal: %v", host.ran)
+	}
+}
+
+// Nothing user-supplied reaches a command line, here either — Remove is
+// Add's counterpart, and holds the same guarantee.
+func TestRemoveChecksTheSpecFirst(t *testing.T) {
+	host := &fakeHost{}
+	bad := Spec{Scope: ScopeHost, Action: ActionAllow, Port: "22; rm -rf /"}
+	if err := Remove(context.Background(), host, bad); !errors.Is(err, ErrBadRule) {
+		t.Fatalf("remove: %v", err)
+	}
+	if len(host.ran) != 0 {
+		t.Errorf("ran a command from an unchecked spec: %v", host.ran)
+	}
+}
+
+// A daemon with no way onto the host answers the same way Add does,
+// rather than being asked to run anything.
+func TestRemoveWithNoHostAnswersUnavailable(t *testing.T) {
+	spec := Spec{Scope: ScopeHost, Action: ActionAllow, Port: "22"}
+	if err := Remove(context.Background(), nil, spec); !errors.Is(err, hostexec.ErrUnavailable) {
+		t.Errorf("remove with a nil host: %v", err)
+	}
+}
+
 type fakePorts []dockerx.PublishedPort
 
 func (f fakePorts) PublishedPorts(context.Context) ([]dockerx.PublishedPort, error) {
