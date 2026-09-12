@@ -12,8 +12,7 @@ export function baseOptions(): BaseLayoutProps {
     links: [
       { text: "Docs", url: "/docs" },
       { text: "Changelog", url: `${githubUrl}/blob/master/CHANGELOG.md` },
-      // The star count in place of the preset's plain icon; the docs
-      // sidebar keeps the icon through githubUrl on its own layout.
+      // The star count in place of the preset's plain icon.
       { type: "custom", secondary: true, children: <GitHubStars /> },
     ],
     // One palette, so nothing offers to switch.

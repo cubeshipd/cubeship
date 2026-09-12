@@ -45,7 +45,7 @@ export function Terminal({ children, title }: { children: ReactNode; title?: str
       {title ? (
         <div className="label border-border border-b px-4 py-2 text-subtle-foreground">{title}</div>
       ) : null}
-      <pre className="overflow-x-auto px-4 py-4 font-mono text-[13px] text-foreground leading-relaxed">
+      <pre className="whitespace-pre-wrap break-words px-4 py-4 font-mono text-[13px] text-foreground leading-relaxed">
         {children}
       </pre>
     </div>
