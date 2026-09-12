@@ -180,3 +180,8 @@ const (
 	dockerBeginMarker = "# BEGIN CUBESHIP DOCKER"
 	dockerEndMarker   = "# END CUBESHIP DOCKER"
 )
+
+// DockerStanza is the block as it is written into after.rules. It exists
+// for test/integration, which hands it to a real iptables-restore: a
+// string that renders proves nothing about whether iptables loads it.
+func DockerStanza(exposed []int) (string, error) { return renderDockerBlock(exposed) }
