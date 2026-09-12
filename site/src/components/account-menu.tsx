@@ -1,5 +1,6 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 type Me = { id: number; login: string; avatarUrl: string | null; role: string } | null;
@@ -7,6 +8,9 @@ type Me = { id: number; login: string; avatarUrl: string | null; role: string } 
 export function AccountMenu() {
   const [me, setMe] = useState<Me>(null);
   const [open, setOpen] = useState(false);
+  // Read from the router, not window: the server renders this link too, and a
+  // server-side guess sends everyone back to the catalog after signing in.
+  const pathname = usePathname();
 
   useEffect(() => {
     fetch("/api/v1/me")
@@ -18,7 +22,7 @@ export function AccountMenu() {
   if (!me) {
     return (
       <a
-        href={`/api/auth/github?next=${encodeURIComponent(typeof window === "undefined" ? "/templates" : window.location.pathname)}`}
+        href={`/api/auth/github?next=${encodeURIComponent(pathname)}`}
         className="label text-fd-muted-foreground hover:text-fd-foreground"
       >
         Sign in
