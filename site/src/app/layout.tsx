@@ -30,10 +30,64 @@ const description = "Self-hosted PaaS — one VPS or a whole cluster, run by you
 // name; none of them is listed here.
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: { default: "Cubeship", template: "%s · Cubeship" },
+  title: { default: "Cubeship — self-hosted PaaS for your own servers", template: "%s · Cubeship" },
   description,
   applicationName: "Cubeship",
-  openGraph: { title: "Cubeship", description, siteName: "Cubeship", type: "website" },
+  keywords: [
+    "self-hosted PaaS",
+    "deploy to your own VPS",
+    "Docker deploy",
+    "Heroku alternative",
+    "Coolify alternative",
+    "zero-downtime deploys",
+    "MCP server for deployments",
+    "Postgres backups",
+  ],
+  authors: [{ name: "Cubeship", url: siteUrl }],
+  creator: "Cubeship",
+  category: "technology",
+  alternates: { canonical: "/" },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, "max-image-preview": "large" },
+  },
+  openGraph: {
+    type: "website",
+    url: siteUrl,
+    siteName: "Cubeship",
+    locale: "en_US",
+    title: "Cubeship — self-hosted PaaS for your own servers",
+    description,
+  },
+  twitter: { card: "summary_large_image", title: "Cubeship", description },
+};
+
+// What a search engine is told the site is, beyond what it can read.
+const structuredData = {
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "WebSite",
+      "@id": `${siteUrl}/#website`,
+      url: siteUrl,
+      name: "Cubeship",
+      description,
+    },
+    {
+      "@type": "SoftwareApplication",
+      "@id": `${siteUrl}/#software`,
+      name: "Cubeship",
+      applicationCategory: "DeveloperApplication",
+      operatingSystem: "Linux",
+      description,
+      url: siteUrl,
+      license: "https://www.apache.org/licenses/LICENSE-2.0",
+      offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
+      softwareHelp: { "@type": "CreativeWork", url: `${siteUrl}/docs` },
+      codeRepository: "https://github.com/cubeshipd/cubeship",
+    },
+  ],
 };
 
 export const viewport: Viewport = { themeColor: "#05070a", colorScheme: "dark" };
@@ -49,6 +103,7 @@ export default function Layout({ children }: LayoutProps<"/">) {
       suppressHydrationWarning
     >
       <body className="flex min-h-screen flex-col font-sans antialiased">
+        <script type="application/ld+json">{JSON.stringify(structuredData)}</script>
         <RootProvider theme={{ enabled: false }}>{children}</RootProvider>
       </body>
     </html>
