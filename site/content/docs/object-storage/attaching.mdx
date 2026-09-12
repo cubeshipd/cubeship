@@ -1,0 +1,55 @@
+---
+title: Attaching apps
+description: An attachment gives an app six S3_ variables for one bucket, from its next deploy. One app may hold several.
+---
+
+On the store's **Apps** tab, attach an app by its full reference and
+pick the bucket. The app receives, from its next deploy:
+
+| Variable | Managed store example |
+| --- | --- |
+| `S3_ENDPOINT` | `http://cubeship-s3-media:9000` |
+| `S3_REGION` | `us-east-1` |
+| `S3_BUCKET` | `uploads` |
+| `S3_ACCESS_KEY_ID` | `…` |
+| `S3_SECRET_ACCESS_KEY` | `…` |
+| `S3_PATH_STYLE` | `true` |
+
+They sit in the app's environment as their own layer — labelled
+`objectstore` on the Environment tab — above the environment's
+variables and below the app's own.
+
+## The bucket is on the attachment
+
+A store holds many buckets and an app wants one, so the bucket is
+chosen when attaching, not stored on the store. That is also why one
+app may be attached to the **same store twice** — a bucket for uploads
+and one for exports is an ordinary shape — with a **prefix** keeping
+the second set apart: `EXPORTS_S3_BUCKET` and the rest.
+
+The prefix is the whole namespace here: every attachment writes the
+same six names, so two attachments on one app need two prefixes, and a
+database's `DATABASE_*` can never collide with them.
+
+## What is deliberately not there
+
+- **No URL variable**, because no two S3 clients agree on one.
+- **No `AWS_*` names.** They would make an app on the AWS SDK work with
+  no configuration, and would also mean two stores on one app fighting
+  over six names a prefix cannot reach. The mapping is one line in the
+  app's own environment when it wants it.
+- **`S3_PATH_STYLE` is there** because half the S3 clients in the world
+  have to be told and the other half guess wrong.
+
+## Not checked against the store
+
+Whether the bucket exists is a live call the instance may not be
+allowed to make — a credential scoped to one bucket may not stat
+another — so the name is taken as given. The dialog offers the buckets
+it can list.
+
+## Through an agent
+
+`attach_object_store` and `detach_object_store` are in the
+[tool reference](/docs/mcp/tools#object-storage). Attaching hands over
+no secret: the keys reach the app through its own environment.

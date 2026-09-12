@@ -1,0 +1,55 @@
+---
+title: Linking a bucket
+description: An S3 endpoint somewhere else, with keys you already have. Four providers, each one variable away from its endpoint.
+---
+
+**Object storage → New store** with the kind *linked* asks for the
+provider, the one thing that differs per account, and the keys.
+
+| Provider | Asks for | Endpoint |
+| --- | --- | --- |
+| **Amazon S3** | a region | `s3.<region>.amazonaws.com` |
+| **DigitalOcean Spaces** | a region | `<region>.digitaloceanspaces.com` |
+| **Cloudflare R2** | an account id | `<account>.r2.cloudflarestorage.com`, region `auto` |
+| **Generic** | the endpoint itself | anything S3-compatible — a MinIO elsewhere, Backblaze, Wasabi, … |
+
+Asking for the variable beats asking somebody to retype
+`s3.eu-central-1.amazonaws.com` and get one character wrong. A region or
+an account id is checked for shape, because it becomes part of a host
+the daemon then signs requests to.
+
+## The keys become a credential
+
+Typed while linking, they become a [credential](/docs/credentials) in
+the same step, reusable for a second store or for anything else on the
+same account. A store may also pick an existing credential — one AWS key
+for S3, ECR and Route 53 is the point.
+
+## Nothing is checked at link time
+
+The credential may be scoped to one bucket and unable to list them; the
+endpoint may be behind a network the daemon reaches later. A refusal
+there would be Cubeship deciding a store is broken on evidence it does
+not have. Whether the login works is answered the first time somebody
+opens the store, in the provider's own words:
+
+| Answer | Meaning |
+| --- | --- |
+| **denied** | the store said no — the keys, or their permissions |
+| **unreachable** | the endpoint did not answer |
+| **bucket not found** | the pinned bucket is not there |
+
+Distinct from *you may not*, which is a role, and reads entirely
+differently to whoever sees it.
+
+## Fixed after linking
+
+The host and the provider. Re-pointing a store in place would silently
+send every app configured against it somewhere else. What changes is
+the credential it authenticates as, the description, and the
+[pinned bucket](/docs/object-storage/pinning).
+
+## No charts, no ceiling
+
+It is somebody else's server: there is no container here to chart or
+to cap, and both are refused rather than answered with an empty series.

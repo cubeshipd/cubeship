@@ -1,0 +1,63 @@
+---
+title: External registries
+description: A login for a registry Cubeship does not run, so a private image there can be pulled — and browsed when the registry allows it.
+---
+
+A public image needs no login and no row here. A private one needs the
+instance to hold a login for its registry: one row per host, with a
+[credential](/docs/credentials) behind it.
+
+## Adding one
+
+**Registries → Add registry** asks for the kind and the login. The
+credential is created in the same step — you do not go to Credentials
+first — and appears there afterwards, ready to be reused.
+
+| Kind | What it asks for | Examples |
+| --- | --- | --- |
+| **Generic** | the host, a username and a password or token | Docker Hub, GHCR, Gitea, Harbor |
+| **DigitalOcean** | the registry's name and an API token | `registry.digitalocean.com/<name>` |
+| **AWS** | the region, an access key id and its secret | ECR — the account id is discovered |
+
+An ECR login is not a password: the stored key is used to fetch a token
+that Docker logs in with, which lasts hours and is minted again when it
+expires.
+
+Matching is by **host**. A reference with no registry in it —
+`nginx`, `library/postgres` — is Docker Hub.
+
+## What is fixed
+
+The host and the kind, once the row exists. Re-pointing one in place
+would silently send every app that pulls from it somewhere else. What
+can change is **which credential** it logs in with — a second account,
+not a second address — from the registry's settings.
+
+Rotating from the registry's settings rotates the **credential**, and
+everything else on it follows; the screen says which other things share
+it first.
+
+## Browsing
+
+The dashboard picks an image from the registry's own catalogue when it
+offers one, and the tag from the repository, newest first. Two cases
+degrade rather than break:
+
+- **Docker Hub has no public catalogue**, so the image is typed and the
+  tag is listed.
+- **A registry may refuse its catalogue.** Then the image is typed too.
+
+From the registry's page an admin can delete a tag or a repository on
+the remote registry, where its API allows it.
+
+## Deleting
+
+A registry that an app pulls from is still deletable — the app keeps
+its stored image reference and the next deploy fails on the login if
+the image is private. The credential behind it stays under Credentials
+until nothing uses it.
+
+## Not through an agent
+
+There are no MCP tools for registries or credentials: creating one means
+a password passing through a model's context.

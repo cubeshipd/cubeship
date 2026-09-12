@@ -1,0 +1,70 @@
+---
+title: DNS providers
+description: Write records through the account whose DNS you already manage — Cloudflare or Route 53 — and let the instance write its own.
+---
+
+**DNS providers** under Platform connects the instance to a DNS account
+so it can write records: an app's name pointed at this host, the
+instance's own name, a challenge proving a domain is yours.
+
+## Providers
+
+| Provider | Credential |
+| --- | --- |
+| **Cloudflare** | an API token with DNS edit on the zones you mean |
+| **Amazon Route 53** | an access key id and its secret |
+
+Adding one asks two questions — the provider, and the credential — and
+the second offers *type a new one*, so the first provider takes no trip
+to the Credentials screen. The credential is a
+[credential](/docs/credentials) like any other: one AWS key can write
+Route 53 records and pull from ECR.
+
+A provider has almost no configuration of its own; it is which API to
+speak and which stored credential to speak it with. Re-pointing one to
+another credential and removing it are the two things its row does.
+
+## Zones and records
+
+A provider's page lists its zones; a zone opens as its records, by
+name. Records can be added, changed and deleted there, with the types
+an operator pointing a name at this host actually needs:
+
+`A` · `AAAA` · `CNAME` · `TXT` · `MX` · `NS` · `SRV` · `CAA`
+
+A record is a list of values, because it is one at both providers — two
+`A` records for one name are one record set at Route 53 and two rows at
+Cloudflare — so a round trip never loses half of what was there. The
+default TTL is **300 seconds**: short enough that a mistake is
+recoverable within a coffee, long enough that resolvers are not asking
+constantly. Cloudflare's *proxied* flag is offered where it applies.
+
+## Adding an app's name in one act
+
+With a provider connected, **Add domain** on an app's Network tab
+offers the provider's zones: pick one, type the subdomain, and the
+`A` record is written **and** the name is added in one act — pointing
+at the instance's public address, whichever machine the app runs on,
+because every name arrives at the control plane. A name that does not
+resolve is a certificate that will not issue, so the record goes first.
+
+Under an sslip.io instance the dialog writes nothing: every name under
+that address already resolves.
+
+## The instance's own provider
+
+**Settings** lets you name which provider writes the instance's own
+records. It is what the Add domain dialog picks by default, and what
+makes the [suggested name](/docs/apps/domains#the-suggested-name) under
+a real domain a name that works.
+
+## Status
+
+A provider's page probes the account: **available**, **unauthorized**
+(re-authenticate — rotate the credential) or **unreachable** (wait for
+somebody else's API).
+
+## Not through an agent
+
+No MCP tools write DNS: a record is a thing on the internet with your
+name on it.

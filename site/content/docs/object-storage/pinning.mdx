@@ -1,0 +1,32 @@
+---
+title: Pinning a bucket
+description: For a login that reaches one bucket and cannot list them. Offered on every provider, with what it costs said where it is chosen.
+---
+
+A linked store may be **pinned to one bucket**, from its settings. That
+bucket is reported without asking the endpoint, and reaching any other
+is refused here — rather than by a provider's access-denied that nobody
+can act on.
+
+## When it is the ordinary answer
+
+R2's tokens and a Space's access keys are handed out per bucket by
+their consoles, so on those providers the field is the expected one.
+
+## When it costs something
+
+Everywhere else, naming a bucket gives up listing, creating and
+deleting for the **whole store**. The form says so. An IAM policy
+narrowed to one bucket is ordinary and a compatible endpoint can be
+anything, so the field is offered rather than refused — knowing rather
+than refusing, with the way back one click away.
+
+## Changing it
+
+The store's settings take the bucket, and **clearing the field unpins**.
+Pinning is refused when an [attached app](/docs/object-storage/attaching)
+names a different bucket, with the app's reference: the app would keep
+working, but the store would be claiming to be one bucket while an
+attachment used another, with no way to browse it.
+
+A managed store lists its own buckets and cannot be pinned.

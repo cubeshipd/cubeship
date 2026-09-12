@@ -1,0 +1,92 @@
+---
+title: Firewall
+description: The host's ufw, from the dashboard — and the one thing ufw does not cover on a machine running Docker.
+---
+
+**Firewall** under Platform is the host's `ufw`: whether it is on, what
+it admits, and what Docker has opened around it. It owns nothing — the
+rules live in ufw, where your own `ufw` command finds them — so nothing
+here drifts from the machine.
+
+## Docker publishes ports around ufw
+
+A published port is forwarded to a container rather than delivered to
+the host, so it never passes the chain `ufw allow` and `ufw deny`
+govern. Every port Cubeship opens is one of those: the proxy's 80 and
+443, an exposed database's, an exposed store's. A screen that only
+wrapped `ufw status` would show a firewall that is in front of nothing
+you deployed.
+
+So a rule has a **scope**:
+
+| Scope | What it governs |
+| --- | --- |
+| **host** | traffic to the machine itself — SSH, the mesh's ports |
+| **apps** | traffic forwarded to a container — an exposed database, a published port |
+
+An *apps* rule only means anything once the firewall has **adopted
+Docker**: a stanza in ufw's own configuration that sends Docker's
+forwarding chain through ufw first. Until then an *apps* rule is refused
+rather than written, because a rule that governs nothing is the lie
+this screen exists to avoid.
+
+## Adopting Docker
+
+**Adopt Docker** asks which of the currently published ports stay open,
+ticked by default — the safe default for a firewall is the state the
+machine is already in. 80 and 443 cannot be unticked, because they are
+the page the button is on. The allow rules are written first, while
+they are inert, and the stanza that starts denying goes in last.
+
+An *apps* rule is written for the port **inside** the container, not
+the one you typed: by the time ufw sees a packet sent to a published
+15000 it is addressed to 5432. The screen reads both halves of every
+mapping off what is running, so the number is never a guess.
+
+## Three things it refuses
+
+Each is a way of silently losing a machine:
+
+- **Enabling with nothing admitting SSH.** Rather than refuse, it
+  *writes that rule itself*, for the port the host's own `sshd` reports.
+  The refusal survives only for a host whose sshd did not say, because a
+  guess there is the lockout.
+- **Deleting the rule that admits SSH** while the firewall is running.
+  Every rule admitting a port sshd is on is protected — move SSH and the
+  old rule stops being protected on the next read. It is still
+  removable on the machine, and the refusal names the command.
+- **Deleting by a position that has moved.** ufw deletes by number and
+  numbers shift; the screen sends the rule's own text and the daemon
+  refuses if it no longer matches.
+
+Editing is a delete and an add, new rule first at the old one's
+position, so the window holds a duplicate rather than a gap.
+
+## Sources
+
+ufw takes one source per rule, so admitting a port from three addresses
+is three rules — one request writes them all. The dialog offers
+**anywhere**, **this computer** (your own address, which is on the
+status so you do not look it up and paste a private one) and an address
+or range.
+
+## What it cannot see
+
+A firewall at your provider — Hetzner, DigitalOcean, Contabo, AWS —
+filters before the packet reaches the host, and does not have the
+Docker problem. Cubeship cannot see it. The screen says what this
+machine is *offering*, not what is reachable.
+
+## No MCP tools, deliberately
+
+An agent that closes 443 takes the instance off the internet. Nothing
+about that is worth automating.
+
+## How it reaches the host
+
+The daemon is a container; `ufw` is a host program. A rule is written by
+a throwaway container in the host's namespaces running the host's own
+`ufw` — the same door `/var/run/docker.sock` already is, used
+deliberately in one place. Nothing typed is interpolated into a
+command: every field is matched against a pattern and passed as an
+argument.
