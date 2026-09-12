@@ -4,12 +4,15 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"maps"
+	"strconv"
 	"strings"
 
 	"cubeship/internal/app"
 	"cubeship/internal/credential"
 	"cubeship/internal/envvar"
+	"cubeship/internal/firewall"
 	"cubeship/internal/metrics"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/settings"
@@ -69,13 +72,18 @@ type Service struct {
 	// The same package an app and a database go through: MinIO is a
 	// container with a CPU and a resident set like any other.
 	metrics *metrics.Service
+	// firewall is the host's, opened for a managed store's inside port
+	// the way mesh.Admit opens the cluster's — no Service and no caller.
+	// Nil in tests and on a daemon with no host access, which admitPort
+	// and withdrawPort treat as nothing to do rather than a failure.
+	firewall firewall.Host
 }
 
 func NewService(db *database.DB, creds *credential.Service, apps *app.Service,
-	prov *Provisioner, cfg *settings.Service, series *metrics.Service,
+	prov *Provisioner, cfg *settings.Service, series *metrics.Service, host firewall.Host,
 ) *Service {
 	return &Service{db: db, creds: creds, apps: apps, prov: prov, settings: cfg,
-		connect: S3Connector{}, metrics: series}
+		connect: S3Connector{}, metrics: series, firewall: host}
 }
 
 // Metrics exposes the series service to this module's own handlers.
@@ -252,6 +260,13 @@ func (s *Service) Create(ctx context.Context, caller *user.User, spec ManagedSpe
 		return nil, createError(err)
 	}
 	s.prov.Start(created)
+	// A managed store may be exposed from the moment it is created —
+	// see ManagedSpec.Expose — and creation never goes through setPort
+	// to get there, so this is the one other place that has to admit
+	// the rule.
+	if created.ExposedPort != 0 {
+		s.admitPort(ctx, created)
+	}
 	return created, nil
 }
 
@@ -654,6 +669,7 @@ func (s *Service) Unexpose(ctx context.Context, caller *user.User, name string) 
 }
 
 func (s *Service) setPort(ctx context.Context, caller *user.User, store *Store, port int) (*Store, error) {
+	oldPort := store.ExposedPort
 	if err := s.Repo().SetExposedPort(ctx, store.ID, port); err != nil {
 		if database.UniqueViolationOn(err, portIndex) {
 			return nil, ErrPortTaken
@@ -672,7 +688,100 @@ func (s *Service) setPort(ctx context.Context, caller *user.User, store *Store, 
 	}
 	updated.Status = StatusProvisioning
 	s.prov.Start(updated)
+
+	// The rule does not wait on the container the row above does: it is
+	// written for Port, fixed whether or not anything is running yet, so
+	// admitting it now rather than after the provision finishes is the
+	// same order AdoptDocker already argues for — an inert rule ahead of
+	// the thing it is for, never a missing one.
+	switch {
+	case port != 0:
+		s.admitPort(ctx, updated)
+	case oldPort != 0:
+		s.withdrawPort(ctx, updated)
+	}
 	return updated, nil
+}
+
+// admitPort opens a managed store's inside port on the host firewall.
+//
+// Best-effort, the same shape mesh.Admit is: a host with no ufw is a
+// host with nothing blocking the port, and a firewall this daemon
+// cannot reach is somebody else's to manage. Neither is a reason to
+// refuse the expose that got here, so a failure is logged and nothing
+// more.
+func (s *Service) admitPort(ctx context.Context, store *Store) {
+	if s.firewall == nil || !s.firewall.Available() {
+		return
+	}
+	if err := firewall.Add(ctx, s.firewall, storeRule()); err != nil {
+		log.Printf("object store %s: could not open port %d on the host firewall: %v", store.Slug, Port, err)
+	}
+}
+
+// withdrawPort closes the managed stores' inside port, unless some other
+// managed store is still exposed on it.
+//
+// Every managed store listens on Port, so the rule this asks about is
+// shared rather than this row's own.
+func (s *Service) withdrawPort(ctx context.Context, store *Store) {
+	if s.firewall == nil || !s.firewall.Available() {
+		return
+	}
+	needed, err := s.Repo().ExposedManagedElsewhere(ctx, store.ID)
+	if err != nil {
+		log.Printf("object store %s: could not tell whether port %d is still needed: %v", store.Slug, Port, err)
+		return
+	}
+	if needed {
+		return
+	}
+	if err := firewall.Remove(ctx, s.firewall, storeRule()); err != nil {
+		log.Printf("object store %s: could not close port %d on the host firewall: %v", store.Slug, Port, err)
+	}
+}
+
+// storeRule is the apps-scope rule for a managed store's inside port.
+//
+// Written for Port, never for a store's ExposedPort: the forward chain
+// sees a packet only after Docker has already translated it, so a rule
+// naming the published port matches nothing — see Spec.Inside and
+// docs/design/networking.md, "the firewall". Port is fixed by the image
+// MinIO runs, so there is nothing to read back from Docker to get it
+// right.
+func storeRule() firewall.Spec {
+	return firewall.Spec{
+		Scope: firewall.ScopeApps, Action: firewall.ActionAllow, Protocol: firewall.ProtocolTCP,
+		Port: strconv.Itoa(Port), Comment: "cubeship",
+	}
+}
+
+// AdmitExposed opens the firewall for every managed store that is
+// already exposed. A linked store has no container and no port, and is
+// skipped.
+//
+// A one-shot, run once at daemon start and never a loop: it only adds.
+// A rule an operator wrote by hand for a port this module knows nothing
+// about is not this module's business, and a sweep that removed rules
+// it does not recognise would take one of those with it on the next
+// restart. This is what repairs an instance exposed before this
+// existed: every already-exposed store gets its rule the next time the
+// daemon starts.
+func (s *Service) AdmitExposed(ctx context.Context) {
+	if s.firewall == nil || !s.firewall.Available() {
+		return
+	}
+	all, err := s.Repo().List(ctx)
+	if err != nil {
+		log.Printf("object store: could not list stores to admit their firewall rules: %v", err)
+		return
+	}
+	for _, store := range all {
+		if store.Kind != KindManaged || store.ExposedPort == 0 {
+			continue
+		}
+		s.admitPort(ctx, store)
+	}
 }
 
 // resolvePort turns what a caller asked for into a port to publish on.
@@ -790,6 +899,13 @@ func (s *Service) Delete(ctx context.Context, caller *user.User, name string) (*
 		// instance naming it.
 		if err := s.prov.Teardown(ctx, store, false); err != nil {
 			return nil, err
+		}
+		// Before the row goes, while the repository can still be asked
+		// whether another managed store is still exposed — withdrawing
+		// after the delete would always find nothing else, whether or
+		// not there really was.
+		if store.ExposedPort != 0 {
+			s.withdrawPort(ctx, store)
 		}
 	}
 	if err := s.Repo().Delete(ctx, store.ID); err != nil {

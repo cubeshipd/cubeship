@@ -218,6 +218,25 @@ func (r *Repository) UsingCredential(ctx context.Context, credentialID int64) ([
 	return slugs, rows.Err()
 }
 
+// ExposedManagedElsewhere reports whether some managed store other than
+// excludeID is still exposed.
+//
+// Every managed store listens on the same inside port — Port, 9000 — so
+// the firewall rule opened for one is the rule opened for all of them,
+// and unexposing one must not close it while another still publishes on
+// it.
+func (r *Repository) ExposedManagedElsewhere(ctx context.Context, excludeID int64) (bool, error) {
+	var exists bool
+	if err := r.q.QueryRowContext(ctx,
+		`SELECT EXISTS (
+			SELECT 1 FROM object_stores
+			WHERE id <> $1 AND kind = $2 AND exposed_port <> 0
+		)`, excludeID, string(KindManaged)).Scan(&exists); err != nil {
+		return false, fmt.Errorf("check exposed object stores: %w", err)
+	}
+	return exists, nil
+}
+
 func (r *Repository) Delete(ctx context.Context, id int64) error {
 	res, err := r.q.ExecContext(ctx, `DELETE FROM object_stores WHERE id = $1`, id)
 	if err != nil {
