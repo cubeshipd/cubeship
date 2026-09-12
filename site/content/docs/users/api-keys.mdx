@@ -1,0 +1,53 @@
+---
+title: API keys
+description: What the CLI, an agent and docker login authenticate with. Self-service, shown once, revocable at any time — including the last one.
+---
+
+An API key is a bearer token carried as `Authorization: Bearer <key>`,
+and it is what every non-browser client uses: the CLI, an MCP client,
+`docker login` at the instance's registry (username plus the key as the
+password), a CI job calling the API.
+
+## Making one
+
+On **Account → API keys**, or:
+
+```bash
+cubeship user api-key create laptop
+cubeship user api-key list
+cubeship user api-key revoke 3
+cubeship user api-key rotate          # replaces the key this CLI is using
+```
+
+A key is shown **once**. Only its hash is stored, so nothing can hand it
+back; a key that was lost is revoked and replaced. Keys are named
+(`laptop`, `ci`, `mcp`) so the list says what each is for, and an
+account may hold any number.
+
+The first account gets no key at setup: keys are self-service, and one
+nobody is shown would be a live credential lying around for nothing.
+
+## Revoking is never refused
+
+Including the last one. A key that has leaked has to be able to go
+*now*, and being made to mint a replacement first would keep the
+leaked one live for as long as that took. What replaces the refusal is
+knowing: the account screen says what revoking this one costs — the CLI
+until you make another, or, for an account with no password, the way
+in — and asks.
+
+## Rotating
+
+`rotate` revokes the key the CLI is signed in with and issues a new one
+in its place, saving it locally. `docker login` sessions using the old
+key stop working.
+
+## The role travels with the key
+
+A key does what its owner may do. Blocking the owner refuses every key
+at the door; deleting the owner deletes them.
+
+## Through an agent
+
+`create_api_key`, `list_api_keys`, `revoke_api_key` and
+`rotate_my_api_key` are in the [tool reference](/docs/mcp/tools#account).

@@ -1,0 +1,57 @@
+---
+title: Updates
+description: The instance replaces itself, daemon included — on a button, or at a time of day you chose.
+---
+
+**Settings → Updates** shows the version running, whether a newer
+release exists, and a button naming what it will install. The
+automatic half is a **time of day** and a timezone: what is being
+chosen is when the instance may be briefly unusable, and 03:00 on a
+server's clock is not the middle of anybody's night.
+
+## What an update does
+
+1. Pulls the new images.
+2. On a cluster, replaces the **workers first** — once the control plane
+   restarts it can tell nobody anything. A worker that does not come
+   back is carried on without.
+3. Replaces the dashboard.
+4. Starts a throwaway container from the new image that replaces the
+   daemon — the process doing the work is the one being replaced, so
+   the last step is handed to something that outlives it. The daemon's
+   options are read back off the container being replaced, so a port or
+   a data directory chosen at install time survives.
+
+Nothing on the instance can be changed while a run is going: every
+write answers 503 until the new daemon is up. A run stuck longer than
+it could plausibly take stops counting, so an instance is never locked
+for ever.
+
+## Stable only, by name
+
+Automatic updates install stable releases only — an instance left to
+update itself must never wander onto a release candidate. The button
+names the version it will install; nothing here installs "the newest"
+decided at click time.
+
+## The notes
+
+After an upgrade the dashboard shows what changed, once per person.
+The notes are in the binary, not fetched, so the dialog works behind a
+firewall — and an instance can only ever show notes up to the version
+it is on.
+
+## What reaches the internet
+
+Checking for a release is the one thing the daemon does on its own: a
+plain `GET` on GitHub's public releases API, with no credential and
+nothing about the instance in it. An instance that cannot reach GitHub
+reports that it could not check rather than claiming to be current.
+
+## By hand
+
+Running the installer again does the same thing from the outside:
+
+```bash
+curl -fsSL https://cubeship.dev/install.sh | sh
+```

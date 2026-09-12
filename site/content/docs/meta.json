@@ -2,6 +2,7 @@
   "title": "Docs",
   "pages": [
     "getting-started",
+    "projects",
     "apps",
     "databases",
     "backups",
@@ -10,7 +11,11 @@
     "networking",
     "servers",
     "credentials",
+    "users",
+    "account",
+    "settings",
     "cli",
+    "api",
     "mcp",
     "operating"
   ]

@@ -1,0 +1,40 @@
+---
+title: Your account
+description: Who is behind the account — a name, an email, a face, the username itself — plus your palette, your keys and your password.
+---
+
+**Account** in the sidebar is yours and nobody else's: nothing on it
+can be changed by another person, which is what makes a preference a
+preference.
+
+## You
+
+| Field | Notes |
+| --- | --- |
+| **Display name** | what every screen shows for you, falling back to the username; at most 60 characters |
+| **Username** | editable here and nowhere else — see below |
+| **Email** | recorded and shown; nothing on this instance sends mail, and the field says so |
+| **Face** | one of nine, named after the palettes |
+
+**Renaming yourself** is safe for sessions and API keys, which are held
+by id. The one thing it breaks is yours: `docker login` sends the
+username with the key, so a push keeps being refused until you log in
+again.
+
+## Palette
+
+Nine, chosen here, stored on the account rather than in the browser —
+so a laptop and a desktop show the same interface. See
+[Themes](/docs/account/themes).
+
+## API keys
+
+Made, listed and revoked here. See [API keys](/docs/users/api-keys).
+
+## Password
+
+Changed here with the current one. Every other session ends.
+
+```bash
+cubeship login https://cubeship.example.com <api-key>     # the CLI signs in with a key, not a password
+```

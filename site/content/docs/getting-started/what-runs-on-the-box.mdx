@@ -1,0 +1,58 @@
+---
+title: What runs on the box
+description: Everything Cubeship runs is a container, the daemon included. What each one is, where its data lives, and which ports are open.
+---
+
+After `install.sh`, `docker ps` on the server shows:
+
+| Container | What it is |
+| --- | --- |
+| `cubeship-daemon` | the daemon: the API, the deploy orchestrator, the schedulers |
+| `cubeship-postgres` | the daemon's own database — every account, project, app, credential |
+| `cubeship-frontend` | the dashboard, a Next.js server the daemon proxies to |
+| `cubeship-traefik` | the proxy: every name arrives here, TLS ends here |
+| `cubeship-registry` | the instance's registry, once there is a domain |
+| `cubeship-buildkit` | the builder, started on the first build and not before |
+| `cubeship-db-<name>` | each database you created |
+| `cubeship-s3-<name>` | each managed object store |
+| `cubeship-<project>-<env>-<app>-<deploy>` | each copy of each app |
+
+Nothing else is installed on the host. The daemon holds the Docker
+socket, which is how it creates its siblings — and which is root on
+the box by another name, so an admin of the instance is an admin of the
+machine.
+
+## The network
+
+Every container is on one Docker network, `cubeship`, and finds the
+others by name: an app reaches `cubeship-db-pg`, the proxy reaches an
+app's container, the daemon reaches the registry. On a cluster, apps,
+databases and managed stores also join the [mesh](/docs/servers/the-mesh).
+
+## Ports
+
+| Port | Who | When |
+| --- | --- | --- |
+| `80`, `443` | the proxy | always — 80 redirects to 443 |
+| `3000` | the daemon | on the first install, until the instance has a domain and the proxy takes over |
+| `127.0.0.1:5432` | the daemon's Postgres | loopback only |
+| `15000–15999` | an exposed database | when you expose one |
+| `16000–16999` | an exposed store | when you expose one |
+| `2377`, `7946`, `4789` | the mesh | between the machines of a cluster |
+
+Docker publishes these around the host's firewall — see
+[Firewall](/docs/networking/firewall).
+
+## The data directory
+
+`/var/lib/cubeship` by default, root-only, and **mounted at the same
+path inside the daemon and out** — the daemon hands paths to Docker,
+which resolves them on the host. Everything that must survive a
+container being replaced is in it; see [The data directory](/docs/operating/data-directory).
+
+## What is stateless
+
+Every container can be recreated from the data directory and the
+database. The daemon replaces its infrastructure siblings whenever
+their configuration changes — a version bump, a new domain — and a
+container's own writable layer is never where anything lives.

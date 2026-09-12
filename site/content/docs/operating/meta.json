@@ -1,4 +1,11 @@
 {
   "title": "Operating",
-  "pages": ["upgrading", "uninstalling", "what-reaches-the-internet"]
+  "pages": [
+    "upgrading",
+    "uninstalling",
+    "data-directory",
+    "what-reaches-the-internet",
+    "troubleshooting",
+    "security"
+  ]
 }

@@ -1,0 +1,37 @@
+---
+title: The data directory
+description: /var/lib/cubeship — everything that must survive a container being replaced, and what each directory in it is.
+---
+
+`/var/lib/cubeship` by default (`CUBESHIP_DATA_DIR` at install), owned
+by root, and mounted into the daemon **at the same path** — the daemon
+hands paths to Docker, which resolves them on the host, so a different
+path inside would point every bind at a directory that does not exist.
+
+| Path | What it is |
+| --- | --- |
+| `postgres/` | the instance's own database |
+| `datastores/<id>/` | each database you created |
+| `objectstores/<id>/` | each managed store's objects |
+| `letsencrypt/acme.json` | every certificate and its private key, owned by the proxy |
+| `traefik-dynamic/` | the routes, written from the rows on every start |
+| `registry-data/` | the instance's registry — every image pushed |
+| `registry-config/`, `registry-token/` | the registry's configuration and the key that signs its tokens |
+| `buildkit/`, `buildkit-run/` | the builder's cache and its socket |
+| `projects/` | the pictures chosen for projects |
+| `setup-token` | the token that claims the instance; deleted when setup succeeds |
+| `update.json` | the state of a self-update in flight |
+| `backups/` | dumps written to this machine |
+
+## What to back up
+
+The [instance's own backup](/docs/backups/instance) takes the database,
+the certificate store and the pictures. Each database and each managed
+store [backs itself up](/docs/backups). The registry's images are
+reproducible by pushing again; the build cache is a cache.
+
+## Uninstalling keeps it
+
+`uninstall.sh` removes the containers and leaves this directory;
+installing again brings the same instance back. `--purge` is the other
+thing.

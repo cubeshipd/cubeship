@@ -1,0 +1,46 @@
+---
+title: Roles
+description: Admin and member, and where the line between them is drawn.
+---
+
+There are two roles and no organizations: Cubeship runs one instance on
+one VPS, and a tenant boundary inside it was a level everybody had to
+name and nobody could use. The role is a column on the account.
+
+## Member
+
+Deploys published images, writes variables, places and scales apps,
+reads everything about what the instance runs — charts, logs, the list
+of databases and what is attached where. A CI job's key is a member's.
+
+## Admin
+
+Everything a member does, and:
+
+- **builds source on this host** — creating, deploying and writing the
+  environment of an app whose source is a repository, because a build
+  executes whatever the repository contains with the builder's
+  privileges;
+- **configures the instance** — projects and environments, databases
+  and stores and what is inside them, registries, DNS, credentials, the
+  firewall, servers, settings, users;
+- **reads data** — a bucket's files, a database's credentials, a
+  backup.
+
+## Why those two lines
+
+**Executing source** is a different kind of act from running a
+published artifact: a member who could point a building app at a
+repository would be running arbitrary code on the box.
+
+**Reading data** is the other. Cubeship lets a member read a great deal
+about what the instance is wired to and never lets one read a row of a
+database or a file in a bucket — an app they deploy still uses both,
+because the app is given the keys.
+
+## What a key inherits
+
+An API key has its owner's role. An agent holding an admin's key can do
+what an admin can, minus what
+[no tool offers](/docs/mcp#what-it-does-not-do); give an agent a
+member's key unless it has business doing the rest.

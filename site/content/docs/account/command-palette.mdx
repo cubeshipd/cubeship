@@ -1,0 +1,36 @@
+---
+title: Command palette
+description: Cmd+K finds things, Cmd+Shift+P runs commands, and > switches between them.
+---
+
+Two halves of one box:
+
+| Shortcut | Answers |
+| --- | --- |
+| `⌘K` / `Ctrl+K` | **what to open** — a screen, a project, an app, a database, a store, a registry, a DNS provider |
+| `⌘⇧P` / `Ctrl+Shift+P` | **what to do** — every create form on the instance |
+
+Type `>` at the front of the search to switch to commands.
+
+## Search
+
+Subsequence, not substring: `wpa` finds `web/production/api`, and
+nobody types the slashes. Letters in a run beat the same letters
+scattered, a letter after a separator beats one mid-word, and a short
+name beats a long one. An app matches on its whole reference and shows
+as `api` beside `web/production`.
+
+The catalogue is fetched when the box opens — a handful of each thing,
+in parallel — so a list that timed out is an absence rather than an
+error.
+
+## Commands
+
+**A command opens a form and never does anything irreversible.**
+Nothing here deploys, deletes or provisions; every irreversible act on
+the instance is behind a screen you went to and a word you typed.
+Each command is a link to the screen its form lives on, so the result
+lands where you would look for it.
+
+There is no *New app*: an app is created inside an environment, and
+from a palette there is no environment to create it in.

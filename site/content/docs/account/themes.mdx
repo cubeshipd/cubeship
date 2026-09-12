@@ -1,0 +1,36 @@
+---
+title: Themes
+description: Nine palettes, all dark but one. A palette changes colour and nothing else.
+---
+
+| Palette | |
+| --- | --- |
+| `cyan` | the default: cyan on near-black with a blue cast |
+| `mono` | white on black |
+| `hacker` | green |
+| `red` · `orange` · `pink` · `purple` | each moves the surfaces with the accent, so nothing reads as recoloured |
+| `blue` | navy rather than the default nudged, so the two are not confused |
+| `helix` | **the light one**: Mono the other way up, black ink on paper, for a console read in daylight |
+
+A palette changes **colour and nothing else** — the layout, the type
+and the square corners are the product. `helix` is one exception rather
+than a light/dark axis over the other eight, which would have been nine
+more palettes to keep honest for the same screens.
+
+Two things about helix worth knowing: its text levels are matched by
+contrast rather than by inverting numbers, and it is the only palette
+that re-picks the status colours, because a green tuned for near-black
+is not a colour on white. A log panel stays black under every palette,
+in the colours the program wrote.
+
+## Where it lives
+
+On your account. The browser keeps a copy so the first paint is already
+the right colour, and the daemon serves the list of names it accepts,
+so nothing can save a palette that is not there.
+
+## Faces
+
+The nine account faces are named after the palettes and drawn in the
+same colours — somebody on the red theme picking the red face is why
+there is more than one. Nothing requires them to line up.
