@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import { ThemeBoot } from "@/components/theme";
 import { Toaster } from "@/components/ui/sonner";
@@ -27,10 +27,23 @@ const jbmono = localFont({
   fallback: ["ui-monospace", "SFMono-Regular", "monospace"],
 });
 
+// The icons, the manifest and the social card are files beside this one
+// (favicon.ico, icon.svg, apple-icon.png, opengraph-image.png,
+// twitter-image.png, manifest.ts) — Next finds them by name and writes
+// the <link>s and <meta>s itself, so none of them is listed here.
 export const metadata: Metadata = {
-  title: "Cubeship",
-  description: "Self-hosted PaaS",
+  title: { default: "Cubeship", template: "%s · Cubeship" },
+  description: "Self-hosted PaaS for one VPS",
+  applicationName: "Cubeship",
+  openGraph: {
+    title: "Cubeship",
+    description: "Self-hosted PaaS for one VPS",
+    siteName: "Cubeship",
+    type: "website",
+  },
 };
+
+export const viewport: Viewport = { themeColor: "#05070a", colorScheme: "dark" };
 
 // `dark` is on <html> rather than left to the system: the shadcn
 // primitives carry `dark:` rules and a visitor whose OS is set to light

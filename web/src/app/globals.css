@@ -53,7 +53,7 @@
   --input: #1d2b38;
 
   /* Cyan is the interface accent; magenta is the brand's second light,
-     used for glow and the mark and nothing you have to read. Neither
+     used for glow and a second chart line and nothing you have to read. Neither
      collides with the status colours below — which matters, because
      green, amber and red already mean running, deploying and failed. */
   --primary: #2de2e6;

@@ -1,6 +1,6 @@
 <div align="center">
 
-# Cubeship
+<h1><img src="web/public/logo/banner.png" alt="Cubeship" width="720"></h1>
 
 **A PaaS you run on your own server.** `docker push`, and it is live —
 with HTTPS, a database beside it, and a second machine when one stops
