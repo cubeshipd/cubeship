@@ -5,7 +5,11 @@
     "apps",
     "databases",
     "backups",
+    "object-storage",
+    "registries",
+    "networking",
     "servers",
+    "credentials",
     "cli",
     "mcp",
     "operating"

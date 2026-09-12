@@ -1,0 +1,68 @@
+---
+title: Registries
+description: The registry the instance runs — where docker push deploys — and the ones it only pulls from.
+---
+
+**Registries** under Platform lists the instance's own registry first,
+then every registry it has a login for.
+
+## The instance's registry
+
+Every instance runs a Docker registry at `registry.<instance domain>`,
+behind the proxy with a certificate like everything else. An app's path
+in it is the app's reference:
+
+```bash
+docker login registry.example.com          # your username; an API key as the password
+docker push registry.example.com/shop/production/api:latest
+```
+
+**The push is the deploy** for an app whose
+[source is the registry](/docs/apps/source-registry): the registry
+notifies the daemon, and the daemon starts a deploy. A push under an
+external app's name is accepted and deploys nothing.
+
+### Who may do what
+
+Logins are checked against the instance's accounts, and a token is
+issued for exactly what the role allows:
+
+| Who | May |
+| --- | --- |
+| a member or an admin | pull and push |
+| a worker machine | pull, and nothing else |
+| the builder | push and pull, on this host only |
+
+**Nobody may delete through `docker`**, whatever they ask for. A delete
+is the one action pushing again does not undo, so it is only offered on
+the dashboard, behind a confirmation, and only to an admin.
+
+### What it holds
+
+The registry's own page lists its repositories — one per app that has
+ever been pushed — and the tags in each, with sizes. From there an admin
+can delete a tag or a whole repository.
+
+### Reclaim disk
+
+Deleting a tag unlinks a manifest and **leaves the layers**, so without
+a garbage-collection pass you clear a repository and watch the disk not
+move. **Reclaim disk** is that pass. It is a button rather than a timer
+because the pass wants the registry stopped — a few seconds during which
+every push fails — and that is a decision to make on purpose.
+
+Deleting an app leaves its images here; the two live together on this
+page so tidying up is one screen.
+
+### Before there is a domain
+
+The registry follows the instance's domain, so a registry app needs the
+instance to have one before there is anywhere to push. An install that
+kept its sslip.io address has one already. An external app needs
+nothing and works the minute the installer finishes.
+
+## Registries the instance pulls from
+
+Docker Hub, GHCR, a Gitea, DigitalOcean's registry, ECR — anywhere an
+[external app](/docs/apps/source-external) pulls a private image from.
+See [External registries](/docs/registries/external).

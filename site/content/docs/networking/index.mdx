@@ -1,0 +1,47 @@
+---
+title: Networking
+description: How a name reaches an app — the record, the proxy, the certificate — and the host's own firewall around it all.
+---
+
+```
+browser ──DNS──▶ the instance's address ──:443──▶ proxy ──▶ the app's container
+                                                    │
+                                         Let's Encrypt, per name
+```
+
+Every name this instance serves — the dashboard's, the registry's, each
+app's — arrives at the control plane's proxy on ports 80 and 443,
+terminates TLS there, and is forwarded on the instance's own network to
+the container behind it, wherever in the cluster that is.
+
+## The instance's domain
+
+Set in **Settings**. Until you set one, the instance gives itself an
+[sslip.io](https://sslip.io) address — a name that resolves to your IP
+without anything registered anywhere — and every name under it resolves
+too, so certificates and app names work on a box you set up five
+minutes ago.
+
+With a domain of your own, the instance answers at it and the registry
+at `registry.<domain>`; both need a record pointing at the server.
+Each app's names are their own records, or come from the
+[suggested name](/docs/apps/domains#the-suggested-name) under the
+domain when a wildcard record or a [DNS provider](/docs/networking/dns-providers)
+covers it.
+
+## Where things are
+
+| Question | Where |
+| --- | --- |
+| Giving an app a name, and the port behind it | [Domains and ports](/docs/apps/domains) |
+| Reaching an app from another app | [Internal address](/docs/apps/internal-address) |
+| Which names have a certificate, and why one has not | [Certificates](/docs/networking/certificates) |
+| Writing records through Cloudflare or Route 53 | [DNS providers](/docs/networking/dns-providers) |
+| What the host admits, and the ports Docker opens around it | [Firewall](/docs/networking/firewall) |
+| The network between machines | [The mesh](/docs/servers/the-mesh) |
+| Reaching a database or a store from outside | [External access](/docs/databases/external-access) |
+
+## What leaves the box
+
+Nothing but what you configured. See
+[What reaches the internet](/docs/operating/what-reaches-the-internet).

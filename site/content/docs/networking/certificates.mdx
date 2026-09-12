@@ -1,0 +1,58 @@
+---
+title: Certificates
+description: What the instance holds, what it is missing, and why. Read-only on purpose, and asked for again on its own.
+---
+
+**Certificates** under Platform is one table: every name the instance
+routes, whether it is served, which app it belongs to, and — for a name
+without one — why.
+
+Certificates come from **Let's Encrypt**, issued by the proxy over
+TLS-ALPN on the instance's own :443 and renewed for you. The store is
+the proxy's own file under the data directory; this screen reads it and
+never writes it.
+
+## What a row says
+
+| State | Meaning |
+| --- | --- |
+| **served** | a certificate covers the name, with its issuer, validity and serial |
+| **pending** | the proxy knows the name and has not got one yet — the proxy's own complaint is quoted beside it |
+| **not deployed** | the name was added after the app's last deploy; a container keeps the labels it was created with |
+| **no domain** | the instance has no domain, so nothing can be issued |
+
+A certificate serving nothing any more — a name removed since — is
+listed too, so what the store holds is never a surprise.
+
+## Asked again, every half hour
+
+The proxy asks a CA for a certificate when its configuration changes
+and at no other moment. So a record written a minute too late, or an
+hour when Let's Encrypt's vantage points could not reach the
+nameservers, used to leave a name without one for the life of the
+instance.
+
+Now, for as long as any name is *pending*, the instance nudges the
+proxy every **thirty minutes** and it asks again. Half an hour is a rate
+limit rather than a preference: Let's Encrypt allows five failed
+validations per hostname per hour, and two of those leaves room for the
+deploys and by-hand retries of whoever is fixing it. The other reasons
+are left alone — no domain, not deployed, and a name on another machine
+are things for a person to do.
+
+## Rate limits
+
+Let's Encrypt counts per **registered domain**, and `sslip.io` is one
+registered domain shared with everyone using it: a busy week on a
+default install can hit the limit, and the complaint appears on this
+screen. A domain of your own does not share its allowance.
+
+## Read-only on purpose
+
+Renewing or deleting by hand means editing a file the proxy owns while
+it runs, which is only safe with the proxy stopped — a few seconds of
+downtime for every app — and every re-issue spends the weekly allowance.
+That is a decision to make deliberately on the box, not a button beside
+a table.
+
+The API is `GET /certificates`.

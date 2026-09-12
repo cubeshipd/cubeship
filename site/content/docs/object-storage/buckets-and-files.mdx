@@ -1,0 +1,48 @@
+---
+title: Buckets and files
+description: Browse, upload, download, make folders, delete — and what a folder is on a store that has none.
+---
+
+The **Buckets** tab lists what the store holds; a bucket opens as a
+table of files and folders with a filter, an upload button and a
+breadcrumb.
+
+## Buckets
+
+Created and deleted from the Buckets tab, for a login that may. A name
+S3 itself would reject is refused where it is typed. A
+[pinned store](/docs/object-storage/pinning) shows its one bucket and
+lists nothing else.
+
+## Files
+
+- **Upload** streams through the daemon into the bucket; there is no
+  size held in memory.
+- **Download** streams back the same way, through
+  `GET …/buckets/{bucket}/download?key=`.
+- **Delete** removes one object.
+
+A key is not a path: `../` means nothing to S3 and would name an object
+called that. Cubeship refuses it anyway, because its own listing is
+built from prefixes and a name that walks out of the folder it was
+uploaded to is a file that appears somewhere nobody put it.
+
+## What a folder is
+
+S3 has no directories. A listing returns keys and *common prefixes*, and
+a folder is the second of those: it exists while something is under it
+and stops existing when the last thing goes. Three things follow:
+
+- **Deleting a folder deletes everything under it, at every depth**,
+  because there is nothing else to delete. The dialog says so.
+- **An empty folder is a zero-byte object** whose key ends in `/` — the
+  convention every console uses. The marker is hidden from the listing
+  of the folder itself.
+- **A folder has no size.** Working one out is a listing of everything
+  under it, on every row.
+
+## Roles
+
+All of it is an **admin's**: a bucket is data, and reading data is the
+line a member does not cross. Through the API it is under
+`/objectstores/{name}/buckets`.

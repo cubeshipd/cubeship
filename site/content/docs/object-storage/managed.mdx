@@ -1,0 +1,57 @@
+---
+title: A managed store
+description: A MinIO the instance runs — a container beside the databases, its objects on this disk, its keys minted here.
+---
+
+**Object storage → New store** with the kind *managed* creates a MinIO
+container named `cubeship-s3-<name>`, with its objects in a host
+directory under `<data dir>/objectstores/<id>`. The same shape as a
+database: the name is the container's and permanent, the version is
+permanent because a data directory belongs to the server that wrote it,
+and the data is outside the container so a recreate does not touch it.
+
+The image is pinned to the last community MinIO release — the tag is
+where the free server ends, not a snapshot that goes stale. One
+directory, single-node single-drive mode; erasure coding wants several
+drives and there is one disk on this machine.
+
+## Keys
+
+The access key and secret are **minted here** when the store is created,
+on its own row, and shown on the store's Overview to an admin. They are
+not a [credential](/docs/credentials): a secret this instance invented
+is not worth naming and reusing the way one it was given is.
+
+An app gets them through an [attachment](/docs/object-storage/attaching)
+without anybody copying them.
+
+## Reaching it
+
+From an app: the container name, `cubeship-s3-<name>`, on port 9000,
+which is what the attachment's `S3_ENDPOINT` is.
+
+From outside: **External access** in the settings publishes a host port
+from **16000–16999** — deliberately not the databases' 15000–15999, so
+the two can never collide. There is no proxy router and no domain in
+front of it, though MinIO speaks HTTP and one would work: a hostname is
+a thing an app's domains own, and borrowing it here would be two
+modules writing routes for names neither can see. So an exposed store is
+a plain port with **no TLS**, and a [firewall rule](/docs/networking/firewall)
+is what makes it safe.
+
+## Stop, start, logs, charts, limits
+
+The same as a database's: stopping leaves the container and its log,
+starting provisions again, Logs is the container's output, Overview
+charts it, and Resources sets a [ceiling](/docs/apps/limits).
+
+## On a cluster
+
+A managed store joins the [mesh](/docs/servers/the-mesh) like a
+database does, so an app on a worker reaches it by the same name.
+
+## Backups
+
+A managed store is **on this machine**. Backing a database up into it
+is a copy on the same disk, and every screen says so — see
+[Destinations](/docs/backups/destinations).

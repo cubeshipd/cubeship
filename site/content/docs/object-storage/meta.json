@@ -1,0 +1,4 @@
+{
+  "title": "Object storage",
+  "pages": ["managed", "linked", "buckets-and-files", "attaching", "pinning"]
+}

@@ -1,0 +1,57 @@
+---
+title: Object storage
+description: The buckets this instance can reach — a MinIO it runs, or an S3 endpoint it holds the keys to — and the files in them.
+---
+
+Two ways a bucket gets here, one screen for both:
+
+- **Managed** — a MinIO the instance runs, as a container beside the
+  databases. Where an app's uploads go without an account anywhere, and
+  where you develop against S3 without paying for S3.
+- **Linked** — an S3-compatible endpoint somewhere else, with keys you
+  gave it: Amazon S3, Cloudflare R2, DigitalOcean Spaces, or any
+  compatible server. Where a [backup](/docs/backups/destinations) should
+  go, because a backup kept on this machine is not one.
+
+Both are an endpoint, a login and buckets inside it, and everything
+above the connection — browsing, uploading, attaching — is the same.
+
+```bash
+# there is no CLI noun for stores yet; the dashboard and the API are the doors
+```
+
+## Every byte goes through the daemon
+
+A download is read from the store and written to the response, an
+upload the other way. No cache, no copy, and no presigned URLs: a
+managed store's endpoint is a container name that resolves on the
+instance's network and nowhere else, so a link to it would be one only
+the daemon could follow.
+
+## Roles
+
+Managing a store is an **admin's**, and so is everything **inside**
+one. A member can read a great deal about what the instance is wired to
+and never reads *data* — there is no way to see a row of a database
+from here either — and a bucket is data. A member's app still uses the
+store, because the app is given the keys.
+
+MCP tools describe the storage and never its contents: an agent can see
+that `backups/2026-09-01.dump` exists and how big it is, and cannot open
+it, create a store or link one. It can [attach](/docs/object-storage/attaching)
+an app, because that hands over no secret.
+
+## In the dashboard
+
+**Object storage** in the sidebar, beside Databases. A store's page
+opens on Overview (charts and the endpoint), then Buckets, Apps, Logs; a
+linked store's Overview is the connection alone, since there is no
+container here to chart. Settings holds External access, Resources and
+Danger, and for a linked store the bucket it is pinned to.
+
+<Cards>
+  <Card title="A managed store" href="/docs/object-storage/managed" />
+  <Card title="Linking a bucket" href="/docs/object-storage/linked" />
+  <Card title="Buckets and files" href="/docs/object-storage/buckets-and-files" />
+  <Card title="Attaching apps" href="/docs/object-storage/attaching" />
+</Cards>
