@@ -55,7 +55,7 @@ upgrade is one command, or a time of day the instance does it by itself,
 and maintaining a second line would mean the fix landing later in both.
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cubeshipd/cubeship/master/install.sh | sh
+curl -fsSL https://cubeship.dev/install.sh | sh
 ```
 
 A release candidate — anything with `-rc` in the version — is never what
