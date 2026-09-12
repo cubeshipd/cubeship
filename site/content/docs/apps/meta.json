@@ -2,7 +2,7 @@
   "title": "Apps",
   "pages": [
     "creating",
-    "---Where the image comes from---",
+    "---Sources---",
     "source-registry",
     "source-external",
     "source-git",
