@@ -97,7 +97,10 @@ export function TemplateForm({
         }
         currentSlug = ((await response.json()) as { slug: string }).slug;
         setSlug(currentSlug);
-      } else if (mode === "edit") {
+      } else {
+        // Metadata may have changed since the draft was created — on a
+        // retry after a rejected publish, or any edit — so it is kept in
+        // sync on every submit rather than only the first one.
         const response = await fetch(`/api/v1/templates/${currentSlug}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
