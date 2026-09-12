@@ -18,7 +18,7 @@ export async function TemplatesStrip() {
       "templates strip",
     ));
   } catch (error) {
-    console.error("templates strip: catalog unavailable:", (error as Error).message);
+    console.warn("templates strip: catalog unavailable:", (error as Error).message);
     return null;
   }
   if (rows.length === 0) return null;

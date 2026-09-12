@@ -32,7 +32,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   try {
     publishedTemplates = await withDeadline(allPublishedTemplates(), 1_500, "sitemap templates");
   } catch (error) {
-    console.error("sitemap: templates unavailable:", (error as Error).message);
+    console.warn("sitemap: templates unavailable:", (error as Error).message);
   }
   const templates = publishedTemplates.map((template) => ({
     url: `${siteUrl}/templates/${template.slug}`,
