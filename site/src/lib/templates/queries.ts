@@ -1,6 +1,7 @@
 import { and, desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { templates, templateVersions, users } from "@/db/schema";
+import type { SessionUser } from "@/lib/auth/session";
 
 // The chips on the catalog: every tag in use by something published,
 // not a fixed vocabulary, since authors coin their own.
@@ -14,6 +15,21 @@ export async function distinctTags(): Promise<string[]> {
 export async function templateBySlug(slug: string) {
   const [row] = await db().select().from(templates).where(eq(templates.slug, slug)).limit(1);
   return row;
+}
+
+// A draft is visible to its author and to an admin, and to nobody
+// else; a removed template is visible to nobody. Unlisted is left
+// out of that check on purpose — the whole point of unlisted is that
+// the direct link still works.
+export function visibleTo(
+  template: { status: string; authorId: number },
+  viewer: SessionUser | null,
+): boolean {
+  if (template.status === "removed") return false;
+  if (template.status === "draft") {
+    return viewer !== null && (viewer.id === template.authorId || viewer.role === "admin");
+  }
+  return true;
 }
 
 export async function templateWithAuthor(slug: string) {
