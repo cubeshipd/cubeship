@@ -616,14 +616,13 @@ func run() error {
 		return fmt.Errorf("reconcile object stores: %w", err)
 	}
 
-	// The firewall rules for whatever is already exposed. A one-shot,
-	// not a loop, and it only adds — see Service.AdmitExposed on each.
-	// This is what repairs an instance where a datastore or a managed
-	// store was exposed before this existed: it gets its rule the next
-	// time the daemon starts, here, rather than waiting for somebody to
-	// expose it again.
-	srv.Datastores.AdmitExposed(ctx)
-	srv.ObjectStores.AdmitExposed(ctx)
+	// The host's stanza, rendered from whatever is exposed now. Every
+	// expose rewrites it too; this is for what changed while the daemon
+	// was not running, and for an instance upgraded from one that kept
+	// no such lines.
+	if err := srv.Firewall.SyncPublished(ctx); err != nil {
+		log.Printf("firewall: could not bring the host stanza in line with what is exposed: %v", err)
+	}
 
 	srv.SetRegistrySigningKey(registrySigningKey, registryCertDER)
 

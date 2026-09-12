@@ -353,7 +353,8 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		// A firewall is the host's, so a server with no way to reach the
 		// host has one that answers "not available" — which is what a
 		// test wants, and what `make dev` is.
-		Firewall:    firewall.NewService(opts.Host, ports(docker), opts.DataDir),
+		Firewall: firewall.NewService(opts.Host, ports(docker),
+			exposedPorts{datastore.NewRepository(db), objectstore.NewRepository(db)}, opts.DataDir),
 		Setup:       setup.NewService(db, users, opts.SetupToken),
 		Credentials: creds,
 		Registries:  registries,
@@ -363,6 +364,10 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		frontend:    opts.Frontend,
 		router:      httpx.NewRouter(),
 	}
+	// Exposing a database or a store rewrites the host's stanza, which
+	// the firewall owns; both modules sit below it and are told.
+	datastores.SetPortsChanged(srv.Firewall)
+	objectStores.SetPortsChanged(srv.Firewall)
 	// The machines in this cluster pull the images this registry holds,
 	// and they authenticate as themselves: their own credential, and
 	// pull on the repository they were told to run. See
@@ -546,6 +551,29 @@ func (s *Server) routes() {
 	// narrower path — and it refuses to choose. The handler answers 405
 	// to anything but a read.
 	s.router.HandleRoot("/", web.Handler(s.frontend))
+}
+
+// exposedPorts is firewall.Exposed: every host port a datastore or a
+// managed object store is published on, read from their rows.
+type exposedPorts struct {
+	datastores   *datastore.Repository
+	objectStores *objectstore.Repository
+}
+
+func (e exposedPorts) ExposedPorts(ctx context.Context) ([]int, error) {
+	used, err := e.datastores.UsedPorts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ports := make([]int, 0, len(used))
+	for port := range used {
+		ports = append(ports, port)
+	}
+	stores, err := e.objectStores.ExposedManagedPorts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return append(ports, stores...), nil
 }
 
 // ports narrows the Engine to the one question the firewall asks of it.

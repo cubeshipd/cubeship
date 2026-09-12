@@ -218,6 +218,27 @@ func (r *Repository) UsingCredential(ctx context.Context, credentialID int64) ([
 	return slugs, rows.Err()
 }
 
+// ExposedManagedPorts is every host port a managed store is published on.
+// A linked store has no container, so it has none.
+func (r *Repository) ExposedManagedPorts(ctx context.Context) ([]int, error) {
+	rows, err := r.q.QueryContext(ctx,
+		`SELECT exposed_port FROM object_stores WHERE kind = $1 AND exposed_port <> 0`,
+		string(KindManaged))
+	if err != nil {
+		return nil, fmt.Errorf("list exposed object stores: %w", err)
+	}
+	defer rows.Close()
+	var ports []int
+	for rows.Next() {
+		var port int
+		if err := rows.Scan(&port); err != nil {
+			return nil, err
+		}
+		ports = append(ports, port)
+	}
+	return ports, rows.Err()
+}
+
 // ExposedManagedElsewhere reports whether some managed store other than
 // excludeID is still exposed.
 //

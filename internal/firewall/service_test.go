@@ -61,7 +61,7 @@ var admin = &user.User{Username: "admin", Role: user.RoleAdmin}
 
 func newService(t *testing.T, h *fakeHost) *Service {
 	t.Helper()
-	return NewService(h, nil, t.TempDir())
+	return NewService(h, nil, nil, t.TempDir())
 }
 
 // The guarantee this module exists for: the firewall is never turned on
@@ -199,7 +199,7 @@ func TestAdoptingAllowsBeforeItDenies(t *testing.T) {
 // builds a server — and a screen that said "failed" there would be
 // describing the developer's machine, not the instance.
 func TestWithNoHostThereIsNothingToReport(t *testing.T) {
-	svc := NewService(nil, nil, t.TempDir())
+	svc := NewService(nil, nil, nil, t.TempDir())
 	status, err := svc.Status(context.Background(), admin)
 	if err != nil {
 		t.Fatalf("status: %v", err)
@@ -290,7 +290,7 @@ func TestTheReportSaysWhichPublishedPortsAreOpen(t *testing.T) {
 	svc := NewService(host, fakePorts{
 		{Port: 80, Protocol: "tcp", Container: "cubeship-traefik"},
 		{Port: 15432, Protocol: "tcp", Container: "cubeship-db-pg"},
-	}, t.TempDir())
+	}, nil, t.TempDir())
 
 	got, err := svc.Status(context.Background(), admin)
 	if err != nil {
@@ -576,7 +576,7 @@ func TestTheReportSaysWhatAdmitsEachPublishedPort(t *testing.T) {
 		{Port: 80, Protocol: "tcp", Container: "cubeship-traefik"},
 		{Port: 15000, Inside: 5432, Protocol: "tcp", Container: "cubeship-db-other"},
 		{Port: 15002, Inside: 5432, Protocol: "tcp", Container: "cubeship-db-pg"},
-	}, t.TempDir())
+	}, nil, t.TempDir())
 
 	got, err := svc.Status(context.Background(), admin)
 	if err != nil {

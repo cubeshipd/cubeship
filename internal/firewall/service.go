@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 
 	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/platform/hostexec"
@@ -31,6 +32,15 @@ type Ports interface {
 	PublishedPorts(ctx context.Context) ([]dockerx.PublishedPort, error)
 }
 
+// Exposed answers which host ports this instance has deliberately published.
+type Exposed interface {
+	ExposedPorts(ctx context.Context) ([]int, error)
+}
+
+// afterRules is the file ufw loads after its own rules, and the one the
+// stanza lives in.
+const afterRules = "/etc/ufw/after.rules"
+
 // A firewall is the instance's own wiring, and reading it is as
 // sensitive as writing it: the list of what is open is exactly what
 // somebody probing would like to have.
@@ -39,17 +49,23 @@ const manageRole = user.RoleAdmin
 // Service is the use cases. It holds no repository because it owns no
 // rows — see the package comment.
 type Service struct {
-	host  Host
-	ports Ports
+	host    Host
+	ports   Ports
+	exposed Exposed
 	// dataDir is the one path this module writes to, and the trick that
 	// makes writing to the host possible at all: it is mounted at the
 	// same path inside and out, so a file the daemon writes is a file
 	// the host can read. See AdoptDocker.
 	dataDir string
+	// rules is afterRules; a test points it at a file of its own.
+	rules string
+	// mu serializes everything that writes the stanza: two exposes at
+	// once would otherwise race on one file.
+	mu sync.Mutex
 }
 
-func NewService(host Host, ports Ports, dataDir string) *Service {
-	return &Service{host: host, ports: ports, dataDir: dataDir}
+func NewService(host Host, ports Ports, exposed Exposed, dataDir string) *Service {
+	return &Service{host: host, ports: ports, exposed: exposed, dataDir: dataDir, rules: afterRules}
 }
 
 // reachable reports whether there is a host to talk to at all.
@@ -593,8 +609,30 @@ func (s *Service) AdoptDocker(ctx context.Context, caller *user.User, allow []in
 	if status.DockerAdopted {
 		return status, nil
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// Read before anything is written, so a failure here changes nothing.
+	ports, err := s.exposedPorts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	block, err := renderDockerBlock(ports)
+	if err != nil {
+		return nil, err
+	}
+	inStanza := map[int]bool{}
+	for _, p := range ports {
+		inStanza[p] = true
+	}
 
 	for _, port := range append([]int{80, 443}, allow...) {
+		// The stanza returns this one by the port it was published on. A
+		// rule for it would name the port inside the container, which
+		// opens every database of the same engine.
+		if inStanza[port] {
+			continue
+		}
 		spec := Spec{
 			Scope: ScopeApps, Action: ActionAllow, Protocol: ProtocolTCP,
 			Port:    strconv.Itoa(port),
@@ -616,10 +654,6 @@ func (s *Service) AdoptDocker(ctx context.Context, caller *user.User, allow []in
 	// file the daemon just wrote, and nothing has to escape several
 	// hundred bytes of iptables syntax past two parsers.
 	path := s.dataDir + "/ufw-docker.rules"
-	block, err := renderDockerBlock(nil)
-	if err != nil {
-		return nil, err
-	}
 	// The leading newline is for a file whose last line has none.
 	if err := os.WriteFile(path, []byte("\n"+block), 0o600); err != nil {
 		return nil, fmt.Errorf("write the docker stanza: %w", err)
@@ -638,6 +672,8 @@ func (s *Service) ReleaseDocker(ctx context.Context, caller *user.User) (*Status
 	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if err := s.script(ctx, releaseScript); err != nil {
 		return nil, err
 	}
@@ -651,6 +687,85 @@ if grep -q '` + dockerBeginMarker + `' /etc/ufw/after.rules; then exit 0; fi
 cp /etc/ufw/after.rules /etc/ufw/after.rules.cubeship-backup
 cat ` + path + ` >> /etc/ufw/after.rules
 ufw status | grep -q '^Status: active' && ufw reload || true
+`
+}
+
+// SyncPublished rewrites the stanza from what is exposed now, whole.
+//
+// Only on a host where the stanza is already installed: without it
+// nothing is denied, and writing it would be adopting Docker behind the
+// operator's back. A daemon that cannot reach the host has nothing to
+// do. The set is read inside the lock, so a sync that started earlier
+// cannot write an older set over a newer one.
+func (s *Service) SyncPublished(ctx context.Context) error {
+	if !s.reachable() {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ports, err := s.exposedPorts(ctx)
+	if err != nil {
+		return err
+	}
+	block, err := renderDockerBlock(ports)
+	if err != nil {
+		return err
+	}
+	path := s.dataDir + "/ufw-docker.rules"
+	// Both paths are single-quoted into the script; neither is typed by
+	// anybody through the API, and this keeps it that way.
+	if strings.ContainsAny(path+s.rules, "'\n") {
+		return fmt.Errorf("the data directory %q cannot be named in a shell script", s.dataDir)
+	}
+	if err := os.WriteFile(path, []byte(block), 0o600); err != nil {
+		return fmt.Errorf("write the docker stanza: %w", err)
+	}
+	return s.script(ctx, replaceScript(path, s.rules))
+}
+
+func (s *Service) exposedPorts(ctx context.Context) ([]int, error) {
+	if s.exposed == nil {
+		return nil, nil
+	}
+	ports, err := s.exposed.ExposedPorts(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("read which ports are exposed: %w", err)
+	}
+	return ports, nil
+}
+
+// replaceScript swaps the block between the markers in rules for the
+// one in the file at block.
+//
+// The new file is built beside the old one and moved over it: a rename
+// within one directory, so every step before it leaves the old file
+// whole and the step itself leaves the new one. `cp -p` first, so what
+// replaces the file keeps its owner and mode. Both markers are required,
+// because sed's range with no end runs to the end of the file and would
+// take the operator's own lines with it.
+//
+// The blank line adopting put before the begin marker stays where it
+// is, and the block goes on the end without one, so replacing it any
+// number of times gives the same file.
+func replaceScript(block, rules string) string {
+	return `
+set -e
+rules='` + rules + `'
+block='` + block + `'
+grep -qF '` + dockerBeginMarker + `' "$rules" 2>/dev/null || exit 0
+if ! grep -qF '` + dockerEndMarker + `' "$rules"; then
+	echo "cubeship: $rules has the begin marker and not the end one, so it is left as it is"
+	exit 1
+fi
+tmp=$(mktemp "$rules.cubeship.XXXXXX")
+trap 'rm -f "$tmp"' EXIT
+cp -p "$rules" "$tmp"
+sed '/` + dockerBeginMarker + `/,/` + dockerEndMarker + `/d' "$rules" > "$tmp"
+if [ -s "$tmp" ] && [ -n "$(tail -c 1 "$tmp")" ]; then echo >> "$tmp"; fi
+cat "$block" >> "$tmp"
+mv -f "$tmp" "$rules"
+if ufw status | grep -q '^Status: active'; then ufw reload; fi
 `
 }
 

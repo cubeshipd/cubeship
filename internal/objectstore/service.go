@@ -77,6 +77,29 @@ type Service struct {
 	// Nil in tests and on a daemon with no host access, which admitPort
 	// and withdrawPort treat as nothing to do rather than a failure.
 	firewall firewall.Host
+	// portsChanged is told after anything changes what this module
+	// publishes on the host. Nil in tests and wherever nothing is set.
+	portsChanged PortsChanged
+}
+
+// PortsChanged is told whenever what this module publishes on the host changes.
+type PortsChanged interface {
+	SyncPublished(ctx context.Context) error
+}
+
+// SetPortsChanged names what is told when an exposed port comes or goes.
+// A setter because what satisfies it is built after this module.
+func (s *Service) SetPortsChanged(p PortsChanged) { s.portsChanged = p }
+
+// syncPorts tells it, best effort: the expose has happened either way,
+// and refusing the request would not undo it.
+func (s *Service) syncPorts(ctx context.Context) {
+	if s.portsChanged == nil {
+		return
+	}
+	if err := s.portsChanged.SyncPublished(ctx); err != nil {
+		log.Printf("object store: could not bring the host firewall in line with what is exposed: %v", err)
+	}
 }
 
 func NewService(db *database.DB, creds *credential.Service, apps *app.Service,
@@ -266,6 +289,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, spec ManagedSpe
 	// the rule.
 	if created.ExposedPort != 0 {
 		s.admitPort(ctx, created)
+		s.syncPorts(ctx)
 	}
 	return created, nil
 }
@@ -700,6 +724,7 @@ func (s *Service) setPort(ctx context.Context, caller *user.User, store *Store, 
 	case oldPort != 0:
 		s.withdrawPort(ctx, updated)
 	}
+	s.syncPorts(ctx)
 	return updated, nil
 }
 
@@ -910,6 +935,11 @@ func (s *Service) Delete(ctx context.Context, caller *user.User, name string) (*
 	}
 	if err := s.Repo().Delete(ctx, store.ID); err != nil {
 		return nil, err
+	}
+	// A linked store is never exposed; the kind is checked anyway, so a
+	// stray number on one cannot reach the host.
+	if store.Kind == KindManaged && store.ExposedPort != 0 {
+		s.syncPorts(ctx)
 	}
 	// The series outlives nothing: the id is free to be reused by the
 	// next store, and a chart that opened on somebody else's history

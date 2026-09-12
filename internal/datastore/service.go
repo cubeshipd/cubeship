@@ -64,6 +64,29 @@ type Service struct {
 	// access, which admitPort and withdrawPort treat as "nothing to do"
 	// rather than a failure.
 	firewall firewall.Host
+	// portsChanged is told after anything changes what this module
+	// publishes on the host. Nil in tests and wherever nothing is set.
+	portsChanged PortsChanged
+}
+
+// PortsChanged is told whenever what this module publishes on the host changes.
+type PortsChanged interface {
+	SyncPublished(ctx context.Context) error
+}
+
+// SetPortsChanged names what is told when an exposed port comes or goes.
+// A setter because what satisfies it is built after this module.
+func (s *Service) SetPortsChanged(p PortsChanged) { s.portsChanged = p }
+
+// syncPorts tells it, best effort: the expose has happened either way,
+// and refusing the request would not undo it.
+func (s *Service) syncPorts(ctx context.Context) {
+	if s.portsChanged == nil {
+		return
+	}
+	if err := s.portsChanged.SyncPublished(ctx); err != nil {
+		log.Printf("datastore: could not bring the host firewall in line with what is exposed: %v", err)
+	}
 }
 
 func NewService(db *database.DB, apps *app.Service, prov *Provisioner,
@@ -243,6 +266,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, spec Spec) (*Da
 	// there, so this is the one other place that has to admit the rule.
 	if created.ExposedPort != 0 {
 		s.admitPort(ctx, created)
+		s.syncPorts(ctx)
 	}
 	return created, nil
 }
@@ -457,6 +481,7 @@ func (s *Service) setPort(ctx context.Context, caller *user.User, d *Datastore, 
 	case oldPort != 0:
 		s.withdrawPort(ctx, updated)
 	}
+	s.syncPorts(ctx)
 	return updated, nil
 }
 
@@ -771,6 +796,9 @@ func (s *Service) Delete(ctx context.Context, caller *user.User, name string) (*
 	}
 	if err := s.Repo().Delete(ctx, d.ID); err != nil {
 		return nil, err
+	}
+	if d.ExposedPort != 0 {
+		s.syncPorts(ctx)
 	}
 	// Its history goes with it, so a later datastore reusing this id
 	// does not inherit a chart of a stranger's.
