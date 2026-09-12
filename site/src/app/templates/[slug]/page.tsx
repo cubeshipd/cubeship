@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Comments } from "@/components/templates/comments";
 import { LikeButton } from "@/components/templates/like-button";
 import { Preview } from "@/components/templates/preview";
 import { SourceBlock } from "@/components/templates/source-block";
@@ -8,7 +9,7 @@ import { currentUser } from "@/lib/auth/session";
 import { publicUrl } from "@/lib/env";
 import type { NormalizedManifest } from "@/lib/template";
 import { currentVersion, templateWithAuthor, versionsOf, visibleTo } from "@/lib/templates/queries";
-import { hasLiked } from "@/lib/templates/social";
+import { hasLiked, listComments } from "@/lib/templates/social";
 
 // Reads the session and the database, so this page can never be static.
 export const dynamic = "force-dynamic";
@@ -32,10 +33,11 @@ export default async function TemplateDetailPage(props: PageProps<"/templates/[s
   if (!row || !visibleTo(row.template, viewer)) notFound();
 
   const { template, author } = row;
-  const [version, versions, liked] = await Promise.all([
+  const [version, versions, liked, comments] = await Promise.all([
     currentVersion(template.id),
     versionsOf(template.id),
     viewer ? hasLiked(viewer.id, template.id) : Promise.resolve(false),
+    listComments(template.id),
   ]);
 
   // Stored as jsonb, so the column carries no static type of its own.
@@ -137,6 +139,18 @@ export default async function TemplateDetailPage(props: PageProps<"/templates/[s
           </ul>
         </div>
       ) : null}
+
+      <div className="mt-10">
+        <p className="label mb-3 text-primary">Comments</p>
+        <Comments
+          slug={slug}
+          initialComments={comments.map((comment) => ({
+            ...comment,
+            createdAt: comment.createdAt.toISOString(),
+          }))}
+          viewer={viewer ? { login: viewer.login, isAdmin: viewer.role === "admin" } : null}
+        />
+      </div>
     </div>
   );
 }
