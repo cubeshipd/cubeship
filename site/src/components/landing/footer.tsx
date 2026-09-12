@@ -3,6 +3,8 @@ import { githubUrl } from "@/lib/shared";
 
 const links = [
   { text: "Docs", href: "/docs" },
+  { text: "vs Dokploy", href: "/vs/dokploy" },
+  { text: "vs Coolify", href: "/vs/coolify" },
   { text: "GitHub", href: githubUrl },
   { text: "Changelog", href: `${githubUrl}/blob/master/CHANGELOG.md` },
   { text: "Security", href: `${githubUrl}/blob/master/SECURITY.md` },
