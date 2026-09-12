@@ -1,0 +1,37 @@
+---
+title: MCP
+description: The same API for an agent, authenticated with the same key. Two lines it deliberately does not cross.
+---
+
+`https://your-instance/mcp` is the same API for an agent, authenticated
+with the same key. Point Claude Code, Cursor or whatever you run at it:
+
+```json title="mcp.json"
+{
+  "mcpServers": {
+    "cubeship": {
+      "type": "http",
+      "url": "https://cubeship.example.com/mcp",
+      "headers": { "Authorization": "Bearer <your-api-key>" }
+    }
+  }
+}
+```
+
+From there it can create a project, deploy an app, read the logs and how
+the last deploy ended, attach a database and set the variables — the
+work of the dashboard, without the dashboard. It is stateless on
+purpose: every call carries the key, so nothing an agent opened can be
+picked up by another.
+
+<Callout type="warn" title="Two lines are deliberately not crossed">
+**No tool reads a secret, and no tool sets a container's ceiling.**
+Those stay with a person, at the dashboard or the CLI.
+</Callout>
+
+## What the key allows
+
+An agent holds an API key, and a key has its owner's role. A **member**
+deploys published images; an **admin** also builds source on the host
+and configures the instance. Give an agent a member's key unless it has
+business doing the other thing.

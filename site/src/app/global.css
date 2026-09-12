@@ -1,0 +1,135 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/preset.css";
+
+/* The dashboard's palette, the cyan one, and nothing else: this site is
+   the product's face and it wears the product's colours. The values are
+   copied from web/src/app/globals.css rather than shared, because the
+   two are two builds — change one, change both. */
+@theme {
+  --font-sans: var(--font-chakra), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jbmono), ui-monospace, SFMono-Regular, monospace;
+
+  --color-background: #05070a;
+  --color-card: #0a0e14;
+  --color-popover: #0d1219;
+  --color-muted: #10161f;
+  --color-accent: #16202c;
+  --color-foreground: #d7e3ec;
+  --color-muted-foreground: #7d8fa3;
+  --color-subtle-foreground: #4e5c6b;
+  --color-border: #182430;
+  --color-border-strong: #263644;
+  --color-primary: #2de2e6;
+  --color-primary-foreground: #03151a;
+  --color-magenta: #ff2e88;
+  --color-success: #8dff5a;
+  --color-warning: #ffb020;
+
+  /* What Fumadocs reads. */
+  --color-fd-background: #05070a;
+  --color-fd-foreground: #d7e3ec;
+  --color-fd-muted: #10161f;
+  --color-fd-muted-foreground: #7d8fa3;
+  --color-fd-popover: #0d1219;
+  --color-fd-popover-foreground: #d7e3ec;
+  --color-fd-card: #0a0e14;
+  --color-fd-card-foreground: #d7e3ec;
+  --color-fd-border: #182430;
+  --color-fd-primary: #2de2e6;
+  --color-fd-primary-foreground: #03151a;
+  --color-fd-secondary: #10161f;
+  --color-fd-secondary-foreground: #d7e3ec;
+  --color-fd-accent: #16202c;
+  --color-fd-accent-foreground: #d7e3ec;
+  --color-fd-ring: #2de2e6;
+  --color-fd-overlay: rgba(0, 0, 0, 0.6);
+  --color-fd-info: #2de2e6;
+  --color-fd-warning: #ffb020;
+  --color-fd-error: #ff2e5b;
+  --color-fd-success: #8dff5a;
+  --color-fd-idea: #ffb020;
+  --color-fd-diff-remove: rgba(255, 46, 91, 0.12);
+  --color-fd-diff-remove-symbol: #ff2e5b;
+  --color-fd-diff-add: rgba(141, 255, 90, 0.1);
+  --color-fd-diff-add-symbol: #8dff5a;
+
+  /* Every corner square. */
+  --radius-sm: 0px;
+  --radius-md: 0px;
+  --radius-lg: 0px;
+  --radius-xl: 0px;
+  --radius-2xl: 0px;
+  --radius-3xl: 0px;
+}
+
+html {
+  scrollbar-gutter: stable;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+}
+
+/* Depth comes from 1px lines and glow, never from shadow. */
+@utility bg-grid {
+  background-image:
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--color-primary) 9%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--color-primary) 9%, transparent) 1px,
+      transparent 1px
+    );
+  background-size: 40px 40px;
+}
+
+/* Corner brackets, the way a HUD frames the thing it is tracking. Two
+   opposite corners rather than four — four reads as a decorative box,
+   two as a sight. */
+@utility hud-frame {
+  position: relative;
+
+  &::before,
+  &::after {
+    content: "";
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-color: var(--color-primary);
+    pointer-events: none;
+  }
+  &::before {
+    top: -1px;
+    left: -1px;
+    border-top: 1px solid;
+    border-left: 1px solid;
+  }
+  &::after {
+    right: -1px;
+    bottom: -1px;
+    border-right: 1px solid;
+    border-bottom: 1px solid;
+  }
+}
+
+@utility text-glow {
+  text-shadow: 0 0 18px color-mix(in srgb, currentColor 55%, transparent);
+}
+
+@utility neon-edge {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--color-primary) 45%, transparent),
+    0 0 22px -6px color-mix(in srgb, var(--color-primary) 60%, transparent);
+}
+
+/* A label: uppercase, widely tracked, mono. The dashboard's own. */
+@utility label {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}

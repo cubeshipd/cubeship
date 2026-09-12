@@ -4,8 +4,18 @@
     {
       "name": "web-preview",
       "runtimeExecutable": "make",
-      "runtimeArgs": ["web-preview"],
+      "runtimeArgs": [
+        "web-preview"
+      ],
       "port": 3001
+    },
+    {
+      "name": "site-preview",
+      "runtimeExecutable": "make",
+      "runtimeArgs": [
+        "site-dev"
+      ],
+      "port": 3002
     }
   ]
 }

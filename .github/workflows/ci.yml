@@ -115,3 +115,30 @@ jobs:
       # types do not exist in a fresh checkout.
       - run: pnpm run typecheck
       - run: pnpm run build
+
+  # The site is the same shape as the dashboard — a Next app with its own
+  # lockfile — and fails on its own terms the same way.
+  site:
+    name: Site
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: site/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: site/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec biome ci .
+      # typegen first: the pages take their params from Next's generated
+      # route types, so a segment renamed without the page following it
+      # is a type error rather than an undefined glued into a URL. Those
+      # types do not exist in a fresh checkout.
+      - run: pnpm run typecheck
+      - run: pnpm run build

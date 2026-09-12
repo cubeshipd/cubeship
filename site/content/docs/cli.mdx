@@ -1,0 +1,43 @@
+---
+title: The CLI
+description: One static binary that talks to the instance's API from your machine. Every command it can run, the dashboard can too.
+---
+
+`cubeship` talks to the instance's API from your machine.
+
+```bash
+cubeship login https://cubeship.example.com <your-api-key>
+cubeship app list
+cubeship app logs api
+cubeship app env set api DATABASE_POOL=10
+```
+
+Make an API key under **Account** in the dashboard. Every noun has
+`--help`, and every command it can run is something the dashboard can
+too — they are the same API.
+
+## Installing it
+
+It is one static binary, attached to every
+[release](https://github.com/cubeshipd/cubeship/releases) for macOS and
+Linux, Intel and ARM:
+
+```bash
+curl -fsSL https://github.com/cubeshipd/cubeship/releases/latest/download/cubeship_darwin_arm64.tar.gz | tar -xz
+sudo mv cubeship /usr/local/bin/
+```
+
+Swap `darwin_arm64` for `darwin_amd64`, `linux_amd64` or `linux_arm64`.
+That name carries no version, so the command keeps working after the next
+release; the same tarball is also attached under its version — which is
+what to ask for when you want a specific one — and `checksums.txt` is
+beside them.
+
+There is no `go install`: the module is named `cubeship` rather than the
+path it lives at, and a downloaded binary covers the same ground.
+
+## The API
+
+Everything here is `https://your-instance/docs`, with the OpenAPI
+document at `/openapi.json`. The CLI, the dashboard and [MCP](/docs/mcp)
+are three clients of it.

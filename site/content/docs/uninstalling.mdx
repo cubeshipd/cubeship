@@ -1,0 +1,13 @@
+---
+title: Uninstalling
+description: The default keeps your data. Purging is a separate, deliberate flag.
+---
+
+```bash
+sudo ./uninstall.sh            # the containers; your data is kept
+sudo ./uninstall.sh --purge    # and the data, permanently
+```
+
+The default is deliberately not the destructive one: removing the
+software is not the same as asking to lose your database. Installing
+again brings the same instance back.
