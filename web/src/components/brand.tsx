@@ -1,30 +1,29 @@
 import { cn } from "cn";
 
-// The mark is an isometric cube drawn as a wireframe: three visible
-// edges lit in the interface accent, the hidden ones implied. It is
-// drawn rather than imported so it inherits the glow around it and
-// scales with the type it sits next to.
+// The mark is the logo's cube, drawn here rather than imported so it
+// takes the palette's accent and the glow around it: an isometric cube
+// as a hologram — the nine visible edges lit, the three hidden ones
+// faint through the faces. The same geometry is in public/logo/mark.svg
+// at full size.
 export function CubeMark({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" className={cn("size-6", className)}>
       <title>Cubeship</title>
-      <path d="M12 2 21 6.9v10.2L12 22l-9-4.9V6.9z" className="fill-primary/8" />
-      <path d="M12 2 21 6.9 12 11.8 3 6.9z" className="fill-primary/22" />
+      <path d="M12 2 21 6.9 12 11.8 3 6.9z" className="fill-primary/16" />
+      <path d="M3 6.9 12 11.8V22l-9-4.9z" className="fill-primary/8" />
+      <path d="M12 11.8 21 6.9v10.2L12 22z" className="fill-primary/4" />
+      <path
+        d="M12 11.8V2M12 11.8 3 17.1M12 11.8l9 5.3"
+        className="stroke-primary/25"
+        strokeWidth=".7"
+      />
       <path
         d="M12 2 21 6.9v10.2L12 22l-9-4.9V6.9z"
         className="stroke-primary"
         strokeWidth="1.2"
         strokeLinejoin="miter"
       />
-      <path
-        d="M3 6.9 12 11.8l9-4.9M12 11.8V22"
-        className="stroke-primary/70"
-        strokeWidth="1.2"
-        strokeLinejoin="miter"
-      />
-      {/* The one magenta element in the interface: the cube's near
-          corner, lit. Nothing you have to read is ever this colour. */}
-      <path d="M12 2 21 6.9" className="stroke-magenta" strokeWidth="1.2" />
+      <path d="M3 6.9 12 11.8l9-4.9M12 11.8V22" className="stroke-primary" strokeWidth="1.2" />
     </svg>
   );
 }

@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+<title>Cubeship</title>
+<defs><filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="2.4"/></filter></defs>
+<polygon points="50.00,10.00 84.64,30.00 50.00,50.00 15.36,30.00" fill="#2de2e6" fill-opacity=".16"/>
+<polygon points="15.36,30.00 50.00,50.00 50.00,90.00 15.36,70.00" fill="#2de2e6" fill-opacity=".08"/>
+<polygon points="84.64,30.00 84.64,70.00 50.00,90.00 50.00,50.00" fill="#2de2e6" fill-opacity=".04"/>
+<path d="M50.00 50.00 L50.00 10.00 M50.00 50.00 L15.36 70.00 M50.00 50.00 L84.64 70.00" stroke="#2de2e6" stroke-opacity=".28" stroke-width="2.20" fill="none"/>
+<g filter="url(#glow)" opacity=".85"><polygon points="50.00,10.00 84.64,30.00 84.64,70.00 50.00,90.00 15.36,70.00 15.36,30.00" stroke="#2de2e6" stroke-width="4" fill="none" stroke-linejoin="miter"/><path d="M15.36 30.00 L50.00 50.00 M50.00 50.00 L84.64 30.00" stroke="#2de2e6" stroke-width="4" fill="none"/><path d="M50.00 50.00 L50.00 90.00" stroke="#2de2e6" stroke-width="4" fill="none"/></g>
+<polygon points="50.00,10.00 84.64,30.00 84.64,70.00 50.00,90.00 15.36,70.00 15.36,30.00" stroke="#2de2e6" stroke-width="4" fill="none" stroke-linejoin="miter"/><path d="M15.36 30.00 L50.00 50.00 M50.00 50.00 L84.64 30.00" stroke="#2de2e6" stroke-width="4" fill="none"/><path d="M50.00 50.00 L50.00 90.00" stroke="#2de2e6" stroke-width="4" fill="none"/>
+</svg>
