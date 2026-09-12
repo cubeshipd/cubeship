@@ -59,6 +59,7 @@ One command on a fresh VPS, and the box is running:
 | **More machines** | add a second server and apps spread across both |
 | **Charts** | what every container is using, and what the machine underneath is doing |
 | **An API, a CLI and MCP** | everything the dashboard does, scriptable — and an endpoint an agent drives directly |
+| **Templates** | recipes for apps and the databases they need, published by the community at [cubeship.dev/templates](https://cubeship.dev/templates) |
 
 Everything Cubeship runs is a container, the daemon included: Postgres,
 the registry, the proxy, the builder and every app of yours are its

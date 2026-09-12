@@ -11,6 +11,7 @@ export function baseOptions(): BaseLayoutProps {
       url: "/",
     },
     links: [
+      { text: "Templates", url: "/templates" },
       { text: "Docs", url: "/docs" },
       { text: "Changelog", url: `${githubUrl}/blob/master/CHANGELOG.md` },
       // The star count in place of the preset's plain icon.

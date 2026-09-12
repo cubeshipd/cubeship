@@ -7,6 +7,7 @@ const groups: { title: string; links: { text: string; href: string }[] }[] = [
   {
     title: "Product",
     links: [
+      { text: "Templates", href: "/templates" },
       { text: "Docs", href: "/docs" },
       { text: "Install", href: "/docs/getting-started/install" },
       { text: "The CLI", href: "/docs/cli" },

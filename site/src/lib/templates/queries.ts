@@ -1,7 +1,17 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import { templates, templateVersions, users } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/session";
+
+// No cap, unlike listTemplates: a sitemap has to name every published
+// template or it is not one, and the catalog is nowhere near the size
+// where that becomes a problem.
+export async function allPublishedTemplates(): Promise<{ slug: string; updatedAt: Date }[]> {
+  return db()
+    .select({ slug: templates.slug, updatedAt: templates.updatedAt })
+    .from(templates)
+    .where(eq(templates.status, "published"));
+}
 
 // The chips on the catalog: every tag in use by something published,
 // not a fixed vocabulary, since authors coin their own.
@@ -84,9 +94,46 @@ export type CatalogRow = {
   imageKey: string | null;
   tags: string[];
   likesCount: number;
+  status: string;
   author: { login: string; avatarUrl: string | null };
   creates: { apps: number; databases: number; engines: string[] };
 };
+
+// Shared by listTemplates and templatesByAuthor: the manifest column is
+// jsonb, so the count-and-engines summary has to be computed here rather
+// than read off a static type, and both callers want it the same way.
+function toCatalogRow(row: {
+  slug: string;
+  name: string;
+  summary: string;
+  imageKey: string | null;
+  tags: string[];
+  likesCount: number;
+  status: string;
+  manifest: unknown;
+  login: string;
+  avatarUrl: string | null;
+}): CatalogRow {
+  const manifest = (row.manifest ?? { apps: [], databases: [] }) as {
+    apps: unknown[];
+    databases: { engine: string }[];
+  };
+  return {
+    slug: row.slug,
+    name: row.name,
+    summary: row.summary,
+    imageKey: row.imageKey,
+    tags: row.tags,
+    likesCount: row.likesCount,
+    status: row.status,
+    author: { login: row.login, avatarUrl: row.avatarUrl },
+    creates: {
+      apps: manifest.apps.length,
+      databases: manifest.databases.length,
+      engines: [...new Set(manifest.databases.map((database) => database.engine))],
+    },
+  };
+}
 
 // Keyset paging, not offset: the catalog is sorted by something that
 // changes, and an offset page would repeat or skip rows as it does.
@@ -135,6 +182,7 @@ export async function listTemplates(options: {
       imageKey: templates.imageKey,
       tags: templates.tags,
       likesCount: templates.likesCount,
+      status: templates.status,
       createdAt: templates.createdAt,
       manifest: templateVersions.manifest,
       login: users.login,
@@ -160,27 +208,35 @@ export async function listTemplates(options: {
         ])
       : null;
 
-  return {
-    rows: page.map((row) => {
-      const manifest = (row.manifest ?? { apps: [], databases: [] }) as {
-        apps: unknown[];
-        databases: { engine: string }[];
-      };
-      return {
-        slug: row.slug,
-        name: row.name,
-        summary: row.summary,
-        imageKey: row.imageKey,
-        tags: row.tags,
-        likesCount: row.likesCount,
-        author: { login: row.login, avatarUrl: row.avatarUrl },
-        creates: {
-          apps: manifest.apps.length,
-          databases: manifest.databases.length,
-          engines: [...new Set(manifest.databases.map((database) => database.engine))],
-        },
-      };
-    }),
-    nextCursor,
-  };
+  return { rows: page.map(toCatalogRow), nextCursor };
+}
+
+// No cursor: an author's own templates are few enough that one page is
+// the only page. Ordered by the most recently touched, which is what an
+// author cares about on their own listing in a way a stranger browsing
+// the catalog does not.
+export async function templatesByAuthor(
+  authorId: number,
+  statuses: string[],
+): Promise<CatalogRow[]> {
+  const rows = await db()
+    .select({
+      slug: templates.slug,
+      name: templates.name,
+      summary: templates.summary,
+      imageKey: templates.imageKey,
+      tags: templates.tags,
+      likesCount: templates.likesCount,
+      status: templates.status,
+      manifest: templateVersions.manifest,
+      login: users.login,
+      avatarUrl: users.avatarUrl,
+    })
+    .from(templates)
+    .innerJoin(users, eq(users.id, templates.authorId))
+    .leftJoin(templateVersions, eq(templateVersions.id, templates.currentVersionId))
+    .where(and(eq(templates.authorId, authorId), inArray(templates.status, statuses)))
+    .orderBy(desc(templates.updatedAt));
+
+  return rows.map(toCatalogRow);
 }

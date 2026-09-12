@@ -9,8 +9,13 @@ image and the daemon knows nothing about it.
 
 The image is the dashboard's recipe: `output: "standalone"`, static
 assets copied back beside the server, an unprivileged user, `:3000`.
-Nothing in it needs the network at run time — the docs are compiled in
-and the search index is built from them on the first query.
+
+The landing page and the docs are still exactly that: nothing in them
+needs the network at run time, the docs are compiled in, and the search
+index is built from them on the first query. `/templates` is not — it
+and its API under `/api/v1` read Postgres, and photos read a bucket.
+See [templates.md](templates.md) for what that half of the site is and
+how it stays out of the way of the half that is still static.
 
 ## One palette, copied
 

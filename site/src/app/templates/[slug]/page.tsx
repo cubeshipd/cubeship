@@ -24,7 +24,9 @@ export async function generateMetadata(props: PageProps<"/templates/[slug]">): P
     title: row.template.name,
     description: row.template.summary,
     alternates: { canonical: `/templates/${slug}` },
-    openGraph: row.template.imageKey ? { images: [`/i/${row.template.imageKey}`] } : undefined,
+    openGraph: {
+      images: [row.template.imageKey ? `/i/${row.template.imageKey}` : `/og/templates/${slug}`],
+    },
   };
 }
 
