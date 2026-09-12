@@ -76,6 +76,10 @@ web-preview: ## Run the dashboard on invented data, with no daemon behind it
 site-dev: ## Run cubeship.dev — the landing page and the docs — with hot reload
 	cd site && $(PNPM) run dev
 
+.PHONY: site-test
+site-test: ## Run the site's unit tests
+	cd site && $(PNPM) test
+
 .PHONY: install
 install: ## Install the CLI into GOBIN
 	$(GO) install ./cmd/cubeship
