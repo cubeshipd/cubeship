@@ -25,7 +25,7 @@ export function Hero() {
           <span className="text-magenta">·</span> run by you or your agent
         </p>
         <h1 className="mt-5 max-w-3xl font-semibold text-4xl leading-tight tracking-tight sm:text-6xl">
-          The PaaS that runs on your servers and answers to your agent.
+          Your servers, run like a platform.
         </h1>
         <p className="mt-6 max-w-2xl text-lg text-muted-foreground leading-relaxed">
           Push an image and it is live, with HTTPS and a database beside it. Add a second machine

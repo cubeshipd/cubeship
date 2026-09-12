@@ -134,33 +134,21 @@ body {
   text-transform: uppercase;
 }
 
-/* The open page in the sidebar is framed the way a card is — two
-   corner brackets, a sight on the thing you are reading — on top of
-   the tint. The group titles are labels. */
-#nd-sidebar [data-active="true"] {
-  position: relative;
+/* The open page and a hovered one change colour and nothing else: no
+   tint and no frame, the way the dashboard's own sidebar reads. */
+#nd-sidebar a[data-active="true"],
+#nd-sidebar a:hover,
+#nd-sidebar button:hover {
+  background: transparent;
+}
+#nd-sidebar a:hover {
+  color: var(--color-fd-foreground);
+}
 
-  &::before,
-  &::after {
-    content: "";
-    position: absolute;
-    width: 10px;
-    height: 10px;
-    border-color: var(--color-primary);
-    pointer-events: none;
-  }
-  &::before {
-    top: 0;
-    left: 0;
-    border-top: 1px solid;
-    border-left: 1px solid;
-  }
-  &::after {
-    right: 0;
-    bottom: 0;
-    border-right: 1px solid;
-    border-bottom: 1px solid;
-  }
+/* The header's search trigger is rounded-full in the preset; every
+   corner here is square. */
+#nd-nav button {
+  border-radius: 0;
 }
 
 /* A separator in meta.json renders as the sidebar's only <p>. */
