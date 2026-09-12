@@ -1,4 +1,5 @@
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
+import { AccountMenu } from "@/components/account-menu";
 import { Wordmark } from "@/components/brand";
 import { GitHubStars } from "@/components/github-stars";
 import { githubUrl } from "./shared";
@@ -14,6 +15,7 @@ export function baseOptions(): BaseLayoutProps {
       { text: "Changelog", url: `${githubUrl}/blob/master/CHANGELOG.md` },
       // The star count in place of the preset's plain icon.
       { type: "custom", secondary: true, children: <GitHubStars /> },
+      { type: "custom", secondary: true, children: <AccountMenu /> },
     ],
     // One palette, so nothing offers to switch.
     themeSwitch: { enabled: false },
