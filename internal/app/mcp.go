@@ -38,19 +38,19 @@ func NewTools(svc *Service, caller *user.User) *Tools {
 func (t *Tools) Register(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "create_app",
-		Description: `Register a new app in a project and get its registry push path. environment defaults to "production" when omitted. Requires member role in the organization.`,
+		Description: `Register a new app in a project and get its registry push path. environment defaults to "production" when omitted. Requires the member role.`,
 	}, t.create)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "list_apps",
-		Description: "List every app you can see, across every organization you belong to.",
+		Description: "List every app you can see, on this instance.",
 	}, t.list)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_app",
-		Description: "Get one app by reference: its domain, registry push path, status, and which organization/project/environment it lives in.",
+		Description: "Get one app by reference: its domain, registry push path, status, and which project and environment it lives in.",
 	}, t.get)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "deploy_app",
-		Description: `Manually redeploy an app from an image tag already pushed to its registry path (no tag means "latest" for an image, or the stored ref for a source that builds). Waits for the deploy to finish and reports the outcome; if this call times out first, the deploy carries on regardless — check it with get_app_deployments. Requires member role in the organization.`,
+		Description: `Manually redeploy an app from an image tag already pushed to its registry path (no tag means "latest" for an image, or the stored ref for a source that builds). Waits for the deploy to finish and reports the outcome; if this call times out first, the deploy carries on regardless — check it with get_app_deployments. Requires the member role.`,
 	}, t.deploy)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_app_env",
@@ -58,7 +58,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.getEnv)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "set_app_env",
-		Description: "Add, change or remove an app's own environment variables. Only the keys you name are touched — variables you don't mention are left alone. These are layered on top of (and override) the app's environment's and project's variables. Requires member role in the organization.",
+		Description: "Add, change or remove an app's own environment variables. Only the keys you name are touched — variables you don't mention are left alone. These are layered on top of (and override) the app's environment's and project's variables. Requires the member role.",
 	}, t.setEnv)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_app_deployments",
@@ -70,7 +70,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.update)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_app",
-		Description: "Delete an app and stop the container serving it. Images already pushed stay in the registry. This cannot be undone. Requires member role in the organization.",
+		Description: "Delete an app and stop the container serving it. Images already pushed stay in the registry. This cannot be undone. Requires the member role.",
 	}, t.delete)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_app_logs",
@@ -101,7 +101,7 @@ func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInp
 }
 
 type updateInput struct {
-	Reference  string  `json:"reference" jsonschema:"the app's reference: org/project/environment/name"`
+	Reference  string  `json:"reference" jsonschema:"the app's reference: project/environment/name"`
 	Source     *string `json:"source,omitempty" jsonschema:"registry, external, dockerfile or railpack. Send the settings the new source needs alongside it"`
 	Image      *string `json:"image,omitempty" jsonschema:"for an external app, the image it pulls, without a tag"`
 	Tag        *string `json:"tag,omitempty" jsonschema:"the tag to run; send empty to follow the registry, which on this instance's own means a push deploys the app"`
@@ -165,7 +165,7 @@ func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*
 }
 
 type nameInput struct {
-	App string `json:"app" jsonschema:"app reference: org/project/environment/app, or org/project/app for production"`
+	App string `json:"app" jsonschema:"app reference: project/environment/app, or project/app for production"`
 }
 
 func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, Response, error) {
@@ -177,7 +177,7 @@ func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (
 }
 
 type deployInput struct {
-	App string `json:"app" jsonschema:"app reference: org/project/environment/app, or org/project/app for production"`
+	App string `json:"app" jsonschema:"app reference: project/environment/app, or project/app for production"`
 	Tag string `json:"tag,omitempty" jsonschema:"image tag already pushed to the app's registry path (default \"latest\")"`
 }
 
@@ -263,7 +263,7 @@ func (t *Tools) getEnv(ctx context.Context, _ *mcp.CallToolRequest, in nameInput
 }
 
 type setEnvInput struct {
-	App   string     `json:"app" jsonschema:"app reference: org/project/environment/app, or org/project/app for production"`
+	App   string     `json:"app" jsonschema:"app reference: project/environment/app, or project/app for production"`
 	Set   envvar.Map `json:"set,omitempty" jsonschema:"variables to add or overwrite"`
 	Unset []string   `json:"unset,omitempty" jsonschema:"names of variables to remove"`
 }
@@ -287,7 +287,7 @@ func (t *Tools) setEnv(ctx context.Context, _ *mcp.CallToolRequest, in setEnvInp
 }
 
 type logsInput struct {
-	App  string `json:"app" jsonschema:"app reference: org/project/environment/app, or org/project/app for production"`
+	App  string `json:"app" jsonschema:"app reference: project/environment/app, or project/app for production"`
 	Tail string `json:"tail,omitempty" jsonschema:"number of trailing lines to return, e.g. \"500\", or \"all\" for the full log (default \"200\")"`
 	// An app spread over several machines has one log per machine and
 	// no combined one. Naming none gets the machine its traffic

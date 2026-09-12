@@ -164,7 +164,7 @@ func parseEnvPairs(pairs []string) (map[string]string, error) {
 }
 
 // The three levels, each wired to its own client calls. The scope beyond
-// the positional argument — which organization, which project — comes
+// the positional argument — which project, which environment — comes
 // from the flags the parent command already declares.
 
 func appEnvCommands() *cobra.Command {

@@ -22,15 +22,15 @@ func NewTools(svc *Service, caller *user.User) *Tools {
 func (t *Tools) Register(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "create_project",
-		Description: `Create a project within an organization. Comes with a "production" environment, which can never be deleted. Requires admin role in the organization.`,
+		Description: `Create a project. Comes with a "production" environment, which can never be deleted. Requires the admin role.`,
 	}, t.create)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "list_projects",
-		Description: "List the projects in an organization.",
+		Description: "List the projects on this instance.",
 	}, t.list)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_project",
-		Description: "Delete a project, the environments inside it and every app in those — each app's container is stopped and removed first. Requires admin role in the organization, and cannot be undone.",
+		Description: "Delete a project, the environments inside it and every app in those — each app's container is stopped and removed first. Requires the admin role, and cannot be undone.",
 	}, t.delete)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_project_env",
@@ -38,11 +38,11 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.getEnv)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "set_project_env",
-		Description: "Add, change or remove environment variables shared by every environment (and every app) in a project. Only the keys you name are touched. Requires admin role in the organization.",
+		Description: "Add, change or remove environment variables shared by every environment (and every app) in a project. Only the keys you name are touched. Requires the admin role.",
 	}, t.setEnv)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "create_environment",
-		Description: "Create an additional environment within a project. Requires admin role in the organization.",
+		Description: "Create an additional environment within a project. Requires the admin role.",
 	}, t.createEnvironment)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "list_environments",
@@ -54,11 +54,11 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.getEnvironmentEnv)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "set_environment_env",
-		Description: "Add, change or remove environment variables shared by every app in one environment. Only the keys you name are touched. Requires admin role in the organization.",
+		Description: "Add, change or remove environment variables shared by every app in one environment. Only the keys you name are touched. Requires the admin role.",
 	}, t.setEnvironmentEnv)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_environment",
-		Description: `Delete an environment and every app deployed in it. Refused for the "production" environment, which every project must keep. Requires admin role in the organization, and cannot be undone.`,
+		Description: `Delete an environment and every app deployed in it. Refused for the "production" environment, which every project must keep. Requires the admin role, and cannot be undone.`,
 	}, t.deleteEnvironment)
 }
 

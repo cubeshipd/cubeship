@@ -31,7 +31,7 @@ func newProjectCmd() *cobra.Command {
 
 	listCmd := &cobra.Command{
 		Use:   "list",
-		Short: "List projects in an organization",
+		Short: "List projects",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := newAPIClient()
