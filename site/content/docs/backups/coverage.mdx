@@ -1,0 +1,46 @@
+---
+title: Coverage
+description: One row per database, worst first. Am I covered, not a list of every dump.
+---
+
+**Backups** under Platform answers one question — *am I covered* — and
+is deliberately not a list of dumps. A list of every dump on the box is
+a log, and it cannot contain the row that matters most: a database
+nobody has ever backed up appears in no list of dumps.
+
+So it is one row per **database**, built from the databases, every one
+of them a row whether or not it has ever been dumped. Five states, worst
+first, so an instance with nothing wrong is one you stop reading after a
+glance:
+
+| State | Meaning |
+| --- | --- |
+| **never backed up** | nothing exists |
+| **failing** | the last attempt did not succeed |
+| **on this machine** | a dump exists and goes with the disk |
+| **protected** | restorable, and somewhere else |
+| **not backed up here** | an engine this instance does not dump — Redis |
+
+Each row shows the last good backup, where it goes and when the
+schedule fires, and links to that database's own Backups tab, which is
+where you act.
+
+## Two facts, not one
+
+*Protected* needs both: a dump that left the machine, and a schedule
+that has produced one. A dump beside the database goes with the disk,
+and a schedule that has never fired is a plan rather than a backup.
+
+*Failing* is not the opposite of protected. Last week's dump can sit
+safely in a bucket while every night since has failed — and that is
+exactly the case worth saying out loud, so both are reported.
+
+## Backups of deleted databases
+
+The second half of the screen. Deleting a database is exactly when its
+backups matter, so every dump it took is kept and listed here, reachable
+nowhere else. They can be downloaded and deleted — and **none can be
+restored** from here, because where to put one is a decision this
+release does not make. See [Restoring](/docs/backups/restoring#what-is-refused).
+
+Through the API: `GET /backups/coverage` and `GET /backups/orphans`.

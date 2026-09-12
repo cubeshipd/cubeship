@@ -1,0 +1,80 @@
+---
+title: Putting an instance back
+description: A fresh install, the daemon stopped, the dump loaded, the files put back. The procedure the instance's backup is for.
+---
+
+There is no button for this — the database being replaced is the one the
+button would run on — so it is done by hand, on the new box, from an
+[instance backup](/docs/backups/instance) you downloaded.
+
+<Callout type="warn" title="Before you start">
+This replaces everything the new instance knows. Do it on a box you have
+just installed and not yet claimed, and have the archive on it.
+</Callout>
+
+## 1. Install
+
+```bash
+curl -fsSL https://cubeship.dev/install.sh | sh
+```
+
+Install the **same version** the backup came from if you can; a newer
+daemon will migrate the rows forward on its next start, an older one
+will not read them.
+
+## 2. Stop the daemon
+
+```bash
+docker stop cubeship-daemon
+```
+
+The instance's Postgres keeps running — it is what the dump is loaded
+into.
+
+## 3. Unpack the archive
+
+```bash
+mkdir restore && tar -xzf instance-2026-09-11T030000.000Z.tar.gz -C restore
+ls restore        # cubeship.sql  letsencrypt/  projects/
+```
+
+## 4. Load the database
+
+The fresh install already created the schema. Drop it and load the dump
+in its place; the password and the names are read from the container's
+own environment, so nothing is typed:
+
+```bash
+docker exec -i cubeship-postgres sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;"'
+docker exec -i cubeship-postgres sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < restore/cubeship.sql
+```
+
+## 5. Put the files back
+
+```bash
+cp restore/letsencrypt/acme.json /var/lib/cubeship/letsencrypt/acme.json
+cp -r restore/projects /var/lib/cubeship/
+```
+
+`/var/lib/cubeship` is the default data directory; use yours if the
+install was given another.
+
+## 6. Start the daemon
+
+```bash
+docker start cubeship-daemon
+```
+
+It runs any migrations the new version needs and comes up with every
+account, project, app, credential and attachment the backup held.
+Point the DNS records at the new box, and the certificates in the
+restored store keep answering for the names they cover.
+
+## What is not back
+
+The **data**: every database and every managed bucket is empty, and
+comes back from [its own backups](/docs/backups/restoring) — create the
+database with the same engine and major version, then restore. Apps
+come back on their next deploy, which a push or a build triggers; an app
+that follows the instance's registry needs its image pushed again, since
+the registry's contents were not in the archive either.
