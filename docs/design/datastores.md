@@ -225,10 +225,14 @@ databases of one engine could not share one. The container publishes the
 port itself.
 
 That means there is **no TLS**, and the endpoint says so. What makes an
-exposed database safe is the password and a firewall rule, and the second
-is the operator's. Publishing replaces the container to pick the port up
-— published ports are fixed at create time — and the data survives
-because it is a bind mount.
+exposed database safe is the password and a firewall rule, and the
+second is written the moment this happens — `internal/firewall`'s own
+door, best effort — so what is left to the operator is turning UFW on in
+the first place, not remembering to open the port by hand; unexposing
+withdraws the rule the same way, unless another datastore still answers
+on it. Publishing replaces the container to pick the port up — published
+ports are fixed at create time — and the data survives because it is a
+bind mount.
 
 Ports 15000-15999 for the automatic range: the daemon's own Postgres
 already publishes 5432 on loopback, so the obvious number is the one

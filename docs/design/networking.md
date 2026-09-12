@@ -226,6 +226,37 @@ port anybody opens themselves. A rule for a port nothing publishes is
 written unchanged, which is what keeps a rule added ahead of the thing
 it is for from becoming a rule for a number nobody chose.
 
+**Exposing writes the rule itself, and nobody has to remember to.**
+`internal/datastore` and `internal/objectstore` call `firewall.Add` the
+moment a datastore or a managed store is exposed, and `firewall.Remove`
+the moment it is unexposed — the same door `mesh.Admit` already opens
+the cluster's ports through: no `Service`, no caller, best effort, and a
+host this daemon cannot reach is simply nothing to do. The rule is
+written whether or not `AdoptDocker` has run yet, for the same reason an
+`apps` rule for an unpublished port is left alone above: an inert rule
+ahead of the thing it is for is the order adopting already argues for,
+and a missing one is a port open to whoever finds it.
+
+**Withdrawing asks first, because the rule outlives the row that asked
+for it.** It names the port inside the container, and that port is fixed
+by the engine or by the image, not by which datastore happens to be
+running it — MySQL and MariaDB both listen on 3306, and every managed
+store listens on 9000. Unexposing one has to ask whether another
+exposed datastore or store still needs that port before removing the
+rule, or turning one database off would silently close the connection
+to a second one that shares its port.
+
+**The daemon admits everything already exposed once at every start, and
+never removes anything.** This is a repair, not a reconciler: an
+instance exposed before either of these modules called the firewall at
+all had a datastore answering on a port with no rule ever written for
+it, and the fix is to write the missing rules once rather than to trust
+that every future expose will get there first. It only adds because a
+sweep that deletes is a sweep that can take a rule an operator wrote by
+hand with it — the same asymmetry `mesh.Admit`'s own comment argues for,
+and for the same reason: adding a rule nobody asked for twice is
+harmless, and removing one that still matters is not.
+
 **A firewall at the provider is a third layer, and it is not visible
 here.** Contabo, Hetzner, DigitalOcean and AWS all filter in front of
 the machine, and that layer does *not* have the Docker problem: it drops
