@@ -1,5 +1,6 @@
 import type { MetadataRoute } from "next";
 import { comparisons } from "@/lib/comparisons";
+import { withDeadline } from "@/lib/deadline";
 import { siteUrl } from "@/lib/shared";
 import { source } from "@/lib/source";
 import { allPublishedTemplates } from "@/lib/templates/queries";
@@ -25,7 +26,14 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: "monthly" as const,
     priority: 0.8,
   }));
-  const publishedTemplates = await allPublishedTemplates();
+  // A database that is down still leaves the landing page and the docs
+  // worth listing; only the templates are missing until it is back.
+  let publishedTemplates: Awaited<ReturnType<typeof allPublishedTemplates>> = [];
+  try {
+    publishedTemplates = await withDeadline(allPublishedTemplates(), 1_500, "sitemap templates");
+  } catch (error) {
+    console.error("sitemap: templates unavailable:", (error as Error).message);
+  }
   const templates = publishedTemplates.map((template) => ({
     url: `${siteUrl}/templates/${template.slug}`,
     lastModified: template.updatedAt,

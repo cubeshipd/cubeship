@@ -13,11 +13,46 @@ export function json(data: unknown, init?: ResponseInit): Response {
   return Response.json(data, init);
 }
 
+// Node/pg errno codes for a connection that never opened, plus 57014
+// (query_canceled), the SQLSTATE our own statement_timeout comes back
+// as. drizzle wraps the real error in a DrizzleQueryError and puts it
+// on `.cause`, so isDatabaseUnavailable walks that chain rather than
+// checking `error` alone.
+const CONNECTION_ERROR_CODES = new Set([
+  "ECONNREFUSED",
+  "ETIMEDOUT",
+  "EHOSTUNREACH",
+  "ENETUNREACH",
+  "ENOTFOUND",
+  "57014",
+]);
+
+// pg's own connect timeout and pg-pool's checkout timeout throw a plain
+// Error with one of these messages and no code at all — there is
+// nothing else to match them on.
+const CONNECTION_TIMEOUT_MESSAGE =
+  /timeout expired|connection terminated due to connection timeout|timeout exceeded when trying to connect|query read timeout/i;
+
+function isDatabaseUnavailable(error: unknown, depth = 0): boolean {
+  if (!(error instanceof Error) || depth > 3) return false;
+  const code = (error as NodeJS.ErrnoException).code;
+  if (code && CONNECTION_ERROR_CODES.has(code)) return true;
+  if (CONNECTION_TIMEOUT_MESSAGE.test(error.message)) return true;
+  return isDatabaseUnavailable((error as { cause?: unknown }).cause, depth + 1);
+}
+
 export function fail(error: unknown): Response {
   if (error instanceof HttpError) {
     return json(
       { error: { code: error.code, message: error.message }, ...error.extra },
       { status: error.status },
+    );
+  }
+  if (isDatabaseUnavailable(error)) {
+    console.error("database unavailable:", (error as Error).message);
+    return json(
+      { error: { code: "unavailable", message: "the template registry is unavailable right now" } },
+      { status: 503 },
     );
   }
   // Anything unplanned is ours, and its message is not the caller's business.

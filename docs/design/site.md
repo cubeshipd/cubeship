@@ -17,6 +17,36 @@ and its API under `/api/v1` read Postgres, and photos read a bucket.
 See [templates.md](templates.md) for what that half of the site is and
 how it stays out of the way of the half that is still static.
 
+## Postgres can be down without taking the site with it
+
+`register()` used to `await` the migration runner, so a database that
+refused a connection took the whole process down before it served a
+single request — an operator running `make site-dev` against a
+misconfigured `DATABASE_URL` got a crashed server instead of a working
+landing page. Migrations now run in the background: `runMigrations` is
+still one attempt and the real error, for `withDatabase()` in tests to
+await against a database that is already up, but `register()` calls
+`runMigrationsInBackground` instead, which never throws — it logs the
+failure and retries with a backoff capped at 30 seconds until one
+attempt applies cleanly.
+
+The landing page and the sitemap read Postgres too — the templates
+strip on `/` and the published-templates list in `/sitemap.xml` — and
+both degrade rather than fail: a failed query logs once and the strip
+renders nothing, the sitemap falls back to its static entries. Only
+`/templates`, `/u/*`, `/me/*`, `/admin/*` and the `/api/v1` routes that
+read the database are allowed to fail, and they fail fast and readable:
+the pool gives up connecting after 3 seconds and a query after 5,
+rather than waiting out the OS's ~75-second TCP timeout, while the strip
+and the sitemap stop waiting for their own read after 800 milliseconds
+and 1.5 seconds, so a dead database costs the landing page under a
+second. The pool's limit is not that short because a remote database's
+handshake alone can take longer than the landing page may wait. `fail`
+in `src/lib/http.ts` maps a connection failure to a 503 with the code
+`unavailable` in the one place every route's errors already go through,
+and `error.tsx` under `src/app/templates` catches what a Server
+Component throws and shows a sentence instead of a stack trace.
+
 ## One palette, copied
 
 The site is the product's face and wears the product's colours: the

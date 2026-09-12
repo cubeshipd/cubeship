@@ -1,13 +1,26 @@
 import Link from "next/link";
 import { TemplateCard } from "@/components/templates/card";
+import { withDeadline } from "@/lib/deadline";
 import { listTemplates } from "@/lib/templates/queries";
 import { Section } from "./section";
 
 // The four most-liked published templates, the same query and card the
 // catalog itself uses. This is what makes the page read Postgres at
 // request time — see the `force-dynamic` on the page that renders it.
+// A database that is down must not take the landing page with it, so a
+// failed query degrades to no section at all rather than an error.
 export async function TemplatesStrip() {
-  const { rows } = await listTemplates({ sort: "likes", limit: 4 });
+  let rows: Awaited<ReturnType<typeof listTemplates>>["rows"];
+  try {
+    ({ rows } = await withDeadline(
+      listTemplates({ sort: "likes", limit: 4 }),
+      800,
+      "templates strip",
+    ));
+  } catch (error) {
+    console.error("templates strip: catalog unavailable:", (error as Error).message);
+    return null;
+  }
   if (rows.length === 0) return null;
 
   return (

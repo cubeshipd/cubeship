@@ -9,6 +9,9 @@ export async function register() {
     return;
   }
 
-  const { runMigrations } = await import("@/db/migrate");
-  await runMigrations();
+  // Not awaited: a database that is down must not stop the server from
+  // starting. runMigrationsInBackground retries on its own until one
+  // attempt applies cleanly.
+  const { runMigrationsInBackground } = await import("@/db/migrate");
+  runMigrationsInBackground();
 }
