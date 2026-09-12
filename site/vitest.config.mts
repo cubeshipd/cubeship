@@ -12,5 +12,9 @@ export default defineConfig({
     // *.db.test.ts round-trips a real Postgres per assertion; 5s is not
     // enough headroom when that database is remote.
     testTimeout: 15_000,
+    // withDatabase() truncates shared tables rather than giving each test
+    // its own schema, so two files racing against one Postgres corrupt
+    // each other's rows mid-transaction. One file at a time keeps it safe.
+    fileParallelism: false,
   },
 });
