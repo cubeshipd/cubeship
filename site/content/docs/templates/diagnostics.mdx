@@ -1,0 +1,258 @@
+---
+title: Diagnostics
+description: Every code the validator can return — what it means, and what to do about it.
+---
+
+Every diagnostic is one object, from the editor, from `POST
+/api/v1/validate`, and nowhere else:
+
+```ts
+type Diagnostic = {
+  severity: "error" | "warning" | "info";
+  code: string;        // stable and linkable — this page has a section per code
+  message: string;
+  path: (string | number)[];
+  range?: { start: Pos; end: Pos };
+  hint?: string;
+};
+```
+
+**Error** stops a publish. **Warning** is advice the author may keep
+anyway — the file still installs. **Info** is a passing remark, nothing
+more. A code is permanent: once a template links to a section here, the
+code does not change meaning under it.
+
+## Parsing
+
+### `yaml.syntax`
+
+*Error.* The file is not valid YAML. The message is whatever the parser
+said, with its position folded into `range` instead of repeated in the
+text.
+
+### `yaml.empty`
+
+*Error.* The file parsed but is not a mapping — empty, a bare scalar, a
+list at the top level. A template is at least `version`, `project` and
+`apps`.
+
+## Shape
+
+### `schema.unknown-key`
+
+*Error.* A key exists that the schema does not recognize, at any level
+— the top of the file, an app, an input, a limit. The `hint` names the
+nearest real key when one is close enough to be a typo rather than a
+different word; a dropped `healthcheck` with no error would be the
+worse outcome.
+
+Every other shape violation — a string where a number belongs, a value
+below its minimum, a pattern that does not match — carries the code
+`schema.` followed by the underlying rule's name, for example
+`invalid_type` or `too_small`. The message says which rule, and `path`
+says where.
+
+## Names and keys
+
+### `key.duplicate`
+
+*Error.* Two inputs, two databases, two stores, or two apps share a
+`key`. Keys are compared within their own kind only — an app and a
+database may share one.
+
+### `name.reserved`
+
+*Error.* A database, store or app's `name` (its `key`, when `name` is
+not set) is not a valid instance name, or is one the instance keeps for
+itself — `settings` is refused everywhere, `engines` for a database,
+`providers` for a store.
+
+### `name.duplicate`
+
+*Error.* Two databases, two stores, or two apps would resolve to the
+same `name` on the instance — including when one sets `name` and the
+other only has a matching `key`.
+
+## Versions
+
+### `version.range`
+
+*Error.* `minCubeship` is not a version range
+[`semver` understands](https://github.com/npm/node-semver#ranges).
+
+## Inputs
+
+### `input.generate`
+
+*Error.* A `secret` input's `generate` is below `8`. Shorter is not a
+secret.
+
+## References
+
+### `reference.unknown`
+
+*Error.* A `${kind.key}` names a `key` that does not exist under that
+kind in this file. See [References](/docs/templates/references) for
+what each kind may name.
+
+### `reference.attribute`
+
+*Error.* A reference's attribute does not exist for its kind — missing
+where one is required (`${db.main}` alone), present where none is
+allowed (`${input.domain.host}`), or simply not one of the kind's own
+attributes.
+
+## Domains
+
+### `domain.literal`
+
+*Error.* A `domains.host` is not exactly one reference to an
+[input of type `domain`](/docs/templates/inputs) — a literal hostname,
+several references, surrounding text, or a reference to an input of a
+different type. A domain that could only ever mean one host would make
+the template installable exactly once.
+
+## Attachments
+
+### `attach.prefix`
+
+*Error.* An `attach` entry's `prefix` is not upper case ending in `_`,
+like `ANALYTICS_`.
+
+### `attach.kind`
+
+*Error.* An `attach` entry names both `database` and `store`, or
+neither. Exactly one.
+
+### `attach.unknown`
+
+*Error.* An `attach` entry's `database` or `store` names a key that is
+not a database, not a store, and — for `store` — not a
+[`store` input](/docs/templates/inputs) either.
+
+### `attach.bucket`
+
+*Error.* A `store` attachment has no `bucket`. The bucket lives on the
+attachment, not on the store, which is what lets one app hold two
+buckets from the same store at two prefixes.
+
+### `attach.collision`
+
+*Error* when two attachments would write the same environment variable
+— give one of them a `prefix`. *Warning* when an app's own `env`
+overrides a variable an attachment already wrote; that may be exactly
+what you meant, so it does not block a publish.
+
+## Databases
+
+### `engine.unknown`
+
+*Error.* `engine` is not one this platform runs:
+`postgres`, `mysql`, `mariadb`, `redis`, `mongodb`.
+
+### `engine.version`
+
+*Error.* `version` is not offered for that engine. The hint lists what
+is.
+
+### `engine.username`
+
+*Error.* `username` conflicts with what the engine allows — Redis only
+ever has `default`; MySQL and MariaDB refuse `root`.
+
+### `database.ignored`
+
+*Warning.* A `database` name was given for an engine with no named
+databases (Redis). It has no effect.
+
+## Sources and builds
+
+### `source.missing`
+
+*Error.* An app has neither `image` nor enough to build — no `repo`, or
+`repo` with no `build`.
+
+### `source.conflict`
+
+*Error.* An app names both `image` and a build (`repo` or `build`), or
+a built app also sets `tag` — a built app's tag comes from its deploy.
+
+### `image.tagged`
+
+*Error.* `image` contains a `:` — the tag belongs in the `tag` field,
+not in the image string.
+
+### `build.missing`
+
+*Error.* A `repo` is set with no `build`: `dockerfile` or `railpack`.
+
+### `repo.scheme`
+
+*Error.* `repo` is not an `http`, `https` or `git` URL.
+
+### `repo.ref`
+
+*Error.* `repo` carries a branch after `#`. Put it in `ref` instead.
+
+### `dockerfile.misplaced`
+
+*Error.* `dockerfile` is set without `build: dockerfile` — it means
+nothing under `railpack`.
+
+## Health
+
+### `health.path`
+
+*Error.* `health` does not start with `/`, is over 255 characters, or
+carries a `?` or `#`.
+
+## Limits and autoscale
+
+### `limits.cpu`
+
+*Error.* A CPU limit is below `0.01` of a core.
+
+### `limits.memory`
+
+*Error.* A memory limit does not parse as a size (`512Mi`, `2Gi`,
+`1500M`), or is below `6Mi`.
+
+### `autoscale.range`
+
+*Error.* Autoscale's `max` is outside `1..100`, its `min` is outside
+`1..max`, or its `cpu` is `0` or below.
+
+## Advice
+
+None of these block a publish.
+
+### `advice.unpinned-engine`
+
+*Warning.* A database has no `version`. Two installs of this template
+would run different engine versions from each other.
+
+### `advice.no-health`
+
+*Warning.* An app has no `health`. A deploy has no way to tell whether
+it started.
+
+### `advice.floating-tag`
+
+*Warning.* An app has `image` but no `tag`. Two installs may pull
+different builds of the same image.
+
+### `advice.dockerhub`
+
+*Info.* An `image` has no registry prefix, so it comes from Docker Hub,
+which rate-limits anonymous pulls.
+
+### `advice.no-limits`
+
+*Warning.* An app has no `limits`. One copy can take the whole machine
+it lands on.
+
+### `advice.unreachable-app`
+
+*Warning.* An app has no `domains` and nothing else in the template
+references it. Probably a mistake, unless it is meant to sit idle until
+a later version wires it up.

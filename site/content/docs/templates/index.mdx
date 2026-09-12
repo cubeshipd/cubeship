@@ -1,0 +1,74 @@
+---
+title: Templates
+description: A published recipe for a set of apps and the managed data they need — one YAML file, checked before anyone installs it.
+---
+
+A template is a YAML file that describes a set of apps, the databases
+and stores they need, and the questions an installer has to answer —
+a domain, a secret, a choice of engine version. The community writes
+them here, signed in with GitHub; an instance only ever consumes one.
+Nothing on this page needs a sign-in: the file, the schema and the
+validator are open to anyone.
+
+The split is deliberate. This site owns identity, authorship and the
+schema. An instance owns the machine, the secrets, and every decision
+the template itself cannot make.
+
+## What a template may not contain
+
+Four rules come straight out of what an instance enforces, and they
+bound what a template can ever be.
+
+**No domain.** A hostname is unique across a whole instance and is
+refused if it collides with one of the instance's own names. A literal
+host would make a template installable exactly once, on one machine.
+Domains come from [inputs](/docs/templates/inputs) instead — the
+installer supplies the name at install time.
+
+**No machine names.** Which node something runs on is instance-local:
+a template says `scale`, or `spread` to follow the cluster, never a
+node.
+
+**No push-registry app.** An app whose image you `docker push` has no
+image until somebody pushes one. A template's apps run a public image,
+or a public repository built on the instance from a Dockerfile or with
+Railpack.
+
+**No volumes and no command override**, because apps on this platform
+have neither. Persistent data is a managed database or a bucket, so
+every app in a template is stateless — and a template cannot express
+the common web-plus-worker pair built from one image, unless that image
+picks its role from an environment variable.
+
+Excluded for the same reason, all of it instance-level: DNS providers,
+backup schedules, certificates, firewall rules, external registries,
+and stored credentials. A template that could carry a credential would
+be a template that could steal one.
+
+## Checking a file
+
+Two ways to check a file without installing anything:
+
+```bash
+curl -sS -X POST --data-binary @template.yaml https://cubeship.dev/api/v1/validate
+```
+
+or point an editor at the published schema for live completion and
+inline errors:
+
+```
+https://cubeship.dev/schema/template/v1.json
+```
+
+Both addresses are permanent — pin them from a CI job or an editor
+config. See [Diagnostics](/docs/templates/diagnostics) for what a
+refusal looks like and what each code means.
+
+## Where to go
+
+<Cards>
+  <Card title="The file" href="/docs/templates/file" description="Every block a template may contain, field by field, with the defaults." />
+  <Card title="Inputs" href="/docs/templates/inputs" description="The six ways a template asks the installer a question." />
+  <Card title="References" href="/docs/templates/references" description="How one part of a template points at another, and how an app reaches another app." />
+  <Card title="Diagnostics" href="/docs/templates/diagnostics" description="Every code the validator can return, and what to do about it." />
+</Cards>

@@ -1,0 +1,82 @@
+---
+title: Inputs
+description: The six ways a template asks the installer a question — a domain, a secret, a choice, and the fields each one takes.
+---
+
+An input is a question the template cannot answer for itself. Every
+input shares four fields:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `key` | — | Required. What `${input.<key>}` names elsewhere in the file. |
+| `type` | — | Required. One of the six below. |
+| `label` | — | Required, at least one character. What the installer reads. |
+| `help` | none | Longer text under the label. |
+| `required` | `true` | Whether the installer must answer before installing. |
+
+Then, per `type`:
+
+## `domain`
+
+Nothing further. This is the only way a template can name a host — see
+[No domain](/docs/templates/index#what-a-template-may-not-contain). The
+installer supplies a hostname it controls, and `${input.<key>}` is the
+only thing a `domains.host` may ever equal.
+
+```yaml
+- key: domain
+  type: domain
+  label: Where the dashboard answers
+```
+
+## `text`
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `default` | none | Pre-filled, still editable. |
+| `pattern` | none | A regular expression the answer must match. |
+
+## `number`
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `default` | none | Pre-filled, still editable. |
+| `min` | none | Lower bound. |
+| `max` | none | Upper bound. |
+
+## `choice`
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `default` | none | Which option is pre-selected. |
+| `options` | — | Required, at least two strings. |
+
+## `secret`
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `generate` | none | A length in characters, at least `8`. |
+
+With `generate` set, the instance produces the value and shows it once
+— nobody types a secret into a template. Without it, the installer
+types the value directly, the way a `text` input would.
+
+```yaml
+- key: appSecret
+  type: secret
+  label: The app's session secret
+  generate: 32
+```
+
+## `store`
+
+Nothing further. Asks the installer to pick an object store that
+already exists on the instance — the only way a template reaches S3
+without carrying anyone's keys. The chosen key is then valid wherever a
+`store` key is expected, including `attach.store`.
+
+## Answering an input elsewhere in the file
+
+An input's value is read with `${input.<key>}` — in a `domains.host`,
+in `env`, nowhere else. See
+[References](/docs/templates/references) for the full grammar.

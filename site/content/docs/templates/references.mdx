@@ -1,0 +1,72 @@
+---
+title: References
+description: How one part of a template points at another — the grammar, what each kind carries, and the one reference the validator can resolve itself.
+---
+
+A reference is `${kind.key}` or `${kind.key.attr}`, and it is how a
+template wires its own pieces together without knowing anything about
+the instance that will run it — an app's domain, a database's
+password, another app's address.
+
+```
+${input.domain}
+${db.main.host}
+${app.web.internal}
+```
+
+## Where a reference may appear
+
+Inside a `domains.host` — where it must be the entire value, and must
+name an [input of type `domain`](/docs/templates/inputs) — and inside
+an app's `env` values, where it can sit anywhere in the string.
+
+## What each kind carries
+
+| Kind | Names | Attributes |
+| --- | --- | --- |
+| `input` | an input's `key` | none — the input's value is the whole reference |
+| `app` | an app's `key` | `internal`, `host`, `port` |
+| `db` | a database's `key` | `host`, `port`, `user`, `password`, `name` |
+| `store` | a store's `key`, or an [input of type `store`](/docs/templates/inputs) | `bucket`, `endpoint` |
+
+`${input.domain}` needs no attribute — an input has one value. Every
+other kind needs one: `${db.main}` alone is refused with
+[`reference.attribute`](/docs/templates/diagnostics#referenceattribute),
+because a database is not one string.
+
+Naming something that is not declared under that kind — a database key
+where no database exists — is
+[`reference.unknown`](/docs/templates/diagnostics#referenceunknown).
+
+## The validator resolves what it can, and no more
+
+A generated password does not exist until an instance creates one, so
+the validator can only prove a reference points at something declared,
+with an attribute that exists for its kind. The normalized JSON keeps
+every placeholder exactly as written; whatever applies the template —
+the instance, later — does the substitution.
+
+One reference is the exception, because it needs nothing from the
+instance at all.
+
+## The internal address
+
+An app reaches another app on the same instance at a Docker network
+alias built entirely from names the template already declares:
+
+```
+cubeship-<project>-<environment>-<app>
+```
+
+So `${app.web.internal}`, inside another app's `env`, resolves — once
+applied — to a plain hostname the receiving app answers on, on its own
+port. No new concept, no coordination step: the validator computes this
+string itself and shows it in the normalized output as each app's
+`internal_host`, so an author can see exactly what a sibling app will
+be called before ever installing the template.
+
+For the Umami example in [The file](/docs/templates/file), that app is
+
+```
+cubeship-umami-production-web
+```
