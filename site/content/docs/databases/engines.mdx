@@ -1,0 +1,80 @@
+---
+title: Engines
+description: What differs between Postgres, MySQL, MariaDB, Redis and MongoDB here — versions, ports, logins, variables — and what each one's backup promises.
+---
+
+Five engines, each the official image, each one entry in a table. What
+differs is below; everything else — the container, the network, the
+data directory, attaching — is the same.
+
+| Engine | Versions offered | Port | Variables | Login |
+| --- | --- | --- | --- | --- |
+| `postgres` | 18, 17, 16, 15 | 5432 | `DATABASE_*` | yours to choose |
+| `mysql` | 8.4, 8.0 | 3306 | `DATABASE_*` | yours, not `root` |
+| `mariadb` | 11.4, 10.11 | 3306 | `DATABASE_*` | yours, not `root` |
+| `redis` | 7.4, 7.2 | 6379 | `REDIS_*` | `default`, fixed |
+| `mongodb` | 8.0, 7.0 | 27017 | `MONGO_*` | yours to choose |
+
+The first version listed is what a database created without naming one
+gets. Versions are pinned rather than open because a version cannot be
+changed afterwards — offering one is a promise to keep running it.
+
+## Postgres
+
+The connection URL carries `sslmode=disable`: there is no TLS on the
+instance's network, and none over an exposed port either, and clients
+that default to requiring it need telling.
+
+Backups are `pg_dump` in **one transaction** — the database as it was at
+a single moment — and restore with `--clean --if-exists`, so restoring
+over a database that already has tables replaces them.
+
+## MySQL and MariaDB
+
+`root` is refused as the login: it already exists, the image gives it
+a random password Cubeship never stores, and Cubeship never connects
+as it. Yours is created beside it.
+
+Backups are `mysqldump` / `mariadb-dump` with `--single-transaction`,
+which covers InnoDB tables. A MyISAM table is dumped as it was read
+rather than as it was when the dump began.
+
+## Redis
+
+One login, `default`, and the password belongs to it — Redis's own
+rule. Naming another user is refused, not silently overwritten.
+
+There is no named database, so the variables carry no `_NAME`. It is
+started with `--appendonly yes`, because otherwise Redis snapshots on
+its own schedule and a restart loses the last few minutes — free for a
+cache, and somebody's queue otherwise.
+
+Redis is **not backed up**, on purpose. It is a cache and a queue on a
+box this size, and there is no good answer to what a nightly copy of one
+would be restored *to*. Its page offers no Backups tab rather than an
+empty one.
+
+## MongoDB
+
+The connection string carries `authSource=admin`: the root user lives
+in the `admin` database whatever database the connection names, and
+without it every connection fails on credentials that are correct.
+
+Backups are `mongodump --archive`, and they are **each collection as it
+was read**, not all of them at one moment — a consistent snapshot needs
+a replica set, which a single server is not. Restore is `mongorestore
+--drop`.
+
+## Two things every engine shares
+
+**The data is the mount point, never below it.** Each image chowns its
+data directory to the unprivileged user it drops to, and a mount above
+that stays root-owned. Postgres 18 in particular moved its default
+below the volume, and left alone would keep its data in an anonymous
+volume nothing here names — in no backup, and orphaned the next time
+the container is replaced. Cubeship says where the data goes.
+
+**The password is delivered the way the image reads it.** Through the
+environment for the SQL engines and Mongo; on the command line for
+Redis, whose image has no variable for it. Either way it is in the
+container's configuration, where `docker inspect` on the host reads it.

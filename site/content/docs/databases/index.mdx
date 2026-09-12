@@ -1,31 +1,77 @@
 ---
-title: Databases and storage
-description: A database belongs to the instance, not to a project. Attach it and the app gets its URL from the next deploy.
+title: Databases
+description: Postgres, MySQL, MariaDB, Redis and MongoDB, run by the instance for the apps on it. A database belongs to the instance, not to a project.
 ---
 
-A database belongs to the **instance**, not to a project: on one box the
-usual shape is a single Postgres serving several small apps, and those
-apps are routinely in different projects.
+Cubeship runs a database as a container of its own on the shared
+network, provisions it once, and hands its connection string to
+whichever apps are attached to it.
 
 ```bash
 cubeship db create pg --engine postgres
-cubeship db attach pg --app myproject/production/api
+cubeship db attach pg --app shop/production/api
 ```
 
-The app receives `DATABASE_URL` and its parts in its own environment
-from its next deploy — nothing to copy, and no credential passing
-through your hands. A second database on one app takes a prefix.
+The app gets `DATABASE_URL` and its parts from its next deploy —
+nothing to copy, no credential through your hands.
 
-Object storage works the same way: a MinIO Cubeship runs, or an S3
-bucket you already have. An attached app gets `S3_ENDPOINT`,
-`S3_BUCKET`, the keys and the rest.
+## A database belongs to the instance
 
-## Environment variables
+Not to a project, and not to an environment. On one box the usual shape
+is a single Postgres serving several small apps, and those apps are
+routinely in different projects. So a database exists on its own, and an
+**attachment** is the whole of what connects it to anything — it may
+cross projects and environments freely.
 
-Variables are set at three levels, and an app inherits all of them:
-project, then environment, then the app's own, each overriding the last.
-An attached database contributes a fourth layer nobody types, between the
-environment's and the app's own — more specific than the environment it
-is in, and still beaten by an app's own variable, which is how you point
-an app somewhere else without detaching anything. The environment screen
-says where every value came from.
+What that gives up: an environment no longer separates data by itself.
+`pg-production` and `pg-staging` are two databases told apart by their
+names, and attaching the wrong one to the wrong app is possible. That is
+the price of a database that can be shared, which is the reason to run
+one on a box this size.
+
+## The name is the address
+
+A database's name is unique across the instance because it **is** the
+container: `cubeship-db-<name>` is the host every attached app resolves
+on the shared network. An app's containers are named differently, so a
+database called `api` may sit beside an app called `api`.
+
+`engines` is the one name refused — the API lists what it can run there.
+
+## What it is not
+
+A database is not an app. It has no image to push, no source to build,
+no domain, no zero-downtime swap and no deployment history. It is
+provisioned once and then runs, and four things about it are
+[fixed for life](/docs/databases/creating#fixed-after-creation).
+
+## Status
+
+| Status | Meaning |
+| --- | --- |
+| `provisioning` | the row exists and the container is being pulled and started |
+| `running` | serving |
+| `stopped` | somebody turned it off — a decision, and it stays off across reboots |
+| `down` | the container stopped on its own — a fault |
+| `failed` | provisioning did not finish; `error` says why, and **Start** retries |
+
+## In the dashboard
+
+**Databases** is its own entry in the sidebar, beside Projects: a
+database is a thing you deploy against and open as often as an app. The
+list is a table — engine, status, what is using it. A database's page
+opens on Overview (charts and how to connect), then Apps, then Logs;
+its settings are Backups, External access, Resources and Danger.
+
+## Roles
+
+Reading — the list, a database, its logs and charts — is a **member's**.
+Everything that changes one — creating, attaching, exposing, stopping,
+the ceiling, the credentials, deleting — is an **admin's**.
+
+<Cards>
+  <Card title="Creating a database" href="/docs/databases/creating" />
+  <Card title="Engines" href="/docs/databases/engines" description="What differs between the five." />
+  <Card title="Attaching apps" href="/docs/databases/attaching" description="The variables an app receives." />
+  <Card title="External access" href="/docs/databases/external-access" description="Reaching one from your laptop." />
+</Cards>

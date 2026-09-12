@@ -1,0 +1,51 @@
+---
+title: External access
+description: Publish a database on a host port for a laptop, psql or a BI tool. Off by default, no TLS, and a firewall rule is yours to write.
+---
+
+```bash
+cubeship db expose pg               # a port from 15000–15999
+cubeship db expose pg --port 5433   # this one
+cubeship db unexpose pg
+```
+
+Or **External access** in the database's settings. The database's
+Overview then shows an **External URI** beside the internal one, with
+the instance's public address and the published port.
+
+## What it is
+
+The container publishes the port itself — not through the proxy, which
+routes HTTP by host name; a database speaks its own protocol on its own
+port. Ports come from **15000–15999** when none is named, because the
+daemon's own Postgres already holds 5432 on loopback, so the obvious
+number is the one that cannot work. Any port above 1024 may be named.
+
+**Publishing replaces the container.** A published port is fixed when a
+container is created, so the database goes away for a few seconds and
+comes back on the new port. The data is on the host and survives that
+untouched.
+
+## There is no TLS
+
+A database speaks its own protocol, and nothing here terminates TLS in
+front of it. An exposed database is a password on the open internet.
+What makes that safe:
+
+1. **The password**, which is 32 generated characters unless you chose
+   one.
+2. **A firewall rule**, which is yours. The instance's
+   [Firewall](/docs/networking/firewall) screen writes one for the
+   port from your own address, and knows that Docker publishes ports
+   *around* the host firewall — a rule written the naive way would
+   govern nothing.
+
+A firewall at your provider (Hetzner, DigitalOcean, AWS, …) is a third
+layer this instance cannot see, and it does not have the Docker problem.
+
+## Where the data goes
+
+An exposed port is for a migration run from a laptop, `psql`, a
+dashboarding tool. Apps on the instance keep using the
+[internal address](/docs/databases/attaching) — that connection never
+leaves the box.
