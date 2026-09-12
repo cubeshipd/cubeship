@@ -812,44 +812,6 @@ func Add(ctx context.Context, host Host, spec Spec) error {
 	return nil
 }
 
-// Remove deletes one rule through a Host, the counterpart to Add.
-//
-// It exists for the same callers Add does — internal/datastore and
-// internal/objectstore withdraw a rule when nothing still needs the port,
-// with no Service and no caller to ask.
-//
-// ufw's own refusal for a rule that is not there — "Could not delete
-// non-existent rule" — is success here, not a failure: withdrawing has
-// to be idempotent, since Unexpose and Delete can both ask to withdraw
-// the same rule.
-//
-// It tries **twice**. A rule this module writes is a plain `ufw route
-// allow`, which ufw duplicates into its v4 and v6 tables, and one delete
-// only ever clears one of the two — the instance in the bug this fixes
-// had exactly that: an IPv4 rule long gone and an IPv6 twin still
-// sitting there. A second attempt is what actually clears a rule down to
-// nothing; a real refusal on either attempt still stops it here rather
-// than trying blindly a third time.
-func Remove(ctx context.Context, host Host, spec Spec) error {
-	if err := spec.Check(); err != nil {
-		return err
-	}
-	if host == nil || !host.Available() {
-		return hostexec.ErrUnavailable
-	}
-	argv := spec.DeleteArgs()
-	for i := 0; i < 2; i++ {
-		res, err := host.Run(ctx, argv...)
-		if err != nil {
-			return err
-		}
-		if !res.OK() && !strings.Contains(res.Output, "Could not delete non-existent rule") {
-			return fmt.Errorf("%s", firstLine(res.Output))
-		}
-	}
-	return nil
-}
-
 func (s *Service) run(ctx context.Context, argv ...string) error {
 	if !s.reachable() {
 		return hostexec.ErrUnavailable

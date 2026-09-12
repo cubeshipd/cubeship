@@ -198,26 +198,6 @@ func (r *Repository) UsedPorts(ctx context.Context) (map[int]bool, error) {
 	return used, rows.Err()
 }
 
-// ExposedElsewhereOnPort reports whether some datastore other than
-// excludeID is still exposed while running one of these engines.
-//
-// engines is every engine that listens on the inside port a firewall
-// rule was written for, not just the one belonging to the datastore
-// being unexposed — MySQL and MariaDB both listen on 3306, and a rule
-// closed because one of them stopped being exposed would take the
-// other's connection with it.
-func (r *Repository) ExposedElsewhereOnPort(ctx context.Context, engines []string, excludeID int64) (bool, error) {
-	var exists bool
-	if err := r.q.QueryRowContext(ctx,
-		`SELECT EXISTS (
-			SELECT 1 FROM datastores
-			WHERE id <> $1 AND exposed_port <> 0 AND engine = ANY($2)
-		)`, excludeID, engines).Scan(&exists); err != nil {
-		return false, fmt.Errorf("check exposed datastores on port: %w", err)
-	}
-	return exists, nil
-}
-
 func (r *Repository) Delete(ctx context.Context, id int64) error {
 	if _, err := r.q.ExecContext(ctx, `DELETE FROM datastores WHERE id = $1`, id); err != nil {
 		return fmt.Errorf("delete datastore: %w", err)

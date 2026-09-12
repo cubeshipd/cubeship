@@ -272,17 +272,6 @@ func (s Spec) Args() []string {
 	return args
 }
 
-// DeleteArgs is Args, as ufw removes a rule instead of adding one.
-//
-// "delete" goes where ufw wants it — after "route" for an apps rule,
-// before the verb otherwise — which is exactly what insertDelete already
-// knows, because parseAddedRule needs the same answer to hand a rule
-// read while the firewall is off its own removal command.
-func (s Spec) DeleteArgs() []string {
-	args := s.Args()
-	return append([]string{args[0]}, insertDelete(args[1:])...)
-}
-
 // parseAdded reads `ufw show added`, which is what answers while the
 // firewall is off.
 //

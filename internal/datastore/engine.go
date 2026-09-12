@@ -385,24 +385,6 @@ func (e Engine) DefaultVersion() string {
 // Port is what this engine listens on inside its container.
 func (e Engine) Port() int { return specs[e].port }
 
-// enginesOnPort is every engine that listens on this port inside its
-// container.
-//
-// Usually one. MySQL and MariaDB are not: both listen on 3306, and the
-// firewall rule opened for an exposed datastore is written for that
-// number rather than for an engine — so withdrawing it has to ask about
-// every engine that could still need it, not just the one row being
-// unexposed.
-func enginesOnPort(port int) []string {
-	var out []string
-	for _, e := range Engines() {
-		if e.Port() == port {
-			out = append(out, string(e))
-		}
-	}
-	return out
-}
-
 // HasDatabase reports whether a named database inside the server means
 // anything for this engine.
 func (e Engine) HasDatabase() bool { return specs[e].hasDatabase }

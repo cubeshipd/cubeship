@@ -235,26 +235,6 @@ func TestThePortARuleIsWrittenForComesFromWhatIsPublished(t *testing.T) {
 	}
 }
 
-// Removing a rule is adding it with "delete" inserted where ufw wants
-// it — after "route" for an apps rule, before the verb otherwise — which
-// is the same knowledge parseAddedRule already needed the other way
-// round.
-func TestDeleteArgsIsAddWithDeleteWhereUFWWantsIt(t *testing.T) {
-	host := Spec{Scope: ScopeHost, Action: ActionAllow, Protocol: ProtocolTCP, Port: "5432"}.DeleteArgs()
-	if strings.Join(host, " ") != "ufw delete allow proto tcp from any to any port 5432" {
-		t.Errorf("host delete: %v", host)
-	}
-
-	apps := Spec{
-		Scope: ScopeApps, Action: ActionAllow, Protocol: ProtocolTCP,
-		Port: "5432", Comment: "cubeship",
-	}.DeleteArgs()
-	want := "ufw route delete allow proto tcp from any to any port 5432 comment cubeship"
-	if strings.Join(apps, " ") != want {
-		t.Errorf("apps delete: %v", apps)
-	}
-}
-
 // A firewall that is off reports no rules at all — `ufw status` answers
 // "inactive" and stops — while the rules somebody added sit in its file
 // waiting to be applied.

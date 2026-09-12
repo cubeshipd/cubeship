@@ -69,7 +69,7 @@ func newExposeFixture(t *testing.T, ports PortsChanged) *Service {
 	prov := NewProvisioner(db, exposeFakeDocker{}, t.TempDir())
 	prov.ReadyAttempts = 1
 	svc := NewService(db, credential.NewService(db), nil, prov,
-		settings.NewService(db), metrics.NewService(db), nil)
+		settings.NewService(db), metrics.NewService(db))
 	if ports != nil {
 		svc.SetPortsChanged(ports)
 	}
