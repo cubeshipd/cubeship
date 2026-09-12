@@ -72,6 +72,8 @@ echo '` + statusSeparator + `'
 grep -c '` + dockerBeginMarker + `' /etc/ufw/after.rules 2>/dev/null || true
 echo '` + statusSeparator + `'
 sshd -T 2>/dev/null | awk '/^port /{print $2}' || true
+echo '` + statusSeparator + `'
+sed -n '/` + dockerBeginMarker + `/,/` + dockerEndMarker + `/p' /etc/ufw/after.rules 2>/dev/null | grep -e '--ctorigdstport' || true
 `
 
 const noUFW = "cubeship: no ufw"
@@ -99,7 +101,7 @@ func (s *Service) Status(ctx context.Context, caller *user.User) (*Status, error
 	status.Installed = true
 
 	sections := strings.Split(res.Output, statusSeparator)
-	for len(sections) < 5 {
+	for len(sections) < 6 {
 		sections = append(sections, "")
 	}
 	status.Enabled, status.DefaultIncoming, status.Rules = parseStatus(
@@ -126,6 +128,10 @@ func (s *Service) Status(ctx context.Context, caller *user.User) (*Status, error
 	status.SSHAllowed = allowsAny(status.Rules, ScopeHost, status.SSHPorts)
 	markProtected(status)
 
+	// What the host's stanza admits by published port, read off the file
+	// rather than the database: the screen says what the host has.
+	exposed := parseExposedRules(sections[5])
+
 	// What is actually exposed on a Docker host, which is rarely what
 	// the host's own services are listening on.
 	if s.ports != nil {
@@ -141,7 +147,12 @@ func (s *Service) Status(ctx context.Context, caller *user.User) (*Status, error
 				// than the one somebody typed. A host rule for either
 				// number governs traffic that never reaches this
 				// container.
-				out.Allowed = allowsAny(status.Rules, ScopeApps, []int{admits(out)})
+				switch {
+				case allowsAny(status.Rules, ScopeApps, []int{admits(out)}):
+					out.Allowed, out.AllowedBy = true, AllowedByRule
+				case exposed[out.Port] && out.Protocol == string(ProtocolTCP):
+					out.Allowed, out.AllowedBy = true, AllowedByExposed
+				}
 				status.Published = append(status.Published, out)
 			}
 		}
@@ -558,7 +569,7 @@ func sameRule(a, b string) bool {
 
 // AdoptDocker puts published container ports under UFW's control.
 //
-// Everything about this is in dockerBlock and the package comment. What
+// Everything about this is in renderDockerBlock and the package comment. What
 // matters here is the order, and it is not cosmetic: the allow rules go
 // in **first**, while they are still inert, and the stanza that starts
 // denying goes in last. The other way round is an instance that is off
@@ -605,7 +616,12 @@ func (s *Service) AdoptDocker(ctx context.Context, caller *user.User, allow []in
 	// file the daemon just wrote, and nothing has to escape several
 	// hundred bytes of iptables syntax past two parsers.
 	path := s.dataDir + "/ufw-docker.rules"
-	if err := os.WriteFile(path, []byte(dockerBlock), 0o600); err != nil {
+	block, err := renderDockerBlock(nil)
+	if err != nil {
+		return nil, err
+	}
+	// The leading newline is for a file whose last line has none.
+	if err := os.WriteFile(path, []byte("\n"+block), 0o600); err != nil {
 		return nil, fmt.Errorf("write the docker stanza: %w", err)
 	}
 	if err := s.script(ctx, adoptScript(path)); err != nil {

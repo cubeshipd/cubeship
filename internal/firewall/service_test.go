@@ -555,3 +555,55 @@ func TestTheRuleThatKeepsYouInCannotBeEdited(t *testing.T) {
 		t.Errorf("it ran anyway: %v", host.ran)
 	}
 }
+
+// The stanza's own lines admit a published port by the number it was
+// published on, and the report says which kind of thing admitted it —
+// read off the host's file, not off what this instance believes it
+// exposed.
+func TestTheReportSaysWhatAdmitsEachPublishedPort(t *testing.T) {
+	stanza, err := renderDockerBlock([]int{15002})
+	if err != nil {
+		t.Fatalf("render: %v", err)
+	}
+	host := &fakeHost{status: strings.Join([]string{
+		active,
+		"[ 1] 80/tcp                     ALLOW FWD   Anywhere",
+		"", "1", "22",
+		// What the read script's sed and grep leave of it.
+		grepLines(stanza, "--ctorigdstport"),
+	}, statusSeparator)}
+	svc := NewService(host, fakePorts{
+		{Port: 80, Protocol: "tcp", Container: "cubeship-traefik"},
+		{Port: 15000, Inside: 5432, Protocol: "tcp", Container: "cubeship-db-other"},
+		{Port: 15002, Inside: 5432, Protocol: "tcp", Container: "cubeship-db-pg"},
+	}, t.TempDir())
+
+	got, err := svc.Status(context.Background(), admin)
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if len(got.Published) != 3 {
+		t.Fatalf("published: %+v", got.Published)
+	}
+	if p := got.Published[0]; !p.Allowed || p.AllowedBy != AllowedByRule {
+		t.Errorf("80 has a rule: %+v", p)
+	}
+	// The one the bug was: the same engine, the same inside port, and
+	// nothing admitting this one.
+	if p := got.Published[1]; p.Allowed || p.AllowedBy != "" {
+		t.Errorf("15000 is admitted by nothing: %+v", p)
+	}
+	if p := got.Published[2]; !p.Allowed || p.AllowedBy != AllowedByExposed {
+		t.Errorf("15002 is in the stanza: %+v", p)
+	}
+}
+
+func grepLines(text, substr string) string {
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		if strings.Contains(line, substr) {
+			out = append(out, line)
+		}
+	}
+	return strings.Join(out, "\n")
+}

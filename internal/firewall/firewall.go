@@ -25,7 +25,7 @@
 //
 // What covers those ports is the DOCKER-USER chain, which Docker jumps
 // to before its own rules and never rewrites. Sending it through UFW's
-// forward chain is what `ufw route allow` then governs — see dockerBlock
+// forward chain is what `ufw route allow` then governs — see renderDockerBlock
 // for the stanza that does it and Service.AdoptDocker for when it is
 // installed.
 package firewall
@@ -203,7 +203,16 @@ type Published struct {
 	// Allowed is whether a rule already admits it, so the screen can
 	// offer the ones that would go dark rather than all of them.
 	Allowed bool `json:"allowed"`
+	// AllowedBy says what admits it, when something does: a ufw rule, or
+	// the stanza's line for a port this instance exposed.
+	AllowedBy string `json:"allowed_by,omitempty"`
 }
+
+// What Published.AllowedBy can say.
+const (
+	AllowedByRule    = "rule"
+	AllowedByExposed = "exposed"
+)
 
 var (
 	// ErrNotInstalled is a host with no ufw. Installing one is the

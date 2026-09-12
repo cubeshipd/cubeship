@@ -30,11 +30,12 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			}, "index", "text", "scope", "protected", "v6"),
 
 			"FirewallPublishedPort": openapi.Object(map[string]*openapi.Schema{
-				"port":      openapi.Integer("A host port a container is answering on right now."),
-				"inside":    openapi.Integer("The port the container itself listens on, when Docker is translating — a database published on 15000 listens on 5432. Absent when the two are the same. It is the number a rule for this port is actually written for: a forwarded rule is consulted after the translation, so the published number could never match."),
-				"protocol":  openapi.String("tcp or udp."),
-				"container": openapi.String("Which container publishes it."),
-				"allowed":   openapi.Bool("Whether a rule already admits it. Ports bound to loopback are not listed at all: nothing outside the host can reach them, and offering to open one would be offering a hole for something that was never exposed."),
+				"port":       openapi.Integer("A host port a container is answering on right now."),
+				"inside":     openapi.Integer("The port the container itself listens on, when Docker is translating — a database published on 15000 listens on 5432. Absent when the two are the same. It is the number a rule for this port is actually written for: a forwarded rule is consulted after the translation, so the published number could never match."),
+				"protocol":   openapi.String("tcp or udp."),
+				"container":  openapi.String("Which container publishes it."),
+				"allowed":    openapi.Bool("Whether a rule already admits it. Ports bound to loopback are not listed at all: nothing outside the host can reach them, and offering to open one would be offering a hole for something that was never exposed."),
+				"allowed_by": openapi.String("What admits it, when something does: `rule` for a ufw rule, `exposed` for the line Cubeship keeps in its stanza for a datastore or object store it exposed. That line matches the port as it was published, which a ufw rule cannot."),
 			}, "port", "protocol", "container", "allowed"),
 
 			"FirewallRuleRequest": openapi.Object(map[string]*openapi.Schema{
