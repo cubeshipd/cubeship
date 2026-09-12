@@ -226,36 +226,58 @@ port anybody opens themselves. A rule for a port nothing publishes is
 written unchanged, which is what keeps a rule added ahead of the thing
 it is for from becoming a rule for a number nobody chose.
 
-**Exposing writes the rule itself, and nobody has to remember to.**
-`internal/datastore` and `internal/objectstore` call `firewall.Add` the
-moment a datastore or a managed store is exposed, and `firewall.Remove`
-the moment it is unexposed — the same door `mesh.Admit` already opens
-the cluster's ports through: no `Service`, no caller, best effort, and a
-host this daemon cannot reach is simply nothing to do. The rule is
-written whether or not `AdoptDocker` has run yet, for the same reason an
-`apps` rule for an unpublished port is left alone above: an inert rule
-ahead of the thing it is for is the order adopting already argues for,
-and a missing one is a port open to whoever finds it.
+**An exposed database is governed by the number it was published on,
+and that is not a ufw rule.** The forward chain sees a packet after
+Docker's DNAT, so a ufw rule can only name the port inside the container
+— and every Postgres listens on 5432 inside. That was the first answer,
+and it was wrong in the worst direction: exposing a datastore wrote
+`ufw route allow` for its engine's port, and on a live instance one rule
+for 5432 turned a database published on 15002 *and* an unrelated one on
+15000 to allowed. Exposing one database exposed every database of that
+engine, and every managed store shares MinIO's 9000 the same way. It
+never shipped.
 
-**Withdrawing asks first, because the rule outlives the row that asked
-for it.** It names the port inside the container, and that port is fixed
-by the engine or by the image, not by which datastore happens to be
-running it — MySQL and MariaDB both listen on 3306, and every managed
-store listens on 9000. Unexposing one has to ask whether another
-exposed datastore or store still needs that port before removing the
-rule, or turning one database off would silently close the connection
-to a second one that shares its port.
+The kernel keeps the destination from before the DNAT in conntrack, and
+iptables can match it: `-m conntrack --ctorigdstport 15002 --ctdir
+ORIGINAL`. ufw has no way to say that, so these are not rules on the
+screen. They are lines in the stanza Cubeship already owns in
+`after.rules`, one per exposed published port, after the RETURNs for the
+private ranges and DNS and before the first denial.
 
-**The daemon admits everything already exposed once at every start, and
-never removes anything.** This is a repair, not a reconciler: an
-instance exposed before either of these modules called the firewall at
-all had a datastore answering on a port with no rule ever written for
-it, and the fix is to write the missing rules once rather than to trust
-that every future expose will get there first. It only adds because a
-sweep that deletes is a sweep that can take a rule an operator wrote by
-hand with it — the same asymmetry `mesh.Admit`'s own comment argues for,
-and for the same reason: adding a rule nobody asked for twice is
-harmless, and removing one that still matters is not.
+- **RETURN, not ACCEPT.** It hands the packet back to Docker's own rules,
+  exactly as the stanza's other RETURNs do. Not a chain of their own
+  either: a RETURN from a sub-chain lands back in `DOCKER-USER` and falls
+  into the denials.
+- **Not a container's address.** It changes on every restart and deploy,
+  and a reused one would open whatever container got it next.
+- **TCP and IPv4 only.** Datastores and MinIO speak TCP, and the stanza
+  lives in `after.rules`, not `after6.rules`.
+
+**The set is derived, never edited, so the module still owns no rows.**
+What is exposed is `exposed_port` on datastores and managed stores;
+`internal/server` hands the firewall their union as `firewall.Exposed`,
+and `SyncPublished` renders the whole block from it every time and puts
+it where the old one was. Both modules call it through `PortsChanged`, a
+seam each declares, after anything that changes exposure — creating one
+exposed, exposing, moving it, unexposing, deleting it — best effort,
+because the port is published either way. The daemon calls it once at
+start for whatever changed while it was not running. On a host without
+the stanza it does nothing: nothing is denied there, and writing it
+would be adopting Docker for somebody who did not ask. Adopting renders
+the same set, and writes no ufw rule for those ports, since that would
+be the inside-port rule again.
+
+The file is replaced by building a copy beside it and moving it over, so
+a failure at any step leaves one whole file, the old or the new, and
+never a file without a block. The set is read inside the lock that
+serializes writing, so a sync that started first cannot write an older
+set over a newer one.
+
+**The screen reads those lines back off the host**, in the one script
+that reads everything else, rather than off the database: a published
+port listed there is allowed, and `allowed_by` says `exposed`, where a
+ufw rule says `rule`. What the database says should be there and what
+the host has are different facts, and only one of them lets a packet in.
 
 **A firewall at the provider is a third layer, and it is not visible
 here.** Contabo, Hetzner, DigitalOcean and AWS all filter in front of
