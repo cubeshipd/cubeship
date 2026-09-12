@@ -166,8 +166,7 @@ export function personName(u: { display_name?: string; username: string }): stri
 // face beside a username is drawn on every screen of the dashboard, and
 // the file behind it is the first image the browser asks for; the
 // picker on the account screen is one screen, drawn once, at twice the
-// size. 8 KB against 88 KB, from `scripts/profiles.sh`, which writes
-// both from the same source.
+// size. 8 KB against 88 KB, both cut from the same master.
 export function avatarSrc(name: string, size: "full" | "small" = "full"): string {
   return `/profiles/${name}${size === "small" ? "-sm" : ""}.png`;
 }

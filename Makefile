@@ -72,12 +72,6 @@ web-dev: ## Run the dashboard for `make dev`, with hot reload
 web-preview: ## Run the dashboard on invented data, with no daemon behind it
 	cd $(WEBDIR) && NEXT_PUBLIC_CUBESHIP_MOCK=1 $(PNPM) run dev
 
-# A face is committed at the size it is drawn at, not at the size the
-# generator wrote — see the script.
-.PHONY: profiles
-profiles: ## Resize the account faces and write their thumbnails (SRC=dir for new ones)
-	./scripts/profiles.sh $(SRC)
-
 .PHONY: install
 install: ## Install the CLI into GOBIN
 	$(GO) install ./cmd/cubeship
@@ -219,7 +213,7 @@ changelog-check: ## Fail if CHANGELOG.md is not what the release notes say
 
 .PHONY: sh-check
 sh-check: ## Syntax-check the shell scripts
-	@for f in install.sh uninstall.sh scripts/profiles.sh test/install/run.sh test/install/uninstall.sh; do \
+	@for f in install.sh uninstall.sh test/install/run.sh test/install/uninstall.sh; do \
 		sh -n $$f || exit 1; \
 	done
 

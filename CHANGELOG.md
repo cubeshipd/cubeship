@@ -131,7 +131,7 @@ scripting in it.
 rather than the default with the accent nudged. **`helix` is the first
 light one** — Mono the other way up, black ink on paper, for a console
 read in daylight. The faces are nine different people rather than one in
-nine colours, and the source they are drawn from is in the repository.
+nine colours.
 
 **`cubeship version` answers.** It never did — `-X main.version=` was
 writing to a constant, so every CLI released so far reports `dev`. Yours

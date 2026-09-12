@@ -83,7 +83,6 @@ func (u *User) Blocked() bool { return u != nil && u.BlockedAt != nil }
 // than shipping: a name here with no file there is a broken image on
 // somebody's account, and a file there with no name here is a face
 // nobody can choose and nobody knows is missing. See avatars_test.go.
-// `scripts/profiles.sh` prepares the files and prints this line.
 //
 // **They are the palettes' own names**, because they are drawn in the
 // same colours: somebody on the red theme picking the red face is the

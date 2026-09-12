@@ -11,8 +11,8 @@ import (
 // profiles is where the dashboard keeps the faces, from this package.
 const profiles = "../../web/public/profiles"
 
-// thumbSuffix is what `scripts/profiles.sh` names the small copy, which
-// is the one the sidebar draws on every screen.
+// thumbSuffix names the small copy, which is the one the sidebar draws
+// on every screen.
 const thumbSuffix = "-sm"
 
 // **Adding a face is two edits, and this is what makes two safe.**
@@ -62,15 +62,15 @@ func TestEveryFaceIsBothANameAndAFile(t *testing.T) {
 // fallback to the large file, it is a broken image beside somebody's
 // username for the whole time they are signed in.
 //
-// A face added by hand rather than through `scripts/profiles.sh` is
-// exactly how that happens, and it is invisible from the Go side: the
-// name resolves, the large file is there, and the one file nothing in
-// this package mentions is the one that is missing.
+// A face added without its small copy is exactly how that happens, and
+// it is invisible from the Go side: the name resolves, the large file
+// is there, and the one file nothing in this package mentions is the
+// one that is missing.
 func TestEveryFaceHasAThumbnail(t *testing.T) {
 	for _, name := range Avatars {
 		thumb := filepath.Join(profiles, name+thumbSuffix+".png")
 		if _, err := os.Stat(thumb); err != nil {
-			t.Errorf("%s has no thumbnail: %v\nrun scripts/profiles.sh", name, err)
+			t.Errorf("%s has no thumbnail: %v", name, err)
 		}
 	}
 }
