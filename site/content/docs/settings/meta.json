@@ -1,7 +1,4 @@
 {
   "title": "Instance settings",
-  "pages": [
-    "updates",
-    "github"
-  ]
+  "pages": ["updates", "github"]
 }
