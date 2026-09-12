@@ -67,9 +67,10 @@ Unknown keys are refused — see [`schema.unknown-key`](/docs/templates/diagnost
 
 Every input, database, store and app has a `key` — lowercase or mixed
 case, letters/digits/dash/underscore, starting with a letter — which
-never leaves the file. It is what `${db.db.host}` and `attach:
-database: db` mean, and it is how one part of the template points at
-another. See [References](/docs/templates/references).
+never leaves the file. It is what a reference like `${db.db.host}`
+names, and what `attach.database` or `attach.store` names, and it is
+how one part of the template points at another. See
+[References](/docs/templates/references).
 
 A database, store or app also has a `name`, which defaults to its
 `key` and is what appears on the instance. The installer may change any
