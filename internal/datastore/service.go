@@ -6,9 +6,11 @@ import (
 	"io"
 	"log"
 	"maps"
+	"strconv"
 
 	"cubeship/internal/app"
 	"cubeship/internal/envvar"
+	"cubeship/internal/firewall"
 	"cubeship/internal/metrics"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/settings"
@@ -55,11 +57,18 @@ type Service struct {
 	// The same package the app module uses: a database and an app are
 	// both a container with a CPU and a resident set.
 	metrics *metrics.Service
+	// firewall is the host's, opened for an exposed datastore's inside
+	// port the way mesh.Admit opens the cluster's — no Service and no
+	// caller, because a rule that governs a container has nothing to do
+	// with who asked for one. Nil in tests and on a daemon with no host
+	// access, which admitPort and withdrawPort treat as "nothing to do"
+	// rather than a failure.
+	firewall firewall.Host
 }
 
 func NewService(db *database.DB, apps *app.Service, prov *Provisioner,
-	cfg *settings.Service, series *metrics.Service) *Service {
-	return &Service{db: db, apps: apps, prov: prov, settings: cfg, metrics: series}
+	cfg *settings.Service, series *metrics.Service, host firewall.Host) *Service {
+	return &Service{db: db, apps: apps, prov: prov, settings: cfg, metrics: series, firewall: host}
 }
 
 // Metrics exposes the series service to this module's own handlers.
@@ -229,6 +238,12 @@ func (s *Service) Create(ctx context.Context, caller *user.User, spec Spec) (*Da
 	}
 
 	s.prov.Start(created)
+	// A datastore may be exposed from the moment it is created — see
+	// Spec.Expose — and creation never goes through setPort to get
+	// there, so this is the one other place that has to admit the rule.
+	if created.ExposedPort != 0 {
+		s.admitPort(ctx, created)
+	}
 	return created, nil
 }
 
@@ -409,6 +424,7 @@ func (s *Service) Unexpose(ctx context.Context, caller *user.User, name string) 
 }
 
 func (s *Service) setPort(ctx context.Context, caller *user.User, d *Datastore, port int) (*Datastore, error) {
+	oldPort := d.ExposedPort
 	if err := s.Repo().SetExposedPort(ctx, d.ID, port); err != nil {
 		if database.UniqueViolationOn(err, portIndex) {
 			return nil, ErrPortTaken
@@ -427,7 +443,103 @@ func (s *Service) setPort(ctx context.Context, caller *user.User, d *Datastore, 
 	}
 	updated.Status = StatusProvisioning
 	s.prov.Start(updated)
+
+	// The firewall rule does not wait on the container the way the row
+	// above does: it is written for the engine's own port, fixed before
+	// any container exists, so nothing about it depends on what the
+	// provision just started is about to do. Admitting it now rather
+	// than after the container comes up is the same order AdoptDocker
+	// already argues for — an inert rule ahead of the thing it is for,
+	// never a missing one.
+	switch {
+	case port != 0:
+		s.admitPort(ctx, updated)
+	case oldPort != 0:
+		s.withdrawPort(ctx, updated)
+	}
 	return updated, nil
+}
+
+// admitPort opens this datastore's inside port on the host firewall.
+//
+// Best-effort, the same shape mesh.Admit is: a host with no ufw is a
+// host with nothing blocking the port, and a firewall this daemon
+// cannot reach is somebody else's to manage. Neither is a reason to
+// refuse the expose that got here, so a failure is logged and nothing
+// more.
+func (s *Service) admitPort(ctx context.Context, d *Datastore) {
+	if s.firewall == nil || !s.firewall.Available() {
+		return
+	}
+	if err := firewall.Add(ctx, s.firewall, datastoreRule(d)); err != nil {
+		log.Printf("datastore %s: could not open port %d on the host firewall: %v", d.Slug, d.Engine.Port(), err)
+	}
+}
+
+// withdrawPort closes this datastore's inside port, unless some other
+// exposed datastore still needs it.
+//
+// The rule is written for the inside port, not for this row — MySQL and
+// MariaDB both listen on 3306 — so this asks the repository rather than
+// assuming a datastore going off its port is the only one on it.
+func (s *Service) withdrawPort(ctx context.Context, d *Datastore) {
+	if s.firewall == nil || !s.firewall.Available() {
+		return
+	}
+	needed, err := s.Repo().ExposedElsewhereOnPort(ctx, enginesOnPort(d.Engine.Port()), d.ID)
+	if err != nil {
+		log.Printf("datastore %s: could not tell whether port %d is still needed: %v", d.Slug, d.Engine.Port(), err)
+		return
+	}
+	if needed {
+		return
+	}
+	if err := firewall.Remove(ctx, s.firewall, datastoreRule(d)); err != nil {
+		log.Printf("datastore %s: could not close port %d on the host firewall: %v", d.Slug, d.Engine.Port(), err)
+	}
+}
+
+// datastoreRule is the apps-scope rule for this datastore's inside port.
+//
+// Written for Engine.Port(), never for ExposedPort: the forward chain
+// sees a packet only after Docker has already translated it, so a rule
+// naming the published port matches nothing — see Spec.Inside and
+// docs/design/networking.md, "the firewall". The engine's port is fixed
+// before any container exists, so there is nothing to read back from
+// Docker to get it right.
+func datastoreRule(d *Datastore) firewall.Spec {
+	return firewall.Spec{
+		Scope: firewall.ScopeApps, Action: firewall.ActionAllow, Protocol: firewall.ProtocolTCP,
+		Port: strconv.Itoa(d.Engine.Port()), Comment: "cubeship",
+	}
+}
+
+// AdmitExposed opens the firewall for every datastore that is already
+// exposed.
+//
+// A one-shot, run once at daemon start and never a loop: it only adds.
+// This module's rule is written for a fixed engine port, but the ones
+// an operator adds by hand are not this module's business at all, and a
+// sweep that removed rules it does not recognise would take one of
+// those with it on the next restart. This is what repairs an instance
+// exposed before this existed — see the bug this fixes — since every
+// already-exposed datastore gets its rule the next time the daemon
+// starts.
+func (s *Service) AdmitExposed(ctx context.Context) {
+	if s.firewall == nil || !s.firewall.Available() {
+		return
+	}
+	all, err := s.Repo().List(ctx)
+	if err != nil {
+		log.Printf("datastore: could not list datastores to admit their firewall rules: %v", err)
+		return
+	}
+	for _, d := range all {
+		if d.ExposedPort == 0 {
+			continue
+		}
+		s.admitPort(ctx, d)
+	}
 }
 
 // resolvePort turns what a caller asked for into a port to publish on.
@@ -649,6 +761,13 @@ func (s *Service) Delete(ctx context.Context, caller *user.User, name string) (*
 	}
 	if err := s.prov.Teardown(ctx, d, false); err != nil {
 		return nil, err
+	}
+	// Before the row goes, while the repository can still be asked
+	// whether anything else on this port is still exposed — withdrawing
+	// after the delete would always find nothing else, whether or not
+	// there really was.
+	if d.ExposedPort != 0 {
+		s.withdrawPort(ctx, d)
 	}
 	if err := s.Repo().Delete(ctx, d.ID); err != nil {
 		return nil, err
