@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 
 const SORTS = [
@@ -10,17 +10,29 @@ const SORTS = [
 
 // Every filter lives in the query string, not component state, so a
 // link to a filtered catalog is a link anyone can share.
-export function Filters({ tags }: { tags: string[] }) {
+// The page hands the current filters down rather than this reading them with
+// useSearchParams, which would need a Suspense boundary and paint the filters
+// after the grid below them, shifting it.
+export function Filters({
+  tags,
+  q: initialQ,
+  tag: activeTag,
+  sort,
+}: {
+  tags: string[];
+  q?: string;
+  tag?: string;
+  sort: "recent" | "likes";
+}) {
   const router = useRouter();
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const [q, setQ] = useState(searchParams.get("q") ?? "");
-
-  const activeTag = searchParams.get("tag");
-  const sort = searchParams.get("sort") === "likes" ? "likes" : "recent";
+  const [q, setQ] = useState(initialQ ?? "");
 
   function push(next: Record<string, string | null>) {
-    const params = new URLSearchParams(searchParams.toString());
+    const params = new URLSearchParams();
+    if (initialQ) params.set("q", initialQ);
+    if (activeTag) params.set("tag", activeTag);
+    if (sort !== "recent") params.set("sort", sort);
     params.delete("cursor");
     for (const [key, value] of Object.entries(next)) {
       if (value) params.set(key, value);

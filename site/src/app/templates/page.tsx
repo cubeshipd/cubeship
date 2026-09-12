@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { Suspense } from "react";
 import { TemplateCard } from "@/components/templates/card";
 import { Filters } from "@/components/templates/filters";
 import { distinctTags, listTemplates } from "@/lib/templates/queries";
@@ -44,9 +43,7 @@ export default async function TemplatesPage(props: PageProps<"/templates">) {
       </h1>
 
       <div className="mt-8">
-        <Suspense>
-          <Filters tags={tags} />
-        </Suspense>
+        <Filters tags={tags} q={q} tag={tag} sort={sort} />
       </div>
 
       {rows.length === 0 ? (

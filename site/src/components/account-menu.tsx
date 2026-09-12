@@ -5,8 +5,13 @@ import { useEffect, useState } from "react";
 
 type Me = { id: number; login: string; avatarUrl: string | null; role: string } | null;
 
+// Every state takes the same box, so the header does not move when the session
+// arrives after the page has painted.
+const BOX = "flex h-7 w-20 items-center justify-end";
+
 export function AccountMenu() {
-  const [me, setMe] = useState<Me>(null);
+  // undefined until /api/v1/me answers, so nothing is shown that the answer replaces.
+  const [me, setMe] = useState<Me | undefined>(undefined);
   const [open, setOpen] = useState(false);
   // Read from the router, not window: the server renders this link too, and a
   // server-side guess sends everyone back to the catalog after signing in.
@@ -19,25 +24,29 @@ export function AccountMenu() {
       .catch(() => setMe(null));
   }, []);
 
+  if (me === undefined) return <div className={BOX} aria-hidden="true" />;
+
   if (!me) {
     return (
-      <a
-        href={`/api/auth/github?next=${encodeURIComponent(pathname)}`}
-        className="label text-fd-muted-foreground hover:text-fd-foreground"
-      >
-        Sign in
-      </a>
+      <div className={BOX}>
+        <a
+          href={`/api/auth/github?next=${encodeURIComponent(pathname)}`}
+          className="label text-fd-muted-foreground hover:text-fd-foreground"
+        >
+          Sign in
+        </a>
+      </div>
     );
   }
 
   return (
-    <div className="relative">
+    <div className={`relative ${BOX}`}>
       <button type="button" onClick={() => setOpen(!open)} aria-label={`Account: ${me.login}`}>
         {me.avatarUrl ? (
           // biome-ignore lint/performance/noImgElement: an external GitHub avatar, not one of our own assets.
           <img src={me.avatarUrl} alt="" className="size-7 border border-fd-border" />
         ) : (
-          <span className="label">{me.login}</span>
+          <span className="label block max-w-20 truncate">{me.login}</span>
         )}
       </button>
       {open && (
