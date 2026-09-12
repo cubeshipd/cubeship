@@ -205,12 +205,21 @@ function distance(a: string, b: string): number {
 function nearest(key: string, candidates: string[]): string | undefined {
   const lower = key.toLowerCase();
   // "healthcheck" for "health" is not a typo, it is the old name; edit
-  // distance alone would place it too far away to suggest.
-  const contained = candidates.find((candidate) => {
-    const c = candidate.toLowerCase();
-    return lower.includes(c) || c.includes(lower);
-  });
-  if (contained) return contained;
+  // distance alone would place it too far away to suggest. But containment
+  // alone is too loose: "environment" contains "env" too, at a distance of
+  // 8 - the app's unrelated variable map. Bound it to candidates within
+  // double the shorter string's length, and when several qualify, take the
+  // one edit distance actually ranks closest rather than the first found.
+  const contained = candidates
+    .filter((candidate) => {
+      const c = candidate.toLowerCase();
+      if (!(lower.includes(c) || c.includes(lower))) return false;
+      const shorter = Math.min(c.length, lower.length);
+      const longer = Math.max(c.length, lower.length);
+      return longer <= shorter * 2;
+    })
+    .sort((a, b) => distance(lower, a.toLowerCase()) - distance(lower, b.toLowerCase()));
+  if (contained.length > 0) return contained[0];
 
   const ranked = candidates
     .map((candidate) => ({ candidate, d: distance(lower, candidate.toLowerCase()) }))

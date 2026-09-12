@@ -35,6 +35,13 @@ describe("manifestSchema", () => {
     expect(diagnostics[0].range?.start.line).toBe(6);
   });
 
+  it("does not suggest env for the unrelated environment", () => {
+    const { diagnostics } = check(`${minimal}    environment: staging\n`);
+
+    expect(diagnostics[0].code).toBe("schema.unknown-key");
+    expect(diagnostics[0].hint ?? "").not.toContain("env");
+  });
+
   it("refuses a version it does not speak", () => {
     const { diagnostics } = check(minimal.replace("version: 1", "version: 2"));
 
