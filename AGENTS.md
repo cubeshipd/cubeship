@@ -36,6 +36,7 @@ re-made by accident.
 | --- | --- |
 | Anything under `web/` | [dashboard.md](docs/design/dashboard.md) — the layers, the navigation, the components, the look |
 | Anything under `site/` | [site.md](docs/design/site.md) — cubeship.dev: the landing page, the docs, and where `install.sh` comes from |
+| The template registry in `site/` | [templates.md](docs/design/templates.md) — the template file, the validator, the registry it lives in, and what a template may never carry |
 | `internal/node`, `internal/mesh`, `internal/worker` | [cluster.md](docs/design/cluster.md) — placement, replicas, the agent, the network between machines, the one front door, autoscaling, limits |
 | `internal/app` | [deploys.md](docs/design/deploys.md) — where an image comes from, the two builders, the GitHub App, who may build, what deleting takes |
 | `internal/datastore` | [datastores.md](docs/design/datastores.md) — the engines, attaching, exposing, what is fixed after creation |
