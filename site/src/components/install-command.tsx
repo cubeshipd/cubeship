@@ -17,14 +17,16 @@ export function InstallCommand() {
   }
 
   return (
-    <div className="hud-frame inline-flex max-w-full items-center gap-3 border border-border bg-card px-4 py-3 font-mono text-sm">
+    <div className="hud-frame flex w-full max-w-xl items-center gap-3 border border-border bg-card px-4 py-3 font-mono text-sm">
       <span className="text-magenta select-none">$</span>
-      <code className="overflow-x-auto whitespace-nowrap text-foreground">{installCommand}</code>
+      <code className="min-w-0 overflow-x-auto whitespace-nowrap text-foreground">
+        {installCommand}
+      </code>
       <button
         type="button"
         onClick={copy}
         aria-label="Copy the install command"
-        className="ml-1 text-muted-foreground transition-colors hover:text-primary"
+        className="ml-auto shrink-0 text-muted-foreground transition-colors hover:text-primary"
       >
         {copied ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
       </button>

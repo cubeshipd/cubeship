@@ -1,16 +1,20 @@
 {
   "title": "Docs",
   "pages": [
+    "---Getting started---",
     "index",
     "install",
     "first-five-minutes",
+    "---Running things---",
     "deploy-an-app",
     "databases-and-storage",
     "backups",
     "more-machines",
     "limits-and-autoscaling",
+    "---Other doors---",
     "cli",
     "mcp",
+    "---Operating it---",
     "upgrading",
     "uninstalling",
     "what-reaches-the-internet"

@@ -4,7 +4,8 @@ import { source } from "@/lib/source";
 
 export default function Layout({ children }: LayoutProps<"/docs">) {
   return (
-    <DocsLayout tree={source.getPageTree()} {...baseOptions()}>
+    // The header's links are the header's; the sidebar is the tree.
+    <DocsLayout tree={source.getPageTree()} {...baseOptions()} links={[]}>
       {children}
     </DocsLayout>
   );

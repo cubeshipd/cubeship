@@ -133,3 +133,41 @@ body {
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
+
+/* The open page in the sidebar is framed the way a card is — two
+   corner brackets, a sight on the thing you are reading — on top of
+   the tint. The group titles are labels. */
+#nd-sidebar [data-active="true"] {
+  position: relative;
+
+  &::before,
+  &::after {
+    content: "";
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border-color: var(--color-primary);
+    pointer-events: none;
+  }
+  &::before {
+    top: 0;
+    left: 0;
+    border-top: 1px solid;
+    border-left: 1px solid;
+  }
+  &::after {
+    right: 0;
+    bottom: 0;
+    border-right: 1px solid;
+    border-bottom: 1px solid;
+  }
+}
+
+/* A separator in meta.json renders as the sidebar's only <p>. */
+#nd-sidebar p.inline-flex {
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-subtle-foreground);
+}
