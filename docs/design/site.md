@@ -2,9 +2,15 @@
 
 `site/` is cubeship.dev: the landing page at `/`, the docs under
 `/docs`, and `install.sh` at the root. A Next.js app of its own, built
-by Fumadocs' scaffold and deployed on Vercel with `site` as the root
-directory. It is not part of the daemon's image and the daemon knows
-nothing about it.
+by Fumadocs' scaffold, shipped as its own image (`Dockerfile.site`,
+`make site-image`) and run as an app on a Cubeship instance — the
+product hosting its own front door. It is not part of the daemon's
+image and the daemon knows nothing about it.
+
+The image is the dashboard's recipe: `output: "standalone"`, static
+assets copied back beside the server, an unprivileged user, `:3000`.
+Nothing in it needs the network at run time — the docs are compiled in
+and the search index is built from them on the first query.
 
 ## One palette, copied
 

@@ -7,4 +7,7 @@ bin
 dist
 web/node_modules
 web/.next
+site/node_modules
+site/.next
+site/.source
 coverage.out
