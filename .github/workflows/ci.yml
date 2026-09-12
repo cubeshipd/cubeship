@@ -124,6 +124,16 @@ jobs:
     defaults:
       run:
         working-directory: site
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: site
+          POSTGRES_PASSWORD: site
+          POSTGRES_DB: site
+        ports: ["5434:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -137,6 +147,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec biome ci .
       - run: pnpm test
+        env:
+          SITE_TEST_DATABASE_URL: postgres://site:site@localhost:5434/site
       # typegen first: the pages take their params from Next's generated
       # route types, so a segment renamed without the page following it
       # is a type error rather than an undefined glued into a URL. Those

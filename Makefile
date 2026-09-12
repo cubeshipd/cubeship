@@ -80,6 +80,15 @@ site-dev: ## Run cubeship.dev — the landing page and the docs — with hot rel
 site-test: ## Run the site's unit tests
 	cd site && $(PNPM) test
 
+.PHONY: site-db-up
+site-db-up: ## Start the site's Postgres for development, on 5434
+	docker run -d --rm --name cubeship-site-db -p 5434:5432 \
+		-e POSTGRES_PASSWORD=site -e POSTGRES_USER=site -e POSTGRES_DB=site postgres:18-alpine
+
+.PHONY: site-db-down
+site-db-down: ## Stop it
+	docker stop cubeship-site-db
+
 .PHONY: install
 install: ## Install the CLI into GOBIN
 	$(GO) install ./cmd/cubeship

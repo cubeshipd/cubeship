@@ -12,6 +12,10 @@ const config: NextConfig = {
   output: dev ? undefined : "standalone",
   reactStrictMode: true,
   devIndicators: false,
+  // standalone traces imports; .sql files are read at run time, so they
+  // have to be named explicitly or the container starts without them.
+  outputFileTracingIncludes: { "/**": ["./drizzle/**"] },
+  serverExternalPackages: ["pg", "sharp"],
   // `curl -fsSL https://cubeship.dev/install.sh | sh` is what install.sh
   // and the CLI print, so the script is served from here — from the
   // repository's master, so the site never carries a stale copy of it.

@@ -9,5 +9,8 @@ export default defineConfig({
   test: {
     environment: "node",
     include: ["src/**/*.test.ts"],
+    // *.db.test.ts round-trips a real Postgres per assertion; 5s is not
+    // enough headroom when that database is remote.
+    testTimeout: 15_000,
   },
 });

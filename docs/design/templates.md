@@ -349,17 +349,25 @@ product's own first user.
 | `DATABASE_URL` | attaching the managed Postgres at an empty prefix |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PATH_STYLE` | attaching the managed bucket |
 | `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET` | a GitHub OAuth app for cubeship.dev, set by hand |
-| `SESSION_SECRET` | set by hand. Rotating it signs everybody out |
 | `ADMIN_LOGINS` | comma-separated GitHub logins |
+
+There is no `SESSION_SECRET`. A session token is 32 random bytes and the
+table stores only its SHA-256, so there is nothing to sign and nothing to
+rotate; the OAuth state is compared against the copy in its own cookie
+rather than signed against a server secret.
 
 Three constraints that break the build if they are got wrong:
 
 - **`next build` runs with no database**, in CI and in the image. Every
   page that queries Postgres renders at request time, the sitemap
   included, and no module reads an environment variable at import time.
-- **Migrations run in the entrypoint, before the server.** The generated
-  SQL files are copied into the image explicitly, because standalone
-  output only traces what code imports.
+- **Migrations run in `instrumentation.ts`, Next's server-start hook,
+  not a container entrypoint script.** `output: "standalone"` traces
+  only what code imports, so a loose script would need its own
+  `node_modules`; the generated SQL files are named in
+  `outputFileTracingIncludes` and copied into the image because of the
+  same tracing. A Postgres advisory lock held for the migration keeps
+  two containers starting at once from both applying the same file.
 - **The site gains a test runner.** Vitest over the schema, the reference
   resolver and the diagnostics, in the `site` job. A bug in the validator
   publishes broken templates to everybody, which makes it the one part of
