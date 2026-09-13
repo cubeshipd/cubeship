@@ -37,7 +37,7 @@ re-made by accident.
 | --- | --- |
 | Anything under `product/dashboard/` | [dashboard.md](docs/design/product/dashboard.md) — the layers, the navigation, the components, the look |
 | Anything under `hosted/site/` | [site.md](docs/design/hosted/site.md) — cubeship.dev: the landing page, the docs, and where `install.sh` comes from |
-| `product/template`, `hosted/discovery`, `/templates` in the site | [templates.md](docs/design/hosted/templates.md) — the validator, the indexer that reads GitHub releases, the catalog, and what a template may never carry |
+| `product/template`, `hosted/catalog`, `/templates` in the site | [templates.md](docs/design/hosted/templates.md) — the validator, the catalog that indexes GitHub releases and serves them, the site's pages, and what a template may never carry |
 | `internal/node`, `internal/mesh`, `internal/worker` | [cluster.md](docs/design/product/cluster.md) — placement, replicas, the agent, the network between machines, the one front door, autoscaling, limits |
 | `internal/app` | [deploys.md](docs/design/product/deploys.md) — where an image comes from, the two builders, the GitHub App, who may build, what deleting takes |
 | `internal/datastore` | [datastores.md](docs/design/product/datastores.md) — the engines, attaching, exposing, what is fixed after creation |
@@ -65,22 +65,23 @@ product/        what a person installs — one Go module and the dashboard
   dashboard/      the dashboard: Next.js standalone, its own image and
                   container on the VPS
   template/       the template file and its validator — outside internal/
-                  because hosted/discovery imports it
+                  because hosted/catalog imports it
   tools/          changelog, sitedocs — run by make, never shipped
   test/           integration and installer tests
 hosted/         what only we run, on one instance we operate — never
                 part of an install
   site/           cubeship.dev — the landing page, the docs and the
-                  template catalog, which it only reads
-  discovery/      the job that fills that catalog from GitHub releases —
-                  its own Go module, compiling product/template
+                  template pages. No database: it reads catalog/'s API
+  catalog/        the template catalog: indexes GitHub releases and
+                  serves them at cubeship.dev/api/v1 — its own Go module,
+                  compiling product/template
 docs/design/    product/ and hosted/, one file per area
 install.sh, uninstall.sh  stay at the root: the published install
                 command fetches `master/install.sh` by that path
 ```
 
 Every Dockerfile — `product/Dockerfile`, `product/dashboard/Dockerfile`,
-`hosted/site/Dockerfile`, `hosted/discovery/Dockerfile` — is built with the **repository root** as its
+`hosted/site/Dockerfile`, `hosted/catalog/Dockerfile` — is built with the **repository root** as its
 context, which is also how an instance builds an app whose Dockerfile is
 in a subdirectory.
 

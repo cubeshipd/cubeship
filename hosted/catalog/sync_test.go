@@ -1,4 +1,4 @@
-package discovery
+package catalog
 
 import (
 	"context"
@@ -42,17 +42,15 @@ func complete(t *testing.T, gh *fakeGitHub, commit string) {
 type harness struct {
 	gh     *fakeGitHub
 	store  *fakeStore
-	bucket *fakeBucket
 	syncer *Syncer
 }
 
 func newHarness() *harness {
 	h := &harness{
-		gh:     &fakeGitHub{files: map[string][]byte{}, failing: map[string]bool{}, lookup: map[string]Repo{}},
-		store:  newStore(),
-		bucket: &fakeBucket{objects: map[string][]byte{}},
+		gh:    &fakeGitHub{files: map[string][]byte{}, failing: map[string]bool{}, lookup: map[string]Repo{}},
+		store: newStore(),
 	}
-	h.syncer = &Syncer{GitHub: h.gh, Store: h.store, Objects: h.bucket, Topic: Topic, Log: quietLog()}
+	h.syncer = &Syncer{GitHub: h.gh, Store: h.store, Topic: Topic, Log: quietLog()}
 	return h
 }
 
@@ -78,8 +76,8 @@ func TestACompleteReleaseIsAccepted(t *testing.T) {
 	if !rec.Accepted || rec.Manifest == nil || rec.Readme != "# Umami\n" || rec.Name != "v1.0.0" {
 		t.Errorf("release = %+v", rec)
 	}
-	if rec.IconKey != "templates/icons/7/abc.png" || h.bucket.objects[rec.IconKey] == nil {
-		t.Errorf("icon %q not stored", rec.IconKey)
+	if len(rec.Icon) == 0 {
+		t.Error("the icon was not kept")
 	}
 	if template.Blocks(rec.Problems) {
 		t.Errorf("accepted with errors: %+v", rec.Problems)
@@ -96,7 +94,7 @@ func TestAReleaseMissingFilesIsRejectedWithEveryReason(t *testing.T) {
 
 	h.run(t)
 	rec := h.store.releases[0]
-	if rec.Accepted || rec.Manifest != nil || rec.IconKey != "" {
+	if rec.Accepted || rec.Manifest != nil || rec.Icon != nil {
 		t.Fatalf("release = %+v", rec)
 	}
 	var codes []string
@@ -124,8 +122,8 @@ func TestAnInvalidTemplateIsRejectedWithTheValidatorsDiagnostics(t *testing.T) {
 	if rec.Accepted || !slices.ContainsFunc(rec.Problems, func(d template.Diagnostic) bool { return d.Code == "schema.too_small" }) {
 		t.Fatalf("release = %+v", rec)
 	}
-	if len(h.bucket.objects) != 0 {
-		t.Error("stored the icon of a rejected release")
+	if rec.Icon != nil {
+		t.Error("kept the icon of a rejected release")
 	}
 }
 

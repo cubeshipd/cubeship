@@ -6,8 +6,8 @@ COVER   ?= coverage.out
 # The Go module — the daemon and the CLI — and the dashboard beside it:
 # everything an instance runs. hosted/ is what only we run, cubeship.dev among it.
 GODIR   ?= product
-# The catalog's indexer: a Go module of its own, beside the site it feeds.
-DISCOVERYDIR ?= hosted/discovery
+# The template catalog — its indexer and its API — a Go module of its own.
+CATALOGDIR ?= hosted/catalog
 WEBDIR  ?= $(GODIR)/dashboard
 PNPM    ?= pnpm
 RELEASEDIR ?= dist
@@ -85,13 +85,14 @@ site-dev: ## Run cubeship.dev — the landing page and the docs — with hot rel
 site-test: ## Run the site's unit tests
 	cd hosted/site && $(PNPM) test
 
-.PHONY: discovery-dev
-discovery-dev: ## Run the template indexer once a pass against the site's database (needs GITHUB_TOKEN and S3_*)
-	cd $(DISCOVERYDIR) && DATABASE_URL="$${DATABASE_URL:-postgres://site:site@127.0.0.1:5434/site?sslmode=disable}" $(GO) run ./cmd/discovery
+.PHONY: catalog-dev
+catalog-dev: ## Run the template catalog on :8080 against the local Postgres on 5434 (needs GITHUB_TOKEN)
+	cd $(CATALOGDIR) && DATABASE_URL="$${DATABASE_URL:-postgres://site:site@127.0.0.1:5434/site?sslmode=disable}" \
+		CATALOG_PUBLIC_URL="$${CATALOG_PUBLIC_URL:-http://localhost:3002/api/v1}" $(GO) run ./cmd/catalog
 
-.PHONY: discovery-image
-discovery-image: ## Build the template indexer's image
-	docker build -f $(DISCOVERYDIR)/Dockerfile -t cubeship-discovery:$(VERSION) .
+.PHONY: catalog-image
+catalog-image: ## Build the template catalog's image
+	docker build -f $(CATALOGDIR)/Dockerfile -t cubeship-catalog:$(VERSION) .
 
 .PHONY: site-db-up
 site-db-up: ## Start the site's Postgres for development, on 5434
@@ -197,13 +198,13 @@ db-down: ## Stop and remove the test Postgres, discarding its data
 .PHONY: test
 test: ## Unit tests that need nothing but this repository, race detector on
 	$(GO) -C $(GODIR) test -short -race -count=1 ./...
-	$(GO) -C $(DISCOVERYDIR) test -short -race -count=1 ./...
+	$(GO) -C $(CATALOGDIR) test -short -race -count=1 ./...
 
 # The same tests with the database they want. This is what CI runs.
 .PHONY: test-db
 test-db: db-up ## Unit tests including the DB-backed ones (starts Postgres)
 	$(GO) -C $(GODIR) test -race -count=1 ./...
-	$(GO) -C $(DISCOVERYDIR) test -race -count=1 ./...
+	$(GO) -C $(CATALOGDIR) test -race -count=1 ./...
 
 # The installer is the first thing every user runs, and no Go test can
 # reach it. This runs it on a real Linux against a release built here.
@@ -273,21 +274,21 @@ sh-check: ## Syntax-check the shell scripts
 vet: ## go vet, including the build-tagged integration test
 	$(GO) -C $(GODIR) vet ./...
 	$(GO) -C $(GODIR) vet -tags integration ./test/integration/...
-	$(GO) -C $(DISCOVERYDIR) vet ./...
+	$(GO) -C $(CATALOGDIR) vet ./...
 
 .PHONY: fmt
 fmt: ## Rewrite badly formatted files in place
-	gofmt -w $(GODIR) $(DISCOVERYDIR)
+	gofmt -w $(GODIR) $(CATALOGDIR)
 
 .PHONY: fmt-check
 fmt-check: ## Fail if anything needs gofmt
-	@out=$$(gofmt -l $(GODIR) $(DISCOVERYDIR)); \
+	@out=$$(gofmt -l $(GODIR) $(CATALOGDIR)); \
 	if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
 .PHONY: tidy
 tidy: ## Sync go.mod/go.sum with the imports
 	$(GO) -C $(GODIR) mod tidy
-	$(GO) -C $(DISCOVERYDIR) mod tidy
+	$(GO) -C $(CATALOGDIR) mod tidy
 
 .PHONY: clean
 clean: ## Remove build output

@@ -1,4 +1,4 @@
-package discovery
+package catalog
 
 import (
 	"bytes"
@@ -90,13 +90,6 @@ func (s *fakeStore) Indexed(_ context.Context, id int64, tag, commit string) (bo
 
 func (s *fakeStore) SaveRelease(_ context.Context, r Indexed) error {
 	s.releases = append(s.releases, r)
-	return nil
-}
-
-type fakeBucket struct{ objects map[string][]byte }
-
-func (b *fakeBucket) Put(_ context.Context, key string, body []byte, _ string) error {
-	b.objects[key] = body
 	return nil
 }
 

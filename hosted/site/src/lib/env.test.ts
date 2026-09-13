@@ -1,16 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { databaseUrl, publicUrl } from "./env";
+import { catalogUrl } from "./env";
 
 afterEach(() => vi.unstubAllEnvs());
 
-describe("env", () => {
-  it("throws only when asked, never at import", () => {
-    vi.stubEnv("DATABASE_URL", "");
-    expect(() => databaseUrl()).toThrow(/DATABASE_URL/);
+describe("catalogUrl", () => {
+  it("falls back to the catalog `make catalog-dev` runs", () => {
+    vi.stubEnv("CATALOG_URL", "");
+    expect(catalogUrl()).toBe("http://localhost:8080");
   });
 
-  it("falls back to the development origin", () => {
-    vi.stubEnv("SITE_URL", "");
-    expect(publicUrl()).toBe("http://localhost:3002");
+  it("reads the address at call time", () => {
+    vi.stubEnv("CATALOG_URL", "http://cubeship-cubeship-production-cubeship-catalog:8080");
+    expect(catalogUrl()).toBe("http://cubeship-cubeship-production-cubeship-catalog:8080");
   });
 });

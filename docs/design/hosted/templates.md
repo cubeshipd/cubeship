@@ -10,8 +10,8 @@ Three pieces, and each owns one thing:
 | Piece | Where | Owns |
 | --- | --- | --- |
 | The validator | `product/template` | what a valid template is |
-| The indexer | `hosted/discovery` | the catalog's tables, and everything written to them |
-| The catalog | `hosted/site` | showing what the indexer accepted. It writes nothing |
+| The catalog | `hosted/catalog` | the indexer, its database, and the public API that is the only way to read it |
+| The site | `hosted/site` | pages over that API. No database, no bucket, nothing written |
 
 ## Why GitHub, and not a registry of our own
 
@@ -23,8 +23,9 @@ better — authorship, history, discussion, stars — and each one was a
 table, a route, an auth check and a spam surface we had to keep.
 
 So a template is a repository. The site holds no identity, takes no
-input and has no API: the attack surface of a community catalog is a
-job reading public repositories and a page rendering what it read.
+input and reaches no database: the attack surface of a community catalog
+is a job reading public repositories, a read-only API over what it read,
+and pages rendering that.
 
 ## What a template may not contain
 
@@ -56,11 +57,12 @@ that is the reference. What follows is why it is built the way it is.
 
 ## The validator is the product's
 
-`product/template` is outside `internal/` on purpose: the indexer
-imports it, and the daemon will when it applies a template. Two programs
-that must agree on what a valid file is should run the same code, so the
-indexer's module replaces `cubeship` with `../../product` and compiles
-the validator from the same checkout.
+`product/template` is outside `internal/` on purpose: the catalog
+imports it, and the daemon will when it applies a template. It cannot be
+under `internal/` — Go refuses an internal import from another module,
+`replace` or not. Two programs that must agree on what a valid file is
+should run the same code, so the catalog's module replaces `cubeship`
+with `../../product` and compiles the validator from the same checkout.
 
 It used to be TypeScript with Zod, bundled into the editor. With no
 editor there is no reason for it to be JavaScript, and every reason for
@@ -94,10 +96,13 @@ and `make reference` copies it into the site's `public/` with
 
 ## The indexer
 
-`hosted/discovery` is a Go service that runs a pass on start and every
-five minutes after (`DISCOVERY_INTERVAL`). It is not an API; its only
-HTTP answer is its own last pass, always 200, because GitHub being down
-is the service working as intended and not a container to replace.
+`hosted/catalog` is one Go service with two jobs: a pass over GitHub on
+start and every five minutes after (`CATALOG_INTERVAL`), and the API
+below the whole time. One binary, because the pass already holds a lock
+that makes several copies safe and the reads scale with copies anyway;
+two services would buy nothing until there is traffic to split.
+`/healthz` is the last pass, always 200, because GitHub being down is
+the service working as intended and the API is still answering.
 
 A pass:
 
@@ -139,11 +144,12 @@ Decisions worth keeping:
   again with its history intact.
 - **The newest accepted release is the listing.** `latest_release_id`
   is recomputed on every save, so a broken v2 leaves v1 listed.
-- **The icon is re-encoded.** Its header is read first and anything not
-  a square PNG between 128 and 1024 pixels is refused before it is
-  decompressed; what is stored is our own encoding of the pixels, never
-  the author's bytes. Icons go to the bucket the site already serves
-  images from, under `templates/icons/<repository>/<commit>.png`.
+- **The icon is re-encoded, and kept in Postgres.** Its header is read
+  first and anything not a square PNG between 128 and 1024 pixels is
+  refused before it is decompressed; what is stored is our own encoding
+  of the pixels, never the author's bytes. It is a `bytea` on the
+  release rather than an object in a bucket: a few hundred kilobytes a
+  template, and one fewer thing the service has to be given.
 - **One pass at a time.** Each pass holds a Postgres advisory lock on a
   dedicated connection; a second copy skips its turn rather than
   indexing the same release twice.
@@ -157,16 +163,45 @@ Moderation is `blocklist`, a table of owners and `owner/name` subjects
 written by hand. The catalog is open; a pre-publication queue would make
 one person the gate on every author's first impression.
 
+## The API
+
+The only way into the catalog. Read-only, JSON, CORS open, cached for a
+minute — a pass writes at most every five. Its public address is
+`https://cubeship.dev/api/v1`, and instances will pin it, so a route
+under `/v1` never changes meaning.
+
+| Route | What |
+| --- | --- |
+| `GET /v1/templates?q&tag&sort&cursor&limit` | the listing: `sort` is `recent` or `stars`, `limit` at most 48, keyset `next_cursor` |
+| `GET /v1/templates/{owner}/{repo}` | one template: its listing fields, `readme`, `source`, `source_url` and the normalized `manifest` |
+| `GET /v1/templates/{owner}/{repo}/releases` | the history, refused releases included with their `problems`, so an author can see why |
+| `GET /v1/templates/{owner}/{repo}/manifest?release=v1.0.0` | the normalized manifest alone, the listed release's without `release`. What an instance will call |
+| `GET /v1/tags` | every topic a listed template carries |
+| `GET /v1/icons/{repository}/{commit}.png` | an icon, cached forever: the commit is in the address |
+
+A failure is `{"error": {"code", "message"}}`: `invalid_query`,
+`not_found`, or `unavailable` for anything the database did, with the
+cause in the log and never in the response.
+
+**cubeship.dev proxies it; it does not rewrite to it.** `proxy.ts` sends
+`/api/v1/*` to `CATALOG_URL` on each request. A `rewrites()` entry in
+`next.config.ts` would be evaluated at build time and baked into the
+image, and the image is built on the instance before anybody has told it
+where the catalog is. The site's own pages skip the proxy and call
+`CATALOG_URL` on the instance's internal network.
+
+`CATALOG_PUBLIC_URL` is what the icon addresses in a response start
+with, so a browser fetches them through the public address.
+
 ## The tables
 
-The indexer owns them and migrates them with goose on start. The site
-reads them through a Drizzle description of its own and never migrates
-anything.
+The catalog owns them and migrates them with goose on start. Nothing
+else connects to that database.
 
 | Table | Holds |
 | --- | --- |
 | `repositories` | GitHub's `id` as the key, so a rename is an update; `node_id` for lookups; owner, name, description, stars, topics; `hidden`; `latest_release_id` |
-| `releases` | `(repository_id, tag, commit_sha)` unique; `status` accepted or rejected; `problems` as every diagnostic; `manifest` as normalized JSON, `source`, `readme` and `icon_key` for an accepted one only |
+| `releases` | `(repository_id, tag, commit_sha)` unique; `status` accepted or rejected; `problems` as every diagnostic; `manifest` as normalized JSON, `source`, `readme` and `icon` for an accepted one only |
 | `blocklist` | `subject`, `reason` |
 
 The registry's old tables — `users`, `sessions`, `templates`,
@@ -181,8 +216,8 @@ dropping them is a separate, deliberate step.
 | `/templates` | search, topic filters, newest or most starred, a grid of cards: icon, name, description, owner, stars, updated |
 | `/templates/{owner}/{repo}` | the README, what the file creates, the file with the raw URL at its commit, and beside it the author, stars, release, required version, tags and release history |
 
-The name is read from the repository: `cubeship-uptime-kuma-template` is
-shown as Uptime Kuma. The README is rendered on the server with GitHub's
+The name is the API's `title`, read from the repository:
+`cubeship-uptime-kuma-template` is Uptime Kuma. The README is rendered on the server with GitHub's
 own sanitizer allowlist after raw HTML is parsed, and its relative links
 and images are resolved to the release's commit, so a page never shows a
 newer screenshot than the file it describes.
@@ -193,21 +228,23 @@ instance would read it from.
 
 ## Running it
 
-Both are apps on a Cubeship instance, attached to the same managed
-Postgres and the same bucket, so the variables are the ones Cubeship
-injects:
+Two apps on a Cubeship instance. Only the catalog is attached to
+anything:
 
-| Variable | Site | Indexer |
+| Variable | Site | Catalog |
 | --- | --- | --- |
-| `DATABASE_URL` | reads | owns |
-| `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PATH_STYLE` | reads icons | writes icons |
+| `DATABASE_URL` | — | attaching the managed Postgres |
 | `GITHUB_TOKEN` | — | a token with no scopes: everything it reads is public |
-| `DISCOVERY_INTERVAL`, `DISCOVERY_TOPIC`, `PORT` | — | `5m`, `cubeship-template`, `8080` |
+| `CATALOG_URL` | the catalog's internal address, `http://cubeship-cubeship-production-cubeship-catalog:8080` | — |
+| `CATALOG_PUBLIC_URL` | — | `https://cubeship.dev/api/v1` by default |
+| `CATALOG_INTERVAL`, `CATALOG_TOPIC`, `PORT` | — | `5m`, `cubeship-template`, `8080` |
 
-The indexer's image is `hosted/discovery/Dockerfile`, built from the
+The catalog's image is `hosted/catalog/Dockerfile`, built from the
 repository root like every other. Its database tests take a schema per
-test in the Postgres `make db-up` runs, and skip under `-short` like
-every other DB-backed test; `make check` runs the rest.
+test in the Postgres `make db-up` runs and skip under `-short` like every
+other DB-backed test; `make check` runs the rest. Locally, `make
+site-db-up`, then `make catalog-dev` with a `GITHUB_TOKEN`, then `make
+site-dev` — the site's default `CATALOG_URL` is `make catalog-dev`'s.
 
 ## What is left for later
 

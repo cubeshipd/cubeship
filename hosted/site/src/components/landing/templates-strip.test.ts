@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@/lib/templates/queries", () => ({
+vi.mock("@/lib/catalog", () => ({
   listTemplates: vi.fn().mockRejectedValue(new Error("connect ETIMEDOUT 10.0.0.1:5432")),
 }));
 

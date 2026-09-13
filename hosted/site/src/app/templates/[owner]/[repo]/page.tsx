@@ -9,9 +9,9 @@ import { Readme } from "@/components/templates/readme";
 import { SourceBlock } from "@/components/templates/source-block";
 import { avatarAt } from "@/lib/avatar";
 import { formatDate } from "@/lib/dates";
-import { acceptedReleases, templateByPath } from "@/lib/templates/queries";
+import { releasesOf, templateByPath } from "@/lib/catalog";
 
-// Reads the database, so this page can never be static.
+// Reads the catalog, so this page can never be static.
 export const dynamic = "force-dynamic";
 
 export async function generateMetadata(
@@ -21,10 +21,10 @@ export async function generateMetadata(
   const found = await templateByPath(owner, repo);
   if (!found) return {};
 
-  const path = `/templates/${found.repository.owner}/${found.repository.name}`;
+  const path = `/templates/${found.owner}/${found.name}`;
   return {
     title: found.title,
-    description: found.repository.description,
+    description: found.description,
     alternates: { canonical: path },
     openGraph: { images: [`/og${path}`] },
   };
@@ -38,19 +38,21 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
   const found = await templateByPath(owner, repo);
   if (!found) notFound();
 
-  const { repository, release, manifest } = found;
-  const history = await acceptedReleases(repository.id);
-  const rawUrl = `https://raw.githubusercontent.com/${repository.owner}/${repository.name}/${release.commitSha}/template.yaml`;
+  const { release, manifest } = found;
+  const published = new Date(release.published_at);
+  const history = (await releasesOf(found.owner, found.name)).filter(
+    (r) => r.status === "accepted",
+  );
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
       <header className="flex items-center gap-4">
-        <TemplateIcon iconKey={release.iconKey} className="size-16" />
+        <TemplateIcon src={found.icon_url} className="size-16" />
         <div className="min-w-0">
           <h1 className="font-semibold text-3xl text-fd-foreground tracking-tight">
             {found.title}
           </h1>
-          <p className="mt-1 max-w-3xl text-fd-muted-foreground">{repository.description}</p>
+          <p className="mt-1 max-w-3xl text-fd-muted-foreground">{found.description}</p>
         </div>
       </header>
 
@@ -62,7 +64,7 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
             <div className="flex items-center gap-3 p-4">
               {/* biome-ignore lint/performance/noImgElement: a GitHub avatar, not one of our own assets. */}
               <img
-                src={avatarAt(repository.ownerAvatarUrl, 72)}
+                src={avatarAt(found.avatar_url, 72)}
                 alt=""
                 width={36}
                 height={36}
@@ -71,15 +73,15 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
               <div className="min-w-0 flex-1">
                 <p className="label text-fd-muted-foreground">Author</p>
                 <a
-                  href={`https://github.com/${repository.owner}`}
+                  href={`https://github.com/${found.owner}`}
                   className="block truncate text-primary hover:text-glow"
                 >
-                  {repository.owner}
+                  {found.owner}
                 </a>
               </div>
               <a
-                href={repository.url}
-                aria-label={`${repository.owner}/${repository.name} on GitHub`}
+                href={found.url}
+                aria-label={`${found.owner}/${found.name} on GitHub`}
                 className="text-fd-muted-foreground transition-colors hover:text-primary"
               >
                 <GitHubIcon className="size-4" />
@@ -90,13 +92,11 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
               <dt className={term}>Stars</dt>
               <dd className={`${row} flex items-center justify-end gap-1`}>
                 <Star className="size-3" aria-hidden />
-                {repository.stars}
+                {found.stars}
               </dd>
               <dt className={term}>Updated</dt>
               <dd className={row}>
-                <time dateTime={release.publishedAt.toISOString()}>
-                  {formatDate(release.publishedAt)}
-                </time>
+                <time dateTime={published.toISOString()}>{formatDate(published)}</time>
               </dd>
               <dt className={term}>Release</dt>
               <dd className={row}>
@@ -144,10 +144,10 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
                       ) : null}
                     </a>
                     <time
-                      dateTime={r.publishedAt.toISOString()}
+                      dateTime={r.published_at}
                       className="shrink-0 text-fd-muted-foreground text-xs"
                     >
-                      {formatDate(r.publishedAt)}
+                      {formatDate(new Date(r.published_at))}
                     </time>
                   </li>
                 ))}
@@ -157,13 +157,13 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
         </aside>
 
         <div className="min-w-0 space-y-10 lg:order-1">
-          {release.readme ? (
+          {found.readme ? (
             <section className="hud-frame border border-fd-border p-6">
               <Readme
-                source={release.readme}
-                owner={repository.owner}
-                repo={repository.name}
-                commit={release.commitSha}
+                source={found.readme}
+                owner={found.owner}
+                repo={found.name}
+                commit={release.commit}
               />
             </section>
           ) : null}
@@ -175,9 +175,9 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
             </section>
           ) : null}
 
-          {release.source ? (
+          {found.source ? (
             <section>
-              <SourceBlock source={release.source} rawUrl={rawUrl} />
+              <SourceBlock source={found.source} rawUrl={found.source_url} />
             </section>
           ) : null}
         </div>

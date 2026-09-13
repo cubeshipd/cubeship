@@ -39,7 +39,9 @@ CREATE TABLE releases (
     manifest      JSONB,
     source        TEXT,
     readme        TEXT,
-    icon_key      TEXT,
+    -- The re-encoded PNG, at most a few hundred KB. Kept here rather than
+    -- in a bucket so the service needs nothing but its database.
+    icon          BYTEA,
     indexed_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (repository_id, tag, commit_sha)
 );

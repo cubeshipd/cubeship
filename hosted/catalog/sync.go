@@ -1,4 +1,4 @@
-package discovery
+package catalog
 
 import (
 	"context"
@@ -13,11 +13,10 @@ import (
 
 // Syncer runs one pass over the catalog.
 type Syncer struct {
-	GitHub  GitHub
-	Store   Store
-	Objects Objects
-	Topic   string
-	Log     *log.Logger
+	GitHub GitHub
+	Store  Store
+	Topic  string
+	Log    *log.Logger
 }
 
 // Report is what one pass did.
@@ -27,7 +26,7 @@ type Report struct {
 	Rejected     int `json:"rejected"`
 	Hidden       int `json:"hidden"`
 	// Failed counts repositories and releases left for the next pass
-	// because something on the way — GitHub, the bucket, the database —
+	// because something on the way — GitHub or the database —
 	// did not answer. Nothing is recorded for them.
 	Failed int `json:"failed"`
 }
@@ -225,11 +224,7 @@ func (s *Syncer) index(ctx context.Context, r Repo, rel Release) (Indexed, error
 		rec.Manifest, rec.Source, rec.Readme = nil, "", ""
 		return rec, nil
 	}
-
-	rec.IconKey = fmt.Sprintf("templates/icons/%d/%s.png", r.ID, rel.Commit)
-	if err := s.Objects.Put(ctx, rec.IconKey, icon, "image/png"); err != nil {
-		return rec, fmt.Errorf("store the icon: %w", err)
-	}
+	rec.Icon = icon
 	return rec, nil
 }
 

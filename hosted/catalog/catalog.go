@@ -1,11 +1,11 @@
-// Package discovery keeps the template catalog: it finds the GitHub
-// repositories carrying the cubeship-template topic, reads each new
-// release at the commit its tag points to, validates it, and records it
-// as accepted or rejected.
+// Package catalog keeps the template catalog and serves it.
 //
-// It runs on a timer, not on requests. cubeship.dev only reads what this
-// writes.
-package discovery
+// A pass on a timer finds the GitHub repositories carrying the
+// cubeship-template topic, reads each new release at the commit its tag
+// points to, validates it, and records it as accepted or rejected. The
+// read-only API under /v1 is the only way anything else — cubeship.dev,
+// an instance, an agent — sees what it recorded.
+package catalog
 
 import (
 	"context"
@@ -85,7 +85,7 @@ type Indexed struct {
 	Manifest     *template.Normalized
 	Source       string
 	Readme       string
-	IconKey      string
+	Icon         []byte // the re-encoded PNG, for an accepted release
 }
 
 var (
@@ -116,9 +116,4 @@ type Store interface {
 	Hide(ctx context.Context, id int64, reason string) error
 	Indexed(ctx context.Context, repositoryID int64, tag, commit string) (bool, error)
 	SaveRelease(ctx context.Context, r Indexed) error
-}
-
-// Objects is the bucket icons go to.
-type Objects interface {
-	Put(ctx context.Context, key string, body []byte, contentType string) error
 }

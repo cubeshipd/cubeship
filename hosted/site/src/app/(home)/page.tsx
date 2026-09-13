@@ -14,7 +14,7 @@ export const metadata: Metadata = {
   alternates: { canonical: "/" },
 };
 
-// TemplatesStrip reads Postgres, so the page it sits on can never be
+// TemplatesStrip reads the catalog, so the page it sits on can never be
 // static — the price of showing live rows on the landing page.
 export const dynamic = "force-dynamic";
 

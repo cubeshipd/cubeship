@@ -13,33 +13,26 @@ assets copied back beside the server, an unprivileged user, `:3000`.
 The landing page and the docs are still exactly that: nothing in them
 needs the network at run time, the docs are compiled in, and the search
 index is built from them on the first query. `/templates` is not — it
-reads the catalog `hosted/discovery` keeps in Postgres, and icons from a
-bucket. The site writes to neither, holds no session and has no API.
-See [templates.md](templates.md) for what that half is.
+reads `hosted/catalog`'s API, and `/api/v1/*` is proxied to the same
+API for everybody else. The site has no database, no bucket, no session
+and nothing it writes. See [templates.md](templates.md) for that half.
 
-## Postgres can be down without taking the site with it
+## The catalog can be down without taking the site with it
 
-The site used to migrate its own schema on start, and a database that
-refused a connection took the whole process down before it served a
-single request. It migrates nothing now — the indexer owns the tables —
-so starting never touches Postgres at all.
+The site used to hold the registry's Postgres itself, and a database
+that refused a connection took the whole process down before it served
+a single request. It holds nothing now, so starting touches nothing.
 
-The landing page and the sitemap read Postgres too — the templates
-strip on `/` and the published-templates list in `/sitemap.xml` — and
-both degrade rather than fail: a failed query logs once and the strip
-renders nothing, the sitemap falls back to its static entries. Only
-`/templates` and the pages under it are allowed to fail, and they fail
-fast and readable:
-the pool gives up connecting after 3 seconds and a query after 5,
-rather than waiting out the OS's ~75-second TCP timeout, while the strip
-and the sitemap stop waiting for their own read after 800 milliseconds
-and 1.5 seconds, so a dead database costs the landing page under a
-second. The pool's limit is not that short because a remote database's
-handshake alone can take longer than the landing page may wait. `fail`
-in `src/lib/http.ts` maps a connection failure to a 503 for the one
-route left, `/i/*`, and `error.tsx` under `src/app/templates` catches
-what a Server Component throws and shows a sentence instead of a stack
-trace.
+The landing page and the sitemap read the catalog too — the templates
+strip on `/` and every template in `/sitemap.xml` — and both degrade
+rather than fail: a failed read logs once and the strip renders nothing,
+the sitemap falls back to its static entries. Only `/templates` and the
+pages under it are allowed to fail, and they fail fast and readable:
+every read gives up after 5 seconds, the strip and the sitemap stop
+waiting after 800 milliseconds and 1.5 seconds, and `error.tsx` under
+`src/app/templates` shows a sentence instead of a stack trace. What the
+catalog answers is cached for a minute, so a catalog that goes away is
+not noticed until that minute is up.
 
 ## One palette, copied
 

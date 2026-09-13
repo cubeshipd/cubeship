@@ -1,5 +1,6 @@
-// Command discovery keeps cubeship.dev's template catalog: a pass over
-// GitHub on start, then one every DISCOVERY_INTERVAL.
+// Command catalog keeps cubeship.dev's template catalog and serves it: a
+// pass over GitHub on start and every CATALOG_INTERVAL after, and the
+// read-only API under /v1 the whole time.
 package main
 
 import (
@@ -14,7 +15,7 @@ import (
 	"syscall"
 	"time"
 
-	"discovery"
+	"catalog"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 )
@@ -22,10 +23,10 @@ import (
 func main() {
 	logger := log.New(os.Stderr, "", log.LstdFlags)
 	interval := 5 * time.Minute
-	if v := os.Getenv("DISCOVERY_INTERVAL"); v != "" {
+	if v := os.Getenv("CATALOG_INTERVAL"); v != "" {
 		d, err := time.ParseDuration(v)
 		if err != nil || d < time.Minute {
-			logger.Fatalf("DISCOVERY_INTERVAL %q is not a duration of a minute or more", v)
+			logger.Fatalf("CATALOG_INTERVAL %q is not a duration of a minute or more", v)
 		}
 		interval = d
 	}
@@ -34,26 +35,23 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-	store := &discovery.Postgres{DB: db}
-	bucket, err := discovery.NewBucket(need(logger, "S3_ENDPOINT"), envOr("S3_REGION", "us-east-1"),
-		need(logger, "S3_BUCKET"), need(logger, "S3_ACCESS_KEY_ID"), need(logger, "S3_SECRET_ACCESS_KEY"),
-		envOr("S3_PATH_STYLE", "true") != "false")
-	if err != nil {
-		logger.Fatal(err)
-	}
-	syncer := &discovery.Syncer{
-		GitHub:  &discovery.Client{HTTP: &http.Client{Timeout: 30 * time.Second}, Token: need(logger, "GITHUB_TOKEN"), API: "https://api.github.com"},
-		Store:   store,
-		Objects: bucket,
-		Topic:   envOr("DISCOVERY_TOPIC", discovery.Topic),
-		Log:     logger,
+	topic := envOr("CATALOG_TOPIC", catalog.Topic)
+	store := &catalog.Postgres{DB: db, Topic: topic}
+	syncer := &catalog.Syncer{
+		GitHub: &catalog.Client{HTTP: &http.Client{Timeout: 30 * time.Second}, Token: need(logger, "GITHUB_TOKEN"), API: "https://api.github.com"},
+		Store:  store,
+		Topic:  topic,
+		Log:    logger,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
 	st := &status{}
-	server := &http.Server{Addr: ":" + envOr("PORT", "8080"), Handler: st, ReadHeaderTimeout: 5 * time.Second}
+	mux := http.NewServeMux()
+	(&catalog.API{Reader: store, PublicURL: envOr("CATALOG_PUBLIC_URL", "https://cubeship.dev/api/v1"), Log: logger}).Routes(mux)
+	mux.Handle("GET /healthz", st)
+	server := &http.Server{Addr: ":" + envOr("PORT", "8080"), Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatal(err)
@@ -90,12 +88,12 @@ func main() {
 	}
 }
 
-func pass(ctx context.Context, store *discovery.Postgres, syncer *discovery.Syncer, st *status, logger *log.Logger, interval time.Duration) {
+func pass(ctx context.Context, store *catalog.Postgres, syncer *catalog.Syncer, st *status, logger *log.Logger, interval time.Duration) {
 	// A pass never outlives the next one's turn.
 	ctx, cancel := context.WithTimeout(ctx, interval-10*time.Second)
 	defer cancel()
 	started := time.Now()
-	var rep discovery.Report
+	var rep catalog.Report
 	ran, err := store.Locked(ctx, func() error {
 		var err error
 		rep, err = syncer.Run(ctx)
@@ -114,18 +112,18 @@ func pass(ctx context.Context, store *discovery.Postgres, syncer *discovery.Sync
 	st.record(started, rep, err)
 }
 
-// status answers every request with the last pass. Always 200: a GitHub
-// outage is this service working as intended, not a container to replace.
+// status is the last pass. Always 200: a GitHub outage is this service
+// working as intended, and the API is still answering.
 type status struct {
 	mu    sync.Mutex
 	state struct {
-		LastPass  *time.Time        `json:"last_pass"`
-		LastError string            `json:"last_error,omitempty"`
-		Report    *discovery.Report `json:"report,omitempty"`
+		LastPass  *time.Time      `json:"last_pass"`
+		LastError string          `json:"last_error,omitempty"`
+		Report    *catalog.Report `json:"report,omitempty"`
 	}
 }
 
-func (s *status) record(at time.Time, rep discovery.Report, err error) {
+func (s *status) record(at time.Time, rep catalog.Report, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.state.LastPass = &at

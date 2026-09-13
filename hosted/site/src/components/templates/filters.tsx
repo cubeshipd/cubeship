@@ -3,7 +3,7 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { Input } from "@/components/ui/field";
-import type { Sort } from "@/lib/templates/queries";
+import type { Sort } from "@/lib/catalog";
 
 const SORTS = [
   { value: "recent", label: "Newest" },

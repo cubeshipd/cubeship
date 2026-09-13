@@ -1,9 +1,9 @@
 import { generateOGImage } from "fumadocs-ui/og";
 import { notFound } from "next/navigation";
 import { appName } from "@/lib/shared";
-import { templateByPath } from "@/lib/templates/queries";
+import { templateByPath } from "@/lib/catalog";
 
-// Reads Postgres, so unlike the docs' own OG route this can never be
+// Reads the catalog, so unlike the docs' own OG route this can never be
 // prerendered: there is no set of templates known at build time.
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,7 @@ export async function GET(_req: Request, { params }: RouteContext<"/og/templates
 
   return generateOGImage({
     title: found.title,
-    description: found.repository.description,
+    description: found.description,
     site: appName,
   });
 }

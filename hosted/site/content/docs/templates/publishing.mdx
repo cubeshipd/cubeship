@@ -74,7 +74,12 @@ release itself:
 | `icon.size` | `icon.png` is not square, or not 128 to 1024 pixels a side. |
 
 Warnings never refuse a release. Fix what was wrong and publish a new
-release; the refused one stays refused.
+release; the refused one stays refused. Every release the catalog read,
+refused ones with their reasons, is at
+
+```bash
+curl -s https://cubeship.dev/api/v1/templates/<owner>/<repo>/releases
+```
 
 ## Taking one down
 

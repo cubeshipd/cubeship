@@ -1,14 +1,14 @@
 import type { MetadataRoute } from "next";
+import { allTemplates } from "@/lib/catalog";
 import { comparisons } from "@/lib/comparisons";
 import { withDeadline } from "@/lib/deadline";
 import { siteUrl } from "@/lib/shared";
 import { source } from "@/lib/source";
-import { allTemplates } from "@/lib/templates/queries";
 
-// Reads Postgres for the templates, so this can never be static — see
-// the `force-dynamic` below. The query lives in the function body,
+// Reads the catalog for the templates, so this can never be static — see
+// the `force-dynamic` below. The read lives in the function body,
 // never at module scope, which is what keeps `next build` from needing
-// a database: nothing here runs until a request asks for the sitemap.
+// the catalog: nothing here runs until a request asks for the sitemap.
 export const dynamic = "force-dynamic";
 
 // The landing page and every docs page there is, from the same tree the
@@ -26,7 +26,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     changeFrequency: "monthly" as const,
     priority: 0.8,
   }));
-  // A database that is down still leaves the landing page and the docs
+  // A catalog that is down still leaves the landing page and the docs
   // worth listing; only the templates are missing until it is back.
   let listed: Awaited<ReturnType<typeof allTemplates>> = [];
   try {
@@ -36,7 +36,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }
   const templates = listed.map((template) => ({
     url: `${siteUrl}/templates/${template.owner}/${template.name}`,
-    lastModified: template.publishedAt,
+    lastModified: new Date(template.release.published_at),
     changeFrequency: "weekly" as const,
     priority: 0.6,
   }));

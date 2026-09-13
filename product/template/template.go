@@ -3,7 +3,7 @@
 // installer has to answer.
 //
 // It is outside internal/ on purpose. The catalog that indexes
-// templates from GitHub (hosted/discovery) and the daemon that will one
+// templates from GitHub (hosted/catalog) and the daemon that will one
 // day install them must agree on what a valid file is, and the only
 // way two programs never disagree about that is running the same code.
 package template

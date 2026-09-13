@@ -1,4 +1,4 @@
-package discovery
+package catalog
 
 import (
 	"context"
@@ -11,9 +11,12 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-// Postgres is the catalog, in the database cubeship.dev reads.
+// Postgres is the catalog's database, which nothing but this service
+// reads or writes.
 type Postgres struct {
 	DB *sql.DB
+	// Topic is left out of the tags a template is listed with; Topic when empty.
+	Topic string
 }
 
 //go:embed migrations/*.sql
@@ -94,19 +97,23 @@ func (p *Postgres) Repositories(ctx context.Context) ([]Known, error) {
 }
 
 func (p *Postgres) SaveRepository(ctx context.Context, r Repo, hidden string) error {
-	topics := r.Topics
-	if topics == nil {
-		topics = []string{}
+	if r.Topics == nil {
+		r.Topics = []string{}
 	}
-	_, err := p.DB.ExecContext(ctx, `
+	// As JSON, so the array goes through database/sql as one string.
+	topics, err := json.Marshal(r.Topics)
+	if err != nil {
+		return err
+	}
+	_, err = p.DB.ExecContext(ctx, `
 		INSERT INTO repositories (id, node_id, owner, name, description, url, owner_avatar_url, stars, topics, hidden)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''))
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ARRAY(SELECT jsonb_array_elements_text($9::jsonb)), NULLIF($10, ''))
 		ON CONFLICT (id) DO UPDATE SET
 			node_id = EXCLUDED.node_id, owner = EXCLUDED.owner, name = EXCLUDED.name,
 			description = EXCLUDED.description, url = EXCLUDED.url,
 			owner_avatar_url = EXCLUDED.owner_avatar_url, stars = EXCLUDED.stars,
 			topics = EXCLUDED.topics, hidden = EXCLUDED.hidden, checked_at = now()`,
-		r.ID, r.NodeID, r.Owner, r.Name, r.Description, r.URL, r.OwnerAvatar, r.Stars, topics, hidden)
+		r.ID, r.NodeID, r.Owner, r.Name, r.Description, r.URL, r.OwnerAvatar, r.Stars, string(topics), hidden)
 	return err
 }
 
@@ -145,11 +152,11 @@ func (p *Postgres) SaveRelease(ctx context.Context, r Indexed) error {
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO releases (repository_id, tag, commit_sha, name, url, published_at, status, problems, manifest, source, readme, icon_key)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''), NULLIF($11, ''), NULLIF($12, ''))
+		INSERT INTO releases (repository_id, tag, commit_sha, name, url, published_at, status, problems, manifest, source, readme, icon)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NULLIF($10, ''), NULLIF($11, ''), $12)
 		ON CONFLICT (repository_id, tag, commit_sha) DO NOTHING`,
 		r.RepositoryID, r.Tag, r.Commit, r.Name, r.URL, r.PublishedAt, status, problems, nullJSON(manifest),
-		r.Source, r.Readme, r.IconKey); err != nil {
+		r.Source, r.Readme, nullBytes(r.Icon)); err != nil {
 		return err
 	}
 	// The newest accepted release is what the catalog shows: a rejected
@@ -162,6 +169,13 @@ func (p *Postgres) SaveRelease(ctx context.Context, r Indexed) error {
 		return err
 	}
 	return tx.Commit()
+}
+
+func nullBytes(b []byte) any {
+	if len(b) == 0 {
+		return nil
+	}
+	return b
 }
 
 func nullJSON(b []byte) any {

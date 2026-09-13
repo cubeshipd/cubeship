@@ -6,7 +6,7 @@ vi.mock("@/lib/source", () => ({
   source: { getPages: () => [{ url: "/docs" }] },
 }));
 vi.mock("@/lib/comparisons", () => ({ comparisons: [] }));
-vi.mock("@/lib/templates/queries", () => ({
+vi.mock("@/lib/catalog", () => ({
   allTemplates: vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED 10.0.0.1:5432")),
 }));
 

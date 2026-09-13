@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { TemplateCard } from "@/components/templates/card";
 import { Filters } from "@/components/templates/filters";
-import { distinctTags, listTemplates } from "@/lib/templates/queries";
+import { distinctTags, listTemplates } from "@/lib/catalog";
 
-// Reads Postgres on every request, so this page can never be static.
+// Reads the catalog on every request, so this page can never be static.
 export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
@@ -24,7 +24,7 @@ export default async function TemplatesPage(props: PageProps<"/templates">) {
   const cursor = firstOf(params.cursor);
   const sort = firstOf(params.sort) === "stars" ? "stars" : "recent";
 
-  const [{ rows, nextCursor }, tags] = await Promise.all([
+  const [{ templates: rows, next_cursor: nextCursor }, tags] = await Promise.all([
     listTemplates({ q, tag, sort, cursor }),
     distinctTags(),
   ]);

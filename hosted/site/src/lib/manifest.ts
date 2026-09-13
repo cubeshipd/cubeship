@@ -1,4 +1,4 @@
-// The normalized manifest hosted/discovery stores, as written by
+// The normalized manifest hosted/catalog serves, as written by
 // product/template/normalize.go. Only types: the site validates nothing,
 // it shows what the validator already accepted.
 
