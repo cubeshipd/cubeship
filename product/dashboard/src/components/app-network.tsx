@@ -42,12 +42,9 @@ import {
   type DNSZone,
   type Settings,
 } from "@/lib/api";
+import { DEFAULT_PORT, internalUrl, publicUrl } from "@/lib/app-urls";
 import { providerIcon } from "@/lib/credentials";
 import { message } from "@/lib/errors";
-
-// DEFAULT_PORT is what the daemon serves a name on when nobody said
-// otherwise. It is app.DefaultPort.
-const DEFAULT_PORT = 8080;
 
 // INSTANCE_DOMAIN is the third answer to "where does this name live",
 // beside a stored DNS credential and "somewhere Cubeship cannot reach":
@@ -88,10 +85,7 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
   });
 
   const base = `/apps/${app.reference}`;
-  // Every name is served on the instance's one scheme; https until the
-  // settings say TLS is off.
-  const urlOf = (d: AppDomain) =>
-    `${settings.data?.tls_enabled === false ? "http" : "https"}://${d.host}`;
+  const urlOf = (d: AppDomain) => publicUrl(d.host, settings.data?.tls_enabled);
 
   async function copyUrl(d: AppDomain) {
     if (await copyText(urlOf(d))) {
@@ -287,12 +281,6 @@ function InternalAddress({ app }: { app: App }) {
 // What to suggest for the port. Cubeship knows it only when a name
 // routes to it: a worker declares its port to nobody, so the honest
 // answer there is that the app knows and this screen does not.
-// Plain http: nothing terminates TLS on the internal network. With
-// several ports behind its names, the first one's.
-function internalUrl(app: App): string {
-  return `http://${app.internal_host}:${app.domains[0]?.port || DEFAULT_PORT}`;
-}
-
 function portHint(app: App): string {
   const ports = [...new Set(app.domains.map((d) => d.port || DEFAULT_PORT))];
   if (ports.length === 0) return `${DEFAULT_PORT} unless it was built to listen elsewhere`;

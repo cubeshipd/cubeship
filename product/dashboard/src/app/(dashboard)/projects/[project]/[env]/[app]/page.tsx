@@ -12,6 +12,7 @@ import {
 import Link from "next/link";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActionButton } from "@/components/action-button";
+import { AppAddresses } from "@/components/app-addresses";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ContainerLogs, LogView } from "@/components/container-logs";
 import { CopyButton } from "@/components/copy-button";
@@ -234,6 +235,7 @@ function Detail({
               )
             )}
             <MetricsSection path={path} />
+            {app !== null && <AppAddresses app={app} />}
             <Deployments reference={reference} deployed={deployed} onSettled={reload} />
           </TabsContent>
 
