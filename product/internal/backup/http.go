@@ -61,6 +61,11 @@ type ScheduleResponse struct {
 // built from the databases: a database that has never been dumped is
 // the row somebody most needs and it appears in no list of dumps.
 type CoverageResponse struct {
+	Kind string `json:"kind"`
+	// VolumeID and Volume are set for a volume's row, whose Database is
+	// its app's reference.
+	VolumeID int64  `json:"volume_id,omitempty"`
+	Volume   string `json:"volume,omitempty"`
 	Database string `json:"database"`
 	Engine   string `json:"engine"`
 	Version  string `json:"version"`
@@ -163,6 +168,7 @@ func (h *Handler) coverage(w http.ResponseWriter, r *http.Request) {
 	out := make([]CoverageResponse, 0, len(rows))
 	for _, c := range rows {
 		item := CoverageResponse{
+			Kind: string(c.Kind), VolumeID: c.VolumeID, Volume: c.Volume,
 			Database: c.Database, Engine: c.Engine, Version: c.Version,
 			CanBackUp: c.CanBackUp,
 			Protected: c.Protected(), Failing: c.Failing(),

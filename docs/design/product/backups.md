@@ -171,7 +171,10 @@ streams straight into the sink.
 
 A volume's schedule is its own table, `volume_backup_schedules`, keyed by
 the volume. `Schedule.Kind()` tells it from the other two by `VolumeID`.
-Volumes are not in the coverage report yet.
+Volumes are rows of the coverage report beside the databases; one on
+another server reports that it is not backed up here. The CLI
+(`cubeship app volume backup`) lists, takes and restores; the MCP tools
+list and take, and restoring stays with a person.
 
 ### Backing the instance up
 

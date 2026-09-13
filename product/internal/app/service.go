@@ -851,6 +851,29 @@ func (s *Service) VolumeByID(ctx context.Context, id int64) (*VolumeTarget, erro
 	}, nil
 }
 
+// AllVolumes is every volume on the instance. It takes no caller, for the
+// reason VolumeByID does not.
+func (s *Service) AllVolumes(ctx context.Context) ([]*VolumeTarget, error) {
+	apps, err := s.Repo().ListScoped(ctx)
+	if err != nil {
+		return nil, err
+	}
+	here, err := s.Repo().ControlPlaneID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := []*VolumeTarget{}
+	for _, a := range apps {
+		for _, v := range a.Volumes {
+			out = append(out, &VolumeTarget{
+				Volume: v, App: ReferenceOf(a), AppID: a.ID,
+				Dir: VolumeDir(s.dataDir, v.ID), OnWorker: v.NodeID != here,
+			})
+		}
+	}
+	return out, nil
+}
+
 // VolumeOf is one of an app's volumes, by the app's reference.
 func (s *Service) VolumeOf(ctx context.Context, caller *user.User, ref Reference, id int64) (*VolumeTarget, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)

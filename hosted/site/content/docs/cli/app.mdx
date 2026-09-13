@@ -278,6 +278,41 @@ than one copy, on more than one server, or autoscales.
 cubeship app volume add <app> <path>
 ```
 
+## cubeship app volume backup
+
+Back up and restore one of an app's volumes. The app is stopped while a
+copy is taken or put back, and started again afterwards. Requires the
+admin role.
+
+## cubeship app volume backup list
+
+List a volume's backups, newest first
+
+```bash
+cubeship app volume backup list <app> <volume-id>
+```
+
+## cubeship app volume backup restore
+
+Replace a volume's data with what it held when the backup was taken.
+This cannot be undone. The app is stopped while it happens.
+
+```bash
+cubeship app volume backup restore <backup-id> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--yes` |  | confirm the restore |
+
+## cubeship app volume backup take
+
+Back a volume up now, stopping the app for the copy
+
+```bash
+cubeship app volume backup take <app> <volume-id>
+```
+
 ## cubeship app volume list
 
 List an app's volumes

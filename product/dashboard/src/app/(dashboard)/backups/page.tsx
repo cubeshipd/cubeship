@@ -56,15 +56,21 @@ export default function BackupsPage() {
   const columns: Column<BackupCoverage>[] = [
     {
       id: "database",
-      header: "Database",
+      header: "Database or volume",
       width: 22,
       sortBy: (c) => c.database,
-      cell: (c) => (
-        <span className="flex min-w-0 items-center gap-2">
-          <span className="truncate font-mono">{c.database}</span>
-          <span className="shrink-0 text-subtle-foreground text-xs">{c.engine}</span>
-        </span>
-      ),
+      cell: (c) =>
+        c.kind === "volume" ? (
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate font-mono">{c.database}</span>
+            <span className="truncate text-subtle-foreground text-xs">volume {c.volume}</span>
+          </span>
+        ) : (
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="truncate font-mono">{c.database}</span>
+            <span className="shrink-0 text-subtle-foreground text-xs">{c.engine}</span>
+          </span>
+        ),
     },
     {
       id: "coverage",
@@ -128,12 +134,21 @@ export default function BackupsPage() {
       <DataTable
         columns={columns}
         rows={sorted}
-        rowKey={(c) => c.database}
-        search={{ placeholder: "Filter databases", by: (c) => [c.database, c.engine] }}
+        rowKey={(c) => (c.kind === "volume" ? `volume:${c.volume_id}` : c.database)}
+        search={{
+          placeholder: "Filter databases and volumes",
+          by: (c) => [c.database, c.engine, c.volume ?? ""],
+        }}
         // Straight to the tab that acts on it, rather than to the
         // database's Overview and two more clicks to find Backups.
-        onRowClick={(c) => router.push(`/databases/${c.database}/settings?tab=backups`)}
-        empty="This instance runs no databases."
+        onRowClick={(c) =>
+          router.push(
+            c.kind === "volume"
+              ? `/projects/${c.database}/settings?tab=volumes`
+              : `/databases/${c.database}/settings?tab=backups`,
+          )
+        }
+        empty="This instance runs no databases and no volumes."
       />
 
       {orphans && orphans.length > 0 && (
@@ -167,7 +182,11 @@ function state(c: BackupCoverage): { label: string; tone: string } {
   // An engine this instance does not dump. A row rather than an
   // omission: a database missing from a coverage report reads as one
   // nobody checked.
-  if (!c.can_back_up) return { label: "Not backed up here", tone: "text-subtle-foreground" };
+  if (!c.can_back_up)
+    return {
+      label: c.kind === "volume" ? "On another server" : "Not backed up here",
+      tone: "text-subtle-foreground",
+    };
   if (c.count === 0) return { label: "Never backed up", tone: "text-destructive" };
   // Was working and is not. Said even when there is a good dump behind
   // it, because that dump is getting older every night.

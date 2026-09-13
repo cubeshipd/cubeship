@@ -1244,6 +1244,10 @@ export type BackupSchedule = {
 // a list of its dumps: this is built from the databases, so a database
 // nobody has ever backed up — the row that matters most — is in it.
 export type BackupCoverage = {
+  // A volume's row names its app in `database` and its path in `volume`.
+  kind?: "datastore" | "volume";
+  volume_id?: number;
+  volume?: string;
   database: string;
   engine: string;
   version?: string;

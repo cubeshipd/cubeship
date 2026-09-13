@@ -25,6 +25,19 @@ func (a appVolumes) VolumeByID(ctx context.Context, id int64) (*backup.Volume, e
 	return volumeFor(a.apps.VolumeByID(ctx, id))
 }
 
+func (a appVolumes) AllVolumes(ctx context.Context) ([]*backup.Volume, error) {
+	all, err := a.apps.AllVolumes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*backup.Volume, 0, len(all))
+	for _, t := range all {
+		v, _ := volumeFor(t, nil)
+		out = append(out, v)
+	}
+	return out, nil
+}
+
 func (a appVolumes) WithAppStopped(ctx context.Context, appID int64, fn func() error) error {
 	return a.apps.WithAppStopped(ctx, appID, fn)
 }

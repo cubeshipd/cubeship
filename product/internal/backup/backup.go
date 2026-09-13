@@ -271,6 +271,11 @@ func ParseTimeOfDay(at string) (hour, minute int, err error) {
 // databases rather than from the backups, which is the whole of why it
 // exists.
 type Coverage struct {
+	// Kind is KindDatastore or KindVolume. A volume's row names its app
+	// in Database and its path in Volume.
+	Kind     Kind
+	VolumeID int64
+	Volume   string
 	Database string
 	Engine   string
 	Version  string

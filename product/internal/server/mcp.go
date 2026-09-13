@@ -1,9 +1,11 @@
 package server
 
 import (
+	"context"
 	"net/http"
 
 	"cubeship/internal/app"
+	"cubeship/internal/backup"
 	"cubeship/internal/datastore"
 	"cubeship/internal/machine"
 	"cubeship/internal/node"
@@ -59,5 +61,10 @@ func (s *Server) BuildMCPServer(caller *user.User, keyHash string) *mcp.Server {
 	templateinstall.NewTools(s.Templates, caller).Register(srv)
 	machine.NewTools(s.Machine, caller).Register(srv)
 	node.NewTools(s.Nodes, caller).Register(srv)
+	backups := backup.NewHandler(s.Backups)
+	backups.SetStoreNames(func(id int64) string {
+		return s.ObjectStores.NameForID(context.Background(), id)
+	})
+	backup.NewTools(backups, caller).Register(srv)
 	return srv
 }

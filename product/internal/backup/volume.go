@@ -23,6 +23,8 @@ type Volumes interface {
 	VolumeOf(ctx context.Context, caller *user.User, ref string, id int64) (*Volume, error)
 	// VolumeByID is one volume whatever app it is on, for the timer.
 	VolumeByID(ctx context.Context, id int64) (*Volume, error)
+	// AllVolumes is every volume on the instance, for the coverage report.
+	AllVolumes(ctx context.Context) ([]*Volume, error)
 	// WithAppStopped stops the app's container, runs fn, and starts it
 	// again whatever fn returned, with no deploy running meanwhile.
 	WithAppStopped(ctx context.Context, appID int64, fn func() error) error

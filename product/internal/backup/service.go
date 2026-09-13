@@ -151,6 +151,7 @@ func (s *Service) Coverage(ctx context.Context, caller *user.User) ([]*Coverage,
 	index := make(map[int64]*Coverage, len(databases))
 	for _, d := range databases {
 		c := &Coverage{
+			Kind:      KindDatastore,
 			Database:  d.Slug,
 			Engine:    string(d.Engine),
 			Version:   d.Version,
@@ -163,10 +164,46 @@ func (s *Service) Coverage(ctx context.Context, caller *user.User) ([]*Coverage,
 
 	// The listing is newest first, so the first of each kind seen is
 	// the newest of it.
+	// Volumes are rows too, keyed apart: a volume's id and a database's
+	// share nothing.
+	volumeIndex := map[int64]*Coverage{}
+	if s.volumes != nil {
+		volumes, err := s.volumes.AllVolumes(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list volumes: %w", err)
+		}
+		volumeSchedules, err := s.Repo().VolumeSchedules(ctx)
+		if err != nil {
+			return nil, err
+		}
+		byVolume := make(map[int64]*Schedule, len(volumeSchedules))
+		for _, sc := range volumeSchedules {
+			byVolume[sc.VolumeID] = sc
+		}
+		for _, v := range volumes {
+			c := &Coverage{
+				Kind: KindVolume, VolumeID: v.ID, Volume: v.Path,
+				Database: v.App, Engine: "volume",
+				// A volume on another server is not backed up here yet,
+				// and says so rather than reading as never backed up.
+				CanBackUp: !v.OnWorker,
+				Schedule:  byVolume[v.ID],
+			}
+			out = append(out, c)
+			volumeIndex[v.ID] = c
+		}
+	}
+
 	for _, b := range backups {
-		c := index[b.DatastoreID]
+		var c *Coverage
+		switch b.Kind {
+		case KindDatastore:
+			c = index[b.DatastoreID]
+		case KindVolume:
+			c = volumeIndex[b.VolumeID]
+		}
 		if c == nil {
-			continue // its database is gone; it is reported on its own
+			continue // what it was taken from is gone; it is reported on its own
 		}
 		c.Count++
 		if c.Last == nil {

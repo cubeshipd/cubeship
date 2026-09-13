@@ -19,6 +19,7 @@ import (
 	"strings"
 
 	"cubeship/internal/app"
+	"cubeship/internal/backup"
 	"cubeship/internal/datastore"
 	"cubeship/internal/machine"
 	"cubeship/internal/node"
@@ -62,6 +63,7 @@ func modules() []module {
 		{"Object storage", objectstore.NewTools(nil, caller).Register},
 		{"The machine", machine.NewTools(nil, caller).Register},
 		{"Servers", node.NewTools(nil, caller).Register},
+		{"Backups", backup.NewTools(nil, caller).Register},
 	}
 }
 

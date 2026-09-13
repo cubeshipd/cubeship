@@ -694,6 +694,30 @@ export class MockGap extends Error {
 // coverage mirrors what the daemon builds: one row per database, from
 // the databases — so a database nobody has ever backed up is in it.
 function coverage(): Row[] {
+  const volumes = Object.entries(mockVolumes).flatMap(([ref, list]) =>
+    list.map((v) => {
+      const mine = db.backups.filter((b) => b.kind === "volume" && b.volume_id === v.id);
+      const lastGood = mine.find((b) => b.status === "succeeded");
+      return {
+        kind: "volume",
+        volume_id: v.id,
+        volume: v.path,
+        database: ref,
+        engine: "volume",
+        can_back_up: true,
+        schedule: db.backupSchedules[`volume:${v.id}`],
+        protected: Boolean(lastGood?.off_machine),
+        failing: mine[0]?.status === "failed",
+        last_good: lastGood,
+        last: mine[0],
+        count: mine.length,
+      };
+    }),
+  );
+  return [...datastoreCoverage(), ...volumes];
+}
+
+function datastoreCoverage(): Row[] {
   return db.datastores.map((d) => {
     const name = d.name as string;
     const mine = db.backups.filter((b) => b.database === name && b.database_exists);

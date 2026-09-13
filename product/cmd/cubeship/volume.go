@@ -108,6 +108,116 @@ func newAppVolumeCmd() *cobra.Command {
 	removeCmd.Flags().BoolVar(&confirmed, "yes", false, "confirm the removal")
 	removeCmd.Flags().BoolVar(&deleteData, "delete-data", false, "delete the volume's data too, which cannot be undone")
 
-	volumeCmd.AddCommand(listCmd, addCmd, removeCmd)
+	volumeCmd.AddCommand(listCmd, addCmd, removeCmd, newAppVolumeBackupCmd())
 	return volumeCmd
+}
+
+// newAppVolumeBackupCmd is `cubeship app volume backup`.
+func newAppVolumeBackupCmd() *cobra.Command {
+	backupCmd := &cobra.Command{
+		Use:   "backup",
+		Short: "Back up and restore a volume",
+		Long: "Back up and restore one of an app's volumes. The app is stopped while a\n" +
+			"copy is taken or put back, and started again afterwards. Requires the\n" +
+			"admin role.",
+	}
+
+	listCmd := &cobra.Command{
+		Use:   "list <app> <volume-id>",
+		Short: "List a volume's backups, newest first",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := parseVolumeID(args[1])
+			if err != nil {
+				return err
+			}
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			rows, err := c.ListVolumeBackups(context.Background(), args[0], id)
+			if err != nil {
+				return err
+			}
+			if len(rows) == 0 {
+				fmt.Println("No backups of this volume yet.")
+				return nil
+			}
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "ID\tTAKEN\tWHERE\tSIZE\tSTATUS")
+			for _, b := range rows {
+				where := "this machine"
+				if b.Store != "" {
+					where = b.Store + "/" + b.Bucket
+				}
+				status := b.Status
+				if b.Error != "" {
+					status += ": " + b.Error
+				}
+				fmt.Fprintf(w, "%d\t%s\t%s\t%d\t%s\n", b.ID, b.StartedAt, where, b.Size, status)
+			}
+			return w.Flush()
+		},
+	}
+
+	takeCmd := &cobra.Command{
+		Use:   "take <app> <volume-id>",
+		Short: "Back a volume up now, stopping the app for the copy",
+		Args:  cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := parseVolumeID(args[1])
+			if err != nil {
+				return err
+			}
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			b, err := c.TakeVolumeBackup(context.Background(), args[0], id)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Backup %d started. Check it with: cubeship app volume backup list %s %d\n", b.ID, args[0], id)
+			return nil
+		},
+	}
+
+	var confirmed bool
+	restoreCmd := &cobra.Command{
+		Use:   "restore <backup-id>",
+		Short: "Replace a volume's data with a backup of it",
+		Long: "Replace a volume's data with what it held when the backup was taken.\n" +
+			"This cannot be undone. The app is stopped while it happens.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := strconv.ParseInt(args[0], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid backup id %q", args[0])
+			}
+			if !confirmed {
+				return fmt.Errorf("this replaces the volume's data with backup %d and cannot be undone; pass --yes to confirm", id)
+			}
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			if err := c.RestoreBackup(context.Background(), id); err != nil {
+				return err
+			}
+			fmt.Printf("Restored backup %d\n", id)
+			return nil
+		},
+	}
+	restoreCmd.Flags().BoolVar(&confirmed, "yes", false, "confirm the restore")
+
+	backupCmd.AddCommand(listCmd, takeCmd, restoreCmd)
+	return backupCmd
+}
+
+func parseVolumeID(s string) (int64, error) {
+	id, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid volume id %q", s)
+	}
+	return id, nil
 }

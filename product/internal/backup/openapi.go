@@ -43,7 +43,10 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			}, "id", "database", "database_exists", "engine", "version", "key", "off_machine", "size_bytes", "status", "scheduled", "started_at"),
 
 			"BackupCoverage": openapi.Object(map[string]*openapi.Schema{
-				"database":    openapi.String("The database, by name."),
+				"kind":        {Type: "string", Enum: []string{"datastore", "volume"}, Description: "A database, or an app's volume."},
+				"volume_id":   openapi.Integer("For a volume, its id."),
+				"volume":      openapi.String("For a volume, the path inside its app's container."),
+				"database":    openapi.String("The database, by name — or, for a volume, its app's reference."),
 				"engine":      openapi.String("The engine it runs."),
 				"version":     openapi.String("And its major version."),
 				"can_back_up": openapi.Bool("Whether this instance dumps this engine at all. False for Redis — a cache whose own append-only file already survives a restart, and whose restore has no good answer to what it would be restored *to*. Reported rather than left out: a database missing from a coverage report reads as one nobody checked."),
