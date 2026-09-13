@@ -34,6 +34,23 @@ waiting after 800 milliseconds and 1.5 seconds, and `error.tsx` under
 catalog answers is cached for a minute, so a catalog that goes away is
 not noticed until that minute is up.
 
+## Visits are counted by our own Umami
+
+The site counts page views with Umami, run as an app on the same
+instance. The tracker is served from the site's own address: every page
+loads `/u/script.js` with `data-host-url="/u"`, and `src/proxy.ts`
+rewrites `/u/script.js` and `/u/api/send` — those two, nothing else of
+Umami — to `UMAMI_URL` on each request, the way `/api/v1` reaches the
+catalog. The browser never talks to another host, so a blocker that
+knows Umami's domain has nothing to match, and the site reaches Umami on
+the internal network rather than by a public name that points back at
+the machine.
+
+`UMAMI_URL` is Umami's internal address,
+`http://cubeship-umami-production-web:3000`. Unset — `make site-dev` —
+the two paths answer 404 and nothing is counted. The website id is a
+constant in `src/lib/shared.ts`: it is in every page's HTML anyway.
+
 ## One palette, copied
 
 The site is the product's face and wears the product's colours: the

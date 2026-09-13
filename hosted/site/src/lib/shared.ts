@@ -5,6 +5,8 @@ export const siteUrl = "https://cubeship.dev";
 export const docsRoute = "/docs";
 export const docsImageRoute = "/og/docs";
 export const docsContentRoute = "/llms.mdx/docs";
+// cubeship.dev in Umami. Not a secret: it is in every page's HTML.
+export const umamiWebsiteId = "9db42214-19a1-4e99-a18d-597502873f40";
 
 export const gitConfig = {
   user: "cubeshipd",

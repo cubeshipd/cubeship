@@ -1,7 +1,7 @@
 import { RootProvider } from "fumadocs-ui/provider/next";
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
-import { siteUrl } from "@/lib/shared";
+import { siteUrl, umamiWebsiteId } from "@/lib/shared";
 import "./global.css";
 
 // The dashboard's own two faces, vendored the same way it vendors them:
@@ -104,6 +104,8 @@ export default function Layout({ children }: LayoutProps<"/">) {
     >
       <body className="flex min-h-screen flex-col font-sans antialiased">
         <script type="application/ld+json">{JSON.stringify(structuredData)}</script>
+        {/* Umami, through the site's own /u — see lib/umami-proxy. */}
+        <script defer src="/u/script.js" data-website-id={umamiWebsiteId} data-host-url="/u" />
         <RootProvider theme={{ enabled: false }}>{children}</RootProvider>
       </body>
     </html>

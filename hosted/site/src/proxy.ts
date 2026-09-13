@@ -1,8 +1,9 @@
 import { isMarkdownPreferred, rewritePath } from "fumadocs-core/negotiation";
 import { type NextRequest, NextResponse } from "next/server";
 import { catalogRewrite } from "@/lib/catalog-proxy";
-import { catalogUrl } from "@/lib/env";
+import { catalogUrl, umamiUrl } from "@/lib/env";
 import { docsContentRoute, docsRoute } from "@/lib/shared";
+import { umamiRewrite } from "@/lib/umami-proxy";
 
 const { rewrite: rewriteDocs } = rewritePath(
   `${docsRoute}{/*path}`,
@@ -16,6 +17,9 @@ const { rewrite: rewriteSuffix } = rewritePath(
 export default function proxy(request: NextRequest) {
   const catalog = catalogRewrite(request.nextUrl.pathname, request.nextUrl.search, catalogUrl());
   if (catalog) return NextResponse.rewrite(new URL(catalog));
+
+  const umami = umamiRewrite(request.nextUrl.pathname, request.nextUrl.search, umamiUrl());
+  if (umami) return NextResponse.rewrite(new URL(umami));
 
   const result = rewriteSuffix(request.nextUrl.pathname);
   if (result) {
