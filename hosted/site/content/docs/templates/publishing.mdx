@@ -28,7 +28,19 @@ Three files at the root, all required:
 | --- | --- |
 | `template.yaml` | [The template file](/docs/templates/file). At most 256 KB. |
 | `README.md` | The template's page: what it installs, what to set up after. GitHub-flavoured Markdown, at most 512 KB. |
-| `icon.png` | A square PNG, 128 to 1024 pixels a side, at most 512 KB. |
+| `icon.png` | A square PNG, 128 to 1024 pixels a side, at most 512 KB, drawn edge to edge. |
+
+**Draw the icon edge to edge.** The catalog and the dashboard frame every
+icon in a square, so an icon drawn as a rounded tile — transparent
+corners — shows as a rounded shape among square ones, and one with a
+transparent margin shows smaller than the rest. Fill the corners with the
+icon's background, and crop the margin. Neither refuses a release; each is
+a warning:
+
+| Code | Why |
+| --- | --- |
+| `icon.rounded` | All four corners are transparent while the edges are not: a rounded tile. |
+| `icon.padding` | The artwork fills less than 90% of the image's width or height. |
 
 Relative links and images in the README work the way they do on GitHub.
 HTML is allowed as far as GitHub itself allows it — no scripts, no

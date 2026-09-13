@@ -214,6 +214,7 @@ func (s *Syncer) index(ctx context.Context, r Repo, rel Release) (Indexed, error
 		if code != "" {
 			problem(code, message, "")
 		}
+		rec.Problems = append(rec.Problems, iconAdvice(clean)...)
 		icon = clean
 	}
 
