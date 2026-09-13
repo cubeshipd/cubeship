@@ -30,13 +30,7 @@ import {
   type TemplateManifest,
 } from "@/lib/api";
 import { message } from "@/lib/errors";
-
-// Where an install's generated secrets wait for the page that shows them
-// once. Session storage and not the URL: a secret in an address is in
-// the history.
-export function secretsKey(id: number) {
-  return `cubeship:template-install:${id}:secrets`;
-}
+import { handOverSecrets } from "@/lib/install-secrets";
 
 // One template: what it creates, and the form that installs it.
 //
@@ -222,9 +216,7 @@ function InstallForm({
           inputs,
         },
       );
-      if (Object.keys(started.secrets).length > 0) {
-        sessionStorage.setItem(secretsKey(started.install.id), JSON.stringify(started.secrets));
-      }
+      handOverSecrets(started.install.id, started.secrets);
       router.push(`/templates/installs/${started.install.id}`);
     } catch (e) {
       setError(message(e));

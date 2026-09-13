@@ -51,6 +51,12 @@ func getECRAuthorization(ctx context.Context, client *http.Client, accessKeyID, 
 		target  = "AmazonEC2ContainerRegistry_V20150921.GetAuthorizationToken"
 	)
 	body := []byte(`{}`)
+	// Checked again where it becomes a host, not only where it was typed:
+	// a row written before the input check existed carries whatever was
+	// accepted then.
+	if !regionPattern.MatchString(region) {
+		return nil, ErrInvalidRegion
+	}
 	endpoint := ecrEndpoint(region)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(string(body)))
@@ -217,6 +223,9 @@ func listECRImages(ctx context.Context, client *http.Client, c *Credential, repo
 
 // callECR is one signed request to the ECR API.
 func callECR(ctx context.Context, client *http.Client, c *Credential, action, body string, into any) error {
+	if !regionPattern.MatchString(c.Region) {
+		return ErrInvalidRegion
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, ecrEndpoint(c.Region), strings.NewReader(body))
 	if err != nil {
 		return err

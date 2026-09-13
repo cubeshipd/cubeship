@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { api, type TemplateInstall, type TemplateResource, type TemplateRun } from "@/lib/api";
 import { message } from "@/lib/errors";
-import { secretsKey } from "../../[owner]/[repo]/page";
+import { takeSecrets } from "@/lib/install-secrets";
 
 // An installation: what it owns, the run changing it now, and its history.
 // Polled while a run is going; a failed run has already been undone by the
@@ -36,12 +36,8 @@ export default function TemplateInstallPage({ params }: PageProps<"/templates/in
   // Read once and forgotten: this page is the one place they are shown.
   const [secrets, setSecrets] = useState<Record<string, string>>({});
   useEffect(() => {
-    const key = secretsKey(Number(id));
-    const stored = sessionStorage.getItem(key);
-    if (stored) {
-      setSecrets(JSON.parse(stored));
-      sessionStorage.removeItem(key);
-    }
+    const handed = takeSecrets(Number(id));
+    if (Object.keys(handed).length > 0) setSecrets(handed);
   }, [id]);
 
   if (install.error) return <ErrorAlert error={message(install.error)} />;

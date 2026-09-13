@@ -8,6 +8,7 @@ package extregistry
 
 import (
 	"errors"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -146,20 +147,13 @@ var (
 // interpolated, which is the rule `firewall.Spec.Check` and
 // `objectstore.CheckBucketName` already keep.
 func ValidRegion(region string) bool {
-	if region == "" || len(region) > 63 {
-		return false
-	}
-	for i := 0; i < len(region); i++ {
-		c := region[i]
-		switch {
-		case c >= 'a' && c <= 'z', c >= '0' && c <= '9':
-		case c == '-' && i > 0 && i < len(region)-1:
-		default:
-			return false
-		}
-	}
-	return true
+	return regionPattern.MatchString(region)
 }
+
+// regionPattern is one DNS label: lowercase letters, digits and inner
+// hyphens, at most 63. A pattern rather than a loop so the check is one
+// a static analyser recognises where the region reaches a URL.
+var regionPattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // NormalizeHost reduces what someone types to the host an image
 // reference actually carries, so a credential entered as

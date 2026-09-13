@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { secretsKey } from "@/app/(dashboard)/templates/[owner]/[repo]/page";
 import { ErrorAlert } from "@/components/error-alert";
 import { LoadingList } from "@/components/loading";
 import { Button } from "@/components/ui/button";
@@ -26,6 +25,7 @@ import {
   type TemplateUpdatePreview,
 } from "@/lib/api";
 import { message } from "@/lib/errors";
+import { handOverSecrets } from "@/lib/install-secrets";
 
 const ACTIONS: Record<TemplateChange["action"], { label: string; tone: string }> = {
   create: { label: "Create", tone: "text-success" },
@@ -70,9 +70,7 @@ export function TemplateUpdateDialog({
           inputs: answers,
         },
       );
-      if (started.secrets && Object.keys(started.secrets).length > 0) {
-        sessionStorage.setItem(secretsKey(install.id), JSON.stringify(started.secrets));
-      }
+      handOverSecrets(install.id, started.secrets);
       onOpenChange(false);
       router.push(`/templates/installs/${install.id}`);
     } catch (err) {
