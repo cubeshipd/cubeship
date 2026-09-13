@@ -97,6 +97,7 @@ export type CatalogRow = {
   likesCount: number;
   status: string;
   author: { login: string; avatarUrl: string | null };
+  updatedAt: Date;
   creates: { apps: number; databases: number; engines: string[] };
 };
 
@@ -114,6 +115,7 @@ function toCatalogRow(row: {
   manifest: unknown;
   login: string;
   avatarUrl: string | null;
+  updatedAt: Date;
 }): CatalogRow {
   const manifest = (row.manifest ?? { apps: [], databases: [] }) as {
     apps: unknown[];
@@ -128,6 +130,7 @@ function toCatalogRow(row: {
     likesCount: row.likesCount,
     status: row.status,
     author: { login: row.login, avatarUrl: row.avatarUrl },
+    updatedAt: row.updatedAt,
     creates: {
       apps: manifest.apps.length,
       databases: manifest.databases.length,
@@ -188,6 +191,7 @@ export async function listTemplates(options: {
       manifest: templateVersions.manifest,
       login: users.login,
       avatarUrl: users.avatarUrl,
+      updatedAt: templates.updatedAt,
     })
     .from(templates)
     .innerJoin(users, eq(users.id, templates.authorId))
@@ -232,6 +236,7 @@ export async function templatesByAuthor(
       manifest: templateVersions.manifest,
       login: users.login,
       avatarUrl: users.avatarUrl,
+      updatedAt: templates.updatedAt,
     })
     .from(templates)
     .innerJoin(users, eq(users.id, templates.authorId))

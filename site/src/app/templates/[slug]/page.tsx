@@ -8,6 +8,7 @@ import { Preview } from "@/components/templates/preview";
 import { ReportButton } from "@/components/templates/report-button";
 import { SourceBlock } from "@/components/templates/source-block";
 import { currentUser } from "@/lib/auth/session";
+import { avatarAt } from "@/lib/avatar";
 import { publicUrl } from "@/lib/env";
 import type { NormalizedManifest } from "@/lib/template";
 import { currentVersion, templateWithAuthor, versionsOf, visibleTo } from "@/lib/templates/queries";
@@ -29,13 +30,6 @@ export async function generateMetadata(props: PageProps<"/templates/[slug]">): P
       images: [row.template.imageKey ? `/i/${row.template.imageKey}` : `/og/templates/${slug}`],
     },
   };
-}
-
-// GitHub serves the avatar at whatever size is asked for; the default is 460px.
-function avatarAt(url: string, size: number): string {
-  const avatar = new URL(url);
-  avatar.searchParams.set("s", String(size));
-  return avatar.toString();
 }
 
 export default async function TemplateDetailPage(props: PageProps<"/templates/[slug]">) {
