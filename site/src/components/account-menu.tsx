@@ -50,7 +50,7 @@ export function AccountMenu() {
         )}
       </button>
       {open && (
-        <div className="absolute right-0 z-50 mt-2 w-44 border border-fd-border bg-fd-background p-2 text-sm">
+        <div className="absolute top-full right-0 z-50 mt-2 w-44 border border-fd-border bg-fd-background p-2 text-sm">
           <a href={`/u/${me.login}`} className="block px-2 py-1 hover:text-fd-foreground">
             My templates
           </a>
