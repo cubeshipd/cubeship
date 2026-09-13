@@ -16,7 +16,7 @@ Everything a person installing Cubeship needs is in the
 
 ## What you need
 
-- **Go** (the version in [go.mod](go.mod)) and **pnpm** for the dashboard.
+- **Go** (the version in [go.mod](product/go.mod)) and **pnpm** for the dashboard.
 - **Docker**, for the Postgres the tests run against — and for anything
   that starts a container, which is most of what this daemon does.
 
@@ -34,7 +34,7 @@ Two processes, because the dashboard has its own dev server:
 
 ```bash
 make dev        # the daemon on this machine, rebuilding on every Go change
-make web-dev    # the dashboard on :3001, hot reloading
+make dashboard-dev    # the dashboard on :3001, hot reloading
 ```
 
 The daemon proxies page requests to whichever of those is there, so
@@ -111,7 +111,7 @@ the two drifted apart before this layout.
 
 **[AGENTS.md](AGENTS.md) is the conventions every change follows**, and
 it is worth reading before a first one. The long version is
-[docs/design/](docs/design), one file per area: every decision in this
+[docs/design/](docs/design), one file per area — `product/` for what an instance runs, `site/` for cubeship.dev: every decision in this
 codebase is written down there with the reason it was made, including
 the ones that were made twice. AGENTS.md indexes them, and says which to
 open for what you are about to touch.
@@ -149,7 +149,7 @@ GitHub release, `CHANGELOG.md`, and the dialog the dashboard shows after
 an upgrade.
 
 ```bash
-$EDITOR internal/release/notes/0.2.0.md   # version, date, summary, then the notes
+$EDITOR product/internal/release/notes/0.2.0.md   # version, date, summary, then the notes
 make changelog                            # regenerate CHANGELOG.md
 git commit -am "Release notes for 0.2.0"
 make release VERSION=0.2.0

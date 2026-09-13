@@ -9,7 +9,7 @@
 # pull. Both are built for amd64 and arm64, because the cheap VPS people
 # run this on is as often one as the other.
 #
-# The notes are written by hand, in internal/release/notes, and are the
+# The notes are written by hand, in product/internal/release/notes, and are the
 # same text three ways: the GitHub release's body, the CHANGELOG.md in
 # the repository, and the dialog the dashboard shows after an upgrade.
 # The first job refuses a tag that has none — a release nobody wrote
@@ -45,6 +45,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: product/go.sum
 
       - name: Read the version and its notes
         id: read
@@ -58,7 +59,7 @@ jobs:
             *)   echo "prerelease=false" >> "$GITHUB_OUTPUT" ;;
           esac
 
-          file="internal/release/notes/$version.md"
+          file="product/internal/release/notes/$version.md"
           test -f "$file" || {
             echo "::error::no release notes at $file — a release nobody wrote notes for is one whose in-app dialog is blank"
             exit 1
@@ -73,7 +74,7 @@ jobs:
       # here rather than after the tag exists: it is the copy people
       # read on GitHub.
       - name: The changelog matches the notes
-        run: go run ./cmd/changelog -check
+        run: go -C product run ./tools/changelog -check
 
       - uses: actions/upload-artifact@v4
         with:
@@ -96,9 +97,9 @@ jobs:
             runner: ubuntu-24.04-arm
             platform: linux/arm64
           - image: cubeshipd
-            dockerfile: Dockerfile
+            dockerfile: product/Dockerfile
           - image: cubeship
-            dockerfile: Dockerfile.web
+            dockerfile: product/dashboard/Dockerfile
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -219,6 +220,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: product/go.sum
 
       # The CLI is what somebody drives their instance from, and it runs
       # on their laptop rather than on the server — so it is the one
@@ -235,9 +237,9 @@ jobs:
           mkdir -p dist
           for target in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
             os="${target%/*}"; arch="${target#*/}"
-            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build \
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go -C product build \
               -ldflags "-s -w -X main.version=$VERSION" \
-              -o "dist/cubeship" ./cmd/cubeship
+              -o "$PWD/dist/cubeship" ./cmd/cubeship
             tar -czf "dist/cubeship_${VERSION}_${os}_${arch}.tar.gz" -C dist cubeship
             # And the same tarball under a name with no version in it.
             # `releases/latest/download/<name>` needs the name to be

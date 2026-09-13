@@ -52,7 +52,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+          cache-dependency-path: product/go.sum
 
       - run: make fmt-check
       - run: make vet
@@ -62,7 +62,7 @@ jobs:
       # already up and health-checked, at the port the tests default to.
       # No -short, so the DB-backed tests run rather than skipping.
       - name: Unit tests
-        run: go test -race -count=1 ./...
+        run: go -C product test -race -count=1 ./...
 
   # Everything that boots a container: a privileged buildkitd per build
   # test, and the whole product once — install the daemon, push an image,
@@ -76,7 +76,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-          cache: true
+          cache-dependency-path: product/go.sum
       - run: make test-integration
 
   # install.sh is the product's front door and uninstall.sh deletes
@@ -96,17 +96,17 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: web
+        working-directory: product/dashboard
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
         with:
-          package_json_file: web/package.json
+          package_json_file: product/dashboard/package.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
+          cache-dependency-path: product/dashboard/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec biome ci .
       # typegen first: the pages take their params from Next's generated

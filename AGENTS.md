@@ -27,38 +27,63 @@ Work happens on `master`, in the repository root. No worktrees.
 
 ## Where the rest is written down
 
-Read the file for the area before changing it. Each one carries the
+Go paths below (`internal/…`, `cmd/…`) are relative to `product/`, the
+Go module. Read the file for the area before changing it. Each one carries the
 reasoning as well as the rule, including the things that were tried the
 other way and were wrong — which is the part that stops a decision being
 re-made by accident.
 
 | Opening | Read |
 | --- | --- |
-| Anything under `web/` | [dashboard.md](docs/design/dashboard.md) — the layers, the navigation, the components, the look |
-| Anything under `site/` | [site.md](docs/design/site.md) — cubeship.dev: the landing page, the docs, and where `install.sh` comes from |
-| The template registry in `site/` | [templates.md](docs/design/templates.md) — the template file, the validator, the registry it lives in, and what a template may never carry |
-| `internal/node`, `internal/mesh`, `internal/worker` | [cluster.md](docs/design/cluster.md) — placement, replicas, the agent, the network between machines, the one front door, autoscaling, limits |
-| `internal/app` | [deploys.md](docs/design/deploys.md) — where an image comes from, the two builders, the GitHub App, who may build, what deleting takes |
-| `internal/datastore` | [datastores.md](docs/design/datastores.md) — the engines, attaching, exposing, what is fixed after creation |
-| `internal/objectstore` | [object-storage.md](docs/design/object-storage.md) — managed MinIO, linked S3, what a folder is |
-| `internal/backup` | [backups.md](docs/design/backups.md) — dumps, the schedule, restoring |
-| `internal/certificates`, `internal/firewall`, app domains | [networking.md](docs/design/networking.md) — where an app answers, TLS, and the host's ufw |
-| `internal/metrics`, `internal/machine` | [monitoring.md](docs/design/monitoring.md) — what is sampled, and what 100% means |
-| `internal/credential`, `internal/extregistry` | [credentials.md](docs/design/credentials.md) — one secret, named by everything that needs it |
-| `internal/user`, `internal/setup` | [authentication.md](docs/design/authentication.md) — API keys, sessions, the setup token |
-| `install.sh`, `internal/settings` | [installing.md](docs/design/installing.md) — the front door, the data directory, the instance's own settings |
-| `internal/release`, `internal/update` | [releasing.md](docs/design/releasing.md) — tags, notes, and replacing the daemon that is running |
-| `internal/platform/bootstrap` | [infrastructure.md](docs/design/infrastructure.md) — the config hash, and why state must be a bind mount |
-| Adding or moving a route | [the-api-document.md](docs/design/the-api-document.md) — `Handle` vs `HandleInternal` |
+| Anything under `product/dashboard/` | [dashboard.md](docs/design/product/dashboard.md) — the layers, the navigation, the components, the look |
+| Anything under `site/` | [site.md](docs/design/site/site.md) — cubeship.dev: the landing page, the docs, and where `install.sh` comes from |
+| The template registry in `site/` | [templates.md](docs/design/site/templates.md) — the template file, the validator, the registry it lives in, and what a template may never carry |
+| `internal/node`, `internal/mesh`, `internal/worker` | [cluster.md](docs/design/product/cluster.md) — placement, replicas, the agent, the network between machines, the one front door, autoscaling, limits |
+| `internal/app` | [deploys.md](docs/design/product/deploys.md) — where an image comes from, the two builders, the GitHub App, who may build, what deleting takes |
+| `internal/datastore` | [datastores.md](docs/design/product/datastores.md) — the engines, attaching, exposing, what is fixed after creation |
+| `internal/objectstore` | [object-storage.md](docs/design/product/object-storage.md) — managed MinIO, linked S3, what a folder is |
+| `internal/backup` | [backups.md](docs/design/product/backups.md) — dumps, the schedule, restoring |
+| `internal/certificates`, `internal/firewall`, app domains | [networking.md](docs/design/product/networking.md) — where an app answers, TLS, and the host's ufw |
+| `internal/metrics`, `internal/machine` | [monitoring.md](docs/design/product/monitoring.md) — what is sampled, and what 100% means |
+| `internal/credential`, `internal/extregistry` | [credentials.md](docs/design/product/credentials.md) — one secret, named by everything that needs it |
+| `internal/user`, `internal/setup` | [authentication.md](docs/design/product/authentication.md) — API keys, sessions, the setup token |
+| `install.sh`, `internal/settings` | [installing.md](docs/design/product/installing.md) — the front door, the data directory, the instance's own settings |
+| `internal/release`, `internal/update` | [releasing.md](docs/design/product/releasing.md) — tags, notes, and replacing the daemon that is running |
+| `internal/platform/bootstrap` | [infrastructure.md](docs/design/product/infrastructure.md) — the config hash, and why state must be a bind mount |
+| Adding or moving a route | [the-api-document.md](docs/design/product/the-api-document.md) — `Handle` vs `HandleInternal` |
 
 ## Layout
+
+The repository splits on one question: **does it run on somebody's
+instance, or only on ours?**
+
+```
+product/        what a person installs — one Go module and the dashboard
+  cmd/cubeshipd/  the daemon, on the VPS
+  cmd/cubeship/   the CLI, on the operator's laptop
+  internal/       everything both are made of (below)
+  dashboard/      the dashboard: Next.js standalone, its own image and
+                  container on the VPS
+  tools/          changelog, sitedocs — run by make, never shipped
+  test/           integration and installer tests
+site/           cubeship.dev — the landing page, the docs and the
+                template registry. Runs on one instance we operate
+docs/design/    product/ and site/, one file per area
+install.sh, uninstall.sh  stay at the root: the published install
+                command fetches `master/install.sh` by that path
+```
+
+Every Dockerfile — `product/Dockerfile`, `product/dashboard/Dockerfile`,
+`site/Dockerfile` — is built with the **repository root** as its
+context, which is also how an instance builds an app whose Dockerfile is
+in a subdirectory.
 
 The code is organized by domain, not by technical layer. A module owns
 everything about one concept — its entity, its persistence, its use
 cases, and every surface it is reached through.
 
 ```
-internal/
+product/internal/
   user/         identities, the API keys they authenticate with, and the
                 one authorization question on the instance
   project/      projects and the environments inside them
@@ -96,16 +121,16 @@ internal/
                 Traefik's own store
   firewall/     the host's ufw, and the one thing it does not cover on a
                 machine running Docker
-  web/          proxies page requests to the dashboard's container
+  dashboard/    proxies page requests to the dashboard's container
   server/       mounts every module on the HTTP mux and the MCP endpoint
   platform/     infrastructure: database, dockerx, traefik, bootstrap,
                 buildkit, config, authkey, regauth, hostexec, httpx
   envvar/ slug/ small shared vocabulary
+  cli/          what the CLI talks to the daemon with: its client and
+                the credentials it keeps
 cmd/cubeshipd/  the daemon
 cmd/cubeship/   the CLI (cobra), one file per noun — the noun is what the
                 API's own tag calls it, so `/nodes` is `cubeship server`
-web/            the dashboard: Next.js standalone, its own image and container
-internal/apiclient, internal/clicreds — what the CLI talks to the daemon with
 ```
 
 Every domain module has the same shape:

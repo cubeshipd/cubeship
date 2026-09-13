@@ -197,7 +197,7 @@ ensure_docker() {
 # anything is replaced.
 build_images() {
 	dir=$(source_dir)
-	[ -f "$dir/Dockerfile" ] ||
+	[ -f "$dir/product/Dockerfile" ] ||
 		die "--local needs the repository. Run it from a checkout: git clone, then sudo ./install.sh --local"
 
 	IMAGE="${CUBESHIP_IMAGE:-cubeshipd}"
@@ -208,12 +208,12 @@ build_images() {
 	# should not spend a build on one.
 	if [ "$WORKER" = 0 ]; then
 		say "Building $WEB_IMAGE:$VERSION from $dir…"
-		docker build -f "$dir/Dockerfile.web" -t "$WEB_IMAGE:$VERSION" "$dir" ||
+		docker build -f "$dir/product/dashboard/Dockerfile" -t "$WEB_IMAGE:$VERSION" "$dir" ||
 			die "the dashboard image did not build. Nothing was changed."
 	fi
 
 	say "Building $IMAGE:$VERSION from $dir…"
-	docker build --build-arg "VERSION=$VERSION" -t "$IMAGE:$VERSION" "$dir" ||
+	docker build -f "$dir/product/Dockerfile" --build-arg "VERSION=$VERSION" -t "$IMAGE:$VERSION" "$dir" ||
 		die "the daemon image did not build. Nothing was changed."
 }
 

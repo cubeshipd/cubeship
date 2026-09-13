@@ -3,7 +3,7 @@
 
 /* The dashboard's palette, the cyan one, and nothing else: this site is
    the product's face and it wears the product's colours. The values are
-   copied from web/src/app/globals.css rather than shared, because the
+   copied from product/dashboard/src/app/globals.css rather than shared, because the
    two are two builds — change one, change both. */
 @theme {
   --font-sans: var(--font-chakra), ui-sans-serif, system-ui, sans-serif;
@@ -168,7 +168,7 @@ body {
   box-shadow: none;
 }
 
-/* Fields, copied from web/src/app/globals.css so a field on the site is the
+/* Fields, copied from product/dashboard/src/app/globals.css so a field on the site is the
    dashboard's field: mono, the page's own ground, a border that brightens on
    hover, and focus as a light coming on rather than a fatter outline.
    Unlayered, so no per-usage utility can undo them. Change one, change both. */

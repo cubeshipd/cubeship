@@ -1,0 +1,1303 @@
+// The dashboard is served by the daemon it talks to, so the API is
+// always the same origin under one prefix. Nothing here takes a base
+// URL: there is no deployment where those two come apart.
+const PREFIX = "/api";
+
+export class ApiError extends Error {
+  status: number;
+  constructor(status: number, message: string) {
+    super(message);
+    this.status = status;
+  }
+}
+
+// PREVIEW is the dashboard standing on invented data with no daemon
+// behind it — `make dashboard-preview`.
+//
+// The import is dynamic and behind the flag, and that alone is not
+// enough: the chunk is emitted whether or not the branch can run. What
+// keeps the fixtures out of the image is the alias in next.config.ts,
+// which resolves them to a stub in every build that is not the preview.
+const PREVIEW = process.env.NEXT_PUBLIC_CUBESHIP_MOCK === "1";
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  if (PREVIEW) {
+    const { handle } = await import("@/lib/mock");
+    try {
+      return (await handle(method, path, body)) as T;
+    } catch (err) {
+      // Rethrown as the error every screen already knows how to show,
+      // so a gap in the preview reads like a refusal from the daemon
+      // rather than a crash.
+      const status = (err as { status?: number }).status ?? 500;
+      throw new ApiError(status, (err as Error).message);
+    }
+  }
+
+  const res = await fetch(PREFIX + path, {
+    method,
+    // The session is a cookie the daemon set. Sending it is the whole
+    // of the dashboard's authentication.
+    credentials: "same-origin",
+    headers: body === undefined ? {} : { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    // Errors are text/plain: that is what http.Error writes.
+    throw new ApiError(res.status, (await res.text()).trim() || res.statusText);
+  }
+  if (!res.headers.get("Content-Type")?.includes("json")) {
+    return undefined as T;
+  }
+  return (await res.json()) as T;
+}
+
+export const api = {
+  get: <T>(path: string) => request<T>("GET", path),
+  post: <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {}),
+  put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
+  patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
+  del: <T>(path: string) => request<T>("DELETE", path),
+
+  // A log, which the daemon answers as text/plain — it is the log, not
+  // a document about the log — so it cannot go through `request`.
+  //
+  // It is **here** rather than a bare `fetch` in the component for one
+  // reason: that is the seam the preview replaces. The log screen was
+  // the only one in the dashboard that reached past it, so it was the
+  // only one the preview answered with a 500 — on every app, every
+  // database and every store, which is three screens nobody could look
+  // at while changing how they look.
+  getText: async (path: string): Promise<string> => {
+    if (PREVIEW) {
+      const { handle } = await import("@/lib/mock");
+      return (await handle("GET", path)) as string;
+    }
+    const res = await fetch(PREFIX + path, { credentials: "same-origin" });
+    if (!res.ok) {
+      throw new ApiError(res.status, (await res.text()).trim() || res.statusText);
+    }
+    return res.text();
+  },
+
+  // The one request that is not JSON either way: a file, sent as
+  // itself. There is one value and no others, and a multipart envelope
+  // around a single value is a form where there is no form.
+  //
+  // The Content-Type is the browser's guess about the blob and the
+  // daemon decides nothing by it — it sniffs the bytes, because the
+  // header is a claim and what it stores is what it serves back from
+  // its own origin.
+  putBytes: async (path: string, blob: Blob): Promise<void> => {
+    if (PREVIEW) {
+      const { handle } = await import("@/lib/mock");
+      await handle("PUT", path, blob);
+      return;
+    }
+    const res = await fetch(PREFIX + path, {
+      method: "PUT",
+      credentials: "same-origin",
+      headers: { "Content-Type": blob.type || "application/octet-stream" },
+      body: blob,
+    });
+    if (!res.ok) {
+      throw new ApiError(res.status, (await res.text()).trim() || res.statusText);
+    }
+  },
+};
+
+// token_required says the claim has to carry the token the installer
+// printed — see setup.Token on the daemon.
+export type SetupStatus = { needed: boolean; token_required: boolean };
+// Who is signed in, from GET /users/me.
+//
+// `is_super_admin` used to be here, and it outlived the thing it named:
+// organizations went, roles moved onto the account, and the daemon has
+// answered with `role` ever since. Nothing complained, because reading
+// a field that is not in the JSON is `undefined` rather than an error —
+// so every admin-only piece of UI behind it was simply never rendered.
+export type Me = {
+  username: string;
+  role: "admin" | "member";
+  // Whether this account can sign in without an API key. It is what
+  // says how much revoking the last key costs — see the account screen.
+  has_password: boolean;
+  // Which palette this person sees the dashboard in, absent for the
+  // default, and which ones this instance offers. The list is served
+  // rather than written here: the daemon is what refuses a name.
+  theme?: string;
+  themes?: string[];
+  // What the account says about the person holding it. Absent when
+  // unset, which is the normal state for all three: a username is what
+  // identifies somebody here, and these are what it cannot carry.
+  display_name?: string;
+  email?: string;
+  // Always present: there is no account with no face.
+  avatar: string;
+  // Which faces this instance ships, served for the reason `themes` is:
+  // the daemon is what refuses a name, and a second list here would be
+  // one to disagree with it.
+  avatars?: string[];
+};
+
+// personName is what to call somebody on screen.
+//
+// **The display name, and the username only when there is none.** A
+// username is an address — it is the path segment, what `docker login`
+// sends, and what a confirmation asks you to type — and a person is
+// called something else. `lgs` and "Lucas" are both true and only one
+// of them is a name.
+//
+// One function rather than `u.display_name || u.username` written out
+// per screen, because the day somebody is shown by their username
+// somewhere is the day two screens disagree about who that row is.
+// The Users table is the one place both appear, and there they are two
+// columns: it is the screen where the address is the point.
+export function personName(u: { display_name?: string; username: string }): string {
+  return u.display_name?.trim() || u.username;
+}
+
+// avatarSrc is where a face's file is. The name is one of `avatars`,
+// which the daemon checked — never a path and never a URL, so there is
+// nothing here to escape.
+//
+// **There are two sizes and the small one is not an optimisation.** The
+// face beside a username is drawn on every screen of the dashboard, and
+// the file behind it is the first image the browser asks for; the
+// picker on the account screen is one screen, drawn once, at twice the
+// size. 8 KB against 88 KB, both cut from the same master.
+export function avatarSrc(name: string, size: "full" | "small" = "full"): string {
+  return `/profiles/${name}${size === "small" ? "-sm" : ""}.png`;
+}
+
+// One account on the instance.
+export type InstanceUser = {
+  username: string;
+  role: "admin" | "member";
+  theme?: string;
+  display_name?: string;
+  email?: string;
+  // Always present, like Me's: there is no account with no face.
+  avatar: string;
+  // When this account was shut out, absent while it is not. One field
+  // rather than a flag and a date — the two would be one fact with two
+  // places to disagree about it.
+  blocked_at?: string;
+  created_at: string;
+};
+// None of these has a display name. The slug is the name — the rule an
+// app has always followed, now everywhere: a slug is a path component of
+// every registry reference underneath it, so it is the identifier that
+// cannot change and the one everybody reads.
+export type Org = { slug: string };
+
+// projectImageSrc is where a project's picture is.
+//
+// Served by the daemon rather than from the dashboard's own files: it
+// is somebody's upload, kept in the data directory, and the request
+// carries the session cookie like every other read here. `has_image` on
+// the project says whether to ask at all — without it a grid makes one
+// request per project and, on an instance where nobody has chosen one,
+// every single one answers 404.
+export function projectImageSrc(slug: string): string {
+  // **The preview has no bytes to serve.** Everything else there goes
+  // through `handle`, which an <img> does not — so without this the one
+  // screen the picture is for shows an empty frame, and a screen that
+  // looks broken in the preview is one somebody reviews as broken.
+  // A stand-in drawn from the slug, so two projects differ the way two
+  // real pictures would.
+  if (PREVIEW) return previewImage(slug);
+  return `/api/projects/${encodeURIComponent(slug)}/image`;
+}
+
+function previewImage(slug: string): string {
+  let hash = 0;
+  for (const ch of slug) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
+  const hue = hash % 360;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">` +
+    `<rect width="64" height="64" fill="hsl(${hue} 70% 12%)"/>` +
+    `<circle cx="32" cy="32" r="17" fill="none" stroke="hsl(${hue} 90% 60%)" stroke-width="3"/>` +
+    `<rect x="24" y="24" width="16" height="16" fill="hsl(${(hue + 140) % 360} 90% 60%)"/>` +
+    `</svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+export type Project = {
+  slug: string;
+  environments?: string[];
+  // Whether this project wears a picture. Absent for one that does not,
+  // which is what every project starts as — see projectImageSrc.
+  has_image?: boolean;
+};
+export type Environment = { slug: string };
+
+// registry and external run a published image; dockerfile and railpack
+// build one from a Git repository, which is why they need an admin.
+export type AppSource = "registry" | "external" | "dockerfile" | "railpack";
+
+export const BUILDING_SOURCES: AppSource[] = ["dockerfile", "railpack"];
+
+// One name an app is served at.
+//
+// The pair is the unit: an image can expose several ports, so "which
+// port does this app listen on" stops having one answer as soon as the
+// app has more than one name.
+export type AppDomain = {
+  id: number;
+  host: string;
+  // What this name reaches inside the container, or 0 for "read it from
+  // the image" — which is the normal answer.
+  port: number;
+};
+
+// hostsOf renders every name an app answers at, for the places that
+// have room for one line.
+//
+// Empty when there are none, and the caller renders nothing. It used to
+// say "no domain" on the grounds that answering nowhere is a state
+// worth reading — but it is the *normal* state for a worker or a queue
+// consumer, and a line of grey text under every one of them saying so
+// is a caption on the ordinary.
+export function hostsOf(app: { domains: AppDomain[] }): string {
+  return app.domains.map((d) => d.host).join(", ");
+}
+
+export type App = {
+  reference: string;
+  name: string;
+  // Every name this app answers at, each with the port behind it. Empty
+  // is a normal state: an app nothing outside the instance should reach
+  // deploys with none, and its neighbours reach it at `internal_host`.
+  domains: AppDomain[];
+  // A name this app could answer at, under the instance's own domain.
+  // Only ever offered — nothing assigns it. Absent while the instance
+  // has no domain to build one under.
+  suggested_host?: string;
+  // Where another app on this instance reaches this one, on whatever
+  // port the app listens on. Always present — it is derived from the
+  // reference, so an app with no public name at all still has one, and
+  // that is exactly the app most likely to be called this way.
+  internal_host: string;
+  // For a registry app, where to push; for an external one, what it pulls.
+  image?: string;
+  // The tag this app runs. Absent means it follows the registry: on
+  // this instance's own that is a push deploying it, and anywhere else
+  // it is `latest`.
+  tag?: string;
+  // Whether a push to this instance's registry deploys this app. True
+  // exactly when it is on that registry and pinned to no tag — derived
+  // from those two, so nothing can claim it is on while a tag says
+  // otherwise.
+  autodeploy?: boolean;
+  status: string;
+  // Whether a container currently backs this app, which is what decides
+  // whether there is a log to read. The status cannot answer it: an app
+  // that has never been deployed and one whose container went away both
+  // read as not running, and only the second has anything to say.
+  has_container: boolean;
+  // The daemon's four. The dashboard groups them into two: an app is
+  // built from a repository, or it runs an image someone published.
+  source: AppSource;
+  // Where a building app builds from. Absent for one that does not.
+  repo?: string;
+  ref?: string;
+  dockerfile?: string;
+  project: string;
+  environment: string;
+  // The machines it runs on. More than one is an app this instance's
+  // proxy spreads traffic across, over the cluster's private network.
+  //
+  // There is no machine that serves it: every name arrives at this
+  // instance and is routed from here, which is what makes moving an
+  // app not a DNS change and not a second certificate.
+  nodes: string[];
+  // What is running on each of those machines — what a "degraded"
+  // status is made of. One entry per copy, so a machine running two
+  // appears twice.
+  replicas: AppReplica[];
+  // How many copies run in total, across those machines. A number where
+  // `replicas` is the list: two shapes of the same fact, and one name
+  // for both is how a client sends an array where a count was meant.
+  scale: number;
+  // Whether the machines serving this app are not all serving the same
+  // deployment. Apart from `status` because the two are orthogonal: an
+  // app can be degraded and split, or running and split.
+  split?: boolean;
+  // Where a DNS record for this app has to point: this instance's own
+  // public address, whichever machine the app runs on. Absent when the
+  // instance does not know it — a name nothing can be pointed at yet.
+  address?: string;
+  // Whether this app follows the cluster: it runs on every machine
+  // there is, and is re-spread whenever one is added or taken away.
+  // Absent on an app placed by hand, which is every app until somebody
+  // turns this on.
+  spread?: boolean;
+  // What one copy of it may take from the machine it runs on. Zero in
+  // either half is no limit, which is the default.
+  limits: AppLimits;
+  // When the instance decides the replica count itself. Off when `max`
+  // is zero, which is every app until somebody turns it on.
+  autoscale: AppAutoscale;
+  // What Traefik asks this app for before trusting a container with
+  // traffic. Absent is no check, which is the default: a wrong path
+  // does not degrade a name, it takes every replica out at once.
+  health_path?: string;
+};
+
+// The rule the instance scales an app by.
+//
+// CPU is the only signal, and deliberately: adding a copy does not lower
+// any copy's memory, so a memory rule would climb and never return.
+export type AppAutoscale = {
+  // The fewest copies it will leave running.
+  min: number;
+  // The most it will run. **Zero is off** — there is no separate flag
+  // to disagree with it. A ceiling is not optional: without one a loop
+  // of requests is a loop of replicas.
+  max: number;
+  // What each copy should sit at, where 100 is one core — the same
+  // scale the charts are drawn on.
+  cpu: number;
+  // When it last changed the count. Absent until it has.
+  at?: string;
+};
+
+// What one copy of an app may take from its machine.
+//
+// Per copy, not per app: three replicas under a one-core limit may take
+// three cores between them.
+export type AppLimits = {
+  // Cores, fractional allowed. A ceiling rather than a share.
+  cpu: number;
+  // A hard memory ceiling in bytes. The kernel enforces it by killing
+  // whatever crosses it.
+  memory_bytes: number;
+};
+
+// One machine an app runs on.
+export type AppReplica = {
+  node: string;
+  status: string;
+  // Whether the edge is sending traffic here. A replica can be running
+  // and not yet a backend: the edge reaches one by container name, and
+  // a container from before this existed has none written down until
+  // its next deploy.
+  serving: boolean;
+  // Which deployment this machine is running, by id — the same id the
+  // deploy history is listed under. Absent for a machine that has been
+  // given the app and not yet run it.
+  deploy?: number;
+  // Which copy of the app on this machine this is, starting at 1.
+  // Absent on the first, which is the only one an app that has never
+  // been scaled out has.
+  ordinal?: number;
+};
+
+// --- credentials ---
+
+// One secret this instance holds. It carries no provider: what it is
+// used for is the use's business, and the same key may be writing DNS
+// records and pulling images at once. The secret itself is not here and
+// cannot be asked for — the daemon is what talks to the provider, so
+// nothing out here needs to read one back.
+export type Credential = {
+  id: number;
+  label: string;
+  // The first half, where the secret has one — an access key id, a
+  // registry login. Not a secret: the secret is the other half.
+  username?: string;
+  // What is currently depending on it, so the list can say why one
+  // cannot be deleted before somebody tries.
+  in_use_by?: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type RegistryProvider = "generic" | "digitalocean" | "aws";
+
+export type RegistryCredential = {
+  id: number;
+  // The stored account this authenticates as, and where its secret
+  // lives. Rotating that secret is one edit there.
+  credential_id: number;
+  provider: RegistryProvider;
+  host: string;
+  // The path segment between the host and the image, where the provider
+  // has one — DigitalOcean's registry name.
+  namespace?: string;
+  region?: string;
+  username: string;
+  created_at: string;
+  updated_at: string;
+};
+
+// What a live probe of a registry found. `unauthorized` is fixed by
+// storing a new login, which is what the registry's settings screen is
+// for; `unreachable` is someone else's registry being down.
+export type RegistryStatus = {
+  state: "available" | "unauthorized" | "unreachable";
+  detail?: string;
+};
+
+// One DNS provider: which API is spoken, and which stored credential
+// speaks it. The zones and records pages address it by this id.
+export type DNSProvider = {
+  id: number;
+  provider: string;
+  // The provider as a person calls it, served so the dashboard keeps no
+  // table of its own that drifts out of step.
+  provider_name: string;
+  credential_id: number;
+  // The credential's label, which is what a person picked it out of a
+  // list by.
+  label: string;
+  username?: string;
+  created_at: string;
+  updated_at: string;
+};
+
+// One provider a DNS account can be created for, and what to ask for
+// when a login is typed rather than picked. The form is built from this
+// rather than from a copy of the list.
+export type DNSProviderKind = {
+  provider: string;
+  name: string;
+  // Absent where the secret is a single value — then there is no first
+  // field, and asking for one would be asking for something that does
+  // not exist.
+  username_label?: string;
+  password_label: string;
+  hint: string;
+};
+
+export type DNSStatus = {
+  state: "available" | "unauthorized" | "unreachable";
+  detail?: string;
+};
+
+export type DNSZone = { id: string; name: string };
+
+// A record is a list at both providers: two A records for one name are
+// one record with two values here.
+export type DNSRecord = {
+  id?: string;
+  name: string;
+  type: string;
+  values: string[];
+  ttl: number;
+  proxied?: boolean;
+};
+
+export type Deployment = {
+  id: number;
+  status: string;
+  image: string;
+  error?: string;
+  // What the build printed. **Absent from a listing**, whatever the
+  // deploy printed: it is capped at 256 KiB a row and a history is
+  // fifty of them. Read one deployment for it.
+  logs?: string;
+  // Whether there is output to read, which is what a listing answers
+  // without carrying it.
+  has_logs: boolean;
+  // Whether this record may be removed. False only for a deploy still
+  // running, which the daemon is still writing to — a stalled one
+  // counts as not running, because nothing is writing to it any more.
+  deletable: boolean;
+  // The machines this deploy is waiting for that have stopped
+  // answering. Absent on every deploy that is not waiting on one.
+  //
+  // The status stays "pending" on purpose: a machine that comes back
+  // picks a pending deploy up and finishes the rollout it missed.
+  stalled_on?: string[];
+  // Whether the app is running this deploy — so deleting it takes the
+  // app down. Reported apart from `deletable` because it is not a
+  // refusal, it is a different act.
+  live: boolean;
+  created_at: string;
+};
+
+export type Settings = {
+  domain: string;
+  acme_email: string;
+  registry_host?: string;
+  // Whether the registered App can be installed anywhere but the
+  // account that owns it. An App from before Cubeship asked for OAuth
+  // on install was also registered private, and neither can be changed
+  // after the fact — false means it has to be replaced, not fixed.
+  github_oauth_ready?: boolean;
+  // What this instance's DNS records should point at. The browser
+  // cannot work this out, so the daemon reports it.
+  public_ip?: string;
+  public_ip_configured: boolean;
+  // The stored DNS credential that writes this instance's own records.
+  dns_provider_id?: string;
+  // When this instance updates itself, as HH:MM, and what that is in.
+  // Absent is off.
+  auto_update_at?: string;
+  auto_update_timezone?: string;
+  tls_enabled: boolean;
+  // The GitHub App this instance acts as. Its credentials are
+  // write-only: the daemon reports whether they are there, never what
+  // they are.
+  github_app_slug?: string;
+  github_connected: boolean;
+  // Whether every name under the instance's domain already resolves
+  // here — true of the sslip.io address a default install takes. It is
+  // what decides whether a name for an app needs a record written.
+  wildcard_domain?: boolean;
+};
+
+// GitHubInstallation is one GitHub account this instance has
+// connected. The installation is what lets Cubeship clone that
+// account's private repositories, and what makes a push to one deploy
+// the apps built from it.
+export type GitHubInstallation = {
+  id: number;
+  installation_id: number;
+  account: string;
+  created_at: string;
+};
+
+export type GitHubRepository = {
+  full_name: string;
+  private: boolean;
+  default_branch: string;
+};
+
+export type GitHubBranch = { name: string };
+
+export type GitHubConnections = {
+  installations: GitHubInstallation[];
+  // Where to send someone to install the App. Empty until the instance
+  // is registered as one.
+  install_url: string;
+};
+
+// ownerOf reads the GitHub account a repository URL belongs to, which is
+// what an installation is matched on. Anything not on GitHub — or not a
+// repository — is null, and none of this applies to it.
+export function ownerOf(repo: string): string | null {
+  const match = repo.trim().match(/^https?:\/\/(?:www\.)?github\.com\/([^/\s]+)\/([^/\s]+)/i);
+  return match ? match[1] : null;
+}
+
+// One repository in a registry, and one tag in it. The same shape
+// whichever registry answered — Cubeship's own or somebody else's —
+// because what the dashboard shows is the same either way.
+export type RegistryRepository = { name: string };
+
+export type RegistryImage = {
+  tag: string;
+  digest?: string;
+  size?: number;
+  pushed_at?: string;
+};
+
+export type RegistryUsage = {
+  total_bytes: number;
+  // Always true: layers are shared between images, so two tags built
+  // from one base count that base twice. An upper bound on what is
+  // stored, not what is billed.
+  counts_shared_layers: boolean;
+  repositories: { name: string; bytes: number; images: number }[];
+};
+
+export type ApiKey = {
+  id: number;
+  name: string;
+  created_at: string;
+  last_used_at?: string;
+  current_key: boolean;
+};
+
+export type ResolvedVar = { key: string; value: string; source: string };
+export type EnvView = { vars: Record<string, string>; effective?: ResolvedVar[] };
+
+// One TLS certificate this instance holds. Traefik issues and renews
+// them; this is what it has, read out of its own store.
+export type Certificate = {
+  host: string;
+  sans?: string[];
+  issuer: string;
+  not_before: string;
+  not_after: string;
+  serial: string;
+  // The app served at that name, as its reference. Absent for the
+  // instance's own names and for one nothing serves any more.
+  app?: string;
+  instance?: boolean;
+  // Nothing on this instance answers there now. Still valid, just
+  // unused.
+  orphan?: boolean;
+};
+
+// Why a name this instance routes has no certificate. The three are
+// three different jobs: configure the instance, redeploy the app, or
+// look at what Traefik said.
+export type MissingReason =
+  | "tls_not_configured"
+  | "not_deployed"
+  | "pending"
+  // The app is on another machine in this cluster, which runs its own
+  // edge and holds its own certificate store. Nothing here can say
+  // whether that certificate exists.
+  | "another_server";
+
+export type MissingCertificate = {
+  host: string;
+  app?: string;
+  instance?: boolean;
+  reason: MissingReason;
+  // The machine that serves it, when that is not this one.
+  node?: string;
+  // The last thing Traefik's log said about that name, when it said
+  // anything. A quotation, not a contract.
+  detail?: string;
+};
+
+export type CertificateReport = {
+  tls_enabled: boolean;
+  acme_email?: string;
+  certificates: Certificate[];
+  missing: MissingCertificate[];
+  // What Traefik has lately complained about, whether or not the line
+  // names a host. Often the only place the real reason appears.
+  traefik_says?: string[];
+};
+
+// --- managed databases ---
+
+// The engines the daemon can run. Not a hard-coded list: a version is
+// permanent once a database runs it, so the daemon is the only thing
+// that knows which ones it will accept — see GET /datastores/engines.
+export type DatastoreEngine = {
+  engine: string;
+  versions: string[];
+  default_version: string;
+  port: number;
+  has_database: boolean;
+  // Whether the login is yours to choose. False for Redis, whose
+  // password belongs to the ACL user `default` — which already exists
+  // and cannot be renamed.
+  has_user: boolean;
+  // The login an empty username becomes, and the only one there is when
+  // has_user is false.
+  default_username: string;
+  // What an attached app's variables are called: an app on a Redis gets
+  // REDIS_URL, not DATABASE_URL.
+  var_stem: string;
+};
+
+// What an attached app receives, by name. Values are not in it: one of
+// them is the password.
+//
+// `app` is a full reference, project/environment/name. Full, because a
+// datastore is not inside an environment and one may serve apps in
+// several.
+export type DatastoreAttachment = {
+  app: string;
+  prefix?: string;
+  variables: string[];
+};
+
+// One managed database. It belongs to the instance, not to a project:
+// on one host, one Postgres serving several small apps is the normal
+// shape, and those apps are routinely in different projects. Its name
+// is unique across the instance and is the whole of its address.
+//
+// No password field, deliberately. It is read from its own endpoint, by
+// an admin, on purpose — see DatastoreCredentials.
+export type Datastore = {
+  name: string;
+  description: string;
+  engine: string;
+  version: string;
+  // The middle of the variables an attached app receives — DATABASE,
+  // REDIS or MONGO. Served rather than derived here, so nothing out
+  // here keeps a second copy of the engine table, and it is what says
+  // whether two attachments would collide.
+  var_stem: string;
+  // Whether this instance knows how to back this engine up. False for
+  // Redis, deliberately, and the screen leaves the tab out rather than
+  // offering one that could never hold anything.
+  can_back_up?: boolean;
+  // What a dump of this engine actually promises, in a sentence. It
+  // differs per engine in a way no general wording covers.
+  backup_consistency?: string;
+  status: string;
+  // Why provisioning failed, when it did.
+  error?: string;
+  username: string;
+  database?: string;
+  // Whether a container currently backs this — what decides whether
+  // there is a log to read or anything to stop. The status alone cannot
+  // answer it: one whose provisioning failed may have neither.
+  has_container: boolean;
+  // Where an app on this instance reaches it: the container's own name
+  // on the shared network.
+  host: string;
+  port: number;
+  // The host port it also answers on from outside, absent when it does
+  // not — which is the default.
+  exposed_port?: number;
+  external_host?: string;
+  // What its container may take from the machine. Zero in either half
+  // is no limit, which is the default.
+  limits: AppLimits;
+  attachments: DatastoreAttachment[];
+  created_at: string;
+};
+
+// The statuses a database reports. "stopped" is one somebody turned
+// off; "down" is one whose container stopped on its own. One is a
+// decision and the other is a fault, and StatusBadge colours them
+// alike — grey for both — because neither is an error to chase, but the
+// word is what tells them apart.
+export const DATASTORE_RUNNING = "running";
+export const DATASTORE_STOPPED = "stopped";
+
+// The response to creating one, which is the single place the password
+// comes back without being asked for: whoever left the field empty is
+// whoever needs to see what was generated.
+export type CreatedDatastore = Datastore & { password: string };
+
+export type DatastoreCredentials = {
+  username: string;
+  password: string;
+  database?: string;
+  internal_uri: string;
+  internal_host: string;
+  internal_port: number;
+  external_uri?: string;
+  external_host?: string;
+  external_port?: number;
+};
+
+// The engines the dashboard knows how to label. One the daemon adds
+// that is not here is shown by its own name rather than guessed at.
+export const DATASTORE_LABELS: Record<string, string> = {
+  postgres: "PostgreSQL",
+  mysql: "MySQL",
+  mariadb: "MariaDB",
+  redis: "Redis",
+  mongodb: "MongoDB",
+};
+
+export function datastoreLabel(engine: string): string {
+  return DATASTORE_LABELS[engine] ?? engine;
+}
+
+// The password field of a create form comes pre-filled, so a database
+// with a weak password is not something you get by not thinking about
+// it. Generated here rather than left to the daemon because the person
+// filling the form should be able to see it, change it, and copy it
+// before anything is created.
+//
+// The alphabet is letters and digits only — the same one the daemon
+// uses, and for the same reason: a generated password gets retyped into
+// a psql prompt and pasted into config boxes, and a quote or a
+// backslash in one is somebody's afternoon.
+const PASSWORD_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+export function generatePassword(length = 24): string {
+  const bytes = new Uint32Array(length);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (n) => PASSWORD_ALPHABET[n % PASSWORD_ALPHABET.length]).join("");
+}
+
+// datastorePath is the API path for one database. One segment: the name
+// is the whole address.
+export function datastorePath(name: string): string {
+  return `/datastores/${name}`;
+}
+
+// --- metrics ---
+
+// One bucket of one container's readings. `at` is the start of the
+// bucket, and the API buckets server-side so a chart is the same
+// density whichever window is asked for.
+export type MetricSample = {
+  at: string;
+  // Percent of one core: 250 is two and a half cores. Deliberately not
+  // capped at 100 — a container using four cores on an eight-core host
+  // is a fact worth seeing.
+  cpu_percent: number;
+  memory_bytes: number;
+  memory_limit_bytes: number;
+};
+
+export type MetricSeries = {
+  window: string;
+  samples: MetricSample[];
+  // The ceiling the newest sample saw, which is what a memory chart is
+  // drawn against. 0 when nothing has been sampled.
+  memory_limit_bytes: number;
+  // Whether there is a container behind this right now. False with no
+  // samples means there is nothing to sample — a different sentence
+  // from "nothing has been sampled yet", and the only one worth
+  // showing.
+  collecting: boolean;
+};
+
+// The windows the daemon offers, shortest first. Kept in step with
+// metrics.Windows on the daemon, which is the side that refuses one it
+// does not know.
+// One machine in this instance's cluster, from GET /nodes.
+//
+// The control plane is in the list rather than implied: it is a machine
+// like the others, and a listing of "the other servers" is one that
+// cannot answer where something runs.
+export type ClusterServer = {
+  name: string;
+  description?: string;
+  control_plane: boolean;
+  // Derived from when the agent last called, never stored. "pending"
+  // has never connected — the installer has not been run on it yet.
+  status: "ready" | "pending" | "unreachable";
+  // Where the machine is reached from outside, as it reported it.
+  // Absent when it could not work its own out.
+  address?: string;
+  version?: string;
+  cores: number;
+  memory_total_bytes: number;
+  disk_total_bytes: number;
+  // The newest reading, absent until one has been taken.
+  cpu_percent?: number;
+  memory_bytes?: number;
+  // Whether this machine is on the cluster's private network — Docker's
+  // own overlay, which is what lets a container here reach, and resolve
+  // by name, a container on another machine. A server can be ready and
+  // not on it: it is calling in, and its containers are alone.
+  in_mesh: boolean;
+  last_seen_at?: string;
+  created_at: string;
+};
+
+// The one answer that carries a credential, from POST /nodes. It is
+// shown once and never again — only its hash is stored.
+export type ClusterServerCreated = ClusterServer & { token: string };
+
+// What the machine itself has been doing, from GET /instance/metrics.
+//
+// A different shape from a container's series and deliberately not the
+// same type: the box has a disk filling up and a wire moving bytes,
+// neither of which a container has, and its CPU percentage is of the
+// **whole machine** where a container's is of one core.
+export type InstanceSample = {
+  at: string;
+  // 100 is every core busy.
+  cpu_percent: number;
+  memory_bytes: number;
+  memory_total_bytes: number;
+  disk_bytes: number;
+  disk_total_bytes: number;
+  // Absent when this daemon cannot see the machine's own interfaces —
+  // see `unavailable` — and on the first pass after a restart, because
+  // a rate is a difference.
+  rx_bytes_per_sec?: number;
+  tx_bytes_per_sec?: number;
+};
+
+export type InstanceSeries = {
+  window: string;
+  samples: InstanceSample[];
+  // Facts about the machine rather than about the series, so a daemon
+  // that started a minute ago can still say what box it is on.
+  cores: number;
+  memory_total_bytes: number;
+  disk_total_bytes: number;
+  disk_path: string;
+  // The interfaces the network figures add up, so a number that looks
+  // wrong can be explained rather than argued with.
+  interfaces?: string[];
+  // What this daemon cannot measure and why, keyed by "cpu", "memory",
+  // "disk" or "network". The usual entry is the network: a container's
+  // /proc/net is its own namespace, so a daemon whose container was
+  // started without the machine's procfs says so here instead of
+  // charting its own veth.
+  unavailable?: Record<string, string>;
+};
+
+// One container's newest reading, from GET /instance/containers.
+//
+// It crosses every module that runs a container — apps, databases and
+// managed object stores — because "what is using this box" does. The
+// CPU convention here is the **container** one: 100 is one core, not
+// the whole machine as it is on InstanceSample.
+export type ContainerUsage = {
+  kind: "app" | "datastore" | "objectstore";
+  // An app's full project/environment/name reference, or a database's
+  // or store's name. A bare app name would identify nothing.
+  name: string;
+  at: string;
+  cpu_percent: number;
+  memory_bytes: number;
+  memory_limit_bytes: number;
+};
+
+export const METRIC_WINDOWS = ["1h", "6h", "24h"] as const;
+export type MetricWindow = (typeof METRIC_WINDOWS)[number];
+
+// Bytes as a person reads them. Binary units, because that is what a
+// cgroup limit is expressed in and what every other tool shows.
+export function formatBytes(bytes: number): string {
+  if (bytes <= 0) return "0 B";
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  const exp = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** exp;
+  // One decimal below 10 — 1.4 GiB says something 1 GiB does not — and
+  // none above it, where the digit is noise.
+  return `${value < 10 && exp > 0 ? value.toFixed(1) : Math.round(value)} ${units[exp]}`;
+}
+
+// A percentage of one core. Under 10 the fraction is the whole signal;
+// above it, it is noise.
+export function formatCPU(percent: number): string {
+  return `${percent < 10 ? percent.toFixed(1) : Math.round(percent)}%`;
+}
+
+// --- firewall ---
+
+// One rule as UFW prints it.
+//
+// `text` is what a screen shows: UFW's syntax is wider than the parsed
+// fields — an interface, a rate limit — and a rule shown as less than it
+// is would be a rule somebody deletes by mistake.
+export type FirewallRule = {
+  index: number;
+  text: string;
+  // `host` is traffic to the machine; `apps` is traffic forwarded to a
+  // container, which is every port Cubeship publishes.
+  scope: "host" | "apps";
+  action?: "allow" | "deny" | "reject";
+  protocol?: "tcp" | "udp";
+  ports?: string;
+  from?: string;
+  comment?: string;
+  // This rule admits SSH on a running firewall. Deleting it from here
+  // is refused — it is what keeps the session you are reading this in.
+  protected: boolean;
+  // The IPv6 half of a rule UFW wrote twice. One decision, two lines.
+  v6: boolean;
+};
+
+// A host port a container is answering on right now, which on this kind
+// of machine is what is actually exposed.
+export type FirewallPublishedPort = {
+  port: number;
+  // What the port becomes once Docker has translated it — a database
+  // published on 15000 is listening on 5432. Absent when the two are
+  // the same, and it is the number a rule for this port is written
+  // for: a forwarded rule is consulted after the translation.
+  inside?: number;
+  protocol: string;
+  container: string;
+  allowed: boolean;
+  // What admits it, when `allowed` is true: a ufw rule, or the stanza
+  // Cubeship keeps for a datastore or object store it exposed — a line
+  // that matches the port as it was published, which a ufw rule cannot.
+  // Absent when nothing does.
+  allowed_by?: "rule" | "exposed";
+};
+
+export type Firewall = {
+  // False when the daemon is a host process rather than a container —
+  // `make dev`. Then nothing else here is known.
+  available: boolean;
+  installed: boolean;
+  enabled: boolean;
+  default_incoming?: string;
+  rules: FirewallRule[];
+  // Whether published container ports are answerable to ufw at all.
+  // False means every `apps` rule would be inert.
+  docker_adopted: boolean;
+  ssh_ports?: number[];
+  ssh_allowed: boolean;
+  // The address this request came from, so the rule form can offer
+  // "just me" without sending anybody to look their own address up.
+  your_ip?: string;
+  published: FirewallPublishedPort[];
+};
+
+// --- object storage ---
+
+// Where a store is. "managed" is a MinIO this instance runs; "external"
+// is an endpoint somewhere else it holds keys for. The difference shows
+// up in exactly one place that matters — deleting the first removes the
+// data, deleting the second forgets an address.
+export type ObjectStoreKind = "managed" | "external";
+
+export type ObjectStoreProvider = "minio" | "aws" | "cloudflare" | "digitalocean" | "generic";
+
+// One app wired to one bucket. The variable *names* and not their
+// values: one of them is the secret key.
+export type ObjectStoreAttachment = {
+  app: string;
+  bucket: string;
+  prefix?: string;
+  variables: string[];
+};
+
+export type ObjectStore = {
+  name: string;
+  description?: string;
+  kind: ObjectStoreKind;
+  provider: ObjectStoreProvider;
+  // The provider's name as a person writes it. From the daemon, so
+  // every surface spells "DigitalOcean Spaces" the same way.
+  provider_label: string;
+  endpoint: string;
+  region: string;
+  path_style: boolean;
+  // Whether this store's provider issues logins for a single bucket,
+  // which is where pinning one is accepted. From the daemon: a second
+  // list of which providers those are is one that disagrees with it the
+  // first time one is added.
+  scopes_by_bucket?: boolean;
+  // The one bucket this store is pinned to, when its login reaches
+  // exactly one and cannot list them.
+  bucket?: string;
+  credential_id?: number;
+  version?: string;
+  exposed_port?: number;
+  external_endpoint?: string;
+  // What a managed store's container may take from the machine. Zero in
+  // either half is no limit, and both are always zero on a linked
+  // store: that is somebody else's server, so there is nothing here to
+  // cap.
+  limits: AppLimits;
+  has_container: boolean;
+  status: string;
+  error?: string;
+  attachments: ObjectStoreAttachment[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type ObjectStoreCredentials = {
+  access_key: string;
+  secret_key: string;
+  region: string;
+  endpoint: string;
+  external_endpoint?: string;
+  path_style: boolean;
+};
+
+// What each provider asks for beyond the login, because its endpoint is
+// a template with one variable in it.
+export type ObjectStoreProviderInfo = {
+  provider: ObjectStoreProvider;
+  label: string;
+  asks: "region" | "account" | "endpoint";
+  // Whether this provider's own logins are commonly issued for a single
+  // bucket — R2's tokens, a Space's access keys. The link form offers
+  // the optional bucket field only where it is true: everywhere else a
+  // login reaches the account, and naming a bucket would take the rest
+  // of the store away for a limit it does not have.
+  scopes_by_bucket: boolean;
+};
+
+export type ObjectStoreProviders = {
+  providers: ObjectStoreProviderInfo[];
+  versions: string[];
+};
+
+export type Bucket = { name: string; created_at?: string };
+
+// A folder is a common prefix, which is the only kind S3 has: `prefix`
+// is what to ask for to go into it, `name` is what it is called here.
+export type ObjectFolder = { prefix: string; name: string };
+
+export type StoredObject = {
+  key: string;
+  name: string;
+  size: number;
+  modified_at: string;
+  etag?: string;
+};
+
+export type ObjectListing = {
+  prefix: string;
+  folders: ObjectFolder[];
+  objects: StoredObject[];
+  cursor?: string;
+};
+
+// objectStorePath is the API path for one store.
+export function objectStorePath(name: string): string {
+  return `/objectstores/${name}`;
+}
+
+// bucketPath is the API path for one bucket inside one store. Both
+// segments are encoded: a bucket name is DNS-shaped and a store's is a
+// slug, so neither can carry a slash — but neither is this code's to
+// assume about a value that arrived over the wire.
+export function bucketPath(store: string, bucket: string): string {
+  return `${objectStorePath(store)}/buckets/${encodeURIComponent(bucket)}`;
+}
+
+// uploadObject sends a file as the request body.
+//
+// Not a multipart form, and not through `api` either, which is JSON in
+// both directions. `multipart/form-data` is one of the three content
+// types a browser sends cross-site with no preflight, so an endpoint
+// taking one would be reachable from any page the session's owner
+// happens to open; a raw body forces the preflight instead.
+export async function uploadObject(
+  store: string,
+  bucket: string,
+  prefix: string,
+  file: File,
+): Promise<StoredObject> {
+  const query = new URLSearchParams({ prefix, filename: file.name });
+  const res = await fetch(`/api${bucketPath(store, bucket)}/objects?${query}`, {
+    method: "PUT",
+    credentials: "same-origin",
+    // The browser knows the length, so the daemon can hand the store a
+    // size instead of uploading in parts.
+    headers: { "Content-Type": file.type || "application/octet-stream" },
+    body: file,
+  });
+  if (!res.ok) {
+    throw new ApiError(res.status, (await res.text()).trim() || res.statusText);
+  }
+  return (await res.json()) as StoredObject;
+}
+
+// downloadURL is where a file is fetched from. A plain link, because
+// the session cookie is what authenticates it and a GET is safe — see
+// httpx.SameOrigin, which lets every read through.
+// One copy of one database, and what it says about itself outlives the
+// database it came from.
+export type Backup = {
+  // What this is a copy of. `instance` is Cubeship itself rather than
+  // a database somebody asked it to run — and it is the one kind with
+  // no restore, because what it would replace is the database doing the
+  // replacing.
+  kind?: "datastore" | "instance";
+  id: number;
+  database: string;
+  // Whether that database is still here, which is what decides whether
+  // this can be restored at all. False is a backup that can be
+  // downloaded and deleted and not put back: where to put it is a
+  // decision this release does not make.
+  database_exists: boolean;
+  engine: string;
+  version: string;
+  store?: string;
+  bucket?: string;
+  key: string;
+  // Whether it is somewhere other than the disk it was taken from.
+  // **False is not a backup** in the sense that matters — it survives
+  // somebody dropping a table and not the machine — so every row says
+  // so rather than the screen claiming otherwise.
+  off_machine: boolean;
+  size_bytes: number;
+  status: "taking" | "succeeded" | "failed";
+  error?: string;
+  scheduled: boolean;
+  started_at: string;
+  finished_at?: string;
+};
+
+// When a database is backed up without anybody asking. Absent entirely
+// when it is not: the row existing is what scheduled means, so nothing
+// can say off while a time sits beside it.
+export type BackupSchedule = {
+  at: string;
+  timezone: string;
+  // How many to hold on to, newest first. Zero keeps every one.
+  keep: number;
+  // The object store they go to, by name — which is how every surface
+  // here addresses one. Absent for this machine's own disk.
+  store?: string;
+  bucket?: string;
+  last_run_at?: string;
+};
+
+// One database's backup situation, which is a different question from
+// a list of its dumps: this is built from the databases, so a database
+// nobody has ever backed up — the row that matters most — is in it.
+export type BackupCoverage = {
+  database: string;
+  engine: string;
+  version?: string;
+  can_back_up: boolean;
+  schedule?: BackupSchedule;
+  // There is something to restore and it is not on this machine's own
+  // disk. Both halves, because either alone is a lie somebody acts on.
+  protected: boolean;
+  // The most recent attempt failed. Not the opposite of `protected`: a
+  // good dump can sit in a bucket while every night since has failed.
+  failing: boolean;
+  last_good?: Backup;
+  last?: Backup;
+  count: number;
+};
+
+export function downloadURL(store: string, bucket: string, key: string): string {
+  return `/api${bucketPath(store, bucket)}/download?key=${encodeURIComponent(key)}`;
+}
+
+// One release of Cubeship.
+//
+// The notes are in the daemon's own binary rather than fetched from
+// anywhere: an instance on somebody's own VPS may be behind a firewall,
+// and a changelog that is sometimes empty is worse than none. So an
+// instance can only ever describe releases up to the one it is on,
+// which is the question somebody has after an upgrade.
+export type Release = {
+  version: string;
+  date: string;
+  // One sentence, for a list where the body would be too much.
+  summary: string;
+  // The notes, in Markdown.
+  body: string;
+  prerelease?: boolean;
+};
+
+export type Releases = {
+  // What this instance is running. Absent on a developer's build, which
+  // has nothing stamped on it and therefore nothing to show.
+  version?: string;
+  // Every release up to that version, newest first.
+  notes: Release[];
+  // The ones this person has not been shown. Empty is the ordinary
+  // answer, and it is what the dialog reads to decide not to appear.
+  unseen: Release[];
+};
+
+// What this instance is on, and what it could move to.
+export type Updates = {
+  // What it is running. Absent on a developer's build.
+  version?: string;
+  available?: {
+    version: string;
+    // What changed, in Markdown. Carried by the API because it is the
+    // one thing about a newer version this build cannot already know.
+    notes?: string;
+    published_at?: string;
+    prerelease?: boolean;
+  };
+  // Whether the lookup happened. **False with no `available` means the
+  // instance could not ask** — an instance behind a firewall is a
+  // normal instance, and telling it that it is current would be a lie.
+  checked: boolean;
+  run?: UpdateRun;
+};
+
+// One attempt to move the instance to a version.
+export type UpdateRun = {
+  version: string;
+  from?: string;
+  status: "running" | "done" | "failed";
+  // What is happening now, in words.
+  step?: string;
+  // Every step that finished, oldest first.
+  done?: string[];
+  error?: string;
+  started_at: string;
+  finished_at?: string;
+};

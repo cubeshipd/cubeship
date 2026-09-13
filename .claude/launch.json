@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "web-preview",
+      "name": "dashboard-preview",
       "runtimeExecutable": "make",
       "runtimeArgs": [
-        "web-preview"
+        "dashboard-preview"
       ],
       "port": 3001
     },

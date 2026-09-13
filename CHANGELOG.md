@@ -2,7 +2,7 @@
 
 Every release of Cubeship, newest first.
 
-<!-- Generated from internal/release/notes by cmd/changelog. Edit a note
+<!-- Generated from internal/release/notes by tools/changelog. Edit a note
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 

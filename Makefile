@@ -3,7 +3,10 @@
 GO      ?= go
 BINDIR  ?= bin
 COVER   ?= coverage.out
-WEBDIR  ?= web
+# The Go module — the daemon and the CLI — and the dashboard beside it:
+# everything an instance runs. site/ is cubeship.dev, which only we host.
+GODIR   ?= product
+WEBDIR  ?= $(GODIR)/dashboard
 PNPM    ?= pnpm
 RELEASEDIR ?= dist
 
@@ -21,18 +24,18 @@ help: ## List targets
 		| awk 'BEGIN{FS=":.*## "}{printf "  %-18s %s\n", $$1, $$2}'
 
 .PHONY: build
-build: web ## Build cubeship and cubeshipd for this machine into bin/
-	$(GO) build -o $(BINDIR)/ ./cmd/...
+build: dashboard ## Build cubeship and cubeshipd for this machine into bin/
+	$(GO) -C $(GODIR) build -o $(CURDIR)/$(BINDIR)/ ./cmd/...
 
 .PHONY: daemon-linux
 daemon-linux: ## Cross-compile the daemon for the VPS (linux/amd64 unless overridden)
-	GOOS=$(DAEMON_GOOS) GOARCH=$(DAEMON_GOARCH) $(GO) build -o $(DAEMON_BIN) ./cmd/cubeshipd
+	GOOS=$(DAEMON_GOOS) GOARCH=$(DAEMON_GOARCH) $(GO) -C $(GODIR) build -o $(CURDIR)/$(DAEMON_BIN) ./cmd/cubeshipd
 
 # The dashboard is its own image and its own container now, so the Go
 # build no longer waits on it. This target is here to fail a broken
 # dashboard on your machine rather than in the image build.
-.PHONY: web
-web: ## Build the dashboard, the way its image does
+.PHONY: dashboard
+dashboard: ## Build the dashboard, the way its image does
 	cd $(WEBDIR) && $(PNPM) install --frozen-lockfile && $(PNPM) run build
 
 # The data directory a dev daemon keeps its state in. Override it to run
@@ -58,18 +61,18 @@ dev: db-up ## Run the daemon with live reload, rebuilding on every Go change
 	@docker exec $(PG_CONTAINER) psql -U cubeship -d postgres -tc \
 		"SELECT 1 FROM pg_database WHERE datname = 'cubeship_dev'" | grep -q 1 || \
 		docker exec $(PG_CONTAINER) createdb -U cubeship cubeship_dev
-	CUBESHIP_DATA_DIR=$(DEV_DATA_DIR) CUBESHIP_DATABASE_URL="$(DEV_DATABASE_URL)" $(GO) tool air
+	cd $(GODIR) && CUBESHIP_DATA_DIR=$(DEV_DATA_DIR) CUBESHIP_DATABASE_URL="$(DEV_DATABASE_URL)" $(GO) tool air
 
 # The daemon proxies to :3001 when it runs on the host — see
 # bootstrap.FrontendAddress — so this is the dashboard for `make dev`
 # rather than a second thing to open. Reach the instance at :3000 either
 # way; :3001 works too, and rewrites /api to the daemon itself.
-.PHONY: web-dev
-web-dev: ## Run the dashboard for `make dev`, with hot reload
+.PHONY: dashboard-dev
+dashboard-dev: ## Run the dashboard for `make dev`, with hot reload
 	cd $(WEBDIR) && $(PNPM) run dev
 
-.PHONY: web-preview
-web-preview: ## Run the dashboard on invented data, with no daemon behind it
+.PHONY: dashboard-preview
+dashboard-preview: ## Run the dashboard on invented data, with no daemon behind it
 	cd $(WEBDIR) && NEXT_PUBLIC_CUBESHIP_MOCK=1 $(PNPM) run dev
 
 .PHONY: site-dev
@@ -91,7 +94,7 @@ site-db-down: ## Stop it
 
 .PHONY: install
 install: ## Install the CLI into GOBIN
-	$(GO) install ./cmd/cubeship
+	$(GO) -C $(GODIR) install ./cmd/cubeship
 
 # Deliberately not `systemctl restart` on a host you haven't named: pass
 # HOST explicitly, every time.
@@ -103,11 +106,11 @@ IMAGE   ?= ghcr.io/cubeshipd/cubeshipd
 
 .PHONY: image
 image: ## Build the daemon's image, dashboard included
-	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE):$(VERSION) .
+	docker build -f $(GODIR)/Dockerfile --build-arg VERSION=$(VERSION) -t $(IMAGE):$(VERSION) .
 
 .PHONY: site-image
 site-image: ## Build cubeship.dev's image
-	docker build -f Dockerfile.site -t cubeship-site:$(VERSION) .
+	docker build -f site/Dockerfile -t cubeship-site:$(VERSION) .
 
 # Releasing is a tag, and the rest is .github/workflows/release.yml:
 # both images for both architectures, the GitHub release with the notes
@@ -121,8 +124,8 @@ site-image: ## Build cubeship.dev's image
 .PHONY: release
 release: ## Cut a release: write the notes first, then `make release VERSION=0.2.0`
 	@test "$(VERSION)" != "dev" || { echo "usage: make release VERSION=0.2.0"; exit 1; }
-	@test -f internal/release/notes/$(VERSION).md || { \
-		echo "write internal/release/notes/$(VERSION).md first — it is the GitHub release, the CHANGELOG and the dialog the dashboard shows"; \
+	@test -f $(GODIR)/internal/release/notes/$(VERSION).md || { \
+		echo "write $(GODIR)/internal/release/notes/$(VERSION).md first — it is the GitHub release, the CHANGELOG and the dialog the dashboard shows"; \
 		exit 1; }
 	$(MAKE) changelog
 	@git diff --quiet -- CHANGELOG.md || { echo "CHANGELOG.md changed: commit it, then run this again"; exit 1; }
@@ -144,7 +147,7 @@ check: fmt-check vet sh-check changelog-check reference-check test ## Everything
 
 # Postgres has no in-memory mode, so the unit tests need a real server.
 # Each test gets its own schema in this one container (see
-# internal/storetest), which is why one shared instance is enough.
+# internal/platform/database/dbtest), which is why one shared instance is enough.
 # Port 5433, not 5432, so it never collides with a Postgres you already
 # run.
 PG_CONTAINER ?= cubeship-test-db
@@ -183,12 +186,12 @@ db-down: ## Stop and remove the test Postgres, discarding its data
 # skipping when -short is absent.
 .PHONY: test
 test: ## Unit tests that need nothing but this repository, race detector on
-	$(GO) test -short -race -count=1 ./...
+	$(GO) -C $(GODIR) test -short -race -count=1 ./...
 
 # The same tests with the database they want. This is what CI runs.
 .PHONY: test-db
 test-db: db-up ## Unit tests including the DB-backed ones (starts Postgres)
-	$(GO) test -race -count=1 ./...
+	$(GO) -C $(GODIR) test -race -count=1 ./...
 
 # The installer is the first thing every user runs, and no Go test can
 # reach it. This runs it on a real Linux against a release built here.
@@ -196,7 +199,7 @@ test-db: db-up ## Unit tests including the DB-backed ones (starts Postgres)
 test-install: ## Run install.sh end to end in a Linux container
 	docker run --rm \
 		-v "$(CURDIR)/install.sh:/src/install.sh:ro" \
-		-v "$(CURDIR)/test/install/run.sh:/src/run.sh:ro" \
+		-v "$(CURDIR)/$(GODIR)/test/install/run.sh:/src/run.sh:ro" \
 		--platform linux/amd64 debian:bookworm-slim \
 		sh -c 'apt-get -qq update && apt-get -qq install -y curl > /dev/null && sh /src/run.sh'
 
@@ -206,68 +209,68 @@ test-install: ## Run install.sh end to end in a Linux container
 test-uninstall: ## Run uninstall.sh end to end in a Linux container
 	docker run --rm \
 		-v "$(CURDIR)/uninstall.sh:/src/uninstall.sh:ro" \
-		-v "$(CURDIR)/test/install/uninstall.sh:/src/run.sh:ro" \
+		-v "$(CURDIR)/$(GODIR)/test/install/uninstall.sh:/src/run.sh:ro" \
 		--platform linux/amd64 debian:bookworm-slim \
 		sh /src/run.sh
 
 .PHONY: test-integration
 test-integration: ## End-to-end test against a real Docker daemon (needs Linux)
-	$(GO) test -tags integration -count=1 -v -timeout 15m ./test/integration/...
+	$(GO) -C $(GODIR) test -tags integration -count=1 -v -timeout 15m ./test/integration/...
 
 .PHONY: cover
 cover: ## Unit test coverage, opened as HTML
-	$(GO) test -coverprofile=$(COVER) ./...
-	$(GO) tool cover -html=$(COVER)
+	$(GO) -C $(GODIR) test -coverprofile=$(CURDIR)/$(COVER) ./...
+	$(GO) -C $(GODIR) tool cover -html=$(CURDIR)/$(COVER)
 
 # The integration test sits behind a build tag, so a plain `go vet ./...`
 # never compiles it. Vet it explicitly or it rots.
 .PHONY: changelog
 changelog: ## Write CHANGELOG.md from the release notes
-	go run ./cmd/changelog
+	$(GO) -C $(GODIR) run ./tools/changelog
 
 # The generated file going stale is the failure worth catching: a note
 # added without this following it leaves two answers to what a release
 # said, and the next person to look cannot tell which is the copy.
 .PHONY: changelog-check
 changelog-check: ## Fail if CHANGELOG.md is not what the release notes say
-	go run ./cmd/changelog -check
+	$(GO) -C $(GODIR) run ./tools/changelog -check
 
 # The site's CLI and MCP references are written from the CLI and the
 # daemon, so a flag or a tool added without its page is a stale page,
 # and `check` refuses it the way it refuses a stale changelog.
 .PHONY: reference
 reference: ## Write the CLI and MCP references into the site's docs
-	go run ./cmd/cubeship docs site/content/docs/cli
-	go run ./cmd/sitedocs site/content/docs/mcp/tools.mdx
+	$(GO) -C $(GODIR) run ./cmd/cubeship docs ../site/content/docs/cli
+	$(GO) -C $(GODIR) run ./tools/sitedocs ../site/content/docs/mcp/tools.mdx
 
 .PHONY: reference-check
 reference-check: ## Fail if the site's references are not what the code says
-	go run ./cmd/cubeship docs --check site/content/docs/cli
-	go run ./cmd/sitedocs -check site/content/docs/mcp/tools.mdx
+	$(GO) -C $(GODIR) run ./cmd/cubeship docs --check ../site/content/docs/cli
+	$(GO) -C $(GODIR) run ./tools/sitedocs -check ../site/content/docs/mcp/tools.mdx
 
 .PHONY: sh-check
 sh-check: ## Syntax-check the shell scripts
-	@for f in install.sh uninstall.sh test/install/run.sh test/install/uninstall.sh; do \
+	@for f in install.sh uninstall.sh $(GODIR)/test/install/run.sh $(GODIR)/test/install/uninstall.sh; do \
 		sh -n $$f || exit 1; \
 	done
 
 .PHONY: vet
 vet: ## go vet, including the build-tagged integration test
-	$(GO) vet ./...
-	$(GO) vet -tags integration ./test/integration/...
+	$(GO) -C $(GODIR) vet ./...
+	$(GO) -C $(GODIR) vet -tags integration ./test/integration/...
 
 .PHONY: fmt
 fmt: ## Rewrite badly formatted files in place
-	gofmt -w .
+	gofmt -w $(GODIR)
 
 .PHONY: fmt-check
 fmt-check: ## Fail if anything needs gofmt
-	@out=$$(gofmt -l .); \
+	@out=$$(gofmt -l $(GODIR)); \
 	if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
 .PHONY: tidy
 tidy: ## Sync go.mod/go.sum with the imports
-	$(GO) mod tidy
+	$(GO) -C $(GODIR) mod tidy
 
 .PHONY: clean
 clean: ## Remove build output
