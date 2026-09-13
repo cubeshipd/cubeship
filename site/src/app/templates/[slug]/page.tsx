@@ -83,7 +83,6 @@ export default async function TemplateDetailPage(props: PageProps<"/templates/[s
                   {author.login}
                 </Link>
               </div>
-              <LikeButton slug={slug} initialCount={template.likesCount} initialLiked={liked} />
               <a
                 href={`https://github.com/${author.login}`}
                 target="_blank"
@@ -93,6 +92,7 @@ export default async function TemplateDetailPage(props: PageProps<"/templates/[s
               >
                 <GitHubIcon className="size-4" />
               </a>
+              <LikeButton slug={slug} initialCount={template.likesCount} initialLiked={liked} />
             </div>
 
             <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 p-4">
