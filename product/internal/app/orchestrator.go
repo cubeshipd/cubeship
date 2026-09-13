@@ -110,10 +110,17 @@ func (o *Orchestrator) SetBuilderLogin(username, password string) {
 	o.builderLogin = buildkit.Login{Username: username, Password: password}
 }
 
-// DeployTimeout bounds a detached deploy. It is not any client's
-// timeout — nobody is waiting on the connection any more — it only stops
-// a wedged deploy running forever.
+// DeployTimeout bounds a detached deploy once it has an image: the pull,
+// the swap and the health gate. It is not any client's timeout — nobody is
+// waiting on the connection any more — it only stops a wedged deploy
+// running forever.
 const DeployTimeout = 10 * time.Minute
+
+// BuildTimeout bounds resolving the image, which is where a source that
+// builds does all of its work: the clone, pulling the base image into the
+// builder, the build, and loading the result into the Engine. A cold build
+// on a 1–2 GB base image does not fit in DeployTimeout on a small VPS.
+const BuildTimeout = 30 * time.Minute
 
 // DatastoreVars answers what the databases attached to an app
 // contribute to its environment: DATABASE_URL and its parts, for every
@@ -418,8 +425,9 @@ func (o *Orchestrator) Start(ctx context.Context, appID int64, tag string) (*Dep
 	go func() {
 		defer o.running.Done()
 		// A fresh context: the request that asked for this may already
-		// be gone, and that must not matter.
-		ctx, cancel := context.WithTimeout(context.Background(), DeployTimeout)
+		// be gone, and that must not matter. deploy gives each half its
+		// own deadline inside this one.
+		ctx, cancel := context.WithTimeout(context.Background(), BuildTimeout+DeployTimeout)
 		defer cancel()
 		o.run(ctx, appID, tag, deployment.ID)
 	}()
@@ -595,10 +603,20 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	logs := newDeploymentLog(o.saveDeploymentLogs(deploymentID))
 	defer logs.Close()
 
-	image, err := source.Resolve(ctx, a, tag, logs)
+	// Two deadlines rather than one: a build that took twenty minutes
+	// must not leave the swap with none of its own.
+	resolveCtx, cancelResolve := context.WithTimeout(ctx, BuildTimeout)
+	image, err := source.Resolve(resolveCtx, a, tag, logs)
+	timedOut := errors.Is(resolveCtx.Err(), context.DeadlineExceeded)
+	cancelResolve()
+	if timedOut {
+		return fmt.Errorf("resolve image: the build did not finish within %s", BuildTimeout)
+	}
 	if err != nil {
 		return fmt.Errorf("resolve image: %w", err)
 	}
+	ctx, cancel := context.WithTimeout(ctx, DeployTimeout)
+	defer cancel()
 	if err := o.apps.SetDeploymentImage(ctx, deploymentID, image.Ref); err != nil {
 		log.Printf("deploy %s: could not record the resolved image: %v", appName, err)
 	}

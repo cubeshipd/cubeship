@@ -52,7 +52,7 @@ func (s *Service) step(run *Run, format string, args ...any) {
 }
 
 func (s *Service) runInstall(caller *user.User, in *Install, run *Run, p *plan) {
-	ctx, cancel := context.WithTimeout(context.Background(), s.Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), s.timeoutFor(p.manifest))
 	defer cancel()
 	if err := s.apply(ctx, caller, in, run, p); err != nil {
 		s.failInstall(caller, in, run, err)
@@ -519,7 +519,7 @@ func (s *Service) waitFor(ctx context.Context, what string, ready func() (bool, 
 }
 
 func (s *Service) runUpdate(caller *user.User, in *Install, run *Run, up *updatePlan) {
-	ctx, cancel := context.WithTimeout(context.Background(), s.Timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), s.timeoutFor(up.manifest))
 	defer cancel()
 	if err := s.applyUpdate(ctx, caller, run, up); err != nil {
 		s.rollbackUpdate(caller, run, err)

@@ -587,7 +587,7 @@ func (c *Client) Deploy(ctx context.Context, ref, tag string) (Deployment, error
 // error, because giving up on watching is not a failure.
 func (c *Client) WaitForDeployment(ctx context.Context, ref string, id int64) (Deployment, error) {
 	return request[Deployment](ctx, c, "check deploy", http.MethodGet,
-		fmt.Sprintf("%s/deployments/%d?wait=true", appPath(ref), id), nil, http.StatusOK, DeployTimeout)
+		fmt.Sprintf("%s/deployments/%d?wait=true", appPath(ref), id), nil, http.StatusOK, DeployWaitTimeout)
 }
 
 // Deployments returns an app's recent deploy history, newest first.

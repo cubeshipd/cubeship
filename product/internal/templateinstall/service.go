@@ -114,7 +114,8 @@ type Service struct {
 
 	// Poll is how often a wait for a database or a store looks again.
 	Poll time.Duration
-	// Timeout is the longest an install may run before it is undone.
+	// Timeout is the longest an install may run before it is undone, for
+	// a template whose apps build nothing. See timeoutFor.
 	Timeout time.Duration
 }
 
@@ -124,6 +125,22 @@ func NewService(records Records, projects Projects, apps Apps, datastores Datast
 		catalog: catalog, version: version,
 		Poll: 2 * time.Second, Timeout: 30 * time.Minute,
 	}
+}
+
+// timeoutFor is how long an install or update of m may run: Timeout, and
+// a build's whole budget again for every app that builds, because apps
+// deploy one after another and each build may take all of its own.
+func (s *Service) timeoutFor(m *template.Normalized) time.Duration {
+	d := s.Timeout
+	if m == nil {
+		return d
+	}
+	for _, a := range m.Apps {
+		if a.Source.Type != "image" {
+			d += app.BuildTimeout
+		}
+	}
+	return d
 }
 
 // SetCatalog replaces where templates come from. For tests.

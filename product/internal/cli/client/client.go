@@ -26,10 +26,12 @@ import (
 // Timeouts. Most calls are a database round-trip and answer immediately;
 // a deploy blocks for the pull, the container start and several seconds
 // of health checks, so it gets its own budget rather than the default.
+// Watching one waits as long as the daemon lets it run, a build included.
 const (
-	DefaultTimeout = 30 * time.Second
-	DeployTimeout  = 10 * time.Minute
-	LogsTimeout    = 2 * time.Minute
+	DefaultTimeout    = 30 * time.Second
+	DeployTimeout     = 10 * time.Minute
+	DeployWaitTimeout = 40 * time.Minute
+	LogsTimeout       = 2 * time.Minute
 )
 
 type Client struct {

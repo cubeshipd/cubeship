@@ -331,6 +331,12 @@ project/environment (when missing) → databases, stores → apps and their sett
   → deploy each app and wait for it
 ```
 
+**The run's time limit grows with what builds.** Apps deploy one after
+another, and a deploy that builds may take `app.BuildTimeout` on its own,
+so an install or an update gets `Timeout` (30 minutes) plus that again for
+every app built from a repository (`timeoutFor`). A fixed half hour undid
+a template whose second built app was still inside its own budget.
+
 References are resolved from what was created: a database's credentials,
 an app's internal address, the answers. **Any failure undoes exactly the
 recorded resources, newest first** — a project that already existed is

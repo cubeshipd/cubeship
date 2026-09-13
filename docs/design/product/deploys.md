@@ -195,6 +195,12 @@ press — see "Deleting" — and this has nothing at all:
 `docker exec cubeship-buildkit buildctl prune` is the manual answer for
 now.
 
+**And a built image is on the disk twice.** The builder keeps its layers
+in that cache, base image included, and the `docker` exporter streams the
+whole image into the Engine as well — so a Dockerfile `FROM` a 1.5 GB
+image costs three, and every new ref leaves another image in the Engine.
+Neither copy is pruned today.
+
 ## Acting as a GitHub App
 
 One App per instance, registered by whoever runs the VPS; its
@@ -351,6 +357,21 @@ deploy; the panic becomes the deployment's error instead.
 How a deploy went lives in its row, since nobody is on the connection to
 be told. `WaitFor` polls it, `?wait=true` does the same over HTTP, and
 abandoning either does not touch the deploy.
+
+**Two deadlines, not one.** `BuildTimeout` (30 minutes) bounds resolving
+the image and `DeployTimeout` (10 minutes) starts once there is one, for
+the pull, the swap and the health gate. It was a single ten minutes over
+all of it, and for a build that covered waiting for the builder, the
+clone, pulling the base image, the build and loading the result into the
+Engine — which a cold build on a 1–2 GB base image does not finish on a
+small VPS. A template install that timed out undid everything it made,
+volumes included, so the failure landed on exactly the templates that
+build. A second deadline rather than a larger one: a build that used
+twenty minutes must not leave the swap with none, and an image deploy
+that wedges is still stopped at ten. A build that runs out says so in the
+deployment's error rather than as `context deadline exceeded`. The CLI
+watches for both (`DeployWaitTimeout`), since giving up sooner would only
+stop it watching.
 
 **A restart kills the goroutine, and the row used to say `pending` for
 ever.** Replacing the daemon — an update started while a site was
