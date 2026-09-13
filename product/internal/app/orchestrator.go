@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"os"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -33,6 +32,7 @@ type DockerAPI interface {
 	SetResources(ctx context.Context, id string, r dockerx.Resources) error
 	IsRunning(ctx context.Context, id string) (bool, error)
 	Logs(ctx context.Context, id, tail string) (io.ReadCloser, error)
+	PathOwner(ctx context.Context, image, path string) (dockerx.Owner, error)
 	// Not used here. It is declared so that one Docker client satisfies
 	// every module's view of the Engine, which is what lets `server`
 	// hand the same value to all of them — the alternative is an
@@ -768,8 +768,8 @@ func (o *Orchestrator) swapInPlace(ctx context.Context, a *Scoped, replica Repli
 	}
 	binds := make([]string, 0, len(a.Volumes))
 	for _, v := range a.Volumes {
-		if err := os.MkdirAll(VolumeDir(o.dataDir, v.ID), 0o755); err != nil {
-			return fmt.Errorf("make volume %s: %w", v.Path, err)
+		if err := dockerx.SeedVolume(ctx, o.docker, VolumeDir(o.dataDir, v.ID), image.Ref, v.Path); err != nil {
+			return err
 		}
 		binds = append(binds, VolumeBind(o.dataDir, v.ID, v.Path))
 	}

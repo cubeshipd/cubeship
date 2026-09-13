@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"sync"
 
@@ -130,6 +131,10 @@ func (f *fakeDocker) Logs(_ context.Context, _, _ string) (io.ReadCloser, error)
 // every module's view of the Engine. Nothing in this package calls it.
 func (f *fakeDocker) ExecStream(context.Context, string, []string, io.Reader, io.Writer) (string, int, error) {
 	return "", 0, errors.New("this fake does not exec")
+}
+
+func (f *fakeDocker) PathOwner(context.Context, string, string) (dockerx.Owner, error) {
+	return dockerx.Owner{UID: os.Getuid(), GID: os.Getgid(), Mode: 0o755}, nil
 }
 
 // PulledRefs is what was pulled, in order.

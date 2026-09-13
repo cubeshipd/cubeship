@@ -873,3 +873,7 @@ func TestADatabaseCeilingTooSmallToMeanAnythingIsRefused(t *testing.T) {
 		servertest.RequireStatus(t, rec, http.StatusBadRequest)
 	}
 }
+
+func (*fakeDocker) PathOwner(context.Context, string, string) (dockerx.Owner, error) {
+	return dockerx.Owner{Mode: 0o755}, nil
+}

@@ -274,3 +274,7 @@ func (quietDocker) Logs(context.Context, string, string) (io.ReadCloser, error) 
 func (quietDocker) ExecStream(context.Context, string, []string, io.Reader, io.Writer) (string, int, error) {
 	return "", 0, nil
 }
+
+func (quietDocker) PathOwner(context.Context, string, string) (dockerx.Owner, error) {
+	return dockerx.Owner{Mode: 0o755}, nil
+}

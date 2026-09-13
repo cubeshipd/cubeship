@@ -17,6 +17,7 @@ import (
 	"github.com/docker/docker/api/types/system"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/errdefs"
+	dockerspec "github.com/moby/docker-image-spec/specs-go/v1"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -54,6 +55,10 @@ type fakeAPI struct {
 	networks                map[string]bool
 	networkConnectErr       error
 	connected               []string
+	// imageUser is the USER every local image says it runs as, and
+	// archives what CopyFromContainer answers, by path.
+	imageUser string
+	archives  map[string][]byte
 }
 
 func (f *fakeAPI) ImagePull(ctx context.Context, ref string, options image.PullOptions) (io.ReadCloser, error) {
@@ -151,7 +156,12 @@ func (f *fakeAPI) ContainerUpdate(_ context.Context, id string, cfg container.Up
 
 func (f *fakeAPI) ImageInspectWithRaw(_ context.Context, ref string) (types.ImageInspect, []byte, error) {
 	if f.localImages[ref] {
-		return types.ImageInspect{ID: "sha256:" + ref}, nil, nil
+		info := types.ImageInspect{ID: "sha256:" + ref}
+		if f.imageUser != "" {
+			info.Config = &dockerspec.DockerOCIImageConfig{}
+			info.Config.User = f.imageUser
+		}
+		return info, nil, nil
 	}
 	return types.ImageInspect{}, nil, errdefs.NotFound(errors.New("no such image"))
 }

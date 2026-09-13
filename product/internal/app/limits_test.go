@@ -198,3 +198,7 @@ func TestZeroClearsTheCeiling(t *testing.T) {
 		t.Errorf("the replacement came up under %+v", got)
 	}
 }
+
+func (*cappingDocker) PathOwner(context.Context, string, string) (dockerx.Owner, error) {
+	return dockerx.Owner{Mode: 0o755}, nil
+}

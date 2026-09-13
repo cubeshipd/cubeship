@@ -375,3 +375,7 @@ func AddDomain(t testing.TB, f *Fixture, key, ref, host string) {
 	RequireStatus(t, f.Do(t, http.MethodPost, "/apps/"+ref+"/domains",
 		map[string]any{"host": host}, key), http.StatusCreated)
 }
+
+func (noDocker) PathOwner(context.Context, string, string) (dockerx.Owner, error) {
+	return dockerx.Owner{Mode: 0o755}, nil
+}

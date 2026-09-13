@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -26,6 +27,8 @@ type fakeEngine struct {
 	createErr error
 	// events is every stop and create, in order.
 	events []string
+	// ownersAsked is every image PathOwner was asked about.
+	ownersAsked []string
 }
 
 // errWouldNotStart is a container the Engine refuses to make.
@@ -69,6 +72,13 @@ func (e *fakeEngine) Logs(context.Context, string, string) (io.ReadCloser, error
 	return io.NopCloser(strings.NewReader("")), nil
 }
 func (e *fakeEngine) StartContainer(context.Context, string) error { return nil }
+
+// PathOwner answers the mode an image with a writable data directory
+// has, and remembers which images were asked about.
+func (e *fakeEngine) PathOwner(_ context.Context, image, _ string) (dockerx.Owner, error) {
+	e.ownersAsked = append(e.ownersAsked, image)
+	return dockerx.Owner{UID: os.Getuid(), GID: os.Getgid(), Mode: 0o770}, nil
+}
 func (e *fakeEngine) StopContainer(_ context.Context, id string) error {
 	e.events = append(e.events, "stop "+id)
 	return nil

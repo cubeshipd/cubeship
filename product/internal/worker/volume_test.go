@@ -2,6 +2,7 @@ package worker
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
@@ -42,6 +43,17 @@ func TestACopyWithAVolumeStopsTheOldContainerBeforeTheNewOneStarts(t *testing.T)
 	bind := filepath.Join(dataDir, "volumes", "5") + ":/var/lib/rabbitmq"
 	if got := engine.created[0].Binds; len(got) != 1 || got[0] != bind {
 		t.Errorf("binds = %v, want %s", got, bind)
+	}
+	// Seeded from the image before the container that mounts it exists.
+	if !slices.Equal(engine.ownersAsked, []string{"rabbitmq"}) {
+		t.Errorf("images asked for an owner = %v, want [rabbitmq]", engine.ownersAsked)
+	}
+	info, err := os.Stat(filepath.Join(dataDir, "volumes", "5"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o770 {
+		t.Errorf("volume mode = %v, want the image's 0770", got)
 	}
 }
 

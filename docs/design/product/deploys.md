@@ -386,6 +386,28 @@ app with more than one copy, `spread` or autoscaling, and while it has one
 (`canHoldVolume`, `keepsVolume`). The volume records its machine
 (`node_id`) when it is made, and that never changes.
 
+**An empty volume starts owned the way the image has that path.** A bind
+mount is a directory the daemon made, so it is root's and `0755` — and an
+image with a non-root `USER` cannot write to it: pgAdmin, running as
+`5050`, exits on its first start. Docker's named volumes copy the image's
+own directory into an empty volume on first mount; `dockerx.SeedVolume`
+does the part of that which matters, the owner and mode, before every
+deploy's container is created, on the control plane and on a worker alike.
+`PathOwner` reads them through a container that is created and never
+started, off the first header of the Engine's archive of that path. When
+the image has nothing there it is the image's `USER`, looked up in its own
+`/etc/passwd` and `/etc/group`, and root when it has none. A `USER` those
+files do not name refuses the deploy rather than guessing root, the one
+owner certain to be wrong.
+
+**Only while it is empty.** A volume holding data belongs to whatever wrote
+it — an app may chown its own files, and a restore puts owners back — so
+it is never re-owned. The contents are not copied either: a volume that
+starts empty is what every app here has been deployed against, and copying
+an image's files in would make the first deploy different from the rest.
+An empty volume costs one throwaway container per deploy until something
+is written to it.
+
 **Its deploy stops the old container before starting the new one**
 (`swapInPlace`), the one deploy here that is not zero-downtime. A new
 container that will not come up is removed and the old one started again,

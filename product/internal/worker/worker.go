@@ -27,7 +27,6 @@ import (
 	"log"
 	"net/http"
 	neturl "net/url"
-	"os"
 	"path/filepath"
 	"runtime/debug"
 	"sort"
@@ -87,6 +86,7 @@ type Engine interface {
 	SpecOf(ctx context.Context, name string) (dockerx.ContainerOpts, error)
 	IsRunning(ctx context.Context, id string) (bool, error)
 	RunningContainers(ctx context.Context) ([]dockerx.Running, error)
+	PathOwner(ctx context.Context, image, path string) (dockerx.Owner, error)
 }
 
 // How long the agent watches a container it has just started before
@@ -563,8 +563,8 @@ func (a *Agent) start(ctx context.Context, p node.Placement, registry string) (s
 	binds := make([]string, 0, len(p.Volumes))
 	for _, v := range p.Volumes {
 		dir := filepath.Join(a.dataDir, "volumes", strconv.FormatInt(v.ID, 10))
-		if err := os.MkdirAll(dir, 0o755); err != nil {
-			return "", fmt.Errorf("make volume %s: %w", v.Path, err)
+		if err := dockerx.SeedVolume(ctx, a.engine, dir, p.Image, v.Path); err != nil {
+			return "", err
 		}
 		binds = append(binds, dir+":"+v.Path)
 	}

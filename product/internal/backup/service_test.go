@@ -763,3 +763,7 @@ func countStatus(rows []backupRow, status string) int {
 }
 
 func itoa(id int64) string { return strconv.FormatInt(id, 10) }
+
+func (*fakeDocker) PathOwner(context.Context, string, string) (dockerx.Owner, error) {
+	return dockerx.Owner{Mode: 0o755}, nil
+}

@@ -192,3 +192,7 @@ func TestDeletingAProjectRemovesItsEnvironments(t *testing.T) {
 		t.Fatalf("expected only a fresh production environment, got %v", envs)
 	}
 }
+
+func (*stubDocker) PathOwner(context.Context, string, string) (dockerx.Owner, error) {
+	return dockerx.Owner{Mode: 0o755}, nil
+}
