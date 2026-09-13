@@ -21,6 +21,14 @@ import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -237,30 +245,77 @@ export function VolumeBackups({ app, volumeID }: { app: string; volumeID: number
     return () => clearInterval(timer);
   }, [running, load]);
 
+  // "Back up now" asks where: a volume's copy only goes to a store linked
+  // from outside the instance, and the schedule's is the default.
+  const [asking, setAsking] = useState(false);
+  const [askError, setAskError] = useState<string | null>(null);
+  const [stores, setStores] = useState<ObjectStore[] | null>(null);
+  const [store, setStore] = useState("");
+  const [buckets, setBuckets] = useState<Bucket[] | null>(null);
+  const [bucket, setBucket] = useState("");
+
+  useEffect(() => {
+    if (!asking) return;
+    api
+      .get<ObjectStore[]>("/objectstores")
+      .then((all) => setStores(all.filter((s) => s.kind !== "managed")))
+      .catch(() => setStores([]));
+    api
+      .get<BackupSchedule>(`${path}/schedule`)
+      .then((s) => {
+        setStore(s.store ?? "");
+        setBucket(s.bucket ?? "");
+      })
+      .catch(() => {});
+  }, [asking, path]);
+
+  useEffect(() => {
+    if (!store) {
+      setBuckets(null);
+      return;
+    }
+    let live = true;
+    setBuckets(null);
+    api
+      .get<Bucket[]>(`/objectstores/${encodeURIComponent(store)}/buckets`)
+      .then((b) => live && setBuckets(b))
+      .catch(() => live && setBuckets([]));
+    return () => {
+      live = false;
+    };
+  }, [store]);
+
+  async function takeNow(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setAskError(null);
+    try {
+      await api.post(path, { store, bucket });
+      setAsking(false);
+      load();
+    } catch (err) {
+      setAskError(message(err));
+    }
+    setBusy(false);
+  }
+
   return (
     <>
       <Schedule
         path={`${path}/schedule`}
         label="Back this volume up every day"
         note="The app is stopped while each copy is taken, so pick a time it can be down."
+        offsiteOnly
         onChanged={load}
       />
       <SectionHeader
         title="Backups"
-        sub="A copy of the directory, taken with the app stopped and started again afterwards."
+        sub="A copy of the directory in an S3 bucket linked from outside this instance, taken with the app stopped and started again afterwards."
         actions={
           <ActionButton
-            busy={busy}
-            onClick={async () => {
-              setBusy(true);
-              setError(null);
-              try {
-                await api.post(path, {});
-                load();
-              } catch (e) {
-                setError(message(e));
-              }
-              setBusy(false);
+            onClick={() => {
+              setAskError(null);
+              setAsking(true);
             }}
           >
             Back up now
@@ -269,6 +324,64 @@ export function VolumeBackups({ app, volumeID }: { app: string; volumeID: number
       />
       <ErrorAlert error={error} />
       <BackupTable rows={rows} onChanged={load} showDatabase={false} />
+
+      <Dialog open={asking} onOpenChange={setAsking}>
+        <DialogContent className="sm:max-w-md">
+          <form onSubmit={takeNow}>
+            <DialogHeader>
+              <DialogTitle>Back up this volume now</DialogTitle>
+              <DialogDescription>
+                The app is stopped while the copy is taken and started again afterwards.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-5">
+              <ErrorAlert error={askError} />
+              {stores !== null && stores.length === 0 ? (
+                <Notice tone="warning">
+                  No S3 store is linked from outside this instance. Link one under Object storage
+                  first: a volume&rsquo;s copy is not kept on this machine.
+                </Notice>
+              ) : (
+                <>
+                  <SearchableSelect
+                    label="Store"
+                    value={store}
+                    busy={stores === null}
+                    onChange={(v) => {
+                      setStore(v);
+                      setBucket("");
+                    }}
+                    choices={(stores ?? []).map((s) => ({
+                      value: s.name,
+                      label: s.name,
+                      icon: CloudIcon,
+                      hint: s.provider_label,
+                    }))}
+                  />
+                  {/* Always there, so choosing a store does not grow the
+                      dialog under the pointer. */}
+                  <SearchableSelect
+                    label="Bucket"
+                    value={bucket}
+                    busy={Boolean(store) && buckets === null}
+                    onChange={setBucket}
+                    choices={(buckets ?? []).map((b) => ({ value: b.name, label: b.name }))}
+                    empty={store ? "That store holds no buckets yet." : "Choose a store first."}
+                  />
+                </>
+              )}
+            </div>
+            <DialogFooter>
+              <Button type="button" variant="ghost" onClick={() => setAsking(false)}>
+                Cancel
+              </Button>
+              <ActionButton type="submit" busy={busy} disabled={!store || !bucket}>
+                Back up
+              </ActionButton>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }
@@ -481,6 +594,7 @@ export function Schedule({
   path,
   label,
   note,
+  offsiteOnly,
   onChanged,
 }: {
   path: string;
@@ -488,6 +602,9 @@ export function Schedule({
   label: string;
   // What taking one costs, said beside the switch.
   note?: string;
+  // Only stores linked from outside the instance: a volume's copy is worth
+  // taking nowhere else, and the daemon refuses the rest.
+  offsiteOnly?: boolean;
   onChanged: () => void;
 }) {
   const [schedule, setSchedule] = useState<BackupSchedule | null>(null);
@@ -564,6 +681,11 @@ export function Schedule({
         await api.del(path);
         setSchedule(null);
       } else {
+        if (offsiteOnly && !chosen) {
+          setError("Choose an S3 store linked from outside this instance.");
+          setBusy(false);
+          return;
+        }
         const next = await api.put<BackupSchedule>(path, {
           at,
           timezone,
@@ -655,21 +777,27 @@ export function Schedule({
                   setBucket("");
                 }}
                 choices={[
-                  {
-                    value: "",
-                    label: "This machine's disk",
-                    icon: ServerIcon,
-                    hint: "not a backup",
-                  },
-                  ...stores.map((s) => ({
-                    value: s.name,
-                    label: s.name,
-                    icon: s.kind === "managed" ? ServerIcon : CloudIcon,
-                    hint:
-                      s.kind === "managed"
-                        ? `${s.provider_label} on this machine`
-                        : s.provider_label,
-                  })),
+                  ...(offsiteOnly
+                    ? []
+                    : [
+                        {
+                          value: "",
+                          label: "This machine's disk",
+                          icon: ServerIcon,
+                          hint: "not a backup",
+                        },
+                      ]),
+                  ...stores
+                    .filter((s) => !offsiteOnly || s.kind !== "managed")
+                    .map((s) => ({
+                      value: s.name,
+                      label: s.name,
+                      icon: s.kind === "managed" ? ServerIcon : CloudIcon,
+                      hint:
+                        s.kind === "managed"
+                          ? `${s.provider_label} on this machine`
+                          : s.provider_label,
+                    })),
                 ]}
                 hint="An S3 bucket, on a provider this instance is connected to. Somewhere else is the whole point: a dump on this disk goes with the machine."
               />
@@ -691,7 +819,7 @@ export function Schedule({
                   the data directory — so picking one is not sending the
                   dumps anywhere, and it used to read as though it were.
                   Only a linked store is somewhere else. */}
-              {!chosen && (
+              {!chosen && !offsiteOnly && (
                 <Notice tone="warning">
                   With no store chosen these land beside the database, on this machine&rsquo;s own
                   disk. That survives somebody dropping a table and nothing else — not the disk, not

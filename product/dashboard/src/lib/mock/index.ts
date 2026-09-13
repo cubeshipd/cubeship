@@ -289,7 +289,7 @@ const routes: [string, string, Handler][] = [
   [
     "POST",
     "/apps/:a/:b/:c/volumes/:id/backups",
-    (p) => {
+    (p, body) => {
       const ref = p.slice(0, 3).join("/");
       const volume = (mockVolumes[ref] ?? []).find((v) => String(v.id) === p[3]) ?? notFound();
       const b: Row = {
@@ -302,7 +302,9 @@ const routes: [string, string, Handler][] = [
         engine: "volume",
         version: "",
         key: `cubeship/volumes/${p.slice(0, 3).join("-")}/${p[3]}/${new Date().toISOString()}.tar.gz`,
-        off_machine: false,
+        store: (body as Row).store,
+        bucket: (body as Row).bucket,
+        off_machine: true,
         size_bytes: 0,
         status: "taking",
         scheduled: false,
