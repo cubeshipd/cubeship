@@ -89,10 +89,10 @@ function Body() {
           <AutoUpdate settings={current} onSaved={setCurrent} />
 
           <SectionHeader
-            title="Release candidates"
-            sub="Be offered a release before it is stable, to try what is coming. Automatic updates stay on stable releases either way."
+            title="Beta versions"
+            sub="Be offered betas and release candidates before they are stable, to try what is coming. Automatic updates stay on stable releases either way."
           />
-          <ReleaseCandidates settings={current} onSaved={setCurrent} />
+          <BetaVersions settings={current} onSaved={setCurrent} />
         </TabsContent>
 
         {/* The instance backing itself up. Here rather than under
@@ -106,9 +106,9 @@ function Body() {
   );
 }
 
-// ReleaseCandidates saves as it is flipped: one switch with a Save
+// BetaVersions saves as it is flipped: one switch with a Save
 // button under it is a second click that confirms nothing.
-function ReleaseCandidates({
+function BetaVersions({
   settings,
   onSaved,
 }: {
@@ -124,14 +124,14 @@ function ReleaseCandidates({
         <ErrorAlert error={error} />
         <div className="flex items-start gap-3">
           <Switch
-            id="release-candidates"
-            checked={!!settings.release_candidates}
+            id="beta-versions"
+            checked={!!settings.beta_versions}
             disabled={busy}
             onCheckedChange={async (v) => {
               setBusy(true);
               setError(null);
               try {
-                onSaved(await api.put<Settings>("/settings", { release_candidates: v === true }));
+                onSaved(await api.put<Settings>("/settings", { beta_versions: v === true }));
               } catch (err) {
                 setError(message(err));
               } finally {
@@ -140,13 +140,10 @@ function ReleaseCandidates({
             }}
             className="mt-0.5"
           />
-          <label
-            htmlFor="release-candidates"
-            className="text-xs leading-relaxed text-muted-foreground"
-          >
-            Receive release candidates. A candidate may still have bugs. Turning this off later
-            keeps this instance where it is until a newer stable release comes out — it never goes
-            back a version.
+          <label htmlFor="beta-versions" className="text-xs leading-relaxed text-muted-foreground">
+            Receive beta versions — betas and release candidates. They may still have bugs. Turning
+            this off later keeps this instance where it is until a newer stable release comes out —
+            it never goes back a version.
           </label>
         </div>
       </CardContent>
@@ -205,7 +202,7 @@ function AutoUpdate({ settings, onSaved }: { settings: Settings; onSaved: (s: Se
             />
             <label htmlFor="auto-update" className="text-xs leading-relaxed text-muted-foreground">
               Update this instance automatically. Only stable releases — an instance left to update
-              itself should not wander onto a release candidate at three in the morning.
+              itself should not wander onto a beta at three in the morning.
             </label>
           </div>
 

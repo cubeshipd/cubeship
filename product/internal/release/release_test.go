@@ -18,6 +18,9 @@ func TestVersionsOrderTheWaySemverSays(t *testing.T) {
 		{"0.5.0-rc.1", "0.5.0", -1, "a candidate comes before the release it is a candidate for"},
 		{"0.5.0-rc.1", "0.5.0-rc.2", -1, ""},
 		{"0.5.0-rc.2", "0.4.9", 1, ""},
+		{"0.5.0-rc.2", "0.5.0-rc.10", -1, "a numeric part is a number, not text"},
+		{"0.5.0-beta.3", "0.5.0-rc.1", -1, "a beta comes before the candidates"},
+		{"0.5.0-beta", "0.5.0-beta.1", -1, "fewer parts sort first when the rest are equal"},
 		// A build with nothing stamped on it sorts below everything,
 		// rather than crashing a listing.
 		{"dev", "0.1.0", -1, "an unstamped build is not a version"},

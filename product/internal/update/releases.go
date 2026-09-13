@@ -37,28 +37,29 @@ type Available struct {
 	Notes string `json:"notes,omitempty"`
 	// PublishedAt is when it went out.
 	PublishedAt time.Time `json:"published_at,omitempty"`
-	// Prerelease says it is a candidate. Never offered by a check —
-	// see Newer — and reachable by asking for it by name.
+	// Prerelease says it is a beta or a release candidate. Offered by a
+	// check only to an instance that asked for betas — see Newer — and
+	// always reachable by asking for it by name.
 	Prerelease bool `json:"prerelease,omitempty"`
 }
 
 // Newer is the newest release above current, or nil.
 //
-// **Prereleases are skipped unless candidates is set** — the instance's
-// own choice, `settings.ReleaseCandidates`. Nobody on a stable release
-// should be offered a candidate by a button that says "update" without
-// having asked for them. A stable release above a candidate is offered
-// either way, which is how somebody who turned candidates off again gets
-// back onto stable.
-func Newer(ctx context.Context, client *http.Client, current string, candidates bool) (*Available, error) {
+// **Prereleases are skipped unless betas is set** — the instance's own
+// choice, `settings.BetaVersions`, which covers betas and release
+// betas alike. Nobody on a stable release should be offered one by a
+// button that says "update" without having asked. A stable release above
+// a beta is offered either way, which is how somebody who turned betas
+// off again gets back onto stable.
+func Newer(ctx context.Context, client *http.Client, current string, betas bool) (*Available, error) {
 	all, err := list(ctx, client)
 	if err != nil {
 		return nil, err
 	}
-	return newest(all, current, candidates), nil
+	return newest(all, current, betas), nil
 }
 
-func newest(all []Available, current string, candidates bool) *Available {
+func newest(all []Available, current string, betas bool) *Available {
 	current = release.Normalize(current)
 	if current == "" {
 		// A build with nothing stamped on it cannot be compared to
@@ -70,7 +71,7 @@ func newest(all []Available, current string, candidates bool) *Available {
 	var best *Available
 	for i := range all {
 		r := all[i]
-		if (r.Prerelease && !candidates) || release.Compare(r.Version, current) <= 0 {
+		if (r.Prerelease && !betas) || release.Compare(r.Version, current) <= 0 {
 			continue
 		}
 		if best == nil || release.Compare(r.Version, best.Version) > 0 {
@@ -82,7 +83,7 @@ func newest(all []Available, current string, candidates bool) *Available {
 
 // Find is one release by version, prerelease or not.
 //
-// Asking for a candidate by name is the supported way to run one, which
+// Asking for a beta or a candidate by name is the supported way to run one, which
 // is why this does not filter and Newer does.
 func Find(ctx context.Context, client *http.Client, version string) (*Available, error) {
 	all, err := list(ctx, client)

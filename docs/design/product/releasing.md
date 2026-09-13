@@ -177,12 +177,12 @@ is not something anybody can plan around. It takes a timezone, because
 releases only: an instance left to update itself must not wander onto a
 release candidate.
 
-**Release candidates are offered only to an instance that asked.**
-`settings.ReleaseCandidates`, a switch under Settings → Updates, makes
-the check offer the newest release whether it is a candidate or not; off,
+**Beta versions are offered only to an instance that asked.**
+`settings.BetaVersions`, a switch under Settings → Updates, makes
+the check offer the newest release whether it is a prerelease or not — a beta (`0.8.0-beta.1`) or a release candidate (`0.8.0-rc.1`) alike; off,
 which is the default, it offers stable releases only. It changes what a
 person is offered and nothing else — the scheduler passes `false` to
-`Newer` whatever the switch says. Turning it off on a candidate never
+`Newer` whatever the switch says. Turning it off on a beta never
 goes back a version: the instance stays where it is until a stable
 release above it exists, which `Newer` offers either way.
 

@@ -136,8 +136,9 @@ func Normalize(v string) string {
 // The one rule that is not "compare the numbers" is the one that
 // matters here: **a version with a prerelease suffix comes before the
 // same version without one**, because 0.5.0-rc.1 is on the way to
-// 0.5.0 rather than after it. Suffixes are compared as text, which is
-// enough for rc.1 < rc.2 and is not asked to do more.
+// 0.5.0 rather than after it. Suffixes are compared part by part, a
+// numeric part as a number, so rc.10 comes after rc.2 and beta.3 before
+// rc.1.
 func Compare(a, b string) int {
 	a, b = Normalize(a), Normalize(b)
 	an, apre := split(a)
@@ -157,10 +158,42 @@ func Compare(a, b string) int {
 		return 1
 	case bpre == "":
 		return -1
-	case apre < bpre:
-		return -1
 	}
-	return 1
+	return comparePrerelease(apre, bpre)
+}
+
+// comparePrerelease is semver's rule for what follows the hyphen: the
+// dot-separated parts in order, numbers as numbers and below any text,
+// and a shorter list first when every part it has is equal.
+func comparePrerelease(a, b string) int {
+	ap, bp := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(ap) && i < len(bp); i++ {
+		an, aerr := strconv.Atoi(ap[i])
+		bn, berr := strconv.Atoi(bp[i])
+		switch {
+		case aerr == nil && berr == nil:
+			if an != bn {
+				return cmpInt(an, bn)
+			}
+		case aerr == nil:
+			return -1
+		case berr == nil:
+			return 1
+		case ap[i] != bp[i]:
+			return strings.Compare(ap[i], bp[i])
+		}
+	}
+	return cmpInt(len(ap), len(bp))
+}
+
+func cmpInt(a, b int) int {
+	switch {
+	case a < b:
+		return -1
+	case a > b:
+		return 1
+	}
+	return 0
 }
 
 // split reads a version into its three numbers and whatever came after

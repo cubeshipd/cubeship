@@ -24,8 +24,8 @@ type Response struct {
 	// Version is what this instance is running. Absent on a build with
 	// nothing stamped on it, which is a developer's.
 	Version string `json:"version,omitempty"`
-	// Available is a newer release, or absent. A candidate only when the
-	// instance's release_candidates setting is on.
+	// Available is a newer release, or absent. A beta or a release candidate only
+	// when the instance's beta_versions setting is on.
 	Available *Available `json:"available,omitempty"`
 	// Checked says the lookup happened. **False with no `available` is
 	// "could not ask"**, which is a different thing to show than "you

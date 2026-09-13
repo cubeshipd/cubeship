@@ -18,8 +18,9 @@ type Response struct {
 	// AutoUpdateTimezone is what that is in. Empty is off.
 	AutoUpdateAt       string `json:"auto_update_at,omitempty"`
 	AutoUpdateTimezone string `json:"auto_update_timezone,omitempty"`
-	// ReleaseCandidates says the update check offers candidates too.
-	ReleaseCandidates bool `json:"release_candidates"`
+	// BetaVersions says the update check offers betas and release
+	// candidates too.
+	BetaVersions bool `json:"beta_versions"`
 
 	// RegistryHost is where a `docker push` goes, or empty while no
 	// domain is set.
@@ -89,7 +90,7 @@ func toResponse(v Values, publicIP string) Response {
 	r.DNSProviderID = v.Get(DNSProviderID)
 	r.AutoUpdateAt = v.Get(AutoUpdateAt)
 	r.AutoUpdateTimezone = v.Get(AutoUpdateTimezone)
-	r.ReleaseCandidates = v.Get(ReleaseCandidates) == "true"
+	r.BetaVersions = v.Get(BetaVersions) == "true"
 	r.GitHubAppSlug = v.Get(GitHubAppSlug)
 	r.GitHubConnected = v.HasGitHub()
 	r.GitHubOAuthReady = v.HasGitHubOAuth()
@@ -144,7 +145,7 @@ func (h *Handler) set(w http.ResponseWriter, r *http.Request) {
 		// says otherwise.
 		AutoUpdateAt       *string `json:"auto_update_at"`
 		AutoUpdateTimezone *string `json:"auto_update_timezone"`
-		ReleaseCandidates  *bool   `json:"release_candidates"`
+		BetaVersions       *bool   `json:"beta_versions"`
 
 		// The GitHub App's registration. Write-only, and normally
 		// written once by the connect flow rather than typed.
@@ -187,10 +188,10 @@ func (h *Handler) set(w http.ResponseWriter, r *http.Request) {
 		}
 		values[AutoUpdateTimezone] = *req.AutoUpdateTimezone
 	}
-	if req.ReleaseCandidates != nil {
-		values[ReleaseCandidates] = ""
-		if *req.ReleaseCandidates {
-			values[ReleaseCandidates] = "true"
+	if req.BetaVersions != nil {
+		values[BetaVersions] = ""
+		if *req.BetaVersions {
+			values[BetaVersions] = "true"
 		}
 	}
 	for key, given := range map[string]*string{

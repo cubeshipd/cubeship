@@ -521,9 +521,9 @@ export type Deployment = {
 export type Settings = {
   domain: string;
   acme_email: string;
-  // Whether the update check offers release candidates too. Automatic
+  // Whether the update check offers betas and release candidates too. Automatic
   // updating stays on stable releases either way.
-  release_candidates?: boolean;
+  beta_versions?: boolean;
   registry_host?: string;
   // Whether the registered App can be installed anywhere but the
   // account that owns it. An App from before Cubeship asked for OAuth

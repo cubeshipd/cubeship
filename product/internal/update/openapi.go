@@ -14,7 +14,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"version":      openapi.String("The release, without a leading v."),
 				"notes":        openapi.String("What changed, in Markdown, as written on the release. Carried here because it is the one thing about a version newer than this build that the build cannot already know."),
 				"published_at": {Type: "string", Format: "date-time", Description: "When it went out."},
-				"prerelease":   openapi.Bool("Whether it is a candidate. Never offered by a check — asking for one by name is the way to run one."),
+				"prerelease":   openapi.Bool("Whether it is a beta or a release candidate. Offered by a check only to an instance with `beta_versions` on — asking for one by name is the way to run one."),
 			}, "version"),
 			"UpdateRun": openapi.Object(map[string]*openapi.Schema{
 				"version":     openapi.String("The release it is moving to."),

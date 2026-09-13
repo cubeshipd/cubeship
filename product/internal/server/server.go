@@ -296,9 +296,9 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		bootstrap.DaemonContainerName, opts.DaemonImage,
 		bootstrap.FrontendContainerName, opts.WebImage)
 	updates.SetCluster(nodes)
-	updates.SetCandidates(func(ctx context.Context) bool {
+	updates.SetBetas(func(ctx context.Context) bool {
 		values, err := cfg.Load(ctx)
-		return err == nil && values.Get(settings.ReleaseCandidates) == "true"
+		return err == nil && values.Get(settings.BetaVersions) == "true"
 	})
 	// And the other way: what only the machine an app is on can answer
 	// — its log today — reaches it through the channel that machine's

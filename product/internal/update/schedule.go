@@ -100,9 +100,9 @@ func (s *Scheduler) when(ctx context.Context) (string, *time.Location) {
 
 // once updates if there is anything to update to.
 //
-// **Stable releases only**, whatever settings.ReleaseCandidates says:
+// **Stable releases only**, whatever settings.BetaVersions says:
 // that setting is about what a person is offered, and an instance left
-// to update itself must not wander onto a release candidate at three in
+// to update itself must not wander onto a beta at three in
 // the morning.
 //
 // The caller is the instance itself, so it passes an admin that is not
