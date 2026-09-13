@@ -197,3 +197,8 @@ func keepsVolume(a *Scoped, p Placement) bool {
 func canHoldVolume(a *App) bool {
 	return len(a.Replicas) == 1 && !a.Spread && !a.Autoscale.On() && a.Scale <= 1
 }
+
+// ErrVolumeMoveOne refuses moving an app with more than one volume by
+// restoring one of them: the app runs where all its volumes are, and the
+// others would be left behind empty.
+var ErrVolumeMoveOne = errors.New("this app has more than one volume, and moving it by restoring one backup would leave the others behind")

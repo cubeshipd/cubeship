@@ -417,9 +417,15 @@ func (c *Client) TakeVolumeBackup(ctx context.Context, ref string, volumeID int6
 }
 
 // RestoreBackup puts a backup back, replacing what is there.
-func (c *Client) RestoreBackup(ctx context.Context, id int64) error {
+// server, for a volume's backup, restores it on another server and moves
+// the app there.
+func (c *Client) RestoreBackup(ctx context.Context, id int64, server string) error {
+	var body any
+	if server != "" {
+		body = map[string]string{"server": server}
+	}
 	_, err := request[noContent](ctx, c, "restore backup", http.MethodPost,
-		fmt.Sprintf("/backups/%d/restore", id), nil, http.StatusNoContent, 2*time.Hour)
+		fmt.Sprintf("/backups/%d/restore", id), body, http.StatusNoContent, 2*time.Hour)
 	return err
 }
 

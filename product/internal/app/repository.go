@@ -1147,3 +1147,33 @@ func affected(result sql.Result) error {
 	}
 	return nil
 }
+
+// ServerBySlug is a machine's id and whether it is the control plane.
+func (r *Repository) ServerBySlug(ctx context.Context, slug string) (int64, bool, error) {
+	var id int64
+	var controlPlane bool
+	err := r.q.QueryRowContext(ctx,
+		`SELECT id, control_plane FROM nodes WHERE slug = $1`, slug).Scan(&id, &controlPlane)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, ErrNoSuchNode
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("find server %s: %w", slug, err)
+	}
+	return id, controlPlane, nil
+}
+
+// SetVolumeNode records that a volume's data is now on another machine.
+func (r *Repository) SetVolumeNode(ctx context.Context, volumeID, nodeID int64) error {
+	result, err := r.q.ExecContext(ctx,
+		`UPDATE app_volumes SET node_id = $2 WHERE id = $1`, volumeID, nodeID)
+	if err != nil {
+		return fmt.Errorf("move app volume: %w", err)
+	}
+	if err := affected(result); errors.Is(err, database.ErrNotFound) {
+		return ErrVolumeNotFound
+	} else if err != nil {
+		return err
+	}
+	return nil
+}

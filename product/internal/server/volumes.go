@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"cubeship/internal/app"
 	"cubeship/internal/backup"
@@ -53,4 +54,25 @@ func volumeFor(t *app.VolumeTarget, err error) (*backup.Volume, error) {
 		ID: t.ID, AppID: t.AppID, NodeID: t.NodeID, App: t.App.String(), Path: t.Path,
 		Dir: t.Dir, OnWorker: t.OnWorker,
 	}, nil
+}
+
+func (a appVolumes) ServerFor(ctx context.Context, server string) (int64, bool, error) {
+	id, controlPlane, err := a.apps.ServerFor(ctx, server)
+	if errors.Is(err, app.ErrNoSuchNode) {
+		return 0, false, backup.ErrNoSuchServer
+	}
+	return id, controlPlane, err
+}
+
+func (a appVolumes) MoveVolume(ctx context.Context, volumeID int64, server string) error {
+	err := a.apps.MoveVolume(ctx, volumeID, server)
+	switch {
+	case errors.Is(err, app.ErrVolumeMoveOne):
+		return backup.ErrVolumeMoveOne
+	case errors.Is(err, app.ErrNoSuchNode):
+		return backup.ErrNoSuchServer
+	case errors.Is(err, app.ErrNotPlaceable):
+		return fmt.Errorf("%w: %v", backup.ErrCannotMove, err)
+	}
+	return err
 }

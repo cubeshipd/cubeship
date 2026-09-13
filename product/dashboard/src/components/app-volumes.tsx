@@ -132,7 +132,7 @@ export function AppVolumes({
       {(volumes ?? []).map((v) => (
         <section key={v.id} className="mt-8">
           <h3 className="mb-3 font-mono text-sm text-muted-foreground">{v.path}</h3>
-          <VolumeBackups app={app.reference} volumeID={v.id} />
+          <VolumeBackups app={app.reference} volumeID={v.id} node={v.node} />
         </section>
       ))}
 

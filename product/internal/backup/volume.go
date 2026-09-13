@@ -25,6 +25,12 @@ type Volumes interface {
 	// WithAppStopped stops the app's container, runs fn, and starts it
 	// again whatever fn returned, with no deploy running meanwhile.
 	WithAppStopped(ctx context.Context, appID int64, fn func() error) error
+	// ServerFor is a machine by name: its id, and whether it is the
+	// control plane.
+	ServerFor(ctx context.Context, server string) (nodeID int64, controlPlane bool, err error)
+	// MoveVolume puts the volume's app on server, with the volume recorded
+	// there. Its data has to be there already.
+	MoveVolume(ctx context.Context, volumeID int64, server string) error
 }
 
 // Machines is how a volume on another server is backed up: that server
@@ -63,6 +69,16 @@ var (
 
 	// ErrNoVolumes is a server wired without apps, which only a test is.
 	ErrNoVolumes = errors.New("volume backups are not available on this server")
+
+	// ErrNoSuchServer is a restore onto a machine that is not in the cluster.
+	ErrNoSuchServer = errors.New("no server of that name is in this cluster")
+
+	// ErrVolumeMoveOne refuses moving an app with several volumes by
+	// restoring one of them.
+	ErrVolumeMoveOne = errors.New("this app has more than one volume, and moving it by restoring one backup would leave the others behind")
+
+	// ErrCannotMove is an app that cannot run on the server asked for.
+	ErrCannotMove = errors.New("the app cannot run on that server")
 )
 
 // SetVolumes wires `app`. Called once, at startup, by `server`.
@@ -231,10 +247,16 @@ func (s *Service) dumpVolume(ctx context.Context, v *Volume, row *Backup) (int64
 	return counted.n, nil
 }
 
-// restoreVolume replaces a volume's data with a backup of it, on the
-// machine the volume is on. It is unpacked beside the data first, so a
-// restore that fails leaves the data as it was.
-func (s *Service) restoreVolume(ctx context.Context, row *Backup) error {
+// restoreVolume replaces a volume's data with a backup of it. It is
+// unpacked beside the data first, so a restore that fails leaves the data
+// as it was.
+//
+// **Naming another server moves the volume there.** Sending a volume from
+// one machine to another is not something this does; restoring its backup
+// on the new one is. The data goes onto that server first, and only then is
+// the app placed there — so it starts on the restored data — and the copy
+// on the old server is left where it is.
+func (s *Service) restoreVolume(ctx context.Context, row *Backup, server string) error {
 	if row.VolumeID == 0 {
 		return fmt.Errorf("%w: the volume it came from has been removed", ErrNotFound)
 	}
@@ -244,6 +266,15 @@ func (s *Service) restoreVolume(ctx context.Context, row *Backup) error {
 	v, err := s.volumes.VolumeByID(ctx, row.VolumeID)
 	if err != nil {
 		return ErrNotFound
+	}
+	if server != "" {
+		nodeID, controlPlane, err := s.volumes.ServerFor(ctx, server)
+		if err != nil {
+			return err
+		}
+		if nodeID != v.NodeID {
+			return s.moveVolume(ctx, v, row, server, nodeID, controlPlane)
+		}
 	}
 	if v.OnWorker {
 		if s.machines == nil {
@@ -268,6 +299,35 @@ func (s *Service) restoreVolume(ctx context.Context, row *Backup) error {
 	return s.volumes.WithAppStopped(ctx, v.AppID, func() error {
 		return dirarchive.Replace(r, v.Dir)
 	})
+}
+
+// moveVolume restores a backup onto another server and puts the app there.
+func (s *Service) moveVolume(ctx context.Context, v *Volume, row *Backup, server string, nodeID int64, controlPlane bool) error {
+	if row.StoreID == 0 || !row.Off {
+		return fmt.Errorf("%w: a volume moves by restoring a backup that is off the machine", ErrVolumeNeedsOffsite)
+	}
+	if controlPlane {
+		r, err := s.read(ctx, row)
+		if err != nil {
+			return err
+		}
+		defer r.Close()
+		if err := dirarchive.Replace(r, v.Dir); err != nil {
+			return err
+		}
+	} else {
+		if s.machines == nil {
+			return ErrVolumeOnWorker
+		}
+		job, err := s.volumeJob(ctx, v, row)
+		if err != nil {
+			return err
+		}
+		if _, err := s.machines.RunVolumeJob(ctx, nodeID, node.CommandVolumeRestore, job); err != nil {
+			return err
+		}
+	}
+	return s.volumes.MoveVolume(ctx, v.ID, server)
 }
 
 // --- schedules ---

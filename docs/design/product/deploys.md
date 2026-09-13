@@ -421,6 +421,15 @@ Kept data is found by the `<id>.json` record written beside each directory
 an admin deletes it. Backups of a volume are in
 [backups.md](backups.md#backing-up-an-apps-volumes).
 
+**Moving a volume to another server is restoring its backup there**
+(`POST /backups/{id}/restore` with a `server`), never copying a directory
+between machines. The backup, which has to be in a store linked from
+outside the instance, is restored on the new server first; then the app is
+placed there, so it starts on the restored data. Anything written after the
+backup was taken is not moved, and the copy on the old server is left where
+it is. An app with more than one volume is refused: the others would be
+left behind.
+
 ## Deleting
 
 **Deleting something takes everything under it.** A project takes its

@@ -438,8 +438,19 @@ func (h *Handler) restore(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// Optional, and only for a volume's backup: the server to restore it on,
+	// which moves the app there when it is not the volume's own.
+	var req struct {
+		Server string `json:"server"`
+	}
+	if r.ContentLength != 0 {
+		if err := httpx.DecodeJSON(r, &req); err != nil {
+			WriteError(w, err)
+			return
+		}
+	}
 	ctx := r.Context()
-	if err := h.svc.Restore(ctx, user.FromContext(ctx), id); err != nil {
+	if err := h.svc.Restore(ctx, user.FromContext(ctx), id, req.Server); err != nil {
 		WriteError(w, err)
 		return
 	}
@@ -559,7 +570,7 @@ func WriteError(w http.ResponseWriter, err error) {
 	// up. 409 rather than 400: nothing about the request is wrong, and
 	// nothing the caller can change about it would help.
 	case errors.Is(err, ErrNoInstanceDatabase), errors.Is(err, ErrVolumeOnWorker),
-		errors.Is(err, ErrNoVolumes):
+		errors.Is(err, ErrNoVolumes), errors.Is(err, ErrVolumeMoveOne), errors.Is(err, ErrCannotMove):
 		http.Error(w, err.Error(), http.StatusConflict)
 
 	case errors.Is(err, ErrStillRunning), errors.Is(err, ErrNotDone),
@@ -569,7 +580,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusConflict)
 
 	case errors.Is(err, ErrBadTime), errors.Is(err, ErrUnknownTimezone),
-		errors.Is(err, ErrBadKeep), errors.Is(err, ErrNoBucket), errors.Is(err, ErrVolumeNeedsOffsite),
+		errors.Is(err, ErrBadKeep), errors.Is(err, ErrNoBucket), errors.Is(err, ErrVolumeNeedsOffsite), errors.Is(err, ErrNoSuchServer),
 		errors.Is(err, httpx.ErrNotJSON):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 

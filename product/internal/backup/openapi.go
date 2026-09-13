@@ -343,6 +343,9 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Description: "**This replaces what is in the database and cannot be undone.** Every surface in front of it asks for the database's own name first.\n\nWhat it does not do is stop the database: an app writing during a restore produces a state that is neither the backup nor what was there. Nothing here can prevent that, so it is said rather than pretended otherwise.\n\nRefused for a dump that is still being taken, one that failed, one from a different engine or major version, and one whose database has been deleted.\n\nRequires the admin role.",
 					Tags:        []string{"Backups"},
 					Parameters:  idParam,
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"server": openapi.String("For a volume's backup only: the server to restore it on, by name. Naming one other than the volume's **moves the app there** — the backup is restored on that server first, the app is placed on it, and the copy on the old server is left where it is. Needs a backup in a store linked from outside this instance, and an app with one volume."),
+					})),
 					Responses: openapi.Responses{
 						"204": openapi.Empty("The database now holds what the dump held."),
 						"401": openapi.Unauthorized,

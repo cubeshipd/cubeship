@@ -224,7 +224,16 @@ export function InstanceBackups() {
 
 // One volume's backups. The app is stopped for each copy, so the button
 // and the schedule both say so.
-export function VolumeBackups({ app, volumeID }: { app: string; volumeID: number }) {
+export function VolumeBackups({
+  app,
+  volumeID,
+  node,
+}: {
+  app: string;
+  volumeID: number;
+  // The server the volume's data is on.
+  node: string;
+}) {
   const [rows, setRows] = useState<Backup[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -323,7 +332,7 @@ export function VolumeBackups({ app, volumeID }: { app: string; volumeID: number
         }
       />
       <ErrorAlert error={error} />
-      <BackupTable rows={rows} onChanged={load} showDatabase={false} />
+      <BackupTable rows={rows} onChanged={load} showDatabase={false} volumeNode={node} />
 
       <Dialog open={asking} onOpenChange={setAsking}>
         <DialogContent className="sm:max-w-md">
@@ -399,14 +408,31 @@ export function BackupTable({
   rows,
   onChanged,
   showDatabase,
+  volumeNode,
 }: {
   rows: Backup[] | null;
   onChanged: () => void;
   showDatabase: boolean;
+  // The server a volume's data is on. Set, restoring asks which server to
+  // restore on, and another one moves the app there.
+  volumeNode?: string;
 }) {
   const [restoring, setRestoring] = useState<Backup | null>(null);
   const [deleting, setDeleting] = useState<Backup | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [servers, setServers] = useState<string[] | null>(null);
+  const [server, setServer] = useState("");
+
+  const asksServer = restoring?.kind === "volume" && Boolean(volumeNode);
+  const moving = asksServer && server !== "" && server !== volumeNode;
+  useEffect(() => {
+    if (!asksServer || !volumeNode) return;
+    setServer(volumeNode);
+    api
+      .get<{ name: string }[]>("/nodes")
+      .then((nodes) => setServers(nodes.map((n) => n.name)))
+      .catch(() => setServers([volumeNode]));
+  }, [asksServer, volumeNode]);
 
   const columns: Column<Backup>[] = [
     ...(showDatabase
@@ -527,7 +553,13 @@ export function BackupTable({
         onOpenChange={(open) => !open && setRestoring(null)}
         title={`Restore ${restoring?.volume ?? restoring?.database} from ${when(restoring?.started_at ?? "")}?`}
         description={
-          restoring?.kind === "volume" ? (
+          moving ? (
+            <>
+              <strong>The app moves to {server}.</strong> This backup is restored there and the app
+              starts on it. Anything written on {volumeNode} after it was taken is not moved, and
+              the copy on {volumeNode} is left where it is.
+            </>
+          ) : restoring?.kind === "volume" ? (
             <>
               <strong>Everything in the volume now is replaced</strong> by what was in it when this
               was taken, and that cannot be undone. The app is stopped while it happens and started
@@ -546,11 +578,11 @@ export function BackupTable({
           )
         }
         confirmWord={restoring?.database}
-        confirmLabel="Restore"
+        confirmLabel={moving ? "Restore and move" : "Restore"}
         onConfirm={async () => {
           setError(null);
           try {
-            await api.post(`/backups/${restoring?.id}/restore`, {});
+            await api.post(`/backups/${restoring?.id}/restore`, moving ? { server } : {});
             setRestoring(null);
             onChanged();
           } catch (e) {
@@ -558,7 +590,23 @@ export function BackupTable({
             throw e;
           }
         }}
-      />
+      >
+        {asksServer && (
+          <SearchableSelect
+            label="Restore on"
+            value={server}
+            busy={servers === null}
+            onChange={setServer}
+            choices={(servers ?? []).map((name) => ({
+              value: name,
+              label: name,
+              icon: ServerIcon,
+              hint: name === volumeNode ? "where it is now" : undefined,
+            }))}
+            hint="Another server moves the app there. It needs a backup in a bucket linked from outside this instance."
+          />
+        )}
+      </ConfirmDialog>
 
       <ConfirmDialog
         open={deleting !== null}

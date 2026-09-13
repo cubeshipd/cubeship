@@ -1534,3 +1534,39 @@ func (s *Service) RemoveDomain(ctx context.Context, caller *user.User, ref Refer
 	}
 	return s.Resolve(ctx, caller, ref, user.RoleAdmin)
 }
+
+// ServerFor is a machine by name: its id, and whether it is the control
+// plane. For `backup`, which restores a volume onto it before MoveVolume.
+func (s *Service) ServerFor(ctx context.Context, slug string) (int64, bool, error) {
+	return s.Repo().ServerBySlug(ctx, slug)
+}
+
+// MoveVolume puts an app with one volume on another server and records the
+// volume there. Its data has to be there already — `backup` restores it
+// first — and the copy on the old server is left where it is.
+//
+// It takes no caller: `backup` requires its own role before asking.
+func (s *Service) MoveVolume(ctx context.Context, volumeID int64, server string) error {
+	v, err := s.Repo().VolumeByID(ctx, volumeID)
+	if err != nil {
+		return err
+	}
+	a, err := s.Repo().ScopedByID(ctx, v.AppID)
+	if err != nil {
+		return ErrVolumeNotFound
+	}
+	if len(a.Volumes) != 1 {
+		return ErrVolumeMoveOne
+	}
+	nodeID, _, err := s.Repo().ServerBySlug(ctx, server)
+	if err != nil {
+		return err
+	}
+	if err := s.checkPlacement(ctx, server, Source(a.Source)); err != nil {
+		return err
+	}
+	if err := s.Repo().SetVolumeNode(ctx, v.ID, nodeID); err != nil {
+		return err
+	}
+	return s.replace(ctx, a, Placement{Nodes: []string{server}, Replicas: 1}, Source(a.Source))
+}

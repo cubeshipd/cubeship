@@ -186,6 +186,7 @@ func newAppVolumeBackupCmd() *cobra.Command {
 	takeCmd.Flags().StringVar(&takeStore, "store", "", "the S3 store linked from outside this instance to send it to; defaults to the volume's schedule's")
 	takeCmd.Flags().StringVar(&takeBucket, "bucket", "", "the bucket in that store")
 
+	var restoreServer string
 	var confirmed bool
 	restoreCmd := &cobra.Command{
 		Use:   "restore <backup-id>",
@@ -205,7 +206,7 @@ func newAppVolumeBackupCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := c.RestoreBackup(context.Background(), id); err != nil {
+			if err := c.RestoreBackup(context.Background(), id, restoreServer); err != nil {
 				return err
 			}
 			fmt.Printf("Restored backup %d\n", id)
@@ -213,6 +214,7 @@ func newAppVolumeBackupCmd() *cobra.Command {
 		},
 	}
 	restoreCmd.Flags().BoolVar(&confirmed, "yes", false, "confirm the restore")
+	restoreCmd.Flags().StringVar(&restoreServer, "server", "", "restore on this server instead, which moves the app there; the copy on the old server is left")
 
 	backupCmd.AddCommand(listCmd, takeCmd, restoreCmd)
 	return backupCmd

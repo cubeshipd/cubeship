@@ -540,7 +540,9 @@ func KeyFor(datastore string, at time.Time) string {
 // What it does not do is stop the database: an app writing during a
 // restore produces a state that is neither the backup nor what was
 // there, and the screen says so rather than this pretending otherwise.
-func (s *Service) Restore(ctx context.Context, caller *user.User, id int64) error {
+// server is only for a volume's backup: naming another server than the
+// volume's restores it there and moves the app with it.
+func (s *Service) Restore(ctx context.Context, caller *user.User, id int64, server string) error {
 	if err := user.Require(caller, manageRole); err != nil {
 		return err
 	}
@@ -554,7 +556,7 @@ func (s *Service) Restore(ctx context.Context, caller *user.User, id int64) erro
 	case row.Status != StatusDone:
 		return ErrNotDone
 	case row.Kind == KindVolume:
-		return s.restoreVolume(ctx, row)
+		return s.restoreVolume(ctx, row, server)
 	case row.DatastoreID == 0:
 		// The database it came from is gone. Restoring means choosing
 		// which one to load it into, and that is a decision this does
