@@ -1377,6 +1377,18 @@ export type TemplateManifest = {
   }[];
 };
 
+// A release a template can be installed at.
+export type TemplateReleaseOption = { tag: string; commit: string; published_at?: string };
+
+// One release as the instance read and checked it. `fits` is false for a
+// release that needs a newer Cubeship, and `problem` says so.
+export type TemplateReleaseManifest = {
+  release: TemplateReleaseOption;
+  manifest: TemplateManifest;
+  fits: boolean;
+  problem?: string;
+};
+
 export type TemplateDetail = TemplateSummary & {
   readme: string;
   source: string;

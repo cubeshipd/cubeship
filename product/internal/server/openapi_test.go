@@ -179,6 +179,8 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"GET /template-tags",
 		"GET /templates",
 		"GET /templates/{owner}/{repo}",
+		"GET /templates/{owner}/{repo}/manifest",
+		"GET /templates/{owner}/{repo}/releases",
 		"GET /updates",
 		"GET /users",
 		"GET /users/me",

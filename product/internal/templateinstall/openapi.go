@@ -114,6 +114,36 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
+			"/templates/{owner}/{repo}/releases": {
+				"get": {
+					OperationID: "listTemplateReleases",
+					Summary:     "List the versions a template can be installed at",
+					Description: "Every release of the template the catalog accepted, newest first. Install one by passing its tag as `release`.",
+					Tags:        []string{"Templates"},
+					Parameters:  []openapi.Parameter{owner, repo},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The releases, as `{releases: [{tag, commit, published_at}]}`.", openapi.Object(nil)),
+						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
+						"502": unreachable,
+					},
+				},
+			},
+			"/templates/{owner}/{repo}/manifest": {
+				"get": {
+					OperationID: "getTemplateManifest",
+					Summary:     "Read what one release of a template creates",
+					Description: "The release's `template.yaml`, read from its repository at the release's commit and checked here the way an install checks it, as a normalized manifest: what installing that version asks and creates. `fits` is false, with `problem` saying why, when the release needs a newer Cubeship than this instance runs — the install would refuse it.",
+					Tags:        []string{"Templates"},
+					Parameters:  []openapi.Parameter{owner, repo, openapi.QueryParam("release", "A release tag. Empty is the newest the catalog accepted.")},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The release, its manifest, and whether it fits this instance.", openapi.Object(nil)),
+						"401": openapi.Unauthorized,
+						"404": openapi.NotFound,
+						"502": unreachable,
+					},
+				},
+			},
 			"/templates/{owner}/{repo}/installs": {
 				"post": {
 					OperationID: "installTemplate",

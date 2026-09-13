@@ -381,9 +381,102 @@ type plan struct {
 	generated   map[string]string
 }
 
-// fetch reads a release's file from its repository and validates it here.
-// An empty release is the newest the catalog accepted.
+// ReleaseOption is a release a template can be installed at.
+type ReleaseOption struct {
+	Tag         string `json:"tag"`
+	Commit      string `json:"commit"`
+	PublishedAt string `json:"published_at,omitempty"`
+}
+
+// Releases is every release of a template the catalog accepted, newest
+// first: the versions it can be installed at.
+func (s *Service) Releases(ctx context.Context, caller *user.User, owner, repo string) ([]ReleaseOption, error) {
+	if err := user.Require(caller, user.RoleMember); err != nil {
+		return nil, err
+	}
+	c, err := s.source()
+	if err != nil {
+		return nil, err
+	}
+	all, err := c.Releases(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	out := []ReleaseOption{}
+	for _, r := range all {
+		if r.Status == "accepted" {
+			out = append(out, ReleaseOption{Tag: r.Tag, Commit: r.Commit, PublishedAt: r.PublishedAt})
+		}
+	}
+	return out, nil
+}
+
+// ReleaseManifest is one release as this instance read and checked it.
+type ReleaseManifest struct {
+	Release  ReleaseOption        `json:"release"`
+	Manifest *template.Normalized `json:"manifest"`
+	// Fits is false for a release that needs a newer Cubeship than this
+	// instance runs, and Problem says so. The install would refuse it.
+	Fits    bool   `json:"fits"`
+	Problem string `json:"problem,omitempty"`
+}
+
+// Manifest is what one release creates and asks, read from its repository
+// the way an install reads it — so choosing an older version shows the form
+// that version installs with.
+func (s *Service) Manifest(ctx context.Context, caller *user.User, owner, repo, release string) (*ReleaseManifest, error) {
+	if err := user.Require(caller, user.RoleMember); err != nil {
+		return nil, err
+	}
+	chosen, m, err := s.readRelease(ctx, owner, repo, release)
+	if err != nil {
+		return nil, err
+	}
+	out := &ReleaseManifest{
+		Release:  ReleaseOption{Tag: chosen.Tag, Commit: chosen.Commit, PublishedAt: chosen.PublishedAt},
+		Manifest: m, Fits: true,
+	}
+	if err := s.fitsInstance(m); err != nil {
+		if !errors.Is(err, ErrTooNew) {
+			return nil, err
+		}
+		out.Fits, out.Problem = false, err.Error()
+	}
+	return out, nil
+}
+
+// fetch reads a release's file from its repository, validates it here, and
+// refuses one this instance is too old for. An empty release is the newest
+// the catalog accepted.
 func (s *Service) fetch(ctx context.Context, owner, repo, release string) (CatalogRelease, *template.Normalized, error) {
+	chosen, m, err := s.readRelease(ctx, owner, repo, release)
+	if err != nil {
+		return CatalogRelease{}, nil, err
+	}
+	if err := s.fitsInstance(m); err != nil {
+		return CatalogRelease{}, nil, err
+	}
+	return chosen, m, nil
+}
+
+// fitsInstance refuses a manifest whose minCubeship this instance does not
+// satisfy.
+func (s *Service) fitsInstance(m *template.Normalized) error {
+	if m.MinCubeship == nil {
+		return nil
+	}
+	ok, err := template.Satisfies(*m.MinCubeship, s.version)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return fmt.Errorf("%w: it asks for %s and this instance runs %s", ErrTooNew, *m.MinCubeship, s.version)
+	}
+	return nil
+}
+
+// readRelease reads a release's file from its repository and validates it.
+func (s *Service) readRelease(ctx context.Context, owner, repo, release string) (CatalogRelease, *template.Normalized, error) {
 	c, err := s.source()
 	if err != nil {
 		return CatalogRelease{}, nil, err
@@ -416,17 +509,7 @@ func (s *Service) fetch(ctx context.Context, owner, repo, release string) (Catal
 		}
 		return CatalogRelease{}, nil, &InvalidTemplateError{Diagnostics: refused}
 	}
-	m := result.Manifest
-	if m.MinCubeship != nil {
-		ok, err := template.Satisfies(*m.MinCubeship, s.version)
-		if err != nil {
-			return CatalogRelease{}, nil, err
-		}
-		if !ok {
-			return CatalogRelease{}, nil, fmt.Errorf("%w: it asks for %s and this instance runs %s", ErrTooNew, *m.MinCubeship, s.version)
-		}
-	}
-	return *chosen, m, nil
+	return *chosen, result.Manifest, nil
 }
 
 func (s *Service) prepare(ctx context.Context, caller *user.User, req Request) (*plan, error) {

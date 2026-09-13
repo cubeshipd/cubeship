@@ -96,6 +96,8 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET /templates", auth(http.HandlerFunc(h.catalog)))
 	r.Handle("GET /template-tags", auth(http.HandlerFunc(h.tags)))
 	r.Handle("GET /templates/{owner}/{repo}", auth(http.HandlerFunc(h.template)))
+	r.Handle("GET /templates/{owner}/{repo}/releases", auth(http.HandlerFunc(h.releases)))
+	r.Handle("GET /templates/{owner}/{repo}/manifest", auth(http.HandlerFunc(h.manifest)))
 	r.Handle("POST /templates/{owner}/{repo}/installs", auth(http.HandlerFunc(h.install)))
 	r.Handle("GET /template-icons/{repository}/{file}", auth(http.HandlerFunc(h.icon)))
 	r.Handle("GET /template-installs", auth(http.HandlerFunc(h.list)))
@@ -297,4 +299,25 @@ func (h *Handler) uninstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"run": toRunResponse(run)})
+}
+
+// releases is the versions a template can be installed at.
+func (h *Handler) releases(w http.ResponseWriter, r *http.Request) {
+	out, err := h.svc.Releases(r.Context(), user.FromContext(r.Context()), r.PathValue("owner"), r.PathValue("repo"))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"releases": out})
+}
+
+// manifest is what one release creates and asks, and whether it fits.
+func (h *Handler) manifest(w http.ResponseWriter, r *http.Request) {
+	out, err := h.svc.Manifest(r.Context(), user.FromContext(r.Context()),
+		r.PathValue("owner"), r.PathValue("repo"), r.URL.Query().Get("release"))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
 }

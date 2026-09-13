@@ -147,3 +147,21 @@ func (c *Client) GetTemplateInstall(ctx context.Context, id int64) (TemplateInst
 	return request[TemplateInstall](ctx, c, "read install", http.MethodGet,
 		fmt.Sprintf("/template-installs/%d", id), nil, http.StatusOK, DefaultTimeout)
 }
+
+// TemplateRelease is a version a template can be installed at.
+type TemplateRelease struct {
+	Tag         string `json:"tag"`
+	Commit      string `json:"commit"`
+	PublishedAt string `json:"published_at"`
+}
+
+// ListTemplateReleases is every release of a template the catalog
+// accepted, newest first.
+func (c *Client) ListTemplateReleases(ctx context.Context, owner, repo string) ([]TemplateRelease, error) {
+	page, err := request[struct {
+		Releases []TemplateRelease `json:"releases"`
+	}](ctx, c, "list template releases", http.MethodGet,
+		fmt.Sprintf("/templates/%s/%s/releases", url.PathEscape(owner), url.PathEscape(repo)),
+		nil, http.StatusOK, DefaultTimeout)
+	return page.Releases, err
+}

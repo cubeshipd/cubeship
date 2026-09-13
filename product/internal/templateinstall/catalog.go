@@ -35,6 +35,8 @@ type CatalogRelease struct {
 	Tag    string `json:"tag"`
 	Commit string `json:"commit"`
 	Status string `json:"status"`
+	// PublishedAt is when the release went out, as the catalog wrote it.
+	PublishedAt string `json:"published_at,omitempty"`
 }
 
 // HTTPCatalog reads cubeship.dev's API — or wherever CUBESHIP_CATALOG_URL

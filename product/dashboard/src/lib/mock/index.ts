@@ -382,6 +382,32 @@ const routes: [string, string, Handler][] = [
     }),
   ],
   [
+    "GET",
+    "/templates/:owner/:repo/releases",
+    (p) => {
+      const t = db.templates.find((x) => x.owner === p[0] && x.name === p[1]) ?? notFound();
+      return {
+        releases: [
+          t.release,
+          { tag: "v0.9.0", commit: "1a2b3c4", published_at: "2026-06-01T12:00:00Z" },
+        ],
+      };
+    },
+  ],
+  [
+    "GET",
+    "/templates/:owner/:repo/manifest",
+    () => ({
+      release: { tag: "v0.9.0", commit: "1a2b3c4" },
+      manifest: db.templateManifest,
+      // An older release that asks for more than the preview runs, so the
+      // refusal is something you can look at.
+      fits: false,
+      problem:
+        "this template needs a newer Cubeship than this instance runs: it asks for >=0.9.0 and this instance runs 0.7.0",
+    }),
+  ],
+  [
     "POST",
     "/templates/:owner/:repo/installs",
     (p, body) => {

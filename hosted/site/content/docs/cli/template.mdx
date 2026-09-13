@@ -50,6 +50,15 @@ cubeship template list [search] [flags]
 | --- | --- | --- |
 | `--tag` |  | only templates with this tag |
 
+## cubeship template releases
+
+List the releases of a template the catalog accepted, newest first.
+Install one with `cubeship template install --release \<tag\>`.
+
+```bash
+cubeship template releases <owner/repo>
+```
+
 ## cubeship template uninstall
 
 Delete an installation's apps, and the project and environment it created

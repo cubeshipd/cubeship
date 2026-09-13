@@ -289,6 +289,13 @@ the certificate Traefik serves for that name. No private DNS, nothing to
 configure; a daemon not on the shared network falls back to the public
 route.
 
+**Any accepted release can be installed, not only the newest.**
+`GET /templates/{owner}/{repo}/releases` lists them, and
+`GET /templates/{owner}/{repo}/manifest?release=` reads one the way an
+install reads it — from the repository at its commit, validated here — so
+the dashboard's Version picker shows the form that version installs with,
+and says when it needs a newer Cubeship than the instance runs.
+
 **A project the install creates wears the template's icon.** The icon of
 the release installed, not the newest one: the listing's `icon_url`
 gives the repository id, and the icon is fetched by that id and the

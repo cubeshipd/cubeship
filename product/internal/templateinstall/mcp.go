@@ -29,6 +29,10 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Description: "Search the template catalog at cubeship.dev: ready-made apps with the databases and stores they need, like Umami, n8n or Grafana. q matches a template's name, description or tags.",
 	}, t.list)
 	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "list_template_releases",
+		Description: "List the releases of a template the catalog accepted, newest first: the versions install_template can be given as release.",
+	}, t.releases)
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "install_template",
 		Description: "Install a template from the catalog: create its project and environment when they do not exist, its databases, stores and apps, and deploy the apps. It runs in the background — follow it with get_template_install. Anything that fails is undone. A secret input with generate is generated when left out, and is not returned: it is in the variables of the app that uses it. Requires the admin role.",
 	}, t.install)
@@ -175,4 +179,21 @@ func (t *Tools) uninstall(ctx context.Context, _ *mcp.CallToolRequest, in uninst
 		return nil, RunResponse{}, err
 	}
 	return nil, toRunResponse(run), nil
+}
+
+type releasesInput struct {
+	Owner string `json:"owner" jsonschema:"the template repository's owner on GitHub, from list_templates"`
+	Repo  string `json:"repo" jsonschema:"the template repository's name"`
+}
+
+type releasesOutput struct {
+	Releases []ReleaseOption `json:"releases"`
+}
+
+func (t *Tools) releases(ctx context.Context, _ *mcp.CallToolRequest, in releasesInput) (*mcp.CallToolResult, releasesOutput, error) {
+	out, err := t.svc.Releases(ctx, t.caller, in.Owner, in.Repo)
+	if err != nil {
+		return nil, releasesOutput{}, err
+	}
+	return nil, releasesOutput{Releases: out}, nil
 }

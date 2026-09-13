@@ -226,7 +226,35 @@ func newTemplateCmd() *cobra.Command {
 	uninstallCmd.Flags().BoolVar(&deleteData, "delete-data", false, "also delete its databases and object stores, and their data")
 	uninstallCmd.Flags().BoolVar(&uninstallConfirmed, "yes", false, "confirm the uninstall")
 
-	templateCmd.AddCommand(listCmd, installCmd, installedCmd, updateCmd, uninstallCmd)
+	releasesCmd := &cobra.Command{
+		Use:   "releases <owner/repo>",
+		Short: "List the versions a template can be installed at",
+		Long: "List the releases of a template the catalog accepted, newest first.\n" +
+			"Install one with `cubeship template install --release <tag>`.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			owner, repo, ok := strings.Cut(args[0], "/")
+			if !ok || owner == "" || repo == "" {
+				return errors.New("name the template as owner/repo, as `cubeship template list` shows it")
+			}
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			releases, err := c.ListTemplateReleases(context.Background(), owner, repo)
+			if err != nil {
+				return err
+			}
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "RELEASE\tPUBLISHED")
+			for _, r := range releases {
+				fmt.Fprintf(w, "%s\t%s\n", r.Tag, r.PublishedAt)
+			}
+			return w.Flush()
+		},
+	}
+
+	templateCmd.AddCommand(listCmd, releasesCmd, installCmd, installedCmd, updateCmd, uninstallCmd)
 	return templateCmd
 }
 
