@@ -6,6 +6,36 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.7.0-rc.2 — 2026-09-13
+
+*Prerelease.*
+
+A switch to be offered beta versions — betas and release candidates — from the update button, and prereleases ordered the way semver says.
+
+### Added
+
+**Beta versions, if you ask for them.** Under **Settings → Updates**,
+**Receive beta versions** makes the update button offer betas and
+release candidates — `0.8.0-beta.1`, `0.8.0-rc.1` — as well as stable
+releases. It is off by default.
+
+- **It changes what the button offers and nothing else.** Automatic
+  updates stay on stable releases with it on: a beta is something you
+  choose to try, not something that should arrive on its own at three in
+  the morning.
+- **Turning it off never goes back a version.** An instance on a beta
+  stays where it is until a stable release above it comes out, and is
+  offered that one.
+
+Until now the only way onto a candidate was asking for it by name, which
+is still how an instance on 0.6.0 gets here.
+
+### Fixed
+
+**Prereleases are ordered part by part.** What followed the hyphen was
+compared as text, so `rc.10` came before `rc.2`. Numbers are numbers
+now, and `beta.3` comes before `rc.1`.
+
 ## 0.7.0-rc.1 — 2026-09-13
 
 *Prerelease.*
