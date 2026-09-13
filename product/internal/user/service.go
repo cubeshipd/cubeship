@@ -191,33 +191,20 @@ func (s *Service) SetRole(ctx context.Context, caller *User, username string, ro
 	if !role.Valid() {
 		return nil, ErrInvalidRole
 	}
-	target, err := s.Repo().ByUsername(ctx, username)
-	if err != nil {
-		return nil, ErrNoSuchUser
-	}
-	if caller.ID == target.ID {
-		return nil, ErrCannotChangeYourOwnRole
-	}
-	if target.Role == role {
-		return target, nil
-	}
-
-	var updated *User
-	err = s.db.WithTx(ctx, func(tx database.Queryer) error {
-		repo := NewRepository(tx)
-		if err := repo.refuseIfLastAdmin(ctx, target, role != RoleAdmin); err != nil {
-			return err
-		}
-		if err := repo.SetRole(ctx, target.ID, role); err != nil {
-			return err
-		}
-		updated, err = repo.ByID(ctx, target.ID)
-		return err
-	})
+	id, err := s.Repo().SystemRoleID(ctx, systemFor(role))
 	if err != nil {
 		return nil, err
 	}
-	return updated, nil
+	return s.SetAccessRole(ctx, caller, username, id)
+}
+
+// systemFor is the role an admin or a member is given: Admin, or Deploy,
+// which is what a member could always do.
+func systemFor(role Role) string {
+	if role == RoleAdmin {
+		return SystemAdmin
+	}
+	return SystemDeploy
 }
 
 // SetBlocked shuts an account out of the instance, or lets it back in.
@@ -671,6 +658,14 @@ func (s *Service) CreateWithPassword(ctx context.Context, q database.Queryer, us
 	if err := repo.SetPassword(ctx, u.ID, hash); err != nil {
 		return nil, err
 	}
+	id, err := repo.SystemRoleID(ctx, systemFor(role))
+	if err != nil {
+		return nil, err
+	}
+	if err := repo.SetAccessRole(ctx, u.ID, id); err != nil {
+		return nil, err
+	}
+	u.AccessRoleID = id
 	return u, nil
 }
 
@@ -843,7 +838,14 @@ func (s *Service) UpdateRole(ctx context.Context, caller *User, id int64, req Ro
 	if err := req.check(); err != nil {
 		return nil, err
 	}
-	err := s.Repo().UpdateRole(ctx, id, req.Name, req.Description, req.Grants)
+	current, err := s.Repo().RoleByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if current.System != "" {
+		return nil, ErrSystemRole
+	}
+	err = s.Repo().UpdateRole(ctx, id, req.Name, req.Description, req.Grants)
 	if database.IsUniqueViolation(err) {
 		return nil, ErrRoleNameTaken
 	}
@@ -861,6 +863,9 @@ func (s *Service) DeleteRole(ctx context.Context, caller *User, id int64) error 
 	if err != nil {
 		return err
 	}
+	if role.System != "" {
+		return ErrSystemRole
+	}
 	if role.Members > 0 || role.Keys > 0 {
 		return ErrRoleInUse
 	}
@@ -876,15 +881,76 @@ func (s *Service) SetAccessRole(ctx context.Context, caller *User, username stri
 	if err != nil {
 		return nil, ErrNoSuchUser
 	}
-	if roleID != 0 {
-		if _, err := s.Repo().RoleByID(ctx, roleID); err != nil {
+	if roleID == 0 {
+		if roleID, err = s.Repo().SystemRoleID(ctx, SystemDeploy); err != nil {
 			return nil, err
 		}
 	}
-	if err := s.Repo().SetAccessRole(ctx, target.ID, roleID); err != nil {
+	role, err := s.Repo().RoleByID(ctx, roleID)
+	if err != nil {
 		return nil, err
 	}
-	return s.Repo().ByID(ctx, target.ID)
+	if target.AccessRoleID == role.ID {
+		return target, nil
+	}
+	// Your own is refused for the reason demoting yourself always was:
+	// whether anybody is left to put it back is not knowable from here.
+	if caller.ID == target.ID {
+		return nil, ErrCannotChangeYourOwnRole
+	}
+	next := RoleMember
+	if role.System == SystemAdmin {
+		next = RoleAdmin
+	}
+
+	var updated *User
+	err = s.db.WithTx(ctx, func(tx database.Queryer) error {
+		repo := NewRepository(tx)
+		if err := repo.refuseIfLastAdmin(ctx, target, next != RoleAdmin); err != nil {
+			return err
+		}
+		// users.role follows the role, so everything that asks "is this
+		// an admin" goes on getting one answer.
+		if err := repo.SetRole(ctx, target.ID, next); err != nil {
+			return err
+		}
+		if err := repo.SetAccessRole(ctx, target.ID, role.ID); err != nil {
+			return err
+		}
+		updated, err = repo.ByID(ctx, target.ID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
+// AddWithRole is Add giving the account a role from the list: Admin makes
+// an admin, any other a member holding it.
+func (s *Service) AddWithRole(ctx context.Context, caller *User, username, password string, roleID int64) (*User, string, error) {
+	if err := Require(caller, RoleAdmin); err != nil {
+		return nil, "", err
+	}
+	role, err := s.Repo().RoleByID(ctx, roleID)
+	if err != nil {
+		return nil, "", err
+	}
+	kind := RoleMember
+	if role.System == SystemAdmin {
+		kind = RoleAdmin
+	}
+	created, generated, err := s.Add(ctx, caller, username, password, kind)
+	if err != nil {
+		return nil, "", err
+	}
+	if created.AccessRoleID != role.ID {
+		if err := s.Repo().SetAccessRole(ctx, created.ID, role.ID); err != nil {
+			return nil, "", err
+		}
+		created.AccessRoleID = role.ID
+	}
+	return created, generated, nil
 }
 
 // RoleNames is every role's name by id, for listings that show one.

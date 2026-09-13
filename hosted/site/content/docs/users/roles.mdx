@@ -40,14 +40,20 @@ because the app is given the keys.
 
 ## Access roles
 
-A member can be held to less than that, or given more, with an **access
-role**: a named list of grants, made once on **Users → Access roles** and
-given to members and to API keys.
+Every account holds a **role**: a named list of grants, given on
+**Users**. Three ship with the instance and cannot be changed or deleted:
 
-Each grant is one kind of resource — projects, apps, domains, databases,
-object storage, servers, templates, backups, the registries, git and DNS
-providers, credentials, certificates, the firewall, settings, the audit
-log — and says:
+| Role | What it is |
+| --- | --- |
+| **Admin** | Everything above, users and roles included. |
+| **Deploy** | What a member always did: apps managed with their variables, projects read, and domains, databases, object storage, servers, templates and this instance's registry read. |
+| **Read only** | Every resource read, nothing changed, no secret. |
+
+Any other role is made on **Users → Access roles**. Each grant is one kind
+of resource — projects, apps, domains, databases, object storage,
+servers, templates, backups, the registries, git and DNS providers,
+credentials, certificates, the firewall, settings, the audit log — and
+says:
 
 | | |
 | --- | --- |
@@ -55,15 +61,9 @@ log — and says:
 | **Secrets** | Whether it reads what somebody set: variables, credentials, files in a bucket, backup downloads. |
 | **Which** | For projects, apps, domains, databases and object storage: every one, or only those named. One outside the list is not there — it answers as not found. |
 
-A member with no role has the **member default**: apps managed with their
-variables, projects read, and domains, databases, object storage, servers,
-templates and this instance's registry read — what a member did before
-roles existed. Two roles come with the instance, *Read only* and *Deploy*,
-and are edited like any other.
-
-Users and roles are not grantable: whoever can shape access can give
-themselves all of it, so they stay an admin's. So does building source,
-whatever a role says. A role still held by somebody cannot be deleted.
+Users and roles are an admin's whatever a role says — whoever can shape
+access can give themselves all of it — and so is building source. A role
+still held by somebody cannot be deleted.
 
 ```bash
 cubeship role list

@@ -664,6 +664,8 @@ export type AccessRole = {
   name: string;
   description?: string;
   grants: Grant[];
+  /** A role the instance ships — admin, read_only or deploy — which cannot be changed. */
+  system?: string;
   members: number;
   keys: number;
   updated_at: string;

@@ -147,6 +147,13 @@ func TestRolesAreAnAdminsToChange(t *testing.T) {
 	servertest.RequireStatus(t, f.Do(t, http.MethodDelete, "/roles/"+strconv.FormatInt(role, 10), nil, f.AdminKey), http.StatusConflict)
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/roles",
 		map[string]any{"name": "bad", "grants": []map[string]any{{"resource": "users", "level": "view", "items": nil}}}, f.AdminKey), http.StatusBadRequest)
+
+	// The roles the instance ships mean what they say for everybody
+	// holding them, so nobody changes or deletes one.
+	deploy := strconv.FormatInt(seededRole(t, f, "Deploy"), 10)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPut, "/roles/"+deploy,
+		map[string]any{"name": "Deploy", "grants": []any{}}, f.AdminKey), http.StatusConflict)
+	servertest.RequireStatus(t, f.Do(t, http.MethodDelete, "/roles/"+deploy, nil, f.AdminKey), http.StatusConflict)
 }
 
 type auditPage struct {

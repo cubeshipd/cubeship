@@ -52,7 +52,8 @@ const routes: [string, string, Handler][] = [
       const b = body as Row;
       const created = {
         username: b.username as string,
-        role: (b.role as "admin" | "member") ?? "member",
+        role: (b.access_role_id === 3 ? "admin" : "member") as "admin" | "member",
+        access_role_id: (b.access_role_id as number) ?? 2,
         avatar: "mono",
         created_at: new Date().toISOString(),
       };
@@ -68,7 +69,10 @@ const routes: [string, string, Handler][] = [
       const u = db.users.find((x) => x.username === p[0]);
       if (!u) return null;
       if (typeof b.role === "string") u.role = b.role as "admin" | "member";
-      if (typeof b.access_role_id === "number") u.access_role_id = b.access_role_id || undefined;
+      if (typeof b.access_role_id === "number") {
+        u.access_role_id = b.access_role_id;
+        u.role = b.access_role_id === 3 ? "admin" : "member";
+      }
       if (typeof b.blocked === "boolean") {
         u.blocked_at = b.blocked ? new Date().toISOString() : undefined;
       }

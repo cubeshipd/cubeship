@@ -13,6 +13,10 @@ type AccessRole struct {
 	Name        string
 	Description string
 	Grants      []Grant
+	// System names a role the instance ships — SystemAdmin, SystemReadOnly
+	// or SystemDeploy — and those are neither edited nor deleted. Empty
+	// for one somebody made.
+	System string
 	// Members and Keys are how many accounts and keys hold it.
 	Members   int
 	Keys      int
@@ -20,5 +24,17 @@ type AccessRole struct {
 	UpdatedAt time.Time
 }
 
-// Policy is the role's grants as a policy.
-func (r *AccessRole) Policy() Policy { return NewPolicy(r.Grants) }
+const (
+	SystemAdmin    = "admin"
+	SystemReadOnly = "read_only"
+	SystemDeploy   = "deploy"
+)
+
+// Policy is the role's grants as a policy. The Admin role's is nil:
+// everything, which no list of grants can say.
+func (r *AccessRole) Policy() Policy {
+	if r.System == SystemAdmin {
+		return nil
+	}
+	return NewPolicy(r.Grants)
+}

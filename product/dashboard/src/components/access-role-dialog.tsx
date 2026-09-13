@@ -259,3 +259,71 @@ export function AccessRoleDialog({
     </Dialog>
   );
 }
+
+// What a role allows, listed: every resource it reaches, how far, and which
+// ones. Opened from the roles table, which shows only names.
+export function AccessRoleInfo({
+  role,
+  resources,
+  onOpenChange,
+}: {
+  role: AccessRole | null;
+  resources: ResourceInfo[];
+  onOpenChange: (v: boolean) => void;
+}) {
+  const granted = resources
+    .map((info) => ({ info, grant: role?.grants.find((g) => g.resource === info.resource) }))
+    .filter((r) => r.grant && r.grant.level !== "none");
+
+  return (
+    <Dialog open={role !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="flex max-h-[85vh] flex-col gap-0 p-0 sm:max-w-xl">
+        <DialogHeader className="shrink-0 border-border border-b p-4 pr-12">
+          <DialogTitle>{role?.name}</DialogTitle>
+          {role?.description && <p className="text-muted-foreground text-xs">{role.description}</p>}
+        </DialogHeader>
+        <div className="min-h-0 flex-1 overflow-y-auto p-4">
+          {role?.system === "admin" ? (
+            <p className="text-sm">
+              Everything on this instance: every resource at manage with its secrets, users and
+              roles, and building source on this host.
+            </p>
+          ) : granted.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              Nothing. Somebody holding it can sign in and see their own account.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border border border-border">
+              {granted.map(({ info, grant }) => (
+                <li
+                  key={info.resource}
+                  className="flex items-start justify-between gap-4 px-3 py-2.5"
+                >
+                  <span className="text-sm">{RESOURCE_LABEL[info.resource] ?? info.resource}</span>
+                  <span className="flex min-w-0 flex-col items-end text-right">
+                    <span className="text-xs">
+                      {grant?.level === "manage" ? "View and manage" : "View"}
+                      {grant?.secrets ? " · reads secrets" : ""}
+                    </span>
+                    {info.items && (
+                      <span className="truncate font-mono text-[11px] text-muted-foreground">
+                        {grant?.items
+                          ? grant.items.join(", ") || "none"
+                          : `every ${info.items_are}`}
+                      </span>
+                    )}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {role?.system !== "admin" && (
+            <p className="mt-3 text-[11px] text-muted-foreground">
+              Anything not listed is not reached. Users and roles stay an admin's.
+            </p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

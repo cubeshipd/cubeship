@@ -75,9 +75,10 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Description: "Creates an account and returns the password it signs in with, **shown exactly once**. There is no second endpoint that reveals it — this instance keeps only the hash — so an account whose password is lost before it is handed over is deleted and made again.\n\n**A password rather than an API key**, because a key is what a CLI or an MCP client carries and the dashboard wants a session: an account handed a key and no password could not sign in anywhere it was given the address of, and nothing here lets somebody set a first one. Keys are self-service, made by whoever wants one.\n\nAdmin only. An account is a way into this instance, so handing out the ability to mint them would hand out the instance.",
 					Tags:        []string{"Identity"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"username": openapi.String("Lowercase letters, digits and dashes. Also the account's docker login user."),
-						"role":     openapi.String("`admin` or `member`. Defaults to `member`."),
-						"password": openapi.String("Optional, and generated when it is not given — a field somebody has to fill in is a field somebody fills in badly. At least 12 characters."),
+						"username":       openapi.String("Lowercase letters, digits and dashes. Also the account's docker login user."),
+						"role":           openapi.String("`admin` or `member`. Defaults to `member`, which is the Deploy role. Ignored when `access_role_id` is given."),
+						"access_role_id": openapi.Integer("A role from `GET /roles`. The Admin role makes an admin; any other a member holding it."),
+						"password":       openapi.String("Optional, and generated when it is not given — a field somebody has to fill in is a field somebody fills in badly. At least 12 characters."),
 					}, "username")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse("The account and its password.", openapi.Ref("NewUser")),
@@ -202,6 +203,7 @@ func (h *Handler) RolesOpenAPI() openapi.Spec {
 		"name":        openapi.String(""),
 		"description": openapi.String(""),
 		"grants":      openapi.Array(openapi.Ref("Grant")),
+		"system":      openapi.String("`admin`, `read_only` or `deploy` for a role the instance ships, which cannot be changed or deleted. Absent otherwise."),
 		"members":     openapi.Integer("How many accounts hold it."),
 		"keys":        openapi.Integer("How many API keys hold it."),
 		"updated_at":  openapi.String("RFC 3339."),
@@ -216,7 +218,7 @@ func (h *Handler) RolesOpenAPI() openapi.Spec {
 		Tags: []openapi.Tag{{
 			Name: "Access roles",
 			Description: "What a member, or an API key, may reach. A role is a list of grants — for each kind of resource a level, whether it reads secrets, and which items — given to members and to keys.\n\n" +
-				"An admin reaches everything. A member without a role has the member default: apps managed, the rest of the workspace read. A key's role narrows its owner's access and never widens it. Changing a role changes everybody holding it, from their next request.",
+				"Every account holds one. Three ship with the instance and cannot be changed: **Admin** (everything, users and roles included), **Read only** and **Deploy** (what a member could always do). A key's role narrows its owner's access and never widens it. Changing a role changes everybody holding it, from their next request.",
 		}},
 		Schemas: map[string]*openapi.Schema{
 			"Grant":      grant,

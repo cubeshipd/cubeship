@@ -63,6 +63,7 @@ export const db = {
       role: "admin",
       avatar: "cyan",
       created_at: ago(60 * 24 * 90),
+      access_role_id: 3,
     },
     // No display name, which is the ordinary state: the username
     // stands in, and the preview shows both halves of that rule.
@@ -104,8 +105,19 @@ export const db = {
 
   roles: [
     {
+      id: 3,
+      name: "Admin",
+      description: "Everything, including users, roles and building source on this host.",
+      grants: [],
+      system: "admin",
+      members: 1,
+      keys: 0,
+      updated_at: ago(60 * 24 * 3),
+    },
+    {
       id: 1,
       name: "Read only",
+      system: "read_only",
       description: "Sees everything a member can be given, changes nothing, and reads no secret.",
       grants: [
         "projects",
@@ -133,6 +145,7 @@ export const db = {
     {
       id: 2,
       name: "Deploy",
+      system: "deploy",
       description: "Creates, configures and deploys apps, and reads what they run against.",
       grants: [
         { resource: "projects", level: "view", secrets: true, items: null },

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  InfoIcon,
   KeyRoundIcon,
   LockIcon,
   PencilIcon,
@@ -11,7 +12,7 @@ import {
   UnlockIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
-import { AccessRoleDialog, summarize } from "@/components/access-role-dialog";
+import { AccessRoleDialog, AccessRoleInfo } from "@/components/access-role-dialog";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
@@ -41,11 +42,6 @@ import {
 } from "@/lib/api";
 import { message } from "@/lib/errors";
 import { useOpenOnArrival } from "@/lib/open-on-arrival";
-
-const ROLES = [
-  { value: "member", label: "Member" },
-  { value: "admin", label: "Admin" },
-];
 
 // Who can reach this instance at all.
 //
@@ -82,6 +78,7 @@ export default function UsersPage() {
   const [editing, setEditing] = useState<AccessRole | null>(null);
   const [composing, setComposing] = useState(false);
   const [deleting, setDeleting] = useState<AccessRole | null>(null);
+  const [inspecting, setInspecting] = useState<AccessRole | null>(null);
   const [tab, setTab] = useState<"users" | "roles">("users");
 
   useOpenOnArrival("new", setAdding);
@@ -136,23 +133,18 @@ export default function UsersPage() {
       // you to type.
       id: "username",
       header: "Username",
-      width: 20,
+      width: 16,
       sortBy: (u) => u.username,
       cell: (u) => <span className="truncate font-mono text-xs">{u.username}</span>,
     },
     {
       id: "role",
       header: "Role",
-      width: 14,
+      width: 18,
       sortBy: (u) => u.role,
       cell: (u) => (
-        <span className="flex min-w-0 flex-col">
-          <span className="text-muted-foreground">{u.role}</span>
-          {u.role === "member" && (
-            <span className="truncate text-[11px] text-subtle-foreground">
-              {roles?.roles.find((r) => r.id === u.access_role_id)?.name ?? "Member default"}
-            </span>
-          )}
+        <span className="truncate text-muted-foreground">
+          {roles?.roles.find((r) => r.id === u.access_role_id)?.name ?? u.role}
         </span>
       ),
     },
@@ -206,7 +198,7 @@ export default function UsersPage() {
                 title={isYou ? "You cannot change your own role." : undefined}
                 onClick={() => setChanging(u)}
               >
-                Change access
+                Change role
               </RowMenuItem>
               <RowMenuItem icon={RotateCcwKeyIcon} onClick={() => setResetting(u)}>
                 Reset password
@@ -247,7 +239,9 @@ export default function UsersPage() {
     // the first, and a second table under the first made both scroll.
     <Tabs
       value={tab}
-      onValueChange={(v) => setTab(v as "users" | "roles")}
+      // Only a click moves it: Base UI also reports a fallback while the
+      // list mounts into the rail, which opened the page on the last tab.
+      onValueChange={(v, details) => details.reason === "none" && setTab(v as "users" | "roles")}
       className="subrail-page"
     >
       <RailTabs>
@@ -296,6 +290,7 @@ export default function UsersPage() {
 
         <NewUserDialog
           open={adding}
+          roles={roles?.roles ?? []}
           onOpenChange={setAdding}
           onCreated={(created) => {
             setIssued(created);
@@ -313,19 +308,26 @@ export default function UsersPage() {
 
       <TabsContent value="roles">
         <p className="mb-4 text-muted-foreground text-xs">
-          What a member, or an API key, may reach. A member without one has the member default; a
-          key given one never reaches more than its owner.
+          What an account, or an API key, may reach. Admin, Read only and Deploy ship with the
+          instance and cannot be changed; a key given a role never reaches more than its owner.
         </p>
         <DataTable
           columns={[
             {
               id: "name",
               header: "Role",
-              width: 24,
+              width: 78,
               sortBy: (r) => r.name,
               cell: (r) => (
                 <span className="flex min-w-0 flex-col">
-                  <span className="truncate text-sm">{r.name}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="truncate text-sm">{r.name}</span>
+                    {r.system && (
+                      <span className="shrink-0 border border-border px-1.5 font-mono text-[10px] text-muted-foreground uppercase tracking-wide">
+                        System
+                      </span>
+                    )}
+                  </span>
                   {r.description && (
                     <span className="truncate text-[11px] text-muted-foreground">
                       {r.description}
@@ -335,42 +337,36 @@ export default function UsersPage() {
               ),
             },
             {
-              id: "grants",
-              header: "Grants",
-              width: 48,
-              wrap: true,
-              cell: (r) => <span className="text-muted-foreground text-xs">{summarize(r)}</span>,
-            },
-            {
-              id: "used",
-              header: "Given to",
-              width: 18,
-              sortBy: (r) => r.members + r.keys,
-              cell: (r) => (
-                <span className="font-mono text-[11px] text-muted-foreground">
-                  {r.members} {r.members === 1 ? "member" : "members"} · {r.keys}{" "}
-                  {r.keys === 1 ? "key" : "keys"}
-                </span>
-              ),
-            },
-            {
               id: "actions",
               header: "",
-              width: 10,
+              width: 22,
               align: "right",
               cell: (r) => (
                 <RowActions>
                   <RowAction
+                    icon={InfoIcon}
+                    label={`What ${r.name} allows`}
+                    onClick={() => setInspecting(r)}
+                  />
+                  <RowAction
                     icon={PencilIcon}
                     label={`Edit ${r.name}`}
+                    disabled={!!r.system}
+                    title={r.system ? "A system role cannot be changed." : undefined}
                     onClick={() => setEditing(r)}
                   />
                   <RowAction
                     icon={Trash2Icon}
                     label={`Delete ${r.name}`}
                     danger
-                    disabled={r.members + r.keys > 0}
-                    title={r.members + r.keys > 0 ? "Still given to somebody." : undefined}
+                    disabled={!!r.system || r.members + r.keys > 0}
+                    title={
+                      r.system
+                        ? "A system role cannot be deleted."
+                        : r.members + r.keys > 0
+                          ? "Still given to somebody."
+                          : undefined
+                    }
                     onClick={() => setDeleting(r)}
                   />
                 </RowActions>
@@ -380,9 +376,15 @@ export default function UsersPage() {
           rows={roles?.roles ?? null}
           rowKey={(r) => String(r.id)}
           loadingRows={2}
-          empty="No roles. Every member has the member default."
+          empty="No roles."
         />
       </TabsContent>
+
+      <AccessRoleInfo
+        role={inspecting}
+        resources={roles?.resources ?? []}
+        onOpenChange={(open) => !open && setInspecting(null)}
+      />
 
       <AccessRoleDialog
         open={composing || editing !== null}
@@ -486,24 +488,27 @@ function cnFace(u: InstanceUser) {
 // self-service, made from their own account screen.
 function NewUserDialog({
   open,
+  roles,
   onOpenChange,
   onCreated,
 }: {
   open: boolean;
+  roles: AccessRole[];
   onOpenChange: (v: boolean) => void;
   onCreated: (created: { username: string; password: string }) => void;
 }) {
   const [username, setUsername] = useState("");
-  const [role, setRole] = useState("member");
+  const deploy = roles.find((r) => r.system === "deploy");
+  const [role, setRole] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setUsername("");
-    setRole("member");
+    setRole(deploy ? String(deploy.id) : "");
     setError(null);
-  }, [open]);
+  }, [open, deploy]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -512,7 +517,7 @@ function NewUserDialog({
     try {
       const created = await api.post<{ username: string; password: string }>("/users", {
         username,
-        role,
+        access_role_id: Number(role),
       });
       onCreated(created);
       onOpenChange(false);
@@ -542,18 +547,17 @@ function NewUserDialog({
             />
             <SearchableSelect
               label="Role"
-              searchable={false}
-              choices={ROLES}
+              choices={roles.map((r) => ({ value: String(r.id), label: r.name }))}
               value={role}
               onChange={setRole}
-              hint="An admin also builds source on this host and configures the instance."
+              hint={roles.find((r) => String(r.id) === role)?.description}
             />
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <ActionButton type="submit" busy={busy} disabled={!username.trim()}>
+            <ActionButton type="submit" busy={busy} disabled={!username.trim() || !role}>
               Add account
             </ActionButton>
           </DialogFooter>
@@ -579,16 +583,13 @@ function RoleDialog({
   onOpenChange: (v: boolean) => void;
   onSaved: () => void;
 }) {
-  const [role, setRole] = useState("member");
-  // "0" is the member default.
-  const [access, setAccess] = useState("0");
+  const [role, setRole] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
-    setRole(user.role);
-    setAccess(String(user.access_role_id ?? 0));
+    setRole(String(user.access_role_id ?? ""));
     setError(null);
   }, [user]);
 
@@ -598,10 +599,7 @@ function RoleDialog({
     setBusy(true);
     setError(null);
     try {
-      const body: Record<string, unknown> = {};
-      if (role !== user.role) body.role = role;
-      if (role === "member") body.access_role_id = Number(access);
-      await api.patch(`/users/${user.username}`, body);
+      await api.patch(`/users/${user.username}`, { access_role_id: Number(role) });
       onSaved();
       onOpenChange(false);
     } catch (err) {
@@ -610,44 +608,24 @@ function RoleDialog({
     setBusy(false);
   }
 
-  const unchanged = role === user?.role && access === String(user?.access_role_id ?? 0);
-  const chosen = roles.find((r) => String(r.id) === access);
-
   return (
     <Dialog open={user !== null} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <form onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>{user ? personName(user) : ""}&rsquo;s access</DialogTitle>
+            <DialogTitle>{user ? personName(user) : ""}&rsquo;s role</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-5">
             <ErrorAlert error={error} />
             <SearchableSelect
               label="Role"
-              searchable={false}
-              choices={ROLES}
+              choices={roles.map((r) => ({ value: String(r.id), label: r.name }))}
               value={role}
               onChange={setRole}
-              hint="An admin reaches everything, users and roles included, and builds source on this host."
+              hint={roles.find((r) => String(r.id) === role)?.description}
             />
-            {role === "member" && (
-              <SearchableSelect
-                label="Access role"
-                choices={[
-                  { value: "0", label: "Member default" },
-                  ...roles.map((r) => ({ value: String(r.id), label: r.name })),
-                ]}
-                value={access}
-                onChange={setAccess}
-                hint={
-                  chosen
-                    ? summarize(chosen)
-                    : "Manages apps and reads the rest of the workspace — what a member has always done."
-                }
-              />
-            )}
             <p className="text-[11px] text-muted-foreground">
-              Their sessions and keys are untouched and start being refused for what the new access
+              Their sessions and keys are untouched and start being refused for what the new role
               does not reach, on their next request.
             </p>
           </div>
@@ -655,7 +633,11 @@ function RoleDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <ActionButton type="submit" busy={busy} disabled={unchanged}>
+            <ActionButton
+              type="submit"
+              busy={busy}
+              disabled={!role || role === String(user?.access_role_id ?? "")}
+            >
               Save
             </ActionButton>
           </DialogFooter>

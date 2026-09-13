@@ -10,19 +10,24 @@ CREATE TABLE access_roles (
     name        TEXT NOT NULL UNIQUE,
     description TEXT NOT NULL DEFAULT '',
     grants      JSONB NOT NULL DEFAULT '[]',
+    -- system names a role the instance ships: admin, read_only, deploy.
+    -- Those are neither edited nor deleted.
+    system      TEXT UNIQUE,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- A member's role; null is the built-in member default. An admin's is
--- ignored. RESTRICT, because the service refuses deleting a role in use
--- and a foreign key is what makes that true under a race.
+-- Every account's role. users.role stays, kept in step by the service:
+-- admin exactly when this is the Admin role. RESTRICT, because the
+-- service refuses deleting a role in use and a foreign key is what makes
+-- that true under a race.
 ALTER TABLE users ADD COLUMN access_role_id BIGINT REFERENCES access_roles(id) ON DELETE RESTRICT;
 
 -- A key's role narrows its owner's access; null is all of it.
 ALTER TABLE api_keys ADD COLUMN access_role_id BIGINT REFERENCES access_roles(id) ON DELETE RESTRICT;
 
-INSERT INTO access_roles (name, description, grants) VALUES
+INSERT INTO access_roles (name, description, grants, system) VALUES
+('Admin', 'Everything, including users, roles and building source on this host.', '[]', 'admin'),
 ('Read only', 'Sees everything a member can be given, changes nothing, and reads no secret.', '[
   {"resource":"projects","level":"view","items":null},
   {"resource":"apps","level":"view","items":null},
@@ -41,7 +46,7 @@ INSERT INTO access_roles (name, description, grants) VALUES
   {"resource":"firewall","level":"view","items":null},
   {"resource":"settings","level":"view","items":null},
   {"resource":"audit","level":"view","items":null}
-]'),
+]', 'read_only'),
 ('Deploy', 'Creates, configures and deploys apps, and reads what they run against.', '[
   {"resource":"projects","level":"view","secrets":true,"items":null},
   {"resource":"apps","level":"manage","secrets":true,"items":null},
@@ -51,7 +56,12 @@ INSERT INTO access_roles (name, description, grants) VALUES
   {"resource":"servers","level":"view","items":null},
   {"resource":"templates","level":"view","items":null},
   {"resource":"registry","level":"view","items":null}
-]');
+]', 'deploy');
+
+-- Every account gets one: an admin the Admin role, a member Deploy, which
+-- is exactly what a member could do.
+UPDATE users SET access_role_id = (SELECT id FROM access_roles WHERE system = 'admin') WHERE role = 'admin';
+UPDATE users SET access_role_id = (SELECT id FROM access_roles WHERE system = 'deploy') WHERE role <> 'admin';
 
 -- Who changed what. Names are written down rather than joined: the row
 -- has to outlive the account, the key and the thing it names.

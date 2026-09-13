@@ -269,13 +269,15 @@ type KeyResponse struct {
 
 // RoleResponse is an access role as the API returns it.
 type RoleResponse struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Grants      []Grant   `json:"grants"`
-	Members     int       `json:"members"`
-	Keys        int       `json:"keys"`
-	UpdatedAt   time.Time `json:"updated_at"`
+	ID          int64   `json:"id"`
+	Name        string  `json:"name"`
+	Description string  `json:"description,omitempty"`
+	Grants      []Grant `json:"grants"`
+	// System names a role the instance ships, which cannot be changed.
+	System    string    `json:"system,omitempty"`
+	Members   int       `json:"members"`
+	Keys      int       `json:"keys"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func toRoleResponse(r *AccessRole) RoleResponse {
@@ -284,7 +286,7 @@ func toRoleResponse(r *AccessRole) RoleResponse {
 		grants = []Grant{}
 	}
 	return RoleResponse{
-		ID: r.ID, Name: r.Name, Description: r.Description, Grants: grants,
+		ID: r.ID, Name: r.Name, Description: r.Description, Grants: grants, System: r.System,
 		Members: r.Members, Keys: r.Keys, UpdatedAt: r.UpdatedAt,
 	}
 }
@@ -713,7 +715,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	case errors.Is(err, ErrRoleName), errors.Is(err, ErrBadGrant):
 		http.Error(w, err.Error(), http.StatusBadRequest)
-	case errors.Is(err, ErrRoleNameTaken), errors.Is(err, ErrRoleInUse):
+	case errors.Is(err, ErrRoleNameTaken), errors.Is(err, ErrRoleInUse), errors.Is(err, ErrSystemRole):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrBadUsername), errors.Is(err, ErrBadEmail),
 		errors.Is(err, ErrBadDisplayName), errors.Is(err, ErrUnknownAvatar):
@@ -757,6 +759,9 @@ func (h *Handler) add(w http.ResponseWriter, r *http.Request) {
 		// field somebody has to fill in is a field somebody fills in
 		// badly.
 		Password string `json:"password"`
+		// AccessRoleID gives the account a role from the list, and when
+		// set decides admin or member itself.
+		AccessRoleID int64 `json:"access_role_id"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil || req.Username == "" {
 		http.Error(w, "username is required", http.StatusBadRequest)
@@ -770,8 +775,16 @@ func (h *Handler) add(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, password, err := h.svc.Add(r.Context(), FromContext(r.Context()),
-		req.Username, req.Password, Role(req.Role))
+	var created *User
+	var password string
+	var err error
+	if req.AccessRoleID != 0 {
+		created, password, err = h.svc.AddWithRole(r.Context(), FromContext(r.Context()),
+			req.Username, req.Password, req.AccessRoleID)
+	} else {
+		created, password, err = h.svc.Add(r.Context(), FromContext(r.Context()),
+			req.Username, req.Password, Role(req.Role))
+	}
 	if err != nil {
 		WriteError(w, err)
 		return

@@ -499,14 +499,14 @@ func (r *Repository) DeleteExpiredSessions(ctx context.Context) (int64, error) {
 
 // --- access roles ---
 
-const roleColumns = `id, name, description, grants, created_at, updated_at,
+const roleColumns = `id, name, description, grants, COALESCE(system, ''), created_at, updated_at,
 	(SELECT COUNT(*) FROM users u WHERE u.access_role_id = access_roles.id),
 	(SELECT COUNT(*) FROM api_keys k WHERE k.access_role_id = access_roles.id)`
 
 func scanRole(row scanner) (*AccessRole, error) {
 	var ar AccessRole
 	var grants []byte
-	if err := row.Scan(&ar.ID, &ar.Name, &ar.Description, &grants, &ar.CreatedAt, &ar.UpdatedAt, &ar.Members, &ar.Keys); err != nil {
+	if err := row.Scan(&ar.ID, &ar.Name, &ar.Description, &grants, &ar.System, &ar.CreatedAt, &ar.UpdatedAt, &ar.Members, &ar.Keys); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(grants, &ar.Grants); err != nil {
@@ -516,7 +516,7 @@ func scanRole(row scanner) (*AccessRole, error) {
 }
 
 func (r *Repository) ListRoles(ctx context.Context) ([]*AccessRole, error) {
-	rows, err := r.q.QueryContext(ctx, `SELECT `+roleColumns+` FROM access_roles ORDER BY name`)
+	rows, err := r.q.QueryContext(ctx, `SELECT `+roleColumns+` FROM access_roles ORDER BY system IS NULL, id`)
 	if err != nil {
 		return nil, fmt.Errorf("list roles: %w", err)
 	}
@@ -580,7 +580,17 @@ func (r *Repository) DeleteRole(ctx context.Context, id int64) error {
 	return nil
 }
 
-// SetAccessRole gives an account a role; 0 is the member default.
+// SystemRoleID is the id of a role the instance ships.
+func (r *Repository) SystemRoleID(ctx context.Context, system string) (int64, error) {
+	var id int64
+	err := r.q.QueryRowContext(ctx, `SELECT id FROM access_roles WHERE system = $1`, system).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNoSuchRole
+	}
+	return id, err
+}
+
+// SetAccessRole gives an account a role; 0 is none, the member default.
 func (r *Repository) SetAccessRole(ctx context.Context, userID, roleID int64) error {
 	if _, err := r.q.ExecContext(ctx,
 		`UPDATE users SET access_role_id = $2 WHERE id = $1`, userID, nullID(roleID)); err != nil {

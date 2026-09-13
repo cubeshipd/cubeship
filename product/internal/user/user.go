@@ -364,6 +364,11 @@ var (
 	// deciding what that should be.
 	ErrRoleInUse = errors.New("this role is still given to an account or an API key")
 
+	// ErrSystemRole refuses changing or deleting a role the instance
+	// ships: everybody holding Admin, Read only or Deploy relies on it
+	// meaning what it says.
+	ErrSystemRole = errors.New("a system role cannot be changed or deleted")
+
 	// ErrRoleName is a role with no name, or one too long to show.
 	ErrRoleName = errors.New("a role name is 1-60 characters")
 )
