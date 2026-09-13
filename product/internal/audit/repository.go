@@ -55,6 +55,12 @@ func (r *Repository) List(ctx context.Context, f Filter) ([]*Event, error) {
 	if f.Target != "" {
 		add("strpos(target, ?) > 0", f.Target)
 	}
+	if !f.From.IsZero() {
+		add("at >= ?", f.From)
+	}
+	if !f.To.IsZero() {
+		add("at < ?", f.To)
+	}
 	if f.Before > 0 {
 		add("id < ?", f.Before)
 	}

@@ -33,6 +33,8 @@ type listInput struct {
 	Via     string `json:"via,omitempty" jsonschema:"dashboard, api or mcp"`
 	Outcome string `json:"outcome,omitempty" jsonschema:"ok, refused or failed"`
 	Target  string `json:"target,omitempty" jsonschema:"only events whose target contains this"`
+	From    string `json:"from,omitempty" jsonschema:"only events at or after this: RFC 3339, or YYYY-MM-DD for midnight UTC"`
+	To      string `json:"to,omitempty" jsonschema:"only events before this, in the same form"`
 	Before  int64  `json:"before,omitempty" jsonschema:"an event id; only older events"`
 	Limit   int    `json:"limit,omitempty" jsonschema:"at most this many, up to 500; default 100"`
 }
@@ -43,9 +45,17 @@ func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, in listInput) 
 		limit = DefaultLimit
 	}
 	limit = min(limit, MaxLimit)
+	from, err := ParseTime(in.From)
+	if err != nil {
+		return nil, Page{}, fmt.Errorf("from: %w", err)
+	}
+	to, err := ParseTime(in.To)
+	if err != nil {
+		return nil, Page{}, fmt.Errorf("to: %w", err)
+	}
 	events, err := t.svc.List(ctx, t.caller, Filter{
 		Username: in.User, Via: Via(in.Via), Outcome: Outcome(in.Outcome),
-		Target: in.Target, Before: in.Before, Limit: limit,
+		Target: in.Target, From: from, To: to, Before: in.Before, Limit: limit,
 	})
 	if err != nil {
 		return nil, Page{}, err

@@ -63,6 +63,8 @@ func newAuditCmd() *cobra.Command {
 	cmd.Flags().StringVar(&f.Via, "via", "", "dashboard, api or mcp")
 	cmd.Flags().StringVar(&f.Outcome, "outcome", "", "ok, refused or failed")
 	cmd.Flags().StringVar(&f.Target, "target", "", "only events whose target contains this, e.g. an app's reference")
+	cmd.Flags().StringVar(&f.From, "from", "", "only events at or after this: YYYY-MM-DD (midnight UTC) or RFC 3339")
+	cmd.Flags().StringVar(&f.To, "to", "", "only events before this, in the same form")
 	cmd.Flags().Int64Var(&f.Before, "before", 0, "only events older than this id")
 	cmd.Flags().IntVar(&f.Limit, "limit", 0, "at most this many, up to 500 (default 100)")
 	return cmd

@@ -42,6 +42,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						openapi.QueryParam("via", "`dashboard`, `api` or `mcp`."),
 						openapi.QueryParam("outcome", "`ok`, `refused` or `failed`."),
 						openapi.QueryParam("target", "Only events whose target contains this, e.g. an app's reference."),
+						openapi.QueryParam("from", "Only events at or after this: RFC 3339, or YYYY-MM-DD for midnight UTC."),
+						openapi.QueryParam("to", "Only events before this, in the same form."),
 						openapi.QueryParam("before", "An event id; only older events."),
 						openapi.QueryParam("limit", "At most this many, up to 500. Default 100."),
 					},

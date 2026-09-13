@@ -8,6 +8,7 @@
 package audit
 
 import (
+	"fmt"
 	"time"
 
 	"cubeship/internal/user"
@@ -63,8 +64,10 @@ type Filter struct {
 	// Target matches anywhere in the target, so an app's reference finds
 	// every change to it.
 	Target string
-	Before int64
-	Limit  int
+	// From and To bound when it happened, To excluded. Zero is unbounded.
+	From, To time.Time
+	Before   int64
+	Limit    int
 }
 
 const (
@@ -76,6 +79,22 @@ const (
 	// maxDetail is how much of an error is kept.
 	maxDetail = 300
 )
+
+// ParseTime reads a bound of a range: RFC 3339, or a bare date taken as
+// midnight UTC. Empty is no bound.
+func ParseTime(s string) (time.Time, error) {
+	if s == "" {
+		return time.Time{}, nil
+	}
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+	t, err := time.Parse(time.DateOnly, s)
+	if err != nil {
+		return time.Time{}, fmt.Errorf("%q is neither RFC 3339 nor YYYY-MM-DD", s)
+	}
+	return t, nil
+}
 
 // From starts an event for caller.
 func From(caller *user.User, via Via, ip string) Event {

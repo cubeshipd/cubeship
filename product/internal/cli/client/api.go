@@ -724,13 +724,15 @@ type AuditPage struct {
 // AuditFilter narrows ListAudit; zero values filter nothing.
 type AuditFilter struct {
 	User, Via, Outcome, Target string
-	Before                     int64
-	Limit                      int
+	// From and To are RFC 3339 or YYYY-MM-DD, as the daemon reads them.
+	From, To string
+	Before   int64
+	Limit    int
 }
 
 func (c *Client) ListAudit(ctx context.Context, f AuditFilter) (AuditPage, error) {
 	q := url.Values{}
-	for k, v := range map[string]string{"user": f.User, "via": f.Via, "outcome": f.Outcome, "target": f.Target} {
+	for k, v := range map[string]string{"user": f.User, "via": f.Via, "outcome": f.Outcome, "target": f.Target, "from": f.From, "to": f.To} {
 		if v != "" {
 			q.Set(k, v)
 		}

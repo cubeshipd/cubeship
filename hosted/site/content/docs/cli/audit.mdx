@@ -19,9 +19,11 @@ cubeship audit [flags]
 | Flag | Default | What it does |
 | --- | --- | --- |
 | `--before` |  | only events older than this id |
+| `--from` |  | only events at or after this: YYYY-MM-DD (midnight UTC) or RFC 3339 |
 | `--limit` |  | at most this many, up to 500 (default 100) |
 | `--outcome` |  | ok, refused or failed |
 | `--target` |  | only events whose target contains this, e.g. an app's reference |
+| `--to` |  | only events before this, in the same form |
 | `--user` |  | only this username |
 | `--via` |  | dashboard, api or mcp |
 

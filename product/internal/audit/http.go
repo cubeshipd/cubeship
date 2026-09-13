@@ -71,12 +71,22 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	f.Before, _ = strconv.ParseInt(q.Get("before"), 10, 64)
 	f.Limit, _ = strconv.Atoi(q.Get("limit"))
+	var err error
+	if f.From, err = ParseTime(q.Get("from")); err != nil {
+		http.Error(w, "from: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if f.To, err = ParseTime(q.Get("to")); err != nil {
+		http.Error(w, "to: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 	if f.Limit <= 0 {
 		f.Limit = DefaultLimit
 	}
 	f.Limit = min(f.Limit, MaxLimit)
 	ctx := r.Context()
-	events, err := h.svc.List(ctx, user.FromContext(ctx), f)
+	var events []*Event
+	events, err = h.svc.List(ctx, user.FromContext(ctx), f)
 	if err != nil {
 		user.WriteError(w, err)
 		return

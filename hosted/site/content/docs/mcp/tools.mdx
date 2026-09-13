@@ -499,9 +499,11 @@ Read the audit log, newest first: who changed what, through the dashboard, the A
 | Input | Type | What it is |
 | --- | --- | --- |
 | `before` | integer | an event id; only older events |
+| `from` | string | only events at or after this: RFC 3339, or YYYY-MM-DD for midnight UTC |
 | `limit` | integer | at most this many, up to 500; default 100 |
 | `outcome` | string | ok, refused or failed |
 | `target` | string | only events whose target contains this |
+| `to` | string | only events before this, in the same form |
 | `user` | string | only this username |
 | `via` | string | dashboard, api or mcp |
 

@@ -41,7 +41,8 @@ export function SearchableSelect({
   searchable: searchableProp,
   fieldClassName,
 }: {
-  label: string;
+  // Absent in a row of filters, where the placeholder says what it is.
+  label?: string;
   hint?: string;
   placeholder?: string;
   empty?: string;
@@ -87,7 +88,7 @@ export function SearchableSelect({
     // opened it — pushing everything below it down, and leaving it
     // there. A margin on the label depends on nothing but the label.
     <div className={fieldClassName}>
-      <Label className="mb-2 block text-xs text-muted-foreground">{label}</Label>
+      {label && <Label className="mb-2 block text-xs text-muted-foreground">{label}</Label>}
       <Popover
         open={open}
         onOpenChange={(next) => {
