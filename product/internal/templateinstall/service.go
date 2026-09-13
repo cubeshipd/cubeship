@@ -48,6 +48,9 @@ type Apps interface {
 	WaitForDeployment(ctx context.Context, caller *user.User, ref app.Reference, deploymentID int64) (*app.Deployment, error)
 	Delete(ctx context.Context, caller *user.User, ref app.Reference) (*app.Scoped, error)
 	HostTaken(ctx context.Context, host string) (bool, error)
+	Env(ctx context.Context, caller *user.User, ref app.Reference) (envvar.Map, []envvar.Resolved, error)
+	List(ctx context.Context, caller *user.User) ([]*app.Scoped, error)
+	RemoveDomain(ctx context.Context, caller *user.User, ref app.Reference, domainID int64) (*app.Scoped, error)
 }
 
 type Datastores interface {
@@ -55,6 +58,7 @@ type Datastores interface {
 	Create(ctx context.Context, caller *user.User, spec datastore.Spec) (*datastore.Datastore, error)
 	Credentials(ctx context.Context, caller *user.User, name string) (datastore.Credentials, error)
 	Attach(ctx context.Context, caller *user.User, name, appRef, prefix string) (*datastore.Datastore, error)
+	Detach(ctx context.Context, caller *user.User, name, appRef string) (*datastore.Datastore, error)
 	Delete(ctx context.Context, caller *user.User, name string) (*datastore.Datastore, error)
 }
 
@@ -64,6 +68,7 @@ type ObjectStores interface {
 	Credentials(ctx context.Context, caller *user.User, name string) (objectstore.Credentials, error)
 	CreateBucket(ctx context.Context, caller *user.User, name, bucket string) error
 	Attach(ctx context.Context, caller *user.User, name, appRef, bucket, prefix string) (*objectstore.Store, error)
+	Detach(ctx context.Context, caller *user.User, name, appRef, bucket string) (*objectstore.Store, error)
 	Delete(ctx context.Context, caller *user.User, name string) (*objectstore.Store, error)
 }
 
@@ -72,13 +77,17 @@ type Users interface {
 	ByID(ctx context.Context, id int64) (*user.User, error)
 }
 
-// Records is where installs are kept. *Repository is one.
+// Records is where installations and their runs are kept. *Repository
+// is one.
 type Records interface {
-	Create(ctx context.Context, in *Install) (*Install, error)
-	Save(ctx context.Context, in *Install) error
-	ByID(ctx context.Context, id int64) (*Install, error)
-	List(ctx context.Context, limit int) ([]*Install, error)
-	Running(ctx context.Context) ([]*Install, error)
+	CreateInstall(ctx context.Context, in *Install) (*Install, error)
+	SaveInstall(ctx context.Context, in *Install) error
+	Install(ctx context.Context, id int64) (*Install, error)
+	Installs(ctx context.Context) ([]*Install, error)
+	CreateRun(ctx context.Context, run *Run) (*Run, error)
+	SaveRun(ctx context.Context, run *Run) error
+	Runs(ctx context.Context, installID int64) ([]*Run, error)
+	RunningRuns(ctx context.Context) ([]*Run, error)
 }
 
 // RoleToInstall is admin: an install creates databases, and a template's
@@ -129,9 +138,17 @@ func (s *Service) source() (Catalog, error) {
 	return s.catalog, nil
 }
 
-// Wait blocks until every install this process started has finished.
-// For tests, and for a daemon shutting down.
+// Wait blocks until every run this process started has finished. For
+// tests, and for a daemon shutting down.
 func (s *Service) Wait() { s.wg.Wait() }
+
+func (s *Service) start(run func()) {
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		run()
+	}()
+}
 
 // Templates is a page of the catalog.
 func (s *Service) Templates(ctx context.Context, caller *user.User, query url.Values) (json.RawMessage, error) {
@@ -182,20 +199,94 @@ func (s *Service) Icon(ctx context.Context, caller *user.User, repository, file 
 	return c.Icon(ctx, repository, file)
 }
 
-// Get is one install and how it is going.
-func (s *Service) Get(ctx context.Context, caller *user.User, id int64) (*Install, error) {
-	if err := user.Require(caller, user.RoleMember); err != nil {
-		return nil, err
-	}
-	return s.records.ByID(ctx, id)
+// Installed is an installation with what a screen shows about it.
+type Installed struct {
+	Install *Install
+	// Runs is its most recent runs, newest first.
+	Runs []*Run
+	// Available is the newest release the catalog accepted, when the
+	// installation is not on it.
+	Available *CatalogRelease
 }
 
-// List is the most recent installs.
-func (s *Service) List(ctx context.Context, caller *user.User) ([]*Install, error) {
+// Busy reports whether a run is changing the installation now.
+func (i Installed) Busy() bool { return len(i.Runs) > 0 && i.Runs[0].Status == RunRunning }
+
+// Installs is what is installed, or being installed, newest first.
+func (s *Service) Installs(ctx context.Context, caller *user.User) ([]Installed, error) {
 	if err := user.Require(caller, user.RoleMember); err != nil {
 		return nil, err
 	}
-	return s.records.List(ctx, 50)
+	all, err := s.records.Installs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	newest := map[string]*CatalogRelease{}
+	out := []Installed{}
+	for _, in := range all {
+		if in.Status != StatusInstalled && in.Status != StatusInstalling {
+			continue
+		}
+		runs, err := s.records.Runs(ctx, in.ID)
+		if err != nil {
+			return nil, err
+		}
+		if len(runs) > 1 {
+			runs = runs[:1]
+		}
+		out = append(out, Installed{Install: in, Runs: runs, Available: s.available(ctx, in, newest)})
+	}
+	return out, nil
+}
+
+// Get is one installation, its runs, and whether a newer release exists.
+func (s *Service) Get(ctx context.Context, caller *user.User, id int64) (*Installed, error) {
+	if err := user.Require(caller, user.RoleMember); err != nil {
+		return nil, err
+	}
+	in, err := s.records.Install(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	runs, err := s.records.Runs(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return &Installed{Install: in, Runs: runs, Available: s.available(ctx, in, map[string]*CatalogRelease{})}, nil
+}
+
+// available is the newest release the catalog accepted, when the
+// installation is not on it. A catalog that does not answer is no update
+// rather than an error: the installation is still there to look at.
+func (s *Service) available(ctx context.Context, in *Install, seen map[string]*CatalogRelease) *CatalogRelease {
+	if in.Status != StatusInstalled {
+		return nil
+	}
+	key := in.Owner + "/" + in.Repo
+	newest, asked := seen[key]
+	if !asked {
+		if c, err := s.source(); err == nil {
+			if releases, err := c.Releases(ctx, in.Owner, in.Repo); err == nil {
+				for i := range releases {
+					if releases[i].Status == "accepted" {
+						found := releases[i]
+						newest = &found
+						break
+					}
+				}
+			}
+		}
+		seen[key] = newest
+	}
+	if newest == nil || newest.Tag == in.Release {
+		return nil
+	}
+	return newest
+}
+
+func (s *Service) busy(ctx context.Context, installID int64) (bool, error) {
+	runs, err := s.records.Runs(ctx, installID)
+	return len(runs) > 0 && runs[0].Status == RunRunning, err
 }
 
 // Request is what an install is asked to do.
@@ -223,7 +314,7 @@ type Request struct {
 //
 // The secrets the instance generated come back here and nowhere else:
 // they are not recorded, only written into the apps that use them.
-func (s *Service) Install(ctx context.Context, caller *user.User, req Request) (*Install, map[string]string, error) {
+func (s *Service) Install(ctx context.Context, caller *user.User, req Request) (*Installed, map[string]string, error) {
 	if err := user.Require(caller, RoleToInstall); err != nil {
 		return nil, nil, err
 	}
@@ -231,21 +322,37 @@ func (s *Service) Install(ctx context.Context, caller *user.User, req Request) (
 	if err != nil {
 		return nil, nil, err
 	}
-	rec, err := s.records.Create(ctx, &Install{
+	in, err := s.records.CreateInstall(ctx, &Install{
 		Owner: p.owner, Repo: p.repo, Release: p.release.Tag, Commit: p.release.Commit,
-		Project: p.project, Environment: p.environment,
-		Status: StatusRunning, Step: "Starting", CreatedBy: caller.ID,
+		Project: p.project, Environment: p.environment, Status: StatusInstalling,
+		Manifest: p.manifest, Answers: p.answers(), CreatedBy: caller.ID,
 	})
 	if err != nil {
 		return nil, nil, err
 	}
-	started := *rec
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		s.run(caller, rec, p)
-	}()
-	return &started, p.generated, nil
+	run, err := s.records.CreateRun(ctx, &Run{
+		InstallID: in.ID, Kind: RunInstall, ToRelease: p.release.Tag,
+		Status: RunRunning, Step: "Starting", CreatedBy: caller.ID,
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	started := &Installed{Install: copyInstall(in), Runs: []*Run{copyRun(run)}}
+	s.start(func() { s.runInstall(caller, in, run, p) })
+	return started, p.generated, nil
+}
+
+func copyInstall(in *Install) *Install {
+	c := *in
+	c.Resources = slices.Clone(in.Resources)
+	return &c
+}
+
+func copyRun(r *Run) *Run {
+	c := *r
+	c.Created = slices.Clone(r.Created)
+	c.Snapshot = slices.Clone(r.Snapshot)
+	return &c
 }
 
 // plan is a request checked against the template and the instance, with
@@ -270,28 +377,30 @@ type plan struct {
 	generated   map[string]string
 }
 
-func (s *Service) prepare(ctx context.Context, caller *user.User, req Request) (*plan, error) {
+// fetch reads a release's file from its repository and validates it here.
+// An empty release is the newest the catalog accepted.
+func (s *Service) fetch(ctx context.Context, owner, repo, release string) (CatalogRelease, *template.Normalized, error) {
 	c, err := s.source()
 	if err != nil {
-		return nil, err
+		return CatalogRelease{}, nil, err
 	}
-	releases, err := c.Releases(ctx, req.Owner, req.Repo)
+	releases, err := c.Releases(ctx, owner, repo)
 	if err != nil {
-		return nil, err
+		return CatalogRelease{}, nil, err
 	}
 	var chosen *CatalogRelease
 	for i := range releases {
-		if releases[i].Status == "accepted" && (req.Release == "" || releases[i].Tag == req.Release) {
+		if releases[i].Status == "accepted" && (release == "" || releases[i].Tag == release) {
 			chosen = &releases[i]
 			break
 		}
 	}
 	if chosen == nil {
-		return nil, ErrReleaseNotFound
+		return CatalogRelease{}, nil, ErrReleaseNotFound
 	}
-	source, err := c.Source(ctx, req.Owner, req.Repo, chosen.Commit)
+	source, err := c.Source(ctx, owner, repo, chosen.Commit)
 	if err != nil {
-		return nil, err
+		return CatalogRelease{}, nil, err
 	}
 	result := template.Validate(source)
 	if !result.OK {
@@ -301,21 +410,29 @@ func (s *Service) prepare(ctx context.Context, caller *user.User, req Request) (
 				refused = append(refused, d)
 			}
 		}
-		return nil, &InvalidTemplateError{Diagnostics: refused}
+		return CatalogRelease{}, nil, &InvalidTemplateError{Diagnostics: refused}
 	}
 	m := result.Manifest
 	if m.MinCubeship != nil {
 		ok, err := template.Satisfies(*m.MinCubeship, s.version)
 		if err != nil {
-			return nil, err
+			return CatalogRelease{}, nil, err
 		}
 		if !ok {
-			return nil, fmt.Errorf("%w: it asks for %s and this instance runs %s", ErrTooNew, *m.MinCubeship, s.version)
+			return CatalogRelease{}, nil, fmt.Errorf("%w: it asks for %s and this instance runs %s", ErrTooNew, *m.MinCubeship, s.version)
 		}
+	}
+	return *chosen, m, nil
+}
+
+func (s *Service) prepare(ctx context.Context, caller *user.User, req Request) (*plan, error) {
+	release, m, err := s.fetch(ctx, req.Owner, req.Repo, req.Release)
+	if err != nil {
+		return nil, err
 	}
 
 	p := &plan{
-		owner: req.Owner, repo: req.Repo, release: *chosen, manifest: m,
+		owner: req.Owner, repo: req.Repo, release: release, manifest: m,
 		project:     or(req.Project, m.Project),
 		environment: or(req.Environment, m.Environment),
 		databases:   map[string]string{}, stores: map[string]string{}, apps: map[string]string{},
@@ -423,89 +540,107 @@ func (s *Service) nameApps(ctx context.Context, caller *user.User, p *plan, over
 	return nil
 }
 
+// answers is every answer that is not a secret: what an installation
+// keeps for the next update.
+func (p *plan) answers() map[string]string {
+	out := map[string]string{}
+	for _, in := range p.manifest.Inputs {
+		if value, ok := p.inputs[in.Key]; ok && in.Type != "secret" {
+			out[in.Key] = value
+		}
+	}
+	return out
+}
+
 // answer settles every input: the caller's answer, else the template's
 // default, else a generated secret — and checks each against its type.
 func (s *Service) answer(ctx context.Context, caller *user.User, p *plan, given map[string]string) error {
 	hosts := map[string]bool{}
 	for _, in := range p.manifest.Inputs {
-		key := "inputs." + in.Key
-		value := given[in.Key]
-		if in.Type != "secret" {
-			value = strings.TrimSpace(value)
+		if err := s.answerInput(ctx, caller, p, in, given[in.Key], hosts); err != nil {
+			return err
 		}
-		if value == "" && in.Default != nil {
-			value = fmt.Sprint(in.Default)
-		}
-		if value == "" && in.Type == "secret" && in.Generate != nil {
-			generated, err := generateSecret(*in.Generate)
-			if err != nil {
-				return err
-			}
-			value = generated
-			p.generated[in.Key] = generated
-		}
-		if value == "" {
-			if in.Required {
-				return &InputError{Key: key, Message: in.Label + " is required"}
-			}
-			continue
-		}
-
-		switch in.Type {
-		case "domain":
-			host := app.NormalizeHost(value)
-			if !app.ValidHost(host) {
-				return &InputError{Key: key, Message: value + " is not a hostname"}
-			}
-			if hosts[host] {
-				return &InputError{Key: key, Message: host + " is the answer to another domain as well"}
-			}
-			hosts[host] = true
-			taken, err := s.apps.HostTaken(ctx, host)
-			if err != nil {
-				return err
-			}
-			if taken {
-				return &TakenError{Kind: "domain", Name: host}
-			}
-			value = host
-		case "number":
-			n, err := strconv.ParseFloat(value, 64)
-			if err != nil {
-				return &InputError{Key: key, Message: value + " is not a number"}
-			}
-			if in.Min != nil && n < *in.Min {
-				return &InputError{Key: key, Message: fmt.Sprintf("is at least %v", *in.Min)}
-			}
-			if in.Max != nil && n > *in.Max {
-				return &InputError{Key: key, Message: fmt.Sprintf("is at most %v", *in.Max)}
-			}
-		case "choice":
-			if !slices.Contains(in.Options, value) {
-				return &InputError{Key: key, Message: "is one of " + strings.Join(in.Options, ", ")}
-			}
-		case "text":
-			if in.Pattern != "" {
-				// A template's pattern matches the whole answer, the way an
-				// HTML pattern attribute does.
-				re, err := regexp.Compile("^(?:" + in.Pattern + ")$")
-				if err != nil {
-					return &InputError{Key: key, Message: "the template's pattern cannot be read here: " + err.Error()}
-				}
-				if !re.MatchString(value) {
-					return &InputError{Key: key, Message: "does not match " + in.Pattern}
-				}
-			}
-		case "store":
-			if _, err := s.stores.Resolve(ctx, caller, value, RoleToInstall); errors.Is(err, objectstore.ErrNotFound) {
-				return &InputError{Key: key, Message: "there is no object store called " + value}
-			} else if err != nil {
-				return err
-			}
-			p.storeInputs[in.Key] = value
-		}
-		p.inputs[in.Key] = value
 	}
+	return nil
+}
+
+func (s *Service) answerInput(ctx context.Context, caller *user.User, p *plan, in template.NormalizedInput, value string, hosts map[string]bool) error {
+	key := "inputs." + in.Key
+	if in.Type != "secret" {
+		value = strings.TrimSpace(value)
+	}
+	if value == "" && in.Default != nil {
+		value = fmt.Sprint(in.Default)
+	}
+	if value == "" && in.Type == "secret" && in.Generate != nil {
+		generated, err := generateSecret(*in.Generate)
+		if err != nil {
+			return err
+		}
+		value = generated
+		p.generated[in.Key] = generated
+	}
+	if value == "" {
+		if in.Required {
+			return &InputError{Key: key, Message: in.Label + " is required"}
+		}
+		return nil
+	}
+
+	switch in.Type {
+	case "domain":
+		host := app.NormalizeHost(value)
+		if !app.ValidHost(host) {
+			return &InputError{Key: key, Message: value + " is not a hostname"}
+		}
+		if hosts[host] {
+			return &InputError{Key: key, Message: host + " is the answer to another domain as well"}
+		}
+		hosts[host] = true
+		taken, err := s.apps.HostTaken(ctx, host)
+		if err != nil {
+			return err
+		}
+		if taken {
+			return &TakenError{Kind: "domain", Name: host}
+		}
+		value = host
+	case "number":
+		n, err := strconv.ParseFloat(value, 64)
+		if err != nil {
+			return &InputError{Key: key, Message: value + " is not a number"}
+		}
+		if in.Min != nil && n < *in.Min {
+			return &InputError{Key: key, Message: fmt.Sprintf("is at least %v", *in.Min)}
+		}
+		if in.Max != nil && n > *in.Max {
+			return &InputError{Key: key, Message: fmt.Sprintf("is at most %v", *in.Max)}
+		}
+	case "choice":
+		if !slices.Contains(in.Options, value) {
+			return &InputError{Key: key, Message: "is one of " + strings.Join(in.Options, ", ")}
+		}
+	case "text":
+		if in.Pattern != "" {
+			// A template's pattern matches the whole answer, the way an
+			// HTML pattern attribute does.
+			re, err := regexp.Compile("^(?:" + in.Pattern + ")$")
+			if err != nil {
+				return &InputError{Key: key, Message: "the template's pattern cannot be read here: " + err.Error()}
+			}
+			if !re.MatchString(value) {
+				return &InputError{Key: key, Message: "does not match " + in.Pattern}
+			}
+		}
+	case "store":
+		if _, err := s.stores.Resolve(ctx, caller, value, RoleToInstall); errors.Is(err, objectstore.ErrNotFound) {
+			return &InputError{Key: key, Message: "there is no object store called " + value}
+		} else if err != nil {
+			return err
+		}
+		p.storeInputs[in.Key] = value
+	}
+	p.inputs[in.Key] = value
 	return nil
 }
 

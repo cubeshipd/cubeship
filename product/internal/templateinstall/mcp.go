@@ -10,10 +10,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
-// **The install tool returns no generated secret.** The API hands them
-// back once, to the person who asked; through MCP they would pass into a
-// model's context for no purpose, since each one is already in the
-// variables of the app that uses it.
+// **No tool returns a generated secret.** The API hands them back once,
+// to the person who asked; through MCP they would pass into a model's
+// context for no purpose, since each one is already in the variables of
+// the app that uses it.
 type Tools struct {
 	svc    *Service
 	caller *user.User
@@ -33,9 +33,25 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Description: "Install a template from the catalog: create its project and environment when they do not exist, its databases, stores and apps, and deploy the apps. It runs in the background — follow it with get_template_install. Anything that fails is undone. A secret input with generate is generated when left out, and is not returned: it is in the variables of the app that uses it. Requires the admin role.",
 	}, t.install)
 	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "list_template_installs",
+		Description: "List the templates installed on this instance: the release each is on, whether a newer one is available, and whether a run is changing it now.",
+	}, t.installs)
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_template_install",
-		Description: "How an install started by install_template is going: its status (running, succeeded, failed — a failed install has already been undone), the step it is on, and what it created.",
+		Description: "One installation: what it created, its recent runs — install, update, uninstall — with the step a running one is on and why a failed one failed. A failed run has already been undone.",
 	}, t.get)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "preview_template_update",
+		Description: "What updating an installation to a release would do, without doing it: each app, database, store, variable, domain and attachment it would create or change, what it leaves in place, and any question it would need answered. Call this before update_template_install. Requires the admin role.",
+	}, t.preview)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "update_template_install",
+		Description: "Update an installation to a release — the newest by default — in the background. It applies what changed and deletes nothing; if any step fails, the installation is put back as it was. Answer the questions preview_template_update listed in inputs. Requires the admin role.",
+	}, t.update)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "uninstall_template_install",
+		Description: "Uninstall an installation in the background: its apps are deleted, and the project and environment it created once they are empty. Its databases and object stores are kept unless delete_data is true, which deletes them and their data permanently. Requires the admin role.",
+	}, t.uninstall)
 }
 
 type listInput struct {
@@ -90,17 +106,73 @@ func (t *Tools) install(ctx context.Context, _ *mcp.CallToolRequest, in installI
 	if err != nil {
 		return nil, Response{}, err
 	}
-	return nil, toResponse(started), nil
+	return nil, toResponse(*started), nil
 }
 
-type getInput struct {
-	ID int64 `json:"id" jsonschema:"the install's id, from install_template"`
+type installsOutput struct {
+	Installs []Response `json:"installs"`
 }
 
-func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in getInput) (*mcp.CallToolResult, Response, error) {
+func (t *Tools) installs(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, installsOutput, error) {
+	found, err := t.svc.Installs(ctx, t.caller)
+	if err != nil {
+		return nil, installsOutput{}, err
+	}
+	out := installsOutput{Installs: []Response{}}
+	for _, i := range found {
+		out.Installs = append(out.Installs, toResponse(i))
+	}
+	return nil, out, nil
+}
+
+type idInput struct {
+	ID int64 `json:"id" jsonschema:"the installation's id, from list_template_installs or install_template"`
+}
+
+func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in idInput) (*mcp.CallToolResult, Response, error) {
 	found, err := t.svc.Get(ctx, t.caller, in.ID)
 	if err != nil {
 		return nil, Response{}, err
 	}
-	return nil, toResponse(found), nil
+	return nil, toResponse(*found), nil
+}
+
+type previewInput struct {
+	ID      int64  `json:"id" jsonschema:"the installation's id"`
+	Release string `json:"release,omitempty" jsonschema:"a release tag. Defaults to the newest the catalog accepted"`
+}
+
+func (t *Tools) preview(ctx context.Context, _ *mcp.CallToolRequest, in previewInput) (*mcp.CallToolResult, Preview, error) {
+	preview, err := t.svc.PreviewUpdate(ctx, t.caller, in.ID, in.Release)
+	if err != nil {
+		return nil, Preview{}, err
+	}
+	return nil, *preview, nil
+}
+
+type updateInput struct {
+	ID      int64             `json:"id" jsonschema:"the installation's id"`
+	Release string            `json:"release,omitempty" jsonschema:"a release tag. Defaults to the newest the catalog accepted"`
+	Inputs  map[string]string `json:"inputs,omitempty" jsonschema:"answers to the questions preview_template_update listed, by key"`
+}
+
+func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInput) (*mcp.CallToolResult, RunResponse, error) {
+	run, _, err := t.svc.Update(ctx, t.caller, in.ID, UpdateRequest{Release: in.Release, Inputs: in.Inputs})
+	if err != nil {
+		return nil, RunResponse{}, err
+	}
+	return nil, toRunResponse(run), nil
+}
+
+type uninstallInput struct {
+	ID         int64 `json:"id" jsonschema:"the installation's id"`
+	DeleteData bool  `json:"delete_data,omitempty" jsonschema:"also delete the databases and object stores it created, and everything in them, permanently. Defaults to false"`
+}
+
+func (t *Tools) uninstall(ctx context.Context, _ *mcp.CallToolRequest, in uninstallInput) (*mcp.CallToolResult, RunResponse, error) {
+	run, err := t.svc.Uninstall(ctx, t.caller, in.ID, !in.DeleteData)
+	if err != nil {
+		return nil, RunResponse{}, err
+	}
+	return nil, toRunResponse(run), nil
 }

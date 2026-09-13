@@ -41,21 +41,84 @@ func (c *Client) ListTemplates(ctx context.Context, q, tag string) (TemplatePage
 	return request[TemplatePage](ctx, c, "list templates", http.MethodGet, path, nil, http.StatusOK, DefaultTimeout)
 }
 
-// TemplateInstall is one install and how it is going.
+type TemplateResource struct {
+	Kind string `json:"kind"`
+	Name string `json:"name"`
+}
+
+// TemplateRun is one install, update or uninstall of an installation.
+type TemplateRun struct {
+	ID          int64              `json:"id"`
+	Kind        string             `json:"kind"`
+	FromRelease string             `json:"from_release"`
+	ToRelease   string             `json:"to_release"`
+	Status      string             `json:"status"`
+	Step        string             `json:"step"`
+	Error       string             `json:"error"`
+	Created     []TemplateResource `json:"created"`
+}
+
+// TemplateInstall is a template installed on the instance.
 type TemplateInstall struct {
-	ID          int64  `json:"id"`
-	Owner       string `json:"owner"`
-	Repo        string `json:"repo"`
-	Release     string `json:"release"`
-	Project     string `json:"project"`
-	Environment string `json:"environment"`
-	Status      string `json:"status"`
-	Step        string `json:"step"`
-	Error       string `json:"error"`
-	Resources   []struct {
-		Kind string `json:"kind"`
-		Name string `json:"name"`
-	} `json:"resources"`
+	ID              int64              `json:"id"`
+	Owner           string             `json:"owner"`
+	Repo            string             `json:"repo"`
+	Release         string             `json:"release"`
+	Project         string             `json:"project"`
+	Environment     string             `json:"environment"`
+	Status          string             `json:"status"`
+	Resources       []TemplateResource `json:"resources"`
+	Runs            []TemplateRun      `json:"runs"`
+	Busy            bool               `json:"busy"`
+	UpdateAvailable *string            `json:"update_available"`
+}
+
+func (c *Client) ListTemplateInstalls(ctx context.Context) ([]TemplateInstall, error) {
+	return request[[]TemplateInstall](ctx, c, "list installations", http.MethodGet, "/template-installs", nil, http.StatusOK, DefaultTimeout)
+}
+
+// TemplateChange is one line of an update's preview.
+type TemplateChange struct {
+	Action string `json:"action"`
+	Kind   string `json:"kind"`
+	Name   string `json:"name"`
+	Detail string `json:"detail"`
+}
+
+type TemplateUpdatePreview struct {
+	From    string           `json:"from"`
+	To      string           `json:"to"`
+	Changes []TemplateChange `json:"changes"`
+	Inputs  []struct {
+		Key   string `json:"key"`
+		Label string `json:"label"`
+		Type  string `json:"type"`
+	} `json:"inputs"`
+}
+
+func (c *Client) PreviewTemplateUpdate(ctx context.Context, id int64, release string) (TemplateUpdatePreview, error) {
+	path := fmt.Sprintf("/template-installs/%d/update", id)
+	if release != "" {
+		path += "?release=" + url.QueryEscape(release)
+	}
+	return request[TemplateUpdatePreview](ctx, c, "preview update", http.MethodGet, path, nil, http.StatusOK, DefaultTimeout)
+}
+
+type RunStarted struct {
+	Run     TemplateRun       `json:"run"`
+	Secrets map[string]string `json:"secrets"`
+}
+
+func (c *Client) UpdateTemplateInstall(ctx context.Context, id int64, release string, inputs map[string]string) (RunStarted, error) {
+	return request[RunStarted](ctx, c, "update installation", http.MethodPost,
+		fmt.Sprintf("/template-installs/%d/update", id),
+		map[string]any{"release": release, "inputs": inputs}, http.StatusAccepted, DefaultTimeout)
+}
+
+func (c *Client) UninstallTemplateInstall(ctx context.Context, id int64, keepData bool) (RunStarted, error) {
+	return request[RunStarted](ctx, c, "uninstall", http.MethodPost,
+		fmt.Sprintf("/template-installs/%d/uninstall", id),
+		map[string]any{"keep_data": keepData}, http.StatusAccepted, DefaultTimeout)
 }
 
 type InstallTemplateRequest struct {
