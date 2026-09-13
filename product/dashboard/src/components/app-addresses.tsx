@@ -22,7 +22,7 @@ export function AppAddresses({ app }: { app: App }) {
   return (
     <>
       <SectionHeader title="Networking" />
-      <Card className="divide-y divide-border py-0">
+      <Card className="gap-0 divide-y divide-border py-0">
         <Address kind="Internal" url={internal} />
         {app.domains.map((d) => (
           <Address
@@ -47,7 +47,7 @@ function Address({
   external?: boolean;
 }) {
   return (
-    <div className="flex items-center gap-4 px-4 py-2.5">
+    <div className="flex h-11 items-center gap-4 px-4">
       <span className="w-16 shrink-0 text-[0.6875rem] font-semibold tracking-[0.16em] text-muted-foreground uppercase">
         {kind}
       </span>
