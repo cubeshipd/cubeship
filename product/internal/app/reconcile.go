@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"log"
+	"strings"
+	"time"
 )
 
 // reconcileDocker is the subset of the Docker client Reconcile needs.
@@ -58,4 +60,82 @@ func Reconcile(ctx context.Context, repo *Repository, d reconcileDocker) error {
 		}
 	}
 	return nil
+}
+
+// SettleInterrupted closes the deploys a restart of this daemon left
+// with nobody working on them. It runs at startup, after Reconcile, and
+// before anything can start a deploy.
+//
+// A deploy's control-plane half — resolving the image, which is where a
+// build happens, and swapping the containers on this machine — runs on a
+// goroutine of the process that started it. Replacing the daemon, an
+// update most of all, kills that goroutine, and nothing afterwards comes
+// for the row: it said `pending` for ever, and a deploy that has not
+// finished cannot be deleted.
+//
+//   - No image yet: the build never finished, and nothing will resume
+//     it. Failed.
+//   - This machine runs the app and was not yet on this deploy: the swap
+//     never happened. Failed — the containers are still the previous
+//     deploy's, which is exactly what DeploymentToRun falls back to.
+//   - Every copy already runs it: the swap finished and the row was not
+//     closed. Succeeded.
+//   - Otherwise it is waiting on other machines, which pick a pending
+//     deploy up when they call in. Left alone — see Stall.
+func SettleInterrupted(ctx context.Context, repo *Repository) error {
+	here, err := repo.ControlPlaneID(ctx)
+	if err != nil {
+		return err
+	}
+	pending, err := repo.PendingSince(ctx, time.Now())
+	if err != nil {
+		return err
+	}
+	for _, d := range pending {
+		a, err := repo.ByID(ctx, d.AppID)
+		if err != nil {
+			log.Printf("settle interrupted deploy %d: read app %d: %v", d.ID, d.AppID, err)
+			continue
+		}
+		status, why := interruptedOutcome(d, a, here)
+		if status == "" {
+			continue
+		}
+		log.Printf("settle interrupted deploy %d of app %s: %s", d.ID, a.Name, status)
+		if err := repo.FinishDeployment(ctx, d.ID, status, why); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// interruptedOutcome is what a pending deploy found at startup ends as,
+// or "" when it is still somebody's to finish.
+func interruptedOutcome(d *Deployment, a *App, here int64) (status, why string) {
+	if !resolvedImage(d.ImageRef) {
+		return DeploymentFailed, "the daemon restarted before this deploy had an image; deploy again"
+	}
+	for _, r := range a.ReplicasOn(here) {
+		if r.Deploy != d.ID {
+			return DeploymentFailed, "the daemon restarted before this machine ran this deploy; deploy again"
+		}
+	}
+	if len(a.Replicas) == 0 {
+		return "", ""
+	}
+	for _, r := range a.Replicas {
+		if r.Deploy != d.ID || !r.Running() {
+			return "", ""
+		}
+	}
+	return DeploymentSucceeded, ""
+}
+
+// resolvedImage tells an image reference from what a deploy was asked
+// for. StartDeployment records the tag — `master`, `1.27`, or nothing —
+// and SetDeploymentImage replaces it with a reference once the source
+// has one, which always names a repository: a tag can hold neither a
+// slash nor a colon.
+func resolvedImage(ref string) bool {
+	return strings.ContainsAny(ref, "/:@")
 }

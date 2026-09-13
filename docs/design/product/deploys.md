@@ -352,6 +352,25 @@ How a deploy went lives in its row, since nobody is on the connection to
 be told. `WaitFor` polls it, `?wait=true` does the same over HTTP, and
 abandoning either does not touch the deploy.
 
+**A restart kills the goroutine, and the row used to say `pending` for
+ever.** Replacing the daemon — an update started while a site was
+building, which is how it was found — ends the process doing the
+control-plane half of the deploy, and a deploy that has not finished
+cannot be deleted. `app.SettleInterrupted` runs at startup, after
+`Reconcile` and before anything can start a deploy, and closes each
+pending row by what it can see:
+
+- **No image yet** — the row still holds the tag it was asked for, which
+  never contains a slash or a colon, where a resolved reference always
+  does. The build is gone. Failed, saying to deploy again.
+- **This machine runs the app and is not on this deploy** — the swap
+  never happened, and the containers are still the previous deploy's.
+  Failed, which is also what makes `DeploymentToRun` fall back to them.
+- **Every copy already runs it** — the swap finished and the row was not
+  closed. Succeeded.
+- **Anything else is waiting on other machines**, which pick a pending
+  deploy up when they call in, so it is left alone. See `Stall`.
+
 ## Deleting
 
 **Deleting something takes everything under it.** A project takes its

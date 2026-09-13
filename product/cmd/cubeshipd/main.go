@@ -637,6 +637,9 @@ func run() error {
 	if err := app.Reconcile(ctx, srv.Apps.Repo(), docker); err != nil {
 		return fmt.Errorf("reconcile: %w", err)
 	}
+	if err := app.SettleInterrupted(ctx, srv.Apps.Repo()); err != nil {
+		return fmt.Errorf("settle interrupted deploys: %w", err)
+	}
 	// The same correction for the databases. Their containers come back
 	// on their own — Docker's restart policy is unless-stopped — but
 	// the rows still describe the world from before the reboot.
