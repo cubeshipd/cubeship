@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
+import { cache } from "react";
 import { db } from "@/db/client";
 import { templates, templateVersions, users } from "@/db/schema";
 import type { SessionUser } from "@/lib/auth/session";
@@ -42,7 +43,7 @@ export function visibleTo(
   return true;
 }
 
-export async function templateWithAuthor(slug: string) {
+async function readTemplateWithAuthor(slug: string) {
   const [row] = await db()
     .select({
       template: templates,
@@ -240,3 +241,6 @@ export async function templatesByAuthor(
 
   return rows.map(toCatalogRow);
 }
+
+// One read per request: a page's metadata and its body both ask.
+export const templateWithAuthor = cache(readTemplateWithAuthor);

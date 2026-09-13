@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import { and, eq, gt } from "drizzle-orm";
 import { cookies } from "next/headers";
+import { cache } from "react";
 import { db } from "@/db/client";
 import { sessions, users } from "@/db/schema";
 
@@ -38,7 +39,7 @@ export async function createSession(userId: number): Promise<{ token: string; ex
   return { token, expiresAt };
 }
 
-export async function currentUser(): Promise<SessionUser | null> {
+async function readCurrentUser(): Promise<SessionUser | null> {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return null;
 
@@ -75,3 +76,6 @@ export async function destroySession(): Promise<void> {
       .where(eq(sessions.tokenHash, hash(token)));
   jar.delete(SESSION_COOKIE);
 }
+
+// One read per request: a page's metadata and its body both ask.
+export const currentUser = cache(readCurrentUser);

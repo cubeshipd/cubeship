@@ -3,19 +3,29 @@ import { Pool } from "pg";
 import { databaseUrl } from "@/lib/env";
 import * as schema from "./schema";
 
-let handle: ReturnType<typeof drizzle<typeof schema>> | undefined;
+type Handle = ReturnType<typeof drizzle<typeof schema>>;
+
+// Kept on globalThis rather than in a module variable: `next dev` re-evaluates
+// modules on every change, and each evaluation would open a pool of its own
+// while the old one kept its connections.
+const shared = globalThis as typeof globalThis & { cubeshipDb?: Handle };
 
 // Lazy, so importing this module never opens a connection and never
 // reads an environment variable.
 export function db() {
-  if (!handle) {
+  if (!shared.cubeshipDb) {
     const pool = new Pool({
       connectionString: databaseUrl(),
       max: 10,
       // Not the OS's ~75s TCP timeout: an unreachable database fails a request in
-      // seconds. Short enough to fail fast, long enough for a remote database's
-      // handshake; the landing page and sitemap add their own tighter deadline.
-      connectionTimeoutMillis: 3_000,
+      // seconds. A connection to a remote database is a TCP handshake plus several
+      // round trips of authentication, so the limit leaves room for that; the
+      // landing page and sitemap add their own tighter deadline.
+      connectionTimeoutMillis: 5_000,
+      // A connection costs those round trips again, so an idle one is kept for
+      // minutes rather than pg's 10 seconds.
+      idleTimeoutMillis: 5 * 60_000,
+      keepAlive: true,
       // A database that accepts the connection but never answers must
       // not hang the landing page or the sitemap either.
       statement_timeout: 5_000,
@@ -26,7 +36,7 @@ export function db() {
     pool.on("error", (error) => {
       console.error("database pool error:", error.message);
     });
-    handle = drizzle(pool, { schema });
+    shared.cubeshipDb = drizzle(pool, { schema });
   }
-  return handle;
+  return shared.cubeshipDb;
 }
