@@ -6,6 +6,40 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.7.0-rc.11 — 2026-09-13
+
+*Prerelease.*
+
+Access roles decide what every account and API key reaches, and an audit log records who changed what.
+
+### Added
+
+**Access roles.** Every account holds a role: for each kind of resource —
+projects, apps, domains, databases, object storage, servers, templates,
+backups, registries, git and DNS providers, credentials, certificates, the
+firewall, settings, the audit log — a level (view or manage), whether it
+reads secrets, and which projects, databases or stores. **Admin**, **Deploy**
+and **Read only** ship with the instance and cannot be changed; others are
+made on **Users → Access roles**. Admins keep Admin, and members become
+Deploy, which is exactly what a member could do.
+
+**Roles for API keys.** A key can be given a role, and then reaches what the
+role grants and its owner reaches — never more. Over MCP a key is not
+offered a tool its role would refuse, so an agent cannot be talked into
+calling one. `cubeship user api-key create --role`, `cubeship role list`,
+`list_roles`.
+
+**The audit log.** Every change made through the dashboard, the API or MCP,
+and every refused attempt, in a sentence — who, through which door, with
+which key, and how it ended. Filter by person, channel, outcome and a date
+range on **Platform → Audit log**, or with `cubeship audit` and
+`list_audit_events`. Request bodies are never kept; events are kept 90 days.
+
+### Fixed
+
+**A chosen theme stays chosen.** Opening Appearance again put the default
+palette back.
+
 ## 0.7.0-rc.10 — 2026-09-13
 
 *Prerelease.*
