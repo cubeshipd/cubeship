@@ -101,7 +101,7 @@ func Since(all []Note, seen, current string) []Note {
 	seen = Normalize(seen)
 	var out []Note
 	for _, n := range all {
-		if Compare(n.Version, current) > 0 {
+		if !Shown(n, current) {
 			continue
 		}
 		if seen == "" {
@@ -115,6 +115,18 @@ func Since(all []Note, seen, current string) []Note {
 		}
 	}
 	return out
+}
+
+// Shown reports whether an instance running current shows a release's
+// notes: no newer than current, and **no prerelease on a stable version**.
+// A stable release's notes cover its whole cycle, so somebody moving from
+// 0.6.0 to 0.7.0 reads one page rather than every candidate on the way;
+// an instance running a beta or a candidate still sees each of them.
+func Shown(n Note, current string) bool {
+	if Compare(n.Version, current) > 0 {
+		return false
+	}
+	return !n.Prerelease || strings.Contains(current, "-")
 }
 
 // Normalize turns what a build or a column carries into a version this

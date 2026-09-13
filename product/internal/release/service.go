@@ -73,7 +73,7 @@ func (s *Service) For(ctx context.Context, caller *user.User) (State, error) {
 	}
 	out := State{Version: s.version}
 	for _, n := range s.notes {
-		if s.version == "" || Compare(n.Version, s.version) <= 0 {
+		if s.version == "" || Shown(n, s.version) {
 			out.Notes = append(out.Notes, n)
 		}
 	}

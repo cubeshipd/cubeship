@@ -66,6 +66,13 @@ only ever show notes up to the version it is on.** A build carrying
 notes for a version ahead of it — which is what a release branch looks
 like mid-flight — would otherwise advertise something nobody can use.
 
+**A stable version shows no prerelease's notes** (`release.Shown`), in
+the dialog or the history. A stable release's notes cover its whole
+cycle, so somebody moving from 0.6.0 to 0.7.0 reads one page rather than
+every candidate on the way — which means those notes have to be written
+as that summary. An instance running a beta or a candidate still sees
+each one.
+
 `release_seen` is **per person, not per instance**: two admins on one
 box should each read the notes once, rather than whichever opened the
 dashboard first taking the notice away from the other. It is its own

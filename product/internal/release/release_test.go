@@ -36,7 +36,9 @@ func TestVersionsOrderTheWaySemverSays(t *testing.T) {
 }
 
 var history = []Note{
-	{Version: "0.4.0"}, {Version: "0.3.0"}, {Version: "0.3.0-rc.1"}, {Version: "0.2.0"}, {Version: "0.1.0"},
+	{Version: "0.4.0"}, {Version: "0.3.0"},
+	{Version: "0.3.0-rc.2", Prerelease: true}, {Version: "0.3.0-rc.1", Prerelease: true},
+	{Version: "0.2.0"}, {Version: "0.1.0"},
 }
 
 func versions(notes []Note) []string {
@@ -55,8 +57,25 @@ func TestWhatAnInstanceHasToSayAfterAnUpgrade(t *testing.T) {
 	}{
 		{
 			name: "two versions behind", seen: "0.2.0", current: "0.4.0",
-			want: []string{"0.4.0", "0.3.0", "0.3.0-rc.1"},
+			want: []string{"0.4.0", "0.3.0"},
 			why:  "everything between, newest first",
+		},
+		{
+			// A stable release's notes cover its whole cycle, so the
+			// candidates on the way are not a page each.
+			name: "a stable upgrade past candidates", seen: "0.2.0", current: "0.3.0",
+			want: []string{"0.3.0"},
+			why:  "no prerelease on a stable version",
+		},
+		{
+			name: "from a candidate to the release", seen: "0.3.0-rc.1", current: "0.3.0",
+			want: []string{"0.3.0"},
+			why:  "the release sums up the candidates",
+		},
+		{
+			name: "running a candidate", seen: "0.2.0", current: "0.3.0-rc.2",
+			want: []string{"0.3.0-rc.2", "0.3.0-rc.1"},
+			why:  "an instance on betas sees each one",
 		},
 		{
 			name: "up to date", seen: "0.4.0", current: "0.4.0", want: nil,
