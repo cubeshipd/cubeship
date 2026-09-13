@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useUpdateSession } from "@/components/session-context";
 import { api, type Me } from "@/lib/api";
 
 // Where the browser keeps its copy of the chosen palette.
@@ -38,6 +39,7 @@ export function applyTheme(theme: string | undefined) {
 export function useTheme(me: Me) {
   const [theme, setTheme] = useState(me.theme ?? "");
   const [busy, setBusy] = useState(false);
+  const update = useUpdateSession();
 
   // What the daemon says wins over what the browser remembered — a
   // preference changed on another machine has to arrive here.
@@ -46,19 +48,25 @@ export function useTheme(me: Me) {
     setTheme(me.theme ?? "");
   }, [me.theme]);
 
-  const choose = useCallback(async (next: string) => {
-    // Painted first, then saved. It is the one setting where the
-    // result is the feedback, and a spinner between the click and the
-    // colour would be the whole interaction.
-    applyTheme(next);
-    setTheme(next);
-    setBusy(true);
-    try {
-      await api.patch<Me>("/users/me", { theme: next });
-    } finally {
-      setBusy(false);
-    }
-  }, []);
+  const choose = useCallback(
+    async (next: string) => {
+      // Painted first, then saved. It is the one setting where the
+      // result is the feedback, and a spinner between the click and the
+      // colour would be the whole interaction.
+      applyTheme(next);
+      setTheme(next);
+      // The session too, or the effect above puts the old one back the
+      // next time this mounts.
+      update({ theme: next });
+      setBusy(true);
+      try {
+        await api.patch<Me>("/users/me", { theme: next });
+      } finally {
+        setBusy(false);
+      }
+    },
+    [update],
+  );
 
   return { theme, choose, busy };
 }

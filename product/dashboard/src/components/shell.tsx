@@ -174,7 +174,7 @@ export function Shell({ children }: { children: ReactNode }) {
   if (!me) return null;
 
   return (
-    <SessionProvider me={me}>
+    <SessionProvider me={me} update={(change) => setMe((m) => (m ? { ...m, ...change } : m))}>
       <QueryProvider>
         {/* What changed, once, after an upgrade — and on demand from
             the menu below, which is why it wraps rather than sits

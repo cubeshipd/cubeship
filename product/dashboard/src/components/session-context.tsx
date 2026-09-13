@@ -8,8 +8,26 @@ import type { Me } from "@/lib/api";
 // without asking again.
 const Context = createContext<Me | null>(null);
 
-export function SessionProvider({ me, children }: { me: Me; children: ReactNode }) {
-  return <Context.Provider value={me}>{children}</Context.Provider>;
+// How a screen that changes the account tells the shell. Without it the
+// copy resolved at load goes stale: a theme chosen on Appearance was put
+// back to the old one the next time the tab mounted, because the tab
+// re-applied what the stale copy said.
+const Update = createContext<(change: Partial<Me>) => void>(() => {});
+
+export function SessionProvider({
+  me,
+  update,
+  children,
+}: {
+  me: Me;
+  update: (change: Partial<Me>) => void;
+  children: ReactNode;
+}) {
+  return (
+    <Context.Provider value={me}>
+      <Update.Provider value={update}>{children}</Update.Provider>
+    </Context.Provider>
+  );
 }
 
 // useSession is safe anywhere under the shell, which is everywhere a
@@ -20,4 +38,9 @@ export function useSession(): Me {
     throw new Error("useSession outside the shell");
   }
   return me;
+}
+
+/** useUpdateSession merges a change into the signed-in account. */
+export function useUpdateSession() {
+  return useContext(Update);
 }
