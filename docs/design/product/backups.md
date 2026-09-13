@@ -142,6 +142,37 @@ deleted can be **downloaded and not restored** — where it should go is a
 choice this release does not offer, and picking one on somebody's behalf
 would be the wrong database quietly replaced.
 
+### Backing up an app's volumes
+
+A volume is a directory, not a database, so its backup is a `.tar.gz` of
+the directory rather than a dump — `KindVolume`, beside the other two,
+with the same destinations, retention and `OffMachine` column.
+
+**The app is stopped for the copy.** `app.Orchestrator.Paused` takes the
+app's deploy lock, stops its container, runs the copy, and starts it
+again whether or not the copy worked. Files being written while they are
+read are not a copy, and a queue or an index is writing all the time.
+Nothing is staged: tar reads each file's size off the disk, so the archive
+streams straight into the sink.
+
+- **Owners and modes are kept.** A queue's files belong to the user its
+  image runs as, and a restore that handed them to root would leave it
+  unable to start. Symlinks stay links and are never followed.
+- **An empty volume is a failed backup** (`ErrEmptyArchive`): restoring it
+  would empty the volume.
+- **Restore extracts beside the directory** (`<id>.restore`) and swaps it
+  in only once that worked, so a failed restore leaves the data as it was.
+  An entry that would land outside the volume refuses the whole archive.
+- **The row keeps the app's reference and the path**, and `volume_id` goes
+  null when the volume is removed: its backups can then be downloaded and
+  not restored, like a deleted database's.
+- **Volumes on another server are refused** (`ErrVolumeOnWorker`). This
+  daemon cannot read that disk.
+
+A volume's schedule is its own table, `volume_backup_schedules`, keyed by
+the volume. `Schedule.Kind()` tells it from the other two by `VolumeID`.
+Volumes are not in the coverage report yet.
+
 ### Backing the instance up
 
 This module was built above `datastore` rather than inside it for

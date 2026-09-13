@@ -18,7 +18,8 @@ func NewRepository(q database.Queryer) *Repository { return &Repository{q: q} }
 // which is where this has gone wrong elsewhere.
 const columns = `id, kind, COALESCE(datastore_id, 0), datastore_name, engine, version,
 	COALESCE(object_store_id, 0), bucket, object_key, size_bytes, off_machine,
-	status, error, scheduled, started_at, finished_at`
+	status, error, scheduled, started_at, finished_at,
+	COALESCE(volume_id, 0), volume_path`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -27,7 +28,8 @@ func scan(row scanner) (*Backup, error) {
 	var finished sql.NullTime
 	if err := row.Scan(&b.ID, &b.Kind, &b.DatastoreID, &b.DatastoreName, &b.Engine, &b.Version,
 		&b.StoreID, &b.Bucket, &b.Key, &b.Size, &b.Off,
-		&b.Status, &b.Error, &b.Scheduled, &b.StartedAt, &finished); err != nil {
+		&b.Status, &b.Error, &b.Scheduled, &b.StartedAt, &finished,
+		&b.VolumeID, &b.VolumePath); err != nil {
 		return nil, err
 	}
 	if finished.Valid {
@@ -38,9 +40,12 @@ func scan(row scanner) (*Backup, error) {
 
 // Start writes the row a dump will report into, before it begins.
 func (r *Repository) Start(ctx context.Context, b *Backup) (*Backup, error) {
-	var datastoreID, storeID any
+	var datastoreID, storeID, volumeID any
 	if b.DatastoreID != 0 {
 		datastoreID = b.DatastoreID
+	}
+	if b.VolumeID != 0 {
+		volumeID = b.VolumeID
 	}
 	kind := b.Kind
 	if kind == "" {
@@ -52,11 +57,12 @@ func (r *Repository) Start(ctx context.Context, b *Backup) (*Backup, error) {
 	row := r.q.QueryRowContext(ctx,
 		`INSERT INTO backups
 		   (kind, datastore_id, datastore_name, engine, version,
-		    object_store_id, bucket, object_key, off_machine, status, scheduled)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'taking',$10)
+		    object_store_id, bucket, object_key, off_machine, status, scheduled,
+		    volume_id, volume_path)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'taking',$10,$11,$12)
 		 RETURNING `+columns,
 		kind, datastoreID, b.DatastoreName, b.Engine, b.Version,
-		storeID, b.Bucket, b.Key, b.Off, b.Scheduled)
+		storeID, b.Bucket, b.Key, b.Off, b.Scheduled, volumeID, b.VolumePath)
 	created, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("start backup: %w", err)
@@ -108,6 +114,13 @@ func (r *Repository) ForDatastore(ctx context.Context, datastoreID int64) ([]*Ba
 		KindDatastore, datastoreID)
 }
 
+// ForVolume lists one volume's backups, newest first.
+func (r *Repository) ForVolume(ctx context.Context, volumeID int64) ([]*Backup, error) {
+	return r.list(ctx, `SELECT `+columns+` FROM backups
+		WHERE kind = $1 AND volume_id = $2 ORDER BY started_at DESC`,
+		KindVolume, volumeID)
+}
+
 // ForInstance is the instance's own, newest first.
 func (r *Repository) ForInstance(ctx context.Context) ([]*Backup, error) {
 	return r.list(ctx, `SELECT `+columns+` FROM backups
@@ -128,10 +141,18 @@ func (r *Repository) List(ctx context.Context) ([]*Backup, error) {
 // otherwise push the last good dump out of the window, which is the one
 // moment retention must not be the thing that loses it. A failed row is
 // kept regardless — it is the evidence that a schedule is not working.
-func (r *Repository) Expired(ctx context.Context, kind Kind, datastoreID int64, keep int) ([]*Backup, error) {
+//
+// id is the database's for KindDatastore and the volume's for KindVolume.
+func (r *Repository) Expired(ctx context.Context, kind Kind, id int64, keep int) ([]*Backup, error) {
 	if keep <= 0 {
 		return nil, nil
 	}
+	if kind == KindVolume {
+		return r.list(ctx, `SELECT `+columns+` FROM backups
+			WHERE kind = $1 AND volume_id = $2 AND status = $3
+			ORDER BY started_at DESC OFFSET $4`, KindVolume, id, StatusDone, keep)
+	}
+	datastoreID := id
 	// **Counted within one kind.** An instance backup and a database's
 	// dump share this table and share nothing else: without the kind,
 	// a nightly copy of the instance would push somebody's database
@@ -310,6 +331,92 @@ func (r *Repository) MarkInstanceRun(ctx context.Context, at time.Time) error {
 		`UPDATE instance_backup_schedule SET last_run_at = $1 WHERE singleton`, at)
 	if err != nil {
 		return fmt.Errorf("mark the instance schedule: %w", err)
+	}
+	return nil
+}
+
+// --- volume schedules ---
+
+const volumeScheduleColumns = `volume_id, at, timezone, keep,
+	COALESCE(object_store_id, 0), bucket, last_run_at`
+
+func scanVolumeSchedule(row scanner) (*Schedule, error) {
+	var s Schedule
+	var last sql.NullTime
+	if err := row.Scan(&s.VolumeID, &s.At, &s.Timezone, &s.Keep,
+		&s.StoreID, &s.Bucket, &last); err != nil {
+		return nil, err
+	}
+	if last.Valid {
+		s.LastRunAt = &last.Time
+	}
+	return &s, nil
+}
+
+// SetVolumeSchedule writes a volume's, or replaces it.
+func (r *Repository) SetVolumeSchedule(ctx context.Context, s *Schedule) (*Schedule, error) {
+	var storeID any
+	if s.StoreID != 0 {
+		storeID = s.StoreID
+	}
+	row := r.q.QueryRowContext(ctx,
+		`INSERT INTO volume_backup_schedules (volume_id, at, timezone, keep, object_store_id, bucket)
+		 VALUES ($1,$2,$3,$4,$5,$6)
+		 ON CONFLICT (volume_id) DO UPDATE
+		   SET at = $2, timezone = $3, keep = $4,
+		       object_store_id = $5, bucket = $6, updated_at = now()
+		 RETURNING `+volumeScheduleColumns,
+		s.VolumeID, s.At, s.Timezone, s.Keep, storeID, s.Bucket)
+	created, err := scanVolumeSchedule(row)
+	if err != nil {
+		return nil, fmt.Errorf("set volume backup schedule: %w", err)
+	}
+	return created, nil
+}
+
+// VolumeScheduleFor returns a volume's, or ErrNotFound.
+func (r *Repository) VolumeScheduleFor(ctx context.Context, volumeID int64) (*Schedule, error) {
+	s, err := scanVolumeSchedule(r.q.QueryRowContext(ctx,
+		`SELECT `+volumeScheduleColumns+` FROM volume_backup_schedules WHERE volume_id = $1`, volumeID))
+	if err != nil {
+		return nil, fmt.Errorf("get volume backup schedule: %w", err)
+	}
+	return s, nil
+}
+
+func (r *Repository) DeleteVolumeSchedule(ctx context.Context, volumeID int64) error {
+	_, err := r.q.ExecContext(ctx,
+		`DELETE FROM volume_backup_schedules WHERE volume_id = $1`, volumeID)
+	if err != nil {
+		return fmt.Errorf("delete volume backup schedule: %w", err)
+	}
+	return nil
+}
+
+// VolumeSchedules is every volume's, for the timer.
+func (r *Repository) VolumeSchedules(ctx context.Context) ([]*Schedule, error) {
+	rows, err := r.q.QueryContext(ctx, `SELECT `+volumeScheduleColumns+` FROM volume_backup_schedules`)
+	if err != nil {
+		return nil, fmt.Errorf("list volume backup schedules: %w", err)
+	}
+	defer rows.Close()
+
+	out := []*Schedule{}
+	for rows.Next() {
+		s, err := scanVolumeSchedule(rows)
+		if err != nil {
+			return nil, fmt.Errorf("list volume backup schedules: %w", err)
+		}
+		out = append(out, s)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) MarkVolumeRun(ctx context.Context, volumeID int64, at time.Time) error {
+	_, err := r.q.ExecContext(ctx,
+		`UPDATE volume_backup_schedules SET last_run_at = $1 WHERE volume_id = $2`, at, volumeID)
+	if err != nil {
+		return fmt.Errorf("mark volume backup schedule: %w", err)
 	}
 	return nil
 }

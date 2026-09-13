@@ -5,6 +5,13 @@ import "cubeship/internal/platform/openapi"
 var nameParam = []openapi.Parameter{openapi.PathParam("name", "The database.")}
 var idParam = []openapi.Parameter{openapi.PathParam("id", "The backup.")}
 
+var volumeParams = []openapi.Parameter{
+	openapi.PathParam("project", "The project's slug."),
+	openapi.PathParam("env", "The environment's slug."),
+	openapi.PathParam("name", "The app's name."),
+	openapi.PathParam("volumeID", "The volume."),
+}
+
 func (h *Handler) OpenAPI() openapi.Spec {
 	return openapi.Spec{
 		Tags: []openapi.Tag{{
@@ -17,9 +24,10 @@ func (h *Handler) OpenAPI() openapi.Spec {
 		Schemas: map[string]*openapi.Schema{
 			"Backup": openapi.Object(map[string]*openapi.Schema{
 				"id":              openapi.Integer(""),
-				"kind":            {Type: "string", Enum: []string{"datastore", "instance"}, Description: "What this is a copy of. `instance` is Cubeship itself — its own database and the few files beside it — rather than a database somebody asked it to run."},
-				"database":        openapi.String("The database it was taken from, by name. Written down rather than joined, because a backup outlives the database — deleting one is exactly when its backups matter."),
-				"database_exists": openapi.Bool("Whether that database is still here. False means this can be downloaded and deleted but not restored: where to put it is a decision, and this release does not make it."),
+				"kind":            {Type: "string", Enum: []string{"datastore", "instance", "volume"}, Description: "What this is a copy of. `instance` is Cubeship itself — its own database and the few files beside it — rather than a database somebody asked it to run. `volume` is an app's volume, archived with the app stopped."},
+				"volume":          openapi.String("For a volume's backup, the path inside the app's container."),
+				"database":        openapi.String("The database it was taken from, by name — or, for a volume's, the app's reference. Written down rather than joined, because a backup outlives the database — deleting one is exactly when its backups matter."),
+				"database_exists": openapi.Bool("Whether that database, or volume, is still here. False means this can be downloaded and deleted but not restored: where to put it is a decision, and this release does not make it."),
 				"engine":          openapi.String("The engine that produced it."),
 				"version":         openapi.String("And its major version. A dump does not load into a different one, and the restore refuses rather than failing partway with the database already half replaced."),
 				"store":           openapi.String("The object store it is in, by name. Absent for one on this machine's own disk."),
@@ -235,6 +243,84 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Description: "The backups already taken are untouched. Requires the admin role.",
 					Tags:        []string{"Backups"},
 					Parameters:  nameParam,
+					Responses: openapi.Responses{
+						"204": openapi.Empty("There is no schedule now."),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+					},
+				},
+			},
+			"/apps/{project}/{env}/{name}/volumes/{volumeID}/backups": {
+				"get": {
+					OperationID: "listVolumeBackups",
+					Summary:     "List one volume's backups",
+					Tags:        []string{"Backups"},
+					Parameters:  volumeParams,
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The backups, newest first.", openapi.Array(openapi.Ref("Backup"))),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+					},
+				},
+				"post": {
+					OperationID: "takeVolumeBackup",
+					Summary:     "Back a volume up now",
+					Description: "**The app is stopped for the copy** and started again however the copy went: files being written while they are read are not a copy. No deploy of the app runs meanwhile.\n\nA `.tar.gz` of the volume's directory, keeping owners and modes, streamed to wherever the volume's schedule says — this machine's own disk when there is none. Answers 202 with the row it will report into. An empty volume is a failed backup.\n\nRefused for a volume on another server. Requires the admin role.",
+					Tags:        []string{"Backups"},
+					Parameters:  volumeParams,
+					Responses: openapi.Responses{
+						"202": openapi.JSONResponse("The backup, running.", openapi.Ref("Backup")),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("The volume's data is on another server."),
+					},
+				},
+			},
+			"/apps/{project}/{env}/{name}/volumes/{volumeID}/backups/schedule": {
+				"get": {
+					OperationID: "getVolumeBackupSchedule",
+					Summary:     "Read when a volume is backed up",
+					Description: "404 when there is none, which is what off is.",
+					Tags:        []string{"Backups"},
+					Parameters:  volumeParams,
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The schedule.", openapi.Ref("BackupSchedule")),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.TextResponse("This volume is not backed up on a schedule."),
+					},
+				},
+				"put": {
+					OperationID: "setVolumeBackupSchedule",
+					Summary:     "Back a volume up on a schedule",
+					Description: "The same four answers a database's schedule takes. **The app is stopped for each copy**, so pick a time it can be down. Requires the admin role.",
+					Tags:        []string{"Backups"},
+					Parameters:  volumeParams,
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"at":       openapi.String(`"HH:MM" on a 24-hour clock.`),
+						"timezone": openapi.String("An IANA name. Defaults to UTC."),
+						"keep":     openapi.Integer("How many to keep, newest first. Zero keeps every one."),
+						"store":    openapi.String("Which object store to put them in, by name. Leave it out for this machine's own disk, which is not a backup."),
+						"bucket":   openapi.String("The bucket in that store. Required when one is named."),
+					}, "at")),
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The schedule.", openapi.Ref("BackupSchedule")),
+						"400": openapi.TextResponse("The time, the timezone, the count or the bucket was not one."),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("The volume's data is on another server."),
+					},
+				},
+				"delete": {
+					OperationID: "unsetVolumeBackupSchedule",
+					Summary:     "Stop backing a volume up on a schedule",
+					Description: "The backups already taken are untouched. Requires the admin role.",
+					Tags:        []string{"Backups"},
+					Parameters:  volumeParams,
 					Responses: openapi.Responses{
 						"204": openapi.Empty("There is no schedule now."),
 						"401": openapi.Unauthorized,

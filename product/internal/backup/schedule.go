@@ -189,6 +189,11 @@ func (s *Scheduler) Once(ctx context.Context) {
 	} else if own != nil {
 		schedules = append(schedules, own)
 	}
+	if volumes, err := s.Backups.Repo().VolumeSchedules(ctx); err != nil {
+		log.Printf("backup: reading the volume schedules: %v", err)
+	} else {
+		schedules = append(schedules, volumes...)
+	}
 	now := time.Now()
 	for _, schedule := range schedules {
 		if !Due(schedule, now) {
@@ -206,6 +211,10 @@ func (s *Scheduler) Once(ctx context.Context) {
 // instance that had just restarted would take one backup per minute
 // until it finished.
 func (s *Service) RunScheduled(ctx context.Context, schedule *Schedule, at time.Time) {
+	if schedule.Kind() == KindVolume {
+		s.runScheduledVolume(ctx, schedule, at)
+		return
+	}
 	if schedule.Kind() == KindInstance {
 		// Marked before the dump starts, for the reason below.
 		if err := s.Repo().MarkInstanceRun(ctx, at); err != nil {
@@ -283,7 +292,11 @@ func (s *Service) Prune(ctx context.Context, schedule *Schedule) {
 	if schedule.Keep <= 0 {
 		return
 	}
-	expired, err := s.Repo().Expired(ctx, schedule.Kind(), schedule.DatastoreID, schedule.Keep)
+	id := schedule.DatastoreID
+	if schedule.Kind() == KindVolume {
+		id = schedule.VolumeID
+	}
+	expired, err := s.Repo().Expired(ctx, schedule.Kind(), id, schedule.Keep)
 	if err != nil {
 		log.Printf("backup: working out what to prune: %v", err)
 		return

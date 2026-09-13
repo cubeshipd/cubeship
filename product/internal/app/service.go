@@ -820,6 +820,57 @@ func (s *Service) DeleteVolumeOrphan(ctx context.Context, caller *user.User, id 
 	return ErrOrphanNotFound
 }
 
+// VolumeTarget is a volume as `backup` sees it: whose it is, where its data
+// is, and whether that is this machine.
+type VolumeTarget struct {
+	Volume
+	App      Reference
+	AppID    int64
+	Dir      string
+	OnWorker bool
+}
+
+// VolumeByID is one volume for a backup. It takes no caller: `backup`
+// requires its own role before asking, and the scheduler has no caller.
+func (s *Service) VolumeByID(ctx context.Context, id int64) (*VolumeTarget, error) {
+	v, err := s.Repo().VolumeByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	a, err := s.Repo().ScopedByID(ctx, v.AppID)
+	if err != nil {
+		return nil, ErrVolumeNotFound
+	}
+	here, err := s.Repo().ControlPlaneID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &VolumeTarget{
+		Volume: *v, App: ReferenceOf(a), AppID: a.ID,
+		Dir: VolumeDir(s.dataDir, v.ID), OnWorker: v.NodeID != here,
+	}, nil
+}
+
+// VolumeOf is one of an app's volumes, by the app's reference.
+func (s *Service) VolumeOf(ctx context.Context, caller *user.User, ref Reference, id int64) (*VolumeTarget, error) {
+	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range a.Volumes {
+		if v.ID == id {
+			return s.VolumeByID(ctx, id)
+		}
+	}
+	return nil, ErrVolumeNotFound
+}
+
+// WithAppStopped stops an app's containers on this machine, runs fn, and
+// starts them again whatever fn returned. No deploy runs meanwhile.
+func (s *Service) WithAppStopped(ctx context.Context, appID int64, fn func() error) error {
+	return s.orch.Paused(ctx, appID, fn)
+}
+
 // DeleteAppsInProject and DeleteAppsInEnvironment are
 // project.AppTeardown: what deleting a project or an environment calls
 // to take the apps under it out of service first.

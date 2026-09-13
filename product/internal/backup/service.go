@@ -77,6 +77,8 @@ type Service struct {
 	// instance itself up. Wired by `server`, and nil in a test that
 	// does not need it — which is what ErrNoInstanceDatabase answers.
 	instance Instance
+	// volumes is `app`, for backing up its volumes. Wired by `server`.
+	volumes Volumes
 
 	// running tracks dumps that outlive the request that asked for
 	// one. Tests wait on it; the daemon does not.
@@ -191,7 +193,9 @@ func (s *Service) Orphans(ctx context.Context, caller *user.User) ([]*Backup, er
 	}
 	out := []*Backup{}
 	for _, b := range all {
-		if b.DatastoreID == 0 {
+		gone := (b.Kind == KindDatastore && b.DatastoreID == 0) ||
+			(b.Kind == KindVolume && b.VolumeID == 0)
+		if gone {
 			out = append(out, b)
 		}
 	}
@@ -367,16 +371,24 @@ func (s *Service) open(ctx context.Context, row *Backup) (sink, error) {
 // nothing configured — and a dump on the same disk still survives
 // somebody dropping a table.
 func (s *Service) openLocal(row *Backup) (sink, error) {
-	dir := filepath.Join(s.dataDir, "backups", row.DatastoreName)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	path := s.localPath(row)
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("make room for the dump: %w", err)
 	}
-	path := filepath.Join(dir, filepath.Base(row.Key))
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("open the dump: %w", err)
 	}
 	return &localSink{f: f, path: path}, nil
+}
+
+// localPath is where a backup on this machine's own disk is: under the
+// database's name, and a volume's under the key's own directories.
+func (s *Service) localPath(row *Backup) string {
+	if row.Kind == KindVolume {
+		return filepath.Join(s.dataDir, "backups", filepath.FromSlash(strings.TrimPrefix(row.Key, "cubeship/")))
+	}
+	return filepath.Join(s.dataDir, "backups", row.DatastoreName, filepath.Base(row.Key))
 }
 
 type localSink struct {
@@ -502,6 +514,8 @@ func (s *Service) Restore(ctx context.Context, caller *user.User, id int64) erro
 		return ErrStillRunning
 	case row.Status != StatusDone:
 		return ErrNotDone
+	case row.Kind == KindVolume:
+		return s.restoreVolume(ctx, row)
 	case row.DatastoreID == 0:
 		// The database it came from is gone. Restoring means choosing
 		// which one to load it into, and that is a decision this does
@@ -559,7 +573,7 @@ func (s *Service) Download(ctx context.Context, caller *user.User, id int64) (io
 
 func (s *Service) read(ctx context.Context, row *Backup) (io.ReadCloser, error) {
 	if row.StoreID == 0 {
-		f, err := os.Open(filepath.Join(s.dataDir, "backups", row.DatastoreName, filepath.Base(row.Key)))
+		f, err := os.Open(s.localPath(row))
 		if err != nil {
 			return nil, fmt.Errorf("open the dump: %w", err)
 		}
@@ -607,7 +621,7 @@ func (s *Service) remove(ctx context.Context, row *Backup) error {
 		return nil
 	}
 	if row.StoreID == 0 {
-		path := filepath.Join(s.dataDir, "backups", row.DatastoreName, filepath.Base(row.Key))
+		path := s.localPath(row)
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return fmt.Errorf("remove the dump: %w", err)
 		}

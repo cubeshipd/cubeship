@@ -371,6 +371,34 @@ pending row by what it can see:
 - **Anything else is waiting on other machines**, which pick a pending
   deploy up when they call in, so it is left alone. See `Stall`.
 
+## Volumes
+
+A volume is a directory inside the container whose contents survive
+deploys: `<data dir>/volumes/<volume id>` on the machine that holds it,
+bind-mounted at the path the app asked for. Keyed by id, because the id
+is the one thing that is not a name.
+
+**An app with a volume is one copy on one machine.** Two containers on
+one data directory is how a queue or a search index corrupts itself, and
+data does not move between machines. So adding a volume is refused for an
+app with more than one copy, `spread` or autoscaling, and while it has one
+`Update` refuses anything that would move or multiply it
+(`canHoldVolume`, `keepsVolume`). The volume records its machine
+(`node_id`) when it is made, and that never changes.
+
+**Its deploy stops the old container before starting the new one**
+(`swapInPlace`), the one deploy here that is not zero-downtime. A new
+container that will not come up is removed and the old one started again,
+so a bad image costs the downtime and nothing else. A worker does the same
+in `displace`.
+
+**The data belongs to the app, and outlives it by default.** Removing a
+volume or deleting the app keeps the directory unless asked otherwise.
+Kept data is found by the `<id>.json` record written beside each directory
+— the row that named it is gone — and listed at `/volumes/orphans` until
+an admin deletes it. Backups of a volume are in
+[backups.md](backups.md#backing-up-an-apps-volumes).
+
 ## Deleting
 
 **Deleting something takes everything under it.** A project takes its

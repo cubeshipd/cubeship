@@ -42,9 +42,14 @@ bound what a template can ever be:
   image until somebody pushes one. A template's apps are a public image,
   or a public repository built on the instance with Dockerfile or
   Railpack.
-- **No volumes and no command override**, because apps have neither.
-  Persistent data on this platform is a managed datastore or a bucket,
-  so every app in a template is stateless.
+- **No command override**, because apps have none.
+- **Volumes are paths, and only paths.** `apps[].volumes: [{ path }]`
+  becomes a volume on install, one copy on one machine like any other
+  (see [deploys.md](../product/deploys.md#volumes)). A volume refuses
+  `scale` above 1, `spread` and `autoscale` beside it
+  (`volume.one-copy`), and needs a `minCubeship` no release before
+  0.7.0 satisfies (`volume.min-cubeship`). Uninstalling keeps the data
+  unless asked otherwise.
 
 Excluded for the same reason, all of it instance-level: DNS providers,
 backup schedules, certificates, firewall rules, external registries, and
@@ -356,5 +361,5 @@ carried on.
 Updating on its own when a release appears, moving back to an older
 release on purpose, deleting what a release dropped, and installing from
 a repository the catalog does not list. The
-first wall authors will hit is still that apps have no volume and no
-command override, and that is a daemon change.
+first wall authors will hit is now that apps have no command override,
+and that is a daemon change.

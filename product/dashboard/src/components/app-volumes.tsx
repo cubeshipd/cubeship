@@ -3,6 +3,7 @@
 import { HardDriveIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { ActionButton } from "@/components/action-button";
+import { VolumeBackups } from "@/components/backups";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
 import { LoadingList } from "@/components/loading";
@@ -128,6 +129,13 @@ export function AppVolumes({
         </CardContent>
       </Card>
 
+      {(volumes ?? []).map((v) => (
+        <section key={v.id} className="mt-8">
+          <h3 className="mb-3 font-mono text-sm text-muted-foreground">{v.path}</h3>
+          <VolumeBackups app={app.reference} volumeID={v.id} />
+        </section>
+      ))}
+
       <ConfirmDialog
         open={removing !== null}
         onOpenChange={(open) => !open && setRemoving(null)}
@@ -147,9 +155,7 @@ export function AppVolumes({
           Keep the data
         </Label>
         {!keepData && (
-          <Notice tone="warning">
-            The data is deleted permanently, and there is no backup of it here.
-          </Notice>
+          <Notice tone="warning">The data is deleted permanently. Its backups are kept.</Notice>
         )}
       </ConfirmDialog>
     </>

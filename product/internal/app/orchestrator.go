@@ -888,6 +888,43 @@ func (o *Orchestrator) Retire(ctx context.Context, appID int64) error {
 	return nil
 }
 
+// Paused stops an app's containers on this machine under its deploy lock,
+// runs fn, and starts them again **whether or not fn succeeded** — a backup
+// that failed must not also leave the app down. A container that would not
+// stop is not paused, and fn does not run.
+func (o *Orchestrator) Paused(ctx context.Context, appID int64, fn func() error) error {
+	mu := o.lockApp(appID)
+	mu.Lock()
+	defer mu.Unlock()
+
+	a, err := o.apps.ByID(ctx, appID)
+	if err != nil {
+		return ErrNotFound
+	}
+	here, err := o.apps.ControlPlaneID(ctx)
+	if err != nil {
+		return err
+	}
+	var stopped []string
+	defer func() {
+		for _, id := range stopped {
+			if err := o.docker.StartContainer(ctx, id); err != nil {
+				log.Printf("app %d: could not start container %s again: %v", appID, id, err)
+			}
+		}
+	}()
+	for _, mine := range a.ReplicasOn(here) {
+		if mine.Container == "" {
+			continue
+		}
+		if err := o.docker.StopContainer(ctx, mine.Container); err != nil {
+			return fmt.Errorf("stop the app: %w", err)
+		}
+		stopped = append(stopped, mine.Container)
+	}
+	return fn()
+}
+
 // waitHealthy reports whether a freshly started container looks healthy.
 //
 // It requires HealthCheckSuccesses *consecutive* running observations,

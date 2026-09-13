@@ -1068,6 +1068,22 @@ func (r *Repository) VolumesFor(ctx context.Context, appIDs []int64) (map[int64]
 	return out, rows.Err()
 }
 
+// VolumeByID is one volume, whatever app it belongs to.
+func (r *Repository) VolumeByID(ctx context.Context, id int64) (*Volume, error) {
+	var v Volume
+	err := r.q.QueryRowContext(ctx, `
+		SELECT v.id, v.app_id, v.path, v.node_id, n.slug, v.created_at
+		FROM app_volumes v JOIN nodes n ON n.id = v.node_id
+		WHERE v.id = $1`, id).Scan(&v.ID, &v.AppID, &v.Path, &v.NodeID, &v.NodeSlug, &v.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrVolumeNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get app volume: %w", err)
+	}
+	return &v, nil
+}
+
 // AddVolume records a volume on the machine its data will be on.
 func (r *Repository) AddVolume(ctx context.Context, appID int64, containerPath string, nodeID int64) (*Volume, error) {
 	var v Volume

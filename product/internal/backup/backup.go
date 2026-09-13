@@ -69,6 +69,9 @@ type Kind string
 const (
 	KindDatastore Kind = "datastore"
 	KindInstance  Kind = "instance"
+	// KindVolume is an app's volume: a directory archived with the app
+	// stopped, because files being written mid-copy are not a copy.
+	KindVolume Kind = "volume"
 )
 
 // InstanceName is what an instance backup is filed under, in the column
@@ -107,6 +110,12 @@ type Backup struct {
 	// Off is whether this copy actually left the machine, recorded when
 	// the dump was taken — see OffMachine, and migration 00050.
 	Off bool
+
+	// VolumeID is the volume a KindVolume backup is of, zero once it is
+	// removed. DatastoreName holds the app's reference, and VolumePath
+	// the path inside its container.
+	VolumeID   int64
+	VolumePath string
 
 	Status string
 	Error  string
@@ -148,6 +157,8 @@ type Schedule struct {
 	// row to be keyed by. Everything above this reads the two as one
 	// list, because what a schedule *is* does not differ between them.
 	DatastoreID int64
+	// VolumeID is set instead for a volume's, which has its own table.
+	VolumeID int64
 	// At is a time of day, "03:00", in Timezone.
 	//
 	// A time of day rather than an interval, for the reason
@@ -178,7 +189,10 @@ type Schedule struct {
 // Kind says what this schedule backs up, from the one field that can
 // tell: a schedule with no database is the instance's.
 func (s *Schedule) Kind() Kind {
-	if s == nil || s.DatastoreID == 0 {
+	switch {
+	case s != nil && s.VolumeID != 0:
+		return KindVolume
+	case s == nil || s.DatastoreID == 0:
 		return KindInstance
 	}
 	return KindDatastore

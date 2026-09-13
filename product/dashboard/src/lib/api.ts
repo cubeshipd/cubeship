@@ -1196,7 +1196,10 @@ export type Backup = {
   // a database somebody asked it to run — and it is the one kind with
   // no restore, because what it would replace is the database doing the
   // replacing.
-  kind?: "datastore" | "instance";
+  kind?: "datastore" | "instance" | "volume";
+  // For a volume's backup, the path inside the app's container; `database`
+  // is then the app's reference.
+  volume?: string;
   id: number;
   database: string;
   // Whether that database is still here, which is what decides whether

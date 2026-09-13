@@ -282,6 +282,63 @@ const routes: [string, string, Handler][] = [
     },
   ],
   [
+    "GET",
+    "/apps/:a/:b/:c/volumes/:id/backups",
+    (p) => db.backups.filter((b) => b.kind === "volume" && String(b.volume_id) === p[3]),
+  ],
+  [
+    "POST",
+    "/apps/:a/:b/:c/volumes/:id/backups",
+    (p) => {
+      const ref = p.slice(0, 3).join("/");
+      const volume = (mockVolumes[ref] ?? []).find((v) => String(v.id) === p[3]) ?? notFound();
+      const b: Row = {
+        id: Math.floor(Math.random() * 900) + 100,
+        kind: "volume",
+        volume: volume.path,
+        volume_id: volume.id,
+        database: ref,
+        database_exists: true,
+        engine: "volume",
+        version: "",
+        key: `cubeship/volumes/${p.slice(0, 3).join("-")}/${p[3]}/${new Date().toISOString()}.tar.gz`,
+        off_machine: false,
+        size_bytes: 0,
+        status: "taking",
+        scheduled: false,
+        started_at: new Date().toISOString(),
+      };
+      db.backups.unshift(b);
+      setTimeout(() => {
+        b.status = "succeeded";
+        b.size_bytes = 12_400_000;
+        b.finished_at = new Date().toISOString();
+      }, 4000);
+      return b;
+    },
+  ],
+  [
+    "GET",
+    "/apps/:a/:b/:c/volumes/:id/backups/schedule",
+    (p) => db.backupSchedules[`volume:${p[3]}`] ?? notFound(),
+  ],
+  [
+    "PUT",
+    "/apps/:a/:b/:c/volumes/:id/backups/schedule",
+    (p, body) => {
+      db.backupSchedules[`volume:${p[3]}`] = { ...(body as Row), last_run_at: undefined };
+      return db.backupSchedules[`volume:${p[3]}`];
+    },
+  ],
+  [
+    "DELETE",
+    "/apps/:a/:b/:c/volumes/:id/backups/schedule",
+    (p) => {
+      delete db.backupSchedules[`volume:${p[3]}`];
+      return {};
+    },
+  ],
+  [
     "DELETE",
     "/apps/:a/:b/:c/volumes/:id",
     (p) => {

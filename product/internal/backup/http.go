@@ -15,7 +15,10 @@ import (
 
 // Response is one backup, as a table shows it.
 type Response struct {
-	ID int64 `json:"id"`
+	ID   int64  `json:"id"`
+	Kind string `json:"kind"`
+	// Volume is the path inside the app's container, for a volume's.
+	Volume string `json:"volume,omitempty"`
 	// Database is the name it was taken from, and it survives that
 	// database being deleted — which is when a backup matters most.
 	Database string `json:"database"`
@@ -109,6 +112,9 @@ const databasePath = "/datastores/{name}/backups"
 // it.
 const instancePath = "/instance/backups"
 
+// volumePath is under the app, the way the volume itself is.
+const volumePath = "/apps/{project}/{env}/{name}/volumes/{volumeID}/backups"
+
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.Handle("GET /backups", auth(http.HandlerFunc(h.list)))
 	// Before the {id} routes in the file and irrelevant to the mux,
@@ -126,6 +132,11 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET "+databasePath+"/schedule", auth(http.HandlerFunc(h.schedule)))
 	r.Handle("PUT "+databasePath+"/schedule", auth(http.HandlerFunc(h.setSchedule)))
 	r.Handle("DELETE "+databasePath+"/schedule", auth(http.HandlerFunc(h.unsetSchedule)))
+	r.Handle("GET "+volumePath, auth(http.HandlerFunc(h.forVolume)))
+	r.Handle("POST "+volumePath, auth(http.HandlerFunc(h.takeVolume)))
+	r.Handle("GET "+volumePath+"/schedule", auth(http.HandlerFunc(h.volumeSchedule)))
+	r.Handle("PUT "+volumePath+"/schedule", auth(http.HandlerFunc(h.setVolumeSchedule)))
+	r.Handle("DELETE "+volumePath+"/schedule", auth(http.HandlerFunc(h.unsetVolumeSchedule)))
 	r.Handle("POST /backups/{id}/restore", auth(http.HandlerFunc(h.restore)))
 	r.Handle("GET /backups/{id}/download", auth(http.HandlerFunc(h.download)))
 	r.Handle("DELETE /backups/{id}", auth(http.HandlerFunc(h.delete)))
@@ -318,6 +329,92 @@ func (h *Handler) unsetSchedule(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// volumeOf reads the app's reference and the volume's id off the path.
+func volumeOf(w http.ResponseWriter, r *http.Request) (string, int64, bool) {
+	id, err := strconv.ParseInt(r.PathValue("volumeID"), 10, 64)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return "", 0, false
+	}
+	return r.PathValue("project") + "/" + r.PathValue("env") + "/" + r.PathValue("name"), id, true
+}
+
+func (h *Handler) forVolume(w http.ResponseWriter, r *http.Request) {
+	ref, id, ok := volumeOf(w, r)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	rows, err := h.svc.ForVolume(ctx, user.FromContext(ctx), ref, id)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, h.toResponses(rows))
+}
+
+func (h *Handler) takeVolume(w http.ResponseWriter, r *http.Request) {
+	ref, id, ok := volumeOf(w, r)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	row, err := h.svc.TakeVolume(ctx, user.FromContext(ctx), ref, id)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusAccepted, h.toResponse(row))
+}
+
+func (h *Handler) volumeSchedule(w http.ResponseWriter, r *http.Request) {
+	ref, id, ok := volumeOf(w, r)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	s, err := h.svc.VolumeSchedule(ctx, user.FromContext(ctx), ref, id)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, h.toScheduleResponse(s))
+}
+
+func (h *Handler) setVolumeSchedule(w http.ResponseWriter, r *http.Request) {
+	ref, id, ok := volumeOf(w, r)
+	if !ok {
+		return
+	}
+	var req scheduleRequest
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		WriteError(w, err)
+		return
+	}
+	ctx := r.Context()
+	s, err := h.svc.SetVolumeSchedule(ctx, user.FromContext(ctx), ref, id, req.Store, Schedule{
+		At: req.At, Timezone: req.Timezone, Keep: req.Keep, Bucket: req.Bucket,
+	})
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, h.toScheduleResponse(s))
+}
+
+func (h *Handler) unsetVolumeSchedule(w http.ResponseWriter, r *http.Request) {
+	ref, id, ok := volumeOf(w, r)
+	if !ok {
+		return
+	}
+	ctx := r.Context()
+	if err := h.svc.UnsetVolumeSchedule(ctx, user.FromContext(ctx), ref, id); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) restore(w http.ResponseWriter, r *http.Request) {
 	id, ok := idOf(w, r)
 	if !ok {
@@ -386,8 +483,18 @@ func idOf(w http.ResponseWriter, r *http.Request) (int64, bool) {
 }
 
 func (h *Handler) toResponse(b *Backup) Response {
+	// Whether what it was taken from is still here, which is what decides
+	// whether it can be restored. The instance always is.
+	exists := b.DatastoreID != 0
+	switch b.Kind {
+	case KindInstance:
+		exists = true
+	case KindVolume:
+		exists = b.VolumeID != 0
+	}
 	out := Response{
-		ID: b.ID, Database: b.DatastoreName, Exists: b.DatastoreID != 0,
+		ID: b.ID, Kind: string(b.Kind), Volume: b.VolumePath,
+		Database: b.DatastoreName, Exists: exists,
 		Engine: b.Engine, Version: b.Version,
 		Bucket: b.Bucket, Key: b.Key, OffMachine: b.OffMachine(),
 		Size: b.Size, Status: b.Status, Error: b.Error,
@@ -433,7 +540,8 @@ func WriteError(w http.ResponseWriter, err error) {
 	// An instance that does not run its own database cannot back itself
 	// up. 409 rather than 400: nothing about the request is wrong, and
 	// nothing the caller can change about it would help.
-	case errors.Is(err, ErrNoInstanceDatabase):
+	case errors.Is(err, ErrNoInstanceDatabase), errors.Is(err, ErrVolumeOnWorker),
+		errors.Is(err, ErrNoVolumes):
 		http.Error(w, err.Error(), http.StatusConflict)
 
 	case errors.Is(err, ErrStillRunning), errors.Is(err, ErrNotDone),

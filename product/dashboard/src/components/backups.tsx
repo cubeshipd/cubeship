@@ -214,6 +214,65 @@ export function InstanceBackups() {
   );
 }
 
+// One volume's backups. The app is stopped for each copy, so the button
+// and the schedule both say so.
+export function VolumeBackups({ app, volumeID }: { app: string; volumeID: number }) {
+  const [rows, setRows] = useState<Backup[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const path = `/apps/${app}/volumes/${volumeID}/backups`;
+  const load = useCallback(() => {
+    api
+      .get<Backup[]>(path)
+      .then(setRows)
+      .catch((e) => setError(message(e)));
+  }, [path]);
+  useEffect(load, [load]);
+
+  const running = (rows ?? []).some((b) => b.status === "taking");
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(load, POLL);
+    return () => clearInterval(timer);
+  }, [running, load]);
+
+  return (
+    <>
+      <Schedule
+        path={`${path}/schedule`}
+        label="Back this volume up every day"
+        note="The app is stopped while each copy is taken, so pick a time it can be down."
+        onChanged={load}
+      />
+      <SectionHeader
+        title="Backups"
+        sub="A copy of the directory, taken with the app stopped and started again afterwards."
+        actions={
+          <ActionButton
+            busy={busy}
+            onClick={async () => {
+              setBusy(true);
+              setError(null);
+              try {
+                await api.post(path, {});
+                load();
+              } catch (e) {
+                setError(message(e));
+              }
+              setBusy(false);
+            }}
+          >
+            Back up now
+          </ActionButton>
+        }
+      />
+      <ErrorAlert error={error} />
+      <BackupTable rows={rows} onChanged={load} showDatabase={false} />
+    </>
+  );
+}
+
 // BackupTable is the dumps themselves: a database's own tab, and the
 // listing of the ones whose database has been deleted. They differ in
 // one column and nothing else.
@@ -353,17 +412,25 @@ export function BackupTable({
       <ConfirmDialog
         open={restoring !== null}
         onOpenChange={(open) => !open && setRestoring(null)}
-        title={`Restore ${restoring?.database} from ${when(restoring?.started_at ?? "")}?`}
+        title={`Restore ${restoring?.volume ?? restoring?.database} from ${when(restoring?.started_at ?? "")}?`}
         description={
-          <>
-            <strong>Everything in the database now is replaced</strong> by what was in it when this
-            was taken, and that cannot be undone.
-            <br />
-            <br />
-            The database is not stopped while it happens, so an app writing during the restore
-            leaves a state that is neither the backup nor what was there. Stop what writes to it
-            first if you can.
-          </>
+          restoring?.kind === "volume" ? (
+            <>
+              <strong>Everything in the volume now is replaced</strong> by what was in it when this
+              was taken, and that cannot be undone. The app is stopped while it happens and started
+              again afterwards.
+            </>
+          ) : (
+            <>
+              <strong>Everything in the database now is replaced</strong> by what was in it when
+              this was taken, and that cannot be undone.
+              <br />
+              <br />
+              The database is not stopped while it happens, so an app writing during the restore
+              leaves a state that is neither the backup nor what was there. Stop what writes to it
+              first if you can.
+            </>
+          )
         }
         confirmWord={restoring?.database}
         confirmLabel="Restore"
@@ -413,11 +480,14 @@ export function BackupTable({
 export function Schedule({
   path,
   label,
+  note,
   onChanged,
 }: {
   path: string;
   // What the switch says it will back up.
   label: string;
+  // What taking one costs, said beside the switch.
+  note?: string;
   onChanged: () => void;
 }) {
   const [schedule, setSchedule] = useState<BackupSchedule | null>(null);
@@ -536,6 +606,7 @@ export function Schedule({
                 A time of day rather than an interval, because what you are choosing is when it may
                 be busy and slow. A window this instance was down for runs late rather than being
                 skipped.
+                {note && ` ${note}`}
                 {schedule?.last_run_at && ` Last run ${when(schedule.last_run_at)}.`}
               </p>
             </div>
