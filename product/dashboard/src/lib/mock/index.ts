@@ -264,6 +264,32 @@ const routes: [string, string, Handler][] = [
       return app;
     },
   ],
+  ["GET", "/apps/:a/:b/:c/volumes", (p) => mockVolumes[p.join("/")] ?? []],
+  [
+    "POST",
+    "/apps/:a/:b/:c/volumes",
+    (p, body) => {
+      const ref = p.join("/");
+      const app = appOr404(ref);
+      const volume = {
+        id: Math.floor(Math.random() * 900) + 100,
+        path: String((body as Row).path).replace(/\/+$/, ""),
+        node: (app.nodes as string[])[0] ?? "control-plane",
+        created_at: new Date().toISOString(),
+      };
+      mockVolumes[ref] = [...(mockVolumes[ref] ?? []), volume];
+      return volume;
+    },
+  ],
+  [
+    "DELETE",
+    "/apps/:a/:b/:c/volumes/:id",
+    (p) => {
+      const ref = p.slice(0, 3).join("/");
+      mockVolumes[ref] = (mockVolumes[ref] ?? []).filter((v) => String(v.id) !== p[3]);
+      return {};
+    },
+  ],
   [
     "DELETE",
     "/apps/:a/:b/:c/domains/:id",
@@ -726,6 +752,18 @@ function instanceSeries() {
     })),
   };
 }
+
+// Volumes, by app reference: the worker keeps its queue's files in one.
+const mockVolumes: Record<string, Row[]> = {
+  "web/production/worker": [
+    {
+      id: 41,
+      path: "/var/lib/rabbitmq",
+      node: "control-plane",
+      created_at: "2026-09-01T10:00:00Z",
+    },
+  ],
+};
 
 function containers() {
   const at = new Date().toISOString();

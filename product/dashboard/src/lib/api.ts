@@ -251,6 +251,23 @@ export type AppDomain = {
   port: number;
 };
 
+// A directory mounted into an app's container that outlives it. Any at
+// all pins the app to one copy on `node`, the machine its data is on.
+export type AppVolume = {
+  id: number;
+  path: string;
+  node: string;
+  created_at: string;
+};
+
+// A volume's data kept after the volume was removed or its app deleted.
+export type VolumeOrphan = {
+  id: number;
+  app?: string;
+  path?: string;
+  created_at?: string;
+};
+
 // hostsOf renders every name an app answers at, for the places that
 // have room for one line.
 //

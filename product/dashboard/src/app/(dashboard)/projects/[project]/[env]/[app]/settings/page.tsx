@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { AppNetwork } from "@/components/app-network";
+import { AppVolumes } from "@/components/app-volumes";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
@@ -28,6 +29,7 @@ import {
   type AppLimits,
   type AppReplica,
   type AppSource,
+  type AppVolume,
   api,
   BUILDING_SOURCES,
   type ClusterServer,
@@ -51,7 +53,7 @@ export default function AppSettingsPage({
   return <Settings reference={`${project}/${env}/${app}`} />;
 }
 
-const TABS = ["network", "source", "resources", "danger"] as const;
+const TABS = ["network", "source", "resources", "volumes", "danger"] as const;
 type Tab = (typeof TABS)[number];
 
 function Settings({ reference }: { reference: string }) {
@@ -68,6 +70,8 @@ function Settings({ reference }: { reference: string }) {
   const [app, setApp] = useState<App | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [deleteVolumeData, setDeleteVolumeData] = useState(false);
+  const [volumes, setVolumes] = useState<AppVolume[] | null>(null);
 
   const path = `/apps/${reference}`;
   const reload = useCallback(() => {
@@ -78,6 +82,15 @@ function Settings({ reference }: { reference: string }) {
       .catch((e) => setError(message(e)));
   }, [path, reference]);
   useEffect(reload, [reload]);
+  const reloadVolumes = useCallback(() => {
+    if (!reference) return;
+    api
+      .get<AppVolume[]>(`${path}/volumes`)
+      .then(setVolumes)
+      .catch(() => setVolumes([]));
+  }, [path, reference]);
+  useEffect(reloadVolumes, [reloadVolumes]);
+  const pinned = (volumes?.length ?? 0) > 0;
 
   if (!reference) {
     return (
@@ -122,6 +135,7 @@ function Settings({ reference }: { reference: string }) {
                 <TabsTrigger value="network">Network</TabsTrigger>
                 <TabsTrigger value="source">Source</TabsTrigger>
                 <TabsTrigger value="resources">Resources</TabsTrigger>
+                <TabsTrigger value="volumes">Volumes</TabsTrigger>
                 <TabsTrigger value="danger">Danger</TabsTrigger>
               </TabsList>
             </RailTabs>
@@ -138,9 +152,26 @@ function Settings({ reference }: { reference: string }) {
                 whether it decides its own count. One decision asked
                 three ways. */}
             <TabsContent value="resources">
-              <Placement app={app} onSaved={setApp} onError={setError} />
+              {/* A volume pins where it runs and how many of it, so the
+                  two sections that change those are not offered. */}
+              {pinned ? (
+                <>
+                  <SectionHeader title="Servers" />
+                  <Notice>
+                    This app has a volume, so it runs as one copy on {volumes?.[0]?.node}, where its
+                    data is. Data does not move between machines: remove its volumes to place or
+                    scale it.
+                  </Notice>
+                </>
+              ) : (
+                <Placement app={app} onSaved={setApp} onError={setError} />
+              )}
               <Limits app={app} onSaved={setApp} onError={setError} />
-              <AutoscaleSection app={app} onSaved={setApp} onError={setError} />
+              {!pinned && <AutoscaleSection app={app} onSaved={setApp} onError={setError} />}
+            </TabsContent>
+
+            <TabsContent value="volumes">
+              <AppVolumes app={app} volumes={volumes} onChanged={reloadVolumes} />
             </TabsContent>
 
             <TabsContent value="danger">
@@ -166,10 +197,27 @@ function Settings({ reference }: { reference: string }) {
             confirmWord={app.name}
             confirmLabel="Delete app"
             onConfirm={async () => {
-              await api.del(path);
+              await api.del(deleteVolumeData ? `${path}?delete_volume_data=true` : path);
               router.push(`/projects/${app.project}/${app.environment}`);
             }}
-          />
+          >
+            {pinned && (
+              <>
+                <Label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={!deleteVolumeData}
+                    onCheckedChange={(v) => setDeleteVolumeData(!v)}
+                  />
+                  Keep its volumes&apos; data
+                </Label>
+                {deleteVolumeData && (
+                  <Notice tone="warning">
+                    The data in {volumes?.map((v) => v.path).join(", ")} is deleted permanently.
+                  </Notice>
+                )}
+              </>
+            )}
+          </ConfirmDialog>
         </>
       )}
     </>

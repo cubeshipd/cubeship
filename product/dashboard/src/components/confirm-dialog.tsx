@@ -27,7 +27,10 @@ export function ConfirmDialog({
   confirmWord,
   confirmLabel = "Delete",
   onConfirm,
+  children,
 }: {
+  // Choices that belong to the confirmation, above the typed name.
+  children?: ReactNode;
   open: boolean;
   onOpenChange: (v: boolean) => void;
   title: string;
@@ -67,6 +70,7 @@ export function ConfirmDialog({
 
           <div className="space-y-4 py-5">
             <ErrorAlert error={error} />
+            {children}
             {confirmWord && (
               <TextField
                 label={`Type ${confirmWord} to confirm`}
