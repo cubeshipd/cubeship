@@ -6,6 +6,27 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.7.0-rc.3 — 2026-09-13
+
+*Prerelease.*
+
+Templates load on an instance that serves the catalog itself, instead of timing out.
+
+### Fixed
+
+**Templates could not be listed when the catalog ran on the same
+machine.** Opening Templates answered "the template catalog could not be
+reached" after twenty seconds. From inside the machine, a name that
+points back at it leaves for the machine's own public address, and many
+hosts never deliver that traffic back to themselves — so the request
+hung until it gave up.
+
+A request for a name that resolves to this instance — its public
+address, or what its own domain resolves to — now goes straight to its
+proxy over the internal network, with the same name and the same
+certificate check as from outside. Nothing to configure, and no private
+DNS. Every other address still goes out over the internet.
+
 ## 0.7.0-rc.2 — 2026-09-13
 
 *Prerelease.*
