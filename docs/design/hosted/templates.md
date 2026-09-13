@@ -280,6 +280,15 @@ the certificate Traefik serves for that name. No private DNS, nothing to
 configure; a daemon not on the shared network falls back to the public
 route.
 
+**A project the install creates wears the template's icon.** The icon of
+the release installed, not the newest one: the listing's `icon_url`
+gives the repository id, and the icon is fetched by that id and the
+installed commit, then handed to the project's own `SetImage`, which
+checks the bytes like any upload. Only a project the install created — an
+existing one keeps the picture somebody chose — and best effort: a
+project with no picture wears a mark, which is no reason to undo an
+install.
+
 **Everything is checked before anything exists.** The project and
 environment are taken from the request or the template, and created only
 when missing. Every database, store and app name, every domain and every

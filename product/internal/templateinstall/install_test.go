@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"maps"
 	"net/url"
 	"slices"
@@ -188,6 +189,12 @@ func (f fakeProjects) Delete(_ context.Context, _ *user.User, slug string) (*pro
 	f.mu.Unlock()
 	f.did("delete project " + slug)
 	return &project.Project{Slug: slug}, nil
+}
+
+func (f fakeProjects) SetImage(_ context.Context, _ *user.User, slug string, body io.Reader) error {
+	data, _ := io.ReadAll(body)
+	f.did("set image " + slug + " " + string(data))
+	return nil
 }
 
 func (f fakeProjects) DeleteEnvironment(_ context.Context, _ *user.User, slug, env string) (*project.Environment, error) {
@@ -535,10 +542,19 @@ func (c fakeCatalog) publish() {
 
 func (c fakeCatalog) List(context.Context, url.Values) (json.RawMessage, error) { return nil, nil }
 func (c fakeCatalog) Tags(context.Context) (json.RawMessage, error)             { return nil, nil }
+
+// Template names the newest release's icon, the way HTTPCatalog hands it
+// on: rewritten to the instance's own address.
 func (c fakeCatalog) Template(context.Context, string, string) (json.RawMessage, error) {
-	return nil, nil
+	return json.RawMessage(`{"icon_url": "/api/template-icons/4242/def5678.png"}`), nil
 }
-func (c fakeCatalog) Icon(context.Context, string, string) ([]byte, error) { return nil, nil }
+
+func (c fakeCatalog) Icon(_ context.Context, repository, file string) ([]byte, error) {
+	if repository != "4242" {
+		return nil, ErrTemplateNotFound
+	}
+	return []byte("png of " + file), nil
+}
 
 func (c fakeCatalog) Releases(context.Context, string, string) ([]CatalogRelease, error) {
 	c.mu.Lock()
@@ -623,6 +639,8 @@ func TestAnInstallCreatesWhatTheTemplateDeclaresAndDeploysIt(t *testing.T) {
 		"add domain analytics.example.com to umami/production/web",
 		"attach umami-db to umami/production/web",
 		"deploy umami/production/web",
+		// The installed release's icon, not the newest one the listing names.
+		"set image umami png of abc1234.png",
 	} {
 		if !slices.Contains(f.w.events(), event) {
 			t.Errorf("nothing did %q in %v", event, f.w.events())
@@ -656,7 +674,8 @@ func TestAnInstallIntoAnExistingProjectLeavesThatProjectAlone(t *testing.T) {
 		t.Errorf("the existing project was recorded as created: %v", in.Resources)
 	}
 	for _, event := range f.w.events() {
-		if strings.HasPrefix(event, "delete project") || strings.HasPrefix(event, "create project") {
+		if strings.HasPrefix(event, "delete project") || strings.HasPrefix(event, "create project") ||
+			strings.HasPrefix(event, "set image") {
 			t.Errorf("the existing project was touched: %s", event)
 		}
 	}

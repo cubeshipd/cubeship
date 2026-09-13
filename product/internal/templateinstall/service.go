@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/url"
 	"regexp"
@@ -36,6 +37,7 @@ type Projects interface {
 	CreateEnvironment(ctx context.Context, caller *user.User, projectSlug, envSlug string) (*project.Environment, error)
 	Delete(ctx context.Context, caller *user.User, projectSlug string) (*project.Project, error)
 	DeleteEnvironment(ctx context.Context, caller *user.User, projectSlug, envSlug string) (*project.Environment, error)
+	SetImage(ctx context.Context, caller *user.User, projectSlug string, body io.Reader) error
 }
 
 type Apps interface {

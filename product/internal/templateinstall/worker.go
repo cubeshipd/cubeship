@@ -1,10 +1,13 @@
 package templateinstall
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -71,6 +74,44 @@ func (s *Service) failInstall(caller *user.User, in *Install, run *Run, cause er
 	s.finish(run, withProblems(cause, problems, "undoing the install"))
 }
 
+// iconRepository reads the repository id out of a listing's icon address,
+// as the catalog writes it or as HTTPCatalog rewrote it to the instance's.
+var iconRepository = regexp.MustCompile(`icons/([0-9]{1,20})/[0-9a-f]{7,64}\.png$`)
+
+// projectIcon gives a project the install created the icon of the release
+// installed. Only a created one: a project that already existed keeps the
+// picture somebody chose. Best effort — a project with no picture wears a
+// mark, which is no reason to undo an install.
+func (s *Service) projectIcon(ctx context.Context, caller *user.User, p *plan) {
+	c, err := s.source()
+	if err != nil {
+		return
+	}
+	body, err := c.Template(ctx, p.owner, p.repo)
+	if err != nil {
+		log.Printf("template install %s/%s: read its icon address: %v", p.owner, p.repo, err)
+		return
+	}
+	var listed struct {
+		IconURL *string `json:"icon_url"`
+	}
+	if err := json.Unmarshal(body, &listed); err != nil || listed.IconURL == nil {
+		return
+	}
+	m := iconRepository.FindStringSubmatch(*listed.IconURL)
+	if m == nil {
+		return
+	}
+	icon, err := c.Icon(ctx, m[1], p.release.Commit+".png")
+	if err != nil {
+		log.Printf("template install %s/%s: fetch its icon: %v", p.owner, p.repo, err)
+		return
+	}
+	if err := s.projects.SetImage(ctx, caller, p.project, bytes.NewReader(icon)); err != nil {
+		log.Printf("template install %s/%s: give project %s its icon: %v", p.owner, p.repo, p.project, err)
+	}
+}
+
 func withProblems(cause error, problems []string, what string) error {
 	if len(problems) == 0 {
 		return cause
@@ -98,6 +139,7 @@ func (s *Service) apply(ctx context.Context, caller *user.User, in *Install, run
 			return fmt.Errorf("create project %s: %w", p.project, err)
 		}
 		created(KindProject, "", p.project)
+		s.projectIcon(ctx, caller, p)
 	}
 	if p.createEnvironment {
 		s.step(run, "Creating environment %s", p.environment)
