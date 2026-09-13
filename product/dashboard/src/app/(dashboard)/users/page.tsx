@@ -16,10 +16,9 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
+import { RailPortal, RailTabs } from "@/components/header-rail";
 import { RowAction, RowActions, RowMenu, RowMenuItem } from "@/components/row-actions";
 import { SearchableSelect } from "@/components/searchable-select";
-import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -30,6 +29,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ValueCard } from "@/components/value-card";
 import {
   type AccessRole,
@@ -82,6 +82,7 @@ export default function UsersPage() {
   const [editing, setEditing] = useState<AccessRole | null>(null);
   const [composing, setComposing] = useState(false);
   const [deleting, setDeleting] = useState<AccessRole | null>(null);
+  const [tab, setTab] = useState<"users" | "roles">("users");
 
   useOpenOnArrival("new", setAdding);
 
@@ -242,133 +243,146 @@ export default function UsersPage() {
   ];
 
   return (
-    <>
+    // Two tabs rather than one page: the roles are given to the people in
+    // the first, and a second table under the first made both scroll.
+    <Tabs
+      value={tab}
+      onValueChange={(v) => setTab(v as "users" | "roles")}
+      className="subrail-page"
+    >
+      <RailTabs>
+        <TabsList variant="line">
+          <TabsTrigger value="users">Users</TabsTrigger>
+          <TabsTrigger value="roles">Access roles</TabsTrigger>
+        </TabsList>
+      </RailTabs>
       <RailPortal>
-        <Button onClick={() => setAdding(true)}>
-          <PlusIcon />
-          Add user
-        </Button>
+        {tab === "users" ? (
+          <Button onClick={() => setAdding(true)}>
+            <PlusIcon />
+            Add user
+          </Button>
+        ) : (
+          <Button onClick={() => setComposing(true)}>
+            <PlusIcon />
+            New role
+          </Button>
+        )}
       </RailPortal>
 
       <ErrorAlert error={error} />
 
-      {/* Above the table, because it cannot be asked for again and the
+      <TabsContent value="users">
+        {/* Above the table, because it cannot be asked for again and the
           next click must not be able to lose it. */}
-      {issued && (
-        <ValueCard
-          className="mb-4 ring-primary/40"
-          label={`${issued.username}'s password — copy it now, it is not shown again`}
-          value={issued.password}
+        {issued && (
+          <ValueCard
+            className="mb-4 ring-primary/40"
+            label={`${issued.username}'s password — copy it now, it is not shown again`}
+            value={issued.password}
+          />
+        )}
+
+        <DataTable
+          columns={columns}
+          rows={users}
+          rowKey={(u) => u.username}
+          search={{
+            placeholder: "Filter users",
+            by: (u) => [u.display_name, u.username, u.role],
+          }}
+          empty="Nobody but you."
         />
-      )}
 
-      <DataTable
-        columns={columns}
-        rows={users}
-        rowKey={(u) => u.username}
-        search={{
-          placeholder: "Filter users",
-          by: (u) => [u.display_name, u.username, u.role],
-        }}
-        empty="Nobody but you."
-      />
-
-      <NewUserDialog
-        open={adding}
-        onOpenChange={setAdding}
-        onCreated={(created) => {
-          setIssued(created);
-          reload();
-        }}
-      />
-
-      <RoleDialog
-        user={changing}
-        roles={roles?.roles ?? []}
-        onOpenChange={(open) => !open && setChanging(null)}
-        onSaved={reload}
-      />
-
-      {/* What a member, or a key, may reach. Here rather than on a screen
-          of its own: roles are given to the people listed above. */}
-      <div className="mt-10">
-        <SectionHeader
-          title="Access roles"
-          sub="What a member, or an API key, may reach. A member without one has the member default; a key given one never reaches more than its owner."
-          actions={
-            <Button variant="outline" size="sm" onClick={() => setComposing(true)}>
-              <PlusIcon />
-              New role
-            </Button>
-          }
+        <NewUserDialog
+          open={adding}
+          onOpenChange={setAdding}
+          onCreated={(created) => {
+            setIssued(created);
+            reload();
+          }}
         />
-      </div>
-      <DataTable
-        columns={[
-          {
-            id: "name",
-            header: "Role",
-            width: 24,
-            sortBy: (r) => r.name,
-            cell: (r) => (
-              <span className="flex min-w-0 flex-col">
-                <span className="truncate text-sm">{r.name}</span>
-                {r.description && (
-                  <span className="truncate text-[11px] text-muted-foreground">
-                    {r.description}
-                  </span>
-                )}
-              </span>
-            ),
-          },
-          {
-            id: "grants",
-            header: "Grants",
-            width: 48,
-            wrap: true,
-            cell: (r) => <span className="text-muted-foreground text-xs">{summarize(r)}</span>,
-          },
-          {
-            id: "used",
-            header: "Given to",
-            width: 18,
-            sortBy: (r) => r.members + r.keys,
-            cell: (r) => (
-              <span className="font-mono text-[11px] text-muted-foreground">
-                {r.members} {r.members === 1 ? "member" : "members"} · {r.keys}{" "}
-                {r.keys === 1 ? "key" : "keys"}
-              </span>
-            ),
-          },
-          {
-            id: "actions",
-            header: "",
-            width: 10,
-            align: "right",
-            cell: (r) => (
-              <RowActions>
-                <RowAction
-                  icon={PencilIcon}
-                  label={`Edit ${r.name}`}
-                  onClick={() => setEditing(r)}
-                />
-                <RowAction
-                  icon={Trash2Icon}
-                  label={`Delete ${r.name}`}
-                  danger
-                  disabled={r.members + r.keys > 0}
-                  title={r.members + r.keys > 0 ? "Still given to somebody." : undefined}
-                  onClick={() => setDeleting(r)}
-                />
-              </RowActions>
-            ),
-          },
-        ]}
-        rows={roles?.roles ?? null}
-        rowKey={(r) => String(r.id)}
-        loadingRows={2}
-        empty="No roles. Every member has the member default."
-      />
+
+        <RoleDialog
+          user={changing}
+          roles={roles?.roles ?? []}
+          onOpenChange={(open) => !open && setChanging(null)}
+          onSaved={reload}
+        />
+      </TabsContent>
+
+      <TabsContent value="roles">
+        <p className="mb-4 text-muted-foreground text-xs">
+          What a member, or an API key, may reach. A member without one has the member default; a
+          key given one never reaches more than its owner.
+        </p>
+        <DataTable
+          columns={[
+            {
+              id: "name",
+              header: "Role",
+              width: 24,
+              sortBy: (r) => r.name,
+              cell: (r) => (
+                <span className="flex min-w-0 flex-col">
+                  <span className="truncate text-sm">{r.name}</span>
+                  {r.description && (
+                    <span className="truncate text-[11px] text-muted-foreground">
+                      {r.description}
+                    </span>
+                  )}
+                </span>
+              ),
+            },
+            {
+              id: "grants",
+              header: "Grants",
+              width: 48,
+              wrap: true,
+              cell: (r) => <span className="text-muted-foreground text-xs">{summarize(r)}</span>,
+            },
+            {
+              id: "used",
+              header: "Given to",
+              width: 18,
+              sortBy: (r) => r.members + r.keys,
+              cell: (r) => (
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {r.members} {r.members === 1 ? "member" : "members"} · {r.keys}{" "}
+                  {r.keys === 1 ? "key" : "keys"}
+                </span>
+              ),
+            },
+            {
+              id: "actions",
+              header: "",
+              width: 10,
+              align: "right",
+              cell: (r) => (
+                <RowActions>
+                  <RowAction
+                    icon={PencilIcon}
+                    label={`Edit ${r.name}`}
+                    onClick={() => setEditing(r)}
+                  />
+                  <RowAction
+                    icon={Trash2Icon}
+                    label={`Delete ${r.name}`}
+                    danger
+                    disabled={r.members + r.keys > 0}
+                    title={r.members + r.keys > 0 ? "Still given to somebody." : undefined}
+                    onClick={() => setDeleting(r)}
+                  />
+                </RowActions>
+              ),
+            },
+          ]}
+          rows={roles?.roles ?? null}
+          rowKey={(r) => String(r.id)}
+          loadingRows={2}
+          empty="No roles. Every member has the member default."
+        />
+      </TabsContent>
 
       <AccessRoleDialog
         open={composing || editing !== null}
@@ -451,7 +465,7 @@ export default function UsersPage() {
           reload();
         }}
       />
-    </>
+    </Tabs>
   );
 }
 
