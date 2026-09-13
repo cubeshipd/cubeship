@@ -1,5 +1,5 @@
 import { Check, X } from "lucide-react";
-import { Section, Terminal } from "./section";
+import { CodeTerminal, Section } from "./section";
 
 const can = [
   "create a project and an environment",
@@ -20,8 +20,17 @@ export function Agent() {
       lede="/mcp is authenticated with the same key as the dashboard and the CLI. Point Claude Code, Cursor or whatever you run at it, and it does the work of the dashboard without the dashboard."
     >
       <div className="grid gap-10 lg:grid-cols-2">
-        <Terminal title="mcp.json">
-          {`{
+        <CodeTerminal
+          title="mcp.json"
+          lang="json"
+          // Keys in the green template.yaml's keys are, values in its
+          // light blue. The theme gives JSON keys the blue it gives
+          // numbers, and this snippet has none.
+          colorReplacements={{
+            "github-dark": { "#79b8ff": "#85e89d" },
+            "github-light": { "#005cc5": "#22863a" },
+          }}
+          code={`{
   "mcpServers": {
     "cubeship": {
       "type": "http",
@@ -30,7 +39,7 @@ export function Agent() {
     }
   }
 }`}
-        </Terminal>
+        />
         <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-1">
           <div>
             <p className="label text-subtle-foreground">An agent can</p>
