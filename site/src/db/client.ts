@@ -26,6 +26,10 @@ export function db() {
       // minutes rather than pg's 10 seconds.
       idleTimeoutMillis: 5 * 60_000,
       keepAlive: true,
+      // The OS waits two hours before its first keepalive probe, far longer than a
+      // home router keeps an idle connection; a dropped one surfaces as
+      // "Connection terminated unexpectedly" on the next query.
+      keepAliveInitialDelayMillis: 10_000,
       // A database that accepts the connection but never answers must
       // not hang the landing page or the sitemap either.
       statement_timeout: 5_000,
