@@ -5,7 +5,6 @@ import { GitHubIcon } from "@/components/icons";
 import { Comments } from "@/components/templates/comments";
 import { LikeButton } from "@/components/templates/like-button";
 import { Preview } from "@/components/templates/preview";
-import { ReportButton } from "@/components/templates/report-button";
 import { SourceBlock } from "@/components/templates/source-block";
 import { currentUser } from "@/lib/auth/session";
 import { avatarAt } from "@/lib/avatar";
@@ -84,6 +83,7 @@ export default async function TemplateDetailPage(props: PageProps<"/templates/[s
                   {author.login}
                 </Link>
               </div>
+              <LikeButton slug={slug} initialCount={template.likesCount} initialLiked={liked} />
               <a
                 href={`https://github.com/${author.login}`}
                 target="_blank"
@@ -93,11 +93,6 @@ export default async function TemplateDetailPage(props: PageProps<"/templates/[s
               >
                 <GitHubIcon className="size-4" />
               </a>
-            </div>
-
-            <div className="flex items-center gap-4 p-4">
-              <LikeButton slug={slug} initialCount={template.likesCount} initialLiked={liked} />
-              <ReportButton subjectType="template" subjectId={template.id} />
             </div>
 
             <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 p-4">
