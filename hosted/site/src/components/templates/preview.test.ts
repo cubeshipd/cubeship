@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { NormalizedManifest } from "@/lib/manifest";
-import { describeApp, describeDatabase } from "./preview";
+import { engineOf, sourceOf } from "./preview";
 
 // What product/template normalizes the fixture in its own tests to.
 const manifest: NormalizedManifest = {
@@ -43,14 +43,12 @@ const manifest: NormalizedManifest = {
   ],
 };
 
-describe("the preview's sentences", () => {
-  it("says what an app is and where it answers", () => {
-    expect(describeApp(manifest.apps[0], manifest.inputs)).toBe(
-      "nginx:1 on port 3000, at the domain from “Where it answers”, reachable inside as cubeship-umami-production-web:3000",
-    );
+describe("the preview's details", () => {
+  it("names an app by its image and tag", () => {
+    expect(sourceOf(manifest.apps[0])).toBe("nginx:1");
   });
 
-  it("says what a database is", () => {
-    expect(describeDatabase(manifest.databases[0])).toBe("postgres 18, named db, on port 5432");
+  it("names a database by its engine and version", () => {
+    expect(engineOf(manifest.databases[0])).toBe("Postgres 18");
   });
 });

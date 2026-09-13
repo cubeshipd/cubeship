@@ -179,7 +179,10 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
 
           {found.source ? (
             <section>
-              <SourceBlock source={found.source} rawUrl={found.source_url} />
+              <SourceBlock
+                source={found.source}
+                fileUrl={`${found.url}/blob/${release.commit}/template.yaml`}
+              />
             </section>
           ) : null}
         </div>

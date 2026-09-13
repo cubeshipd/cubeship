@@ -1,38 +1,31 @@
-"use client";
+import { ServerCodeBlock } from "fumadocs-ui/components/codeblock.rsc";
+import { ExternalLink } from "lucide-react";
 
-import { Check, Copy } from "lucide-react";
-import { useState } from "react";
-
-// The file itself, plus the address it is read from: the release's
-// commit, which is what an instance will fetch too.
-export function SourceBlock({ source, rawUrl }: { source: string; rawUrl: string }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copy() {
-    await navigator.clipboard.writeText(source);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 1600);
-  }
-
+// Highlighted on the server with the docs' own themes, so the file
+// arrives coloured rather than repainting after load.
+export function SourceBlock({ source, fileUrl }: { source: string; fileUrl: string }) {
   return (
-    <div className="hud-frame border border-fd-border">
-      <div className="flex items-center justify-between border-fd-border border-b px-4 py-2">
-        <p className="label text-fd-muted-foreground">template.yaml</p>
-        <button
-          type="button"
-          onClick={copy}
-          aria-label="Copy the template file"
-          className="text-fd-muted-foreground transition-colors hover:text-primary"
-        >
-          {copied ? <Check className="size-4 text-success" /> : <Copy className="size-4" />}
-        </button>
-      </div>
-      <pre className="overflow-x-auto p-4 text-fd-foreground text-xs leading-relaxed">
-        <code>{source}</code>
-      </pre>
-      <p className="overflow-x-auto border-fd-border border-t px-4 py-2 font-mono text-fd-muted-foreground text-xs">
-        GET {rawUrl}
-      </p>
-    </div>
+    <ServerCodeBlock
+      code={source}
+      lang="yaml"
+      themes={{ light: "github-light", dark: "github-dark" }}
+      codeblock={{
+        title: (
+          <span className="flex w-full items-center justify-between gap-3">
+            <span>template.yaml</span>
+            <a
+              href={fileUrl}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="template.yaml on GitHub, at this release"
+              title="template.yaml on GitHub, at this release"
+              className="text-fd-muted-foreground transition-colors hover:text-primary"
+            >
+              <ExternalLink className="size-3.5" />
+            </a>
+          </span>
+        ),
+      }}
+    />
   );
 }
