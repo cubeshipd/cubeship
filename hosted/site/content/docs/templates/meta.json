@@ -1,4 +1,13 @@
 {
   "title": "Templates",
-  "pages": ["index", "publishing", "file", "inputs", "references", "diagnostics", "api"]
+  "pages": [
+    "index",
+    "installing",
+    "publishing",
+    "file",
+    "inputs",
+    "references",
+    "diagnostics",
+    "api"
+  ]
 }

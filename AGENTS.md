@@ -37,7 +37,7 @@ re-made by accident.
 | --- | --- |
 | Anything under `product/dashboard/` | [dashboard.md](docs/design/product/dashboard.md) — the layers, the navigation, the components, the look |
 | Anything under `hosted/site/` | [site.md](docs/design/hosted/site.md) — cubeship.dev: the landing page, the docs, and where `install.sh` comes from |
-| `product/template`, `hosted/catalog`, `/templates` in the site | [templates.md](docs/design/hosted/templates.md) — the validator, the catalog that indexes GitHub releases and serves them, the site's pages, and what a template may never carry |
+| `product/template`, `hosted/catalog`, `internal/templateinstall`, `/templates` in the site or the dashboard | [templates.md](docs/design/hosted/templates.md) — the validator, the catalog that indexes GitHub releases and serves them, installing one on an instance, the site's pages, and what a template may never carry |
 | `internal/node`, `internal/mesh`, `internal/worker` | [cluster.md](docs/design/product/cluster.md) — placement, replicas, the agent, the network between machines, the one front door, autoscaling, limits |
 | `internal/app` | [deploys.md](docs/design/product/deploys.md) — where an image comes from, the two builders, the GitHub App, who may build, what deleting takes |
 | `internal/datastore` | [datastores.md](docs/design/product/datastores.md) — the engines, attaching, exposing, what is fixed after creation |
@@ -128,6 +128,9 @@ product/internal/
                 Traefik's own store
   firewall/     the host's ufw, and the one thing it does not cover on a
                 machine running Docker
+  templateinstall/ installing a template from the catalog: checks it,
+                creates what it declares, deploys it, and undoes it all
+                when a step fails. Above every module it creates through
   dashboard/    proxies page requests to the dashboard's container
   server/       mounts every module on the HTTP mux and the MCP endpoint
   platform/     infrastructure: database, dockerx, traefik, bootstrap,

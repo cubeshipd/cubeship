@@ -1,0 +1,57 @@
+---
+title: Installing a template
+description: Install an app from the catalog on your instance — from the dashboard, the CLI or an agent — and what happens when something goes wrong.
+---
+
+Templates in the dashboard lists the catalog. Open one to see what it
+creates, answer its questions, and press **Install**.
+
+From the CLI:
+
+```bash
+cubeship template list analytics
+```
+
+```bash
+cubeship template install cubeshipd/cubeship-umami-template --input domain=analytics.example.com
+```
+
+An agent uses `list_templates`, `install_template` and
+`get_template_install` over [MCP](/docs/mcp). Installing needs the admin
+role.
+
+## What you choose
+
+| | Default |
+| --- | --- |
+| Project | The template's suggestion. Created when it does not exist; an existing one is used as it is. |
+| Environment | The template's, usually `production`. Created when missing. |
+| Names | The template's. Database and store names are unique on the whole instance, so a second install of one template needs new ones. |
+| Answers | Whatever the template asks: a domain, a choice, an existing object store. A secret the template generates can be left empty. |
+
+A domain has to resolve to the instance for the app to answer at it.
+Under an instance domain that is a wildcard, like the `sslip.io` address
+a default install takes, the dashboard fills one in.
+
+## What happens
+
+Your instance reads the template's file from GitHub at the release's
+commit and validates it itself. Then it checks every name, domain and
+answer against what already exists, and refuses **before creating
+anything** if one cannot be used.
+
+The install then runs in the background — you can close the page. It
+creates the project and environment when they are missing, the databases
+and stores, the apps with their domains, attachments and variables, and
+deploys each app.
+
+**Generated secrets are shown once**, when the install starts. They are
+in the variables of the apps that use them and nowhere else, so keep a
+copy of anything like an encryption key.
+
+## When it fails
+
+Everything the install created is deleted again, newest first, and the
+install says which step failed and why. A project or environment that
+existed before the install is never touched. If the daemon restarts in
+the middle of an install, it undoes that install when it comes back.

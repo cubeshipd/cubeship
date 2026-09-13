@@ -278,6 +278,69 @@ const routes: [string, string, Handler][] = [
   ["GET", "/instance/containers", () => containers()],
 
   // --- databases ---
+  ["GET", "/templates", () => ({ templates: db.templates, next_cursor: null })],
+  [
+    "GET",
+    "/templates/:owner/:repo",
+    (p) => ({
+      ...(db.templates.find((t) => t.owner === p[0] && t.name === p[1]) ?? notFound()),
+      readme: "",
+      source: "",
+      source_url: "",
+      manifest: db.templateManifest,
+    }),
+  ],
+  [
+    "POST",
+    "/templates/:owner/:repo/installs",
+    (p, body) => {
+      const b = body as Row;
+      const install = {
+        id: db.templateInstalls.length + 1,
+        owner: p[0],
+        repo: p[1],
+        release: (b.release as string) || "v1.1.0",
+        commit: "c79ef5b",
+        project: (b.project as string) || "umami",
+        environment: (b.environment as string) || "production",
+        status: "running",
+        step: "Creating project",
+        resources: [] as Row[],
+        created_at: new Date().toISOString(),
+        polls: 0,
+      };
+      db.templateInstalls.push(install);
+      return { install, secrets: { appSecret: "k3Xq9vP2mT7wZr4nB8yL6cF1hJ5sD0aG" } };
+    },
+  ],
+  [
+    "GET",
+    "/template-installs/:id",
+    (p) => {
+      // Each read moves the install one step on, so the progress screen
+      // has something to show and then an ending.
+      const install = db.templateInstalls.find((i) => String(i.id) === p[0]) ?? notFound();
+      const steps = [
+        ["Creating database umami-db", { kind: "project", name: install.project }],
+        ["Creating app web", { kind: "database", name: "umami-db" }],
+        [
+          "Deploying app web",
+          { kind: "app", name: `${install.project}/${install.environment}/web` },
+        ],
+      ] as const;
+      const polls = install.polls as number;
+      if (polls < steps.length) {
+        install.step = steps[polls][0];
+        (install.resources as Row[]).push(steps[polls][1]);
+      } else {
+        install.status = "succeeded";
+        install.step = "";
+        install.finished_at = new Date().toISOString();
+      }
+      install.polls = polls + 1;
+      return install;
+    },
+  ],
   ["GET", "/datastores/engines", () => engines],
   ["GET", "/datastores", () => db.datastores],
   ["GET", "/datastores/:name", (p) => row(db.datastores, "name", p[0])],

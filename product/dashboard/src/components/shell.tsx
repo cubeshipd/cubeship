@@ -11,6 +11,7 @@ import {
   GlobeIcon,
   HardDriveIcon,
   KeyRoundIcon,
+  LayoutTemplateIcon,
   LogOutIcon,
   ServerCogIcon,
   ServerIcon,
@@ -93,6 +94,9 @@ export const sections: { label?: string; items: NavItem[] }[] = [
       // beside Databases in the same section it read as the place disks
       // are, and the URL stays /storage because a label is not a route.
       { href: "/storage", label: "Object storage", icon: HardDriveIcon, owns: ["/storage"] },
+      // Ready-made apps from the catalog. In Workspace, because an
+      // install is a project and the apps and data inside it.
+      { href: "/templates", label: "Templates", icon: LayoutTemplateIcon, owns: ["/templates"] },
     ],
   },
   {

@@ -252,9 +252,49 @@ other DB-backed test; `make check` runs the rest. Locally, `make
 catalog-db-up`, then `make catalog-dev` with a `GITHUB_TOKEN`, then `make
 site-dev` — the site's default `CATALOG_URL` is `make catalog-dev`'s.
 
+## Installing one on an instance
+
+`product/internal/templateinstall` is the daemon's half, behind
+`/api/templates`, the MCP tools `list_templates`, `install_template` and
+`get_template_install`, `cubeship template list|install`, and the
+dashboard's Templates section.
+
+**The instance reads, and trusts nothing it did not check.** It lists the
+catalog through `CUBESHIP_CATALOG_URL` (cubeship.dev's API by default) and
+proxies icons, so a browser on the dashboard never talks to the catalog.
+To install, it reads `template.yaml` from GitHub at the commit the catalog
+recorded for the release — not the catalog's copy — and runs the same
+`product/template` validator. A bare `minCubeship` is a minimum; one with
+an operator is a range.
+
+**Everything is checked before anything exists.** The project and
+environment are taken from the request or the template, and created only
+when missing. Every database, store and app name, every domain and every
+answer is checked against the instance first — names free, domains not
+taken, inputs valid for their type — and a refusal creates nothing.
+Secrets with `generate` are made then and returned in that one response;
+they are never recorded, only written into the apps that use them. The
+MCP tool does not return them.
+
+**Then it runs detached, recorded as it goes.** `template_installs` holds
+the step and every resource created, in order:
+
+```
+project/environment (when missing) → databases, stores → apps and their settings
+  → wait for databases and stores → buckets → domains, attachments, variables
+  → deploy each app and wait for it
+```
+
+References are resolved from what was created: a database's credentials,
+an app's internal address, the answers. **Any failure undoes exactly the
+recorded resources, newest first** — a project that already existed is
+never in the list, so it is never touched. A daemon that restarts
+mid-install undoes what the previous run left on start, as the account
+that started it.
+
 ## What is left for later
 
-The daemon's half: applying a normalized manifest, `cubeship template
-apply <owner>/<repo>`, and a browser over the catalog in the dashboard.
-The first wall authors will hit is still that apps have no volume and no
+Upgrading an installed template to a newer release, uninstalling one as a
+unit, and installing from a repository the catalog does not list. The
+first wall authors will hit is still that apps have no volume and no
 command override, and that is a daemon change.

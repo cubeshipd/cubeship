@@ -1301,3 +1301,76 @@ export type UpdateRun = {
   started_at: string;
   finished_at?: string;
 };
+
+// Templates, read from the catalog through the instance. `icon_url` is
+// already the instance's own address for the icon.
+export type TemplateSummary = {
+  owner: string;
+  name: string;
+  title: string;
+  description: string;
+  url: string;
+  stars: number;
+  tags: string[];
+  avatar_url: string;
+  icon_url: string | null;
+  verified: boolean;
+  release: { tag: string; commit: string; published_at: string };
+};
+
+export type TemplatePage = { templates: TemplateSummary[]; next_cursor: string | null };
+
+export type TemplateInput = {
+  key: string;
+  type: "domain" | "text" | "number" | "choice" | "secret" | "store";
+  label: string;
+  help?: string;
+  required: boolean;
+  default?: string | number;
+  pattern?: string;
+  min?: number;
+  max?: number;
+  options?: string[];
+  generate?: number;
+};
+
+// The part of a normalized manifest the install form reads.
+export type TemplateManifest = {
+  project: string;
+  environment: string;
+  inputs: TemplateInput[];
+  databases: { key: string; name: string; engine: string; version: string | null }[];
+  stores: { key: string; name: string; buckets: string[] }[];
+  apps: {
+    key: string;
+    name: string;
+    source: { type: string; image?: string; tag?: string | null; repo?: string };
+    port: number | null;
+    domains: { host: string; port: number }[];
+  }[];
+};
+
+export type TemplateDetail = TemplateSummary & {
+  readme: string;
+  source: string;
+  source_url: string;
+  manifest: TemplateManifest | null;
+};
+
+export type TemplateInstall = {
+  id: number;
+  owner: string;
+  repo: string;
+  release: string;
+  commit: string;
+  project: string;
+  environment: string;
+  status: "running" | "succeeded" | "failed";
+  step?: string;
+  error?: string;
+  resources: { kind: "project" | "environment" | "database" | "store" | "app"; name: string }[];
+  created_at: string;
+  finished_at?: string;
+};
+
+export type TemplateInstallStarted = { install: TemplateInstall; secrets: Record<string, string> };

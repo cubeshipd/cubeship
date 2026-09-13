@@ -91,6 +91,78 @@ export const db = {
     auto_update_timezone: "America/Sao_Paulo",
   } as Settings,
 
+  // The catalog, as cubeship.dev lists it. Icons are left out: the
+  // preview has no daemon to fetch them through.
+  templates: [
+    {
+      owner: "cubeshipd",
+      name: "cubeship-umami-template",
+      title: "Umami",
+      description:
+        "Privacy-focused, cookie-free web analytics — a self-hosted alternative to Google Analytics",
+      url: "https://github.com/cubeshipd/cubeship-umami-template",
+      stars: 12,
+      tags: ["analytics", "privacy"],
+      avatar_url: "",
+      icon_url: null,
+      verified: true,
+      release: { tag: "v1.1.0", commit: "c79ef5b", published_at: ago(60 * 24) },
+    },
+    {
+      owner: "cubeshipd",
+      name: "cubeship-n8n-template",
+      title: "N8n",
+      description: "Workflow automation with a visual editor and hundreds of integrations",
+      url: "https://github.com/cubeshipd/cubeship-n8n-template",
+      stars: 7,
+      tags: ["automation"],
+      avatar_url: "",
+      icon_url: null,
+      verified: true,
+      release: { tag: "v1.0.0", commit: "59ff226", published_at: ago(60 * 20) },
+    },
+    {
+      owner: "someone",
+      name: "cubeship-grafana-template",
+      title: "Grafana",
+      description: "Dashboards, visualizations and alerts for your metrics, logs and traces",
+      url: "https://github.com/someone/cubeship-grafana-template",
+      stars: 3,
+      tags: ["monitoring"],
+      avatar_url: "",
+      icon_url: null,
+      verified: false,
+      release: { tag: "v1.0.0", commit: "9482e52", published_at: ago(60 * 18) },
+    },
+  ] as Row[],
+  templateManifest: {
+    project: "umami",
+    environment: "production",
+    inputs: [
+      { key: "domain", type: "domain", label: "Where the dashboard answers", required: true },
+      {
+        key: "appSecret",
+        type: "secret",
+        label: "The app's session secret",
+        required: true,
+        generate: 32,
+      },
+    ],
+    databases: [{ key: "db", name: "umami-db", engine: "postgres", version: "18" }],
+    stores: [],
+    apps: [
+      {
+        key: "web",
+        name: "web",
+        source: { type: "image", image: "ghcr.io/umami-software/umami", tag: "3.3.1" },
+        port: 3000,
+        // biome-ignore lint/suspicious/noTemplateCurlyInString: a reference in a template file, not JavaScript.
+        domains: [{ host: "${input.domain}", port: 3000 }],
+      },
+    ],
+  } as Row,
+  templateInstalls: [] as Row[],
+
   // One with a picture and one without, so the grid shows both halves
   // of the rule rather than a row of identical marks.
   projects: [{ slug: "web", has_image: true }, { slug: "internal" }] as Row[],

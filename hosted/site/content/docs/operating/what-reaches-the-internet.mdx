@@ -7,7 +7,7 @@ description: There is no telemetry. Three things leave the box, and all three ar
 deploy, or that this instance exists. There is no analytics in the
 dashboard and no account with anybody.
 
-Three things leave the box, and all three are yours to look at:
+These leave the box, and all of them are yours to look at:
 
 - **Installing and upgrading** pulls two images from `ghcr.io`, and asks
   GitHub which release is newest so it can pin an exact one.
@@ -20,6 +20,12 @@ Three things leave the box, and all three are yours to look at:
   says so, rather than claiming to be current.
 - **Let's Encrypt**, for certificates — and only once you have given the
   instance a domain.
+- **The template catalog**, when somebody opens Templates in the
+  dashboard or installs one: the daemon reads `cubeship.dev/api/v1` (or
+  `CUBESHIP_CATALOG_URL`), and reads the template's `template.yaml` from
+  `raw.githubusercontent.com` at the release's commit. Plain `GET`s,
+  nothing about your instance in them, and nothing at all until
+  somebody opens that screen.
 
 After that it does what you ask it to: pull the images you named, clone
 the repositories you connected, write the DNS records you configured.
