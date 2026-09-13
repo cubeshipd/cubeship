@@ -10,7 +10,7 @@ import { Screens } from "@/components/landing/screens";
 import { TemplatesStrip } from "@/components/landing/templates-strip";
 
 export const metadata: Metadata = {
-  title: { absolute: "Cubeship — self-hosted PaaS for your own servers" },
+  title: { absolute: "Cubeship — the self-hosted platform for your own servers" },
   alternates: { canonical: "/" },
 };
 

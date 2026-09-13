@@ -11,12 +11,12 @@ export function Deploy() {
       <div className="grid gap-6 lg:grid-cols-3">
         <Terminal title="Push an image">
           <Prompt>docker login registry.example.com</Prompt>
-          <Prompt>docker push registry.example.com/shop/api</Prompt>
+          <Prompt>docker push registry.example.com/shop/production/api</Prompt>
           <Comment># the push is the deploy</Comment>
         </Terminal>
         <Terminal title="Run one from anywhere">
-          <Prompt>cubeship app create api --image nginx</Prompt>
-          <Prompt>cubeship app deploy api --tag 1.27</Prompt>
+          <Prompt>cubeship app create api --project shop --source external --image nginx</Prompt>
+          <Prompt>cubeship app deploy shop/api --tag 1.27</Prompt>
           <Comment># Docker Hub, GHCR, ECR — nothing to set up</Comment>
         </Terminal>
         <Terminal title="Build from a repository">

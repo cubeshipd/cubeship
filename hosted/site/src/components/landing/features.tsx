@@ -3,14 +3,17 @@ import {
   Archive,
   Bot,
   Database,
+  Globe,
   Hammer,
   HardDrive,
   LayoutDashboard,
+  LayoutTemplate,
   Lock,
   Network,
   Package,
   RefreshCw,
   Server,
+  Shield,
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Section } from "./section";
@@ -55,6 +58,21 @@ const features: { icon: ReactNode; title: string; body: string }[] = [
     icon: <Hammer />,
     title: "Builds",
     body: "From a Dockerfile, or from a repository with no Dockerfile at all. A push to GitHub deploys it.",
+  },
+  {
+    icon: <LayoutTemplate />,
+    title: "Templates",
+    body: "Umami, n8n, Grafana — an app and the data it needs, installed in one form and updated when a release comes out.",
+  },
+  {
+    icon: <Shield />,
+    title: "Firewall",
+    body: "The host's ufw from the dashboard, with Docker's published ports finally answering to it.",
+  },
+  {
+    icon: <Globe />,
+    title: "DNS",
+    body: "Connect Cloudflare or Route 53: the instance's records are written for you, and every zone is editable from the dashboard.",
   },
   {
     icon: <Server />,

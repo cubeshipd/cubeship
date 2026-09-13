@@ -27,14 +27,14 @@ export function Hero() {
         <h1 className="mt-5 max-w-3xl font-semibold text-4xl leading-tight tracking-tight sm:text-6xl">
           Your servers, run like a platform.
         </h1>
-        <p className="mt-6 max-w-2xl text-lg text-muted-foreground leading-relaxed">
-          Push an image and it is live, with HTTPS and a database beside it. Add a second machine
-          and it is a cluster. Hand the API key to an agent and it runs the whole thing.
+        <p className="mt-6 max-w-2xl text-foreground/85 text-lg leading-relaxed">
+          Apps, databases and their backups, object storage, certificates and a firewall — the whole
+          platform, on servers you own. One machine or a cluster, one dashboard, one API.
         </p>
         <div className="mt-10 w-full max-w-xl">
           <InstallCommand />
         </div>
-        <p className="mt-3 text-subtle-foreground text-xs">
+        <p className="mt-3 text-foreground/80 text-sm">
           One command on a fresh Debian or Ubuntu box. It installs Docker, pulls two images and
           prints the address to open.
         </p>

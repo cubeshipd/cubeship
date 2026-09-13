@@ -24,13 +24,17 @@ const jbmono = localFont({
   display: "swap",
 });
 
-const description = "Self-hosted PaaS — one VPS or a whole cluster, run by you or your agent.";
+const description =
+  "The self-hosted platform for your own servers — apps, databases, backups, storage, certificates and a firewall, on one VPS or a whole cluster.";
 
 // The icons and the social card are files beside this one, found by
 // name; none of them is listed here.
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
-  title: { default: "Cubeship — self-hosted PaaS for your own servers", template: "%s · Cubeship" },
+  title: {
+    default: "Cubeship — the self-hosted platform for your own servers",
+    template: "%s · Cubeship",
+  },
   description,
   applicationName: "Cubeship",
   keywords: [
@@ -57,7 +61,7 @@ export const metadata: Metadata = {
     url: siteUrl,
     siteName: "Cubeship",
     locale: "en_US",
-    title: "Cubeship — self-hosted PaaS for your own servers",
+    title: "Cubeship — the self-hosted platform for your own servers",
     description,
   },
   twitter: { card: "summary_large_image", title: "Cubeship", description },

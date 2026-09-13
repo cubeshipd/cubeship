@@ -31,11 +31,11 @@ export function Cluster() {
           <Prompt>cubeship server add eu-1</Prompt>
           <Comment># prints the command to run on the new box, credential in it</Comment>
           {"\n"}
-          <Prompt>cubeship app place api --on eu-1</Prompt>
-          <Prompt>cubeship app place api --replicas 4</Prompt>
-          <Prompt>cubeship app place api --everywhere</Prompt>
+          <Prompt>cubeship app place shop/api --on eu-1</Prompt>
+          <Prompt>cubeship app place shop/api --replicas 4</Prompt>
+          <Prompt>cubeship app place shop/api --everywhere</Prompt>
           {"\n"}
-          <Prompt>cubeship app autoscale api --min 2 --max 8 --cpu 70</Prompt>
+          <Prompt>cubeship app autoscale shop/api --min 2 --max 8 --cpu 70</Prompt>
         </Terminal>
         <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-1">
           {points.map((p) => (

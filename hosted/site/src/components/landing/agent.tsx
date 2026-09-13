@@ -6,10 +6,11 @@ const can = [
   "deploy an app, then read how the deploy ended",
   "read its logs and what its container is using",
   "attach a database and set the variables",
+  "install a template, and update it when a release comes out",
   "list the servers, the stores and the buckets",
 ];
 
-const cannot = ["read a secret", "set a container's ceiling"];
+const cannot = ["set a container's ceiling", "open a port to the internet"];
 
 export function Agent() {
   return (
