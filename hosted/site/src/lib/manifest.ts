@@ -40,6 +40,8 @@ export type NormalizedApp = {
   scale: number | null;
   spread: boolean;
   autoscale: { min: number; max: number; cpu: number } | null;
+  // Absent in a manifest the catalog stored before templates had volumes.
+  volumes?: { path: string }[];
   internal_host: string;
 };
 

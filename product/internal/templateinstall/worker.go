@@ -233,6 +233,24 @@ func (s *Service) createApp(ctx context.Context, caller *user.User, run *Run, p 
 	if err := s.configure(ctx, caller, ref, a); err != nil {
 		return fmt.Errorf("configure app %s: %w", ref, err)
 	}
+	// After configuring, which is where scale and spread are set: a volume
+	// is refused on an app that is not one copy on one machine.
+	return s.addVolumes(ctx, caller, ref, a.Key, a.Volumes, nil)
+}
+
+// addVolumes gives an app volumes. An update records each, because the app
+// they were added to stays when the update is undone; an install passes no
+// recorder, since deleting the app takes them with it.
+func (s *Service) addVolumes(ctx context.Context, caller *user.User, ref app.Reference, key string,
+	volumes []template.NormalizedVolume, created recorder) error {
+	for _, v := range volumes {
+		if _, err := s.apps.AddVolume(ctx, caller, ref, v.Path); err != nil {
+			return fmt.Errorf("add volume %s to app %s: %w", v.Path, ref, err)
+		}
+		if created != nil {
+			created(KindVolume, key, ref.String()+" "+v.Path)
+		}
+	}
 	return nil
 }
 
@@ -627,6 +645,9 @@ func (s *Service) applyUpdate(ctx context.Context, caller *user.User, run *Run, 
 			err = s.wire(ctx, caller, run, up.plan, a, a.Domains, a.Attach, envNames(a), created)
 		case ch != nil:
 			err = s.wire(ctx, caller, run, up.plan, a, ch.domains, ch.attach, ch.env, created)
+			if err == nil {
+				err = s.addVolumes(ctx, caller, up.ref(a.Key), a.Key, ch.volumes, created)
+			}
 		default:
 			continue
 		}
@@ -716,7 +737,7 @@ func (s *Service) runUninstall(caller *user.User, in *Install, run *Run) {
 			if !slices.Contains(kinds, r.Kind) {
 				continue
 			}
-			if err := s.remove(ctx, caller, r); err != nil {
+			if err := s.remove(ctx, caller, r, !run.KeepData); err != nil {
 				problems = append(problems, fmt.Sprintf("%s %s: %v", r.Kind, r.Name, err))
 			}
 		}
@@ -748,7 +769,7 @@ func (s *Service) runUninstall(caller *user.User, in *Install, run *Run) {
 			if inUse {
 				continue
 			}
-			if err := s.remove(ctx, caller, r); err != nil {
+			if err := s.remove(ctx, caller, r, false); err != nil {
 				problems = append(problems, fmt.Sprintf("%s %s: %v", r.Kind, r.Name, err))
 			}
 		}
@@ -767,14 +788,17 @@ func (s *Service) removeAll(ctx context.Context, caller *user.User, resources []
 	var problems []string
 	for i := len(resources) - 1; i >= 0; i-- {
 		r := resources[i]
-		if err := s.remove(ctx, caller, r); err != nil {
+		// Undoing what a run created: its data is only what it wrote.
+		if err := s.remove(ctx, caller, r, true); err != nil {
 			problems = append(problems, fmt.Sprintf("%s %s: %v", r.Kind, r.Name, err))
 		}
 	}
 	return problems
 }
 
-func (s *Service) remove(ctx context.Context, caller *user.User, r Resource) error {
+// remove deletes one resource. deleteData says whether an app's volumes'
+// data goes with it.
+func (s *Service) remove(ctx context.Context, caller *user.User, r Resource, deleteData bool) error {
 	var err error
 	switch r.Kind {
 	case KindApp:
@@ -782,7 +806,21 @@ func (s *Service) remove(ctx context.Context, caller *user.User, r Resource) err
 		if perr != nil {
 			return perr
 		}
-		_, err = s.apps.Delete(ctx, caller, ref)
+		_, err = s.apps.DeleteApp(ctx, caller, ref, deleteData)
+	case KindVolume:
+		refText, volumePath, _ := strings.Cut(r.Name, " ")
+		ref, perr := app.ParseReference(refText)
+		if perr != nil {
+			return perr
+		}
+		var a *app.Scoped
+		if a, err = s.apps.Resolve(ctx, caller, ref, RoleToInstall); err == nil {
+			for _, v := range a.Volumes {
+				if v.Path == volumePath {
+					err = s.apps.RemoveVolume(ctx, caller, ref, v.ID, deleteData)
+				}
+			}
+		}
 	case KindStore:
 		_, err = s.stores.Delete(ctx, caller, r.Name)
 	case KindDatabase:
@@ -826,7 +864,8 @@ func (s *Service) remove(ctx context.Context, caller *user.User, r Resource) err
 	if errors.Is(err, app.ErrNotFound) || errors.Is(err, project.ErrNotFound) ||
 		errors.Is(err, project.ErrEnvironmentNotFound) || errors.Is(err, datastore.ErrNotFound) ||
 		errors.Is(err, objectstore.ErrNotFound) || errors.Is(err, datastore.ErrNotAttached) ||
-		errors.Is(err, objectstore.ErrNotAttached) || errors.Is(err, app.ErrDomainNotFound) {
+		errors.Is(err, objectstore.ErrNotAttached) || errors.Is(err, app.ErrDomainNotFound) ||
+		errors.Is(err, app.ErrVolumeNotFound) {
 		return nil
 	}
 	return err

@@ -237,6 +237,29 @@ and `/-._~%!$&'()*+,;=:@`.
 *Error.* Autoscale's `max` is outside `1..100`, its `min` is outside
 `1..max`, or its `cpu` is `0` or below.
 
+## Volumes
+
+### `volume.path`
+
+*Error.* A volume's `path` is not absolute, is `/`, is under `/proc`,
+`/sys` or `/dev`, or holds a colon or a comma.
+
+### `volume.duplicate`
+
+*Error.* Two volumes of one app are at the same path once cleaned —
+`/data` and `/data/` are one path.
+
+### `volume.one-copy`
+
+*Error.* An app with a volume also sets `scale` above `1`, `spread` or
+`autoscale`. A volume's data is on one machine, and two copies writing it
+corrupt it.
+
+### `volume.min-cubeship`
+
+*Error.* A template with a volume has no `minCubeship`, or one that a
+release before volumes satisfies. Set `minCubeship: "0.7.0"`.
+
 ## Advice
 
 None of these refuse a release.

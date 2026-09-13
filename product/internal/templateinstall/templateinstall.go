@@ -60,6 +60,9 @@ const (
 	// apps that stay.
 	KindDomain     = "domain"
 	KindAttachment = "attachment"
+	// A volume is the same: an install's go with the app, and an update's
+	// is added to an app that stays. Named "<app reference> <path>".
+	KindVolume = "volume"
 )
 
 // Resource is one thing a run created.

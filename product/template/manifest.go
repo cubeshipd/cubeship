@@ -67,4 +67,10 @@ type App struct {
 	Scale                                               *int
 	Spread                                              *bool
 	Autoscale                                           *Autoscale
+	Volumes                                             []Volume
+}
+
+// Volume is a directory inside an app's container that outlives it.
+type Volume struct {
+	Path string
 }

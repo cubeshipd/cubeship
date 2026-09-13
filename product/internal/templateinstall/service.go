@@ -48,7 +48,9 @@ type Apps interface {
 	MergeEnv(ctx context.Context, caller *user.User, ref app.Reference, set envvar.Map, unset []string) (*app.Scoped, error)
 	Deploy(ctx context.Context, caller *user.User, ref app.Reference, tag string) (*app.Scoped, *app.Deployment, error)
 	WaitForDeployment(ctx context.Context, caller *user.User, ref app.Reference, deploymentID int64) (*app.Deployment, error)
-	Delete(ctx context.Context, caller *user.User, ref app.Reference) (*app.Scoped, error)
+	DeleteApp(ctx context.Context, caller *user.User, ref app.Reference, deleteVolumeData bool) (*app.Scoped, error)
+	AddVolume(ctx context.Context, caller *user.User, ref app.Reference, containerPath string) (*app.Volume, error)
+	RemoveVolume(ctx context.Context, caller *user.User, ref app.Reference, volumeID int64, deleteData bool) error
 	HostTaken(ctx context.Context, host string) (bool, error)
 	Env(ctx context.Context, caller *user.User, ref app.Reference) (envvar.Map, []envvar.Resolved, error)
 	List(ctx context.Context, caller *user.User) ([]*app.Scoped, error)

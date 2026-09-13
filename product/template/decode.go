@@ -17,7 +17,8 @@ var keySets = map[string][]string{
 	"database": {"key", "name", "engine", "version", "username", "database", "expose", "limits"},
 	"store":    {"key", "name", "version", "buckets", "limits"},
 	"app": {"key", "name", "image", "tag", "repo", "ref", "build", "dockerfile", "port", "health",
-		"domains", "attach", "env", "limits", "scale", "spread", "autoscale"},
+		"domains", "attach", "env", "limits", "scale", "spread", "autoscale", "volumes"},
+	"volume":    {"path"},
 	"domain":    {"host", "port"},
 	"attach":    {"database", "store", "bucket", "prefix"},
 	"limits":    {"cpu", "memory"},
@@ -276,6 +277,16 @@ func (d *decoder) app(n *yaml.Node, path []any) App {
 			}
 			a.Autoscale = &as
 		}
+	}
+	for i, vn := range d.list(f, path, "volumes") {
+		p := child(child(path, "volumes"), i)
+		vf := d.object(vn, p, keySets["volume"], keySets["volume"])
+		if vf == nil {
+			continue
+		}
+		var v Volume
+		v.Path, _ = d.str(vf, p, "path", true, nil)
+		a.Volumes = append(a.Volumes, v)
 	}
 	return a
 }

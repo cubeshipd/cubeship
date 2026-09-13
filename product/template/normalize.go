@@ -114,7 +114,12 @@ type NormalizedApp struct {
 	Scale        *int                 `json:"scale"`
 	Spread       bool                 `json:"spread"`
 	Autoscale    *NormalizedAutoscale `json:"autoscale"`
+	Volumes      []NormalizedVolume   `json:"volumes"`
 	InternalHost string               `json:"internal_host"`
+}
+
+type NormalizedVolume struct {
+	Path string `json:"path"`
 }
 
 func orNil(s string) *string {
@@ -212,6 +217,11 @@ func normalize(m Manifest) Normalized {
 				lo = *as.Min
 			}
 			na.Autoscale = &NormalizedAutoscale{Min: lo, Max: as.Max, CPU: as.CPU}
+		}
+		na.Volumes = []NormalizedVolume{}
+		for _, v := range a.Volumes {
+			clean, _ := volumePath(v.Path)
+			na.Volumes = append(na.Volumes, NormalizedVolume{Path: clean})
 		}
 		n.Apps = append(n.Apps, na)
 	}

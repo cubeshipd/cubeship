@@ -495,6 +495,21 @@
               "cpu"
             ],
             "additionalProperties": false
+          },
+          "volumes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path"
+              ],
+              "additionalProperties": false
+            }
           }
         },
         "required": [

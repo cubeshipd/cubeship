@@ -1,4 +1,4 @@
-import { Box, Database, HardDrive } from "lucide-react";
+import { Box, Database, FolderLock, HardDrive } from "lucide-react";
 import type { ReactNode } from "react";
 import type { NormalizedApp, NormalizedManifest } from "@/lib/manifest";
 
@@ -45,6 +45,16 @@ export function Preview({ manifest }: { manifest: NormalizedManifest }) {
           detail={store.buckets.length > 0 ? store.buckets.join(", ") : "Object storage"}
         />
       ))}
+      {manifest.apps.flatMap((app) =>
+        (app.volumes ?? []).map((volume) => (
+          <Row
+            key={`volume-${app.key}-${volume.path}`}
+            icon={<FolderLock />}
+            name={volume.path}
+            detail={`Volume of ${app.name}`}
+          />
+        )),
+      )}
     </div>
   );
 }

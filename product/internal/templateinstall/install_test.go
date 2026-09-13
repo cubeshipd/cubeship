@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"maps"
 	"net/url"
@@ -303,12 +304,32 @@ func (f fakeApps) WaitForDeployment(_ context.Context, _ *user.User, _ app.Refer
 	return &app.Deployment{ID: id, Status: app.DeploymentSucceeded}, nil
 }
 
-func (f fakeApps) Delete(_ context.Context, _ *user.User, ref app.Reference) (*app.Scoped, error) {
+func (f fakeApps) DeleteApp(_ context.Context, _ *user.User, ref app.Reference, deleteVolumeData bool) (*app.Scoped, error) {
 	f.mu.Lock()
+	hadVolumes := f.apps[ref.String()] != nil && len(f.apps[ref.String()].Volumes) > 0
 	delete(f.apps, ref.String())
 	f.mu.Unlock()
-	f.did("delete app " + ref.String())
+	if deleteVolumeData && hadVolumes {
+		f.did("delete app " + ref.String() + " and its volume data")
+	} else {
+		f.did("delete app " + ref.String())
+	}
 	return &app.Scoped{}, nil
+}
+
+func (f fakeApps) AddVolume(_ context.Context, _ *user.User, ref app.Reference, containerPath string) (*app.Volume, error) {
+	f.mu.Lock()
+	a := f.apps[ref.String()]
+	v := app.Volume{ID: int64(len(a.Volumes) + 1), Path: containerPath}
+	a.Volumes = append(a.Volumes, v)
+	f.mu.Unlock()
+	f.did("add volume " + containerPath + " to " + ref.String())
+	return &v, nil
+}
+
+func (f fakeApps) RemoveVolume(_ context.Context, _ *user.User, ref app.Reference, id int64, deleteData bool) error {
+	f.did(fmt.Sprintf("remove volume %d from %s", id, ref))
+	return nil
 }
 
 func (f fakeApps) HostTaken(_ context.Context, host string) (bool, error) {

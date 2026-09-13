@@ -183,3 +183,26 @@ above.
 | `autoscale.cpu` | — | Required with `autoscale`. A target above `0`, where `100` means one whole core. |
 
 `limits` and `stores`/`databases`' own `limits` share the same shape.
+
+### Volumes
+
+```yaml
+apps:
+  - key: broker
+    image: rabbitmq
+    volumes:
+      - path: /var/lib/rabbitmq
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `volumes[].path` | — | An absolute path inside the container whose contents survive deploys and restarts. Not `/`, not under `/proc`, `/sys` or `/dev`. |
+
+A volume is for software that keeps its state in files — a queue, a
+search index. **An app with a volume runs as one copy on one machine**,
+so `scale`, `spread` and `autoscale` are refused beside it, and each
+deploy stops the old container before starting the new one: the app is
+briefly unavailable. A template with a volume needs `minCubeship: "0.7.0"`
+or later, so an older instance refuses it instead of installing it
+without its data surviving. Uninstalling keeps volume data unless
+whoever uninstalls says otherwise.

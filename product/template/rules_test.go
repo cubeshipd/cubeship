@@ -51,6 +51,16 @@ func TestHealthPathsAgreeWithTheDaemon(t *testing.T) {
 	}
 }
 
+func TestVolumePathsAgreeWithTheDaemon(t *testing.T) {
+	for _, p := range []string{"/data", "/data/", "data", "/", "/proc", "/procs", "/sys/x", "/dev", "/a:b", "/a,b", " /x/../y "} {
+		clean, err := app.CleanVolumePath(p)
+		ours, problem := volumePath(p)
+		if (err == nil) != (problem == "") || (err == nil && clean != ours) {
+			t.Errorf("%q: the daemon says %q, %v; templates say %q, %q", p, clean, err, ours, problem)
+		}
+	}
+}
+
 // The published schema is a file, not generated, so it is checked
 // against the keys the decoder actually accepts.
 func TestJSONSchemaMatchesTheDecoder(t *testing.T) {

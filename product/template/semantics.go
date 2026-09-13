@@ -2,6 +2,7 @@ package template
 
 import (
 	"fmt"
+	"path"
 	"slices"
 	"strings"
 )
@@ -230,6 +231,33 @@ func checkSemantics(m Manifest, doc *document) []Diagnostic {
 
 		c.limits(a.Limits, at("limits"))
 
+		paths := map[string]bool{}
+		for x, v := range a.Volumes {
+			clean, problem := volumePath(v.Path)
+			if problem != "" {
+				c.error("volume.path", problem, at("volumes", x, "path"), "")
+				continue
+			}
+			if paths[clean] {
+				c.error("volume.duplicate", "two volumes of this app are at "+clean, at("volumes", x, "path"), "")
+			}
+			paths[clean] = true
+		}
+		if len(a.Volumes) > 0 {
+			if (a.Scale != nil && *a.Scale > 1) || (a.Spread != nil && *a.Spread) || a.Autoscale != nil {
+				c.error("volume.one-copy", "an app with a volume runs as one copy on one machine: drop scale, spread and autoscale",
+					at("volumes"), "a volume's data is on one machine, and two copies writing it corrupt it")
+			}
+			if m.MinCubeship == "" || slices.ContainsFunc(withoutVolumes, func(v string) bool {
+				ok, _ := Satisfies(m.MinCubeship, v)
+				return ok
+			}) {
+				c.error("volume.min-cubeship", "a template with a volume needs a minCubeship that "+
+					"excludes releases before volumes, or an older instance installs it without its data surviving",
+					at("volumes"), `set minCubeship: "`+volumesSince+`"`)
+			}
+		}
+
 		if as := a.Autoscale; as != nil {
 			lo := 1
 			if as.Min != nil {
@@ -248,6 +276,37 @@ func checkSemantics(m Manifest, doc *document) []Diagnostic {
 	}
 
 	return c.found
+}
+
+// volumesSince is the first release whose instances mount volumes.
+const volumesSince = "0.7.0"
+
+// withoutVolumes are the newest releases that do not: a minCubeship either
+// satisfies installs on an instance that would drop the volume. Two,
+// because a range leaves prereleases out unless it names one — ">=0.6.0"
+// is not satisfied by 0.7.0-rc.5, and is by any 0.6.
+var withoutVolumes = []string{"0.6.999", "0.7.0-rc.5"}
+
+// reservedMounts are paths a container gets from the kernel. The daemon's
+// app.CleanVolumePath refuses the same, which rules_test holds it to.
+var reservedMounts = []string{"/proc", "/sys", "/dev"}
+
+// volumePath is a volume's path cleaned, or why it is not one.
+func volumePath(p string) (string, string) {
+	p = strings.TrimSpace(p)
+	if !strings.HasPrefix(p, "/") || strings.ContainsAny(p, ":,\x00") {
+		return "", "a volume path is absolute inside the container, without a colon or a comma"
+	}
+	clean := path.Clean(p)
+	if clean == "/" {
+		return "", "a volume cannot be the container's root"
+	}
+	for _, reserved := range reservedMounts {
+		if clean == reserved || strings.HasPrefix(clean, reserved+"/") {
+			return "", "a volume cannot be under " + reserved + ", which the kernel provides"
+		}
+	}
+	return clean, ""
 }
 
 type checker struct {

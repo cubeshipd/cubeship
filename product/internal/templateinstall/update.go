@@ -57,10 +57,12 @@ type appChange struct {
 	env      []string
 	domains  []template.NormalizedDomain
 	attach   []template.NormalizedAttach
+	volumes  []template.NormalizedVolume
 }
 
 func (c *appChange) empty() bool {
-	return !c.source && !c.settings && len(c.env) == 0 && len(c.domains) == 0 && len(c.attach) == 0
+	return !c.source && !c.settings && len(c.env) == 0 && len(c.domains) == 0 && len(c.attach) == 0 &&
+		len(c.volumes) == 0
 }
 
 // updatePlan is a release compared with what is installed.
@@ -381,6 +383,13 @@ func compareApp(old, a template.NormalizedApp) *appChange {
 			ch.attach = append(ch.attach, at)
 		}
 	}
+	// Added, never removed: a volume a release no longer declares keeps its
+	// data, as every other resource an update drops stays.
+	for _, v := range a.Volumes {
+		if !slices.ContainsFunc(old.Volumes, func(o template.NormalizedVolume) bool { return o.Path == v.Path }) {
+			ch.volumes = append(ch.volumes, v)
+		}
+	}
 	return ch
 }
 
@@ -543,6 +552,9 @@ func (up *updatePlan) describeWiring() {
 				name = up.storeName(at.Key)
 			}
 			up.change(ActionCreate, KindAttachment, name, "to "+ref)
+		}
+		for _, v := range ch.volumes {
+			up.change(ActionCreate, KindVolume, v.Path, "on "+ref+"; it runs as one copy from here on")
 		}
 	}
 }
