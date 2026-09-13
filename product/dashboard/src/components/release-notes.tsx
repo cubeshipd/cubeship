@@ -1,6 +1,14 @@
 "use client";
 
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -41,6 +49,10 @@ export function ReleaseNotes({ children }: { children?: ReactNode }) {
   // what is new and marks it read; the second is the history, and
   // reading it again is not an event.
   const [asked, setAsked] = useState(false);
+  // Where focus lands when it opens. The dialog's default is the first
+  // focusable element, which is a link somewhere down the notes, so it
+  // opened scrolled to an old release instead of the newest.
+  const notesRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api
@@ -100,7 +112,10 @@ export function ReleaseNotes({ children }: { children?: ReactNode }) {
           footer stay put and the notes scroll between them. Grid gave
           one tall box, so the button that dismisses this was below the
           fold of a long release. */}
-        <DialogContent className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl">
+        <DialogContent
+          initialFocus={notesRef}
+          className="flex max-h-[85vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-2xl"
+        >
           <DialogHeader className="shrink-0 border-border border-b p-4 pr-12">
             <DialogTitle>
               {asked
@@ -118,7 +133,11 @@ export function ReleaseNotes({ children }: { children?: ReactNode }) {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="min-w-0 flex-1 space-y-8 overflow-y-auto p-4">
+          <div
+            ref={notesRef}
+            tabIndex={-1}
+            className="min-w-0 flex-1 space-y-8 overflow-y-auto p-4 outline-none"
+          >
             {pending.map((note) => (
               <section key={note.version} className="space-y-3">
                 {many && (
