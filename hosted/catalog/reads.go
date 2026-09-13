@@ -24,16 +24,19 @@ type ReleaseRef struct {
 // Summary is a template as the catalog lists it: its repository and the
 // newest release that was accepted.
 type Summary struct {
-	Owner       string     `json:"owner"`
-	Name        string     `json:"name"`
-	Title       string     `json:"title"`
-	Description string     `json:"description"`
-	URL         string     `json:"url"`
-	Stars       int        `json:"stars"`
-	Tags        []string   `json:"tags"`
-	AvatarURL   string     `json:"avatar_url"`
-	IconURL     *string    `json:"icon_url"`
-	Release     ReleaseRef `json:"release"`
+	Owner       string   `json:"owner"`
+	Name        string   `json:"name"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	URL         string   `json:"url"`
+	Stars       int      `json:"stars"`
+	Tags        []string `json:"tags"`
+	AvatarURL   string   `json:"avatar_url"`
+	IconURL     *string  `json:"icon_url"`
+	// Verified is a template published by an owner the catalog vouches
+	// for — Cubeship's own organization, by default.
+	Verified bool       `json:"verified"`
+	Release  ReleaseRef `json:"release"`
 
 	RepositoryID int64 `json:"-"`
 	HasIcon      bool  `json:"-"`

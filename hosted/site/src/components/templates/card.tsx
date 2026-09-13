@@ -3,6 +3,7 @@ import Link from "next/link";
 import { avatarAt } from "@/lib/avatar";
 import type { TemplateSummary } from "@/lib/catalog";
 import { formatDate } from "@/lib/dates";
+import { VerifiedBadge } from "./verified";
 
 export function TemplateCard({ template }: { template: TemplateSummary }) {
   const updated = new Date(template.release.published_at);
@@ -14,7 +15,10 @@ export function TemplateCard({ template }: { template: TemplateSummary }) {
       <div className="flex items-start gap-3">
         <TemplateIcon src={template.icon_url} className="size-12" />
         <div className="min-w-0">
-          <h3 className="truncate font-medium text-fd-foreground">{template.title}</h3>
+          <h3 className="flex items-center gap-1.5 font-medium text-fd-foreground">
+            <span className="truncate">{template.title}</span>
+            {template.verified ? <VerifiedBadge className="size-4" /> : null}
+          </h3>
           <p className="truncate font-mono text-subtle-foreground text-xs">
             {template.owner}/{template.name}
           </p>

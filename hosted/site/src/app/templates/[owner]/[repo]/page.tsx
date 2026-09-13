@@ -7,6 +7,7 @@ import { TemplateIcon } from "@/components/templates/card";
 import { Preview } from "@/components/templates/preview";
 import { Readme } from "@/components/templates/readme";
 import { SourceBlock } from "@/components/templates/source-block";
+import { VerifiedBadge } from "@/components/templates/verified";
 import { avatarAt } from "@/lib/avatar";
 import { releasesOf, templateByPath } from "@/lib/catalog";
 import { formatDate } from "@/lib/dates";
@@ -49,8 +50,9 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
       <header className="flex items-center gap-4">
         <TemplateIcon src={found.icon_url} className="size-16" />
         <div className="min-w-0">
-          <h1 className="font-semibold text-3xl text-fd-foreground tracking-tight">
+          <h1 className="flex items-center gap-2 font-semibold text-3xl text-fd-foreground tracking-tight">
             {found.title}
+            {found.verified ? <VerifiedBadge className="size-6" /> : null}
           </h1>
           <p className="mt-1 max-w-3xl text-fd-muted-foreground">{found.description}</p>
         </div>

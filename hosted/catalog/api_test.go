@@ -50,7 +50,7 @@ func (f *fakeReader) Icon(_ context.Context, id int64, commit string) ([]byte, e
 func serve(t *testing.T, reader Reader, path string) *httptest.ResponseRecorder {
 	t.Helper()
 	mux := http.NewServeMux()
-	(&API{Reader: reader, PublicURL: "https://cubeship.dev/api/v1", Log: quietLog()}).Routes(mux)
+	(&API{Reader: reader, PublicURL: "https://cubeship.dev/api/v1", VerifiedOwners: []string{"cubeshipd"}, Log: quietLog()}).Routes(mux)
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 	return rec
@@ -95,6 +95,23 @@ func TestListingPassesTheQueryAndFillsIconURLs(t *testing.T) {
 	}
 	if strings.Contains(rec.Body.String(), "RepositoryID") {
 		t.Error("an internal field leaked into the response")
+	}
+}
+
+func TestOnlyAVouchedForOwnerIsVerified(t *testing.T) {
+	stranger := umamiSummary()
+	stranger.Owner = "someone"
+	ours := umamiSummary()
+	ours.Owner = "CubeshipD"
+	rec := serve(t, &fakeReader{list: []Summary{ours, stranger}}, "/v1/templates")
+	var body struct {
+		Templates []struct {
+			Verified bool `json:"verified"`
+		} `json:"templates"`
+	}
+	json.Unmarshal(rec.Body.Bytes(), &body)
+	if len(body.Templates) != 2 || !body.Templates[0].Verified || body.Templates[1].Verified {
+		t.Errorf("body = %s", rec.Body)
 	}
 }
 

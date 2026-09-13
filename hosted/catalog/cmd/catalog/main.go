@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -49,7 +50,12 @@ func main() {
 
 	st := &status{}
 	mux := http.NewServeMux()
-	(&catalog.API{Reader: store, PublicURL: envOr("CATALOG_PUBLIC_URL", "https://cubeship.dev/api/v1"), Log: logger}).Routes(mux)
+	(&catalog.API{
+		Reader:         store,
+		PublicURL:      envOr("CATALOG_PUBLIC_URL", "https://cubeship.dev/api/v1"),
+		VerifiedOwners: strings.Split(envOr("CATALOG_VERIFIED_OWNERS", "cubeshipd"), ","),
+		Log:            logger,
+	}).Routes(mux)
 	mux.Handle("GET /healthz", st)
 	server := &http.Server{Addr: ":" + envOr("PORT", "8080"), Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 	go func() {

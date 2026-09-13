@@ -26,6 +26,7 @@ export type TemplateSummary = {
   tags: string[];
   avatar_url: string;
   icon_url: string | null;
+  verified: boolean;
   release: ReleaseRef;
 };
 

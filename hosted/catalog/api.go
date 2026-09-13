@@ -30,7 +30,10 @@ type API struct {
 	// PublicURL is where /v1 is reached from outside, and what the icon
 	// URLs in a response start with: https://cubeship.dev/api/v1.
 	PublicURL string
-	Log       *log.Logger
+	// VerifiedOwners are the GitHub owners whose templates are marked
+	// verified, compared without case.
+	VerifiedOwners []string
+	Log            *log.Logger
 }
 
 // Routes mounts every /v1 route on mux.
@@ -90,7 +93,7 @@ func (a *API) list(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for i := range found {
-		a.withIcon(&found[i])
+		a.decorate(&found[i])
 	}
 	body := struct {
 		Templates  []Summary `json:"templates"`
@@ -115,7 +118,7 @@ func (a *API) template(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, http.StatusNotFound, "not_found", "no template is listed at that address")
 		return
 	}
-	a.withIcon(&d.Summary)
+	a.decorate(&d.Summary)
 	a.write(w, shortCache, d)
 }
 
@@ -192,9 +195,15 @@ func (a *API) icon(w http.ResponseWriter, r *http.Request) {
 	w.Write(icon)
 }
 
-// withIcon fills the icon's address. The path carries the commit, so it
-// never changes content and is cached forever.
-func (a *API) withIcon(s *Summary) {
+// decorate fills what the API knows and the database does not: the
+// icon's address, whose path carries the commit so it never changes
+// content, and whether the owner is one the catalog vouches for.
+func (a *API) decorate(s *Summary) {
+	for _, owner := range a.VerifiedOwners {
+		if strings.EqualFold(owner, s.Owner) {
+			s.Verified = true
+		}
+	}
 	if !s.HasIcon {
 		return
 	}
