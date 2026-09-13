@@ -87,6 +87,12 @@ function Body() {
             sub="Update this instance every day at a time you choose. It replaces the daemon, the dashboard and every other machine in this cluster; your apps and databases keep running, and nothing can be changed here for the minute or so it takes."
           />
           <AutoUpdate settings={current} onSaved={setCurrent} />
+
+          <SectionHeader
+            title="Release candidates"
+            sub="Be offered a release before it is stable, to try what is coming. Automatic updates stay on stable releases either way."
+          />
+          <ReleaseCandidates settings={current} onSaved={setCurrent} />
         </TabsContent>
 
         {/* The instance backing itself up. Here rather than under
@@ -97,6 +103,54 @@ function Body() {
         </TabsContent>
       </Tabs>
     </>
+  );
+}
+
+// ReleaseCandidates saves as it is flipped: one switch with a Save
+// button under it is a second click that confirms nothing.
+function ReleaseCandidates({
+  settings,
+  onSaved,
+}: {
+  settings: Settings;
+  onSaved: (s: Settings) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  return (
+    <Card>
+      <CardContent className="space-y-4">
+        <ErrorAlert error={error} />
+        <div className="flex items-start gap-3">
+          <Switch
+            id="release-candidates"
+            checked={!!settings.release_candidates}
+            disabled={busy}
+            onCheckedChange={async (v) => {
+              setBusy(true);
+              setError(null);
+              try {
+                onSaved(await api.put<Settings>("/settings", { release_candidates: v === true }));
+              } catch (err) {
+                setError(message(err));
+              } finally {
+                setBusy(false);
+              }
+            }}
+            className="mt-0.5"
+          />
+          <label
+            htmlFor="release-candidates"
+            className="text-xs leading-relaxed text-muted-foreground"
+          >
+            Receive release candidates. A candidate may still have bugs. Turning this off later
+            keeps this instance where it is until a newer stable release comes out — it never goes
+            back a version.
+          </label>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

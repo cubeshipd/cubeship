@@ -177,6 +177,15 @@ is not something anybody can plan around. It takes a timezone, because
 releases only: an instance left to update itself must not wander onto a
 release candidate.
 
+**Release candidates are offered only to an instance that asked.**
+`settings.ReleaseCandidates`, a switch under Settings → Updates, makes
+the check offer the newest release whether it is a candidate or not; off,
+which is the default, it offers stable releases only. It changes what a
+person is offered and nothing else — the scheduler passes `false` to
+`Newer` whatever the switch says. Turning it off on a candidate never
+goes back a version: the instance stays where it is until a stable
+release above it exists, which `Newer` offers either way.
+
 **This is the one thing here that reaches the internet.** A build knows
 every release up to its own and by definition nothing about the one
 after — the changelog is carried so a dialog works behind a firewall,

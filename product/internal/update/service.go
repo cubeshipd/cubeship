@@ -55,6 +55,10 @@ type Service struct {
 	daemonImage, frontendImage string
 	// client is how releases are looked up. Replaceable for a test.
 	client *http.Client
+	// candidates says whether the check offers release candidates —
+	// settings.ReleaseCandidates, read on each check so flipping the
+	// switch changes the next answer. Nil is stable only.
+	candidates func(context.Context) bool
 
 	// running guards against two updates at once from one process. The
 	// file guards against everything else — a second daemon, a browser
@@ -73,6 +77,10 @@ func NewService(dataDir string, d Docker, version, daemon, daemonImage, frontend
 
 // SetCluster wires in the machines. Called once, by server.New.
 func (s *Service) SetCluster(c Cluster) { s.cluster = c }
+
+// SetCandidates wires in whether the check offers release candidates.
+// Called once, by server.New.
+func (s *Service) SetCandidates(f func(context.Context) bool) { s.candidates = f }
 
 // SetClient replaces how releases are looked up. For a test.
 func (s *Service) SetClient(c *http.Client) { s.client = c }
@@ -103,7 +111,8 @@ func (s *Service) Current() *Run {
 type State struct {
 	// Version is what this instance is running.
 	Version string
-	// Available is a newer stable release, or nil. Nil is also what an
+	// Available is a newer release — stable, or a candidate when the
+	// instance asked for those — or nil. Nil is also what an
 	// instance that could not reach GitHub answers — see Checked.
 	Available *Available
 	// Checked says the lookup happened. False with a nil Available is
@@ -127,7 +136,7 @@ func (s *Service) Check(ctx context.Context, caller *user.User) (State, error) {
 	if s.version == "" {
 		return out, nil
 	}
-	newer, err := Newer(ctx, s.client, s.version)
+	newer, err := Newer(ctx, s.client, s.version, s.candidates != nil && s.candidates(ctx))
 	if err != nil {
 		// Not an error to the caller: an instance that cannot reach
 		// GitHub is a normal instance, and a red banner about it on

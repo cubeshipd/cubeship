@@ -42,35 +42,42 @@ type Available struct {
 	Prerelease bool `json:"prerelease,omitempty"`
 }
 
-// Newer is the newest stable release above current, or nil.
+// Newer is the newest release above current, or nil.
 //
-// **Prereleases are skipped.** Somebody running a candidate asked for
-// it by name, and nobody on a stable release should be offered one by a
-// button that says "update".
-func Newer(ctx context.Context, client *http.Client, current string) (*Available, error) {
+// **Prereleases are skipped unless candidates is set** — the instance's
+// own choice, `settings.ReleaseCandidates`. Nobody on a stable release
+// should be offered a candidate by a button that says "update" without
+// having asked for them. A stable release above a candidate is offered
+// either way, which is how somebody who turned candidates off again gets
+// back onto stable.
+func Newer(ctx context.Context, client *http.Client, current string, candidates bool) (*Available, error) {
 	all, err := list(ctx, client)
 	if err != nil {
 		return nil, err
 	}
+	return newest(all, current, candidates), nil
+}
+
+func newest(all []Available, current string, candidates bool) *Available {
 	current = release.Normalize(current)
 	if current == "" {
 		// A build with nothing stamped on it cannot be compared to
 		// anything, and offering it "the newest release" would be
 		// offering to replace somebody's own build with a published
 		// one.
-		return nil, nil
+		return nil
 	}
 	var best *Available
 	for i := range all {
 		r := all[i]
-		if r.Prerelease || release.Compare(r.Version, current) <= 0 {
+		if (r.Prerelease && !candidates) || release.Compare(r.Version, current) <= 0 {
 			continue
 		}
 		if best == nil || release.Compare(r.Version, best.Version) > 0 {
 			best = &r
 		}
 	}
-	return best, nil
+	return best
 }
 
 // Find is one release by version, prerelease or not.

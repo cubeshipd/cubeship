@@ -89,6 +89,7 @@ export const db = {
     github_oauth_ready: true,
     auto_update_at: "03:00",
     auto_update_timezone: "America/Sao_Paulo",
+    release_candidates: false,
   } as Settings,
 
   // The catalog, as cubeship.dev lists it. Icons are left out: the

@@ -100,9 +100,10 @@ func (s *Scheduler) when(ctx context.Context) (string, *time.Location) {
 
 // once updates if there is anything to update to.
 //
-// **Stable releases only**, which is what Newer answers: an instance
-// left to update itself must not wander onto a release candidate at
-// three in the morning.
+// **Stable releases only**, whatever settings.ReleaseCandidates says:
+// that setting is about what a person is offered, and an instance left
+// to update itself must not wander onto a release candidate at three in
+// the morning.
 //
 // The caller is the instance itself, so it passes an admin that is not
 // anybody: this is machinery, and the authorization on updating lives
@@ -111,7 +112,7 @@ func (s *Scheduler) once(ctx context.Context) {
 	if r := s.Updates.Current(); r.Running() {
 		return
 	}
-	newer, err := Newer(ctx, s.Updates.client, s.Updates.Version())
+	newer, err := Newer(ctx, s.Updates.client, s.Updates.Version(), false)
 	if err != nil {
 		log.Printf("auto-update: checking for a newer release: %v", err)
 		return

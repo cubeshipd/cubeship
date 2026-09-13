@@ -90,6 +90,7 @@ const routes: [string, string, Handler][] = [
   ["GET", "/users/me/api-keys", () => db.apiKeys],
   ["GET", "/settings", () => db.settings],
   ["PATCH", "/settings", (_p, body) => Object.assign(db.settings, body as Row)],
+  ["PUT", "/settings", (_p, body) => Object.assign(db.settings, body as Row)],
   ["GET", "/updates", () => db.updates],
   ["GET", "/release", () => ({ version: db.updates.current, notes: "", seen: true })],
 

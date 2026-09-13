@@ -74,6 +74,15 @@ const (
 	// number mean anything.
 	AutoUpdateTimezone = "auto_update_timezone"
 
+	// ReleaseCandidates is "true" when the update check offers release
+	// candidates as well as stable releases. Empty is stable only.
+	//
+	// It changes what is offered and nothing else: automatic updating
+	// stays on stable releases whatever this says, because a candidate is
+	// something somebody chooses to try, not something that should arrive
+	// on its own at three in the morning.
+	ReleaseCandidates = "release_candidates"
+
 	// ACMEEmail is the contact address Let's Encrypt registers.
 	//
 	// Without it Traefik has no certificate resolver, so apps are served
@@ -126,6 +135,7 @@ var known = map[string]string{
 	ACMEEmail:           "Contact address for Let's Encrypt. Optional: certificates are issued as soon as there is a domain.",
 	AutoUpdateAt:        "When this instance updates itself, as HH:MM. Empty is off. Only stable releases, and only when there is one: an instance already on the newest does nothing.",
 	AutoUpdateTimezone:  "What auto_update_at is in, as an IANA timezone like Europe/Lisbon. Empty is UTC, which is a server's clock rather than anybody's night.",
+	ReleaseCandidates:   "\"true\" to be offered release candidates as well as stable releases. Automatic updating stays on stable releases either way.",
 	PublicIP:            "What this instance's DNS records should point at. Empty means work it out — the address the dashboard is opened at, or the machine's own — which is right on a VPS and has no answer behind NAT. A private address is never the answer: one of those in a record is a domain that stops resolving.",
 	DNSProviderID:       "Which stored DNS credential writes this instance's own records. Empty means the operator keeps their DNS elsewhere and writes them by hand.",
 	GitHubAppID:         "The numeric id of the GitHub App this instance acts as.",
