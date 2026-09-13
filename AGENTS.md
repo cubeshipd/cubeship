@@ -36,8 +36,8 @@ re-made by accident.
 | Opening | Read |
 | --- | --- |
 | Anything under `product/dashboard/` | [dashboard.md](docs/design/product/dashboard.md) — the layers, the navigation, the components, the look |
-| Anything under `site/` | [site.md](docs/design/site/site.md) — cubeship.dev: the landing page, the docs, and where `install.sh` comes from |
-| The template registry in `site/` | [templates.md](docs/design/site/templates.md) — the template file, the validator, the registry it lives in, and what a template may never carry |
+| Anything under `hosted/site/` | [site.md](docs/design/hosted/site.md) — cubeship.dev: the landing page, the docs, and where `install.sh` comes from |
+| The template registry in `hosted/site/` | [templates.md](docs/design/hosted/templates.md) — the template file, the validator, the registry it lives in, and what a template may never carry |
 | `internal/node`, `internal/mesh`, `internal/worker` | [cluster.md](docs/design/product/cluster.md) — placement, replicas, the agent, the network between machines, the one front door, autoscaling, limits |
 | `internal/app` | [deploys.md](docs/design/product/deploys.md) — where an image comes from, the two builders, the GitHub App, who may build, what deleting takes |
 | `internal/datastore` | [datastores.md](docs/design/product/datastores.md) — the engines, attaching, exposing, what is fixed after creation |
@@ -66,15 +66,17 @@ product/        what a person installs — one Go module and the dashboard
                   container on the VPS
   tools/          changelog, sitedocs — run by make, never shipped
   test/           integration and installer tests
-site/           cubeship.dev — the landing page, the docs and the
-                template registry. Runs on one instance we operate
-docs/design/    product/ and site/, one file per area
+hosted/         what only we run, on one instance we operate — never
+                part of an install
+  site/           cubeship.dev — the landing page, the docs and the
+                  template catalogue
+docs/design/    product/ and hosted/, one file per area
 install.sh, uninstall.sh  stay at the root: the published install
                 command fetches `master/install.sh` by that path
 ```
 
 Every Dockerfile — `product/Dockerfile`, `product/dashboard/Dockerfile`,
-`site/Dockerfile` — is built with the **repository root** as its
+`hosted/site/Dockerfile` — is built with the **repository root** as its
 context, which is also how an instance builds an app whose Dockerfile is
 in a subdirectory.
 

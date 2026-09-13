@@ -111,7 +111,7 @@ the two drifted apart before this layout.
 
 **[AGENTS.md](AGENTS.md) is the conventions every change follows**, and
 it is worth reading before a first one. The long version is
-[docs/design/](docs/design), one file per area — `product/` for what an instance runs, `site/` for cubeship.dev: every decision in this
+[docs/design/](docs/design), one file per area — `product/` for what an instance runs, `hosted/` for cubeship.dev and what else only we run: every decision in this
 codebase is written down there with the reason it was made, including
 the ones that were made twice. AGENTS.md indexes them, and says which to
 open for what you are about to touch.

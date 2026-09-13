@@ -4,7 +4,7 @@ GO      ?= go
 BINDIR  ?= bin
 COVER   ?= coverage.out
 # The Go module — the daemon and the CLI — and the dashboard beside it:
-# everything an instance runs. site/ is cubeship.dev, which only we host.
+# everything an instance runs. hosted/ is what only we run, cubeship.dev among it.
 GODIR   ?= product
 WEBDIR  ?= $(GODIR)/dashboard
 PNPM    ?= pnpm
@@ -77,11 +77,11 @@ dashboard-preview: ## Run the dashboard on invented data, with no daemon behind 
 
 .PHONY: site-dev
 site-dev: ## Run cubeship.dev — the landing page and the docs — with hot reload
-	cd site && $(PNPM) run dev
+	cd hosted/site && $(PNPM) run dev
 
 .PHONY: site-test
 site-test: ## Run the site's unit tests
-	cd site && $(PNPM) test
+	cd hosted/site && $(PNPM) test
 
 .PHONY: site-db-up
 site-db-up: ## Start the site's Postgres for development, on 5434
@@ -110,7 +110,7 @@ image: ## Build the daemon's image, dashboard included
 
 .PHONY: site-image
 site-image: ## Build cubeship.dev's image
-	docker build -f site/Dockerfile -t cubeship-site:$(VERSION) .
+	docker build -f hosted/site/Dockerfile -t cubeship-site:$(VERSION) .
 
 # Releasing is a tag, and the rest is .github/workflows/release.yml:
 # both images for both architectures, the GitHub release with the notes
@@ -240,13 +240,13 @@ changelog-check: ## Fail if CHANGELOG.md is not what the release notes say
 # and `check` refuses it the way it refuses a stale changelog.
 .PHONY: reference
 reference: ## Write the CLI and MCP references into the site's docs
-	$(GO) -C $(GODIR) run ./cmd/cubeship docs ../site/content/docs/cli
-	$(GO) -C $(GODIR) run ./tools/sitedocs ../site/content/docs/mcp/tools.mdx
+	$(GO) -C $(GODIR) run ./cmd/cubeship docs ../hosted/site/content/docs/cli
+	$(GO) -C $(GODIR) run ./tools/sitedocs ../hosted/site/content/docs/mcp/tools.mdx
 
 .PHONY: reference-check
 reference-check: ## Fail if the site's references are not what the code says
-	$(GO) -C $(GODIR) run ./cmd/cubeship docs --check ../site/content/docs/cli
-	$(GO) -C $(GODIR) run ./tools/sitedocs -check ../site/content/docs/mcp/tools.mdx
+	$(GO) -C $(GODIR) run ./cmd/cubeship docs --check ../hosted/site/content/docs/cli
+	$(GO) -C $(GODIR) run ./tools/sitedocs -check ../hosted/site/content/docs/mcp/tools.mdx
 
 .PHONY: sh-check
 sh-check: ## Syntax-check the shell scripts

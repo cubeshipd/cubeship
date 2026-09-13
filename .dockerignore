@@ -7,7 +7,7 @@ bin
 dist
 product/dashboard/node_modules
 product/dashboard/.next
-site/node_modules
-site/.next
-site/.source
+hosted/site/node_modules
+hosted/site/.next
+hosted/site/.source
 coverage.out

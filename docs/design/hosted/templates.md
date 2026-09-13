@@ -6,7 +6,7 @@ writes them on cubeship.dev, signed in with GitHub. An instance consumes
 one; it never publishes one.
 
 **This document is the design agreed before any of it was built.** The
-registry lives entirely in `site/` — see [site.md](site.md) for what the
+registry lives entirely in `hosted/site/` — see [site.md](site.md) for what the
 site was before it held state. Nothing in the daemon changes in this
 pass; the half that applies a template to an instance is designed
 separately, against the API described here.

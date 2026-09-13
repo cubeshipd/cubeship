@@ -3,7 +3,7 @@ import type { NextConfig } from "next";
 
 const withMDX = createMDX();
 
-// The site runs as a container from a Next server (site/Dockerfile).
+// The site runs as a container from a Next server (hosted/site/Dockerfile).
 // standalone traces exactly the files the server needs, so the image
 // carries neither node_modules nor the toolchain that built it.
 const dev = process.env.NODE_ENV === "development";

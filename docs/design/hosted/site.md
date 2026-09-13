@@ -1,8 +1,8 @@
 # The site
 
-`site/` is cubeship.dev: the landing page at `/`, the docs under
+`hosted/site/` is cubeship.dev: the landing page at `/`, the docs under
 `/docs`, and `install.sh` at the root. A Next.js app of its own, built
-by Fumadocs' scaffold, shipped as its own image (`site/Dockerfile`,
+by Fumadocs' scaffold, shipped as its own image (`hosted/site/Dockerfile`,
 `make site-image`) and run as an app on a Cubeship instance — the
 product hosting its own front door. It is not part of the daemon's
 image and the daemon knows nothing about it.

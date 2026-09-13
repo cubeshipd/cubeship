@@ -1,6 +1,6 @@
 # cubeship.dev, as it ships: the landing page, the docs and /install.sh.
 #
-# Its own image, built from the repository root so `site/` is copied
+# Its own image, built from the repository root so `hosted/site/` is copied
 # the way `product/dashboard/` is in its Dockerfile, and run like any other app on a
 # Cubeship instance — a container answering on :3000 behind the proxy.
 # The docs are compiled in and the search index is built at request time
@@ -16,10 +16,10 @@ RUN corepack enable
 
 # The workspace file travels with the manifest and the lockfile because
 # it governs the install (see product/dashboard/Dockerfile for the failure it avoids).
-COPY site/package.json site/pnpm-lock.yaml site/pnpm-workspace.yaml ./
+COPY hosted/site/package.json hosted/site/pnpm-lock.yaml hosted/site/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
-COPY site/ ./
+COPY hosted/site/ ./
 RUN pnpm run build
 
 # `output: "standalone"` writes a server plus exactly the files Next
