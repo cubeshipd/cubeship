@@ -1,7 +1,7 @@
 import { generateOGImage } from "fumadocs-ui/og";
 import { notFound } from "next/navigation";
-import { appName } from "@/lib/shared";
 import { templateByPath } from "@/lib/catalog";
+import { appName } from "@/lib/shared";
 
 // Reads the catalog, so unlike the docs' own OG route this can never be
 // prerendered: there is no set of templates known at build time.

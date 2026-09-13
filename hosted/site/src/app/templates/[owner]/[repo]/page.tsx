@@ -8,8 +8,8 @@ import { Preview } from "@/components/templates/preview";
 import { Readme } from "@/components/templates/readme";
 import { SourceBlock } from "@/components/templates/source-block";
 import { avatarAt } from "@/lib/avatar";
-import { formatDate } from "@/lib/dates";
 import { releasesOf, templateByPath } from "@/lib/catalog";
+import { formatDate } from "@/lib/dates";
 
 // Reads the catalog, so this page can never be static.
 export const dynamic = "force-dynamic";
