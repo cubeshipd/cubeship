@@ -249,7 +249,7 @@ The catalog's image is `hosted/catalog/Dockerfile`, built from the
 repository root like every other. Its database tests take a schema per
 test in the Postgres `make db-up` runs and skip under `-short` like every
 other DB-backed test; `make check` runs the rest. Locally, `make
-site-db-up`, then `make catalog-dev` with a `GITHUB_TOKEN`, then `make
+catalog-db-up`, then `make catalog-dev` with a `GITHUB_TOKEN`, then `make
 site-dev` — the site's default `CATALOG_URL` is `make catalog-dev`'s.
 
 ## What is left for later

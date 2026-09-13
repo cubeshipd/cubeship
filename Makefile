@@ -87,21 +87,21 @@ site-test: ## Run the site's unit tests
 
 .PHONY: catalog-dev
 catalog-dev: ## Run the template catalog on :8080 against the local Postgres on 5434 (needs GITHUB_TOKEN)
-	cd $(CATALOGDIR) && DATABASE_URL="$${DATABASE_URL:-postgres://site:site@127.0.0.1:5434/site?sslmode=disable}" \
+	cd $(CATALOGDIR) && DATABASE_URL="$${DATABASE_URL:-postgres://catalog:catalog@127.0.0.1:5434/catalog?sslmode=disable}" \
 		CATALOG_PUBLIC_URL="$${CATALOG_PUBLIC_URL:-http://localhost:3002/api/v1}" $(GO) run ./cmd/catalog
 
 .PHONY: catalog-image
 catalog-image: ## Build the template catalog's image
 	docker build -f $(CATALOGDIR)/Dockerfile -t cubeship-catalog:$(VERSION) .
 
-.PHONY: site-db-up
-site-db-up: ## Start the site's Postgres for development, on 5434
-	docker run -d --rm --name cubeship-site-db -p 5434:5432 \
-		-e POSTGRES_PASSWORD=site -e POSTGRES_USER=site -e POSTGRES_DB=site postgres:18-alpine
+.PHONY: catalog-db-up
+catalog-db-up: ## Start the catalog's Postgres for development, on 5434
+	docker run -d --rm --name cubeship-catalog-db -p 5434:5432 \
+		-e POSTGRES_PASSWORD=catalog -e POSTGRES_USER=catalog -e POSTGRES_DB=catalog postgres:18-alpine
 
-.PHONY: site-db-down
-site-db-down: ## Stop it
-	docker stop cubeship-site-db
+.PHONY: catalog-db-down
+catalog-db-down: ## Stop it
+	docker stop cubeship-catalog-db
 
 .PHONY: install
 install: ## Install the CLI into GOBIN

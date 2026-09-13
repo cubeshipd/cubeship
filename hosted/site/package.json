@@ -10,8 +10,7 @@
     "typecheck": "next typegen && tsc --noEmit",
     "format": "biome check --write",
     "test": "vitest run",
-    "test:watch": "vitest",
-    "db:generate": "drizzle-kit generate"
+    "test:watch": "vitest"
   },
   "dependencies": {
     "cn": "^0.2.6",

@@ -24,7 +24,7 @@ yarn-error.log*
 .env*.local
 .vercel
 next-env.d.ts
-# Local secrets. `next dev` writes one of these holding a database URL.
+# Local secrets.
 .env
 .env.*
 !.env.example
