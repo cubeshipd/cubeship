@@ -2,6 +2,7 @@ package objectstore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -29,7 +30,7 @@ const (
 // one, linking one, re-pointing it, exposing it, deleting it. An
 // admin's, because it starts a container, claims disk nothing reclaims
 // on its own, and holds keys to somebody's account.
-const RoleToManage = user.RoleAdmin
+const RoleToManage = user.LevelManage
 
 // RoleForContents is the role every read and write of what is *in* a
 // store takes — listing a bucket, downloading a file, uploading one.
@@ -152,8 +153,11 @@ func (s *Service) UsesCredential(ctx context.Context, credentialID int64) ([]cre
 }
 
 // Resolve looks up a store by name and requires minRole of the caller.
-func (s *Service) Resolve(ctx context.Context, caller *user.User, name string, minRole user.Role) (*Store, error) {
-	if err := user.Require(caller, minRole); err != nil {
+func (s *Service) Resolve(ctx context.Context, caller *user.User, name string, need user.Level) (*Store, error) {
+	if err := user.Allow(caller, user.ResStorage, need, name); err != nil {
+		if errors.Is(err, user.ErrHidden) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 	store, err := s.Repo().BySlug(ctx, name)
@@ -188,7 +192,12 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Store, error)
 	if err != nil {
 		return nil, err
 	}
+	seen := all[:0]
 	for _, store := range all {
+		if !user.Sees(caller, user.ResStorage, store.Slug) {
+			continue
+		}
+		seen = append(seen, store)
 		store.Attachments = byStore[store.ID]
 	}
 	return all, nil
@@ -218,7 +227,7 @@ type ManagedSpec struct {
 // holding the request open for an image pull. The store comes back in
 // "provisioning"; how it went lands on the same row.
 func (s *Service) Create(ctx context.Context, caller *user.User, spec ManagedSpec) (*Store, error) {
-	if err := user.Require(caller, RoleToManage); err != nil {
+	if err := user.Allow(caller, user.ResStorage, RoleToManage, spec.Slug); err != nil {
 		return nil, err
 	}
 	if err := s.checkSlug(spec.Slug); err != nil {
@@ -333,7 +342,7 @@ type NewLogin struct {
 // first time somebody opens it, in the place where the provider's own
 // words can be shown.
 func (s *Service) Link(ctx context.Context, caller *user.User, spec LinkSpec, login *NewLogin) (*Store, error) {
-	if err := user.Require(caller, RoleToManage); err != nil {
+	if err := user.Allow(caller, user.ResStorage, RoleToManage, spec.Slug); err != nil {
 		return nil, err
 	}
 	if err := s.checkSlug(spec.Slug); err != nil {
@@ -605,8 +614,11 @@ type Credentials struct {
 // than a field on the store: everything else about one is worth listing
 // on a screen, and this is worth asking for.
 func (s *Service) Credentials(ctx context.Context, caller *user.User, name string) (Credentials, error) {
-	store, err := s.Resolve(ctx, caller, name, RoleToManage)
+	store, err := s.Resolve(ctx, caller, name, user.LevelView)
 	if err != nil {
+		return Credentials{}, err
+	}
+	if err := user.AllowSecrets(caller, user.ResStorage, name); err != nil {
 		return Credentials{}, err
 	}
 	region := store.Region
@@ -781,7 +793,7 @@ const DefaultLogTail = "500"
 // not an admin's privilege. It carries no key — MinIO prints its own
 // startup, not what it was configured with.
 func (s *Service) Logs(ctx context.Context, caller *user.User, name, tail string) (io.ReadCloser, error) {
-	store, err := s.Resolve(ctx, caller, name, user.RoleMember)
+	store, err := s.Resolve(ctx, caller, name, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -856,8 +868,18 @@ func (s *Service) managed(ctx context.Context, caller *user.User, name string) (
 // client resolves a store, requires the contents role, and opens a
 // connection to it. Every call below goes through it, so the
 // authorization question is asked once and in one place.
-func (s *Service) client(ctx context.Context, caller *user.User, name string) (*Store, Client, error) {
-	store, err := s.Resolve(ctx, caller, name, RoleForContents)
+func (s *Service) client(ctx context.Context, caller *user.User, name string, write bool) (*Store, Client, error) {
+	store, err := s.Resolve(ctx, caller, name, user.LevelView)
+	if err != nil {
+		return nil, nil, err
+	}
+	// What is in a bucket is data somebody put there: reading it is a
+	// secret, changing it is managing the store.
+	if write {
+		err = user.Allow(caller, user.ResStorage, user.LevelManage, name)
+	} else {
+		err = user.AllowSecrets(caller, user.ResStorage, name)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
@@ -875,7 +897,7 @@ func (s *Service) client(ctx context.Context, caller *user.User, name string) (*
 // is exactly what it is not allowed to do, so the call would fail for a
 // question this instance already knows the answer to.
 func (s *Service) Buckets(ctx context.Context, caller *user.User, name string) ([]Bucket, error) {
-	store, c, err := s.client(ctx, caller, name)
+	store, c, err := s.client(ctx, caller, name, false)
 	if err != nil {
 		return nil, err
 	}
@@ -887,7 +909,7 @@ func (s *Service) Buckets(ctx context.Context, caller *user.User, name string) (
 
 // CreateBucket makes one.
 func (s *Service) CreateBucket(ctx context.Context, caller *user.User, name, bucket string) error {
-	store, c, err := s.client(ctx, caller, name)
+	store, c, err := s.client(ctx, caller, name, true)
 	if err != nil {
 		return err
 	}
@@ -908,7 +930,7 @@ func (s *Service) CreateBucket(ctx context.Context, caller *user.User, name, buc
 // is the one mistake here nobody recovers from. Emptying it is a
 // separate act, one folder at a time, each with its own confirmation.
 func (s *Service) DeleteBucket(ctx context.Context, caller *user.User, name, bucket string) error {
-	store, c, err := s.client(ctx, caller, name)
+	store, c, err := s.client(ctx, caller, name, true)
 	if err != nil {
 		return err
 	}
@@ -921,7 +943,7 @@ func (s *Service) DeleteBucket(ctx context.Context, caller *user.User, name, buc
 // Browse is one level of one bucket: the folders directly under a
 // prefix and the objects directly in it.
 func (s *Service) Browse(ctx context.Context, caller *user.User, name, bucket, prefix, cursor string, limit int) (Listing, error) {
-	store, c, err := s.client(ctx, caller, name)
+	store, c, err := s.client(ctx, caller, name, false)
 	if err != nil {
 		return Listing{}, err
 	}
@@ -941,7 +963,7 @@ func (s *Service) Browse(ctx context.Context, caller *user.User, name, bucket, p
 // Upload writes one object. size may be -1 for a stream whose length is
 // not known, which is what an upload from a browser is.
 func (s *Service) Upload(ctx context.Context, caller *user.User, name, bucket, prefix, filename string, r io.Reader, size int64, contentType string) (string, error) {
-	store, c, err := s.client(ctx, caller, name)
+	store, c, err := s.client(ctx, caller, name, true)
 	if err != nil {
 		return "", err
 	}
@@ -972,7 +994,7 @@ func (s *Service) Upload(ctx context.Context, caller *user.User, name, bucket, p
 // so an empty folder is a convention, and this is the one every console
 // uses.
 func (s *Service) CreateFolder(ctx context.Context, caller *user.User, name, bucket, prefix, folder string) (string, error) {
-	store, c, err := s.client(ctx, caller, name)
+	store, c, err := s.client(ctx, caller, name, true)
 	if err != nil {
 		return "", err
 	}
@@ -1000,7 +1022,7 @@ func (s *Service) CreateFolder(ctx context.Context, caller *user.User, name, buc
 // two code paths where one of them is exercised on external stores only
 // is one that breaks quietly.
 func (s *Service) Download(ctx context.Context, caller *user.User, name, bucket, key string) (io.ReadCloser, Object, error) {
-	store, c, err := s.client(ctx, caller, name)
+	store, c, err := s.client(ctx, caller, name, false)
 	if err != nil {
 		return nil, Object{}, err
 	}
@@ -1015,7 +1037,7 @@ func (s *Service) Download(ctx context.Context, caller *user.User, name, bucket,
 
 // DeleteObject removes one file.
 func (s *Service) DeleteObject(ctx context.Context, caller *user.User, name, bucket, key string) error {
-	store, c, err := s.client(ctx, caller, name)
+	store, c, err := s.client(ctx, caller, name, true)
 	if err != nil {
 		return err
 	}
@@ -1036,7 +1058,7 @@ func (s *Service) DeleteObject(ctx context.Context, caller *user.User, name, buc
 // answer can say what actually happened — "deleted" over a prefix that
 // held four hundred files is worth being told about after the fact.
 func (s *Service) DeleteFolder(ctx context.Context, caller *user.User, name, bucket, prefix string) (int, error) {
-	store, c, err := s.client(ctx, caller, name)
+	store, c, err := s.client(ctx, caller, name, true)
 	if err != nil {
 		return 0, err
 	}

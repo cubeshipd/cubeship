@@ -194,7 +194,7 @@ func (h *Handler) authorizeScope(ctx scopeContext, caller *user.User, scope stri
 	// A repository is <project>/<environment>/<app>, so a key held to
 	// projects reaches only those images.
 	project, _, _ := strings.Cut(name, "/")
-	if !caller.SeesProject(project) {
+	if !user.Sees(caller, user.ResApps, project) {
 		return nil
 	}
 
@@ -203,7 +203,7 @@ func (h *Handler) authorizeScope(ctx scopeContext, caller *user.User, scope stri
 	// could ask for — and receive — a token for "delete".
 	var granted []string
 	for _, action := range strings.Split(actionsStr, ",") {
-		if !pushPullActions[action] || (action == "push" && !caller.CanWrite()) {
+		if !pushPullActions[action] || (action == "push" && user.Allow(caller, user.ResApps, user.LevelManage, project) != nil) {
 			continue
 		}
 		granted = append(granted, action)

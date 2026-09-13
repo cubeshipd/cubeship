@@ -77,7 +77,7 @@ func (s *Service) imagePath(id int64) string {
 // reads — so a write that dies in the middle leaves bytes nobody
 // serves rather than a row pointing at a file that is not there.
 func (s *Service) SetImage(ctx context.Context, caller *user.User, slug string, body io.Reader) error {
-	p, err := s.Resolve(ctx, caller, slug, user.RoleAdmin)
+	p, err := s.Resolve(ctx, caller, slug, user.LevelManage)
 	if err != nil {
 		return err
 	}
@@ -116,7 +116,7 @@ func (s *Service) SetImage(ctx context.Context, caller *user.User, slug string, 
 // A **member's**, unlike setting one: it is drawn on the projects grid,
 // which every member opens.
 func (s *Service) Image(ctx context.Context, caller *user.User, slug string) ([]byte, string, error) {
-	p, err := s.Resolve(ctx, caller, slug, user.RoleMember)
+	p, err := s.Resolve(ctx, caller, slug, user.LevelView)
 	if err != nil {
 		return nil, "", err
 	}
@@ -141,7 +141,7 @@ func (s *Service) Image(ctx context.Context, caller *user.User, slug string) ([]
 // is removed after, and a failure to remove it leaves bytes nobody
 // serves.
 func (s *Service) ClearImage(ctx context.Context, caller *user.User, slug string) error {
-	p, err := s.Resolve(ctx, caller, slug, user.RoleAdmin)
+	p, err := s.Resolve(ctx, caller, slug, user.LevelManage)
 	if err != nil {
 		return err
 	}

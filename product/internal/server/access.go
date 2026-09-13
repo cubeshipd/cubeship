@@ -1,216 +1,129 @@
 package server
 
 import (
-	"net/http"
-	"strings"
-
-	"cubeship/internal/platform/httpx"
 	"cubeship/internal/user"
 )
 
-// What an API key may reach, decided at the two doors rather than inside
-// each module.
+// What an MCP tool reaches, so a caller is offered only the tools its
+// access allows.
 //
-// Role is already lowered by user.Authenticate, and projects are checked
-// again where a project or an app is resolved. What only a door can
-// decide is whether a request is a read, whether it reads a secret, and
-// whether it is about a project at all — and a door is the one place a
-// route added later cannot slip past: every route and every tool below
-// is classified, and a test fails for one that is not.
-
-// secretRoutes are reads a read-only key never gets: they hand back
-// values somebody set, credentials, or whole files.
-var secretRoutes = map[string]bool{
-	"GET /apps/{project}/{env}/{name}/env":                   true,
-	"GET /projects/{projectSlug}/env":                        true,
-	"GET /projects/{projectSlug}/environments/{envSlug}/env": true,
-	"GET /datastores/{name}/credentials":                     true,
-	"GET /objectstores/{name}/credentials":                   true,
-	"GET /backups/{id}/download":                             true,
-	"GET /objectstores/{name}/buckets/{bucket}/download":     true,
-}
-
-// scopedRoutes are the routes a key held to projects keeps that name no
-// project in their path: the listings, filtered by the services, creating
-// an app, whose project the service resolves, and the key's own account.
-var scopedRoutes = map[string]bool{
-	"GET /projects":                  true,
-	"GET /apps":                      true,
-	"POST /apps":                     true,
-	"GET /users/me":                  true,
-	"PATCH /users/me":                true,
-	"PUT /users/me/password":         true,
-	"GET /users/me/api-keys":         true,
-	"POST /users/me/api-keys":        true,
-	"DELETE /users/me/api-keys/{id}": true,
-	"POST /users/me/api-key/rotate":  true,
-	"POST /auth/logout":              true,
-	"GET /releases":                  true,
-	"POST /releases/seen":            true,
-}
-
-// projectParams are the path values a project slug arrives in.
-var projectParams = []string{"project", "projectSlug"}
-
-// keyPolicy refuses what the request's API key does not allow. A session
-// passes untouched: it is the person, with all of their role.
-func keyPolicy(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		caller := user.FromContext(r.Context())
-		if caller == nil || caller.Key == nil {
-			next.ServeHTTP(w, r)
-			return
-		}
-		pattern := routeOf(r)
-		if status, err := allowRoute(caller, r, pattern); err != nil {
-			http.Error(w, err.Error(), status)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
-}
-
-func routeOf(r *http.Request) string {
-	return strings.Replace(r.Pattern, " "+httpx.APIPrefix+"/", " /", 1)
-}
-
-func allowRoute(caller *user.User, r *http.Request, pattern string) (int, error) {
-	if caller.Key.Access == user.AccessRead {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			return http.StatusForbidden, user.ErrKeyForbidden
-		}
-		if secretRoutes[pattern] {
-			return http.StatusForbidden, user.ErrKeyForbidden
-		}
-	}
-	if !caller.ProjectScoped() {
-		return 0, nil
-	}
-	for _, param := range projectParams {
-		if slug := r.PathValue(param); slug != "" {
-			if !caller.SeesProject(slug) {
-				return http.StatusNotFound, errProjectNotFound
-			}
-			return 0, nil
-		}
-	}
-	if scopedRoutes[pattern] {
-		return 0, nil
-	}
-	return http.StatusForbidden, user.ErrKeyForbidden
-}
-
-var errProjectNotFound = httpError("project not found")
-
-type httpError string
-
-func (e httpError) Error() string { return string(e) }
-
-// toolKind is what calling a tool does.
-type toolKind int
-
-const (
-	toolRead toolKind = iota
-	// toolSecret reads values somebody set.
-	toolSecret
-	toolChange
-)
+// The services decide every call — this is not the check. It is what
+// keeps an agent from being shown, and so from being talked into, a tool
+// its key would refuse. Every tool is classified, and a test fails for
+// one that is not.
 
 type toolRule struct {
-	kind toolKind
-	// scoped is whether a key held to projects keeps the tool. Only
-	// tools that name a project or an app, which the services check, or
-	// that list what the services filter.
-	scoped bool
+	// resource is what the tool reaches; empty is the caller's own
+	// account, which everybody signed in has.
+	resource user.Resource
+	level    user.Level
+	// secrets is whether it reads what somebody set.
+	secrets bool
 }
+
+func tool(r user.Resource, l user.Level) toolRule { return toolRule{resource: r, level: l} }
+func secret(r user.Resource) toolRule {
+	return toolRule{resource: r, level: user.LevelView, secrets: true}
+}
+
+var own = toolRule{}
 
 var toolRules = map[string]toolRule{
-	// account
-	"whoami":            {toolRead, true},
-	"create_api_key":    {toolChange, true},
-	"list_api_keys":     {toolRead, true},
-	"revoke_api_key":    {toolChange, true},
-	"rotate_my_api_key": {toolChange, true},
-	"list_audit_events": {toolRead, false},
+	"whoami":            own,
+	"create_api_key":    own,
+	"list_api_keys":     own,
+	"revoke_api_key":    own,
+	"rotate_my_api_key": own,
+	"list_roles":        own,
+	"list_audit_events": tool(user.ResAudit, user.LevelView),
 
-	// projects
-	"create_project":      {toolChange, false},
-	"list_projects":       {toolRead, true},
-	"delete_project":      {toolChange, true},
-	"get_project_env":     {toolSecret, true},
-	"set_project_env":     {toolChange, true},
-	"create_environment":  {toolChange, true},
-	"list_environments":   {toolRead, true},
-	"get_environment_env": {toolSecret, true},
-	"set_environment_env": {toolChange, true},
-	"delete_environment":  {toolChange, true},
+	"create_project":      tool(user.ResProjects, user.LevelManage),
+	"list_projects":       own,
+	"delete_project":      tool(user.ResProjects, user.LevelManage),
+	"get_project_env":     secret(user.ResProjects),
+	"set_project_env":     tool(user.ResProjects, user.LevelManage),
+	"create_environment":  tool(user.ResProjects, user.LevelManage),
+	"list_environments":   own,
+	"get_environment_env": secret(user.ResProjects),
+	"set_environment_env": tool(user.ResProjects, user.LevelManage),
+	"delete_environment":  tool(user.ResProjects, user.LevelManage),
 
-	// apps
-	"create_app":          {toolChange, true},
-	"list_apps":           {toolRead, true},
-	"get_app":             {toolRead, true},
-	"deploy_app":          {toolChange, true},
-	"get_app_env":         {toolSecret, true},
-	"set_app_env":         {toolChange, true},
-	"get_app_deployments": {toolRead, true},
-	"update_app":          {toolChange, true},
-	"delete_app":          {toolChange, true},
-	"get_app_logs":        {toolRead, true},
-	"list_app_volumes":    {toolRead, true},
-	"add_app_volume":      {toolChange, true},
-	"list_volume_backups": {toolRead, true},
-	"back_up_volume":      {toolChange, true},
+	"create_app":          tool(user.ResApps, user.LevelManage),
+	"list_apps":           own,
+	"get_app":             tool(user.ResApps, user.LevelView),
+	"deploy_app":          tool(user.ResApps, user.LevelManage),
+	"get_app_env":         secret(user.ResApps),
+	"set_app_env":         tool(user.ResApps, user.LevelManage),
+	"get_app_deployments": tool(user.ResApps, user.LevelView),
+	"update_app":          tool(user.ResApps, user.LevelManage),
+	"delete_app":          tool(user.ResApps, user.LevelManage),
+	"get_app_logs":        tool(user.ResApps, user.LevelView),
+	"list_app_volumes":    tool(user.ResApps, user.LevelView),
+	"add_app_volume":      tool(user.ResApps, user.LevelManage),
+	"list_volume_backups": tool(user.ResBackups, user.LevelView),
+	"back_up_volume":      tool(user.ResBackups, user.LevelManage),
 
-	// what belongs to the whole instance
-	"create_datastore":           {toolChange, false},
-	"list_datastores":            {toolRead, false},
-	"get_datastore":              {toolRead, false},
-	"list_datastore_engines":     {toolRead, false},
-	"attach_datastore":           {toolChange, false},
-	"detach_datastore":           {toolChange, false},
-	"delete_datastore":           {toolChange, false},
-	"list_object_stores":         {toolRead, false},
-	"get_object_store":           {toolRead, false},
-	"list_buckets":               {toolRead, false},
-	"list_objects":               {toolRead, false},
-	"attach_object_store":        {toolChange, false},
-	"detach_object_store":        {toolChange, false},
-	"instance_metrics":           {toolRead, false},
-	"instance_containers":        {toolRead, false},
-	"list_servers":               {toolRead, false},
-	"list_templates":             {toolRead, false},
-	"list_template_releases":     {toolRead, false},
-	"install_template":           {toolChange, false},
-	"list_template_installs":     {toolRead, false},
-	"get_template_install":       {toolRead, false},
-	"preview_template_update":    {toolRead, false},
-	"update_template_install":    {toolChange, false},
-	"uninstall_template_install": {toolChange, false},
+	"create_datastore":       tool(user.ResDatabases, user.LevelManage),
+	"list_datastores":        own,
+	"get_datastore":          tool(user.ResDatabases, user.LevelView),
+	"list_datastore_engines": own,
+	"attach_datastore":       tool(user.ResDatabases, user.LevelManage),
+	"detach_datastore":       tool(user.ResDatabases, user.LevelManage),
+	"delete_datastore":       tool(user.ResDatabases, user.LevelManage),
+
+	"list_object_stores":  own,
+	"get_object_store":    tool(user.ResStorage, user.LevelView),
+	"list_buckets":        secret(user.ResStorage),
+	"list_objects":        secret(user.ResStorage),
+	"attach_object_store": tool(user.ResStorage, user.LevelManage),
+	"detach_object_store": tool(user.ResStorage, user.LevelManage),
+
+	"instance_metrics":    tool(user.ResServers, user.LevelView),
+	"instance_containers": tool(user.ResServers, user.LevelView),
+	"list_servers":        tool(user.ResServers, user.LevelView),
+
+	"list_templates":             tool(user.ResTemplates, user.LevelView),
+	"list_template_releases":     tool(user.ResTemplates, user.LevelView),
+	"install_template":           tool(user.ResTemplates, user.LevelManage),
+	"list_template_installs":     tool(user.ResTemplates, user.LevelView),
+	"get_template_install":       tool(user.ResTemplates, user.LevelView),
+	"preview_template_update":    tool(user.ResTemplates, user.LevelView),
+	"update_template_install":    tool(user.ResTemplates, user.LevelManage),
+	"uninstall_template_install": tool(user.ResTemplates, user.LevelManage),
 }
 
-// toolAvailable reports whether caller has a tool at all. A tool a key
-// does not allow is not refused when called — it is not listed, so an
-// agent holding the key cannot be talked into calling it.
+// toolAvailable reports whether caller is offered a tool. A listing a
+// grant filters is always offered: it answers with what the caller sees.
 func toolAvailable(caller *user.User, name string) bool {
-	rule, known := toolRules[name]
-	if caller == nil || caller.Key == nil {
+	if caller == nil {
+		return false
+	}
+	if caller.Admin() {
 		return true
 	}
+	rule, known := toolRules[name]
 	if !known {
-		return !caller.Key.Restricted()
-	}
-	if caller.Key.Access == user.AccessRead && rule.kind != toolRead {
 		return false
 	}
-	if caller.ProjectScoped() && !rule.scoped {
-		return false
+	if rule.resource == "" {
+		return true
 	}
-	return true
+	if rule.secrets {
+		return user.HasSecrets(caller, rule.resource)
+	}
+	return user.CanAny(caller, rule.resource, rule.level)
 }
 
-// toolChanges reports whether calling a tool is worth recording. An
-// unclassified tool is, so a forgotten entry errs toward the log.
+// toolChanges reports whether calling a tool is worth recording: it is
+// neither a read nor a secret read. An unclassified tool is, so a
+// forgotten entry errs toward the log.
 func toolChanges(name string) bool {
 	rule, known := toolRules[name]
-	return !known || rule.kind == toolChange
+	if !known {
+		return true
+	}
+	if name == "create_api_key" || name == "revoke_api_key" || name == "rotate_my_api_key" {
+		return true
+	}
+	return rule.level == user.LevelManage
 }

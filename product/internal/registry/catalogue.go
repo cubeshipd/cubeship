@@ -41,7 +41,7 @@ var (
 // project/environment/app — so the catalogue is the list of apps that
 // have ever had an image pushed to them.
 func (h *Handler) Repositories(ctx context.Context, caller *user.User) ([]Repo, error) {
-	if err := user.Require(caller, user.RoleMember); err != nil {
+	if err := user.Allow(caller, user.ResRegistry, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 
@@ -64,7 +64,7 @@ func (h *Handler) Repositories(ctx context.Context, caller *user.User) ([]Repo, 
 
 // Images lists one repository's tags.
 func (h *Handler) Images(ctx context.Context, caller *user.User, repository string) ([]Image, error) {
-	if err := user.Require(caller, user.RoleMember); err != nil {
+	if err := user.Allow(caller, user.ResRegistry, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	if repository == "" {
@@ -197,7 +197,7 @@ func (h *Handler) DeleteRepository(ctx context.Context, caller *user.User, repos
 // removing an image is the same kind of act as deleting the app that
 // pushed it.
 func (h *Handler) ownRepository(ctx context.Context, caller *user.User, repository string) error {
-	if err := user.Require(caller, user.RoleAdmin); err != nil {
+	if err := user.Allow(caller, user.ResRegistry, user.LevelManage, ""); err != nil {
 		return err
 	}
 	if repository == "" {

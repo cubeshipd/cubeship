@@ -18,6 +18,7 @@
 // build, which is what keeps the fixtures out of the image people run.
 
 import type {
+  AccessRole,
   Bucket,
   DNSProviderKind,
   DNSRecord,
@@ -67,6 +68,7 @@ const routes: [string, string, Handler][] = [
       const u = db.users.find((x) => x.username === p[0]);
       if (!u) return null;
       if (typeof b.role === "string") u.role = b.role as "admin" | "member";
+      if (typeof b.access_role_id === "number") u.access_role_id = b.access_role_id || undefined;
       if (typeof b.blocked === "boolean") {
         u.blocked_at = b.blocked ? new Date().toISOString() : undefined;
       }
@@ -96,8 +98,8 @@ const routes: [string, string, Handler][] = [
       const created = {
         id: db.apiKeys.length + 1,
         name: b.name as string,
-        access: (b.access as "read" | "deploy" | "full") ?? "full",
-        projects: b.projects as string[] | undefined,
+        access_role_id: (b.access_role_id as number) || undefined,
+        access_role: db.roles.find((r) => r.id === b.access_role_id)?.name,
         created_at: new Date().toISOString(),
         current_key: false,
       };
@@ -106,6 +108,42 @@ const routes: [string, string, Handler][] = [
     },
   ],
   ["GET", "/audit", () => ({ events: db.audit })],
+  ["GET", "/roles", () => ({ roles: db.roles, resources: db.resources })],
+  [
+    "POST",
+    "/roles",
+    (_p, body) => {
+      const b = body as Row;
+      const role = {
+        id: Math.max(0, ...db.roles.map((r) => r.id)) + 1,
+        name: b.name as string,
+        description: b.description as string,
+        grants: b.grants as AccessRole["grants"],
+        members: 0,
+        keys: 0,
+        updated_at: new Date().toISOString(),
+      };
+      db.roles.push(role);
+      return role;
+    },
+  ],
+  [
+    "PUT",
+    "/roles/:id",
+    (p, body) => {
+      const role = db.roles.find((r) => r.id === Number(p[0]));
+      if (!role) return null;
+      return Object.assign(role, body as Row, { updated_at: new Date().toISOString() });
+    },
+  ],
+  [
+    "DELETE",
+    "/roles/:id",
+    (p) => {
+      db.roles = db.roles.filter((r) => r.id !== Number(p[0]));
+      return null;
+    },
+  ],
   ["GET", "/settings", () => db.settings],
   ["PATCH", "/settings", (_p, body) => Object.assign(db.settings, body as Row)],
   ["PUT", "/settings", (_p, body) => Object.assign(db.settings, body as Row)],

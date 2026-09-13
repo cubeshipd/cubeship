@@ -87,7 +87,7 @@ func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*
 }
 
 func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, Response, error) {
-	store, err := t.svc.Resolve(ctx, t.caller, in.Store, user.RoleMember)
+	store, err := t.svc.Resolve(ctx, t.caller, in.Store, user.LevelView)
 	if err != nil {
 		return nil, Response{}, err
 	}

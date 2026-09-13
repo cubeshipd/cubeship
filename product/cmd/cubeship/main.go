@@ -32,6 +32,7 @@ func main() {
 	root.AddCommand(newServerCmd())
 	root.AddCommand(newUserCmd())
 	root.AddCommand(newAuditCmd())
+	root.AddCommand(newRoleCmd())
 	root.AddCommand(newVersionCmd())
 	root.AddCommand(newDocsCmd(root))
 

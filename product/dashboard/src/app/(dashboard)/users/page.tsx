@@ -3,6 +3,7 @@
 import {
   KeyRoundIcon,
   LockIcon,
+  PencilIcon,
   PlusIcon,
   RotateCcwKeyIcon,
   ShieldIcon,
@@ -10,13 +11,15 @@ import {
   UnlockIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { AccessRoleDialog, summarize } from "@/components/access-role-dialog";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
-import { RowActions, RowMenu, RowMenuItem } from "@/components/row-actions";
+import { RowAction, RowActions, RowMenu, RowMenuItem } from "@/components/row-actions";
 import { SearchableSelect } from "@/components/searchable-select";
+import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -28,7 +31,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ValueCard } from "@/components/value-card";
-import { api, avatarSrc, type InstanceUser, personName } from "@/lib/api";
+import {
+  type AccessRole,
+  type AccessRoles,
+  api,
+  avatarSrc,
+  type InstanceUser,
+  personName,
+} from "@/lib/api";
 import { message } from "@/lib/errors";
 import { useOpenOnArrival } from "@/lib/open-on-arrival";
 
@@ -68,6 +78,10 @@ export default function UsersPage() {
   // A password this instance will never say again — whether it came
   // from creating an account or from resetting one.
   const [issued, setIssued] = useState<{ username: string; password: string } | null>(null);
+  const [roles, setRoles] = useState<AccessRoles | null>(null);
+  const [editing, setEditing] = useState<AccessRole | null>(null);
+  const [composing, setComposing] = useState(false);
+  const [deleting, setDeleting] = useState<AccessRole | null>(null);
 
   useOpenOnArrival("new", setAdding);
 
@@ -75,6 +89,10 @@ export default function UsersPage() {
     api
       .get<{ users: InstanceUser[] }>("/users")
       .then((r) => setUsers(r.users))
+      .catch((e) => setError(message(e)));
+    api
+      .get<AccessRoles>("/roles")
+      .then(setRoles)
       .catch((e) => setError(message(e)));
   }, []);
   useEffect(reload, [reload]);
@@ -126,7 +144,16 @@ export default function UsersPage() {
       header: "Role",
       width: 14,
       sortBy: (u) => u.role,
-      cell: (u) => <span className="text-muted-foreground">{u.role}</span>,
+      cell: (u) => (
+        <span className="flex min-w-0 flex-col">
+          <span className="text-muted-foreground">{u.role}</span>
+          {u.role === "member" && (
+            <span className="truncate text-[11px] text-subtle-foreground">
+              {roles?.roles.find((r) => r.id === u.access_role_id)?.name ?? "Member default"}
+            </span>
+          )}
+        </span>
+      ),
     },
     {
       id: "status",
@@ -178,7 +205,7 @@ export default function UsersPage() {
                 title={isYou ? "You cannot change your own role." : undefined}
                 onClick={() => setChanging(u)}
               >
-                Change role
+                Change access
               </RowMenuItem>
               <RowMenuItem icon={RotateCcwKeyIcon} onClick={() => setResetting(u)}>
                 Reset password
@@ -257,8 +284,115 @@ export default function UsersPage() {
 
       <RoleDialog
         user={changing}
+        roles={roles?.roles ?? []}
         onOpenChange={(open) => !open && setChanging(null)}
         onSaved={reload}
+      />
+
+      {/* What a member, or a key, may reach. Here rather than on a screen
+          of its own: roles are given to the people listed above. */}
+      <div className="mt-10">
+        <SectionHeader
+          title="Access roles"
+          sub="What a member, or an API key, may reach. A member without one has the member default; a key given one never reaches more than its owner."
+          actions={
+            <Button variant="outline" size="sm" onClick={() => setComposing(true)}>
+              <PlusIcon />
+              New role
+            </Button>
+          }
+        />
+      </div>
+      <DataTable
+        columns={[
+          {
+            id: "name",
+            header: "Role",
+            width: 24,
+            sortBy: (r) => r.name,
+            cell: (r) => (
+              <span className="flex min-w-0 flex-col">
+                <span className="truncate text-sm">{r.name}</span>
+                {r.description && (
+                  <span className="truncate text-[11px] text-muted-foreground">
+                    {r.description}
+                  </span>
+                )}
+              </span>
+            ),
+          },
+          {
+            id: "grants",
+            header: "Grants",
+            width: 48,
+            wrap: true,
+            cell: (r) => <span className="text-muted-foreground text-xs">{summarize(r)}</span>,
+          },
+          {
+            id: "used",
+            header: "Given to",
+            width: 18,
+            sortBy: (r) => r.members + r.keys,
+            cell: (r) => (
+              <span className="font-mono text-[11px] text-muted-foreground">
+                {r.members} {r.members === 1 ? "member" : "members"} · {r.keys}{" "}
+                {r.keys === 1 ? "key" : "keys"}
+              </span>
+            ),
+          },
+          {
+            id: "actions",
+            header: "",
+            width: 10,
+            align: "right",
+            cell: (r) => (
+              <RowActions>
+                <RowAction
+                  icon={PencilIcon}
+                  label={`Edit ${r.name}`}
+                  onClick={() => setEditing(r)}
+                />
+                <RowAction
+                  icon={Trash2Icon}
+                  label={`Delete ${r.name}`}
+                  danger
+                  disabled={r.members + r.keys > 0}
+                  title={r.members + r.keys > 0 ? "Still given to somebody." : undefined}
+                  onClick={() => setDeleting(r)}
+                />
+              </RowActions>
+            ),
+          },
+        ]}
+        rows={roles?.roles ?? null}
+        rowKey={(r) => String(r.id)}
+        loadingRows={2}
+        empty="No roles. Every member has the member default."
+      />
+
+      <AccessRoleDialog
+        open={composing || editing !== null}
+        role={editing}
+        resources={roles?.resources ?? []}
+        onOpenChange={(open) => {
+          if (open) return;
+          setComposing(false);
+          setEditing(null);
+        }}
+        onSaved={reload}
+      />
+
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title={`Delete ${deleting?.name}?`}
+        confirmLabel="Delete role"
+        description="Nobody holds it, so nothing changes for anybody."
+        onConfirm={async () => {
+          await api.del(`/roles/${deleting?.id}`);
+          setDeleting(null);
+          reload();
+        }}
       />
 
       <ConfirmDialog
@@ -422,20 +556,25 @@ function NewUserDialog({
 // moment it is released is one a stray click operates.
 function RoleDialog({
   user,
+  roles,
   onOpenChange,
   onSaved,
 }: {
   user: InstanceUser | null;
+  roles: AccessRole[];
   onOpenChange: (v: boolean) => void;
   onSaved: () => void;
 }) {
   const [role, setRole] = useState("member");
+  // "0" is the member default.
+  const [access, setAccess] = useState("0");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) return;
     setRole(user.role);
+    setAccess(String(user.access_role_id ?? 0));
     setError(null);
   }, [user]);
 
@@ -445,7 +584,10 @@ function RoleDialog({
     setBusy(true);
     setError(null);
     try {
-      await api.patch(`/users/${user.username}`, { role });
+      const body: Record<string, unknown> = {};
+      if (role !== user.role) body.role = role;
+      if (role === "member") body.access_role_id = Number(access);
+      await api.patch(`/users/${user.username}`, body);
       onSaved();
       onOpenChange(false);
     } catch (err) {
@@ -454,12 +596,15 @@ function RoleDialog({
     setBusy(false);
   }
 
+  const unchanged = role === user?.role && access === String(user?.access_role_id ?? 0);
+  const chosen = roles.find((r) => String(r.id) === access);
+
   return (
     <Dialog open={user !== null} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <form onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>{user ? personName(user) : ""}&rsquo;s role</DialogTitle>
+            <DialogTitle>{user ? personName(user) : ""}&rsquo;s access</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 py-5">
             <ErrorAlert error={error} />
@@ -469,10 +614,26 @@ function RoleDialog({
               choices={ROLES}
               value={role}
               onChange={setRole}
-              hint="A member deploys images somebody already published. An admin also builds source on this host — which runs whatever the repository contains, here — and configures the instance."
+              hint="An admin reaches everything, users and roles included, and builds source on this host."
             />
+            {role === "member" && (
+              <SearchableSelect
+                label="Access role"
+                choices={[
+                  { value: "0", label: "Member default" },
+                  ...roles.map((r) => ({ value: String(r.id), label: r.name })),
+                ]}
+                value={access}
+                onChange={setAccess}
+                hint={
+                  chosen
+                    ? summarize(chosen)
+                    : "Manages apps and reads the rest of the workspace — what a member has always done."
+                }
+              />
+            )}
             <p className="text-[11px] text-muted-foreground">
-              Their sessions and keys are untouched and start being refused for what the new role
+              Their sessions and keys are untouched and start being refused for what the new access
               does not reach, on their next request.
             </p>
           </div>
@@ -480,7 +641,7 @@ function RoleDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <ActionButton type="submit" busy={busy} disabled={role === user?.role}>
+            <ActionButton type="submit" busy={busy} disabled={unchanged}>
               Save
             </ActionButton>
           </DialogFooter>

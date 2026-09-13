@@ -2,8 +2,6 @@ package user
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -346,16 +344,9 @@ func (s *Service) Authenticate(ctx context.Context, key string) (*User, string, 
 	if err != nil {
 		return nil, "", err
 	}
-	if k.Projects != nil {
-		if k.Projects, err = s.Repo().KeyProjects(ctx, k.ID); err != nil {
-			return nil, "", err
-		}
-	}
-	u.Key = &KeyScope{ID: k.ID, Name: k.Name, Access: k.Access, Projects: k.Projects}
-	// Lowered here, once, so every Require on the instance already
-	// answers for the key rather than for its owner.
-	if k.Access != AccessFull {
-		u.Role = RoleMember
+	u.Key = &KeyScope{ID: k.ID, Name: k.Name, AccessRoleID: k.AccessRoleID}
+	if u.Policy, err = s.PolicyFor(ctx, u); err != nil {
+		return nil, "", err
 	}
 	// Best effort: a caller whose last_used_at could not be written is
 	// still authenticated. Failing the request over a bookkeeping write
@@ -375,19 +366,6 @@ func (s *Service) RotateAPIKey(ctx context.Context, u *User, keyHash string) (st
 	if err != nil {
 		return "", err
 	}
-	// The replacement keeps the scope. Read before revoking, because
-	// revoking takes the key's projects with it.
-	var projectIDs []int64
-	if old.Projects != nil {
-		slugs, err := s.Repo().KeyProjects(ctx, old.ID)
-		if err != nil {
-			return "", err
-		}
-		if projectIDs, _, err = s.Repo().ProjectIDs(ctx, slugs); err != nil {
-			return "", err
-		}
-	}
-
 	var key string
 	// Revoke and reissue in one transaction. Revoking first and failing
 	// to issue the replacement locks the user out permanently — and if
@@ -402,7 +380,7 @@ func (s *Service) RotateAPIKey(ctx context.Context, u *User, keyHash string) (st
 		if err != nil {
 			return err
 		}
-		if _, err := repo.CreateScopedAPIKey(ctx, u.ID, authkey.Hash(generated), old.Name, old.Access, projectIDs); err != nil {
+		if _, err := repo.CreateRoleAPIKey(ctx, u.ID, authkey.Hash(generated), old.Name, old.AccessRoleID); err != nil {
 			return err
 		}
 		key = generated
@@ -424,30 +402,25 @@ func (s *Service) CreateAPIKey(ctx context.Context, u *User, req KeyRequest) (*A
 	}
 	// Left out means the caller's own: a restricted key asking for a key
 	// by name alone gets one no wider than itself, not a refusal.
-	if req.Access == "" {
-		req.Access = AccessFull
-		if u.Key != nil {
-			req.Access = u.Key.Access
+	if req.AccessRoleID == 0 && u.Key.Restricted() {
+		req.AccessRoleID = u.Key.AccessRoleID
+	}
+	if req.AccessRoleID != 0 {
+		role, err := s.Repo().RoleByID(ctx, req.AccessRoleID)
+		if err != nil {
+			return nil, "", err
 		}
-	}
-	if req.Projects == nil && u.ProjectScoped() {
-		req.Projects = u.Key.Projects
-	}
-	if !req.Access.Valid() {
-		return nil, "", ErrInvalidAccess
-	}
-	if req.Projects != nil && len(req.Projects) == 0 {
-		return nil, "", ErrNoProjects
-	}
-	if u.Key != nil {
-		if !req.Access.Within(u.Key.Access) {
-			return nil, "", ErrKeyScopeWider
-		}
-		if u.ProjectScoped() {
-			for _, p := range req.Projects {
-				if !u.SeesProject(p) {
-					return nil, "", ErrKeyScopeWider
-				}
+		// What the new key would reach is its role narrowed by the owner;
+		// a restricted key may only hand that out when it reaches it too.
+		if u.Key.Restricted() {
+			owner := *u
+			owner.Key = nil
+			base, err := s.PolicyFor(ctx, &owner)
+			if err != nil {
+				return nil, "", err
+			}
+			if !Intersect(base, role.Policy()).Within(u.Policy) {
+				return nil, "", ErrKeyScopeWider
 			}
 		}
 	}
@@ -456,34 +429,42 @@ func (s *Service) CreateAPIKey(ctx context.Context, u *User, req KeyRequest) (*A
 	if err != nil {
 		return nil, "", err
 	}
-	var created *APIKey
-	err = s.db.WithTx(ctx, func(tx database.Queryer) error {
-		repo := NewRepository(tx)
-		var ids []int64
-		if req.Projects != nil {
-			var missing string
-			if ids, missing, err = repo.ProjectIDs(ctx, req.Projects); err != nil {
-				if errors.Is(err, ErrUnknownProject) {
-					return fmt.Errorf("%w: %s", ErrUnknownProject, missing)
-				}
-				return err
-			}
-		}
-		created, err = repo.CreateScopedAPIKey(ctx, u.ID, authkey.Hash(generated), req.Name, req.Access, ids)
-		return err
-	})
+	created, err := s.Repo().CreateRoleAPIKey(ctx, u.ID, authkey.Hash(generated), req.Name, req.AccessRoleID)
 	if err != nil {
 		return nil, "", err
 	}
 	return created, generated, nil
 }
 
-// KeyRequest is what a new key is called and allowed. An empty Access
-// and a nil Projects both mean "as much as the caller has".
+// KeyRequest is what a new key is called and which role narrows it. An
+// AccessRoleID of 0 is as much as the caller has.
 type KeyRequest struct {
-	Name     string
-	Access   Access
-	Projects []string
+	Name         string
+	AccessRoleID int64
+}
+
+// PolicyFor is what u may reach: an admin everything, a member their
+// role or the member default, and either narrowed by the key's role.
+func (s *Service) PolicyFor(ctx context.Context, u *User) (Policy, error) {
+	var base Policy
+	if u.Role != RoleAdmin {
+		base = DefaultMemberPolicy()
+		if u.AccessRoleID != 0 {
+			role, err := s.Repo().RoleByID(ctx, u.AccessRoleID)
+			if err != nil {
+				return nil, err
+			}
+			base = role.Policy()
+		}
+	}
+	if !u.Key.Restricted() {
+		return base, nil
+	}
+	role, err := s.Repo().RoleByID(ctx, u.Key.AccessRoleID)
+	if err != nil {
+		return nil, err
+	}
+	return Intersect(base, role.Policy()), nil
 }
 
 // ListAPIKeys returns metadata for every key u holds. The key values
@@ -620,6 +601,9 @@ func (s *Service) AuthenticateSession(ctx context.Context, token string) (*User,
 	// what makes unblocking put somebody back exactly where they were.
 	if u.Blocked() {
 		return nil, "", ErrBlocked
+	}
+	if u.Policy, err = s.PolicyFor(ctx, u); err != nil {
+		return nil, "", err
 	}
 	// Best effort, like the API key's: a caller whose last_used_at could
 	// not be written is still signed in.
@@ -800,4 +784,152 @@ func (s *Service) SetTheme(ctx context.Context, caller *User, theme string) (*Us
 	}
 	caller.Theme = theme
 	return caller, nil
+}
+
+// --- access roles ---
+
+// RoleRequest is a role as an editor sends it.
+type RoleRequest struct {
+	Name        string
+	Description string
+	Grants      []Grant
+}
+
+func (req *RoleRequest) check() error {
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" || len(req.Name) > 60 {
+		return ErrRoleName
+	}
+	if req.Grants == nil {
+		req.Grants = []Grant{}
+	}
+	return ValidateGrants(req.Grants)
+}
+
+// ListRoles is every role. Anybody signed in may read them: a member
+// choosing a role for their own key has to see what each one reaches.
+func (s *Service) ListRoles(ctx context.Context, caller *User) ([]*AccessRole, error) {
+	if err := Require(caller, RoleMember); err != nil {
+		return nil, err
+	}
+	return s.Repo().ListRoles(ctx)
+}
+
+// CreateRole, like every change to roles, is an admin's: whoever can
+// shape access can give themselves all of it.
+func (s *Service) CreateRole(ctx context.Context, caller *User, req RoleRequest) (*AccessRole, error) {
+	if err := Require(caller, RoleAdmin); err != nil {
+		return nil, err
+	}
+	if err := req.check(); err != nil {
+		return nil, err
+	}
+	id, err := s.Repo().CreateRole(ctx, req.Name, req.Description, req.Grants)
+	if database.IsUniqueViolation(err) {
+		return nil, ErrRoleNameTaken
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.Repo().RoleByID(ctx, id)
+}
+
+// UpdateRole replaces a role. Everybody holding it reaches the new grants
+// from their next request.
+func (s *Service) UpdateRole(ctx context.Context, caller *User, id int64, req RoleRequest) (*AccessRole, error) {
+	if err := Require(caller, RoleAdmin); err != nil {
+		return nil, err
+	}
+	if err := req.check(); err != nil {
+		return nil, err
+	}
+	err := s.Repo().UpdateRole(ctx, id, req.Name, req.Description, req.Grants)
+	if database.IsUniqueViolation(err) {
+		return nil, ErrRoleNameTaken
+	}
+	if err != nil {
+		return nil, err
+	}
+	return s.Repo().RoleByID(ctx, id)
+}
+
+func (s *Service) DeleteRole(ctx context.Context, caller *User, id int64) error {
+	if err := Require(caller, RoleAdmin); err != nil {
+		return err
+	}
+	role, err := s.Repo().RoleByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if role.Members > 0 || role.Keys > 0 {
+		return ErrRoleInUse
+	}
+	return s.Repo().DeleteRole(ctx, id)
+}
+
+// SetAccessRole gives a member a role, or the member default with 0.
+func (s *Service) SetAccessRole(ctx context.Context, caller *User, username string, roleID int64) (*User, error) {
+	if err := Require(caller, RoleAdmin); err != nil {
+		return nil, err
+	}
+	target, err := s.Repo().ByUsername(ctx, username)
+	if err != nil {
+		return nil, ErrNoSuchUser
+	}
+	if roleID != 0 {
+		if _, err := s.Repo().RoleByID(ctx, roleID); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.Repo().SetAccessRole(ctx, target.ID, roleID); err != nil {
+		return nil, err
+	}
+	return s.Repo().ByID(ctx, target.ID)
+}
+
+// RoleNames is every role's name by id, for listings that show one.
+func (s *Service) RoleNames(ctx context.Context) map[int64]string {
+	out := map[int64]string{}
+	roles, err := s.Repo().ListRoles(ctx)
+	if err != nil {
+		return out
+	}
+	for _, r := range roles {
+		out[r.ID] = r.Name
+	}
+	return out
+}
+
+// RoleName is one role's name, empty for 0 or a role that is gone.
+func (s *Service) RoleName(ctx context.Context, id int64) string {
+	if id == 0 {
+		return ""
+	}
+	role, err := s.Repo().RoleByID(ctx, id)
+	if err != nil {
+		return ""
+	}
+	return role.Name
+}
+
+// KeyResponse describes the key a request carried, nil for a session.
+func (s *Service) KeyResponse(ctx context.Context, u *User) *KeyResponse {
+	if u == nil || u.Key == nil {
+		return nil
+	}
+	return &KeyResponse{Name: u.Key.Name, AccessRole: s.RoleName(ctx, u.Key.AccessRoleID)}
+}
+
+// RoleByName finds a role for a caller that names one, as an agent does.
+func (s *Service) RoleByName(ctx context.Context, caller *User, name string) (*AccessRole, error) {
+	roles, err := s.ListRoles(ctx, caller)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range roles {
+		if strings.EqualFold(r.Name, name) {
+			return r, nil
+		}
+	}
+	return nil, ErrNoSuchRole
 }

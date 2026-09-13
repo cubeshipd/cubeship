@@ -137,10 +137,9 @@ type Domain struct {
 type APIKey struct {
 	ID   int64  `json:"id"`
 	Name string `json:"name"`
-	// Access is read, deploy or full; Projects is empty for a key that
-	// reaches every project.
-	Access     string     `json:"access"`
-	Projects   []string   `json:"projects,omitempty"`
+	// AccessRole narrows the key; empty for one carrying all its owner's
+	// access.
+	AccessRole string     `json:"access_role,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	CurrentKey bool       `json:"current_key"`
@@ -677,18 +676,15 @@ func (c *Client) RotateAPIKey(ctx context.Context) (string, error) {
 // CreateAPIKey issues an additional key under name, independent of any
 // the caller already holds.
 func (c *Client) CreateAPIKey(ctx context.Context, name string) (id int64, apiKey string, err error) {
-	return c.CreateScopedAPIKey(ctx, name, "", nil)
+	return c.CreateRoleAPIKey(ctx, name, 0)
 }
 
-// CreateScopedAPIKey issues a key limited to access and projects. Empty
-// access and nil projects mean as much as the key making the call has.
-func (c *Client) CreateScopedAPIKey(ctx context.Context, name, access string, projects []string) (id int64, apiKey string, err error) {
+// CreateRoleAPIKey issues a key narrowed to an access role; 0 is none,
+// which for a restricted key making the call is its own role.
+func (c *Client) CreateRoleAPIKey(ctx context.Context, name string, roleID int64) (id int64, apiKey string, err error) {
 	body := map[string]any{"name": name}
-	if access != "" {
-		body["access"] = access
-	}
-	if projects != nil {
-		body["projects"] = projects
+	if roleID != 0 {
+		body["access_role_id"] = roleID
 	}
 	out, err := request[struct {
 		ID     int64  `json:"id"`
@@ -696,6 +692,28 @@ func (c *Client) CreateScopedAPIKey(ctx context.Context, name, access string, pr
 	}](ctx, c, "create api key", http.MethodPost, "/users/me/api-keys",
 		body, http.StatusCreated, DefaultTimeout)
 	return out.ID, out.APIKey, err
+}
+
+// AccessRole is a named set of grants for members and keys.
+type AccessRole struct {
+	ID          int64  `json:"id"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Grants      []struct {
+		Resource string   `json:"resource"`
+		Level    string   `json:"level"`
+		Secrets  bool     `json:"secrets,omitempty"`
+		Items    []string `json:"items"`
+	} `json:"grants"`
+	Members int `json:"members"`
+	Keys    int `json:"keys"`
+}
+
+func (c *Client) ListRoles(ctx context.Context) ([]AccessRole, error) {
+	out, err := request[struct {
+		Roles []AccessRole `json:"roles"`
+	}](ctx, c, "list roles", http.MethodGet, "/roles", nil, http.StatusOK, DefaultTimeout)
+	return out.Roles, err
 }
 
 // --- audit ---

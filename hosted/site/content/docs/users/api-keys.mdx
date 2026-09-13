@@ -44,42 +44,34 @@ key stop working.
 
 ## What a key may do
 
-A key never does more than its owner may, and it can do less. Two
-things decide it, both chosen when the key is made:
-
-| Access | What it does |
-| --- | --- |
-| `read` | Lists, logs and status. Never a variable, a credential, a download, or a change. |
-| `deploy` | What a member does — create, configure and deploy apps — whatever the owner's role. |
-| `full` | Everything the owner may. The default. |
-
-**Projects.** A key can be held to a list of projects. The others are
-not there — they answer as not found — and neither is what belongs to
-the whole instance: databases, object stores, servers, templates,
-settings. It can still list its projects and their apps, create apps in
-them, and push and pull their images.
+A key carries all of its owner's access unless it is given an
+[access role](/docs/users/roles#access-roles). Then it reaches what the
+role grants **and** its owner reaches — a role never widens a key.
 
 ```bash
-cubeship user api-key create claude --access read
-cubeship user api-key create ci --access deploy --project shop
+cubeship role list
+cubeship user api-key create claude --role "Read only"
+cubeship user api-key create ci --role Deploy
 ```
 
 **The limit is in the key, not in the prompt.** Over MCP a key is not
-offered a tool it does not allow — an agent cannot be talked into
-calling what it was never shown — and the API refuses the same requests
-at the door. A deleted project leaves a key held to it reaching nothing,
-never everything.
+offered a tool its role does not allow — an agent cannot be talked into
+calling what it was never shown — and every call is decided by the daemon
+anyway. A role naming projects reaches only those; one whose projects were
+all deleted reaches none of them, never all.
 
-A restricted key cannot make one that reaches more than it does, cannot
-revoke keys and cannot change the password. Rotating keeps the scope.
-What every key did is in the [audit log](/docs/users/audit).
+A key with a role cannot make one that reaches more than it does, cannot
+revoke keys and cannot change the password. Rotating keeps the role, and
+a key asked for by name alone gets the caller's own. What every key did
+is in the [audit log](/docs/users/audit).
 
-## The role travels with the key
+## The owner decides the ceiling
 
-A key does what its owner may do, within its access. Blocking the owner
-refuses every key at the door; deleting the owner deletes them.
+Blocking the owner refuses every key at the door; deleting the owner
+deletes them; changing the owner's role changes what every key of theirs
+reaches, from the next request.
 
 ## Through an agent
 
-`create_api_key`, `list_api_keys`, `revoke_api_key` and
+`create_api_key` (with `role`), `list_roles`, `list_api_keys`, `revoke_api_key` and
 `rotate_my_api_key` are in the [tool reference](/docs/mcp/tools#account).

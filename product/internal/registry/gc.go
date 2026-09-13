@@ -64,7 +64,7 @@ var ErrNoMaintenance = errors.New("this daemon cannot run maintenance on the reg
 //
 // It takes an admin, which is the same bar as deleting an image.
 func (h *Handler) GarbageCollect(ctx context.Context, caller *user.User) (*GCResult, error) {
-	if err := user.Require(caller, user.RoleAdmin); err != nil {
+	if err := user.Allow(caller, user.ResRegistry, user.LevelManage, ""); err != nil {
 		return nil, err
 	}
 	if h.maintenance == nil {

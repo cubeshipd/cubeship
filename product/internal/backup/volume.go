@@ -93,8 +93,8 @@ func VolumeKeyFor(app string, volumeID int64, at time.Time) string {
 		strings.ReplaceAll(app, "/", "-"), volumeID, at.Format("2006-01-02T150405.000Z"))
 }
 
-func (s *Service) resolveVolume(ctx context.Context, caller *user.User, ref string, id int64) (*Volume, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+func (s *Service) resolveVolume(ctx context.Context, caller *user.User, ref string, id int64, need user.Level) (*Volume, error) {
+	if err := user.Allow(caller, user.ResBackups, need, ""); err != nil {
 		return nil, err
 	}
 	if s.volumes == nil {
@@ -110,7 +110,7 @@ func (s *Service) offsite(ctx context.Context, storeID int64) bool {
 
 // ForVolume is one volume's backups, newest first.
 func (s *Service) ForVolume(ctx context.Context, caller *user.User, ref string, id int64) ([]*Backup, error) {
-	v, err := s.resolveVolume(ctx, caller, ref, id)
+	v, err := s.resolveVolume(ctx, caller, ref, id, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +120,7 @@ func (s *Service) ForVolume(ctx context.Context, caller *user.User, ref string, 
 // TakeVolume starts one now: the app is stopped for the copy. store and
 // bucket say where it goes; empty takes the volume's schedule's.
 func (s *Service) TakeVolume(ctx context.Context, caller *user.User, ref string, id int64, store, bucket string) (*Backup, error) {
-	v, err := s.resolveVolume(ctx, caller, ref, id)
+	v, err := s.resolveVolume(ctx, caller, ref, id, user.LevelManage)
 	if err != nil {
 		return nil, err
 	}
@@ -334,7 +334,7 @@ func (s *Service) moveVolume(ctx context.Context, v *Volume, row *Backup, server
 
 // VolumeSchedule reads one volume's, or ErrNotFound — which is off.
 func (s *Service) VolumeSchedule(ctx context.Context, caller *user.User, ref string, id int64) (*Schedule, error) {
-	v, err := s.resolveVolume(ctx, caller, ref, id)
+	v, err := s.resolveVolume(ctx, caller, ref, id, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -350,7 +350,7 @@ func (s *Service) VolumeSchedule(ctx context.Context, caller *user.User, ref str
 
 // SetVolumeSchedule turns one on, or moves it.
 func (s *Service) SetVolumeSchedule(ctx context.Context, caller *user.User, ref string, id int64, store string, in Schedule) (*Schedule, error) {
-	v, err := s.resolveVolume(ctx, caller, ref, id)
+	v, err := s.resolveVolume(ctx, caller, ref, id, user.LevelManage)
 	if err != nil {
 		return nil, err
 	}
@@ -366,7 +366,7 @@ func (s *Service) SetVolumeSchedule(ctx context.Context, caller *user.User, ref 
 
 // UnsetVolumeSchedule turns it off.
 func (s *Service) UnsetVolumeSchedule(ctx context.Context, caller *user.User, ref string, id int64) error {
-	v, err := s.resolveVolume(ctx, caller, ref, id)
+	v, err := s.resolveVolume(ctx, caller, ref, id, user.LevelManage)
 	if err != nil {
 		return err
 	}

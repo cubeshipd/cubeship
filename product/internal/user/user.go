@@ -65,70 +65,35 @@ type User struct {
 	// and deleting one.
 	BlockedAt *time.Time
 	CreatedAt time.Time
+	// AccessRoleID is a member's role, 0 for the member default. An
+	// admin's is ignored.
+	AccessRoleID int64
 	// Key is the API key this request authenticated with, nil for a
-	// session. Role has already been lowered to what the key allows.
+	// session.
 	Key *KeyScope
+	// Policy is what this request may reach: the account's role, narrowed
+	// by the key's. Nil is everything, which only an admin without a
+	// restricted key has. Set at authentication; see Allow.
+	Policy Policy
 }
 
-// Access is how much of its owner's role an API key carries.
-type Access string
-
-const (
-	// AccessRead reads, and never reads a secret.
-	AccessRead Access = "read"
-	// AccessDeploy does what a member does, whatever the owner's role.
-	AccessDeploy Access = "deploy"
-	// AccessFull does everything its owner may.
-	AccessFull Access = "full"
-)
-
-func (a Access) Valid() bool { return a == AccessRead || a == AccessDeploy || a == AccessFull }
-
-func (a Access) rank() int {
-	switch a {
-	case AccessRead:
-		return 0
-	case AccessDeploy:
-		return 1
-	}
-	return 2
-}
-
-// Within reports whether a grants no more than b.
-func (a Access) Within(b Access) bool { return a.rank() <= b.rank() }
-
-// KeyScope is what one API key is allowed. Projects is nil when the key
-// reaches every project, and a list of slugs — possibly empty, once
-// they have all been deleted — when it does not.
+// KeyScope is the key a request carried. AccessRoleID is 0 for a key
+// that carries all of its owner's access.
 type KeyScope struct {
-	ID       int64
-	Name     string
-	Access   Access
-	Projects []string
+	ID           int64
+	Name         string
+	AccessRoleID int64
 }
 
 // Restricted reports whether the key reaches less than its owner does.
 func (k *KeyScope) Restricted() bool {
-	return k != nil && (k.Access != AccessFull || k.Projects != nil)
+	return k != nil && k.AccessRoleID != 0
 }
 
-// SeesProject reports whether the caller may reach a project at all. A
-// project outside a key's scope is answered as not found.
-func (u *User) SeesProject(slug string) bool {
-	if u == nil || u.Key == nil || u.Key.Projects == nil {
-		return u != nil
-	}
-	return slices.Contains(u.Key.Projects, slug)
-}
-
-// ProjectScoped reports whether the caller is held to a list of projects.
-func (u *User) ProjectScoped() bool {
-	return u != nil && u.Key != nil && u.Key.Projects != nil
-}
-
-// CanWrite reports whether the caller may change anything at all.
-func (u *User) CanWrite() bool {
-	return u != nil && (u.Key == nil || u.Key.Access != AccessRead)
+// Admin reports whether u may do everything, users and roles included.
+// An admin holding a restricted key is not: the key is the limit.
+func (u *User) Admin() bool {
+	return u != nil && u.Role == RoleAdmin && u.Policy == nil
 }
 
 // Blocked reports whether this account may authenticate at all.
@@ -278,13 +243,13 @@ func ValidTheme(s string) bool {
 	return slices.Contains(Themes, s)
 }
 
-// Is reports whether u holds at least min. An admin satisfies both
-// checks; a member only satisfies RoleMember.
+// Is reports whether u holds at least min. RoleMember is anybody signed
+// in; RoleAdmin is Admin. What a member may reach is Allow's question.
 func (u *User) Is(min Role) bool {
 	if u == nil {
 		return false
 	}
-	return min == RoleMember || u.Role == RoleAdmin
+	return min == RoleMember || u.Admin()
 }
 
 // Require is the authorization every module calls. It answers with the
@@ -308,11 +273,10 @@ type APIKey struct {
 	UserID  int64
 	KeyHash string
 	Name    string
-	Access  Access
-	// Projects is nil for a key that reaches every project.
-	Projects   []string
-	CreatedAt  time.Time
-	LastUsedAt *time.Time
+	// AccessRoleID narrows the key to a role; 0 is all its owner has.
+	AccessRoleID int64
+	CreatedAt    time.Time
+	LastUsedAt   *time.Time
 }
 
 // DefaultAPIKeyName is the name given to a key created without one
@@ -381,10 +345,6 @@ var (
 	// should not be here still gets to read.
 	ErrBlocked = errors.New("this account has been blocked on this instance")
 
-	// ErrInvalidAccess reports an access string that is not one of the
-	// three.
-	ErrInvalidAccess = errors.New(`access must be "read", "deploy" or "full"`)
-
 	// ErrKeyScopeWider refuses a key minting one that reaches more than
 	// it does, which would make every restriction one call deep.
 	ErrKeyScopeWider = errors.New("forbidden: a key cannot create one that reaches more than it does")
@@ -393,14 +353,17 @@ var (
 	// decides: revoking keys and changing the password.
 	ErrKeyRestricted = errors.New("forbidden: this API key is restricted; sign in or use an unrestricted key")
 
-	// ErrNoProjects is a key scoped to projects with none named.
-	ErrNoProjects = errors.New("name at least one project, or give the key every project")
+	// ErrNoSuchRole is an access role that does not exist.
+	ErrNoSuchRole = errors.New("no such role")
 
-	// ErrUnknownProject is a project named in a key's scope that does
-	// not exist.
-	ErrUnknownProject = errors.New("no such project")
+	// ErrRoleNameTaken is a role name already used.
+	ErrRoleNameTaken = errors.New("a role by that name already exists")
 
-	// ErrKeyForbidden is what a restricted key hears for anything
-	// outside its access.
-	ErrKeyForbidden = errors.New("forbidden: this API key does not allow that")
+	// ErrRoleInUse refuses deleting a role an account or a key still
+	// holds: taking it away would change what they reach without anybody
+	// deciding what that should be.
+	ErrRoleInUse = errors.New("this role is still given to an account or an API key")
+
+	// ErrRoleName is a role with no name, or one too long to show.
+	ErrRoleName = errors.New("a role name is 1-60 characters")
 )

@@ -54,7 +54,7 @@ const manageRole = user.RoleAdmin
 // account. The installation id comes back from GitHub when someone
 // finishes the install, and the account is which login it landed on.
 func (s *Service) Connect(ctx context.Context, caller *user.User, installationID int64, code string) (*Installation, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResGit, user.LevelManage, ""); err != nil {
 		return nil, err
 	}
 	if installationID == 0 {
@@ -97,14 +97,14 @@ func (s *Service) Connect(ctx context.Context, caller *user.User, installationID
 }
 
 func (s *Service) List(ctx context.Context, caller *user.User) ([]*Installation, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResGit, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	return s.Repo().List(ctx)
 }
 
 func (s *Service) Disconnect(ctx context.Context, caller *user.User, id int64) error {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResGit, user.LevelManage, ""); err != nil {
 		return err
 	}
 	if err := s.Repo().Delete(ctx, id); errors.Is(err, database.ErrNotFound) {
@@ -190,7 +190,7 @@ func (s *Service) InstallURL(ctx context.Context) string {
 // picking from a list cannot mistype an owner, and cannot name a
 // repository this instance has no way to clone.
 func (s *Service) Repositories(ctx context.Context, caller *user.User) ([]RepositoryRef, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResGit, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	installations, err := s.Repo().List(ctx)
@@ -225,7 +225,7 @@ func (s *Service) Repositories(ctx context.Context, caller *user.User) ([]Reposi
 // Branches lists a repository's branches, for the same reason
 // Repositories exists: a branch is chosen, not spelled.
 func (s *Service) Branches(ctx context.Context, caller *user.User, fullName string) ([]Branch, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResGit, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	owner, _, found := strings.Cut(fullName, "/")
@@ -287,7 +287,7 @@ func (s *Service) tokenFor(ctx context.Context, installation *Installation) (str
 // the request that comes back, because that request arrives from a
 // redirect somebody else may have written.
 func (s *Service) NewManifestState(ctx context.Context, caller *user.User, replace bool) (string, error) {
-	if err := user.Require(caller, user.RoleAdmin); err != nil {
+	if err := user.Allow(caller, user.ResGit, user.LevelManage, ""); err != nil {
 		return "", err
 	}
 	return s.states.issue(caller.ID, replace, s.now())
@@ -311,7 +311,7 @@ func (s *Service) NewManifestState(ctx context.Context, caller *user.User, repla
 func (s *Service) RegisterFromManifest(ctx context.Context, caller *user.User, code, state string) (settings.Values, error) {
 	// Settings are the VPS operator's, and this writes six of them.
 	// Doing the exchange first would spend the code before finding out.
-	if err := user.Require(caller, user.RoleAdmin); err != nil {
+	if err := user.Allow(caller, user.ResGit, user.LevelManage, ""); err != nil {
 		return nil, err
 	}
 	if code == "" {

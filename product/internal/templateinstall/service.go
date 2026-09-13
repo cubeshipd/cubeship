@@ -31,8 +31,8 @@ import (
 // without a database or a Docker behind them.
 
 type Projects interface {
-	Resolve(ctx context.Context, caller *user.User, projectSlug string, minRole user.Role) (*project.Project, error)
-	ResolveEnvironment(ctx context.Context, caller *user.User, projectSlug, envSlug string, minRole user.Role) (*project.Environment, error)
+	Resolve(ctx context.Context, caller *user.User, projectSlug string, need user.Level) (*project.Project, error)
+	ResolveEnvironment(ctx context.Context, caller *user.User, projectSlug, envSlug string, need user.Level) (*project.Environment, error)
 	Create(ctx context.Context, caller *user.User, projectSlug string) (*project.Project, *project.Environment, error)
 	CreateEnvironment(ctx context.Context, caller *user.User, projectSlug, envSlug string) (*project.Environment, error)
 	Delete(ctx context.Context, caller *user.User, projectSlug string) (*project.Project, error)
@@ -41,7 +41,7 @@ type Projects interface {
 }
 
 type Apps interface {
-	Resolve(ctx context.Context, caller *user.User, ref app.Reference, minRole user.Role) (*app.Scoped, error)
+	Resolve(ctx context.Context, caller *user.User, ref app.Reference, need user.Level) (*app.Scoped, error)
 	Create(ctx context.Context, caller *user.User, projectSlug, envSlug, name string, source app.Source, origin app.Origin) (*app.Scoped, error)
 	Update(ctx context.Context, caller *user.User, ref app.Reference, source *app.Source, origin *app.Origin, health *string, limits *app.Limits, auto *app.Autoscale, place *app.Placement) (*app.Scoped, error)
 	AddDomain(ctx context.Context, caller *user.User, ref app.Reference, host string, port int) (*app.Scoped, error)
@@ -58,7 +58,7 @@ type Apps interface {
 }
 
 type Datastores interface {
-	Resolve(ctx context.Context, caller *user.User, name string, minRole user.Role) (*datastore.Datastore, error)
+	Resolve(ctx context.Context, caller *user.User, name string, need user.Level) (*datastore.Datastore, error)
 	Create(ctx context.Context, caller *user.User, spec datastore.Spec) (*datastore.Datastore, error)
 	Credentials(ctx context.Context, caller *user.User, name string) (datastore.Credentials, error)
 	Attach(ctx context.Context, caller *user.User, name, appRef, prefix string) (*datastore.Datastore, error)
@@ -67,7 +67,7 @@ type Datastores interface {
 }
 
 type ObjectStores interface {
-	Resolve(ctx context.Context, caller *user.User, name string, minRole user.Role) (*objectstore.Store, error)
+	Resolve(ctx context.Context, caller *user.User, name string, need user.Level) (*objectstore.Store, error)
 	Create(ctx context.Context, caller *user.User, spec objectstore.ManagedSpec) (*objectstore.Store, error)
 	Credentials(ctx context.Context, caller *user.User, name string) (objectstore.Credentials, error)
 	CreateBucket(ctx context.Context, caller *user.User, name, bucket string) error
@@ -96,7 +96,7 @@ type Records interface {
 
 // RoleToInstall is admin: an install creates databases, and a template's
 // app may build a repository on this host.
-const RoleToInstall = user.RoleAdmin
+const RoleToInstall = user.LevelManage
 
 type Service struct {
 	records    Records
@@ -173,7 +173,7 @@ func (s *Service) start(run func()) {
 
 // Templates is a page of the catalog.
 func (s *Service) Templates(ctx context.Context, caller *user.User, query url.Values) (json.RawMessage, error) {
-	if err := user.Require(caller, user.RoleMember); err != nil {
+	if err := user.Allow(caller, user.ResTemplates, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	c, err := s.source()
@@ -185,7 +185,7 @@ func (s *Service) Templates(ctx context.Context, caller *user.User, query url.Va
 
 // Tags is every tag a listed template carries, for the filter.
 func (s *Service) Tags(ctx context.Context, caller *user.User) (json.RawMessage, error) {
-	if err := user.Require(caller, user.RoleMember); err != nil {
+	if err := user.Allow(caller, user.ResTemplates, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	c, err := s.source()
@@ -197,7 +197,7 @@ func (s *Service) Tags(ctx context.Context, caller *user.User) (json.RawMessage,
 
 // Template is one template, with its README, file and manifest.
 func (s *Service) Template(ctx context.Context, caller *user.User, owner, repo string) (json.RawMessage, error) {
-	if err := user.Require(caller, user.RoleMember); err != nil {
+	if err := user.Allow(caller, user.ResTemplates, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	c, err := s.source()
@@ -210,7 +210,7 @@ func (s *Service) Template(ctx context.Context, caller *user.User, owner, repo s
 // Icon is a release's icon, fetched through the instance so the
 // dashboard's browser never talks to the catalog.
 func (s *Service) Icon(ctx context.Context, caller *user.User, repository, file string) ([]byte, error) {
-	if err := user.Require(caller, user.RoleMember); err != nil {
+	if err := user.Allow(caller, user.ResTemplates, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	c, err := s.source()
@@ -235,7 +235,7 @@ func (i Installed) Busy() bool { return len(i.Runs) > 0 && i.Runs[0].Status == R
 
 // Installs is what is installed, or being installed, newest first.
 func (s *Service) Installs(ctx context.Context, caller *user.User) ([]Installed, error) {
-	if err := user.Require(caller, user.RoleMember); err != nil {
+	if err := user.Allow(caller, user.ResTemplates, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	all, err := s.records.Installs(ctx)
@@ -262,7 +262,7 @@ func (s *Service) Installs(ctx context.Context, caller *user.User) ([]Installed,
 
 // Get is one installation, its runs, and whether a newer release exists.
 func (s *Service) Get(ctx context.Context, caller *user.User, id int64) (*Installed, error) {
-	if err := user.Require(caller, user.RoleMember); err != nil {
+	if err := user.Allow(caller, user.ResTemplates, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	in, err := s.records.Install(ctx, id)
@@ -336,7 +336,7 @@ type Request struct {
 // The secrets the instance generated come back here and nowhere else:
 // they are not recorded, only written into the apps that use them.
 func (s *Service) Install(ctx context.Context, caller *user.User, req Request) (*Installed, map[string]string, error) {
-	if err := user.Require(caller, RoleToInstall); err != nil {
+	if err := user.Allow(caller, user.ResTemplates, RoleToInstall, ""); err != nil {
 		return nil, nil, err
 	}
 	p, err := s.prepare(ctx, caller, req)
@@ -408,7 +408,7 @@ type ReleaseOption struct {
 // Releases is every release of a template the catalog accepted, newest
 // first: the versions it can be installed at.
 func (s *Service) Releases(ctx context.Context, caller *user.User, owner, repo string) ([]ReleaseOption, error) {
-	if err := user.Require(caller, user.RoleMember); err != nil {
+	if err := user.Allow(caller, user.ResTemplates, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	c, err := s.source()
@@ -442,7 +442,7 @@ type ReleaseManifest struct {
 // the way an install reads it — so choosing an older version shows the form
 // that version installs with.
 func (s *Service) Manifest(ctx context.Context, caller *user.User, owner, repo, release string) (*ReleaseManifest, error) {
-	if err := user.Require(caller, user.RoleMember); err != nil {
+	if err := user.Allow(caller, user.ResTemplates, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	chosen, m, err := s.readRelease(ctx, owner, repo, release)

@@ -15,19 +15,24 @@ tool needs is in its inputs; what it refuses to do is in [MCP](/docs/mcp).
 
 ### create_api_key
 
-Issue an additional, independent API key for yourself under a given name (e.g. "mcp", "laptop") — it coexists with every key you already hold. access is read (reads, never a secret), deploy (what a member does) or full (everything you may); projects holds the key to those projects. A key can never create one that reaches more than it does.
+Issue an additional, independent API key for yourself under a given name (e.g. "mcp", "laptop") — it coexists with every key you already hold. role narrows the key to an access role from list_roles; without one it carries everything you may. A key can never create one that reaches more than it does.
 
 | Input | Type | What it is |
 | --- | --- | --- |
-| `access` | string | read, deploy or full; defaults to what the key calling this has |
 | `name` * | string | a label to recognize this key by later, e.g. "mcp" or "laptop" |
-| `projects` | array | project slugs the key is held to; omitted means every project the key calling this reaches |
+| `role` | string | the name of an access role narrowing the key, from list_roles; omitted is everything the key calling this reaches |
 
 \* required
 
 ### list_api_keys
 
 List metadata for every API key you hold (id, name, timestamps). Key values are never shown again after creation.
+
+Takes no input.
+
+### list_roles
+
+List the access roles on this instance: each one's name and grants — for every kind of resource, a level (none, view or manage), whether it reads secrets, and which items (null for every one). A role narrows what a member or an API key reaches.
 
 Takes no input.
 

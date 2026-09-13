@@ -118,7 +118,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) providers(w http.ResponseWriter, r *http.Request) {
-	if err := user.Require(user.FromContext(r.Context()), manageRole); err != nil {
+	if err := user.Allow(user.FromContext(r.Context()), user.ResDNS, user.LevelView, ""); err != nil {
 		WriteError(w, err)
 		return
 	}

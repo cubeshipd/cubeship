@@ -22,6 +22,7 @@
 // file whose whole job is to be edited.
 
 import type {
+  AccessRole,
   ApiKey,
   AuditEvent,
   CertificateReport,
@@ -31,6 +32,7 @@ import type {
   InstanceUser,
   Me,
   RegistryCredential,
+  ResourceInfo,
   Settings,
 } from "@/lib/api";
 
@@ -51,6 +53,7 @@ export const db = {
     email: "lucas@example.com",
     avatar: "cyan",
     avatars: ["blue", "cyan", "hacker", "helix", "mono", "orange", "pink", "purple", "red"],
+    grants: null,
   } as Me,
 
   users: [
@@ -63,14 +66,19 @@ export const db = {
     },
     // No display name, which is the ordinary state: the username
     // stands in, and the preview shows both halves of that rule.
-    { username: "ci", role: "member", avatar: "hacker", created_at: ago(60 * 24 * 12) },
+    {
+      username: "ci",
+      role: "member",
+      avatar: "hacker",
+      created_at: ago(60 * 24 * 12),
+      access_role_id: 2,
+    },
   ] as InstanceUser[],
 
   apiKeys: [
     {
       id: 1,
       name: "laptop",
-      access: "full",
       created_at: ago(60 * 24 * 30),
       last_used_at: ago(140),
       current_key: true,
@@ -78,20 +86,89 @@ export const db = {
     {
       id: 2,
       name: "ci",
-      access: "deploy",
-      projects: ["web"],
+      access_role_id: 2,
+      access_role: "Deploy",
       created_at: ago(60 * 24 * 8),
       current_key: false,
     },
     {
       id: 3,
       name: "claude",
-      access: "read",
+      access_role_id: 1,
+      access_role: "Read only",
       created_at: ago(60 * 24 * 2),
       last_used_at: ago(12),
       current_key: false,
     },
   ] as ApiKey[],
+
+  roles: [
+    {
+      id: 1,
+      name: "Read only",
+      description: "Sees everything a member can be given, changes nothing, and reads no secret.",
+      grants: [
+        "projects",
+        "apps",
+        "domains",
+        "databases",
+        "storage",
+        "servers",
+        "templates",
+        "backups",
+        "registry",
+        "registries",
+        "git",
+        "dns",
+        "credentials",
+        "certificates",
+        "firewall",
+        "settings",
+        "audit",
+      ].map((resource) => ({ resource, level: "view" as const, items: null })),
+      members: 0,
+      keys: 1,
+      updated_at: ago(60 * 24 * 3),
+    },
+    {
+      id: 2,
+      name: "Deploy",
+      description: "Creates, configures and deploys apps, and reads what they run against.",
+      grants: [
+        { resource: "projects", level: "view", secrets: true, items: null },
+        { resource: "apps", level: "manage", secrets: true, items: null },
+        { resource: "domains", level: "view", items: null },
+        { resource: "databases", level: "view", items: null },
+        { resource: "storage", level: "view", items: null },
+        { resource: "servers", level: "view", items: null },
+        { resource: "templates", level: "view", items: null },
+        { resource: "registry", level: "view", items: null },
+      ],
+      members: 1,
+      keys: 1,
+      updated_at: ago(60 * 24 * 3),
+    },
+  ] as AccessRole[],
+
+  resources: [
+    { resource: "projects", items: true, items_are: "project", secrets: true },
+    { resource: "apps", items: true, items_are: "project", secrets: true },
+    { resource: "domains", items: true, items_are: "project", secrets: false },
+    { resource: "databases", items: true, items_are: "database", secrets: true },
+    { resource: "storage", items: true, items_are: "object store", secrets: true },
+    { resource: "servers", items: false, secrets: false },
+    { resource: "templates", items: false, secrets: false },
+    { resource: "backups", items: false, secrets: true },
+    { resource: "registry", items: false, secrets: false },
+    { resource: "registries", items: false, secrets: false },
+    { resource: "git", items: false, secrets: false },
+    { resource: "dns", items: false, secrets: false },
+    { resource: "credentials", items: false, secrets: false },
+    { resource: "certificates", items: false, secrets: false },
+    { resource: "firewall", items: false, secrets: false },
+    { resource: "settings", items: false, secrets: false },
+    { resource: "audit", items: false, secrets: false },
+  ] as ResourceInfo[],
 
   audit: [
     {

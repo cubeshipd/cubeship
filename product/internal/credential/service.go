@@ -67,7 +67,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, in Credential) 
 // the credential first and be left holding an orphan when the registry
 // turned out to be unreachable.
 func (s *Service) CreateWith(ctx context.Context, caller *user.User, q database.Queryer, in Credential) (*Credential, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResCredentials, user.LevelManage, ""); err != nil {
 		return nil, err
 	}
 	in.Label = strings.TrimSpace(in.Label)
@@ -92,6 +92,9 @@ func (s *Service) CreateWith(ctx context.Context, caller *user.User, q database.
 // Update changes the label, the first half and the secret. A nil field
 // is left alone, so renaming one cannot blank its password.
 func (s *Service) Update(ctx context.Context, caller *user.User, id int64, label, username, password *string) (*Credential, error) {
+	if err := user.Allow(caller, user.ResCredentials, user.LevelManage, ""); err != nil {
+		return nil, err
+	}
 	if _, err := s.Resolve(ctx, caller, id); err != nil {
 		return nil, err
 	}
@@ -124,7 +127,7 @@ func (s *Service) Update(ctx context.Context, caller *user.User, id int64, label
 // of them, and the use it is being wired to is what decides whether it
 // works.
 func (s *Service) List(ctx context.Context, caller *user.User) ([]*Credential, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResCredentials, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	return s.Repo().List(ctx)
@@ -132,7 +135,7 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Credential, e
 
 // Resolve looks one up and requires the caller's role.
 func (s *Service) Resolve(ctx context.Context, caller *user.User, id int64) (*Credential, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResCredentials, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	c, err := s.Repo().ByID(ctx, id)
@@ -176,6 +179,9 @@ func (s *Service) Uses(ctx context.Context, id int64) ([]Use, error) {
 // The refusal names what is using it, because "in use" that does not
 // say by what is a refusal somebody has to go hunting to satisfy.
 func (s *Service) Delete(ctx context.Context, caller *user.User, id int64) error {
+	if err := user.Allow(caller, user.ResCredentials, user.LevelManage, ""); err != nil {
+		return err
+	}
 	if _, err := s.Resolve(ctx, caller, id); err != nil {
 		return err
 	}

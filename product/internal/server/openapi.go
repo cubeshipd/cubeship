@@ -49,6 +49,7 @@ const (
 func (s *Server) OpenAPI() openapi.Document {
 	merged := openapi.Merge(
 		user.NewHandler(s.Users).OpenAPI(),
+		user.NewHandler(s.Users).RolesOpenAPI(),
 		audit.NewHandler(s.Audit).OpenAPI(),
 		project.NewHandler(s.Projects).OpenAPI(),
 		app.NewHandler(s.Apps).OpenAPI(),

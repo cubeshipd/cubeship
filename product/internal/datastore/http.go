@@ -348,7 +348,7 @@ func engineResponses() []EngineResponse {
 }
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
-	d, err := h.svc.Resolve(r.Context(), user.FromContext(r.Context()), nameFrom(r), user.RoleMember)
+	d, err := h.svc.Resolve(r.Context(), user.FromContext(r.Context()), nameFrom(r), user.LevelView)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -391,7 +391,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 // metrics is what this database's container has been using. The series
 // is metrics' to render; what this adds is who may look at it.
 func (h *Handler) metrics(w http.ResponseWriter, r *http.Request) {
-	d, err := h.svc.Resolve(r.Context(), user.FromContext(r.Context()), nameFrom(r), user.RoleMember)
+	d, err := h.svc.Resolve(r.Context(), user.FromContext(r.Context()), nameFrom(r), user.LevelView)
 	if err != nil {
 		WriteError(w, err)
 		return

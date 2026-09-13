@@ -48,7 +48,7 @@ func (s *Service) Reader() *Reader { return s.reader }
 // this box has and how big its disk is, which is most of what somebody
 // opening the screen wanted to know.
 func (s *Service) Series(ctx context.Context, caller *user.User, window string) (Series, error) {
-	if err := user.Require(caller, RoleToRead); err != nil {
+	if err := user.Allow(caller, user.ResServers, user.LevelView, ""); err != nil {
 		return Series{}, err
 	}
 	w, err := metrics.ParseWindow(window)
@@ -93,7 +93,7 @@ func (s *Service) Series(ctx context.Context, caller *user.User, window string) 
 // it as the machine's own numbers — one screen, one question, one
 // answer about who may see it.
 func (s *Service) Containers(ctx context.Context, caller *user.User) ([]metrics.Usage, error) {
-	if err := user.Require(caller, RoleToRead); err != nil {
+	if err := user.Allow(caller, user.ResServers, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	return s.series.Usage(ctx)

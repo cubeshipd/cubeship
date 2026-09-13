@@ -69,7 +69,7 @@ func (s *Service) UsesCredential(ctx context.Context, credentialID int64) ([]cre
 
 // Accounts is every provider this instance reaches.
 func (s *Service) Accounts(ctx context.Context, caller *user.User) ([]*Account, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResDNS, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	return s.Repo().List(ctx)
@@ -82,7 +82,7 @@ func (s *Service) Accounts(ctx context.Context, caller *user.User) ([]*Account, 
 // NewLogin. Both at once is not a request with an obvious reading, and
 // guessing which was meant is how the wrong secret gets stored.
 func (s *Service) Connect(ctx context.Context, caller *user.User, in Account, login *NewLogin) (*Account, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResDNS, user.LevelManage, ""); err != nil {
 		return nil, err
 	}
 	if !in.Provider.Valid() {
@@ -144,7 +144,7 @@ func (s *Service) Repoint(ctx context.Context, caller *user.User, id, credential
 	if err := user.Require(caller, manageRole); err != nil {
 		return nil, err
 	}
-	if _, err := s.resolve(ctx, caller, id); err != nil {
+	if _, err := s.resolve(ctx, caller, id, user.LevelManage); err != nil {
 		return nil, err
 	}
 	if _, err := s.creds.Resolve(ctx, caller, credentialID); err != nil {
@@ -166,7 +166,7 @@ func (s *Service) Disconnect(ctx context.Context, caller *user.User, id int64) e
 	if err := user.Require(caller, manageRole); err != nil {
 		return err
 	}
-	if _, err := s.resolve(ctx, caller, id); err != nil {
+	if _, err := s.resolve(ctx, caller, id, user.LevelManage); err != nil {
 		return err
 	}
 	if s.cfg != nil {
@@ -189,8 +189,8 @@ func (s *Service) Disconnect(ctx context.Context, caller *user.User, id int64) e
 // resolve finds the provider an operation is addressed to. Every
 // operation below goes through it, so a caller without the role never
 // reaches somebody else's API.
-func (s *Service) resolve(ctx context.Context, caller *user.User, id int64) (*Account, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+func (s *Service) resolve(ctx context.Context, caller *user.User, id int64, need user.Level) (*Account, error) {
+	if err := user.Allow(caller, user.ResDNS, need, ""); err != nil {
 		return nil, err
 	}
 	a, err := s.Repo().ByID(ctx, id)
@@ -208,7 +208,7 @@ func (s *Service) resolve(ctx context.Context, caller *user.User, id int64) (*Ac
 // anything — the first sign would be a record edit failing — and the
 // point of asking now is to find out before that.
 func (s *Service) Probe(ctx context.Context, caller *user.User, id int64) (*Status, error) {
-	c, err := s.resolve(ctx, caller, id)
+	c, err := s.resolve(ctx, caller, id, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +237,7 @@ const probeTimeout = 10 * time.Second
 
 // Zones lists the domains a credential can reach.
 func (s *Service) Zones(ctx context.Context, caller *user.User, id int64) ([]Zone, error) {
-	c, err := s.resolve(ctx, caller, id)
+	c, err := s.resolve(ctx, caller, id, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +249,7 @@ func (s *Service) Zones(ctx context.Context, caller *user.User, id int64) ([]Zon
 
 // Records lists one zone's entries.
 func (s *Service) Records(ctx context.Context, caller *user.User, id int64, zoneID string) ([]Record, error) {
-	c, err := s.resolve(ctx, caller, id)
+	c, err := s.resolve(ctx, caller, id, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -270,7 +270,7 @@ func (s *Service) Records(ctx context.Context, caller *user.User, id int64, zone
 // creates or replaces the set whole, and a create/update split would be
 // two names for one call there and a race between them at the other.
 func (s *Service) PutRecord(ctx context.Context, caller *user.User, id int64, zoneID string, r Record) error {
-	c, err := s.resolve(ctx, caller, id)
+	c, err := s.resolve(ctx, caller, id, user.LevelManage)
 	if err != nil {
 		return err
 	}
@@ -301,7 +301,7 @@ func (s *Service) PutRecord(ctx context.Context, caller *user.User, id int64, zo
 
 // DeleteRecord removes everything at one name and type.
 func (s *Service) DeleteRecord(ctx context.Context, caller *user.User, id int64, zoneID, name, kind string) error {
-	c, err := s.resolve(ctx, caller, id)
+	c, err := s.resolve(ctx, caller, id, user.LevelManage)
 	if err != nil {
 		return err
 	}

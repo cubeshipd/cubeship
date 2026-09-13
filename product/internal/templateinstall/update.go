@@ -142,7 +142,7 @@ func (s *Service) Update(ctx context.Context, caller *user.User, id int64, req U
 // Uninstall deletes an installation's apps in the background — and its
 // databases and stores too, unless keepData.
 func (s *Service) Uninstall(ctx context.Context, caller *user.User, id int64, keepData bool) (*Run, error) {
-	if err := user.Require(caller, RoleToInstall); err != nil {
+	if err := user.Allow(caller, user.ResTemplates, RoleToInstall, ""); err != nil {
 		return nil, err
 	}
 	in, err := s.records.Install(ctx, id)
@@ -170,7 +170,7 @@ func (s *Service) Uninstall(ctx context.Context, caller *user.User, id int64, ke
 }
 
 func (s *Service) planUpdate(ctx context.Context, caller *user.User, id int64, release string, given map[string]string) (*updatePlan, error) {
-	if err := user.Require(caller, RoleToInstall); err != nil {
+	if err := user.Allow(caller, user.ResTemplates, RoleToInstall, ""); err != nil {
 		return nil, err
 	}
 	in, err := s.records.Install(ctx, id)

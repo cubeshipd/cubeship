@@ -275,7 +275,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	store, err := h.svc.Resolve(ctx, user.FromContext(ctx), r.PathValue("name"), user.RoleMember)
+	store, err := h.svc.Resolve(ctx, user.FromContext(ctx), r.PathValue("name"), user.LevelView)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -465,7 +465,7 @@ func (h *Handler) logs(w http.ResponseWriter, r *http.Request) {
 // measuring.
 func (h *Handler) metrics(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	store, err := h.svc.Resolve(ctx, user.FromContext(ctx), r.PathValue("name"), user.RoleMember)
+	store, err := h.svc.Resolve(ctx, user.FromContext(ctx), r.PathValue("name"), user.LevelView)
 	if err != nil {
 		WriteError(w, err)
 		return

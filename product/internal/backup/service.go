@@ -106,7 +106,7 @@ func (s *Service) Wait() { s.running.Wait() }
 // the ones whose database has been deleted, which is the only place
 // those still appear.
 func (s *Service) List(ctx context.Context, caller *user.User) ([]*Backup, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResBackups, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	return s.Repo().List(ctx)
@@ -127,7 +127,7 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Backup, error
 // alternative is a query that would have to know a schema `datastore`
 // owns.
 func (s *Service) Coverage(ctx context.Context, caller *user.User) ([]*Coverage, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResBackups, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 
@@ -243,7 +243,7 @@ func (s *Service) Orphans(ctx context.Context, caller *user.User) ([]*Backup, er
 
 // ForDatabase is one database's backups.
 func (s *Service) ForDatabase(ctx context.Context, caller *user.User, name string) ([]*Backup, error) {
-	d, err := s.resolve(ctx, caller, name)
+	d, err := s.resolve(ctx, caller, name, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +257,7 @@ func (s *Service) ForDatabase(ctx context.Context, caller *user.User, name strin
 // stops waiting rather than stops the backup. How it went lives in the
 // row, which is why the row is written first.
 func (s *Service) Take(ctx context.Context, caller *user.User, name string) (*Backup, error) {
-	d, err := s.resolve(ctx, caller, name)
+	d, err := s.resolve(ctx, caller, name, user.LevelManage)
 	if err != nil {
 		return nil, err
 	}
@@ -543,7 +543,7 @@ func KeyFor(datastore string, at time.Time) string {
 // server is only for a volume's backup: naming another server than the
 // volume's restores it there and moves the app with it.
 func (s *Service) Restore(ctx context.Context, caller *user.User, id int64, server string) error {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResBackups, user.LevelManage, ""); err != nil {
 		return err
 	}
 	row, err := s.Repo().ByID(ctx, id)
@@ -595,7 +595,7 @@ func (s *Service) Restore(ctx context.Context, caller *user.User, id int64, serv
 // backup being worth having: one nobody can get at is one that is only
 // useful to this instance.
 func (s *Service) Download(ctx context.Context, caller *user.User, id int64) (io.ReadCloser, *Backup, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.AllowSecrets(caller, user.ResBackups, ""); err != nil {
 		return nil, nil, err
 	}
 	row, err := s.Repo().ByID(ctx, id)
@@ -646,7 +646,7 @@ func SettleInterrupted(ctx context.Context, repo *Repository) error {
 // with no row is bytes in a bucket, which somebody can see and remove
 // where they are. Of the two, the second is the one that does not lie.
 func (s *Service) Delete(ctx context.Context, caller *user.User, id int64) error {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResBackups, user.LevelManage, ""); err != nil {
 		return err
 	}
 	row, err := s.Repo().ByID(ctx, id)
@@ -688,8 +688,14 @@ func (s *Service) remove(ctx context.Context, row *Backup) error {
 	return nil
 }
 
-func (s *Service) resolve(ctx context.Context, caller *user.User, name string) (*datastore.Datastore, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+func (s *Service) resolve(ctx context.Context, caller *user.User, name string, need user.Level) (*datastore.Datastore, error) {
+	if err := user.Allow(caller, user.ResBackups, need, ""); err != nil {
+		return nil, err
+	}
+	if err := user.Allow(caller, user.ResDatabases, user.LevelView, name); err != nil {
+		if errors.Is(err, user.ErrHidden) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 	d, err := s.dbs.BySlug(ctx, name)

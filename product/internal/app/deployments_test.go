@@ -44,7 +44,7 @@ func TestADeploymentListingCarriesNoLogs(t *testing.T) {
 	// writes one.
 	ctx := t.Context()
 	scoped, err := f.Server.Apps.Resolve(ctx, f.Admin,
-		app.Reference{Project: "web", Environment: "production", Name: "api"}, user.RoleAdmin)
+		app.Reference{Project: "web", Environment: "production", Name: "api"}, user.LevelManage)
 	if err != nil {
 		t.Fatalf("find the app: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestDeletingTheLiveDeployTakesTheAppDownAndKeepsTheApp(t *testing.T) {
 
 	ctx := t.Context()
 	scoped, err := f.Server.Apps.Resolve(ctx, f.Admin,
-		app.Reference{Project: "web", Environment: "production", Name: "api"}, user.RoleAdmin)
+		app.Reference{Project: "web", Environment: "production", Name: "api"}, user.LevelManage)
 	if err != nil {
 		t.Fatalf("find the app: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestADeployStillRunningCannotBeDeleted(t *testing.T) {
 
 	ctx := t.Context()
 	scoped, err := f.Server.Apps.Resolve(ctx, f.Admin,
-		app.Reference{Project: "web", Environment: "production", Name: "api"}, user.RoleAdmin)
+		app.Reference{Project: "web", Environment: "production", Name: "api"}, user.LevelManage)
 	if err != nil {
 		t.Fatal(err)
 	}

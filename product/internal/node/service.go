@@ -213,7 +213,7 @@ func (s *Service) Repo() *Repository { return NewRepository(s.db) }
 // exist yet — somebody now goes and runs the installer on it — and a
 // node that has never called is `pending` rather than an error.
 func (s *Service) Add(ctx context.Context, caller *user.User, name, description string) (*Node, string, error) {
-	if err := user.Require(caller, RoleToManage); err != nil {
+	if err := user.Allow(caller, user.ResServers, user.LevelManage, ""); err != nil {
 		return nil, "", err
 	}
 	if err := checkSlug(name); err != nil {
@@ -328,7 +328,7 @@ func (s *Service) MeshNetwork(ctx context.Context) string {
 // somebody's back: every container on it loses the cluster's network
 // until it is created again.
 func (s *Service) MeshStatus(ctx context.Context, caller *user.User) (Mesh, error) {
-	if err := user.Require(caller, RoleToRead); err != nil {
+	if err := user.Allow(caller, user.ResServers, user.LevelView, ""); err != nil {
 		return Mesh{}, err
 	}
 	if s.engine == nil {
@@ -357,7 +357,7 @@ type Mesh struct {
 
 // List is the cluster, this machine included.
 func (s *Service) List(ctx context.Context, caller *user.User) ([]*Node, error) {
-	if err := user.Require(caller, RoleToRead); err != nil {
+	if err := user.Allow(caller, user.ResServers, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	return s.Repo().List(ctx)
@@ -365,7 +365,7 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Node, error) 
 
 // Get is one machine by name.
 func (s *Service) Get(ctx context.Context, caller *user.User, name string) (*Node, error) {
-	if err := user.Require(caller, RoleToRead); err != nil {
+	if err := user.Allow(caller, user.ResServers, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	return s.Repo().BySlug(ctx, name)
@@ -383,7 +383,7 @@ func (s *Service) Get(ctx context.Context, caller *user.User, name string) (*Nod
 // The control plane cannot be removed. It is not a machine this
 // instance joined; it is the instance.
 func (s *Service) Remove(ctx context.Context, caller *user.User, name string) (*Node, error) {
-	if err := user.Require(caller, RoleToManage); err != nil {
+	if err := user.Allow(caller, user.ResServers, user.LevelManage, ""); err != nil {
 		return nil, err
 	}
 	n, err := s.Repo().BySlug(ctx, name)

@@ -51,6 +51,11 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.HandleInternal("POST /users/me/api-keys", auth(http.HandlerFunc(h.createAPIKey)))
 	r.HandleInternal("GET /users/me/api-keys", auth(http.HandlerFunc(h.listAPIKeys)))
 	r.HandleInternal("DELETE /users/me/api-keys/{id}", auth(http.HandlerFunc(h.revokeAPIKey)))
+
+	r.Handle("GET /roles", auth(http.HandlerFunc(h.listRoles)))
+	r.Handle("POST /roles", auth(http.HandlerFunc(h.createRole)))
+	r.Handle("PUT /roles/{id}", auth(http.HandlerFunc(h.updateRole)))
+	r.Handle("DELETE /roles/{id}", auth(http.HandlerFunc(h.deleteRole)))
 }
 
 // --- authentication ---
@@ -213,35 +218,44 @@ type WhoAmIResponse struct {
 	// Themes is served: the daemon is what refuses a name.
 	Avatars []string `json:"avatars,omitempty"`
 	// Key is the API key this request carried, absent for a session.
-	// Role above is already what the key allows.
 	Key *KeyResponse `json:"key,omitempty"`
+	// AccessRole is a member's role, absent for the member default.
+	AccessRole string `json:"access_role,omitempty"`
+	// Grants is what this request may reach — the account's role narrowed
+	// by the key's — and null for everything. The dashboard reads it to
+	// offer only what will be allowed; the daemon decides regardless.
+	Grants []Grant `json:"grants"`
+}
+
+func grantsOf(u *User) []Grant {
+	if u.Admin() {
+		return nil
+	}
+	return u.Effective().Grants()
 }
 
 // APIKeyResponse is one key's metadata. The key value itself appears
 // only in the response to creating it.
 type APIKeyResponse struct {
-	ID     int64  `json:"id"`
-	Name   string `json:"name"`
-	Access Access `json:"access"`
-	// Projects is absent for a key that reaches every project.
-	Projects   []string   `json:"projects,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
-	CurrentKey bool       `json:"current_key"`
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	// AccessRoleID and AccessRole are the role narrowing the key, absent
+	// for a key that carries all of its owner's access.
+	AccessRoleID int64      `json:"access_role_id,omitempty"`
+	AccessRole   string     `json:"access_role,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	LastUsedAt   *time.Time `json:"last_used_at,omitempty"`
+	CurrentKey   bool       `json:"current_key"`
 }
 
-func toAPIKeyResponse(k *APIKey, currentHash string) APIKeyResponse {
-	return APIKeyResponse{
-		ID: k.ID, Name: k.Name, Access: k.Access, Projects: k.Projects,
-		CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt,
-		CurrentKey: k.KeyHash == currentHash,
-	}
-}
-
-func toAPIKeyResponses(keys []*APIKey, currentHash string) []APIKeyResponse {
+func toAPIKeyResponses(keys []*APIKey, currentHash string, roles map[int64]string) []APIKeyResponse {
 	out := make([]APIKeyResponse, 0, len(keys))
 	for _, k := range keys {
-		out = append(out, toAPIKeyResponse(k, currentHash))
+		out = append(out, APIKeyResponse{
+			ID: k.ID, Name: k.Name, AccessRoleID: k.AccessRoleID, AccessRole: roles[k.AccessRoleID],
+			CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt,
+			CurrentKey: k.KeyHash == currentHash,
+		})
 	}
 	return out
 }
@@ -249,16 +263,36 @@ func toAPIKeyResponses(keys []*APIKey, currentHash string) []APIKeyResponse {
 // KeyResponse is the key a request authenticated with, as whoami
 // reports it.
 type KeyResponse struct {
-	Name     string   `json:"name"`
-	Access   Access   `json:"access"`
-	Projects []string `json:"projects,omitempty"`
+	Name       string `json:"name"`
+	AccessRole string `json:"access_role,omitempty"`
 }
 
-func toKeyResponse(k *KeyScope) *KeyResponse {
-	if k == nil {
-		return nil
+// RoleResponse is an access role as the API returns it.
+type RoleResponse struct {
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	Grants      []Grant   `json:"grants"`
+	Members     int       `json:"members"`
+	Keys        int       `json:"keys"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
+func toRoleResponse(r *AccessRole) RoleResponse {
+	grants := r.Grants
+	if grants == nil {
+		grants = []Grant{}
 	}
-	return &KeyResponse{Name: k.Name, Access: k.Access, Projects: k.Projects}
+	return RoleResponse{
+		ID: r.ID, Name: r.Name, Description: r.Description, Grants: grants,
+		Members: r.Members, Keys: r.Keys, UpdatedAt: r.UpdatedAt,
+	}
+}
+
+// RolesResponse is every role, and every resource a role can grant.
+type RolesResponse struct {
+	Roles     []RoleResponse `json:"roles"`
+	Resources []ResourceInfo `json:"resources"`
 }
 
 // --- signing in ---
@@ -363,7 +397,8 @@ func (h *Handler) whoAmI(w http.ResponseWriter, r *http.Request) {
 		Username: u.Username, Role: u.Role, HasPassword: has,
 		Theme: u.Theme, Themes: Themes,
 		DisplayName: u.DisplayName, Email: u.Email, Avatar: u.Avatar, Avatars: Avatars,
-		Key: toKeyResponse(u.Key),
+		Key: h.svc.KeyResponse(r.Context(), u), AccessRole: h.svc.RoleName(r.Context(), u.AccessRoleID),
+		Grants: grantsOf(u),
 	})
 }
 
@@ -388,6 +423,8 @@ type UserResponse struct {
 	// still there — see Service.SetBlocked.
 	BlockedAt *time.Time `json:"blocked_at,omitempty"`
 	CreatedAt time.Time  `json:"created_at"`
+	// AccessRoleID is a member's role, absent for the member default.
+	AccessRoleID int64 `json:"access_role_id,omitempty"`
 }
 
 // userResponseFor is the whole of an account, and it is one function
@@ -402,7 +439,7 @@ func userResponseFor(u *User) UserResponse {
 	return UserResponse{
 		Username: u.Username, Role: u.Role, Theme: u.Theme,
 		DisplayName: u.DisplayName, Email: u.Email, Avatar: u.Avatar,
-		BlockedAt: u.BlockedAt, CreatedAt: u.CreatedAt,
+		BlockedAt: u.BlockedAt, CreatedAt: u.CreatedAt, AccessRoleID: u.AccessRoleID,
 	}
 }
 
@@ -508,8 +545,9 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request) {
 // could not if absent meant the same thing.
 func (h *Handler) updateUser(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Role    *Role `json:"role"`
-		Blocked *bool `json:"blocked"`
+		Role         *Role  `json:"role"`
+		Blocked      *bool  `json:"blocked"`
+		AccessRoleID *int64 `json:"access_role_id"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -544,6 +582,13 @@ func (h *Handler) updateUser(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Blocked != nil {
 		updated, err = h.svc.SetBlocked(ctx, caller, username, *req.Blocked)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+	}
+	if req.AccessRoleID != nil {
+		updated, err = h.svc.SetAccessRole(ctx, caller, username, *req.AccessRoleID)
 		if err != nil {
 			WriteError(w, err)
 			return
@@ -604,23 +649,22 @@ func (h *Handler) rotateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name     string   `json:"name"`
-		Access   Access   `json:"access"`
-		Projects []string `json:"projects"`
+		Name         string `json:"name"`
+		AccessRoleID int64  `json:"access_role_id"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil || req.Name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
 	created, generated, err := h.svc.CreateAPIKey(r.Context(), FromContext(r.Context()),
-		KeyRequest{Name: req.Name, Access: req.Access, Projects: req.Projects})
+		KeyRequest{Name: req.Name, AccessRoleID: req.AccessRoleID})
 	if err != nil {
 		WriteError(w, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"id": created.ID, "name": created.Name, "api_key": generated,
-		"access": created.Access, "projects": created.Projects,
+		"access_role_id": created.AccessRoleID,
 	})
 }
 
@@ -635,7 +679,7 @@ func (h *Handler) listAPIKeys(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, toAPIKeyResponses(keys, KeyHashFromContext(ctx)))
+	httpx.WriteJSON(w, http.StatusOK, toAPIKeyResponses(keys, KeyHashFromContext(ctx), h.svc.RoleNames(ctx)))
 }
 
 func (h *Handler) revokeAPIKey(w http.ResponseWriter, r *http.Request) {
@@ -663,11 +707,14 @@ func WriteError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrUnauthenticated):
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
-	case errors.Is(err, ErrForbidden), errors.Is(err, ErrKeyScopeWider),
-		errors.Is(err, ErrKeyRestricted), errors.Is(err, ErrKeyForbidden):
+	case errors.Is(err, ErrForbidden), errors.Is(err, ErrKeyScopeWider), errors.Is(err, ErrKeyRestricted):
 		http.Error(w, err.Error(), http.StatusForbidden)
-	case errors.Is(err, ErrInvalidAccess), errors.Is(err, ErrNoProjects), errors.Is(err, ErrUnknownProject):
+	case errors.Is(err, ErrHidden), errors.Is(err, ErrNoSuchRole):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, ErrRoleName), errors.Is(err, ErrBadGrant):
 		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrRoleNameTaken), errors.Is(err, ErrRoleInUse):
+		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrBadUsername), errors.Is(err, ErrBadEmail),
 		errors.Is(err, ErrBadDisplayName), errors.Is(err, ErrUnknownAvatar):
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -732,4 +779,75 @@ func (h *Handler) add(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusCreated, AddResponse{
 		Username: created.Username, Role: created.Role, Password: password,
 	})
+}
+
+// --- access roles ---
+
+type roleBody struct {
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Grants      []Grant `json:"grants"`
+}
+
+func (h *Handler) listRoles(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	roles, err := h.svc.ListRoles(ctx, FromContext(ctx))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	out := RolesResponse{Roles: make([]RoleResponse, 0, len(roles)), Resources: Resources}
+	for _, role := range roles {
+		out.Roles = append(out.Roles, toRoleResponse(role))
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) createRole(w http.ResponseWriter, r *http.Request) {
+	var body roleBody
+	if err := httpx.DecodeJSON(r, &body); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	role, err := h.svc.CreateRole(ctx, FromContext(ctx), RoleRequest(body))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, toRoleResponse(role))
+}
+
+func (h *Handler) updateRole(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid role id", http.StatusBadRequest)
+		return
+	}
+	var body roleBody
+	if err := httpx.DecodeJSON(r, &body); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	role, err := h.svc.UpdateRole(ctx, FromContext(ctx), id, RoleRequest(body))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toRoleResponse(role))
+}
+
+func (h *Handler) deleteRole(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid role id", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	if err := h.svc.DeleteRole(ctx, FromContext(ctx), id); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

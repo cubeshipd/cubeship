@@ -14,7 +14,7 @@ import (
 // Schedule reads one database's, or nothing at all — which is what off
 // is, because the row existing is the whole of it.
 func (s *Service) Schedule(ctx context.Context, caller *user.User, name string) (*Schedule, error) {
-	d, err := s.resolve(ctx, caller, name)
+	d, err := s.resolve(ctx, caller, name, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -33,7 +33,7 @@ func (s *Service) Schedule(ctx context.Context, caller *user.User, name string) 
 // that is negative, and a store named with no bucket to put anything
 // in.
 func (s *Service) SetSchedule(ctx context.Context, caller *user.User, name, store string, in Schedule) (*Schedule, error) {
-	d, err := s.resolve(ctx, caller, name)
+	d, err := s.resolve(ctx, caller, name, user.LevelManage)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func (s *Service) checkSchedule(ctx context.Context, store string, in *Schedule)
 
 // UnsetSchedule turns it off by removing the row, which is what off is.
 func (s *Service) UnsetSchedule(ctx context.Context, caller *user.User, name string) error {
-	d, err := s.resolve(ctx, caller, name)
+	d, err := s.resolve(ctx, caller, name, user.LevelManage)
 	if err != nil {
 		return err
 	}
@@ -244,7 +244,7 @@ func (s *Service) RunScheduled(ctx context.Context, schedule *Schedule, at time.
 // InstanceSchedule reads the instance's own, or ErrNotFound — which is
 // what off is, because the row existing is the whole of it.
 func (s *Service) InstanceSchedule(ctx context.Context, caller *user.User) (*Schedule, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResBackups, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	schedule, err := s.Repo().InstanceSchedule(ctx)
@@ -260,7 +260,7 @@ func (s *Service) InstanceSchedule(ctx context.Context, caller *user.User) (*Sch
 // person who typed it is still watching, rather than at three in the
 // morning in a log nobody reads.
 func (s *Service) SetInstanceSchedule(ctx context.Context, caller *user.User, store string, in Schedule) (*Schedule, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResBackups, user.LevelManage, ""); err != nil {
 		return nil, err
 	}
 	if s.instance == nil || !s.instance.OwnsDatabase() {
@@ -274,7 +274,7 @@ func (s *Service) SetInstanceSchedule(ctx context.Context, caller *user.User, st
 
 // UnsetInstanceSchedule turns it off, which is the row going.
 func (s *Service) UnsetInstanceSchedule(ctx context.Context, caller *user.User) error {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResBackups, user.LevelManage, ""); err != nil {
 		return err
 	}
 	return s.Repo().DeleteInstanceSchedule(ctx)

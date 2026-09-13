@@ -96,7 +96,7 @@ const noUFW = "cubeship: no ufw"
 
 // Status reads the host's firewall.
 func (s *Service) Status(ctx context.Context, caller *user.User) (*Status, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResFirewall, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	status := &Status{Rules: []Rule{}}
@@ -284,6 +284,9 @@ func markProtected(status *Status) {
 // kept: a host whose sshd did not say which port it is on. There, any
 // rule this wrote would be a guess, and a wrong guess is the lockout.
 func (s *Service) Enable(ctx context.Context, caller *user.User) (*Status, error) {
+	if err := user.Allow(caller, user.ResFirewall, user.LevelManage, ""); err != nil {
+		return nil, err
+	}
 	status, err := s.Status(ctx, caller)
 	if err != nil {
 		return nil, err
@@ -320,7 +323,7 @@ func (s *Service) Enable(ctx context.Context, caller *user.User) (*Status, error
 // lock anybody out, and an operator who wants it off in a hurry is
 // usually having a bad enough day already.
 func (s *Service) Disable(ctx context.Context, caller *user.User) (*Status, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResFirewall, user.LevelManage, ""); err != nil {
 		return nil, err
 	}
 	if err := s.run(ctx, "ufw", "disable"); err != nil {
@@ -419,6 +422,9 @@ func insideOf(published []Published, port string) string {
 // a firewall nobody asked for, and the half that landed is the half
 // somebody then has to find.
 func (s *Service) AddRule(ctx context.Context, caller *user.User, req Request) (*Status, error) {
+	if err := user.Allow(caller, user.ResFirewall, user.LevelManage, ""); err != nil {
+		return nil, err
+	}
 	status, err := s.Status(ctx, caller)
 	if err != nil {
 		return nil, err
@@ -469,6 +475,9 @@ func (s *Service) AddRule(ctx context.Context, caller *user.User, req Request) (
 // that matches decides, so a rule appended to the end is a rule that may
 // now be shadowed by one above it.
 func (s *Service) ReplaceRule(ctx context.Context, caller *user.User, index int, expect string, req Request) (*Status, error) {
+	if err := user.Allow(caller, user.ResFirewall, user.LevelManage, ""); err != nil {
+		return nil, err
+	}
 	status, err := s.Status(ctx, caller)
 	if err != nil {
 		return nil, err
@@ -546,6 +555,9 @@ func findRule(status *Status, index int, expect string) (*Rule, error) {
 // deletes the wrong rule and the only sign is a port that stopped
 // answering.
 func (s *Service) DeleteRule(ctx context.Context, caller *user.User, index int, expect string) (*Status, error) {
+	if err := user.Allow(caller, user.ResFirewall, user.LevelManage, ""); err != nil {
+		return nil, err
+	}
 	status, err := s.Status(ctx, caller)
 	if err != nil {
 		return nil, err
@@ -596,6 +608,9 @@ func sameRule(a, b string) bool {
 // instance and the dashboard itself, and an adopt that took those down
 // would be a button that breaks the thing you pressed it from.
 func (s *Service) AdoptDocker(ctx context.Context, caller *user.User, allow []int) (*Status, error) {
+	if err := user.Allow(caller, user.ResFirewall, user.LevelManage, ""); err != nil {
+		return nil, err
+	}
 	status, err := s.Status(ctx, caller)
 	if err != nil {
 		return nil, err
@@ -669,7 +684,7 @@ func (s *Service) AdoptDocker(ctx context.Context, caller *user.User, allow []in
 // Published ports go back to being open regardless of what any rule
 // says, which is Docker's own behaviour and the reason for all of this.
 func (s *Service) ReleaseDocker(ctx context.Context, caller *user.User) (*Status, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResFirewall, user.LevelManage, ""); err != nil {
 		return nil, err
 	}
 	s.mu.Lock()

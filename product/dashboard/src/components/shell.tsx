@@ -42,7 +42,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { api, avatarSrc, type Me, personName } from "@/lib/api";
+import { api, avatarSrc, can, type Me, personName } from "@/lib/api";
 
 // The two layers, and what separates them.
 //
@@ -79,12 +79,19 @@ export const sections: { label?: string; items: NavItem[] }[] = [
         label: "Projects",
         icon: FolderTreeIcon,
         owns: ["/projects", "/environments", "/apps"],
+        resource: ["projects", "apps"],
       },
       // Beside Projects rather than under Platform: a database belongs
       // to the instance, but it is a thing you deploy against, not a
       // thing the instance is wired to. It is opened as often as an app
       // is, which is what the Platform section is not for.
-      { href: "/databases", label: "Databases", icon: DatabaseIcon, owns: ["/databases"] },
+      {
+        href: "/databases",
+        label: "Databases",
+        icon: DatabaseIcon,
+        owns: ["/databases"],
+        resource: "databases",
+      },
       // Beside Databases for the same reason it is beside Projects: a
       // bucket belongs to the instance, and it is a thing you deploy
       // against rather than a thing the instance is wired to. It sits
@@ -94,10 +101,22 @@ export const sections: { label?: string; items: NavItem[] }[] = [
       // "Object storage" rather than "Storage", which said nothing:
       // beside Databases in the same section it read as the place disks
       // are, and the URL stays /storage because a label is not a route.
-      { href: "/storage", label: "Object storage", icon: HardDriveIcon, owns: ["/storage"] },
+      {
+        href: "/storage",
+        label: "Object storage",
+        icon: HardDriveIcon,
+        owns: ["/storage"],
+        resource: "storage",
+      },
       // Ready-made apps from the catalog. In Workspace, because an
       // install is a project and the apps and data inside it.
-      { href: "/templates", label: "Templates", icon: LayoutTemplateIcon, owns: ["/templates"] },
+      {
+        href: "/templates",
+        label: "Templates",
+        icon: LayoutTemplateIcon,
+        owns: ["/templates"],
+        resource: "templates",
+      },
     ],
   },
   {
@@ -106,35 +125,70 @@ export const sections: { label?: string; items: NavItem[] }[] = [
       // First in the section, because the others are configured
       // *through* it: a registry and a DNS account both name a
       // credential now rather than holding a secret of their own.
-      { href: "/credentials", label: "Credentials", icon: KeyRoundIcon, owns: ["/credentials"] },
+      {
+        href: "/credentials",
+        label: "Credentials",
+        icon: KeyRoundIcon,
+        owns: ["/credentials"],
+        resource: "credentials",
+      },
       // Beside Credentials, and for the same reason it is in this
       // section at all: who can reach this instance is a fact about
       // the instance, the same kind as which registry it pulls from.
       // What is *yours* — your password, the colours you see — is
       // under your own name at the foot of this list.
-      { href: "/users", label: "Users", icon: UsersIcon, owns: ["/users"] },
+      { href: "/users", label: "Users", icon: UsersIcon, owns: ["/users"], admin: true },
       // Beside Users: what those people, and the keys they handed to
       // agents, actually did.
-      { href: "/audit", label: "Audit log", icon: ScrollTextIcon },
-      { href: "/registries", label: "Registries", icon: ContainerIcon, owns: ["/registries"] },
-      { href: "/git", label: "Git Providers", icon: GitBranchIcon, owns: ["/git"] },
-      { href: "/dns", label: "DNS Providers", icon: GlobeIcon, owns: ["/dns"] },
-      { href: "/certificates", label: "Certificates", icon: ShieldCheckIcon },
+      { href: "/audit", label: "Audit log", icon: ScrollTextIcon, resource: "audit" },
+      {
+        href: "/registries",
+        label: "Registries",
+        icon: ContainerIcon,
+        owns: ["/registries"],
+        resource: ["registries", "registry"],
+      },
+      {
+        href: "/git",
+        label: "Git Providers",
+        icon: GitBranchIcon,
+        owns: ["/git"],
+        resource: "git",
+      },
+      { href: "/dns", label: "DNS Providers", icon: GlobeIcon, owns: ["/dns"], resource: "dns" },
+      {
+        href: "/certificates",
+        label: "Certificates",
+        icon: ShieldCheckIcon,
+        resource: "certificates",
+      },
       // Here rather than beside Databases: what is on this screen is not
       // about any one database, and half of it is about databases that
       // no longer exist — which is the one thing a database's own tab
       // can never show.
-      { href: "/backups", label: "Backups", icon: ArchiveIcon, owns: ["/backups"] },
+      {
+        href: "/backups",
+        label: "Backups",
+        icon: ArchiveIcon,
+        owns: ["/backups"],
+        resource: "backups",
+      },
       // Next to Certificates rather than under Instance: both are about
       // how the outside reaches this machine, and both are read far
       // more often than they are changed.
-      { href: "/firewall", label: "Firewall", icon: ShieldIcon },
+      { href: "/firewall", label: "Firewall", icon: ShieldIcon, resource: "firewall" },
       // Above Instance, and the two read as a pair: the machines this
       // instance is made of, then the instance itself. A server is not
       // something you deploy *to* yet — when it is, this may well
       // belong beside Projects rather than here.
-      { href: "/servers", label: "Servers", icon: ServerIcon, owns: ["/servers"] },
-      { href: "/settings", label: "Settings", icon: ServerCogIcon },
+      {
+        href: "/servers",
+        label: "Servers",
+        icon: ServerIcon,
+        owns: ["/servers"],
+        resource: "servers",
+      },
+      { href: "/settings", label: "Settings", icon: ServerCogIcon, resource: "settings" },
     ],
   },
   // There is no "You" section any more. It held one item, and what is
@@ -156,7 +210,19 @@ type NavItem = {
   label: string;
   owns?: string[];
   icon: typeof FolderTreeIcon;
+  // What the screen is about: shown to somebody who can see any of it.
+  resource?: string | string[];
+  admin?: boolean;
 };
+
+// offered is whether the sidebar shows an entry at all. A screen somebody
+// cannot open is a link to a refusal.
+function offered(me: Me, item: NavItem) {
+  if (item.admin) return me.role === "admin" && !me.grants;
+  if (!item.resource) return true;
+  const resources = Array.isArray(item.resource) ? item.resource : [item.resource];
+  return resources.some((r) => can(me, r));
+}
 
 // Shell is every signed-in page: it resolves who you are before
 // rendering, and sends you to sign in when the answer is nobody.
@@ -193,20 +259,24 @@ export function Shell({ children }: { children: ReactNode }) {
               </Link>
 
               <div className="flex-1 p-2">
-                {sections.map((section, i) => (
-                  <div key={section.label ?? "workspace"} className={i > 0 ? "mt-5" : undefined}>
-                    {/* A heading rather than a rule: a line says these
+                {sections.map((section, i) => {
+                  const items = section.items.filter((item) => offered(me, item));
+                  if (items.length === 0) return null;
+                  return (
+                    <div key={section.label ?? "workspace"} className={i > 0 ? "mt-5" : undefined}>
+                      {/* A heading rather than a rule: a line says these
                         are apart, a word says what the other side is. */}
-                    {section.label && (
-                      <p className="mb-1 px-3 text-[10px] font-semibold tracking-[0.18em] text-subtle-foreground uppercase">
-                        {section.label}
-                      </p>
-                    )}
-                    {section.items.map((item) => (
-                      <NavLink key={item.href} {...item} />
-                    ))}
-                  </div>
-                ))}
+                      {section.label && (
+                        <p className="mb-1 px-3 text-[10px] font-semibold tracking-[0.18em] text-subtle-foreground uppercase">
+                          {section.label}
+                        </p>
+                      )}
+                      {items.map((item) => (
+                        <NavLink key={item.href} {...item} />
+                      ))}
+                    </div>
+                  );
+                })}
               </div>
 
               {/* The account button and nothing beside it. The link to

@@ -159,7 +159,7 @@ func (s *Service) MetricSubjects(ctx context.Context) ([]metrics.Subject, error)
 // using is part of knowing whether it is healthy, which is not an
 // admin's question.
 func (s *Service) Series(ctx context.Context, caller *user.User, ref Reference, window string) (metrics.Series, error) {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelView)
 	if err != nil {
 		return metrics.Series{}, err
 	}
@@ -262,12 +262,9 @@ func (s *Service) Orchestrator() *Orchestrator { return s.orch }
 
 // Resolve looks up an app by reference and requires minRole of the
 // caller.
-func (s *Service) Resolve(ctx context.Context, caller *user.User, ref Reference, minRole user.Role) (*Scoped, error) {
-	if err := user.Require(caller, minRole); err != nil {
+func (s *Service) Resolve(ctx context.Context, caller *user.User, ref Reference, need user.Level) (*Scoped, error) {
+	if err := allowApps(caller, ref.Project, need); err != nil {
 		return nil, err
-	}
-	if !caller.SeesProject(ref.Project) {
-		return nil, ErrNotFound
 	}
 	a, err := s.Repo().ScopedByReference(ctx, ref.Project, ref.Environment, ref.Name)
 	if err != nil {
@@ -284,12 +281,12 @@ func (s *Service) Resolve(ctx context.Context, caller *user.User, ref Reference,
 }
 
 // ResolveString is Resolve for a reference that still has to be parsed.
-func (s *Service) ResolveString(ctx context.Context, caller *user.User, ref string, minRole user.Role) (*Scoped, error) {
+func (s *Service) ResolveString(ctx context.Context, caller *user.User, ref string, need user.Level) (*Scoped, error) {
 	parsed, err := ParseReference(ref)
 	if err != nil {
 		return nil, err
 	}
-	return s.Resolve(ctx, caller, parsed, minRole)
+	return s.Resolve(ctx, caller, parsed, need)
 }
 
 // Create registers an app in a project's environment and returns it,
@@ -320,12 +317,18 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, en
 	// execute whatever that source contains, so it takes the same role
 	// deploying it does. A member creating one they could never deploy
 	// would be an odd thing to allow.
-	if err := user.Require(caller, RoleToDeploy(source)); err != nil {
+	if err := allowApps(caller, projectSlug, user.LevelManage); err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, project.ErrNotFound
+		}
 		return nil, err
 	}
-	p, err := s.projects.Resolve(ctx, caller, projectSlug, RoleToDeploy(source))
-	if err != nil {
+	if err := requireSource(caller, source); err != nil {
 		return nil, err
+	}
+	p, err := s.projects.Repo().BySlug(ctx, projectSlug)
+	if err != nil {
+		return nil, project.ErrNotFound
 	}
 	env, err := s.projects.EnvironmentRepo().BySlug(ctx, p.ID, envSlug)
 	if err != nil {
@@ -359,7 +362,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, en
 // whatever that repository contains — so it takes the same role, checked
 // against the source being moved to rather than the one being left.
 func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, source *Source, origin *Origin, health *string, limits *Limits, auto *Autoscale, place *Placement) (*Scoped, error) {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleAdmin)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
 	if err != nil {
 		return nil, err
 	}
@@ -385,7 +388,7 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 		if err := checkOrigin(next, &o); err != nil {
 			return nil, err
 		}
-		if err := user.Require(caller, RoleToDeploy(next)); err != nil {
+		if err := requireSource(caller, next); err != nil {
 			return nil, err
 		}
 		source, origin = &next, &o
@@ -454,7 +457,7 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 			return nil, err
 		}
 	}
-	return s.Resolve(ctx, caller, ref, user.RoleMember)
+	return s.Resolve(ctx, caller, ref, user.LevelView)
 }
 
 // Placement is where an app runs and where its traffic arrives.
@@ -666,7 +669,7 @@ func (s *Service) Delete(ctx context.Context, caller *user.User, ref Reference) 
 // Kept by default: deleting an app is not deciding its data is worthless,
 // and kept data is listed by VolumeOrphans until somebody removes it.
 func (s *Service) DeleteApp(ctx context.Context, caller *user.User, ref Reference, deleteVolumeData bool) (*Scoped, error) {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
 	if err != nil {
 		return nil, err
 	}
@@ -705,7 +708,7 @@ func (s *Service) dropVolumeData(ctx context.Context, volumes []Volume) {
 
 // Volumes is an app's volumes.
 func (s *Service) Volumes(ctx context.Context, caller *user.User, ref Reference) ([]Volume, error) {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -715,7 +718,7 @@ func (s *Service) Volumes(ctx context.Context, caller *user.User, ref Reference)
 // AddVolume gives an app a directory that outlives its container, on the
 // machine the app runs on. It is mounted from the app's next deploy.
 func (s *Service) AddVolume(ctx context.Context, caller *user.User, ref Reference, containerPath string) (*Volume, error) {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
 	if err != nil {
 		return nil, err
 	}
@@ -759,7 +762,7 @@ func (s *Service) AddVolume(ctx context.Context, caller *user.User, ref Referenc
 // deleteData, and the container running now keeps its mount until the
 // next deploy.
 func (s *Service) RemoveVolume(ctx context.Context, caller *user.User, ref Reference, volumeID int64, deleteData bool) error {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
 	if err != nil {
 		return err
 	}
@@ -804,7 +807,7 @@ func (s *Service) VolumeOrphans(ctx context.Context, caller *user.User) ([]Orpha
 // DeleteVolumeOrphan deletes kept data for good. An admin's: nothing
 // says whose it was but a record on disk.
 func (s *Service) DeleteVolumeOrphan(ctx context.Context, caller *user.User, id int64) error {
-	if err := user.Require(caller, user.RoleAdmin); err != nil {
+	if err := user.Allow(caller, user.ResApps, user.LevelManage, ""); err != nil {
 		return err
 	}
 	known, err := s.Repo().VolumeIDs(ctx)
@@ -879,7 +882,7 @@ func (s *Service) AllVolumes(ctx context.Context) ([]*VolumeTarget, error) {
 
 // VolumeOf is one of an app's volumes, by the app's reference.
 func (s *Service) VolumeOf(ctx context.Context, caller *user.User, ref Reference, id int64) (*VolumeTarget, error) {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -957,10 +960,10 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Scoped, error
 	if err != nil {
 		return nil, err
 	}
-	if caller.ProjectScoped() {
+	if !caller.Admin() {
 		seen := apps[:0]
 		for _, a := range apps {
-			if caller.SeesProject(a.ProjectSlug) {
+			if user.Sees(caller, user.ResApps, a.ProjectSlug) {
 				seen = append(seen, a)
 			}
 		}
@@ -994,8 +997,11 @@ func (s *Service) withDomains(ctx context.Context, apps []*Scoped) ([]*Scoped, e
 // Without this there is no way to see what an app is configured with —
 // which is what made replacing the whole map so easy to do by accident.
 func (s *Service) Env(ctx context.Context, caller *user.User, ref Reference) (envvar.Map, []envvar.Resolved, error) {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelView)
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := user.AllowSecrets(caller, user.ResApps, ref.Project); err != nil {
 		return nil, nil, err
 	}
 	p, err := s.projects.Repo().ByID(ctx, a.ProjectID)
@@ -1046,7 +1052,7 @@ func (s *Service) Env(ctx context.Context, caller *user.User, ref Reference) (en
 // environment's and its project's, so a member who could write them
 // could decide what an admin's app builds and runs.
 func (s *Service) requireEnvRole(caller *user.User, a *Scoped) error {
-	return user.Require(caller, RoleToDeploy(Source(a.Source)))
+	return requireSource(caller, Source(a.Source))
 }
 
 // SetEnv replaces the app's own variables, deleting any key not present.
@@ -1056,7 +1062,7 @@ func (s *Service) SetEnv(ctx context.Context, caller *user.User, ref Reference, 
 	// Resolved as a member first, so someone who cannot write this app's
 	// environment still gets the answer an unknown app gets rather than
 	// two different refusals. See requireEnvRole for the check after.
-	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
 	if err != nil {
 		return nil, err
 	}
@@ -1069,7 +1075,7 @@ func (s *Service) SetEnv(ctx context.Context, caller *user.User, ref Reference, 
 // MergeEnv adds or overwrites the given variables and removes the unset
 // ones, leaving every other key untouched.
 func (s *Service) MergeEnv(ctx context.Context, caller *user.User, ref Reference, set envvar.Map, unset []string) (*Scoped, error) {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
 	if err != nil {
 		return nil, err
 	}
@@ -1091,11 +1097,11 @@ func (s *Service) Deploy(ctx context.Context, caller *user.User, ref Reference, 
 	// Resolved as a member first, so someone outside the organization
 	// gets the same 404 an unknown app gets rather than learning it
 	// exists. The source's own requirement is checked after.
-	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := user.Require(caller, RoleToDeploy(Source(a.Source))); err != nil {
+	if err := requireSource(caller, Source(a.Source)); err != nil {
 		return nil, nil, err
 	}
 	deployment, err := s.orch.Start(ctx, a.ID, tag)
@@ -1114,7 +1120,7 @@ func (s *Service) WaitForDeploys() { s.orch.Wait() }
 // WaitForDeployment blocks until a deployment finishes or ctx is done.
 // Abandoning the wait does not abandon the deploy.
 func (s *Service) WaitForDeployment(ctx context.Context, caller *user.User, ref Reference, deploymentID int64) (*Deployment, error) {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -1123,7 +1129,7 @@ func (s *Service) WaitForDeployment(ctx context.Context, caller *user.User, ref 
 
 // Deployment reads one of an app's deployments.
 func (s *Service) Deployment(ctx context.Context, caller *user.User, ref Reference, deploymentID int64) (*Deployment, error) {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -1167,11 +1173,11 @@ func (s *Service) Deployment(ctx context.Context, caller *user.User, ref Referen
 // The role is the one that deploys this app: somebody who may replace
 // what is running may take it off.
 func (s *Service) DeleteDeployment(ctx context.Context, caller *user.User, ref Reference, deploymentID int64) error {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
 	if err != nil {
 		return err
 	}
-	if err := user.Require(caller, RoleToDeploy(Source(a.Source))); err != nil {
+	if err := requireSource(caller, Source(a.Source)); err != nil {
 		return err
 	}
 	d, err := s.Repo().DeploymentByID(ctx, a.ID, deploymentID)
@@ -1248,7 +1254,7 @@ const MaxDeploymentHistory = 50
 // the one the app is running — which is what makes removing it a
 // different act. See DeleteDeployment.
 func (s *Service) Deployments(ctx context.Context, caller *user.User, ref Reference) ([]*Deployment, error) {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -1336,7 +1342,7 @@ func (s *Service) markStalled(ctx context.Context, a *Scoped, history []*Deploym
 // Logs returns an app's container output. tail limits it to that many
 // trailing lines; an empty tail returns the whole log.
 func (s *Service) Logs(ctx context.Context, caller *user.User, ref Reference, server, tail string) (io.ReadCloser, error) {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	a, err := s.Resolve(ctx, caller, ref, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -1443,7 +1449,7 @@ func (s *Service) DeployOnPush(ctx context.Context, fullName, branch string) (in
 // Port 0 means DefaultPort. See Domain.Port for why nothing reads it
 // off the image.
 func (s *Service) AddDomain(ctx context.Context, caller *user.User, ref Reference, host string, port int) (*Scoped, error) {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleAdmin)
+	a, err := s.resolveDomains(ctx, caller, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -1473,7 +1479,7 @@ func (s *Service) AddDomain(ctx context.Context, caller *user.User, ref Referenc
 		}
 		return nil, err
 	}
-	return s.Resolve(ctx, caller, ref, user.RoleAdmin)
+	return s.Resolve(ctx, caller, ref, user.LevelView)
 }
 
 // instanceOwnsHost reports whether a name is one the daemon already
@@ -1511,7 +1517,7 @@ func (s *Service) instanceOwnsHost(ctx context.Context, host string) (bool, erro
 
 // SetDomainPort changes what one of an app's names reaches.
 func (s *Service) SetDomainPort(ctx context.Context, caller *user.User, ref Reference, domainID int64, port int) (*Scoped, error) {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleAdmin)
+	a, err := s.resolveDomains(ctx, caller, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -1524,7 +1530,7 @@ func (s *Service) SetDomainPort(ctx context.Context, caller *user.User, ref Refe
 		}
 		return nil, err
 	}
-	return s.Resolve(ctx, caller, ref, user.RoleAdmin)
+	return s.Resolve(ctx, caller, ref, user.LevelView)
 }
 
 // RemoveDomain takes a name off an app.
@@ -1534,7 +1540,7 @@ func (s *Service) SetDomainPort(ctx context.Context, caller *user.User, ref Refe
 // every other routing change follows, and it is why this does not stop
 // anything by itself.
 func (s *Service) RemoveDomain(ctx context.Context, caller *user.User, ref Reference, domainID int64) (*Scoped, error) {
-	a, err := s.Resolve(ctx, caller, ref, user.RoleAdmin)
+	a, err := s.resolveDomains(ctx, caller, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -1544,7 +1550,7 @@ func (s *Service) RemoveDomain(ctx context.Context, caller *user.User, ref Refer
 		}
 		return nil, err
 	}
-	return s.Resolve(ctx, caller, ref, user.RoleAdmin)
+	return s.Resolve(ctx, caller, ref, user.LevelView)
 }
 
 // ServerFor is a machine by name: its id, and whether it is the control
@@ -1581,4 +1587,27 @@ func (s *Service) MoveVolume(ctx context.Context, volumeID int64, server string)
 		return err
 	}
 	return s.replace(ctx, a, Placement{Nodes: []string{server}, Replicas: 1}, Source(a.Source))
+}
+
+// allowApps is Allow on the apps in a project, answering a project
+// outside the caller's grant as the app not being there.
+func allowApps(caller *user.User, projectSlug string, need user.Level) error {
+	err := user.Allow(caller, user.ResApps, need, projectSlug)
+	if errors.Is(err, user.ErrHidden) {
+		return ErrNotFound
+	}
+	return err
+}
+
+// resolveDomains is an app whose names the caller may change.
+func (s *Service) resolveDomains(ctx context.Context, caller *user.User, ref Reference) (*Scoped, error) {
+	a, err := s.Resolve(ctx, caller, ref, user.LevelView)
+	if err != nil {
+		return nil, err
+	}
+	err = user.Allow(caller, user.ResDomains, user.LevelManage, ref.Project)
+	if errors.Is(err, user.ErrHidden) {
+		return nil, ErrNotFound
+	}
+	return a, err
 }

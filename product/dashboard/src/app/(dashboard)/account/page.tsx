@@ -9,7 +9,6 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailTabs } from "@/components/header-rail";
-import { MultiSelect } from "@/components/multi-select";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
 import { SearchableSelect } from "@/components/searchable-select";
@@ -28,19 +27,8 @@ import {
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ValueCard } from "@/components/value-card";
-import { type ApiKey, api, avatarSrc, type KeyAccess } from "@/lib/api";
+import { type AccessRoles, type ApiKey, api, avatarSrc } from "@/lib/api";
 import { message } from "@/lib/errors";
-
-const ACCESS_LABEL: Record<KeyAccess, string> = {
-  read: "Read only",
-  deploy: "Deploy",
-  full: "Full",
-};
-
-const ACCESS_HINT: Record<Exclude<KeyAccess, "full">, string> = {
-  read: "Lists, logs and status. Never a variable, a credential, a download or a change.",
-  deploy: "What a member does: create, configure and deploy apps.",
-};
 
 // The screen for everything that is **yours** rather than the
 // instance's: how you sign in, and what it looks like to you.
@@ -287,13 +275,10 @@ function Keys() {
       id: "access",
       header: "Access",
       width: 30,
-      sortBy: (k) => k.access,
+      sortBy: (k) => k.access_role ?? "",
       cell: (k) => (
-        <span className="flex min-w-0 flex-col">
-          <span className="text-xs">{ACCESS_LABEL[k.access] ?? k.access}</span>
-          <span className="truncate font-mono text-[11px] text-subtle-foreground">
-            {k.projects ? k.projects.join(", ") || "no projects left" : "every project"}
-          </span>
+        <span className="truncate text-xs">
+          {k.access_role ?? <span className="text-muted-foreground">All your access</span>}
         </span>
       ),
     },
@@ -456,25 +441,22 @@ function NewKeyDialog({
   onOpenChange: (v: boolean) => void;
   onIssued: (key: string) => void;
 }) {
-  const me = useSession();
   const [name, setName] = useState("");
-  const [access, setAccess] = useState<KeyAccess>("full");
-  // None picked is every project.
-  const [picked, setPicked] = useState<string[]>([]);
-  const [projects, setProjects] = useState<string[] | null>(null);
+  // "0" is all of the caller's own access.
+  const [role, setRole] = useState("0");
+  const [roles, setRoles] = useState<AccessRoles["roles"]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setName("");
-    setAccess("full");
-    setPicked([]);
+    setRole("0");
     setError(null);
     api
-      .get<{ slug: string }[]>("/projects")
-      .then((list) => setProjects(list.map((p) => p.slug)))
-      .catch(() => setProjects([]));
+      .get<AccessRoles>("/roles")
+      .then((r) => setRoles(r.roles))
+      .catch(() => setRoles([]));
   }, [open]);
 
   async function submit(e: React.FormEvent) {
@@ -484,8 +466,7 @@ function NewKeyDialog({
     try {
       const created = await api.post<{ api_key: string }>("/users/me/api-keys", {
         name,
-        access,
-        projects: picked.length > 0 ? picked : undefined,
+        access_role_id: Number(role),
       });
       onIssued(created.api_key);
       onOpenChange(false);
@@ -494,6 +475,8 @@ function NewKeyDialog({
     }
     setBusy(false);
   }
+
+  const chosen = roles.find((r) => String(r.id) === role);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -515,27 +498,17 @@ function NewKeyDialog({
             />
             <SearchableSelect
               label="Access"
-              value={access}
-              onChange={(v) => setAccess(v as KeyAccess)}
-              choices={(["read", "deploy", "full"] as const).map((a) => ({
-                value: a,
-                label: ACCESS_LABEL[a],
-              }))}
+              value={role}
+              onChange={setRole}
+              choices={[
+                { value: "0", label: "All your access" },
+                ...roles.map((r) => ({ value: String(r.id), label: r.name })),
+              ]}
               hint={
-                access === "full" ? `Everything you can do, as ${me.role}.` : ACCESS_HINT[access]
-              }
-            />
-            <MultiSelect
-              label="Projects"
-              none="Every project"
-              values={picked}
-              onChange={setPicked}
-              choices={(projects ?? []).map((slug) => ({ value: slug, label: slug }))}
-              empty="No projects yet."
-              hint={
-                picked.length === 0
-                  ? "And what belongs to the instance: databases, object storage, servers."
-                  : "The other projects, and what belongs to the instance, are not there."
+                chosen
+                  ? (chosen.description ??
+                    "Narrowed to this role. It never reaches more than you do.")
+                  : "Everything you can do. Pick a role to hand an agent less."
               }
             />
           </div>

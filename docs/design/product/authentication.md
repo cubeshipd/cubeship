@@ -133,38 +133,49 @@ case no single request can show, two admins taking each other's role in
 the same moment, where a check made outside the transaction lets both
 through.
 
-## What a key may do, and what everyone did
+## Access roles, and what everyone did
 
-**A key carries an access and, optionally, a list of projects.** `read`,
-`deploy` or `full`, under its owner's role. `user.Authenticate` puts the
-scope on the caller as `User.Key` and lowers `Role` to member for anything
-short of `full`, once — so every `Require` on the instance already answers
-for the key. A deploy key of an admin cannot create a project.
+**Roles are the authorization model; `admin` and `member` are its two
+ends.** An access role (`access_roles`, `internal/user/role.go`) is a name
+and a list of grants: a resource, a level (`none`/`view`/`manage`),
+whether it reads secrets, and which items — project slugs, database or
+store names — with **null meaning every one and an empty list none**, so
+a grant whose items were all deleted reaches nothing.
 
-Projects are checked where they are resolved — `project.Service.Resolve`,
-`app.Service.Resolve`, the two listings, and the registry's scope grant —
-and answer as not found. `api_keys.all_projects` is a column rather than
-"no rows below", because a scoped key whose projects were all deleted must
-reach nothing, not everything.
+`user.Authenticate` and `AuthenticateSession` put a `Policy` on the
+caller: nil for an admin, the member's role or `DefaultMemberPolicy`, and
+either intersected with the key's role. `Effective()` answers the member
+default for a member whose Policy was never set — **nil is everything only
+for an admin**, because a member built by hand without it passed every
+check once. Every module asks `user.Allow(caller, resource, level, item)`;
+an item outside a grant is `ErrHidden`, which modules answer as their own
+not found. Secrets are `AllowSecrets`: app, project and environment
+variables, database and store credentials, a bucket's contents, backup
+downloads.
 
-**What only a door can decide is at the door** (`server/access.go`):
-whether a request is a read, whether it reads a secret (`secretRoutes`),
-and whether it is about a project at all. A project key keeps routes with
-a project in the path and a short list without (`scopedRoutes`); every
-instance-wide thing — databases, stores, servers, templates — is gone.
-Over MCP a tool a key does not allow is **removed from the list** rather
-than refused: an agent cannot be talked into calling what it was never
-shown. `toolRules` classifies every tool, and a test fails for one that
-is not — a forgotten entry would otherwise be a tool a restricted key
-keeps.
+The resources split where the old line between member and admin ran, so
+`DefaultMemberPolicy` is exactly what a member had: **apps** (deploys,
+variables, volumes) apart from **projects** (their structure and
+variables) and **domains**. Seeing a project follows from seeing its apps.
+Users and roles are not a resource — whoever can grant access can grant
+themselves all of it — and building source stays the owner's admin role
+(`app.requireSource`), whatever a key's role says.
 
-A restricted key cannot mint a wider key, revoke keys or change the
-password: each would be a way out of the scope from inside it.
+A key's role only narrows. A restricted key cannot mint a key whose
+effective policy is wider than its own, revoke keys or change the
+password. A role held by anybody cannot be deleted (`ErrRoleInUse`, and
+`ON DELETE RESTRICT` under a race).
+
+**Over MCP a tool the caller cannot use is removed from the list** rather
+than refused (`server/access.go`): an agent cannot be talked into calling
+what it was never shown. `toolRules` names each tool's resource and level,
+and a test fails for one that is not classified. The services decide every
+call regardless.
 
 **The audit log** (`internal/audit`) records at the same two doors: every
 non-read HTTP request behind `auth`, every refused one including reads,
 and every tool call that changes something or was not available. Recorded
-outside the key policy, so refusals are in it. Never a body; a tool's
+inside authentication, so refusals are in it. Never a body; a tool's
 arguments keep only the ones that name something. What no request asked
 for — a push webhook's deploy, a schedule — is not in it. Kept 90 days.
 

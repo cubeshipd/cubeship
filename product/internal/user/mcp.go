@@ -33,8 +33,12 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.whoAmI)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "create_api_key",
-		Description: `Issue an additional, independent API key for yourself under a given name (e.g. "mcp", "laptop") — it coexists with every key you already hold. access is read (reads, never a secret), deploy (what a member does) or full (everything you may); projects holds the key to those projects. A key can never create one that reaches more than it does.`,
+		Description: `Issue an additional, independent API key for yourself under a given name (e.g. "mcp", "laptop") — it coexists with every key you already hold. role narrows the key to an access role from list_roles; without one it carries everything you may. A key can never create one that reaches more than it does.`,
 	}, t.createAPIKey)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "list_roles",
+		Description: "List the access roles on this instance: each one's name and grants — for every kind of resource, a level (none, view or manage), whether it reads secrets, and which items (null for every one). A role narrows what a member or an API key reaches.",
+	}, t.listRoles)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "list_api_keys",
 		Description: "List metadata for every API key you hold (id, name, timestamps). Key values are never shown again after creation.",
@@ -49,37 +53,54 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.rotateMyAPIKey)
 }
 
-func (t *Tools) whoAmI(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, WhoAmIResponse, error) {
+func (t *Tools) whoAmI(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, WhoAmIResponse, error) {
 	// No password flag here. It exists for the account screen, which
 	// has a revoke button beside it; an agent has nothing to do with
 	// how its caller signs in.
-	return nil, WhoAmIResponse{Username: t.caller.Username, Role: t.caller.Role, Key: toKeyResponse(t.caller.Key)}, nil
+	return nil, WhoAmIResponse{Username: t.caller.Username, Role: t.caller.Role, Key: t.svc.KeyResponse(ctx, t.caller), AccessRole: t.svc.RoleName(ctx, t.caller.AccessRoleID), Grants: grantsOf(t.caller)}, nil
 }
 
 type createAPIKeyInput struct {
-	Name     string   `json:"name" jsonschema:"a label to recognize this key by later, e.g. \"mcp\" or \"laptop\""`
-	Access   string   `json:"access,omitempty" jsonschema:"read, deploy or full; defaults to what the key calling this has"`
-	Projects []string `json:"projects,omitempty" jsonschema:"project slugs the key is held to; omitted means every project the key calling this reaches"`
+	Name string `json:"name" jsonschema:"a label to recognize this key by later, e.g. \"mcp\" or \"laptop\""`
+	Role string `json:"role,omitempty" jsonschema:"the name of an access role narrowing the key, from list_roles; omitted is everything the key calling this reaches"`
 }
 
 type createAPIKeyOutput struct {
-	ID       int64    `json:"id"`
-	Name     string   `json:"name"`
-	APIKey   string   `json:"api_key"`
-	Access   Access   `json:"access"`
-	Projects []string `json:"projects,omitempty"`
+	ID         int64  `json:"id"`
+	Name       string `json:"name"`
+	APIKey     string `json:"api_key"`
+	AccessRole string `json:"access_role,omitempty"`
 }
 
 func (t *Tools) createAPIKey(ctx context.Context, _ *mcp.CallToolRequest, in createAPIKeyInput) (*mcp.CallToolResult, createAPIKeyOutput, error) {
-	created, generated, err := t.svc.CreateAPIKey(ctx, t.caller,
-		KeyRequest{Name: in.Name, Access: Access(in.Access), Projects: in.Projects})
+	req := KeyRequest{Name: in.Name}
+	if in.Role != "" {
+		role, err := t.svc.RoleByName(ctx, t.caller, in.Role)
+		if err != nil {
+			return nil, createAPIKeyOutput{}, fmt.Errorf("role %q: %w", in.Role, err)
+		}
+		req.AccessRoleID = role.ID
+	}
+	created, generated, err := t.svc.CreateAPIKey(ctx, t.caller, req)
 	if err != nil {
 		return nil, createAPIKeyOutput{}, err
 	}
 	return nil, createAPIKeyOutput{
 		ID: created.ID, Name: created.Name, APIKey: generated,
-		Access: created.Access, Projects: created.Projects,
+		AccessRole: t.svc.RoleName(ctx, created.AccessRoleID),
 	}, nil
+}
+
+func (t *Tools) listRoles(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, []RoleResponse, error) {
+	roles, err := t.svc.ListRoles(ctx, t.caller)
+	if err != nil {
+		return nil, nil, err
+	}
+	out := make([]RoleResponse, 0, len(roles))
+	for _, r := range roles {
+		out = append(out, toRoleResponse(r))
+	}
+	return nil, out, nil
 }
 
 func (t *Tools) listAPIKeys(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, []APIKeyResponse, error) {
@@ -87,7 +108,7 @@ func (t *Tools) listAPIKeys(ctx context.Context, _ *mcp.CallToolRequest, _ struc
 	if err != nil {
 		return nil, nil, err
 	}
-	return nil, toAPIKeyResponses(keys, t.keyHash), nil
+	return nil, toAPIKeyResponses(keys, t.keyHash, t.svc.RoleNames(ctx)), nil
 }
 
 type revokeAPIKeyInput struct {

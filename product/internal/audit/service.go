@@ -38,7 +38,7 @@ func (s *Service) Record(ctx context.Context, e Event) {
 // List reads the log, newest first. Admin only: it is everybody's
 // activity on the instance.
 func (s *Service) List(ctx context.Context, caller *user.User, f Filter) ([]*Event, error) {
-	if err := user.Require(caller, user.RoleAdmin); err != nil {
+	if err := user.Allow(caller, user.ResAudit, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	if f.Limit <= 0 {

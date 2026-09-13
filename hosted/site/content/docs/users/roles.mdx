@@ -38,9 +38,41 @@ about what the instance is wired to and never lets one read a row of a
 database or a file in a bucket — an app they deploy still uses both,
 because the app is given the keys.
 
+## Access roles
+
+A member can be held to less than that, or given more, with an **access
+role**: a named list of grants, made once on **Users → Access roles** and
+given to members and to API keys.
+
+Each grant is one kind of resource — projects, apps, domains, databases,
+object storage, servers, templates, backups, the registries, git and DNS
+providers, credentials, certificates, the firewall, settings, the audit
+log — and says:
+
+| | |
+| --- | --- |
+| **Level** | `none`, `view` or `manage`. |
+| **Secrets** | Whether it reads what somebody set: variables, credentials, files in a bucket, backup downloads. |
+| **Which** | For projects, apps, domains, databases and object storage: every one, or only those named. One outside the list is not there — it answers as not found. |
+
+A member with no role has the **member default**: apps managed with their
+variables, projects read, and domains, databases, object storage, servers,
+templates and this instance's registry read — what a member did before
+roles existed. Two roles come with the instance, *Read only* and *Deploy*,
+and are edited like any other.
+
+Users and roles are not grantable: whoever can shape access can give
+themselves all of it, so they stay an admin's. So does building source,
+whatever a role says. A role still held by somebody cannot be deleted.
+
+```bash
+cubeship role list
+```
+
 ## What a key inherits
 
-An API key has its owner's role. An agent holding an admin's key can do
-what an admin can, minus what
-[no tool offers](/docs/mcp#what-it-does-not-do); give an agent a
-member's key unless it has business doing the rest.
+An API key has its owner's access. Given a role, it has **that role
+narrowed by its owner's** — never more than the owner reaches, and over
+MCP it is not offered a tool its access would refuse. Give an agent a
+key with a role unless it has business doing everything you can. See
+[API keys](/docs/users/api-keys).

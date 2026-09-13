@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -23,8 +24,8 @@ func NewRepository(q database.Queryer) *Repository {
 }
 
 const (
-	userColumns   = `id, username, role, theme, display_name, email, avatar, blocked_at, created_at`
-	apiKeyColumns = `id, user_id, key_hash, name, access, all_projects, created_at, last_used_at`
+	userColumns   = `id, username, role, theme, display_name, email, avatar, blocked_at, created_at, access_role_id`
+	apiKeyColumns = `id, user_id, key_hash, name, access_role_id, created_at, last_used_at`
 )
 
 // joinedUserColumns is userColumns under the alias `u`, for the two
@@ -61,13 +62,15 @@ func scanUser(row scanner) (*User, error) { return scanUserWith(row) }
 // stops it going wrong a third time.
 func scanUserWith(row scanner, extra ...any) (*User, error) {
 	var u User
+	var role sql.NullInt64
 	dest := []any{
 		&u.ID, &u.Username, &u.Role, &u.Theme,
-		&u.DisplayName, &u.Email, &u.Avatar, &u.BlockedAt, &u.CreatedAt,
+		&u.DisplayName, &u.Email, &u.Avatar, &u.BlockedAt, &u.CreatedAt, &role,
 	}
 	if err := row.Scan(append(dest, extra...)...); err != nil {
 		return nil, err
 	}
+	u.AccessRoleID = role.Int64
 	return &u, nil
 }
 
@@ -102,17 +105,11 @@ func (r *Repository) SetTheme(ctx context.Context, userID int64, theme string) e
 
 func scanAPIKey(row scanner) (*APIKey, error) {
 	var k APIKey
-	var access string
-	var all bool
-	if err := row.Scan(&k.ID, &k.UserID, &k.KeyHash, &k.Name, &access, &all, &k.CreatedAt, &k.LastUsedAt); err != nil {
+	var role sql.NullInt64
+	if err := row.Scan(&k.ID, &k.UserID, &k.KeyHash, &k.Name, &role, &k.CreatedAt, &k.LastUsedAt); err != nil {
 		return nil, err
 	}
-	k.Access = Access(access)
-	// Non-nil and empty until the projects are read: a scoped key with
-	// none left reaches nothing.
-	if !all {
-		k.Projects = []string{}
-	}
+	k.AccessRoleID = role.Int64
 	return &k, nil
 }
 
@@ -288,71 +285,27 @@ func (r *Repository) Count(ctx context.Context) (int, error) {
 }
 
 func (r *Repository) CreateAPIKey(ctx context.Context, userID int64, keyHash, name string) (*APIKey, error) {
-	return r.CreateScopedAPIKey(ctx, userID, keyHash, name, AccessFull, nil)
+	return r.CreateRoleAPIKey(ctx, userID, keyHash, name, 0)
 }
 
-// CreateScopedAPIKey issues a key limited to access and, when projectIDs
-// is not nil, to those projects. Run it inside a transaction: the key
-// and its projects are one fact.
-func (r *Repository) CreateScopedAPIKey(ctx context.Context, userID int64, keyHash, name string, access Access, projectIDs []int64) (*APIKey, error) {
+// CreateRoleAPIKey issues a key narrowed to an access role; 0 is none.
+func (r *Repository) CreateRoleAPIKey(ctx context.Context, userID int64, keyHash, name string, roleID int64) (*APIKey, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO api_keys (user_id, key_hash, name, access, all_projects) VALUES ($1, $2, $3, $4, $5) RETURNING `+apiKeyColumns,
-		userID, keyHash, name, string(access), projectIDs == nil)
+		`INSERT INTO api_keys (user_id, key_hash, name, access_role_id) VALUES ($1, $2, $3, $4) RETURNING `+apiKeyColumns,
+		userID, keyHash, name, nullID(roleID))
 	k, err := scanAPIKey(row)
 	if err != nil {
 		return nil, fmt.Errorf("create api key: %w", err)
 	}
-	for _, id := range projectIDs {
-		if _, err := r.q.ExecContext(ctx,
-			`INSERT INTO api_key_projects (key_id, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, k.ID, id); err != nil {
-			return nil, fmt.Errorf("scope api key: %w", err)
-		}
-	}
-	if projectIDs != nil {
-		if k.Projects, err = r.KeyProjects(ctx, k.ID); err != nil {
-			return nil, err
-		}
-	}
 	return k, nil
 }
 
-// KeyProjects returns the slugs of the projects a scoped key reaches.
-func (r *Repository) KeyProjects(ctx context.Context, keyID int64) ([]string, error) {
-	rows, err := r.q.QueryContext(ctx, `
-		SELECT p.slug FROM api_key_projects kp
-		JOIN projects p ON p.id = kp.project_id
-		WHERE kp.key_id = $1 ORDER BY p.slug`, keyID)
-	if err != nil {
-		return nil, fmt.Errorf("read key projects: %w", err)
+// nullID is an optional foreign key: 0 is none.
+func nullID(id int64) any {
+	if id == 0 {
+		return nil
 	}
-	defer rows.Close()
-	out := []string{}
-	for rows.Next() {
-		var slug string
-		if err := rows.Scan(&slug); err != nil {
-			return nil, err
-		}
-		out = append(out, slug)
-	}
-	return out, rows.Err()
-}
-
-// ProjectIDs resolves project slugs to ids, and says which one does not
-// exist.
-func (r *Repository) ProjectIDs(ctx context.Context, slugs []string) ([]int64, string, error) {
-	ids := make([]int64, 0, len(slugs))
-	for _, slug := range slugs {
-		var id int64
-		err := r.q.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug = $1`, slug).Scan(&id)
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, slug, ErrUnknownProject
-		}
-		if err != nil {
-			return nil, "", fmt.Errorf("resolve project: %w", err)
-		}
-		ids = append(ids, id)
-	}
-	return ids, "", nil
+	return id
 }
 
 // ByAPIKeyHash resolves a credential to the identity that holds it. This
@@ -395,19 +348,7 @@ func (r *Repository) ListAPIKeys(ctx context.Context, userID int64) ([]*APIKey, 
 		}
 		out = append(out, k)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	rows.Close()
-	for _, k := range out {
-		if k.Projects == nil {
-			continue
-		}
-		if k.Projects, err = r.KeyProjects(ctx, k.ID); err != nil {
-			return nil, err
-		}
-	}
-	return out, nil
+	return out, rows.Err()
 }
 
 // RevokeAPIKeyByHash revokes exactly the key with this hash — the one a
@@ -554,4 +495,96 @@ func (r *Repository) DeleteExpiredSessions(ctx context.Context) (int64, error) {
 		return 0, fmt.Errorf("delete expired sessions: %w", err)
 	}
 	return res.RowsAffected()
+}
+
+// --- access roles ---
+
+const roleColumns = `id, name, description, grants, created_at, updated_at,
+	(SELECT COUNT(*) FROM users u WHERE u.access_role_id = access_roles.id),
+	(SELECT COUNT(*) FROM api_keys k WHERE k.access_role_id = access_roles.id)`
+
+func scanRole(row scanner) (*AccessRole, error) {
+	var ar AccessRole
+	var grants []byte
+	if err := row.Scan(&ar.ID, &ar.Name, &ar.Description, &grants, &ar.CreatedAt, &ar.UpdatedAt, &ar.Members, &ar.Keys); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(grants, &ar.Grants); err != nil {
+		return nil, fmt.Errorf("read the grants of role %d: %w", ar.ID, err)
+	}
+	return &ar, nil
+}
+
+func (r *Repository) ListRoles(ctx context.Context) ([]*AccessRole, error) {
+	rows, err := r.q.QueryContext(ctx, `SELECT `+roleColumns+` FROM access_roles ORDER BY name`)
+	if err != nil {
+		return nil, fmt.Errorf("list roles: %w", err)
+	}
+	defer rows.Close()
+	out := []*AccessRole{}
+	for rows.Next() {
+		ar, err := scanRole(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ar)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repository) RoleByID(ctx context.Context, id int64) (*AccessRole, error) {
+	ar, err := scanRole(r.q.QueryRowContext(ctx, `SELECT `+roleColumns+` FROM access_roles WHERE id = $1`, id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNoSuchRole
+	}
+	return ar, err
+}
+
+func (r *Repository) CreateRole(ctx context.Context, name, description string, grants []Grant) (int64, error) {
+	raw, err := json.Marshal(grants)
+	if err != nil {
+		return 0, err
+	}
+	var id int64
+	err = r.q.QueryRowContext(ctx,
+		`INSERT INTO access_roles (name, description, grants) VALUES ($1, $2, $3) RETURNING id`,
+		name, description, raw).Scan(&id)
+	return id, err
+}
+
+func (r *Repository) UpdateRole(ctx context.Context, id int64, name, description string, grants []Grant) error {
+	raw, err := json.Marshal(grants)
+	if err != nil {
+		return err
+	}
+	res, err := r.q.ExecContext(ctx,
+		`UPDATE access_roles SET name = $2, description = $3, grants = $4, updated_at = now() WHERE id = $1`,
+		id, name, description, raw)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNoSuchRole
+	}
+	return nil
+}
+
+func (r *Repository) DeleteRole(ctx context.Context, id int64) error {
+	res, err := r.q.ExecContext(ctx, `DELETE FROM access_roles WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNoSuchRole
+	}
+	return nil
+}
+
+// SetAccessRole gives an account a role; 0 is the member default.
+func (r *Repository) SetAccessRole(ctx context.Context, userID, roleID int64) error {
+	if _, err := r.q.ExecContext(ctx,
+		`UPDATE users SET access_role_id = $2 WHERE id = $1`, userID, nullID(roleID)); err != nil {
+		return fmt.Errorf("give the role: %w", err)
+	}
+	return nil
 }

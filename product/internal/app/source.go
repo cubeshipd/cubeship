@@ -81,6 +81,19 @@ func RoleToDeploy(s Source) user.Role {
 	return user.RoleMember
 }
 
+// requireSource is the rule a source that builds adds to managing apps:
+// this host will execute whatever it contains, so it is an admin's — the
+// owner's role, whatever access role narrows the request.
+func requireSource(caller *user.User, s Source) error {
+	if caller == nil {
+		return user.ErrUnauthenticated
+	}
+	if s.Builds() && caller.Role != user.RoleAdmin {
+		return user.ErrForbidden
+	}
+	return nil
+}
+
 // ErrUnknownSource reports a source this version cannot deploy.
 var ErrUnknownSource = errors.New(`source must be "registry", "external", "dockerfile" or "railpack"`)
 

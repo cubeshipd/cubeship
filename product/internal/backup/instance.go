@@ -73,7 +73,7 @@ const DatabaseEntry = "cubeship.sql"
 // Same row, same destinations and same retention as a database's — see
 // Kind for why this module is the one that can reach it at all.
 func (s *Service) TakeInstance(ctx context.Context, caller *user.User) (*Backup, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResBackups, user.LevelManage, ""); err != nil {
 		return nil, err
 	}
 	schedule, err := s.instanceScheduleOrNothing(ctx)
@@ -89,7 +89,7 @@ func (s *Service) TakeInstance(ctx context.Context, caller *user.User) (*Backup,
 
 // ListInstance is every backup of the instance, newest first.
 func (s *Service) ListInstance(ctx context.Context, caller *user.User) ([]*Backup, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResBackups, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	return s.Repo().ForInstance(ctx)

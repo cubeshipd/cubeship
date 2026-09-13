@@ -4,11 +4,11 @@ import (
 	"context"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
 	"cubeship/internal/audit"
-	"cubeship/internal/server"
 	"cubeship/internal/server/servertest"
 	"cubeship/internal/user"
 )
@@ -22,23 +22,36 @@ func issueKey(t *testing.T, f *servertest.Fixture, withKey string, body map[stri
 	return out.APIKey
 }
 
-func TestEveryRouteTheKeyPolicyNamesExists(t *testing.T) {
-	f := servertest.New(t)
-	served := map[string]bool{}
-	for _, p := range append(f.Server.Patterns(), f.Server.InternalPatterns()...) {
-		served[p] = true
-	}
-	for _, list := range []map[string]bool{server.SecretRoutes, server.ScopedRoutes} {
-		for pattern := range list {
-			if !served[pattern] {
-				t.Errorf("the key policy names %s, which is not a route", pattern)
-			}
-		}
-	}
+type roleOut struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
 }
 
-// Every change the API can record reads as a sentence, and so does every
-// secret a key can be refused.
+// seededRole is one of the roles the migration creates.
+func seededRole(t *testing.T, f *servertest.Fixture, name string) int64 {
+	t.Helper()
+	var out struct {
+		Roles []roleOut `json:"roles"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/roles", nil, f.AdminKey, &out), http.StatusOK)
+	for _, r := range out.Roles {
+		if r.Name == name {
+			return r.ID
+		}
+	}
+	t.Fatalf("no role %q among %+v", name, out.Roles)
+	return 0
+}
+
+func createRole(t *testing.T, f *servertest.Fixture, name string, grants ...user.Grant) int64 {
+	t.Helper()
+	var out roleOut
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodPost, "/roles",
+		map[string]any{"name": name, "grants": grants}, f.AdminKey, &out), http.StatusCreated)
+	return out.ID
+}
+
+// Every change the API can record reads as a sentence.
 func TestEveryRecordedRouteHasASentence(t *testing.T) {
 	f := servertest.New(t)
 	// Not behind authentication, so never recorded.
@@ -48,98 +61,59 @@ func TestEveryRecordedRouteHasASentence(t *testing.T) {
 		"POST /nodes/agent/reconcile": true, "POST /nodes/agent/results/{id}": true,
 	}
 	for _, p := range append(f.Server.Patterns(), f.Server.InternalPatterns()...) {
-		method, _ := strings.CutSuffix(strings.SplitN(p, " ", 2)[0], "")
-		if method == "GET" || method == "HEAD" || !strings.Contains(p, " ") || unrecorded[p] {
+		method, _, found := strings.Cut(p, " ")
+		if !found || method == "GET" || method == "HEAD" || unrecorded[p] {
 			continue
 		}
 		if !audit.Describes(p) {
 			t.Errorf("route %s has no sentence in audit's routes", p)
 		}
 	}
-	for p := range server.SecretRoutes {
-		if !audit.Describes(p) {
-			t.Errorf("secret route %s has no sentence in audit's routes", p)
-		}
-	}
 }
 
-func TestAProjectKeyReachesOnlyItsProject(t *testing.T) {
+func TestARoleHoldsAMemberToItsGrants(t *testing.T) {
 	f := servertest.New(t)
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/projects", map[string]any{"slug": "shop"}, f.AdminKey), http.StatusCreated)
-	agent := issueKey(t, f, f.AdminKey, map[string]any{"name": "agent", "access": "deploy", "projects": []string{"web"}}, http.StatusCreated)
+	role := createRole(t, f, "web deployer",
+		user.Grant{Resource: user.ResApps, Level: user.LevelManage, Secrets: true, Items: []string{"web"}})
+	_, key := f.AddMember(t, "dev", user.RoleMember)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/users/dev", map[string]any{"access_role_id": role}, f.AdminKey), http.StatusOK)
 
 	var projects []struct {
 		Slug string `json:"slug"`
 	}
-	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/projects", nil, agent, &projects), http.StatusOK)
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/projects", nil, key, &projects), http.StatusOK)
 	if len(projects) != 1 || projects[0].Slug != "web" {
-		t.Fatalf("a key held to web listed %v", projects)
+		t.Fatalf("a member given web's apps listed %v", projects)
 	}
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", map[string]any{"project": "shop", "name": "api"}, key), http.StatusNotFound)
+	if rec := f.Do(t, http.MethodPost, "/apps", map[string]any{"project": "web", "name": "api"}, key); rec.Code >= 300 {
+		t.Fatalf("a member managing web's apps could not create one: %d %s", rec.Code, rec.Body)
+	}
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/projects", map[string]any{"slug": "nope"}, key), http.StatusForbidden)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/datastores", map[string]any{"slug": "db", "engine": "postgres"}, key), http.StatusForbidden)
 
-	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/projects/shop/environments", nil, agent), http.StatusNotFound)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", map[string]any{"project": "shop", "name": "api"}, agent), http.StatusNotFound)
-	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/datastores", nil, agent), http.StatusForbidden)
-	if rec := f.Do(t, http.MethodPost, "/apps", map[string]any{"project": "web", "name": "api"}, agent); rec.Code >= 300 {
-		t.Fatalf("a key held to web could not create an app in it: %d %s", rec.Code, rec.Body)
-	}
-
-	// Its own key cannot be widened, and one asked for by name alone is
-	// no wider than it.
-	issueKey(t, f, agent, map[string]any{"name": "wider", "projects": []string{"shop"}}, http.StatusForbidden)
-	issueKey(t, f, agent, map[string]any{"name": "full", "access": "full"}, http.StatusForbidden)
-	issueKey(t, f, agent, map[string]any{"name": "same"}, http.StatusCreated)
-	var keys []struct {
-		Name     string   `json:"name"`
-		Access   string   `json:"access"`
-		Projects []string `json:"projects"`
-	}
-	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/users/me/api-keys", nil, agent, &keys), http.StatusOK)
-	i := slices.IndexFunc(keys, func(k struct {
-		Name     string   `json:"name"`
-		Access   string   `json:"access"`
-		Projects []string `json:"projects"`
-	}) bool {
-		return k.Name == "same"
-	})
-	if i < 0 || keys[i].Access != "deploy" || !slices.Equal(keys[i].Projects, []string{"web"}) {
-		t.Fatalf("a key made by a restricted key is %+v", keys)
-	}
-
-	// Nor can it revoke its owner's keys.
-	servertest.RequireStatus(t, f.Do(t, http.MethodDelete, "/users/me/api-keys/1", nil, agent), http.StatusForbidden)
-
-	session := connectMCP(t, f, agent)
-	listed, result := callTool[[]struct {
-		Slug string `json:"slug"`
-	}](t, session, "list_projects", nil)
-	if result.IsError || len(listed) != 1 || listed[0].Slug != "web" {
-		t.Fatalf("over MCP a key held to web listed %v (%s)", listed, toolErrorText(result))
-	}
-	tools, err := session.ListTools(context.Background(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, tool := range tools.Tools {
-		if tool.Name == "create_datastore" || tool.Name == "list_datastores" {
-			t.Errorf("a key held to a project was offered %s", tool.Name)
-		}
-	}
+	// Back to the member default, which reads the databases again.
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/users/dev", map[string]any{"access_role_id": 0}, f.AdminKey), http.StatusOK)
+	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/projects/shop/environments", nil, key), http.StatusOK)
 }
 
-func TestADeployKeyDoesNotCarryItsOwnersAdminRole(t *testing.T) {
+func TestAKeyRoleNarrowsItsOwner(t *testing.T) {
 	f := servertest.New(t)
-	deploy := issueKey(t, f, f.AdminKey, map[string]any{"name": "ci", "access": "deploy"}, http.StatusCreated)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/projects", map[string]any{"slug": "nope"}, deploy), http.StatusForbidden)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/projects", map[string]any{"slug": "yes"}, f.AdminKey), http.StatusCreated)
-}
-
-func TestAReadKeyReadsAndChangesNothing(t *testing.T) {
-	f := servertest.New(t)
-	read := issueKey(t, f, f.AdminKey, map[string]any{"name": "watcher", "access": "read"}, http.StatusCreated)
+	readOnly := seededRole(t, f, "Read only")
+	deploy := seededRole(t, f, "Deploy")
+	read := issueKey(t, f, f.AdminKey, map[string]any{"name": "watcher", "access_role_id": readOnly}, http.StatusCreated)
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/apps", nil, read), http.StatusOK)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps", map[string]any{"project": "web", "name": "api"}, read), http.StatusForbidden)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/projects", map[string]any{"slug": "nope"}, read), http.StatusForbidden)
 	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/projects/web/env", nil, read), http.StatusForbidden)
+	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/users", nil, read), http.StatusForbidden)
+
+	// It cannot hand out more than it has, cannot revoke, and a key asked
+	// for by name alone carries its role.
+	issueKey(t, f, read, map[string]any{"name": "wider", "access_role_id": deploy}, http.StatusForbidden)
+	issueKey(t, f, read, map[string]any{"name": "same"}, http.StatusCreated)
+	servertest.RequireStatus(t, f.Do(t, http.MethodDelete, "/users/me/api-keys/1", nil, read), http.StatusForbidden)
 
 	session := connectMCP(t, f, read)
 	tools, err := session.ListTools(context.Background(), nil)
@@ -151,24 +125,34 @@ func TestAReadKeyReadsAndChangesNothing(t *testing.T) {
 		names = append(names, tool.Name)
 	}
 	if !slices.Contains(names, "list_apps") {
-		t.Error("a read key lost list_apps")
+		t.Error("a read-only key lost list_apps")
 	}
 	for _, hidden := range []string{"deploy_app", "get_app_env", "create_project"} {
 		if slices.Contains(names, hidden) {
-			t.Errorf("a read key was offered %s", hidden)
+			t.Errorf("a read-only key was offered %s", hidden)
 		}
 	}
-	_, result := callTool[map[string]any](t, session, "create_project", map[string]any{"slug": "nope"})
-	if !result.IsError {
-		t.Fatal("a read key created a project over MCP")
+	if _, result := callTool[map[string]any](t, session, "create_project", map[string]any{"slug": "nope"}); !result.IsError {
+		t.Fatal("a read-only key created a project over MCP")
 	}
+}
+
+func TestRolesAreAnAdminsToChange(t *testing.T) {
+	f := servertest.New(t)
+	_, key := f.AddMember(t, "dev", user.RoleMember)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/roles", map[string]any{"name": "mine", "grants": []any{}}, key), http.StatusForbidden)
+
+	role := createRole(t, f, "ops", user.Grant{Resource: user.ResServers, Level: user.LevelView})
+	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/users/dev", map[string]any{"access_role_id": role}, f.AdminKey), http.StatusOK)
+	servertest.RequireStatus(t, f.Do(t, http.MethodDelete, "/roles/"+strconv.FormatInt(role, 10), nil, f.AdminKey), http.StatusConflict)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/roles",
+		map[string]any{"name": "bad", "grants": []map[string]any{{"resource": "users", "level": "view", "items": nil}}}, f.AdminKey), http.StatusBadRequest)
 }
 
 type auditPage struct {
 	Events []struct {
 		Username string `json:"username"`
 		Via      string `json:"via"`
-		KeyName  string `json:"key_name"`
 		Action   string `json:"action"`
 		Target   string `json:"target"`
 		Outcome  string `json:"outcome"`
@@ -178,7 +162,7 @@ type auditPage struct {
 func TestChangesAndRefusalsAreAudited(t *testing.T) {
 	f := servertest.New(t)
 	_, memberKey := f.AddMember(t, "member", user.RoleMember)
-	read := issueKey(t, f, f.AdminKey, map[string]any{"name": "watcher", "access": "read"}, http.StatusCreated)
+	read := issueKey(t, f, f.AdminKey, map[string]any{"name": "watcher", "access_role_id": seededRole(t, f, "Read only")}, http.StatusCreated)
 
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/projects", map[string]any{"slug": "shop"}, f.AdminKey), http.StatusCreated)
 	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/apps", nil, read), http.StatusOK)
@@ -191,7 +175,6 @@ func TestChangesAndRefusalsAreAudited(t *testing.T) {
 
 	var page auditPage
 	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, "/audit", nil, f.AdminKey, &page), http.StatusOK)
-
 	has := func(action, outcome, via string) bool {
 		for _, e := range page.Events {
 			if e.Action == action && e.Outcome == outcome && e.Via == via {
@@ -204,7 +187,7 @@ func TestChangesAndRefusalsAreAudited(t *testing.T) {
 		t.Errorf("creating a project is not in the log: %+v", page.Events)
 	}
 	if !has("POST /apps", "refused", "api") {
-		t.Errorf("a read key's refused write is not in the log: %+v", page.Events)
+		t.Errorf("a read-only key's refused write is not in the log: %+v", page.Events)
 	}
 	if !has("mcp create_app", "ok", "mcp") {
 		t.Errorf("an app created over MCP is not in the log: %+v", page.Events)
@@ -213,10 +196,6 @@ func TestChangesAndRefusalsAreAudited(t *testing.T) {
 		if e.Action == "GET /apps" {
 			t.Errorf("a read that was allowed was recorded: %+v", e)
 		}
-		if e.Action == "mcp create_app" && !strings.Contains(e.Target, "name=viamcp") {
-			t.Errorf("the MCP event does not say what it created: %q", e.Target)
-		}
 	}
-
 	servertest.RequireStatus(t, f.Do(t, http.MethodGet, "/audit", nil, memberKey), http.StatusForbidden)
 }

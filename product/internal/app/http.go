@@ -664,7 +664,7 @@ func (h *Handler) setEnv(w http.ResponseWriter, r *http.Request) {
 // this adds is the one thing that package must not decide: who is
 // allowed to look.
 func (h *Handler) metrics(w http.ResponseWriter, r *http.Request) {
-	a, err := h.svc.Resolve(r.Context(), user.FromContext(r.Context()), refFrom(r), user.RoleMember)
+	a, err := h.svc.Resolve(r.Context(), user.FromContext(r.Context()), refFrom(r), user.LevelView)
 	if err != nil {
 		WriteError(w, err)
 		return

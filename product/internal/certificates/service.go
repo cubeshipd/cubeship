@@ -66,7 +66,7 @@ func (s *Service) SetEngine(e Engine) { s.engine = e }
 // member sees an app's domains on the app; whether the instance managed
 // to get a certificate for one is the operator's business.
 func (s *Service) Report(ctx context.Context, caller *user.User) (Report, error) {
-	if err := user.Require(caller, user.RoleAdmin); err != nil {
+	if err := user.Allow(caller, user.ResCertificates, user.LevelView, ""); err != nil {
 		return Report{}, err
 	}
 	report, err := s.report(ctx)

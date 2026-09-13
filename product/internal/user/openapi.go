@@ -29,14 +29,15 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"avatars":      openapi.Array(openapi.String("A face's name. Served rather than compiled into the dashboard, for the reason `themes` is: the daemon is what refuses a name.")),
 			}, "username", "role", "has_password"),
 			"User": openapi.Object(map[string]*openapi.Schema{
-				"username":     openapi.String("The account."),
-				"role":         openapi.String("Either `admin` or `member`."),
-				"theme":        openapi.String("Which palette this person sees the dashboard in. Absent for the default."),
-				"display_name": openapi.String("What the person is called. Absent when unset."),
-				"email":        openapi.String("Somewhere to reach them. Absent when unset."),
-				"avatar":       openapi.String("Which face the account wears."),
-				"blocked_at":   openapi.String("RFC 3339, when the account was shut out. **Absent while it is not**, which is what makes this one field rather than a flag and a date.\n\nA blocked account keeps everything it had — its password, its keys, its sessions — and is refused at the door instead, so unblocking puts somebody back exactly where they were."),
-				"created_at":   openapi.String("RFC 3339."),
+				"username":       openapi.String("The account."),
+				"role":           openapi.String("Either `admin` or `member`."),
+				"theme":          openapi.String("Which palette this person sees the dashboard in. Absent for the default."),
+				"display_name":   openapi.String("What the person is called. Absent when unset."),
+				"email":          openapi.String("Somewhere to reach them. Absent when unset."),
+				"avatar":         openapi.String("Which face the account wears."),
+				"blocked_at":     openapi.String("RFC 3339, when the account was shut out. **Absent while it is not**, which is what makes this one field rather than a flag and a date.\n\nA blocked account keeps everything it had — its password, its keys, its sessions — and is refused at the door instead, so unblocking puts somebody back exactly where they were."),
+				"created_at":     openapi.String("RFC 3339."),
+				"access_role_id": openapi.Integer("A member's access role. Absent for the member default, and for an admin."),
 			}, "username", "role", "created_at"),
 			"Users": openapi.Object(map[string]*openapi.Schema{
 				"users": openapi.Array(openapi.Ref("User")),
@@ -95,8 +96,9 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Tags:        []string{"Identity"},
 					Parameters:  []openapi.Parameter{openapi.PathParam("username", "The account to change.")},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"role":    openapi.String("`admin` or `member`. An admin also builds source on this host and configures the instance."),
-						"blocked": openapi.Bool("Whether the account is shut out of every way in. `false` lets it back."),
+						"role":           openapi.String("`admin` or `member`. An admin also builds source on this host and configures the instance."),
+						"blocked":        openapi.Bool("Whether the account is shut out of every way in. `false` lets it back."),
+						"access_role_id": openapi.Integer("A member's access role, from `GET /roles`. `0` is the member default."),
 					})),
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The account as it now is.", openapi.Ref("User")),
@@ -180,6 +182,111 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"400": openapi.TextResponse("Nothing to change, or a value this instance refuses: an unknown theme or face, a username that cannot be one, an address that is not one."),
 						"409": openapi.TextResponse("That username is taken."),
 						"401": openapi.Unauthorized,
+					},
+				},
+			},
+		},
+	}
+}
+
+// RolesOpenAPI documents the access roles.
+func (h *Handler) RolesOpenAPI() openapi.Spec {
+	grant := openapi.Object(map[string]*openapi.Schema{
+		"resource": openapi.String("What kind of thing: `projects`, `apps`, `domains`, `databases`, `storage`, `servers`, `templates`, `backups`, `registry`, `registries`, `git`, `dns`, `credentials`, `certificates`, `firewall`, `settings` or `audit`."),
+		"level":    {Type: "string", Enum: []string{"none", "view", "manage"}},
+		"secrets":  openapi.Bool("Reads what somebody set: variables, credentials, files."),
+		"items":    openapi.Array(openapi.String("A project slug, a database or an object store name. **Null is every one, and an empty list is none.**")),
+	}, "resource", "level", "items")
+	role := openapi.Object(map[string]*openapi.Schema{
+		"id":          openapi.Integer(""),
+		"name":        openapi.String(""),
+		"description": openapi.String(""),
+		"grants":      openapi.Array(openapi.Ref("Grant")),
+		"members":     openapi.Integer("How many accounts hold it."),
+		"keys":        openapi.Integer("How many API keys hold it."),
+		"updated_at":  openapi.String("RFC 3339."),
+	}, "id", "name", "grants", "members", "keys")
+	body := openapi.Body(openapi.Object(map[string]*openapi.Schema{
+		"name":        openapi.String("1-60 characters, unique."),
+		"description": openapi.String(""),
+		"grants":      openapi.Array(openapi.Ref("Grant")),
+	}, "name", "grants"))
+	id := []openapi.Parameter{openapi.PathParam("id", "The role.")}
+	return openapi.Spec{
+		Tags: []openapi.Tag{{
+			Name: "Access roles",
+			Description: "What a member, or an API key, may reach. A role is a list of grants — for each kind of resource a level, whether it reads secrets, and which items — given to members and to keys.\n\n" +
+				"An admin reaches everything. A member without a role has the member default: apps managed, the rest of the workspace read. A key's role narrows its owner's access and never widens it. Changing a role changes everybody holding it, from their next request.",
+		}},
+		Schemas: map[string]*openapi.Schema{
+			"Grant":      grant,
+			"AccessRole": role,
+			"AccessRoles": openapi.Object(map[string]*openapi.Schema{
+				"roles": openapi.Array(openapi.Ref("AccessRole")),
+				"resources": openapi.Array(openapi.Object(map[string]*openapi.Schema{
+					"resource":  openapi.String(""),
+					"items":     openapi.Bool("Whether a grant can name which ones."),
+					"items_are": openapi.String("What an item is."),
+					"secrets":   openapi.Bool("Whether it has secrets to grant."),
+				}, "resource", "items", "secrets")),
+			}, "roles", "resources"),
+		},
+		Paths: map[string]openapi.PathItem{
+			"/roles": {
+				"get": {
+					OperationID: "listAccessRoles",
+					Summary:     "List the access roles",
+					Description: "Every role, and every resource a role can grant. Anybody signed in may read them.",
+					Tags:        []string{"Access roles"},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The roles.", openapi.Ref("AccessRoles")),
+						"401": openapi.Unauthorized,
+					},
+				},
+				"post": {
+					OperationID: "createAccessRole",
+					Summary:     "Create an access role",
+					Description: "Admin only.",
+					Tags:        []string{"Access roles"},
+					RequestBody: body,
+					Responses: openapi.Responses{
+						"201": openapi.JSONResponse("The role.", openapi.Ref("AccessRole")),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"409": openapi.TextResponse("A role by that name exists."),
+					},
+				},
+			},
+			"/roles/{id}": {
+				"put": {
+					OperationID: "updateAccessRole",
+					Summary:     "Replace an access role",
+					Description: "Everybody holding it reaches the new grants from their next request. Admin only.",
+					Tags:        []string{"Access roles"},
+					Parameters:  id,
+					RequestBody: body,
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The role.", openapi.Ref("AccessRole")),
+						"400": openapi.BadRequest,
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.TextResponse("No such role."),
+						"409": openapi.TextResponse("A role by that name exists."),
+					},
+				},
+				"delete": {
+					OperationID: "deleteAccessRole",
+					Summary:     "Delete an access role",
+					Description: "Refused while an account or a key holds it. Admin only.",
+					Tags:        []string{"Access roles"},
+					Parameters:  id,
+					Responses: openapi.Responses{
+						"204": openapi.Empty("Gone."),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.TextResponse("No such role."),
+						"409": openapi.TextResponse("An account or a key holds it."),
 					},
 				},
 			},

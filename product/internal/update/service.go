@@ -158,7 +158,7 @@ func (s *Service) Check(ctx context.Context, caller *user.User) (State, error) {
 // once this one restarts it can tell nobody anything; this one goes
 // last, and hands its own replacement to a container that outlives it.
 func (s *Service) Start(ctx context.Context, caller *user.User, version string) (*Run, error) {
-	if err := user.Require(caller, RoleToUpdate); err != nil {
+	if err := user.Allow(caller, user.ResSettings, user.LevelManage, ""); err != nil {
 		return nil, err
 	}
 	if s.daemon == "" || s.daemonImage == "" {

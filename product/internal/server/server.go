@@ -514,10 +514,9 @@ func (s *Server) routes() {
 	// mounted the same way, and no module invents its own.
 	userHandler := user.NewHandler(s.Users)
 	auditHandler := audit.NewHandler(s.Audit)
-	// Recorded outside the key policy, so what a key was refused is in
-	// the log too.
+	// Recorded inside authentication, so every change has somebody behind it.
 	auth := func(h http.Handler) http.Handler {
-		return userHandler.Middleware(auditHandler.Record(keyPolicy(h)))
+		return userHandler.Middleware(auditHandler.Record(h))
 	}
 	auditHandler.Routes(s.router, auth)
 

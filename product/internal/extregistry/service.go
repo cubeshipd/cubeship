@@ -83,7 +83,7 @@ const manageRole = user.RoleAdmin
 // The login comes from one of two places, and neither is privileged
 // over the other: a stored account, or one typed here — see NewLogin.
 func (s *Service) Create(ctx context.Context, caller *user.User, in Credential, login *NewLogin) (*Credential, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResRegistries, user.LevelManage, ""); err != nil {
 		return nil, err
 	}
 	switch {
@@ -237,7 +237,7 @@ func (c Changes) empty() bool {
 // reading — it would rotate the account being pointed at, which is
 // nobody's intent — so it is refused.
 func (s *Service) Update(ctx context.Context, caller *user.User, id int64, ch Changes) (*Credential, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResRegistries, user.LevelManage, ""); err != nil {
 		return nil, err
 	}
 	if ch.empty() {
@@ -248,7 +248,7 @@ func (s *Service) Update(ctx context.Context, caller *user.User, id int64, ch Ch
 		return nil, ErrTwoLogins
 	}
 
-	existing, err := s.resolve(ctx, caller, id)
+	existing, err := s.resolve(ctx, caller, id, user.LevelManage)
 	if err != nil {
 		return nil, err
 	}
@@ -281,7 +281,7 @@ func (s *Service) Update(ctx context.Context, caller *user.User, id int64, ch Ch
 	if ch.CredentialID == nil && ch.Namespace == nil {
 		// Only the login changed, and that is a row in another table.
 		// Read the registry back so the caller sees the new username.
-		return s.resolve(ctx, caller, id)
+		return s.resolve(ctx, caller, id, user.LevelView)
 	}
 
 	c, err := s.Repo().Update(ctx, id, ch.CredentialID, ch.Namespace)
@@ -292,14 +292,14 @@ func (s *Service) Update(ctx context.Context, caller *user.User, id int64, ch Ch
 }
 
 func (s *Service) List(ctx context.Context, caller *user.User) ([]*Credential, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResRegistries, user.LevelView, ""); err != nil {
 		return nil, err
 	}
 	return s.Repo().List(ctx)
 }
 
 func (s *Service) Delete(ctx context.Context, caller *user.User, id int64) error {
-	if err := user.Require(caller, manageRole); err != nil {
+	if err := user.Allow(caller, user.ResRegistries, user.LevelManage, ""); err != nil {
 		return err
 	}
 	err := s.Repo().Delete(ctx, id)
@@ -360,7 +360,7 @@ var ErrNoListing = errors.New("this registry does not list what it holds")
 
 // Repositories lists what a credential's registry contains.
 func (s *Service) Repositories(ctx context.Context, caller *user.User, id int64) ([]Repo, error) {
-	c, err := s.resolve(ctx, caller, id)
+	c, err := s.resolve(ctx, caller, id, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -375,7 +375,7 @@ func (s *Service) Repositories(ctx context.Context, caller *user.User, id int64)
 
 // Images lists one repository's tags.
 func (s *Service) Images(ctx context.Context, caller *user.User, id int64, repository string) ([]Image, error) {
-	c, err := s.resolve(ctx, caller, id)
+	c, err := s.resolve(ctx, caller, id, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -392,8 +392,8 @@ func (s *Service) Images(ctx context.Context, caller *user.User, id int64, repos
 }
 
 // resolve finds one of this instance's credentials.
-func (s *Service) resolve(ctx context.Context, caller *user.User, id int64) (*Credential, error) {
-	if err := user.Require(caller, manageRole); err != nil {
+func (s *Service) resolve(ctx context.Context, caller *user.User, id int64, need user.Level) (*Credential, error) {
+	if err := user.Allow(caller, user.ResRegistries, need, ""); err != nil {
 		return nil, err
 	}
 	creds, err := s.Repo().List(ctx)
@@ -414,7 +414,7 @@ func (s *Service) resolve(ctx context.Context, caller *user.User, id int64) (*Cr
 // storage, and a registry that only untags does not. What is promised
 // here is that nothing can pull that tag afterwards.
 func (s *Service) DeleteImage(ctx context.Context, caller *user.User, id int64, repository string, ref ImageRef) error {
-	c, err := s.resolve(ctx, caller, id)
+	c, err := s.resolve(ctx, caller, id, user.LevelManage)
 	if err != nil {
 		return err
 	}
@@ -432,7 +432,7 @@ func (s *Service) DeleteImage(ctx context.Context, caller *user.User, id int64, 
 
 // DeleteRepository removes a repository and everything in it.
 func (s *Service) DeleteRepository(ctx context.Context, caller *user.User, id int64, repository string) error {
-	c, err := s.resolve(ctx, caller, id)
+	c, err := s.resolve(ctx, caller, id, user.LevelManage)
 	if err != nil {
 		return err
 	}
@@ -454,7 +454,7 @@ func (s *Service) DeleteRepository(ctx context.Context, caller *user.User, id in
 // it is its own endpoint rather than part of the listing: a page that
 // waited for this before showing anything would wait for all of them.
 func (s *Service) Usage(ctx context.Context, caller *user.User, id int64) (*Usage, error) {
-	c, err := s.resolve(ctx, caller, id)
+	c, err := s.resolve(ctx, caller, id, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -502,7 +502,7 @@ type Status struct {
 // token stays valid for hours after the access key that minted it was
 // deleted, so answering from it would report a dead login as healthy.
 func (s *Service) Probe(ctx context.Context, caller *user.User, id int64) (*Status, error) {
-	c, err := s.resolve(ctx, caller, id)
+	c, err := s.resolve(ctx, caller, id, user.LevelView)
 	if err != nil {
 		return nil, err
 	}
@@ -539,7 +539,7 @@ const probeTimeout = 10 * time.Second
 // DigitalOcean has a name sitting in the middle that someone types, so
 // only DigitalOcean has one to correct.
 func checkNamespace(ctx context.Context, s *Service, caller *user.User, id int64, namespace string) (string, error) {
-	c, err := s.resolve(ctx, caller, id)
+	c, err := s.resolve(ctx, caller, id, user.LevelView)
 	if err != nil {
 		return "", err
 	}

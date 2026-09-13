@@ -23,7 +23,7 @@ export function MultiSelect({
   onChange,
   disabled,
 }: {
-  label: string;
+  label?: string;
   hint?: string;
   none: string;
   empty?: string;
@@ -52,7 +52,7 @@ export function MultiSelect({
   return (
     // A margin on the label rather than space-y: see SearchableSelect.
     <div>
-      <Label className="mb-2 block text-xs text-muted-foreground">{label}</Label>
+      {label && <Label className="mb-2 block text-xs text-muted-foreground">{label}</Label>}
       <Popover
         open={open}
         onOpenChange={(next) => {

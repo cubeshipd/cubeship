@@ -139,6 +139,10 @@ export type Me = {
   // the daemon is what refuses a name, and a second list here would be
   // one to disagree with it.
   avatars?: string[];
+  // A member's access role, absent for the member default.
+  access_role?: string;
+  // What this request reaches, null for everything. See `can`.
+  grants: Grant[] | null;
 };
 
 // personName is what to call somebody on screen.
@@ -185,6 +189,8 @@ export type InstanceUser = {
   // places to disagree about it.
   blocked_at?: string;
   created_at: string;
+  // A member's access role, absent for the member default.
+  access_role_id?: number;
 };
 // None of these has a display name. The slug is the name — the rule an
 // app has always followed, now everywhere: a slug is a path component of
@@ -624,18 +630,57 @@ export type RegistryUsage = {
   repositories: { name: string; bytes: number; images: number }[];
 };
 
-export type KeyAccess = "read" | "deploy" | "full";
-
 export type ApiKey = {
   id: number;
   name: string;
-  access: KeyAccess;
-  /** Absent for a key that reaches every project. */
-  projects?: string[];
+  /** The role narrowing the key; absent for one carrying all its owner's access. */
+  access_role_id?: number;
+  access_role?: string;
   created_at: string;
   last_used_at?: string;
   current_key: boolean;
 };
+
+export type Level = "none" | "view" | "manage";
+
+// One resource in an access role. `items` null is every one; a list is
+// only those.
+export type Grant = {
+  resource: string;
+  level: Level;
+  secrets?: boolean;
+  items: string[] | null;
+};
+
+export type ResourceInfo = {
+  resource: string;
+  items: boolean;
+  items_are?: string;
+  secrets: boolean;
+};
+
+export type AccessRole = {
+  id: number;
+  name: string;
+  description?: string;
+  grants: Grant[];
+  members: number;
+  keys: number;
+  updated_at: string;
+};
+
+export type AccessRoles = { roles: AccessRole[]; resources: ResourceInfo[] };
+
+const RANK: Record<Level, number> = { none: 0, view: 1, manage: 2 };
+
+// can is whether the signed-in request reaches a resource at a level, on
+// some of it. **Only for what to offer**: the daemon decides every call,
+// and a screen that shows something this says no to is refused there.
+export function can(me: Me, resource: string, level: Level = "view"): boolean {
+  if (!me.grants) return true;
+  const g = me.grants.find((x) => x.resource === resource);
+  return !!g && RANK[g.level] >= RANK[level] && (g.items === null || g.items.length > 0);
+}
 
 export type AuditEvent = {
   id: number;

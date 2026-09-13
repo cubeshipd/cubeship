@@ -150,7 +150,7 @@ func (w *world) app(ref string) app.Scoped {
 
 type fakeProjects struct{ *world }
 
-func (f fakeProjects) Resolve(_ context.Context, _ *user.User, slug string, _ user.Role) (*project.Project, error) {
+func (f fakeProjects) Resolve(_ context.Context, _ *user.User, slug string, _ user.Level) (*project.Project, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if _, ok := f.projects[slug]; !ok {
@@ -159,7 +159,7 @@ func (f fakeProjects) Resolve(_ context.Context, _ *user.User, slug string, _ us
 	return &project.Project{Slug: slug}, nil
 }
 
-func (f fakeProjects) ResolveEnvironment(_ context.Context, _ *user.User, slug, env string, _ user.Role) (*project.Environment, error) {
+func (f fakeProjects) ResolveEnvironment(_ context.Context, _ *user.User, slug, env string, _ user.Level) (*project.Environment, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !slices.Contains(f.projects[slug], env) {
@@ -205,7 +205,7 @@ func (f fakeProjects) DeleteEnvironment(_ context.Context, _ *user.User, slug, e
 
 type fakeApps struct{ *world }
 
-func (f fakeApps) Resolve(_ context.Context, _ *user.User, ref app.Reference, _ user.Role) (*app.Scoped, error) {
+func (f fakeApps) Resolve(_ context.Context, _ *user.User, ref app.Reference, _ user.Level) (*app.Scoped, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	a, ok := f.apps[ref.String()]
@@ -340,7 +340,7 @@ func (f fakeApps) HostTaken(_ context.Context, host string) (bool, error) {
 
 type fakeDatastores struct{ *world }
 
-func (f fakeDatastores) Resolve(_ context.Context, _ *user.User, name string, _ user.Role) (*datastore.Datastore, error) {
+func (f fakeDatastores) Resolve(_ context.Context, _ *user.User, name string, _ user.Level) (*datastore.Datastore, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !f.dbs[name] {
@@ -383,7 +383,7 @@ func (f fakeDatastores) Delete(_ context.Context, _ *user.User, name string) (*d
 
 type fakeStores struct{ *world }
 
-func (f fakeStores) Resolve(_ context.Context, _ *user.User, name string, _ user.Role) (*objectstore.Store, error) {
+func (f fakeStores) Resolve(_ context.Context, _ *user.User, name string, _ user.Level) (*objectstore.Store, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if !f.stores[name] {

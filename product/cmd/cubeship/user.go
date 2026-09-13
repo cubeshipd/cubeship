@@ -62,8 +62,7 @@ func newUserCmd() *cobra.Command {
 		},
 	}
 
-	var access string
-	var projects []string
+	var roleName string
 	createKeyCmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Issue an additional, independent API key for yourself",
@@ -78,11 +77,22 @@ func newUserCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			var scope []string
-			if len(projects) > 0 {
-				scope = projects
+			var roleID int64
+			if roleName != "" {
+				roles, err := c.ListRoles(context.Background())
+				if err != nil {
+					return err
+				}
+				for _, r := range roles {
+					if strings.EqualFold(r.Name, roleName) {
+						roleID = r.ID
+					}
+				}
+				if roleID == 0 {
+					return fmt.Errorf("no role %q; see cubeship role list", roleName)
+				}
 			}
-			_, key, err := c.CreateScopedAPIKey(context.Background(), args[0], access, scope)
+			_, key, err := c.CreateRoleAPIKey(context.Background(), args[0], roleID)
 			if err != nil {
 				return err
 			}
@@ -90,10 +100,8 @@ func newUserCmd() *cobra.Command {
 			return nil
 		},
 	}
-	createKeyCmd.Flags().StringVar(&access, "access", "",
-		"read (reads, never a secret), deploy (what a member does) or full; defaults to what the key you are using has")
-	createKeyCmd.Flags().StringSliceVar(&projects, "project", nil,
-		"hold the key to this project; repeat for more. Defaults to every project the key you are using reaches")
+	createKeyCmd.Flags().StringVar(&roleName, "role", "",
+		"narrow the key to this access role (see cubeship role list); without one it carries everything you may")
 
 	listKeysCmd := &cobra.Command{
 		Use:   "list",
@@ -117,11 +125,11 @@ func newUserCmd() *cobra.Command {
 				if k.LastUsedAt != nil {
 					lastUsed = k.LastUsedAt.Format("2006-01-02 15:04")
 				}
-				scope := "every project"
-				if len(k.Projects) > 0 {
-					scope = strings.Join(k.Projects, ",")
+				role := k.AccessRole
+				if role == "" {
+					role = "all your access"
 				}
-				fmt.Printf("%d\t%s\t%s\t%s\tlast used: %s%s\n", k.ID, k.Name, k.Access, scope, lastUsed, current)
+				fmt.Printf("%d\t%s\t%s\tlast used: %s%s\n", k.ID, k.Name, role, lastUsed, current)
 			}
 			return nil
 		},

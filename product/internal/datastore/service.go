@@ -2,6 +2,7 @@ package datastore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -33,7 +34,7 @@ const (
 // Reading is a member's, minus the credentials: seeing what databases
 // the instance runs, and which apps use them, is part of understanding
 // what you are deploying into.
-const RoleToManage = user.RoleAdmin
+const RoleToManage = user.LevelManage
 
 // Service holds the datastore use cases.
 //
@@ -113,7 +114,7 @@ func (s *Service) MetricSubjects(ctx context.Context) ([]metrics.Subject, error)
 // part of knowing whether the app in front of it is slow because of
 // it, and that is not an admin's question.
 func (s *Service) Series(ctx context.Context, caller *user.User, name, window string) (metrics.Series, error) {
-	d, err := s.Resolve(ctx, caller, name, user.RoleMember)
+	d, err := s.Resolve(ctx, caller, name, user.LevelView)
 	if err != nil {
 		return metrics.Series{}, err
 	}
@@ -127,8 +128,11 @@ func (s *Service) WaitForProvisioning()      { s.prov.Wait() }
 // Resolve looks up a datastore by name and requires minRole of the
 // caller, loading the apps attached to it — with nothing above a
 // datastore, what it is wired to is the whole of where it sits.
-func (s *Service) Resolve(ctx context.Context, caller *user.User, name string, minRole user.Role) (*Datastore, error) {
-	if err := user.Require(caller, minRole); err != nil {
+func (s *Service) Resolve(ctx context.Context, caller *user.User, name string, need user.Level) (*Datastore, error) {
+	if err := user.Allow(caller, user.ResDatabases, need, name); err != nil {
+		if errors.Is(err, user.ErrHidden) {
+			return nil, ErrNotFound
+		}
 		return nil, err
 	}
 	d, err := s.Repo().BySlug(ctx, name)
@@ -171,7 +175,7 @@ type Spec struct {
 // holding the request open for an image pull. The datastore comes back
 // in "provisioning"; how it went lands on the same row.
 func (s *Service) Create(ctx context.Context, caller *user.User, spec Spec) (*Datastore, error) {
-	if err := user.Require(caller, RoleToManage); err != nil {
+	if err := user.Allow(caller, user.ResDatabases, RoleToManage, spec.Slug); err != nil {
 		return nil, err
 	}
 	// The name is the container's, which is the host every attached app
@@ -329,9 +333,15 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Datastore, er
 	if err != nil {
 		return nil, err
 	}
+	seen := all[:0]
 	for _, d := range all {
+		if !user.Sees(caller, user.ResDatabases, d.Slug) {
+			continue
+		}
 		d.Attachments = byDatastore[d.ID]
+		seen = append(seen, d)
 	}
+	all = seen
 	return all, nil
 }
 
@@ -355,8 +365,11 @@ type Credentials struct {
 // than a field on the datastore: everything else about a database is
 // worth listing on a screen, and this is worth asking for.
 func (s *Service) Credentials(ctx context.Context, caller *user.User, name string) (Credentials, error) {
-	d, err := s.Resolve(ctx, caller, name, RoleToManage)
+	d, err := s.Resolve(ctx, caller, name, user.LevelView)
 	if err != nil {
+		return Credentials{}, err
+	}
+	if err := user.AllowSecrets(caller, user.ResDatabases, name); err != nil {
 		return Credentials{}, err
 	}
 	host := ContainerName(d.Slug)
@@ -504,7 +517,7 @@ const DefaultLogTail = "500"
 // admin's privilege. It carries no credential — the engine prints its
 // own startup, not what Cubeship configured it with.
 func (s *Service) Logs(ctx context.Context, caller *user.User, name, tail string) (io.ReadCloser, error) {
-	d, err := s.Resolve(ctx, caller, name, user.RoleMember)
+	d, err := s.Resolve(ctx, caller, name, user.LevelView)
 	if err != nil {
 		return nil, err
 	}

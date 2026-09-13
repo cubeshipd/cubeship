@@ -97,7 +97,7 @@ type nameInput struct {
 }
 
 func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, Response, error) {
-	d, err := t.svc.Resolve(ctx, t.caller, in.Datastore, user.RoleMember)
+	d, err := t.svc.Resolve(ctx, t.caller, in.Datastore, user.LevelView)
 	if err != nil {
 		return nil, Response{}, err
 	}

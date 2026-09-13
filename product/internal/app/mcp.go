@@ -15,7 +15,7 @@ import (
 
 // orgRoleMember is the role every read-and-deploy action needs. Aliased
 // here so the handlers and tools don't each spell out the import.
-const orgRoleMember = user.RoleMember
+const orgRoleMember = user.LevelView
 
 // maxMCPLogBytes bounds how much of an app's log get_app_logs returns — a
 // large log pasted whole into an LLM's context is mostly waste. Paired
