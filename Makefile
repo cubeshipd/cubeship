@@ -6,6 +6,8 @@ COVER   ?= coverage.out
 # The Go module — the daemon and the CLI — and the dashboard beside it:
 # everything an instance runs. hosted/ is what only we run, cubeship.dev among it.
 GODIR   ?= product
+# The catalog's indexer: a Go module of its own, beside the site it feeds.
+DISCOVERYDIR ?= hosted/discovery
 WEBDIR  ?= $(GODIR)/dashboard
 PNPM    ?= pnpm
 RELEASEDIR ?= dist
@@ -82,6 +84,14 @@ site-dev: ## Run cubeship.dev — the landing page and the docs — with hot rel
 .PHONY: site-test
 site-test: ## Run the site's unit tests
 	cd hosted/site && $(PNPM) test
+
+.PHONY: discovery-dev
+discovery-dev: ## Run the template indexer once a pass against the site's database (needs GITHUB_TOKEN and S3_*)
+	cd $(DISCOVERYDIR) && DATABASE_URL="$${DATABASE_URL:-postgres://site:site@127.0.0.1:5434/site?sslmode=disable}" $(GO) run ./cmd/discovery
+
+.PHONY: discovery-image
+discovery-image: ## Build the template indexer's image
+	docker build -f $(DISCOVERYDIR)/Dockerfile -t cubeship-discovery:$(VERSION) .
 
 .PHONY: site-db-up
 site-db-up: ## Start the site's Postgres for development, on 5434
@@ -187,11 +197,13 @@ db-down: ## Stop and remove the test Postgres, discarding its data
 .PHONY: test
 test: ## Unit tests that need nothing but this repository, race detector on
 	$(GO) -C $(GODIR) test -short -race -count=1 ./...
+	$(GO) -C $(DISCOVERYDIR) test -short -race -count=1 ./...
 
 # The same tests with the database they want. This is what CI runs.
 .PHONY: test-db
 test-db: db-up ## Unit tests including the DB-backed ones (starts Postgres)
 	$(GO) -C $(GODIR) test -race -count=1 ./...
+	$(GO) -C $(DISCOVERYDIR) test -race -count=1 ./...
 
 # The installer is the first thing every user runs, and no Go test can
 # reach it. This runs it on a real Linux against a release built here.
@@ -242,11 +254,14 @@ changelog-check: ## Fail if CHANGELOG.md is not what the release notes say
 reference: ## Write the CLI and MCP references into the site's docs
 	$(GO) -C $(GODIR) run ./cmd/cubeship docs ../hosted/site/content/docs/cli
 	$(GO) -C $(GODIR) run ./tools/sitedocs ../hosted/site/content/docs/mcp/tools.mdx
+	cp $(GODIR)/template/schema.json hosted/site/public/schema/template/v1.json
 
 .PHONY: reference-check
 reference-check: ## Fail if the site's references are not what the code says
 	$(GO) -C $(GODIR) run ./cmd/cubeship docs --check ../hosted/site/content/docs/cli
 	$(GO) -C $(GODIR) run ./tools/sitedocs -check ../hosted/site/content/docs/mcp/tools.mdx
+	@cmp -s $(GODIR)/template/schema.json hosted/site/public/schema/template/v1.json || { \
+		echo "the site's template schema is not product/template/schema.json: run make reference"; exit 1; }
 
 .PHONY: sh-check
 sh-check: ## Syntax-check the shell scripts
@@ -258,19 +273,21 @@ sh-check: ## Syntax-check the shell scripts
 vet: ## go vet, including the build-tagged integration test
 	$(GO) -C $(GODIR) vet ./...
 	$(GO) -C $(GODIR) vet -tags integration ./test/integration/...
+	$(GO) -C $(DISCOVERYDIR) vet ./...
 
 .PHONY: fmt
 fmt: ## Rewrite badly formatted files in place
-	gofmt -w $(GODIR)
+	gofmt -w $(GODIR) $(DISCOVERYDIR)
 
 .PHONY: fmt-check
 fmt-check: ## Fail if anything needs gofmt
-	@out=$$(gofmt -l $(GODIR)); \
+	@out=$$(gofmt -l $(GODIR) $(DISCOVERYDIR)); \
 	if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
 .PHONY: tidy
 tidy: ## Sync go.mod/go.sum with the imports
 	$(GO) -C $(GODIR) mod tidy
+	$(GO) -C $(DISCOVERYDIR) mod tidy
 
 .PHONY: clean
 clean: ## Remove build output

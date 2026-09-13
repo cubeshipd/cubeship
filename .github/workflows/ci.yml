@@ -62,7 +62,9 @@ jobs:
       # already up and health-checked, at the port the tests default to.
       # No -short, so the DB-backed tests run rather than skipping.
       - name: Unit tests
-        run: go -C product test -race -count=1 ./...
+        run: |
+          go -C product test -race -count=1 ./...
+          go -C hosted/discovery test -race -count=1 ./...
 
   # Everything that boots a container: a privileged buildkitd per build
   # test, and the whole product once — install the daemon, push an image,
@@ -124,16 +126,6 @@ jobs:
     defaults:
       run:
         working-directory: hosted/site
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_USER: site
-          POSTGRES_PASSWORD: site
-          POSTGRES_DB: site
-        ports: ["5434:5432"]
-        options: >-
-          --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -147,8 +139,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec biome ci .
       - run: pnpm test
-        env:
-          SITE_TEST_DATABASE_URL: postgres://site:site@localhost:5434/site
       # typegen first: the pages take their params from Next's generated
       # route types, so a segment renamed without the page following it
       # is a type error rather than an undefined glued into a URL. Those
