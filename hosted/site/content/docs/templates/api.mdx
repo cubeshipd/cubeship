@@ -1,0 +1,103 @@
+---
+title: The catalog API
+description: Read the template catalog from a program — listings, one template, its releases, and the manifest an instance installs.
+---
+
+Everything on [the catalog](/templates) is readable as JSON, with no key
+and from any origin:
+
+```
+https://cubeship.dev/api/v1
+```
+
+The address is permanent: a route under `/v1` never changes meaning.
+Responses are cached for a minute, and the catalog itself changes at
+most every five.
+
+## List templates
+
+```bash
+curl -s "https://cubeship.dev/api/v1/templates?sort=stars&limit=10"
+```
+
+| Parameter | Meaning |
+| --- | --- |
+| `q` | Matches the repository name or description. |
+| `tag` | One of the repository's topics. |
+| `sort` | `recent` (the default, newest release first) or `stars`. |
+| `limit` | 1 to 48, 24 by default. |
+| `cursor` | The previous page's `next_cursor`. |
+
+```json
+{
+  "templates": [
+    {
+      "owner": "cubeshipd",
+      "name": "cubeship-umami-template",
+      "title": "Umami",
+      "description": "Privacy-focused web analytics, with its Postgres",
+      "url": "https://github.com/cubeshipd/cubeship-umami-template",
+      "stars": 12,
+      "tags": ["analytics"],
+      "avatar_url": "https://avatars.githubusercontent.com/u/1",
+      "icon_url": "https://cubeship.dev/api/v1/icons/1/3f2c9e1.png",
+      "verified": true,
+      "release": {
+        "tag": "v1.0.0",
+        "name": "v1.0.0",
+        "url": "https://github.com/cubeshipd/cubeship-umami-template/releases/tag/v1.0.0",
+        "commit": "3f2c9e1…",
+        "published_at": "2026-09-13T03:09:09Z"
+      }
+    }
+  ],
+  "next_cursor": null
+}
+```
+
+`verified` is true for a template published by Cubeship's own
+organization, [cubeshipd](https://github.com/cubeshipd).
+
+## One template
+
+```bash
+curl -s https://cubeship.dev/api/v1/templates/cubeshipd/cubeship-umami-template
+```
+
+The listing's fields, plus `readme`, `source` (the `template.yaml` as
+written), `source_url` (that file on GitHub at the release's commit) and
+`manifest` — the file [normalized](/docs/templates/references#the-validator-resolves-what-it-can-and-no-more):
+names filled in, defaults applied, internal hostnames spelled out.
+
+## The manifest alone
+
+```bash
+curl -s "https://cubeship.dev/api/v1/templates/cubeshipd/cubeship-umami-template/manifest?release=v1.0.0"
+```
+
+Without `release`, the listed one. This is what an instance reads.
+
+## Releases
+
+```bash
+curl -s https://cubeship.dev/api/v1/templates/cubeshipd/cubeship-umami-template/releases
+```
+
+Every release the catalog read, newest first, each with `status` —
+`accepted` or `rejected` — and `problems`, the
+[diagnostics](/docs/templates/diagnostics) that refused it or the advice
+that did not.
+
+## Tags and icons
+
+`GET /v1/tags` is every topic a listed template carries.
+`GET /v1/icons/{repository}/{commit}.png` is what `icon_url` points at,
+cached forever: the commit is in the address.
+
+## Errors
+
+```json
+{ "error": { "code": "not_found", "message": "no template is listed at that address" } }
+```
+
+`invalid_query` (400), `not_found` (404) or `unavailable` (503).

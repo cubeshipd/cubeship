@@ -12,3 +12,5 @@ dist/
 /product/cubeship
 /product/cubeshipd
 .air/
+
+/templates/
