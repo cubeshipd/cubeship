@@ -10,10 +10,12 @@ import { NewObjectStoreDialog } from "@/components/new-object-store-dialog";
 import { ResourceCard, ResourceGrid } from "@/components/resource-grid";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
+import { UsageRings } from "@/components/usage-ring";
 import { api, type ObjectStore } from "@/lib/api";
 import { PROVIDER_ICONS } from "@/lib/credentials";
 import { message } from "@/lib/errors";
 import { useOpenOnArrival } from "@/lib/open-on-arrival";
+import { usageShares, useContainerUsage } from "@/lib/usage";
 
 // Every object store this instance can reach, both kinds in one grid.
 //
@@ -34,6 +36,7 @@ export default function StoragePage() {
       .catch((e) => setError(message(e)));
   }, []);
   useEffect(reload, [reload]);
+  const { usage, machine } = useContainerUsage("objectstore");
 
   return (
     <>
@@ -74,6 +77,15 @@ export default function StoragePage() {
                   <span className="font-mono text-xs text-warning">:{s.exposed_port}</span>
                 ) : null}
               </span>
+            }
+            // A linked store is somebody else's server: nothing here to read.
+            usage={
+              s.has_container && (
+                <UsageRings
+                  name={s.name}
+                  shares={usageShares(usage?.get(s.name), s.limits, machine)}
+                />
+              )
             }
           />
         )}

@@ -86,12 +86,16 @@ export function ResourceCard({
   name,
   detail,
   status,
+  usage,
 }: {
   href: string;
   icon: ComponentType<{ className?: string }>;
   name: string;
   detail: ReactNode;
   status: ReactNode;
+  // Bottom right, beside the name. Its row is always the height of a
+  // ring, so a card whose readings arrive late does not grow.
+  usage?: ReactNode;
 }) {
   return (
     <Link
@@ -104,11 +108,14 @@ export function ResourceCard({
         </span>
         {status}
       </span>
-      <span className="min-w-0">
-        <span className="block truncate font-mono text-sm font-semibold group-hover:text-primary">
-          {name}
+      <span className="flex min-h-15 items-end justify-between gap-3">
+        <span className="min-w-0">
+          <span className="block truncate font-mono text-sm font-semibold group-hover:text-primary">
+            {name}
+          </span>
+          <span className="block truncate text-xs text-muted-foreground">{detail}</span>
         </span>
-        <span className="block truncate text-xs text-muted-foreground">{detail}</span>
+        {usage && <span className="flex shrink-0 gap-3">{usage}</span>}
       </span>
     </Link>
   );
@@ -121,7 +128,7 @@ function LoadingCard() {
     <div className={FRAME}>
       <Skeleton className="size-11 shrink-0 rounded-none" />
       {/* Each line the height of the text it stands for. */}
-      <span className="block">
+      <span className="flex min-h-15 flex-col justify-end">
         <span className="flex h-5 items-center">
           <Skeleton className="h-3.5 w-2/3" />
         </span>

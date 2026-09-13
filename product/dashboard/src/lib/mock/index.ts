@@ -759,7 +759,39 @@ function containers() {
       at,
       cpu_percent: 1,
       memory_bytes: 61_000_000,
-      memory_limit_bytes: 0,
+      memory_limit_bytes: 8 * 1024 ** 3,
+    },
+    {
+      kind: "datastore",
+      name: "orders",
+      at,
+      cpu_percent: 12,
+      memory_bytes: 420_000_000,
+      memory_limit_bytes: 1024 ** 3,
+    },
+    {
+      kind: "datastore",
+      name: "events",
+      at,
+      cpu_percent: 290,
+      memory_bytes: 1_700_000_000,
+      memory_limit_bytes: 2 * 1024 ** 3,
+    },
+    {
+      kind: "datastore",
+      name: "billing",
+      at,
+      cpu_percent: 4,
+      memory_bytes: 190_000_000,
+      memory_limit_bytes: 8 * 1024 ** 3,
+    },
+    {
+      kind: "datastore",
+      name: "cache",
+      at,
+      cpu_percent: 2,
+      memory_bytes: 38_000_000,
+      memory_limit_bytes: 512 * 1024 ** 2,
     },
   ];
 }
@@ -778,12 +810,33 @@ function credentialsFor(name: string) {
 
 // --- static answers ---
 
+// The daemon's shape in full: a field left out here is undefined in the
+// form, and a controlled input that starts undefined warns in React.
+const engine = (
+  engine: string,
+  versions: string[],
+  port: number,
+  var_stem: string,
+  default_username: string,
+  has_user = true,
+  has_database = true,
+) => ({
+  engine,
+  versions,
+  default_version: versions[0],
+  port,
+  has_database,
+  has_user,
+  default_username,
+  var_stem,
+});
+
 const engines = [
-  { engine: "postgres", label: "PostgreSQL", versions: ["18", "17", "16", "15"] },
-  { engine: "mysql", label: "MySQL", versions: ["8.4", "8.0"] },
-  { engine: "mariadb", label: "MariaDB", versions: ["11", "10.11"] },
-  { engine: "redis", label: "Redis", versions: ["7"] },
-  { engine: "mongodb", label: "MongoDB", versions: ["7"] },
+  engine("postgres", ["18", "17", "16", "15"], 5432, "DATABASE", "cubeship"),
+  engine("mysql", ["8.4", "8.0"], 3306, "DATABASE", "cubeship"),
+  engine("mariadb", ["11", "10.11"], 3306, "DATABASE", "cubeship"),
+  engine("redis", ["7"], 6379, "REDIS", "default", false, false),
+  engine("mongodb", ["7"], 27017, "MONGO", "cubeship"),
 ];
 
 const providers = {
