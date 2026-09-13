@@ -1,26 +1,25 @@
 "use client";
 
-import { PlusIcon } from "lucide-react";
+import { HardDriveIcon, PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
+import { MinIOIcon } from "@/components/icons";
 import { NewObjectStoreDialog } from "@/components/new-object-store-dialog";
+import { ResourceCard, ResourceGrid } from "@/components/resource-grid";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { api, type ObjectStore } from "@/lib/api";
+import { PROVIDER_ICONS } from "@/lib/credentials";
 import { message } from "@/lib/errors";
 import { useOpenOnArrival } from "@/lib/open-on-arrival";
 
-// Every object store this instance can reach, both kinds in one table.
+// Every object store this instance can reach, both kinds in one grid.
 //
-// One table rather than two sections, because they are one thing to
-// scan: what somebody comes here for is "where can this instance put a
-// file", and splitting that by who runs the server would make you read
-// both halves to answer it. Which kind each is has a column of its own,
-// which is where the difference belongs — it is a fact about a row, not
-// a reason for two tables.
+// One grid rather than two sections, because they are one thing to
+// scan: "where can this instance put a file". Which kind each is is a
+// fact about a card, not a reason for two lists.
 export default function StoragePage() {
   const router = useRouter();
   const [stores, setStores] = useState<ObjectStore[] | null>(null);
@@ -36,62 +35,6 @@ export default function StoragePage() {
   }, []);
   useEffect(reload, [reload]);
 
-  const columns: Column<ObjectStore>[] = [
-    {
-      id: "name",
-      header: "Name",
-      width: 26,
-      sortBy: (s) => s.name,
-      cell: (s) => <span className="font-mono text-sm">{s.name}</span>,
-    },
-    {
-      id: "kind",
-      header: "Kind",
-      width: 16,
-      sortBy: (s) => s.kind,
-      // The one fact that changes what deleting a row means, so it is
-      // in the column you glance at rather than a page deeper.
-      cell: (s) => (
-        <span className="text-sm">{s.kind === "managed" ? "On this host" : "Linked"}</span>
-      ),
-    },
-    {
-      id: "provider",
-      header: "Where",
-      width: 38,
-      sortBy: (s) => s.provider_label,
-      // Two lines, because one of them is an address. The provider is
-      // what you scan for and the endpoint is what tells two of the
-      // same provider apart — and side by side the endpoint pushed the
-      // status column off its own edge.
-      cell: (s) => (
-        <span className="block min-w-0">
-          <span className="block text-sm">{s.provider_label}</span>
-          <span className="block truncate font-mono text-xs text-muted-foreground">
-            {s.endpoint.replace(/^https?:\/\//, "")}
-          </span>
-        </span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      width: 20,
-      sortBy: (s) => s.status,
-      cell: (s) => (
-        <span className="flex items-center gap-2">
-          <StatusBadge value={s.status} />
-          {/* A published port is the difference between something on a
-              private network and something on the internet, which is
-              worth a glance rather than a click. */}
-          {s.exposed_port ? (
-            <span className="font-mono text-xs text-warning">:{s.exposed_port}</span>
-          ) : null}
-        </span>
-      ),
-    },
-  ];
-
   return (
     <>
       <RailPortal>
@@ -104,12 +47,36 @@ export default function StoragePage() {
       </RailPortal>
       <ErrorAlert error={error} />
 
-      <DataTable
-        columns={columns}
+      <ResourceGrid
         rows={stores}
         search={{ placeholder: "Filter stores", by: (s) => [s.name, s.provider, s.kind] }}
         rowKey={(s) => s.name}
-        onRowClick={(s) => router.push(`/storage/${s.name}`)}
+        card={(s) => (
+          <ResourceCard
+            href={`/storage/${s.name}`}
+            icon={
+              s.provider === "minio" ? MinIOIcon : (PROVIDER_ICONS[s.provider] ?? HardDriveIcon)
+            }
+            name={s.name}
+            // The kind is the one fact that changes what deleting it
+            // means, so it is on the card rather than a page deeper.
+            detail={
+              s.kind === "managed"
+                ? `${s.provider_label} · on this host`
+                : `${s.provider_label} · ${s.endpoint.replace(/^https?:\/\//, "")}`
+            }
+            status={
+              <span className="flex items-center gap-2">
+                <StatusBadge value={s.status} />
+                {/* A published port is the difference between a private
+                    network and the internet, worth a glance. */}
+                {s.exposed_port ? (
+                  <span className="font-mono text-xs text-warning">:{s.exposed_port}</span>
+                ) : null}
+              </span>
+            }
+          />
+        )}
         empty={
           <span className="flex items-center justify-between gap-4">
             This instance reaches no object storage yet.

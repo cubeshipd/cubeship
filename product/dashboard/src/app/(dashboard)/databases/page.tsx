@@ -1,29 +1,33 @@
 "use client";
 
-import { PlusIcon } from "lucide-react";
+import { DatabaseIcon, PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { type Column, DataTable } from "@/components/data-table";
+import { type ComponentType, useCallback, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
+import { MariaDBIcon, MongoDBIcon, MySQLIcon, PostgreSQLIcon, RedisIcon } from "@/components/icons";
 import { NewDatastoreDialog } from "@/components/new-datastore-dialog";
+import { ResourceCard, ResourceGrid } from "@/components/resource-grid";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { api, type Datastore, datastoreLabel } from "@/lib/api";
 import { message } from "@/lib/errors";
 import { useOpenOnArrival } from "@/lib/open-on-arrival";
 
-// Every database this instance runs.
+const ENGINE_ICONS: Record<string, ComponentType<{ className?: string }>> = {
+  postgres: PostgreSQLIcon,
+  mysql: MySQLIcon,
+  mariadb: MariaDBIcon,
+  redis: RedisIcon,
+  mongodb: MongoDBIcon,
+};
+
+// Every database this instance runs, as cards: the engine's mark is
+// what you find one by, before its name.
 //
-// A table rather than cards, like the registries and the DNS accounts:
-// what someone comes here to do is scan a column — which engine, is it
-// up — and cards make you read each one whole to find the one line you
-// were after.
-//
-// What is attached to each is not among them. It is a list inside a
-// row, as long as the number of apps, and in a listing it is either
-// truncated to uselessness or the widest thing on the screen. It
-// belongs on the database's own page, where it is a table of its own.
+// What is attached to each is not on the card. It is a list as long as
+// the number of apps, and it belongs on the database's own page, where
+// it is a table of its own.
 export default function DatabasesPage() {
   const router = useRouter();
   const [datastores, setDatastores] = useState<Datastore[] | null>(null);
@@ -39,34 +43,6 @@ export default function DatabasesPage() {
   }, []);
   useEffect(reload, [reload]);
 
-  const columns: Column<Datastore>[] = [
-    {
-      id: "name",
-      header: "Name",
-      width: 54,
-      sortBy: (d) => d.name,
-      cell: (d) => <span className="font-mono text-sm">{d.name}</span>,
-    },
-    {
-      id: "engine",
-      header: "Engine",
-      width: 26,
-      sortBy: (d) => `${d.engine} ${d.version}`,
-      cell: (d) => (
-        <span className="text-sm">
-          {datastoreLabel(d.engine)} <span className="text-muted-foreground">{d.version}</span>
-        </span>
-      ),
-    },
-    {
-      id: "status",
-      header: "Status",
-      width: 20,
-      sortBy: (d) => d.status,
-      cell: (d) => <StatusBadge value={d.status} />,
-    },
-  ];
-
   return (
     <>
       <RailPortal>
@@ -79,12 +55,19 @@ export default function DatabasesPage() {
       </RailPortal>
       <ErrorAlert error={error} />
 
-      <DataTable
-        columns={columns}
+      <ResourceGrid
         rows={datastores}
         search={{ placeholder: "Filter databases", by: (d) => [d.name, d.engine, d.version] }}
         rowKey={(d) => d.name}
-        onRowClick={(d) => router.push(`/databases/${d.name}`)}
+        card={(d) => (
+          <ResourceCard
+            href={`/databases/${d.name}`}
+            icon={ENGINE_ICONS[d.engine] ?? DatabaseIcon}
+            name={d.name}
+            detail={`${datastoreLabel(d.engine)} ${d.version}`}
+            status={<StatusBadge value={d.status} />}
+          />
+        )}
         empty={
           <span className="flex items-center justify-between gap-4">
             This instance runs no databases yet.

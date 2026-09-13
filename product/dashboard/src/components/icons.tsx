@@ -11,6 +11,12 @@ export {
   SiCloudflare as CloudflareIcon,
   SiDigitalocean as DigitalOceanIcon,
   SiGithub as GitHubIcon,
+  SiMariadb as MariaDBIcon,
+  SiMinio as MinIOIcon,
+  SiMongodb as MongoDBIcon,
+  SiMysql as MySQLIcon,
+  SiPostgresql as PostgreSQLIcon,
+  SiRedis as RedisIcon,
 } from "@icons-pack/react-simple-icons";
 
 // AWS is the exception: simple-icons carries the mark, but the React

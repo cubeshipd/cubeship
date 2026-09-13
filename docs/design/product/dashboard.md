@@ -629,8 +629,10 @@ looks at, and that is all a caller says now.
 control over the page — what it hides is gone from everything below —
 and the gap is what says so.
 
-Two listings write it out by hand, and both for a reason. The projects
-grid is cards rather than a table. The registries table carries a row
+Grids of cards get the same control from `ResourceGrid` — databases
+and object stores, where the engine's or provider's mark is what you
+find one by. Two listings write it out by hand, and both for a reason.
+The projects grid predates `ResourceGrid`. The registries table carries a row
 with no data behind it — Cubeship's own, always first — which the filter
 has to match too, because a filter that cannot hide the row you are
 looking for is one that lies about its own count.
