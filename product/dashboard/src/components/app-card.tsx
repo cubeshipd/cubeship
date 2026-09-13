@@ -1,7 +1,9 @@
 import { CloudIcon, ContainerIcon, FileCodeIcon, GitBranchIcon } from "lucide-react";
-import Link from "next/link";
+import { ResourceCard } from "@/components/resource-grid";
 import { StatusDot } from "@/components/status-badge";
+import { UsageRings } from "@/components/usage-ring";
 import { type App, type AppSource, hostsOf } from "@/lib/api";
+import type { Shares } from "@/lib/usage";
 
 // What an app is made of, as a mark and as words.
 //
@@ -25,45 +27,34 @@ const ORIGIN: Record<AppSource, { label: string; icon: typeof ContainerIcon }> =
 };
 
 // One app in an environment's grid: what it is made of, what it is
-// called, where it answers, and whether it is up.
+// called, where it answers, whether it is up, and what it is using.
 //
-// **The same shape as a project's card**, and for the same reason. It
-// was two zones with a rule between them and a footer, which is a lot
-// of furniture around four short facts — and the status was a badge, a
-// bordered box with a word in it, on a card whose whole job is to be
-// scanned beside eleven others. A lamp is the same fact at a glance.
-export function AppCard({ app }: { app: App }) {
+// **The status is a lamp, not a badge.** A badge is a bordered box with
+// a word in it, on a card whose whole job is to be scanned beside eleven
+// others. The word is on the app's own page, where there is room to say
+// `degraded` and room to say what it means.
+export function AppCard({ app, shares }: { app: App; shares: Shares }) {
   const origin = ORIGIN[app.source] ?? { label: app.source, icon: ContainerIcon };
   const Mark = origin.icon;
-  const hosts = hostsOf(app);
 
   return (
-    <Link
+    <ResourceCard
       href={`/projects/${app.reference}`}
-      className="hud-frame group flex items-center gap-4 border border-border bg-card p-4 transition-all hover:border-primary/40 hover:bg-secondary/40 focus-visible:border-primary focus-visible:outline-none"
-    >
-      <span
-        title={origin.label}
-        className="flex size-11 shrink-0 items-center justify-center border border-border bg-primary/5 text-primary/70"
-      >
-        <Mark className="size-5" />
-      </span>
-
-      <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="truncate font-mono text-sm text-foreground group-hover:text-primary">
-          {app.name}
+      mark={
+        <span
+          title={origin.label}
+          className="flex size-11 shrink-0 items-center justify-center border border-border bg-primary/5 text-primary/70 group-hover:text-primary"
+        >
+          <Mark className="size-5" />
         </span>
-        {/* Nothing at all when it answers nowhere, which is the normal
-            state for a worker or a queue consumer — not a dash, which
-            would read as a name that failed to load. */}
-        {hosts && (
-          <span className="truncate font-mono text-[11px] text-muted-foreground">{hosts}</span>
-        )}
-      </span>
-
-      {/* The lamp alone. The word is on the app's own page, where there
-          is room to say `degraded` and room to say what it means. */}
-      <StatusDot value={app.status} className="size-2" title={app.status} />
-    </Link>
+      }
+      name={app.name}
+      // Empty when it answers nowhere, which is the normal state for a
+      // worker — not a dash, which would read as a name that failed to
+      // load.
+      detail={<span className="font-mono text-[11px]">{hostsOf(app)}</span>}
+      status={<StatusDot value={app.status} className="mt-1 size-2" title={app.status} />}
+      usage={app.has_container && <UsageRings name={app.name} shares={shares} />}
+    />
   );
 }

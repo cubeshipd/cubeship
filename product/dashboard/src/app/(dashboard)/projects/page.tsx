@@ -21,6 +21,7 @@ import {
 import { type App, api, type Project } from "@/lib/api";
 import { message } from "@/lib/errors";
 import { useOpenOnArrival } from "@/lib/open-on-arrival";
+import { projectShares, useContainerUsage } from "@/lib/usage";
 
 // An unclaimed instance is not this page's problem: the shell above
 // sends anyone it cannot identify to sign in, and sign-in is where an
@@ -62,6 +63,8 @@ function Projects() {
       .then(setApps)
       .catch(() => setApps([]));
   }, []);
+
+  const { usage, machine } = useContainerUsage("app");
 
   const needle = query.trim().toLowerCase();
   const shown = (projects ?? []).filter((p) => p.slug.toLowerCase().includes(needle));
@@ -128,6 +131,7 @@ function Projects() {
               slug={p.slug}
               hasImage={p.has_image}
               apps={apps.filter((a) => a.project === p.slug)}
+              shares={projectShares(usage, p.slug, machine)}
             />
           ))}
         </div>

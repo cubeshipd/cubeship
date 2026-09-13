@@ -23,6 +23,7 @@ import {
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { type App, api, type Environment } from "@/lib/api";
 import { message } from "@/lib/errors";
+import { usageShares, useContainerUsage } from "@/lib/usage";
 
 // One project, opened on an environment.
 //
@@ -64,6 +65,7 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
     enabled: Boolean(project),
   });
   const apps = useQuery({ queryKey: ["apps"], queryFn: () => api.get<App[]>("/apps") });
+  const { usage, machine } = useContainerUsage("app");
   const error = envs.error ?? apps.error;
 
   if (!project) {
@@ -178,7 +180,11 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
       {shown && shown.length > 0 && (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {shown.map((a) => (
-            <AppCard key={a.reference} app={a} />
+            <AppCard
+              key={a.reference}
+              app={a}
+              shares={usageShares(usage?.get(a.reference), a.limits, machine)}
+            />
           ))}
         </div>
       )}

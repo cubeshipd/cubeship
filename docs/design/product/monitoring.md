@@ -93,8 +93,10 @@ ceiling: drawn against the ceiling, a container using 200 MiB of a 2 GiB
 cgroup is a flat line along the bottom — a chart that has given up its
 only job to answer a question the caption answers better.
 
-The database and object-store cards carry two rings, CPU and memory,
-from one `/instance/containers` read for the whole grid. **A ring is a
+The project, app, database and object-store cards carry two rings, CPU
+and memory, from one `/instance/containers` read for the whole grid. A
+project's are its apps added up against the whole machine, since a
+project has no limit of its own; an app's replicas are added up too. **A ring is a
 share, so it needs a ceiling**, and the one-core convention has none:
 CPU is drawn against the container's own limit, or against every core
 of the machine when it has no limit, and memory against the cgroup's

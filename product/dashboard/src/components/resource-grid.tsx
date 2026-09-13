@@ -83,13 +83,16 @@ const FRAME = "hud-frame flex flex-col gap-3 border border-border bg-card p-4";
 export function ResourceCard({
   href,
   icon: Icon,
+  mark,
   name,
   detail,
   status,
   usage,
 }: {
   href: string;
-  icon: ComponentType<{ className?: string }>;
+  icon?: ComponentType<{ className?: string }>;
+  // In place of the icon's box, for a mark of its own — a project's picture.
+  mark?: ReactNode;
   name: string;
   detail: ReactNode;
   status: ReactNode;
@@ -103,9 +106,11 @@ export function ResourceCard({
       className={`${FRAME} group h-full transition-all hover:border-primary/40 hover:bg-secondary/40 focus-visible:border-primary focus-visible:outline-none`}
     >
       <span className="flex items-start justify-between gap-3">
-        <span className="flex size-11 shrink-0 items-center justify-center border border-border bg-primary/5 text-primary/70 group-hover:text-primary">
-          <Icon className="size-5" />
-        </span>
+        {mark ?? (
+          <span className="flex size-11 shrink-0 items-center justify-center border border-border bg-primary/5 text-primary/70 group-hover:text-primary">
+            {Icon && <Icon className="size-5" />}
+          </span>
+        )}
         {status}
       </span>
       <span className="flex min-h-15 items-end justify-between gap-3">

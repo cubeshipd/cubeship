@@ -747,6 +747,22 @@ function containers() {
     },
     {
       kind: "app",
+      name: "web/production/worker",
+      at,
+      cpu_percent: 118,
+      memory_bytes: 640_000_000,
+      memory_limit_bytes: 1024 ** 3,
+    },
+    {
+      kind: "app",
+      name: "web/staging/api",
+      at,
+      cpu_percent: 6,
+      memory_bytes: 150_000_000,
+      memory_limit_bytes: 16 * 1024 ** 3,
+    },
+    {
+      kind: "app",
       name: "internal/production/docs",
       at,
       cpu_percent: 3,

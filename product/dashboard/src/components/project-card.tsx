@@ -1,11 +1,14 @@
 import { FolderTreeIcon } from "lucide-react";
-import Link from "next/link";
+import { ResourceCard } from "@/components/resource-grid";
 import { StatusRing } from "@/components/status-ring";
+import { UsageRings } from "@/components/usage-ring";
 import type { App } from "@/lib/api";
 import { projectImageSrc } from "@/lib/api";
+import type { Shares } from "@/lib/usage";
 
-// One project in the grid: a picture, its name, and a ring saying how
-// many apps are inside and whether any of them is unhappy.
+// One project in the grid: a picture, its name, a ring saying how many
+// apps are inside and whether any of them is unhappy, and what those
+// apps are taking from the machine between them.
 //
 // **It used to carry three more things and was worse for it.** The
 // environments were badges, which put `production` on every card on the
@@ -14,32 +17,31 @@ import { projectImageSrc } from "@/lib/api";
 // row of lamps each with a number beside it, which is a legend you read
 // rather than a picture you glance at. The count is in the middle of
 // the ring now, where it is the same fact in one place.
-//
-// What is left is what makes a grid worth having over a list: something
-// to recognise, a name, and whether to open it.
 export function ProjectCard({
   slug,
   hasImage,
   apps,
+  shares,
 }: {
   slug: string;
   hasImage?: boolean;
   apps: App[];
+  shares: Shares;
 }) {
   return (
-    <Link
+    <ResourceCard
       href={`/projects/${slug}`}
-      className="hud-frame group flex items-center gap-4 border border-border bg-card p-4 transition-all hover:border-primary/40 hover:bg-secondary/40 focus-visible:border-primary focus-visible:outline-none"
-    >
-      <ProjectMark slug={slug} hasImage={hasImage} />
-      <h3 className="min-w-0 flex-1 truncate font-mono text-sm font-semibold group-hover:text-primary">
-        {slug}
-      </h3>
-      <StatusRing
-        values={apps.map((a) => a.status)}
-        label={`${apps.length} ${apps.length === 1 ? "app" : "apps"} in ${slug}`}
-      />
-    </Link>
+      mark={<ProjectMark slug={slug} hasImage={hasImage} />}
+      name={slug}
+      detail={`${apps.length} ${apps.length === 1 ? "app" : "apps"}`}
+      status={
+        <StatusRing
+          values={apps.map((a) => a.status)}
+          label={`${apps.length} ${apps.length === 1 ? "app" : "apps"} in ${slug}`}
+        />
+      }
+      usage={apps.some((a) => a.has_container) && <UsageRings name={slug} shares={shares} />}
+    />
   );
 }
 
