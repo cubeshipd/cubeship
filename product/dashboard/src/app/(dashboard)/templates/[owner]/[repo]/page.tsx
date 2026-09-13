@@ -327,6 +327,13 @@ function InstallForm({
     }
   }
 
+  // Domains take a whole row, so they go first and the rest pair up after
+  // them; one left over takes the row to itself rather than leave a hole.
+  const domainInputs = manifest.inputs.filter((i) => i.type === "domain");
+  const otherInputs = manifest.inputs.filter((i) => i.type !== "domain");
+  const ordered = [...domainInputs, ...otherInputs];
+  const lonely = otherInputs.length % 2 === 1 ? otherInputs[otherInputs.length - 1].key : "";
+
   return (
     <>
       <SectionHeader
@@ -335,7 +342,11 @@ function InstallForm({
       />
       <Card>
         <CardContent className="space-y-6">
-          <div className="grid gap-4 sm:grid-cols-2">
+          {/* Two fields or three, one row either way: a third that wrapped
+              left a hole beside it. */}
+          <div
+            className={`grid gap-4 ${projectPick === NEW || envPick === NEW ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
+          >
             <SearchableSelect
               label="Project"
               value={projectPick}
@@ -385,7 +396,7 @@ function InstallForm({
 
           {manifest.inputs.length > 0 && (
             <div className="grid gap-4 sm:grid-cols-2">
-              {manifest.inputs.map((input) =>
+              {ordered.map((input) =>
                 input.type === "domain" ? (
                   <DomainInput
                     key={input.key}
@@ -408,16 +419,20 @@ function InstallForm({
                     address={settings.data?.public_ip}
                   />
                 ) : (
-                  <InputField
+                  <div
                     key={input.key}
-                    input={input}
-                    value={inputs[input.key] ?? ""}
-                    onChange={(value) =>
-                      setInputs((current) => ({ ...current, [input.key]: value }))
-                    }
-                    stores={stores.data ?? []}
-                    address={settings.data?.public_ip}
-                  />
+                    className={input.key === lonely ? "sm:col-span-2" : undefined}
+                  >
+                    <InputField
+                      input={input}
+                      value={inputs[input.key] ?? ""}
+                      onChange={(value) =>
+                        setInputs((current) => ({ ...current, [input.key]: value }))
+                      }
+                      stores={stores.data ?? []}
+                      address={settings.data?.public_ip}
+                    />
+                  </div>
                 ),
               )}
             </div>
