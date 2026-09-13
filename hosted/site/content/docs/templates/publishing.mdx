@@ -1,0 +1,83 @@
+---
+title: Publishing a template
+description: A template is a GitHub repository with the cubeship-template topic. Every release is read, checked, and listed or refused.
+---
+
+There is no form to fill in and nothing to sign in to. A template is a
+public GitHub repository, and the catalog finds it on its own.
+
+## The repository
+
+Name it `cubeship-<app>-template` — `cubeship-umami-template`,
+`cubeship-uptime-kuma-template`. The catalog calls it by the `<app>`
+part, so that one is shown as **Uptime Kuma**. A name outside the
+convention still works; it is just shown as it is.
+
+Give it the topic **`cubeship-template`** (the gear beside *About* on
+the repository page). The topic is what the catalog searches for; the
+name is not.
+
+The repository's description is the template's one-line summary on the
+catalog, and its other topics are the template's tags.
+
+## The files
+
+Three files at the root, all required:
+
+| File | What it is |
+| --- | --- |
+| `template.yaml` | [The template file](/docs/templates/file). At most 256 KB. |
+| `README.md` | The template's page: what it installs, what to set up after. GitHub-flavoured Markdown, at most 512 KB. |
+| `icon.png` | A square PNG, 128 to 1024 pixels a side, at most 512 KB. |
+
+Relative links and images in the README work the way they do on GitHub.
+HTML is allowed as far as GitHub itself allows it — no scripts, no
+styles.
+
+Add this line to the top of `template.yaml` and an editor with the YAML
+language server checks the file as you type:
+
+```yaml
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+```
+
+## Releasing
+
+The catalog reads **releases**, not the branch. Create one on GitHub
+with a tag — `v1.0.0` — and within about five minutes it is read at the
+commit that tag points to.
+
+- A **pre-release** is skipped, and so is a draft. Mark a release as a
+  pre-release to try it without listing it.
+- A release is read **once**. Pushing more commits changes nothing
+  already indexed; publish another release. A tag moved to another
+  commit is read again, as a new release.
+- The catalog shows the newest release it **accepted**. A newer release
+  that is refused leaves the previous one listed.
+- The last ten releases are read, so the first time a repository is
+  found, its recent history comes with it.
+
+## Refused releases
+
+A release with anything wrong with it is recorded with every reason and
+not listed. The reasons are the validator's
+[diagnostics](/docs/templates/diagnostics), plus the ones about the
+release itself:
+
+| Code | Why |
+| --- | --- |
+| `release.template-missing` | No `template.yaml` at the root. A `template.yml` is pointed out. |
+| `release.readme-missing` | No `README.md` at the root. |
+| `release.icon-missing` | No `icon.png` at the root. |
+| `release.too-large` | One of the files is over its ceiling. |
+| `icon.not-png` | `icon.png` is not a PNG. |
+| `icon.size` | `icon.png` is not square, or not 128 to 1024 pixels a side. |
+
+Warnings never refuse a release. Fix what was wrong and publish a new
+release; the refused one stays refused.
+
+## Taking one down
+
+Remove the topic, make the repository private, or delete it, and the
+template leaves the catalog on the next pass. A repository the catalog
+has blocked is not listed whatever it carries.

@@ -7,7 +7,7 @@ vi.mock("@/lib/source", () => ({
 }));
 vi.mock("@/lib/comparisons", () => ({ comparisons: [] }));
 vi.mock("@/lib/templates/queries", () => ({
-  allPublishedTemplates: vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED 10.0.0.1:5432")),
+  allTemplates: vi.fn().mockRejectedValue(new Error("connect ECONNREFUSED 10.0.0.1:5432")),
 }));
 
 describe("sitemap", () => {

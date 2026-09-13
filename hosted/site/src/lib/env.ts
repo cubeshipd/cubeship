@@ -10,17 +10,6 @@ export function databaseUrl(): string {
   return need("DATABASE_URL");
 }
 
-export function githubOAuth(): { clientId: string; clientSecret: string } {
-  return { clientId: need("GITHUB_CLIENT_ID"), clientSecret: need("GITHUB_CLIENT_SECRET") };
-}
-
-export function adminLogins(): string[] {
-  return (process.env.ADMIN_LOGINS ?? "")
-    .split(",")
-    .map((login) => login.trim().toLowerCase())
-    .filter(Boolean);
-}
-
 export function s3Config(): {
   endpoint: string;
   region: string;

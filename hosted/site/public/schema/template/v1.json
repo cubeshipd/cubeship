@@ -46,7 +46,11 @@
                 "const": "domain"
               }
             },
-            "required": ["key", "label", "type"],
+            "required": [
+              "key",
+              "label",
+              "type"
+            ],
             "additionalProperties": false
           },
           {
@@ -78,7 +82,11 @@
                 "type": "string"
               }
             },
-            "required": ["key", "label", "type"],
+            "required": [
+              "key",
+              "label",
+              "type"
+            ],
             "additionalProperties": false
           },
           {
@@ -113,7 +121,11 @@
                 "type": "number"
               }
             },
-            "required": ["key", "label", "type"],
+            "required": [
+              "key",
+              "label",
+              "type"
+            ],
             "additionalProperties": false
           },
           {
@@ -149,7 +161,12 @@
                 }
               }
             },
-            "required": ["key", "label", "type", "options"],
+            "required": [
+              "key",
+              "label",
+              "type",
+              "options"
+            ],
             "additionalProperties": false
           },
           {
@@ -180,7 +197,11 @@
                 "maximum": 9007199254740991
               }
             },
-            "required": ["key", "label", "type"],
+            "required": [
+              "key",
+              "label",
+              "type"
+            ],
             "additionalProperties": false
           },
           {
@@ -206,7 +227,11 @@
                 "const": "store"
               }
             },
-            "required": ["key", "label", "type"],
+            "required": [
+              "key",
+              "label",
+              "type"
+            ],
             "additionalProperties": false
           }
         ]
@@ -257,13 +282,19 @@
                 "type": "number"
               },
               "memory": {
-                "type": ["string", "number"]
+                "type": [
+                  "string",
+                  "number"
+                ]
               }
             },
             "additionalProperties": false
           }
         },
-        "required": ["key", "engine"],
+        "required": [
+          "key",
+          "engine"
+        ],
         "additionalProperties": false
       }
     },
@@ -298,13 +329,18 @@
                 "type": "number"
               },
               "memory": {
-                "type": ["string", "number"]
+                "type": [
+                  "string",
+                  "number"
+                ]
               }
             },
             "additionalProperties": false
           }
         },
-        "required": ["key"],
+        "required": [
+          "key"
+        ],
         "additionalProperties": false
       }
     },
@@ -337,7 +373,10 @@
           },
           "build": {
             "type": "string",
-            "enum": ["dockerfile", "railpack"]
+            "enum": [
+              "dockerfile",
+              "railpack"
+            ]
           },
           "dockerfile": {
             "type": "string"
@@ -366,7 +405,9 @@
                   "maximum": 65535
                 }
               },
-              "required": ["host"],
+              "required": [
+                "host"
+              ],
               "additionalProperties": false
             }
           },
@@ -402,7 +443,11 @@
               "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
             },
             "additionalProperties": {
-              "type": ["string", "number", "boolean"]
+              "type": [
+                "string",
+                "number",
+                "boolean"
+              ]
             }
           },
           "limits": {
@@ -412,7 +457,10 @@
                 "type": "number"
               },
               "memory": {
-                "type": ["string", "number"]
+                "type": [
+                  "string",
+                  "number"
+                ]
               }
             },
             "additionalProperties": false
@@ -442,16 +490,25 @@
                 "type": "number"
               }
             },
-            "required": ["max", "cpu"],
+            "required": [
+              "max",
+              "cpu"
+            ],
             "additionalProperties": false
           }
         },
-        "required": ["key"],
+        "required": [
+          "key"
+        ],
         "additionalProperties": false
       }
     }
   },
-  "required": ["version", "project", "apps"],
+  "required": [
+    "version",
+    "project",
+    "apps"
+  ],
   "additionalProperties": false,
   "$id": "https://cubeship.dev/schema/template/v1.json",
   "title": "Cubeship template, version 1"

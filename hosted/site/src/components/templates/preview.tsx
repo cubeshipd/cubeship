@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
-import type { NormalizedApp, NormalizedManifest } from "@/lib/template";
+import type { NormalizedApp, NormalizedManifest } from "@/lib/manifest";
 
 // Only a domain input's own reference is worth spelling out by label;
 // anything else is either not there yet or not something a template may
-// carry (see docs/design/templates.md: "No domain").
+// carry (see docs/design/hosted/templates.md: "No domain").
 function domainInputKey(host: string): string | undefined {
   return /^\$\{input\.([a-zA-Z][a-zA-Z0-9_-]*)\}$/.exec(host)?.[1];
 }

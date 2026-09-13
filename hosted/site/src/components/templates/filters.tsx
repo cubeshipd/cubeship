@@ -3,10 +3,11 @@
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { Input } from "@/components/ui/field";
+import type { Sort } from "@/lib/templates/queries";
 
 const SORTS = [
   { value: "recent", label: "Newest" },
-  { value: "likes", label: "Most liked" },
+  { value: "stars", label: "Most starred" },
 ] as const;
 
 // Every filter lives in the query string, not component state, so a
@@ -23,7 +24,7 @@ export function Filters({
   tags: string[];
   q?: string;
   tag?: string;
-  sort: "recent" | "likes";
+  sort: Sort;
 }) {
   const router = useRouter();
   const pathname = usePathname();

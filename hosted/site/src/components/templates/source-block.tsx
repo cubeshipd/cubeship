@@ -3,9 +3,9 @@
 import { Check, Copy } from "lucide-react";
 import { useState } from "react";
 
-// The file itself, plus the one address an instance would read instead
-// of a person: no install verb is shown, because none exists yet.
-export function SourceBlock({ source, manifestUrl }: { source: string; manifestUrl: string }) {
+// The file itself, plus the address it is read from: the release's
+// commit, which is what an instance will fetch too.
+export function SourceBlock({ source, rawUrl }: { source: string; rawUrl: string }) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -17,7 +17,7 @@ export function SourceBlock({ source, manifestUrl }: { source: string; manifestU
   return (
     <div className="hud-frame border border-fd-border">
       <div className="flex items-center justify-between border-fd-border border-b px-4 py-2">
-        <p className="label text-fd-muted-foreground">The file</p>
+        <p className="label text-fd-muted-foreground">template.yaml</p>
         <button
           type="button"
           onClick={copy}
@@ -31,7 +31,7 @@ export function SourceBlock({ source, manifestUrl }: { source: string; manifestU
         <code>{source}</code>
       </pre>
       <p className="overflow-x-auto border-fd-border border-t px-4 py-2 font-mono text-fd-muted-foreground text-xs">
-        GET {manifestUrl}
+        GET {rawUrl}
       </p>
     </div>
   );

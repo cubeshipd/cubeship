@@ -17,7 +17,7 @@ export default function TemplatesError({ error }: { error: Error & { digest?: st
     <div className="mx-auto max-w-6xl px-6 py-24 text-center">
       <p className="label text-primary">Templates</p>
       <h1 className="mt-2 font-semibold text-2xl text-fd-foreground tracking-tight">
-        The template registry is unavailable right now
+        The template catalog is unavailable right now
       </h1>
       <p className="mt-3 text-fd-muted-foreground text-sm">
         Try again in a moment. The docs don't need it.

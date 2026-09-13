@@ -13,39 +13,33 @@ assets copied back beside the server, an unprivileged user, `:3000`.
 The landing page and the docs are still exactly that: nothing in them
 needs the network at run time, the docs are compiled in, and the search
 index is built from them on the first query. `/templates` is not — it
-and its API under `/api/v1` read Postgres, and photos read a bucket.
-See [templates.md](templates.md) for what that half of the site is and
-how it stays out of the way of the half that is still static.
+reads the catalog `hosted/discovery` keeps in Postgres, and icons from a
+bucket. The site writes to neither, holds no session and has no API.
+See [templates.md](templates.md) for what that half is.
 
 ## Postgres can be down without taking the site with it
 
-`register()` used to `await` the migration runner, so a database that
+The site used to migrate its own schema on start, and a database that
 refused a connection took the whole process down before it served a
-single request — an operator running `make site-dev` against a
-misconfigured `DATABASE_URL` got a crashed server instead of a working
-landing page. Migrations now run in the background: `runMigrations` is
-still one attempt and the real error, for `withDatabase()` in tests to
-await against a database that is already up, but `register()` calls
-`runMigrationsInBackground` instead, which never throws — it logs the
-failure and retries with a backoff capped at 30 seconds until one
-attempt applies cleanly.
+single request. It migrates nothing now — the indexer owns the tables —
+so starting never touches Postgres at all.
 
 The landing page and the sitemap read Postgres too — the templates
 strip on `/` and the published-templates list in `/sitemap.xml` — and
 both degrade rather than fail: a failed query logs once and the strip
 renders nothing, the sitemap falls back to its static entries. Only
-`/templates`, `/u/*`, `/me/*`, `/admin/*` and the `/api/v1` routes that
-read the database are allowed to fail, and they fail fast and readable:
+`/templates` and the pages under it are allowed to fail, and they fail
+fast and readable:
 the pool gives up connecting after 3 seconds and a query after 5,
 rather than waiting out the OS's ~75-second TCP timeout, while the strip
 and the sitemap stop waiting for their own read after 800 milliseconds
 and 1.5 seconds, so a dead database costs the landing page under a
 second. The pool's limit is not that short because a remote database's
 handshake alone can take longer than the landing page may wait. `fail`
-in `src/lib/http.ts` maps a connection failure to a 503 with the code
-`unavailable` in the one place every route's errors already go through,
-and `error.tsx` under `src/app/templates` catches what a Server
-Component throws and shows a sentence instead of a stack trace.
+in `src/lib/http.ts` maps a connection failure to a 503 for the one
+route left, `/i/*`, and `error.tsx` under `src/app/templates` catches
+what a Server Component throws and shows a sentence instead of a stack
+trace.
 
 ## One palette, copied
 
@@ -85,9 +79,11 @@ the instance's own OpenAPI document; generating it here from
 
 ## What CI runs
 
-The same three steps as the dashboard, under the `site` job: `biome ci`,
-`typecheck` (typegen first, for the same reason as the dashboard) and
-`build`. `make check` does not cover it — nothing here is Go.
+The dashboard's three steps plus the unit tests, under the `site` job:
+`biome ci`, `test`, `typecheck` (typegen first, for the same reason as
+the dashboard) and `build`. None of it needs a database. `make check`
+does not cover it — nothing here is Go — except `reference-check`, which
+refuses a template schema that is not `product/template`'s.
 
 `make site-dev` runs it on `:3002`, which is also what the preview
 launches.

@@ -1,145 +1,37 @@
-import { relations, sql } from "drizzle-orm";
-import {
-  type AnyPgColumn,
-  bigint,
-  index,
-  integer,
-  jsonb,
-  pgTable,
-  primaryKey,
-  serial,
-  text,
-  timestamp,
-  unique,
-  uniqueIndex,
-} from "drizzle-orm/pg-core";
+import { bigint, integer, jsonb, pgTable, text, timestamp } from "drizzle-orm/pg-core";
 
-export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  githubId: bigint("github_id", { mode: "number" }).notNull().unique(),
-  login: text("login").notNull(),
-  name: text("name"),
-  avatarUrl: text("avatar_url"),
-  role: text("role").notNull().default("user"),
-  blockedAt: timestamp("blocked_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+// Read only. hosted/discovery owns these tables and their migrations;
+// this is the site's description of what it reads, not a schema it
+// creates. A column added there is added here by hand.
+export const repositories = pgTable("repositories", {
+  id: bigint("id", { mode: "number" }).primaryKey(),
+  nodeId: text("node_id").notNull(),
+  owner: text("owner").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull(),
+  url: text("url").notNull(),
+  ownerAvatarUrl: text("owner_avatar_url").notNull(),
+  stars: integer("stars").notNull(),
+  topics: text("topics").array().notNull(),
+  hidden: text("hidden"),
+  latestReleaseId: bigint("latest_release_id", { mode: "number" }),
+  firstSeenAt: timestamp("first_seen_at", { withTimezone: true }).notNull(),
+  checkedAt: timestamp("checked_at", { withTimezone: true }).notNull(),
 });
 
-export const sessions = pgTable("sessions", {
-  // The cookie carries the token; only its hash is stored, so a dump of
-  // this table is not a drawer of live sessions.
-  tokenHash: text("token_hash").primaryKey(),
-  userId: integer("user_id")
-    .notNull()
-    .references(() => users.id, { onDelete: "cascade" }),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+export const releases = pgTable("releases", {
+  id: bigint("id", { mode: "number" }).primaryKey(),
+  repositoryId: bigint("repository_id", { mode: "number" }).notNull(),
+  tag: text("tag").notNull(),
+  commitSha: text("commit_sha").notNull(),
+  name: text("name").notNull(),
+  url: text("url").notNull(),
+  publishedAt: timestamp("published_at", { withTimezone: true }).notNull(),
+  status: text("status").notNull(),
+  problems: jsonb("problems").notNull(),
+  manifest: jsonb("manifest"),
+  source: text("source"),
+  readme: text("readme"),
+  iconKey: text("icon_key"),
+  indexedAt: timestamp("indexed_at", { withTimezone: true }).notNull(),
 });
-
-export const templates = pgTable(
-  "templates",
-  {
-    id: serial("id").primaryKey(),
-    slug: text("slug").notNull().unique(),
-    authorId: integer("author_id")
-      .notNull()
-      .references(() => users.id),
-    name: text("name").notNull(),
-    summary: text("summary").notNull(),
-    imageKey: text("image_key"),
-    tags: text("tags").array().notNull().default([]),
-    status: text("status").notNull().default("draft"),
-    likesCount: integer("likes_count").notNull().default(0),
-    // No foreign key: templates and template_versions reference each
-    // other, and the publish transaction is what keeps this honest.
-    currentVersionId: integer("current_version_id"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [
-    index("templates_status_idx").on(table.status),
-    index("templates_author_idx").on(table.authorId),
-  ],
-);
-
-export const templateVersions = pgTable(
-  "template_versions",
-  {
-    id: serial("id").primaryKey(),
-    templateId: integer("template_id")
-      .notNull()
-      .references(() => templates.id, { onDelete: "cascade" }),
-    number: integer("number").notNull(),
-    manifest: jsonb("manifest").notNull(),
-    source: text("source").notNull(),
-    schemaVersion: integer("schema_version").notNull(),
-    notes: text("notes"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [unique("template_versions_number").on(table.templateId, table.number)],
-);
-
-export const likes = pgTable(
-  "likes",
-  {
-    templateId: integer("template_id")
-      .notNull()
-      .references(() => templates.id, { onDelete: "cascade" }),
-    userId: integer("user_id")
-      .notNull()
-      .references(() => users.id, { onDelete: "cascade" }),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (table) => [primaryKey({ columns: [table.templateId, table.userId] })],
-);
-
-export const comments = pgTable(
-  "comments",
-  {
-    id: serial("id").primaryKey(),
-    templateId: integer("template_id")
-      .notNull()
-      .references(() => templates.id, { onDelete: "cascade" }),
-    authorId: integer("author_id")
-      .notNull()
-      .references(() => users.id),
-    parentId: integer("parent_id").references((): AnyPgColumn => comments.id, {
-      onDelete: "cascade",
-    }),
-    body: text("body").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-    // Soft, so a removed comment keeps the thread's shape.
-    deletedAt: timestamp("deleted_at", { withTimezone: true }),
-  },
-  (table) => [index("comments_template_idx").on(table.templateId)],
-);
-
-export const reports = pgTable(
-  "reports",
-  {
-    id: serial("id").primaryKey(),
-    subjectType: text("subject_type").notNull(),
-    subjectId: integer("subject_id").notNull(),
-    reporterId: integer("reporter_id")
-      .notNull()
-      .references(() => users.id),
-    reason: text("reason").notNull(),
-    note: text("note"),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
-    resolution: text("resolution"),
-  },
-  (table) => [
-    // A person may report one subject once — but only while that report
-    // is still open, so a resolved one does not block reporting it again.
-    uniqueIndex("reports_one_per_person")
-      .on(table.subjectType, table.subjectId, table.reporterId)
-      .where(sql`${table.resolvedAt} is null`),
-  ],
-);
-
-export const templateRelations = relations(templates, ({ one, many }) => ({
-  author: one(users, { fields: [templates.authorId], references: [users.id] }),
-  versions: many(templateVersions),
-}));

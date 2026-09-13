@@ -1,18 +1,19 @@
 ---
 title: Templates
-description: A published recipe for a set of apps and the managed data they need — one YAML file, checked before anyone installs it.
+description: A set of apps and the managed data they need, published as a GitHub repository and checked before anyone installs it.
 ---
 
 A template is a YAML file that describes a set of apps, the databases
 and stores they need, and the questions an installer has to answer —
-a domain, a secret, a choice of engine version. The community writes
-them here, signed in with GitHub; an instance only ever consumes one.
-Nothing on this page needs a sign-in: the file, the schema and the
-validator are open to anyone.
+a domain, a secret, a choice of engine version. The community publishes
+them as GitHub repositories, and [the catalog](/templates) lists every
+release that passes the same validator an instance runs. An instance
+only ever consumes one.
 
-The split is deliberate. This site owns identity, authorship and the
-schema. An instance owns the machine, the secrets, and every decision
-the template itself cannot make.
+The split is deliberate. GitHub holds authorship, history and
+discussion. The catalog holds nothing but what it read. An instance
+owns the machine, the secrets, and every decision the template itself
+cannot make.
 
 ## What a template may not contain
 
@@ -47,26 +48,22 @@ be a template that could steal one.
 
 ## Checking a file
 
-Two ways to check a file without installing anything:
-
-```bash
-curl -sS -X POST --data-binary @template.yaml https://cubeship.dev/api/v1/validate
-```
-
-or point an editor at the published schema for live completion and
-inline errors:
+Point an editor at the published schema for live completion and inline
+errors — the address is permanent:
 
 ```
 https://cubeship.dev/schema/template/v1.json
 ```
 
-Both addresses are permanent — pin them from a CI job or an editor
-config. See [Diagnostics](/docs/templates/diagnostics) for what a
-refusal looks like and what each code means.
+The schema checks the shape. Everything beyond it — references,
+engines, domains — is checked when a release is read, and a refused
+release lists every reason. See [Diagnostics](/docs/templates/diagnostics)
+for what each code means.
 
 ## Where to go
 
 <Cards>
+  <Card title="Publishing" href="/docs/templates/publishing" description="The repository, the three files, and what happens to a release." />
   <Card title="The file" href="/docs/templates/file" description="Every block a template may contain, field by field, with the defaults." />
   <Card title="Inputs" href="/docs/templates/inputs" description="The six ways a template asks the installer a question." />
   <Card title="References" href="/docs/templates/references" description="How one part of a template points at another, and how an app reaches another app." />

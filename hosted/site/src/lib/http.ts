@@ -51,7 +51,7 @@ export function fail(error: unknown): Response {
   if (isDatabaseUnavailable(error)) {
     console.error("database unavailable:", (error as Error).message);
     return json(
-      { error: { code: "unavailable", message: "the template registry is unavailable right now" } },
+      { error: { code: "unavailable", message: "the template catalog is unavailable right now" } },
       { status: 503 },
     );
   }
@@ -83,16 +83,4 @@ export function route<Params extends Record<string, string | string[]> = Record<
       return fail(error);
     }
   };
-}
-
-export async function readText(request: Request, limit = 256 * 1024): Promise<string> {
-  const text = await request.text();
-  if (text.length > limit) {
-    throw new HttpError(
-      413,
-      "too_large",
-      `a template file is at most ${Math.floor(limit / 1024)} KB`,
-    );
-  }
-  return text;
 }

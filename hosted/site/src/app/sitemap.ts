@@ -3,7 +3,7 @@ import { comparisons } from "@/lib/comparisons";
 import { withDeadline } from "@/lib/deadline";
 import { siteUrl } from "@/lib/shared";
 import { source } from "@/lib/source";
-import { allPublishedTemplates } from "@/lib/templates/queries";
+import { allTemplates } from "@/lib/templates/queries";
 
 // Reads Postgres for the templates, so this can never be static — see
 // the `force-dynamic` below. The query lives in the function body,
@@ -28,15 +28,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   }));
   // A database that is down still leaves the landing page and the docs
   // worth listing; only the templates are missing until it is back.
-  let publishedTemplates: Awaited<ReturnType<typeof allPublishedTemplates>> = [];
+  let listed: Awaited<ReturnType<typeof allTemplates>> = [];
   try {
-    publishedTemplates = await withDeadline(allPublishedTemplates(), 1_500, "sitemap templates");
+    listed = await withDeadline(allTemplates(), 1_500, "sitemap templates");
   } catch (error) {
     console.warn("sitemap: templates unavailable:", (error as Error).message);
   }
-  const templates = publishedTemplates.map((template) => ({
-    url: `${siteUrl}/templates/${template.slug}`,
-    lastModified: template.updatedAt,
+  const templates = listed.map((template) => ({
+    url: `${siteUrl}/templates/${template.owner}/${template.name}`,
+    lastModified: template.publishedAt,
     changeFrequency: "weekly" as const,
     priority: 0.6,
   }));

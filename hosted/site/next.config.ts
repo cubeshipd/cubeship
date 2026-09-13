@@ -12,14 +12,24 @@ const config: NextConfig = {
   output: dev ? undefined : "standalone",
   reactStrictMode: true,
   devIndicators: false,
-  // standalone traces imports; .sql files are read at run time, so they
-  // have to be named explicitly or the container starts without them.
-  outputFileTracingIncludes: { "/**": ["./drizzle/**"] },
-  serverExternalPackages: ["pg", "sharp"],
+  serverExternalPackages: ["pg"],
   // `curl -fsSL https://cubeship.dev/install.sh | sh` is what install.sh
   // and the CLI print, so the script is served from here — from the
   // repository's master, so the site never carries a stale copy of it.
   // A rewrite rather than a redirect: `sh` never sees a Location header.
+  // The template schema is a file copied from product/template (make
+  // reference); editors and agents fetch it from anywhere.
+  async headers() {
+    return [
+      {
+        source: "/schema/:path*",
+        headers: [
+          { key: "access-control-allow-origin", value: "*" },
+          { key: "cache-control", value: "public, max-age=3600" },
+        ],
+      },
+    ];
+  },
   async rewrites() {
     return [
       {

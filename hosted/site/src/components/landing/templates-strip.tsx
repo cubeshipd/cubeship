@@ -4,7 +4,7 @@ import { withDeadline } from "@/lib/deadline";
 import { listTemplates } from "@/lib/templates/queries";
 import { Section } from "./section";
 
-// The four most-liked published templates, the same query and card the
+// The four most-starred templates, the same query and card the
 // catalog itself uses. This is what makes the page read Postgres at
 // request time — see the `force-dynamic` on the page that renders it.
 // A database that is down must not take the landing page with it, so a
@@ -13,7 +13,7 @@ export async function TemplatesStrip() {
   let rows: Awaited<ReturnType<typeof listTemplates>>["rows"];
   try {
     ({ rows } = await withDeadline(
-      listTemplates({ sort: "likes", limit: 4 }),
+      listTemplates({ sort: "stars", limit: 4 }),
       800,
       "templates strip",
     ));
@@ -26,12 +26,12 @@ export async function TemplatesStrip() {
   return (
     <Section
       label="Templates"
-      title="Recipes the community already wrote"
-      lede="An app and the managed data it needs, published by someone who has already run it. Copy it, change what's yours, deploy."
+      title="Apps the community already packaged"
+      lede="An app and the managed data it needs, published as a GitHub repository by someone who already runs it."
     >
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {rows.map((template) => (
-          <TemplateCard key={template.slug} template={template} />
+          <TemplateCard key={`${template.owner}/${template.name}`} template={template} />
         ))}
       </div>
       <div className="mt-8">

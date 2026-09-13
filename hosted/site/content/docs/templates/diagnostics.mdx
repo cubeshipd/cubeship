@@ -3,8 +3,8 @@ title: Diagnostics
 description: Every code the validator can return — what it means, and what to do about it.
 ---
 
-Every diagnostic is one object, from the editor, from `POST
-/api/v1/validate`, and nowhere else:
+Every diagnostic is one object, and a refused release carries all of
+them:
 
 ```ts
 type Diagnostic = {
@@ -12,12 +12,17 @@ type Diagnostic = {
   code: string;        // stable and linkable — this page has a section per code
   message: string;
   path: (string | number)[];
-  range?: { start: Pos; end: Pos };
+  line?: number;
+  column?: number;
   hint?: string;
 };
 ```
 
-**Error** stops a publish. **Warning** is advice the author may keep
+The codes about the release rather than the file —
+`release.template-missing`, `icon.size` and the rest — are listed in
+[Publishing](/docs/templates/publishing#refused-releases).
+
+**Error** refuses a release. **Warning** is advice the author may keep
 anyway — the file still installs. **Info** is a passing remark, nothing
 more. A code is permanent: once a template links to a section here, the
 code does not change meaning under it.
@@ -26,9 +31,15 @@ code does not change meaning under it.
 
 ### `yaml.syntax`
 
-*Error.* The file is not valid YAML. The message is whatever the parser
-said, with its position folded into `range` instead of repeated in the
-text.
+*Error.* The file is not valid YAML, or gives one key twice. The
+message is whatever the parser said, with its position in `line`
+instead of repeated in the text.
+
+### `yaml.alias`
+
+*Error.* The file uses an anchor (`&name`) or an alias (`*name`). Write
+the value out: one alias can expand to far more document than anybody
+wrote.
 
 ### `yaml.empty`
 
@@ -46,10 +57,11 @@ nearest real key when one is close enough to be a typo rather than a
 different word; a dropped `healthcheck` with no error would be the
 worse outcome.
 
-Every other shape violation — a string where a number belongs, a value
-below its minimum, a pattern that does not match — carries the code
-`schema.` followed by the underlying rule's name, for example
-`invalid_type` or `too_small`. The message says which rule, and `path`
+Every other shape violation carries the code `schema.` followed by the
+rule: `invalid_type` (a string where a number belongs, or a required
+key missing), `invalid_value` (a value outside a fixed set),
+`invalid_format` (a pattern that does not match), `invalid_union` (an
+input `type` that does not exist), `too_small` and `too_big`. The message says which rule, and `path`
 says where.
 
 ## Names and keys
@@ -77,8 +89,9 @@ other only has a matching `key`.
 
 ### `version.range`
 
-*Error.* `minCubeship` is not a version range
-[`semver` understands](https://github.com/npm/node-semver#ranges).
+*Error.* `minCubeship` is not a version range in
+[npm's grammar](https://github.com/npm/node-semver#ranges) — `0.6.0`,
+`>=0.6.0 <1.0.0`, `^0.6 || ^1`.
 
 ## Inputs
 
@@ -142,7 +155,7 @@ buckets from the same store at two prefixes.
 *Error* when two attachments would write the same environment variable
 — give one of them a `prefix`. *Warning* when an app's own `env`
 overrides a variable an attachment already wrote; that may be exactly
-what you meant, so it does not block a publish.
+what you meant, so it does not refuse a release.
 
 ## Databases
 
@@ -204,8 +217,9 @@ nothing under `railpack`.
 
 ### `health.path`
 
-*Error.* `health` does not start with `/`, is over 255 characters, or
-carries a `?` or `#`.
+*Error.* `health` does not start with `/`, is over 255 characters,
+carries a `?` or `#`, or holds a character other than letters, digits
+and `/-._~%!$&'()*+,;=:@`.
 
 ## Limits and autoscale
 
@@ -225,7 +239,7 @@ carries a `?` or `#`.
 
 ## Advice
 
-None of these block a publish.
+None of these refuse a release.
 
 ### `advice.unpinned-engine`
 
