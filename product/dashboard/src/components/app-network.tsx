@@ -1,11 +1,19 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { CheckIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import {
+  CheckIcon,
+  CopyIcon,
+  ExternalLinkIcon,
+  PencilIcon,
+  PlusIcon,
+  Trash2Icon,
+} from "lucide-react";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { copyText } from "@/components/copy-button";
 import { CopyField } from "@/components/copy-field";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
@@ -72,6 +80,7 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
   const [editing, setEditing] = useState<AppDomain | null>(null);
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
+  const [copied, setCopied] = useState<number | null>(null);
 
   const settings = useQuery({
     queryKey: ["settings"],
@@ -79,12 +88,23 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
   });
 
   const base = `/apps/${app.reference}`;
+  // Every name is served on the instance's one scheme; https until the
+  // settings say TLS is off.
+  const urlOf = (d: AppDomain) =>
+    `${settings.data?.tls_enabled === false ? "http" : "https"}://${d.host}`;
+
+  async function copyUrl(d: AppDomain) {
+    if (await copyText(urlOf(d))) {
+      setCopied(d.id);
+      setTimeout(() => setCopied((id) => (id === d.id ? null : id)), 1500);
+    }
+  }
 
   const columns: Column<AppDomain>[] = [
     {
       id: "host",
       header: "Domain",
-      width: 58,
+      width: 50,
       sortBy: (d) => d.host,
       cell: (d) => <span className="font-mono text-xs">{d.host}</span>,
     },
@@ -108,10 +128,16 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
     {
       id: "actions",
       header: "",
-      width: 16,
+      width: 24,
       align: "right",
       cell: (d) => (
         <RowActions>
+          <RowAction
+            icon={copied === d.id ? CheckIcon : CopyIcon}
+            label={`Copy ${urlOf(d)}`}
+            onClick={() => copyUrl(d)}
+          />
+          <RowAction icon={ExternalLinkIcon} label={`Open ${urlOf(d)}`} href={urlOf(d)} />
           <RowAction
             icon={PencilIcon}
             label={`Change the port for ${d.host}`}
