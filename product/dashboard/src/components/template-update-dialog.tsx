@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { LoadingList } from "@/components/loading";
+import { SearchableSelect } from "@/components/searchable-select";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -21,6 +22,7 @@ import {
   api,
   type TemplateChange,
   type TemplateInstall,
+  type TemplateReleaseOption,
   type TemplateRunStarted,
   type TemplateUpdatePreview,
 } from "@/lib/api";
@@ -49,13 +51,33 @@ export function TemplateUpdateDialog({
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Empty is the newest release, which the daemon picks. Any other is one
+  // somebody chose, older ones included.
+  const [chosen, setChosen] = useState("");
+  const releases = useQuery({
+    queryKey: ["templates", install.owner, install.repo, "releases"],
+    queryFn: () =>
+      api.get<{ releases: TemplateReleaseOption[] }>(
+        `/templates/${install.owner}/${install.repo}/releases`,
+      ),
+    enabled: open,
+  });
   const preview = useQuery({
-    queryKey: ["template-update", install.id, install.update_available],
-    queryFn: () => api.get<TemplateUpdatePreview>(`/template-installs/${install.id}/update`),
+    queryKey: ["template-update", install.id, install.update_available, chosen],
+    queryFn: () =>
+      api.get<TemplateUpdatePreview>(
+        `/template-installs/${install.id}/update${chosen ? `?release=${encodeURIComponent(chosen)}` : ""}`,
+      ),
     enabled: open,
   });
 
   const unanswered = (preview.data?.inputs ?? []).some((i) => !answers[i.key]?.trim());
+  const list = releases.data?.releases ?? [];
+  const target = chosen || (preview.data?.to ?? "");
+  const same = target !== "" && target === install.release;
+  const at = (tag: string) => list.findIndex((r) => r.tag === tag);
+  // Newest first, so a higher index is an older release.
+  const older = !same && at(target) > at(install.release) && at(install.release) >= 0;
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -66,7 +88,7 @@ export function TemplateUpdateDialog({
       const started = await api.post<TemplateRunStarted>(
         `/template-installs/${install.id}/update`,
         {
-          release: preview.data.to,
+          release: target,
           inputs: answers,
         },
       );
@@ -88,7 +110,7 @@ export function TemplateUpdateDialog({
               Update {install.repo}
               {preview.data && (
                 <span className="ml-2 font-mono text-sm text-muted-foreground">
-                  {preview.data.from} → {preview.data.to}
+                  {preview.data.from} → {target}
                 </span>
               )}
             </DialogTitle>
@@ -97,8 +119,33 @@ export function TemplateUpdateDialog({
             </DialogDescription>
           </DialogHeader>
 
+          <SearchableSelect
+            label="Version"
+            value={target}
+            busy={releases.data === undefined && !releases.error}
+            onChange={setChosen}
+            choices={(list.length > 0 ? list : target ? [{ tag: target, commit: "" }] : []).map(
+              (r, i) => ({
+                value: r.tag,
+                label: r.tag,
+                hint:
+                  r.tag === install.release
+                    ? "installed"
+                    : i === 0 && list.length > 0
+                      ? "latest"
+                      : undefined,
+              }),
+            )}
+          />
+          {older && (
+            <p className="text-xs text-muted-foreground">
+              An older release: its images and settings are put back on the apps. Nothing is
+              deleted, and what newer releases created stays.
+            </p>
+          )}
+
           <ErrorAlert error={preview.error ? message(preview.error) : error} />
-          {preview.isLoading && <LoadingList rows={3} />}
+          {preview.isFetching && !preview.data && <LoadingList rows={3} />}
 
           {preview.data && (
             <div className="max-h-72 divide-y divide-border overflow-y-auto border border-border">
@@ -148,8 +195,12 @@ export function TemplateUpdateDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!preview.data || unanswered || busy}>
-              {busy ? "Starting…" : `Update to ${preview.data?.to ?? "…"}`}
+            <Button type="submit" disabled={!preview.data || unanswered || busy || same}>
+              {busy
+                ? "Starting…"
+                : same
+                  ? "Already installed"
+                  : `${older ? "Move" : "Update"} to ${target || "…"}`}
             </Button>
           </DialogFooter>
         </form>

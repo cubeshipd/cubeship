@@ -388,6 +388,7 @@ const routes: [string, string, Handler][] = [
       const t = db.templates.find((x) => x.owner === p[0] && x.name === p[1]) ?? notFound();
       return {
         releases: [
+          { tag: "v1.3.0", commit: "def5678", published_at: "2026-09-10T12:00:00Z" },
           t.release,
           { tag: "v0.9.0", commit: "1a2b3c4", published_at: "2026-06-01T12:00:00Z" },
         ],

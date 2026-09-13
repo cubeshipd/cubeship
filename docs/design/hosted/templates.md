@@ -337,7 +337,7 @@ recorded resources, newest first** — a project that already existed is
 never in the list, so it is never touched.
 
 **An update applies what changed and deletes nothing.** The preview —
-`GET /template-installs/{id}/update` — compares the newer release's
+`GET /template-installs/{id}/update` — for the release chosen in the dialog's Version picker, the newest by default, an older one included — compares the newer release's
 manifest with the recorded one by key: a changed image or build source,
 changed health, limits or scale, each variable the template declares
 that is new or different, and new apps, databases, stores, buckets,
