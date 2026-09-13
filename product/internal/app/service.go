@@ -1222,6 +1222,18 @@ func (s *Service) AddDomain(ctx context.Context, caller *user.User, ref Referenc
 // unique index knows nothing about is exactly the collision it cannot
 // catch — the app would be created, and one of the two would quietly
 // stop answering after a deploy.
+// HostTaken reports whether AddDomain would refuse host for already
+// being somebody's: an app's name, or one of the instance's own. For a
+// caller adding several names at once, which has to know before it adds
+// the first.
+func (s *Service) HostTaken(ctx context.Context, host string) (bool, error) {
+	host = NormalizeHost(host)
+	if own, err := s.instanceOwnsHost(ctx, host); err != nil || own {
+		return own, err
+	}
+	return s.Repo().HostTaken(ctx, host)
+}
+
 func (s *Service) instanceOwnsHost(ctx context.Context, host string) (bool, error) {
 	values, err := s.settings.Load(ctx)
 	if err != nil {

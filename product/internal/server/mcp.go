@@ -9,6 +9,7 @@ import (
 	"cubeship/internal/node"
 	"cubeship/internal/objectstore"
 	"cubeship/internal/project"
+	"cubeship/internal/templateinstall"
 	"cubeship/internal/user"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -55,6 +56,7 @@ func (s *Server) BuildMCPServer(caller *user.User, keyHash string) *mcp.Server {
 	app.NewTools(s.Apps, caller).Register(srv)
 	datastore.NewTools(s.Datastores, caller).Register(srv)
 	objectstore.NewTools(s.ObjectStores, caller).Register(srv)
+	templateinstall.NewTools(s.Templates, caller).Register(srv)
 	machine.NewTools(s.Machine, caller).Register(srv)
 	node.NewTools(s.Nodes, caller).Register(srv)
 	return srv

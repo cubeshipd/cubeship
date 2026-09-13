@@ -1,0 +1,44 @@
+---
+title: cubeship template
+description: "Install apps from the template catalog"
+---
+
+{/* Generated from the CLI by `cubeship docs` — run `make reference`. Editing this file is editing the copy rather than the thing. */}
+
+Install apps from the template catalog
+
+## cubeship template install
+
+Install a template from the catalog: its project and environment when
+they do not exist, its databases, stores and apps, and a deploy of
+each app. Anything that fails is undone.
+
+Secrets the instance generates are printed once, here, and nowhere else.
+
+```bash
+cubeship template install <owner/repo> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--app-name` |  | rename an app the template declares, key=name (repeatable) |
+| `--database-name` |  | rename a database the template declares, key=name (repeatable) |
+| `--env` |  | the environment inside it; the template's by default |
+| `--input` |  | an answer to one of the template's inputs, key=value (repeatable) |
+| `--project` |  | the project to install into; the template's suggestion by default |
+| `--release` |  | a release tag; the newest the catalog accepted by default |
+| `--store-name` |  | rename an object store the template declares, key=name (repeatable) |
+
+## cubeship template list
+
+Search the template catalog at cubeship.dev. The search matches a
+template's name, description or tags.
+
+```bash
+cubeship template list [search] [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--tag` |  | only templates with this tag |
+

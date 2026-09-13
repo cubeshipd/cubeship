@@ -997,6 +997,13 @@ func (r *Repository) DomainsFor(ctx context.Context, appIDs []int64) (map[int64]
 }
 
 // AddDomain gives an app a name to answer at.
+// HostTaken reports whether any app on the instance answers at host.
+func (r *Repository) HostTaken(ctx context.Context, host string) (bool, error) {
+	var taken bool
+	err := r.q.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM app_domains WHERE host = $1)`, host).Scan(&taken)
+	return taken, err
+}
+
 func (r *Repository) AddDomain(ctx context.Context, appID int64, host string, port int) (*Domain, error) {
 	var d Domain
 	err := r.q.QueryRowContext(ctx,

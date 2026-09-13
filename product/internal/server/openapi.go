@@ -23,6 +23,7 @@ import (
 	"cubeship/internal/project"
 	"cubeship/internal/release"
 	"cubeship/internal/settings"
+	"cubeship/internal/templateinstall"
 	"cubeship/internal/update"
 	"cubeship/internal/user"
 )
@@ -52,6 +53,7 @@ func (s *Server) OpenAPI() openapi.Document {
 		backup.NewHandler(s.Backups).OpenAPI(),
 		datastore.NewHandler(s.Datastores).OpenAPI(),
 		objectstore.NewHandler(s.ObjectStores).OpenAPI(),
+		templateinstall.NewHandler(s.Templates).OpenAPI(),
 		extregistry.NewHandler(s.Registries).OpenAPI(),
 		credential.NewHandler(s.Credentials).OpenAPI(),
 		dns.NewHandler(s.DNS).OpenAPI(),

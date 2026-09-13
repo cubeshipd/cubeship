@@ -28,6 +28,7 @@ func main() {
 	root.AddCommand(newProjectCmd())
 	root.AddCommand(newEnvironmentCmd())
 	root.AddCommand(newDatastoreCmd())
+	root.AddCommand(newTemplateCmd())
 	root.AddCommand(newServerCmd())
 	root.AddCommand(newUserCmd())
 	root.AddCommand(newVersionCmd())

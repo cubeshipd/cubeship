@@ -56,6 +56,11 @@ type Config struct {
 	// not an API key and not anybody's: a node is not an account.
 	NodeToken string
 
+	// CatalogURL is the template catalog's API, when it is not
+	// cubeship.dev's (CUBESHIP_CATALOG_URL): a mirror, or a catalog being
+	// developed.
+	CatalogURL string
+
 	// WebImage is the image the dashboard's container runs from.
 	//
 	// It is told rather than derived. The daemon could take its own
@@ -136,6 +141,7 @@ func Load() (*Config, error) {
 		WebImage:     os.Getenv("CUBESHIP_WEB_IMAGE"),
 		ControlPlane: controlPlane,
 		NodeToken:    nodeToken,
+		CatalogURL:   os.Getenv("CUBESHIP_CATALOG_URL"),
 	}, nil
 }
 

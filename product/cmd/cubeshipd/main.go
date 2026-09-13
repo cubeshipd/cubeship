@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -40,10 +41,12 @@ import (
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/platform/hostexec"
+	"cubeship/internal/platform/httpx"
 	"cubeship/internal/platform/regauth"
 	"cubeship/internal/server"
 	"cubeship/internal/settings"
 	"cubeship/internal/setup"
+	"cubeship/internal/templateinstall"
 	"cubeship/internal/update"
 	"cubeship/internal/user"
 	"cubeship/internal/worker"
@@ -563,6 +566,8 @@ func run() error {
 		Host:          host,
 		Machine:       box,
 		Version:       version,
+		Catalog: templateinstall.NewHTTPCatalog(cmp.Or(cfg.CatalogURL, templateinstall.DefaultCatalogURL),
+			httpx.APIPrefix+"/template-icons/"),
 		// What this instance's own two containers were started from.
 		// Read back off the running container rather than derived: an
 		// operator is free to point either at a mirror, and string
@@ -614,6 +619,11 @@ func run() error {
 	// no container and is skipped.
 	if err := objectstore.Reconcile(ctx, srv.ObjectStores.Repo(), docker); err != nil {
 		return fmt.Errorf("reconcile object stores: %w", err)
+	}
+	// An install this daemon's previous run was applying has nobody
+	// applying it now, so what it created is undone.
+	if err := srv.Templates.Recover(ctx); err != nil {
+		log.Printf("template installs: could not undo the ones left running: %v", err)
 	}
 
 	// The host's stanza, rendered from whatever is exposed now. Every

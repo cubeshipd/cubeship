@@ -36,6 +36,7 @@ import (
 	"cubeship/internal/release"
 	"cubeship/internal/settings"
 	"cubeship/internal/setup"
+	"cubeship/internal/templateinstall"
 	"cubeship/internal/update"
 	"cubeship/internal/user"
 )
@@ -47,8 +48,11 @@ type Server struct {
 	Apps         *app.Service
 	Datastores   *datastore.Service
 	ObjectStores *objectstore.Service
-	Backups      *backup.Service
-	Metrics      *metrics.Service
+	// Templates installs what the catalog lists. It sits above every
+	// module an install creates things through.
+	Templates *templateinstall.Service
+	Backups   *backup.Service
+	Metrics   *metrics.Service
 	// Machine is what the box itself is doing, which belongs to no
 	// module below: there is one of it, and nothing here configures it.
 	Machine *machine.Service
@@ -158,6 +162,10 @@ type Options struct {
 	// nothing to say changed.
 	Version string
 
+	// Catalog is where templates are listed and read from. Nil refuses
+	// both, which is what a test's server wants.
+	Catalog templateinstall.Catalog
+
 	// DaemonImage and WebImage are what this instance's own two
 	// containers are pulled from. Empty on a daemon that is not a
 	// container, which cannot update itself and says so.
@@ -225,6 +233,12 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// else. Nothing below it knows it exists.
 	objectStores := objectstore.NewService(db, creds, apps,
 		objectstore.NewProvisioner(db, docker, opts.DataDir), cfg, series)
+
+	// Installing a template creates through every module above, so it
+	// sits on top of them and nothing below knows it exists. No catalog
+	// is a test's server: listing and installing refuse, and the rest runs.
+	templates := templateinstall.NewService(templateinstall.NewRepository(db),
+		projects, apps, datastores, objectStores, user.NewRepository(db), opts.Catalog, opts.Version)
 
 	// The box itself, which sits beside all of them rather than under
 	// any: one machine, no configuration, and the only module here that
@@ -337,6 +351,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Machine:      machine.NewService(db, reader, series),
 		Nodes:        nodes,
 		Settings:     cfg,
+		Templates:    templates,
 		Releases:     release.NewService(db, opts.Version),
 		Updates:      updates,
 		Certs:        certificates.NewService(cfg, apps, opts.DataDir),
@@ -514,6 +529,7 @@ func (s *Server) routes() {
 	app.NewHandler(s.Apps).Routes(s.router, auth)
 	datastore.NewHandler(s.Datastores).Routes(s.router, auth)
 	objectstore.NewHandler(s.ObjectStores).Routes(s.router, auth)
+	templateinstall.NewHandler(s.Templates).Routes(s.router, auth)
 	machine.NewHandler(s.Machine).Routes(s.router, auth)
 	release.NewHandler(s.Releases).Routes(s.router, auth)
 	update.NewHandler(s.Updates).Routes(s.router, auth)
