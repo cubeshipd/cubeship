@@ -100,29 +100,31 @@ export default async function TemplateDetailPage(props: PageProps<"/templates/[s
               <ReportButton subjectType="template" subjectId={template.id} />
             </div>
 
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 p-4">
-              <dt className="label text-fd-muted-foreground">Updated</dt>
-              <dd className="text-right text-fd-foreground">
+            <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 p-4">
+              <dt className="label leading-5 text-fd-muted-foreground">Updated</dt>
+              <dd className="text-right font-mono text-[0.6875rem] leading-5 text-fd-foreground">
                 <time dateTime={template.updatedAt.toISOString()}>
                   {formatDate(template.updatedAt)}
                 </time>
               </dd>
-              <dt className="label text-fd-muted-foreground">Published</dt>
-              <dd className="text-right text-fd-foreground">
+              <dt className="label leading-5 text-fd-muted-foreground">Published</dt>
+              <dd className="text-right font-mono text-[0.6875rem] leading-5 text-fd-foreground">
                 <time dateTime={template.createdAt.toISOString()}>
                   {formatDate(template.createdAt)}
                 </time>
               </dd>
               {version ? (
                 <>
-                  <dt className="label text-fd-muted-foreground">Version</dt>
-                  <dd className="text-right font-mono text-fd-foreground">v{version.number}</dd>
+                  <dt className="label leading-5 text-fd-muted-foreground">Version</dt>
+                  <dd className="text-right font-mono text-[0.6875rem] leading-5 text-fd-foreground">
+                    v{version.number}
+                  </dd>
                 </>
               ) : null}
               {manifest?.min_cubeship ? (
                 <>
-                  <dt className="label text-fd-muted-foreground">Requires</dt>
-                  <dd className="text-right font-mono text-fd-foreground">
+                  <dt className="label leading-5 text-fd-muted-foreground">Requires</dt>
+                  <dd className="text-right font-mono text-[0.6875rem] leading-5 text-fd-foreground">
                     Cubeship {manifest.min_cubeship}
                   </dd>
                 </>
