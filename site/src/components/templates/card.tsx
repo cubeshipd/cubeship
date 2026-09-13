@@ -1,10 +1,8 @@
 import { Heart } from "lucide-react";
 import Link from "next/link";
 import { avatarAt } from "@/lib/avatar";
+import { formatDate } from "@/lib/dates";
 import type { CatalogRow } from "@/lib/templates/queries";
-
-// UTC, so the server and the browser print the same day.
-const dateFormat = new Intl.DateTimeFormat("en", { dateStyle: "medium", timeZone: "UTC" });
 
 export function TemplateCard({ template }: { template: CatalogRow }) {
   return (
@@ -48,9 +46,7 @@ export function TemplateCard({ template }: { template: CatalogRow }) {
         </div>
         <p className="label text-subtle-foreground">
           Updated{" "}
-          <time dateTime={template.updatedAt.toISOString()}>
-            {dateFormat.format(template.updatedAt)}
-          </time>
+          <time dateTime={template.updatedAt.toISOString()}>{formatDate(template.updatedAt)}</time>
         </p>
       </div>
     </Link>
