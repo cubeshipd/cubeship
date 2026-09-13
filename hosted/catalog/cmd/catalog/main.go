@@ -53,7 +53,7 @@ func main() {
 	(&catalog.API{
 		Reader:         store,
 		PublicURL:      envOr("CATALOG_PUBLIC_URL", "https://cubeship.dev/api/v1"),
-		VerifiedOwners: strings.Split(envOr("CATALOG_VERIFIED_OWNERS", "cubeshipd"), ","),
+		VerifiedOwners: strings.Split(envOr("CATALOG_VERIFIED_OWNERS", "cubeshipd,lucasaarch"), ","),
 		Log:            logger,
 	}).Routes(mux)
 	mux.Handle("GET /healthz", st)

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -183,7 +184,14 @@ func TestTheStoreReadsWhatTheAPIServes(t *testing.T) {
 	}
 
 	d, err := p.Template(ctx, "LUCASAARCH", "cubeship-app0-template")
-	if err != nil || d == nil || d.Readme != "# app" || !strings.Contains(string(d.Manifest), `"project":"umami"`) ||
+	// jsonb comes back reformatted, so the manifest is compared as JSON.
+	var m struct {
+		Project string `json:"project"`
+	}
+	if d != nil {
+		json.Unmarshal(d.Manifest, &m)
+	}
+	if err != nil || d == nil || d.Readme != "# app" || m.Project != "umami" ||
 		d.SourceURL != "https://raw.githubusercontent.com/lucasaarch/cubeship-app0-template/c0/template.yaml" {
 		t.Fatalf("template %+v err %v", d, err)
 	}

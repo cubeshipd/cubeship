@@ -34,7 +34,7 @@ type Summary struct {
 	AvatarURL   string   `json:"avatar_url"`
 	IconURL     *string  `json:"icon_url"`
 	// Verified is a template published by an owner the catalog vouches
-	// for — Cubeship's own organization, by default.
+	// for — Cubeship's organization and its maintainer, by default.
 	Verified bool       `json:"verified"`
 	Release  ReleaseRef `json:"release"`
 

@@ -1,11 +1,11 @@
 import { BadgeCheck } from "lucide-react";
 
-// Shown beside a template the catalog vouches for: published by
-// Cubeship's own organization. The catalog decides; the site only draws it.
+// Shown beside a template the catalog vouches for, by who published it.
+// The catalog decides (CATALOG_VERIFIED_OWNERS); the site only draws it.
 export function VerifiedBadge({ className }: { className: string }) {
   return (
-    <span title="Verified: published by Cubeship" className="inline-flex shrink-0 text-primary">
-      <BadgeCheck className={className} aria-label="Verified: published by Cubeship" role="img" />
+    <span title="Verified publisher" className="inline-flex shrink-0 text-primary">
+      <BadgeCheck className={className} aria-label="Verified publisher" role="img" />
     </span>
   );
 }

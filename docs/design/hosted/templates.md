@@ -194,7 +194,7 @@ where the catalog is. The site's own pages skip the proxy and call
 with, so a browser fetches them through the public address.
 
 `verified` marks a template whose owner is in `CATALOG_VERIFIED_OWNERS`,
-`cubeshipd` by default. It is decided in the API, not stored: vouching
+`cubeshipd,lucasaarch` by default. It is decided in the API, not stored: vouching
 for an owner is a setting, and changing it must not wait for a pass or
 rewrite rows. It says who published it and nothing about the file,
 which every listed template has passed the same validator for.
@@ -243,7 +243,7 @@ anything:
 | `GITHUB_TOKEN` | — | a token with no scopes: everything it reads is public |
 | `CATALOG_URL` | the catalog's internal address, `http://cubeship-cubeship-production-cubeship-catalog:8080` | — |
 | `CATALOG_PUBLIC_URL` | — | `https://cubeship.dev/api/v1` by default |
-| `CATALOG_INTERVAL`, `CATALOG_TOPIC`, `CATALOG_VERIFIED_OWNERS`, `PORT` | — | `5m`, `cubeship-template`, `cubeshipd`, `8080` |
+| `CATALOG_INTERVAL`, `CATALOG_TOPIC`, `CATALOG_VERIFIED_OWNERS`, `PORT` | — | `5m`, `cubeship-template`, `cubeshipd,lucasaarch`, `8080` |
 
 The catalog's image is `hosted/catalog/Dockerfile`, built from the
 repository root like every other. Its database tests take a schema per
