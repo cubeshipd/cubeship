@@ -3,11 +3,15 @@
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
 import { ChevronDownIcon, TagIcon } from "lucide-react";
+import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
+import { RailTabs } from "@/components/header-rail";
 import { SearchBar } from "@/components/search-bar";
 import { TemplateCard } from "@/components/template-card";
+import { TemplateInstalls } from "@/components/template-installs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, type TemplatePage } from "@/lib/api";
 import { message } from "@/lib/errors";
 
@@ -24,7 +28,35 @@ const SORTS: { value: Sort; label: string }[] = [
 // Cards rather than a table, like projects: what somebody comes here to
 // do is recognise an app they already know, and that is an icon and a
 // name rather than a column to scan.
+const TABS = ["catalog", "installed"] as const;
+type Tab = (typeof TABS)[number];
+
+// Two tabs: what can be installed, and what is. The tab is linkable —
+// the list of installations is where a breadcrumb over one goes back to.
 export default function TemplatesPage() {
+  const asked = useSearchParams().get("tab");
+  const [tab, setTab] = useState<Tab>(() =>
+    TABS.includes(asked as Tab) ? (asked as Tab) : "catalog",
+  );
+  return (
+    <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="subrail-page">
+      <RailTabs>
+        <TabsList variant="line">
+          <TabsTrigger value="catalog">Catalog</TabsTrigger>
+          <TabsTrigger value="installed">Installed</TabsTrigger>
+        </TabsList>
+      </RailTabs>
+      <TabsContent value="catalog">
+        <Catalog />
+      </TabsContent>
+      <TabsContent value="installed">
+        <TemplateInstalls />
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+function Catalog() {
   const [query, setQuery] = useState("");
   const [search, setSearch] = useState("");
   const [tag, setTag] = useState<string | null>(null);

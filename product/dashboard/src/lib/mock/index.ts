@@ -300,50 +300,97 @@ const routes: [string, string, Handler][] = [
     "/templates/:owner/:repo/installs",
     (p, body) => {
       const b = body as Row;
-      const install = {
+      const release = (b.release as string) || "v1.1.0";
+      const install: Row = {
         id: db.templateInstalls.length + 1,
         owner: p[0],
         repo: p[1],
-        release: (b.release as string) || "v1.1.0",
+        release,
         commit: "c79ef5b",
         project: (b.project as string) || "umami",
         environment: (b.environment as string) || "production",
-        status: "running",
-        step: "Creating project",
-        resources: [] as Row[],
+        status: "installing",
+        resources: [],
+        runs: [],
         created_at: new Date().toISOString(),
-        polls: 0,
+        updated_at: new Date().toISOString(),
       };
+      startRun(install, "install");
       db.templateInstalls.push(install);
-      return { install, secrets: { appSecret: "k3Xq9vP2mT7wZr4nB8yL6cF1hJ5sD0aG" } };
+      return {
+        install: installView(install),
+        secrets: { appSecret: "k3Xq9vP2mT7wZr4nB8yL6cF1hJ5sD0aG" },
+      };
     },
+  ],
+  [
+    "GET",
+    "/template-installs",
+    () =>
+      db.templateInstalls
+        .filter((i) => i.status === "installed" || i.status === "installing")
+        .map((i) => {
+          advanceRun(i);
+          return { ...installView(i), runs: (i.runs as Row[]).slice(0, 1) };
+        }),
   ],
   [
     "GET",
     "/template-installs/:id",
     (p) => {
-      // Each read moves the install one step on, so the progress screen
-      // has something to show and then an ending.
       const install = db.templateInstalls.find((i) => String(i.id) === p[0]) ?? notFound();
-      const steps = [
-        ["Creating database umami-db", { kind: "project", name: install.project }],
-        ["Creating app web", { kind: "database", name: "umami-db" }],
-        [
-          "Deploying app web",
-          { kind: "app", name: `${install.project}/${install.environment}/web` },
+      advanceRun(install);
+      return installView(install);
+    },
+  ],
+  [
+    "GET",
+    "/template-installs/:id/update",
+    (p) => {
+      const install = db.templateInstalls.find((i) => String(i.id) === p[0]) ?? notFound();
+      return {
+        from: install.release,
+        to: "v1.3.0",
+        changes: [
+          {
+            action: "change",
+            kind: "app",
+            name: `${install.project}/${install.environment}/web`,
+            detail: "ghcr.io/umami-software/umami:3.3.1 → ghcr.io/umami-software/umami:3.4.0",
+          },
+          { action: "create", kind: "database", name: "umami-cache", detail: "redis 7.4" },
+          {
+            action: "change",
+            kind: "variable",
+            name: "TZ",
+            detail: `set on ${install.project}/${install.environment}/web`,
+          },
+          {
+            action: "keep",
+            kind: "variable",
+            name: "SELF",
+            detail: `no longer in the template; left on ${install.project}/${install.environment}/web`,
+          },
         ],
-      ] as const;
-      const polls = install.polls as number;
-      if (polls < steps.length) {
-        install.step = steps[polls][0];
-        (install.resources as Row[]).push(steps[polls][1]);
-      } else {
-        install.status = "succeeded";
-        install.step = "";
-        install.finished_at = new Date().toISOString();
-      }
-      install.polls = polls + 1;
-      return install;
+        inputs: [{ key: "timezone", type: "text", label: "Time zone", required: true }],
+      };
+    },
+  ],
+  [
+    "POST",
+    "/template-installs/:id/update",
+    (p) => {
+      const install = db.templateInstalls.find((i) => String(i.id) === p[0]) ?? notFound();
+      return { run: startRun(install, "update"), secrets: {} };
+    },
+  ],
+  [
+    "POST",
+    "/template-installs/:id/uninstall",
+    (p, body) => {
+      const install = db.templateInstalls.find((i) => String(i.id) === p[0]) ?? notFound();
+      const keep = (body as Row).keep_data !== false;
+      return { run: startRun(install, "uninstall", { keep_data: keep }) };
     },
   ],
   ["GET", "/datastores/engines", () => engines],
@@ -876,3 +923,68 @@ const sampleLog = [
   "[2m2026-09-11T05:13:02.115Z[0m [31mERROR[0m upstream timed out, retrying",
   "[2m2026-09-11T05:13:02.900Z[0m [32m INFO[0m recovered",
 ].join("\n");
+
+// Templates installed in the preview. Each read of one that is busy moves
+// its run a step on, so the progress screen has something to show and then
+// an ending.
+const newestRelease = "v1.3.0";
+
+function installView(install: Row) {
+  const runs = install.runs as Row[];
+  return {
+    ...install,
+    busy: runs[0]?.status === "running",
+    update_available:
+      install.status === "installed" && install.release !== newestRelease ? newestRelease : null,
+  };
+}
+
+function startRun(install: Row, kind: string, extra: Row = {}) {
+  const run: Row = {
+    id: Date.now(),
+    kind,
+    from_release: kind === "install" ? undefined : install.release,
+    to_release:
+      kind === "update" ? newestRelease : kind === "install" ? install.release : undefined,
+    status: "running",
+    step: "Starting",
+    created: [],
+    created_at: new Date().toISOString(),
+    polls: 0,
+    ...extra,
+  };
+  (install.runs as Row[]).unshift(run);
+  return run;
+}
+
+const runSteps: Record<string, string[]> = {
+  install: ["Creating database umami-db", "Creating app web", "Deploying app web"],
+  update: ["Recording the apps as they are", "Changing app web", "Deploying app web"],
+  uninstall: ["Deleting the apps", "Deleting what is left empty"],
+};
+
+function advanceRun(install: Row) {
+  const run = (install.runs as Row[])[0];
+  if (!run || run.status !== "running") return;
+  const steps = runSteps[run.kind as string];
+  const polls = run.polls as number;
+  if (polls < steps.length) {
+    run.step = steps[polls];
+    run.polls = polls + 1;
+    return;
+  }
+  run.status = "succeeded";
+  run.step = "";
+  run.finished_at = new Date().toISOString();
+  if (run.kind === "install") {
+    install.status = "installed";
+    install.resources = [
+      { kind: "project", name: install.project },
+      { kind: "database", key: "db", name: "umami-db" },
+      { kind: "app", key: "web", name: `${install.project}/${install.environment}/web` },
+    ];
+    run.created = install.resources;
+  }
+  if (run.kind === "update") install.release = run.to_release;
+  if (run.kind === "uninstall") install.status = "uninstalled";
+}

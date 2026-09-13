@@ -12,6 +12,15 @@ const tones: Record<string, Tone> = {
   // reason `running` is: it is the state where nothing needs doing.
   ready: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
   succeeded: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
+  installed: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
+  installing: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
+  updating: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
+  uninstalling: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
+  uninstalled: {
+    dot: "bg-subtle-foreground",
+    text: "text-muted-foreground",
+    edge: "border-border-strong",
+  },
   deploying: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
   building: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
   pending: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },

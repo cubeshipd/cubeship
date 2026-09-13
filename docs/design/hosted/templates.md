@@ -255,9 +255,9 @@ site-dev` — the site's default `CATALOG_URL` is `make catalog-dev`'s.
 ## Installing one on an instance
 
 `product/internal/templateinstall` is the daemon's half, behind
-`/api/templates`, the MCP tools `list_templates`, `install_template` and
-`get_template_install`, `cubeship template list|install`, and the
-dashboard's Templates section.
+`/api/templates` and `/api/template-installs`, the MCP tools that mirror
+them, `cubeship template list|install|installed|update|uninstall`, and
+the dashboard's Templates section — a Catalog tab and an Installed tab.
 
 **The instance reads, and trusts nothing it did not check.** It lists the
 catalog through `CUBESHIP_CATALOG_URL` (cubeship.dev's API by default) and
@@ -276,8 +276,16 @@ Secrets with `generate` are made then and returned in that one response;
 they are never recorded, only written into the apps that use them. The
 MCP tool does not return them.
 
-**Then it runs detached, recorded as it goes.** `template_installs` holds
-the step and every resource created, in order:
+**An installation is a row, and every change to it is a run.**
+`template_installs` is what is installed: the release, the normalized
+manifest at that release, the answers that are not secret, and every
+resource with the template key it came from. `template_install_runs` is
+each install, update and uninstall — its step, its error, what it
+created, and for an update what the apps looked like before. A run of its
+own is what lets a failed update leave the installation exactly as it
+was.
+
+**An install runs detached, recorded as it goes:**
 
 ```
 project/environment (when missing) → databases, stores → apps and their settings
@@ -288,13 +296,43 @@ project/environment (when missing) → databases, stores → apps and their sett
 References are resolved from what was created: a database's credentials,
 an app's internal address, the answers. **Any failure undoes exactly the
 recorded resources, newest first** — a project that already existed is
-never in the list, so it is never touched. A daemon that restarts
-mid-install undoes what the previous run left on start, as the account
-that started it.
+never in the list, so it is never touched.
+
+**An update applies what changed and deletes nothing.** The preview —
+`GET /template-installs/{id}/update` — compares the newer release's
+manifest with the recorded one by key: a changed image or build source,
+changed health, limits or scale, each variable the template declares
+that is new or different, and new apps, databases, stores, buckets,
+domains and attachments. What the release dropped is listed as kept and
+left alone, and so is a database whose engine or version it changed,
+because those are fixed once one exists. Variables somebody added by hand
+are never touched; one the template declares gets the new value, and the
+preview says so. A question the release adds with no default, or a secret
+it needs that the installation cannot read back, is asked there. A secret
+is read back only from an app the template gave it to whole
+(`APP_SECRET: ${input.appSecret}`), since it is recorded nowhere else.
+
+Applying records every app it will change as it is, then creates, changes
+and deploys what is new or different. **If any step fails it puts things
+back**: what the update created is deleted, the recorded apps get their
+source, settings and variables back and are deployed again, and the
+installation stays on its release.
+
+**An uninstall keeps the data unless told otherwise.** It deletes the
+installation's apps, then — only with `keep_data: false`, which the
+dashboard makes you type the name for — its databases and stores, then the
+project and environment it created once no app is left in them. Anything
+it cannot delete leaves the installation installed, with the reason on
+the run.
+
+A daemon that restarts during a run finishes it on start, as the account
+that started it: an install is undone, an update put back, an uninstall
+carried on.
 
 ## What is left for later
 
-Upgrading an installed template to a newer release, uninstalling one as a
-unit, and installing from a repository the catalog does not list. The
+Updating on its own when a release appears, moving back to an older
+release on purpose, deleting what a release dropped, and installing from
+a repository the catalog does not list. The
 first wall authors will hit is still that apps have no volume and no
 command override, and that is a daemon change.

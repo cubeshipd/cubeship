@@ -1357,6 +1357,28 @@ export type TemplateDetail = TemplateSummary & {
   manifest: TemplateManifest | null;
 };
 
+export type TemplateResource = {
+  kind: "project" | "environment" | "database" | "store" | "app" | "domain" | "attachment";
+  key?: string;
+  name: string;
+};
+
+// One install, update or uninstall of an installation. A failed one has
+// already been undone by the daemon.
+export type TemplateRun = {
+  id: number;
+  kind: "install" | "update" | "uninstall";
+  from_release?: string;
+  to_release?: string;
+  status: "running" | "succeeded" | "failed";
+  step?: string;
+  error?: string;
+  created: TemplateResource[];
+  keep_data?: boolean;
+  created_at: string;
+  finished_at?: string;
+};
+
 export type TemplateInstall = {
   id: number;
   owner: string;
@@ -1365,12 +1387,29 @@ export type TemplateInstall = {
   commit: string;
   project: string;
   environment: string;
-  status: "running" | "succeeded" | "failed";
-  step?: string;
-  error?: string;
-  resources: { kind: "project" | "environment" | "database" | "store" | "app"; name: string }[];
+  status: "installing" | "installed" | "failed" | "uninstalled";
+  resources: TemplateResource[];
+  // Newest first; a listing carries only that one.
+  runs: TemplateRun[];
+  busy: boolean;
+  update_available: string | null;
   created_at: string;
-  finished_at?: string;
+  updated_at: string;
 };
 
 export type TemplateInstallStarted = { install: TemplateInstall; secrets: Record<string, string> };
+export type TemplateRunStarted = { run: TemplateRun; secrets?: Record<string, string> };
+
+export type TemplateChange = {
+  action: "create" | "change" | "keep";
+  kind: string;
+  name: string;
+  detail?: string;
+};
+
+export type TemplateUpdatePreview = {
+  from: string;
+  to: string;
+  changes: TemplateChange[];
+  inputs: TemplateInput[];
+};

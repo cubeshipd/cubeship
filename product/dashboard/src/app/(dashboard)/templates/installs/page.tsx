@@ -1,8 +1,7 @@
 import { redirect } from "next/navigation";
 
-// The breadcrumb over an install names this address. An install is
-// reached from the template it installed, so the catalog is where this
-// goes rather than a list of its own.
+// The breadcrumb over an installation names this address, and the list
+// of installations is a tab of the Templates screen.
 export default function TemplateInstalls() {
-  redirect("/templates");
+  redirect("/templates?tab=installed");
 }

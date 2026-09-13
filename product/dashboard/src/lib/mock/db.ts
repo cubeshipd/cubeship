@@ -161,7 +161,36 @@ export const db = {
       },
     ],
   } as Row,
-  templateInstalls: [] as Row[],
+  templateInstalls: [
+    {
+      id: 1,
+      owner: "cubeshipd",
+      repo: "cubeship-umami-template",
+      release: "v1.1.0",
+      commit: "c79ef5b",
+      project: "analytics",
+      environment: "production",
+      status: "installed",
+      resources: [
+        { kind: "project", name: "analytics" },
+        { kind: "database", key: "db", name: "umami-db" },
+        { kind: "app", key: "web", name: "analytics/production/web" },
+      ],
+      runs: [
+        {
+          id: 1,
+          kind: "install",
+          to_release: "v1.1.0",
+          status: "succeeded",
+          created: [],
+          created_at: "2026-09-12T10:00:00Z",
+          finished_at: "2026-09-12T10:02:00Z",
+        },
+      ],
+      created_at: "2026-09-12T10:00:00Z",
+      updated_at: "2026-09-12T10:02:00Z",
+    },
+  ] as Row[],
 
   // One with a picture and one without, so the grid shows both halves
   // of the rule rather than a row of identical marks.
