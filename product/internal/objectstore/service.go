@@ -657,6 +657,11 @@ func (s *Service) Expose(ctx context.Context, caller *user.User, name string, po
 	if err != nil {
 		return nil, err
 	}
+	// Asked for the port it already holds: nothing to change, and the
+	// port is in use — by this one — so resolvePort would refuse it.
+	if port != 0 && port == store.ExposedPort {
+		return store, nil
+	}
 	chosen, err := s.resolvePort(ctx, port)
 	if err != nil {
 		return nil, err
