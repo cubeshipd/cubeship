@@ -258,6 +258,7 @@ function InternalAddress({ app }: { app: App }) {
           <CopyField
             label="Host"
             value={app.internal_host}
+            copyValue={internalUrl(app)}
             hint={
               <>
                 Reach it on the port the app listens on — {portHint(app)}. Nothing proxies this, so
@@ -286,6 +287,12 @@ function InternalAddress({ app }: { app: App }) {
 // What to suggest for the port. Cubeship knows it only when a name
 // routes to it: a worker declares its port to nobody, so the honest
 // answer there is that the app knows and this screen does not.
+// Plain http: nothing terminates TLS on the internal network. With
+// several ports behind its names, the first one's.
+function internalUrl(app: App): string {
+  return `http://${app.internal_host}:${app.domains[0]?.port || DEFAULT_PORT}`;
+}
+
 function portHint(app: App): string {
   const ports = [...new Set(app.domains.map((d) => d.port || DEFAULT_PORT))];
   if (ports.length === 0) return `${DEFAULT_PORT} unless it was built to listen elsewhere`;

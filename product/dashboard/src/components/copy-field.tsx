@@ -31,11 +31,15 @@ export function CopyField({
   // still copyable — the point of the button is that nobody has to read
   // a password to use it.
   masked = false,
+  // copyValue is what the button copies when that differs from what
+  // is shown: a host shown bare, copied as a URL.
+  copyValue,
   fieldClassName,
   className,
 }: {
   label: string;
   value: string;
+  copyValue?: string;
   hint?: React.ReactNode;
   masked?: boolean;
   fieldClassName?: string;
@@ -62,7 +66,7 @@ export function CopyField({
           className={cn("h-10 px-3 pr-10 text-sm", className)}
         />
         <CopyButton
-          value={value}
+          value={copyValue ?? value}
           label={`Copy ${label.toLowerCase()}`}
           className="absolute top-1/2 right-1 -translate-y-1/2"
         />
