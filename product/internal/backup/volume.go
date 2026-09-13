@@ -1,19 +1,16 @@
 package backup
 
 import (
-	"archive/tar"
-	"compress/gzip"
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
+	"cubeship/internal/node"
 	"cubeship/internal/platform/database"
+	"cubeship/internal/platform/dirarchive"
 	"cubeship/internal/user"
 )
 
@@ -30,27 +27,39 @@ type Volumes interface {
 	WithAppStopped(ctx context.Context, appID int64, fn func() error) error
 }
 
+// Machines is how a volume on another server is backed up: that server
+// makes the archive and sends it to S3 itself, so the data never passes
+// through this one.
+type Machines interface {
+	RunVolumeJob(ctx context.Context, nodeID int64, kind string, job node.VolumeJob) (int64, error)
+}
+
 // Volume is a volume as this module sees it.
 type Volume struct {
-	ID    int64
-	AppID int64
+	ID     int64
+	AppID  int64
+	NodeID int64
 	// App is the app's reference, "project/environment/app".
 	App  string
 	Path string
-	// Dir is where its data is on this machine.
+	// Dir is where its data is on this machine, when it is on this one.
 	Dir      string
 	OnWorker bool
 }
 
 var (
-	// ErrVolumeOnWorker refuses backing up or restoring a volume whose
-	// data is on another machine: this daemon cannot read that disk.
-	ErrVolumeOnWorker = errors.New("this volume's data is on another server, and backing those up is not available yet")
+	// ErrVolumeOnWorker is a volume on another server with no way wired
+	// to reach it, which only a test is.
+	ErrVolumeOnWorker = errors.New("this volume's data is on another server, and this one cannot reach it")
 
-	// ErrEmptyArchive is a volume with nothing in it. An app that keeps
-	// state has written something, so an empty copy is one that did not
-	// happen — and restoring it would empty the volume.
-	ErrEmptyArchive = errors.New("the volume is empty, so there is nothing to back up")
+	// ErrVolumeNeedsOffsite refuses a volume backup that would stay on
+	// the instance. A database is dumped locally to be loaded back or
+	// looked at; a volume's copy is only worth taking somewhere that
+	// survives the machine, and is what moves it to another one.
+	ErrVolumeNeedsOffsite = errors.New("a volume is backed up to an S3 bucket linked from outside this instance — not this machine's disk, and not a store this instance runs")
+
+	// ErrEmptyArchive is a volume with nothing in it.
+	ErrEmptyArchive = dirarchive.ErrEmpty
 
 	// ErrNoVolumes is a server wired without apps, which only a test is.
 	ErrNoVolumes = errors.New("volume backups are not available on this server")
@@ -58,6 +67,9 @@ var (
 
 // SetVolumes wires `app`. Called once, at startup, by `server`.
 func (s *Service) SetVolumes(v Volumes) { s.volumes = v }
+
+// SetMachines wires `node`. Called once, at startup, by `server`.
+func (s *Service) SetMachines(m Machines) { s.machines = m }
 
 // VolumeKeyFor is what a volume's backup is called where it lands.
 func VolumeKeyFor(app string, volumeID int64, at time.Time) string {
@@ -75,6 +87,11 @@ func (s *Service) resolveVolume(ctx context.Context, caller *user.User, ref stri
 	return s.volumes.VolumeOf(ctx, caller, ref, id)
 }
 
+// offsite reports whether a store is somewhere a volume may be backed up to.
+func (s *Service) offsite(ctx context.Context, storeID int64) bool {
+	return storeID != 0 && s.stores.LeavesThisMachine(ctx, storeID)
+}
+
 // ForVolume is one volume's backups, newest first.
 func (s *Service) ForVolume(ctx context.Context, caller *user.User, ref string, id int64) ([]*Backup, error) {
 	v, err := s.resolveVolume(ctx, caller, ref, id)
@@ -84,32 +101,47 @@ func (s *Service) ForVolume(ctx context.Context, caller *user.User, ref string, 
 	return s.Repo().ForVolume(ctx, v.ID)
 }
 
-// TakeVolume starts one now: the app is stopped for the copy.
-func (s *Service) TakeVolume(ctx context.Context, caller *user.User, ref string, id int64) (*Backup, error) {
+// TakeVolume starts one now: the app is stopped for the copy. store and
+// bucket say where it goes; empty takes the volume's schedule's.
+func (s *Service) TakeVolume(ctx context.Context, caller *user.User, ref string, id int64, store, bucket string) (*Backup, error) {
 	v, err := s.resolveVolume(ctx, caller, ref, id)
 	if err != nil {
 		return nil, err
 	}
-	schedule, err := s.volumeScheduleOrNothing(ctx, v.ID)
-	if err != nil {
-		return nil, err
-	}
-	storeID, bucket := int64(0), ""
-	if schedule != nil {
-		storeID, bucket = schedule.StoreID, schedule.Bucket
+	var storeID int64
+	if store != "" {
+		if bucket == "" {
+			return nil, ErrNoBucket
+		}
+		if storeID, err = s.stores.IDForName(ctx, store); err != nil {
+			return nil, err
+		}
+		if _, _, err := s.stores.ClientForID(ctx, storeID); err != nil {
+			return nil, err
+		}
+	} else {
+		schedule, err := s.volumeScheduleOrNothing(ctx, v.ID)
+		if err != nil {
+			return nil, err
+		}
+		if schedule != nil {
+			storeID, bucket = schedule.StoreID, schedule.Bucket
+		}
 	}
 	return s.startVolume(ctx, v, storeID, bucket, false)
 }
 
 func (s *Service) startVolume(ctx context.Context, v *Volume, storeID int64, bucket string, scheduled bool) (*Backup, error) {
-	if v.OnWorker {
+	if !s.offsite(ctx, storeID) {
+		return nil, ErrVolumeNeedsOffsite
+	}
+	if v.OnWorker && s.machines == nil {
 		return nil, ErrVolumeOnWorker
 	}
-	off := storeID != 0 && s.stores.LeavesThisMachine(ctx, storeID)
 	row, err := s.Repo().Start(ctx, &Backup{
 		Kind: KindVolume, VolumeID: v.ID, VolumePath: v.Path,
 		DatastoreName: v.App, Engine: "volume",
-		StoreID: storeID, Bucket: bucket, Off: off,
+		StoreID: storeID, Bucket: bucket, Off: true,
 		Key:       VolumeKeyFor(v.App, v.ID, time.Now().UTC()),
 		Scheduled: scheduled,
 	})
@@ -123,7 +155,7 @@ func (s *Service) startVolume(ctx context.Context, v *Volume, storeID int64, buc
 		work, cancel := context.WithTimeout(context.WithoutCancel(ctx), Timeout)
 		defer cancel()
 
-		size, err := s.dumpVolume(work, v, row)
+		size, err := s.copyVolume(work, v, row)
 		failure := ""
 		if err != nil {
 			failure = err.Error()
@@ -143,8 +175,37 @@ func (s *Service) startVolume(ctx context.Context, v *Volume, storeID int64, buc
 	return row, nil
 }
 
-// dumpVolume streams a tar.gz of the directory into the sink while the app
-// is stopped. Nothing is staged: tar knows each file's size from the disk.
+// copyVolume takes the archive where the volume is: here, or on the
+// server that holds it.
+func (s *Service) copyVolume(ctx context.Context, v *Volume, row *Backup) (int64, error) {
+	if !v.OnWorker {
+		return s.dumpVolume(ctx, v, row)
+	}
+	job, err := s.volumeJob(ctx, v, row)
+	if err != nil {
+		return 0, err
+	}
+	return s.machines.RunVolumeJob(ctx, v.NodeID, node.CommandVolumeBackup, job)
+}
+
+// volumeJob is what a server needs to copy a volume to or from a backup's
+// object: where it is, and the login.
+func (s *Service) volumeJob(ctx context.Context, v *Volume, row *Backup) (node.VolumeJob, error) {
+	store, _, err := s.stores.ClientForID(ctx, row.StoreID)
+	if err != nil {
+		return node.VolumeJob{}, err
+	}
+	return node.VolumeJob{ID: v.ID, App: v.App, S3: node.S3Object{
+		Endpoint: store.EndpointHost(), Region: store.Region,
+		Secure: store.Secure, PathStyle: store.PathStyle,
+		AccessKey: store.AccessKey, SecretKey: store.SecretKey,
+		Bucket: row.Bucket, Key: row.Key,
+	}}, nil
+}
+
+// dumpVolume streams a tar.gz of a volume on this machine into the sink
+// while the app is stopped. Nothing is staged: tar knows each file's size
+// from the disk.
 func (s *Service) dumpVolume(ctx context.Context, v *Volume, row *Backup) (int64, error) {
 	sink, err := s.open(ctx, row)
 	if err != nil {
@@ -154,7 +215,7 @@ func (s *Service) dumpVolume(ctx context.Context, v *Volume, row *Backup) (int64
 	entries := 0
 	copyErr := s.volumes.WithAppStopped(ctx, v.AppID, func() error {
 		var err error
-		entries, err = writeDirArchive(v.Dir, counted)
+		entries, err = dirarchive.Write(v.Dir, counted)
 		return err
 	})
 	if copyErr == nil && entries == 0 {
@@ -170,66 +231,9 @@ func (s *Service) dumpVolume(ctx context.Context, v *Volume, row *Backup) (int64
 	return counted.n, nil
 }
 
-// writeDirArchive writes every entry under dir, keeping modes and owners —
-// a queue's files belong to the user its image runs as, and a restore that
-// handed them to root would leave it unable to start. Symlinks are kept as
-// links, never followed. It answers how many entries it wrote.
-func writeDirArchive(dir string, out io.Writer) (int, error) {
-	gz := gzip.NewWriter(out)
-	archive := tar.NewWriter(gz)
-	entries := 0
-	err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(dir, path)
-		if err != nil || rel == "." {
-			return err
-		}
-		link := ""
-		if info.Mode()&os.ModeSymlink != 0 {
-			if link, err = os.Readlink(path); err != nil {
-				return err
-			}
-		} else if !info.Mode().IsRegular() && !info.IsDir() {
-			return nil // sockets and pipes are not data
-		}
-		header, err := tar.FileInfoHeader(info, link)
-		if err != nil {
-			return err
-		}
-		header.Name = filepath.ToSlash(rel)
-		if info.IsDir() {
-			header.Name += "/"
-		}
-		if err := archive.WriteHeader(header); err != nil {
-			return err
-		}
-		entries++
-		if !info.Mode().IsRegular() {
-			return nil
-		}
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		_, err = io.Copy(archive, f)
-		return err
-	})
-	if err != nil {
-		return 0, fmt.Errorf("archive the volume: %w", err)
-	}
-	if err := archive.Close(); err != nil {
-		return 0, fmt.Errorf("close the archive: %w", err)
-	}
-	return entries, gz.Close()
-}
-
-// restoreVolume replaces a volume's directory with a backup of it.
-//
-// Extracted beside the directory first, and swapped in only once that
-// worked: a restore that fails partway leaves the data as it was.
+// restoreVolume replaces a volume's data with a backup of it, on the
+// machine the volume is on. It is unpacked beside the data first, so a
+// restore that fails leaves the data as it was.
 func (s *Service) restoreVolume(ctx context.Context, row *Backup) error {
 	if row.VolumeID == 0 {
 		return fmt.Errorf("%w: the volume it came from has been removed", ErrNotFound)
@@ -242,107 +246,28 @@ func (s *Service) restoreVolume(ctx context.Context, row *Backup) error {
 		return ErrNotFound
 	}
 	if v.OnWorker {
-		return ErrVolumeOnWorker
+		if s.machines == nil {
+			return ErrVolumeOnWorker
+		}
+		if row.StoreID == 0 {
+			return fmt.Errorf("%w: this backup is on the control plane's own disk, which the volume's server cannot read", ErrVolumeNeedsOffsite)
+		}
+		job, err := s.volumeJob(ctx, v, row)
+		if err != nil {
+			return err
+		}
+		_, err = s.machines.RunVolumeJob(ctx, v.NodeID, node.CommandVolumeRestore, job)
+		return err
 	}
+
 	r, err := s.read(ctx, row)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
-
 	return s.volumes.WithAppStopped(ctx, v.AppID, func() error {
-		staged := v.Dir + ".restore"
-		previous := v.Dir + ".previous"
-		_ = os.RemoveAll(staged)
-		if err := extractDirArchive(r, staged); err != nil {
-			_ = os.RemoveAll(staged)
-			return err
-		}
-		// The directory itself is not in the archive, so it keeps the
-		// owner and mode the current one has.
-		if info, err := os.Stat(v.Dir); err == nil {
-			_ = os.Chmod(staged, info.Mode().Perm())
-			if uid, gid, ok := owner(info); ok {
-				_ = os.Lchown(staged, uid, gid)
-			}
-		}
-		_ = os.RemoveAll(previous)
-		if err := os.Rename(v.Dir, previous); err != nil && !os.IsNotExist(err) {
-			_ = os.RemoveAll(staged)
-			return fmt.Errorf("move the current data aside: %w", err)
-		}
-		if err := os.Rename(staged, v.Dir); err != nil {
-			_ = os.Rename(previous, v.Dir)
-			_ = os.RemoveAll(staged)
-			return fmt.Errorf("put the restored data in place: %w", err)
-		}
-		if err := os.RemoveAll(previous); err != nil {
-			log.Printf("backup: removing the replaced data of volume %d: %v", v.ID, err)
-		}
-		return nil
+		return dirarchive.Replace(r, v.Dir)
 	})
-}
-
-// extractDirArchive unpacks what writeDirArchive wrote into dir. An entry
-// that would land outside dir is refused rather than skipped: an archive
-// with one is not one this instance wrote.
-func extractDirArchive(in io.Reader, dir string) error {
-	gz, err := gzip.NewReader(in)
-	if err != nil {
-		return fmt.Errorf("read the archive: %w", err)
-	}
-	defer gz.Close()
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	root, err := os.OpenRoot(dir)
-	if err != nil {
-		return err
-	}
-	defer root.Close()
-
-	archive := tar.NewReader(gz)
-	for {
-		h, err := archive.Next()
-		if err == io.EOF {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("read the archive: %w", err)
-		}
-		name := filepath.FromSlash(strings.TrimSuffix(h.Name, "/"))
-		if !filepath.IsLocal(name) {
-			return fmt.Errorf("the archive has an entry outside the volume: %q", h.Name)
-		}
-		mode := os.FileMode(h.Mode) & os.ModePerm
-		switch h.Typeflag {
-		case tar.TypeDir:
-			if err := root.MkdirAll(name, 0o755); err != nil {
-				return err
-			}
-			_ = root.Chmod(name, mode)
-		case tar.TypeReg:
-			f, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, mode)
-			if err != nil {
-				return err
-			}
-			_, copyErr := io.Copy(f, archive)
-			if err := f.Close(); copyErr == nil {
-				copyErr = err
-			}
-			if copyErr != nil {
-				return copyErr
-			}
-		case tar.TypeSymlink:
-			if err := root.Symlink(h.Linkname, name); err != nil {
-				return err
-			}
-		default:
-			continue
-		}
-		// Owners only take when the daemon is root, which it is on a VPS.
-		_ = root.Lchown(name, h.Uid, h.Gid)
-	}
 }
 
 // --- schedules ---
@@ -369,11 +294,11 @@ func (s *Service) SetVolumeSchedule(ctx context.Context, caller *user.User, ref 
 	if err != nil {
 		return nil, err
 	}
-	if v.OnWorker {
-		return nil, ErrVolumeOnWorker
-	}
 	if err := s.checkSchedule(ctx, store, &in); err != nil {
 		return nil, err
+	}
+	if !s.offsite(ctx, in.StoreID) {
+		return nil, ErrVolumeNeedsOffsite
 	}
 	in.VolumeID = v.ID
 	return s.Repo().SetVolumeSchedule(ctx, &in)

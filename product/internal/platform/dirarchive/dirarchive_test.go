@@ -1,4 +1,4 @@
-package backup
+package dirarchive
 
 import (
 	"archive/tar"
@@ -7,9 +7,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
-	"time"
 )
 
 // A volume comes back as it was: files, directories, modes and links.
@@ -22,7 +20,7 @@ func TestAVolumeArchiveRestoresWhatWasThere(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	entries, err := writeDirArchive(src, &buf)
+	entries, err := Write(src, &buf)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,7 +29,7 @@ func TestAVolumeArchiveRestoresWhatWasThere(t *testing.T) {
 	}
 
 	dst := filepath.Join(t.TempDir(), "restored")
-	if err := extractDirArchive(&buf, dst); err != nil {
+	if err := Extract(&buf, dst); err != nil {
 		t.Fatal(err)
 	}
 	if got := mustRead(t, filepath.Join(dst, "mnesia", "queue.dat")); got != "messages" {
@@ -52,7 +50,7 @@ func TestAVolumeArchiveRestoresWhatWasThere(t *testing.T) {
 // An empty volume writes no entries, which a backup reports as a failure.
 func TestAnEmptyVolumeHasNoEntries(t *testing.T) {
 	var buf bytes.Buffer
-	entries, err := writeDirArchive(t.TempDir(), &buf)
+	entries, err := Write(t.TempDir(), &buf)
 	if err != nil || entries != 0 {
 		t.Fatalf("entries %d, err %v", entries, err)
 	}
@@ -70,24 +68,11 @@ func TestARestoreRefusesAnEntryOutsideTheVolume(t *testing.T) {
 	_ = gz.Close()
 
 	parent := t.TempDir()
-	if err := extractDirArchive(&buf, filepath.Join(parent, "v")); err == nil {
+	if err := Extract(&buf, filepath.Join(parent, "v")); err == nil {
 		t.Fatal("an entry outside the volume was accepted")
 	}
 	if _, err := os.Stat(filepath.Join(parent, "escape")); !errors.Is(err, os.ErrNotExist) {
 		t.Error("the entry was written outside the volume")
-	}
-}
-
-func TestAVolumeBackupIsFiledUnderItsAppAndVolume(t *testing.T) {
-	at := time.Date(2026, 9, 13, 3, 0, 0, 0, time.UTC)
-	key := VolumeKeyFor("shop/production/rabbit", 7, at)
-	if key != "cubeship/volumes/shop-production-rabbit/7/2026-09-13T030000.000Z.tar.gz" {
-		t.Errorf("key = %q", key)
-	}
-	s := &Service{dataDir: "/data"}
-	path := s.localPath(&Backup{Kind: KindVolume, Key: key})
-	if !strings.HasPrefix(path, filepath.Join("/data", "backups", "volumes", "shop-production-rabbit", "7")) {
-		t.Errorf("local path = %q", path)
 	}
 }
 

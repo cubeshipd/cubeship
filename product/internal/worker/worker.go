@@ -32,6 +32,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"cubeship/internal/envvar"
@@ -171,6 +172,14 @@ type Agent struct {
 	// Saying it once is what the installer waits for; saying it every
 	// ten seconds would be a log nobody can read.
 	joined bool
+
+	// paused is the apps a volume job has stopped, by reference, counted.
+	// apply leaves them alone until the job starts them again. Guarded by
+	// jobs, because a job runs beside the loop.
+	jobs   sync.Mutex
+	paused map[string]int
+	// s3 opens the bucket a volume job names.
+	s3 s3Opener
 }
 
 func New(controlPlane, token, version, dataDir string, box *machine.Reader, engine Engine,
@@ -188,6 +197,7 @@ func New(controlPlane, token, version, dataDir string, box *machine.Reader, engi
 		healthAttempts: healthAttempts,
 		healthInterval: healthInterval,
 		client:         &http.Client{Timeout: dialTimeout},
+		s3:             openS3,
 	}
 }
 
@@ -304,6 +314,10 @@ func (a *Agent) answer(ctx context.Context, cmd node.Command) {
 		if err := a.replaceSelf(ctx, cmd.Version); err != nil {
 			log.Printf("agent: replacing this machine with %s: %v", cmd.Version, err)
 		}
+		return
+	case node.CommandVolumeBackup, node.CommandVolumeRestore:
+		// Answered by the job itself, when the copy is done.
+		go a.volumeJob(cmd)
 		return
 	default:
 		// A command this agent does not know is one from a control
@@ -453,6 +467,10 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 	}
 
 	for _, p := range placements {
+		if a.isPaused(p.App) {
+			// Stopped on purpose for a volume job, which starts it again.
+			continue
+		}
 		if id := named(running, p.Container); id != "" {
 			// Already running it. Not news, and reporting it every ten
 			// seconds would mark one deploy succeeded forever.
@@ -504,7 +522,7 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 			// none of it is this loop's to touch.
 			continue
 		}
-		if wanted[c.Name] {
+		if wanted[c.Name] || a.isPaused(app) {
 			continue
 		}
 		// Which copy this is, so what may replace it is **its own**

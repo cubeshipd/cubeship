@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"cubeship/internal/server/servertest"
-	"cubeship/internal/user"
 )
 
 type volumeView struct {
@@ -117,47 +116,4 @@ func TestAVolumePinsTheAppToOneCopyOnOneMachine(t *testing.T) {
 		map[string]any{"path": "/proc/x"}, f.AdminKey), http.StatusBadRequest)
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/apps/"+pinned.Reference+"/volumes",
 		map[string]any{"path": "/data/"}, f.AdminKey), http.StatusConflict)
-}
-
-// A volume is backed up and put back: the restore replaces what the app
-// wrote since with what was there when the backup was taken.
-func TestAVolumeIsBackedUpAndRestored(t *testing.T) {
-	f := servertest.New(t)
-	created := createExternalApp(t, f, "broker")
-	v := addVolume(t, f, created.Reference, "/var/lib/rabbitmq")
-	dir := filepath.Join(f.DataDir, "volumes", strconv.FormatInt(v.ID, 10))
-	file := filepath.Join(dir, "queue.dat")
-	if err := os.WriteFile(file, []byte("before"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-
-	path := fmt.Sprintf("/apps/%s/volumes/%d/backups", created.Reference, v.ID)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, path, nil, f.AdminKey), http.StatusAccepted)
-	f.Server.Backups.Wait()
-
-	var rows []struct {
-		ID     int64  `json:"id"`
-		Kind   string `json:"kind"`
-		Volume string `json:"volume"`
-		Status string `json:"status"`
-		Error  string `json:"error"`
-	}
-	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet, path, nil, f.AdminKey, &rows), http.StatusOK)
-	if len(rows) != 1 || rows[0].Status != "succeeded" || rows[0].Kind != "volume" || rows[0].Volume != "/var/lib/rabbitmq" {
-		t.Fatalf("backups %+v", rows)
-	}
-
-	if err := os.WriteFile(file, []byte("after"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost,
-		fmt.Sprintf("/backups/%d/restore", rows[0].ID), nil, f.AdminKey), http.StatusNoContent)
-	got, err := os.ReadFile(file)
-	if err != nil || string(got) != "before" {
-		t.Fatalf("after the restore the file is %q, %v", got, err)
-	}
-
-	// A member may use the volume and may not copy its data out.
-	_, member := f.AddMember(t, "member", user.RoleMember)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, path, nil, member), http.StatusForbidden)
 }

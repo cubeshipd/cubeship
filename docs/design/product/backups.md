@@ -166,8 +166,27 @@ streams straight into the sink.
 - **The row keeps the app's reference and the path**, and `volume_id` goes
   null when the volume is removed: its backups can then be downloaded and
   not restored, like a deleted database's.
-- **Volumes on another server are refused** (`ErrVolumeOnWorker`). This
-  daemon cannot read that disk.
+- **Only to an S3 store linked from outside the instance**
+  (`ErrVolumeNeedsOffsite`) — never this machine's disk, nor a managed
+  store, which is the same disk. A database is dumped locally to be
+  loaded back or looked at; a volume's copy is only worth taking where it
+  survives the machine, and it is what moves a volume to another one.
+  Backups taken to the disk before this rule still list and restore.
+- **A volume on another server is copied by that server**, straight to
+  the bucket: `node.CommandVolumeBackup` and `CommandVolumeRestore` carry
+  the object and the store's login, which the agent holds for the job and
+  writes nowhere. The volume never crosses the agent's channel, whose
+  answers are capped at 2 MiB. The agent runs the job beside its loop and
+  marks the app paused, so `apply` does not take the stopped container
+  for a missing one; the control plane waits for the answer for as long
+  as `Timeout`. A machine that has not called in for two minutes is
+  refused rather than queued, and one too old to know the command answers
+  that it does not.
+- **A restart fails what was `taking`** (`backup.SettleInterrupted`): the
+  goroutine or the server doing the copy is gone, and a row left running
+  can be neither restored nor deleted.
+- The archive format is `internal/platform/dirarchive`, one copy for both
+  machines.
 
 A volume's schedule is its own table, `volume_backup_schedules`, keyed by
 the volume. `Schedule.Kind()` tells it from the other two by `VolumeID`.

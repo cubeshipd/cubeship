@@ -28,13 +28,20 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.listVolume)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "back_up_volume",
-		Description: "Back up one of an app's volumes now. **The app is stopped while the copy is taken** and started again afterwards, whether or not it worked. The backup runs detached: this returns its row with status `taking`, and list_volume_backups says how it ended. It goes wherever the volume's schedule says, or to this machine's own disk, which is not a backup that survives the machine. Refused for a volume on another server. Requires the admin role.",
+		Description: "Back up one of an app's volumes now. **The app is stopped while the copy is taken** and started again afterwards, whether or not it worked. The backup runs detached: this returns its row with status `taking`, and list_volume_backups says how it ended. It goes to an S3 store linked from outside this instance — the one named, or the volume's schedule's; this machine's disk and a store this instance runs are refused. A volume on another server is copied by that server, straight to the bucket. Requires the admin role.",
 	}, t.takeVolume)
 }
 
 type volumeInput struct {
 	Reference string `json:"reference" jsonschema:"the app's reference: project/environment/name"`
 	VolumeID  int64  `json:"volume_id" jsonschema:"the volume's id, from list_app_volumes"`
+}
+
+type takeVolumeInput struct {
+	Reference string `json:"reference" jsonschema:"the app's reference: project/environment/name"`
+	VolumeID  int64  `json:"volume_id" jsonschema:"the volume's id, from list_app_volumes"`
+	Store     string `json:"store,omitempty" jsonschema:"the S3 store linked from outside this instance to send it to, by name. Empty uses the volume's schedule"`
+	Bucket    string `json:"bucket,omitempty" jsonschema:"the bucket in that store. Required with store"`
 }
 
 type backupList struct {
@@ -49,8 +56,8 @@ func (t *Tools) listVolume(ctx context.Context, _ *mcp.CallToolRequest, in volum
 	return nil, backupList{Backups: t.h.toResponses(rows)}, nil
 }
 
-func (t *Tools) takeVolume(ctx context.Context, _ *mcp.CallToolRequest, in volumeInput) (*mcp.CallToolResult, Response, error) {
-	row, err := t.h.svc.TakeVolume(ctx, t.caller, in.Reference, in.VolumeID)
+func (t *Tools) takeVolume(ctx context.Context, _ *mcp.CallToolRequest, in takeVolumeInput) (*mcp.CallToolResult, Response, error) {
+	row, err := t.h.svc.TakeVolume(ctx, t.caller, in.Reference, in.VolumeID, in.Store, in.Bucket)
 	if err != nil {
 		return nil, Response{}, err
 	}

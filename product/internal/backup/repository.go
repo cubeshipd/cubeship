@@ -88,6 +88,17 @@ func (r *Repository) Finish(ctx context.Context, id int64, size int64, failure s
 	return nil
 }
 
+// FailTaking marks every backup still `taking` as failed, with why.
+func (r *Repository) FailTaking(ctx context.Context, why string) error {
+	_, err := r.q.ExecContext(ctx,
+		`UPDATE backups SET status = $1, error = $2, finished_at = now() WHERE status = $3`,
+		StatusFailed, why, StatusTaking)
+	if err != nil {
+		return fmt.Errorf("settle interrupted backups: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) ByID(ctx context.Context, id int64) (*Backup, error) {
 	b, err := scan(r.q.QueryRowContext(ctx, `SELECT `+columns+` FROM backups WHERE id = $1`, id))
 	if err != nil {

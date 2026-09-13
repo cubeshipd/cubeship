@@ -79,6 +79,8 @@ type Service struct {
 	instance Instance
 	// volumes is `app`, for backing up its volumes. Wired by `server`.
 	volumes Volumes
+	// machines is `node`, for a volume on another server. Wired by `server`.
+	machines Machines
 
 	// running tracks dumps that outlive the request that asked for
 	// one. Tests wait on it; the daemon does not.
@@ -186,7 +188,7 @@ func (s *Service) Coverage(ctx context.Context, caller *user.User) ([]*Coverage,
 				Database: v.App, Engine: "volume",
 				// A volume on another server is not backed up here yet,
 				// and says so rather than reading as never backed up.
-				CanBackUp: !v.OnWorker,
+				CanBackUp: !v.OnWorker || s.machines != nil,
 				Schedule:  byVolume[v.ID],
 			}
 			out = append(out, c)
@@ -625,6 +627,13 @@ func (s *Service) read(ctx context.Context, row *Backup) (io.ReadCloser, error) 
 		return nil, fmt.Errorf("read the dump: %w", err)
 	}
 	return r, nil
+}
+
+// SettleInterrupted fails the backups a restart of this daemon left
+// `taking`. The goroutine or the server doing the copy is gone, and a row
+// left running can be neither restored nor deleted.
+func SettleInterrupted(ctx context.Context, repo *Repository) error {
+	return repo.FailTaking(ctx, "the daemon restarted while this backup was being taken")
 }
 
 // Delete removes a backup and the object behind it.

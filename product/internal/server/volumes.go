@@ -50,7 +50,7 @@ func volumeFor(t *app.VolumeTarget, err error) (*backup.Volume, error) {
 		return nil, err
 	}
 	return &backup.Volume{
-		ID: t.ID, AppID: t.AppID, App: t.App.String(), Path: t.Path,
+		ID: t.ID, AppID: t.AppID, NodeID: t.NodeID, App: t.App.String(), Path: t.Path,
 		Dir: t.Dir, OnWorker: t.OnWorker,
 	}, nil
 }

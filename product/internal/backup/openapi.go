@@ -270,9 +270,13 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"post": {
 					OperationID: "takeVolumeBackup",
 					Summary:     "Back a volume up now",
-					Description: "**The app is stopped for the copy** and started again however the copy went: files being written while they are read are not a copy. No deploy of the app runs meanwhile.\n\nA `.tar.gz` of the volume's directory, keeping owners and modes, streamed to wherever the volume's schedule says — this machine's own disk when there is none. Answers 202 with the row it will report into. An empty volume is a failed backup.\n\nRefused for a volume on another server. Requires the admin role.",
+					Description: "**The app is stopped for the copy** and started again however the copy went: files being written while they are read are not a copy. No deploy of the app runs meanwhile.\n\nA `.tar.gz` of the volume's directory, keeping owners and modes, streamed to an S3 store linked from outside this instance: the one in the body, or the volume's schedule's. **Never this machine's disk, nor a store this instance runs** — a volume's copy is worth taking only where it survives the machine. A volume on another server is copied by that server, straight to the bucket. Answers 202 with the row it will report into. An empty volume is a failed backup.\n\nRefused for a volume on another server. Requires the admin role.",
 					Tags:        []string{"Backups"},
 					Parameters:  volumeParams,
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"store":  openapi.String("The S3 store linked from outside this instance to send it to, by name. Leave the body out to use the volume's schedule."),
+						"bucket": openapi.String("The bucket in that store. Required with store."),
+					})),
 					Responses: openapi.Responses{
 						"202": openapi.JSONResponse("The backup, running.", openapi.Ref("Backup")),
 						"401": openapi.Unauthorized,

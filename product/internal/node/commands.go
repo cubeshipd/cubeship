@@ -90,6 +90,8 @@ type Command struct {
 	// Version is the release to replace this machine with. Only an
 	// update carries one.
 	Version string `json:"version,omitempty"`
+	// Volume is what a volume backup or restore is about.
+	Volume *VolumeJob `json:"volume,omitempty"`
 }
 
 // ErrNoAnswer is a machine that did not come back in time. It says
@@ -217,7 +219,7 @@ func (h *hub) Tell(nodeID int64, cmd Command) error {
 	return nil
 }
 
-func (h *hub) Ask(ctx context.Context, nodeID int64, cmd Command) ([]byte, error) {
+func (h *hub) ask(ctx context.Context, nodeID int64, cmd Command, timeout time.Duration) ([]byte, error) {
 	id, err := commandID()
 	if err != nil {
 		return nil, err
@@ -243,7 +245,7 @@ func (h *hub) Ask(ctx context.Context, nodeID int64, cmd Command) ([]byte, error
 		return a.output, a.err
 	case <-ctx.Done():
 		return nil, ctx.Err()
-	case <-time.After(CommandTimeout):
+	case <-expired(timeout):
 		return nil, ErrNoAnswer
 	}
 }

@@ -410,6 +410,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// either case `backup` refuses with the reason rather than writing
 	// an archive with a hole where the database should be.
 	srv.Backups.SetVolumes(appVolumes{apps: apps})
+	srv.Backups.SetMachines(srv.Nodes)
 	if e, ok := docker.(bootstrap.PostgresDumper); ok {
 		srv.Backups.SetInstance(&instanceDatabase{docker: e, owned: opts.OwnDatabase})
 	}

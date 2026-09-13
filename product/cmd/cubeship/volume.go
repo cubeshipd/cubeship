@@ -160,6 +160,7 @@ func newAppVolumeBackupCmd() *cobra.Command {
 		},
 	}
 
+	var takeStore, takeBucket string
 	takeCmd := &cobra.Command{
 		Use:   "take <app> <volume-id>",
 		Short: "Back a volume up now, stopping the app for the copy",
@@ -173,7 +174,7 @@ func newAppVolumeBackupCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			b, err := c.TakeVolumeBackup(context.Background(), args[0], id)
+			b, err := c.TakeVolumeBackup(context.Background(), args[0], id, takeStore, takeBucket)
 			if err != nil {
 				return err
 			}
@@ -181,6 +182,9 @@ func newAppVolumeBackupCmd() *cobra.Command {
 			return nil
 		},
 	}
+
+	takeCmd.Flags().StringVar(&takeStore, "store", "", "the S3 store linked from outside this instance to send it to; defaults to the volume's schedule's")
+	takeCmd.Flags().StringVar(&takeBucket, "bucket", "", "the bucket in that store")
 
 	var confirmed bool
 	restoreCmd := &cobra.Command{

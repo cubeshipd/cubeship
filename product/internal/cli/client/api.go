@@ -407,9 +407,13 @@ func (c *Client) ListVolumeBackups(ctx context.Context, ref string, volumeID int
 }
 
 // TakeVolumeBackup starts one; it runs detached, so the row is `taking`.
-func (c *Client) TakeVolumeBackup(ctx context.Context, ref string, volumeID int64) (Backup, error) {
+func (c *Client) TakeVolumeBackup(ctx context.Context, ref string, volumeID int64, store, bucket string) (Backup, error) {
+	var body any
+	if store != "" {
+		body = map[string]string{"store": store, "bucket": bucket}
+	}
 	return request[Backup](ctx, c, "back up volume", http.MethodPost,
-		volumeBackupsPath(ref, volumeID), nil, http.StatusAccepted, DefaultTimeout)
+		volumeBackupsPath(ref, volumeID), body, http.StatusAccepted, DefaultTimeout)
 }
 
 // RestoreBackup puts a backup back, replacing what is there.

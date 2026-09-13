@@ -310,8 +310,13 @@ cubeship app volume backup restore <backup-id> [flags]
 Back a volume up now, stopping the app for the copy
 
 ```bash
-cubeship app volume backup take <app> <volume-id>
+cubeship app volume backup take <app> <volume-id> [flags]
 ```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--bucket` |  | the bucket in that store |
+| `--store` |  | the S3 store linked from outside this instance to send it to; defaults to the volume's schedule's |
 
 ## cubeship app volume list
 

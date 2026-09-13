@@ -1,6 +1,6 @@
 //go:build !unix
 
-package backup
+package dirarchive
 
 import "os"
 

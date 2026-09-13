@@ -71,7 +71,10 @@ func (e *fakeEngine) ContainerStats(context.Context, string) (dockerx.Stats, err
 func (e *fakeEngine) Logs(context.Context, string, string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
 }
-func (e *fakeEngine) StartContainer(context.Context, string) error { return nil }
+func (e *fakeEngine) StartContainer(_ context.Context, id string) error {
+	e.events = append(e.events, "start "+id)
+	return nil
+}
 
 // PathOwner answers the mode an image with a writable data directory
 // has, and remembers which images were asked about.

@@ -364,8 +364,20 @@ func (h *Handler) takeVolume(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	// The body is optional: without one the backup goes where the volume's
+	// schedule sends them.
+	var req struct {
+		Store  string `json:"store"`
+		Bucket string `json:"bucket"`
+	}
+	if r.ContentLength != 0 {
+		if err := httpx.DecodeJSON(r, &req); err != nil {
+			WriteError(w, err)
+			return
+		}
+	}
 	ctx := r.Context()
-	row, err := h.svc.TakeVolume(ctx, user.FromContext(ctx), ref, id)
+	row, err := h.svc.TakeVolume(ctx, user.FromContext(ctx), ref, id, req.Store, req.Bucket)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -557,7 +569,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusConflict)
 
 	case errors.Is(err, ErrBadTime), errors.Is(err, ErrUnknownTimezone),
-		errors.Is(err, ErrBadKeep), errors.Is(err, ErrNoBucket),
+		errors.Is(err, ErrBadKeep), errors.Is(err, ErrNoBucket), errors.Is(err, ErrVolumeNeedsOffsite),
 		errors.Is(err, httpx.ErrNotJSON):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 

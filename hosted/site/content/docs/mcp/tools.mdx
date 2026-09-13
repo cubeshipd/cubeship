@@ -466,11 +466,13 @@ Takes no input.
 
 ### back_up_volume
 
-Back up one of an app's volumes now. **The app is stopped while the copy is taken** and started again afterwards, whether or not it worked. The backup runs detached: this returns its row with status `taking`, and list_volume_backups says how it ended. It goes wherever the volume's schedule says, or to this machine's own disk, which is not a backup that survives the machine. Refused for a volume on another server. Requires the admin role.
+Back up one of an app's volumes now. **The app is stopped while the copy is taken** and started again afterwards, whether or not it worked. The backup runs detached: this returns its row with status `taking`, and list_volume_backups says how it ended. It goes to an S3 store linked from outside this instance — the one named, or the volume's schedule's; this machine's disk and a store this instance runs are refused. A volume on another server is copied by that server, straight to the bucket. Requires the admin role.
 
 | Input | Type | What it is |
 | --- | --- | --- |
+| `bucket` | string | the bucket in that store. Required with store |
 | `reference` * | string | the app's reference: project/environment/name |
+| `store` | string | the S3 store linked from outside this instance to send it to, by name. Empty uses the volume's schedule |
 | `volume_id` * | integer | the volume's id, from list_app_volumes |
 
 \* required
