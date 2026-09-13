@@ -91,7 +91,7 @@ func TestARoleHoldsAMemberToItsGrants(t *testing.T) {
 		t.Fatalf("a member managing web's apps could not create one: %d %s", rec.Code, rec.Body)
 	}
 	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/projects", map[string]any{"slug": "nope"}, key), http.StatusForbidden)
-	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/datastores", map[string]any{"slug": "db", "engine": "postgres"}, key), http.StatusForbidden)
+	servertest.RequireStatus(t, f.Do(t, http.MethodPost, "/datastores", map[string]any{"name": "db", "engine": "postgres"}, key), http.StatusForbidden)
 
 	// Back to the member default, which reads the databases again.
 	servertest.RequireStatus(t, f.Do(t, http.MethodPatch, "/users/dev", map[string]any{"access_role_id": 0}, f.AdminKey), http.StatusOK)
@@ -132,7 +132,7 @@ func TestAKeyRoleNarrowsItsOwner(t *testing.T) {
 			t.Errorf("a read-only key was offered %s", hidden)
 		}
 	}
-	if _, result := callTool[map[string]any](t, session, "create_project", map[string]any{"slug": "nope"}); !result.IsError {
+	if !refused(t, session, "create_project", map[string]any{"slug": "nope"}) {
 		t.Fatal("a read-only key created a project over MCP")
 	}
 }

@@ -98,9 +98,7 @@ func TestMCPToolsAreAuthorizedLikeHTTP(t *testing.T) {
 
 	t.Run("a member cannot create a project", func(t *testing.T) {
 		session := connectMCP(t, f, memberKey)
-		_, result := callTool[map[string]any](t, session, "create_project",
-			map[string]any{"slug": "globex"})
-		if !result.IsError {
+		if !refused(t, session, "create_project", map[string]any{"slug": "globex"}) {
 			t.Fatal("a member was allowed to create a project over MCP")
 		}
 	})
@@ -120,9 +118,7 @@ func TestMCPToolsAreAuthorizedLikeHTTP(t *testing.T) {
 
 	t.Run("a member cannot create a project", func(t *testing.T) {
 		session := connectMCP(t, f, memberKey)
-		_, result := callTool[map[string]any](t, session, "create_project",
-			map[string]any{"slug": "nope"})
-		if !result.IsError {
+		if !refused(t, session, "create_project", map[string]any{"slug": "nope"}) {
 			t.Fatal("a member was allowed to create a project over MCP")
 		}
 	})
@@ -217,4 +213,13 @@ func TestMCPCreateAppRoundTrip(t *testing.T) {
 	if shorthand.Reference != created.Reference {
 		t.Errorf("the shorthand resolved to %q, want %q", shorthand.Reference, created.Reference)
 	}
+}
+
+// refused reports whether a tool call was turned away: an error result, or
+// the tool not being offered to this caller at all, which MCP answers as an
+// unknown tool.
+func refused(t *testing.T, session *mcp.ClientSession, name string, args map[string]any) bool {
+	t.Helper()
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+	return err != nil || result.IsError
 }
