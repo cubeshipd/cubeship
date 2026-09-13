@@ -49,7 +49,11 @@ bound what a template can ever be:
   `scale` above 1, `spread` and `autoscale` beside it
   (`volume.one-copy`), and needs a `minCubeship` no release before
   0.7.0 satisfies (`volume.min-cubeship`). Uninstalling keeps the data
-  unless asked otherwise.
+  unless asked otherwise. The published schema says the same in an
+  editor, through an `if`/`then` on a pattern for `minCubeship`: a
+  pattern reads simple ranges only, so it may flag one the validator
+  accepts, and `volume_schema_test.go` holds it to never passing one the
+  validator refuses.
 
 Excluded for the same reason, all of it instance-level: DNS providers,
 backup schedules, certificates, firewall rules, external registries, and
