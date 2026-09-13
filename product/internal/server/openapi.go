@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"cubeship/internal/app"
+	"cubeship/internal/audit"
 	"cubeship/internal/backup"
 	"cubeship/internal/certificates"
 	"cubeship/internal/credential"
@@ -48,6 +49,7 @@ const (
 func (s *Server) OpenAPI() openapi.Document {
 	merged := openapi.Merge(
 		user.NewHandler(s.Users).OpenAPI(),
+		audit.NewHandler(s.Audit).OpenAPI(),
 		project.NewHandler(s.Projects).OpenAPI(),
 		app.NewHandler(s.Apps).OpenAPI(),
 		backup.NewHandler(s.Backups).OpenAPI(),

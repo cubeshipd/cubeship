@@ -2,6 +2,8 @@ package user
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"strings"
 	"time"
 
@@ -340,6 +342,21 @@ func (s *Service) Authenticate(ctx context.Context, key string) (*User, string, 
 	if u.Blocked() {
 		return nil, "", ErrBlocked
 	}
+	k, err := s.Repo().APIKeyByHash(ctx, keyHash)
+	if err != nil {
+		return nil, "", err
+	}
+	if k.Projects != nil {
+		if k.Projects, err = s.Repo().KeyProjects(ctx, k.ID); err != nil {
+			return nil, "", err
+		}
+	}
+	u.Key = &KeyScope{ID: k.ID, Name: k.Name, Access: k.Access, Projects: k.Projects}
+	// Lowered here, once, so every Require on the instance already
+	// answers for the key rather than for its owner.
+	if k.Access != AccessFull {
+		u.Role = RoleMember
+	}
 	// Best effort: a caller whose last_used_at could not be written is
 	// still authenticated. Failing the request over a bookkeeping write
 	// would take the whole API down with the column.
@@ -358,6 +375,18 @@ func (s *Service) RotateAPIKey(ctx context.Context, u *User, keyHash string) (st
 	if err != nil {
 		return "", err
 	}
+	// The replacement keeps the scope. Read before revoking, because
+	// revoking takes the key's projects with it.
+	var projectIDs []int64
+	if old.Projects != nil {
+		slugs, err := s.Repo().KeyProjects(ctx, old.ID)
+		if err != nil {
+			return "", err
+		}
+		if projectIDs, _, err = s.Repo().ProjectIDs(ctx, slugs); err != nil {
+			return "", err
+		}
+	}
 
 	var key string
 	// Revoke and reissue in one transaction. Revoking first and failing
@@ -373,7 +402,7 @@ func (s *Service) RotateAPIKey(ctx context.Context, u *User, keyHash string) (st
 		if err != nil {
 			return err
 		}
-		if _, err := repo.CreateAPIKey(ctx, u.ID, authkey.Hash(generated), old.Name); err != nil {
+		if _, err := repo.CreateScopedAPIKey(ctx, u.ID, authkey.Hash(generated), old.Name, old.Access, projectIDs); err != nil {
 			return err
 		}
 		key = generated
@@ -389,19 +418,72 @@ func (s *Service) RotateAPIKey(ctx context.Context, u *User, keyHash string) (st
 // any key(s) they already hold. This is how an MCP client gets its own
 // credential, separate from the one a terminal uses, so revoking or
 // rotating one never touches the other.
-func (s *Service) CreateAPIKey(ctx context.Context, u *User, name string) (*APIKey, string, error) {
+func (s *Service) CreateAPIKey(ctx context.Context, u *User, req KeyRequest) (*APIKey, string, error) {
 	if u == nil {
 		return nil, "", ErrUnauthenticated
 	}
+	// Left out means the caller's own: a restricted key asking for a key
+	// by name alone gets one no wider than itself, not a refusal.
+	if req.Access == "" {
+		req.Access = AccessFull
+		if u.Key != nil {
+			req.Access = u.Key.Access
+		}
+	}
+	if req.Projects == nil && u.ProjectScoped() {
+		req.Projects = u.Key.Projects
+	}
+	if !req.Access.Valid() {
+		return nil, "", ErrInvalidAccess
+	}
+	if req.Projects != nil && len(req.Projects) == 0 {
+		return nil, "", ErrNoProjects
+	}
+	if u.Key != nil {
+		if !req.Access.Within(u.Key.Access) {
+			return nil, "", ErrKeyScopeWider
+		}
+		if u.ProjectScoped() {
+			for _, p := range req.Projects {
+				if !u.SeesProject(p) {
+					return nil, "", ErrKeyScopeWider
+				}
+			}
+		}
+	}
+
 	generated, err := authkey.Generate()
 	if err != nil {
 		return nil, "", err
 	}
-	created, err := s.Repo().CreateAPIKey(ctx, u.ID, authkey.Hash(generated), name)
+	var created *APIKey
+	err = s.db.WithTx(ctx, func(tx database.Queryer) error {
+		repo := NewRepository(tx)
+		var ids []int64
+		if req.Projects != nil {
+			var missing string
+			if ids, missing, err = repo.ProjectIDs(ctx, req.Projects); err != nil {
+				if errors.Is(err, ErrUnknownProject) {
+					return fmt.Errorf("%w: %s", ErrUnknownProject, missing)
+				}
+				return err
+			}
+		}
+		created, err = repo.CreateScopedAPIKey(ctx, u.ID, authkey.Hash(generated), req.Name, req.Access, ids)
+		return err
+	})
 	if err != nil {
 		return nil, "", err
 	}
 	return created, generated, nil
+}
+
+// KeyRequest is what a new key is called and allowed. An empty Access
+// and a nil Projects both mean "as much as the caller has".
+type KeyRequest struct {
+	Name     string
+	Access   Access
+	Projects []string
 }
 
 // ListAPIKeys returns metadata for every key u holds. The key values
@@ -432,6 +514,11 @@ func (s *Service) ListAPIKeys(ctx context.Context, u *User) ([]*APIKey, error) {
 func (s *Service) RevokeAPIKey(ctx context.Context, u *User, id int64) error {
 	if u == nil {
 		return ErrUnauthenticated
+	}
+	// A restricted key revoking its owner's other keys would be a way
+	// to lock the owner out from inside a scope meant to contain it.
+	if u.Key.Restricted() {
+		return ErrKeyRestricted
 	}
 	keys, err := s.Repo().ListAPIKeys(ctx, u.ID)
 	if err != nil {
@@ -552,6 +639,9 @@ func (s *Service) AuthenticateSession(ctx context.Context, token string) (*User,
 func (s *Service) SetPassword(ctx context.Context, u *User, currentSessionHash, current, next string) error {
 	if u == nil {
 		return ErrUnauthenticated
+	}
+	if u.Key.Restricted() {
+		return ErrKeyRestricted
 	}
 
 	_, existing, err := s.Repo().PasswordHash(ctx, u.Username)

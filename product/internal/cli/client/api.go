@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -134,8 +135,12 @@ type Domain struct {
 // APIKey is one of the caller's keys. The key value itself is only ever
 // returned once, at creation.
 type APIKey struct {
-	ID         int64      `json:"id"`
-	Name       string     `json:"name"`
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+	// Access is read, deploy or full; Projects is empty for a key that
+	// reaches every project.
+	Access     string     `json:"access"`
+	Projects   []string   `json:"projects,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	CurrentKey bool       `json:"current_key"`
@@ -672,12 +677,74 @@ func (c *Client) RotateAPIKey(ctx context.Context) (string, error) {
 // CreateAPIKey issues an additional key under name, independent of any
 // the caller already holds.
 func (c *Client) CreateAPIKey(ctx context.Context, name string) (id int64, apiKey string, err error) {
+	return c.CreateScopedAPIKey(ctx, name, "", nil)
+}
+
+// CreateScopedAPIKey issues a key limited to access and projects. Empty
+// access and nil projects mean as much as the key making the call has.
+func (c *Client) CreateScopedAPIKey(ctx context.Context, name, access string, projects []string) (id int64, apiKey string, err error) {
+	body := map[string]any{"name": name}
+	if access != "" {
+		body["access"] = access
+	}
+	if projects != nil {
+		body["projects"] = projects
+	}
 	out, err := request[struct {
 		ID     int64  `json:"id"`
 		APIKey string `json:"api_key"`
 	}](ctx, c, "create api key", http.MethodPost, "/users/me/api-keys",
-		map[string]string{"name": name}, http.StatusCreated, DefaultTimeout)
+		body, http.StatusCreated, DefaultTimeout)
 	return out.ID, out.APIKey, err
+}
+
+// --- audit ---
+
+// AuditEvent is one change, or one refused attempt, on the instance.
+type AuditEvent struct {
+	ID       int64     `json:"id"`
+	At       time.Time `json:"at"`
+	Username string    `json:"username"`
+	Via      string    `json:"via"`
+	KeyName  string    `json:"key_name,omitempty"`
+	Action   string    `json:"action"`
+	Target   string    `json:"target,omitempty"`
+	Outcome  string    `json:"outcome"`
+	Status   int       `json:"status,omitempty"`
+	Detail   string    `json:"detail,omitempty"`
+	IP       string    `json:"ip,omitempty"`
+}
+
+type AuditPage struct {
+	Events []AuditEvent `json:"events"`
+	Next   int64        `json:"next,omitempty"`
+}
+
+// AuditFilter narrows ListAudit; zero values filter nothing.
+type AuditFilter struct {
+	User, Via, Outcome, Target string
+	Before                     int64
+	Limit                      int
+}
+
+func (c *Client) ListAudit(ctx context.Context, f AuditFilter) (AuditPage, error) {
+	q := url.Values{}
+	for k, v := range map[string]string{"user": f.User, "via": f.Via, "outcome": f.Outcome, "target": f.Target} {
+		if v != "" {
+			q.Set(k, v)
+		}
+	}
+	if f.Before > 0 {
+		q.Set("before", strconv.FormatInt(f.Before, 10))
+	}
+	if f.Limit > 0 {
+		q.Set("limit", strconv.Itoa(f.Limit))
+	}
+	path := "/audit"
+	if len(q) > 0 {
+		path += "?" + q.Encode()
+	}
+	return request[AuditPage](ctx, c, "read the audit log", http.MethodGet, path, nil, http.StatusOK, DefaultTimeout)
 }
 
 func (c *Client) ListAPIKeys(ctx context.Context) ([]APIKey, error) {

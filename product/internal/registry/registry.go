@@ -191,15 +191,22 @@ func (h *Handler) authorizeScope(ctx scopeContext, caller *user.User, scope stri
 	if !caller.Is(user.RoleMember) {
 		return nil
 	}
+	// A repository is <project>/<environment>/<app>, so a key held to
+	// projects reaches only those images.
+	project, _, _ := strings.Cut(name, "/")
+	if !caller.SeesProject(project) {
+		return nil
+	}
 
 	// Keep only actions this instance grants at all. Without this filter
 	// the requested action list was echoed back verbatim, so a client
 	// could ask for — and receive — a token for "delete".
 	var granted []string
 	for _, action := range strings.Split(actionsStr, ",") {
-		if pushPullActions[action] {
-			granted = append(granted, action)
+		if !pushPullActions[action] || (action == "push" && !caller.CanWrite()) {
+			continue
 		}
+		granted = append(granted, action)
 	}
 	if len(granted) == 0 {
 		return nil

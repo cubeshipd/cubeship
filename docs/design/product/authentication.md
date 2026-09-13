@@ -133,6 +133,41 @@ case no single request can show, two admins taking each other's role in
 the same moment, where a check made outside the transaction lets both
 through.
 
+## What a key may do, and what everyone did
+
+**A key carries an access and, optionally, a list of projects.** `read`,
+`deploy` or `full`, under its owner's role. `user.Authenticate` puts the
+scope on the caller as `User.Key` and lowers `Role` to member for anything
+short of `full`, once — so every `Require` on the instance already answers
+for the key. A deploy key of an admin cannot create a project.
+
+Projects are checked where they are resolved — `project.Service.Resolve`,
+`app.Service.Resolve`, the two listings, and the registry's scope grant —
+and answer as not found. `api_keys.all_projects` is a column rather than
+"no rows below", because a scoped key whose projects were all deleted must
+reach nothing, not everything.
+
+**What only a door can decide is at the door** (`server/access.go`):
+whether a request is a read, whether it reads a secret (`secretRoutes`),
+and whether it is about a project at all. A project key keeps routes with
+a project in the path and a short list without (`scopedRoutes`); every
+instance-wide thing — databases, stores, servers, templates — is gone.
+Over MCP a tool a key does not allow is **removed from the list** rather
+than refused: an agent cannot be talked into calling what it was never
+shown. `toolRules` classifies every tool, and a test fails for one that
+is not — a forgotten entry would otherwise be a tool a restricted key
+keeps.
+
+A restricted key cannot mint a wider key, revoke keys or change the
+password: each would be a way out of the scope from inside it.
+
+**The audit log** (`internal/audit`) records at the same two doors: every
+non-read HTTP request behind `auth`, every refused one including reads,
+and every tool call that changes something or was not available. Recorded
+outside the key policy, so refusals are in it. Never a body; a tool's
+arguments keep only the ones that name something. What no request asked
+for — a push webhook's deploy, a schedule — is not in it. Kept 90 days.
+
 ## Claiming an instance
 
 `internal/setup` is the first-run flow, and it exists because the daemon

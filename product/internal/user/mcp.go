@@ -33,7 +33,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.whoAmI)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "create_api_key",
-		Description: `Issue an additional, independent API key for yourself under a given name (e.g. "mcp", "laptop") — it coexists with every key you already hold.`,
+		Description: `Issue an additional, independent API key for yourself under a given name (e.g. "mcp", "laptop") — it coexists with every key you already hold. access is read (reads, never a secret), deploy (what a member does) or full (everything you may); projects holds the key to those projects. A key can never create one that reaches more than it does.`,
 	}, t.createAPIKey)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "list_api_keys",
@@ -53,25 +53,33 @@ func (t *Tools) whoAmI(_ context.Context, _ *mcp.CallToolRequest, _ struct{}) (*
 	// No password flag here. It exists for the account screen, which
 	// has a revoke button beside it; an agent has nothing to do with
 	// how its caller signs in.
-	return nil, WhoAmIResponse{Username: t.caller.Username, Role: t.caller.Role}, nil
+	return nil, WhoAmIResponse{Username: t.caller.Username, Role: t.caller.Role, Key: toKeyResponse(t.caller.Key)}, nil
 }
 
 type createAPIKeyInput struct {
-	Name string `json:"name" jsonschema:"a label to recognize this key by later, e.g. \"mcp\" or \"laptop\""`
+	Name     string   `json:"name" jsonschema:"a label to recognize this key by later, e.g. \"mcp\" or \"laptop\""`
+	Access   string   `json:"access,omitempty" jsonschema:"read, deploy or full; defaults to what the key calling this has"`
+	Projects []string `json:"projects,omitempty" jsonschema:"project slugs the key is held to; omitted means every project the key calling this reaches"`
 }
 
 type createAPIKeyOutput struct {
-	ID     int64  `json:"id"`
-	Name   string `json:"name"`
-	APIKey string `json:"api_key"`
+	ID       int64    `json:"id"`
+	Name     string   `json:"name"`
+	APIKey   string   `json:"api_key"`
+	Access   Access   `json:"access"`
+	Projects []string `json:"projects,omitempty"`
 }
 
 func (t *Tools) createAPIKey(ctx context.Context, _ *mcp.CallToolRequest, in createAPIKeyInput) (*mcp.CallToolResult, createAPIKeyOutput, error) {
-	created, generated, err := t.svc.CreateAPIKey(ctx, t.caller, in.Name)
+	created, generated, err := t.svc.CreateAPIKey(ctx, t.caller,
+		KeyRequest{Name: in.Name, Access: Access(in.Access), Projects: in.Projects})
 	if err != nil {
 		return nil, createAPIKeyOutput{}, err
 	}
-	return nil, createAPIKeyOutput{ID: created.ID, Name: created.Name, APIKey: generated}, nil
+	return nil, createAPIKeyOutput{
+		ID: created.ID, Name: created.Name, APIKey: generated,
+		Access: created.Access, Projects: created.Projects,
+	}, nil
 }
 
 func (t *Tools) listAPIKeys(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, []APIKeyResponse, error) {

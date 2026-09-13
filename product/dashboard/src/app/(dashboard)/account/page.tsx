@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailTabs } from "@/components/header-rail";
+import { OptionCards } from "@/components/option-cards";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
 import { SectionHeader } from "@/components/section-header";
@@ -16,6 +17,7 @@ import { useSession } from "@/components/session-context";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -26,8 +28,14 @@ import {
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ValueCard } from "@/components/value-card";
-import { type ApiKey, api, avatarSrc } from "@/lib/api";
+import { type ApiKey, api, avatarSrc, type KeyAccess } from "@/lib/api";
 import { message } from "@/lib/errors";
+
+const ACCESS_LABEL: Record<KeyAccess, string> = {
+  read: "Read only",
+  deploy: "Deploy",
+  full: "Full",
+};
 
 // The screen for everything that is **yours** rather than the
 // instance's: how you sign in, and what it looks like to you.
@@ -256,7 +264,7 @@ function Keys() {
     {
       id: "name",
       header: "Name",
-      width: 36,
+      width: 24,
       sortBy: (k) => k.name,
       cell: (k) => (
         <span className="flex min-w-0 items-center gap-2">
@@ -271,9 +279,23 @@ function Keys() {
       ),
     },
     {
+      id: "access",
+      header: "Access",
+      width: 30,
+      sortBy: (k) => k.access,
+      cell: (k) => (
+        <span className="flex min-w-0 flex-col">
+          <span className="text-xs">{ACCESS_LABEL[k.access] ?? k.access}</span>
+          <span className="truncate font-mono text-[11px] text-subtle-foreground">
+            {k.projects ? k.projects.join(", ") || "no projects left" : "every project"}
+          </span>
+        </span>
+      ),
+    },
+    {
       id: "created",
       header: "Created",
-      width: 26,
+      width: 16,
       sortBy: (k) => k.created_at,
       cell: (k) => (
         <span className="text-xs text-muted-foreground">
@@ -284,7 +306,7 @@ function Keys() {
     {
       id: "used",
       header: "Last used",
-      width: 28,
+      width: 20,
       // A key never used sorts below every key that has been, rather
       // than above them: it is the one you are most likely looking for
       // a reason to revoke.
@@ -429,14 +451,26 @@ function NewKeyDialog({
   onOpenChange: (v: boolean) => void;
   onIssued: (key: string) => void;
 }) {
+  const me = useSession();
   const [name, setName] = useState("");
+  const [access, setAccess] = useState<KeyAccess>("full");
+  const [scope, setScope] = useState<"all" | "some">("all");
+  const [picked, setPicked] = useState<string[]>([]);
+  const [projects, setProjects] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setName("");
+    setAccess("full");
+    setScope("all");
+    setPicked([]);
     setError(null);
+    api
+      .get<{ slug: string }[]>("/projects")
+      .then((list) => setProjects(list.map((p) => p.slug)))
+      .catch(() => setProjects([]));
   }, [open]);
 
   async function submit(e: React.FormEvent) {
@@ -444,7 +478,11 @@ function NewKeyDialog({
     setBusy(true);
     setError(null);
     try {
-      const created = await api.post<{ api_key: string }>("/users/me/api-keys", { name });
+      const created = await api.post<{ api_key: string }>("/users/me/api-keys", {
+        name,
+        access,
+        projects: scope === "some" ? picked : undefined,
+      });
       onIssued(created.api_key);
       onOpenChange(false);
     } catch (err) {
@@ -455,7 +493,7 @@ function NewKeyDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="sm:max-w-2xl">
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>New API key</DialogTitle>
@@ -471,12 +509,69 @@ function NewKeyDialog({
               placeholder="laptop"
               hint="For you, so a key you no longer recognise is one you can revoke. Name it after the machine or the tool holding it."
             />
+            <OptionCards
+              label="Access"
+              value={access}
+              onChange={setAccess}
+              className="sm:grid-cols-3"
+              options={[
+                {
+                  value: "read",
+                  title: ACCESS_LABEL.read,
+                  body: "Lists, logs and status. Never a variable, a credential or a download.",
+                },
+                {
+                  value: "deploy",
+                  title: ACCESS_LABEL.deploy,
+                  body: "What a member does: create, configure and deploy apps.",
+                },
+                {
+                  value: "full",
+                  title: ACCESS_LABEL.full,
+                  body: `Everything you can do, as ${me.role}.`,
+                },
+              ]}
+              hint="An agent holding the key is not offered anything outside it, over MCP or the API."
+            />
+            <OptionCards
+              label="Projects"
+              value={scope}
+              onChange={setScope}
+              options={[
+                { value: "all", title: "Every project", body: "And what belongs to the instance." },
+                {
+                  value: "some",
+                  title: "Only these projects",
+                  body: "The others, and the instance's databases and servers, are not there.",
+                },
+              ]}
+            />
+            {scope === "some" && (
+              <div className="grid gap-2 sm:grid-cols-3">
+                {(projects ?? []).map((slug) => (
+                  // biome-ignore lint/a11y/noLabelWithoutControl: the checkbox inside is the control
+                  <label key={slug} className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={picked.includes(slug)}
+                      onCheckedChange={(on) =>
+                        setPicked((p) => (on ? [...p, slug] : p.filter((x) => x !== slug)))
+                      }
+                    />
+                    <span className="truncate font-mono text-xs">{slug}</span>
+                  </label>
+                ))}
+              </div>
+            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <ActionButton type="submit" busy={busy} disabled={!name.trim()}>
+            <ActionButton
+              type="submit"
+              busy={busy}
+              disabled={!name.trim() || (scope === "some" && picked.length === 0)}
+            >
               Create
             </ActionButton>
           </DialogFooter>

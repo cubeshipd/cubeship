@@ -2,6 +2,8 @@ package user
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -22,7 +24,7 @@ func NewRepository(q database.Queryer) *Repository {
 
 const (
 	userColumns   = `id, username, role, theme, display_name, email, avatar, blocked_at, created_at`
-	apiKeyColumns = `id, user_id, key_hash, name, created_at, last_used_at`
+	apiKeyColumns = `id, user_id, key_hash, name, access, all_projects, created_at, last_used_at`
 )
 
 // joinedUserColumns is userColumns under the alias `u`, for the two
@@ -100,8 +102,16 @@ func (r *Repository) SetTheme(ctx context.Context, userID int64, theme string) e
 
 func scanAPIKey(row scanner) (*APIKey, error) {
 	var k APIKey
-	if err := row.Scan(&k.ID, &k.UserID, &k.KeyHash, &k.Name, &k.CreatedAt, &k.LastUsedAt); err != nil {
+	var access string
+	var all bool
+	if err := row.Scan(&k.ID, &k.UserID, &k.KeyHash, &k.Name, &access, &all, &k.CreatedAt, &k.LastUsedAt); err != nil {
 		return nil, err
+	}
+	k.Access = Access(access)
+	// Non-nil and empty until the projects are read: a scoped key with
+	// none left reaches nothing.
+	if !all {
+		k.Projects = []string{}
 	}
 	return &k, nil
 }
@@ -278,14 +288,71 @@ func (r *Repository) Count(ctx context.Context) (int, error) {
 }
 
 func (r *Repository) CreateAPIKey(ctx context.Context, userID int64, keyHash, name string) (*APIKey, error) {
+	return r.CreateScopedAPIKey(ctx, userID, keyHash, name, AccessFull, nil)
+}
+
+// CreateScopedAPIKey issues a key limited to access and, when projectIDs
+// is not nil, to those projects. Run it inside a transaction: the key
+// and its projects are one fact.
+func (r *Repository) CreateScopedAPIKey(ctx context.Context, userID int64, keyHash, name string, access Access, projectIDs []int64) (*APIKey, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO api_keys (user_id, key_hash, name) VALUES ($1, $2, $3) RETURNING `+apiKeyColumns,
-		userID, keyHash, name)
+		`INSERT INTO api_keys (user_id, key_hash, name, access, all_projects) VALUES ($1, $2, $3, $4, $5) RETURNING `+apiKeyColumns,
+		userID, keyHash, name, string(access), projectIDs == nil)
 	k, err := scanAPIKey(row)
 	if err != nil {
 		return nil, fmt.Errorf("create api key: %w", err)
 	}
+	for _, id := range projectIDs {
+		if _, err := r.q.ExecContext(ctx,
+			`INSERT INTO api_key_projects (key_id, project_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, k.ID, id); err != nil {
+			return nil, fmt.Errorf("scope api key: %w", err)
+		}
+	}
+	if projectIDs != nil {
+		if k.Projects, err = r.KeyProjects(ctx, k.ID); err != nil {
+			return nil, err
+		}
+	}
 	return k, nil
+}
+
+// KeyProjects returns the slugs of the projects a scoped key reaches.
+func (r *Repository) KeyProjects(ctx context.Context, keyID int64) ([]string, error) {
+	rows, err := r.q.QueryContext(ctx, `
+		SELECT p.slug FROM api_key_projects kp
+		JOIN projects p ON p.id = kp.project_id
+		WHERE kp.key_id = $1 ORDER BY p.slug`, keyID)
+	if err != nil {
+		return nil, fmt.Errorf("read key projects: %w", err)
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var slug string
+		if err := rows.Scan(&slug); err != nil {
+			return nil, err
+		}
+		out = append(out, slug)
+	}
+	return out, rows.Err()
+}
+
+// ProjectIDs resolves project slugs to ids, and says which one does not
+// exist.
+func (r *Repository) ProjectIDs(ctx context.Context, slugs []string) ([]int64, string, error) {
+	ids := make([]int64, 0, len(slugs))
+	for _, slug := range slugs {
+		var id int64
+		err := r.q.QueryRowContext(ctx, `SELECT id FROM projects WHERE slug = $1`, slug).Scan(&id)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, slug, ErrUnknownProject
+		}
+		if err != nil {
+			return nil, "", fmt.Errorf("resolve project: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, "", nil
 }
 
 // ByAPIKeyHash resolves a credential to the identity that holds it. This
@@ -328,7 +395,19 @@ func (r *Repository) ListAPIKeys(ctx context.Context, userID int64) ([]*APIKey, 
 		}
 		out = append(out, k)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	rows.Close()
+	for _, k := range out {
+		if k.Projects == nil {
+			continue
+		}
+		if k.Projects, err = r.KeyProjects(ctx, k.ID); err != nil {
+			return nil, err
+		}
+	}
+	return out, nil
 }
 
 // RevokeAPIKeyByHash revokes exactly the key with this hash — the one a

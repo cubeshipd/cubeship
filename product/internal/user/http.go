@@ -212,27 +212,53 @@ type WhoAmIResponse struct {
 	// Avatars is which faces this instance ships, for the same reason
 	// Themes is served: the daemon is what refuses a name.
 	Avatars []string `json:"avatars,omitempty"`
+	// Key is the API key this request carried, absent for a session.
+	// Role above is already what the key allows.
+	Key *KeyResponse `json:"key,omitempty"`
 }
 
 // APIKeyResponse is one key's metadata. The key value itself appears
 // only in the response to creating it.
 type APIKeyResponse struct {
-	ID         int64      `json:"id"`
-	Name       string     `json:"name"`
+	ID     int64  `json:"id"`
+	Name   string `json:"name"`
+	Access Access `json:"access"`
+	// Projects is absent for a key that reaches every project.
+	Projects   []string   `json:"projects,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
 	CurrentKey bool       `json:"current_key"`
 }
 
+func toAPIKeyResponse(k *APIKey, currentHash string) APIKeyResponse {
+	return APIKeyResponse{
+		ID: k.ID, Name: k.Name, Access: k.Access, Projects: k.Projects,
+		CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt,
+		CurrentKey: k.KeyHash == currentHash,
+	}
+}
+
 func toAPIKeyResponses(keys []*APIKey, currentHash string) []APIKeyResponse {
 	out := make([]APIKeyResponse, 0, len(keys))
 	for _, k := range keys {
-		out = append(out, APIKeyResponse{
-			ID: k.ID, Name: k.Name, CreatedAt: k.CreatedAt, LastUsedAt: k.LastUsedAt,
-			CurrentKey: k.KeyHash == currentHash,
-		})
+		out = append(out, toAPIKeyResponse(k, currentHash))
 	}
 	return out
+}
+
+// KeyResponse is the key a request authenticated with, as whoami
+// reports it.
+type KeyResponse struct {
+	Name     string   `json:"name"`
+	Access   Access   `json:"access"`
+	Projects []string `json:"projects,omitempty"`
+}
+
+func toKeyResponse(k *KeyScope) *KeyResponse {
+	if k == nil {
+		return nil
+	}
+	return &KeyResponse{Name: k.Name, Access: k.Access, Projects: k.Projects}
 }
 
 // --- signing in ---
@@ -312,7 +338,7 @@ func (h *Handler) setPassword(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, ErrPasswordTooShort):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		WriteError(w, err)
 	}
 }
 
@@ -337,6 +363,7 @@ func (h *Handler) whoAmI(w http.ResponseWriter, r *http.Request) {
 		Username: u.Username, Role: u.Role, HasPassword: has,
 		Theme: u.Theme, Themes: Themes,
 		DisplayName: u.DisplayName, Email: u.Email, Avatar: u.Avatar, Avatars: Avatars,
+		Key: toKeyResponse(u.Key),
 	})
 }
 
@@ -577,23 +604,23 @@ func (h *Handler) rotateAPIKey(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) createAPIKey(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name string `json:"name"`
+		Name     string   `json:"name"`
+		Access   Access   `json:"access"`
+		Projects []string `json:"projects"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil || req.Name == "" {
 		http.Error(w, "name is required", http.StatusBadRequest)
 		return
 	}
-	created, generated, err := h.svc.CreateAPIKey(r.Context(), FromContext(r.Context()), req.Name)
-	if errors.Is(err, ErrUnauthenticated) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
+	created, generated, err := h.svc.CreateAPIKey(r.Context(), FromContext(r.Context()),
+		KeyRequest{Name: req.Name, Access: req.Access, Projects: req.Projects})
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		WriteError(w, err)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusCreated, map[string]any{
 		"id": created.ID, "name": created.Name, "api_key": generated,
+		"access": created.Access, "projects": created.Projects,
 	})
 }
 
@@ -625,7 +652,7 @@ func (h *Handler) revokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, database.ErrNotFound):
 		http.Error(w, "api key not found", http.StatusNotFound)
 	default:
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		WriteError(w, err)
 	}
 }
 
@@ -636,8 +663,11 @@ func WriteError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrUnauthenticated):
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
-	case errors.Is(err, ErrForbidden):
+	case errors.Is(err, ErrForbidden), errors.Is(err, ErrKeyScopeWider),
+		errors.Is(err, ErrKeyRestricted), errors.Is(err, ErrKeyForbidden):
 		http.Error(w, err.Error(), http.StatusForbidden)
+	case errors.Is(err, ErrInvalidAccess), errors.Is(err, ErrNoProjects), errors.Is(err, ErrUnknownProject):
+		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrBadUsername), errors.Is(err, ErrBadEmail),
 		errors.Is(err, ErrBadDisplayName), errors.Is(err, ErrUnknownAvatar):
 		http.Error(w, err.Error(), http.StatusBadRequest)

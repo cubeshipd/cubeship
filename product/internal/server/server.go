@@ -14,6 +14,7 @@ import (
 	"net/http"
 
 	"cubeship/internal/app"
+	"cubeship/internal/audit"
 	"cubeship/internal/backup"
 	"cubeship/internal/certificates"
 	"cubeship/internal/credential"
@@ -52,7 +53,9 @@ type Server struct {
 	// module an install creates things through.
 	Templates *templateinstall.Service
 	Backups   *backup.Service
-	Metrics   *metrics.Service
+	// Audit is who changed what, recorded at the API's door and MCP's.
+	Audit   *audit.Service
+	Metrics *metrics.Service
 	// Machine is what the box itself is doing, which belongs to no
 	// module below: there is one of it, and nothing here configures it.
 	Machine *machine.Service
@@ -358,6 +361,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Settings:     cfg,
 		Templates:    templates,
 		Releases:     release.NewService(db, opts.Version),
+		Audit:        audit.NewService(db),
 		Updates:      updates,
 		Certs:        certificates.NewService(cfg, apps, opts.DataDir),
 		// Above both of the modules it needs, the way certificates sits
@@ -509,7 +513,13 @@ func (s *Server) routes() {
 	// auth is handed to each module so every authenticated route is
 	// mounted the same way, and no module invents its own.
 	userHandler := user.NewHandler(s.Users)
-	auth := userHandler.Middleware
+	auditHandler := audit.NewHandler(s.Audit)
+	// Recorded outside the key policy, so what a key was refused is in
+	// the log too.
+	auth := func(h http.Handler) http.Handler {
+		return userHandler.Middleware(auditHandler.Record(keyPolicy(h)))
+	}
+	auditHandler.Routes(s.router, auth)
 
 	userHandler.Routes(s.router, auth)
 	// Setup is the one surface that cannot require being signed in:
@@ -552,7 +562,9 @@ func (s *Server) routes() {
 	s.Registry.CatalogueRoutes(s.router, auth)
 	s.githubHandler.WebhookRoutes(s.router)
 
-	s.router.HandleRoot("POST /mcp", auth(s.mcpHandler()))
+	// Authenticated only: MCP is one POST for every tool, so the key
+	// policy and the log both work per tool, inside it.
+	s.router.HandleRoot("POST /mcp", userHandler.Middleware(s.mcpHandler()))
 
 	// A path under the prefix that matches no route is a wrong API call,
 	// not a dashboard route. Without this it would fall through to "GET

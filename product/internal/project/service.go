@@ -44,6 +44,11 @@ func (s *Service) Resolve(ctx context.Context, caller *user.User, projectSlug st
 	if err := user.Require(caller, minRole); err != nil {
 		return nil, err
 	}
+	// A project outside the caller's key is not there, the same answer
+	// as one that does not exist.
+	if !caller.SeesProject(projectSlug) {
+		return nil, ErrNotFound
+	}
 	p, err := s.Repo().BySlug(ctx, projectSlug)
 	if err != nil {
 		return nil, ErrNotFound
@@ -117,7 +122,17 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Project, erro
 	if err := user.Require(caller, user.RoleMember); err != nil {
 		return nil, err
 	}
-	return s.Repo().List(ctx)
+	all, err := s.Repo().List(ctx)
+	if err != nil || !caller.ProjectScoped() {
+		return all, err
+	}
+	out := make([]*Project, 0, len(all))
+	for _, p := range all {
+		if caller.SeesProject(p.Slug) {
+			out = append(out, p)
+		}
+	}
+	return out, nil
 }
 
 // Env returns the variables set on a project. Reading at RoleMember:

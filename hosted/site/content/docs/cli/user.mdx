@@ -20,8 +20,13 @@ or rotating one never touches the other. Point the MCP client at
 this daemon's /mcp endpoint with this key as its bearer token.
 
 ```bash
-cubeship user api-key create <name>
+cubeship user api-key create <name> [flags]
 ```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--access` |  | read (reads, never a secret), deploy (what a member does) or full; defaults to what the key you are using has |
+| `--project` |  | hold the key to this project; repeat for more. Defaults to every project the key you are using reaches |
 
 ## cubeship user api-key list
 

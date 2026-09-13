@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"cubeship/internal/app"
+	"cubeship/internal/audit"
 	"cubeship/internal/backup"
 	"cubeship/internal/datastore"
 	"cubeship/internal/machine"
@@ -42,7 +43,7 @@ func (s *Server) mcpServerForRequest(r *http.Request) *mcp.Server {
 		// rather than a panic, so handle it explicitly.
 		return nil
 	}
-	return s.BuildMCPServer(caller, user.KeyHashFromContext(r.Context()))
+	return s.buildMCPServer(caller, user.KeyHashFromContext(r.Context()), audit.ClientIP(r))
 }
 
 // BuildMCPServer registers every module's tools for one already
@@ -52,7 +53,31 @@ func (s *Server) mcpServerForRequest(r *http.Request) *mcp.Server {
 //
 // It is exported so tests can drive the same server the endpoint serves.
 func (s *Server) BuildMCPServer(caller *user.User, keyHash string) *mcp.Server {
+	return s.buildMCPServer(caller, keyHash, "")
+}
+
+func (s *Server) buildMCPServer(caller *user.User, keyHash, ip string) *mcp.Server {
+	srv := s.registerMCPTools(caller, keyHash)
+	// Removed rather than refused: what a key does not allow is not on
+	// the list an agent reads.
+	// TestEveryMCPToolIsClassified keeps toolRules the whole list.
+	var hidden []string
+	for name := range toolRules {
+		if !toolAvailable(caller, name) {
+			hidden = append(hidden, name)
+		}
+	}
+	srv.RemoveTools(hidden...)
+	srv.AddReceivingMiddleware(s.Audit.Middleware(caller, ip, func(tool string) (bool, bool) {
+		_, known := toolRules[tool]
+		return toolChanges(tool), known && toolAvailable(caller, tool)
+	}))
+	return srv
+}
+
+func (s *Server) registerMCPTools(caller *user.User, keyHash string) *mcp.Server {
 	srv := mcp.NewServer(&mcp.Implementation{Name: "cubeship", Version: mcpVersion}, nil)
+	audit.NewTools(s.Audit, caller).Register(srv)
 	user.NewTools(s.Users, caller, keyHash).Register(srv)
 	project.NewTools(s.Projects, caller).Register(srv)
 	app.NewTools(s.Apps, caller).Register(srv)

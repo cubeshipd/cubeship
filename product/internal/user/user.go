@@ -65,6 +65,70 @@ type User struct {
 	// and deleting one.
 	BlockedAt *time.Time
 	CreatedAt time.Time
+	// Key is the API key this request authenticated with, nil for a
+	// session. Role has already been lowered to what the key allows.
+	Key *KeyScope
+}
+
+// Access is how much of its owner's role an API key carries.
+type Access string
+
+const (
+	// AccessRead reads, and never reads a secret.
+	AccessRead Access = "read"
+	// AccessDeploy does what a member does, whatever the owner's role.
+	AccessDeploy Access = "deploy"
+	// AccessFull does everything its owner may.
+	AccessFull Access = "full"
+)
+
+func (a Access) Valid() bool { return a == AccessRead || a == AccessDeploy || a == AccessFull }
+
+func (a Access) rank() int {
+	switch a {
+	case AccessRead:
+		return 0
+	case AccessDeploy:
+		return 1
+	}
+	return 2
+}
+
+// Within reports whether a grants no more than b.
+func (a Access) Within(b Access) bool { return a.rank() <= b.rank() }
+
+// KeyScope is what one API key is allowed. Projects is nil when the key
+// reaches every project, and a list of slugs — possibly empty, once
+// they have all been deleted — when it does not.
+type KeyScope struct {
+	ID       int64
+	Name     string
+	Access   Access
+	Projects []string
+}
+
+// Restricted reports whether the key reaches less than its owner does.
+func (k *KeyScope) Restricted() bool {
+	return k != nil && (k.Access != AccessFull || k.Projects != nil)
+}
+
+// SeesProject reports whether the caller may reach a project at all. A
+// project outside a key's scope is answered as not found.
+func (u *User) SeesProject(slug string) bool {
+	if u == nil || u.Key == nil || u.Key.Projects == nil {
+		return u != nil
+	}
+	return slices.Contains(u.Key.Projects, slug)
+}
+
+// ProjectScoped reports whether the caller is held to a list of projects.
+func (u *User) ProjectScoped() bool {
+	return u != nil && u.Key != nil && u.Key.Projects != nil
+}
+
+// CanWrite reports whether the caller may change anything at all.
+func (u *User) CanWrite() bool {
+	return u != nil && (u.Key == nil || u.Key.Access != AccessRead)
 }
 
 // Blocked reports whether this account may authenticate at all.
@@ -240,10 +304,13 @@ func Require(caller *User, min Role) error {
 // APIKey is one credential belonging to a User. Only its hash is ever
 // stored; the key itself is shown once, at creation, and never again.
 type APIKey struct {
-	ID         int64
-	UserID     int64
-	KeyHash    string
-	Name       string
+	ID      int64
+	UserID  int64
+	KeyHash string
+	Name    string
+	Access  Access
+	// Projects is nil for a key that reaches every project.
+	Projects   []string
 	CreatedAt  time.Time
 	LastUsedAt *time.Time
 }
@@ -313,4 +380,27 @@ var (
 	// instance's business, and this is the one message an account that
 	// should not be here still gets to read.
 	ErrBlocked = errors.New("this account has been blocked on this instance")
+
+	// ErrInvalidAccess reports an access string that is not one of the
+	// three.
+	ErrInvalidAccess = errors.New(`access must be "read", "deploy" or "full"`)
+
+	// ErrKeyScopeWider refuses a key minting one that reaches more than
+	// it does, which would make every restriction one call deep.
+	ErrKeyScopeWider = errors.New("forbidden: a key cannot create one that reaches more than it does")
+
+	// ErrKeyRestricted refuses a restricted key the things only its owner
+	// decides: revoking keys and changing the password.
+	ErrKeyRestricted = errors.New("forbidden: this API key is restricted; sign in or use an unrestricted key")
+
+	// ErrNoProjects is a key scoped to projects with none named.
+	ErrNoProjects = errors.New("name at least one project, or give the key every project")
+
+	// ErrUnknownProject is a project named in a key's scope that does
+	// not exist.
+	ErrUnknownProject = errors.New("no such project")
+
+	// ErrKeyForbidden is what a restricted key hears for anything
+	// outside its access.
+	ErrKeyForbidden = errors.New("forbidden: this API key does not allow that")
 )

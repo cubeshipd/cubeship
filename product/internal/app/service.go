@@ -266,6 +266,9 @@ func (s *Service) Resolve(ctx context.Context, caller *user.User, ref Reference,
 	if err := user.Require(caller, minRole); err != nil {
 		return nil, err
 	}
+	if !caller.SeesProject(ref.Project) {
+		return nil, ErrNotFound
+	}
 	a, err := s.Repo().ScopedByReference(ctx, ref.Project, ref.Environment, ref.Name)
 	if err != nil {
 		return nil, ErrNotFound
@@ -320,9 +323,9 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, en
 	if err := user.Require(caller, RoleToDeploy(source)); err != nil {
 		return nil, err
 	}
-	p, err := s.projects.Repo().BySlug(ctx, projectSlug)
+	p, err := s.projects.Resolve(ctx, caller, projectSlug, RoleToDeploy(source))
 	if err != nil {
-		return nil, project.ErrNotFound
+		return nil, err
 	}
 	env, err := s.projects.EnvironmentRepo().BySlug(ctx, p.ID, envSlug)
 	if err != nil {
@@ -953,6 +956,15 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Scoped, error
 	apps, err := s.Repo().ListScoped(ctx)
 	if err != nil {
 		return nil, err
+	}
+	if caller.ProjectScoped() {
+		seen := apps[:0]
+		for _, a := range apps {
+			if caller.SeesProject(a.ProjectSlug) {
+				seen = append(seen, a)
+			}
+		}
+		apps = seen
 	}
 	return s.withDomains(ctx, apps)
 }

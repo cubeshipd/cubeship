@@ -13,6 +13,7 @@ import {
   KeyRoundIcon,
   LayoutTemplateIcon,
   LogOutIcon,
+  ScrollTextIcon,
   ServerCogIcon,
   ServerIcon,
   SettingsIcon,
@@ -112,6 +113,9 @@ export const sections: { label?: string; items: NavItem[] }[] = [
       // What is *yours* — your password, the colours you see — is
       // under your own name at the foot of this list.
       { href: "/users", label: "Users", icon: UsersIcon, owns: ["/users"] },
+      // Beside Users: what those people, and the keys they handed to
+      // agents, actually did.
+      { href: "/audit", label: "Audit log", icon: ScrollTextIcon },
       { href: "/registries", label: "Registries", icon: ContainerIcon, owns: ["/registries"] },
       { href: "/git", label: "Git Providers", icon: GitBranchIcon, owns: ["/git"] },
       { href: "/dns", label: "DNS Providers", icon: GlobeIcon, owns: ["/dns"] },

@@ -88,6 +88,24 @@ const routes: [string, string, Handler][] = [
   ],
   ["DELETE", "/users/:username/credentials", () => ({ api_keys: 2, sessions: 1 })],
   ["GET", "/users/me/api-keys", () => db.apiKeys],
+  [
+    "POST",
+    "/users/me/api-keys",
+    (_p, body) => {
+      const b = body as Row;
+      const created = {
+        id: db.apiKeys.length + 1,
+        name: b.name as string,
+        access: (b.access as "read" | "deploy" | "full") ?? "full",
+        projects: b.projects as string[] | undefined,
+        created_at: new Date().toISOString(),
+        current_key: false,
+      };
+      db.apiKeys.push(created);
+      return { ...created, api_key: "csk_mock_0123456789abcdef" };
+    },
+  ],
+  ["GET", "/audit", () => ({ events: db.audit })],
   ["GET", "/settings", () => db.settings],
   ["PATCH", "/settings", (_p, body) => Object.assign(db.settings, body as Row)],
   ["PUT", "/settings", (_p, body) => Object.assign(db.settings, body as Row)],

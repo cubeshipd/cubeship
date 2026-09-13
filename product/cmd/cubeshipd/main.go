@@ -29,6 +29,7 @@ import (
 	_ "time/tzdata"
 
 	"cubeship/internal/app"
+	"cubeship/internal/audit"
 	"cubeship/internal/backup"
 	"cubeship/internal/certificates"
 	"cubeship/internal/datastore"
@@ -434,6 +435,26 @@ func purgeExpiredSessions(ctx context.Context, users *user.Service) {
 	}
 }
 
+// purgeAuditEvents drops audit events past audit.Retention, once at start
+// and then every six hours.
+func purgeAuditEvents(ctx context.Context, events *audit.Service) {
+	ticker := time.NewTicker(6 * time.Hour)
+	defer ticker.Stop()
+	for {
+		n, err := events.Purge(ctx)
+		if err != nil {
+			log.Printf("could not purge audit events: %v", err)
+		} else if n > 0 {
+			log.Printf("purged %d audit event(s) past %s", n, audit.Retention)
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -724,6 +745,7 @@ func run() error {
 	go (&backup.Scheduler{Backups: srv.Backups}).Run(ctx)
 
 	go purgeExpiredSessions(ctx, srv.Users)
+	go purgeAuditEvents(ctx, srv.Audit)
 
 	needsSetup, err := srv.Setup.Needed(ctx)
 	if err != nil {

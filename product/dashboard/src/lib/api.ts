@@ -624,13 +624,34 @@ export type RegistryUsage = {
   repositories: { name: string; bytes: number; images: number }[];
 };
 
+export type KeyAccess = "read" | "deploy" | "full";
+
 export type ApiKey = {
   id: number;
   name: string;
+  access: KeyAccess;
+  /** Absent for a key that reaches every project. */
+  projects?: string[];
   created_at: string;
   last_used_at?: string;
   current_key: boolean;
 };
+
+export type AuditEvent = {
+  id: number;
+  at: string;
+  username: string;
+  via: "dashboard" | "api" | "mcp";
+  key_name?: string;
+  action: string;
+  target?: string;
+  outcome: "ok" | "refused" | "failed";
+  status?: number;
+  detail?: string;
+  ip?: string;
+};
+
+export type AuditPage = { events: AuditEvent[]; next?: number };
 
 export type ResolvedVar = { key: string; value: string; source: string };
 export type EnvView = { vars: Record<string, string>; effective?: ResolvedVar[] };

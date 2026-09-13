@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -61,6 +62,8 @@ func newUserCmd() *cobra.Command {
 		},
 	}
 
+	var access string
+	var projects []string
 	createKeyCmd := &cobra.Command{
 		Use:   "create <name>",
 		Short: "Issue an additional, independent API key for yourself",
@@ -75,7 +78,11 @@ func newUserCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			_, key, err := c.CreateAPIKey(context.Background(), args[0])
+			var scope []string
+			if len(projects) > 0 {
+				scope = projects
+			}
+			_, key, err := c.CreateScopedAPIKey(context.Background(), args[0], access, scope)
 			if err != nil {
 				return err
 			}
@@ -83,6 +90,10 @@ func newUserCmd() *cobra.Command {
 			return nil
 		},
 	}
+	createKeyCmd.Flags().StringVar(&access, "access", "",
+		"read (reads, never a secret), deploy (what a member does) or full; defaults to what the key you are using has")
+	createKeyCmd.Flags().StringSliceVar(&projects, "project", nil,
+		"hold the key to this project; repeat for more. Defaults to every project the key you are using reaches")
 
 	listKeysCmd := &cobra.Command{
 		Use:   "list",
@@ -106,7 +117,11 @@ func newUserCmd() *cobra.Command {
 				if k.LastUsedAt != nil {
 					lastUsed = k.LastUsedAt.Format("2006-01-02 15:04")
 				}
-				fmt.Printf("%d\t%s\tlast used: %s%s\n", k.ID, k.Name, lastUsed, current)
+				scope := "every project"
+				if len(k.Projects) > 0 {
+					scope = strings.Join(k.Projects, ",")
+				}
+				fmt.Printf("%d\t%s\t%s\t%s\tlast used: %s%s\n", k.ID, k.Name, k.Access, scope, lastUsed, current)
 			}
 			return nil
 		},

@@ -15,11 +15,13 @@ tool needs is in its inputs; what it refuses to do is in [MCP](/docs/mcp).
 
 ### create_api_key
 
-Issue an additional, independent API key for yourself under a given name (e.g. "mcp", "laptop") — it coexists with every key you already hold.
+Issue an additional, independent API key for yourself under a given name (e.g. "mcp", "laptop") — it coexists with every key you already hold. access is read (reads, never a secret), deploy (what a member does) or full (everything you may); projects holds the key to those projects. A key can never create one that reaches more than it does.
 
 | Input | Type | What it is |
 | --- | --- | --- |
+| `access` | string | read, deploy or full; defaults to what the key calling this has |
 | `name` * | string | a label to recognize this key by later, e.g. "mcp" or "laptop" |
+| `projects` | array | project slugs the key is held to; omitted means every project the key calling this reaches |
 
 \* required
 
@@ -485,6 +487,23 @@ List the backups of one of an app's volumes, newest first: when each was taken, 
 | --- | --- | --- |
 | `reference` * | string | the app's reference: project/environment/name |
 | `volume_id` * | integer | the volume's id, from list_app_volumes |
+
+\* required
+
+## Audit
+
+### list_audit_events
+
+Read the audit log, newest first: who changed what, through the dashboard, the API or MCP, and every refused attempt. Filter by user, via (dashboard, api, mcp), outcome (ok, refused, failed) or target (e.g. an app's reference). Pass the returned next as before for older events. Requires the admin role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `before` | integer | an event id; only older events |
+| `limit` | integer | at most this many, up to 500; default 100 |
+| `outcome` | string | ok, refused or failed |
+| `target` | string | only events whose target contains this |
+| `user` | string | only this username |
+| `via` | string | dashboard, api or mcp |
 
 \* required
 

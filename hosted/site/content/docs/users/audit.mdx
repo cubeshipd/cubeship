@@ -1,0 +1,53 @@
+---
+title: Audit log
+description: Who changed what on the instance, through the dashboard, the API or an agent — and every attempt that was refused.
+---
+
+Every change made on the instance is written down: who made it, through
+which door (`dashboard`, `api` or `mcp`), with which API key, what it
+named, and how it ended. So is every attempt that was **refused** — a
+read included, so a key trying to read a secret it does not allow shows
+up.
+
+It is recorded where requests come in, not inside each feature, so a
+route or a tool added later is recorded without anybody remembering to.
+
+## Reading it
+
+On **Platform → Audit log**, or:
+
+```bash
+cubeship audit
+cubeship audit --via mcp --outcome refused
+cubeship audit --target web/production/api
+cubeship audit --user ci --before 1200
+```
+
+An agent reads it with `list_audit_events`. All three are admin only:
+the log is everybody's activity.
+
+| Column | What it is |
+| --- | --- |
+| `via` | `dashboard` (a session), `api` (an API key) or `mcp` (an API key, through `/mcp`). |
+| `key_name` | The key, when one was used. |
+| `action` | The route, e.g. `POST /apps/{project}/{env}/{name}/deployments`, or `mcp deploy_app`. |
+| `target` | The path, or a tool's identifying arguments — `app=web/production/api`. |
+| `outcome` | `ok`, `refused` (a role, a key's access, a project outside its scope) or `failed`. |
+| `detail` | The error the caller was given, cut to 300 characters. |
+
+## What it keeps, and what it does not
+
+- **Never a request body.** A variable's value, a password, a file — none
+  of it is written down, and a tool's arguments keep only those that name
+  something.
+- **Reads are not recorded** unless they were refused.
+- **What nobody asked for in a request** is not here: a deploy started by
+  a push, a scheduled backup.
+- Events are kept for **90 days**. Usernames and key names stay after the
+  account or the key is gone.
+
+## Undoing something
+
+The log says what happened; it does not undo it. What can be undone has
+its own way back — an earlier deployment, a [backup](/docs/backups) —
+and deleting a volume or a database is not one of those.

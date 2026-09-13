@@ -1,0 +1,27 @@
+---
+title: cubeship audit
+description: "Read who changed what on this instance"
+---
+
+{/* Generated from the CLI by `cubeship docs` — run `make reference`. Editing this file is editing the copy rather than the thing. */}
+
+Read the audit log, newest first: every change made through the
+dashboard, the API or MCP, and every refused attempt — a read
+included, so a key trying to read a secret shows up. Request
+bodies are never kept, and events are kept for 90 days.
+
+Admin only. The last line says how to read the page before it.
+
+```bash
+cubeship audit [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--before` |  | only events older than this id |
+| `--limit` |  | at most this many, up to 500 (default 100) |
+| `--outcome` |  | ok, refused or failed |
+| `--target` |  | only events whose target contains this, e.g. an app's reference |
+| `--user` |  | only this username |
+| `--via` |  | dashboard, api or mcp |
+
