@@ -55,6 +55,7 @@ func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.Handle("GET /templates", auth(http.HandlerFunc(h.catalog)))
+	r.Handle("GET /template-tags", auth(http.HandlerFunc(h.tags)))
 	r.Handle("GET /templates/{owner}/{repo}", auth(http.HandlerFunc(h.template)))
 	r.Handle("POST /templates/{owner}/{repo}/installs", auth(http.HandlerFunc(h.install)))
 	r.Handle("GET /template-icons/{repository}/{file}", auth(http.HandlerFunc(h.icon)))
@@ -90,6 +91,15 @@ func (h *Handler) catalog(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeRaw(w, page)
+}
+
+func (h *Handler) tags(w http.ResponseWriter, r *http.Request) {
+	tags, err := h.svc.Tags(r.Context(), user.FromContext(r.Context()))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	writeRaw(w, tags)
 }
 
 func (h *Handler) template(w http.ResponseWriter, r *http.Request) {

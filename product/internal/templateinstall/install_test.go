@@ -342,6 +342,7 @@ func (r *fakeRecords) Running(context.Context) ([]*Install, error) {
 type fakeCatalog struct{ source string }
 
 func (c fakeCatalog) List(context.Context, url.Values) (json.RawMessage, error) { return nil, nil }
+func (c fakeCatalog) Tags(context.Context) (json.RawMessage, error)             { return nil, nil }
 func (c fakeCatalog) Template(context.Context, string, string) (json.RawMessage, error) {
 	return nil, nil
 }

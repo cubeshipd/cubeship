@@ -18,6 +18,8 @@ import (
 type Catalog interface {
 	// List is a page of the catalog, for query's q, tag, sort and cursor.
 	List(ctx context.Context, query url.Values) (json.RawMessage, error)
+	// Tags is every tag a listed template carries.
+	Tags(ctx context.Context) (json.RawMessage, error)
 	// Template is one template with its README, file and manifest.
 	Template(ctx context.Context, owner, repo string) (json.RawMessage, error)
 	// Releases is a template's history, newest first.
@@ -123,6 +125,10 @@ func (c *HTTPCatalog) List(ctx context.Context, query url.Values) (json.RawMessa
 		address += "?" + kept.Encode()
 	}
 	return c.readJSON(ctx, address)
+}
+
+func (c *HTTPCatalog) Tags(ctx context.Context) (json.RawMessage, error) {
+	return c.readJSON(ctx, c.API+"/tags")
 }
 
 func (c *HTTPCatalog) Template(ctx context.Context, owner, repo string) (json.RawMessage, error) {

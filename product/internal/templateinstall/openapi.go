@@ -43,11 +43,26 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Parameters: []openapi.Parameter{
 						openapi.QueryParam("q", "Search text."),
 						openapi.QueryParam("tag", "Only templates with this tag."),
-						openapi.QueryParam("sort", "recent or stars."),
+						openapi.QueryParam("sort", "recent (newest release first, the default) or stars."),
 						openapi.QueryParam("cursor", "next_cursor from the previous page."),
 					},
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("A page of templates.", openapi.Object(nil)),
+						"401": openapi.Unauthorized,
+						"502": openapi.TextResponse("The catalog could not be reached."),
+					},
+				},
+			},
+			"/template-tags": {
+				"get": {
+					OperationID: "listTemplateTags",
+					Summary:     "List the catalog's tags",
+					Description: "Every tag a listed template carries, for filtering the catalog.",
+					Tags:        []string{"Templates"},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The tags.", openapi.Object(map[string]*openapi.Schema{
+							"tags": openapi.Array(openapi.String("")),
+						}, "tags")),
 						"401": openapi.Unauthorized,
 						"502": openapi.TextResponse("The catalog could not be reached."),
 					},

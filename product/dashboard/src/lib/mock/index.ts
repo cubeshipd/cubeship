@@ -281,6 +281,11 @@ const routes: [string, string, Handler][] = [
   ["GET", "/templates", () => ({ templates: db.templates, next_cursor: null })],
   [
     "GET",
+    "/template-tags",
+    () => ({ tags: [...new Set(db.templates.flatMap((t) => t.tags as string[]))].sort() }),
+  ],
+  [
+    "GET",
     "/templates/:owner/:repo",
     (p) => ({
       ...(db.templates.find((t) => t.owner === p[0] && t.name === p[1]) ?? notFound()),

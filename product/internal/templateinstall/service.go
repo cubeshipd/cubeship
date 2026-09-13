@@ -145,6 +145,18 @@ func (s *Service) Templates(ctx context.Context, caller *user.User, query url.Va
 	return c.List(ctx, query)
 }
 
+// Tags is every tag a listed template carries, for the filter.
+func (s *Service) Tags(ctx context.Context, caller *user.User) (json.RawMessage, error) {
+	if err := user.Require(caller, user.RoleMember); err != nil {
+		return nil, err
+	}
+	c, err := s.source()
+	if err != nil {
+		return nil, err
+	}
+	return c.Tags(ctx)
+}
+
 // Template is one template, with its README, file and manifest.
 func (s *Service) Template(ctx context.Context, caller *user.User, owner, repo string) (json.RawMessage, error) {
 	if err := user.Require(caller, user.RoleMember); err != nil {
