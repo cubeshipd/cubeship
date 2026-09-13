@@ -173,6 +173,9 @@ func TestTheStoreReadsWhatTheAPIServes(t *testing.T) {
 	if found, _, _ := p.List(ctx, Query{Q: "APP1", Limit: 10}); len(found) != 1 {
 		t.Errorf("search found %d", len(found))
 	}
+	if found, _, _ := p.List(ctx, Query{Q: "Analytic", Limit: 10}); len(found) != 3 {
+		t.Errorf("searching a topic found %d", len(found))
+	}
 	if found, _, _ := p.List(ctx, Query{Q: "100%", Limit: 10}); len(found) != 0 {
 		t.Errorf("a %% in a search matched %d", len(found))
 	}

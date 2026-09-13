@@ -104,7 +104,7 @@ func (p *Postgres) scanSummary(row interface{ Scan(...any) error }, extra ...any
 // Keyset paging, not offset: the catalog is sorted by something that
 // changes between two page loads.
 func encodeCursor(key, id int64) string {
-	return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("%d:%d", key, id)))
+	return base64.RawURLEncoding.EncodeToString(fmt.Appendf(nil, "%d:%d", key, id))
 }
 
 func decodeCursor(cursor string) (int64, int64, bool) {
@@ -135,7 +135,8 @@ func (p *Postgres) List(ctx context.Context, q Query) ([]Summary, string, error)
 	where := []string{}
 	if q.Q != "" {
 		like := arg("%"+escapeLike(strings.ToLower(q.Q))+"%", "text")
-		where = append(where, fmt.Sprintf("(lower(p.name) LIKE %[1]s OR lower(p.description) LIKE %[1]s)", like))
+		// A topic matches too, so searching "monitoring" finds what is tagged with it.
+		where = append(where, fmt.Sprintf("(lower(p.name) LIKE %[1]s OR lower(p.description) LIKE %[1]s OR EXISTS (SELECT 1 FROM unnest(p.topics) t WHERE lower(t) LIKE %[1]s))", like))
 	}
 	if q.Tag != "" {
 		where = append(where, arg(q.Tag, "text")+" = ANY(p.topics)")
