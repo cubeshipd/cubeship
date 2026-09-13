@@ -102,6 +102,7 @@ export function AppVolumes({
               <div className="min-w-0 flex-1">
                 <TextField
                   label="Path inside the container"
+                  placeholder="/path/to/data"
                   spellCheck={false}
                   value={path}
                   onChange={(e) => setPath(e.target.value)}
