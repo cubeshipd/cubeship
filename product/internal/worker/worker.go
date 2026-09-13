@@ -27,8 +27,11 @@ import (
 	"log"
 	"net/http"
 	neturl "net/url"
+	"os"
+	"path/filepath"
 	"runtime/debug"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -468,7 +471,9 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 			}
 			continue
 		}
+		displaced := a.displace(ctx, running, p)
 		id, err := a.start(ctx, p, registry)
+		a.settleDisplaced(ctx, displaced, err)
 		// The ordinal goes back untouched. It is how the control plane
 		// knows which copy of this app on this machine the result is
 		// about, and without it every report is about a copy nothing
@@ -555,7 +560,16 @@ func (a *Agent) start(ctx context.Context, p node.Placement, registry string) (s
 	if len(p.Networks) > 0 {
 		network, also = p.Networks[0], p.Networks[1:]
 	}
+	binds := make([]string, 0, len(p.Volumes))
+	for _, v := range p.Volumes {
+		dir := filepath.Join(a.dataDir, "volumes", strconv.FormatInt(v.ID, 10))
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return "", fmt.Errorf("make volume %s: %w", v.Path, err)
+		}
+		binds = append(binds, dir+":"+v.Path)
+	}
 	id, err := a.engine.CreateContainer(ctx, dockerx.ContainerOpts{
+		Binds:        binds,
 		Name:         p.Container,
 		Image:        p.Image,
 		Labels:       p.Labels,
@@ -591,6 +605,44 @@ func (a *Agent) start(ctx context.Context, p node.Placement, registry string) (s
 // discard removes a container that should not exist. Best effort: what
 // went wrong is already the error being returned, and a container that
 // cannot be removed is a line in a log rather than a second failure.
+// displace stops the containers a copy with a volume is replacing, before
+// its replacement starts: two containers on one data directory corrupt it.
+// Every other copy starts first and retires the old one after, which is
+// the second half of apply.
+func (a *Agent) displace(ctx context.Context, running []dockerx.Running, p node.Placement) []dockerx.Running {
+	if len(p.Volumes) == 0 {
+		return nil
+	}
+	var stopped []dockerx.Running
+	for _, c := range running {
+		if c.Labels[node.LabelApp] != p.App || c.Name == p.Container ||
+			node.OrdinalFromLabels(c.Labels) != node.OrdinalOf(p.Ordinal) {
+			continue
+		}
+		if err := a.engine.StopContainer(ctx, c.ID); err != nil {
+			log.Printf("agent: stopping %s before its replacement: %v", c.Name, err)
+		}
+		stopped = append(stopped, c)
+	}
+	return stopped
+}
+
+// settleDisplaced removes what displace stopped once the replacement is
+// up, or starts it again when the replacement did not come up.
+func (a *Agent) settleDisplaced(ctx context.Context, stopped []dockerx.Running, failed error) {
+	for _, c := range stopped {
+		if failed != nil {
+			if err := a.engine.StartContainer(ctx, c.ID); err != nil {
+				log.Printf("agent: starting %s again after its replacement failed: %v", c.Name, err)
+			}
+			continue
+		}
+		if err := a.engine.RemoveContainer(ctx, c.ID); err != nil {
+			log.Printf("agent: removing %s: %v", c.Name, err)
+		}
+	}
+}
+
 func (a *Agent) discard(ctx context.Context, id string) {
 	if err := a.engine.RemoveContainer(ctx, id); err != nil {
 		log.Printf("agent: removing %s after it would not run: %v", id, err)

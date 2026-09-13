@@ -286,7 +286,21 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 		// what makes a limit changed here take effect there without a
 		// deploy.
 		Resources: a.Limits.Resources(),
+		Volumes:   volumeMounts(a.Volumes),
 	}, nil
+}
+
+// volumeMounts is an app's volumes as a machine is told them: which
+// directory, by id, and where the container sees it.
+func volumeMounts(volumes []Volume) []node.VolumeMount {
+	if len(volumes) == 0 {
+		return nil
+	}
+	out := make([]node.VolumeMount, 0, len(volumes))
+	for _, v := range volumes {
+		out = append(out, node.VolumeMount{ID: v.ID, Path: v.Path})
+	}
+	return out
 }
 
 // publicImage turns an image reference this machine can pull into one

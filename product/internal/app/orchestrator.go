@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -63,6 +64,10 @@ type Orchestrator struct {
 	// certificate to already exist, which must not be what a deploy
 	// waits on.
 	localRegistry string
+
+	// dataDir is where this machine's volumes keep their data. Set by
+	// Service.SetDataDir.
+	dataDir string
 
 	// HealthCheckAttempts bounds how many observations waitHealthy takes
 	// before giving up; HealthCheckSuccesses is how many of them must be
@@ -672,6 +677,9 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 func (o *Orchestrator) swap(ctx context.Context, a *Scoped, replica Replica, image Image,
 	env envvar.Map, labels map[string]string, base string, deploymentID int64,
 ) error {
+	if len(a.Volumes) > 0 {
+		return o.swapInPlace(ctx, a, replica, image, env, labels, base, deploymentID)
+	}
 	appName := ReferenceOf(a).String()
 	// Named for the deploy it is and the copy it is, rather than for
 	// the moment it was created. A machine that is told to run a
@@ -737,6 +745,85 @@ func (o *Orchestrator) removeContainer(ctx context.Context, id, why string) {
 	if err := o.docker.RemoveContainer(ctx, id); err != nil {
 		log.Printf("%s: could not remove container %s, it is now orphaned: %v", why, id, err)
 	}
+}
+
+// swapInPlace replaces the copy of an app with a volume: **the old
+// container stops before the new one starts.** Two containers on one data
+// directory is how a database or a queue corrupts itself, so this app is
+// unavailable for the seconds between — the one deploy here that is not
+// zero-downtime, and the price of keeping state in files.
+//
+// A new container that will not come up is removed and the old one is
+// started again, so a bad image costs the downtime and nothing else.
+func (o *Orchestrator) swapInPlace(ctx context.Context, a *Scoped, replica Replica, image Image,
+	env envvar.Map, labels map[string]string, base string, deploymentID int64,
+) error {
+	appName := ReferenceOf(a).String()
+	newName := containerNameFor(base, deploymentID, replica.Ordinal)
+	if replica.Container != "" && replica.Name == newName {
+		return nil
+	}
+	if o.dataDir == "" {
+		return ErrNoDataDir
+	}
+	binds := make([]string, 0, len(a.Volumes))
+	for _, v := range a.Volumes {
+		if err := os.MkdirAll(VolumeDir(o.dataDir, v.ID), 0o755); err != nil {
+			return fmt.Errorf("make volume %s: %w", v.Path, err)
+		}
+		binds = append(binds, VolumeBind(o.dataDir, v.ID, v.Path))
+	}
+
+	old := replica.Container
+	if old != "" {
+		if err := o.docker.StopContainer(ctx, old); err != nil {
+			log.Printf("deploy %s: could not stop the previous container %s: %v", appName, old, err)
+		}
+	}
+	restore := func() {
+		if old == "" {
+			return
+		}
+		if err := o.docker.StartContainer(ctx, old); err != nil {
+			log.Printf("deploy %s: could not start the previous container %s again: %v", appName, old, err)
+		}
+	}
+
+	newID, err := o.docker.CreateContainer(ctx, dockerx.ContainerOpts{
+		Name:         newName,
+		Image:        image.Ref,
+		Labels:       labels,
+		Env:          envvar.Slice(env),
+		Network:      Network,
+		AlsoNetworks: o.mesh(ctx),
+		Aliases:      []string{base},
+		Resources:    a.Limits.Resources(),
+		Binds:        binds,
+	})
+	if err != nil {
+		restore()
+		return fmt.Errorf("create container: %w", err)
+	}
+	if err := o.docker.StartContainer(ctx, newID); err != nil {
+		o.removeContainer(ctx, newID, "abandoning a container that would not start")
+		restore()
+		return fmt.Errorf("start container: %w", err)
+	}
+	if !o.waitHealthy(ctx, newID) {
+		o.removeContainer(ctx, newID, "abandoning a container that never became healthy")
+		restore()
+		return fmt.Errorf("health check timed out for container %s", newID)
+	}
+	if err := o.apps.UpdateContainer(ctx, a.ID, replica.NodeID, replica.Ordinal, newID, newName,
+		deploymentID, StatusRunning); err != nil {
+		o.removeContainer(ctx, newID, "rolling back a deploy the database did not record")
+		restore()
+		return fmt.Errorf("update app container: %w", err)
+	}
+	if old != "" && old != newID {
+		o.removeContainer(ctx, old, "retiring the previous container")
+	}
+	return nil
 }
 
 // Logs returns the app's container log. tail limits it to that many

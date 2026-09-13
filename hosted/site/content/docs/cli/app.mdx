@@ -257,3 +257,47 @@ cubeship app place <reference> [flags]
 | `--on` |  | the machines that run it, by name |
 | `--replicas` |  | how many copies to run in total, spread over those machines (default: unchanged) |
 
+## cubeship app volume
+
+A volume is a directory mounted into an app's container whose contents
+survive deploys and restarts.
+
+An app with a volume runs as one copy on the machine its data is on, and
+each deploy stops the old container before the new one starts — two
+containers on one directory corrupt it — so the app is briefly
+unavailable during a deploy.
+
+## cubeship app volume add
+
+Give an app a volume at \<path\>, an absolute path inside its container.
+
+It is mounted from the next deploy. Refused while the app runs as more
+than one copy, on more than one server, or autoscales.
+
+```bash
+cubeship app volume add <app> <path>
+```
+
+## cubeship app volume list
+
+List an app's volumes
+
+```bash
+cubeship app volume list <app>
+```
+
+## cubeship app volume remove
+
+Take a volume off an app. Its data is kept on the server unless
+--delete-data is given, which cannot be undone. The container running
+now keeps the directory until the next deploy.
+
+```bash
+cubeship app volume remove <app> <id> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--delete-data` |  | delete the volume's data too, which cannot be undone |
+| `--yes` |  | confirm the removal |
+

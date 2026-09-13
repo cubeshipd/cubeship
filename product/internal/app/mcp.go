@@ -76,6 +76,14 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Name:        "get_app_logs",
 		Description: "Get an app's recent container log output (stdout and stderr combined).",
 	}, t.logs)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "list_app_volumes",
+		Description: "List an app's volumes: directories mounted into its container that outlive it, each with the path the container sees and the machine its data is on.",
+	}, t.listVolumes)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "add_app_volume",
+		Description: "Give an app a volume: a directory at `path` inside its container whose contents survive deploys and restarts. It is mounted from the app's next deploy, so deploy it afterwards. An app with a volume runs as one copy on one machine — adding one is refused while the app is spread, scaled past one copy or autoscaled — and each deploy stops the old container before the new one starts, so the app is briefly unavailable. Removing a volume is not a tool: deleting data stays with a person. Requires the member role.",
+	}, t.addVolume)
 }
 
 type createInput struct {
@@ -243,6 +251,49 @@ func (t *Tools) delete(ctx context.Context, _ *mcp.CallToolRequest, in nameInput
 		return nil, user.ActionResult{}, err
 	}
 	return nil, user.ActionResult{Message: fmt.Sprintf("deleted app %s", ref)}, nil
+}
+
+type volumeOutput struct {
+	ID   int64  `json:"id"`
+	Path string `json:"path" jsonschema:"where the container sees the volume"`
+	Node string `json:"node" jsonschema:"the machine its data is on"`
+}
+
+type volumesOutput struct {
+	Volumes []volumeOutput `json:"volumes"`
+}
+
+func (t *Tools) listVolumes(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, volumesOutput, error) {
+	ref, err := ParseReference(in.App)
+	if err != nil {
+		return nil, volumesOutput{}, err
+	}
+	volumes, err := t.svc.Volumes(ctx, t.caller, ref)
+	if err != nil {
+		return nil, volumesOutput{}, err
+	}
+	out := volumesOutput{Volumes: []volumeOutput{}}
+	for _, v := range volumes {
+		out.Volumes = append(out.Volumes, volumeOutput{ID: v.ID, Path: v.Path, Node: v.NodeSlug})
+	}
+	return nil, out, nil
+}
+
+type addVolumeInput struct {
+	App  string `json:"app" jsonschema:"app reference: project/environment/app, or project/app for production"`
+	Path string `json:"path" jsonschema:"absolute path inside the container, e.g. /var/lib/rabbitmq. Not /, and not under /proc, /sys or /dev"`
+}
+
+func (t *Tools) addVolume(ctx context.Context, _ *mcp.CallToolRequest, in addVolumeInput) (*mcp.CallToolResult, volumeOutput, error) {
+	ref, err := ParseReference(in.App)
+	if err != nil {
+		return nil, volumeOutput{}, err
+	}
+	v, err := t.svc.AddVolume(ctx, t.caller, ref, in.Path)
+	if err != nil {
+		return nil, volumeOutput{}, err
+	}
+	return nil, volumeOutput{ID: v.ID, Path: v.Path, Node: v.NodeSlug}, nil
 }
 
 type envOutput struct {

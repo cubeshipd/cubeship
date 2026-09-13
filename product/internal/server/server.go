@@ -218,6 +218,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	apps := app.NewService(db, projects,
 		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gh, opts.PullRegistry),
 		cfg, series)
+	apps.SetDataDir(opts.DataDir)
 
 	// Datastores sit above apps: an attachment names one, so this module
 	// depends on that one. Nothing below them knows they exist —

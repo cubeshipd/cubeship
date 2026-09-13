@@ -50,6 +50,17 @@ type Service struct {
 	// on the next tick. Nil on a server with nobody listening, which is
 	// a test.
 	routesChanged func()
+
+	// dataDir is where volumes on this machine keep their data. Empty on
+	// a server with no disk of its own, which is a test.
+	dataDir string
+}
+
+// SetDataDir tells the module where this machine's volumes live. Called
+// once, by server.New.
+func (s *Service) SetDataDir(dir string) {
+	s.dataDir = dir
+	s.orch.dataDir = dir
 }
 
 // Remote is how this module reaches the machine an app runs on.
@@ -401,6 +412,17 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 		return nil, ErrInvalidAutoscale
 	}
 
+	// A volume's data is on one machine and cannot be shared by two
+	// copies, so neither where the app runs nor how many of it may change.
+	if len(a.Volumes) > 0 {
+		if auto != nil && auto.On() {
+			return nil, ErrVolumePinsApp
+		}
+		if place != nil && !keepsVolume(a, *place) {
+			return nil, ErrVolumePinsApp
+		}
+	}
+
 	if _, err := s.Repo().Update(ctx, a.ID, source, origin, health, limits, auto); err != nil {
 		return nil, err
 	}
@@ -634,6 +656,13 @@ func (s *Service) checkPlacement(ctx context.Context, nodeSlug string, source So
 }
 
 func (s *Service) Delete(ctx context.Context, caller *user.User, ref Reference) (*Scoped, error) {
+	return s.DeleteApp(ctx, caller, ref, false)
+}
+
+// DeleteApp is Delete, saying what happens to the app's volumes' data.
+// Kept by default: deleting an app is not deciding its data is worthless,
+// and kept data is listed by VolumeOrphans until somebody removes it.
+func (s *Service) DeleteApp(ctx context.Context, caller *user.User, ref Reference, deleteVolumeData bool) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
 	if err != nil {
 		return nil, err
@@ -641,7 +670,154 @@ func (s *Service) Delete(ctx context.Context, caller *user.User, ref Reference) 
 	if err := s.orch.Retire(ctx, a.ID); err != nil {
 		return nil, fmt.Errorf("stop the app's container: %w", err)
 	}
-	return a, s.Repo().Delete(ctx, a.ID)
+	if err := s.Repo().Delete(ctx, a.ID); err != nil {
+		return nil, err
+	}
+	if deleteVolumeData {
+		s.dropVolumeData(ctx, a.Volumes)
+	}
+	return a, nil
+}
+
+// dropVolumeData deletes what it can reach of some volumes' data, after
+// their rows are gone. Data on another machine is left, and said so in the
+// log: the app is already deleted, and failing now would report a delete
+// that happened as one that did not.
+func (s *Service) dropVolumeData(ctx context.Context, volumes []Volume) {
+	here, err := s.Repo().ControlPlaneID(ctx)
+	if err != nil {
+		log.Printf("delete volume data: %v", err)
+		return
+	}
+	for _, v := range volumes {
+		if v.NodeID != here {
+			log.Printf("delete volume data: volume %d is on %s; its directory is left there", v.ID, v.NodeSlug)
+			continue
+		}
+		if err := removeVolumeData(s.dataDir, v.ID); err != nil {
+			log.Printf("delete volume data: volume %d: %v", v.ID, err)
+		}
+	}
+}
+
+// Volumes is an app's volumes.
+func (s *Service) Volumes(ctx context.Context, caller *user.User, ref Reference) ([]Volume, error) {
+	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	if err != nil {
+		return nil, err
+	}
+	return a.Volumes, nil
+}
+
+// AddVolume gives an app a directory that outlives its container, on the
+// machine the app runs on. It is mounted from the app's next deploy.
+func (s *Service) AddVolume(ctx context.Context, caller *user.User, ref Reference, containerPath string) (*Volume, error) {
+	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	if err != nil {
+		return nil, err
+	}
+	clean, err := CleanVolumePath(containerPath)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range a.Volumes {
+		if v.Path == clean {
+			return nil, ErrVolumeExists
+		}
+	}
+	if !canHoldVolume(&a.App) {
+		return nil, ErrVolumeNeedsOneCopy
+	}
+	nodeID := a.Replicas[0].NodeID
+	here, err := s.Repo().ControlPlaneID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if nodeID == here && s.dataDir == "" {
+		return nil, ErrNoDataDir
+	}
+	v, err := s.Repo().AddVolume(ctx, a.ID, clean, nodeID)
+	if err != nil {
+		return nil, err
+	}
+	// A worker makes the directory when it first mounts it, with its own
+	// data directory. This machine makes it now, with the record that
+	// says what it was should it ever be kept.
+	if nodeID == here {
+		if err := prepareVolume(s.dataDir, ReferenceOf(a).String(), v); err != nil {
+			_ = s.Repo().RemoveVolume(ctx, a.ID, v.ID)
+			return nil, err
+		}
+	}
+	return v, nil
+}
+
+// RemoveVolume takes a volume off an app. Its data is kept unless
+// deleteData, and the container running now keeps its mount until the
+// next deploy.
+func (s *Service) RemoveVolume(ctx context.Context, caller *user.User, ref Reference, volumeID int64, deleteData bool) error {
+	a, err := s.Resolve(ctx, caller, ref, user.RoleMember)
+	if err != nil {
+		return err
+	}
+	var v *Volume
+	for i := range a.Volumes {
+		if a.Volumes[i].ID == volumeID {
+			v = &a.Volumes[i]
+		}
+	}
+	if v == nil {
+		return ErrVolumeNotFound
+	}
+	here, err := s.Repo().ControlPlaneID(ctx)
+	if err != nil {
+		return err
+	}
+	if deleteData && v.NodeID != here {
+		return ErrVolumeOnWorker
+	}
+	if err := s.Repo().RemoveVolume(ctx, a.ID, v.ID); err != nil {
+		return err
+	}
+	if deleteData {
+		return removeVolumeData(s.dataDir, v.ID)
+	}
+	return nil
+}
+
+// VolumeOrphans is the data kept after its volumes were removed, on this
+// machine.
+func (s *Service) VolumeOrphans(ctx context.Context, caller *user.User) ([]Orphan, error) {
+	if err := user.Require(caller, user.RoleMember); err != nil {
+		return nil, err
+	}
+	known, err := s.Repo().VolumeIDs(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return orphans(s.dataDir, known)
+}
+
+// DeleteVolumeOrphan deletes kept data for good. An admin's: nothing
+// says whose it was but a record on disk.
+func (s *Service) DeleteVolumeOrphan(ctx context.Context, caller *user.User, id int64) error {
+	if err := user.Require(caller, user.RoleAdmin); err != nil {
+		return err
+	}
+	known, err := s.Repo().VolumeIDs(ctx)
+	if err != nil {
+		return err
+	}
+	found, err := orphans(s.dataDir, known)
+	if err != nil {
+		return err
+	}
+	for _, o := range found {
+		if o.ID == id {
+			return removeVolumeData(s.dataDir, id)
+		}
+	}
+	return ErrOrphanNotFound
 }
 
 // DeleteAppsInProject and DeleteAppsInEnvironment are

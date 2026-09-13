@@ -161,6 +161,17 @@ Add, change or remove environment variables shared by every environment (and eve
 
 ## Apps
 
+### add_app_volume
+
+Give an app a volume: a directory at `path` inside its container whose contents survive deploys and restarts. It is mounted from the app's next deploy, so deploy it afterwards. An app with a volume runs as one copy on one machine — adding one is refused while the app is spread, scaled past one copy or autoscaled — and each deploy stops the old container before the new one starts, so the app is briefly unavailable. Removing a volume is not a tool: deleting data stays with a person. Requires the member role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | app reference: project/environment/app, or project/app for production |
+| `path` * | string | absolute path inside the container, e.g. /var/lib/rabbitmq. Not /, and not under /proc, /sys or /dev |
+
+\* required
+
 ### create_app
 
 Register a new app in a project and get its registry push path. environment defaults to "production" when omitted. Requires the member role.
@@ -239,6 +250,16 @@ Get an app's recent container log output (stdout and stderr combined).
 | `app` * | string | app reference: project/environment/app, or project/app for production |
 | `server` | string | which server's copy to read, for an app that runs on more than one; defaults to the one serving its names |
 | `tail` | string | number of trailing lines to return, e.g. "500", or "all" for the full log (default "200") |
+
+\* required
+
+### list_app_volumes
+
+List an app's volumes: directories mounted into its container that outlive it, each with the path the container sees and the machine its data is on.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | app reference: project/environment/app, or project/app for production |
 
 \* required
 

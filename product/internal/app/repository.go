@@ -274,8 +274,15 @@ func (r *Repository) attach(ctx context.Context, apps []*App) error {
 	if err != nil {
 		return err
 	}
+	// Volumes too, for the same reason: they decide how an app may be
+	// placed and deployed, and a caller that forgot them would move one.
+	volumes, err := r.VolumesFor(ctx, ids)
+	if err != nil {
+		return err
+	}
 	for _, a := range apps {
 		a.Replicas = byApp[a.ID]
+		a.Volumes = volumes[a.ID]
 	}
 	return nil
 }
@@ -1033,6 +1040,85 @@ func (r *Repository) RemoveDomain(ctx context.Context, appID, domainID int64) er
 		return fmt.Errorf("remove app domain: %w", err)
 	}
 	return affected(result)
+}
+
+// VolumesFor reads the volumes of several apps at once, keyed by app.
+func (r *Repository) VolumesFor(ctx context.Context, appIDs []int64) (map[int64][]Volume, error) {
+	out := map[int64][]Volume{}
+	if len(appIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.q.QueryContext(ctx, `
+		SELECT v.id, v.app_id, v.path, v.node_id, n.slug, v.created_at
+		FROM app_volumes v
+		JOIN nodes n ON n.id = v.node_id
+		WHERE v.app_id = ANY($1)
+		ORDER BY v.app_id, v.path`, appIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list app volumes: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var v Volume
+		if err := rows.Scan(&v.ID, &v.AppID, &v.Path, &v.NodeID, &v.NodeSlug, &v.CreatedAt); err != nil {
+			return nil, err
+		}
+		out[v.AppID] = append(out[v.AppID], v)
+	}
+	return out, rows.Err()
+}
+
+// AddVolume records a volume on the machine its data will be on.
+func (r *Repository) AddVolume(ctx context.Context, appID int64, containerPath string, nodeID int64) (*Volume, error) {
+	var v Volume
+	err := r.q.QueryRowContext(ctx, `
+		WITH inserted AS (
+			INSERT INTO app_volumes (app_id, path, node_id) VALUES ($1, $2, $3)
+			RETURNING id, app_id, path, node_id, created_at
+		)
+		SELECT i.id, i.app_id, i.path, i.node_id, n.slug, i.created_at
+		FROM inserted i JOIN nodes n ON n.id = i.node_id`,
+		appID, containerPath, nodeID).Scan(&v.ID, &v.AppID, &v.Path, &v.NodeID, &v.NodeSlug, &v.CreatedAt)
+	if database.IsUniqueViolation(err) {
+		return nil, ErrVolumeExists
+	}
+	if err != nil {
+		return nil, fmt.Errorf("add app volume: %w", err)
+	}
+	return &v, nil
+}
+
+// RemoveVolume deletes a volume's row. Its directory is the caller's.
+func (r *Repository) RemoveVolume(ctx context.Context, appID, volumeID int64) error {
+	result, err := r.q.ExecContext(ctx,
+		`DELETE FROM app_volumes WHERE id = $1 AND app_id = $2`, volumeID, appID)
+	if err != nil {
+		return fmt.Errorf("remove app volume: %w", err)
+	}
+	if err := affected(result); errors.Is(err, database.ErrNotFound) {
+		return ErrVolumeNotFound
+	} else if err != nil {
+		return err
+	}
+	return nil
+}
+
+// VolumeIDs is every volume there is, for telling kept data from live.
+func (r *Repository) VolumeIDs(ctx context.Context) (map[int64]bool, error) {
+	rows, err := r.q.QueryContext(ctx, `SELECT id FROM app_volumes`)
+	if err != nil {
+		return nil, fmt.Errorf("list volume ids: %w", err)
+	}
+	defer rows.Close()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
 }
 
 func affected(result sql.Result) error {

@@ -24,6 +24,8 @@ type fakeEngine struct {
 	capped []dockerx.Resources
 	// createErr, when set, is what CreateContainer answers.
 	createErr error
+	// events is every stop and create, in order.
+	events []string
 }
 
 // errWouldNotStart is a container the Engine refuses to make.
@@ -34,6 +36,7 @@ func (e *fakeEngine) CreateContainer(_ context.Context, opts dockerx.ContainerOp
 		return "", e.createErr
 	}
 	e.created = append(e.created, opts)
+	e.events = append(e.events, "create "+opts.Name)
 	return "id-" + opts.Name, nil
 }
 
@@ -66,7 +69,10 @@ func (e *fakeEngine) Logs(context.Context, string, string) (io.ReadCloser, error
 	return io.NopCloser(strings.NewReader("")), nil
 }
 func (e *fakeEngine) StartContainer(context.Context, string) error { return nil }
-func (e *fakeEngine) StopContainer(context.Context, string) error  { return nil }
+func (e *fakeEngine) StopContainer(_ context.Context, id string) error {
+	e.events = append(e.events, "stop "+id)
+	return nil
+}
 func (e *fakeEngine) RemoveContainer(_ context.Context, id string) error {
 	e.removed = append(e.removed, id)
 	return nil

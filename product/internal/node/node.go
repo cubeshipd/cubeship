@@ -225,6 +225,14 @@ type Report struct {
 // answer, so placing an app on a node is filling this in rather than
 // inventing a way to reach the machine. A reconcile loop that starts
 // life as a heartbeat is one that does not have to be replaced by one.
+// VolumeMount is one of an app's volumes as a machine is told it: the
+// directory under its own data directory, by id, and where the container
+// sees it.
+type VolumeMount struct {
+	ID   int64  `json:"id"`
+	Path string `json:"path"`
+}
+
 type Desired struct {
 	// Apps are the containers this node should be running: one entry
 	// per copy, so a machine running two of one app is told twice.
@@ -289,6 +297,10 @@ type Placement struct {
 	// ten seconds instead of at the next deploy. An agent from before
 	// this sends containers with no ceiling, which is what they had.
 	Resources dockerx.Resources `json:"resources,omitzero"`
+	// Volumes are directories the container mounts from this machine's
+	// data directory, which outlive it. A copy with any is replaced by
+	// stopping the old container first: two on one directory corrupt it.
+	Volumes []VolumeMount `json:"volumes,omitempty"`
 }
 
 // Result is what a node did with a placement.

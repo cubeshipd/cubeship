@@ -352,6 +352,36 @@ func (c *Client) RemoveAppDomain(ctx context.Context, ref string, domainID int64
 		fmt.Sprintf("%s/domains/%d", appPath(ref), domainID), nil, http.StatusOK, DefaultTimeout)
 }
 
+// Volume is one of an app's volumes.
+type Volume struct {
+	ID        int64     `json:"id"`
+	Path      string    `json:"path"`
+	Node      string    `json:"node"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func (c *Client) ListAppVolumes(ctx context.Context, ref string) ([]Volume, error) {
+	return request[[]Volume](ctx, c, "list app volumes", http.MethodGet, appPath(ref)+"/volumes",
+		nil, http.StatusOK, DefaultTimeout)
+}
+
+func (c *Client) AddAppVolume(ctx context.Context, ref, containerPath string) (Volume, error) {
+	return request[Volume](ctx, c, "add app volume", http.MethodPost, appPath(ref)+"/volumes",
+		map[string]any{"path": containerPath}, http.StatusCreated, DefaultTimeout)
+}
+
+// RemoveAppVolume takes a volume off an app, keeping its data unless
+// deleteData.
+func (c *Client) RemoveAppVolume(ctx context.Context, ref string, id int64, deleteData bool) error {
+	path := fmt.Sprintf("%s/volumes/%d", appPath(ref), id)
+	if deleteData {
+		path += "?delete_data=true"
+	}
+	_, err := request[noContent](ctx, c, "remove app volume", http.MethodDelete, path, nil,
+		http.StatusNoContent, DefaultTimeout)
+	return err
+}
+
 func (c *Client) ListApps(ctx context.Context) ([]App, error) {
 	return request[[]App](ctx, c, "list apps", http.MethodGet, "/apps", nil, http.StatusOK, DefaultTimeout)
 }

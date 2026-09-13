@@ -94,6 +94,18 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"deploy":  openapi.Integer("Which deployment this machine is running, by id — the same id the deploy history is listed under. Absent for a machine that has been given the app and not yet run it."),
 				"ordinal": openapi.Integer("Which copy of the app on this machine this is, starting at 1. Absent on the first, which is the only one an app that has never been scaled out has."),
 			}, "node", "status", "serving"),
+			"AppVolume": openapi.Object(map[string]*openapi.Schema{
+				"id":         openapi.Integer("Identifies this volume on this app, for removing it."),
+				"path":       openapi.String("Where the container sees the volume: an absolute path, cleaned."),
+				"node":       openapi.String("The machine the data is on. The app runs there, as one copy, for as long as it has the volume: data does not move between machines."),
+				"created_at": {Type: "string", Format: "date-time"},
+			}, "id", "path", "node", "created_at"),
+			"VolumeOrphan": openapi.Object(map[string]*openapi.Schema{
+				"id":         openapi.Integer("The id the volume had, which is also its directory's name under the data directory."),
+				"app":        openapi.String("The app it belonged to. Absent when its record is missing."),
+				"path":       openapi.String("Where that app's container saw it. Absent when its record is missing."),
+				"created_at": {Type: "string", Format: "date-time", Description: "When the volume was created. Absent when its record is missing."},
+			}, "id"),
 			"AppDomain": openapi.Object(map[string]*openapi.Schema{
 				"id":   openapi.Integer("Identifies this domain on this app, for changing or removing it."),
 				"host": openapi.String("The name Traefik routes to this app, over HTTPS. Lowercase, without a trailing dot — which is how a browser sends one and how Traefik matches it."),
@@ -188,9 +200,10 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"delete": {
 					OperationID: "deleteApp",
 					Summary:     "Delete an app",
-					Description: "Stops and removes the container serving the app, then deletes it. **This cannot be undone.**\n\nImages already pushed stay in the registry; reclaiming that disk needs a registry garbage collection pass, which is a separate operation. Requires the member role.",
+					Description: "Stops and removes the container serving the app, then deletes it. **This cannot be undone.**\n\nImages already pushed stay in the registry; reclaiming that disk needs a registry garbage collection pass, which is a separate operation. The app's volumes' data is kept unless `delete_volume_data=true`, and kept data is listed at `/volumes/orphans`. Requires the member role.",
 					Tags:        []string{"Apps"},
-					Parameters:  refParams,
+					Parameters: append(refParams,
+						openapi.QueryParam("delete_volume_data", "`true` deletes the data of the app's volumes on this machine too, which cannot be undone.")),
 					Responses: openapi.Responses{
 						"200": openapi.Empty("The app is gone and its container is stopped."),
 						"401": openapi.Unauthorized,
@@ -264,6 +277,85 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,
 						"409": openapi.TextResponse("The deploy has not finished."),
+					},
+				},
+			},
+			appPath + "/volumes": {
+				"get": {
+					OperationID: "listAppVolumes",
+					Summary:     "List an app's volumes",
+					Description: "Directories mounted into the app's container whose contents survive deploys and restarts.",
+					Tags:        []string{"Apps"},
+					Parameters:  refParams,
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The app's volumes.", openapi.Array(openapi.Ref("AppVolume"))),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+					},
+				},
+				"post": {
+					OperationID: "addAppVolume",
+					Summary:     "Give an app a volume",
+					Description: "Mounted from the app's next deploy.\n\n**A volume pins the app.** Its data is on the machine the app runs on and does not move, and two containers writing one directory is how a database or a queue corrupts itself — so an app with a volume runs as one copy on that machine, and changing its machines, its count, spread or autoscaling is refused. Each deploy stops the old container before the new one starts, so the app is briefly unavailable.\n\nRefused (409) while the app is on more than one machine, runs more than one copy, is spread or autoscales. Requires the member role.",
+					Tags:        []string{"Apps"},
+					Parameters:  refParams,
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"path": openapi.String("An absolute path inside the container, e.g. `/var/lib/rabbitmq`. Not `/`, not under `/proc`, `/sys` or `/dev`, and without a colon or a comma."),
+					}, "path")),
+					Responses: openapi.Responses{
+						"201": openapi.JSONResponse("The volume.", openapi.Ref("AppVolume")),
+						"400": openapi.TextResponse("The path is not one a volume may have."),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("The app already has a volume there, or is not one copy on one machine."),
+					},
+				},
+			},
+			appPath + "/volumes/{volumeID}": {
+				"delete": {
+					OperationID: "removeAppVolume",
+					Summary:     "Take a volume off an app",
+					Description: "The data is **kept** unless `delete_data=true`, and kept data is listed at `/volumes/orphans`. The container running now keeps the directory until the next deploy.\n\nDeleting the data of a volume on a machine other than the control plane is refused: this instance cannot delete files there.",
+					Tags:        []string{"Apps"},
+					Parameters: append(refParams,
+						openapi.PathParam("volumeID", "The volume's id."),
+						openapi.QueryParam("delete_data", "`true` deletes the volume's data too, which cannot be undone.")),
+					Responses: openapi.Responses{
+						"204": openapi.Empty("The volume is gone, and its data with it if that was asked."),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("The data is on another machine."),
+					},
+				},
+			},
+			"/volumes/orphans": {
+				"get": {
+					OperationID: "listVolumeOrphans",
+					Summary:     "List volume data kept after its volume was removed",
+					Description: "Directories on this machine that no volume names any more — kept when a volume was removed or its app deleted. They are not reattachable; delete one when it is no longer wanted.",
+					Tags:        []string{"Apps"},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The kept data.", openapi.Array(openapi.Ref("VolumeOrphan"))),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+					},
+				},
+			},
+			"/volumes/orphans/{id}": {
+				"delete": {
+					OperationID: "deleteVolumeOrphan",
+					Summary:     "Delete kept volume data",
+					Description: "Deletes the directory for good. Requires the admin role: nothing but a record on disk says whose it was.",
+					Tags:        []string{"Apps"},
+					Parameters:  []openapi.Parameter{openapi.PathParam("id", "The id from the list.")},
+					Responses: openapi.Responses{
+						"204": openapi.Empty("The data is gone."),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
 					},
 				},
 			},

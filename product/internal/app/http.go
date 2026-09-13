@@ -235,6 +235,11 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("PATCH "+appPath+"/env", auth(http.HandlerFunc(h.mergeEnv)))
 	r.Handle("GET "+appPath+"/logs", auth(http.HandlerFunc(h.logs)))
 	r.Handle("GET "+appPath+"/metrics", auth(http.HandlerFunc(h.metrics)))
+	r.Handle("GET "+appPath+"/volumes", auth(http.HandlerFunc(h.listVolumes)))
+	r.Handle("POST "+appPath+"/volumes", auth(http.HandlerFunc(h.addVolume)))
+	r.Handle("DELETE "+appPath+"/volumes/{volumeID}", auth(http.HandlerFunc(h.removeVolume)))
+	r.Handle("GET /volumes/orphans", auth(http.HandlerFunc(h.volumeOrphans)))
+	r.Handle("DELETE /volumes/orphans/{id}", auth(http.HandlerFunc(h.deleteVolumeOrphan)))
 }
 
 // refFrom builds the app reference from the request path.
@@ -280,6 +285,13 @@ func WriteError(w http.ResponseWriter, err error) {
 	// rather than a bad request: the same call is right once the app is
 	// somewhere else, or once the thing it needs exists.
 	case errors.Is(err, ErrNotPlaceable), errors.Is(err, ErrRemote):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, ErrInvalidVolumePath):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrVolumeNotFound), errors.Is(err, ErrOrphanNotFound):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, ErrVolumeExists), errors.Is(err, ErrVolumeNeedsOneCopy),
+		errors.Is(err, ErrVolumePinsApp), errors.Is(err, ErrVolumeOnWorker), errors.Is(err, ErrNoDataDir):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		project.WriteError(w, err)
@@ -457,7 +469,8 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 // delete removes an app and the container serving it. Requires the
 // member role — the same level that can deploy it.
 func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
-	if _, err := h.svc.Delete(r.Context(), user.FromContext(r.Context()), refFrom(r)); err != nil {
+	deleteData := r.URL.Query().Get("delete_volume_data") == "true"
+	if _, err := h.svc.DeleteApp(r.Context(), user.FromContext(r.Context()), refFrom(r), deleteData); err != nil {
 		WriteError(w, err)
 		return
 	}
@@ -762,6 +775,105 @@ func (h *Handler) removeDomain(w http.ResponseWriter, r *http.Request) {
 // domainIDFrom reads the domain's id, answering 404 for anything that is
 // not one: a path segment that is not a number names nothing, and that
 // is the same answer as naming something that does not exist.
+// VolumeResponse is one of an app's volumes.
+type VolumeResponse struct {
+	ID        int64     `json:"id"`
+	Path      string    `json:"path"`
+	Node      string    `json:"node"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+func toVolumeResponse(v Volume) VolumeResponse {
+	return VolumeResponse{ID: v.ID, Path: v.Path, Node: v.NodeSlug, CreatedAt: v.CreatedAt}
+}
+
+// OrphanResponse is a volume's data kept after the volume was removed.
+type OrphanResponse struct {
+	ID        int64      `json:"id"`
+	App       string     `json:"app,omitempty"`
+	Path      string     `json:"path,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+}
+
+func (h *Handler) listVolumes(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	volumes, err := h.svc.Volumes(ctx, user.FromContext(ctx), refFrom(r))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	out := make([]VolumeResponse, 0, len(volumes))
+	for _, v := range volumes {
+		out = append(out, toVolumeResponse(v))
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) addVolume(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Path string `json:"path"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	v, err := h.svc.AddVolume(ctx, user.FromContext(ctx), refFrom(r), req.Path)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, toVolumeResponse(*v))
+}
+
+func (h *Handler) removeVolume(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("volumeID"), 10, 64)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	ctx := r.Context()
+	deleteData := r.URL.Query().Get("delete_data") == "true"
+	if err := h.svc.RemoveVolume(ctx, user.FromContext(ctx), refFrom(r), id, deleteData); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) volumeOrphans(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	found, err := h.svc.VolumeOrphans(ctx, user.FromContext(ctx))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	out := make([]OrphanResponse, 0, len(found))
+	for _, o := range found {
+		resp := OrphanResponse{ID: o.ID, App: o.App, Path: o.Path}
+		if !o.CreatedAt.IsZero() {
+			at := o.CreatedAt
+			resp.CreatedAt = &at
+		}
+		out = append(out, resp)
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) deleteVolumeOrphan(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	ctx := r.Context()
+	if err := h.svc.DeleteVolumeOrphan(ctx, user.FromContext(ctx), id); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func domainIDFrom(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	id, err := strconv.ParseInt(r.PathValue("domainID"), 10, 64)
 	if err != nil {

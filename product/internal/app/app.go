@@ -94,7 +94,10 @@ type App struct {
 	// Replicas are the machines this app runs on, and what is running on
 	// each. One machine is the ordinary case and the shape is the same:
 	// a second is a row, not a different kind of app.
-	Replicas  []Replica
+	Replicas []Replica
+	// Volumes are the directories mounted into its container that
+	// outlive it. Any at all pins the app: see Volume.
+	Volumes   []Volume
 	Env       envvar.Map
 	CreatedAt time.Time
 }
