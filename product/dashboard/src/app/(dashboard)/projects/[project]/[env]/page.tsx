@@ -178,7 +178,7 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
       )}
 
       {shown && shown.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {shown.map((a) => (
             <AppCard
               key={a.reference}

@@ -10,7 +10,6 @@ import { NewObjectStoreDialog } from "@/components/new-object-store-dialog";
 import { ResourceCard, ResourceGrid } from "@/components/resource-grid";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import { UsageRings } from "@/components/usage-ring";
 import { api, type ObjectStore } from "@/lib/api";
 import { PROVIDER_ICONS } from "@/lib/credentials";
 import { message } from "@/lib/errors";
@@ -78,15 +77,9 @@ export default function StoragePage() {
                 ) : null}
               </span>
             }
-            // A linked store is somebody else's server: nothing here to read.
-            usage={
-              s.has_container && (
-                <UsageRings
-                  name={s.name}
-                  shares={usageShares(usage?.get(s.name), s.limits, machine)}
-                />
-              )
-            }
+            // A linked store is somebody else's server: nothing here to
+            // read, so its bars stay at 0 like anything not running.
+            usage={usageShares(usage?.get(s.name), s.limits, machine)}
           />
         )}
         empty={

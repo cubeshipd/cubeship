@@ -1,7 +1,6 @@
 import { CloudIcon, ContainerIcon, FileCodeIcon, GitBranchIcon } from "lucide-react";
 import { ResourceCard } from "@/components/resource-grid";
 import { StatusDot } from "@/components/status-badge";
-import { UsageRings } from "@/components/usage-ring";
 import { type App, type AppSource, hostsOf } from "@/lib/api";
 import type { Shares } from "@/lib/usage";
 
@@ -53,8 +52,8 @@ export function AppCard({ app, shares }: { app: App; shares: Shares }) {
       // worker — not a dash, which would read as a name that failed to
       // load.
       detail={<span className="font-mono text-[11px]">{hostsOf(app)}</span>}
-      status={<StatusDot value={app.status} className="mt-1 size-2" title={app.status} />}
-      usage={app.has_container && <UsageRings name={app.name} shares={shares} />}
+      status={<StatusDot value={app.status} className="size-2" title={app.status} />}
+      usage={shares}
     />
   );
 }

@@ -154,9 +154,9 @@ field that appears in the row with a Save beside it.
 
 ### What a project card carries
 
-**A picture, a name, a ring, and what its apps use.** The usage is two
-more rings, CPU and memory, adding up every app in the project as a
-share of the machine — see [monitoring.md](monitoring.md). It used to carry three more things
+**A picture, a name, a ring, and what its apps use.** The usage is a
+footer of two bars, CPU and memory, adding up every app in the project
+as a share of the machine — see [monitoring.md](monitoring.md). It used to carry three more things
 and was worse for all of them. The environments were badges, which put
 `production` on every card on the screen — a word true of everything
 says nothing about anything. The app count was a line of its own, and
@@ -193,7 +193,7 @@ chosen a picture, every one of them answers 404.
 
 ### What an app card carries
 
-The same shape as a project's — `ResourceCard`, CPU and memory rings
+The same shape as a project's — `ResourceCard`, CPU and memory bars
 included — and the same reasoning. It was two zones
 with a rule between them and a footer strip reading `cubeship registry`
 — four cards deep, that is the same two words four times, which is a

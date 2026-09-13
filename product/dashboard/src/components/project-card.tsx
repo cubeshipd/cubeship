@@ -1,7 +1,6 @@
 import { FolderTreeIcon } from "lucide-react";
 import { ResourceCard } from "@/components/resource-grid";
 import { StatusRing } from "@/components/status-ring";
-import { UsageRings } from "@/components/usage-ring";
 import type { App } from "@/lib/api";
 import { projectImageSrc } from "@/lib/api";
 import type { Shares } from "@/lib/usage";
@@ -40,7 +39,7 @@ export function ProjectCard({
           label={`${apps.length} ${apps.length === 1 ? "app" : "apps"} in ${slug}`}
         />
       }
-      usage={apps.some((a) => a.has_container) && <UsageRings name={slug} shares={shares} />}
+      usage={shares}
     />
   );
 }

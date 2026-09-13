@@ -5,6 +5,8 @@ import { type ComponentType, type ReactNode, useMemo, useState } from "react";
 import { SearchBar } from "@/components/search-bar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { UsageBar } from "@/components/usage-bar";
+import type { Shares } from "@/lib/usage";
 
 // A grid of cards with the filter DataTable carries: the same field, the
 // same gap, the same count, and the same two different sentences for an
@@ -63,7 +65,9 @@ export function ResourceGrid<T>({
           </CardContent>
         </Card>
       ) : (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        // Three columns only from xl: below it a card is too narrow for a
+        // name beside its mark and a status badge.
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {matched == null
             ? LOADING.map((k) => <LoadingCard key={k} />)
             : matched.map((row) => <div key={rowKey(row)}>{card(row)}</div>)}
@@ -75,11 +79,12 @@ export function ResourceGrid<T>({
 
 const LOADING = ["a", "b", "c"];
 
-const FRAME = "hud-frame flex flex-col gap-3 border border-border bg-card p-4";
+const FRAME = "hud-frame flex flex-col border border-border bg-card";
+const HEAD = "flex items-center gap-4 p-4";
+const FOOT = "grid grid-cols-2 gap-4 border-t border-border px-4 py-2.5";
 
-// One resource: its mark and state on top, and its name and one line
-// under them. Stacked rather than side by side, because beside a status
-// badge a name in a third of the pane truncated to four letters.
+// One resource: its mark, its name and one line beside it, its state at
+// the right edge, and what it is using along the bottom.
 export function ResourceCard({
   href,
   icon: Icon,
@@ -96,31 +101,30 @@ export function ResourceCard({
   name: string;
   detail: ReactNode;
   status: ReactNode;
-  // Bottom right, beside the name. Its row is always the height of a
-  // ring, so a card whose readings arrive late does not grow.
-  usage?: ReactNode;
+  usage: Shares;
 }) {
   return (
     <Link
       href={href}
       className={`${FRAME} group h-full transition-all hover:border-primary/40 hover:bg-secondary/40 focus-visible:border-primary focus-visible:outline-none`}
     >
-      <span className="flex items-start justify-between gap-3">
+      <span className={HEAD}>
         {mark ?? (
           <span className="flex size-11 shrink-0 items-center justify-center border border-border bg-primary/5 text-primary/70 group-hover:text-primary">
             {Icon && <Icon className="size-5" />}
           </span>
         )}
-        {status}
-      </span>
-      <span className="flex min-h-15 items-end justify-between gap-3">
-        <span className="min-w-0">
+        <span className="min-w-0 flex-1">
           <span className="block truncate font-mono text-sm font-semibold group-hover:text-primary">
             {name}
           </span>
-          <span className="block truncate text-xs text-muted-foreground">{detail}</span>
+          <span className="block h-4 truncate text-xs text-muted-foreground">{detail}</span>
         </span>
-        {usage && <span className="flex shrink-0 gap-3">{usage}</span>}
+        <span className="shrink-0">{status}</span>
+      </span>
+      <span className={`${FOOT} mt-auto`}>
+        <UsageBar label="CPU" percent={usage.cpu} />
+        <UsageBar label="Mem" percent={usage.memory} />
       </span>
     </Link>
   );
@@ -131,15 +135,21 @@ export function ResourceCard({
 function LoadingCard() {
   return (
     <div className={FRAME}>
-      <Skeleton className="size-11 shrink-0 rounded-none" />
-      {/* Each line the height of the text it stands for. */}
-      <span className="flex min-h-15 flex-col justify-end">
-        <span className="flex h-5 items-center">
-          <Skeleton className="h-3.5 w-2/3" />
+      <span className={HEAD}>
+        <Skeleton className="size-11 shrink-0 rounded-none" />
+        {/* Each line the height of the text it stands for. */}
+        <span className="min-w-0 flex-1">
+          <span className="flex h-5 items-center">
+            <Skeleton className="h-3.5 w-2/3" />
+          </span>
+          <span className="flex h-4 items-center">
+            <Skeleton className="h-3 w-1/3" />
+          </span>
         </span>
-        <span className="flex h-4 items-center">
-          <Skeleton className="h-3 w-1/3" />
-        </span>
+      </span>
+      <span className={FOOT}>
+        <UsageBar label="CPU" />
+        <UsageBar label="Mem" />
       </span>
     </div>
   );

@@ -10,7 +10,6 @@ import { NewDatastoreDialog } from "@/components/new-datastore-dialog";
 import { ResourceCard, ResourceGrid } from "@/components/resource-grid";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import { UsageRings } from "@/components/usage-ring";
 import { api, type Datastore, datastoreLabel } from "@/lib/api";
 import { message } from "@/lib/errors";
 import { useOpenOnArrival } from "@/lib/open-on-arrival";
@@ -69,14 +68,7 @@ export default function DatabasesPage() {
             name={d.name}
             detail={`${datastoreLabel(d.engine)} ${d.version}`}
             status={<StatusBadge value={d.status} />}
-            usage={
-              d.has_container && (
-                <UsageRings
-                  name={d.name}
-                  shares={usageShares(usage?.get(d.name), d.limits, machine)}
-                />
-              )
-            }
+            usage={usageShares(usage?.get(d.name), d.limits, machine)}
           />
         )}
         empty={
