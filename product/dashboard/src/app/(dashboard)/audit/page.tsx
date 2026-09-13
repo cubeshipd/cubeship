@@ -9,7 +9,7 @@ import { ErrorAlert } from "@/components/error-alert";
 import { SearchBar } from "@/components/search-bar";
 import { SearchableSelect } from "@/components/searchable-select";
 import { useSession } from "@/components/session-context";
-import { type AuditEvent, type AuditPage, api, type InstanceUser } from "@/lib/api";
+import { type AuditEvent, type AuditPage, api, avatarSrc, type InstanceUser } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // Who changed what, and through which door.
@@ -50,7 +50,7 @@ export default function AuditLog() {
   const [next, setNext] = useState<number | undefined>();
   const [older, setOlder] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [people, setPeople] = useState<string[]>([]);
+  const [people, setPeople] = useState<InstanceUser[]>([]);
 
   const [who, setWho] = useState("");
   const [via, setVia] = useState("");
@@ -97,7 +97,7 @@ export default function AuditLog() {
     if (me.role !== "admin") return;
     api
       .get<{ users: InstanceUser[] }>("/users")
-      .then((r) => setPeople(r.users.map((u) => u.username)))
+      .then((r) => setPeople(r.users))
       .catch(() => {});
   }, [me.role]);
 
@@ -123,14 +123,30 @@ export default function AuditLog() {
       id: "who",
       header: "Who",
       width: 18,
-      cell: (e) => (
-        <span className="flex min-w-0 flex-col">
-          <span className="truncate text-xs">{e.username}</span>
-          <span className="truncate font-mono text-[11px] text-subtle-foreground">
-            {e.key_name ? `${e.via} · ${e.key_name}` : e.via}
+      cell: (e) => {
+        const person = people.find((p) => p.username === e.username);
+        return (
+          <span className="flex min-w-0 items-center gap-2.5">
+            {/* The default face until the accounts arrive, and for an
+                account deleted since, faded: the same size either way. */}
+            {/* biome-ignore lint/performance/noImgElement: a static file in this image's own public directory */}
+            <img
+              src={avatarSrc(person?.avatar ?? "cyan", "small")}
+              alt=""
+              className={cn(
+                "size-6 shrink-0 border object-cover",
+                person ? "border-primary/40" : "border-border opacity-40 grayscale",
+              )}
+            />
+            <span className="flex min-w-0 flex-col">
+              <span className="truncate text-xs">{e.username}</span>
+              <span className="truncate font-mono text-[11px] text-subtle-foreground">
+                {e.key_name ? `${e.via} · ${e.key_name}` : e.via}
+              </span>
+            </span>
           </span>
-        </span>
-      ),
+        );
+      },
     },
     {
       id: "what",
@@ -182,7 +198,7 @@ export default function AuditLog() {
           onChange={setWho}
           choices={[
             { value: "", label: "Everyone" },
-            ...people.map((p) => ({ value: p, label: p })),
+            ...people.map((p) => ({ value: p.username, label: p.username })),
           ]}
         />
         <SearchableSelect value={via} onChange={setVia} choices={VIA} />
