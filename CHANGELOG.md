@@ -6,6 +6,32 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.7.0-rc.10 — 2026-09-13
+
+*Prerelease.*
+
+A template's domain can be set through a DNS provider, and its project picked from the ones there are.
+
+### Added
+
+**A template's domain through a DNS provider.** A domain question in the
+install form offers what adding a domain to an app does: a connected DNS
+provider, a zone and a subdomain — the `A` record pointing at this
+instance is written before the install starts — a name under the
+instance's own domain, or one typed by hand.
+
+**Install into a project that exists.** The form lists the instance's
+projects beside **New project**, and inside an existing one its
+environments beside a new one, rather than asking for names to type.
+
+### Fixed
+
+**The release notes open at the newest release.** They opened scrolled to
+the first link in an older release's notes.
+
+**The install form has no gaps.** Fields are laid out so none sits alone
+beside an empty space, and a domain question is spaced like the rest.
+
 ## 0.7.0-rc.9 — 2026-09-13
 
 *Prerelease.*
