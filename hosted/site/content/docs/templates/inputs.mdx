@@ -23,6 +23,12 @@ Nothing further. This is the only way a template can name a host — see
 installer supplies a hostname it controls, and `${input.<key>}` is the
 only thing a `domains.host` may ever equal.
 
+On an instance's dashboard the installer picks the name the way they add
+one to an app: a connected DNS provider, a zone and a subdomain — and the
+`A` record pointing at the instance is written before the install starts —
+or a name under the instance's own domain, or one typed by hand for DNS
+kept elsewhere.
+
 ```yaml
 - key: domain
   type: domain

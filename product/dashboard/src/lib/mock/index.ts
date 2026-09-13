@@ -662,6 +662,7 @@ const routes: [string, string, Handler][] = [
   ["GET", "/dns/:id/status", () => ({ state: "available" })],
   ["GET", "/dns/:id/zones", () => zones],
   ["GET", "/dns/:id/records", () => records],
+  ["PUT", "/dns/:id/records", () => ({})],
   ["GET", "/certificates", () => db.certificates],
   ["GET", "/firewall", () => db.firewall],
   [

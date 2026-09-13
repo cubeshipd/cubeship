@@ -7,10 +7,12 @@ import {
   DatabaseIcon,
   ExternalLinkIcon,
   HardDriveIcon,
+  PlusIcon,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ReactNode, use, useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
+import { DomainInput, type PendingRecord, writeRecord } from "@/components/domain-input";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
@@ -23,7 +25,9 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   api,
+  type Environment,
   type ObjectStore,
+  type Project,
   type Settings,
   type TemplateDetail,
   type TemplateInput,
@@ -34,6 +38,9 @@ import {
 } from "@/lib/api";
 import { message } from "@/lib/errors";
 import { handOverSecrets } from "@/lib/install-secrets";
+
+// NEW is the choice of a project or environment that does not exist yet.
+const NEW = "__new__";
 
 // One template: what it creates, and the form that installs it.
 //
@@ -199,10 +206,34 @@ function InstallForm({
   blocked: boolean;
 }) {
   const router = useRouter();
-  const [project, setProject] = useState(manifest.project);
-  const [environment, setEnvironment] = useState(manifest.environment);
+  // Where the apps go: a project that exists, picked, or a new one, named —
+  // and inside an existing one, an environment it has or a new one.
+  const [projectPick, setProjectPick] = useState(NEW);
+  const [newProject, setNewProject] = useState(manifest.project);
+  const [envPick, setEnvPick] = useState(NEW);
+  const [newEnvironment, setNewEnvironment] = useState(manifest.environment);
+  const projects = useQuery({
+    queryKey: ["projects"],
+    queryFn: () => api.get<Project[]>("/projects"),
+  });
+  const environments = useQuery({
+    queryKey: ["projects", projectPick, "environments"],
+    queryFn: () => api.get<Environment[]>(`/projects/${projectPick}/environments`),
+    enabled: projectPick !== NEW,
+  });
+  // Picking a project lands on the template's environment when it has one.
+  useEffect(() => {
+    if (!environments.data) return;
+    setEnvPick(
+      environments.data.some((e) => e.slug === manifest.environment) ? manifest.environment : NEW,
+    );
+  }, [environments.data, manifest.environment]);
+  const project = projectPick === NEW ? newProject.trim() : projectPick;
+  const environment = projectPick === NEW || envPick === NEW ? newEnvironment.trim() : envPick;
   const [names, setNames] = useState<Record<string, string>>({});
   const [inputs, setInputs] = useState<Record<string, string>>({});
+  // The DNS records a domain input chose to have written, by input key.
+  const [records, setRecords] = useState<Record<string, PendingRecord>>({});
   const [error, setError] = useState<string | null>(null);
 
   const settings = useQuery({
@@ -266,6 +297,19 @@ function InstallForm({
           .map(([id, value]) => [id.slice(kind.length + 1), value.trim()]),
       );
     try {
+      // The records first, the way adding an app's domain does it: a name
+      // the install then routes that resolves nowhere is an app answering
+      // at nothing.
+      const ip = settings.data?.public_ip ?? "";
+      for (const [key, record] of Object.entries(records)) {
+        if (inputs[key] !== record.host) continue;
+        if (!ip) {
+          throw new Error(
+            "This instance does not know its own public address, so no DNS record can point at it. Set it under Settings.",
+          );
+        }
+        await writeRecord(record, ip);
+      }
       const started = await api.post<TemplateInstallStarted>(
         `/templates/${template.owner}/${template.name}/installs`,
         {
@@ -292,30 +336,90 @@ function InstallForm({
       <Card>
         <CardContent className="space-y-6">
           <div className="grid gap-4 sm:grid-cols-2">
-            <TextField
+            <SearchableSelect
               label="Project"
-              value={project}
-              onChange={(e) => setProject(e.target.value)}
+              value={projectPick}
+              busy={projects.isLoading}
+              onChange={(v) => {
+                setProjectPick(v);
+                setEnvPick(NEW);
+              }}
+              choices={[
+                {
+                  value: NEW,
+                  label: "New project",
+                  icon: PlusIcon,
+                  hint: "Created by the install",
+                },
+                ...(projects.data ?? []).map((p) => ({ value: p.slug, label: p.slug })),
+              ]}
             />
-            <TextField
-              label="Environment"
-              value={environment}
-              onChange={(e) => setEnvironment(e.target.value)}
-            />
+            {projectPick === NEW ? (
+              <TextField
+                label="Project name"
+                spellCheck={false}
+                value={newProject}
+                onChange={(e) => setNewProject(e.target.value)}
+              />
+            ) : (
+              <SearchableSelect
+                label="Environment"
+                value={envPick}
+                busy={environments.isLoading}
+                onChange={setEnvPick}
+                choices={[
+                  { value: NEW, label: "New environment", icon: PlusIcon },
+                  ...(environments.data ?? []).map((e) => ({ value: e.slug, label: e.slug })),
+                ]}
+              />
+            )}
+            {(projectPick === NEW || envPick === NEW) && (
+              <TextField
+                label={projectPick === NEW ? "Environment" : "Environment name"}
+                spellCheck={false}
+                value={newEnvironment}
+                onChange={(e) => setNewEnvironment(e.target.value)}
+              />
+            )}
           </div>
 
           {manifest.inputs.length > 0 && (
             <div className="grid gap-4 sm:grid-cols-2">
-              {manifest.inputs.map((input) => (
-                <InputField
-                  key={input.key}
-                  input={input}
-                  value={inputs[input.key] ?? ""}
-                  onChange={(value) => setInputs((current) => ({ ...current, [input.key]: value }))}
-                  stores={stores.data ?? []}
-                  address={settings.data?.public_ip}
-                />
-              ))}
+              {manifest.inputs.map((input) =>
+                input.type === "domain" ? (
+                  <DomainInput
+                    key={input.key}
+                    label={input.required ? input.label : `${input.label} (optional)`}
+                    hint={input.help}
+                    value={inputs[input.key] ?? ""}
+                    onChange={(value) =>
+                      setInputs((current) => ({ ...current, [input.key]: value }))
+                    }
+                    onRecord={(record) =>
+                      setRecords((current) => {
+                        const next = { ...current };
+                        if (record) next[input.key] = record;
+                        else delete next[input.key];
+                        return next;
+                      })
+                    }
+                    suggested={suggested[input.key]}
+                    settings={settings.data}
+                    address={settings.data?.public_ip}
+                  />
+                ) : (
+                  <InputField
+                    key={input.key}
+                    input={input}
+                    value={inputs[input.key] ?? ""}
+                    onChange={(value) =>
+                      setInputs((current) => ({ ...current, [input.key]: value }))
+                    }
+                    stores={stores.data ?? []}
+                    address={settings.data?.public_ip}
+                  />
+                ),
+              )}
             </div>
           )}
 

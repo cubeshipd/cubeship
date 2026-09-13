@@ -305,6 +305,13 @@ existing one keeps the picture somebody chose — and best effort: a
 project with no picture wears a mark, which is no reason to undo an
 install.
 
+**A domain input is chosen the way an app's domain is.** On the
+dashboard it offers a connected DNS provider, a zone and a subdomain, the
+instance's own domain, or a name typed by hand; with a provider, the `A`
+record pointing at the instance is written before the install is started,
+as adding a domain to an app does. The daemon still only receives the
+hostname.
+
 **Everything is checked before anything exists.** The project and
 environment are taken from the request or the template, and created only
 when missing. Every database, store and app name, every domain and every
