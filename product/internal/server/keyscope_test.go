@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"cubeship/internal/audit"
 	"cubeship/internal/server"
 	"cubeship/internal/server/servertest"
 	"cubeship/internal/user"
@@ -32,6 +33,32 @@ func TestEveryRouteTheKeyPolicyNamesExists(t *testing.T) {
 			if !served[pattern] {
 				t.Errorf("the key policy names %s, which is not a route", pattern)
 			}
+		}
+	}
+}
+
+// Every change the API can record reads as a sentence, and so does every
+// secret a key can be refused.
+func TestEveryRecordedRouteHasASentence(t *testing.T) {
+	f := servertest.New(t)
+	// Not behind authentication, so never recorded.
+	unrecorded := map[string]bool{
+		"POST /setup": true, "POST /auth/login": true, "POST /mcp": true,
+		"POST /hooks/github": true, "POST /hooks/registry": true,
+		"POST /nodes/agent/reconcile": true, "POST /nodes/agent/results/{id}": true,
+	}
+	for _, p := range append(f.Server.Patterns(), f.Server.InternalPatterns()...) {
+		method, _ := strings.CutSuffix(strings.SplitN(p, " ", 2)[0], "")
+		if method == "GET" || method == "HEAD" || !strings.Contains(p, " ") || unrecorded[p] {
+			continue
+		}
+		if !audit.Describes(p) {
+			t.Errorf("route %s has no sentence in audit's routes", p)
+		}
+	}
+	for p := range server.SecretRoutes {
+		if !audit.Describes(p) {
+			t.Errorf("secret route %s has no sentence in audit's routes", p)
 		}
 	}
 }

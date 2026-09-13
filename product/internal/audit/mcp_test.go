@@ -9,8 +9,8 @@ import (
 // down.** The log is read by every admin, and a variable's value in it
 // would be a secret handed to all of them.
 func TestATargetKeepsNamesAndDropsValues(t *testing.T) {
-	got := targetOf([]byte(`{"app":"web/production/api","name":"api","vars":{"TOKEN":"s3cret"},"value":"s3cret","password":"hunter2","api_key":"k","tag":"v1","replicas":2}`))
-	for _, want := range []string{"app=web/production/api", "name=api", "tag=v1", "replicas=2"} {
+	got := targetOf([]byte(`{"app":"web/production/api","name":"api","environment":"staging","set":{"TOKEN":"s3cret"},"inputs":{"pw":"s3cret"},"password":"hunter2","api_key":"k","tag":"v1","volume_id":2}`))
+	for _, want := range []string{"app=web/production/api", "name=api", "environment=staging", "tag=v1", "volume_id=2"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("target %q lacks %q", got, want)
 		}

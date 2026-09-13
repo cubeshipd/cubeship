@@ -94,11 +94,18 @@ func (s *Service) Middleware(caller *user.User, ip string, classify Classify) mc
 	}
 }
 
-// secretish are argument names whose values are never written down.
-var secretish = []string{"value", "var", "env", "set", "unset", "password", "secret", "token", "key", "content", "body", "data", "answer", "input"}
+// naming are the arguments kept from a tool call: the ones that say what
+// it was about. A list of what to keep rather than of what to drop, so
+// an argument added later that carries a value somebody set is not
+// written down by default.
+var naming = map[string]bool{
+	"app": true, "reference": true, "project": true, "environment": true, "name": true,
+	"slug": true, "datastore": true, "store": true, "bucket": true, "id": true,
+	"volume_id": true, "owner": true, "repo": true, "release": true, "tag": true,
+	"path": true, "engine": true, "access": true, "server": true,
+}
 
-// targetOf keeps the arguments that name something — an app, a project,
-// an id — and drops anything that could carry a value somebody set.
+// targetOf keeps the arguments that name something, as `key=value`.
 func targetOf(raw json.RawMessage) string {
 	var args map[string]any
 	if json.Unmarshal(raw, &args) != nil {
@@ -106,16 +113,16 @@ func targetOf(raw json.RawMessage) string {
 	}
 	var parts []string
 	for name, v := range args {
-		lower := strings.ToLower(name)
-		if lower == "name" || !containsAny(lower, secretish) {
-			switch v := v.(type) {
-			case string:
-				if v != "" && len(v) <= 120 {
-					parts = append(parts, fmt.Sprintf("%s=%s", name, v))
-				}
-			case float64, bool:
-				parts = append(parts, fmt.Sprintf("%s=%v", name, v))
+		if !naming[name] {
+			continue
+		}
+		switch v := v.(type) {
+		case string:
+			if v != "" && len(v) <= 120 {
+				parts = append(parts, fmt.Sprintf("%s=%s", name, v))
 			}
+		case float64:
+			parts = append(parts, fmt.Sprintf("%s=%v", name, v))
 		}
 	}
 	sort.Strings(parts)
@@ -124,15 +131,6 @@ func targetOf(raw json.RawMessage) string {
 		out = out[:maxDetail]
 	}
 	return out
-}
-
-func containsAny(s string, subs []string) bool {
-	for _, sub := range subs {
-		if strings.Contains(s, sub) {
-			return true
-		}
-	}
-	return false
 }
 
 func errorText(r *mcp.CallToolResult) string {

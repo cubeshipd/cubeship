@@ -707,6 +707,7 @@ type AuditEvent struct {
 	Username string    `json:"username"`
 	Via      string    `json:"via"`
 	KeyName  string    `json:"key_name,omitempty"`
+	Summary  string    `json:"summary"`
 	Action   string    `json:"action"`
 	Target   string    `json:"target,omitempty"`
 	Outcome  string    `json:"outcome"`

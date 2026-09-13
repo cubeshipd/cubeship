@@ -73,12 +73,10 @@ export default function AuditLog() {
       sortBy: (e) => e.action,
       cell: (e) => (
         <span className="flex min-w-0 flex-col">
-          <span className="break-all font-mono text-xs">{e.action}</span>
-          {e.target && (
-            <span className="break-all font-mono text-[11px] text-muted-foreground">
-              {e.target}
-            </span>
-          )}
+          <span className="break-words text-sm">{e.summary}</span>
+          {/* The route or the tool stays, smaller: it is what to search
+              the API reference or the logs for. */}
+          <span className="break-all font-mono text-[11px] text-subtle-foreground">{e.action}</span>
         </span>
       ),
     },
@@ -118,7 +116,7 @@ export default function AuditLog() {
         loadingRows={8}
         search={{
           placeholder: "Filter by person, key, action or target",
-          by: (e) => [e.username, e.key_name ?? "", e.action, e.target ?? "", e.outcome, e.via],
+          by: (e) => [e.username, e.key_name ?? "", e.summary, e.action, e.outcome, e.via],
         }}
         empty="Nothing yet. Every change made on this instance, and every refused attempt, lands here."
       />

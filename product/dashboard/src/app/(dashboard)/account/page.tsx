@@ -9,15 +9,15 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailTabs } from "@/components/header-rail";
-import { OptionCards } from "@/components/option-cards";
+import { MultiSelect } from "@/components/multi-select";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
+import { SearchableSelect } from "@/components/searchable-select";
 import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +35,11 @@ const ACCESS_LABEL: Record<KeyAccess, string> = {
   read: "Read only",
   deploy: "Deploy",
   full: "Full",
+};
+
+const ACCESS_HINT: Record<Exclude<KeyAccess, "full">, string> = {
+  read: "Lists, logs and status. Never a variable, a credential, a download or a change.",
+  deploy: "What a member does: create, configure and deploy apps.",
 };
 
 // The screen for everything that is **yours** rather than the
@@ -454,7 +459,7 @@ function NewKeyDialog({
   const me = useSession();
   const [name, setName] = useState("");
   const [access, setAccess] = useState<KeyAccess>("full");
-  const [scope, setScope] = useState<"all" | "some">("all");
+  // None picked is every project.
   const [picked, setPicked] = useState<string[]>([]);
   const [projects, setProjects] = useState<string[] | null>(null);
   const [busy, setBusy] = useState(false);
@@ -464,7 +469,6 @@ function NewKeyDialog({
     if (!open) return;
     setName("");
     setAccess("full");
-    setScope("all");
     setPicked([]);
     setError(null);
     api
@@ -481,7 +485,7 @@ function NewKeyDialog({
       const created = await api.post<{ api_key: string }>("/users/me/api-keys", {
         name,
         access,
-        projects: scope === "some" ? picked : undefined,
+        projects: picked.length > 0 ? picked : undefined,
       });
       onIssued(created.api_key);
       onOpenChange(false);
@@ -493,7 +497,7 @@ function NewKeyDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="sm:max-w-lg">
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>New API key</DialogTitle>
@@ -509,69 +513,37 @@ function NewKeyDialog({
               placeholder="laptop"
               hint="For you, so a key you no longer recognise is one you can revoke. Name it after the machine or the tool holding it."
             />
-            <OptionCards
+            <SearchableSelect
               label="Access"
               value={access}
-              onChange={setAccess}
-              className="sm:grid-cols-3"
-              options={[
-                {
-                  value: "read",
-                  title: ACCESS_LABEL.read,
-                  body: "Lists, logs and status. Never a variable, a credential or a download.",
-                },
-                {
-                  value: "deploy",
-                  title: ACCESS_LABEL.deploy,
-                  body: "What a member does: create, configure and deploy apps.",
-                },
-                {
-                  value: "full",
-                  title: ACCESS_LABEL.full,
-                  body: `Everything you can do, as ${me.role}.`,
-                },
-              ]}
-              hint="An agent holding the key is not offered anything outside it, over MCP or the API."
+              onChange={(v) => setAccess(v as KeyAccess)}
+              choices={(["read", "deploy", "full"] as const).map((a) => ({
+                value: a,
+                label: ACCESS_LABEL[a],
+              }))}
+              hint={
+                access === "full" ? `Everything you can do, as ${me.role}.` : ACCESS_HINT[access]
+              }
             />
-            <OptionCards
+            <MultiSelect
               label="Projects"
-              value={scope}
-              onChange={setScope}
-              options={[
-                { value: "all", title: "Every project", body: "And what belongs to the instance." },
-                {
-                  value: "some",
-                  title: "Only these projects",
-                  body: "The others, and the instance's databases and servers, are not there.",
-                },
-              ]}
+              none="Every project"
+              values={picked}
+              onChange={setPicked}
+              choices={(projects ?? []).map((slug) => ({ value: slug, label: slug }))}
+              empty="No projects yet."
+              hint={
+                picked.length === 0
+                  ? "And what belongs to the instance: databases, object storage, servers."
+                  : "The other projects, and what belongs to the instance, are not there."
+              }
             />
-            {scope === "some" && (
-              <div className="grid gap-2 sm:grid-cols-3">
-                {(projects ?? []).map((slug) => (
-                  // biome-ignore lint/a11y/noLabelWithoutControl: the checkbox inside is the control
-                  <label key={slug} className="flex items-center gap-2 text-sm">
-                    <Checkbox
-                      checked={picked.includes(slug)}
-                      onCheckedChange={(on) =>
-                        setPicked((p) => (on ? [...p, slug] : p.filter((x) => x !== slug)))
-                      }
-                    />
-                    <span className="truncate font-mono text-xs">{slug}</span>
-                  </label>
-                ))}
-              </div>
-            )}
           </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <ActionButton
-              type="submit"
-              busy={busy}
-              disabled={!name.trim() || (scope === "some" && picked.length === 0)}
-            >
+            <ActionButton type="submit" busy={busy} disabled={!name.trim()}>
               Create
             </ActionButton>
           </DialogFooter>

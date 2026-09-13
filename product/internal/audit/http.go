@@ -19,12 +19,14 @@ type Response struct {
 	Username string    `json:"username"`
 	Via      Via       `json:"via"`
 	KeyName  string    `json:"key_name,omitempty"`
-	Action   string    `json:"action"`
-	Target   string    `json:"target,omitempty"`
-	Outcome  Outcome   `json:"outcome"`
-	Status   int       `json:"status,omitempty"`
-	Detail   string    `json:"detail,omitempty"`
-	IP       string    `json:"ip,omitempty"`
+	// Summary is the event in a sentence: "Deployed web/production/api".
+	Summary string  `json:"summary"`
+	Action  string  `json:"action"`
+	Target  string  `json:"target,omitempty"`
+	Outcome Outcome `json:"outcome"`
+	Status  int     `json:"status,omitempty"`
+	Detail  string  `json:"detail,omitempty"`
+	IP      string  `json:"ip,omitempty"`
 }
 
 // Page is one page of the log. Next is the before to ask for the page
@@ -39,7 +41,7 @@ func toPage(events []*Event, limit int) Page {
 	for _, e := range events {
 		p.Events = append(p.Events, Response{
 			ID: e.ID, At: e.At, Username: e.Username, Via: e.Via, KeyName: e.KeyName,
-			Action: e.Action, Target: e.Target, Outcome: e.Outcome, Status: e.Status,
+			Summary: Summary(*e), Action: e.Action, Target: e.Target, Outcome: e.Outcome, Status: e.Status,
 			Detail: e.Detail, IP: e.IP,
 		})
 	}

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"testing"
 
+	"cubeship/internal/audit"
 	"cubeship/internal/user"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -56,9 +57,12 @@ func TestEveryMCPToolIsClassified(t *testing.T) {
 			t.Errorf("tool %s is not in toolRules: say whether it reads, reads a secret or changes something, and whether a project key keeps it", name)
 		}
 	}
-	for name := range toolRules {
+	for name, rule := range toolRules {
 		if !registered[name] {
 			t.Errorf("toolRules names %s, which no module registers", name)
+		}
+		if rule.kind != toolRead && !audit.Describes("mcp "+name) {
+			t.Errorf("tool %s has no sentence in audit's tools, so the log would show its name", name)
 		}
 	}
 }

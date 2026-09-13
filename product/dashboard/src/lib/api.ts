@@ -643,6 +643,8 @@ export type AuditEvent = {
   username: string;
   via: "dashboard" | "api" | "mcp";
   key_name?: string;
+  /** The event in a sentence: "Deployed web/production/api". */
+  summary: string;
   action: string;
   target?: string;
   outcome: "ok" | "refused" | "failed";
