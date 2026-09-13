@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { GitHubIcon } from "@/components/icons";
 import { Comments } from "@/components/templates/comments";
 import { LikeButton } from "@/components/templates/like-button";
 import { Preview } from "@/components/templates/preview";
@@ -28,6 +29,13 @@ export async function generateMetadata(props: PageProps<"/templates/[slug]">): P
       images: [row.template.imageKey ? `/i/${row.template.imageKey}` : `/og/templates/${slug}`],
     },
   };
+}
+
+// GitHub serves the avatar at whatever size is asked for; the default is 460px.
+function avatarAt(url: string, size: number): string {
+  const avatar = new URL(url);
+  avatar.searchParams.set("s", String(size));
+  return avatar.toString();
 }
 
 export default async function TemplateDetailPage(props: PageProps<"/templates/[slug]">) {
@@ -61,12 +69,33 @@ export default async function TemplateDetailPage(props: PageProps<"/templates/[s
           {template.name}
         </h1>
         <p className="mt-2 max-w-2xl text-fd-muted-foreground">{template.summary}</p>
-        <p className="mt-2 text-fd-muted-foreground text-sm">
-          by{" "}
-          <Link href={`/u/${author.login}`} className="text-primary hover:text-glow">
-            {author.login}
-          </Link>
-        </p>
+        <div className="mt-3 flex items-center gap-2 text-fd-muted-foreground text-sm">
+          {author.avatarUrl ? (
+            // biome-ignore lint/performance/noImgElement: a GitHub avatar, not one of our own assets.
+            <img
+              src={avatarAt(author.avatarUrl, 48)}
+              alt=""
+              width={24}
+              height={24}
+              className="size-6 border border-fd-border"
+            />
+          ) : null}
+          <span>
+            by{" "}
+            <Link href={`/u/${author.login}`} className="text-primary hover:text-glow">
+              {author.login}
+            </Link>
+          </span>
+          <a
+            href={`https://github.com/${author.login}`}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`${author.login} on GitHub`}
+            className="transition-colors hover:text-primary"
+          >
+            <GitHubIcon className="size-4" />
+          </a>
+        </div>
         <div className="mt-4 flex items-center gap-4">
           <LikeButton slug={slug} initialCount={template.likesCount} initialLiked={liked} />
           <ReportButton subjectType="template" subjectId={template.id} />
