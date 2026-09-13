@@ -34,6 +34,7 @@ const iptablesImage = "alpine:3.21"
 // after.rules, and what the stanza jumps to.
 const ufwChains = `*filter
 :ufw-user-forward - [0:0]
+:ufw-after-input - [0:0]
 COMMIT
 `
 

@@ -267,6 +267,29 @@ would be adopting Docker for somebody who did not ask. Adopting renders
 the same set, and writes no ufw rule for those ports, since that would
 be the inside-port rule again.
 
+**A container reaching this machine's own address goes through INPUT.**
+Docker's DNAT for a published port is written `! -i br-<network>`: traffic
+from the container's own bridge is skipped and left to `docker-proxy`,
+listening on the host. An app calling another by its public domain lands
+there, and on a host with `deny (incoming)` and only `ALLOW FWD` rules
+for 80 and 443 it was dropped without a word — the caller hung until it
+timed out, while the same request from the host itself answered 200. It
+was found through the template catalog, which cubeship.dev serves from
+the instance that reads it, and it applied to every app.
+
+The stanza now also accepts, in `ufw-after-input`, TCP from Docker's
+bridges (`br-+`, `docker0`, `docker_gwbridge`) to the ports this instance
+publishes: 80, 443 and every exposed one, in rules of at most fifteen
+ports because that is what `multiport` carries. Nothing else on the host
+is opened to containers — SSH stays closed to them. The lines are
+appended to the chain rather than declaring it: in `iptables-restore`, a
+chain declaration flushes that chain, and ufw's own `after.rules` has
+already put lines in this one. `SyncPublished` rewrites the block at
+start, so an adopted host picks this up on upgrade with nothing to do.
+
+`platform/selfdial` predates this and stays: it reaches the catalog on a
+host where ufw is on without the stanza, where nothing above is written.
+
 The file is replaced by building a copy beside it and moving it over, so
 a failure at any step leaves one whole file, the old or the new, and
 never a file without a block. The set is read inside the lock that

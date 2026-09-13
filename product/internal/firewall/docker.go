@@ -41,6 +41,11 @@ import (
 //     scoped to SYN for TCP so that established traffic is untouched.
 //   - RETURN at the end, so nothing this stanza did not mean to catch is
 //     affected.
+//   - ACCEPT in ufw-after-input, from Docker's bridges, on the published
+//     ports. A container calling this machine's own public address — an
+//     app reaching another by its domain — is skipped by Docker's DNAT
+//     and handed to docker-proxy through INPUT, which "deny (incoming)"
+//     otherwise drops. See hairpinRules.
 //
 // The shape is the well-trodden one (`ufw-docker` and the Docker
 // documentation's own note about UFW), which matters: this is the kind
@@ -106,10 +111,34 @@ const dockerBlockTail = `
 
 -A ufw-docker-logging-deny -m limit --limit 3/min --limit-burst 10 -j LOG --log-prefix "[UFW DOCKER BLOCK] "
 -A ufw-docker-logging-deny -j DROP
+`
 
+// dockerBlockHairpin introduces the INPUT lines, which let a container
+// reach a port this machine publishes by the machine's own address.
+const dockerBlockHairpin = `
+# A container reaching this machine's own public address — an app calling
+# another by its domain — is not DNATed by Docker, which skips traffic
+# from the container's own bridge and leaves it to docker-proxy on the
+# host. That lands in INPUT, where "deny (incoming)" drops it and the
+# caller hangs. Accepted from Docker's bridges, on the published ports
+# only. Appended to ufw-after-input rather than declared: declaring the
+# chain here would flush the lines ufw's own after.rules put in it.
+`
+
+const dockerBlockEnd = `
 COMMIT
 ` + dockerEndMarker + `
 `
+
+// hairpinInterfaces are Docker's bridges: user-defined networks, the
+// default one, and the gateway an overlay network leaves the machine by.
+var hairpinInterfaces = []string{"br-+", "docker0", "docker_gwbridge"}
+
+// hairpinPorts are always published: Traefik's two.
+var hairpinPorts = []int{80, 443}
+
+// multiportMax is how many ports one -m multiport rule may name.
+const multiportMax = 15
 
 // exposedRulePrefix and exposedRuleSuffix surround the port in each line
 // renderDockerBlock writes, and are what Status reads those lines back by.
@@ -151,7 +180,38 @@ func renderDockerBlock(exposed []int) (string, error) {
 		}
 	}
 	b.WriteString(dockerBlockTail)
+	b.WriteString(dockerBlockHairpin)
+	for _, line := range hairpinRules(ports) {
+		b.WriteString(line + "\n")
+	}
+	b.WriteString(dockerBlockEnd)
 	return b.String(), nil
+}
+
+// hairpinRules accepts, on each Docker bridge, TCP to Traefik's ports and
+// to every exposed one, in groups multiport can carry.
+func hairpinRules(exposed []int) []string {
+	ports := slices.Concat(hairpinPorts, exposed)
+	slices.Sort(ports)
+	ports = slices.Compact(ports)
+
+	var groups []string
+	for start := 0; start < len(ports); start += multiportMax {
+		end := min(start+multiportMax, len(ports))
+		names := make([]string, 0, end-start)
+		for _, p := range ports[start:end] {
+			names = append(names, strconv.Itoa(p))
+		}
+		groups = append(groups, strings.Join(names, ","))
+	}
+
+	var lines []string
+	for _, iface := range hairpinInterfaces {
+		for _, group := range groups {
+			lines = append(lines, "-A ufw-after-input -i "+iface+" -p tcp -m multiport --dports "+group+" -j ACCEPT")
+		}
+	}
+	return lines
 }
 
 // parseExposedRules reads the ports back out of the lines renderDockerBlock
