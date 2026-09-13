@@ -19,6 +19,8 @@
   --color-subtle-foreground: #4e5c6b;
   --color-border: #182430;
   --color-border-strong: #263644;
+  --color-input: #1d2b38;
+  --color-ring: #2de2e6;
   --color-primary: #2de2e6;
   --color-primary-foreground: #03151a;
   --color-magenta: #ff2e88;
@@ -164,4 +166,33 @@ body {
    glow. The style attribute is the one hook the component leaves. */
 [style*="--callout-color"] {
   box-shadow: none;
+}
+
+/* Fields, copied from web/src/app/globals.css so a field on the site is the
+   dashboard's field: mono, the page's own ground, a border that brightens on
+   hover, and focus as a light coming on rather than a fatter outline.
+   Unlayered, so no per-usage utility can undo them. Change one, change both. */
+[data-slot="input"],
+[data-slot="textarea"],
+[data-slot="select-trigger"] {
+  font-family: var(--font-mono);
+  background-color: var(--color-background);
+  border-color: var(--color-input);
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+[data-slot="input"]:hover:not(:focus-visible),
+[data-slot="textarea"]:hover:not(:focus-visible),
+[data-slot="select-trigger"]:hover:not(:focus-visible) {
+  border-color: var(--color-border-strong);
+}
+
+[data-slot="input"]:focus-visible,
+[data-slot="textarea"]:focus-visible,
+[data-slot="select-trigger"]:focus-visible {
+  box-shadow:
+    0 0 0 1px var(--color-ring),
+    0 0 16px -2px color-mix(in srgb, var(--color-ring) 70%, transparent);
 }

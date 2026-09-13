@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
+import { Input } from "@/components/ui/field";
 
 const SORTS = [
   { value: "recent", label: "Newest" },
@@ -51,11 +52,11 @@ export function Filters({
           }}
           className="min-w-0 flex-1"
         >
-          <input
+          <Input
             value={q}
             onChange={(event) => setQ(event.target.value)}
             placeholder="Search templates"
-            className="w-full max-w-sm border border-border bg-transparent px-3 py-2 text-foreground text-sm outline-none focus:border-primary"
+            className="max-w-sm"
           />
         </form>
         <div className="flex border border-border font-mono text-xs uppercase tracking-wide">

@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { Select, Textarea } from "@/components/ui/field";
 
 const REASONS = ["spam", "malware", "abuse", "other"] as const;
 
@@ -59,23 +60,22 @@ export function ReportButton({
 
   return (
     <div className="hud-frame border border-fd-border p-3">
-      <select
+      <Select
         value={reason}
         onChange={(event) => setReason(event.target.value as (typeof REASONS)[number])}
-        className="border border-fd-border bg-fd-background px-2 py-1 text-fd-foreground text-sm"
       >
         {REASONS.map((r) => (
           <option key={r} value={r}>
             {r}
           </option>
         ))}
-      </select>
-      <textarea
+      </Select>
+      <Textarea
         value={note}
         onChange={(event) => setNote(event.target.value)}
         placeholder="Say more, if it helps (optional)"
         rows={2}
-        className="mt-2 w-full border border-fd-border bg-fd-background p-2 text-fd-foreground text-sm outline-none focus:border-primary"
+        className="mt-2"
       />
       <div className="mt-2 flex items-center gap-3">
         <button

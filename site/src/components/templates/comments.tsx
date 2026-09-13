@@ -2,6 +2,7 @@
 
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { Textarea } from "@/components/ui/field";
 
 export type CommentRow = {
   id: number;
@@ -61,12 +62,11 @@ function NewComment({
 
   return (
     <div>
-      <textarea
+      <Textarea
         value={body}
         onChange={(event) => setBody(event.target.value)}
         placeholder={placeholder}
         rows={3}
-        className="hud-frame w-full border border-fd-border bg-fd-background p-3 text-fd-foreground text-sm outline-none focus:border-primary"
       />
       <div className="mt-2 flex items-center gap-3">
         <button
@@ -105,12 +105,7 @@ function CommentActions({
   if (editing) {
     return (
       <div className="mt-2">
-        <textarea
-          value={body}
-          onChange={(event) => setBody(event.target.value)}
-          rows={3}
-          className="hud-frame w-full border border-fd-border bg-fd-background p-3 text-fd-foreground text-sm outline-none focus:border-primary"
-        />
+        <Textarea value={body} onChange={(event) => setBody(event.target.value)} rows={3} />
         <div className="mt-2 flex items-center gap-3">
           <button
             type="button"

@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
+import { Input } from "@/components/ui/field";
 import type { Diagnostic, NormalizedManifest } from "@/lib/template";
 import { validateTemplate } from "@/lib/template";
 import { TemplateEditor, type TemplateEditorHandle } from "./editor";
@@ -147,53 +148,45 @@ export function TemplateForm({
       <div className="hud-frame grid gap-4 border border-fd-border p-4 sm:grid-cols-2">
         <label className="flex flex-col gap-1">
           <span className="label text-fd-muted-foreground">Name</span>
-          <input
+          <Input
             value={name}
             onChange={(event) => setName(event.target.value)}
             minLength={3}
             maxLength={60}
             required
-            className="border border-fd-border bg-transparent px-3 py-2 text-fd-foreground text-sm outline-none focus:border-fd-primary"
           />
         </label>
         <label className="flex flex-col gap-1">
           <span className="label text-fd-muted-foreground">Tags (comma separated)</span>
-          <input
-            value={tagsText}
-            onChange={(event) => setTagsText(event.target.value)}
-            className="border border-fd-border bg-transparent px-3 py-2 text-fd-foreground text-sm outline-none focus:border-fd-primary"
-          />
+          <Input value={tagsText} onChange={(event) => setTagsText(event.target.value)} />
         </label>
         <label className="flex flex-col gap-1 sm:col-span-2">
           <span className="label text-fd-muted-foreground">Summary</span>
-          <input
+          <Input
             value={summary}
             onChange={(event) => setSummary(event.target.value)}
             minLength={10}
             maxLength={160}
             required
-            className="border border-fd-border bg-transparent px-3 py-2 text-fd-foreground text-sm outline-none focus:border-fd-primary"
           />
         </label>
         <label className="flex flex-col gap-1 sm:col-span-2">
           <span className="label text-fd-muted-foreground">
             Photo (re-encoded to WebP, 2 MB max)
           </span>
-          <input
+          <Input
             type="file"
             accept="image/*"
             onChange={(event) => setPhoto(event.target.files?.[0] ?? null)}
-            className="text-fd-muted-foreground text-sm"
           />
         </label>
         {mode === "edit" ? (
           <label className="flex flex-col gap-1 sm:col-span-2">
             <span className="label text-fd-muted-foreground">What changed (optional)</span>
-            <input
+            <Input
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
               maxLength={500}
-              className="border border-fd-border bg-transparent px-3 py-2 text-fd-foreground text-sm outline-none focus:border-fd-primary"
             />
           </label>
         ) : null}
