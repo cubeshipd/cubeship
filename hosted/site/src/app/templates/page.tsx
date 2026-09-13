@@ -53,13 +53,24 @@ export default async function TemplatesPage(props: PageProps<"/templates">) {
 
       {rows.length === 0 ? (
         <div className="hud-frame mt-12 border border-fd-border p-8 text-center">
-          <p className="text-fd-muted-foreground text-sm">Nothing is published yet.</p>
-          <Link
-            href="/docs/templates/publishing"
-            className="mt-3 inline-block text-primary text-sm"
-          >
-            Publish the first one →
-          </Link>
+          {q || tag ? (
+            <>
+              <p className="text-fd-muted-foreground text-sm">No template matches these filters.</p>
+              <Link href="/templates" className="mt-3 inline-block text-primary text-sm">
+                Clear the filters →
+              </Link>
+            </>
+          ) : (
+            <>
+              <p className="text-fd-muted-foreground text-sm">Nothing is published yet.</p>
+              <Link
+                href="/docs/templates/publishing"
+                className="mt-3 inline-block text-primary text-sm"
+              >
+                Publish the first one →
+              </Link>
+            </>
+          )}
         </div>
       ) : (
         <>

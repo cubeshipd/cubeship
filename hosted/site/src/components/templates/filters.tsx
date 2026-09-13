@@ -1,9 +1,9 @@
 "use client";
 
 import { Popover, PopoverContent, PopoverTrigger } from "fumadocs-ui/components/ui/popover";
-import { Check, ChevronDown, Search, Tag, X } from "lucide-react";
+import { ChevronDown, Search, Tag } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Input } from "@/components/ui/field";
 import type { Sort } from "@/lib/catalog";
 
@@ -32,7 +32,7 @@ export function Filters({
   const pathname = usePathname();
   const [q, setQ] = useState(initialQ ?? "");
 
-  function push(next: Record<string, string | null>) {
+  function push(next: Record<string, string | null>, replace = false) {
     const params = new URLSearchParams();
     if (initialQ) params.set("q", initialQ);
     if (activeTag) params.set("tag", activeTag);
@@ -42,14 +42,39 @@ export function Filters({
       if (value) params.set(key, value);
       else params.delete(key);
     }
-    router.push(params.size > 0 ? `${pathname}?${params}` : pathname);
+    const url = params.size > 0 ? `${pathname}?${params}` : pathname;
+    if (replace) router.replace(url);
+    else router.push(url);
   }
+
+  // The URL changing under the field — Back, or a link clearing the
+  // filters — is taken in; the URL catching up with the typing is not.
+  const sent = useRef(initialQ ?? "");
+  useEffect(() => {
+    if ((initialQ ?? "") !== sent.current) {
+      sent.current = initialQ ?? "";
+      setQ(initialQ ?? "");
+    }
+  }, [initialQ]);
+
+  // Filters while typing, once the typing pauses. Replaced rather than
+  // pushed, so Back leaves the catalog instead of stepping through letters.
+  useEffect(() => {
+    const next = q.trim();
+    if (next === sent.current) return;
+    const timer = setTimeout(() => {
+      sent.current = next;
+      push({ q: next || null }, true);
+    }, 300);
+    return () => clearTimeout(timer);
+  });
 
   return (
     <div className="flex flex-wrap items-center gap-3">
       <form
         onSubmit={(event) => {
           event.preventDefault();
+          sent.current = q.trim();
           push({ q: q.trim() || null });
         }}
         className="relative min-w-0 flex-1 basis-64"
@@ -154,9 +179,8 @@ function TagSelect({
               <button
                 type="button"
                 onClick={() => choose(null)}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-muted-foreground text-sm hover:bg-card hover:text-primary"
+                className="w-full px-3 py-1.5 text-left font-mono text-muted-foreground text-sm hover:bg-card hover:text-primary"
               >
-                <X className="size-3.5" aria-hidden />
                 Clear tag
               </button>
             </li>
@@ -166,12 +190,11 @@ function TagSelect({
               <button
                 type="button"
                 onClick={() => choose(tag === active ? null : tag)}
-                className="flex w-full items-center gap-2 px-3 py-1.5 text-left font-mono text-fd-foreground text-sm hover:bg-card hover:text-primary"
+                aria-pressed={tag === active}
+                className={`w-full px-3 py-1.5 text-left font-mono text-sm hover:bg-card hover:text-primary ${
+                  tag === active ? "text-primary" : "text-fd-foreground"
+                }`}
               >
-                <Check
-                  className={`size-3.5 ${tag === active ? "text-primary" : "invisible"}`}
-                  aria-hidden
-                />
                 {tag}
               </button>
             </li>
