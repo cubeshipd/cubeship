@@ -8,6 +8,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -43,6 +44,7 @@ import (
 	"cubeship/internal/platform/hostexec"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/platform/regauth"
+	"cubeship/internal/platform/selfdial"
 	"cubeship/internal/server"
 	"cubeship/internal/settings"
 	"cubeship/internal/setup"
@@ -550,6 +552,8 @@ func run() error {
 		return err
 	}
 
+	catalog := templateinstall.NewHTTPCatalog(cmp.Or(cfg.CatalogURL, templateinstall.DefaultCatalogURL),
+		httpx.APIPrefix+"/template-icons/")
 	srv := server.New(db, docker, server.Options{
 		// An instance that was pointed at somebody else's Postgres has
 		// no container here to dump, so it cannot back itself up — and
@@ -566,8 +570,7 @@ func run() error {
 		Host:          host,
 		Machine:       box,
 		Version:       version,
-		Catalog: templateinstall.NewHTTPCatalog(cmp.Or(cfg.CatalogURL, templateinstall.DefaultCatalogURL),
-			httpx.APIPrefix+"/template-icons/"),
+		Catalog:       catalog,
 		// What this instance's own two containers were started from.
 		// Read back off the running container rather than derived: an
 		// operator is free to point either at a mirror, and string
@@ -580,6 +583,31 @@ func run() error {
 	// to **is** that record finishing: the container that started it has
 	// gone, and it went before this process existed.
 	srv.Updates.Settle()
+
+	// The catalog may be an app on this very instance — cubeship.dev is —
+	// and a request for a name that points back here hangs on a host that
+	// does not hairpin its own NAT. What reaches this instance from
+	// outside is its public address and whatever its own domain resolves
+	// to; a name resolving to either goes to Traefik over the network.
+	catalog.HTTP = selfdial.Client(&selfdial.Dialer{
+		Self: func(ctx context.Context) []string {
+			values, err := srv.Settings.Load(ctx)
+			if err != nil {
+				return nil
+			}
+			var own []string
+			if ip := srv.Settings.PublicIP(ctx, values, ""); ip != "" {
+				own = append(own, ip)
+			}
+			if domain := values.Get(settings.Domain); domain != "" {
+				if found, err := net.DefaultResolver.LookupHost(ctx, domain); err == nil {
+					own = append(own, found...)
+				}
+			}
+			return own
+		},
+		Proxy: bootstrap.TraefikContainerName,
+	}, catalog.HTTP.Timeout)
 
 	// An install upgrading from the release where the domain and contact
 	// address were required environment variables keeps them, once.

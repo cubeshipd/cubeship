@@ -267,6 +267,19 @@ recorded for the release — not the catalog's copy — and runs the same
 `product/template` validator. A bare `minCubeship` is a minimum; one with
 an operator is a range.
 
+**A catalog on the same machine is reached without leaving it.**
+cubeship.dev is an app on the instance we run, and that instance reads
+its own catalog: a request for a name that points back at the machine
+leaves for its public address, and a host that does not hairpin its own
+NAT answers nothing — the lookup hung for twenty seconds and said the
+catalog could not be reached. `platform/selfdial` resolves the name first,
+and when it lands on one of the instance's own addresses — its public
+address, or what its own domain resolves to — dials `cubeship-traefik` on
+the same port instead. Host and SNI are unchanged, so TLS verifies against
+the certificate Traefik serves for that name. No private DNS, nothing to
+configure; a daemon not on the shared network falls back to the public
+route.
+
 **Everything is checked before anything exists.** The project and
 environment are taken from the request or the template, and created only
 when missing. Every database, store and app name, every domain and every
