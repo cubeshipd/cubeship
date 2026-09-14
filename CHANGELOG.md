@@ -6,6 +6,17 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.7.1 — 2026-09-14
+
+The template catalog loads more templates as you scroll, instead of stopping at the first 24.
+
+### Fixed
+
+**The catalog stopped at 24 templates.** Templates showed the first page
+of the catalog and nothing after it. The next page now loads as the grid
+is scrolled to its end, and changing the search, tag or order starts again
+from the top.
+
 ## 0.7.0 — 2026-09-13
 
 Templates install whole stacks in one form, apps can keep data in volumes, access roles decide what every account and API key reaches, and an audit log records who changed what.
