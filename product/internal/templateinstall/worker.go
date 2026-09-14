@@ -234,8 +234,11 @@ func (s *Service) createApp(ctx context.Context, caller *user.User, run *Run, p 
 		return fmt.Errorf("configure app %s: %w", ref, err)
 	}
 	// After configuring, which is where scale and spread are set: a volume
-	// is refused on an app that is not one copy on one machine.
-	return s.addVolumes(ctx, caller, ref, a.Key, a.Volumes, nil)
+	// and a published port are refused on an app that is not one copy.
+	if err := s.addVolumes(ctx, caller, ref, a.Key, a.Volumes, nil); err != nil {
+		return err
+	}
+	return s.addTCPPorts(ctx, caller, p, ref, a.Key, a.TCP, nil)
 }
 
 // addVolumes gives an app volumes. An update records each, because the app
@@ -252,6 +255,49 @@ func (s *Service) addVolumes(ctx context.Context, caller *user.User, ref app.Ref
 		}
 	}
 	return nil
+}
+
+// addTCPPorts publishes an app's ports. An update records each, for the
+// reason addVolumes does; an install passes no recorder.
+func (s *Service) addTCPPorts(ctx context.Context, caller *user.User, p *plan, ref app.Reference, key string,
+	ports []template.NormalizedTCP, created recorder) error {
+	for _, tp := range ports {
+		host, err := tcpHostPort(p, tp)
+		if err != nil {
+			return fmt.Errorf("app %s port %d: %w", ref, tp.Port, err)
+		}
+		published, err := s.apps.AddTCPPort(ctx, caller, ref, tp.Port, host)
+		if err != nil {
+			return fmt.Errorf("publish port %d of app %s: %w", tp.Port, ref, err)
+		}
+		if created != nil {
+			created(KindTCPPort, key, ref.String()+" "+strconv.Itoa(published.ContainerPort))
+		}
+	}
+	return nil
+}
+
+// tcpHostPort is the host port a template's entry asks for once its input
+// is answered, or 0 for the instance to pick one.
+func tcpHostPort(p *plan, tp template.NormalizedTCP) (int, error) {
+	if tp.Host == nil {
+		return 0, nil
+	}
+	value, err := template.ReplaceReferences(*tp.Host, func(kind, key, _ string) (string, error) {
+		if kind == "input" {
+			return p.inputs[key], nil
+		}
+		return "", errors.New("a host port is a number or an input")
+	})
+	if err != nil {
+		return 0, err
+	}
+	// A number input's answer can arrive as 2222.0 from a default.
+	n, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+	if err != nil || n != float64(int(n)) {
+		return 0, fmt.Errorf("%q is not a port number", value)
+	}
+	return int(n), nil
 }
 
 func (s *Service) waitDatabase(ctx context.Context, caller *user.User, run *Run, name string) error {
@@ -648,6 +694,9 @@ func (s *Service) applyUpdate(ctx context.Context, caller *user.User, run *Run, 
 			if err == nil {
 				err = s.addVolumes(ctx, caller, up.ref(a.Key), a.Key, ch.volumes, created)
 			}
+			if err == nil {
+				err = s.addTCPPorts(ctx, caller, up.plan, up.ref(a.Key), a.Key, ch.tcp, created)
+			}
 		default:
 			continue
 		}
@@ -821,6 +870,24 @@ func (s *Service) remove(ctx context.Context, caller *user.User, r Resource, del
 				}
 			}
 		}
+	case KindTCPPort:
+		refText, portText, _ := strings.Cut(r.Name, " ")
+		ref, perr := app.ParseReference(refText)
+		if perr != nil {
+			return perr
+		}
+		containerPort, perr := strconv.Atoi(portText)
+		if perr != nil {
+			return fmt.Errorf("cannot read the port %q", r.Name)
+		}
+		var a *app.Scoped
+		if a, err = s.apps.Resolve(ctx, caller, ref, RoleToInstall); err == nil {
+			for _, tp := range a.TCPPorts {
+				if tp.ContainerPort == containerPort {
+					err = s.apps.RemoveTCPPort(ctx, caller, ref, tp.ID)
+				}
+			}
+		}
 	case KindStore:
 		_, err = s.stores.Delete(ctx, caller, r.Name)
 	case KindDatabase:
@@ -865,7 +932,7 @@ func (s *Service) remove(ctx context.Context, caller *user.User, r Resource, del
 		errors.Is(err, project.ErrEnvironmentNotFound) || errors.Is(err, datastore.ErrNotFound) ||
 		errors.Is(err, objectstore.ErrNotFound) || errors.Is(err, datastore.ErrNotAttached) ||
 		errors.Is(err, objectstore.ErrNotAttached) || errors.Is(err, app.ErrDomainNotFound) ||
-		errors.Is(err, app.ErrVolumeNotFound) {
+		errors.Is(err, app.ErrVolumeNotFound) || errors.Is(err, app.ErrTCPPortNotFound) {
 		return nil
 	}
 	return err

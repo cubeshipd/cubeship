@@ -1,4 +1,4 @@
-import { Box, Database, FolderLock, HardDrive } from "lucide-react";
+import { Box, Cable, Database, FolderLock, HardDrive } from "lucide-react";
 import type { ReactNode } from "react";
 import type { NormalizedApp, NormalizedManifest } from "@/lib/manifest";
 
@@ -52,6 +52,16 @@ export function Preview({ manifest }: { manifest: NormalizedManifest }) {
             icon={<FolderLock />}
             name={volume.path}
             detail={`Volume of ${app.name}`}
+          />
+        )),
+      )}
+      {manifest.apps.flatMap((app) =>
+        (app.tcp ?? []).map((port) => (
+          <Row
+            key={`tcp-${app.key}-${port.port}`}
+            icon={<Cable />}
+            name={`TCP ${port.port}`}
+            detail={`Published by ${app.name}${port.host ? ` on ${port.host}` : ""}`}
           />
         )),
       )}

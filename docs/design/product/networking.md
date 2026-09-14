@@ -224,7 +224,8 @@ Traefik's store.
 published port is DNAT'd and *forwarded* to a container rather than
 delivered to the host, so it never passes the INPUT chain `ufw allow`
 and `ufw deny` govern — and every port Cubeship opens is one of those:
-Traefik's 80 and 443, an exposed datastore's, the daemon's own. A screen
+Traefik's 80 and 443, an exposed datastore's, an app's published TCP
+port, the daemon's own. A screen
 wrapping `ufw status` would therefore show a firewall that is not in
 front of anything you deployed, which is worse than showing nothing.
 
@@ -284,10 +285,11 @@ private ranges and DNS and before the first denial.
   lives in `after.rules`, not `after6.rules`.
 
 **The set is derived, never edited, so the module still owns no rows.**
-What is exposed is `exposed_port` on datastores and managed stores;
+What is exposed is `exposed_port` on datastores and managed stores, and
+`host_port` on apps' TCP ports;
 `internal/server` hands the firewall their union as `firewall.Exposed`,
 and `SyncPublished` renders the whole block from it every time and puts
-it where the old one was. Both modules call it through `PortsChanged`, a
+it where the old one was. All three modules call it through `PortsChanged`, a
 seam each declares, after anything that changes exposure — creating one
 exposed, exposing, moving it, unexposing, deleting it — best effort,
 because the port is published either way. The daemon calls it once at

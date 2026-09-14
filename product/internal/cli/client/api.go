@@ -386,6 +386,36 @@ func (c *Client) RemoveAppVolume(ctx context.Context, ref string, id int64, dele
 	return err
 }
 
+// TCPPort is one of an app's published TCP ports.
+type TCPPort struct {
+	ID            int64     `json:"id"`
+	ContainerPort int       `json:"container_port"`
+	HostPort      int       `json:"host_port"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+func (c *Client) ListAppTCPPorts(ctx context.Context, ref string) ([]TCPPort, error) {
+	return request[[]TCPPort](ctx, c, "list app tcp ports", http.MethodGet, appPath(ref)+"/tcp-ports",
+		nil, http.StatusOK, DefaultTimeout)
+}
+
+// AddAppTCPPort publishes a container port; hostPort 0 lets the instance
+// pick one.
+func (c *Client) AddAppTCPPort(ctx context.Context, ref string, containerPort, hostPort int) (TCPPort, error) {
+	body := map[string]any{"container_port": containerPort}
+	if hostPort != 0 {
+		body["host_port"] = hostPort
+	}
+	return request[TCPPort](ctx, c, "add app tcp port", http.MethodPost, appPath(ref)+"/tcp-ports",
+		body, http.StatusCreated, DefaultTimeout)
+}
+
+func (c *Client) RemoveAppTCPPort(ctx context.Context, ref string, id int64) error {
+	_, err := request[noContent](ctx, c, "remove app tcp port", http.MethodDelete,
+		fmt.Sprintf("%s/tcp-ports/%d", appPath(ref), id), nil, http.StatusNoContent, DefaultTimeout)
+	return err
+}
+
 // Backup is one backup, as the API lists it.
 type Backup struct {
 	ID         int64  `json:"id"`

@@ -206,3 +206,38 @@ briefly unavailable. A template with a volume needs `minCubeship: "0.7.0"`
 or later, so an older instance refuses it instead of installing it
 without its data surviving. Uninstalling keeps volume data unless
 whoever uninstalls says otherwise.
+
+### TCP ports
+
+```yaml
+inputs:
+  - key: sshPort
+    type: number
+    label: The port SSH answers on
+    default: 2222
+    min: 1024
+    max: 65535
+apps:
+  - key: git
+    image: gitea/gitea
+    tcp:
+      - port: 22
+        host: ${input.sshPort}
+```
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `tcp[].port` | — | The port the app listens on inside its container, `1`-`65535`. |
+| `tcp[].host` | picked | Where the instance publishes it: `1024`-`65535`, or `${input.<key>}` naming a `number` input. Left out, the instance picks a free one from `17000`-`17999`. |
+
+A TCP port is for a protocol that is not HTTP — SSH into a Git server, a
+game server, a broker. It is published on the instance's own address with
+**no TLS and no proxy** in front of it, so the app's own authentication is
+what protects it. **An app with a TCP port runs as one copy**, so `scale`,
+`spread` and `autoscale` are refused beside it, and each deploy stops the old
+container before starting the new one.
+
+Name the host port through an input rather than as a number: a port another
+installation already holds is refused, and the person installing is the one
+who knows which is free. A template with a TCP port needs
+`minCubeship: "0.7.2"` or later.

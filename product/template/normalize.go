@@ -115,7 +115,15 @@ type NormalizedApp struct {
 	Spread       bool                 `json:"spread"`
 	Autoscale    *NormalizedAutoscale `json:"autoscale"`
 	Volumes      []NormalizedVolume   `json:"volumes"`
+	TCP          []NormalizedTCP      `json:"tcp"`
 	InternalHost string               `json:"internal_host"`
+}
+
+// NormalizedTCP is a published port. Host is nil for the instance to pick
+// one, the port as digits, or the ${input.<key>} that answers it.
+type NormalizedTCP struct {
+	Port int     `json:"port"`
+	Host *string `json:"host"`
 }
 
 type NormalizedVolume struct {
@@ -222,6 +230,10 @@ func normalize(m Manifest) Normalized {
 		for _, v := range a.Volumes {
 			clean, _ := volumePath(v.Path)
 			na.Volumes = append(na.Volumes, NormalizedVolume{Path: clean})
+		}
+		na.TCP = []NormalizedTCP{}
+		for _, tp := range a.TCP {
+			na.TCP = append(na.TCP, NormalizedTCP{Port: tp.Port, Host: orNil(tp.Host)})
 		}
 		n.Apps = append(n.Apps, na)
 	}

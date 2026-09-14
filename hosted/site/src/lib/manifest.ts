@@ -42,6 +42,10 @@ export type NormalizedApp = {
   autoscale: { min: number; max: number; cpu: number } | null;
   // Absent in a manifest the catalog stored before templates had volumes.
   volumes?: { path: string }[];
+  // Absent in a manifest the catalog stored before templates had TCP
+  // ports. `host` is the port as digits, the input that answers it, or
+  // null for the instance to pick one.
+  tcp?: { port: number; host: string | null }[];
   internal_host: string;
 };
 

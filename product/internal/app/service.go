@@ -54,6 +54,46 @@ type Service struct {
 	// dataDir is where volumes on this machine keep their data. Empty on
 	// a server with no disk of its own, which is a test.
 	dataDir string
+
+	// portsChanged is told after anything changes which host ports apps
+	// publish, and hostPorts answers which ones everything on this
+	// instance already does. Both nil on a server with no firewall wired
+	// in, which is a test.
+	portsChanged PortsChanged
+	hostPorts    HostPorts
+}
+
+// PortsChanged is told whenever what this module publishes on the host
+// changes. Satisfied by the firewall, which sits above this module.
+type PortsChanged interface {
+	SyncPublished(ctx context.Context) error
+}
+
+// HostPorts is every host port this instance deliberately publishes —
+// datastores', stores' and apps' — so a port named for an app is refused
+// while a database holds it, rather than failing at bind time on a deploy.
+type HostPorts interface {
+	ExposedPorts(ctx context.Context) ([]int, error)
+}
+
+// SetPortsChanged names what is told when a published port comes or goes.
+// Called once, by server.New.
+func (s *Service) SetPortsChanged(p PortsChanged) { s.portsChanged = p }
+
+// SetHostPorts names what answers which host ports are taken. Called once,
+// by server.New.
+func (s *Service) SetHostPorts(h HostPorts) { s.hostPorts = h }
+
+// syncPorts tells the firewall, best effort: the port is published (or
+// not) by the next deploy either way, and a firewall that could not be
+// rewritten is not a reason to report that as a failure.
+func (s *Service) syncPorts(ctx context.Context) {
+	if s.portsChanged == nil {
+		return
+	}
+	if err := s.portsChanged.SyncPublished(ctx); err != nil {
+		log.Printf("app: could not bring the host firewall in line with what is published: %v", err)
+	}
 }
 
 // SetDataDir tells the module where this machine's volumes live. Called
@@ -428,6 +468,16 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 			return nil, ErrVolumePinsApp
 		}
 	}
+	// A published port is bound on the control plane by one container, so
+	// the same two things are refused for the same reason.
+	if len(a.TCPPorts) > 0 {
+		if auto != nil && auto.On() {
+			return nil, ErrTCPPinsApp
+		}
+		if place != nil && !keepsTCP(a, *place) {
+			return nil, ErrTCPPinsApp
+		}
+	}
 
 	if _, err := s.Repo().Update(ctx, a.ID, source, origin, health, limits, auto); err != nil {
 		return nil, err
@@ -682,6 +732,9 @@ func (s *Service) DeleteApp(ctx context.Context, caller *user.User, ref Referenc
 	if deleteVolumeData {
 		s.dropVolumeData(ctx, a.Volumes)
 	}
+	if len(a.TCPPorts) > 0 {
+		s.syncPorts(ctx)
+	}
 	return a, nil
 }
 
@@ -704,6 +757,105 @@ func (s *Service) dropVolumeData(ctx context.Context, volumes []Volume) {
 			log.Printf("delete volume data: volume %d: %v", v.ID, err)
 		}
 	}
+}
+
+// TCPPorts is an app's published ports.
+func (s *Service) TCPPorts(ctx context.Context, caller *user.User, ref Reference) ([]TCPPort, error) {
+	a, err := s.Resolve(ctx, caller, ref, user.LevelView)
+	if err != nil {
+		return nil, err
+	}
+	return a.TCPPorts, nil
+}
+
+// AddTCPPort publishes a port of an app's container on a host port of the
+// control plane. hostPort 0 picks one from TCPPortRangeStart. It is
+// published from the app's next deploy, because a container's ports are
+// fixed when it is created.
+//
+// There is no TLS in front of this and no proxy: whatever the app speaks
+// on that port is on the open internet, the way an exposed database is.
+// What makes it safe is the app's own authentication and the firewall,
+// which is why it is an operator's deliberate act with its own endpoint.
+func (s *Service) AddTCPPort(ctx context.Context, caller *user.User, ref Reference, containerPort, hostPort int) (*TCPPort, error) {
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
+	if err != nil {
+		return nil, err
+	}
+	if !validTCPPorts(containerPort, hostPort) {
+		return nil, ErrInvalidTCPPort
+	}
+	for _, p := range a.TCPPorts {
+		if p.ContainerPort == containerPort {
+			return nil, ErrTCPPortExists
+		}
+	}
+	here, err := s.Repo().ControlPlaneID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !canPublishTCP(&a.App, here) {
+		return nil, ErrTCPNeedsOneCopy
+	}
+	used, err := s.usedHostPorts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if hostPort == 0 {
+		if hostPort, err = pickTCPPort(used); err != nil {
+			return nil, err
+		}
+	} else if used[hostPort] {
+		return nil, ErrTCPPortTaken
+	}
+	p, err := s.Repo().AddTCPPort(ctx, a.ID, containerPort, hostPort)
+	if err != nil {
+		return nil, err
+	}
+	s.syncPorts(ctx)
+	return p, nil
+}
+
+// RemoveTCPPort stops publishing a port. The container running now keeps it
+// until the next deploy.
+func (s *Service) RemoveTCPPort(ctx context.Context, caller *user.User, ref Reference, portID int64) error {
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
+	if err != nil {
+		return err
+	}
+	if err := s.Repo().RemoveTCPPort(ctx, a.ID, portID); err != nil {
+		return err
+	}
+	s.syncPorts(ctx)
+	return nil
+}
+
+// TCPPortTaken reports whether a host port is already published by
+// anything on this instance, for a caller checking before it creates.
+func (s *Service) TCPPortTaken(ctx context.Context, hostPort int) (bool, error) {
+	used, err := s.usedHostPorts(ctx)
+	if err != nil {
+		return false, err
+	}
+	return used[hostPort], nil
+}
+
+// usedHostPorts is every host port an app, a datastore or a store holds.
+func (s *Service) usedHostPorts(ctx context.Context) (map[int]bool, error) {
+	used, err := s.Repo().UsedTCPPorts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s.hostPorts != nil {
+		others, err := s.hostPorts.ExposedPorts(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, port := range others {
+			used[port] = true
+		}
+	}
+	return used, nil
 }
 
 // Volumes is an app's volumes.
@@ -934,7 +1086,14 @@ func (s *Service) DeleteAppsInEnvironment(ctx context.Context, environmentID int
 // deleted stays deleted, and the delete above is refused — so a retry
 // resumes rather than starting over.
 func (s *Service) deleteAll(ctx context.Context, apps []*App) error {
+	published := false
+	defer func() {
+		if published {
+			s.syncPorts(ctx)
+		}
+	}()
 	for _, a := range apps {
+		published = published || len(a.TCPPorts) > 0
 		if err := s.orch.Retire(ctx, a.ID); err != nil {
 			return fmt.Errorf("stop app %q's container: %w", a.Name, err)
 		}

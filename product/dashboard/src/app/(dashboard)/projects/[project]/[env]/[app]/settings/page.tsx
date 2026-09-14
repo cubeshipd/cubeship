@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { AppNetwork } from "@/components/app-network";
+import { AppTCPPorts } from "@/components/app-tcp-ports";
 import { AppVolumes } from "@/components/app-volumes";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
@@ -29,6 +30,7 @@ import {
   type AppLimits,
   type AppReplica,
   type AppSource,
+  type AppTCPPort,
   type AppVolume,
   api,
   BUILDING_SOURCES,
@@ -72,6 +74,7 @@ function Settings({ reference }: { reference: string }) {
   const [deleting, setDeleting] = useState(false);
   const [deleteVolumeData, setDeleteVolumeData] = useState(false);
   const [volumes, setVolumes] = useState<AppVolume[] | null>(null);
+  const [ports, setPorts] = useState<AppTCPPort[] | null>(null);
 
   const path = `/apps/${reference}`;
   const reload = useCallback(() => {
@@ -90,7 +93,17 @@ function Settings({ reference }: { reference: string }) {
       .catch(() => setVolumes([]));
   }, [path, reference]);
   useEffect(reloadVolumes, [reloadVolumes]);
+  const reloadPorts = useCallback(() => {
+    if (!reference) return;
+    api
+      .get<AppTCPPort[]>(`${path}/tcp-ports`)
+      .then(setPorts)
+      .catch(() => setPorts([]));
+  }, [path, reference]);
+  useEffect(reloadPorts, [reloadPorts]);
   const pinned = (volumes?.length ?? 0) > 0;
+  // A published TCP port pins the app the same way, to the control plane.
+  const published = (ports?.length ?? 0) > 0;
 
   if (!reference) {
     return (
@@ -142,6 +155,7 @@ function Settings({ reference }: { reference: string }) {
 
             <TabsContent value="network">
               <AppNetwork app={app} onSaved={setApp} />
+              <AppTCPPorts app={app} ports={ports} onChanged={reloadPorts} />
             </TabsContent>
 
             <TabsContent value="source">
@@ -154,20 +168,22 @@ function Settings({ reference }: { reference: string }) {
             <TabsContent value="resources">
               {/* A volume pins where it runs and how many of it, so the
                   two sections that change those are not offered. */}
-              {pinned ? (
+              {pinned || published ? (
                 <>
                   <SectionHeader title="Servers" />
                   <Notice>
-                    This app has a volume, so it runs as one copy on {volumes?.[0]?.node}, where its
-                    data is. Data does not move between machines: remove its volumes to place or
-                    scale it.
+                    {pinned
+                      ? `This app has a volume, so it runs as one copy on ${volumes?.[0]?.node}, where its data is. Data does not move between machines: remove its volumes to place or scale it.`
+                      : `This app publishes a TCP port, so it runs as one copy on ${app.nodes[0]}, where the port is. Remove its TCP ports to place or scale it.`}
                   </Notice>
                 </>
               ) : (
                 <Placement app={app} onSaved={setApp} onError={setError} />
               )}
               <Limits app={app} onSaved={setApp} onError={setError} />
-              {!pinned && <AutoscaleSection app={app} onSaved={setApp} onError={setError} />}
+              {!pinned && !published && (
+                <AutoscaleSection app={app} onSaved={setApp} onError={setError} />
+              )}
             </TabsContent>
 
             <TabsContent value="volumes">

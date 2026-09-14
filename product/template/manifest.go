@@ -68,6 +68,16 @@ type App struct {
 	Spread                                              *bool
 	Autoscale                                           *Autoscale
 	Volumes                                             []Volume
+	TCP                                                 []TCP
+}
+
+// TCP is a port of an app's container published on a host port of the
+// instance, for a protocol that is not HTTP.
+type TCP struct {
+	Port int
+	// Host is the host port as written: digits, the ${input.<key>} that
+	// answers it, or empty for the instance to pick one.
+	Host string
 }
 
 // Volume is a directory inside an app's container that outlives it.

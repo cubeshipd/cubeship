@@ -373,7 +373,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		// host has one that answers "not available" — which is what a
 		// test wants, and what `make dev` is.
 		Firewall: firewall.NewService(opts.Host, ports(docker),
-			exposedPorts{datastore.NewRepository(db), objectstore.NewRepository(db)}, opts.DataDir),
+			exposedPorts{datastore.NewRepository(db), objectstore.NewRepository(db), app.NewRepository(db)}, opts.DataDir),
 		Setup:       setup.NewService(db, users, opts.SetupToken),
 		Credentials: creds,
 		Registries:  registries,
@@ -387,6 +387,10 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// the firewall owns; both modules sit below it and are told.
 	datastores.SetPortsChanged(srv.Firewall)
 	objectStores.SetPortsChanged(srv.Firewall)
+	// An app publishing a TCP port does the same, and asks first which
+	// ports the other two already hold.
+	apps.SetPortsChanged(srv.Firewall)
+	apps.SetHostPorts(exposedPorts{datastore.NewRepository(db), objectstore.NewRepository(db), app.NewRepository(db)})
 	// The machines in this cluster pull the images this registry holds,
 	// and they authenticate as themselves: their own credential, and
 	// pull on the repository they were told to run. See
@@ -582,11 +586,13 @@ func (s *Server) routes() {
 	s.router.HandleRoot("/", dashboard.Handler(s.frontend))
 }
 
-// exposedPorts is firewall.Exposed: every host port a datastore or a
-// managed object store is published on, read from their rows.
+// exposedPorts is firewall.Exposed: every host port a datastore, a
+// managed object store or an app's TCP port is published on, read from
+// their rows.
 type exposedPorts struct {
 	datastores   *datastore.Repository
 	objectStores *objectstore.Repository
+	apps         *app.Repository
 }
 
 func (e exposedPorts) ExposedPorts(ctx context.Context) ([]int, error) {
@@ -602,7 +608,15 @@ func (e exposedPorts) ExposedPorts(ctx context.Context) ([]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	return append(ports, stores...), nil
+	ports = append(ports, stores...)
+	tcp, err := e.apps.UsedTCPPorts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for port := range tcp {
+		ports = append(ports, port)
+	}
+	return ports, nil
 }
 
 // ports narrows the Engine to the one question the firewall asks of it.

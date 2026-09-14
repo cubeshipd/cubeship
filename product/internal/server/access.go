@@ -59,6 +59,7 @@ var toolRules = map[string]toolRule{
 	"delete_app":          tool(user.ResApps, user.LevelManage),
 	"get_app_logs":        tool(user.ResApps, user.LevelView),
 	"list_app_volumes":    tool(user.ResApps, user.LevelView),
+	"list_app_tcp_ports":  tool(user.ResApps, user.LevelView),
 	"add_app_volume":      tool(user.ResApps, user.LevelManage),
 	"list_volume_backups": tool(user.ResBackups, user.LevelView),
 	"back_up_volume":      tool(user.ResBackups, user.LevelManage),

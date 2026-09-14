@@ -324,6 +324,40 @@ const routes: [string, string, Handler][] = [
       return app;
     },
   ],
+  ["GET", "/apps/:a/:b/:c/tcp-ports", (p) => mockTCPPorts[p.join("/")] ?? []],
+  [
+    "POST",
+    "/apps/:a/:b/:c/tcp-ports",
+    (p, body) => {
+      const ref = p.join("/");
+      appOr404(ref);
+      const taken = Object.values(mockTCPPorts)
+        .flat()
+        .map((r) => Number(r.host_port));
+      let host = Number((body as Row).host_port) || 0;
+      if (!host) {
+        host = 17000;
+        while (taken.includes(host)) host++;
+      }
+      const port = {
+        id: Math.floor(Math.random() * 900) + 100,
+        container_port: Number((body as Row).container_port),
+        host_port: host,
+        created_at: new Date().toISOString(),
+      };
+      mockTCPPorts[ref] = [...(mockTCPPorts[ref] ?? []), port];
+      return port;
+    },
+  ],
+  [
+    "DELETE",
+    "/apps/:a/:b/:c/tcp-ports/:id",
+    (p) => {
+      const ref = p.slice(0, 3).join("/");
+      mockTCPPorts[ref] = (mockTCPPorts[ref] ?? []).filter((r) => String(r.id) !== p[3]);
+      return {};
+    },
+  ],
   ["GET", "/apps/:a/:b/:c/volumes", (p) => mockVolumes[p.join("/")] ?? []],
   [
     "POST",
@@ -935,6 +969,10 @@ const mockVolumes: Record<string, Row[]> = {
     },
   ],
 };
+
+// Published TCP ports, by app reference. None to begin with: an app
+// reached over something other than HTTP is the exception.
+const mockTCPPorts: Record<string, Row[]> = {};
 
 function containers() {
   const at = new Date().toISOString();

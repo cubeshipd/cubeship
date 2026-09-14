@@ -695,7 +695,9 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 func (o *Orchestrator) swap(ctx context.Context, a *Scoped, replica Replica, image Image,
 	env envvar.Map, labels map[string]string, base string, deploymentID int64,
 ) error {
-	if len(a.Volumes) > 0 {
+	// A published host port is held by one container at a time, so the
+	// new one could not bind it until the old one lets go.
+	if len(a.Volumes) > 0 || len(a.TCPPorts) > 0 {
 		return o.swapInPlace(ctx, a, replica, image, env, labels, base, deploymentID)
 	}
 	appName := ReferenceOf(a).String()
@@ -765,11 +767,12 @@ func (o *Orchestrator) removeContainer(ctx context.Context, id, why string) {
 	}
 }
 
-// swapInPlace replaces the copy of an app with a volume: **the old
-// container stops before the new one starts.** Two containers on one data
-// directory is how a database or a queue corrupts itself, so this app is
-// unavailable for the seconds between — the one deploy here that is not
-// zero-downtime, and the price of keeping state in files.
+// swapInPlace replaces the copy of an app with a volume or a published TCP
+// port: **the old container stops before the new one starts.** Two
+// containers on one data directory is how a database or a queue corrupts
+// itself, and a host port is bound by one container at a time, so this app
+// is unavailable for the seconds between — the one deploy here that is not
+// zero-downtime.
 //
 // A new container that will not come up is removed and the old one is
 // started again, so a bad image costs the downtime and nothing else.
@@ -781,7 +784,7 @@ func (o *Orchestrator) swapInPlace(ctx context.Context, a *Scoped, replica Repli
 	if replica.Container != "" && replica.Name == newName {
 		return nil
 	}
-	if o.dataDir == "" {
+	if len(a.Volumes) > 0 && o.dataDir == "" {
 		return ErrNoDataDir
 	}
 	binds := make([]string, 0, len(a.Volumes))
@@ -817,6 +820,7 @@ func (o *Orchestrator) swapInPlace(ctx context.Context, a *Scoped, replica Repli
 		Aliases:      []string{base},
 		Resources:    a.Limits.Resources(),
 		Binds:        binds,
+		Ports:        tcpPortSpecs(a.TCPPorts),
 	})
 	if err != nil {
 		restore()

@@ -61,6 +61,12 @@ func TestVolumePathsAgreeWithTheDaemon(t *testing.T) {
 	}
 }
 
+func TestTCPHostPortsAgreeWithTheDaemon(t *testing.T) {
+	if minTCPHostPort != app.MinTCPHostPort {
+		t.Errorf("templates refuse host ports below %d, the daemon below %d", minTCPHostPort, app.MinTCPHostPort)
+	}
+}
+
 // The published schema is a file, not generated, so it is checked
 // against the keys the decoder actually accepts.
 func TestJSONSchemaMatchesTheDecoder(t *testing.T) {
@@ -92,6 +98,7 @@ func TestJSONSchemaMatchesTheDecoder(t *testing.T) {
 	check("domain", apps.Properties["domains"].Items, keySets["domain"])
 	check("attach", apps.Properties["attach"].Items, keySets["attach"])
 	check("autoscale", apps.Properties["autoscale"], keySets["autoscale"])
+	check("tcp", apps.Properties["tcp"].Items, keySets["tcp"])
 
 	variants := s.Properties["inputs"].Items.OneOf
 	if len(variants) != len(inputTypes) {

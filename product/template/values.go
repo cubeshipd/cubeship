@@ -16,7 +16,9 @@ const (
 	minMemory     = 6 << 20 // internal/limits.MinMemory
 	maxAutoscale  = 100     // internal/app.MaxAutoscale
 	maxHealthPath = 255     // internal/app.MaxHealthPathLength
-	defaultPort   = 8080
+	// minTCPHostPort is the lowest host port an app may be published on.
+	minTCPHostPort = 1024 // internal/app.MinTCPHostPort
+	defaultPort    = 8080
 )
 
 var (

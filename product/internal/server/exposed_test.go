@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"cubeship/internal/app"
 	"cubeship/internal/datastore"
 	"cubeship/internal/objectstore"
 	"cubeship/internal/platform/database/dbtest"
@@ -39,7 +40,7 @@ func TestExposedPortsAreEveryDatastoreAndManagedStore(t *testing.T) {
 		}
 	}
 
-	got, err := exposedPorts{datastores, stores}.ExposedPorts(ctx)
+	got, err := exposedPorts{datastores, stores, app.NewRepository(db)}.ExposedPorts(ctx)
 	if err != nil {
 		t.Fatalf("exposed ports: %v", err)
 	}

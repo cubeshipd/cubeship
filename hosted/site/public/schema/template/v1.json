@@ -511,6 +511,37 @@
               "additionalProperties": false
             },
             "markdownDescription": "Paths inside the container whose contents survive deploys. **Available from Cubeship 0.7.0**: needs `minCubeship: \"0.7.0\"` or later."
+          },
+          "tcp": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "host": {
+                  "oneOf": [
+                    {
+                      "type": "integer",
+                      "minimum": 1024,
+                      "maximum": 65535
+                    },
+                    {
+                      "type": "string",
+                      "pattern": "^\\$\\{input\\.[a-zA-Z][a-zA-Z0-9_-]*\\}$"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "port"
+              ],
+              "additionalProperties": false
+            },
+            "markdownDescription": "Ports of the container published on a host port of the instance, for protocols that are not HTTP, such as SSH. `host` is 1024-65535, `${input.<key>}` naming a number input, or left out for the instance to pick one. The app runs as one copy. **Available from Cubeship 0.7.2**: needs `minCubeship: \"0.7.2\"` or later."
           }
         },
         "required": [

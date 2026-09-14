@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"cubeship/internal/app"
@@ -58,11 +59,12 @@ type appChange struct {
 	domains  []template.NormalizedDomain
 	attach   []template.NormalizedAttach
 	volumes  []template.NormalizedVolume
+	tcp      []template.NormalizedTCP
 }
 
 func (c *appChange) empty() bool {
 	return !c.source && !c.settings && len(c.env) == 0 && len(c.domains) == 0 && len(c.attach) == 0 &&
-		len(c.volumes) == 0
+		len(c.volumes) == 0 && len(c.tcp) == 0
 }
 
 // updatePlan is a release compared with what is installed.
@@ -390,6 +392,12 @@ func compareApp(old, a template.NormalizedApp) *appChange {
 			ch.volumes = append(ch.volumes, v)
 		}
 	}
+	// Added by container port, and never removed, for the same reason.
+	for _, tp := range a.TCP {
+		if !slices.ContainsFunc(old.TCP, func(o template.NormalizedTCP) bool { return o.Port == tp.Port }) {
+			ch.tcp = append(ch.tcp, tp)
+		}
+	}
 	return ch
 }
 
@@ -555,6 +563,9 @@ func (up *updatePlan) describeWiring() {
 		}
 		for _, v := range ch.volumes {
 			up.change(ActionCreate, KindVolume, v.Path, "on "+ref+"; it runs as one copy from here on")
+		}
+		for _, tp := range ch.tcp {
+			up.change(ActionCreate, KindTCPPort, strconv.Itoa(tp.Port), "published from "+ref+"; it runs as one copy on the control plane from here on")
 		}
 	}
 }

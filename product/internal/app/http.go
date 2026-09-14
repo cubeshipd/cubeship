@@ -238,6 +238,9 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET "+appPath+"/volumes", auth(http.HandlerFunc(h.listVolumes)))
 	r.Handle("POST "+appPath+"/volumes", auth(http.HandlerFunc(h.addVolume)))
 	r.Handle("DELETE "+appPath+"/volumes/{volumeID}", auth(http.HandlerFunc(h.removeVolume)))
+	r.Handle("GET "+appPath+"/tcp-ports", auth(http.HandlerFunc(h.listTCPPorts)))
+	r.Handle("POST "+appPath+"/tcp-ports", auth(http.HandlerFunc(h.addTCPPort)))
+	r.Handle("DELETE "+appPath+"/tcp-ports/{portID}", auth(http.HandlerFunc(h.removeTCPPort)))
 	r.Handle("GET /volumes/orphans", auth(http.HandlerFunc(h.volumeOrphans)))
 	r.Handle("DELETE /volumes/orphans/{id}", auth(http.HandlerFunc(h.deleteVolumeOrphan)))
 }
@@ -292,6 +295,13 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusNotFound)
 	case errors.Is(err, ErrVolumeExists), errors.Is(err, ErrVolumeNeedsOneCopy),
 		errors.Is(err, ErrVolumePinsApp), errors.Is(err, ErrVolumeOnWorker), errors.Is(err, ErrNoDataDir):
+		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, ErrInvalidTCPPort):
+		http.Error(w, err.Error(), http.StatusBadRequest)
+	case errors.Is(err, ErrTCPPortNotFound):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, ErrTCPPortExists), errors.Is(err, ErrTCPPortTaken), errors.Is(err, ErrNoTCPPortsLeft),
+		errors.Is(err, ErrTCPNeedsOneCopy), errors.Is(err, ErrTCPPinsApp):
 		http.Error(w, err.Error(), http.StatusConflict)
 	default:
 		project.WriteError(w, err)
@@ -868,6 +878,64 @@ func (h *Handler) deleteVolumeOrphan(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	if err := h.svc.DeleteVolumeOrphan(ctx, user.FromContext(ctx), id); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// TCPPortResponse is one of an app's published ports.
+type TCPPortResponse struct {
+	ID            int64     `json:"id"`
+	ContainerPort int       `json:"container_port"`
+	HostPort      int       `json:"host_port"`
+	CreatedAt     time.Time `json:"created_at"`
+}
+
+func toTCPPortResponse(p TCPPort) TCPPortResponse {
+	return TCPPortResponse{ID: p.ID, ContainerPort: p.ContainerPort, HostPort: p.HostPort, CreatedAt: p.CreatedAt}
+}
+
+func (h *Handler) listTCPPorts(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	ports, err := h.svc.TCPPorts(ctx, user.FromContext(ctx), refFrom(r))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	out := make([]TCPPortResponse, 0, len(ports))
+	for _, p := range ports {
+		out = append(out, toTCPPortResponse(p))
+	}
+	httpx.WriteJSON(w, http.StatusOK, out)
+}
+
+func (h *Handler) addTCPPort(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ContainerPort int `json:"container_port"`
+		HostPort      int `json:"host_port"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	ctx := r.Context()
+	p, err := h.svc.AddTCPPort(ctx, user.FromContext(ctx), refFrom(r), req.ContainerPort, req.HostPort)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusCreated, toTCPPortResponse(*p))
+}
+
+func (h *Handler) removeTCPPort(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("portID"), 10, 64)
+	if err != nil {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+	ctx := r.Context()
+	if err := h.svc.RemoveTCPPort(ctx, user.FromContext(ctx), refFrom(r), id); err != nil {
 		WriteError(w, err)
 		return
 	}

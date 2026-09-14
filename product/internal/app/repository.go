@@ -280,9 +280,15 @@ func (r *Repository) attach(ctx context.Context, apps []*App) error {
 	if err != nil {
 		return err
 	}
+	// And published ports, which pin an app the same way.
+	tcp, err := r.TCPPortsFor(ctx, ids)
+	if err != nil {
+		return err
+	}
 	for _, a := range apps {
 		a.Replicas = byApp[a.ID]
 		a.Volumes = volumes[a.ID]
+		a.TCPPorts = tcp[a.ID]
 	}
 	return nil
 }
@@ -1135,6 +1141,83 @@ func (r *Repository) VolumeIDs(ctx context.Context) (map[int64]bool, error) {
 		out[id] = true
 	}
 	return out, rows.Err()
+}
+
+// TCPPortsFor reads the published ports of several apps at once, keyed by
+// app.
+func (r *Repository) TCPPortsFor(ctx context.Context, appIDs []int64) (map[int64][]TCPPort, error) {
+	out := map[int64][]TCPPort{}
+	if len(appIDs) == 0 {
+		return out, nil
+	}
+	rows, err := r.q.QueryContext(ctx, `
+		SELECT id, app_id, container_port, host_port, created_at
+		FROM app_tcp_ports
+		WHERE app_id = ANY($1)
+		ORDER BY app_id, container_port`, appIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list app tcp ports: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var p TCPPort
+		if err := rows.Scan(&p.ID, &p.AppID, &p.ContainerPort, &p.HostPort, &p.CreatedAt); err != nil {
+			return nil, err
+		}
+		out[p.AppID] = append(out[p.AppID], p)
+	}
+	return out, rows.Err()
+}
+
+// AddTCPPort records a container port published on a host port.
+func (r *Repository) AddTCPPort(ctx context.Context, appID int64, containerPort, hostPort int) (*TCPPort, error) {
+	var p TCPPort
+	err := r.q.QueryRowContext(ctx, `
+		INSERT INTO app_tcp_ports (app_id, container_port, host_port) VALUES ($1, $2, $3)
+		RETURNING id, app_id, container_port, host_port, created_at`,
+		appID, containerPort, hostPort).Scan(&p.ID, &p.AppID, &p.ContainerPort, &p.HostPort, &p.CreatedAt)
+	switch {
+	case database.UniqueViolationOn(err, "app_tcp_ports_host_port"):
+		return nil, ErrTCPPortTaken
+	case database.IsUniqueViolation(err):
+		return nil, ErrTCPPortExists
+	case err != nil:
+		return nil, fmt.Errorf("add app tcp port: %w", err)
+	}
+	return &p, nil
+}
+
+// RemoveTCPPort deletes a published port's row.
+func (r *Repository) RemoveTCPPort(ctx context.Context, appID, portID int64) error {
+	result, err := r.q.ExecContext(ctx,
+		`DELETE FROM app_tcp_ports WHERE id = $1 AND app_id = $2`, portID, appID)
+	if err != nil {
+		return fmt.Errorf("remove app tcp port: %w", err)
+	}
+	if err := affected(result); errors.Is(err, database.ErrNotFound) {
+		return ErrTCPPortNotFound
+	} else if err != nil {
+		return err
+	}
+	return nil
+}
+
+// UsedTCPPorts are the host ports apps are published on.
+func (r *Repository) UsedTCPPorts(ctx context.Context) (map[int]bool, error) {
+	rows, err := r.q.QueryContext(ctx, `SELECT host_port FROM app_tcp_ports`)
+	if err != nil {
+		return nil, fmt.Errorf("list app tcp ports: %w", err)
+	}
+	defer rows.Close()
+	used := map[int]bool{}
+	for rows.Next() {
+		var port int
+		if err := rows.Scan(&port); err != nil {
+			return nil, err
+		}
+		used[port] = true
+	}
+	return used, rows.Err()
 }
 
 func affected(result sql.Result) error {

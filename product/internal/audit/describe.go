@@ -64,6 +64,8 @@ var routes = map[string]phrase{
 	"PATCH /apps/{project}/{env}/{name}/env":                 {"change the variables of", "changed the variables of", "{project}/{env}/{name}", "an app"},
 	"POST /apps/{project}/{env}/{name}/volumes":              {"add a volume to", "added a volume to", "{project}/{env}/{name}", "an app"},
 	"DELETE /apps/{project}/{env}/{name}/volumes/{volumeID}": {"remove a volume from", "removed a volume from", "{project}/{env}/{name}", "an app"},
+	"POST /apps/{project}/{env}/{name}/tcp-ports":            {"publish a TCP port of", "published a TCP port of", "{project}/{env}/{name}", "an app"},
+	"DELETE /apps/{project}/{env}/{name}/tcp-ports/{portID}": {"stop publishing a TCP port of", "stopped publishing a TCP port of", "{project}/{env}/{name}", "an app"},
 	"DELETE /volumes/orphans/{id}":                           {"delete the data of a removed volume", "deleted the data of a removed volume", "", ""},
 
 	"POST /datastores":                                            {"create a database", "created a database", "", ""},

@@ -84,6 +84,13 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Name:        "add_app_volume",
 		Description: "Give an app a volume: a directory at `path` inside its container whose contents survive deploys and restarts. It is mounted from the app's next deploy, so deploy it afterwards. An app with a volume runs as one copy on one machine — adding one is refused while the app is spread, scaled past one copy or autoscaled — and each deploy stops the old container before the new one starts, so the app is briefly unavailable. Removing a volume is not a tool: deleting data stays with a person. Requires the member role.",
 	}, t.addVolume)
+	// Listing only. Publishing a port puts whatever the app speaks on the
+	// open internet, and that stays with a person — the line the
+	// datastore tools draw at exposing a database.
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "list_app_tcp_ports",
+		Description: "List an app's published TCP ports: each port its container listens on and the host port of the control plane it is published on, for protocols that are not HTTP, such as SSH. Publishing one is not a tool.",
+	}, t.listTCPPorts)
 }
 
 type createInput struct {
@@ -294,6 +301,32 @@ func (t *Tools) addVolume(ctx context.Context, _ *mcp.CallToolRequest, in addVol
 		return nil, volumeOutput{}, err
 	}
 	return nil, volumeOutput{ID: v.ID, Path: v.Path, Node: v.NodeSlug}, nil
+}
+
+type tcpPortOutput struct {
+	ID            int64 `json:"id"`
+	ContainerPort int   `json:"container_port" jsonschema:"what the app listens on inside its container"`
+	HostPort      int   `json:"host_port" jsonschema:"where the control plane publishes it"`
+}
+
+type tcpPortsOutput struct {
+	Ports []tcpPortOutput `json:"ports"`
+}
+
+func (t *Tools) listTCPPorts(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, tcpPortsOutput, error) {
+	ref, err := ParseReference(in.App)
+	if err != nil {
+		return nil, tcpPortsOutput{}, err
+	}
+	ports, err := t.svc.TCPPorts(ctx, t.caller, ref)
+	if err != nil {
+		return nil, tcpPortsOutput{}, err
+	}
+	out := tcpPortsOutput{Ports: []tcpPortOutput{}}
+	for _, p := range ports {
+		out.Ports = append(out.Ports, tcpPortOutput{ID: p.ID, ContainerPort: p.ContainerPort, HostPort: p.HostPort})
+	}
+	return nil, out, nil
 }
 
 type envOutput struct {

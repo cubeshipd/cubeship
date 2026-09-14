@@ -451,6 +451,48 @@ backup was taken is not moved, and the copy on the old server is left where
 it is. An app with more than one volume is refused: the others would be
 left behind.
 
+## TCP ports
+
+A TCP port is a port of an app's container published on a host port of the
+control plane, for a protocol that is not HTTP — SSH into a Git server, a
+game server, a broker. `POST /apps/{ref}/tcp-ports` names the container port
+and, optionally, the host port; without one it is picked from 17000-17999,
+past the datastores' 15000s and the stores' 16000s, so an automatic pick on
+one side never meets the other.
+
+**Not through Traefik**, for the reason an exposed datastore is not: Traefik
+routes HTTP by name, and a TCP router matching `HostSNI(*)` has one backend
+per entrypoint, so two apps speaking SSH could not share one. The container
+publishes the port itself, which means **no TLS and no proxy** in front of
+it: what the app speaks there is on the open internet, and the app's own
+authentication is what keeps it safe.
+
+**It pins the app to one copy on the control plane.** A host port is bound
+by one container, so a second copy could not start, and a rolling deploy's
+new container could not bind the port until the old one let go — so, like a
+volume, it deploys through `swapInPlace` and is briefly unavailable. On the
+control plane, because every name the instance serves points there and its
+firewall is the one this instance writes: a port published on a worker would
+be at an address nothing points at. Adding one is refused for an app that is
+anywhere else, scaled, spread or autoscaling (`canPublishTCP`), and `Update`
+refuses moving or multiplying it (`keepsTCP`).
+
+**Below 1024 is refused**, as a datastore's is: 22 is the host's own SSH, and
+the low numbers are where the machine's own services already are.
+
+**A named port is checked against every published one first** —
+datastores', stores' and apps' — through `HostPorts`, which `server`
+satisfies with the union the firewall reads, so a clash is a 409 now rather
+than a deploy that fails to bind later. Adding and removing one tells the
+firewall (`PortsChanged`), which admits the port in Cubeship's stanza by the
+number it is published on — see networking.md, "The firewall". Both take
+effect on the next deploy, because a container's published ports are fixed
+when it is created.
+
+**Publishing one is not an MCP tool.** Listing is: what an app is reached on
+is a fair question, and putting a service on the open internet stays with a
+person, the line `internal/datastore` draws at exposing a database.
+
 ## Deleting
 
 **Deleting something takes everything under it.** A project takes its

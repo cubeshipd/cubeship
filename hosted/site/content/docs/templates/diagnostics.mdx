@@ -260,6 +260,38 @@ corrupt it.
 *Error.* A template with a volume has no `minCubeship`, or one that a
 release before volumes satisfies. Set `minCubeship: "0.7.0"`.
 
+## TCP ports
+
+### `tcp.duplicate`
+
+*Error.* Two entries of one app publish the same container `port`.
+
+### `tcp.host`
+
+*Error.* A `host` is not a number from `1024` to `65535` or
+`${input.<key>}`, or it names an input that is not a `number`.
+
+### `tcp.host-duplicate`
+
+*Error.* Two ports in the template are published on the same host port —
+the same number, or the same input.
+
+### `tcp.host-range`
+
+*Warning.* The input a `host` names has no `min` of at least `1024` or no
+`max` of at most `65535`, so an answer no instance publishes on is only
+refused when the install checks it.
+
+### `tcp.one-copy`
+
+*Error.* An app with a TCP port also sets `scale` above `1`, `spread` or
+`autoscale`. A host port is bound by one container.
+
+### `tcp.min-cubeship`
+
+*Error.* A template with a TCP port has no `minCubeship`, or one that a
+release before TCP ports satisfies. Set `minCubeship: "0.7.2"`.
+
 ## Advice
 
 None of these refuse a release.

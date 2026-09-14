@@ -257,6 +257,48 @@ cubeship app place <reference> [flags]
 | `--on` |  | the machines that run it, by name |
 | `--replicas` |  | how many copies to run in total, spread over those machines (default: unchanged) |
 
+## cubeship app tcp
+
+Publish a port of an app's container on a host port of the control plane,
+for a protocol that is not HTTP: SSH into a Git server, a game server, a
+broker. There is no TLS and no proxy in front of it.
+
+An app with a published port runs as one copy on the control plane, and
+each deploy stops the old container before the new one starts, so the
+app is briefly unavailable during a deploy.
+
+## cubeship app tcp add
+
+Publish \<container-port\> on a host port of the control plane, from the
+next deploy. --host-port names it (1024-65535); without it one is picked
+from 17000-17999. Refused while the app runs anywhere but the control
+plane, as more than one copy, or autoscales.
+
+```bash
+cubeship app tcp add <app> <container-port> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--host-port` |  | the host port to publish on; picked from 17000-17999 when left out |
+
+## cubeship app tcp list
+
+List an app's published TCP ports
+
+```bash
+cubeship app tcp list <app>
+```
+
+## cubeship app tcp remove
+
+Stop publishing a port. The container running now keeps it until the
+next deploy.
+
+```bash
+cubeship app tcp remove <app> <id>
+```
+
 ## cubeship app volume
 
 A volume is a directory mounted into an app's container whose contents

@@ -54,6 +54,15 @@ bound what a template can ever be:
   pattern reads simple ranges only, so it may flag one the validator
   accepts, and `volume_schema_test.go` holds it to never passing one the
   validator refuses.
+- **A TCP port's host port is named by an input, or left to the
+  instance.** `apps[].tcp: [{ port, host }]` publishes a container port on
+  the control plane, one copy like a volume (`tcp.one-copy`), and needs a
+  `minCubeship` past the releases without it (`tcp.min-cubeship`). A literal
+  `host` is allowed — unlike a domain, a port is not the instance's own name
+  — but a second install on one instance fails its check on it, so
+  `${input.<key>}` naming a number input is what a template should say. The
+  schema does not hold `tcp` to its release the way it holds volumes: its one
+  `if`/`then` is volumes', and the validator refuses it either way.
 
 Excluded for the same reason, all of it instance-level: DNS providers,
 backup schedules, certificates, firewall rules, external registries, and

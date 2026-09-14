@@ -100,6 +100,12 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"node":       openapi.String("The machine the data is on. The app runs there, as one copy, for as long as it has the volume: data does not move between machines."),
 				"created_at": {Type: "string", Format: "date-time"},
 			}, "id", "path", "node", "created_at"),
+			"AppTCPPort": openapi.Object(map[string]*openapi.Schema{
+				"id":             openapi.Integer("Identifies this port on this app, for removing it."),
+				"container_port": openapi.Integer("What the app listens on inside its container."),
+				"host_port":      openapi.Integer("Where the control plane publishes it: connect to the instance's address on this port."),
+				"created_at":     {Type: "string", Format: "date-time"},
+			}, "id", "container_port", "host_port", "created_at"),
 			"VolumeOrphan": openapi.Object(map[string]*openapi.Schema{
 				"id":         openapi.Integer("The id the volume had, which is also its directory's name under the data directory."),
 				"app":        openapi.String("The app it belonged to. Absent when its record is missing."),
@@ -277,6 +283,55 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,
 						"409": openapi.TextResponse("The deploy has not finished."),
+					},
+				},
+			},
+			appPath + "/tcp-ports": {
+				"get": {
+					OperationID: "listAppTCPPorts",
+					Summary:     "List an app's published TCP ports",
+					Description: "Ports of the app's container published on a host port of the control plane, for protocols that are not HTTP.",
+					Tags:        []string{"Apps"},
+					Parameters:  refParams,
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The app's published ports.", openapi.Array(openapi.Ref("AppTCPPort"))),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+					},
+				},
+				"post": {
+					OperationID: "addAppTCPPort",
+					Summary:     "Publish a TCP port of an app",
+					Description: "Publishes `container_port` on `host_port` of the control plane — SSH into a Git server, a game server, a broker — from the app's next deploy. Traefik routes HTTP by name and these carry none, so the container publishes the port itself.\n\n**There is no TLS and no proxy in front of it**: whatever the app speaks on that port is on the open internet, and what makes that safe is the app's own authentication. On a host whose Docker ports are under ufw, the port is admitted by Cubeship's stanza.\n\n**A published port pins the app.** It runs as one copy on the control plane, and changing its machines, its count, spread or autoscaling is refused. Each deploy stops the old container before the new one starts, so the app is briefly unavailable.\n\nRefused (409) while the app is anywhere but the control plane, runs more than one copy, is spread or autoscales. Requires the member role.",
+					Tags:        []string{"Apps"},
+					Parameters:  refParams,
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"container_port": openapi.Integer("What the app listens on inside its container, 1-65535."),
+						"host_port":      openapi.Integer("Where to publish it, 1024-65535. Left out or 0 picks a free one from 17000-17999."),
+					}, "container_port")),
+					Responses: openapi.Responses{
+						"201": openapi.JSONResponse("The published port.", openapi.Ref("AppTCPPort")),
+						"400": openapi.TextResponse("A port is out of range."),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("The app already publishes that container port, the host port is taken, none is left to pick, or the app is not one copy on the control plane."),
+					},
+				},
+			},
+			appPath + "/tcp-ports/{portID}": {
+				"delete": {
+					OperationID: "removeAppTCPPort",
+					Summary:     "Stop publishing a TCP port of an app",
+					Description: "The container running now keeps the port until the next deploy. Requires the member role.",
+					Tags:        []string{"Apps"},
+					Parameters:  append(refParams, openapi.PathParam("portID", "The published port's id.")),
+					Responses: openapi.Responses{
+						"204": openapi.Empty("The port is no longer published from the next deploy."),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
 					},
 				},
 			},

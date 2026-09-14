@@ -260,6 +260,16 @@ Get an app's recent container log output (stdout and stderr combined).
 
 \* required
 
+### list_app_tcp_ports
+
+List an app's published TCP ports: each port its container listens on and the host port of the control plane it is published on, for protocols that are not HTTP, such as SSH. Publishing one is not a tool.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | app reference: project/environment/app, or project/app for production |
+
+\* required
+
 ### list_app_volumes
 
 List an app's volumes: directories mounted into its container that outlive it, each with the path the container sees and the machine its data is on.

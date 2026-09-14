@@ -51,6 +51,9 @@ type Apps interface {
 	DeleteApp(ctx context.Context, caller *user.User, ref app.Reference, deleteVolumeData bool) (*app.Scoped, error)
 	AddVolume(ctx context.Context, caller *user.User, ref app.Reference, containerPath string) (*app.Volume, error)
 	RemoveVolume(ctx context.Context, caller *user.User, ref app.Reference, volumeID int64, deleteData bool) error
+	AddTCPPort(ctx context.Context, caller *user.User, ref app.Reference, containerPort, hostPort int) (*app.TCPPort, error)
+	RemoveTCPPort(ctx context.Context, caller *user.User, ref app.Reference, portID int64) error
+	TCPPortTaken(ctx context.Context, hostPort int) (bool, error)
 	HostTaken(ctx context.Context, host string) (bool, error)
 	Env(ctx context.Context, caller *user.User, ref app.Reference) (envvar.Map, []envvar.Resolved, error)
 	List(ctx context.Context, caller *user.User) ([]*app.Scoped, error)
@@ -571,6 +574,9 @@ func (s *Service) prepare(ctx context.Context, caller *user.User, req Request) (
 	if err := s.answer(ctx, caller, p, req.Inputs); err != nil {
 		return nil, err
 	}
+	if err := s.checkTCPPorts(ctx, p); err != nil {
+		return nil, err
+	}
 	return p, nil
 }
 
@@ -640,6 +646,45 @@ func (s *Service) nameApps(ctx context.Context, caller *user.User, p *plan, over
 			}
 		}
 		p.apps[a.Key] = name
+	}
+	return nil
+}
+
+// checkTCPPorts refuses, before anything is created, a host port the
+// answers name that no instance publishes on or something here already
+// holds. A port left for the instance to pick cannot be refused.
+func (s *Service) checkTCPPorts(ctx context.Context, p *plan) error {
+	seen := map[int]bool{}
+	for _, a := range p.manifest.Apps {
+		for _, tp := range a.TCP {
+			key := "apps." + a.Key
+			if tp.Host != nil {
+				if input, ok := strings.CutPrefix(*tp.Host, "${input."); ok {
+					key = "inputs." + strings.TrimSuffix(input, "}")
+				}
+			}
+			host, err := tcpHostPort(p, tp)
+			if err != nil {
+				return &InputError{Key: key, Message: err.Error()}
+			}
+			if host == 0 {
+				continue
+			}
+			if host < app.MinTCPHostPort || host > 65535 {
+				return &InputError{Key: key, Message: fmt.Sprintf("a host port is from %d to 65535", app.MinTCPHostPort)}
+			}
+			if seen[host] {
+				return &InputError{Key: key, Message: fmt.Sprintf("host port %d is the answer for another port as well", host)}
+			}
+			seen[host] = true
+			taken, err := s.apps.TCPPortTaken(ctx, host)
+			if err != nil {
+				return err
+			}
+			if taken {
+				return &TakenError{Kind: "host port", Name: strconv.Itoa(host)}
+			}
+		}
 	}
 	return nil
 }

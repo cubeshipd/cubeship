@@ -266,6 +266,16 @@ export type AppVolume = {
   created_at: string;
 };
 
+// A port of an app's container published on a host port of the control
+// plane, for a protocol that is not HTTP. Any at all pins the app to one
+// copy there.
+export type AppTCPPort = {
+  id: number;
+  container_port: number;
+  host_port: number;
+  created_at: string;
+};
+
 // A volume's data kept after the volume was removed or its app deleted.
 export type VolumeOrphan = {
   id: number;

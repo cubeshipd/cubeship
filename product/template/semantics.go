@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path"
 	"slices"
+	"strconv"
 	"strings"
 )
 
@@ -124,6 +125,13 @@ func checkSemantics(m Manifest, doc *document) []Diagnostic {
 			}
 		}
 	}
+
+	inputsByKey := map[string]Input{}
+	for _, in := range m.Inputs {
+		inputsByKey[in.Key] = in
+	}
+	// Host ports as written, across every app: the instance binds each once.
+	hostPorts := map[string]bool{}
 
 	for i, a := range m.Apps {
 		at := func(rest ...any) []any { return append([]any{"apps", i}, rest...) }
@@ -258,6 +266,60 @@ func checkSemantics(m Manifest, doc *document) []Diagnostic {
 			}
 		}
 
+		containerPorts := map[int]bool{}
+		for x, tp := range a.TCP {
+			if containerPorts[tp.Port] {
+				c.error("tcp.duplicate", fmt.Sprintf("two entries of this app publish port %d", tp.Port), at("tcp", x, "port"), "")
+			}
+			containerPorts[tp.Port] = true
+			if tp.Host == "" {
+				continue
+			}
+			p := at("tcp", x, "host")
+			if n, err := strconv.Atoi(tp.Host); err == nil {
+				if n < minTCPHostPort || n > 65535 {
+					c.error("tcp.host", fmt.Sprintf("a host port is from %d to 65535", minTCPHostPort), p, "")
+				}
+			} else {
+				refs := findReferences(tp.Host)
+				if len(refs) != 1 || refs[0].raw != tp.Host || refs[0].kind != "input" || refs[0].attr != "" {
+					c.error("tcp.host", fmt.Sprintf("a host port is a number from %d to 65535, or ${input.<key>} naming a number input", minTCPHostPort), p, "")
+					continue
+				}
+				in, ok := inputsByKey[refs[0].key]
+				if !ok {
+					c.error("reference.unknown", refs[0].raw+" names no input in this template", p, "")
+					continue
+				}
+				if in.Type != "number" {
+					c.error("tcp.host", fmt.Sprintf("%s is a %s input, and a host port is answered by a number", refs[0].raw, in.Type), p,
+						"add an input of type number")
+					continue
+				}
+				if in.Min == nil || *in.Min < minTCPHostPort || in.Max == nil || *in.Max > 65535 {
+					c.add(Warning, "tcp.host-range", fmt.Sprintf("give %s min: %d and max: 65535, so an answer no instance publishes on is asked again rather than failing the install", refs[0].raw, minTCPHostPort), p, "")
+				}
+			}
+			if hostPorts[tp.Host] {
+				c.error("tcp.host-duplicate", "two ports in this template are published on the same host port, "+tp.Host, p, "")
+			}
+			hostPorts[tp.Host] = true
+		}
+		if len(a.TCP) > 0 {
+			if (a.Scale != nil && *a.Scale > 1) || (a.Spread != nil && *a.Spread) || a.Autoscale != nil {
+				c.error("tcp.one-copy", "an app publishing a TCP port runs as one copy on one machine: drop scale, spread and autoscale",
+					at("tcp"), "a host port is bound by one container")
+			}
+			if m.MinCubeship == "" || slices.ContainsFunc(withoutTCP, func(v string) bool {
+				ok, _ := Satisfies(m.MinCubeship, v)
+				return ok
+			}) {
+				c.error("tcp.min-cubeship", "a template publishing a TCP port needs a minCubeship that "+
+					"excludes releases before TCP ports, or an older instance installs it without the port",
+					at("tcp"), `set minCubeship: "`+tcpSince+`"`)
+			}
+		}
+
 		if as := a.Autoscale; as != nil {
 			lo := 1
 			if as.Min != nil {
@@ -286,6 +348,13 @@ const volumesSince = "0.7.0"
 // because a range leaves prereleases out unless it names one — ">=0.6.0"
 // is not satisfied by 0.7.0-rc.5, and is by any 0.6.
 var withoutVolumes = []string{"0.6.999", "0.7.0-rc.5"}
+
+// tcpSince is the first release whose instances publish an app's TCP ports.
+const tcpSince = "0.7.2"
+
+// withoutTCP are the newest releases that do not, two for the reason
+// withoutVolumes is two.
+var withoutTCP = []string{"0.7.1", "0.7.2-rc.0"}
 
 // reservedMounts are paths a container gets from the kernel. The daemon's
 // app.CleanVolumePath refuses the same, which rules_test holds it to.

@@ -116,6 +116,8 @@ type world struct {
 	dbs      map[string]bool
 	stores   map[string]bool
 	hosts    map[string]bool
+	// hostPorts are the host ports something on the instance publishes.
+	hostPorts map[int]bool
 
 	specs       []datastore.Spec
 	deployFails bool
@@ -330,6 +332,27 @@ func (f fakeApps) AddVolume(_ context.Context, _ *user.User, ref app.Reference, 
 func (f fakeApps) RemoveVolume(_ context.Context, _ *user.User, ref app.Reference, id int64, deleteData bool) error {
 	f.did(fmt.Sprintf("remove volume %d from %s", id, ref))
 	return nil
+}
+
+func (f fakeApps) AddTCPPort(_ context.Context, _ *user.User, ref app.Reference, containerPort, hostPort int) (*app.TCPPort, error) {
+	f.mu.Lock()
+	a := f.apps[ref.String()]
+	p := app.TCPPort{ID: int64(len(a.TCPPorts) + 1), ContainerPort: containerPort, HostPort: hostPort}
+	a.TCPPorts = append(a.TCPPorts, p)
+	f.mu.Unlock()
+	f.did(fmt.Sprintf("publish port %d of %s on %d", containerPort, ref, hostPort))
+	return &p, nil
+}
+
+func (f fakeApps) RemoveTCPPort(_ context.Context, _ *user.User, ref app.Reference, id int64) error {
+	f.did(fmt.Sprintf("stop publishing port %d of %s", id, ref))
+	return nil
+}
+
+func (f fakeApps) TCPPortTaken(_ context.Context, hostPort int) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.hostPorts[hostPort], nil
 }
 
 func (f fakeApps) HostTaken(_ context.Context, host string) (bool, error) {

@@ -242,7 +242,7 @@ func newAppCmd() *cobra.Command {
 	deleteCmd.Flags().BoolVar(&deleteConfirmed, "yes", false, "confirm that the app should be deleted")
 
 	appCmd.AddCommand(createCmd, listCmd, getCmd, deployCmd, deploymentsCmd, deleteCmd, logsCmd,
-		newAppPlaceCmd(), newAppLimitsCmd(), newAppAutoscaleCmd(), appEnvCommands(), newAppVolumeCmd())
+		newAppPlaceCmd(), newAppLimitsCmd(), newAppAutoscaleCmd(), appEnvCommands(), newAppVolumeCmd(), newAppTCPCmd())
 	return appCmd
 }
 

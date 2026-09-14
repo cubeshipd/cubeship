@@ -97,7 +97,10 @@ type App struct {
 	Replicas []Replica
 	// Volumes are the directories mounted into its container that
 	// outlive it. Any at all pins the app: see Volume.
-	Volumes   []Volume
+	Volumes []Volume
+	// TCPPorts are its container's ports published on the control plane.
+	// Any at all pins the app there: see TCPPort.
+	TCPPorts  []TCPPort
 	Env       envvar.Map
 	CreatedAt time.Time
 }

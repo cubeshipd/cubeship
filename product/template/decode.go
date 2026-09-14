@@ -17,8 +17,9 @@ var keySets = map[string][]string{
 	"database": {"key", "name", "engine", "version", "username", "database", "expose", "limits"},
 	"store":    {"key", "name", "version", "buckets", "limits"},
 	"app": {"key", "name", "image", "tag", "repo", "ref", "build", "dockerfile", "port", "health",
-		"domains", "attach", "env", "limits", "scale", "spread", "autoscale", "volumes"},
+		"domains", "attach", "env", "limits", "scale", "spread", "autoscale", "volumes", "tcp"},
 	"volume":    {"path"},
+	"tcp":       {"port", "host"},
 	"domain":    {"host", "port"},
 	"attach":    {"database", "store", "bucket", "prefix"},
 	"limits":    {"cpu", "memory"},
@@ -287,6 +288,36 @@ func (d *decoder) app(n *yaml.Node, path []any) App {
 		var v Volume
 		v.Path, _ = d.str(vf, p, "path", true, nil)
 		a.Volumes = append(a.Volumes, v)
+	}
+	for i, tn := range d.list(f, path, "tcp") {
+		p := child(child(path, "tcp"), i)
+		tf := d.object(tn, p, keySets["tcp"], keySets["tcp"])
+		if tf == nil {
+			continue
+		}
+		var tp TCP
+		lo, hi := 1.0, 65535.0
+		if v := d.integerPtr(tf, p, "port", &lo, &hi); v != nil {
+			tp.Port = *v
+		} else if _, given := tf["port"]; !given {
+			d.fail("invalid_type", "port is required", child(p, "port"), "")
+		}
+		// A host port is a number written as one, or the reference to the
+		// input that answers it — which YAML can only hold as a string.
+		if hn, given := tf["host"]; given {
+			switch {
+			case hn.Kind == yaml.ScalarNode && hn.Tag == "!!int":
+				hostLo, hostHi := float64(minTCPHostPort), 65535.0
+				if v := d.integerPtr(tf, p, "host", &hostLo, &hostHi); v != nil {
+					tp.Host = strconv.Itoa(*v)
+				}
+			case hn.Kind == yaml.ScalarNode && hn.Tag == "!!str":
+				tp.Host, _ = d.str(tf, p, "host", false, nil)
+			default:
+				d.fail("invalid_type", "host is a port number or ${input.<key>}", child(p, "host"), "")
+			}
+		}
+		a.TCP = append(a.TCP, tp)
 	}
 	return a
 }
