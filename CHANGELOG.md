@@ -6,6 +6,123 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.7.0 — 2026-09-13
+
+Templates install whole stacks in one form, apps can keep data in volumes, access roles decide what every account and API key reaches, and an audit log records who changed what.
+
+### Upgrading
+
+**Every account gets an access role.** Admins get **Admin**; members get
+**Deploy**, which is exactly what a member could do before. Nothing an
+account or its keys could do changes. See Access roles below.
+
+**A deploy stuck in `pending` from an earlier restart is closed** the first
+time the instance starts on this release, and can then be deleted.
+
+### Added
+
+**Templates.** A template is a GitHub repository with a `template.yaml`
+describing apps, the databases and object stores they need, and the
+questions an installer answers. The catalog at
+[cubeship.dev/templates](https://cubeship.dev/templates) indexes their
+releases, and **Templates** in the dashboard reads it.
+
+- **Installing is one form.** Pick a version, a project and environment —
+  existing ones, or new — and answer the template's questions. A domain
+  can be set through a connected DNS provider, which writes the record
+  before the install starts. The instance creates every database, store
+  and app, wires them together, deploys them, and waits for every build.
+- **A failed step undoes the whole install.**
+- **Installed says when a newer release exists.** Updating shows what will
+  be created, changed and kept first, can move to any release — older ones
+  included — and never deletes. A failed update puts the apps back.
+- **Uninstalling keeps the data by default.**
+- Only an admin, or a role that manages templates, installs. The same is
+  in `cubeship template` and the MCP tools. Opening Templates is the only
+  thing that reaches cubeship.dev, with nothing about your instance in it.
+
+**Volumes for apps.** A path inside an app's container whose contents
+survive deploys and restarts — what RabbitMQ, Elasticsearch and anything
+that keeps state in files needs. Add one under the app's
+**Settings → Volumes** or with `cubeship app volume add`.
+
+- **An app with a volume runs as one copy on one server**, where its data
+  is, and each deploy stops the old container before starting the new one.
+- **A new volume is writable by the app**, taking the owner the image has
+  at its path.
+- **The data outlives the volume by default**; kept data is listed until
+  an admin removes it.
+- **Backed up and restored** now or on a schedule. On the control plane
+  to its disk or S3; on any other server, the worker itself sends it to an
+  S3 bucket outside the instance. A restore is unpacked beside the data
+  first, so a failed one changes nothing.
+- **A volume moves to another server by restoring its backup there.**
+- **Templates can declare volumes**, with `minCubeship: "0.7.0"`.
+
+**Access roles.** Every account holds a role: for each kind of resource —
+projects, apps, domains, databases, object storage, servers, templates,
+backups, registries, git and DNS providers, credentials, certificates, the
+firewall, settings, the audit log — a level (view or manage), whether it
+reads secrets, and which projects, databases or stores. **Admin**,
+**Deploy** and **Read only** ship with the instance and cannot be changed;
+others are made on **Users → Access roles**. Users and roles, and building
+source, stay an admin's.
+
+**Roles for API keys.** A key given a role reaches what the role grants and
+its owner reaches — never more. Over MCP a key is not offered a tool its
+role would refuse, so an agent cannot be talked into calling one.
+`cubeship user api-key create --role`, `cubeship role list`, `list_roles`.
+
+**The audit log.** Every change made through the dashboard, the API or MCP,
+and every refused attempt, as a sentence: who, through which door, with
+which key, and how it ended. Filter by person, channel, outcome and date
+range on **Platform → Audit log**, or with `cubeship audit` and
+`list_audit_events`. Request bodies are never kept; events are kept 90
+days.
+
+**Beta versions, if you ask for them.** **Settings → Updates → Receive beta
+versions** makes the update button offer betas and release candidates.
+Automatic updates stay on stable releases, and turning it off never goes
+back a version.
+
+**Cards show what everything is using.** Projects, apps, databases and
+object stores carry CPU and memory bars.
+
+**An app's addresses can be copied and opened from its page**, internal
+address and public domains alike.
+
+### Fixed
+
+**An exposed database or object store could be unreachable, or open more
+than it should.** Exposing one never told the firewall, and a hand-written
+rule opened every database of that engine. Cubeship keeps its own block in
+ufw's `after.rules` now, per published port — nothing to do on your side.
+
+**A build no longer runs out of time on a small VPS.** A deploy that builds
+gets its own 30 minutes.
+
+**An app calling another by its public domain hung** when both were on the
+same machine.
+
+**A deploy interrupted by a restart stayed `pending` for ever.**
+
+**Prereleases are ordered part by part**, so `rc.10` comes after `rc.2`.
+
+**The release notes open at the newest release**, and a stable version
+shows only stable notes.
+
+**An update or uninstall started from an installation's page shows its
+progress**, and a chosen theme stays chosen when Appearance is opened
+again.
+
+### Security
+
+**An ECR region is checked where it becomes an address**, so one saved
+before 0.6.0 cannot end the AWS hostname early.
+
+**Secrets a template install generates are no longer written to the
+browser's session storage.**
+
 ## 0.7.0-rc.11 — 2026-09-13
 
 *Prerelease.*
