@@ -36,7 +36,8 @@ func TestManagementMigrationBlocksApplicationTraffic(t *testing.T) {
 			last = out
 			time.Sleep(100 * time.Millisecond)
 		}
-		t.Fatalf("service did not become reachable: %s", last)
+		logs, _ := exec.CommandContext(ctx, "docker", "logs", host).CombinedOutput()
+		t.Fatalf("service did not become reachable: %s; server logs: %s", last, logs)
 	}
 	suffix := fmt.Sprint(time.Now().UnixNano())
 	appNet, privateNet := "cs-app-"+suffix, "cs-private-"+suffix
@@ -48,8 +49,8 @@ func TestManagementMigrationBlocksApplicationTraffic(t *testing.T) {
 	for _, name := range []string{server, probe} {
 		t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", name).Run() })
 	}
-	docker("run", "-d", "--name", server, "--network", appNet, "alpine:3.23", "sh", "-c", "mkdir -p /www; echo private > /www/index.html; exec httpd -f -p 8080 -h /www")
-	docker("run", "-d", "--name", probe, "--network", appNet, "--cap-drop", "NET_RAW", "--security-opt", "no-new-privileges:true", "alpine:3.23", "sleep", "120")
+	docker("run", "-d", "--name", server, "--network", appNet, "busybox:1.37", "sh", "-c", "mkdir -p /www; echo private > /www/index.html; exec httpd -f -p 8080 -h /www")
+	docker("run", "-d", "--name", probe, "--network", appNet, "--cap-drop", "NET_RAW", "--security-opt", "no-new-privileges:true", "busybox:1.37", "sleep", "120")
 	waitHTTP(probe, server)
 	client, err := dockerx.New()
 	if err != nil {
