@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { TemplateCard } from "@/components/templates/card";
 import { Filters } from "@/components/templates/filters";
+import { MoreTemplates } from "@/components/templates/more";
 import { distinctTags, listTemplates } from "@/lib/catalog";
 
 // Reads the catalog on every request, so this page can never be static.
@@ -21,19 +22,17 @@ export default async function TemplatesPage(props: PageProps<"/templates">) {
   const params = await props.searchParams;
   const q = firstOf(params.q);
   const tag = firstOf(params.tag);
-  const cursor = firstOf(params.cursor);
   const sort = firstOf(params.sort) === "stars" ? "stars" : "recent";
 
   const [{ templates: rows, next_cursor: nextCursor }, tags] = await Promise.all([
-    listTemplates({ q, tag, sort, cursor }),
+    listTemplates({ q, tag, sort }),
     distinctTags(),
   ]);
 
-  const nextParams = new URLSearchParams();
-  if (q) nextParams.set("q", q);
-  if (tag) nextParams.set("tag", tag);
-  if (sort !== "recent") nextParams.set("sort", sort);
-  if (nextCursor) nextParams.set("cursor", nextCursor);
+  const query = new URLSearchParams();
+  if (q) query.set("q", q);
+  if (tag) query.set("tag", tag);
+  if (sort !== "recent") query.set("sort", sort);
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
@@ -80,14 +79,8 @@ export default async function TemplatesPage(props: PageProps<"/templates">) {
             ))}
           </div>
           {nextCursor ? (
-            <div className="mt-8 text-center">
-              <Link
-                href={`/templates?${nextParams}`}
-                className="label border border-fd-border px-4 py-2 text-fd-muted-foreground hover:border-primary hover:text-primary"
-              >
-                More →
-              </Link>
-            </div>
+            // Keyed on the filters, so changing one starts again from the top.
+            <MoreTemplates key={query.toString()} query={query.toString()} cursor={nextCursor} />
           ) : null}
         </>
       )}

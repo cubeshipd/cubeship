@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
 import { ChevronDownIcon, TagIcon } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -74,11 +74,36 @@ function Catalog() {
   if (tag) params.set("tag", tag);
   if (sort !== "recent") params.set("sort", sort);
 
-  const page = useQuery({
+  // Page after page as the grid is scrolled to its end, rather than a
+  // "More" button or one page and nothing after it.
+  const page = useInfiniteQuery({
     queryKey: ["templates", search, tag, sort],
-    queryFn: () => api.get<TemplatePage>(params.size > 0 ? `/templates?${params}` : "/templates"),
+    queryFn: ({ pageParam }) => {
+      const q = new URLSearchParams(params);
+      if (pageParam) q.set("cursor", pageParam);
+      return api.get<TemplatePage>(q.size > 0 ? `/templates?${q}` : "/templates");
+    },
+    initialPageParam: "",
+    getNextPageParam: (last) => last.next_cursor ?? undefined,
     placeholderData: (previous) => previous,
   });
+  const templates = page.data?.pages.flatMap((p) => p.templates);
+
+  const end = useRef<HTMLDivElement>(null);
+  const { hasNextPage, isFetchingNextPage, fetchNextPage } = page;
+  useEffect(() => {
+    const el = end.current;
+    if (!el || !hasNextPage) return;
+    const seen = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && !isFetchingNextPage) fetchNextPage();
+      },
+      // A screen ahead, so the next page is usually there before the end is.
+      { rootMargin: "600px 0px" },
+    );
+    seen.observe(el);
+    return () => seen.disconnect();
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
   const tags = useQuery({
     queryKey: ["template-tags"],
     queryFn: () => api.get<{ tags: string[] }>("/template-tags"),
@@ -117,23 +142,24 @@ function Catalog() {
       </div>
 
       <ErrorAlert error={page.error ? message(page.error) : null} />
-      {page.data && page.data.templates.length === 0 && (
+      {templates && templates.length === 0 && (
         <p className="py-10 text-center text-sm text-muted-foreground">
           {filtered ? "No template matches these filters." : "The catalog has no templates yet."}
         </p>
       )}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-        {page.data
-          ? page.data.templates.map((t) => (
-              <TemplateCard key={`${t.owner}/${t.name}`} template={t} />
-            ))
-          : !page.error &&
-            Array.from({ length: 6 }, (_, i) => (
-              // The size of a card, so the grid does not move when they arrive.
-              // biome-ignore lint/suspicious/noArrayIndexKey: placeholders with nothing else to key on.
-              <div key={i} className="h-[148px] animate-pulse border border-border bg-card" />
-            ))}
+        {templates?.map((t) => (
+          <TemplateCard key={`${t.owner}/${t.name}`} template={t} />
+        ))}
+        {(!templates || isFetchingNextPage) &&
+          !page.error &&
+          Array.from({ length: templates ? 3 : 6 }, (_, i) => (
+            // The size of a card, so the grid does not move when they arrive.
+            // biome-ignore lint/suspicious/noArrayIndexKey: placeholders with nothing else to key on.
+            <div key={i} className="h-[148px] animate-pulse border border-border bg-card" />
+          ))}
       </div>
+      <div ref={end} aria-hidden />
     </>
   );
 }
