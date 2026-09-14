@@ -14,16 +14,12 @@ export default function TemplatesError({ error }: { error: Error & { digest?: st
   }, [error]);
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-24 text-center">
-      <p className="label text-primary">Templates</p>
-      <h1 className="mt-2 font-semibold text-2xl text-fd-foreground tracking-tight">
-        The template catalog is unavailable right now
-      </h1>
-      <p className="mt-3 text-fd-muted-foreground text-sm">
-        Try again in a moment. The docs don't need it.
-      </p>
-      <Link href={docsRoute} className="label mt-6 inline-block text-primary hover:text-glow">
-        Back to the docs →
+    <div className="editorial-page site-container templates-error">
+      <p className="section-kicker">Catalog connection</p>
+      <h1>The template catalog is unavailable right now.</h1>
+      <p>Try again in a moment. Documentation remains available while the catalog reconnects.</p>
+      <Link href={docsRoute} className="inline-link">
+        Read the docs <span aria-hidden>↗</span>
       </Link>
     </div>
   );

@@ -1,75 +1,73 @@
-import { Check, X } from "lucide-react";
-import { CodeTerminal, Section } from "./section";
-
-const can = [
-  "create a project and an environment",
-  "deploy an app, then read how the deploy ended",
-  "read its logs and what its container is using",
-  "attach a database and set the variables",
-  "install a template, and update it when a release comes out",
-  "list the servers, the stores and the buckets",
-];
-
-const cannot = ["set a container's ceiling", "open a port to the internet"];
+import { ArrowUpRight, Bot, Check, Code, LayoutDashboard, Terminal } from "lucide-react";
+import Link from "next/link";
 
 export function Agent() {
   return (
-    <Section
-      id="agent"
-      label="Run by you or your agent"
-      title="The same API, with an endpoint for an agent."
-      lede="/mcp is authenticated with the same key as the dashboard and the CLI. Point Claude Code, Cursor or whatever you run at it, and it does the work of the dashboard without the dashboard."
-    >
-      <div className="grid gap-10 lg:grid-cols-2">
-        <CodeTerminal
-          title="mcp.json"
-          lang="json"
-          // Keys in the green template.yaml's keys are, values in its
-          // light blue. The theme gives JSON keys the blue it gives
-          // numbers, and this snippet has none.
-          colorReplacements={{
-            "github-dark": { "#79b8ff": "#85e89d" },
-            "github-light": { "#005cc5": "#22863a" },
-          }}
-          code={`{
-  "mcpServers": {
-    "cubeship": {
-      "type": "http",
-      "url": "https://cubeship.example.com/mcp",
-      "headers": { "Authorization": "Bearer <your-api-key>" }
-    }
-  }
-}`}
-        />
-        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-1">
-          <div>
-            <p className="label text-subtle-foreground">An agent can</p>
-            <ul className="mt-3 space-y-2 text-sm">
-              {can.map((c) => (
-                <li key={c} className="flex gap-3">
-                  <Check className="mt-0.5 size-4 shrink-0 text-success" />
-                  <span>{c}</span>
-                </li>
-              ))}
-            </ul>
+    <section id="agent" className="site-container product-section agent-section">
+      <div className="agent-copy">
+        <p className="section-kicker">Built for the way you work</p>
+        <h2>
+          Your platform.
+          <br />
+          Your agent.
+          <br />
+          Same possibilities.
+        </h2>
+        <p className="section-description">
+          Click through the dashboard, script with the CLI, or connect your coding agent over MCP.
+          Your infrastructure is ready for all three.
+        </p>
+        <div className="agent-channels">
+          <span>
+            <LayoutDashboard size={14} /> Dashboard
+          </span>
+          <span>
+            <Terminal size={14} /> CLI
+          </span>
+          <span>
+            <Code size={14} /> API
+          </span>
+          <span>
+            <Bot size={14} /> MCP
+          </span>
+        </div>
+        <Link className="inline-link" href="/docs/mcp">
+          Connect your agent <ArrowUpRight size={16} />
+        </Link>
+      </div>
+      <div>
+        <div className="agent-console">
+          <div className="agent-console-header">
+            <span>
+              <Bot size={15} /> Cubeship + your agent
+            </span>
+            <span>Example workflow</span>
           </div>
-          <div>
-            <p className="label text-subtle-foreground">Two lines it does not cross</p>
-            <ul className="mt-3 space-y-2 text-sm">
-              {cannot.map((c) => (
-                <li key={c} className="flex gap-3">
-                  <X className="mt-0.5 size-4 shrink-0 text-magenta" />
-                  <span>{c}</span>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-4 text-muted-foreground text-sm leading-relaxed">
-              Stateless on purpose: every call carries the key, so nothing an agent opened can be
-              picked up by another. Those two stay with a person.
-            </p>
+          <p className="agent-prompt">
+            “Create a project, deploy my app and connect a Postgres database.”
+          </p>
+          <div className="agent-work">
+            <div>
+              <Check size={14} /> Create the project and environment
+            </div>
+            <div>
+              <Check size={14} /> Provision and attach PostgreSQL
+            </div>
+            <div>
+              <Check size={14} /> Deploy the application
+            </div>
+            <div>
+              <Check size={14} /> Read the deployment result
+            </div>
+          </div>
+          <div className="agent-result">
+            <span className="status-light" /> From a conversation to a running app.
           </div>
         </div>
+        <p className="agent-note">
+          Authenticated with your API key. Resource ceilings and public ports stay in your hands.
+        </p>
       </div>
-    </Section>
+    </section>
   );
 }

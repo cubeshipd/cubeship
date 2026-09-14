@@ -1,6 +1,6 @@
-import { generateOGImage } from "fumadocs-ui/og";
+import { socialImage } from "@/lib/social-image";
 import { notFound } from "next/navigation";
-import { appName, getPageImageUrl } from "@/lib/shared";
+import { getPageImageUrl } from "@/lib/shared";
 import { source } from "@/lib/source";
 
 export const revalidate = false;
@@ -10,10 +10,10 @@ export async function GET(_req: Request, { params }: RouteContext<"/og/docs/[...
   const page = source.getPage(slug.slice(0, -1));
   if (!page) notFound();
 
-  return generateOGImage({
+  return socialImage({
     title: page.data.title,
     description: page.data.description,
-    site: appName,
+    section: "Documentation",
   });
 }
 

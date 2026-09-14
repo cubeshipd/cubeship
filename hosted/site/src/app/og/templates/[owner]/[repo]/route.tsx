@@ -1,7 +1,6 @@
-import { generateOGImage } from "fumadocs-ui/og";
+import { socialImage } from "@/lib/social-image";
 import { notFound } from "next/navigation";
 import { templateByPath } from "@/lib/catalog";
-import { appName } from "@/lib/shared";
 
 // Reads the catalog, so unlike the docs' own OG route this can never be
 // prerendered: there is no set of templates known at build time.
@@ -12,9 +11,9 @@ export async function GET(_req: Request, { params }: RouteContext<"/og/templates
   const found = await templateByPath(owner, repo);
   if (!found) notFound();
 
-  return generateOGImage({
+  return socialImage({
     title: found.title,
     description: found.description,
-    site: appName,
+    section: "Template catalog",
   });
 }

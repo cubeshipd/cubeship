@@ -1,57 +1,63 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowDown, ArrowUpRight, Check } from "lucide-react";
 import Link from "next/link";
-import { FaultyTerminal } from "@/components/faulty-terminal";
-import { InstallCommand } from "@/components/install-command";
-import { githubUrl } from "@/lib/shared";
+import { InfrastructureScene } from "./infrastructure-scene";
+import { ScenePoster } from "./scene-poster";
 
 export function Hero() {
   return (
-    <section className="relative overflow-hidden border-border border-b">
-      <FaultyTerminal
-        className="absolute inset-0 [mask-image:radial-gradient(ellipse_at_center,black_10%,transparent_72%)]"
-        tint="#2de2e6"
-        brightness={0.32}
-        scale={1.6}
-        digitSize={1.2}
-        timeScale={0.35}
-        scanlineIntensity={0.5}
-        glitchAmount={0.6}
-        flickerAmount={0.5}
-        mouseStrength={0.12}
-      />
-      <div className="relative mx-auto flex max-w-6xl flex-col items-center px-6 pt-24 pb-20 text-center">
-        <p className="label text-primary">
-          self-hosted <span className="text-magenta">·</span> one VPS or a whole cluster{" "}
-          <span className="text-magenta">·</span> run by you or your agent
-        </p>
-        <h1 className="mt-5 max-w-3xl font-semibold text-4xl leading-tight tracking-tight sm:text-6xl">
-          Your servers, run like a platform.
-        </h1>
-        <p className="mt-6 max-w-2xl text-foreground/85 text-lg leading-relaxed">
-          Apps, databases and their backups, object storage, certificates and a firewall — the whole
-          platform, on servers you own. One machine or a cluster, one dashboard, one API.
-        </p>
-        <div className="mt-10 w-full max-w-xl">
-          <InstallCommand />
+    <section className="hero-stage" id="product">
+      <div className="site-container hero-layout">
+        <div className="hero-copy">
+          <p className="hero-intro">
+            <span className="status-light" /> Open source. Self hosted. All yours.
+          </p>
+          <h1>
+            Your infrastructure.
+            <br />
+            Ready to ship.
+          </h1>
+          <p className="hero-description">
+            The power of a cloud platform.
+            <br />
+            The freedom of your own servers.
+          </p>
+          <p className="hero-detail">
+            Deploy apps, run databases and keep everything under control. From your first VPS to
+            your own cluster.
+          </p>
+          <div className="button-row">
+            <Link className="button-primary" href="/docs/getting-started/install">
+              Install Cubeship <ArrowUpRight size={18} />
+            </Link>
+            <a className="button-text" href="#screens">
+              Explore the platform <ArrowDown size={16} />
+            </a>
+          </div>
+          <div className="hero-assurances">
+            <span>
+              <Check size={13} /> Free & open source
+            </span>
+            <span>
+              <Check size={13} /> No cloud account
+            </span>
+            <span>
+              <Check size={13} /> Apache 2.0
+            </span>
+          </div>
         </div>
-        <p className="mt-3 text-foreground/80 text-sm">
-          One command on a fresh Debian or Ubuntu box. It installs Docker, pulls two images and
-          prints the address to open.
-        </p>
-        <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
-          <Link
-            href="/docs"
-            className="neon-edge inline-flex items-center gap-2 bg-primary px-5 py-2.5 font-semibold text-primary-foreground text-sm uppercase tracking-[0.18em] transition-colors hover:bg-primary/90"
-          >
-            Read the docs <ArrowRight className="size-4" />
-          </Link>
-          <a
-            href={githubUrl}
-            className="inline-flex items-center gap-2 border border-border-strong px-5 py-2.5 font-semibold text-foreground text-sm uppercase tracking-[0.18em] transition-colors hover:border-primary hover:text-primary"
-          >
-            GitHub
-          </a>
+        <div className="hero-art">
+          <InfrastructureScene variant="hero" fallback={<ScenePoster variant="hero" />} />
+          <span className="scene-label scene-label-top">
+            <span /> Your infrastructure, connected
+          </span>
+          <span className="scene-label scene-label-bottom">Built to run on your terms.</span>
         </div>
+      </div>
+      <div className="site-container hero-baseline">
+        <span>From code to production. One platform.</span>
+        <a href="#screens">
+          Take a closer look <ArrowDown size={14} />
+        </a>
       </div>
     </section>
   );

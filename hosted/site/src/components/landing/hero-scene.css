@@ -1,0 +1,64 @@
+.hero-scene {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  isolation: isolate;
+  pointer-events: none;
+}
+
+.hero-scene__fallback,
+.hero-scene__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.hero-scene__fallback {
+  display: grid;
+  place-items: center;
+  opacity: 1;
+  transition: opacity 320ms ease;
+}
+
+.hero-scene__fallback > img,
+.hero-scene__fallback > picture,
+.hero-scene__fallback > picture > img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.hero-scene__canvas {
+  display: block;
+  opacity: 0;
+  touch-action: pan-y;
+  transition: opacity 320ms ease;
+}
+
+.hero-scene[data-rendered="true"] .hero-scene__fallback {
+  opacity: 0;
+}
+
+.hero-scene[data-rendered="true"] .hero-scene__canvas {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-scene__fallback,
+  .hero-scene__canvas {
+    transition: none;
+  }
+}
+
+.infrastructure-poster {
+  width: 100%;
+  height: 100%;
+}
+.hero-scene[data-variant="hero"] {
+  mask-image: radial-gradient(ellipse, black 38%, transparent 74%);
+}
+.hero-scene[data-variant="cluster"] {
+  mask-image: linear-gradient(transparent, black 12%, black 82%, transparent);
+}

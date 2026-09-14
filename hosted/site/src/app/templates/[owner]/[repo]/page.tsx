@@ -31,8 +31,8 @@ export async function generateMetadata(
   };
 }
 
-const row = "text-right font-mono text-[0.6875rem] leading-5 text-fd-foreground";
-const term = "label leading-5 text-fd-muted-foreground";
+const row = "template-info-value";
+const term = "template-info-term";
 
 export default async function TemplatePage(props: PageProps<"/templates/[owner]/[repo]">) {
   const { owner, repo } = await props.params;
@@ -46,24 +46,30 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
   );
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-12">
-      <header className="flex items-center gap-4">
-        <TemplateIcon src={found.icon_url} className="size-16" />
-        <div className="min-w-0">
-          <h1 className="flex items-center gap-2 font-semibold text-3xl text-fd-foreground tracking-tight">
+    <div className="site-container template-detail">
+      <Link href="/templates" className="template-detail-back">
+        <span aria-hidden>←</span> All templates
+      </Link>
+      <header className="template-detail-header">
+        <TemplateIcon src={found.icon_url} className="template-detail-icon" />
+        <div className="min-w-0 flex-1">
+          <p className="template-detail-path">
+            {found.owner}/{found.name}
+          </p>
+          <h1>
             {found.title}
             {found.verified ? <VerifiedBadge className="size-6" /> : null}
           </h1>
-          <p className="mt-1 max-w-3xl text-fd-muted-foreground">{found.description}</p>
+          <p className="template-detail-description">{found.description}</p>
         </div>
       </header>
 
-      <div className="mt-8 grid gap-10 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="template-detail-grid">
         {/* First in the markup so a phone sees who wrote it and which release this is
             before the README; beside the content, and following the reader, on a wide screen. */}
-        <aside className="lg:sticky lg:top-24 lg:order-2 lg:self-start">
-          <div className="hud-frame divide-y divide-fd-border border border-fd-border text-sm">
-            <div className="flex items-center gap-3 p-4">
+        <aside className="template-detail-aside">
+          <div className="template-info hud-frame">
+            <div className="template-info-author">
               {/* biome-ignore lint/performance/noImgElement: a GitHub avatar, not one of our own assets. */}
               <img
                 src={avatarAt(found.avatar_url, 72)}
@@ -73,24 +79,21 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
                 className="size-9 shrink-0 border border-fd-border"
               />
               <div className="min-w-0 flex-1">
-                <p className="label text-fd-muted-foreground">Author</p>
-                <a
-                  href={`https://github.com/${found.owner}`}
-                  className="block truncate text-primary hover:text-glow"
-                >
+                <p className="template-info-label">Author</p>
+                <a href={`https://github.com/${found.owner}`} className="template-info-author-link">
                   {found.owner}
                 </a>
               </div>
               <a
                 href={found.url}
                 aria-label={`${found.owner}/${found.name} on GitHub`}
-                className="text-fd-muted-foreground transition-colors hover:text-primary"
+                className="template-info-github"
               >
                 <GitHubIcon className="size-4" />
               </a>
             </div>
 
-            <dl className="grid grid-cols-[auto_1fr] items-center gap-x-4 gap-y-2 p-4">
+            <dl className="template-info-facts">
               <dt className={term}>Stars</dt>
               <dd className={`${row} flex items-center justify-end gap-1`}>
                 <Star className="size-3" aria-hidden />
@@ -115,14 +118,14 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
             </dl>
 
             {found.tags.length > 0 ? (
-              <div className="p-4">
-                <p className="label mb-2 text-fd-muted-foreground">Tags</p>
-                <div className="flex flex-wrap gap-2">
+              <div className="template-info-section">
+                <p className="template-info-label">Topics</p>
+                <div className="template-info-tags">
                   {found.tags.map((tag) => (
                     <Link
                       key={tag}
                       href={`/templates?tag=${encodeURIComponent(tag)}`}
-                      className="label border border-fd-border px-2 py-1 text-fd-muted-foreground hover:border-primary hover:text-primary"
+                      className="template-info-tag"
                     >
                       {tag}
                     </Link>
@@ -131,11 +134,11 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
               </div>
             ) : null}
 
-            <div className="p-4">
-              <p className="label mb-2 text-fd-muted-foreground">Releases</p>
-              <ul className="space-y-1.5">
+            <div className="template-info-section">
+              <p className="template-info-label">Release history</p>
+              <ul className="template-release-list">
                 {history.map((r) => (
-                  <li key={r.tag} className="flex items-baseline justify-between gap-3">
+                  <li key={r.tag}>
                     <a
                       href={r.url}
                       className="truncate font-mono text-fd-foreground hover:text-primary"
@@ -158,9 +161,9 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
           </div>
         </aside>
 
-        <div className="min-w-0 space-y-10 lg:order-1">
+        <div className="template-detail-main">
           {found.readme ? (
-            <section className="hud-frame border border-fd-border p-6">
+            <section className="template-readme hud-frame">
               <Readme
                 source={found.readme}
                 owner={found.owner}
@@ -171,14 +174,14 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
           ) : null}
 
           {manifest ? (
-            <section>
-              <p className="label mb-3 text-primary">What this creates</p>
+            <section className="template-detail-section">
+              <p className="template-section-title">What this creates</p>
               <Preview manifest={manifest} />
             </section>
           ) : null}
 
           {found.source ? (
-            <section>
+            <section className="template-detail-section">
               <SourceBlock
                 source={found.source}
                 fileUrl={`${found.url}/blob/${release.commit}/template.yaml`}

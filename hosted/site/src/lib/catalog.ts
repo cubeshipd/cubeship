@@ -46,10 +46,10 @@ export type ReleaseRecord = ReleaseRef & {
 // nothing an author would notice and spares the catalog a read per view.
 const REVALIDATE = 60;
 
-async function read<T>(path: string): Promise<T | null> {
+async function read<T>(path: string, signal = AbortSignal.timeout(5_000)): Promise<T | null> {
   const response = await fetch(`${catalogUrl()}/v1${path}`, {
     next: { revalidate: REVALIDATE },
-    signal: AbortSignal.timeout(5_000),
+    signal,
   });
   if (response.status === 404) return null;
   if (!response.ok) throw new Error(`the catalog answered ${response.status} for ${path}`);
@@ -60,13 +60,16 @@ function templatePath(owner: string, repo: string): string {
   return `/templates/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
 }
 
-export async function listTemplates(options: {
-  q?: string;
-  tag?: string;
-  sort?: Sort;
-  cursor?: string;
-  limit?: number;
-}): Promise<{ templates: TemplateSummary[]; next_cursor: string | null }> {
+export async function listTemplates(
+  options: {
+    q?: string;
+    tag?: string;
+    sort?: Sort;
+    cursor?: string;
+    limit?: number;
+  },
+  signal?: AbortSignal,
+): Promise<{ templates: TemplateSummary[]; next_cursor: string | null }> {
   const params = new URLSearchParams();
   if (options.q) params.set("q", options.q);
   if (options.tag) params.set("tag", options.tag);
@@ -75,6 +78,7 @@ export async function listTemplates(options: {
   if (options.limit) params.set("limit", String(options.limit));
   const page = await read<{ templates: TemplateSummary[]; next_cursor: string | null }>(
     params.size > 0 ? `/templates?${params}` : "/templates",
+    signal,
   );
   return page ?? { templates: [], next_cursor: null };
 }
@@ -95,16 +99,28 @@ export async function releasesOf(owner: string, repo: string): Promise<ReleaseRe
   );
 }
 
-// Every listed template, for the sitemap: a sitemap that stops at a page
-// is not one. Bounded, so a catalog that grew past it still answers.
-export async function allTemplates(): Promise<TemplateSummary[]> {
-  const all: TemplateSummary[] = [];
+// Assemble the complete filtered catalog before rendering one grid. The
+// deadline covers all pages; a repeated cursor must not keep a request alive.
+export async function allTemplates(
+  options: { q?: string; tag?: string; sort?: Sort } = {},
+): Promise<TemplateSummary[]> {
+  const all = new Map<string, TemplateSummary>();
+  const visited = new Set<string>();
+  const signal = AbortSignal.timeout(5_000);
   let cursor: string | undefined;
-  for (let page = 0; page < 50; page++) {
-    const { templates, next_cursor } = await listTemplates({ cursor, limit: 48 });
-    all.push(...templates);
-    if (!next_cursor) break;
+  do {
+    const { templates, next_cursor } = await listTemplates(
+      { ...options, cursor, limit: 48 },
+      signal,
+    );
+    for (const template of templates) {
+      const key = `${template.owner}/${template.name}`;
+      if (!all.has(key)) all.set(key, template);
+    }
+    if (!next_cursor) return [...all.values()];
+    if (visited.has(next_cursor)) throw new Error("the catalog returned a repeated cursor");
+    visited.add(next_cursor);
     cursor = next_cursor;
-  }
-  return all;
+  } while (!signal.aborted);
+  throw signal.reason;
 }

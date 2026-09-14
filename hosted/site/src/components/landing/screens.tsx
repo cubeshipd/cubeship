@@ -1,88 +1,131 @@
 "use client";
 
-import Image, { type StaticImageData } from "next/image";
-import { useState } from "react";
+import { ArrowUpRight, ChartNoAxesCombined, Layers, ShieldCheck } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { useRef, useState } from "react";
 import app from "@/images/screens/app.png";
 import backups from "@/images/screens/backups.png";
 import overview from "@/images/screens/overview.png";
-import { cn } from "@/lib/cn";
 
-// Captured from the dashboard on invented data, at 1600 wide and twice
-// the density, so a Retina screen sees the lines the interface is made of.
-const screens: { key: string; label: string; caption: string; image: StaticImageData }[] = [
+const screens = [
   {
     key: "overview",
-    label: "Overview",
+    label: "Infrastructure",
+    icon: ChartNoAxesCombined,
+    title: "The whole picture. At a glance.",
     caption:
-      "What the machine underneath is doing — CPU, memory, disk and the bytes over its own interfaces, sampled every 30 seconds.",
+      "CPU, memory, disk and network. Know what your servers are doing, without piecing together another stack of tools.",
     image: overview,
   },
   {
     key: "app",
-    label: "An app",
+    label: "Deployments",
+    icon: Layers,
+    title: "Every deploy. Every detail.",
     caption:
-      "What one container is using, and every deploy it has had: whether each succeeded, and why it failed if it did.",
+      "Follow your releases, read your logs and see what each app is using. Everything you need to understand what is running.",
     image: app,
   },
   {
     key: "backups",
     label: "Backups",
+    icon: ShieldCheck,
+    title: "Your data deserves a plan.",
     caption:
-      "One row per database, worst first: never backed up, failing, on this machine, protected. A glance is enough.",
+      "See which databases are protected, catch failed backups and restore from the same place you manage your data.",
     image: backups,
   },
 ];
 
 export function Screens() {
-  const [current, setCurrent] = useState(screens[0]);
-
+  const [selected, setSelected] = useState(0);
+  const buttons = useRef<(HTMLButtonElement | null)[]>([]);
+  const current = screens[selected];
   return (
-    <section id="screens" className="border-border border-b">
-      <div className="mx-auto max-w-6xl px-6 py-20">
-        <div className="flex flex-wrap items-end justify-between gap-6">
-          <div>
-            <p className="label text-primary">
-              <span className="mr-2 inline-block h-3 w-0.5 bg-primary align-middle" />
-              The dashboard
-            </p>
-            <h2 className="mt-4 max-w-2xl font-semibold text-3xl tracking-tight sm:text-4xl">
-              A console, not a control panel.
-            </h2>
-          </div>
-          <div role="tablist" className="flex border border-border">
-            {screens.map((s) => (
-              <button
-                key={s.key}
-                type="button"
-                role="tab"
-                aria-selected={s.key === current.key}
-                onClick={() => setCurrent(s)}
-                className={cn(
-                  "label px-4 py-2.5 transition-colors",
-                  s.key === current.key
-                    ? "bg-primary/10 text-primary"
-                    : "text-muted-foreground hover:text-foreground",
-                )}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
+    <section id="screens" className="product-showcase site-container">
+      <div className="section-heading">
+        <div>
+          <p className="section-kicker">Meet your control center</p>
+          <h2>
+            Everything running.
+            <br />
+            Everything in reach.
+          </h2>
         </div>
-        <figure className="mt-10">
-          <div className="hud-frame neon-edge border border-border bg-card">
-            <Image
-              src={current.image}
-              alt={`The ${current.label.toLowerCase()} screen of the dashboard`}
-              sizes="(min-width: 1152px) 1104px, 100vw"
-              priority={current.key === "overview"}
-              className="block w-full"
-            />
+        <p>
+          A real platform for the things you build.
+          <br />
+          One place to deploy, observe and operate.
+        </p>
+      </div>
+      <div className="product-window">
+        <div className="window-bar">
+          <div className="window-dots">
+            <i />
+            <i />
+            <i />
           </div>
-          <figcaption className="mt-4 text-muted-foreground text-sm leading-relaxed">
-            {current.caption}
-          </figcaption>
-        </figure>
+          <span>
+            <span className="status-light" /> cubeship / your infrastructure
+          </span>
+          <span className="window-version">Self hosted</span>
+        </div>
+        <div className="product-tabs" role="tablist" aria-label="Explore the dashboard">
+          {screens.map((screen, i) => (
+            <button
+              ref={(element) => {
+                buttons.current[i] = element;
+              }}
+              key={screen.key}
+              type="button"
+              role="tab"
+              id={`tab-${screen.key}`}
+              aria-controls={`panel-${screen.key}`}
+              aria-selected={selected === i}
+              tabIndex={selected === i ? 0 : -1}
+              onClick={() => setSelected(i)}
+              onKeyDown={(event) => {
+                let next = i;
+                if (event.key === "ArrowRight") next = (i + 1) % screens.length;
+                else if (event.key === "ArrowLeft")
+                  next = (i + screens.length - 1) % screens.length;
+                else if (event.key === "Home") next = 0;
+                else if (event.key === "End") next = screens.length - 1;
+                else return;
+                event.preventDefault();
+                setSelected(next);
+                buttons.current[next]?.focus();
+              }}
+            >
+              <screen.icon size={15} />
+              {screen.label}
+            </button>
+          ))}
+        </div>
+        <div
+          role="tabpanel"
+          id={`panel-${current.key}`}
+          aria-labelledby={`tab-${current.key}`}
+          tabIndex={0}
+          className="product-screen"
+        >
+          <Image
+            src={current.image}
+            alt={`Cubeship dashboard showing ${current.label.toLowerCase()} with demonstration data`}
+            sizes="(min-width: 1440px) 1230px, 94vw"
+            className="block w-full"
+          />
+        </div>
+      </div>
+      <div className="screen-caption">
+        <div>
+          <h3>{current.title}</h3>
+          <p>{current.caption}</p>
+        </div>
+        <Link href="/docs">
+          Explore the docs <ArrowUpRight size={16} />
+        </Link>
       </div>
     </section>
   );

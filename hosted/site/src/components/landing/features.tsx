@@ -1,118 +1,141 @@
 import {
   Activity,
+  ArrowUpRight,
   Archive,
-  Bot,
   Database,
-  Globe,
-  Hammer,
   HardDrive,
-  LayoutDashboard,
-  LayoutTemplate,
-  Lock,
+  LockKeyhole,
   Network,
-  Package,
-  RefreshCw,
-  Server,
   Shield,
 } from "lucide-react";
-import type { ReactNode } from "react";
-import { Section } from "./section";
-
-const features: { icon: ReactNode; title: string; body: string }[] = [
-  {
-    icon: <LayoutDashboard />,
-    title: "A dashboard",
-    body: "At your instance's address, over HTTPS, from the minute the installer finishes.",
-  },
-  {
-    icon: <Package />,
-    title: "A registry",
-    body: "docker push to it and the app deploys. The push is the deploy — nothing else to press.",
-  },
-  {
-    icon: <RefreshCw />,
-    title: "Zero-downtime deploys",
-    body: "The new container has to look healthy before the old one goes.",
-  },
-  {
-    icon: <Lock />,
-    title: "Certificates",
-    body: "Let's Encrypt, renewed for you, nothing to configure. An sslip.io name until you have one.",
-  },
-  {
-    icon: <Database />,
-    title: "Databases",
-    body: "Postgres, MySQL, MariaDB, Redis, MongoDB — one click, wired into the app's environment.",
-  },
-  {
-    icon: <Archive />,
-    title: "Backups",
-    body: "Every database dumped on a schedule into a bucket off the machine, restored from the same screen.",
-  },
-  {
-    icon: <HardDrive />,
-    title: "Object storage",
-    body: "A MinIO on the box, or the S3 bucket you already have. The app gets the keys.",
-  },
-  {
-    icon: <Hammer />,
-    title: "Builds",
-    body: "From a Dockerfile, or from a repository with no Dockerfile at all. A push to GitHub deploys it.",
-  },
-  {
-    icon: <LayoutTemplate />,
-    title: "Templates",
-    body: "Umami, n8n, Grafana — an app and the data it needs, installed in one form and updated when a release comes out.",
-  },
-  {
-    icon: <Shield />,
-    title: "Firewall",
-    body: "The host's ufw from the dashboard, with Docker's published ports finally answering to it.",
-  },
-  {
-    icon: <Globe />,
-    title: "DNS",
-    body: "Connect Cloudflare or Route 53: the instance's records are written for you, and every zone is editable from the dashboard.",
-  },
-  {
-    icon: <Server />,
-    title: "More machines",
-    body: "Add a second server and apps spread across both. Every name still arrives at one door.",
-  },
-  {
-    icon: <Network />,
-    title: "Internal addresses",
-    body: "cubeship-<project>-<env>-<app> reaches an app from any other, on any machine, across deploys.",
-  },
-  {
-    icon: <Activity />,
-    title: "Charts",
-    body: "What every container is using, and what the machine underneath is doing.",
-  },
-  {
-    icon: <Bot />,
-    title: "An API, a CLI and MCP",
-    body: "Everything the dashboard does, scriptable — and an endpoint an agent drives directly.",
-  },
-];
+import Link from "next/link";
 
 export function Features() {
   return (
-    <Section
-      id="what-you-get"
-      label="What you get"
-      title="One command on a fresh VPS, and the box is running."
-      lede="Everything Cubeship runs is a container, the daemon included. Nothing else is installed on the host."
-    >
-      <ul className="grid gap-px border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
-        {features.map((f) => (
-          <li key={f.title} className="bg-background p-6">
-            <div className="text-primary [&>svg]:size-5">{f.icon}</div>
-            <h3 className="mt-4 font-semibold text-base">{f.title}</h3>
-            <p className="mt-2 text-muted-foreground text-sm leading-relaxed">{f.body}</p>
-          </li>
-        ))}
-      </ul>
-    </Section>
+    <section className="platform-section" id="platform">
+      <div className="site-container product-section">
+        <div className="section-heading">
+          <div>
+            <p className="section-kicker">More than a deploy button</p>
+            <h2>
+              A home for your
+              <br />
+              entire stack.
+            </h2>
+          </div>
+          <p>
+            The services your apps depend on.
+            <br />
+            Connected, visible and under your control.
+          </p>
+        </div>
+        <div className="platform-grid">
+          <article className="platform-databases">
+            <div className="feature-icon">
+              <Database size={23} />
+            </div>
+            <h3>
+              Data, right where
+              <br />
+              you need it.
+            </h3>
+            <p>
+              Provision a database and attach it to an app. Connection variables are wired in for
+              you.
+            </p>
+            <div className="database-stack">
+              <div>
+                <Database size={20} />
+                <strong>PostgreSQL</strong>
+                <span>Relational</span>
+              </div>
+              <div>
+                <Database size={20} />
+                <strong>MySQL / MariaDB</strong>
+                <span>Relational</span>
+              </div>
+              <div>
+                <Database size={20} />
+                <strong>MongoDB</strong>
+                <span>Document</span>
+              </div>
+              <div>
+                <Database size={20} />
+                <strong>Redis</strong>
+                <span>In-memory</span>
+              </div>
+            </div>
+            <Link href="/docs/databases" className="inline-link">
+              Explore databases <ArrowUpRight size={16} />
+            </Link>
+          </article>
+          <article className="platform-backups">
+            <Archive size={23} className="feature-icon" />
+            <h3>
+              A way back.
+              <br />
+              Built in.
+            </h3>
+            <p>
+              Scheduled database backups to an off-server bucket. Restore from the same dashboard.
+            </p>
+            <div className="backup-visual" aria-hidden="true">
+              <div className="backup-orbit">
+                <Database size={25} />
+              </div>
+              <span />
+              <div className="backup-orbit">
+                <Archive size={25} />
+              </div>
+              <span />
+              <div className="backup-orbit">
+                <Shield size={25} />
+              </div>
+            </div>
+            <Link href="/docs/backups" className="inline-link">
+              Protect your data <ArrowUpRight size={16} />
+            </Link>
+          </article>
+          <article className="platform-storage">
+            <HardDrive size={23} className="feature-icon" />
+            <h3>Room for everything.</h3>
+            <p>Run MinIO on your server or connect the S3 storage you already use.</p>
+            <Link href="/docs/object-storage" className="inline-link">
+              Explore object storage <ArrowUpRight size={16} />
+            </Link>
+          </article>
+        </div>
+        <div className="platform-utilities">
+          <div>
+            <LockKeyhole size={20} />
+            <span>
+              <strong>Automatic HTTPS</strong>
+              <small>Certificates that renew themselves.</small>
+            </span>
+          </div>
+          <div>
+            <Network size={20} />
+            <span>
+              <strong>DNS & networking</strong>
+              <small>Connect your domains and services.</small>
+            </span>
+          </div>
+          <div>
+            <Shield size={20} />
+            <span>
+              <strong>Firewall controls</strong>
+              <small>Choose what reaches the internet.</small>
+            </span>
+          </div>
+          <div>
+            <Activity size={20} />
+            <span>
+              <strong>Live metrics</strong>
+              <small>See what your containers are using.</small>
+            </span>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }

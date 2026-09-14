@@ -20,19 +20,25 @@ export default async function Page(props: PageProps<"/docs/[[...slug]]">) {
 
   const MDX = page.data.body;
   const markdownUrl = getPageMarkdownUrl(page).url;
+  const isOverview = !params.slug || params.slug.length === 0;
 
   return (
-    <DocsPage toc={page.data.toc} full={page.data.full}>
-      <DocsTitle>{page.data.title}</DocsTitle>
-      <DocsDescription className="mb-0">{page.data.description}</DocsDescription>
-      <div className="flex flex-row gap-2 items-center border-b pb-6">
+    <DocsPage
+      id="main-content"
+      toc={page.data.toc}
+      full={page.data.full}
+      className={`editorial-page docs-article${isOverview ? " docs-overview" : ""}`}
+    >
+      <DocsTitle className="docs-title">{page.data.title}</DocsTitle>
+      <DocsDescription className="docs-description mb-0">{page.data.description}</DocsDescription>
+      <div className="docs-actions flex flex-row items-center gap-2 border-b pb-6">
         <MarkdownCopyButton markdownUrl={markdownUrl} />
         <ViewOptionsPopover
           markdownUrl={markdownUrl}
           githubUrl={`https://github.com/${gitConfig.user}/${gitConfig.repo}/blob/${gitConfig.branch}/content/docs/${page.path}`}
         />
       </div>
-      <DocsBody>
+      <DocsBody className="docs-body">
         <MDX
           components={getMDXComponents({
             // this allows you to link to other pages with relative file paths

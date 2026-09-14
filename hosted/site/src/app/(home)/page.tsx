@@ -20,13 +20,13 @@ export const dynamic = "force-dynamic";
 
 export default function HomePage() {
   return (
-    <main className="flex-1">
+    <main className="marketing-page flex-1" id="main-content">
       <Hero />
-      <Features />
       <Screens />
       <Deploy />
-      <Agent />
+      <Features />
       <Cluster />
+      <Agent />
       <TemplatesStrip />
       <Privacy />
       <Footer />

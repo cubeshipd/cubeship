@@ -1,51 +1,60 @@
-import { Comment, Prompt, Section, Terminal } from "./section";
-
-const points = [
-  {
-    title: "The new machine dials home",
-    body: "It publishes no port to the internet, serves no dashboard and needs no certificate of its own. A box behind NAT can report in and be told what to run.",
-  },
-  {
-    title: "Every name still arrives at your instance",
-    body: "One DNS record, one certificate store. Moving an app between machines touches neither.",
-  },
-  {
-    title: "A private network between them",
-    body: "Encrypted, and container names mean the same thing on every machine — an app on one reaches a database on another by the name it already had.",
-  },
-  {
-    title: "Scaling takes effect at once",
-    body: "Four copies, spread. Or hand the count over: a CPU target, a minimum and a maximum.",
-  },
-];
+import { ArrowUpRight } from "lucide-react";
+import Link from "next/link";
+import { InfrastructureScene } from "./infrastructure-scene";
+import { ScenePoster } from "./scene-poster";
 
 export function Cluster() {
   return (
-    <Section
-      id="cluster"
-      label="One VPS or a whole cluster"
-      title="Add a server, and the instance becomes a cluster."
-    >
-      <div className="grid gap-10 lg:grid-cols-2">
-        <Terminal>
-          <Prompt>cubeship server add eu-1</Prompt>
-          <Comment># prints the command to run on the new box, credential in it</Comment>
-          {"\n"}
-          <Prompt>cubeship app place shop/api --on eu-1</Prompt>
-          <Prompt>cubeship app place shop/api --replicas 4</Prompt>
-          <Prompt>cubeship app place shop/api --everywhere</Prompt>
-          {"\n"}
-          <Prompt>cubeship app autoscale shop/api --min 2 --max 8 --cpu 70</Prompt>
-        </Terminal>
-        <ul className="grid gap-6 sm:grid-cols-2 lg:grid-cols-1">
-          {points.map((p) => (
-            <li key={p.title} className="border-border border-l pl-4">
-              <h3 className="font-semibold text-base">{p.title}</h3>
-              <p className="mt-1.5 text-muted-foreground text-sm leading-relaxed">{p.body}</p>
-            </li>
-          ))}
-        </ul>
+    <section id="cluster" className="cluster-section site-container">
+      <div className="section-heading">
+        <div>
+          <p className="section-kicker">Space to grow</p>
+          <h2>
+            Start with a server.
+            <br />
+            Build your own cloud.
+          </h2>
+        </div>
+        <div>
+          <p className="section-description">
+            Add another machine when you need it. Your apps get more room. You keep one platform.
+          </p>
+          <Link href="/docs/servers" className="inline-link">
+            Meet the cluster <ArrowUpRight size={16} />
+          </Link>
+        </div>
       </div>
-    </Section>
+      <div className="cluster-art">
+        <InfrastructureScene variant="cluster" fallback={<ScenePoster variant="cluster" />} />
+        <div className="cluster-annotations" aria-hidden="true">
+          <span>Your servers</span>
+          <span>Private connections</span>
+          <span>One platform</span>
+        </div>
+      </div>
+      <div className="cluster-details">
+        <div>
+          <h3>One front door.</h3>
+          <p>
+            Domains and certificates stay at your control plane. Moving an app between machines
+            keeps its address intact.
+          </p>
+        </div>
+        <div>
+          <h3>Connected by design.</h3>
+          <p>
+            An encrypted private network connects your machines. Services reach each other by the
+            names they already use.
+          </p>
+        </div>
+        <div>
+          <h3>Scale on your terms.</h3>
+          <p>
+            Place apps where they belong, add replicas or set a CPU target and let Cubeship adjust
+            the count.
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }

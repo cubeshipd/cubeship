@@ -240,6 +240,12 @@ dropping them is a separate, deliberate step.
 | `/templates` | search, topic filters, newest or most starred, a grid of cards: icon, name, description, owner, stars, updated |
 | `/templates/{owner}/{repo}` | the README, what the file creates, the file with the raw URL at its commit, and beside it the author, stars, release, required version, tags and release history |
 
+The catalog page assembles all matching templates on the server and renders
+one grid, with no infinite scroll or pagination controls. Search, topic and
+sort apply to the complete result. The API keeps its cursor contract; the
+site follows it within a shared five-second deadline and refuses repeated
+cursors. Cards are deduplicated by owner and repository before rendering.
+
 The name is the API's `title`, read from the repository:
 `cubeship-uptime-kuma-template` is Uptime Kuma. The README is rendered on the server with GitHub's
 own sanitizer allowlist after raw HTML is parsed, and its relative links

@@ -10,7 +10,8 @@ export default function Layout({ children }: LayoutProps<"/docs">) {
       tree={source.getPageTree()}
       {...baseOptions()}
       links={[]}
-      sidebar={{ footer: <GitHubStars /> }}
+      containerProps={{ className: "editorial-page docs-layout" }}
+      sidebar={{ footer: <GitHubStars />, className: "docs-sidebar" }}
     >
       {children}
     </DocsLayout>

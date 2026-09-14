@@ -51,25 +51,46 @@ the machine.
 the two paths answer 404 and nothing is counted. The website id is a
 constant in `src/lib/shared.ts`: it is in every page's HTML anyway.
 
-## One palette, copied
+## A product site, in the product's colours
 
-The site is the product's face and wears the product's colours: the
-cyan theme of `product/dashboard/src/app/globals.css`, its two typefaces (vendored the
-same way, under `src/fonts`), square corners, 1px lines and glow. The
-tokens are **copied** into `src/app/global.css`, once as the site's own
-(`--color-background`, `--color-primary`, …) and once as what Fumadocs
-reads (`--color-fd-*`). Copied rather than shared because the two are
-two builds with two lockfiles; a package between them would be a third
-thing to version for a dozen hex values. Change one, change both.
+The site keeps the product's cyan palette, Chakra Petch and JetBrains Mono,
+vendored under `src/fonts`, square corners and dark surfaces. Base tokens
+remain in `src/app/global.css`, mirrored into Fumadocs' `--color-fd-*`
+variables. The dashboard and site are separate builds; neither imports
+styles from the other.
 
-Only the dark palette exists here. `dark` sits on `<html>`, next-themes
-is off in `RootProvider`, and the switch is off in `baseOptions` — a
-light version of this site would be a design of its own, not a toggle.
+The marketing site has its own composition in `src/app/marketing.css`:
+large left-aligned headlines, a cinematic hero, the real dashboard directly
+below it, and sections that explain deployment, data, clusters and MCP.
+`editorial.css` carries the related reading and catalog treatment. A common
+`SiteHeader` serves home, templates and comparisons; Fumadocs keeps the docs'
+navigation, search and tree. Only the dark palette exists.
 
-`hud-frame`, `bg-grid`, `text-glow`, `neon-edge` and `label` are the
-dashboard's utilities, re-declared. A section on the landing page is
-built the way a section of the dashboard is: a mono label, a title, a
-line under it.
+### The scenes are enhancements
+
+`InfrastructureScene` renders a static SVG poster first, then lazily imports
+Three.js when the scene enters the viewport. The hero is a point-cloud cube
+with travelling particles; the cluster is a network of stacked server plates
+with packets moving between nodes. Both share a renderer lifecycle, but have
+separate compositions. Pointer movement changes the camera angle subtly;
+scrolling expands the hero's point cloud. Text and links remain HTML outside
+the canvas.
+
+The renderer caps pixel density at 1.5, resizes with its container and stops
+its animation loop when hidden or outside the viewport. Reduced motion
+keeps the SVG without initializing WebGL. Initialization errors and context
+loss return to that poster. Unmount disconnects observers and listeners and
+disposes GPU resources.
+
+`src/images/brand/` preserves the generated campaign artwork, with original
+prompts and tool provenance in its README. The cube is used in social cards;
+the original infrastructure panorama is retained as an unused design asset.
+Neither is used in the landing page's scenes. The dashboard screens remain
+real captures with demonstration data.
+
+`src/lib/social-image.tsx` renders a consistent social card for the homepage,
+docs and templates, using the local cube artwork and actual page titles.
+The homepage image metadata is generated through Next's file conventions.
 
 ## install.sh is a rewrite
 

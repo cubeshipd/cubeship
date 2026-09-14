@@ -70,17 +70,17 @@ export function Filters({
   });
 
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="template-filters">
       <form
         onSubmit={(event) => {
           event.preventDefault();
           sent.current = q.trim();
           push({ q: q.trim() || null });
         }}
-        className="relative min-w-0 flex-1 basis-64"
+        className="template-search"
       >
         <Search
-          className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+          className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground"
           aria-hidden
         />
         <Input
@@ -89,21 +89,17 @@ export function Filters({
           onChange={(event) => setQ(event.target.value)}
           placeholder="Search by name, description or tag"
           aria-label="Search templates"
-          className="h-9 pl-9"
+          className="h-12 pl-11"
         />
       </form>
       <TagSelect tags={tags} active={activeTag} onChange={(tag) => push({ tag })} />
-      <div className="flex h-9 border border-border font-mono text-xs uppercase tracking-wide">
+      <div className="template-sort" aria-label="Sort templates">
         {SORTS.map((option) => (
           <button
             key={option.value}
             type="button"
             onClick={() => push({ sort: option.value === "recent" ? null : option.value })}
-            className={`px-3 transition-colors ${
-              sort === option.value
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-primary"
-            }`}
+            aria-pressed={sort === option.value}
           >
             {option.label}
           </button>
@@ -136,10 +132,7 @@ function TagSelect({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        data-slot="select-trigger"
-        className="flex h-9 w-52 items-center gap-2 border border-input px-3 text-left font-mono text-sm"
-      >
+      <PopoverTrigger data-slot="select-trigger" className="template-topic-trigger">
         <Tag className="size-4 shrink-0 text-muted-foreground" aria-hidden />
         <span
           className={`min-w-0 flex-1 truncate ${active ? "text-fd-foreground" : "text-muted-foreground"}`}
@@ -150,7 +143,7 @@ function TagSelect({
       </PopoverTrigger>
       <PopoverContent
         align="start"
-        className="w-(--anchor-width) min-w-52 rounded-none border-border bg-fd-background p-0 backdrop-blur-none"
+        className="template-topic-popover w-(--anchor-width) min-w-52 rounded-none border-border bg-fd-background p-0 backdrop-blur-none"
       >
         <div className="relative border-border border-b">
           <Search

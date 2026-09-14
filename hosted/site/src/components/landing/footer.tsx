@@ -1,29 +1,31 @@
+import { ArrowUpRight } from "lucide-react";
+import Link from "next/link";
 import { Wordmark } from "@/components/brand";
 import { githubUrl } from "@/lib/shared";
 
-// A group is a column; adding a link is a line, adding a group is a
-// column, and the grid takes as many as there are.
-const groups: { title: string; links: { text: string; href: string }[] }[] = [
+const groups = [
   {
-    title: "Product",
+    title: "Platform",
     links: [
+      { text: "Deployments", href: "/docs/apps" },
+      { text: "Databases", href: "/docs/databases" },
       { text: "Templates", href: "/templates" },
-      { text: "Docs", href: "/docs" },
-      { text: "Install", href: "/docs/getting-started/install" },
-      { text: "The CLI", href: "/docs/cli" },
-      { text: "The API", href: "/docs/api" },
+      { text: "Clusters", href: "/docs/servers" },
       { text: "MCP", href: "/docs/mcp" },
     ],
   },
   {
-    title: "Compare",
+    title: "Resources",
     links: [
-      { text: "vs Dokploy", href: "/vs/dokploy" },
+      { text: "Documentation", href: "/docs" },
+      { text: "Installation", href: "/docs/getting-started/install" },
+      { text: "CLI & API", href: "/docs/cli" },
       { text: "vs Coolify", href: "/vs/coolify" },
+      { text: "vs Dokploy", href: "/vs/dokploy" },
     ],
   },
   {
-    title: "Project",
+    title: "Open source",
     links: [
       { text: "GitHub", href: githubUrl },
       { text: "Changelog", href: `${githubUrl}/blob/master/CHANGELOG.md` },
@@ -36,36 +38,34 @@ const groups: { title: string; links: { text: string; href: string }[] }[] = [
 
 export function Footer() {
   return (
-    <footer className="mx-auto max-w-6xl px-6 py-14">
-      <div className="grid gap-10 md:grid-cols-[1.2fr_2fr]">
-        <div>
-          <Wordmark />
-          <p className="mt-3 max-w-xs text-subtle-foreground text-xs leading-relaxed">
-            Apache-2.0. Use it, run it, modify it, run your company on it. The name is the one thing
-            not in the grant.
-          </p>
+    <footer className="site-container site-footer">
+      <div className="footer-main">
+        <div className="footer-brand">
+          <Link href="/" aria-label="Cubeship home">
+            <Wordmark />
+          </Link>
+          <p>The self-hosted platform for people who build. Your servers. Your rules.</p>
         </div>
-        {/* auto-fit only works with every track flexible, which is why
-            the groups have a grid of their own beside the wordmark. */}
-        <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-8">
-          {groups.map((g) => (
-            <nav key={g.title} aria-label={g.title}>
-              <p className="label text-subtle-foreground">{g.title}</p>
-              <ul className="mt-3 space-y-2">
-                {g.links.map((l) => (
-                  <li key={l.text}>
-                    <a
-                      href={l.href}
-                      className="text-muted-foreground text-sm transition-colors hover:text-primary"
-                    >
-                      {l.text}
-                    </a>
+        <div className="footer-links">
+          {groups.map((group) => (
+            <nav key={group.title} aria-label={group.title}>
+              <h3>{group.title}</h3>
+              <ul>
+                {group.links.map((link) => (
+                  <li key={link.text}>
+                    <a href={link.href}>{link.text}</a>
                   </li>
                 ))}
               </ul>
             </nav>
           ))}
         </div>
+      </div>
+      <div className="footer-bottom">
+        <span>Open source under Apache 2.0.</span>
+        <a href={githubUrl}>
+          Built in the open. Made to be yours. <ArrowUpRight size={12} />
+        </a>
       </div>
     </footer>
   );

@@ -110,6 +110,9 @@ export default function Layout({ children }: LayoutProps<"/">) {
         <script type="application/ld+json">{JSON.stringify(structuredData)}</script>
         {/* Umami, through the site's own /u — see lib/umami-proxy. */}
         <script defer src="/u/script.js" data-website-id={umamiWebsiteId} data-host-url="/u" />
+        <a href="#main-content" className="skip-link">
+          Skip to content
+        </a>
         <RootProvider theme={{ enabled: false }}>{children}</RootProvider>
       </body>
     </html>

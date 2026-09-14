@@ -1,12 +1,14 @@
-import { HomeLayout } from "fumadocs-ui/layouts/home";
 import { Footer } from "@/components/landing/footer";
-import { baseOptions } from "@/lib/layout.shared";
+import { SiteHeader } from "@/components/site-header";
 
 export default function Layout({ children }: LayoutProps<"/templates">) {
   return (
-    <HomeLayout {...baseOptions()}>
-      <main className="flex-1">{children}</main>
+    <>
+      <SiteHeader />
+      <main id="main-content" className="editorial-page templates-shell flex-1">
+        {children}
+      </main>
       <Footer />
-    </HomeLayout>
+    </>
   );
 }

@@ -2,8 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { TemplateCard } from "@/components/templates/card";
 import { Filters } from "@/components/templates/filters";
-import { MoreTemplates } from "@/components/templates/more";
-import { distinctTags, listTemplates } from "@/lib/catalog";
+import { allTemplates, distinctTags } from "@/lib/catalog";
 
 // Reads the catalog on every request, so this page can never be static.
 export const dynamic = "force-dynamic";
@@ -24,64 +23,61 @@ export default async function TemplatesPage(props: PageProps<"/templates">) {
   const tag = firstOf(params.tag);
   const sort = firstOf(params.sort) === "stars" ? "stars" : "recent";
 
-  const [{ templates: rows, next_cursor: nextCursor }, tags] = await Promise.all([
-    listTemplates({ q, tag, sort }),
-    distinctTags(),
-  ]);
-
-  const query = new URLSearchParams();
-  if (q) query.set("q", q);
-  if (tag) query.set("tag", tag);
-  if (sort !== "recent") query.set("sort", sort);
+  const [rows, tags] = await Promise.all([allTemplates({ q, tag, sort }), distinctTags()]);
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-12">
-      <p className="label text-primary">Templates</p>
-      <div className="mt-2 flex flex-wrap items-end justify-between gap-4">
-        <h1 className="font-semibold text-2xl text-fd-foreground tracking-tight">
-          Apps and the managed data they need
-        </h1>
-        <Link href="/docs/templates/publishing" className="label text-primary hover:text-glow">
-          Publish one →
-        </Link>
-      </div>
+    <div className="site-container templates-catalog">
+      <header className="templates-hero">
+        <div>
+          <p className="section-kicker">Community templates</p>
+          <h1>Your next app starts here.</h1>
+        </div>
+        <div className="templates-hero-copy">
+          <p>
+            Deploy complete projects with the apps and managed data they need, published and
+            versioned on GitHub.
+          </p>
+          <Link href="/docs/templates/publishing" className="inline-link">
+            Publish a template <span aria-hidden>↗</span>
+          </Link>
+        </div>
+      </header>
 
-      <div className="mt-8">
+      <div className="templates-filter-deck">
+        <p className="templates-result-count">
+          {rows.length === 1 ? "1 template" : `${rows.length} templates`}
+          {q || tag ? " match this view" : " ready to explore"}
+        </p>
         <Filters tags={tags} q={q} tag={tag} sort={sort} />
       </div>
 
       {rows.length === 0 ? (
-        <div className="hud-frame mt-12 border border-fd-border p-8 text-center">
+        <div className="templates-empty hud-frame">
           {q || tag ? (
             <>
-              <p className="text-fd-muted-foreground text-sm">No template matches these filters.</p>
-              <Link href="/templates" className="mt-3 inline-block text-primary text-sm">
-                Clear the filters →
+              <h2>No template matches this view.</h2>
+              <p>Try another name or topic, or reset the catalog to see everything.</p>
+              <Link href="/templates" className="inline-link">
+                Clear the filters <span aria-hidden>↗</span>
               </Link>
             </>
           ) : (
             <>
-              <p className="text-fd-muted-foreground text-sm">Nothing is published yet.</p>
-              <Link
-                href="/docs/templates/publishing"
-                className="mt-3 inline-block text-primary text-sm"
-              >
-                Publish the first one →
+              <h2>The catalog is ready for its first template.</h2>
+              <p>Publish a GitHub release with the Cubeship topic to make it available here.</p>
+              <Link href="/docs/templates/publishing" className="inline-link">
+                Read the publishing guide <span aria-hidden>↗</span>
               </Link>
             </>
           )}
         </div>
       ) : (
         <>
-          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="templates-grid">
             {rows.map((template) => (
               <TemplateCard key={`${template.owner}/${template.name}`} template={template} />
             ))}
           </div>
-          {nextCursor ? (
-            // Keyed on the filters, so changing one starts again from the top.
-            <MoreTemplates key={query.toString()} query={query.toString()} cursor={nextCursor} />
-          ) : null}
         </>
       )}
     </div>

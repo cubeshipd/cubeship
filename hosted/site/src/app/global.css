@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @import "fumadocs-ui/css/preset.css";
+@import "./marketing.css";
+@import "./editorial.css";
 
 /* The dashboard's palette, the cyan one, and nothing else: this site is
    the product's face and it wears the product's colours. The values are

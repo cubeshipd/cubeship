@@ -35,78 +35,75 @@ export default async function ComparePage(props: PageProps<"/vs/[slug]">) {
   if (!c) notFound();
 
   return (
-    <main className="flex-1">
-      <section className="border-border border-b">
-        <div className="mx-auto max-w-4xl px-6 pt-20 pb-14 text-center">
-          <p className="label text-primary">Compared</p>
-          <h1 className="mt-4 font-semibold text-4xl tracking-tight sm:text-5xl">{c.title}</h1>
-          <p className="hud-frame mx-auto mt-8 inline-block border border-border bg-card px-5 py-3 font-mono text-sm">
-            <span className="text-success">Cubeship is 100% free.</span>{" "}
-            <span className="text-muted-foreground">
-              Every feature, every server, every user. No plans, no cloud.
-            </span>
-          </p>
-          <p className="mt-4 text-muted-foreground text-sm">{c.cost}</p>
+    <main id="main-content" className="editorial-page comparison-page flex-1">
+      <section className="comparison-hero">
+        <div className="site-container comparison-hero-grid">
+          <div>
+            <p className="section-kicker">A practical comparison</p>
+            <h1>{c.title}</h1>
+          </div>
+          <div className="comparison-promise hud-frame">
+            <strong>Cubeship is 100% free.</strong>
+            <p>Every feature, every server, every user. No plans, no cloud.</p>
+            <p className="comparison-cost">{c.cost}</p>
+          </div>
         </div>
       </section>
 
-      <section className="border-border border-b">
-        <div className="mx-auto max-w-4xl px-6 py-16">
-          <table className="w-full border-collapse">
-            <thead>
-              <tr className="label text-subtle-foreground">
-                <th className="py-3 text-left font-normal">Feature</th>
-                <th className="w-28 py-3 text-center font-normal text-primary">Cubeship</th>
-                <th className="w-28 py-3 text-center font-normal">{c.name}</th>
-              </tr>
-            </thead>
-            {c.groups.map((g) => (
-              <tbody key={g.title}>
+      <section className="comparison-evidence">
+        <div className="site-container comparison-content">
+          <div className="comparison-table-wrap">
+            <table>
+              <thead>
                 <tr>
-                  <th
-                    colSpan={3}
-                    className="label border-border border-t pt-6 pb-2 text-left text-primary"
-                  >
-                    <span className="mr-2 inline-block h-3 w-0.5 bg-primary align-middle" />
-                    {g.title}
-                  </th>
+                  <th>Feature</th>
+                  <th>Cubeship</th>
+                  <th>{c.name}</th>
                 </tr>
-                {g.rows.map((r) => (
-                  <tr key={r.feature} className="border-border border-t">
-                    <td className="py-3 text-sm">{r.feature}</td>
-                    <td className="py-3">
-                      <Mark on={r.cubeship} />
-                    </td>
-                    <td className="py-3">
-                      <Mark on={r.other} />
-                    </td>
+              </thead>
+              {c.groups.map((g) => (
+                <tbody key={g.title}>
+                  <tr>
+                    <th colSpan={3} className="comparison-group">
+                      {g.title}
+                    </th>
                   </tr>
-                ))}
-              </tbody>
-            ))}
-          </table>
-          <p className="mt-6 text-subtle-foreground text-xs">
+                  {g.rows.map((r) => (
+                    <tr key={r.feature}>
+                      <td>{r.feature}</td>
+                      <td>
+                        <Mark on={r.cubeship} />
+                      </td>
+                      <td>
+                        <Mark on={r.other} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              ))}
+            </table>
+          </div>
+          <p className="comparison-checked">
             Checked against {c.checked}. Wrong or out of date?{" "}
-            <a
-              href="https://github.com/cubeshipd/cubeship/issues"
-              className="underline hover:text-primary"
-            >
+            <a href="https://github.com/cubeshipd/cubeship/issues" className="inline-link">
               Say so.
             </a>
           </p>
-          <div className="mt-12 flex flex-wrap justify-center gap-4">
-            <Link
-              href="/docs/getting-started/install"
-              className="neon-edge inline-flex items-center gap-2 bg-primary px-5 py-2.5 font-semibold text-primary-foreground text-sm uppercase tracking-[0.18em] transition-colors hover:bg-primary/90"
-            >
-              Install Cubeship <ArrowRight className="size-4" />
-            </Link>
-            <Link
-              href="/docs"
-              className="inline-flex items-center gap-2 border border-border-strong px-5 py-2.5 font-semibold text-foreground text-sm uppercase tracking-[0.18em] transition-colors hover:border-primary hover:text-primary"
-            >
-              Read the docs
-            </Link>
+          <div className="comparison-cta">
+            <div>
+              <h2>One VPS. Your entire platform.</h2>
+              <p>
+                Install Cubeship and keep the server, data, and deployment path under your control.
+              </p>
+            </div>
+            <div className="comparison-cta-actions">
+              <Link href="/docs/getting-started/install" className="button-primary neon-edge">
+                Install Cubeship <ArrowRight className="size-4" />
+              </Link>
+              <Link href="/docs" className="comparison-secondary-action">
+                Read the docs
+              </Link>
+            </div>
           </div>
         </div>
       </section>
