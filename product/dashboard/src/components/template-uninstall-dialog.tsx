@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
@@ -32,6 +33,7 @@ export function TemplateUninstallDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [keepData, setKeepData] = useState(true);
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
@@ -48,6 +50,10 @@ export function TemplateUninstallDialog({
       await api.post<TemplateRunStarted>(`/template-installs/${install.id}/uninstall`, {
         keep_data: keepData,
       });
+      // Before the push, for the reason updating does it: from the
+      // installation's own page the push goes nowhere, and polling would
+      // never start for the run just begun.
+      await queryClient.invalidateQueries({ queryKey: ["template-installs"] });
       onOpenChange(false);
       router.push(`/templates/installs/${install.id}`);
     } catch (err) {

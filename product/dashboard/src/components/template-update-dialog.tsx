@@ -1,6 +1,6 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { cn } from "cn";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -48,6 +48,7 @@ export function TemplateUpdateDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -93,6 +94,10 @@ export function TemplateUpdateDialog({
         },
       );
       handOverSecrets(install.id, started.secrets);
+      // Before the push: from the installation's own page the push goes
+      // nowhere, and the copy it holds says nothing is running, so it
+      // would never poll for the run just started.
+      await queryClient.invalidateQueries({ queryKey: ["template-installs"] });
       onOpenChange(false);
       router.push(`/templates/installs/${install.id}`);
     } catch (err) {
