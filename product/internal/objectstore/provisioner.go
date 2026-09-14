@@ -163,7 +163,7 @@ func (p *Provisioner) containerOpts(ctx context.Context, s *Store) dockerx.Conta
 			"MINIO_ROOT_PASSWORD=" + s.SecretKey,
 		},
 		Network:      Network,
-		AlsoNetworks: p.mesh(ctx),
+		AlsoNetworks: append([]string{dockerx.ManagementNetwork}, p.mesh(ctx)...),
 		Labels: map[string]string{
 			// No Traefik labels. A managed store answers to apps on the
 			// shared network by container name, and to anything else

@@ -114,10 +114,10 @@ var pushPullActions = map[string]bool{"pull": true, "push": true}
 // NodeAuth turns a machine's credential into the machine.
 //
 // Declared here and satisfied by `node`, so this module keeps knowing
-// nothing about clusters: what it needs is "is this a machine of ours",
-// and the answer is a name for the token's subject.
+// nothing about placement rules: node supplies identity and pull authorization.
 type NodeAuth interface {
-	AuthenticateNode(ctx context.Context, token string) (string, error)
+	AuthenticateNode(ctx context.Context, token string) (int64, string, error)
+	NodeCanPull(ctx context.Context, nodeID int64, repository string) (bool, error)
 }
 
 // SetNodeAuth wires in what authenticates the other machines. Called
@@ -152,16 +152,24 @@ func builderAccess(scope string) []regauth.AccessEntry {
 	return []regauth.AccessEntry{{Type: "repository", Name: parts[1], Actions: granted}}
 }
 
-// nodeAccess is what a machine in this cluster may do with an image:
-// **pull, and nothing else**.
-//
-// A worker runs what it is told to run. It never builds, never pushes,
-// and never deletes — those are decisions, and a machine that decides
-// nothing has no reason to hold a credential that could make one. The
-// scope it asks for is honoured only down to pull.
-func nodeAccess(scope string) []regauth.AccessEntry {
+// nodeAccess grants only requested pulls for repositories the authenticated
+// machine currently needs. Lookup failures grant no access.
+func (h *Handler) nodeAccess(ctx context.Context, nodeID int64, scope string) []regauth.AccessEntry {
 	parts := strings.SplitN(scope, ":", 3)
-	if len(parts) != 3 || parts[0] != "repository" {
+	if len(parts) != 3 || parts[0] != "repository" || parts[1] == "" {
+		return nil
+	}
+	requested := false
+	for _, action := range strings.Split(parts[2], ",") {
+		if action == "pull" {
+			requested = true
+		}
+	}
+	if !requested {
+		return nil
+	}
+	allowed, err := h.nodes.NodeCanPull(ctx, nodeID, parts[1])
+	if err != nil || !allowed {
 		return nil
 	}
 	return []regauth.AccessEntry{{Type: "repository", Name: parts[1], Actions: []string{"pull"}}}

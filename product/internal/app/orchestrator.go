@@ -719,6 +719,8 @@ func (o *Orchestrator) swap(ctx context.Context, a *Scoped, replica Replica, ima
 		Labels:       labels,
 		Env:          envvar.Slice(env),
 		Network:      Network,
+		CapDrop:      []string{"NET_RAW"},
+		SecurityOpt:  []string{"no-new-privileges:true"},
 		AlsoNetworks: o.mesh(ctx),
 		// base is the container's name without this deploy's id on the
 		// end, and it is the one address another app can hold on to.
@@ -816,6 +818,8 @@ func (o *Orchestrator) swapInPlace(ctx context.Context, a *Scoped, replica Repli
 		Labels:       labels,
 		Env:          envvar.Slice(env),
 		Network:      Network,
+		CapDrop:      []string{"NET_RAW"},
+		SecurityOpt:  []string{"no-new-privileges:true"},
 		AlsoNetworks: o.mesh(ctx),
 		Aliases:      []string{base},
 		Resources:    a.Limits.Resources(),

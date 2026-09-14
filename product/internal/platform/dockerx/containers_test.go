@@ -126,6 +126,8 @@ func (f *fakeAPI) NetworkInspect(_ context.Context, name string, _ network.Inspe
 	return network.Inspect{}, errdefs.NotFound(errors.New("no such network"))
 }
 
+func (f *fakeAPI) NetworkDisconnect(context.Context, string, string, bool) error { return nil }
+
 func (f *fakeAPI) NetworkCreate(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error) {
 	if f.networkCreateErr != nil {
 		return network.CreateResponse{}, f.networkCreateErr

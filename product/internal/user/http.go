@@ -315,17 +315,31 @@ func (h *Handler) StartSession(w http.ResponseWriter, r *http.Request, u *User) 
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
+	// Login is a small JSON exchange; uploads on other routes keep streaming.
+	controller := http.NewResponseController(w)
+	_ = controller.SetReadDeadline(time.Now().Add(10 * time.Second))
+	defer controller.SetReadDeadline(time.Time{})
 	var req struct {
 		Username string `json:"username"`
 		Password string `json:"password"`
 	}
-	if err := httpx.DecodeJSON(r, &req); err != nil {
+	if err := httpx.DecodeJSONBounded(w, r, &req, 16*1024); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) {
+			http.Error(w, "login body too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
 
 	token, session, err := h.svc.Login(r.Context(), req.Username, req.Password)
 	if err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			w.Header().Set("Retry-After", "1")
+			http.Error(w, err.Error(), http.StatusTooManyRequests)
+			return
+		}
 		// Deliberately the same answer for an unknown username and a
 		// wrong password.
 		http.Error(w, ErrInvalidCredentials.Error(), http.StatusUnauthorized)
@@ -371,7 +385,7 @@ func (h *Handler) setPassword(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	case errors.Is(err, ErrInvalidCredentials):
 		http.Error(w, "the current password is wrong", http.StatusForbidden)
-	case errors.Is(err, ErrPasswordTooShort):
+	case errors.Is(err, ErrPasswordTooShort), errors.Is(err, ErrPasswordTooLong):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	default:
 		WriteError(w, err)
@@ -728,7 +742,7 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrCannotRemoveYourself), errors.Is(err, ErrLastAdmin),
 		errors.Is(err, ErrCannotBlockYourself), errors.Is(err, ErrCannotChangeYourOwnRole):
 		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, ErrInvalidRole), errors.Is(err, ErrPasswordTooShort),
+	case errors.Is(err, ErrInvalidRole), errors.Is(err, ErrPasswordTooShort), errors.Is(err, ErrPasswordTooLong),
 		errors.Is(err, ErrUnknownTheme), errors.Is(err, slug.ErrReserved):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, slug.ErrInvalid):

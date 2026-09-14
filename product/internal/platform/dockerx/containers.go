@@ -77,7 +77,9 @@ type ContainerOpts struct {
 	ExtraHosts  []string
 	// Privileged drops the container's isolation. Only BuildKit needs
 	// it, and only because building an image means running one.
-	Privileged bool
+	Privileged  bool
+	CapDrop     []string
+	SecurityOpt []string
 	// HostPID puts the container in the host's PID namespace, which is
 	// what makes PID 1 there addressable — the one thing a container
 	// needs to step out into the host's namespaces with nsenter. See
@@ -334,6 +336,8 @@ func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (strin
 			NetworkMode:   networkMode,
 			ExtraHosts:    opts.ExtraHosts,
 			Privileged:    opts.Privileged,
+			CapDrop:       opts.CapDrop,
+			SecurityOpt:   opts.SecurityOpt,
 			PidMode:       pidMode(opts),
 			Resources:     resources(opts.Resources),
 			AutoRemove:    opts.AutoRemove,
@@ -454,16 +458,18 @@ func (c *Client) SpecOf(ctx context.Context, name string) (ContainerOpts, error)
 	}
 
 	opts := ContainerOpts{
-		Name:       strings.TrimPrefix(info.Name, "/"),
-		Image:      info.Config.Image,
-		Labels:     info.Config.Labels,
-		Env:        info.Config.Env,
-		Cmd:        info.Config.Cmd,
-		Entrypoint: info.Config.Entrypoint,
-		Binds:      info.HostConfig.Binds,
-		ExtraHosts: info.HostConfig.ExtraHosts,
-		Privileged: info.HostConfig.Privileged,
-		HostPID:    info.HostConfig.PidMode.IsHost(),
+		Name:        strings.TrimPrefix(info.Name, "/"),
+		Image:       info.Config.Image,
+		Labels:      info.Config.Labels,
+		Env:         info.Config.Env,
+		Cmd:         info.Config.Cmd,
+		Entrypoint:  info.Config.Entrypoint,
+		Binds:       info.HostConfig.Binds,
+		ExtraHosts:  info.HostConfig.ExtraHosts,
+		Privileged:  info.HostConfig.Privileged,
+		CapDrop:     info.HostConfig.CapDrop,
+		SecurityOpt: info.HostConfig.SecurityOpt,
+		HostPID:     info.HostConfig.PidMode.IsHost(),
 		Resources: Resources{
 			NanoCPUs:    info.HostConfig.Resources.NanoCPUs,
 			MemoryBytes: info.HostConfig.Resources.Memory,

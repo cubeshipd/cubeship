@@ -44,9 +44,17 @@ var ErrPasswordTooShort = fmt.Errorf("password must be at least %d characters", 
 // MinPasswordLength is that floor.
 const MinPasswordLength = 12
 
+// MaxPasswordBytes bounds all password entry points, including setup and reset.
+const MaxPasswordBytes = 1024
+
+var ErrPasswordTooLong = fmt.Errorf("password must be at most %d bytes", MaxPasswordBytes)
+
 // HashPassword derives a storable hash, in the PHC string format so the
 // parameters travel with it.
 func HashPassword(password string) (string, error) {
+	if len(password) > MaxPasswordBytes {
+		return "", ErrPasswordTooLong
+	}
 	if len([]rune(password)) < MinPasswordLength {
 		return "", ErrPasswordTooShort
 	}
@@ -70,6 +78,9 @@ func HashPassword(password string) (string, error) {
 // current constants, so hashes written by an older build still verify
 // after those constants change.
 func VerifyPassword(encoded, password string) bool {
+	if len(password) > MaxPasswordBytes {
+		return false
+	}
 	parts := strings.Split(encoded, "$")
 	if len(parts) != 6 || parts[1] != "argon2id" {
 		return false

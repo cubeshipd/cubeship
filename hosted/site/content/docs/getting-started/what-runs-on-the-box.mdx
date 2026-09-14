@@ -34,7 +34,7 @@ databases and managed stores also join the [mesh](/docs/servers/the-mesh).
 | Port | Who | When |
 | --- | --- | --- |
 | `80`, `443` | the proxy | always — 80 redirects to 443 |
-| `3000` | the daemon | on the first install, until the instance has a domain and the proxy takes over |
+| `3000` | the daemon | loopback only; recovery through an SSH tunnel |
 | `127.0.0.1:5432` | the daemon's Postgres | loopback only |
 | `15000–15999` | an exposed database | when you expose one |
 | `16000–16999` | an exposed store | when you expose one |

@@ -39,6 +39,6 @@ unknown username, wrong password, blocked account after a correct
 password — is answered so that none of them says whether the account
 exists.
 
-On a fresh install reached at `http://<ip>:3000` the cookie is not
+During recovery through an SSH tunnel at `http://localhost:3000`, the cookie is not
 marked secure, because it could not be sent back over plain HTTP if it
 were; once the instance has a domain and answers over HTTPS, it is.

@@ -63,7 +63,8 @@ One command on a fresh VPS, and the box is running:
 
 Everything Cubeship runs is a container, the daemon included: Postgres,
 the registry, the proxy, the builder and every app of yours are its
-siblings on one network. Nothing else is installed on the host.
+siblings, with administrative services on a separate network from apps.
+Nothing else is installed on the host.
 
 ## Install
 
@@ -97,9 +98,8 @@ published like any other release and are never what you get by default.
   knows how to put Docker on; on anything else, install Docker first and
   the script will use it.
 - **Ports 80 and 443** free, for the proxy and for certificates.
-- **Port 3000** free on the first install — it is where you claim the
-  instance before it has a domain. The installer refuses rather than
-  fighting whatever is already there.
+- **Port 3000** free on loopback, for recovery through an SSH tunnel.
+  The installer refuses rather than fighting whatever is already there.
 - Root, because it installs Docker and writes to `/var/lib/cubeship`.
 
 ### Installing your own build
@@ -117,9 +117,18 @@ sudo ./install.sh --local
 
 ### Claim the instance
 
-Open the address the installer printed — `http://<your-ip>:3000` — and
-create the first account. It asks for the **setup token**, which the
-installer printed and which is also in `/var/lib/cubeship/setup-token`.
+Open the HTTPS address the installer printed and create the first
+account. It asks for the **setup token**, which the installer printed
+and which is also in `/var/lib/cubeship/setup-token`.
+
+If the domain or certificate is unavailable, run this on your computer:
+
+```bash
+ssh -L 3000:127.0.0.1:3000 root@<your-server>
+```
+
+Keep the tunnel open and visit `http://localhost:3000`. The recovery port
+is bound to the server's loopback interface.
 
 That token is the point: without it, whoever reaches the page first is
 the admin of your machine. With it, claiming the instance takes access

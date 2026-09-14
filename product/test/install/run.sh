@@ -101,8 +101,8 @@ run_tests() {
 	check "creates the data directory" "$(stat -c '%a' /var/lib/cubeship)" "700"
 	# Two images, at the same version: the daemon and the dashboard.
 	check "pulls both images" "$(grep -c '^docker pull ' /tmp/docker.log)" "2"
-	check "creates the shared network" \
-		"$(grep -c '^docker network create cubeship' /tmp/docker.log)" "1"
+	check "creates the application network" \
+		"$(grep -c '^docker network create cubeship$' /tmp/docker.log)" "1"
 	check "runs the daemon" "$(grep -c 'docker run .*--name cubeship-daemon' /tmp/docker.log)" "1"
 	check "gives it the Docker socket" \
 		"$(grep -c 'var/run/docker.sock:/var/run/docker.sock' /tmp/docker.log)" "1"
@@ -110,7 +110,9 @@ run_tests() {
 	# possible: a container's /proc/net is its own namespace.
 	check "gives it the machine's procfs" \
 		"$(grep -c '\-v /proc:/host/proc:ro' /tmp/docker.log)" "1"
-	check "publishes the port" "$(grep -c '\-p 3000:3000' /tmp/docker.log)" "1"
+	check "publishes recovery only on loopback" "$(grep -c '\-p 127.0.0.1:3000:3000' /tmp/docker.log)" "1"
+	check "creates the management network" "$(grep -c '^docker network create cubeship-management$' /tmp/docker.log)" "1"
+	check "joins only the management network" "$(grep -c '\-\-network cubeship-management ' /tmp/docker.log)" "1"
 	check "restarts it with the host" \
 		"$(grep -c '\-\-restart unless-stopped' /tmp/docker.log)" "1"
 	check "ends with the name in lights" "$(printf '%s' "$out" | grep -c '██████╗██╗')" "1"
@@ -118,8 +120,8 @@ run_tests() {
 		"$(printf '%s' "$out" | grep -c 'https://203-0-113-7.sslip.io')" "1"
 	check "makes a domain from the public address" \
 		"$(grep -c 'CUBESHIP_DOMAIN=203-0-113-7.sslip.io' /tmp/docker.log)" "1"
-	check "keeps the port as the way in until the certificate is up" \
-		"$(printf '%s' "$out" | grep -c ':3000')" "1"
+	check "provides an SSH tunnel for recovery" \
+		"$(printf '%s' "$out" | grep -c 'ssh -L 3000:127.0.0.1:3000 root@')" "1"
 
 	# A domain given wins over the one made up, and is passed as is.
 	rm -f /tmp/docker.log
@@ -135,7 +137,7 @@ run_tests() {
 	check "no public address means no domain" \
 		"$(grep -c 'CUBESHIP_DOMAIN= ' /tmp/docker.log)" "1"
 	check "and says where to open instead" \
-		"$(printf '%s' "$out" | grep -c 'http://.*:3000')" "1"
+		"$(printf '%s' "$out" | grep -c 'http://localhost:3000')" "1"
 	curl_stub
 
 	# The data directory has to be mounted at the same path inside as
@@ -197,7 +199,7 @@ run_tests() {
 		"$(grep -c 'CUBESHIP_CONTROL_PLANE=https://cube.example.com' /tmp/docker.log)" "1"
 	check "and what to authenticate as" \
 		"$(grep -c 'CUBESHIP_NODE_TOKEN=a-node-credential' /tmp/docker.log)" "1"
-	check "a worker publishes no port" "$(grep -c '\-p 3000:3000' /tmp/docker.log)" "0"
+	check "a worker publishes no port" "$(grep -c ' -p ' /tmp/docker.log)" "0"
 	check "a worker pulls only the daemon" "$(grep -c '^docker pull ' /tmp/docker.log)" "1"
 	check "a worker is told no domain" "$(grep -c 'CUBESHIP_DOMAIN' /tmp/docker.log)" "0"
 	check "and no dashboard to start" "$(grep -c 'CUBESHIP_WEB_IMAGE' /tmp/docker.log)" "0"

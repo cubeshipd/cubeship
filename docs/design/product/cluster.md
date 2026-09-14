@@ -367,6 +367,22 @@ the hash — so what travels is the registry's *host*, and the machine
 logs in as `cubeship-node` with the credential it already dials home
 with. `internal/registry` grants it **pull and nothing else**: a machine
 that decides nothing has no reason to hold a credential that could push.
+The authenticated node ID also limits **which repositories**: only images
+in that node's current desired placements, with an exact match of the
+instance registry's public host and the image's repository. An external
+registry with the same repository path grants no access here. Missing
+placements and lookup errors grant nothing. The query follows the same
+pending deployment and failed-deployment fallback as reconciliation, so
+new deployments and rollback can pull the version they are told to run.
+
+The registry token protocol scopes access by repository, **not tag or
+digest**. A permitted repository therefore exposes all its retained
+versions, including the previous version needed during a rollout; this
+is not per-version isolation. A rollback to a different repository is
+allowed once it becomes the desired image. Removing a placement prevents
+new grants, while a JWT already issued stays valid for its five-minute
+lifetime. A worker racing a changed desired image may need its next
+reconcile pass before retrying the pull.
 
 **One refusal, and it is a thing that would otherwise not work in a way
 nobody would notice**: an app that **builds** cannot leave the control

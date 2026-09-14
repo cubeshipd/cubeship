@@ -63,9 +63,17 @@ is better discovered before anything is replaced. It refuses when there
 is no checkout beside it — piped from curl there is nothing to build,
 and saying so beats a build that fails on a missing Dockerfile.
 
-**The daemon is a container**, a sibling of Postgres, the registry,
-Traefik, BuildKit, the dashboard and every app on the `cubeship`
-network. Each finds the others by container name.
+**The daemon is a container** on `cubeship-management`, with the
+administrative services it needs. Applications use `cubeship`; Traefik
+bridges ingress to both networks. The installer creates both networks
+and places the daemon or worker only on the management network.
+
+The recovery port is published as `127.0.0.1:3000:3000`. Normal access
+uses the HTTPS domain, including the default sslip.io name. If the domain
+or certificate is unavailable, run `ssh -L 3000:127.0.0.1:3000 root@<host>`
+on your computer and open `http://localhost:3000`. Setup tokens and login
+credentials then travel through SSH instead of public HTTP. Reinstalling
+replaces an older daemon's public port binding with loopback.
 
 **The Engine is not one of the things an address follows.** It is the
 host's daemon whatever Cubeship is, and it is on no user-defined
@@ -161,11 +169,10 @@ is what brings the registry up when a domain appears. It works because
    answer that is not filtered — an instance behind a split-horizon
    resolver may want one nothing here would guess.
 2. **The address the dashboard was opened at**, when the `Host` header
-   is an IP literal. On a fresh install that is free and exactly right:
-   the dashboard is reached at `http://<ip>:3000` before there is a
-   domain, so it is by construction an address that reaches this host.
-   Once there is a domain it is a name and this stops answering — which
-   is the case that produced the bug below.
+   is an IP literal. A domain supplies no IP here, and recovery through
+   `localhost` must not supply the client's loopback address. The
+   installer uses HTTPS by default, so host detection below usually
+   supplies the answer.
 3. **The machine's own**, from `ip route get` run in the host's
    namespaces, through the same door the firewall uses. Cached for
    `HostAddressTTL`, because asking costs a container and a machine's

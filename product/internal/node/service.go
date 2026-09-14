@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/distribution/reference"
+
 	"cubeship/internal/firewall"
 	"cubeship/internal/mesh"
 	"cubeship/internal/platform/authkey"
@@ -185,18 +187,51 @@ func (s *Service) Quiet(ctx context.Context, d time.Duration) (map[int64]bool, e
 // the machine next asks.
 func (s *Service) Wake(nodeID int64) { s.hub.Signal(nodeID) }
 
-// AuthenticateNode turns a machine's credential into its name.
-//
-// It is the registry's seam: a worker pulls the images this instance
-// holds, and what it presents is the credential it already
-// authenticates its own loop with. Returning the name rather than the
-// node keeps the registry knowing nothing about what one is.
-func (s *Service) AuthenticateNode(ctx context.Context, token string) (string, error) {
+// AuthenticateNode returns a stable identity for placement authorization and
+// the display name used as the registry token subject.
+func (s *Service) AuthenticateNode(ctx context.Context, token string) (int64, string, error) {
 	n, err := s.Authenticate(ctx, token)
 	if err != nil {
-		return "", err
+		return 0, "", err
 	}
-	return n.Slug, nil
+	return n.ID, n.Slug, nil
+}
+
+// NodeCanPull authorizes the repositories in this machine's desired images.
+// PlacementsFor follows pending deploys and falls back after a failed deploy.
+// Errors must deny access, including errors resolving a placement's image.
+func (s *Service) NodeCanPull(ctx context.Context, nodeID int64, repository string) (bool, error) {
+	if s.apps == nil {
+		return false, nil
+	}
+	host := s.RegistryHost(ctx)
+	if host == "" {
+		return false, nil
+	}
+	placements, err := s.apps.PlacementsFor(ctx, nodeID)
+	if err != nil {
+		return false, err
+	}
+	for _, placement := range placements {
+		if registryRepository(placement.Image, host) == repository && repository != "" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// Match the complete registry authority and repository, never a substring.
+// Tags and digests are not expressible in distribution's repository scopes.
+func registryRepository(image, host string) string {
+	authority, _, ok := strings.Cut(image, "/")
+	if !ok || authority != host || host == "" {
+		return ""
+	}
+	named, err := reference.ParseNormalizedNamed(image)
+	if err != nil {
+		return ""
+	}
+	return reference.Path(named)
 }
 
 func (s *Service) Repo() *Repository { return NewRepository(s.db) }

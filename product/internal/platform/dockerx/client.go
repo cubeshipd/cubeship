@@ -44,6 +44,7 @@ type apiClient interface {
 	ContainerExecInspect(ctx context.Context, execID string) (container.ExecInspect, error)
 	NetworkCreate(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error)
 	NetworkConnect(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error
+	NetworkDisconnect(ctx context.Context, networkID, containerID string, force bool) error
 	NetworkInspect(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error)
 	// The Engine's own clustering, for its overlay network and nothing
 	// else. See swarm.go.

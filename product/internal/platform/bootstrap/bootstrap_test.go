@@ -28,8 +28,8 @@ func TestRegistryContainerOptsRoutesThroughTraefik(t *testing.T) {
 	if opts.Labels["traefik.http.routers.cubeship-registry.rule"] != "Host(`registry.example.com`)" {
 		t.Fatalf("expected registry to be routed via Traefik, got %v", opts.Labels)
 	}
-	if opts.Network != "cubeship" {
-		t.Fatalf("expected the registry on the cubeship network, got %q", opts.Network)
+	if opts.Network != dockerx.ManagementNetwork {
+		t.Fatalf("expected the registry on the management network, got %q", opts.Network)
 	}
 	if len(opts.Ports) != 1 || opts.Ports[0] != "127.0.0.1:5000:5000" {
 		t.Fatalf("expected the registry published on localhost:5000, got %v", opts.Ports)
@@ -663,14 +663,14 @@ func TestAddressesFollowWhereTheDaemonRuns(t *testing.T) {
 // reach a daemon at 127.0.0.1. It costs more than it buys — not least
 // that it does not work at all on Docker Desktop — and nothing needs it
 // now.
-func TestTraefikIsOnTheSharedNetwork(t *testing.T) {
+func TestTraefikIsOnTheManagementNetwork(t *testing.T) {
 	opts := TraefikContainerOpts(testConfig(), true, "admin@example.com")
 
 	if opts.HostNetwork {
 		t.Error("Traefik is still on the host's network")
 	}
-	if opts.Network != Network {
-		t.Errorf("Traefik is on %q, want %q", opts.Network, Network)
+	if opts.Network != dockerx.ManagementNetwork {
+		t.Errorf("Traefik is on %q, want %q", opts.Network, dockerx.ManagementNetwork)
 	}
 	// It still has to answer the world on the two ports that matter.
 	var published string

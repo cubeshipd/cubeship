@@ -5,9 +5,18 @@ description: Claim the instance with the setup token, then give it a domain — 
 
 ## Claim the instance
 
-Open the address the installer printed — `http://<your-ip>:3000` — and
-create the first account. It asks for the **setup token**, which the
-installer printed and which is also in `/var/lib/cubeship/setup-token`.
+Open the HTTPS address the installer printed and create the first
+account. It asks for the **setup token**, which the installer printed
+and which is also in `/var/lib/cubeship/setup-token`.
+
+If the domain or certificate is unavailable, run this on your computer:
+
+```bash
+ssh -L 3000:127.0.0.1:3000 root@<your-server>
+```
+
+Keep the tunnel open and visit `http://localhost:3000`. The recovery port
+is bound to the server's loopback interface.
 
 That token is the point: without it, whoever reaches the page first is
 the admin of your machine. With it, claiming the instance takes access

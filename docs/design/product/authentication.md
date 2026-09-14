@@ -160,6 +160,14 @@ variables) and **domains**. Seeing a project follows from seeing its apps.
 Users and roles are not a resource — whoever can grant access can grant
 themselves all of it — and building source stays the owner's admin role
 (`app.requireSource`), whatever a key's role says.
+Project and environment variable writes also require that owner's admin
+role, in addition to `projects:manage` on the project. Every inherited
+variable can feed a build, including Railpack commands, so this applies
+to replacements, merges and removals regardless of the apps' current
+sources. Checking only existing build apps would allow a member to plant
+commands before a later source change. A restricted admin key still needs
+the project grant; a member with that grant cannot write inherited build
+input.
 
 A key's role only narrows. A restricted key cannot mint a key whose
 effective policy is wider than its own, revoke keys or change the
@@ -214,3 +222,14 @@ anything should not be left in a directory that gets backed up.
 The account gets a **password and no API key** — its way in is the
 session setup starts. A key nobody is ever shown would be a live
 credential lying around for nothing; keys are self-service.
+
+Password login admits at most two simultaneous attempts per daemon,
+with a token bucket of ten attempts refilling at one per second. It
+rejects overload immediately with 429 and Retry-After rather than queuing
+password hashes. Login bodies are limited to 16 KiB, have a ten-second
+read deadline, and accept at most 255 username bytes and 1024 password
+bytes. Password creation and verification share the password limit;
+older passwords exceeding it require an administrator reset. Other JSON
+request bodies are limited to 1 MiB, including public setup requests.
+Header and idle timeouts protect connections without imposing a global
+body timeout on streaming operations.

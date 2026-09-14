@@ -14,11 +14,12 @@ import (
 // implements any of this logic itself, so the two surfaces cannot drift
 // apart.
 type Service struct {
-	db *database.DB
+	db     *database.DB
+	logins *loginAdmission
 }
 
 func NewService(db *database.DB) *Service {
-	return &Service{db: db}
+	return &Service{db: db, logins: newLoginAdmission(time.Now)}
 }
 
 // Add creates an account and the password it signs in with, and is the
@@ -518,11 +519,25 @@ func (s *Service) DB() *database.DB { return s.db }
 // Login verifies a username and password and starts a session, returning
 // the token the browser carries and the session it belongs to.
 //
-// Every failure is ErrInvalidCredentials, and an unknown username still
-// pays for a hash verification: the response must not say — in its text
-// or in its timing — whether an account exists.
+// Credential failures are ErrInvalidCredentials, and an admitted unknown
+// username still pays for a hash verification: the response must not say
+// whether an account exists. Admission rejects excess attempts before any
+// database lookup or hash allocation.
 func (s *Service) Login(ctx context.Context, username, password string) (string, *Session, error) {
+	// Keep historical names usable even though new usernames are limited to 32.
+	if len(username) > 255 || len(password) > MaxPasswordBytes {
+		return "", nil, ErrInvalidCredentials
+	}
+	release, err := s.logins.acquire(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	defer release()
+
 	u, hash, err := s.Repo().PasswordHash(ctx, username)
+	if ctx.Err() != nil {
+		return "", nil, ctx.Err()
+	}
 	if err != nil {
 		// No such account. Verify against a fixed hash anyway so this
 		// costs what a real attempt costs.

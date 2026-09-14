@@ -5,6 +5,7 @@ package httpx
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"mime"
 	"net/http"
 	"net/url"
@@ -35,13 +36,26 @@ var ErrNotJSON = errors.New("body must be application/json")
 // asking for something with nothing to send, and the decode below
 // refuses it anyway.
 func DecodeJSON(r *http.Request, v any) error {
+	if err := DecodeJSONBounded(nil, r, v, 1<<20); err != nil {
+		if errors.Is(err, ErrNotJSON) {
+			return err
+		}
+		return errors.New("invalid JSON body or body exceeds 1 MiB")
+	}
+	return nil
+}
+
+// DecodeJSONBounded reads the entire body within a byte budget before decoding.
+// Reading to EOF also bounds trailing whitespace and chunked requests.
+func DecodeJSONBounded(w http.ResponseWriter, r *http.Request, v any, limit int64) error {
 	if r.ContentLength != 0 && !isJSONBody(r) {
 		return ErrNotJSON
 	}
-	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
-		return errors.New("invalid JSON body")
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
+	if err != nil {
+		return err
 	}
-	return nil
+	return json.Unmarshal(body, v)
 }
 
 // isJSONBody reports whether the request declares a JSON body. The

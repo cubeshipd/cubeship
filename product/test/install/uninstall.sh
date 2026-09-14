@@ -57,7 +57,8 @@ run_tests() {
 	out=$(main --yes 2>&1) || { printf '%s\n' "$out"; exit 1; }
 
 	check "removes the containers" "$(grep -c '^docker rm -f ' /tmp/docker.log)" "1"
-	check "removes the network" "$(grep -c '^docker network rm cubeship' /tmp/docker.log)" "1"
+	check "removes the application network" "$(grep -c '^docker network rm cubeship$' /tmp/docker.log)" "1"
+	check "removes the management network" "$(grep -c '^docker network rm cubeship-management$' /tmp/docker.log)" "1"
 	check "keeps the data by default" "$([ -d "$DATA_DIR" ] && echo kept || echo gone)" "kept"
 	check "removes no images by default" "$(grep -c '^docker rmi ' /tmp/docker.log)" "0"
 	check "says the data was kept" "$(printf '%s' "$out" | grep -c "$DATA_DIR is kept")" "1"

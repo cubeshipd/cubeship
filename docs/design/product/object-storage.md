@@ -249,3 +249,10 @@ screen offers the buckets it can list; the API takes the name.
 
 **Public buckets.** Nothing here sets a bucket policy, so a store is
 reached with a key or not at all.
+
+Managed stores attach to both the application and management bridges,
+including stores from earlier releases, so the daemon can browse and back
+up data without joining the application network. Linked S3 endpoints must
+be reachable from the management network. A linked endpoint configured
+with an application-only Docker DNS name must be changed to a reachable
+endpoint (normally HTTPS); the daemon no longer resolves that name.

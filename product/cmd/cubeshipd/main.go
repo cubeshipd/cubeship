@@ -149,6 +149,15 @@ func replaceDaemon(name, image string) error {
 	// it starts — an update that looks done and undoes itself on the
 	// next reboot.
 	spec.Env = update.WebImageEnv(spec.Env, run.Version)
+	spec, err = bootstrap.DaemonReplacement(spec)
+	if err != nil {
+		store.Finish(run, err)
+		return err
+	}
+	if err := docker.EnsureNetwork(ctx, dockerx.ManagementNetwork); err != nil {
+		store.Finish(run, err)
+		return err
+	}
 
 	if err := docker.StopContainer(ctx, name); err != nil {
 		log.Printf("update: stopping %s: %v", name, err)
@@ -195,7 +204,7 @@ func runWorker(cfg *config.Config) error {
 	// only on the control plane: it is what the containers placed here
 	// will join, and creating it now means the first placement does not
 	// have to.
-	if err := docker.EnsureNetwork(ctx, bootstrap.Network); err != nil {
+	if err := bootstrap.PrepareNetworks(ctx, docker, cfg.InContainer); err != nil {
 		return fmt.Errorf("ensure network: %w", err)
 	}
 
@@ -522,7 +531,7 @@ func run() error {
 
 	ctx := context.Background()
 
-	if err := docker.EnsureNetwork(ctx, bootstrap.Network); err != nil {
+	if err := bootstrap.PrepareNetworks(ctx, docker, cfg.InContainer); err != nil {
 		return fmt.Errorf("ensure network: %w", err)
 	}
 
@@ -675,6 +684,18 @@ func run() error {
 	if err := objectstore.Reconcile(ctx, srv.ObjectStores.Repo(), docker); err != nil {
 		return fmt.Errorf("reconcile object stores: %w", err)
 	}
+	stores, err := srv.ObjectStores.Repo().List(ctx)
+	if err != nil {
+		return fmt.Errorf("list managed stores for network migration: %w", err)
+	}
+	for _, store := range stores {
+		if store.Kind != objectstore.KindManaged || store.ContainerID == "" {
+			continue
+		}
+		if err := docker.ReconcileNetworks(ctx, store.ContainerID, []string{dockerx.ManagementNetwork}, nil); err != nil && !errors.Is(err, dockerx.ErrContainerNotFound) {
+			return fmt.Errorf("connect managed store to control network: %w", err)
+		}
+	}
 	// An install this daemon's previous run was applying has nobody
 	// applying it now, so what it created is undone.
 	if err := srv.Templates.Recover(ctx); err != nil {
@@ -769,5 +790,9 @@ func run() error {
 	if !current.HasDomain() {
 		log.Printf("no domain configured yet: the registry is running but only reachable from this host, and apps are served over plain HTTP")
 	}
-	return http.ListenAndServe(listenAddr, srv.Router())
+	return (&http.Server{
+		Addr: listenAddr, Handler: srv.Router(),
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}).ListenAndServe()
 }

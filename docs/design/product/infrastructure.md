@@ -38,3 +38,27 @@ Traefik redirects the whole `web` entrypoint to `websecure`, so plain
 HTTP reaches every app and the API without per-router labels. It does not
 interfere with certificates: ACME uses the TLS-ALPN challenge on :443,
 never the HTTP challenge on :80. Changing that would break the redirect.
+
+## Private infrastructure network
+
+Applications retain the `cubeship` bridge. The daemon, its Postgres,
+BuildKit, registry and dashboard use only `cubeship-management`.
+Traefik joins both bridges, and registry labels explicitly select the
+management bridge. Startup attaches existing infrastructure to the new
+bridge before detaching the old one; a migration error prevents serving
+requests. This also migrates an idle builder. Container configuration
+hashes subsequently recreate infrastructure with the new topology.
+
+Managed MinIO joins both bridges because applications and the daemon
+both use its API. It is a trusted service on this boundary. The bridges
+isolate direct container traffic; apps can still reach the public HTTPS
+API and other apps. This is not isolation from kernel vulnerabilities.
+New application containers drop `NET_RAW` and set `no-new-privileges` on
+both control-plane and worker nodes. Existing app containers need a
+redeploy to receive those two runtime settings.
+
+The installer and built-in daemon replacement bind recovery HTTP only
+to loopback. Upgrades preserve additional operator-defined networks but
+remove the application bridge. Host-network daemon installations require
+reinstallation on the management bridge rather than preserving an unsafe
+network mode.

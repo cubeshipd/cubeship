@@ -33,10 +33,9 @@ const TraefikContainerName = "cubeship-traefik"
 // daemon pulls from when both are containers.
 const RegistryContainerName = "cubeship-registry"
 
-// Network is the bridge every Cubeship container shares, the daemon's
-// own included when it runs as one. Container DNS on it is what lets
-// each part address the others by name.
-const Network = "cubeship"
+// Network is the application bridge. Private infrastructure uses
+// dockerx.ManagementNetwork; Traefik joins both to reach their backends.
+const Network = dockerx.ApplicationNetwork
 
 // DaemonContainerName is what the daemon is called when it runs as a
 // container, and so the name everything else reaches it by.
@@ -149,7 +148,7 @@ func PostgresContainerOpts(cfg *config.Config, password string) dockerx.Containe
 		},
 		Ports:   []string{fmt.Sprintf("127.0.0.1:%d:5432", PostgresPort)},
 		Binds:   []string{cfg.DataDir + "/postgres:/var/lib/postgresql/data"},
-		Network: "cubeship",
+		Network: dockerx.ManagementNetwork,
 	}
 }
 
@@ -224,6 +223,7 @@ func RegistryContainerOpts(cfg *config.Config, registryHost string, tls bool, to
 	var labels map[string]string
 	if registryHost != "" {
 		labels = traefik.Labels("registry", []traefik.Domain{{Host: registryHost, Port: registryPort}}, tls, "")
+		labels["traefik.docker.network"] = dockerx.ManagementNetwork
 	}
 	// The trust root goes into the container's own labels, and it has to.
 	//
@@ -246,7 +246,7 @@ func RegistryContainerOpts(cfg *config.Config, registryHost string, tls bool, to
 		Name:    RegistryContainerName,
 		Image:   "registry:2",
 		Labels:  labels,
-		Network: "cubeship",
+		Network: dockerx.ManagementNetwork,
 		// Also published on localhost, plain HTTP, bypassing Traefik/TLS.
 		// Docker trusts 127.0.0.0/8 as insecure-by-default, so this needs
 		// no daemon.json changes — useful for local pushes and is how
@@ -435,7 +435,7 @@ func BuildKitContainerOpts(cfg *config.Config) dockerx.ContainerOpts {
 			cfg.DataDir + "/buildkit:/var/lib/buildkit",
 			cfg.DataDir + "/buildkit-run:/run/buildkit",
 		},
-		Network: "cubeship",
+		Network: dockerx.ManagementNetwork,
 	}
 }
 
@@ -486,7 +486,7 @@ func FrontendContainerOpts(image string) dockerx.ContainerOpts {
 	return dockerx.ContainerOpts{
 		Name:    FrontendContainerName,
 		Image:   image,
-		Network: Network,
+		Network: dockerx.ManagementNetwork,
 	}
 }
 
@@ -601,8 +601,9 @@ func TraefikContainerOpts(cfg *config.Config, tls bool, acmeEmail string) docker
 		// container is reached by name instead, and host networking
 		// costs more than it buys — not least that it does not work at
 		// all on Docker Desktop, where the Engine runs in a VM.
-		Network: Network,
-		Ports:   []string{"80:80", "443:443"},
+		Network:      dockerx.ManagementNetwork,
+		AlsoNetworks: []string{Network},
+		Ports:        []string{"80:80", "443:443"},
 	}
 }
 

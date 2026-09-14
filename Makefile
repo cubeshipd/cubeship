@@ -266,9 +266,10 @@ reference-check: ## Fail if the site's references are not what the code says
 
 .PHONY: sh-check
 sh-check: ## Syntax-check the shell scripts
-	@for f in install.sh uninstall.sh $(GODIR)/test/install/run.sh $(GODIR)/test/install/uninstall.sh; do \
+	@for f in install.sh uninstall.sh $(GODIR)/test/install/run.sh $(GODIR)/test/install/uninstall.sh $(GODIR)/test/install/security.sh; do \
 		sh -n $$f || exit 1; \
 	done
+	@sh $(GODIR)/test/install/security.sh
 
 .PHONY: vet
 vet: ## go vet, including the build-tagged integration test

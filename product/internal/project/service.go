@@ -167,10 +167,26 @@ func (s *Service) Env(ctx context.Context, caller *user.User, projectSlug string
 	return p.Env, nil
 }
 
+// requireInheritedEnv protects build input even before an app starts building.
+// The owner's admin role is necessary, but a restricted key must still pass
+// the scoped project grant in Resolve/ResolveEnvironment.
+func requireInheritedEnv(caller *user.User) error {
+	if caller == nil {
+		return user.ErrUnauthenticated
+	}
+	if caller.Role != user.RoleAdmin {
+		return user.ErrForbidden
+	}
+	return nil
+}
+
 // SetEnv replaces the project's full set of variables, deleting any key
 // not present. Every environment and every app in the project inherits
 // what remains.
 func (s *Service) SetEnv(ctx context.Context, caller *user.User, projectSlug string, env envvar.Map) (*Project, error) {
+	if err := requireInheritedEnv(caller); err != nil {
+		return nil, err
+	}
 	p, err := s.Resolve(ctx, caller, projectSlug, user.LevelManage)
 	if err != nil {
 		return nil, err
@@ -181,6 +197,9 @@ func (s *Service) SetEnv(ctx context.Context, caller *user.User, projectSlug str
 // MergeEnv adds or overwrites the given variables and removes the unset
 // ones, leaving every other key untouched.
 func (s *Service) MergeEnv(ctx context.Context, caller *user.User, projectSlug string, set envvar.Map, unset []string) (*Project, error) {
+	if err := requireInheritedEnv(caller); err != nil {
+		return nil, err
+	}
 	p, err := s.Resolve(ctx, caller, projectSlug, user.LevelManage)
 	if err != nil {
 		return nil, err
@@ -267,6 +286,9 @@ func (s *Service) EnvironmentEnv(ctx context.Context, caller *user.User, project
 // SetEnvironmentEnv replaces one environment's full set of variables,
 // deleting any key not present.
 func (s *Service) SetEnvironmentEnv(ctx context.Context, caller *user.User, projectSlug, envSlug string, env envvar.Map) (*Environment, error) {
+	if err := requireInheritedEnv(caller); err != nil {
+		return nil, err
+	}
 	e, err := s.ResolveEnvironment(ctx, caller, projectSlug, envSlug, user.LevelManage)
 	if err != nil {
 		return nil, err
@@ -277,6 +299,9 @@ func (s *Service) SetEnvironmentEnv(ctx context.Context, caller *user.User, proj
 // MergeEnvironmentEnv adds or overwrites the given variables and removes
 // the unset ones, leaving every other key untouched.
 func (s *Service) MergeEnvironmentEnv(ctx context.Context, caller *user.User, projectSlug, envSlug string, set envvar.Map, unset []string) (*Environment, error) {
+	if err := requireInheritedEnv(caller); err != nil {
+		return nil, err
+	}
 	e, err := s.ResolveEnvironment(ctx, caller, projectSlug, envSlug, user.LevelManage)
 	if err != nil {
 		return nil, err

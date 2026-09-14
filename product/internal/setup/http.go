@@ -73,6 +73,7 @@ func (h *Handler) claim(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, ErrUsernameRequired), errors.Is(err, ErrPasswordRequired),
 		errors.Is(err, user.ErrPasswordTooShort),
+		errors.Is(err, user.ErrPasswordTooLong),
 		errors.Is(err, slug.ErrReserved), errors.Is(err, slug.ErrInvalid):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return

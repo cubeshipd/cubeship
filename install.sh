@@ -15,8 +15,8 @@
 # Go and no Node.
 #
 # Everything Cubeship runs is a container, the daemon included: it is a
-# sibling of the registry, Traefik, BuildKit and every app, on one
-# network they share.
+# sibling of the registry, Traefik, BuildKit and every app. Administrative
+# services use a separate network from application containers.
 #
 # Everything is inside main(), called on the last line, so a download cut
 # short cannot execute half an installer.
@@ -55,6 +55,7 @@ WORKER=0
 
 CONTAINER=cubeship-daemon
 NETWORK=cubeship
+MANAGEMENT_NETWORK=cubeship-management
 DATA_DIR="${CUBESHIP_DATA_DIR:-/var/lib/cubeship}"
 # Where the daemon writes the token that guards claiming an unclaimed
 # instance. Must match setup.TokenFileName.
@@ -273,6 +274,7 @@ run_daemon() {
 	# creates it for its own children, but cannot put itself on one that
 	# is not there yet.
 	docker network create "$NETWORK" >/dev/null 2>&1 || true
+	docker network create "$MANAGEMENT_NETWORK" >/dev/null 2>&1 || true
 
 	# An upgrade replaces the container. Its state is all in the data
 	# directory, so there is nothing in the container to keep.
@@ -292,7 +294,7 @@ run_daemon() {
 	# instance. Built as arguments rather than as two docker runs, so
 	# the shared half cannot drift between them.
 	set -- --name "$CONTAINER" \
-		--network "$NETWORK" \
+		--network "$MANAGEMENT_NETWORK" \
 		--restart unless-stopped \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v "$DATA_DIR:$DATA_DIR" \
@@ -311,7 +313,7 @@ run_daemon() {
 			-e CUBESHIP_WEB_IMAGE="$WEB_IMAGE:$VERSION" \
 			-e CUBESHIP_DOMAIN="$DOMAIN" \
 			-e CUBESHIP_ACME_EMAIL="$ACME_EMAIL" \
-			-p "$PORT:$PORT"
+			-p "127.0.0.1:$PORT:$PORT"
 	fi
 
 	docker run -d "$@" "$IMAGE:$VERSION" >/dev/null ||
@@ -479,7 +481,10 @@ main() {
 
 			Ports 80 and 443 must be open; the certificate is issued on the
 			first visit, which can take a minute. Until then, or if $DOMAIN
-			does not reach this box, http://$host:$PORT is the way in.
+			does not reach this box, use an SSH tunnel from your computer:
+
+			  ssh -L $PORT:127.0.0.1:$PORT root@$host
+			  Open  http://localhost:$PORT
 
 		DONE
 	else
@@ -487,11 +492,14 @@ main() {
 
 			Cubeship is running.
 
-			  Open  http://$host:$PORT
+			No public address could be found, so there is no domain yet.
+			From your computer, open an SSH tunnel to this server:
 
-			No public address could be found, so there is no domain yet. Set
-			one from the dashboard, and close port $PORT at the firewall once
-			HTTPS is up.
+			  ssh -L $PORT:127.0.0.1:$PORT root@$host
+			  Open  http://localhost:$PORT
+
+			Set a domain from the dashboard to enable HTTPS. Port $PORT is
+			bound to loopback and is never published on a public interface.
 
 		DONE
 	fi

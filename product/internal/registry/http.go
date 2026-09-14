@@ -165,14 +165,14 @@ func (h *Handler) issueToken(w http.ResponseWriter, r *http.Request) {
 			access = append(access, builderAccess(scope)...)
 		}
 	case username == node.RegistryUsername && h.nodes != nil:
-		name, err := h.nodes.AuthenticateNode(r.Context(), key)
+		nodeID, name, err := h.nodes.AuthenticateNode(r.Context(), key)
 		if err != nil {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		subject = "node:" + name
 		for _, scope := range r.URL.Query()["scope"] {
-			access = append(access, nodeAccess(scope)...)
+			access = append(access, h.nodeAccess(r.Context(), nodeID, scope)...)
 		}
 	default:
 		caller, _, err := h.users.Authenticate(r.Context(), key)

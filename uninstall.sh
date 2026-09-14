@@ -19,6 +19,7 @@ set -eu
 
 CONTAINER=cubeship-daemon
 NETWORK=cubeship
+MANAGEMENT_NETWORK=cubeship-management
 DATA_DIR="${CUBESHIP_DATA_DIR:-/var/lib/cubeship}"
 
 PURGE=0
@@ -94,6 +95,7 @@ remove_containers() {
 
 remove_network() {
 	docker network rm "$NETWORK" >/dev/null 2>&1 || true
+	docker network rm "$MANAGEMENT_NETWORK" >/dev/null 2>&1 || true
 }
 
 # remove_images drops what Cubeship built here. Images someone pushed to
@@ -124,7 +126,7 @@ what_goes() {
 	else
 		printf '  (no containers)\n'
 	fi
-	printf '  network    %s\n' "$NETWORK"
+	printf '  network    %s\n' "$NETWORK" "$MANAGEMENT_NETWORK"
 
 	if [ "$PURGE" = 1 ]; then
 		printf '\n  and %s, permanently: the database, the pushed images\n' "$DATA_DIR"

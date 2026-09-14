@@ -34,9 +34,8 @@ published like any other release and are never what you get by default.
   knows how to put Docker on; on anything else, install Docker first and
   the script will use it.
 - **Ports 80 and 443** free, for the proxy and for certificates.
-- **Port 3000** free on the first install — it is where you claim the
-  instance before it has a domain. The installer refuses rather than
-  fighting whatever is already there.
+- **Port 3000** free on loopback, for recovery through an SSH tunnel.
+  The installer refuses rather than fighting whatever is already there.
 - Root, because it installs Docker and writes to `/var/lib/cubeship`.
 
 ## Installing your own build

@@ -593,6 +593,8 @@ func (a *Agent) start(ctx context.Context, p node.Placement, registry string) (s
 		Labels:       p.Labels,
 		Env:          envvar.Slice(p.Env),
 		Network:      network,
+		CapDrop:      []string{"NET_RAW"},
+		SecurityOpt:  []string{"no-new-privileges:true"},
 		AlsoNetworks: also,
 		Aliases:      p.Aliases,
 		Resources:    p.Resources,

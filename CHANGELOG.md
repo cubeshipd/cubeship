@@ -6,6 +6,35 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.7.3 — 2026-09-14
+
+Security fixes isolate private infrastructure, restrict inherited environment edits and worker image access, and bound password login work.
+
+### Security
+
+- **Private infrastructure has its own network.** The daemon, its database,
+  builder, registry and dashboard move to a management bridge during startup.
+  Traefik and managed object stores retain the connections their clients need.
+- **Inherited environment edits require an administrator.** Project and
+  environment variables can influence source builds, so member accounts cannot
+  change them even with a key granting project management.
+- **Password login limits resource use.** Request sizes, password lengths and
+  concurrent login attempts are bounded; excessive attempts receive HTTP 429.
+- **Workers can pull only assigned repositories** from the instance registry.
+- **Recovery HTTP binds to localhost** on installation and built-in updates.
+  Use HTTPS normally, or an SSH tunnel for recovery.
+- **New app containers drop raw socket capability and prevent privilege
+  escalation.** Redeploy existing apps to apply these runtime restrictions.
+
+### Upgrade notes
+
+Network migration happens at daemon startup; a failed migration stops startup
+rather than leaving private services exposed. Linked S3 endpoints using an
+application-only Docker name need an endpoint reachable from the management
+network. Passwords exceeding 1024 bytes require an administrator reset.
+Custom daemon installations using host networking require reinstallation on
+the management bridge. See the installation documentation for SSH recovery.
+
 ## 0.7.2 — 2026-09-14
 
 Apps can publish TCP ports for protocols that are not HTTP, such as SSH into a Git server.
