@@ -558,6 +558,11 @@ func TraefikContainerOpts(cfg *config.Config, tls bool, acmeEmail string) docker
 		"--providers.file.watch=true",
 		"--entrypoints.web.address=:80",
 		"--entrypoints.websecure.address=:443",
+		// No limit on reading a request. v3 bounds the whole request,
+		// body included, at 60s, which cuts off any upload slower than a
+		// minute. See networking.md.
+		"--entrypoints.web.transport.respondingtimeouts.readtimeout=0",
+		"--entrypoints.websecure.transport.respondingtimeouts.readtimeout=0",
 		"--api.dashboard=false",
 	}
 	if tls {

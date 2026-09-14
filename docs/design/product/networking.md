@@ -51,6 +51,36 @@ configured, which is why the field is always offered.
 A container keeps the labels it was created with, so adding or removing
 a name changes nothing until the app is redeployed.
 
+## How long a request may take
+
+**Traefik reads a request for as long as it takes.** Both entrypoints set
+`transport.respondingTimeouts.readTimeout=0`. Traefik v3 changed its
+default from none to 60 seconds, and that deadline is on reading the
+*whole* request, body included — Go's `http.Server.ReadTimeout`, which
+Traefik sets and nothing else overrides. So anything uploading for more
+than a minute was cut off mid-body with a proxy error: a phone backing a
+video up to Immich, a file synced to Nextcloud, a large `git push` or LFS
+object to Gitea, an `npm publish`. Those are the ordinary use of apps the
+catalog installs, not an edge case. `writeTimeout` is already 0 and
+`idleTimeout` stays at its 180 seconds, which only closes a kept-alive
+connection nobody is using.
+
+**What this gives up is a deadline on slow clients.** With `ReadTimeout`
+0, Traefik v3.6 sets no `ReadHeaderTimeout` either (it exposes none), so
+a client can open a connection and dribble its headers indefinitely —
+the slowloris pattern — holding a goroutine and a file descriptor per
+connection. A finite value was the alternative and buys little: any
+deadline long enough for a multi-gigabyte upload over a phone's uplink is
+hours, and an attacker holding connections open for hours is the same
+attack. The cost of each held connection in Go is kilobytes, and the
+answer to someone opening them by the thousand is at the firewall, not a
+deadline that also fails every honest slow upload.
+
+Changing these flags changes Traefik's `ContainerOpts`, so the next start
+of an upgraded daemon **replaces the Traefik container** (see
+[infrastructure.md](infrastructure.md)): every app is unreachable for the
+seconds that takes.
+
 ## Where an app answers from *inside* the instance
 
 Everything above is about the world reaching an app. An app reaching its

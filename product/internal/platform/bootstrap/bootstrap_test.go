@@ -558,6 +558,24 @@ func TestTraefikRedirectsHTTPToHTTPS(t *testing.T) {
 	}
 }
 
+// Traefik v3 reads a whole request, body included, within 60s unless told
+// otherwise, so a photo backup or a git push slower than a minute failed
+// with a proxy error. Both entrypoints serve apps: :80 is the only one
+// without a domain.
+func TestTraefikLetsSlowUploadsFinish(t *testing.T) {
+	for _, tls := range []bool{true, false} {
+		opts := TraefikContainerOpts(testConfig(), tls, "")
+		for _, want := range []string{
+			"--entrypoints.web.transport.respondingtimeouts.readtimeout=0",
+			"--entrypoints.websecure.transport.respondingtimeouts.readtimeout=0",
+		} {
+			if !slices.Contains(opts.Cmd, want) {
+				t.Errorf("tls=%v: missing %q; an upload slower than a minute is cut off", tls, want)
+			}
+		}
+	}
+}
+
 // Until a domain is configured, Traefik must have no ACME resolver at
 // all — there is nothing to get a certificate for — and must not
 // redirect :80 to a port that cannot serve.
