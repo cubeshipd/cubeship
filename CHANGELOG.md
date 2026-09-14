@@ -6,6 +6,28 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.7.2 — 2026-09-14
+
+Apps can publish TCP ports for protocols that are not HTTP, such as SSH into a Git server.
+
+### Added
+
+**TCP ports for apps.** A port of an app's container can be published on a
+port of the instance's own address — SSH into GitLab or Gitea, a game
+server, a broker. Add one under the app's **Settings → Network**, or with
+`cubeship app tcp add <app> <port>`; a template declares them with
+`apps[].tcp`.
+
+- **Nothing sits in front of it.** No TLS and no proxy: the app's own
+  authentication protects what it serves there. On a host whose Docker
+  ports are under ufw, Cubeship admits the port.
+- **An app with a TCP port runs as one copy on the control plane**, and each
+  deploy stops the old container before starting the new one, so the app is
+  briefly unavailable.
+- **Host ports are 1024 and up**, so 22 stays the server's own SSH. Left
+  empty, one is picked from 17000–17999.
+- The port opens on the app's next deploy.
+
 ## 0.7.1 — 2026-09-14
 
 The template catalog loads more templates as you scroll, instead of stopping at the first 24.
