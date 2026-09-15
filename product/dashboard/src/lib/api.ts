@@ -1,6 +1,8 @@
 // The dashboard is served by the daemon it talks to, so the API is
 // always the same origin under one prefix. Nothing here takes a base
 // URL: there is no deployment where those two come apart.
+import { demoDownloadURL } from "@/lib/demo";
+
 const PREFIX = "/api";
 
 export class ApiError extends Error {
@@ -1250,6 +1252,14 @@ export async function uploadObject(
   file: File,
 ): Promise<StoredObject> {
   const query = new URLSearchParams({ prefix, filename: file.name });
+  if (PREVIEW) {
+    const { handle } = await import("@/lib/mock");
+    return (await handle(
+      "PUT",
+      `${bucketPath(store, bucket)}/objects?${query}`,
+      file,
+    )) as StoredObject;
+  }
   const res = await fetch(`/api${bucketPath(store, bucket)}/objects?${query}`, {
     method: "PUT",
     credentials: "same-origin",
@@ -1343,7 +1353,12 @@ export type BackupCoverage = {
 };
 
 export function downloadURL(store: string, bucket: string, key: string): string {
+  if (PREVIEW) return demoDownloadURL(key);
   return `/api${bucketPath(store, bucket)}/download?key=${encodeURIComponent(key)}`;
+}
+
+export function backupDownloadURL(id: number): string {
+  return PREVIEW ? demoDownloadURL(`backup-${id}.txt`) : `/api/backups/${id}/download`;
 }
 
 // One release of Cubeship.

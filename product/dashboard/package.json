@@ -4,6 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3001",
+    "dev:demo": "NEXT_PUBLIC_CUBESHIP_MOCK=1 NEXT_PUBLIC_CUBESHIP_DEMO=1 next dev -p 3003",
+    "build:demo": "NEXT_PUBLIC_CUBESHIP_MOCK=1 NEXT_PUBLIC_CUBESHIP_DEMO=1 next build",
     "build": "next build",
     "start": "next start",
     "lint": "biome check",

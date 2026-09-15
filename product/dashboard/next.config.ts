@@ -19,8 +19,12 @@ const dev = process.env.NODE_ENV === "development";
 // The dashboard can stand on invented data with no daemon behind it —
 // `make dashboard-preview`, which sets this. See src/lib/mock.
 const preview = process.env.NEXT_PUBLIC_CUBESHIP_MOCK === "1";
+const publicDemo = process.env.NEXT_PUBLIC_CUBESHIP_DEMO === "1";
+if (publicDemo && !preview) throw new Error("The public demo requires preview data.");
 
 const nextConfig: NextConfig = {
+  basePath: publicDemo ? "/demo" : "",
+  distDir: publicDemo ? ".next-demo" : ".next",
   output: dev ? undefined : "standalone",
   devIndicators: false,
   turbopack: {
@@ -40,8 +44,24 @@ const nextConfig: NextConfig = {
   // `make dashboard-dev`, where the two are reached at different ports and
   // the browser talks to Next directly.
   async rewrites() {
-    if (!dev) return [];
+    if (!dev || preview) return [];
     return [{ source: "/api/:path*", destination: "http://127.0.0.1:3000/api/:path*" }];
+  },
+  async headers() {
+    if (!publicDemo) return [];
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "X-Robots-Tag", value: "noindex, nofollow" },
+          {
+            key: "Content-Security-Policy",
+            value:
+              "frame-ancestors 'self'; form-action 'none'; object-src 'none'; base-uri 'self'; connect-src 'self'",
+          },
+        ],
+      },
+    ];
   },
 };
 

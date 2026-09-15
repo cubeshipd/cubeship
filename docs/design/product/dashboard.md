@@ -35,6 +35,19 @@ on the host proxies there rather than to a container —
 `bootstrap.FrontendAddress` is the one place that branches. Reaching
 :3001 directly works too; it rewrites `/api` to the daemon.
 
+The marketing site also builds this same app as a public, browser-local demo.
+`pnpm dev:demo` and `pnpm build:demo` set both preview flags and mount it at
+`/demo`, with output isolated in `.next-demo`. The public mode never enables
+the daemon rewrite, renders a reset notice and accepts only named tour stops
+from its same-origin parent. See [the site design](../hosted/site.md) for its
+packaging and lifecycle. This mode is not enabled in the installed image.
+
+The demo starts signed in. Signing out ends its in-memory session and opens a
+demo-only entry screen without credential fields; entering again keeps the same
+sample data, while Reset restores the fixtures. Unsupported actions must surface
+through the calling form or a notification, never an unhandled promise. GitHub
+App creation is explained in place and never submits a real manifest in public mode.
+
 **A page's params come from Next's generated route types**, not from a
 hand-written one: `PageProps<"/projects/[project]/[env]/[app]">` reads
 the segments the directory actually has, so a segment renamed without

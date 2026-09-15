@@ -35,6 +35,7 @@ import { db, type Row, series } from "./db";
 // things that flash. A preview where everything is instant is one where
 // the skeletons are never reviewed.
 const LATENCY_MS = 180;
+let signedIn = true;
 
 type Handler = (p: string[], body?: unknown, query?: URLSearchParams) => unknown;
 
@@ -42,6 +43,20 @@ type Handler = (p: string[], body?: unknown, query?: URLSearchParams) => unknown
 // segment, `*` captures the rest — matched in order, first wins.
 const routes: [string, string, Handler][] = [
   ["GET", "/setup", () => db.setup],
+  [
+    "POST",
+    "/auth/login",
+    () => {
+      signedIn = true;
+    },
+  ],
+  [
+    "POST",
+    "/auth/logout",
+    () => {
+      signedIn = false;
+    },
+  ],
   ["GET", "/users/me", () => db.me],
   [
     "PATCH",
@@ -760,6 +775,22 @@ const routes: [string, string, Handler][] = [
   ["GET", "/objectstores/:name", (p) => row(db.objectStores, "name", p[0])],
   ["GET", "/objectstores/:name/buckets", () => buckets],
   ["GET", "/objectstores/:name/buckets/:bucket/objects", () => listing],
+  [
+    "PUT",
+    "/objectstores/:name/buckets/:bucket/objects",
+    (_p, body, query) => {
+      const name = query?.get("filename") || "file";
+      const prefix = query?.get("prefix") || "";
+      const object = {
+        key: prefix + name,
+        name,
+        size: (body as Blob).size,
+        modified_at: new Date().toISOString(),
+      };
+      listing.objects = [...listing.objects.filter((item) => item.key !== object.key), object];
+      return object;
+    },
+  ],
   ["GET", "/objectstores/:name/attachments", () => []],
   [
     "GET",
@@ -830,6 +861,12 @@ export async function handle(method: string, path: string, body?: unknown): Prom
   await new Promise((r) => setTimeout(r, LATENCY_MS));
 
   const [clean] = path.split("?");
+  if (!signedIn && clean !== "/setup" && clean !== "/auth/login" && clean !== "/auth/logout") {
+    throw Object.assign(
+      new Error("You signed out of the demo. Enter the demo to keep exploring."),
+      { status: 401 },
+    );
+  }
   const parts = clean.split("/").filter(Boolean);
 
   for (const [m, pattern, fn] of routes) {
@@ -862,7 +899,11 @@ export class MockGap extends Error {
   // decision nobody made.
   status = 599;
   constructor(route: string) {
-    super(`preview has no mock for ${route} — add it in src/lib/mock/index.ts`);
+    super(
+      process.env.NEXT_PUBLIC_CUBESHIP_DEMO === "1"
+        ? "This action needs a connected instance and is not simulated in the demo. You can keep exploring or reset the demo."
+        : `preview has no mock for ${route} — add it in src/lib/mock/index.ts`,
+    );
   }
 }
 

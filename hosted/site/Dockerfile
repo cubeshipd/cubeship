@@ -5,8 +5,18 @@
 # Cubeship instance — a container answering on :3000 behind the proxy.
 # The docs are compiled in and the search index is built at request time
 # from them, and /install.sh is a rewrite to GitHub that the Next server
-# performs itself. It now reads Postgres and an S3-compatible bucket,
-# both given to it by the instance it runs on.
+# performs itself. The public dashboard demo uses browser-local fixtures;
+# its loopback server is packaged here, never in the installed product.
+
+FROM node:22-alpine AS demo
+WORKDIR /src
+RUN corepack enable
+COPY product/dashboard/package.json product/dashboard/pnpm-lock.yaml product/dashboard/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY product/dashboard/ ./
+RUN pnpm run build:demo
+RUN cp -r .next-demo/static .next-demo/standalone/.next-demo/static && \
+    cp -r public .next-demo/standalone/public
 
 # --- the build ---------------------------------------------------------
 FROM node:22-alpine AS build
@@ -34,11 +44,13 @@ WORKDIR /app
 
 USER node
 
-COPY --from=build --chown=node:node /src/.next/standalone ./
+COPY --from=build --chown=node:node /src/.next/standalone ./site/
+COPY --from=demo --chown=node:node /src/.next-demo/standalone ./demo/
+COPY --chown=node:node hosted/site/scripts/serve.mjs ./start.mjs
 
 ENV HOSTNAME=0.0.0.0
 ENV PORT=3000
 ENV NODE_ENV=production
 
 EXPOSE 3000
-CMD ["node", "server.js"]
+CMD ["node", "start.mjs"]

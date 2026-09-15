@@ -1,10 +1,10 @@
 "use client";
 
-import { ArrowUpRight, Menu, X } from "lucide-react";
+import { ArrowUpRight, Heart, Menu, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { githubUrl } from "@/lib/shared";
+import { githubUrl, sponsorUrl } from "@/lib/shared";
 import { Wordmark } from "./brand";
 
 const links = [
@@ -53,6 +53,9 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="header-actions">
+          <a className="header-sponsor" href={sponsorUrl} aria-label="Sponsor lucasaarch on GitHub">
+            <Heart size={14} aria-hidden="true" /> Sponsor
+          </a>
           <a className="header-github" href={githubUrl}>
             GitHub <ArrowUpRight size={14} />
           </a>
@@ -85,6 +88,9 @@ export function SiteHeader() {
         ))}
         <a href={githubUrl} onClick={() => setOpen(false)}>
           GitHub <ArrowUpRight size={16} />
+        </a>
+        <a className="mobile-sponsor" href={sponsorUrl} onClick={() => setOpen(false)}>
+          <Heart size={16} aria-hidden="true" /> Sponsor
         </a>
         <Link href="/docs/getting-started/install" onClick={() => setOpen(false)}>
           Install Cubeship <ArrowUpRight size={16} />

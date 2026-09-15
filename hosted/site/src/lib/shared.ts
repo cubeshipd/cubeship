@@ -14,6 +14,7 @@ export const gitConfig = {
   branch: "master",
 };
 export const githubUrl = `https://github.com/${gitConfig.user}/${gitConfig.repo}`;
+export const sponsorUrl = "https://github.com/sponsors/lucasaarch";
 
 const getContentUrl = createGetUrl(docsContentRoute);
 

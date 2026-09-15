@@ -2,8 +2,10 @@
 
 import { ExternalLinkIcon } from "lucide-react";
 import { type ComponentType, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
+import { PUBLIC_DEMO } from "@/lib/demo";
 
 // One button instead of four fields and a private key.
 //
@@ -46,6 +48,7 @@ export function CreateGitHubApp({
   // a tab, and a tab opened after an await is a popup a browser blocks.
   const [state, setState] = useState("");
   useEffect(() => {
+    if (PUBLIC_DEMO) return;
     let live = true;
     api
       .post<{ state: string }>("/settings/github/manifest/state", { replace })
@@ -61,6 +64,12 @@ export function CreateGitHubApp({
   }, [replace]);
 
   function create() {
+    if (PUBLIC_DEMO) {
+      toast.info(
+        "Connect GitHub on your own Cubeship instance. This demo uses sample repositories.",
+      );
+      return;
+    }
     // The origin the operator is looking at right now is the address
     // this instance is reachable on — by IP before there is a domain,
     // by name after. Deriving it is what makes this work with neither
@@ -133,7 +142,7 @@ export function CreateGitHubApp({
   }
 
   const button = (
-    <Button type="button" size={size} onClick={create} disabled={!state}>
+    <Button type="button" size={size} onClick={create} disabled={!PUBLIC_DEMO && !state}>
       {Icon && <Icon className="size-4 shrink-0" />}
       {label}
       <ExternalLinkIcon className="size-3.5" />

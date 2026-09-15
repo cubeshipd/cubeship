@@ -7,6 +7,7 @@ import { AuthLayout } from "@/components/auth-layout";
 import { ErrorAlert } from "@/components/error-alert";
 import { TextField } from "@/components/text-field";
 import { api, type SetupStatus } from "@/lib/api";
+import { PUBLIC_DEMO } from "@/lib/demo";
 import { message } from "@/lib/errors";
 
 export default function Login() {
@@ -18,7 +19,11 @@ export default function Login() {
 
   // An unclaimed instance has nobody to sign in as.
   useEffect(() => {
-    api.get<SetupStatus>("/setup").then((s) => s.needed && router.replace("/setup"));
+    if (PUBLIC_DEMO) return;
+    api
+      .get<SetupStatus>("/setup")
+      .then((s) => s.needed && router.replace("/setup"))
+      .catch((err) => setError(message(err)));
   }, [router]);
 
   async function submit(e: React.FormEvent) {
@@ -26,12 +31,29 @@ export default function Login() {
     setBusy(true);
     setError(null);
     try {
-      await api.post("/auth/login", { username, password });
+      await api.post("/auth/login", PUBLIC_DEMO ? {} : { username, password });
       router.replace("/");
     } catch (err) {
       setError(message(err));
       setBusy(false);
     }
+  }
+
+  if (PUBLIC_DEMO) {
+    return (
+      <AuthLayout
+        title="You're out. Jump back in."
+        description="Explore Cubeship with sample infrastructure. No account or password needed."
+        footer="Your demo changes are still here. Reset the demo to start fresh."
+      >
+        <form onSubmit={submit} className="space-y-5">
+          <ErrorAlert error={error} />
+          <ActionButton type="submit" busy={busy} size="lg" className="h-10 w-full">
+            {busy ? "Opening demo" : "Enter demo"}
+          </ActionButton>
+        </form>
+      </AuthLayout>
+    );
   }
 
   return (

@@ -55,7 +55,7 @@ function Exchange() {
         // flow rather than the end of a step. Landing back on the
         // dashboard here would make someone press a second button to
         // finish what they already asked for.
-        if (s.github_app_slug) {
+        if (s.github_app_slug && process.env.NEXT_PUBLIC_CUBESHIP_DEMO !== "1") {
           window.location.replace(`https://github.com/apps/${s.github_app_slug}/installations/new`);
           return;
         }

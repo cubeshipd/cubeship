@@ -55,6 +55,7 @@ function useStars(): number | null {
   const [stars, setStars] = useState<number | null>(cached);
 
   useEffect(() => {
+    if (process.env.NEXT_PUBLIC_CUBESHIP_DEMO === "1") return;
     if (cached() !== null) return;
     fetch(`https://api.github.com/repos/${REPO}`, {
       headers: { Accept: "application/vnd.github+json" },

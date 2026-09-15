@@ -1,7 +1,9 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
+import { DemoBridge } from "@/components/demo-bridge";
 import { ThemeBoot } from "@/components/theme";
 import { Toaster } from "@/components/ui/sonner";
+import { PUBLIC_DEMO } from "@/lib/demo";
 import "./globals.css";
 import "./dashboard.css";
 
@@ -33,6 +35,7 @@ const jbmono = localFont({
 // twitter-image.png, manifest.ts) — Next finds them by name and writes
 // the <link>s and <meta>s itself, so none of them is listed here.
 export const metadata: Metadata = {
+  robots: PUBLIC_DEMO ? { index: false, follow: false } : undefined,
   title: { default: "Cubeship", template: "%s · Cubeship" },
   description: "Your infrastructure. Ready to ship.",
   applicationName: "Cubeship",
@@ -78,6 +81,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <ThemeBoot />
       </head>
       <body className="font-sans antialiased">
+        {PUBLIC_DEMO && <DemoBridge />}
         {children}
         <Toaster theme="dark" position="bottom-right" />
       </body>

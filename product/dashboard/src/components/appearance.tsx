@@ -35,7 +35,7 @@ const PALETTES: Record<string, { label: string; note: string; bg: string; fg: st
 // same colour as the current one.
 export function Appearance() {
   const me = useSession();
-  const { theme, choose } = useTheme(me);
+  const { theme, choose, busy } = useTheme(me);
   // The daemon says which it has, so a palette added there appears here
   // without this list being edited. One it does not know about is
   // dropped rather than shown as a blank.
@@ -57,6 +57,7 @@ export function Appearance() {
                 <button
                   key={name || "default"}
                   type="button"
+                  disabled={busy}
                   onClick={() => choose(name)}
                   aria-pressed={active}
                   className={

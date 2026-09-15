@@ -7,6 +7,7 @@ bin
 dist
 product/dashboard/node_modules
 product/dashboard/.next
+product/dashboard/.next-demo
 hosted/site/node_modules
 hosted/site/.next
 hosted/site/.source

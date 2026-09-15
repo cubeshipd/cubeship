@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { DEMO_PATH, PUBLIC_DEMO } from "@/lib/demo";
 
 // What a page renders when its own code throws. It is a client component
 // and it must be: Next only hands the error to something that can hold
@@ -27,8 +28,9 @@ export default function ErrorPage({
         <p className="font-mono text-[11px] tracking-[0.2em] text-destructive uppercase">Error</p>
         <h1 className="mt-3 text-xl font-semibold">This page could not be rendered</h1>
         <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
-          Something failed while drawing this screen. The daemon and everything it is running are
-          unaffected — only the dashboard stopped here.
+          {PUBLIC_DEMO
+            ? "This demo screen ran into a problem. Try again, return to projects, or reset the demo to start fresh."
+            : "Something failed while drawing this screen. The daemon and everything it is running are unaffected — only the dashboard stopped here."}
         </p>
 
         <pre className="mt-5 max-h-40 overflow-auto border border-border bg-secondary/40 p-3 font-mono text-[11px] leading-relaxed text-muted-foreground">
@@ -39,7 +41,7 @@ export default function ErrorPage({
         <div className="mt-6 flex items-center gap-3">
           <Button onClick={reset}>Try again</Button>
           <a
-            href="/projects"
+            href={`${DEMO_PATH}/projects`}
             className="font-mono text-xs text-muted-foreground underline underline-offset-4 hover:text-primary"
           >
             Back to projects

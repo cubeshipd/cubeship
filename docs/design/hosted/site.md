@@ -66,6 +66,10 @@ below it, and sections that explain deployment, data, clusters and MCP.
 `SiteHeader` serves home, templates and comparisons; Fumadocs keeps the docs'
 navigation, search and tree. Only the dark palette exists.
 
+Sponsorship appears once in the header (inside the menu on small screens),
+linking to `github.com/sponsors/lucasaarch`. It stays secondary to installation;
+there are no donation overlays or repeated calls to action in the page.
+
 ### The scenes are enhancements
 
 `InfrastructureScene` renders a static SVG poster first, then lazily imports
@@ -93,6 +97,34 @@ fonts and actual page titles. The homepage image metadata is generated through
 Next's file conventions. The root README banner at
 `product/dashboard/public/logo/banner.png` is exported from the homepage's
 `/opengraph-image` endpoint; refresh that export when changing the composition.
+
+## The dashboard demo is the product's preview build
+
+The showcase starts with real screenshots. Choosing **Explore the live demo**
+mounts an iframe at `/demo`; no dashboard JavaScript is requested beforehand.
+The section offers tour shortcuts, fullscreen, retry, close and reset. Shortcuts
+send an allowlisted message to the iframe, preserving the visitor's in-memory
+changes while navigating. Closing or resetting discards the simulation.
+
+The site image builds `product/dashboard` a second time with
+`NEXT_PUBLIC_CUBESHIP_MOCK=1` and `NEXT_PUBLIC_CUBESHIP_DEMO=1`. This build uses
+`basePath: /demo` and `.next-demo` so it does not overwrite the installed
+dashboard build. The public demo flag refuses to build without mock data.
+The installed dashboard still excludes the fixture module.
+
+`scripts/serve.mjs` runs the site and demo together, forwards shutdown signals
+and stops both if either exits. Only the site port is exposed; the demo listens
+on loopback port 3003. Next rewrites `/demo/*` to that process without stripping
+the prefix. `pnpm dev` starts both on ports 3002 and 3003; install dependencies
+in both `hosted/site` and `product/dashboard` first.
+
+The demo has no daemon, database or session API. Changes live in each browser
+document's fixture module; reload starts fresh. Uploads stay in the browser and
+downloads contain labelled sample data. Unsupported actions explain that they
+need a connected instance instead of trying a real API. External form submits
+and example infrastructure links stay inside the demo. CSP limits network
+connections to the same origin and framing to the site; the iframe cannot
+navigate its parent. `/demo` is excluded from search indexing.
 
 ## install.sh is a rewrite
 

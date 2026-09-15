@@ -118,6 +118,10 @@ jobs:
       - run: pnpm run typecheck
       - run: pnpm run build
 
+      # The site embeds a separate preview build of the real dashboard.
+      - name: Build the public demo
+        run: pnpm run build:demo
+
   # The site is the same shape as the dashboard — a Next app with its own
   # lockfile — and fails on its own terms the same way.
   site:

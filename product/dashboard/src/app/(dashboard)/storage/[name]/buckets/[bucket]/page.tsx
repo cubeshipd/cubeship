@@ -35,6 +35,7 @@ import {
   type StoredObject,
   uploadObject,
 } from "@/lib/api";
+import { startDownload } from "@/lib/demo";
 import { message } from "@/lib/errors";
 
 // An entry in the listing: a folder or a file, in one table.
@@ -106,7 +107,7 @@ function Browser({ store, bucket }: { store: string; bucket: string }) {
   // leave a stray tab behind and a fetch would hold the whole file in
   // memory before writing it anywhere.
   function download(object: StoredObject) {
-    window.location.assign(downloadURL(store, bucket, object.key));
+    startDownload(downloadURL(store, bucket, object.key), object.name);
   }
 
   async function upload(files: FileList | null) {

@@ -1,8 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { useUpdateSession } from "@/components/session-context";
 import { api, type Me } from "@/lib/api";
+import { message } from "@/lib/errors";
 
 // Where the browser keeps its copy of the chosen palette.
 //
@@ -11,7 +13,8 @@ import { api, type Me } from "@/lib/api";
 // page renders, and a dashboard that renders in one set of colours and
 // swaps to another a moment later is worse than one that only ever had
 // the default.
-const CACHED = "cubeship.theme";
+const CACHED =
+  process.env.NEXT_PUBLIC_CUBESHIP_DEMO === "1" ? "cubeship.demo.theme" : "cubeship.theme";
 
 /** applyTheme paints the interface in one of the palettes. */
 export function applyTheme(theme: string | undefined) {
@@ -50,6 +53,8 @@ export function useTheme(me: Me) {
 
   const choose = useCallback(
     async (next: string) => {
+      if (busy) return;
+      const previous = theme;
       // Painted first, then saved. It is the one setting where the
       // result is the feedback, and a spinner between the click and the
       // colour would be the whole interaction.
@@ -61,11 +66,16 @@ export function useTheme(me: Me) {
       setBusy(true);
       try {
         await api.patch<Me>("/users/me", { theme: next });
+      } catch (error) {
+        applyTheme(previous);
+        setTheme(previous);
+        update({ theme: previous });
+        toast.error(message(error));
       } finally {
         setBusy(false);
       }
     },
-    [update],
+    [update, theme, busy],
   );
 
   return { theme, choose, busy };

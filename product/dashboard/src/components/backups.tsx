@@ -36,10 +36,12 @@ import {
   type Backup,
   type BackupSchedule,
   type Bucket,
+  backupDownloadURL,
   datastorePath,
   formatBytes,
   type ObjectStore,
 } from "@/lib/api";
+import { startDownload } from "@/lib/demo";
 import { message } from "@/lib/errors";
 
 // when is the moment a backup was taken, in the reader's own locale. A
@@ -511,7 +513,7 @@ export function BackupTable({
             icon={DownloadIcon}
             label="Download"
             disabled={b.status === "taking"}
-            onClick={() => window.location.assign(`/api/backups/${b.id}/download`)}
+            onClick={() => startDownload(backupDownloadURL(b.id), `backup-${b.id}`)}
           />
           <RowAction
             icon={RotateCcwIcon}

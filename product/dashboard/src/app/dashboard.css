@@ -932,3 +932,34 @@
     padding: 18px;
   }
 }
+
+.public-demo-badge {
+  position: fixed;
+  z-index: 60;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100% - 24px);
+  padding: 7px 12px;
+  border: 1px solid #2b5660;
+  background: #081318f2;
+  color: #8faab4;
+  font-size: 11px;
+  box-shadow: 0 4px 24px #0006;
+}
+.public-demo-badge span {
+  white-space: nowrap;
+}
+.public-demo-badge button {
+  color: #2de2e6;
+  white-space: nowrap;
+}
+@media (max-width: 480px) {
+  .public-demo-badge {
+    font-size: 9px;
+    gap: 8px;
+  }
+}

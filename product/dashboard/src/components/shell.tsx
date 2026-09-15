@@ -25,6 +25,7 @@ import {
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import { Wordmark } from "@/components/brand";
 import { CommandPalette } from "@/components/command-palette";
 import { GitHubStar } from "@/components/github-star";
@@ -47,6 +48,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { UserAvatar } from "@/components/user-avatar";
 import { api, can, type Me, personName } from "@/lib/api";
+import { message } from "@/lib/errors";
 
 // The two layers, and what separates them.
 //
@@ -384,6 +386,7 @@ function NavLink({
 
 function UserMenu({ me }: { me: Me }) {
   const router = useRouter();
+  const [signingOut, setSigningOut] = useState(false);
   const releaseNotes = useReleaseNotes();
   return (
     <DropdownMenu>
@@ -439,9 +442,17 @@ function UserMenu({ me }: { me: Me }) {
         <GitHubStar />
         <DropdownMenuSeparator />
         <DropdownMenuItem
+          disabled={signingOut}
           onClick={async () => {
-            await api.post("/auth/logout");
-            router.replace("/login");
+            if (signingOut) return;
+            setSigningOut(true);
+            try {
+              await api.post("/auth/logout");
+              router.replace("/login");
+            } catch (error) {
+              toast.error(message(error));
+              setSigningOut(false);
+            }
           }}
         >
           <LogOutIcon />

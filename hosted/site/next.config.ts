@@ -32,6 +32,10 @@ const config: NextConfig = {
   async rewrites() {
     return [
       {
+        source: "/demo/:path*",
+        destination: "http://127.0.0.1:3003/demo/:path*",
+      },
+      {
         source: "/install.sh",
         destination: "https://raw.githubusercontent.com/cubeshipd/cubeship/master/install.sh",
       },

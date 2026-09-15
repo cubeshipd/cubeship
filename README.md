@@ -11,6 +11,8 @@ being enough.
 [Backups](#backups) · [More machines](#more-machines) · [MCP](#mcp) ·
 [Changelog](CHANGELOG.md)
 
+<a href="https://github.com/sponsors/lucasaarch"><img src=".github/assets/sponsor.svg" alt="Sponsor lucasaarch" width="114" height="32"></a>
+
 </div>
 
 ---
