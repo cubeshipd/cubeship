@@ -53,13 +53,29 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="header-actions">
-          <a className="header-sponsor" href={sponsorUrl} aria-label="Sponsor lucasaarch on GitHub">
+          <a
+            className="header-sponsor"
+            href={sponsorUrl}
+            aria-label="Sponsor lucasaarch on GitHub"
+            data-track="sponsor"
+            data-track-location="header"
+          >
             <Heart size={14} aria-hidden="true" /> Sponsor
           </a>
-          <a className="header-github" href={githubUrl}>
+          <a
+            className="header-github"
+            href={githubUrl}
+            data-track="github"
+            data-track-location="header"
+          >
             GitHub <ArrowUpRight size={14} />
           </a>
-          <Link href="/docs/getting-started/install" className="button-small">
+          <Link
+            href="/docs/getting-started/install"
+            className="button-small"
+            data-track="install"
+            data-track-location="header"
+          >
             Get started <ArrowUpRight size={14} />
           </Link>
         </div>
@@ -86,13 +102,29 @@ export function SiteHeader() {
             {link.label}
           </Link>
         ))}
-        <a href={githubUrl} onClick={() => setOpen(false)}>
+        <a
+          href={githubUrl}
+          onClick={() => setOpen(false)}
+          data-track="github"
+          data-track-location="mobile-menu"
+        >
           GitHub <ArrowUpRight size={16} />
         </a>
-        <a className="mobile-sponsor" href={sponsorUrl} onClick={() => setOpen(false)}>
+        <a
+          className="mobile-sponsor"
+          href={sponsorUrl}
+          onClick={() => setOpen(false)}
+          data-track="sponsor"
+          data-track-location="mobile-menu"
+        >
           <Heart size={16} aria-hidden="true" /> Sponsor
         </a>
-        <Link href="/docs/getting-started/install" onClick={() => setOpen(false)}>
+        <Link
+          href="/docs/getting-started/install"
+          onClick={() => setOpen(false)}
+          data-track="install"
+          data-track-location="mobile-menu"
+        >
           Install Cubeship <ArrowUpRight size={16} />
         </Link>
       </nav>

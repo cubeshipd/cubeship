@@ -51,6 +51,15 @@ the machine.
 the two paths answer 404 and nothing is counted. The website id is a
 constant in `src/lib/shared.ts`: it is in every page's HTML anyway.
 
+Clicks are events. An element with `data-track="install"` is sent as the
+event `install` when clicked, and each `data-track-<name>` attribute
+becomes a property — `data-track-location="hero"` says which of the
+install buttons it was. `ClickTracking`, mounted in the root layout,
+listens once for the whole document and calls `umami.track`. Umami's own
+`data-umami-event` was the obvious choice and is wrong here: on a link,
+the tracker cancels the click and sets `location.href` after sending,
+so every client-side `Link` it marked became a full page load.
+
 ## A product site, in the product's colours
 
 The site keeps the product's cyan palette, Chakra Petch and JetBrains Mono,

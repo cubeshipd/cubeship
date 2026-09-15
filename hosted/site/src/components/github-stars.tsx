@@ -29,6 +29,8 @@ export async function GitHubStars() {
   return (
     <a
       href={githubUrl}
+      data-track="github"
+      data-track-location="docs"
       className="label inline-flex items-center gap-2 px-2 py-1.5 text-muted-foreground transition-colors hover:text-primary"
       aria-label={count === null ? "Cubeship on GitHub" : `Cubeship on GitHub, ${count} stars`}
     >

@@ -1,6 +1,7 @@
 import { RootProvider } from "fumadocs-ui/provider/next";
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
+import { ClickTracking } from "@/components/click-tracking";
 import { siteUrl, umamiWebsiteId } from "@/lib/shared";
 import "./global.css";
 
@@ -110,6 +111,7 @@ export default function Layout({ children }: LayoutProps<"/">) {
         <script type="application/ld+json">{JSON.stringify(structuredData)}</script>
         {/* Umami, through the site's own /u — see lib/umami-proxy. */}
         <script defer src="/u/script.js" data-website-id={umamiWebsiteId} data-host-url="/u" />
+        <ClickTracking />
         <a href="#main-content" className="skip-link">
           Skip to content
         </a>

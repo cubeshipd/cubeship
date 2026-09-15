@@ -63,7 +63,7 @@ export function Footer() {
       </div>
       <div className="footer-bottom">
         <span>Open source under Apache 2.0.</span>
-        <a href={githubUrl}>
+        <a href={githubUrl} data-track="github" data-track-location="footer">
           Built in the open. Made to be yours. <ArrowUpRight size={12} />
         </a>
       </div>

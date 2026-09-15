@@ -231,7 +231,12 @@ export function Screens() {
                 <p>Your next control center. Try it here.</p>
                 <span>Real dashboard. Sample data. No sign-up.</span>
               </div>
-              <button type="button" className="button-primary" onClick={start}>
+              <button
+                type="button"
+                className="button-primary"
+                onClick={start}
+                data-track="demo-start"
+              >
                 <Play size={16} /> Explore the live demo
               </button>
             </div>

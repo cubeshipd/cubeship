@@ -25,6 +25,7 @@ export function InstallCommand() {
       <button
         type="button"
         onClick={copy}
+        data-track="copy-install-command"
         aria-label="Copy the install command"
         className="ml-auto shrink-0 text-muted-foreground transition-colors hover:text-primary"
       >

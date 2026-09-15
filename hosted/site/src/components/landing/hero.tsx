@@ -26,7 +26,12 @@ export function Hero() {
             your own cluster.
           </p>
           <div className="button-row">
-            <Link className="button-primary" href="/docs/getting-started/install">
+            <Link
+              className="button-primary"
+              href="/docs/getting-started/install"
+              data-track="install"
+              data-track-location="hero"
+            >
               Install Cubeship <ArrowUpRight size={18} />
             </Link>
             <a className="button-text" href="#screens">
