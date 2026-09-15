@@ -6,6 +6,28 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.8.2 — 2026-09-15
+
+Apps on the instance can reach it by its own domain, so an agent running as an app can use its MCP.
+
+### Reach the instance from its own apps
+
+- **The instance's domain works from inside.** An app calling
+  `https://<your-domain>` — the API, `/mcp` or the registry — now stays on
+  the machine instead of leaving for its public address, which most hosts
+  never route back in. An agent running as an app, such as Hermes Agent,
+  connects to `https://<your-domain>/mcp` exactly as it would from a laptop,
+  with the real certificate.
+- Another app's domain still leaves the machine. Use its internal address
+  for that.
+
+### Upgrade notes
+
+Update normally from the dashboard or CLI. The proxy is recreated once when
+the new version starts, so apps are unreachable for a few seconds. Changing
+the instance's domain later recreates it the same way. No database
+migrations and no redeploy needed.
+
 ## 0.8.1 — 2026-09-14
 
 Handle sign-out failures gracefully and restore your theme when saving fails.
