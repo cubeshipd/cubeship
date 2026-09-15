@@ -135,6 +135,18 @@ and example infrastructure links stay inside the demo. CSP limits network
 connections to the same origin and framing to the site; the iframe cannot
 navigate its parent. `/demo` is excluded from search indexing.
 
+## The docs have an MCP server of their own
+
+`cubeship.dev/mcp` (`src/app/mcp/route.ts`) serves Fumadocs' three
+tools — `search`, `list_pages`, `get_page` — over streamable HTTP, off
+the same `source`, `docsLlms` and search index the pages use. It needs
+no key and reads nothing but the compiled docs, so it holds to "nothing
+needs the network at run time". It is named `cubeship-docs` so it sits
+beside an instance's own `/mcp`, which is a different host and a
+different thing. `content/docs/mcp/docs-server.mdx` carries the command
+for each client, one tab each; when a client changes its syntax, that
+page changes.
+
 ## install.sh is a rewrite
 
 `install.sh` and the CLI print `curl -fsSL https://cubeship.dev/install.sh | sh`.

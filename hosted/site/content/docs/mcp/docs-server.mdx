@@ -1,0 +1,54 @@
+---
+title: These docs, for your agent
+description: cubeship.dev/mcp lets an agent search and read this documentation. No key, nothing to install.
+---
+
+`https://cubeship.dev/mcp` gives an agent these docs: it can search
+them, list every page and read one as Markdown. It needs no key and
+touches no instance — that is [your instance's `/mcp`](/docs/mcp), and
+the two work well side by side.
+
+Add it to what you use:
+
+```bash tab="Claude Code"
+claude mcp add --transport http cubeship-docs https://cubeship.dev/mcp
+```
+
+```bash tab="Codex"
+codex mcp add cubeship-docs --url https://cubeship.dev/mcp
+```
+
+```json tab="Cursor"
+{
+  "mcpServers": {
+    "cubeship-docs": { "url": "https://cubeship.dev/mcp" }
+  }
+}
+```
+
+```bash tab="VS Code"
+code --add-mcp '{"name":"cubeship-docs","type":"http","url":"https://cubeship.dev/mcp"}'
+```
+
+```bash tab="Gemini CLI"
+gemini mcp add --transport http cubeship-docs https://cubeship.dev/mcp
+```
+
+```json tab="Other"
+{
+  "mcpServers": {
+    "cubeship-docs": { "type": "http", "url": "https://cubeship.dev/mcp" }
+  }
+}
+```
+
+In Cursor, that goes in `~/.cursor/mcp.json`. In Claude Desktop, choose
+**Settings → Connectors → Add custom connector** and paste the URL.
+
+## The tools
+
+| Tool | Takes | Returns |
+| --- | --- | --- |
+| `search` | `query` | the matching pages and sections, as JSON |
+| `list_pages` | nothing | every page, with its title and path |
+| `get_page` | `url`, such as `/docs/apps/creating` | that page as Markdown |

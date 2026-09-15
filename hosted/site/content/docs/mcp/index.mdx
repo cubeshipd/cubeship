@@ -24,6 +24,9 @@ install or update a template — the work of the dashboard, without the
 dashboard. It is stateless on purpose: every call carries the key, so
 nothing an agent opened can be picked up by another.
 
+To let an agent read these docs as well, add
+[`cubeship.dev/mcp`](/docs/mcp/docs-server) beside it.
+
 <Callout type="warn" title="An app's variables are readable, secrets included">
 `get_app_env` returns every variable an app's container runs with, and
 the values come with them. An attached database contributes

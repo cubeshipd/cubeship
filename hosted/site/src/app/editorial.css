@@ -139,6 +139,20 @@
   box-shadow: none;
 }
 
+/* Code tabs: the container takes the block's spacing and look, so the
+   block inside it sits flush under the tab list. */
+.docs-body div:has(> [role="tablist"]) {
+  margin-block: 1.75rem;
+  border-color: #293c49;
+  border-radius: 0;
+  background: #0a1017;
+}
+
+.docs-body [role="tabpanel"] > .shiki {
+  margin-block: 0;
+  border-radius: 0;
+}
+
 .docs-body .shiki > div:first-child {
   border-color: #1d2c38;
   background: #0a1017;
