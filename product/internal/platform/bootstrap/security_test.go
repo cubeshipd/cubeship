@@ -20,7 +20,7 @@ func TestAdministrativeContainersDoNotJoinApplicationBridge(t *testing.T) {
 			t.Errorf("%s exposes administrative traffic on the application bridge", opts.Name)
 		}
 	}
-	proxy := TraefikContainerOpts(cfg, true, "")
+	proxy := TraefikContainerOpts(cfg, true, "", nil)
 	if proxy.Network == "cubeship" || !slices.Contains(proxy.AlsoNetworks, "cubeship") {
 		t.Error("ingress must bridge the private control network and application network")
 	}

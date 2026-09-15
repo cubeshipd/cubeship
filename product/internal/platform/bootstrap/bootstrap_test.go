@@ -145,7 +145,7 @@ func TestWriteRegistryTokenCertWritesFile(t *testing.T) {
 }
 
 func TestTraefikContainerOpts(t *testing.T) {
-	opts := TraefikContainerOpts(testConfig(), true, "admin@example.com")
+	opts := TraefikContainerOpts(testConfig(), true, "admin@example.com", nil)
 
 	if len(opts.Binds) != 3 {
 		t.Fatalf("expected docker socket + acme storage + dynamic config binds, got %v", opts.Binds)
@@ -167,6 +167,28 @@ func TestTraefikContainerOpts(t *testing.T) {
 	}
 	if !hasFileProvider {
 		t.Fatalf("expected the file provider flag, got %v", opts.Cmd)
+	}
+}
+
+// An app calling the instance by its public name must reach Traefik on
+// the bridge: the public route hairpins, and most hosts drop it. The
+// aliases are what Docker's DNS answers that name with, and they are part
+// of the hash, so a new domain replaces the container that holds the old.
+func TestTraefikAnswersToTheInstancesOwnNames(t *testing.T) {
+	names := []string{"cubeship.example.com", "registry.cubeship.example.com"}
+	opts := TraefikContainerOpts(testConfig(), true, "", names)
+
+	if !slices.Equal(opts.Aliases, names) {
+		t.Fatalf("aliases = %v, want %v", opts.Aliases, names)
+	}
+	if !slices.Contains(opts.AlsoNetworks, Network) {
+		t.Fatal("the aliases must be on the application network, where apps resolve them")
+	}
+
+	const image = "sha256:same"
+	other := TraefikContainerOpts(testConfig(), true, "", []string{"other.example.com", "registry.other.example.com"})
+	if configHash(opts, image) == configHash(other, image) {
+		t.Fatal("changing the domain left Traefik answering to the old one")
 	}
 }
 
@@ -540,7 +562,7 @@ func TestConfigHashTracksTheOptions(t *testing.T) {
 // Plain HTTP used to answer 404 for everything, since nothing was routed
 // on :80.
 func TestTraefikRedirectsHTTPToHTTPS(t *testing.T) {
-	opts := TraefikContainerOpts(testConfig(), true, "admin@example.com")
+	opts := TraefikContainerOpts(testConfig(), true, "admin@example.com", nil)
 
 	for _, want := range []string{
 		"--entrypoints.web.http.redirections.entryPoint.to=websecure",
@@ -564,7 +586,7 @@ func TestTraefikRedirectsHTTPToHTTPS(t *testing.T) {
 // without a domain.
 func TestTraefikLetsSlowUploadsFinish(t *testing.T) {
 	for _, tls := range []bool{true, false} {
-		opts := TraefikContainerOpts(testConfig(), tls, "")
+		opts := TraefikContainerOpts(testConfig(), tls, "", nil)
 		for _, want := range []string{
 			"--entrypoints.web.transport.respondingtimeouts.readtimeout=0",
 			"--entrypoints.websecure.transport.respondingtimeouts.readtimeout=0",
@@ -580,7 +602,7 @@ func TestTraefikLetsSlowUploadsFinish(t *testing.T) {
 // all — there is nothing to get a certificate for — and must not
 // redirect :80 to a port that cannot serve.
 func TestTraefikWithoutADomainHasNoResolver(t *testing.T) {
-	opts := TraefikContainerOpts(testConfig(), false, "")
+	opts := TraefikContainerOpts(testConfig(), false, "", nil)
 
 	for _, flag := range opts.Cmd {
 		if strings.Contains(flag, "certificatesresolvers") {
@@ -600,8 +622,8 @@ func TestTraefikWithoutADomainHasNoResolver(t *testing.T) {
 // Traefik.
 func TestConfiguringTLSChangesTheTraefikContainer(t *testing.T) {
 	const image = "sha256:same"
-	without := configHash(TraefikContainerOpts(testConfig(), false, ""), image)
-	with := configHash(TraefikContainerOpts(testConfig(), true, "admin@example.com"), image)
+	without := configHash(TraefikContainerOpts(testConfig(), false, "", nil), image)
+	with := configHash(TraefikContainerOpts(testConfig(), true, "admin@example.com", nil), image)
 
 	if without == with {
 		t.Fatal("configuring a domain left the container unchanged, so TLS would never take effect")
@@ -612,7 +634,7 @@ func TestConfiguringTLSChangesTheTraefikContainer(t *testing.T) {
 // an account without one, so a domain alone must bring the resolver up,
 // and the email flag appears only when there is an address to put in it.
 func TestTLSNeedsNoContactAddress(t *testing.T) {
-	opts := TraefikContainerOpts(testConfig(), true, "")
+	opts := TraefikContainerOpts(testConfig(), true, "", nil)
 
 	if !slices.Contains(opts.Cmd, "--certificatesresolvers.letsencrypt.acme.tlschallenge=true") {
 		t.Error("a domain without a contact address got no certificate resolver")
@@ -664,7 +686,7 @@ func TestAddressesFollowWhereTheDaemonRuns(t *testing.T) {
 // that it does not work at all on Docker Desktop — and nothing needs it
 // now.
 func TestTraefikIsOnTheManagementNetwork(t *testing.T) {
-	opts := TraefikContainerOpts(testConfig(), true, "admin@example.com")
+	opts := TraefikContainerOpts(testConfig(), true, "admin@example.com", nil)
 
 	if opts.HostNetwork {
 		t.Error("Traefik is still on the host's network")
@@ -888,7 +910,7 @@ func TestNoInfrastructureContainerIsCapped(t *testing.T) {
 		{"registry", RegistryContainerOpts(cfg, "registry.example.com", true, []byte("cert"))},
 		{"buildkit", BuildKitContainerOpts(cfg)},
 		{"frontend", FrontendContainerOpts("cubeship:v1")},
-		{"traefik", TraefikContainerOpts(cfg, true, "ops@example.com")},
+		{"traefik", TraefikContainerOpts(cfg, true, "ops@example.com", nil)},
 	} {
 		if !tc.opts.Resources.Unlimited() {
 			t.Errorf("%s carries a ceiling Ensure would never apply: %+v", tc.name, tc.opts.Resources)

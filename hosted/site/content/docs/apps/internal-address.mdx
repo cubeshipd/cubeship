@@ -29,6 +29,21 @@ answers nothing at all. What that looks like from the calling app is
 the other app being *down*, never a wrong address, which is why this
 is a name of its own rather than a line in a FAQ.
 
+## Reaching the instance itself
+
+The instance's own API, `/mcp` and registry have no internal address,
+and do not need one: from any app, `https://<your-domain>` resolves
+inside the machine and reaches the instance directly, with its real
+certificate. An agent running as an app uses the same MCP address as
+one on your laptop:
+
+```
+https://cubeship.example.com/mcp
+```
+
+That holds for the instance's domain and `registry.<domain>`. Another
+app's domain still leaves the machine — use its internal address.
+
 ## What it is, mechanically
 
 A **network alias** on the app's containers, not the container's name.

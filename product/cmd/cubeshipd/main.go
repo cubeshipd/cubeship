@@ -395,8 +395,12 @@ func applyInfrastructure(ctx context.Context, cfg *config.Config, docker *docker
 		}
 	}
 
+	var ownNames []string
+	if values.HasDomain() {
+		ownNames = []string{apiHost, registryHost}
+	}
 	if err := bootstrap.Ensure(ctx, docker,
-		bootstrap.TraefikContainerOpts(cfg, values.HasTLS(), values.Get(settings.ACMEEmail))); err != nil {
+		bootstrap.TraefikContainerOpts(cfg, values.HasTLS(), values.Get(settings.ACMEEmail), ownNames)); err != nil {
 		return fmt.Errorf("bootstrap traefik: %w", err)
 	}
 

@@ -126,6 +126,28 @@ it — detecting it means asking the Engine about every app on every
 settings screen, and being told once is cheaper than a name that
 quietly resolves to nothing.
 
+### The instance's own name, from inside
+
+An app calling *the instance* — its API, its `/mcp`, its registry — has
+no internal host to use: the daemon is only on the management network,
+and a name that reached it there would skip Traefik, TLS and the route
+the public address has. So the public name is made to work instead.
+Traefik holds the instance's domain and `registry.<domain>` as **network
+aliases**, on the application bridge and the management network both,
+and Docker's embedded DNS answers them with Traefik before it ever asks
+the outside. The connection stays inside the machine; Host and SNI are
+the public ones, so the certificate verifies as it does from anywhere.
+
+`platform/selfdial` does the same for the daemon's own requests by
+dialling; this is the version every container gets without doing
+anything. An agent on the instance pointed at `https://<domain>/mcp`
+works the same as one on a laptop.
+
+Only the instance's two names. An app's domains would need Traefik
+replaced every time one is added, which is every app unreachable for
+seconds; an app has its internal host for that. Changing the domain
+replaces Traefik for the same reason, as enabling TLS already did.
+
 ## Certificates
 
 `internal/certificates` reports what this instance holds and what it is

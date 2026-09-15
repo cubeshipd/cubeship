@@ -550,7 +550,14 @@ const TraefikImage = "traefik:v3.6"
 // Setting a domain later changes these options, which is what makes
 // Ensure replace the container — the resolver cannot be added to a
 // running one.
-func TraefikContainerOpts(cfg *config.Config, tls bool, acmeEmail string) dockerx.ContainerOpts {
+//
+// ownNames are the instance's own names — its domain and its registry's.
+// Traefik answers to them as network aliases, so an app that calls the
+// instance by its public name reaches the proxy on the bridge instead of
+// leaving for the machine's public address, which a host that does not
+// hairpin its own NAT never answers. Host and SNI are unchanged, so TLS
+// verifies as it does from outside. Changing them replaces the container.
+func TraefikContainerOpts(cfg *config.Config, tls bool, acmeEmail string, ownNames []string) dockerx.ContainerOpts {
 	cmd := []string{
 		"--providers.docker=true",
 		"--providers.docker.exposedbydefault=false",
@@ -603,6 +610,7 @@ func TraefikContainerOpts(cfg *config.Config, tls bool, acmeEmail string) docker
 		// all on Docker Desktop, where the Engine runs in a VM.
 		Network:      dockerx.ManagementNetwork,
 		AlsoNetworks: []string{Network},
+		Aliases:      ownNames,
 		Ports:        []string{"80:80", "443:443"},
 	}
 }
