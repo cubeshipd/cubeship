@@ -9,7 +9,8 @@ import { ErrorAlert } from "@/components/error-alert";
 import { SearchBar } from "@/components/search-bar";
 import { SearchableSelect } from "@/components/searchable-select";
 import { useSession } from "@/components/session-context";
-import { type AuditEvent, type AuditPage, api, avatarSrc, type InstanceUser } from "@/lib/api";
+import { UserAvatar } from "@/components/user-avatar";
+import { type AuditEvent, type AuditPage, api, type InstanceUser } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // Who changed what, and through which door.
@@ -127,16 +128,9 @@ export default function AuditLog() {
         const person = people.find((p) => p.username === e.username);
         return (
           <span className="flex min-w-0 items-center gap-2.5">
-            {/* The default face until the accounts arrive, and for an
-                account deleted since, faded: the same size either way. */}
-            {/* biome-ignore lint/performance/noImgElement: a static file in this image's own public directory */}
-            <img
-              src={avatarSrc(person?.avatar ?? "cyan", "small")}
-              alt=""
-              className={cn(
-                "size-6 shrink-0 border object-cover",
-                person ? "border-primary/40" : "border-border opacity-40 grayscale",
-              )}
+            <UserAvatar
+              person={person ?? { username: e.username }}
+              className={cn("size-6", !person && "opacity-40 grayscale")}
             />
             <span className="flex min-w-0 flex-col">
               <span className="truncate text-xs">{e.username}</span>

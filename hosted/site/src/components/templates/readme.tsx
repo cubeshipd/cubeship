@@ -22,6 +22,14 @@ export function Readme({
   return (
     <div className="prose max-w-none text-sm">
       <Markdown
+        components={{
+          table: ({ children }) => (
+            // biome-ignore lint/a11y/noNoninteractiveTabindex: Keyboard users need to focus this region to scroll wide tables.
+            <section className="readme-table-scroll" aria-label="Table" tabIndex={0}>
+              <table>{children}</table>
+            </section>
+          ),
+        }}
         remarkPlugins={[remarkGfm]}
         rehypePlugins={[rehypeRaw, rehypeSanitize]}
         urlTransform={(url, key) =>

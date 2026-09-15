@@ -1,7 +1,6 @@
 "use client";
 
 import { KeyRoundIcon, Trash2Icon } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
@@ -10,6 +9,7 @@ import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
 import { LoadingNote } from "@/components/loading";
+import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { SearchableSelect } from "@/components/searchable-select";
 import { SectionHeader } from "@/components/section-header";

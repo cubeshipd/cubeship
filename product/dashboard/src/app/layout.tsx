@@ -3,6 +3,7 @@ import localFont from "next/font/local";
 import { ThemeBoot } from "@/components/theme";
 import { Toaster } from "@/components/ui/sonner";
 import "./globals.css";
+import "./dashboard.css";
 
 // The faces are vendored under src/fonts rather than fetched from
 // Google at build time: `make dashboard` already needs the network for
@@ -33,11 +34,11 @@ const jbmono = localFont({
 // the <link>s and <meta>s itself, so none of them is listed here.
 export const metadata: Metadata = {
   title: { default: "Cubeship", template: "%s · Cubeship" },
-  description: "Self-hosted PaaS for one VPS",
+  description: "Your infrastructure. Ready to ship.",
   applicationName: "Cubeship",
   openGraph: {
     title: "Cubeship",
-    description: "Self-hosted PaaS for one VPS",
+    description: "Your infrastructure. Ready to ship.",
     siteName: "Cubeship",
     type: "website",
   },

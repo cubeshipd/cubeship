@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"cubeship/internal/metrics"
+	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/user"
 )
@@ -13,9 +14,7 @@ type Handler struct{ svc *Service }
 
 func NewHandler(svc *Service) *Handler { return &Handler{svc: svc} }
 
-// One route. There is one machine and nothing on it to configure from
-// here — this module reads what the kernel already knows, the way
-// certificates reads Traefik's store.
+// Host history can select a machine; workload usage retains its cluster scope.
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.Handle("GET /instance/metrics", auth(http.HandlerFunc(h.metrics)))
 	r.Handle("GET /instance/containers", auth(http.HandlerFunc(h.containers)))
@@ -23,7 +22,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 
 func (h *Handler) metrics(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	series, err := h.svc.Series(ctx, user.FromContext(ctx), r.URL.Query().Get("window"))
+	series, err := h.svc.SeriesOn(ctx, user.FromContext(ctx), r.URL.Query().Get("window"), r.URL.Query().Get("server"))
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -56,6 +55,8 @@ func (h *Handler) containers(w http.ResponseWriter, r *http.Request) {
 // the three charts that work to report the one that does not.
 func WriteError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, database.ErrNotFound):
+		http.Error(w, "machine not found", http.StatusNotFound)
 	case errors.Is(err, user.ErrUnauthenticated):
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	case errors.Is(err, user.ErrForbidden):

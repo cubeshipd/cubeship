@@ -1,12 +1,12 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useEffect, useRef, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
 import { ErrorAlert } from "@/components/error-alert";
+import Link from "@/components/navigation-link";
 import { ProjectMark } from "@/components/project-card";
 import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";

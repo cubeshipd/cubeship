@@ -36,14 +36,45 @@ import { db, type Row, series } from "./db";
 // the skeletons are never reviewed.
 const LATENCY_MS = 180;
 
-type Handler = (p: string[], body?: unknown) => unknown;
+type Handler = (p: string[], body?: unknown, query?: URLSearchParams) => unknown;
 
 // A route is a method, a pattern and a handler. `:x` captures a
 // segment, `*` captures the rest — matched in order, first wins.
 const routes: [string, string, Handler][] = [
   ["GET", "/setup", () => db.setup],
   ["GET", "/users/me", () => db.me],
-  ["PATCH", "/users/me", (_p, body) => Object.assign(db.me, body as Row)],
+  [
+    "PATCH",
+    "/users/me",
+    (_p, body) => {
+      const account = db.users.find((u) => u.username === db.me.username);
+      Object.assign(db.me, body as Row);
+      if (account) Object.assign(account, body as Row);
+      return db.me;
+    },
+  ],
+  [
+    "PUT",
+    "/users/me/avatar",
+    (_p, body) => {
+      if (db.me.avatar_url?.startsWith("blob:")) URL.revokeObjectURL(db.me.avatar_url);
+      db.me.avatar_url = URL.createObjectURL(body as Blob);
+      db.me.avatar = "upload:preview";
+      const account = db.users.find((u) => u.username === db.me.username);
+      if (account) Object.assign(account, { avatar: db.me.avatar, avatar_url: db.me.avatar_url });
+    },
+  ],
+  [
+    "DELETE",
+    "/users/me/avatar",
+    () => {
+      if (db.me.avatar_url?.startsWith("blob:")) URL.revokeObjectURL(db.me.avatar_url);
+      db.me.avatar_url = undefined;
+      db.me.avatar = "";
+      const account = db.users.find((u) => u.username === db.me.username);
+      if (account) Object.assign(account, { avatar: "", avatar_url: undefined });
+    },
+  ],
   ["GET", "/users", () => ({ users: db.users })],
   [
     "POST",
@@ -54,7 +85,7 @@ const routes: [string, string, Handler][] = [
         username: b.username as string,
         role: (b.access_role_id === 3 ? "admin" : "member") as "admin" | "member",
         access_role_id: (b.access_role_id as number) ?? 2,
-        avatar: "mono",
+        avatar: "",
         created_at: new Date().toISOString(),
       };
       db.users.push(created);
@@ -454,7 +485,11 @@ const routes: [string, string, Handler][] = [
   ],
 
   // --- the instance itself ---
-  ["GET", "/instance/metrics", () => instanceSeries()],
+  [
+    "GET",
+    "/instance/metrics",
+    (_p, _body, query) => instanceSeries(query?.get("server"), query?.get("window")),
+  ],
   ["GET", "/instance/containers", () => containers()],
 
   // --- databases ---
@@ -768,6 +803,21 @@ const routes: [string, string, Handler][] = [
       return db.firewall;
     },
   ],
+  ["GET", "/nodes/:name/components", (p) => ({ server: p[0], components: mockComponents(p[0]) })],
+  [
+    "GET",
+    "/nodes/:name/components/:component/logs",
+    (p) =>
+      [
+        `${new Date().toISOString()} [info] ${p[1]} on ${p[0]}`,
+        "[info] Component started successfully",
+        "[info] Configuration loaded",
+        p[1] === "traefik"
+          ? "[info] Provider configuration updated; TLS router ready"
+          : "[info] Ready for requests",
+        "[info] Preview data — live logs come from this machine's container",
+      ].join("\n"),
+  ],
   ["GET", "/nodes", () => db.nodes],
   ["GET", "/nodes/mesh", () => db.mesh],
   ["GET", "/github", () => db.github],
@@ -792,7 +842,8 @@ export async function handle(method: string, path: string, body?: unknown): Prom
     // edited in place then changed nothing on screen until something
     // else happened to re-render, which is a bug that exists only in
     // the preview and looks exactly like one in the product.
-    if (captured) return structuredClone(fn(captured, body));
+    if (captured)
+      return structuredClone(fn(captured, body, new URLSearchParams(path.split("?")[1])));
   }
 
   // **Loud rather than empty.** A mock that answered `[]` for a path it
@@ -931,16 +982,18 @@ function containerSeries(points: number, limit: number) {
   };
 }
 
-function instanceSeries() {
-  const total = 8 * 1024 * 1024 * 1024;
-  const disk = 160 * 1024 * 1024 * 1024;
-  const cpu = series(48, 28, 18);
+function instanceSeries(server?: string | null, window?: string | null) {
+  const host = db.nodes.find((node) => node.name === (server || "control-plane")) ?? db.nodes[0];
+  const total = host.memory_total_bytes;
+  const disk = host.disk_total_bytes;
+  const cpu = series(48, host.cpu_percent ?? 15, host.control_plane ? 18 : 5);
   const mem = series(48, total * 0.52, total * 0.08);
   const rx = series(48, 240_000, 180_000);
   const tx = series(48, 120_000, 90_000);
   return {
-    window: "1h",
-    cores: 4,
+    window: window || "1h",
+    sampled_at: new Date().toISOString(),
+    cores: host.cores,
     memory_total_bytes: total,
     disk_total_bytes: disk,
     disk_path: "/var/lib/cubeship",
@@ -1304,4 +1357,68 @@ function advanceRun(install: Row) {
   }
   if (run.kind === "update") install.release = run.to_release;
   if (run.kind === "uninstall") install.status = "uninstalled";
+}
+
+function mockComponents(server: string) {
+  const definitions = [
+    [
+      "daemon",
+      "Cubeship daemon",
+      "API, orchestration and cluster coordination.",
+      "cubeship-daemon",
+      "ghcr.io/cubeshipd/cubeshipd:0.7.0",
+    ],
+    [
+      "dashboard",
+      "Dashboard",
+      "The Cubeship web interface.",
+      "cubeship-frontend",
+      "ghcr.io/cubeshipd/cubeship:0.7.0",
+    ],
+    [
+      "traefik",
+      "Traefik",
+      "Ingress, TLS and routing to applications.",
+      "cubeship-traefik",
+      "traefik:v3.6",
+    ],
+    [
+      "postgres",
+      "Instance database",
+      "Cubeship identities, configuration and history.",
+      "cubeship-postgres",
+      "postgres:17-alpine",
+    ],
+    [
+      "registry",
+      "Image registry",
+      "The instance's private container images.",
+      "cubeship-registry",
+      "registry:2",
+    ],
+    [
+      "buildkit",
+      "BuildKit",
+      "Builds application images. Started on demand.",
+      "cubeship-buildkit",
+      "moby/buildkit:latest",
+    ],
+  ];
+  return definitions
+    .filter(([id]) => server === "control-plane" || id === "daemon")
+    .map(([id, name, description, container, image]) => ({
+      id,
+      name: server !== "control-plane" ? "Cubeship worker" : name,
+      description:
+        server !== "control-plane"
+          ? "Worker agent, application runtime and host telemetry."
+          : description,
+      container,
+      image,
+      status: id === "buildkit" ? "exited" : "running",
+      health: id === "postgres" ? "healthy" : undefined,
+      restarts: 0,
+      logs_available: true,
+      started_at: new Date(Date.now() - 86400000).toISOString(),
+    }));
 }

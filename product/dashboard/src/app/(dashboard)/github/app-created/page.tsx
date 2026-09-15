@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
+import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { api, type Settings } from "@/lib/api";
 import { message } from "@/lib/errors";

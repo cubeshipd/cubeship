@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
@@ -14,6 +13,7 @@ import { GitHubSource } from "@/components/github-source";
 import { RailTabs } from "@/components/header-rail";
 import { CUBESHIP, ImageSource, type ImageSourceValue } from "@/components/image-source";
 import { LoadingList } from "@/components/loading";
+import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { OptionCards } from "@/components/option-cards";
 import { SectionHeader } from "@/components/section-header";

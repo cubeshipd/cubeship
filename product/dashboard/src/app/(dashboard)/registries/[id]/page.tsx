@@ -1,13 +1,13 @@
 "use client";
 
 import { ChevronRightIcon, SettingsIcon, Trash2Icon } from "lucide-react";
-import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyButton } from "@/components/copy-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
 import { LoadingList, LoadingNote } from "@/components/loading";
+import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { RowAction } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";

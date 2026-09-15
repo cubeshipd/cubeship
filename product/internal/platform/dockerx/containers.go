@@ -423,9 +423,14 @@ func isAlreadyExists(err error) bool {
 // caller tells a container that is merely running from one that is
 // running the right thing.
 type ContainerInfo struct {
-	ID      string
-	Running bool
-	Labels  map[string]string
+	Status    string
+	Health    string
+	StartedAt string
+	Restarts  int
+	TTY       bool
+	ID        string
+	Running   bool
+	Labels    map[string]string
 	// Image is the reference the container was created from. The daemon
 	// reads its own so it can start a sibling from the same image —
 	// which is how the dashboard's container is the release rather than
@@ -520,8 +525,15 @@ func (c *Client) InspectContainerByName(ctx context.Context, name string) (Conta
 		return ContainerInfo{}, fmt.Errorf("inspect container %q: empty response from docker", name)
 	}
 
-	out := ContainerInfo{ID: info.ID, Running: info.State != nil && info.State.Running}
+	out := ContainerInfo{ID: info.ID, Running: info.State != nil && info.State.Running, Restarts: info.RestartCount}
+	if info.State != nil {
+		out.Status, out.StartedAt = info.State.Status, info.State.StartedAt
+		if info.State.Health != nil {
+			out.Health = info.State.Health.Status
+		}
+	}
 	if info.Config != nil {
+		out.TTY = info.Config.Tty
 		out.Labels = info.Config.Labels
 		// Config.Image is what was asked for — a tag — where the
 		// container's own Image field is the digest it resolved to. A

@@ -1,7 +1,6 @@
 "use client";
 
 import { PlayIcon, PlugIcon, PlusIcon, PowerIcon, SettingsIcon, Trash2Icon } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
@@ -13,6 +12,7 @@ import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal, RailTabs } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
+import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchableSelect } from "@/components/searchable-select";

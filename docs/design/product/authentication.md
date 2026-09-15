@@ -233,3 +233,26 @@ older passwords exceeding it require an administrator reset. Other JSON
 request bodies are limited to 1 MiB, including public setup requests.
 Header and idle timeouts protect connections without imposing a global
 body timeout on streaming operations.
+
+
+## Profile images
+
+`PUT /users/me/avatar` and `DELETE /users/me/avatar` change only the authenticated
+caller's picture, under the existing session/API-key and same-origin mutation
+checks. Uploads are raw PNG, JPEG or WebP bytes, bounded to 512 KiB and sniffed
+on the server; SVG and caller-provided MIME claims are not accepted.
+
+Migration 00058 adds `user_avatars`, one bounded BYTEA per user. Small identity
+images live with the account database, so backup and deletion have one lifecycle;
+the foreign key cascades when an account is deleted. Upload and removal update
+the image and the version in `users.avatar` in one SQL statement, locking the
+user row first. Ordinary profile edits leave that version alone unless the
+legacy avatar preference was explicitly sent.
+
+Identity responses expose `avatar_url` when an upload exists. The URL names the
+current username and includes a content hash; rename responses carry the updated
+URL. `GET /users/{username}/avatar` is authenticated and available to signed-in
+users, including `me` as an alias. It serves private, revalidated images with
+ETag and nosniff; unset images return 404. New accounts have no picture, and the
+dashboard uses initials. Legacy preset names are still accepted for older API
+clients but are no longer offered or displayed in the dashboard.

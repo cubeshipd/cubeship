@@ -1,15 +1,20 @@
 "use client";
 
-import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { ArrowUpRightIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useTransition } from "react";
+import { CubeMark } from "@/components/brand";
 import { type Column, DataTable } from "@/components/data-table";
+import { ErrorAlert } from "@/components/error-alert";
+import { RailPortal } from "@/components/header-rail";
 import { InstanceMetrics } from "@/components/instance-metrics";
+import { MachineSelector, useMachineSelection } from "@/components/machine-selector";
+import Link, { NavigationProgress } from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { SectionHeader } from "@/components/section-header";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   type App,
-  api,
   type ContainerUsage,
   type Datastore,
   formatBytes,
@@ -17,6 +22,14 @@ import {
   type ObjectStore,
   type Project,
 } from "@/lib/api";
+import {
+  appsQuery,
+  containersQuery,
+  datastoresQuery,
+  projectsQuery,
+  storesQuery,
+} from "@/lib/dashboard-queries";
+import { message } from "@/lib/errors";
 
 // The screen this instance opens on.
 //
@@ -34,38 +47,38 @@ import {
 // hard the box is working, then which of the things in the first list is
 // the reason.
 export default function Overview() {
-  const [projects, setProjects] = useState<Project[] | null>(null);
-  const [apps, setApps] = useState<App[] | null>(null);
-  const [datastores, setDatastores] = useState<Datastore[] | null>(null);
-  const [stores, setStores] = useState<ObjectStore[] | null>(null);
-
-  // Each on its own, and a failure is that one card saying nothing
-  // rather than the screen saying nothing. A member may be refused one
-  // of these lists on an instance where they can read the rest, and a
-  // landing page must survive that.
-  useEffect(() => {
-    api
-      .get<Project[]>("/projects")
-      .then(setProjects)
-      .catch(() => setProjects([]));
-    api
-      .get<App[]>("/apps")
-      .then(setApps)
-      .catch(() => setApps([]));
-    api
-      .get<Datastore[]>("/datastores")
-      .then(setDatastores)
-      .catch(() => setDatastores([]));
-    api
-      .get<ObjectStore[]>("/objectstores")
-      .then(setStores)
-      .catch(() => setStores([]));
-  }, []);
+  const machine = useMachineSelection();
+  const projects = useQuery(projectsQuery);
+  const apps = useQuery(appsQuery);
+  const datastores = useQuery(datastoresQuery);
+  const stores = useQuery(storesQuery);
 
   return (
     <>
-      <Stats projects={projects} apps={apps} datastores={datastores} stores={stores} />
-      <InstanceMetrics />
+      <RailPortal>
+        <MachineSelector selection={machine} />
+      </RailPortal>
+      <header className="dashboard-overview-intro">
+        <div>
+          <h1>Your infrastructure.</h1>
+          <p>Your cluster at a glance. Monitoring is shown per machine.</p>
+        </div>
+        <CubeMark className="dashboard-overview-mark" />
+      </header>
+      <Stats
+        projects={projects.data ?? null}
+        apps={apps.data ?? null}
+        datastores={datastores.data ?? null}
+        stores={stores.data ?? null}
+      />
+      <ErrorAlert error={machine.query.error ? message(machine.query.error) : null} />
+      {machine.selected && machine.selected.status !== "ready" && (
+        <Notice tone="warning">
+          {machine.server} is {machine.selected.status}. Historical metrics remain available; live
+          readings resume when it reconnects.
+        </Notice>
+      )}
+      <InstanceMetrics server={machine.server} />
       <Containers />
     </>
   );
@@ -74,7 +87,6 @@ export default function Overview() {
 // How often the list of what is using the box is re-read. The daemon
 // samples every 30 seconds, so anything faster is two requests for one
 // reading.
-const REFRESH_MS = 30_000;
 
 // What every container on this instance is using, heaviest first.
 //
@@ -84,25 +96,11 @@ const REFRESH_MS = 30_000;
 // — and it is the one screen in the dashboard that does, which is why
 // it is served at the instance's own address rather than any module's.
 function Containers() {
-  const [usage, setUsage] = useState<ContainerUsage[] | null>(null);
-  const [refused, setRefused] = useState(false);
-
-  useEffect(() => {
-    const load = () =>
-      api
-        .get<ContainerUsage[]>("/instance/containers")
-        .then((found) => {
-          setUsage(found);
-          setRefused(false);
-        })
-        .catch(() => {
-          setUsage([]);
-          setRefused(true);
-        });
-    load();
-    const timer = setInterval(load, REFRESH_MS);
-    return () => clearInterval(timer);
-  }, []);
+  const router = useRouter();
+  const [navigating, startTransition] = useTransition();
+  const containers = useQuery(containersQuery);
+  const usage = containers.data ?? (containers.isError ? [] : null);
+  const refused = containers.isError;
 
   const columns: Column<ContainerUsage>[] = [
     {
@@ -139,11 +137,12 @@ function Containers() {
 
   return (
     <>
+      <NavigationProgress pending={navigating} />
       <SectionHeader
-        title="Containers"
+        title="Workloads · all machines"
         // The convention is the one thing about this number that
         // surprises people, and it is the opposite of the chart above.
-        sub="What each is using right now, heaviest first. 100% is one core here — not the whole machine, as it is above. Sort by memory for the other question."
+        sub="Cluster-wide application, database and storage usage. App replicas are combined across machines. CPU 100% is one core; machine selection applies to the monitoring charts above."
       />
       <DataTable
         columns={columns}
@@ -151,7 +150,7 @@ function Containers() {
         rowKey={(u) => `${u.kind}:${u.name}`}
         onRowClick={(u) => {
           const href = hrefFor(u);
-          if (href) window.location.assign(href);
+          if (href) startTransition(() => router.push(href));
         }}
         loadingRows={4}
         // Bounded, because an instance with thirty containers would
@@ -213,8 +212,6 @@ function Stats({
 
   return (
     <>
-      <SectionHeader title="Stats" />
-
       {nothingYet ? (
         <Notice>
           Nothing is deployed on this instance yet.{" "}
@@ -224,7 +221,7 @@ function Stats({
           to start.
         </Notice>
       ) : (
-        <div className="mb-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="dashboard-stats">
           <Stat label="Projects" href="/projects" count={projects?.length} />
           <Stat
             label="Apps"
@@ -257,18 +254,13 @@ function Stat({
   note?: string;
 }) {
   return (
-    <Card className="transition-colors hover:border-border-strong">
-      <CardContent>
-        <Link href={href} className="block">
-          <div className="text-[11px] tracking-[0.12em] text-muted-foreground uppercase">
-            {label}
-          </div>
-          {/* An em dash while it loads, and after a refusal. A zero
-              would be a claim. */}
-          <div className="mt-1 font-mono text-2xl text-foreground">{count ?? "—"}</div>
-          <div className="mt-1 h-4 text-[11px] text-subtle-foreground">{note}</div>
-        </Link>
-      </CardContent>
-    </Card>
+    <Link href={href} className="dashboard-stat">
+      <span className="dashboard-stat-label">
+        {label}
+        <ArrowUpRightIcon aria-hidden="true" />
+      </span>
+      <span className="dashboard-stat-value">{count ?? "—"}</span>
+      <span className="dashboard-stat-note">{note}</span>
+    </Link>
   );
 }

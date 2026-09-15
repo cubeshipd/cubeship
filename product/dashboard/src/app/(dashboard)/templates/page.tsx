@@ -1,6 +1,6 @@
 "use client";
 
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
 import { ChevronDownIcon, TagIcon } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -12,7 +12,7 @@ import { TemplateCard } from "@/components/template-card";
 import { TemplateInstalls } from "@/components/template-installs";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { api, type TemplatePage } from "@/lib/api";
+import { api, type TemplatePage, type TemplateSummary } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 type Sort = "recent" | "stars";
@@ -74,36 +74,34 @@ function Catalog() {
   if (tag) params.set("tag", tag);
   if (sort !== "recent") params.set("sort", sort);
 
-  // Page after page as the grid is scrolled to its end, rather than a
-  // "More" button or one page and nothing after it.
-  const page = useInfiniteQuery({
-    queryKey: ["templates", search, tag, sort],
-    queryFn: ({ pageParam }) => {
+  // Collect the complete result before drawing the grid. The catalog API
+  // keeps its cursor contract, but scrolling never triggers another request.
+  const page = useQuery({
+    queryKey: ["templates", "all", search, tag, sort],
+    queryFn: async ({ signal }) => {
       const q = new URLSearchParams(params);
-      if (pageParam) q.set("cursor", pageParam);
-      return api.get<TemplatePage>(q.size > 0 ? `/templates?${q}` : "/templates");
+      q.set("limit", "48");
+      const all = new Map<string, TemplateSummary>();
+      const visited = new Set<string>();
+      for (;;) {
+        const result = await api.get<TemplatePage>(`/templates?${q}`, { signal });
+        for (const template of result.templates) {
+          const key = `${template.owner}/${template.name}`;
+          if (!all.has(key)) all.set(key, template);
+        }
+        if (!result.next_cursor) return [...all.values()];
+        if (visited.has(result.next_cursor))
+          throw new Error("The catalog could not finish loading. Please try again.");
+        visited.add(result.next_cursor);
+        q.set("cursor", result.next_cursor);
+      }
     },
-    initialPageParam: "",
-    getNextPageParam: (last) => last.next_cursor ?? undefined,
     placeholderData: (previous) => previous,
+    staleTime: 60_000,
+    retry: 1,
   });
-  const templates = page.data?.pages.flatMap((p) => p.templates);
+  const templates = page.data;
 
-  const end = useRef<HTMLDivElement>(null);
-  const { hasNextPage, isFetchingNextPage, fetchNextPage } = page;
-  useEffect(() => {
-    const el = end.current;
-    if (!el || !hasNextPage) return;
-    const seen = new IntersectionObserver(
-      (entries) => {
-        if (entries[0]?.isIntersecting && !isFetchingNextPage) fetchNextPage();
-      },
-      // A screen ahead, so the next page is usually there before the end is.
-      { rootMargin: "600px 0px" },
-    );
-    seen.observe(el);
-    return () => seen.disconnect();
-  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
   const tags = useQuery({
     queryKey: ["template-tags"],
     queryFn: () => api.get<{ tags: string[] }>("/template-tags"),
@@ -147,19 +145,25 @@ function Catalog() {
           {filtered ? "No template matches these filters." : "The catalog has no templates yet."}
         </p>
       )}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <p role="status" className="mb-4 font-mono text-xs text-muted-foreground">
+        {page.isFetching
+          ? "Loading catalog…"
+          : templates
+            ? `${templates.length} ${templates.length === 1 ? "template" : "templates"}`
+            : ""}
+      </p>
+      <div aria-busy={page.isFetching} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {templates?.map((t) => (
           <TemplateCard key={`${t.owner}/${t.name}`} template={t} />
         ))}
-        {(!templates || isFetchingNextPage) &&
+        {!templates &&
           !page.error &&
-          Array.from({ length: templates ? 3 : 6 }, (_, i) => (
+          Array.from({ length: 6 }, (_, i) => (
             // The size of a card, so the grid does not move when they arrive.
             // biome-ignore lint/suspicious/noArrayIndexKey: placeholders with nothing else to key on.
             <div key={i} className="h-[148px] animate-pulse border border-border bg-card" />
           ))}
       </div>
-      <div ref={end} aria-hidden />
     </>
   );
 }

@@ -2,7 +2,7 @@
 
 Generated on 2026-09-14 with the integrated ImageGen tool. The tool does not expose model selection, so the exact model version is not asserted. Original PNG outputs are kept here for campaign provenance. Landing-page scenes now use Three.js with static SVG fallbacks.
 
-- `cube.png`: social-image composition.
+- `cube.png`: unused campaign artwork. Social cards now render a code-native point cube.
 - `cluster.png`: original conceptual infrastructure panorama, retained as an unused design asset.
 
 ## Cube prompt

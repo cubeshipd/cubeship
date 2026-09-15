@@ -1,8 +1,9 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { HardDriveIcon, PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
 import { MinIOIcon } from "@/components/icons";
@@ -10,8 +11,8 @@ import { NewObjectStoreDialog } from "@/components/new-object-store-dialog";
 import { ResourceCard, ResourceGrid } from "@/components/resource-grid";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import { api, type ObjectStore } from "@/lib/api";
 import { PROVIDER_ICONS } from "@/lib/credentials";
+import { storesQuery } from "@/lib/dashboard-queries";
 import { message } from "@/lib/errors";
 import { useOpenOnArrival } from "@/lib/open-on-arrival";
 import { usageShares, useContainerUsage } from "@/lib/usage";
@@ -23,18 +24,11 @@ import { usageShares, useContainerUsage } from "@/lib/usage";
 // fact about a card, not a reason for two lists.
 export default function StoragePage() {
   const router = useRouter();
-  const [stores, setStores] = useState<ObjectStore[] | null>(null);
+  const inventory = useQuery(storesQuery);
+  const stores = inventory.data ?? null;
   const [adding, setAdding] = useState(false);
   useOpenOnArrival("new", setAdding);
-  const [error, setError] = useState<string | null>(null);
-
-  const reload = useCallback(() => {
-    api
-      .get<ObjectStore[]>("/objectstores")
-      .then(setStores)
-      .catch((e) => setError(message(e)));
-  }, []);
-  useEffect(reload, [reload]);
+  const error = inventory.error ? message(inventory.error) : null;
   const { usage, machine } = useContainerUsage("objectstore");
 
   return (

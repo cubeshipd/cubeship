@@ -852,3 +852,15 @@ one must not thereby start changing how many containers exist.
   decisions about failure — and about certificates, since a second
   machine answering a name has to be able to prove it owns it — that
   this does not make.
+
+### Host monitoring and Cubeship service logs
+
+A worker's `host` report now includes its own CPU, memory, disk and network
+history sample, computed through the shared machine collector. The existing
+headline readings remain for older control planes. See
+[monitoring.md](monitoring.md#machine-selection-and-worker-history).
+
+The same outbound-only command channel also serves fixed Cubeship component
+inventory and bounded component logs. These reads are administrator-only and
+introduce no worker listeners or arbitrary container access. See
+[components.md](components.md).

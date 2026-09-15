@@ -31,7 +31,12 @@ export function SiteHeader() {
   return (
     <header className="site-header">
       <div className="site-container header-inner">
-        <Link href="/" aria-label="Cubeship home" onClick={() => setOpen(false)}>
+        <Link
+          className="flex items-center"
+          href="/"
+          aria-label="Cubeship home"
+          onClick={() => setOpen(false)}
+        >
           <Wordmark />
         </Link>
         <nav className="desktop-navigation" aria-label="Main navigation">

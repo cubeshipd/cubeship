@@ -79,6 +79,19 @@ func (c *Collector) tick(ctx context.Context) {
 // Collect takes one reading and writes it. Exported so a test can drive
 // a pass without waiting for a ticker.
 func (c *Collector) Collect(ctx context.Context) error {
+	sample := c.Measure()
+	if sample == nil {
+		return c.Repo().Prune(ctx, now().Add(-metrics.Retention))
+	}
+	repo := c.Repo()
+	if err := repo.Insert(ctx, *sample); err != nil {
+		return err
+	}
+	return repo.Prune(ctx, sample.At.Add(-metrics.Retention))
+}
+
+// Measure shares the host counter arithmetic with workers without requiring a DB.
+func (c *Collector) Measure() *Sample {
 	now := now()
 
 	cpu, cpuErr := c.reader.CPU()
@@ -128,11 +141,7 @@ func (c *Collector) Collect(ctx context.Context) error {
 		}
 	}
 
-	repo := c.Repo()
-	if err := repo.Insert(ctx, sample); err != nil {
-		return err
-	}
-	return repo.Prune(ctx, now.Add(-metrics.Retention))
+	return &sample
 }
 
 func (c *Collector) Repo() *Repository { return NewRepository(c.db) }

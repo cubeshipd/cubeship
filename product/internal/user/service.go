@@ -763,7 +763,7 @@ func (s *Service) UpdateProfile(ctx context.Context, caller *User, in Profile) (
 		next.Avatar = *in.Avatar
 	}
 
-	updated, err := s.Repo().UpdateProfile(ctx, caller.ID, &next)
+	updated, err := s.Repo().UpdateProfile(ctx, caller.ID, &next, in.Avatar != nil)
 	if database.IsUniqueViolation(err) {
 		// The unique index decides, not a lookup before it: two people
 		// renaming to one name in the same second would both pass a

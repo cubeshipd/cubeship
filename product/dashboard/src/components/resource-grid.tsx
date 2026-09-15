@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { type ComponentType, type ReactNode, useMemo, useState } from "react";
+import Link from "@/components/navigation-link";
 import { SearchBar } from "@/components/search-bar";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -67,7 +67,7 @@ export function ResourceGrid<T>({
       ) : (
         // Three columns only from xl: below it a card is too narrow for a
         // name beside its mark and a status badge.
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="dashboard-resource-grid grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {matched == null
             ? LOADING.map((k) => <LoadingCard key={k} />)
             : matched.map((row) => <div key={rowKey(row)}>{card(row)}</div>)}
@@ -79,9 +79,9 @@ export function ResourceGrid<T>({
 
 const LOADING = ["a", "b", "c"];
 
-const FRAME = "hud-frame flex flex-col border border-border bg-card";
-const HEAD = "flex items-center gap-4 p-4";
-const FOOT = "grid grid-cols-2 gap-4 border-t border-border px-4 py-2.5";
+const FRAME = "dashboard-resource-card flex flex-col border border-border bg-card";
+const HEAD = "dashboard-resource-head flex items-center gap-4";
+const FOOT = "dashboard-resource-foot grid grid-cols-2 gap-4 border-t border-border";
 
 // One resource: its mark, its name and one line beside it, its state at
 // the right edge, and what it is using along the bottom.
@@ -115,7 +115,7 @@ export function ResourceCard({
           </span>
         )}
         <span className="min-w-0 flex-1">
-          <span className="block truncate font-mono text-sm font-semibold group-hover:text-primary">
+          <span className="dashboard-resource-name block truncate font-mono font-medium group-hover:text-primary">
             {name}
           </span>
           <span className="block h-4 truncate text-xs text-muted-foreground">{detail}</span>

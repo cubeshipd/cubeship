@@ -86,10 +86,10 @@ export function MetricsSection({ path, title = "Monitoring" }: { path: string; t
 
       <ErrorAlert error={error} />
 
-      <div className="mb-4 grid gap-3 lg:grid-cols-2">
+      <div className="mb-4 grid gap-4 lg:grid-cols-2">
         <Card>
           <CardContent>
-            <div className="mb-2 text-[11px] tracking-[0.12em] text-muted-foreground uppercase">
+            <div className="dashboard-chart-label">
               {/* Said here rather than in a tooltip, because it is the
                   one thing about this number that surprises people. */}
               CPU · 100% is one core
@@ -104,9 +104,7 @@ export function MetricsSection({ path, title = "Monitoring" }: { path: string; t
 
         <Card>
           <CardContent>
-            <div className="mb-2 text-[11px] tracking-[0.12em] text-muted-foreground uppercase">
-              Memory
-            </div>
+            <div className="dashboard-chart-label">Memory</div>
             <TimeSeries
               points={samples.map((s) => ({ at: s.at, value: s.memory_bytes }))}
               format={formatBytes}

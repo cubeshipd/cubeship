@@ -1,27 +1,21 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
 import { SectionHeader } from "@/components/section-header";
 import { TimeSeries } from "@/components/time-series";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  api,
-  formatBytes,
-  formatCPU,
-  type InstanceSeries,
-  METRIC_WINDOWS,
-  type MetricWindow,
-} from "@/lib/api";
+import { formatBytes, formatCPU, METRIC_WINDOWS, type MetricWindow } from "@/lib/api";
+import { instanceMetricsQuery } from "@/lib/dashboard-queries";
 import { message } from "@/lib/errors";
 
 // Matched to the daemon's own sampling interval rather than made
 // faster: asking twice as often as there is anything new to say is two
 // requests for one point.
-const REFRESH_MS = 30_000;
 
 // What the box is doing — the machine, not one container on it.
 //
@@ -31,26 +25,11 @@ const REFRESH_MS = 30_000;
 // share of the whole box where a container's is a share of one core.
 // One component drawing both would be a component with two meanings
 // for its most-read number.
-export function InstanceMetrics() {
+export function InstanceMetrics({ server = "control-plane" }: { server?: string }) {
   const [window, setWindow] = useState<MetricWindow>("1h");
-  const [series, setSeries] = useState<InstanceSeries | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(() => {
-    api
-      .get<InstanceSeries>(`/instance/metrics?window=${window}`)
-      .then((s) => {
-        setSeries(s);
-        setError(null);
-      })
-      .catch((e) => setError(message(e)));
-  }, [window]);
-
-  useEffect(() => {
-    load();
-    const timer = setInterval(load, REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [load]);
+  const query = useQuery(instanceMetricsQuery(window, server));
+  const series = query.data;
+  const error = query.error ? message(query.error) : null;
 
   const samples = series?.samples ?? [];
   const missing = series?.unavailable ?? {};
@@ -66,7 +45,7 @@ export function InstanceMetrics() {
   return (
     <>
       <SectionHeader
-        title="Monitoring"
+        title={`Monitoring · ${server}`}
         sub={
           series
             ? `${series.cores || "?"} cores, ${formatBytes(series.memory_total_bytes)} of memory, and ${formatBytes(series.disk_total_bytes)} of disk at ${series.disk_path}. Sampled every 30 seconds and kept for a day.`
@@ -92,13 +71,20 @@ export function InstanceMetrics() {
       />
 
       <ErrorAlert error={error} />
+      {series?.sampled_at && Date.now() - Date.parse(series.sampled_at) > 120_000 && (
+        <Notice tone="warning">
+          No recent samples. The latest reading shown is from{" "}
+          {new Date(series.sampled_at).toLocaleString()}; these charts show recorded history.
+        </Notice>
+      )}
 
-      <div className="mb-4 grid gap-3 lg:grid-cols-2">
+      <div className="mb-4 grid gap-4 lg:grid-cols-2">
         <Chart
           label="CPU · 100% is the whole machine"
           unavailable={missing.cpu}
           points={samples.map((s) => ({ at: s.at, value: s.cpu_percent }))}
           format={formatCPU}
+          loading={query.isPending}
           empty={empty}
         />
 
@@ -116,6 +102,7 @@ export function InstanceMetrics() {
           // bottom. See TimeSeries.
           ceiling={series?.memory_total_bytes || undefined}
           accent="var(--magenta)"
+          loading={query.isPending}
           empty={empty}
         />
 
@@ -135,6 +122,7 @@ export function InstanceMetrics() {
               unavailable={missing.network}
               points={[]}
               format={perSecond}
+              loading={query.isPending}
               empty={empty}
             />
           </div>
@@ -144,6 +132,7 @@ export function InstanceMetrics() {
               label={interfaces ? `Network in · ${interfaces}` : "Network in"}
               points={rates(samples, "rx_bytes_per_sec")}
               format={perSecond}
+              loading={query.isPending}
               empty={empty}
             />
 
@@ -152,6 +141,7 @@ export function InstanceMetrics() {
               points={rates(samples, "tx_bytes_per_sec")}
               format={perSecond}
               accent="var(--magenta)"
+              loading={query.isPending}
               empty={empty}
             />
           </>
@@ -171,6 +161,7 @@ export function InstanceMetrics() {
             points={samples.map((s) => ({ at: s.at, value: s.disk_bytes }))}
             format={formatBytes}
             ceiling={series?.disk_total_bytes || undefined}
+            loading={query.isPending}
             empty={empty}
           />
         </div>
@@ -192,6 +183,7 @@ function Chart({
   ceiling,
   accent,
   empty,
+  loading,
 }: {
   label: string;
   unavailable?: string;
@@ -200,13 +192,12 @@ function Chart({
   ceiling?: number;
   accent?: string;
   empty: string;
+  loading?: boolean;
 }) {
   return (
     <Card>
       <CardContent>
-        <div className="mb-2 text-[11px] tracking-[0.12em] text-muted-foreground uppercase">
-          {label}
-        </div>
+        <div className="dashboard-chart-label">{label}</div>
         {unavailable ? (
           <Notice>{unavailable}</Notice>
         ) : (
@@ -215,6 +206,7 @@ function Chart({
             format={format}
             ceiling={ceiling}
             accent={accent}
+            loading={loading}
             empty={empty}
           />
         )}

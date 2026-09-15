@@ -56,8 +56,7 @@ type User struct {
 	// box to somebody else should be able to find out whose account is
 	// whose. It is not a second way to sign in and never becomes one.
 	Email string
-	// Avatar is a name from Avatars, never a path or a URL, and never
-	// empty — see DefaultAvatar.
+	// Avatar is an upload version or a legacy preset name. Empty uses initials.
 	Avatar string
 	// BlockedAt is when somebody shut this account out, nil while it is
 	// not. Every door checks it — see ErrBlocked — and nothing about the
@@ -99,36 +98,8 @@ func (u *User) Admin() bool {
 // Blocked reports whether this account may authenticate at all.
 func (u *User) Blocked() bool { return u != nil && u.BlockedAt != nil }
 
-// Avatars are the faces the dashboard ships, by name.
-//
-// The list is here for the reason Themes is: the daemon is what refuses
-// a name, and a second list in the browser would be one to disagree
-// with it. The files are `dashboard/public/profiles/<name>.png`.
-//
-// **Adding one is two edits — the file, and this line — and they cannot
-// be derived from each other**: the images are in the dashboard's
-// image and this runs in the daemon's, which are two containers. What
-// makes two edits safe is that forgetting either fails a test rather
-// than shipping: a name here with no file there is a broken image on
-// somebody's account, and a file there with no name here is a face
-// nobody can choose and nobody knows is missing. See avatars_test.go.
-//
-// **They are the palettes' own names**, because they are drawn in the
-// same colours: somebody on the red theme picking the red face is the
-// whole of why there is more than one. A second vocabulary for one set
-// of colours would be one to keep in step by hand, and there is nothing
-// to gain by calling the same red something else here.
-//
-// **Sharing the vocabulary is not the same as being the same list.**
-// Every palette happens to have a face today, and nothing here requires
-// that: a face is an image somebody has to draw and a palette is twenty
-// lines of CSS, so the two move at different speeds and `blue` went a
-// release with a palette and no face. They are read for different
-// questions, and a face missing for a palette costs somebody on that
-// palette a choice rather than a broken screen — which is why there is
-// no test tying them together, unlike `Themes` and the stylesheet,
-// where disagreeing *is* a fault. One here would fail for a reason that
-// is not one.
+// Avatars are legacy preset names accepted for older clients. The current
+// dashboard offers uploads and uses initials when no picture is set.
 var Avatars = []string{
 	"blue", "cyan", "hacker", "helix", "mono", "orange", "pink", "purple", "red",
 }
@@ -169,27 +140,13 @@ func ValidUsername(s string) error {
 	return nil
 }
 
-// DefaultAvatar is the face an account arrives with.
-//
-// **There is no "no face".** It was an answer for one release — the
-// picker offered it first and the sidebar drew two letters of the
-// username instead — and it was the answer almost every account had,
-// because it was what an account was made with. So the ordinary state
-// of the feature was its own fallback, and the fallback was a second
-// thing the same row could be, drawn by a second branch on every
-// screen.
-//
-// Cyan because it is the interface's own accent and the palette an
-// account already starts on: a new account looks like this instance
-// rather than like one nobody has finished setting up. See migration
-// 00048, which is what makes it true of the accounts that already
-// exist.
-const DefaultAvatar = "cyan"
+// DefaultAvatar leaves new accounts without an uploaded picture.
+const DefaultAvatar = ""
 
-// ValidAvatar reports whether s is one of them. Empty is not one: see
-// DefaultAvatar.
+// ValidAvatar accepts legacy preset preferences and clearing them. New
+// pictures go through SetAvatar, never an arbitrary URL in a profile edit.
 func ValidAvatar(s string) bool {
-	return slices.Contains(Avatars, s)
+	return s == "" || slices.Contains(Avatars, s)
 }
 
 // ValidEmail is one @ with something either side and no spaces.

@@ -25,6 +25,7 @@ const RoleToRead = user.RoleMember
 type Service struct {
 	db     *database.DB
 	reader *Reader
+	hosts  Hosts
 	// series is the container-level history, for the one question that
 	// is about all of them at once: what on this box is using it. The
 	// numbers are metrics' — this module adds who may ask.
@@ -81,7 +82,8 @@ func (s *Service) Series(ctx context.Context, caller *user.User, window string) 
 		out.Interfaces = interfaces
 	}
 	out.Unavailable = s.reader.Unavailable()
-	return out, nil
+	out.SampledAt, err = s.Repo().SampledAt(ctx, 0)
+	return out, err
 }
 
 // Containers is what every container on this instance is using right

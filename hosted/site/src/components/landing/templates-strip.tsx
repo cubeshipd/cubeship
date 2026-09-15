@@ -1,8 +1,8 @@
+import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 import { TemplateCard } from "@/components/templates/card";
 import { listTemplates } from "@/lib/catalog";
 import { withDeadline } from "@/lib/deadline";
-import { ArrowUpRight } from "lucide-react";
 
 // The four most-starred templates, the same query and card the
 // catalog itself uses, read from the catalog at request time — see the

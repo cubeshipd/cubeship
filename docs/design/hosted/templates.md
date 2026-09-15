@@ -252,6 +252,11 @@ own sanitizer allowlist after raw HTML is parsed, and its relative links
 and images are resolved to the release's commit, so a page never shows a
 newer screenshot than the file it describes.
 
+The detail layout gives the content column an explicit zero-minimum grid
+track so Markdown cannot push the sidebar off screen. Code blocks and tables
+scroll within that column; prose wraps long links and media stays within its
+available width.
+
 **No page advertises a command that does not exist.** Until an instance
 can apply a template, the detail page offers the file and the address an
 instance would read it from.

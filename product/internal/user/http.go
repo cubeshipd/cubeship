@@ -41,6 +41,9 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET /users", auth(http.HandlerFunc(h.list)))
 	r.Handle("GET /users/me", auth(http.HandlerFunc(h.whoAmI)))
 	r.Handle("PATCH /users/me", auth(http.HandlerFunc(h.setPreferences)))
+	r.Handle("GET /users/{username}/avatar", auth(http.HandlerFunc(h.avatar)))
+	r.Handle("PUT /users/me/avatar", auth(http.HandlerFunc(h.setAvatar)))
+	r.Handle("DELETE /users/me/avatar", auth(http.HandlerFunc(h.clearAvatar)))
 	// Someone leaves, or a laptop does. Neither had an answer here
 	// before, and "go and delete the rows yourself" is not one.
 	r.Handle("PATCH /users/{username}", auth(http.HandlerFunc(h.updateUser)))
@@ -206,16 +209,13 @@ type WhoAmIResponse struct {
 	// What this account says about the person holding it. The first two
 	// are absent when nothing was set, which is their normal state.
 	//
-	// **The face is always here**, because there is no account without
-	// one — see user.DefaultAvatar. Sent even when it is the default so
-	// the dashboard has one answer to draw rather than an answer and a
-	// fallback, which is a second place the default would be written
-	// down.
+	// Avatar is legacy metadata. AvatarURL identifies the uploaded image;
+	// when it is absent, clients render initials.
 	DisplayName string `json:"display_name,omitempty"`
 	Email       string `json:"email,omitempty"`
 	Avatar      string `json:"avatar"`
-	// Avatars is which faces this instance ships, for the same reason
-	// Themes is served: the daemon is what refuses a name.
+	AvatarURL   string `json:"avatar_url,omitempty"`
+	// Avatars is retained for response compatibility; new clients upload images.
 	Avatars []string `json:"avatars,omitempty"`
 	// Key is the API key this request carried, absent for a session.
 	Key *KeyResponse `json:"key,omitempty"`
@@ -412,7 +412,7 @@ func (h *Handler) whoAmI(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, WhoAmIResponse{
 		Username: u.Username, Role: u.Role, HasPassword: has,
 		Theme: u.Theme, Themes: Themes,
-		DisplayName: u.DisplayName, Email: u.Email, Avatar: u.Avatar, Avatars: Avatars,
+		DisplayName: u.DisplayName, Email: u.Email, Avatar: u.Avatar, AvatarURL: u.AvatarURL(),
 		Key: h.svc.KeyResponse(r.Context(), u), AccessRole: h.svc.RoleName(r.Context(), u.AccessRoleID),
 		Grants: grantsOf(u),
 	})
@@ -432,6 +432,7 @@ type UserResponse struct {
 	DisplayName string `json:"display_name,omitempty"`
 	Email       string `json:"email,omitempty"`
 	Avatar      string `json:"avatar"`
+	AvatarURL   string `json:"avatar_url,omitempty"`
 	// BlockedAt is when this account was shut out, absent while it is
 	// not. **One field rather than a flag and a date**: the two would
 	// be one fact with two places to disagree about it, and when it
@@ -454,7 +455,7 @@ type UserResponse struct {
 func userResponseFor(u *User) UserResponse {
 	return UserResponse{
 		Username: u.Username, Role: u.Role, Theme: u.Theme,
-		DisplayName: u.DisplayName, Email: u.Email, Avatar: u.Avatar,
+		DisplayName: u.DisplayName, Email: u.Email, Avatar: u.Avatar, AvatarURL: u.AvatarURL(),
 		BlockedAt: u.BlockedAt, CreatedAt: u.CreatedAt, AccessRoleID: u.AccessRoleID,
 	}
 }
@@ -519,7 +520,7 @@ func (h *Handler) setPreferences(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, UserResponse{
 		Username: updated.Username, Role: updated.Role,
 		Theme: updated.Theme, CreatedAt: updated.CreatedAt,
-		DisplayName: updated.DisplayName, Email: updated.Email, Avatar: updated.Avatar,
+		DisplayName: updated.DisplayName, Email: updated.Email, Avatar: updated.Avatar, AvatarURL: updated.AvatarURL(),
 	})
 }
 
@@ -721,6 +722,12 @@ func (h *Handler) revokeAPIKey(w http.ResponseWriter, r *http.Request) {
 // two refusals are the ones they all raise.
 func WriteError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrNoAvatar):
+		http.Error(w, err.Error(), http.StatusNotFound)
+	case errors.Is(err, ErrAvatarTooLarge):
+		http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
+	case errors.Is(err, ErrAvatarType):
+		http.Error(w, err.Error(), http.StatusUnsupportedMediaType)
 	case errors.Is(err, ErrUnauthenticated):
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	case errors.Is(err, ErrForbidden), errors.Is(err, ErrKeyScopeWider), errors.Is(err, ErrKeyRestricted):

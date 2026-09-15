@@ -1,13 +1,7 @@
 import type { ReactNode } from "react";
 import { Wordmark } from "@/components/brand";
 
-// The shell both unauthenticated screens wear: signing in, and claiming
-// an instance that has never been signed into. They are the same moment
-// from the visitor's side, so they are the same layout — the brand panel
-// is written once here and neither page can drift from it.
-//
-// Below `lg` the panel is gone rather than stacked: half a piece of
-// artwork above a form is worse than no artwork.
+// Sign-in and setup share the same product identity and form layout.
 export function AuthLayout({
   title,
   description,
@@ -20,101 +14,86 @@ export function AuthLayout({
   footer?: ReactNode;
 }) {
   return (
-    <div className="flex min-h-screen bg-card">
-      <BrandPanel />
-
-      <main className="flex flex-1 items-center justify-center px-6 py-12">
-        <div className="w-full max-w-[22rem]">
-          <Wordmark className="mb-10 text-sm lg:hidden" markClassName="size-6" />
-
-          <div className="hud-frame border border-border bg-background/60 p-6">
-            <h1 className="text-lg font-bold tracking-[0.16em] uppercase">{title}</h1>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{description}</p>
-
-            <div className="mt-7">{children}</div>
-          </div>
-
-          {footer && (
-            <div className="mt-5 font-mono text-[11px] leading-relaxed text-subtle-foreground">
-              {footer}
-            </div>
-          )}
+    <div className="auth-layout">
+      <aside className="auth-brand-panel">
+        <Wordmark className="relative text-sm" markClassName="size-7" />
+        <div className="auth-brand-copy">
+          <h2>
+            Your infrastructure.
+            <br />
+            Ready to ship.
+          </h2>
+          <p>
+            Deploy apps, connect your data and keep everything in reach. On servers you control.
+          </p>
+        </div>
+        <InfrastructureMark />
+        <div className="auth-brand-footer">
+          <span>Open source.</span>
+          <span>Self hosted.</span>
+          <span>All yours.</span>
+        </div>
+      </aside>
+      <main className="auth-main">
+        <div className="auth-form-wrap">
+          <Wordmark className="auth-mobile-brand text-sm" markClassName="size-6" />
+          <header className="auth-form-heading">
+            <h1>{title}</h1>
+            <p>{description}</p>
+          </header>
+          {children}
+          {footer && <div className="auth-form-footer">{footer}</div>}
         </div>
       </main>
     </div>
   );
 }
 
-function BrandPanel() {
+function InfrastructureMark() {
+  const dots: { key: string; x: number; y: number; opacity: number }[] = [];
+  for (let face = 0; face < 3; face++) {
+    for (let row = 0; row <= 20; row++) {
+      for (let col = 0; col <= 20; col++) {
+        const u = col / 20;
+        const v = row / 20;
+        const x = face === 0 ? 270 + (u - v) * 170 : face === 1 ? 100 + u * 170 : 270 + u * 170;
+        const y =
+          face === 0
+            ? 14 + (u + v) * 72
+            : face === 1
+              ? 86 + u * 72 + v * 166
+              : 158 - u * 72 + v * 166;
+        dots.push({
+          key: `${face}-${row}-${col}`,
+          x,
+          y,
+          opacity:
+            row === 0 || col === 0 || row === 20 || col === 20
+              ? 0.8
+              : 0.22 + ((row + col) % 5) * 0.08,
+        });
+      }
+    }
+  }
   return (
-    <aside className="relative hidden w-[44%] shrink-0 flex-col justify-between overflow-hidden border-r border-border-strong bg-background p-12 lg:flex xl:w-[48%]">
-      {/* The grid is faded out at the edges so it reads as texture
-          rather than as a table nobody can click. */}
-      <div
-        aria-hidden="true"
-        className="absolute inset-0 bg-grid"
-        style={{
-          maskImage: "radial-gradient(120% 90% at 30% 20%, #000 0%, transparent 72%)",
-          WebkitMaskImage: "radial-gradient(120% 90% at 30% 20%, #000 0%, transparent 72%)",
-        }}
+    <svg viewBox="0 0 540 350" fill="none" className="auth-art" aria-hidden="true">
+      {dots.map((dot) => (
+        <circle
+          key={dot.key}
+          cx={dot.x}
+          cy={dot.y}
+          r="1"
+          fill="currentColor"
+          opacity={dot.opacity}
+        />
+      ))}
+      <path
+        d="M0 242H110L270 312L435 240H540M0 132H102L270 202L438 131H540"
+        stroke="currentColor"
+        strokeOpacity=".22"
+        strokeWidth=".7"
       />
-      <div aria-hidden="true" className="absolute inset-0 bg-scanlines opacity-60" />
-      <div
-        aria-hidden="true"
-        className="absolute -bottom-32 -left-40 size-[42rem] blur-3xl"
-        style={{
-          background:
-            "radial-gradient(circle, color-mix(in srgb, var(--primary) 30%, transparent) 0%, transparent 70%)",
-        }}
-      />
-      {/* The magenta sits opposite the cyan so the panel has two light
-          sources rather than one wash. */}
-      <div
-        aria-hidden="true"
-        className="absolute -top-40 -right-32 size-[30rem] blur-3xl"
-        style={{
-          background:
-            "radial-gradient(circle, color-mix(in srgb, var(--magenta) 22%, transparent) 0%, transparent 70%)",
-        }}
-      />
-
-      <Wordmark className="relative text-sm" markClassName="size-6" />
-
-      <div className="relative max-w-md">
-        <h2 className="text-3xl leading-[1.15] font-bold tracking-tight text-balance uppercase">
-          Your own platform,
-          <br />
-          <span className="text-primary text-glow">on one machine.</span>
-        </h2>
-        <p className="mt-5 text-sm leading-relaxed text-muted-foreground">
-          Cubeship runs your apps on a single VPS — build, deploy, route and renew certificates,
-          from one binary you installed with one command.
-        </p>
-
-        <ul className="mt-8 space-y-2.5">
-          <Point>
-            <code className="text-foreground">docker push</code> is the deploy
-          </Point>
-          <Point>TLS and routing handled by Traefik, no DNS busywork</Point>
-          <Point>One org, one project, one environment — or a hundred</Point>
-        </ul>
-      </div>
-
-      <p className="relative font-mono text-[11px] tracking-[0.18em] text-subtle-foreground uppercase">
-        self-hosted · no external services
-      </p>
-    </aside>
-  );
-}
-
-function Point({ children }: { children: ReactNode }) {
-  return (
-    <li className="flex items-start gap-3 text-sm text-muted-foreground">
-      <span
-        aria-hidden="true"
-        className="mt-[0.4rem] size-1.5 shrink-0 bg-primary shadow-[0_0_8px_var(--primary)]"
-      />
-      <span>{children}</span>
-    </li>
+      <path d="M8 242H58M468 131H498" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
   );
 }

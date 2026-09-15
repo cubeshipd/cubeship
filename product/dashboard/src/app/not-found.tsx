@@ -1,4 +1,4 @@
-import Link from "next/link";
+import Link from "@/components/navigation-link";
 
 // The 404 every unmatched route lands on, including a project or an app
 // whose slug no longer exists — a link someone was sent, or a bookmark

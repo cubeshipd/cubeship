@@ -7,6 +7,10 @@ import { cn } from "cn";
 type Tone = { dot: string; text: string; edge: string; pulse?: boolean };
 
 const tones: Record<string, Tone> = {
+  unhealthy: { dot: "bg-destructive", text: "text-destructive", edge: "border-destructive/40" },
+  dead: { dot: "bg-destructive", text: "text-destructive", edge: "border-destructive/40" },
+  restarting: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
+  paused: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40" },
   running: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
   // A server in the cluster that is calling in. Green for the same
   // reason `running` is: it is the state where nothing needs doing.

@@ -93,7 +93,7 @@ export function Filters({
         />
       </form>
       <TagSelect tags={tags} active={activeTag} onChange={(tag) => push({ tag })} />
-      <div className="template-sort" aria-label="Sort templates">
+      <fieldset className="template-sort" aria-label="Sort templates">
         {SORTS.map((option) => (
           <button
             key={option.value}
@@ -104,7 +104,7 @@ export function Filters({
             {option.label}
           </button>
         ))}
-      </div>
+      </fieldset>
     </div>
   );
 }

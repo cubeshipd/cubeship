@@ -1,10 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { use, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
+import Link from "@/components/navigation-link";
 import { Button } from "@/components/ui/button";
 import { api } from "@/lib/api";
 

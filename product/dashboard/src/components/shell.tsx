@@ -1,9 +1,9 @@
 "use client";
 
-import { cn } from "cn";
 import {
   ActivityIcon,
   ArchiveIcon,
+  ChevronsUpDownIcon,
   ContainerIcon,
   DatabaseIcon,
   FolderTreeIcon,
@@ -13,6 +13,7 @@ import {
   KeyRoundIcon,
   LayoutTemplateIcon,
   LogOutIcon,
+  MenuIcon,
   ScrollTextIcon,
   ServerCogIcon,
   ServerIcon,
@@ -22,17 +23,19 @@ import {
   SparklesIcon,
   UsersIcon,
 } from "lucide-react";
-import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { Wordmark } from "@/components/brand";
 import { CommandPalette } from "@/components/command-palette";
 import { GitHubStar } from "@/components/github-star";
 import { HeaderRail } from "@/components/header-rail";
 import { InstanceUpdate } from "@/components/instance-update";
+import Link from "@/components/navigation-link";
+import { SessionLoading } from "@/components/page-loading";
 import { QueryProvider } from "@/components/query-provider";
 import { ReleaseNotes, useReleaseNotes } from "@/components/release-notes";
 import { SessionProvider } from "@/components/session-context";
+import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,7 +45,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { api, avatarSrc, can, type Me, personName } from "@/lib/api";
+import { UserAvatar } from "@/components/user-avatar";
+import { api, can, type Me, personName } from "@/lib/api";
 
 // The two layers, and what separates them.
 //
@@ -188,6 +192,13 @@ export const sections: { label?: string; items: NavItem[] }[] = [
         owns: ["/servers"],
         resource: "servers",
       },
+      {
+        href: "/components",
+        label: "Components",
+        icon: ServerCogIcon,
+        owns: ["/components"],
+        admin: true,
+      },
       { href: "/settings", label: "Settings", icon: ServerCogIcon, resource: "settings" },
     ],
   },
@@ -230,80 +241,70 @@ export function Shell({ children }: { children: ReactNode }) {
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
 
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: attempt intentionally restarts session bootstrap after Retry
   useEffect(() => {
+    let live = true;
+    setSessionError(null);
     api
       .get<Me>("/users/me")
-      .then(setMe)
-      .catch(() => router.replace("/login"));
-  }, [router]);
+      .then((account) => {
+        if (live) setMe(account);
+      })
+      .catch((error) => {
+        if (!live) return;
+        if (error?.status === 401) router.replace("/login");
+        else
+          setSessionError(
+            error instanceof Error ? error.message : "Check your connection and try again.",
+          );
+      });
+    return () => {
+      live = false;
+    };
+  }, [router, attempt]);
 
-  if (!me) return null;
+  const updateSession = useCallback((change: Partial<Me>) => {
+    setMe((current) => (current ? { ...current, ...change } : current));
+  }, []);
+
+  if (!me)
+    return <SessionLoading error={sessionError} onRetry={() => setAttempt((value) => value + 1)} />;
 
   return (
-    <SessionProvider me={me} update={(change) => setMe((m) => (m ? { ...m, ...change } : m))}>
+    <SessionProvider me={me} update={updateSession}>
       <QueryProvider>
         {/* What changed, once, after an upgrade — and on demand from
             the menu below, which is why it wraps rather than sits
             beside: the item that opens it is three components down. */}
         <ReleaseNotes>
-          <div className="flex min-h-screen bg-background">
-            <nav className="sticky top-0 flex h-screen w-60 shrink-0 flex-col border-r border-border bg-card">
-              {/* A link rather than a plate: the mark is the way back to
-                the projects grid, which is where every other product
-                puts it and where a click on it is aimed. */}
-              <Link
-                href="/"
-                className="flex h-14 items-center border-b border-border px-4 text-primary transition-opacity hover:opacity-80"
-              >
-                <Wordmark className="text-xs" markClassName="size-5" />
+          <div className="dashboard-shell">
+            <a className="dashboard-skip" href="#dashboard-content">
+              Skip to content
+            </a>
+            <aside className="dashboard-sidebar">
+              <Link href="/" aria-label="Cubeship home" className="dashboard-brand">
+                <Wordmark className="text-sm" markClassName="size-6" />
               </Link>
-
-              <div className="flex-1 p-2">
-                {sections.map((section, i) => {
-                  const items = section.items.filter((item) => offered(me, item));
-                  if (items.length === 0) return null;
-                  return (
-                    <div key={section.label ?? "workspace"} className={i > 0 ? "mt-5" : undefined}>
-                      {/* A heading rather than a rule: a line says these
-                        are apart, a word says what the other side is. */}
-                      {section.label && (
-                        <p className="mb-1 px-3 text-[10px] font-semibold tracking-[0.18em] text-subtle-foreground uppercase">
-                          {section.label}
-                        </p>
-                      )}
-                      {items.map((item) => (
-                        <NavLink key={item.href} {...item} />
-                      ))}
-                    </div>
-                  );
-                })}
-              </div>
-
-              {/* The account button and nothing beside it. The link to
-                  the repository shared this row as an icon and a
-                  number, which is a link nobody reads as an invitation
-                  taking width from the one control down here that
-                  people use — it is an item in the menu now, where it
-                  can ask. */}
-              <div className="border-t border-border p-2">
+              <Navigation me={me} />
+              <div className="dashboard-account">
                 <UserMenu me={me} />
               </div>
-            </nav>
+            </aside>
 
             <InstanceUpdate />
 
-            {/* Its screens come from the sidebar's own list rather than
-                a copy: a page added to one would otherwise be missing
-                from the other, and the one it goes missing from is the
-                one nobody notices. */}
-            <CommandPalette screens={SCREENS} />
-
-            <main className="min-w-0 flex-1">
-              {/* The rail is the Shell's, not the page's: where you are
-                  is a question every screen has and half of them used
-                  to answer with a hand-written "back" link. */}
-              <HeaderRail>
-                <div className="mx-auto max-w-5xl px-8 py-8">{children}</div>
+            <main className="dashboard-main">
+              <CommandPalette screens={SCREENS} />
+              <HeaderRail navigation={<MobileNavigation me={me} />}>
+                <div
+                  id="dashboard-content"
+                  tabIndex={-1}
+                  className="dashboard-container dashboard-content"
+                >
+                  {children}
+                </div>
               </HeaderRail>
             </main>
           </div>
@@ -313,32 +314,70 @@ export function Shell({ children }: { children: ReactNode }) {
   );
 }
 
-function NavLink({ href, label, owns = [], icon: Icon }: NavItem) {
+function Navigation({ me, onNavigate }: { me: Me; onNavigate?: () => void }) {
+  return (
+    <nav className="dashboard-navigation" aria-label="Main navigation">
+      {sections.map((section) => {
+        const items = section.items.filter((item) => offered(me, item));
+        if (!items.length) return null;
+        return (
+          <div key={section.label ?? "workspace"} className="dashboard-nav-section">
+            <p className="dashboard-nav-label">{section.label ?? "Workspace"}</p>
+            {items.map((item) => (
+              <NavLink key={item.href} {...item} onNavigate={onNavigate} />
+            ))}
+          </div>
+        );
+      })}
+    </nav>
+  );
+}
+
+function MobileNavigation({ me }: { me: Me }) {
+  const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  // biome-ignore lint/correctness/useExhaustiveDependencies: close the mobile drawer after a route change
+  useEffect(() => {
+    setOpen(false);
+  }, [pathname]);
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger className="dashboard-menu-toggle" aria-label="Open navigation">
+        <MenuIcon className="size-5" />
+      </DialogTrigger>
+      <DialogContent className="dashboard-mobile-navigation">
+        <DialogTitle className="sr-only">Navigation</DialogTitle>
+        <Link href="/" className="dashboard-brand" onClick={() => setOpen(false)}>
+          <Wordmark className="text-sm" markClassName="size-6" />
+        </Link>
+        <Navigation me={me} onNavigate={() => setOpen(false)} />
+        <div className="dashboard-account">
+          <UserMenu me={me} />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function NavLink({
+  href,
+  label,
+  owns = [],
+  icon: Icon,
+  onNavigate,
+}: NavItem & { onNavigate?: () => void }) {
   const pathname = usePathname();
   const active =
     pathname === href || owns.some((p) => pathname === p || pathname.startsWith(`${p}/`));
-
   return (
     <Link
       href={href}
+      onClick={onNavigate}
       aria-current={active ? "page" : undefined}
-      className={cn(
-        "relative flex items-center gap-2.5 px-3 py-2 text-[13px] font-medium tracking-[0.08em] uppercase transition-colors",
-        active
-          ? "bg-primary/8 text-foreground"
-          : "text-muted-foreground hover:bg-secondary hover:text-foreground",
-      )}
+      className="dashboard-nav-link"
     >
-      {/* The lit rail down the left edge is what says "you are here";
-          the background tint alone is too quiet at this contrast. */}
-      {active && (
-        <span
-          aria-hidden="true"
-          className="absolute inset-y-0 left-0 w-0.5 bg-primary shadow-[0_0_10px_var(--primary)]"
-        />
-      )}
-      <Icon className={cn("size-4 shrink-0", active ? "text-primary" : "text-subtle-foreground")} />
-      {label}
+      <Icon className="size-4 shrink-0" aria-hidden="true" />
+      <span>{label}</span>
     </Link>
   );
 }
@@ -350,21 +389,16 @@ function UserMenu({ me }: { me: Me }) {
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
-          <button
-            type="button"
-            className="flex w-full min-w-0 items-center gap-2.5 border border-transparent px-2 py-2 text-left text-sm transition-colors hover:border-border hover:bg-secondary"
-          >
-            {/* No branch here any more. Every account has a face, so
-                the two letters of a username this used to fall back to
-                were a second thing the row could be — and the one it
-                almost always was. */}
-            {/* biome-ignore lint/performance/noImgElement: a static file in this image's own public directory */}
-            <img
-              src={avatarSrc(me.avatar, "small")}
-              alt=""
-              className="size-6 shrink-0 border border-primary/40 object-cover"
+          <button type="button" className="dashboard-user-trigger">
+            <UserAvatar person={me} className="size-8" />
+            <span className="dashboard-user-name">
+              <span>{personName(me)}</span>
+              <small>{me.role === "admin" ? "Administrator" : "Your account"}</small>
+            </span>
+            <ChevronsUpDownIcon
+              className="ml-auto size-3.5 shrink-0 text-muted-foreground"
+              aria-hidden="true"
             />
-            <span className="truncate text-xs">{personName(me)}</span>
           </button>
         }
       />

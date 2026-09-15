@@ -2,12 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { CheckIcon } from "lucide-react";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
+import Link from "@/components/navigation-link";
 import { SearchableSelect } from "@/components/searchable-select";
 import { TextField } from "@/components/text-field";
 import { Card, CardContent } from "@/components/ui/card";

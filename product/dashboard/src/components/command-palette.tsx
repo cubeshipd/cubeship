@@ -2,8 +2,9 @@
 
 import { CornerDownLeftIcon, type BoxIcon as MarkIcon, SearchIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { MARKS } from "@/components/marks";
+import { NavigationProgress } from "@/components/navigation-link";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import {
   type App,
@@ -140,6 +141,7 @@ export function CommandPalette({
   screens: { label: string; href: string; icon: typeof MarkIcon }[];
 }) {
   const router = useRouter();
+  const [navigating, startTransition] = useTransition();
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>("search");
   const [query, setQuery] = useState("");
@@ -235,7 +237,7 @@ export function CommandPalette({
     (entry: Entry | undefined) => {
       if (!entry) return;
       setOpen(false);
-      router.push(entry.href);
+      startTransition(() => router.push(entry.href));
     },
     [router],
   );
@@ -266,63 +268,66 @@ export function CommandPalette({
   }, [picked]);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent
-        className="top-[18%] translate-y-0 gap-0 p-0 sm:max-w-xl"
-        showCloseButton={false}
-        aria-label="Go to"
-      >
-        <div className="flex items-center gap-2 border-b border-border px-3">
-          <SearchIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
-          {/* autoFocus: a palette that does not take the caret is one
+    <>
+      <NavigationProgress pending={navigating} />
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent
+          className="dashboard-command-palette top-[18%] translate-y-0 gap-0 p-0 sm:max-w-xl"
+          showCloseButton={false}
+          aria-label="Go to"
+        >
+          <div className="flex items-center gap-2 border-b border-border px-3">
+            <SearchIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+            {/* autoFocus: a palette that does not take the caret is one
               you have to click, which is the thing it exists to save. */}
-          <input
-            autoFocus
-            value={query}
-            spellCheck={false}
-            placeholder={showing === "command" ? "Run a command…" : "Go to…"}
-            onChange={(e) => {
-              setQuery(e.target.value);
-              setPicked(0);
-            }}
-            onKeyDown={onKeyDown}
-            className="h-11 min-w-0 flex-1 bg-transparent font-mono text-sm outline-none placeholder:font-sans placeholder:text-muted-foreground"
-          />
-        </div>
+            <input
+              autoFocus
+              value={query}
+              spellCheck={false}
+              placeholder={showing === "command" ? "Run a command…" : "Go to…"}
+              onChange={(e) => {
+                setQuery(e.target.value);
+                setPicked(0);
+              }}
+              onKeyDown={onKeyDown}
+              className="h-11 min-w-0 flex-1 bg-transparent font-mono text-sm outline-none placeholder:font-sans placeholder:text-muted-foreground"
+            />
+          </div>
 
-        <div ref={list} className="max-h-80 overflow-y-auto p-1">
-          {results.length === 0 && (
-            <p className="px-3 py-6 text-center text-sm text-muted-foreground">
-              Nothing matches that.
-            </p>
-          )}
-          {results.map((entry, i) => (
-            <button
-              key={entry.id}
-              type="button"
-              data-picked={i === picked}
-              onMouseMove={() => setPicked(i)}
-              onClick={() => go(entry)}
-              className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors data-[picked=true]:bg-secondary"
-            >
-              <entry.icon aria-hidden="true" className="size-4 shrink-0 text-subtle-foreground" />
-              <span className="min-w-0 flex-1 truncate font-mono text-sm">{entry.label}</span>
-              {entry.detail && (
-                <span className="shrink-0 truncate font-mono text-[11px] text-muted-foreground">
-                  {entry.detail}
+          <div ref={list} className="max-h-80 overflow-y-auto p-1">
+            {results.length === 0 && (
+              <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                Nothing matches that.
+              </p>
+            )}
+            {results.map((entry, i) => (
+              <button
+                key={entry.id}
+                type="button"
+                data-picked={i === picked}
+                onMouseMove={() => setPicked(i)}
+                onClick={() => go(entry)}
+                className="flex w-full items-center gap-3 px-3 py-2 text-left transition-colors data-[picked=true]:bg-secondary"
+              >
+                <entry.icon aria-hidden="true" className="size-4 shrink-0 text-subtle-foreground" />
+                <span className="min-w-0 flex-1 truncate font-mono text-sm">{entry.label}</span>
+                {entry.detail && (
+                  <span className="shrink-0 truncate font-mono text-[11px] text-muted-foreground">
+                    {entry.detail}
+                  </span>
+                )}
+                <span className="shrink-0 text-[10px] tracking-[0.14em] text-subtle-foreground uppercase">
+                  {entry.kind}
                 </span>
-              )}
-              <span className="shrink-0 text-[10px] tracking-[0.14em] text-subtle-foreground uppercase">
-                {entry.kind}
-              </span>
-              {i === picked && (
-                <CornerDownLeftIcon aria-hidden="true" className="size-3 shrink-0 text-primary" />
-              )}
-            </button>
-          ))}
-        </div>
-      </DialogContent>
-    </Dialog>
+                {i === picked && (
+                  <CornerDownLeftIcon aria-hidden="true" className="size-3 shrink-0 text-primary" />
+                )}
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
@@ -356,7 +361,7 @@ async function catalogue(): Promise<Entry[]> {
       label: p.slug,
       icon: MARKS.project,
       kind: "project",
-      href: `/projects/${p.slug}`,
+      href: `/projects/${p.slug}/production`,
     })),
     ...datastores.map((d) => ({
       id: `db:${d.name}`,

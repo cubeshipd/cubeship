@@ -7,6 +7,7 @@ import { ErrorAlert } from "@/components/error-alert";
 import { RailTabs } from "@/components/header-rail";
 import { InstanceDomain } from "@/components/instance-domain";
 import { Notice } from "@/components/notice";
+import { PageLoading } from "@/components/page-loading";
 import { SectionHeader } from "@/components/section-header";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -45,7 +46,12 @@ function Body() {
       .catch((e) => setError(message(e)));
   }, []);
 
-  if (!current) return <ErrorAlert error={error} />;
+  if (!current)
+    return error ? (
+      <ErrorAlert error={error} />
+    ) : (
+      <PageLoading kind="form" label="Loading instance settings" />
+    );
 
   return (
     <>

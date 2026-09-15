@@ -30,7 +30,7 @@
   /* Surfaces. Near-black with a blue cast, four steps apart by a hair:
      depth comes from 1px lines and glow, never from shadow. */
   --background: #05070a;
-  --card: #0a0e14;
+  --card: #080d13;
   --popover: #0d1219;
   --secondary: #10161f;
   --muted: #10161f;
@@ -44,12 +44,12 @@
   --popover-foreground: #d7e3ec;
   --secondary-foreground: #d7e3ec;
   --accent-foreground: #d7e3ec;
-  --muted-foreground: #7d8fa3;
-  --subtle-foreground: #4e5c6b;
+  --muted-foreground: #94a6b6;
+  --subtle-foreground: #677e90;
 
   /* Lines. */
-  --border: #182430;
-  --border-strong: #263644;
+  --border: #1e2c37;
+  --border-strong: #304452;
   --input: #1d2b38;
 
   /* Cyan is the interface accent; magenta is the brand's second light,
@@ -468,8 +468,8 @@
   [data-slot="alert-title"] {
     font-family: var(--font-sans);
     font-weight: 600;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
+    letter-spacing: 0;
+    text-transform: none;
   }
 
   /* shadcn's checkbox hard-codes its own corner radius, which is the
@@ -480,15 +480,15 @@
     border-radius: 0;
   }
 
-  /* A field's name is a machine label, not prose. */
+  /* Labels read as interface text; entered values stay monospace. */
   [data-slot="label"],
   [data-slot="table"] thead [data-slot="table-head"],
   [data-slot="table-head-sort"] {
     font-family: var(--font-sans);
     font-weight: 600;
-    font-size: 0.6875rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0;
+    text-transform: none;
   }
 
   [data-slot="input"],
@@ -604,9 +604,9 @@
   /* A step above a section heading rather than level with it: these
      switch what the sections *are*, and at the same size they read as
      one more heading in the column. */
-  font-size: 0.75rem;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  font-size: 0.8125rem;
+  letter-spacing: 0;
+  text-transform: none;
   color: var(--muted-foreground);
 }
 
@@ -969,6 +969,102 @@
 @media (prefers-reduced-motion: reduce) {
   .scan-line::after,
   .scan-block::after {
+    animation: none;
+  }
+}
+
+/* Shared product surfaces; generated primitives keep their behavior. */
+[data-slot="card"] {
+  --card-spacing: 1.25rem;
+  border: 1px solid var(--border);
+  box-shadow: none;
+}
+[data-slot="card"][data-size="sm"] {
+  --card-spacing: 1rem;
+}
+[data-slot="card-title"] {
+  font-size: 18px;
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+[data-slot="button"] {
+  letter-spacing: 0;
+  text-transform: none;
+  transition-duration: 140ms;
+}
+[data-slot="input"],
+[data-slot="textarea"],
+[data-slot="select-trigger"] {
+  border-color: var(--input);
+  border-radius: 0;
+  font-size: 13px;
+}
+[data-slot="textarea"] {
+  line-height: 1.7;
+}
+[data-slot="search-bar"] {
+  background: var(--card);
+  border-color: var(--border-strong);
+}
+[data-slot="dialog-content"] {
+  border: 1px solid var(--border-strong);
+  box-shadow: none;
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+[data-slot="dialog-title"] {
+  font-size: 22px;
+  line-height: 1.25;
+  font-weight: 500;
+  letter-spacing: -0.025em;
+}
+[data-slot="dialog-description"] {
+  line-height: 1.65;
+}
+[data-slot="dialog-header"] {
+  padding-right: 24px;
+  margin-bottom: 8px;
+}
+[data-slot="dialog-footer"] {
+  background: var(--card);
+}
+[data-slot="popover-content"],
+[data-slot="dropdown-menu-content"],
+[data-slot="select-content"] {
+  border: 1px solid var(--border-strong);
+  box-shadow: none;
+}
+[data-slot="dropdown-menu-item"],
+[data-slot="select-item"] {
+  min-height: 34px;
+}
+[data-slot="alert"] {
+  line-height: 1.6;
+}
+[data-slot="button"][aria-pressed="true"] {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, var(--card));
+}
+
+[data-slot="label"],
+[data-slot="table-head"],
+[data-slot="table-head-sort"] {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: none;
+}
+[data-slot="badge"] {
+  letter-spacing: 0.015em;
+  text-transform: none;
+}
+[data-slot="dialog-footer"] [data-slot="button"],
+.dashboard-header-actions [data-slot="button"] {
+  min-height: 34px;
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="dialog-content"],
+  [data-slot="dialog-overlay"] {
     animation: none;
   }
 }

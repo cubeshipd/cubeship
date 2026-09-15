@@ -36,9 +36,9 @@ export function OptionCards<T extends string>({
               onClick={() => onChange(o.value)}
               aria-pressed={selected}
               className={cn(
-                "border p-3 text-left transition-all",
+                "dashboard-option border p-4 text-left transition-colors",
                 selected
-                  ? "neon-edge border-primary/60 bg-primary/8"
+                  ? "border-primary/60 bg-primary/8"
                   : "border-border bg-background hover:border-border-strong",
               )}
             >

@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+minCubeship: "0.7.2"
+project: signoz
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where the SigNoz UI answers
+  - key: ingestDomain
+    type: domain
+    label: Where telemetry from outside the instance is sent
+    help: OTLP over HTTP, with the ingest token as a bearer token. Apps on the instance send to the collector's internal address instead.
+  - key: ingestToken
+    type: secret
+    label: The token senders outside the instance authenticate with
+    generate: 40
+  - key: clickhousePassword
+    type: secret
+    label: ClickHouse's password
+    generate: 32
+  - key: jwtSecret
+    type: secret
+    label: The secret SigNoz signs sessions with
+    generate: 48
+  - key: grpcPort
+    type: number
+    label: The port OTLP gRPC answers on
+    help: Choose a port from 1024 to 65535, and open it in your provider's firewall too.
+    default: 4317
+    min: 1024
+    max: 65535
+
+databases:
+  - key: meta
+    name: signoz-db
+    engine: postgres
+    # The version SigNoz's own Docker install runs.
+    version: "16"
+    database: signoz
+
+apps:
+  # Deployed in this order: the collector waits for ClickHouse and migrates
+  # its schema before it starts.
+  - key: clickhouse
+    name: clickhouse
+    repo: https://github.com/cubeshipd/cubeship-signoz-template
+    ref: v1.0.0
+    build: dockerfile
+    dockerfile: clickhouse/Dockerfile
+    port: 8123
+    health: /ping
+    volumes:
+      - path: /var/lib/clickhouse
+    limits: { cpu: 2, memory: 4Gi }
+    env:
+      CLICKHOUSE_HOST: ${app.clickhouse.internal}
+      CLICKHOUSE_SIGNOZ_PASSWORD: ${input.clickhousePassword}
+
+  - key: collector
+    name: collector
+    repo: https://github.com/cubeshipd/cubeship-signoz-template
+    ref: v1.0.0
+    build: dockerfile
+    dockerfile: collector/Dockerfile
+    port: 4318
+    # No health: a check runs against the domain's port, the receiver that
+    # asks for a token, where nothing answers 2xx without one.
+    domains:
+      - host: ${input.ingestDomain}
+        port: 4319
+    tcp:
+      - port: 4317
+        host: ${input.grpcPort}
+    limits: { cpu: 1, memory: 1Gi }
+    env:
+      SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN: tcp://default:${input.clickhousePassword}@${app.clickhouse.internal}:9000
+      SIGNOZ_OTEL_COLLECTOR_TIMEOUT: 10m
+      LOW_CARDINAL_EXCEPTION_GROUPING: "false"
+      OTLP_BEARER_TOKEN: ${input.ingestToken}
+      SIGNOZ_HOST: ${app.signoz.internal}
+
+  - key: signoz
+    name: signoz
+    image: signoz/signoz
+    tag: v0.141.1
+    port: 8080
+    health: /api/v1/health
+    domains:
+      - host: ${input.domain}
+    attach:
+      - database: meta
+    limits: { cpu: 1, memory: 1Gi }
+    env:
+      SIGNOZ_SQLSTORE_PROVIDER: postgres
+      SIGNOZ_SQLSTORE_POSTGRES_DSN: postgres://${db.meta.user}:${db.meta.password}@${db.meta.host}:${db.meta.port}/${db.meta.name}?sslmode=disable
+      SIGNOZ_TELEMETRYSTORE_PROVIDER: clickhouse
+      SIGNOZ_TELEMETRYSTORE_CLICKHOUSE_DSN: tcp://default:${input.clickhousePassword}@${app.clickhouse.internal}:9000
+      SIGNOZ_TOKENIZER_JWT_SECRET: ${input.jwtSecret}
+      # A double underscore is an underscore in the key: global.external_url.
+      SIGNOZ_GLOBAL_EXTERNAL__URL: https://${input.domain}
+      SIGNOZ_GLOBAL_INGESTION__URL: https://${input.ingestDomain}
+      SIGNOZ_ALERTMANAGER_SIGNOZ_EXTERNAL__URL: https://${input.domain}

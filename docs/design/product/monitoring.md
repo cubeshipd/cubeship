@@ -182,3 +182,33 @@ left edge after every restart is a point somebody reads as a fact. A
 machine whose numbers cannot be read at all — a Mac running `make dev` —
 records nothing rather than a row of zeros, and says so once in the log
 instead of every thirty seconds.
+
+## Machine selection and worker history
+
+`GET /instance/metrics?server=<name>` selects a machine from `/nodes`.
+Omitting `server` still means the control plane. Host percentages are never
+summed: 100% means all cores on the selected machine. The Overview inventory
+counts and the separately labelled workload usage table remain cluster-wide;
+application replicas in that table are combined across machines.
+
+Workers attach `host` telemetry to their existing authenticated reconcile request.
+`machine.Collector.Telemetry` shares the control-plane counter arithmetic without
+needing a local database. It runs at most once per sampling interval; repeated
+heartbeats carry the same timestamp, and the unique `(node_id, at)` index avoids
+duplicate points. No first CPU or network rate is invented. The existing reverse
+channel remains the only communication with workers; no inbound worker port is
+introduced.
+
+Migration 00059 scopes `host_samples` by node. Zero preserves all existing local
+history. `host_reports` stores each worker's machine metadata and missing-reading
+reasons; the authenticated node identity determines which row can be written.
+Samples retain their one-day horizon. Pruning still runs when the local host's
+counters are unreadable. `sampled_at` reports the newest raw timestamp separately
+from the chart buckets, so a 24-hour chart does not look stale merely because its
+last bucket starts several minutes ago.
+
+A worker from an older release continues reconciling, but its charts explain that
+host monitoring has not been reported and that the worker needs updating. Offline
+machines keep their historical charts with a warning; missing and stale data are
+never presented as current zeros. The `instance_metrics` MCP tool accepts the same
+optional machine name.

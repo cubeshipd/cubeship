@@ -1,8 +1,8 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
+import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { SearchableSelect } from "@/components/searchable-select";
 import { TextField } from "@/components/text-field";

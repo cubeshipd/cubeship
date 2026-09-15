@@ -1,6 +1,5 @@
 "use client";
 
-import { cn } from "cn";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
@@ -9,11 +8,12 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailTabs } from "@/components/header-rail";
+import { ProfileImage } from "@/components/profile-image";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
 import { SearchableSelect } from "@/components/searchable-select";
 import { SectionHeader } from "@/components/section-header";
-import { useSession } from "@/components/session-context";
+import { useSession, useUpdateSession } from "@/components/session-context";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -24,10 +24,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ValueCard } from "@/components/value-card";
-import { type AccessRoles, type ApiKey, api, avatarSrc } from "@/lib/api";
+import { type AccessRoles, type ApiKey, api, type Me } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // The screen for everything that is **yours** rather than the
@@ -83,10 +82,10 @@ export default function Account() {
 // the field not existing.
 function General() {
   const me = useSession();
+  const updateSession = useUpdateSession();
   const [displayName, setDisplayName] = useState(me.display_name ?? "");
   const [username, setUsername] = useState(me.username);
   const [email, setEmail] = useState(me.email ?? "");
-  const [avatar, setAvatar] = useState(me.avatar);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -94,8 +93,7 @@ function General() {
   const dirty =
     displayName !== (me.display_name ?? "") ||
     username !== me.username ||
-    email !== (me.email ?? "") ||
-    avatar !== me.avatar;
+    email !== (me.email ?? "");
 
   async function save(e: React.FormEvent) {
     e.preventDefault();
@@ -103,19 +101,29 @@ function General() {
     setError(null);
     setSaved(false);
     try {
-      await api.patch("/users/me", {
+      const updated = await api.patch<
+        Pick<Me, "username" | "display_name" | "email" | "avatar" | "avatar_url">
+      >("/users/me", {
         display_name: displayName,
         username,
         email,
-        avatar,
       });
-      // The shell resolved this account once and hands it down; a name
-      // or a face changed here has to reach the sidebar, and reloading
-      // is the honest way to say "everything that read it reads it
-      // again" without a second source of truth for who you are.
-      window.location.reload();
+      // Merge the canonical profile into the existing session. Authentication,
+      // grants and theme stay mounted; the sidebar reads this same context.
+      updateSession({
+        username: updated.username,
+        display_name: updated.display_name ?? "",
+        email: updated.email ?? "",
+        avatar: updated.avatar,
+        avatar_url: updated.avatar_url,
+      });
+      setDisplayName(updated.display_name ?? "");
+      setUsername(updated.username);
+      setEmail(updated.email ?? "");
+      setSaved(true);
     } catch (err) {
       setError(message(err));
+    } finally {
       setBusy(false);
     }
   }
@@ -125,92 +133,48 @@ function General() {
       <SectionHeader title="You" />
       <Card>
         <CardContent>
+          <ProfileImage />
           <ErrorAlert error={error} />
-          <form onSubmit={save} className="space-y-4">
-            <TextField
-              label="Display name"
-              hint="What you are called, which a username often is not. Empty is fine — your username stands in."
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder={me.username}
-            />
-            <TextField
-              label="Username"
-              hint="Lowercase letters, digits, dot, dash or underscore. Sessions and API keys survive a change; `docker login` does not — it sends this alongside the key, so log in again after."
-              value={username}
-              spellCheck={false}
-              onChange={(e) => setUsername(e.target.value)}
-              className="font-mono"
-            />
-            <TextField
-              label="Email"
-              type="email"
-              hint="Nothing here sends mail. It is so whoever runs this box can tell whose account is whose, and it is never a second way to sign in."
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
+          <form onSubmit={save} aria-busy={busy}>
+            <fieldset disabled={busy} className="space-y-4">
+              <TextField
+                label="Display name"
+                hint="What you are called, which a username often is not. Empty is fine — your username stands in."
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                placeholder={me.username}
+              />
+              <TextField
+                label="Username"
+                hint="Lowercase letters, digits, dot, dash or underscore. Sessions and API keys survive a change; `docker login` does not — it sends this alongside the key, so log in again after."
+                value={username}
+                spellCheck={false}
+                onChange={(e) => setUsername(e.target.value)}
+                className="font-mono"
+              />
+              <TextField
+                label="Email"
+                type="email"
+                hint="Nothing here sends mail. It is so whoever runs this box can tell whose account is whose, and it is never a second way to sign in."
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
 
-            <Faces chosen={avatar} onChoose={setAvatar} offered={me.avatars ?? []} />
-
-            <div className="flex items-center gap-3">
-              <ActionButton type="submit" busy={busy} disabled={!dirty}>
-                Save
-              </ActionButton>
-              {saved && !dirty && <span className="text-xs text-muted-foreground">Saved.</span>}
-            </div>
+              <div className="flex items-center gap-3">
+                <ActionButton type="submit" busy={busy} disabled={!dirty}>
+                  Save
+                </ActionButton>
+                {saved && !dirty && (
+                  <span role="status" className="text-xs text-success">
+                    Changes saved.
+                  </span>
+                )}
+              </div>
+            </fieldset>
           </form>
         </CardContent>
       </Card>
     </>
-  );
-}
-
-// The faces this instance ships, offered as themselves.
-//
-// A grid of the actual images rather than a select of their names: what
-// somebody is choosing is a picture, and a dropdown reading "blue"
-// makes them pick one to find out what it looks like. The same argument
-// the theme swatches make one tab over.
-//
-// **There is no "none".** It was the first choice here for a release,
-// and it was what almost every account held — so the picker's ordinary
-// state was the one that showed no picture, and the sidebar drew two
-// letters of a username instead. An account arrives on one of these
-// now; see user.DefaultAvatar.
-function Faces({
-  chosen,
-  onChoose,
-  offered,
-}: {
-  chosen: string;
-  onChoose: (name: string) => void;
-  offered: string[];
-}) {
-  return (
-    <div className="space-y-2">
-      <Label className="text-xs text-muted-foreground">Icon</Label>
-      <div className="flex flex-wrap gap-3">
-        {offered.map((name) => (
-          <button
-            key={name}
-            type="button"
-            onClick={() => onChoose(name)}
-            aria-label={name}
-            aria-pressed={chosen === name}
-            className={cn(
-              "size-12 shrink-0 overflow-hidden border transition-colors",
-              chosen === name ? "border-primary" : "border-border hover:border-border-strong",
-            )}
-          >
-            {/* A plain <img>: next/image wants a loader and a build-time
-                size for a handful of fixed files in this image's own
-                public directory. */}
-            {/* biome-ignore lint/performance/noImgElement: static files, no loader worth configuring */}
-            <img src={avatarSrc(name)} alt="" className="size-full object-cover" />
-          </button>
-        ))}
-      </div>
-    </div>
   );
 }
 

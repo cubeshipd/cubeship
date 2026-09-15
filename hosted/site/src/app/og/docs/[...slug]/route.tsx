@@ -1,6 +1,6 @@
-import { socialImage } from "@/lib/social-image";
 import { notFound } from "next/navigation";
 import { getPageImageUrl } from "@/lib/shared";
+import { socialImage } from "@/lib/social-image";
 import { source } from "@/lib/source";
 
 export const revalidate = false;

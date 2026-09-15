@@ -21,7 +21,7 @@ func TestPublishedTemplatesExposeTheirExternalProtocols(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			path := filepath.Join("..", "..", "templates", tt.file, "template.yaml")
+			path := filepath.Join("testdata", "published", tt.file+".yaml")
 			contents, err := os.ReadFile(path)
 			if err != nil {
 				t.Fatal(err)

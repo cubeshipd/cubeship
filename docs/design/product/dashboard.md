@@ -885,8 +885,8 @@ in the same form came out different colours with different focus
 weights. The cost is deliberate: a per-usage `bg-*`, `font-*` or focus
 ring on a field no longer takes.
 
-Buttons, badges, field labels and table headers are uppercase with wide
-tracking. **That is applied in `globals.css` through the primitives'
+Buttons, badges, field labels and table headers use sentence case with
+restrained tracking. **That is applied in `globals.css` through the primitives'
 `data-slot` attributes**, not by editing `ui/` — which is what lets a
 re-run of `shadcn add` overwrite those files without taking the house
 style with it. The `hud-frame`, `bg-grid`, `bg-scanlines`, `text-glow`
@@ -966,8 +966,109 @@ hard to tell apart is worse than not offering the second. Its surfaces
 are properly navy, which is what every other palette here does with its
 own hue.
 
-**The account faces are named after these** — see `user.Avatars` — and
-they share a vocabulary rather than a list. Nothing requires a palette
-to have a face or a face to have a palette: they happen to line up, and
-no test says they must, because one would fail for something that is
-not a fault.
+Profile images are independent of palettes. `UserAvatar` renders the uploaded
+`avatar_url` everywhere a person is shown, falling back to initials. Legacy
+character presets are no longer displayed or offered by the dashboard.
+
+### The product-site rebrand, inside the dashboard
+
+The dashboard shares the site's Chakra Petch headlines, cyan accent, square
+geometry and quiet dark surfaces. `src/app/dashboard.css`, imported once by
+the root layout after `globals.css`, owns the shell and component composition.
+It uses palette tokens throughout, including the light Helix palette;
+`globals.css` remains the only source of field styling and primitive overrides.
+No generated `ui/` component is edited to carry the branding.
+
+The sidebar has sentence-case navigation, a bounded scroll area and a fixed
+account footer. Below 761px, the same permission-filtered navigation opens in
+a Base UI dialog, with its focus trap and Escape handling. The shared rail
+keeps breadcrumbs and page actions. The command palette remains available by
+keyboard, without a search button in the header. Tabs use the same portals
+beneath that rail.
+
+Overview opens with the instance heading and one connected row of resource
+counts. Resource cards retain their identifiers, status and usage bars. Charts
+reserve space above the plot for current and peak readings, so the data never
+runs through its own value. Tables, settings, dialogs and catalog cards inherit
+the common typography, borders and surfaces without changing their workflows.
+
+Login and setup use the site's headline and point-cloud cube vocabulary. The
+illustration is an inline SVG and needs no animation loop, external asset or
+Three.js runtime. Operational pages keep motion limited to interaction feedback.
+
+### Navigation responds before a remote read finishes
+
+`(dashboard)/loading.tsx` provides a prefetched Suspense fallback for dynamic
+routes. It lives below the persistent Shell: navigation, account menu and the
+breadcrumb rail remain available while the destination streams. `PageLoading`
+also covers client-side waits that Suspense cannot see, including the projects
+inventory and instance settings. The matching error boundary keeps failures
+inside the content pane and offers a retry.
+
+Internal anchors use `NavigationLink`, a thin wrapper around Next Link. It
+keeps Next's prefetching, history and cancellation and uses `useLinkStatus` for
+a two-pixel progress indicator only when a transition outlasts 120ms. It never
+inserts space in a card or link. Environment tabs, command search and Overview
+container rows use React transitions for the same feedback. Project entry links
+go directly to `production`; the old project URL retains its redirect for
+bookmarks. Downloads and external links still use their native browser behavior.
+
+`dashboard-queries.ts` shares inventory and telemetry within the QueryProvider
+owned by the signed-in Shell. Revisiting an inventory paints its cached data
+and revalidates on mount; telemetry is shared between Overview and resource
+cards and sampled on the existing 30-second interval. A missing reading remains
+a loading state, not an invented measurement. This cache is neither persisted
+nor shared between server requests or signed-in shells.
+
+Saving Account / General merges the canonical profile returned by PATCH into
+SessionProvider and updates the form's baseline. It does not reload the document,
+remount tabs or fetch the session again. Empty profile fields are explicitly
+cleared, while grants, theme lists and authentication fields stay in the session.
+The form prevents edits during its save and reports success in place.
+
+The first session read has its own loading frame. An expired session redirects
+to login; a connection or server failure offers retry instead of treating it as
+sign-out.
+
+
+### Profile pictures and continuous rails
+
+Account / General uses `ProfileImage` for an independent image edit. It accepts
+PNG, JPEG and WebP up to 10 MB, cover-crops the centre to 256 pixels in the
+browser, and shows a preview before saving. Upload and removal update only the
+avatar fields in SessionProvider; other General edits stay in place. Blob
+preview URLs are revoked when replaced or unmounted. See authentication.md
+for persistence and authorization.
+
+Both header halves use the same rail height, including the separator pixel.
+The sidebar brand has no bottom border: the navigation below it owns the top
+border. The tabs' scroll viewport includes the strip's bottom pixel, so it does
+not clip the active tab's background. Only the active tab covers that line;
+inactive tabs stop above it. Horizontal scrolling remains available on mobile.
+
+
+The Dashboard template catalog also renders its complete matching result in one
+grid. One cancellable query collects all API cursors in batches of 48 before
+publishing its result, deduplicating by owner and repository and refusing repeated
+cursors. There is no scroll observer or load-more sentinel. Search, tag and sort
+still apply on the catalog; changing them cancels the previous read. Completed
+results stay fresh in the session cache for one minute.
+
+### Overview machines and Platform / Components
+
+Overview's header portal holds `MachineSelector`. Its `server` URL parameter
+selects host charts without rerouting the page or reloading the shell. Node
+inventory is shared and refreshed every 30 seconds. The cluster resource counts
+and workload table explicitly retain their cluster scope. Host history remains
+separate for each machine, with stale and offline notices.
+
+Components uses the same selector and shows the actual Cubeship services on the
+selected machine, followed by the chosen service's metadata and log viewer.
+Inventory refreshes every 30 seconds; cached inventory is marked as last known
+when the refresh fails. Only unrestricted administrators see this page or its
+sidebar and command-palette entry. See [components.md](components.md) for its API,
+allowlist and worker channel.
+
+`ContainerLogs` uses cancellable queries for all log viewers. Follow waits for
+in-flight requests and pauses in background tabs. A changed resource uses a new
+query key, and log results are not retained after the viewer unmounts.

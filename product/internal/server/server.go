@@ -17,6 +17,7 @@ import (
 	"cubeship/internal/audit"
 	"cubeship/internal/backup"
 	"cubeship/internal/certificates"
+	"cubeship/internal/components"
 	"cubeship/internal/credential"
 	"cubeship/internal/dashboard"
 	"cubeship/internal/datastore"
@@ -58,7 +59,8 @@ type Server struct {
 	Metrics *metrics.Service
 	// Machine is what the box itself is doing, which belongs to no
 	// module below: there is one of it, and nothing here configures it.
-	Machine *machine.Service
+	Machine    *machine.Service
+	Components *components.Service
 	// Nodes is the machines this instance is made of. It sits beside
 	// user at the bottom: it knows about no other module, and what runs
 	// on a node will reach it through the agent's own loop.
@@ -418,6 +420,9 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// either case `backup` refuses with the reason rather than writing
 	// an archive with a hole where the database should be.
 	srv.Backups.SetVolumes(appVolumes{apps: apps})
+	componentEngine, _ := docker.(components.Engine)
+	srv.Components = components.NewService(componentEngine, srv.Nodes)
+	srv.Machine.SetHosts(srv.Nodes)
 	srv.Backups.SetMachines(srv.Nodes)
 	if e, ok := docker.(bootstrap.PostgresDumper); ok {
 		srv.Backups.SetInstance(&instanceDatabase{docker: e, owned: opts.OwnDatabase})
@@ -551,6 +556,7 @@ func (s *Server) routes() {
 	objectstore.NewHandler(s.ObjectStores).Routes(s.router, auth)
 	templateinstall.NewHandler(s.Templates).Routes(s.router, auth)
 	machine.NewHandler(s.Machine).Routes(s.router, auth)
+	components.NewHandler(s.Components).Routes(s.router, auth)
 	release.NewHandler(s.Releases).Routes(s.router, auth)
 	update.NewHandler(s.Updates).Routes(s.router, auth)
 	// Two surfaces on one module: the operator's behind `auth`, and the

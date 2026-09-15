@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"cubeship/internal/machine"
 	"cubeship/internal/mesh"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/httpx"
@@ -205,7 +206,8 @@ func (h *Handler) remove(w http.ResponseWriter, r *http.Request) {
 // plane asking "are you there" — would be a second conversation to keep
 // in step with this one.
 type AgentRequest struct {
-	Version string `json:"version"`
+	Host    *machine.Telemetry `json:"host,omitempty"`
+	Version string             `json:"version"`
 	// Address is where this machine is reached from outside, as it
 	// worked it out. Empty is a legitimate answer and means it could
 	// not — never a bridge address.
@@ -292,7 +294,7 @@ func (h *Handler) reconcile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	desired, meshInfo, err := h.svc.Reconcile(ctx, n, Report{
-		Version: req.Version, Address: req.Address,
+		Version: req.Version, Address: req.Address, Host: req.Host,
 		Cores: req.Cores, MemoryTotalBytes: req.MemoryTotalBytes, DiskTotalBytes: req.DiskTotalBytes,
 		CPUPercent: req.CPUPercent, MemoryBytes: req.MemoryBytes, DiskBytes: req.DiskBytes,
 		MeshNodeID: req.MeshNodeID,

@@ -1,8 +1,9 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { DatabaseIcon, PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { type ComponentType, useCallback, useEffect, useState } from "react";
+import { type ComponentType, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
 import { MariaDBIcon, MongoDBIcon, MySQLIcon, PostgreSQLIcon, RedisIcon } from "@/components/icons";
@@ -10,7 +11,8 @@ import { NewDatastoreDialog } from "@/components/new-datastore-dialog";
 import { ResourceCard, ResourceGrid } from "@/components/resource-grid";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
-import { api, type Datastore, datastoreLabel } from "@/lib/api";
+import { datastoreLabel } from "@/lib/api";
+import { datastoresQuery } from "@/lib/dashboard-queries";
 import { message } from "@/lib/errors";
 import { useOpenOnArrival } from "@/lib/open-on-arrival";
 import { usageShares, useContainerUsage } from "@/lib/usage";
@@ -31,18 +33,11 @@ const ENGINE_ICONS: Record<string, ComponentType<{ className?: string }>> = {
 // it is a table of its own.
 export default function DatabasesPage() {
   const router = useRouter();
-  const [datastores, setDatastores] = useState<Datastore[] | null>(null);
+  const inventory = useQuery(datastoresQuery);
+  const datastores = inventory.data ?? null;
   const [creating, setCreating] = useState(false);
   useOpenOnArrival("new", setCreating);
-  const [error, setError] = useState<string | null>(null);
-
-  const reload = useCallback(() => {
-    api
-      .get<Datastore[]>("/datastores")
-      .then(setDatastores)
-      .catch((e) => setError(message(e)));
-  }, []);
-  useEffect(reload, [reload]);
+  const error = inventory.error ? message(inventory.error) : null;
   const { usage, machine } = useContainerUsage("datastore");
 
   return (

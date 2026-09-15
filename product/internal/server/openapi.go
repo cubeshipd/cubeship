@@ -10,6 +10,7 @@ import (
 	"cubeship/internal/audit"
 	"cubeship/internal/backup"
 	"cubeship/internal/certificates"
+	"cubeship/internal/components"
 	"cubeship/internal/credential"
 	"cubeship/internal/datastore"
 	"cubeship/internal/dns"
@@ -66,6 +67,7 @@ func (s *Server) OpenAPI() openapi.Document {
 		certificates.NewHandler(s.Certs).OpenAPI(),
 		firewall.NewHandler(s.Firewall).OpenAPI(),
 		machine.NewHandler(s.Machine).OpenAPI(),
+		components.NewHandler(s.Components).OpenAPI(),
 		node.NewHandler(s.Nodes).OpenAPI(),
 		release.NewHandler(s.Releases).OpenAPI(),
 		update.NewHandler(s.Updates).OpenAPI())

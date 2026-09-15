@@ -1,8 +1,7 @@
 "use client";
 
 import { ChevronDownIcon, type BoxIcon as MarkIcon } from "lucide-react";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
   createContext,
   type ReactNode,
@@ -14,6 +13,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { MARKS as SHARED } from "@/components/marks";
+import Link from "@/components/navigation-link";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -91,12 +91,18 @@ export function RailTabs({ children }: { children: ReactNode }) {
     // The same container the rail and the page use, so a tab's left
     // edge lines up with the first crumb above it and the first card
     // below.
-    <div className="mx-auto flex w-full max-w-5xl items-stretch px-8">{children}</div>,
+    <div className="dashboard-container dashboard-tabs">{children}</div>,
     tabs,
   );
 }
 
-export function HeaderRail({ children }: { children: ReactNode }) {
+export function HeaderRail({
+  children,
+  navigation,
+}: {
+  children: ReactNode;
+  navigation?: ReactNode;
+}) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const [tabs, setTabs] = useState<HTMLElement | null>(null);
   const pathname = usePathname() ?? "/";
@@ -109,17 +115,10 @@ export function HeaderRail({ children }: { children: ReactNode }) {
       {/* Sticky, because the reason it exists is to be reachable — and
           the screens where switching saves the most are the long ones:
           a log, fifty environment variables, a deploy history. */}
-      {/* The height is on the element that carries the border, so the
-          border is inside it — `h-14` is border-box. With the height on
-          the inner div instead, this strip came to 57px against the
-          sidebar header's 56, and the line across the top of the
-          instance was two lines a pixel apart. */}
-      <div className="sticky top-0 z-30 flex h-14 border-b border-border bg-background/85 backdrop-blur">
-        <div className="mx-auto flex w-full max-w-5xl items-center justify-between gap-4 px-8">
-          <nav
-            aria-label="Breadcrumb"
-            className="flex min-w-0 items-center gap-1.5 overflow-hidden"
-          >
+      <div className="dashboard-header">
+        <div className="dashboard-container dashboard-header-inner">
+          {navigation}
+          <nav aria-label="Breadcrumb" className="dashboard-breadcrumb">
             {crumbs.map((crumb, i) => (
               <div key={crumb.key} className="flex min-w-0 items-center gap-1.5">
                 {i > 0 && (
@@ -131,16 +130,13 @@ export function HeaderRail({ children }: { children: ReactNode }) {
               </div>
             ))}
           </nav>
-          <div ref={setSlot} className="flex shrink-0 items-center gap-2" />
+          <div ref={setSlot} className="dashboard-header-actions" />
         </div>
       </div>
       {/* Under the rail and stuck to it, so scrolling a long screen
           keeps both. Below it in the stacking order as well as on the
           page: a menu opened from the rail has to pass over this. */}
-      <div
-        ref={setTabs}
-        className="subrail sticky top-14 z-20 flex h-10 border-b border-border bg-card"
-      />
+      <div ref={setTabs} className="subrail dashboard-subrail" />
       {children}
     </Rail.Provider>
   );
@@ -416,7 +412,6 @@ function Crumb({ crumb, last }: { crumb: CrumbSpec; last: boolean }) {
 // what it is called without the list, so there it loads on sight — and
 // what the URL holds (`4`) is never what the crumb shows.
 function CrumbMenu({ crumb, className }: { crumb: CrumbSpec; className: string }) {
-  const router = useRouter();
   const [options, setOptions] = useState<Option[] | null>(null);
   const [open, setOpen] = useState(false);
 
@@ -463,7 +458,7 @@ function CrumbMenu({ crumb, className }: { crumb: CrumbSpec; className: string }
           <DropdownMenuItem
             key={option.value}
             className="gap-2 font-mono text-[11px]"
-            onClick={() => router.push(hrefFor(kind, scope, option.value))}
+            render={<Link href={hrefFor(kind, scope, option.value)} />}
           >
             {Mark && <Mark aria-hidden="true" className="size-3.5 shrink-0 opacity-70" />}
             {option.label}
@@ -531,7 +526,7 @@ function hrefFor(kind: Siblings | undefined, scope: string, name: string): strin
   const [above, env] = scope.split("/");
   switch (kind) {
     case "project":
-      return `/projects/${name}`;
+      return `/projects/${name}/production`;
     case "environment":
       return `/projects/${above}/${name}`;
     case "app":

@@ -31,15 +31,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { UserAvatar } from "@/components/user-avatar";
 import { ValueCard } from "@/components/value-card";
-import {
-  type AccessRole,
-  type AccessRoles,
-  api,
-  avatarSrc,
-  type InstanceUser,
-  personName,
-} from "@/lib/api";
+import { type AccessRole, type AccessRoles, api, type InstanceUser, personName } from "@/lib/api";
 import { message } from "@/lib/errors";
 import { useOpenOnArrival } from "@/lib/open-on-arrival";
 
@@ -116,8 +110,7 @@ export default function UsersPage() {
       sortBy: (u) => personName(u),
       cell: (u) => (
         <span className="flex min-w-0 items-center gap-2.5">
-          {/* biome-ignore lint/performance/noImgElement: a static file in this image's own public directory */}
-          <img src={avatarSrc(u.avatar, "small")} alt="" className={cnFace(u)} />
+          <UserAvatar person={u.username === me.username ? me : u} className={cnFace(u)} />
           <span className="truncate">{personName(u)}</span>
           {u.username === me.username && (
             <span className="shrink-0 text-subtle-foreground">you</span>

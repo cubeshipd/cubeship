@@ -20,11 +20,19 @@ export class ApiError extends Error {
 // which resolves them to a stub in every build that is not the preview.
 const PREVIEW = process.env.NEXT_PUBLIC_CUBESHIP_MOCK === "1";
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+async function request<T>(
+  method: string,
+  path: string,
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
+  signal?.throwIfAborted();
   if (PREVIEW) {
     const { handle } = await import("@/lib/mock");
     try {
-      return (await handle(method, path, body)) as T;
+      const result = await handle(method, path, body);
+      signal?.throwIfAborted();
+      return result as T;
     } catch (err) {
       // Rethrown as the error every screen already knows how to show,
       // so a gap in the preview reads like a refusal from the daemon
@@ -35,6 +43,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
 
   const res = await fetch(PREFIX + path, {
+    signal,
     method,
     // The session is a cookie the daemon set. Sending it is the whole
     // of the dashboard's authentication.
@@ -54,7 +63,8 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 }
 
 export const api = {
-  get: <T>(path: string) => request<T>("GET", path),
+  get: <T>(path: string, options?: { signal?: AbortSignal }) =>
+    request<T>("GET", path, undefined, options?.signal),
   post: <T>(path: string, body?: unknown) => request<T>("POST", path, body ?? {}),
   put: <T>(path: string, body: unknown) => request<T>("PUT", path, body),
   patch: <T>(path: string, body: unknown) => request<T>("PATCH", path, body),
@@ -69,12 +79,15 @@ export const api = {
   // only one the preview answered with a 500 — on every app, every
   // database and every store, which is three screens nobody could look
   // at while changing how they look.
-  getText: async (path: string): Promise<string> => {
+  getText: async (path: string, options?: { signal?: AbortSignal }): Promise<string> => {
+    options?.signal?.throwIfAborted();
     if (PREVIEW) {
       const { handle } = await import("@/lib/mock");
-      return (await handle("GET", path)) as string;
+      const result = await handle("GET", path);
+      options?.signal?.throwIfAborted();
+      return result as string;
     }
-    const res = await fetch(PREFIX + path, { credentials: "same-origin" });
+    const res = await fetch(PREFIX + path, { credentials: "same-origin", signal: options?.signal });
     if (!res.ok) {
       throw new ApiError(res.status, (await res.text()).trim() || res.statusText);
     }
@@ -133,12 +146,9 @@ export type Me = {
   // identifies somebody here, and these are what it cannot carry.
   display_name?: string;
   email?: string;
-  // Always present: there is no account with no face.
+  // Legacy preset or upload version; render avatar_url, with initials when absent.
   avatar: string;
-  // Which faces this instance ships, served for the reason `themes` is:
-  // the daemon is what refuses a name, and a second list here would be
-  // one to disagree with it.
-  avatars?: string[];
+  avatar_url?: string;
   // A member's access role, absent for the member default.
   access_role?: string;
   // What this request reaches, null for everything. See `can`.
@@ -162,19 +172,6 @@ export function personName(u: { display_name?: string; username: string }): stri
   return u.display_name?.trim() || u.username;
 }
 
-// avatarSrc is where a face's file is. The name is one of `avatars`,
-// which the daemon checked — never a path and never a URL, so there is
-// nothing here to escape.
-//
-// **There are two sizes and the small one is not an optimisation.** The
-// face beside a username is drawn on every screen of the dashboard, and
-// the file behind it is the first image the browser asks for; the
-// picker on the account screen is one screen, drawn once, at twice the
-// size. 8 KB against 88 KB, both cut from the same master.
-export function avatarSrc(name: string, size: "full" | "small" = "full"): string {
-  return `/profiles/${name}${size === "small" ? "-sm" : ""}.png`;
-}
-
 // One account on the instance.
 export type InstanceUser = {
   username: string;
@@ -182,8 +179,8 @@ export type InstanceUser = {
   theme?: string;
   display_name?: string;
   email?: string;
-  // Always present, like Me's: there is no account with no face.
   avatar: string;
+  avatar_url?: string;
   // When this account was shut out, absent while it is not. One field
   // rather than a flag and a date — the two would be one fact with two
   // places to disagree about it.
@@ -1001,6 +998,7 @@ export type InstanceSample = {
 };
 
 export type InstanceSeries = {
+  sampled_at?: string;
   window: string;
   samples: InstanceSample[];
   // Facts about the machine rather than about the series, so a daemon
@@ -1532,3 +1530,18 @@ export type TemplateUpdatePreview = {
   changes: TemplateChange[];
   inputs: TemplateInput[];
 };
+
+export type SystemComponent = {
+  id: string;
+  name: string;
+  description: string;
+  container: string;
+  image?: string;
+  status: string;
+  health?: string;
+  started_at?: string;
+  restarts: number;
+  logs_available: boolean;
+  detail?: string;
+};
+export type ComponentInventory = { server: string; components: SystemComponent[] };

@@ -25,8 +25,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"themes":       openapi.Array(openapi.String("A palette's name.")),
 				"display_name": openapi.String("What the person is called, which a username often is not. Absent when unset."),
 				"email":        openapi.String("Somewhere to reach whoever holds the account. **Nothing on this instance sends mail**; it is stored so an operator can tell whose account is whose, and it is never a second way to sign in."),
-				"avatar":       openapi.String("Which of the faces in `avatars` this account wears. Absent for none."),
-				"avatars":      openapi.Array(openapi.String("A face's name. Served rather than compiled into the dashboard, for the reason `themes` is: the daemon is what refuses a name.")),
+				"avatar":       openapi.String("Upload version or legacy preset name. Use avatar_url to display the picture."),
+				"avatar_url":   openapi.String("Authenticated, same-origin URL of the uploaded picture. Absent when unset; display initials."),
 			}, "username", "role", "has_password"),
 			"User": openapi.Object(map[string]*openapi.Schema{
 				"username":       openapi.String("The account."),
@@ -34,7 +34,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"theme":          openapi.String("Which palette this person sees the dashboard in. Absent for the default."),
 				"display_name":   openapi.String("What the person is called. Absent when unset."),
 				"email":          openapi.String("Somewhere to reach them. Absent when unset."),
-				"avatar":         openapi.String("Which face the account wears."),
+				"avatar":         openapi.String("Upload version or legacy preset name."),
+				"avatar_url":     openapi.String("Authenticated, versioned URL of the uploaded picture. Absent when unset."),
 				"blocked_at":     openapi.String("RFC 3339, when the account was shut out. **Absent while it is not**, which is what makes this one field rather than a flag and a date.\n\nA blocked account keeps everything it had — its password, its keys, its sessions — and is refused at the door instead, so unblocking puts somebody back exactly where they were."),
 				"created_at":     openapi.String("RFC 3339."),
 				"access_role_id": openapi.Integer("A member's access role. Absent for the member default, and for an admin."),
@@ -155,6 +156,36 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
+			"/users/{username}/avatar": {
+				"get": {
+					OperationID: "getUserAvatar", Summary: "Fetch an account's profile image",
+					Description: "Available to signed-in users. The username may be me for the caller. Returns 404 when unset; use avatar_url on the account to determine whether a picture exists. Private cache revalidation uses ETag.",
+					Tags:        []string{"Identity"}, Parameters: []openapi.Parameter{openapi.PathParam("username", "The account, or me.")},
+					Responses: openapi.Responses{
+						"200": {Description: "The profile image.", Content: avatarMedia()},
+						"304": openapi.Empty("The picture has not changed."),
+						"401": openapi.Unauthorized, "404": openapi.TextResponse("No profile image."),
+					},
+				},
+			},
+			"/users/me/avatar": {
+				"put": {
+					OperationID: "setUserAvatar", Summary: "Upload your profile image",
+					Description: "Raw PNG, JPEG or WebP bytes, at most 512 KiB. The bytes decide the media type. Changes only the authenticated caller's picture. The dashboard crops and resizes before uploading. Read /users/me for the new avatar_url.",
+					Tags:        []string{"Identity"},
+					RequestBody: &openapi.RequestBody{Required: true, Content: avatarMedia()},
+					Responses: openapi.Responses{
+						"204": openapi.Empty("The profile image is saved."), "401": openapi.Unauthorized,
+						"413": openapi.TextResponse("Larger than 512 KiB."), "415": openapi.TextResponse("Not a PNG, JPEG or WebP."),
+					},
+				},
+				"delete": {
+					OperationID: "clearUserAvatar", Summary: "Remove your profile image",
+					Description: "Deletes the authenticated caller's image. Idempotent; the dashboard returns to initials.",
+					Tags:        []string{"Identity"},
+					Responses:   openapi.Responses{"204": openapi.Empty("The profile image is removed."), "401": openapi.Unauthorized},
+				},
+			},
 			"/users/me": {
 				"get": {
 					OperationID: "whoAmI",
@@ -176,7 +207,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"username":     openapi.String("1-32 characters of lowercase letters, digits, dot, dash or underscore, starting with a letter or a digit. It is the segment in `/users/{username}` and what `docker login` sends."),
 						"display_name": openapi.String("At most 60 characters, and anything you like inside that: it is a name rather than an identifier, so nothing else about it is this instance's business."),
 						"email":        openapi.String("Checked shallowly — one `@` with something either side and a dot in the domain — because the only thing that proves an address is sending to it, and nothing here sends."),
-						"avatar":       openapi.String("One of the names in `avatars` on `GET /users/me`, or an empty string for none."),
+						"avatar":       openapi.String("Legacy preset name, or empty to clear. New images use PUT /users/me/avatar."),
 					})),
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The account as it now stands.", openapi.Ref("User")),
@@ -293,5 +324,13 @@ func (h *Handler) RolesOpenAPI() openapi.Spec {
 				},
 			},
 		},
+	}
+}
+
+func avatarMedia() map[string]openapi.MediaType {
+	return map[string]openapi.MediaType{
+		"image/png":  {Schema: &openapi.Schema{Type: "string", Format: "binary"}},
+		"image/jpeg": {Schema: &openapi.Schema{Type: "string", Format: "binary"}},
+		"image/webp": {Schema: &openapi.Schema{Type: "string", Format: "binary"}},
 	}
 }

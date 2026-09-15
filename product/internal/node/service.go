@@ -2,6 +2,7 @@ package node
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -13,6 +14,7 @@ import (
 	"github.com/distribution/reference"
 
 	"cubeship/internal/firewall"
+	"cubeship/internal/machine"
 	"cubeship/internal/mesh"
 	"cubeship/internal/platform/authkey"
 	"cubeship/internal/platform/database"
@@ -482,6 +484,12 @@ func (s *Service) Reconcile(ctx context.Context, n *Node, rep Report, results []
 		return Desired{}, nil, err
 	}
 
+	if rep.Host != nil {
+		if err := machine.RecordTelemetry(ctx, s.db, n.ID, *rep.Host); err != nil {
+			log.Printf("cluster: recording host metrics for %s: %v", n.Slug, err)
+		}
+	}
+
 	// What the machine did comes first. A deploy it has just finished is
 	// what decides which placement it is told about next, and reading
 	// them the other way round would tell it to run the version it has
@@ -665,4 +673,20 @@ func (s *Service) Workers(ctx context.Context) (map[int64]string, error) {
 // surviving the thing it was told to do.
 func (s *Service) Update(_ context.Context, nodeID int64, version string) error {
 	return s.hub.Tell(nodeID, Command{Kind: CommandUpdate, Version: version})
+}
+
+func (s *Service) ResolveMachine(ctx context.Context, caller *user.User, name string) (int64, bool, error) {
+	n, err := s.Get(ctx, caller, name)
+	if errors.Is(err, ErrNotFound) {
+		return 0, false, database.ErrNotFound
+	}
+	if err != nil {
+		return 0, false, err
+	}
+	return n.ID, n.ControlPlane, nil
+}
+
+// Request uses the existing outbound-only worker channel for a bounded read.
+func (s *Service) Request(ctx context.Context, id int64, command Command) ([]byte, error) {
+	return s.hub.Ask(ctx, id, command)
 }

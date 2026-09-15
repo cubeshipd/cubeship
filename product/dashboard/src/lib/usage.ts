@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { type AppLimits, api, type ContainerUsage, type InstanceSeries } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { useMemo } from "react";
+import type { AppLimits, ContainerUsage } from "@/lib/api";
+import { containersQuery, instanceMetricsQuery } from "@/lib/dashboard-queries";
 
 // The daemon samples every 30 seconds, so anything faster is two
 // requests for one reading.
-const REFRESH_MS = 30_000;
 
 export type Machine = { cores: number; memory_total_bytes: number };
 
@@ -24,44 +25,30 @@ export type Shares = { cpu?: number; memory?: number };
 // machine they are shares of. One request for a whole grid rather than
 // one per card.
 export function useContainerUsage(kind: ContainerUsage["kind"]) {
-  const [usage, setUsage] = useState<Map<string, Reading> | null>(null);
-  const [machine, setMachine] = useState<Machine | null>(null);
-
-  useEffect(() => {
-    const load = () =>
-      api
-        .get<ContainerUsage[]>("/instance/containers")
-        .then((all) => {
-          const byName = new Map<string, Reading>();
-          for (const u of all) {
-            if (u.kind !== kind) continue;
-            const r = byName.get(u.name) ?? {
-              cpu_percent: 0,
-              memory_bytes: 0,
-              memory_limit_bytes: 0,
-              containers: 0,
-            };
-            r.cpu_percent += u.cpu_percent;
-            r.memory_bytes += u.memory_bytes;
-            r.memory_limit_bytes += u.memory_limit_bytes;
-            r.containers += 1;
-            byName.set(u.name, r);
-          }
-          setUsage(byName);
-        })
-        .catch(() => setUsage(new Map()));
-    load();
-    const timer = setInterval(load, REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [kind]);
-
-  useEffect(() => {
-    api
-      .get<InstanceSeries>("/instance/metrics?window=1h")
-      .then((s) => setMachine({ cores: s.cores, memory_total_bytes: s.memory_total_bytes }))
-      .catch(() => setMachine(null));
-  }, []);
-
+  const containers = useQuery(containersQuery);
+  const metrics = useQuery(instanceMetricsQuery("1h"));
+  const usage = useMemo(() => {
+    if (!containers.data) return null;
+    const byName = new Map<string, Reading>();
+    for (const u of containers.data) {
+      if (u.kind !== kind) continue;
+      const r = byName.get(u.name) ?? {
+        cpu_percent: 0,
+        memory_bytes: 0,
+        memory_limit_bytes: 0,
+        containers: 0,
+      };
+      r.cpu_percent += u.cpu_percent;
+      r.memory_bytes += u.memory_bytes;
+      r.memory_limit_bytes += u.memory_limit_bytes;
+      r.containers += 1;
+      byName.set(u.name, r);
+    }
+    return byName;
+  }, [containers.data, kind]);
+  const machine: Machine | null = metrics.data
+    ? { cores: metrics.data.cores, memory_total_bytes: metrics.data.memory_total_bytes }
+    : null;
   return { usage, machine };
 }
 

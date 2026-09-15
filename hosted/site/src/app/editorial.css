@@ -466,6 +466,9 @@
   color: #2de2e6;
 }
 
+.template-detail-header > div {
+  min-width: 0;
+}
 .template-detail-header {
   display: flex;
   align-items: flex-start;
@@ -476,17 +479,20 @@
 }
 
 .template-detail-icon {
+  flex-shrink: 0;
   width: clamp(5rem, 9vw, 7.5rem);
   height: clamp(5rem, 9vw, 7.5rem);
 }
 
 .template-detail-path {
+  overflow-wrap: anywhere;
   color: #6f899a;
   font-family: var(--font-mono);
   font-size: 0.72rem;
 }
 
 .template-detail-header h1 {
+  overflow-wrap: anywhere;
   display: flex;
   max-width: 18ch;
   align-items: center;
@@ -507,13 +513,16 @@
 }
 
 .template-detail-grid {
+  min-width: 0;
+  align-items: start;
   display: grid;
   grid-template-columns: minmax(0, 1fr) 19rem;
-  gap: clamp(3rem, 6vw, 6rem);
+  gap: 2rem;
   margin-top: 4rem;
 }
 
 .template-detail-aside {
+  min-width: 0;
   position: sticky;
   top: 6rem;
   order: 2;
@@ -621,18 +630,24 @@
 
 .template-detail-main {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
   gap: 4rem;
   order: 1;
 }
 
 .template-readme {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
   padding: clamp(1.5rem, 4vw, 2.75rem);
   border: 1px solid #263744;
   background: #080d13;
 }
 
 .template-readme .prose {
+  min-width: 0;
+  max-width: 100%;
   color: #b4c3d0;
   line-height: 1.78;
 }
@@ -643,6 +658,8 @@
 }
 
 .template-detail-section {
+  min-width: 0;
+  max-width: 100%;
   padding-top: 1.5rem;
   border-top: 1px solid #263744;
 }
@@ -956,4 +973,41 @@
   .comparison-cta-actions > a {
     justify-content: center;
   }
+}
+
+/* Third-party README content and highlighted YAML stay within their column. */
+.template-detail-main > *,
+.template-readme .prose > *,
+.template-detail-section figure {
+  min-width: 0;
+  max-width: 100%;
+}
+.template-readme .prose :where(pre, .readme-table-scroll) {
+  max-width: 100%;
+  overflow-x: auto;
+  overscroll-behavior-inline: contain;
+}
+.template-readme .prose pre {
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.template-readme .prose :where(img, video, svg) {
+  max-width: 100%;
+  height: auto;
+}
+.template-readme .prose table {
+  width: max-content;
+  min-width: 100%;
+}
+.template-readme .prose :where(th, td) {
+  min-width: 7rem;
+}
+.template-readme .prose :where(a, p, li, code) {
+  overflow-wrap: anywhere;
+}
+.template-readme .prose pre code {
+  overflow-wrap: normal;
+}
+.template-detail-header h1 > svg {
+  flex-shrink: 0;
 }

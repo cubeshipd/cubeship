@@ -1,0 +1,76 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+# The first release that publishes Beats and gives a volume to the user its image runs as;
+# Logstash runs as 1000 and cannot write to one owned by root.
+minCubeship: "0.7.2"
+project: logstash
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where the HTTP input answers
+  - key: httpUser
+    type: text
+    label: The username senders give over HTTP
+    default: logstash
+  - key: httpPassword
+    type: secret
+    label: The password senders give over HTTP
+    generate: 24
+  - key: elasticsearchUrl
+    type: text
+    label: Where Elasticsearch answers
+    help: The default is the Elasticsearch template's internal address with its suggested names.
+    default: http://cubeship-elasticsearch-production-elasticsearch:9200
+    pattern: ^https?://.+
+  - key: elasticsearchUser
+    type: text
+    label: The Elasticsearch user Logstash writes as
+    help: elastic works. A user that can only write logs is better — the README shows how to make one.
+    default: elastic
+  - key: elasticsearchPassword
+    type: secret
+    label: That user's password
+  - key: beatsPort
+    type: number
+    label: The port Beats answers on
+    help: Choose a port from 1024 to 65535, and open it in your provider's firewall too.
+    default: 5044
+    min: 1024
+    max: 65535
+
+apps:
+  - key: pipeline
+    name: logstash
+    # The published image's pipeline reads Beats and prints to stdout. The
+    # Dockerfile in this repository is that image with logstash.conf instead.
+    repo: https://github.com/cubeshipd/cubeship-logstash-template
+    ref: v1.0.0
+    build: dockerfile
+    # The http input. Beats listens on 5044, for apps on the instance only.
+    port: 8080
+    # No health: the http input answers 401 to a request without credentials
+    # and makes an event of one with them. The monitoring API, on 9600, which
+    # answers without either, is not on the port a check probes.
+    domains:
+      - host: ${input.domain}
+    tcp:
+      - port: 5044
+        host: ${input.beatsPort}
+    volumes:
+      - path: /usr/share/logstash/data
+    # The heap is 1 GiB, from the image's jvm.options.
+    limits: { cpu: 1, memory: 2Gi }
+    env:
+      # Settings, which the image writes into logstash.yml: an event accepted
+      # is on disk until Elasticsearch has it, and one Elasticsearch refuses
+      # is kept for a week rather than dropped.
+      QUEUE_TYPE: persisted
+      DEAD_LETTER_QUEUE_ENABLE: "true"
+      DEAD_LETTER_QUEUE_RETAIN_AGE: 7d
+      # Read by logstash.conf.
+      HTTP_INPUT_USER: ${input.httpUser}
+      HTTP_INPUT_PASSWORD: ${input.httpPassword}
+      ELASTICSEARCH_URL: ${input.elasticsearchUrl}
+      ELASTICSEARCH_USER: ${input.elasticsearchUser}
+      ELASTICSEARCH_PASSWORD: ${input.elasticsearchPassword}

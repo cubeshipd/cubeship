@@ -16,12 +16,8 @@
 // takes them at an interval and remembers them long enough to draw a
 // line.
 //
-// The API calls it the instance — `/instance/metrics` — because on this
-// product they are the same box, and "instance" is the word every other
-// surface uses for it. The package is named for what it reads rather
-// than for what the product calls it, because `host` is already two
-// other things here: the machine a firewall rule is executed on, and
-// the name an app answers at.
+// /instance/metrics retains the control plane as its default and accepts a
+// machine selector for worker history. Host measurements are never summed.
 package machine
 
 import (
@@ -69,8 +65,9 @@ type Sample struct {
 // Series is the machine's readings over one window, with the facts a
 // caller would otherwise have to derive to draw axes.
 type Series struct {
-	Window  string   `json:"window"`
-	Samples []Sample `json:"samples"`
+	SampledAt *time.Time `json:"sampled_at,omitempty"`
+	Window    string     `json:"window"`
+	Samples   []Sample   `json:"samples"`
 
 	// Cores is how many the machine has, which is what says whether 60%
 	// is a busy machine or a quiet one.

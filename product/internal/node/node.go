@@ -35,6 +35,7 @@ import (
 	"strconv"
 	"time"
 
+	"cubeship/internal/machine"
 	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/user"
 )
@@ -200,6 +201,7 @@ func (n *Node) Status() string {
 // the node's row, because the machine is the only thing that knows any
 // of it and the newest answer is the only one worth keeping.
 type Report struct {
+	Host    *machine.Telemetry
 	Version string
 	Address string
 

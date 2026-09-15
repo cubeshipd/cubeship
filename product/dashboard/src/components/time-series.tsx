@@ -49,6 +49,7 @@ export function TimeSeries({
   ceiling,
   accent = "var(--primary)",
   empty,
+  loading = false,
   className,
 }: {
   points: Point[];
@@ -56,6 +57,7 @@ export function TimeSeries({
   ceiling?: number;
   accent?: string;
   empty?: React.ReactNode;
+  loading?: boolean;
   className?: string;
 }) {
   const gradient = useId();
@@ -65,14 +67,7 @@ export function TimeSeries({
 
   if (points.length === 0) {
     return (
-      <div
-        className={cn(
-          "flex h-36 items-center justify-center border border-border bg-background text-xs text-muted-foreground",
-          className,
-        )}
-      >
-        {empty ?? "No samples yet."}
-      </div>
+      <div className={cn("dashboard-chart-empty", className)}>{empty ?? "No samples yet."}</div>
     );
   }
 
@@ -85,11 +80,11 @@ export function TimeSeries({
   const active = hover ?? points[points.length - 1];
 
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("dashboard-time-series", className)}>
       {/* The reading sits over the chart rather than beside it: it is
           the same fact the line is, and the eye should not have to
           travel between them. */}
-      <div className="pointer-events-none absolute top-2 left-3 z-10">
+      <div className="dashboard-chart-current">
         <div className="font-mono text-lg leading-none text-foreground">{format(active.value)}</div>
         <div className="mt-1 font-mono text-[10px] text-subtle-foreground">
           {hover === null ? "now" : timeOf(active.at)}
@@ -102,11 +97,11 @@ export function TimeSeries({
         ) : null}
       </div>
 
-      <div className="h-36 w-full border border-border bg-background">
+      <div className="dashboard-chart-surface">
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
             data={points}
-            margin={{ top: 0, right: 0, bottom: 0, left: 0 }}
+            margin={{ top: 52, right: 0, bottom: 4, left: 0 }}
             // Recharts reports which point the cursor is over, which
             // is what the readout above shows. Taken here rather than
             // from the tooltip, so one number stays on screen whether

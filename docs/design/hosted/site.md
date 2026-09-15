@@ -83,14 +83,16 @@ loss return to that poster. Unmount disconnects observers and listeners and
 disposes GPU resources.
 
 `src/images/brand/` preserves the generated campaign artwork, with original
-prompts and tool provenance in its README. The cube is used in social cards;
-the original infrastructure panorama is retained as an unused design asset.
-Neither is used in the landing page's scenes. The dashboard screens remain
+prompts and tool provenance in its README. Both images are retained as unused
+design assets. Neither is used in social cards or the landing page's scenes. The dashboard screens remain
 real captures with demonstration data.
 
 `src/lib/social-image.tsx` renders a consistent social card for the homepage,
-docs and templates, using the local cube artwork and actual page titles.
-The homepage image metadata is generated through Next's file conventions.
+docs and templates, using a deterministic SVG point cube, local Chakra Petch
+fonts and actual page titles. The homepage image metadata is generated through
+Next's file conventions. The root README banner at
+`product/dashboard/public/logo/banner.png` is exported from the homepage's
+`/opengraph-image` endpoint; refresh that export when changing the composition.
 
 ## install.sh is a rewrite
 

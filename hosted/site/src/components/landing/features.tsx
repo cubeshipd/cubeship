@@ -1,7 +1,7 @@
 import {
   Activity,
-  ArrowUpRight,
   Archive,
+  ArrowUpRight,
   Database,
   HardDrive,
   LockKeyhole,

@@ -35,6 +35,7 @@ import (
 	"sync"
 	"time"
 
+	"cubeship/internal/components"
 	"cubeship/internal/envvar"
 	"cubeship/internal/firewall"
 	"cubeship/internal/machine"
@@ -116,9 +117,12 @@ type Agent struct {
 	token        string
 	version      string
 
-	machine *machine.Reader
-	engine  Engine
-	address HostAddress
+	machine      *machine.Reader
+	hostSampler  *machine.Collector
+	hostReport   *machine.Telemetry
+	hostSampleAt time.Time
+	engine       Engine
+	address      HostAddress
 	// firewall is how this machine opens the cluster's ports to its
 	// peers. Nil on a daemon with no way to reach the host, which is a
 	// machine whose firewall is somebody else's business.
@@ -303,6 +307,16 @@ func (a *Agent) answer(ctx context.Context, cmd node.Command) {
 	var failed error
 
 	switch cmd.Kind {
+	case components.CommandInventory:
+		engine, _ := a.engine.(components.Engine)
+		var inventory []components.Component
+		inventory, failed = components.Inspect(ctx, engine, true)
+		if failed == nil {
+			output, failed = json.Marshal(inventory)
+		}
+	case components.CommandLogs:
+		engine, _ := a.engine.(components.Engine)
+		output, failed = components.ReadLogs(ctx, engine, cmd.Container, cmd.Tail)
 	case node.CommandLogs:
 		output, failed = a.readLog(ctx, cmd)
 	case node.CommandUpdate:
@@ -799,6 +813,15 @@ func (a *Agent) report(ctx context.Context) node.AgentRequest {
 	if cpu, ok := a.cpu(); ok {
 		out.CPUPercent = &cpu
 	}
+	if a.hostSampler == nil {
+		a.hostSampler = machine.NewCollector(nil, a.machine)
+	}
+	if a.hostReport == nil || time.Since(a.hostSampleAt) >= metrics.Interval {
+		report := a.hostSampler.Telemetry()
+		a.hostReport = &report
+		a.hostSampleAt = time.Now()
+	}
+	out.Host = a.hostReport
 	out.Results = a.pending
 	out.Readings = a.readings(ctx)
 	return out

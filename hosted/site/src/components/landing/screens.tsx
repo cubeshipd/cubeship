@@ -107,6 +107,7 @@ export function Screens() {
           role="tabpanel"
           id={`panel-${current.key}`}
           aria-labelledby={`tab-${current.key}`}
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: A tab panel without focusable children must be reachable from its tab.
           tabIndex={0}
           className="product-screen"
         >

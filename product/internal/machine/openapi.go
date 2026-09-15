@@ -33,6 +33,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			}, "kind", "name", "at", "cpu_percent", "memory_bytes", "memory_limit_bytes"),
 
 			"InstanceSeries": openapi.Object(map[string]*openapi.Schema{
+				"sampled_at":         openapi.String("Timestamp of the latest raw sample, independent of chart bucketing."),
 				"window":             openapi.String("The window these samples cover."),
 				"samples":            openapi.Array(openapi.Ref("InstanceSample")),
 				"cores":              openapi.Integer("How many the machine has, which is what says whether 60% is a busy box or a quiet one."),
@@ -64,7 +65,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Read the machine's CPU, memory, disk and network",
 					Description: "What the box itself has been doing, rather than one container on it.\n\n" + metrics.Description + "\n\nA measurement this daemon cannot take is reported in `unavailable` inside a normal answer, not as an error: the three that read are still worth having.",
 					Tags:        []string{"Instance"},
-					Parameters:  []openapi.Parameter{metrics.WindowParam()},
+					Parameters:  []openapi.Parameter{metrics.WindowParam(), openapi.QueryParam("server", "Machine name from /nodes. Defaults to the control plane; never an aggregate.")},
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The series, and the facts about the machine it is drawn against.", openapi.Ref("InstanceSeries")),
 						"400": openapi.TextResponse("No such window."),

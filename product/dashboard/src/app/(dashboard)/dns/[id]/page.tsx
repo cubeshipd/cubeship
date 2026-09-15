@@ -1,11 +1,11 @@
 "use client";
 
 import { ChevronRightIcon, KeyRoundIcon } from "lucide-react";
-import Link from "next/link";
 import { use, useCallback, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
 import { LoadingList, LoadingNote } from "@/components/loading";
+import Link from "@/components/navigation-link";
 import { SearchBar } from "@/components/search-bar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";

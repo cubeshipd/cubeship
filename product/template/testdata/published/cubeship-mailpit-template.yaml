@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+# The first release that publishes SMTP and keeps a volume's data across deploys.
+minCubeship: "0.7.2"
+project: mailpit
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where the Mailpit inbox answers
+  - key: username
+    type: text
+    label: The username you sign in with
+    help: No spaces and no colon.
+    default: admin
+    pattern: ^[^\s:]+$
+  - key: password
+    type: secret
+    label: The password you sign in with
+    generate: 24
+  - key: maxMessages
+    type: number
+    label: How many messages to keep
+    help: The oldest are deleted beyond this. 0 keeps every message.
+    default: 500
+    min: 0
+  - key: smtpPort
+    type: number
+    label: The port SMTP answers on
+    help: Choose a port from 1024 to 65535, and open it in your provider's firewall too.
+    default: 1025
+    min: 1024
+    max: 65535
+
+apps:
+  - key: web
+    name: mailpit
+    image: axllent/mailpit
+    tag: v1.31.1
+    port: 8025
+    # Outside the sign-in, and 200 only once the database answers.
+    health: /readyz
+    domains:
+      - host: ${input.domain}
+    tcp:
+      - port: 1025
+        host: ${input.smtpPort}
+    volumes:
+      - path: /data
+    limits: { cpu: 1, memory: 512Mi }
+    env:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: ${input.maxMessages}
+      # Basic auth for the web UI and API; plain user:password is accepted.
+      MP_UI_AUTH: ${input.username}:${input.password}
+      # SMTP on 1025 takes any credentials, or none, without TLS: it is
+      # reachable only by apps on the same instance.
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"

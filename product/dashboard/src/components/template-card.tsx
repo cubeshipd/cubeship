@@ -1,5 +1,5 @@
 import { BadgeCheckIcon, LayoutTemplateIcon, StarIcon } from "lucide-react";
-import Link from "next/link";
+import Link from "@/components/navigation-link";
 import type { TemplateSummary } from "@/lib/api";
 
 // One template in the grid: its icon, name, who published it and what
@@ -8,7 +8,7 @@ export function TemplateCard({ template }: { template: TemplateSummary }) {
   return (
     <Link
       href={`/templates/${template.owner}/${template.name}`}
-      className="hud-frame group flex flex-col gap-3 border border-border bg-card p-4 transition-all hover:border-primary/40 hover:bg-secondary/40 focus-visible:border-primary focus-visible:outline-none"
+      className="dashboard-template-card group flex flex-col gap-4 border border-border bg-card p-5 transition-all hover:border-primary/40 hover:bg-secondary/40 focus-visible:border-primary focus-visible:outline-none"
     >
       <div className="flex items-center gap-3">
         <TemplateMark src={template.icon_url} className="size-11" />

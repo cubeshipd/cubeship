@@ -2,13 +2,14 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { PlusIcon, SettingsIcon, SlidersHorizontalIcon } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { startTransition, use, useState } from "react";
+import { use, useState, useTransition } from "react";
 import { ActionButton } from "@/components/action-button";
 import { AppCard } from "@/components/app-card";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal, RailTabs } from "@/components/header-rail";
+import Link, { NavigationProgress } from "@/components/navigation-link";
+import { PageLoading } from "@/components/page-loading";
 import { SlugField } from "@/components/slug-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -40,6 +41,7 @@ const DEFAULT_ENV = "production";
 
 function Detail({ project, env: wanted }: { project: string; env: string }) {
   const router = useRouter();
+  const [navigating, startTransition] = useTransition();
 
   const [adding, setAdding] = useState(false);
   const [creatingApp, setCreatingApp] = useState(false);
@@ -100,6 +102,7 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
 
   return (
     <>
+      <NavigationProgress pending={navigating} />
       <RailPortal>
         {
           <>
@@ -135,7 +138,12 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
         <Tabs value={env} onValueChange={(v) => goTo(String(v))} className="contents">
           <TabsList variant="line">
             {known.map((slug) => (
-              <TabsTrigger key={slug} value={slug}>
+              <TabsTrigger
+                key={slug}
+                value={slug}
+                onPointerEnter={() => router.prefetch(`/projects/${project}/${slug}`)}
+                onFocus={() => router.prefetch(`/projects/${project}/${slug}`)}
+              >
                 {slug}
               </TabsTrigger>
             ))}
@@ -163,6 +171,8 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
           </Link>
         )}
       </RailTabs>
+
+      {apps.isPending && <PageLoading kind="grid" label="Loading apps" />}
 
       {shown?.length === 0 && (
         <Card>

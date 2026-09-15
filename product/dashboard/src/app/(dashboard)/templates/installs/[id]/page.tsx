@@ -2,12 +2,12 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpCircleIcon, LoaderCircleIcon, Trash2Icon } from "lucide-react";
-import Link from "next/link";
 import { use, useEffect, useState } from "react";
 import { CopyField } from "@/components/copy-field";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
+import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { SectionHeader } from "@/components/section-header";
 import { StatusBadge } from "@/components/status-badge";

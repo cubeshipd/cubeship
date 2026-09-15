@@ -29,7 +29,7 @@ export function ProjectCard({
 }) {
   return (
     <ResourceCard
-      href={`/projects/${slug}`}
+      href={`/projects/${slug}/production`}
       mark={<ProjectMark slug={slug} hasImage={hasImage} />}
       name={slug}
       detail={`${apps.length} ${apps.length === 1 ? "app" : "apps"}`}

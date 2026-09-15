@@ -1,6 +1,6 @@
-import { socialImage } from "@/lib/social-image";
 import { notFound } from "next/navigation";
 import { templateByPath } from "@/lib/catalog";
+import { socialImage } from "@/lib/social-image";
 
 // Reads the catalog, so unlike the docs' own OG route this can never be
 // prerendered: there is no set of templates known at build time.

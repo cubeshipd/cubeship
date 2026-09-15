@@ -169,7 +169,7 @@ export function DataTable<T extends object>({
 
   if (rows != null && rows.length === 0 && empty) {
     return (
-      <Card>
+      <Card className="dashboard-empty">
         <CardContent className="py-2 text-sm text-muted-foreground">{empty}</CardContent>
       </Card>
     );
@@ -182,7 +182,7 @@ export function DataTable<T extends object>({
     return (
       <>
         {filter}
-        <Card>
+        <Card className="dashboard-empty">
           <CardContent className="py-2 text-sm text-muted-foreground">
             Nothing matches that.
           </CardContent>
@@ -194,7 +194,7 @@ export function DataTable<T extends object>({
   return (
     <>
       {filter}
-      <Card className={cn("py-0", className)}>
+      <Card className={cn("dashboard-data-table py-0", className)}>
         {/* The scroll container is here rather than on the page, so a
           table that is genuinely wider than the pane scrolls inside its
           own card and the page body never does. */}

@@ -1,10 +1,12 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { PlusIcon } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
+import { PageLoading } from "@/components/page-loading";
 import { ProjectCard } from "@/components/project-card";
 import { SearchBar } from "@/components/search-bar";
 import { SlugField } from "@/components/slug-field";
@@ -18,7 +20,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { type App, api, type Project } from "@/lib/api";
+import { api } from "@/lib/api";
+import { appsQuery, projectsQuery } from "@/lib/dashboard-queries";
 import { message } from "@/lib/errors";
 import { useOpenOnArrival } from "@/lib/open-on-arrival";
 import { projectShares, useContainerUsage } from "@/lib/usage";
@@ -40,29 +43,17 @@ export default function ProjectsPage() {
 // listed here: an app only means something inside an environment, and
 // which environment is a choice you make after opening the project.
 function Projects() {
-  const [projects, setProjects] = useState<Project[] | null>(null);
-  const [apps, setApps] = useState<App[]>([]);
+  const projectList = useQuery(projectsQuery);
+  const appList = useQuery(appsQuery);
+  const projects = projectList.data ?? null;
+  const apps = appList.data ?? [];
   const [creating, setCreating] = useState(false);
   useOpenOnArrival("new", setCreating);
   const [query, setQuery] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const reload = useCallback(() => {
-    api
-      .get<Project[]>(`/projects`)
-      .then(setProjects)
-      .catch((e) => setError(message(e)));
-  }, []);
-  useEffect(reload, [reload]);
-
-  // The daemon answers with every app you can see, across every project
-  // — one request, and the cards count out of it.
-  useEffect(() => {
-    api
-      .get<App[]>("/apps")
-      .then(setApps)
-      .catch(() => setApps([]));
-  }, []);
+  const error = projectList.error ? message(projectList.error) : null;
+  const reload = () => {
+    void projectList.refetch();
+  };
 
   const { usage, machine } = useContainerUsage("app");
 
@@ -80,6 +71,7 @@ function Projects() {
         }
       </RailPortal>
       <ErrorAlert error={error} />
+      {projectList.isPending && <PageLoading kind="grid" label="Loading projects" />}
 
       {projects?.length === 0 && (
         <Card>

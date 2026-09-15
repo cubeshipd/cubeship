@@ -82,11 +82,12 @@ func scanUserWith(row scanner, extra ...any) (*User, error) {
 // in here rather than in a method of its own for the same reason — it
 // is a field on that form, and the rule that makes it special is the
 // service's to apply, not this one's.
-func (r *Repository) UpdateProfile(ctx context.Context, userID int64, u *User) (*User, error) {
+func (r *Repository) UpdateProfile(ctx context.Context, userID int64, u *User, updateAvatar ...bool) (*User, error) {
+	changeAvatar := len(updateAvatar) == 0 || updateAvatar[0]
 	row := r.q.QueryRowContext(ctx,
-		`UPDATE users SET username = $2, display_name = $3, email = $4, avatar = $5
+		`UPDATE users SET username = $2, display_name = $3, email = $4, avatar = CASE WHEN $6 THEN $5 ELSE avatar END
 		 WHERE id = $1 RETURNING `+userColumns,
-		userID, u.Username, u.DisplayName, u.Email, u.Avatar)
+		userID, u.Username, u.DisplayName, u.Email, u.Avatar, changeAvatar)
 	updated, err := scanUser(row)
 	if err != nil {
 		return nil, fmt.Errorf("update profile: %w", err)
@@ -595,6 +596,45 @@ func (r *Repository) SetAccessRole(ctx context.Context, userID, roleID int64) er
 	if _, err := r.q.ExecContext(ctx,
 		`UPDATE users SET access_role_id = $2 WHERE id = $1`, userID, nullID(roleID)); err != nil {
 		return fmt.Errorf("give the role: %w", err)
+	}
+	return nil
+}
+
+// SetAvatar locks the identity before replacing its bytes. Both changes belong
+// to one statement, including concurrent uploads and deletes for this account.
+func (r *Repository) SetAvatar(ctx context.Context, id int64, version, mediaType string, data []byte) error {
+	_, err := r.q.ExecContext(ctx, `WITH account AS (
+		UPDATE users SET avatar = $2 WHERE id = $1 RETURNING id
+	) INSERT INTO user_avatars (user_id, media_type, image)
+	SELECT id, $3, $4 FROM account
+	ON CONFLICT (user_id) DO UPDATE SET media_type = EXCLUDED.media_type, image = EXCLUDED.image`, id, version, mediaType, data)
+	if err != nil {
+		return fmt.Errorf("save profile image: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) Avatar(ctx context.Context, username string) ([]byte, string, string, error) {
+	var data []byte
+	var mediaType, version string
+	err := r.q.QueryRowContext(ctx, `SELECT a.image, a.media_type, u.avatar
+		FROM user_avatars a JOIN users u ON u.id = a.user_id
+		WHERE u.username = $1 AND u.avatar LIKE 'upload:%'`, username).Scan(&data, &mediaType, &version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, "", "", ErrNoAvatar
+	}
+	if err != nil {
+		return nil, "", "", fmt.Errorf("read profile image: %w", err)
+	}
+	return data, mediaType, version, nil
+}
+
+func (r *Repository) ClearAvatar(ctx context.Context, id int64) error {
+	_, err := r.q.ExecContext(ctx, `WITH account AS (
+		UPDATE users SET avatar = '' WHERE id = $1 RETURNING id
+	) DELETE FROM user_avatars USING account WHERE user_avatars.user_id = account.id`, id)
+	if err != nil {
+		return fmt.Errorf("remove profile image: %w", err)
 	}
 	return nil
 }

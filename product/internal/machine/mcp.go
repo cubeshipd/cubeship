@@ -37,11 +37,12 @@ func (t *Tools) Register(srv *mcp.Server) {
 }
 
 type metricsInput struct {
+	Server string `json:"server,omitempty" jsonschema:"machine name from the server listing; omitted means control-plane, never a cluster sum"`
 	Window string `json:"window,omitempty" jsonschema:"how much of the past to cover: 1h, 6h or 24h. Defaults to 1h"`
 }
 
 func (t *Tools) metrics(ctx context.Context, _ *mcp.CallToolRequest, in metricsInput) (*mcp.CallToolResult, Series, error) {
-	series, err := t.svc.Series(ctx, t.caller, in.Window)
+	series, err := t.svc.SeriesOn(ctx, t.caller, in.Window, in.Server)
 	if err != nil {
 		return nil, Series{}, err
 	}

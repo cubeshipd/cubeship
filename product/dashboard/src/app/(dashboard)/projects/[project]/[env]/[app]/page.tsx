@@ -9,7 +9,6 @@ import {
   SettingsIcon,
   Trash2Icon,
 } from "lucide-react";
-import Link from "next/link";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { AppAddresses } from "@/components/app-addresses";
@@ -21,6 +20,7 @@ import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal, RailTabs } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
+import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";

@@ -1,8 +1,9 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
 import { CopyIcon, DownloadIcon, RefreshCwIcon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ActionButton } from "@/components/action-button";
 import { Ansi, strip } from "@/components/ansi";
@@ -61,41 +62,28 @@ export function ContainerLogs({
   tall?: boolean;
   servers?: string[];
 }) {
-  const [text, setText] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [tail, setTail] = useState<number>(TAILS[0]);
   const [following, setFollowing] = useState(false);
   // Empty is the daemon's own default: the machine the traffic arrives
   // at. Named here only once somebody has chosen another.
   const [server, setServer] = useState("");
 
-  const load = useCallback(async () => {
-    setBusy(true);
-    try {
+  // A slow worker must not accumulate overlapping Follow requests. Query
+  // cancellation also prevents a previous machine's log replacing the new one.
+  const log = useQuery({
+    queryKey: ["container-logs", path, tail, server],
+    queryFn: async ({ signal }) => {
       const where = server ? `&server=${encodeURIComponent(server)}` : "";
-      const body = await api.getText(`${path}/logs?tail=${tail}${where}`);
-      setText(body.trim());
-      setError(null);
-    } catch (e) {
-      setError(message(e));
-    }
-    setBusy(false);
-  }, [path, tail, server]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  // **Polled only when asked.** Re-reading a log under somebody
-  // mid-sentence is the one thing a log viewer must not do, so this is
-  // off until somebody presses Follow — at which point it is what they
-  // asked for, and the view goes to the bottom with it.
-  useEffect(() => {
-    if (!following) return;
-    const timer = setInterval(load, FOLLOW_MS);
-    return () => clearInterval(timer);
-  }, [following, load]);
+      return (await api.getText(`${path}/logs?tail=${tail}${where}`, { signal })).trim();
+    },
+    refetchInterval: following ? FOLLOW_MS : false,
+    refetchOnWindowFocus: false,
+    retry: false,
+    gcTime: 0,
+  });
+  const text = log.data ?? null;
+  const busy = log.isFetching;
+  const error = log.error ? message(log.error) : null;
 
   const refreshing = busy && !following;
   const toolbar = (
@@ -150,7 +138,7 @@ export function ContainerLogs({
         busy={refreshing}
         aria-label="Refresh"
         title="Refresh"
-        onClick={load}
+        onClick={() => void log.refetch()}
       >
         {refreshing ? null : <RefreshCwIcon />}
       </ActionButton>

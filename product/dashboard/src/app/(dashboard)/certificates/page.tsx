@@ -2,10 +2,10 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { InfoIcon } from "lucide-react";
-import Link from "next/link";
 import { useState } from "react";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { StatusBadge } from "@/components/status-badge";

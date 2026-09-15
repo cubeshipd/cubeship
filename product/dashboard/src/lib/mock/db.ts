@@ -51,8 +51,7 @@ export const db = {
     themes: ["cyan", "mono", "hacker", "red", "orange", "pink", "purple", "blue", "helix"],
     display_name: "Lucas",
     email: "lucas@example.com",
-    avatar: "cyan",
-    avatars: ["blue", "cyan", "hacker", "helix", "mono", "orange", "pink", "purple", "red"],
+    avatar: "",
     grants: null,
   } as Me,
 
@@ -61,7 +60,7 @@ export const db = {
       username: "lucas",
       display_name: "Lucas",
       role: "admin",
-      avatar: "cyan",
+      avatar: "",
       created_at: ago(60 * 24 * 90),
       access_role_id: 3,
     },
@@ -70,7 +69,7 @@ export const db = {
     {
       username: "ci",
       role: "member",
-      avatar: "hacker",
+      avatar: "",
       created_at: ago(60 * 24 * 12),
       access_role_id: 2,
     },
@@ -495,7 +494,7 @@ export const db = {
       {
         id: 41,
         status: "succeeded",
-        image_ref: "registry.cubeship.example.com/web/production/api:latest",
+        image: "registry.cubeship.example.com/web/production/api:latest",
         tag: "latest",
         live: true,
         deletable: true,
@@ -506,6 +505,7 @@ export const db = {
       {
         id: 40,
         status: "failed",
+        image: "registry.cubeship.example.com/web/production/api:latest",
         tag: "latest",
         error: "container exited with status 1 before it became healthy",
         live: false,

@@ -9,7 +9,6 @@ import {
   PlusIcon,
   Trash2Icon,
 } from "lucide-react";
-import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -17,6 +16,7 @@ import { copyText } from "@/components/copy-button";
 import { CopyField } from "@/components/copy-field";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchableSelect } from "@/components/searchable-select";
