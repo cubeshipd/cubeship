@@ -107,9 +107,9 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"DELETE /registry/images",
 		"DELETE /registry/repositories",
 		"DELETE /roles/{id}",
+		"DELETE /users/me/avatar",
 		"DELETE /users/{username}",
 		"DELETE /users/{username}/credentials",
-		"DELETE /users/me/avatar",
 		"DELETE /volumes/orphans/{id}",
 		"GET /apps",
 		"GET /apps/{project}/{env}/{name}",
@@ -203,7 +203,6 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"PATCH /objectstores/{name}",
 		"PATCH /projects/{projectSlug}/env",
 		"PATCH /projects/{projectSlug}/environments/{envSlug}/env",
-		"PUT /users/me/avatar",
 		"PATCH /users/me",
 		"PATCH /users/{username}",
 		"POST /apps",
@@ -262,6 +261,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"PUT /registries/{id}",
 		"PUT /roles/{id}",
 		"PUT /settings",
+		"PUT /users/me/avatar",
 	}
 	if got := f.Server.Patterns(); !slices.Equal(got, want) {
 		t.Errorf("the documented API changed.\n got: %v\nwant: %v", got, want)

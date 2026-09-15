@@ -23,6 +23,8 @@ var routes = map[string]phrase{
 	"POST /auth/logout":                    {"sign out", "signed out", "", ""},
 	"PUT /users/me/password":               {"change their password", "changed their password", "", ""},
 	"PATCH /users/me":                      {"change their profile", "changed their profile", "", ""},
+	"PUT /users/me/avatar":                 {"change their profile image", "changed their profile image", "", ""},
+	"DELETE /users/me/avatar":              {"remove their profile image", "removed their profile image", "", ""},
 	"POST /users/me/api-keys":              {"create an API key", "created an API key", "", ""},
 	"POST /users/me/api-key/rotate":        {"rotate their API key", "rotated their API key", "", ""},
 	"DELETE /users/me/api-keys/{id}":       {"revoke API key", "revoked API key", "{id}", ""},

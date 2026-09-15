@@ -84,15 +84,16 @@ func TestAFaceIsNamedAndNotAddressed(t *testing.T) {
 			t.Errorf("%q is not a name", name)
 		}
 	}
-	for _, bad := range []string{"../secret", "/etc/passwd", "https://evil.example", "blue.png", ""} {
+	for _, bad := range []string{"../secret", "/etc/passwd", "https://evil.example", "blue.png", "upload:forged"} {
 		if ValidAvatar(bad) {
 			t.Errorf("ValidAvatar(%q) = true", bad)
 		}
 	}
-	// Empty is in that list on purpose. It used to be the one value
-	// that was not a name and was accepted anyway, and what made it
-	// worth removing is that it was what almost every account held —
-	// see DefaultAvatar.
+	// An empty value selects initials. Upload markers are set only by
+	// SetAvatar after storing the image, never through profile edits.
+	if !ValidAvatar("") {
+		t.Error("an empty avatar must select the initials fallback")
+	}
 	if !ValidAvatar(DefaultAvatar) {
 		t.Errorf("the default face %q is not one this instance ships", DefaultAvatar)
 	}
