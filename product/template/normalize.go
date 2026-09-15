@@ -36,15 +36,20 @@ type NormalizedLimits struct {
 }
 
 type NormalizedDatabase struct {
-	Key      string            `json:"key"`
-	Name     string            `json:"name"`
-	Engine   string            `json:"engine"`
-	Version  *string           `json:"version"`
-	Username *string           `json:"username"`
-	Database *string           `json:"database"`
-	Expose   *int              `json:"expose"`
-	Limits   *NormalizedLimits `json:"limits"`
-	Port     *int              `json:"port"`
+	Key     string  `json:"key"`
+	Name    string  `json:"name"`
+	Engine  string  `json:"engine"`
+	Version *string `json:"version"`
+	// Extensions is the normalized list: sorted, deduplicated, and
+	// carrying what one of them requires — so a template asking for
+	// vectorchord alone stores both, and two releases that mean the
+	// same thing compare equal.
+	Extensions []string          `json:"extensions"`
+	Username   *string           `json:"username"`
+	Database   *string           `json:"database"`
+	Expose     *int              `json:"expose"`
+	Limits     *NormalizedLimits `json:"limits"`
+	Port       *int              `json:"port"`
 }
 
 type NormalizedStore struct {
@@ -130,6 +135,15 @@ type NormalizedVolume struct {
 	Path string `json:"path"`
 }
 
+// defaultVersion is the newest version an engine offers, which is what
+// a database that names none runs.
+func defaultVersion(e *engine) string {
+	if len(e.versions) == 0 {
+		return ""
+	}
+	return e.versions[0]
+}
+
 func orNil(s string) *string {
 	if s == "" {
 		return nil
@@ -177,11 +191,22 @@ func normalize(m Manifest) Normalized {
 	for _, db := range m.Databases {
 		nd := NormalizedDatabase{
 			Key: db.Key, Name: or(db.Name, db.Key), Engine: db.Engine,
-			Version: orNil(db.Version), Username: orNil(db.Username), Database: orNil(db.Database),
+			Version: orNil(db.Version), Extensions: []string{},
+			Username: orNil(db.Username), Database: orNil(db.Database),
 			Expose: db.Expose, Limits: limitsOf(db.Limits),
 		}
 		if e := findEngine(db.Engine); e != nil {
 			nd.Port = &e.port
+			// Normalized against the version this will actually run,
+			// which is the engine's newest when the file names none —
+			// the same version the daemon would default to.
+			// Never nil: a database with none carries `[]`, so nothing
+			// downstream has to tell "none" from "this release did not
+			// say". A file that failed validation keeps `[]` too — the
+			// manifest is only published when it validated.
+			if normalized, problem := normalizeExtensions(db.Engine, or(db.Version, defaultVersion(e)), db.Extensions); problem.code == "" && normalized != nil {
+				nd.Extensions = normalized
+			}
 		}
 		n.Databases = append(n.Databases, nd)
 	}

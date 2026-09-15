@@ -787,6 +787,36 @@ export type DatastoreEngine = {
   // What an attached app's variables are called: an app on a Redis gets
   // REDIS_URL, not DATABASE_URL.
   var_stem: string;
+  // The extensions this engine offers, each with the versions it is
+  // offered at. Empty for every engine but Postgres.
+  //
+  // Per version rather than per engine, because that is how it is true:
+  // each combination is a reviewed image and not every one exists. A
+  // form offering the union would let somebody pick something the daemon
+  // then refuses.
+  extensions: DatastoreEngineExtension[];
+};
+
+// One extension an engine offers.
+//
+// `name` is what the API takes; `sql_name` is what Postgres calls it,
+// and the two differ — you ask for "pgvector" and write CREATE EXTENSION
+// vector. Both are shown, because the second is what an application's
+// own migrations say.
+export type DatastoreEngineExtension = {
+  name: string;
+  sql_name: string;
+  summary: string;
+  // Extensions this one is created alongside. The daemon adds them
+  // rather than refusing, and the form says so rather than letting
+  // somebody untick one into a request that quietly re-adds it.
+  requires: string[];
+  versions: string[];
+  // Whether it is inside every Postgres image Cubeship runs. True for
+  // the contrib modules, which is most of them: installing one of those
+  // is a statement and the database keeps answering. The rest replace
+  // the container, and only those are worth warning about.
+  builtin: boolean;
 };
 
 // What an attached app receives, by name. Values are not in it: one of
@@ -813,6 +843,10 @@ export type Datastore = {
   description: string;
   engine: string;
   version: string;
+  // The Postgres extensions it was created with, normalized and sorted.
+  // Empty for almost every database, and permanent: they chose the
+  // image, and the image wrote the data directory.
+  extensions: string[];
   // The middle of the variables an attached app receives — DATABASE,
   // REDIS or MONGO. Served rather than derived here, so nothing out
   // here keeps a second copy of the engine table, and it is what says

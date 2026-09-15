@@ -315,3 +315,129 @@ func joinPath(path []any) string {
 	}
 	return strings.Join(parts, ".")
 }
+
+// --- extensions on a database ---
+
+func extensionTemplate(t *testing.T, databaseYAML string) Result {
+	t.Helper()
+	return Validate([]byte(`version: 1
+minCubeship: ">=` + extensionsSince + `"
+project: vectors
+databases:
+  - key: db
+` + databaseYAML + `
+apps:
+  - key: web
+    image: nginx
+`))
+}
+
+func TestADatabaseDeclaresExtensions(t *testing.T) {
+	r := extensionTemplate(t, `    engine: postgres
+    version: "16"
+    extensions:
+      - vectorchord
+      - pgvector`)
+	if !r.OK {
+		t.Fatalf("refused: %v", r.Diagnostics)
+	}
+	// Normalized: sorted, deduplicated, and carrying what one of them
+	// requires — so two releases that mean the same thing compare equal.
+	got := r.Manifest.Databases[0].Extensions
+	if !slices.Equal(got, []string{"pgvector", "vectorchord"}) {
+		t.Errorf("normalized to %v", got)
+	}
+}
+
+// Asking for one alone stores both, because VectorChord cannot work
+// without pgvector and there is one right answer to that.
+func TestATemplateGetsWhatItsExtensionNeeds(t *testing.T) {
+	r := extensionTemplate(t, `    engine: postgres
+    extensions: [vectorchord]`)
+	if !r.OK {
+		t.Fatalf("refused: %v", r.Diagnostics)
+	}
+	if got := r.Manifest.Databases[0].Extensions; !slices.Equal(got, []string{"pgvector", "vectorchord"}) {
+		t.Errorf("got %v", got)
+	}
+}
+
+// A database with none carries an empty list rather than null, so a
+// client never has to tell "none" from "this release did not say".
+func TestADatabaseWithoutExtensionsNormalizesToAnEmptyList(t *testing.T) {
+	r := extensionTemplate(t, `    engine: postgres`)
+	if !r.OK {
+		t.Fatalf("refused: %v", r.Diagnostics)
+	}
+	if got := r.Manifest.Databases[0].Extensions; got == nil || len(got) != 0 {
+		t.Errorf("got %#v", got)
+	}
+}
+
+func TestExtensionDiagnostics(t *testing.T) {
+	cases := []struct {
+		name, yaml, code string
+	}{
+		{"a name nobody offers", `    engine: postgres
+    extensions: [postgis]`, "extension.unknown"},
+		{"an engine with none", `    engine: redis
+    extensions: [pgvector]`, "extension.engine"},
+		{"a version with no image", `    engine: postgres
+    version: "15.0"
+    extensions: [pgvector]`, "engine.version"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			r := extensionTemplate(t, c.yaml)
+			if r.OK {
+				t.Fatal("accepted")
+			}
+			if !hasCode(r.Diagnostics, c.code) {
+				t.Errorf("diagnostics are %v, want %s", r.Diagnostics, c.code)
+			}
+		})
+	}
+}
+
+// An instance older than extensions installs the template and creates
+// the database without them, and every other step succeeds — so the app
+// comes up and fails on its first query, on an instance with no way to
+// add one. That is an error, not advice.
+func TestExtensionsNeedAMinCubeship(t *testing.T) {
+	r := Validate([]byte(`version: 1
+project: vectors
+databases:
+  - key: db
+    engine: postgres
+    extensions: [pgvector]
+apps:
+  - key: web
+    image: nginx
+`))
+	if r.OK {
+		t.Fatal("accepted without a minCubeship")
+	}
+	if !hasCode(r.Diagnostics, "extension.min-cubeship") {
+		t.Fatalf("diagnostics are %v", r.Diagnostics)
+	}
+	// And a minCubeship that still admits an older instance is the same
+	// mistake said differently.
+	r = Validate([]byte(`version: 1
+minCubeship: ">=0.8.0"
+project: vectors
+databases:
+  - key: db
+    engine: postgres
+    extensions: [pgvector]
+apps:
+  - key: web
+    image: nginx
+`))
+	if r.OK || !hasCode(r.Diagnostics, "extension.min-cubeship") {
+		t.Fatalf("diagnostics are %v", r.Diagnostics)
+	}
+}
+
+func hasCode(ds []Diagnostic, code string) bool {
+	return slices.ContainsFunc(ds, func(d Diagnostic) bool { return d.Code == code })
+}

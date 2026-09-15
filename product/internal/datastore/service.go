@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"maps"
+	"slices"
 
 	"cubeship/internal/app"
 	"cubeship/internal/envvar"
@@ -156,6 +157,14 @@ type Spec struct {
 	// Version is a tag this release offers for that engine. Empty takes
 	// the newest.
 	Version string
+	// Extensions are the Postgres extensions to create the database
+	// with, by their public names — "pgvector", "vectorchord". Empty is
+	// the normal answer, and it keeps the plain engine image.
+	//
+	// Names, not images or SQL: what each one runs is in the support
+	// matrix, and anything not in it is refused. Permanent, so this is
+	// only ever read at creation.
+	Extensions []string
 	// Username and Database default to something workable; Password is
 	// generated when it is empty, so a database without a strong
 	// password is not something anybody can create by leaving a box
@@ -199,6 +208,15 @@ func (s *Service) Create(ctx context.Context, caller *user.User, spec Spec) (*Da
 		return nil, fmt.Errorf("%w: %s %q — this release offers %v",
 			ErrUnknownVersion, spec.Engine, spec.Version, spec.Engine.Versions())
 	}
+	// After the version, because which extensions exist is a fact about
+	// a version: the answer for "vectorchord on postgres 16" is not the
+	// answer for a version nobody has an image of it for. Here rather
+	// than in a handler, so the MCP surface and a template install are
+	// held to exactly the same list.
+	extensions, err := NormalizeExtensions(spec.Engine, spec.Version, spec.Extensions)
+	if err != nil {
+		return nil, err
+	}
 	if spec.Username == "" {
 		// Per engine, because Redis has exactly one login and it is
 		// not ours to name.
@@ -229,7 +247,6 @@ func (s *Service) Create(ctx context.Context, caller *user.User, spec Spec) (*Da
 
 	port := 0
 	if spec.Expose != nil {
-		var err error
 		if port, err = s.resolvePort(ctx, *spec.Expose); err != nil {
 			return nil, err
 		}
@@ -237,7 +254,7 @@ func (s *Service) Create(ctx context.Context, caller *user.User, spec Spec) (*Da
 
 	created, err := s.Repo().Create(ctx, &Datastore{
 		Slug: spec.Slug, Description: spec.Description,
-		Engine: spec.Engine, Version: spec.Version,
+		Engine: spec.Engine, Version: spec.Version, Extensions: extensions,
 		Username: spec.Username, Password: spec.Password, Database: spec.Database,
 		ExposedPort: port,
 	})
@@ -292,10 +309,32 @@ func engineList() string {
 // initializes itself, and nothing reads it afterwards. Changing this
 // column would change every connection string Cubeship hands out while
 // the database went on accepting only the old one.
-func (s *Service) Update(ctx context.Context, caller *user.User, name string, description *string, l *Limits) (*Datastore, error) {
+//
+// Not the extensions, which are not fixed but are not a field either:
+// adding one replaces the container, and that does not belong under a
+// PATCH whose other two fields are a sentence and a memory ceiling. See
+// AddExtensions.
+func (s *Service) Update(ctx context.Context, caller *user.User, name string,
+	description *string, l *Limits, extensions *[]string) (*Datastore, error) {
 	d, err := s.Resolve(ctx, caller, name, RoleToManage)
 	if err != nil {
 		return nil, err
+	}
+	// Refused rather than ignored, and refused here rather than by a
+	// handler that simply has no field for it: a request that asks for
+	// an extension and gets a 200 back is somebody believing their
+	// database has one. Adding one replaces the container, which is not
+	// what a PATCH of a description should do — AddExtensions is where
+	// that is asked for deliberately. Sending exactly what is already
+	// there is not a change, so it is not an error either.
+	if extensions != nil {
+		want, err := NormalizeExtensions(d.Engine, d.Version, *extensions)
+		if err != nil {
+			return nil, err
+		}
+		if !slices.Equal(want, d.Extensions) {
+			return nil, ErrExtensionsNotHere
+		}
 	}
 	// Checked here rather than found out by a container that will not
 	// start, minutes later, with nobody watching.
@@ -316,6 +355,108 @@ func (s *Service) Update(ctx context.Context, caller *user.User, name string, de
 		}
 	}
 	return s.Resolve(ctx, caller, name, RoleToManage)
+}
+
+// AddExtensions installs extensions on a database that already exists.
+//
+// **Add only.** Every extension the datastore already has stays, and
+// asking for fewer is refused rather than quietly ignored: adding one is
+// an image carrying one more library over the same data directory, and
+// removing one is an image *without* a library that a column's type, an
+// index or a default may already need. The second is a database that
+// comes up and cannot read its own tables, and nothing here can tell in
+// advance which one it would be.
+//
+// **Most of them interrupt nothing.** A contrib module is already inside
+// every image this instance runs, so adding one is a statement against
+// the server that is up. Two things are not: an extension with an image
+// of its own, and one whose library the postmaster has to preload. Both
+// are fixed when a container is created, so both replace it — a database
+// going away for a few seconds, its data untouched because the data is a
+// host bind mount.
+//
+// A replacement is detached, like every other provision here: the row is
+// written first, the status goes back to "provisioning", and how it went
+// lands on the same row. That is also what makes it retryable — a
+// failure leaves the row asking for the extensions, and `start`
+// provisions again.
+//
+// A database that is stopped, or that never produced a container, is
+// only written down: the next `start` creates them, on the path that
+// creates them for every other datastore.
+//
+// Idempotent. Asking for what is already there replaces nothing and
+// returns the datastore untouched, which is what makes this safe to call
+// from a script that does not track state.
+func (s *Service) AddExtensions(ctx context.Context, caller *user.User, name string, names []string) (*Datastore, error) {
+	d, err := s.Resolve(ctx, caller, name, RoleToManage)
+	if err != nil {
+		return nil, err
+	}
+	// Normalized as one set, so what an extension requires is added even
+	// when only the other one was asked for, and so the list is checked
+	// against the version this database actually runs.
+	want, err := NormalizeExtensions(d.Engine, d.Version, append(d.Extensions.Strings(), names...))
+	if err != nil {
+		return nil, err
+	}
+	for _, have := range d.Extensions {
+		if !want.Has(have) {
+			return nil, fmt.Errorf("%w: %s", ErrExtensionRemoval, have)
+		}
+	}
+	if slices.Equal(want, d.Extensions) {
+		return d, nil
+	}
+
+	after := *d
+	after.Extensions = want
+	replace := NeedsReplacement(d, &after)
+
+	// Nothing to run against: a database that is stopped, or one whose
+	// provisioning never produced a container. The list is stored and
+	// the next `start` creates them, which is the same code path every
+	// other provision takes.
+	if d.ContainerID == "" || d.Status != StatusRunning {
+		if err := s.Repo().SetExtensions(ctx, d.ID, want); err != nil {
+			return nil, err
+		}
+		return s.Resolve(ctx, caller, name, RoleToManage)
+	}
+
+	if !replace {
+		// The usual case, and the reason most of these cost nothing: a
+		// contrib module is already in the image, so the whole of adding
+		// it is a statement against the server that is running.
+		//
+		// Run **before** the row is written. A failure here leaves the
+		// datastore saying exactly what it has, which is what stops a
+		// refused statement from turning into a row that claims an
+		// extension nobody created.
+		if err := s.prov.Install(ctx, &after); err != nil {
+			return nil, err
+		}
+		if err := s.Repo().SetExtensions(ctx, d.ID, want); err != nil {
+			return nil, err
+		}
+		return s.Resolve(ctx, caller, name, RoleToManage)
+	}
+
+	// A new image or a new preloaded library: both are fixed when a
+	// container is created, so the container is replaced. The row goes
+	// first, because it is what chooses the image — and because a
+	// provision that fails halfway then leaves the datastore asking for
+	// the extensions, so `start` finishes it rather than reverting it.
+	if err := s.Repo().SetExtensions(ctx, d.ID, want); err != nil {
+		return nil, err
+	}
+	d.Extensions = want
+	if err := s.Repo().UpdateContainer(ctx, d.ID, d.ContainerID, StatusProvisioning, ""); err != nil {
+		return nil, err
+	}
+	d.Status = StatusProvisioning
+	s.prov.Start(d)
+	return d, nil
 }
 
 // List is every database on the instance, each with what it is attached

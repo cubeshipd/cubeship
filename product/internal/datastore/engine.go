@@ -117,6 +117,19 @@ type spec struct {
 	consistency string
 }
 
+// PostgresShmSize is how much /dev/shm a Postgres datastore gets.
+//
+// The Engine's default is 64 MiB, and Postgres takes its dynamic shared
+// memory from there: a parallel query that wants more fails with "could
+// not resize shared memory segment" on a database with nothing else
+// wrong with it. It is the one setting every Postgres compose file
+// raises, and the number here is the one they use.
+//
+// Applied to Postgres only. The other engines do not use /dev/shm for
+// anything, and a gigabyte of tmpfs per container on a box this size is
+// not free.
+const PostgresShmSize = 256 << 20
+
 // postgresDataPath is where Postgres keeps its files inside the
 // container. It is the bind mount and it is PGDATA, which is one fact
 // rather than two — see the env below for why saying so matters.
@@ -406,9 +419,28 @@ func (e Engine) DefaultUsername() string { return specs[e].defaultUser }
 // and not over the prefix alone.
 func (e Engine) VarStem() string { return specs[e].stem }
 
-// Image is the reference the container runs.
+// Image is the reference the container runs for a datastore with no
+// extensions — the engine's own image at that version.
 func (e Engine) Image(version string) string {
 	return specs[e].image + ":" + version
+}
+
+// Image is the reference this datastore's container runs.
+//
+// Without extensions it is the engine's own image, unchanged: a database
+// created before extensions existed, or created without any, keeps
+// running exactly what it ran before. That is not a nicety — it is the
+// same image over the same data directory, which is the only thing that
+// makes this migration free.
+//
+// With them it is the build from the support matrix, pinned by digest,
+// so which bytes a Cubeship release runs is decided here rather than by
+// whoever last pushed the tag.
+func (d *Datastore) Image() string {
+	if b, ok := buildFor(d.Version, d.Extensions); ok {
+		return b.image + ":" + b.tag + "@" + b.digest
+	}
+	return d.Engine.Image(d.Version)
 }
 
 // KnowsVersion reports whether version is one this release offers for e.
@@ -436,6 +468,14 @@ func (d *Datastore) ContainerEnv() []string {
 func (d *Datastore) ContainerCmd() []string {
 	if build := specs[d.Engine].cmd; build != nil {
 		return build(d)
+	}
+	// An extension build may need libraries mapped before the first
+	// backend starts, which no statement can do afterwards — VectorChord
+	// is one. Said here rather than relying on the image's own CMD: the
+	// image happens to set the same thing today, and a setting that
+	// lives in somebody else's default changes without us.
+	if libs := preloadFor(d.Version, d.Extensions); len(libs) > 0 {
+		return []string{"postgres", "-c", "shared_preload_libraries=" + strings.Join(libs, ",")}
 	}
 	return nil
 }

@@ -317,6 +317,17 @@ Reconfigure an app: where its image comes from. Its domains are added and remove
 
 ## Databases
 
+### add_datastore_extensions
+
+Install Postgres extensions on a database that already exists — "pgvector", "vectorchord". Adds only: everything the database already has stays, and removing one is refused because the data may already depend on it. **The container is replaced to pick the new image up**, so the database is unreachable for a few seconds and comes back as "provisioning"; its data survives, being a host bind mount. Asking for what is already there does nothing. Requires the admin role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `datastore` * | string | the database's name on this instance |
+| `extensions` * | array | the extensions to install, by name: "pgvector", "vectorchord". "vectorchord" brings "pgvector" with it. Call list_datastore_engines for which versions offer which |
+
+\* required
+
 ### attach_datastore
 
 Wire an app to a database: the app's container is given DATABASE_URL and its parts — REDIS_URL for a Redis, MONGO_URL for a MongoDB — from its next deploy onwards. The app is named by its full reference, project/environment/name, and may be in any project. Use a prefix like "ANALYTICS_" when one app needs a second database of the same kind; a cache beside a database needs none, since the two name different variables. Requires the admin role.
@@ -331,13 +342,14 @@ Wire an app to a database: the app's container is given DATABASE_URL and its par
 
 ### create_datastore
 
-Provision a managed database on this instance. It belongs to the instance, not to a project — one database can serve apps in several. It comes up with a generated password, which is never returned: attach an app to it and the app receives the connection string as environment variables. Requires the admin role.
+Provision a managed database on this instance. It belongs to the instance, not to a project — one database can serve apps in several. It comes up with a generated password, which is never returned: attach an app to it and the app receives the connection string as environment variables. Extensions can also be added afterwards with add_datastore_extensions, and can never be removed. Requires the admin role.
 
 | Input | Type | What it is |
 | --- | --- | --- |
 | `database` | string | the database to create inside the server. Defaults to the name with dashes turned into underscores |
 | `description` | string | what this database is for, in a sentence |
 | `engine` * | string | which server to run: postgres, mysql or mariadb. Call list_datastore_engines for what this release offers |
+| `extensions` | array | Postgres extensions to create the database with, by name: "pgvector", "vectorchord". More can be added later with add_datastore_extensions, but none can ever be removed. "vectorchord" brings "pgvector" with it. Call list_datastore_engines for which versions offer which. Empty for every engine but postgres |
 | `name` * | string | the database's name, unique on the instance: lowercase letters, digits and dashes. It is the container's name and is permanent |
 | `username` | string | the login to create. Defaults to "cubeship". MySQL and MariaDB will not accept "root" |
 | `version` | string | a version this release offers for that engine. Defaults to the newest. Permanent — a major version cannot be changed under an existing data directory |
@@ -367,7 +379,7 @@ Unwire an app from a database. Its container keeps the variables it was created 
 
 ### get_datastore
 
-Get one managed database by reference: its engine, version, status, the address apps reach it at, and what each attached app receives. Passwords are not reported.
+Get one managed database by reference: its engine, version, extensions, status, the address apps reach it at, and what each attached app receives. Passwords are not reported.
 
 | Input | Type | What it is |
 | --- | --- | --- |
@@ -377,13 +389,13 @@ Get one managed database by reference: its engine, version, status, the address 
 
 ### list_datastore_engines
 
-List the database engines this Cubeship release can run and the versions it offers for each. Call this before create_datastore rather than guessing a version.
+List the database engines this Cubeship release can run, the versions it offers for each, and the Postgres extensions available at each version. Call this before create_datastore rather than guessing a version or an extension.
 
 Takes no input.
 
 ### list_datastores
 
-List every managed database on this instance: which engine and version each runs, whether it is up, and which apps are attached to it.
+List every managed database on this instance: which engine and version each runs, which Postgres extensions it was created with, whether it is up, and which apps are attached to it.
 
 Takes no input.
 

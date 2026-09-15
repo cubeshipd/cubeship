@@ -202,7 +202,11 @@ func (s *Service) createDatabase(ctx context.Context, caller *user.User, run *Ru
 	if _, err := s.datastores.Create(ctx, caller, datastore.Spec{
 		Slug: name, Description: p.description(),
 		Engine: datastore.Engine(db.Engine), Version: deref(db.Version),
-		Username: deref(db.Username), Database: deref(db.Database), Expose: db.Expose,
+		// The manifest's list, already normalized by the validator. The
+		// daemon normalizes it again rather than trusting it — a
+		// manifest reaches here from a catalog, not from this process.
+		Extensions: db.Extensions,
+		Username:   deref(db.Username), Database: deref(db.Database), Expose: db.Expose,
 	}); err != nil {
 		return fmt.Errorf("create database %s: %w", name, err)
 	}

@@ -35,20 +35,24 @@ func NewTools(svc *Service, caller *user.User) *Tools {
 func (t *Tools) Register(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "create_datastore",
-		Description: "Provision a managed database on this instance. It belongs to the instance, not to a project — one database can serve apps in several. It comes up with a generated password, which is never returned: attach an app to it and the app receives the connection string as environment variables. Requires the admin role.",
+		Description: "Provision a managed database on this instance. It belongs to the instance, not to a project — one database can serve apps in several. It comes up with a generated password, which is never returned: attach an app to it and the app receives the connection string as environment variables. Extensions can also be added afterwards with add_datastore_extensions, and can never be removed. Requires the admin role.",
 	}, t.create)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "list_datastores",
-		Description: "List every managed database on this instance: which engine and version each runs, whether it is up, and which apps are attached to it.",
+		Description: "List every managed database on this instance: which engine and version each runs, which Postgres extensions it was created with, whether it is up, and which apps are attached to it.",
 	}, t.list)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_datastore",
-		Description: "Get one managed database by reference: its engine, version, status, the address apps reach it at, and what each attached app receives. Passwords are not reported.",
+		Description: "Get one managed database by reference: its engine, version, extensions, status, the address apps reach it at, and what each attached app receives. Passwords are not reported.",
 	}, t.get)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "list_datastore_engines",
-		Description: "List the database engines this Cubeship release can run and the versions it offers for each. Call this before create_datastore rather than guessing a version.",
+		Description: "List the database engines this Cubeship release can run, the versions it offers for each, and the Postgres extensions available at each version. Call this before create_datastore rather than guessing a version or an extension.",
 	}, t.engines)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "add_datastore_extensions",
+		Description: "Install Postgres extensions on a database that already exists — \"pgvector\", \"vectorchord\". Adds only: everything the database already has stays, and removing one is refused because the data may already depend on it. **The container is replaced to pick the new image up**, so the database is unreachable for a few seconds and comes back as \"provisioning\"; its data survives, being a host bind mount. Asking for what is already there does nothing. Requires the admin role.",
+	}, t.addExtensions)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "attach_datastore",
 		Description: "Wire an app to a database: the app's container is given DATABASE_URL and its parts — REDIS_URL for a Redis, MONGO_URL for a MongoDB — from its next deploy onwards. The app is named by its full reference, project/environment/name, and may be in any project. Use a prefix like \"ANALYTICS_\" when one app needs a second database of the same kind; a cache beside a database needs none, since the two name different variables. Requires the admin role.",
@@ -64,18 +68,19 @@ func (t *Tools) Register(srv *mcp.Server) {
 }
 
 type createInput struct {
-	Name        string `json:"name" jsonschema:"the database's name, unique on the instance: lowercase letters, digits and dashes. It is the container's name and is permanent"`
-	Description string `json:"description,omitempty" jsonschema:"what this database is for, in a sentence"`
-	Engine      string `json:"engine" jsonschema:"which server to run: postgres, mysql or mariadb. Call list_datastore_engines for what this release offers"`
-	Version     string `json:"version,omitempty" jsonschema:"a version this release offers for that engine. Defaults to the newest. Permanent — a major version cannot be changed under an existing data directory"`
-	Username    string `json:"username,omitempty" jsonschema:"the login to create. Defaults to \"cubeship\". MySQL and MariaDB will not accept \"root\""`
-	Database    string `json:"database,omitempty" jsonschema:"the database to create inside the server. Defaults to the name with dashes turned into underscores"`
+	Name        string   `json:"name" jsonschema:"the database's name, unique on the instance: lowercase letters, digits and dashes. It is the container's name and is permanent"`
+	Description string   `json:"description,omitempty" jsonschema:"what this database is for, in a sentence"`
+	Engine      string   `json:"engine" jsonschema:"which server to run: postgres, mysql or mariadb. Call list_datastore_engines for what this release offers"`
+	Version     string   `json:"version,omitempty" jsonschema:"a version this release offers for that engine. Defaults to the newest. Permanent — a major version cannot be changed under an existing data directory"`
+	Extensions  []string `json:"extensions,omitempty" jsonschema:"Postgres extensions to create the database with, by name: \"pgvector\", \"vectorchord\". More can be added later with add_datastore_extensions, but none can ever be removed. \"vectorchord\" brings \"pgvector\" with it. Call list_datastore_engines for which versions offer which. Empty for every engine but postgres"`
+	Username    string   `json:"username,omitempty" jsonschema:"the login to create. Defaults to \"cubeship\". MySQL and MariaDB will not accept \"root\""`
+	Database    string   `json:"database,omitempty" jsonschema:"the database to create inside the server. Defaults to the name with dashes turned into underscores"`
 }
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
 	created, err := t.svc.Create(ctx, t.caller, Spec{
 		Slug: in.Name, Description: in.Description,
-		Engine: Engine(in.Engine), Version: in.Version,
+		Engine: Engine(in.Engine), Version: in.Version, Extensions: in.Extensions,
 		Username: in.Username, Database: in.Database,
 	})
 	if err != nil {
@@ -117,6 +122,19 @@ func (t *Tools) engines(ctx context.Context, _ *mcp.CallToolRequest, _ struct{})
 		return nil, nil, err
 	}
 	return nil, engineResponses(), nil
+}
+
+type extensionsInput struct {
+	Datastore  string   `json:"datastore" jsonschema:"the database's name on this instance"`
+	Extensions []string `json:"extensions" jsonschema:"the extensions to install, by name: \"pgvector\", \"vectorchord\". \"vectorchord\" brings \"pgvector\" with it. Call list_datastore_engines for which versions offer which"`
+}
+
+func (t *Tools) addExtensions(ctx context.Context, _ *mcp.CallToolRequest, in extensionsInput) (*mcp.CallToolResult, Response, error) {
+	d, err := t.svc.AddExtensions(ctx, t.caller, in.Datastore, in.Extensions)
+	if err != nil {
+		return nil, Response{}, err
+	}
+	return nil, toResponse(d, t.instance(ctx)), nil
 }
 
 type attachInput struct {

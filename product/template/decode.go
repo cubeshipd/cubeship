@@ -14,7 +14,7 @@ import (
 var keySets = map[string][]string{
 	"manifest": {"version", "minCubeship", "project", "environment", "inputs", "databases", "stores", "apps"},
 	"input":    {"key", "type", "label", "help", "required", "default", "pattern", "min", "max", "options", "generate"},
-	"database": {"key", "name", "engine", "version", "username", "database", "expose", "limits"},
+	"database": {"key", "name", "engine", "version", "extensions", "username", "database", "expose", "limits"},
 	"store":    {"key", "name", "version", "buckets", "limits"},
 	"app": {"key", "name", "image", "tag", "repo", "ref", "build", "dockerfile", "port", "health",
 		"domains", "attach", "env", "limits", "scale", "spread", "autoscale", "volumes", "tcp"},
@@ -158,6 +158,7 @@ func (d *decoder) database(n *yaml.Node, path []any) Database {
 	db.Name, _ = d.str(f, path, "name", false, slugRule)
 	db.Engine, _ = d.str(f, path, "engine", true, nil)
 	db.Version, _ = d.str(f, path, "version", false, nil)
+	db.Extensions = d.strings(f, path, "extensions")
 	db.Username, _ = d.str(f, path, "username", false, nil)
 	db.Database, _ = d.str(f, path, "database", false, nil)
 	if e, given := f["expose"]; given && !(e.Kind == yaml.ScalarNode && e.Tag == "!!null") {

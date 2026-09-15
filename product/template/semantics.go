@@ -86,6 +86,27 @@ func checkSemantics(m Manifest, doc *document) []Diagnostic {
 		if db.Database != "" && !e.hasDatabase {
 			c.add(Warning, "database.ignored", fmt.Sprintf("%s has no named databases, so this is ignored", e.name), at("database"), "")
 		}
+		if len(db.Extensions) > 0 {
+			// Against the version this will actually run: which
+			// extensions exist is a fact about a version, and a file
+			// that names none runs the engine's newest.
+			if _, problem := normalizeExtensions(db.Engine, or(db.Version, defaultVersion(e)), db.Extensions); problem.code != "" {
+				c.error(problem.code, problem.message, at("extensions"), problem.hint)
+			} else if m.MinCubeship == "" || slices.ContainsFunc(withoutExtensions, func(v string) bool {
+				ok, _ := Satisfies(m.MinCubeship, v)
+				return ok
+			}) {
+				// An error rather than advice, and harder than the
+				// volume one: an older instance creates the database
+				// without the extensions and every other step succeeds,
+				// so what the operator gets is an app that comes up and
+				// fails on its first query — on an instance that has no
+				// way to install one afterwards either.
+				c.error("extension.min-cubeship", "a template whose database has extensions needs a minCubeship that "+
+					"excludes releases before them, or an older instance creates the database without them and has no way to add them",
+					at("extensions"), `set minCubeship: "`+extensionsSince+`"`)
+			}
+		}
 		c.limits(db.Limits, []any{"databases", i, "limits"})
 	}
 	for i, s := range m.Stores {

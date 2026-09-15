@@ -96,6 +96,14 @@ type ContainerOpts struct {
 	// use**: the second update an instance ever ran failed on it, with
 	// the dashboard already replaced and the daemon not.
 	AutoRemove bool
+	// ShmSize is /dev/shm in bytes, zero for the Engine's 64 MiB.
+	//
+	// It exists for Postgres, which takes its dynamic shared memory from
+	// /dev/shm: a parallel query bigger than what is there fails with
+	// "could not resize shared memory segment", on a database that is
+	// otherwise fine. Compose files for Postgres set it for this reason
+	// and nothing else does.
+	ShmSize int64
 	// Resources is the ceiling this container runs under.
 	Resources Resources
 }
@@ -339,6 +347,7 @@ func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (strin
 			CapDrop:       opts.CapDrop,
 			SecurityOpt:   opts.SecurityOpt,
 			PidMode:       pidMode(opts),
+			ShmSize:       opts.ShmSize,
 			Resources:     resources(opts.Resources),
 			AutoRemove:    opts.AutoRemove,
 		},

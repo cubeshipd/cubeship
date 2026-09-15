@@ -20,6 +20,7 @@
 import type {
   AccessRole,
   Bucket,
+  DatastoreEngineExtension,
   DNSProviderKind,
   DNSRecord,
   DNSZone,
@@ -657,6 +658,22 @@ const routes: [string, string, Handler][] = [
   ["GET", "/datastores/:name/attachments", (p) => row(db.datastores, "name", p[0]).attachments],
   ["GET", "/datastores/:name/logs", () => sampleLog],
   ["GET", "/datastores/:name/metrics", () => containerSeries(24, 2 * 1024 * 1024 * 1024)],
+  [
+    "POST",
+    "/datastores/:name/extensions",
+    (p, body) => {
+      // Adds only, like the daemon: what is there stays, and what an
+      // extension requires comes with it.
+      const d = row(db.datastores, "name", p[0]);
+      const want = new Set([
+        ...(d.extensions as string[]),
+        ...((body as Row).extensions as string[]),
+      ]);
+      if (want.has("vectorchord")) want.add("pgvector");
+      d.extensions = [...want].sort();
+      return d;
+    },
+  ],
   ["GET", "/datastores/:name/backups", (p) => db.backups.filter((b) => b.database === p[0])],
   [
     "POST",
@@ -1178,6 +1195,7 @@ const engine = (
   default_username: string,
   has_user = true,
   has_database = true,
+  extensions: DatastoreEngineExtension[] = [],
 ) => ({
   engine,
   versions,
@@ -1187,10 +1205,100 @@ const engine = (
   has_user,
   default_username,
   var_stem,
+  extensions,
 });
 
+// Postgres is the one engine with any, and they are offered per version
+// — the preview has to show the screen behaving that way.
+const pgVersions = ["18", "17", "16", "15"];
+
+// Most of them are contrib modules: in the image already, so installing
+// one interrupts nothing.
+const contrib = (
+  name: string,
+  summary: string,
+  requires: string[] = [],
+): DatastoreEngineExtension => ({
+  name,
+  sql_name: name,
+  summary,
+  requires,
+  versions: pgVersions,
+  builtin: true,
+});
+
+const postgresExtensions: DatastoreEngineExtension[] = [
+  {
+    name: "pgvector",
+    sql_name: "vector",
+    summary:
+      'Vector columns, distance operators and HNSW indexes, for embeddings. Created as the SQL extension "vector".',
+    requires: [],
+    versions: pgVersions,
+    builtin: false,
+  },
+  {
+    name: "vectorchord",
+    sql_name: "vchord",
+    summary:
+      "A disk-friendly vector index over pgvector's types, which it needs and Cubeship adds for you.",
+    requires: ["pgvector"],
+    versions: pgVersions,
+    builtin: false,
+  },
+  contrib(
+    "pg_trgm",
+    "Trigram similarity and indexes for it: fuzzy text search, and fast LIKE '%…%'.",
+  ),
+  contrib(
+    "btree_gin",
+    "GIN index support for ordinary types, so one index covers a jsonb column and an integer beside it.",
+  ),
+  contrib(
+    "btree_gist",
+    "GiST index support for ordinary types — what an exclusion constraint needs.",
+  ),
+  contrib(
+    "citext",
+    "A text type that compares case-insensitively, for email addresses and usernames.",
+  ),
+  contrib("cube", "A multidimensional cube type and distance operators over it."),
+  contrib("earthdistance", "Great-circle distance between points on the earth, built on cube.", [
+    "cube",
+  ]),
+  contrib(
+    "fuzzystrmatch",
+    "Levenshtein, soundex and metaphone: how alike two strings sound or are spelled.",
+  ),
+  contrib("hstore", "A key-value type in a single column, with indexes over it."),
+  contrib("ltree", "A type for hierarchical labels, with indexed ancestor queries."),
+  contrib("pgcrypto", "Hashing, HMAC, symmetric encryption and a proper random generator."),
+  contrib("tablefunc", "crosstab and friends: pivoting rows into columns in SQL."),
+  contrib("unaccent", 'Strips accents, so a search for "jose" finds "José".'),
+  contrib("uuid-ossp", "Generators for UUID versions 1, 3, 4 and 5."),
+  {
+    name: "pg_stat_statements",
+    sql_name: "pg_stat_statements",
+    summary: "Execution counts and total time per query shape.",
+    requires: [],
+    versions: pgVersions,
+    // Its library is loaded at startup, so this one replaces the
+    // container — the preview shows the dialog saying so.
+    builtin: false,
+  },
+];
+
 const engines = [
-  engine("postgres", ["18", "17", "16", "15"], 5432, "DATABASE", "cubeship"),
+  engine(
+    "postgres",
+    ["18", "17", "16", "15"],
+    5432,
+    "DATABASE",
+    "cubeship",
+    true,
+    true,
+    postgresExtensions,
+  ),
   engine("mysql", ["8.4", "8.0"], 3306, "DATABASE", "cubeship"),
   engine("mariadb", ["11", "10.11"], 3306, "DATABASE", "cubeship"),
   engine("redis", ["7"], 6379, "REDIS", "default", false, false),

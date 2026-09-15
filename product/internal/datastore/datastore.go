@@ -45,6 +45,19 @@ type Datastore struct {
 	Engine  Engine
 	Version string
 
+	// Extensions are the Postgres extensions this database was created
+	// with, normalized: sorted, deduplicated, and carrying whatever one
+	// of them requires. Empty for almost every datastore, and for every
+	// engine that is not Postgres.
+	//
+	// Added at creation or afterwards, and never removed. They decide
+	// which image the container runs: adding one is a build carrying one
+	// more library over the same data directory, which is safe and is
+	// why Service.AddExtensions exists. Removing one would be a build
+	// *without* a library a column's type may already need, which is why
+	// there is no method for it.
+	Extensions Extensions
+
 	// Username and Password are the login the engine is initialized
 	// with, and the only one Cubeship knows about. Anything else is
 	// created inside the database by whoever uses it.
@@ -163,6 +176,42 @@ var (
 	// ErrUnknownVersion is a version this version of Cubeship does not
 	// offer for that engine.
 	ErrUnknownVersion = errors.New("unknown version for this engine")
+
+	// ErrUnknownExtension is a name that is not in this release's
+	// allowlist. Refused rather than passed on: the only thing a caller
+	// picks is which of a handful of reviewed images and statements runs.
+	ErrUnknownExtension = errors.New("unknown database extension")
+
+	// ErrExtensionsUnsupported is extensions asked of an engine that has
+	// none here — everything but Postgres.
+	ErrExtensionsUnsupported = errors.New("this engine takes no extensions")
+
+	// ErrExtensionVersion is an extension this release has no image for
+	// at the version asked for. Not every Postgres version has a
+	// trustworthy build of every extension, and offering one that does
+	// not exist is a datastore that can never start.
+	ErrExtensionVersion = errors.New("that extension is not offered for this version")
+
+	// ErrExtensionCombination is a set of extensions with no single
+	// image carrying all of them. Two images cannot both be the
+	// container.
+	ErrExtensionCombination = errors.New("that combination of extensions has no image")
+
+	// ErrExtensionRemoval is taking an extension away.
+	//
+	// **Adding one is supported and removing one is not**, and the
+	// asymmetry is the data rather than the code. Adding means running
+	// an image that carries one more library over the same files, which
+	// nothing already stored can object to. Removing means an image
+	// without a library that a column's type, an index or a default may
+	// already depend on — DROP EXTENSION either refuses or takes the
+	// table with it, and the image that could tell you which is the one
+	// being taken away.
+	ErrExtensionRemoval = errors.New("an extension cannot be removed once it is created: the data may already depend on it")
+
+	// ErrExtensionsNotHere is PATCHing them. They have an endpoint of
+	// their own because adding one replaces the container.
+	ErrExtensionsNotHere = errors.New("extensions are not changed here: POST /datastores/{name}/extensions adds them, and the container is replaced to pick them up")
 
 	// ErrBadUsername is a login the engine itself will not create.
 	ErrBadUsername = errors.New("invalid username")

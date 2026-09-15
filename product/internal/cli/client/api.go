@@ -821,10 +821,13 @@ type Datastore struct {
 	Description string `json:"description"`
 	Engine      string `json:"engine"`
 	Version     string `json:"version"`
-	Status      string `json:"status"`
-	Error       string `json:"error,omitempty"`
-	Username    string `json:"username"`
-	Database    string `json:"database,omitempty"`
+	// Extensions are the Postgres extensions it has, normalized and
+	// sorted. Empty for almost every database.
+	Extensions []string `json:"extensions"`
+	Status     string   `json:"status"`
+	Error      string   `json:"error,omitempty"`
+	Username   string   `json:"username"`
+	Database   string   `json:"database,omitempty"`
 	// HasContainer says whether a container currently backs this.
 	HasContainer bool `json:"has_container"`
 	// Host and Port are where an app on the instance reaches it.
@@ -874,6 +877,20 @@ type DatastoreEngine struct {
 	DefaultVersion string   `json:"default_version"`
 	Port           int      `json:"port"`
 	HasDatabase    bool     `json:"has_database"`
+	// Extensions are what may be asked for on this engine, each with
+	// the versions it is offered at.
+	Extensions []DatastoreEngineExtension `json:"extensions"`
+}
+
+// DatastoreEngineExtension is one extension an engine offers, and the
+// versions it is offered at — which is not every version, because each
+// combination is a reviewed image and not every one exists.
+type DatastoreEngineExtension struct {
+	Name     string   `json:"name"`
+	SQLName  string   `json:"sql_name"`
+	Summary  string   `json:"summary"`
+	Requires []string `json:"requires"`
+	Versions []string `json:"versions"`
 }
 
 // DatastoreSpec is what a datastore is created from. An empty Password
@@ -884,10 +901,13 @@ type DatastoreSpec struct {
 	Description string `json:"description,omitempty"`
 	Engine      string `json:"engine"`
 	Version     string `json:"version,omitempty"`
-	Username    string `json:"username,omitempty"`
-	Password    string `json:"password,omitempty"`
-	Database    string `json:"database,omitempty"`
-	Expose      *int   `json:"expose,omitempty"`
+	// Extensions are asked for by name. Nil for the normal case, which
+	// keeps the plain engine image; more can be added later.
+	Extensions []string `json:"extensions,omitempty"`
+	Username   string   `json:"username,omitempty"`
+	Password   string   `json:"password,omitempty"`
+	Database   string   `json:"database,omitempty"`
+	Expose     *int     `json:"expose,omitempty"`
 }
 
 // CreateDatastore provisions a database and returns it, including the
@@ -904,6 +924,18 @@ func (c *Client) CreateDatastore(ctx context.Context, spec DatastoreSpec) (Datas
 func (c *Client) ListDatastores(ctx context.Context) ([]Datastore, error) {
 	return request[[]Datastore](ctx, c, "list datastores", http.MethodGet,
 		"/datastores", nil, http.StatusOK, DefaultTimeout)
+}
+
+// AddDatastoreExtensions installs extensions on a database that already
+// exists. It adds only — a list leaving one out is refused — and the
+// daemon replaces the container to pick the new image up, so what comes
+// back is the datastore in "provisioning".
+func (c *Client) AddDatastoreExtensions(ctx context.Context, name string, extensions []string) (Datastore, error) {
+	body := struct {
+		Extensions []string `json:"extensions"`
+	}{extensions}
+	return request[Datastore](ctx, c, "add datastore extensions", http.MethodPost,
+		datastorePath(name)+"/extensions", body, http.StatusAccepted, DefaultTimeout)
 }
 
 func (c *Client) ListDatastoreEngines(ctx context.Context) ([]DatastoreEngine, error) {

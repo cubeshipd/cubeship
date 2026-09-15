@@ -30,6 +30,10 @@ type Limits struct {
 
 type Database struct {
 	Key, Name, Engine, Version, Username, Database string
+	// Extensions are the engine extensions to create it with, as
+	// written. Permanent on the instance, so a later release of the
+	// template changing them cannot change an installed database.
+	Extensions []string
 	// Expose is nil for internal only, 0 for "pick a port", N for that port.
 	Expose *int
 	Limits *Limits

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -70,6 +71,16 @@ type Provisioner struct {
 	// them. Tests wait on it; the daemon does not.
 	running sync.WaitGroup
 
+	// ExtensionAttempts and ExtensionInterval bound how long a provision
+	// waits for Postgres to start accepting connections before it
+	// creates the extensions.
+	//
+	// Longer than ReadyAttempts, and separately so: that one is watching
+	// for a container that dies, and this one is waiting for initdb,
+	// which on a cold first start is the slowest thing a datastore does.
+	ExtensionAttempts int
+	ExtensionInterval time.Duration
+
 	// ReadyAttempts and ReadyInterval bound how long a provision watches
 	// a started container before calling it up. An engine that dies on
 	// bad configuration dies in the first seconds — a wrong password
@@ -87,6 +98,7 @@ func NewProvisioner(db *database.DB, docker DockerAPI, dataDir string) *Provisio
 	return &Provisioner{
 		db: db, docker: docker, dataDir: dataDir,
 		ReadyAttempts: 10, ReadyInterval: time.Second,
+		ExtensionAttempts: 60, ExtensionInterval: 2 * time.Second,
 	}
 }
 
@@ -119,7 +131,7 @@ func (p *Provisioner) DataDirFor(d *Datastore) string {
 func (p *Provisioner) containerOpts(ctx context.Context, d *Datastore) dockerx.ContainerOpts {
 	opts := dockerx.ContainerOpts{
 		Name:         ContainerName(d.Slug),
-		Image:        d.Engine.Image(d.Version),
+		Image:        d.Image(),
 		Env:          d.ContainerEnv(),
 		Cmd:          d.ContainerCmd(),
 		Network:      Network,
@@ -132,6 +144,19 @@ func (p *Provisioner) containerOpts(ctx context.Context, d *Datastore) dockerx.C
 			"cubeship.datastore": d.Slug,
 			"cubeship.engine":    string(d.Engine),
 		},
+	}
+	// Informative and credential-free, like the two above: what somebody
+	// reading `docker ps` needs is why this container is on an image
+	// that is not plain `postgres:16`.
+	if len(d.Extensions) > 0 {
+		opts.Labels["cubeship.extensions"] = strings.Join(d.Extensions.Strings(), ",")
+	}
+	// Postgres takes its dynamic shared memory from /dev/shm, and the
+	// Engine's 64 MiB default is too little for a large parallel query —
+	// which fails as "could not resize shared memory segment" rather
+	// than as anything about memory.
+	if d.Engine == EnginePostgres {
+		opts.ShmSize = PostgresShmSize
 	}
 	if dir := p.DataDirFor(d); dir != "" {
 		opts.Binds = []string{dir + ":" + d.DataPath()}
@@ -262,6 +287,13 @@ func (p *Provisioner) provision(ctx context.Context, d *Datastore) error {
 	}
 
 	if err := p.waitReady(ctx, id); err != nil {
+		return err
+	}
+	// After the container is up and before it is called running: an app
+	// that reads "running" and connects should find the extensions
+	// there. A failure here fails the provision, which is what puts the
+	// datastore in `failed` with the reason on its row.
+	if err := p.installExtensions(ctx, d, id); err != nil {
 		return err
 	}
 	return p.repo().UpdateContainer(ctx, d.ID, id, StatusRunning, "")
@@ -403,4 +435,149 @@ func (p *Provisioner) mesh(ctx context.Context) []string {
 		return []string{name}
 	}
 	return nil
+}
+
+// Install creates this datastore's extensions in the container it is
+// already running, without replacing it.
+//
+// The path for a contrib module: it is in the image already, so all that
+// is missing is the statement. Synchronous, because it is one statement
+// against a server that is up — whoever asked is still waiting, and the
+// answer is worth having.
+func (p *Provisioner) Install(ctx context.Context, d *Datastore) error {
+	mu := p.lock(d.ID)
+	mu.Lock()
+	defer mu.Unlock()
+
+	if d.ContainerID == "" {
+		return ErrNotRunning
+	}
+	return p.installExtensions(ctx, d, d.ContainerID)
+}
+
+// NeedsReplacement reports whether going from one set of extensions to
+// another means a new container rather than a statement.
+//
+// Two things decide it, and both are fixed when a container is created:
+// the image, and what the postmaster preloads. Everything else — every
+// contrib module — is already on disk beside the server.
+func NeedsReplacement(before, after *Datastore) bool {
+	return before.Image() != after.Image() ||
+		!slices.Equal(before.ContainerCmd(), after.ContainerCmd())
+}
+
+// installExtensions creates this datastore's extensions inside the
+// container that has just come up.
+//
+// **Nothing here is built from input.** The statements are constants
+// picked by name from the support matrix, the database and the login are
+// the ones this instance created, and the order is the matrix's — so the
+// whole of what a request decides is which of a handful of fixed
+// statements run.
+//
+// It runs on **every** provision, not only the first. Publishing a port
+// replaces the container and `start` recreates it, and both land on the
+// same data directory where the extensions already exist: every
+// statement is `IF NOT EXISTS`, so the second time through is a no-op
+// that still proves they are there.
+//
+// **No password goes anywhere.** psql connects over the container's own
+// Unix socket, which the official image's initdb trusts, and the login
+// Cubeship created is the superuser that CREATE EXTENSION needs. The
+// alternative — PGPASSWORD in the exec's argv, the way a dump does it —
+// would put the credential in a process list for no gain, since a
+// process inside this container can already read it from its own
+// environment.
+func (p *Provisioner) installExtensions(ctx context.Context, d *Datastore, containerID string) error {
+	plan := d.InstallPlan()
+	if len(plan) == 0 {
+		return nil
+	}
+	if err := p.waitAccepting(ctx, d, containerID); err != nil {
+		return err
+	}
+	for _, step := range plan {
+		if out, err := p.exec(ctx, containerID, psqlCmd(d, step.SQL)); err != nil {
+			return fmt.Errorf("creating the %s extension failed: %w%s", step.Extension, err, detail(out))
+		}
+	}
+	return nil
+}
+
+// waitAccepting blocks until the engine answers on its own TCP port.
+//
+// Over TCP rather than the socket, and that is the whole reason this is
+// not a one-liner: the Postgres image initializes a new data directory
+// by starting a temporary server that listens on the socket **only**,
+// runs what it has to, then stops it and starts the real one. A socket
+// that answers therefore means nothing — a CREATE EXTENSION sent to that
+// server is thrown away with it, and the datastore comes up reporting
+// extensions it does not have. Nothing listens on the port until the
+// server that keeps its work is up.
+func (p *Provisioner) waitAccepting(ctx context.Context, d *Datastore, containerID string) error {
+	port := strconv.Itoa(d.Engine.Port())
+	var last string
+	for attempt := range p.ExtensionAttempts {
+		out, err := p.exec(ctx, containerID,
+			[]string{"pg_isready", "-h", "127.0.0.1", "-p", port, "-U", d.Username, "-q"})
+		if err == nil {
+			return nil
+		}
+		last = strings.TrimSpace(out + " " + err.Error())
+		if attempt == p.ExtensionAttempts-1 {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(p.ExtensionInterval):
+		}
+	}
+	return fmt.Errorf("the database did not start accepting connections, so its extensions were not created: %s", last)
+}
+
+// psqlCmd is the client invocation for one statement.
+//
+// ON_ERROR_STOP is what makes a failed statement a non-zero exit: psql's
+// default is to print the error and carry on, which would report success
+// for a database with no extensions in it.
+//
+// The socket directory is named rather than left to psql's default,
+// because the default is a compile-time path and being explicit is what
+// makes this readable next to the note above about which server answers
+// where.
+func psqlCmd(d *Datastore, sql string) []string {
+	return []string{
+		"psql", "--no-psqlrc", "-v", "ON_ERROR_STOP=1",
+		"-h", "/var/run/postgresql", "-U", d.Username, "-d", d.Database,
+		"-c", sql,
+	}
+}
+
+// exec runs one command in the container and returns what it wrote.
+//
+// Output and stderr together, because what psql says about a missing
+// library is on one of the two depending on the version, and the whole
+// point of returning it is that somebody reads the reason on the
+// datastore's own row.
+func (p *Provisioner) exec(ctx context.Context, containerID string, cmd []string) (string, error) {
+	var out strings.Builder
+	stderr, code, err := p.docker.ExecStream(ctx, containerID, cmd, nil, &out)
+	text := strings.TrimSpace(out.String() + "\n" + strings.TrimSpace(stderr))
+	if err != nil {
+		return text, err
+	}
+	if code != 0 {
+		return text, fmt.Errorf("%s exited with status %d", cmd[0], code)
+	}
+	return text, nil
+}
+
+// detail appends what the engine said, when it said anything. Never a
+// credential: nothing this file runs is given one.
+func detail(out string) string {
+	if out = strings.TrimSpace(out); out == "" {
+		return ""
+	}
+	return ": " + out
 }

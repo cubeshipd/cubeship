@@ -149,6 +149,140 @@ because its root user lives in the `admin` database whatever database
 the connection names; without it every connection fails on credentials
 that are perfectly correct.
 
+### Extensions
+
+A Postgres datastore carries a list of extensions. It is empty for
+almost all of them, and every database that existed before this feature
+reads as empty and keeps running exactly the image it came up on — which
+is the whole of what the migration does.
+
+**The list is an allowlist of names Cubeship chose, and that is the
+security model.** Nothing a caller sends reaches a Dockerfile, a package
+manager or a statement. A name that is in `extensionSpecs` picks a fixed
+`CREATE EXTENSION IF NOT EXISTS` and, for two of them, a specific image
+pinned by digest; a name that is not in it is refused. There is no path
+from the API, a template or the dashboard to an arbitrary image, package
+or SQL string, and `TestNormalizeExtensions` has cases for an image
+reference and a statement being sent as names, because those are the two
+things somebody will try.
+
+**The public name is not the SQL name, and both are said.** You ask for
+`pgvector` and the database gets `CREATE EXTENSION "vector"`; you ask
+for `vectorchord` and it gets `vchord`. The first is Cubeship's word,
+the one on a form and in a template; the second is what an application's
+own migrations have to say, and hiding it would leave somebody writing
+`CREATE EXTENSION pgvector` into a migration that fails.
+
+**Most of them are already in the image.** Every image here is built on
+the official `postgres`, and the contrib modules — `pg_trgm`,
+`pgcrypto`, `hstore`, `citext`, `ltree`, `uuid-ossp` and the rest — ship
+inside the `postgresql-<major>` package that installs. So for those,
+"installing an extension" is one statement against the server that is
+already running: no new image, no new container, no interruption. That
+is why the list is long rather than two names.
+
+Two are not in it, and one more is not only a statement:
+
+- **pgvector** runs `pgvector/pgvector`, which is the official image
+  built on the same `postgres` base.
+- **vectorchord** runs `ghcr.io/tensorchord/vchord-postgres`, which
+  carries VectorChord *and* pgvector — which is why asking for one asks
+  for both.
+- **pg_stat_statements** is a contrib module, but its library is mapped
+  by the postmaster before the first backend starts, so it goes in
+  `shared_preload_libraries` and the container has to be created again.
+
+**The combination picks the image, and the table is searched
+fewest-first.** `postgresBuilds` is one row per image per version, and
+`buildFor` takes the first row that carries everything asked for — so
+pgvector alone runs the pgvector image rather than the larger one that
+also has VectorChord. Every row is pinned by digest, because a tag is
+somebody else deciding which bytes run under a database that already has
+data in it, and every digest is a multi-platform index with linux/amd64
+and linux/arm64 in it: an ARM instance is a normal Cubeship install, and
+an amd64-only image is "exec format error" minutes after somebody clicks
+create. **PostGIS is missing for exactly that reason** — postgis's own
+images publish amd64 only — and goes in when there is a multi-platform
+build to pin.
+
+**Postgres gets 256 MiB of `/dev/shm`, and only Postgres.** The
+Engine's default is 64 MiB, and Postgres takes its dynamic shared memory
+from there — a parallel query that wants more fails with "could not
+resize shared memory segment", on a database with nothing else wrong
+with it. It is the one setting every Postgres compose file raises, and
+it landed here with the extensions because a vector index build is
+exactly the kind of query that asks for it. The other engines do not use
+`/dev/shm`, and a tmpfs per container on a box this size is not free.
+
+**`PGDATA` and the bind mount do not move.** Every extension build is
+the official image with something added, so `postgresDataPath` is still
+both the mount and `PGDATA`, and
+`TestExtensionBuildsKeepTheDataWhereItWas` is what stops a build that
+moved it from putting somebody's database in an anonymous volume — the
+same failure `TestPostgresSaysWhereItsDataGoes` exists for, reached from
+the other side.
+
+**They can be added, and they cannot be removed.** The asymmetry is the
+data rather than the code. Adding means running an image that carries one
+more library over the same files, which nothing already stored can object
+to. Removing means an image *without* a library that a column's type, an
+index or a default may already need, and the image that could have told
+you which is the one being taken away. So `AddExtensions` only ever adds,
+a request that leaves one out is refused rather than acted on, and there
+is no endpoint, tool or button for removing one.
+
+**What an install costs depends on what it is.** A contrib module is a
+statement, run against the container that is up, and the datastore never
+leaves `running`. An extension with an image of its own, or one that has
+to be preloaded, replaces the container — the same thing publishing a
+port does, for the same reason, with the data surviving because it is a
+host bind mount. `NeedsReplacement` is the whole of that decision, and
+it compares exactly the two things that are fixed when a container is
+created: the image and the command.
+
+`Extension.Builtin()` is served on `/datastores/engines` so a screen only
+warns about the downtime that is actually coming. A warning printed over
+both kinds is a warning people learn to click through.
+
+**The statements run after the engine answers on its own port, never on
+its socket.** The Postgres image initializes a new data directory by
+starting a *temporary* server that listens on the socket only, and a
+`CREATE EXTENSION` sent to that one is thrown away when it stops — the
+datastore would come up reporting extensions it does not have.
+`waitAccepting` polls `pg_isready` over 127.0.0.1 for that reason, and
+`TestNothingIsCreatedBeforeTheDatabaseAnswers` is what keeps it there.
+
+**No password goes anywhere.** `psql` connects over the container's own
+Unix socket, which the official image's `initdb` trusts, and the login
+Cubeship created is the superuser `CREATE EXTENSION` needs. A dump does
+put `PGPASSWORD` in an `env` prefix; this does not, because it does not
+have to. `TestNothingRunOrReportedCarriesThePassword` checks the argv and
+the error text both — the error lands on the datastore's row, which every
+listing reads.
+
+**Installing runs on every provision**, not only the first: `start`
+recreates the container and publishing a port replaces it, and both land
+on a data directory where the extensions already exist. Every statement
+is `IF NOT EXISTS`, so the second pass is a no-op that still proves they
+are there. A failure at any point fails the provision, which is what
+puts the datastore in `failed` with the engine's own words on its row.
+
+**Backups are unaffected, and restoring needs the right image.** The dump
+is still `pg_dump` and the restore still `psql`, both inside the
+container — so a dump of a database with `vector` columns carries
+`CREATE EXTENSION vector` and the types that depend on it, and restoring
+it works because the container it is restored into is running the image
+that has them. Restoring into a datastore created *without* the
+extensions would fail on the first `CREATE EXTENSION`, which is a
+restore refusing rather than a restore losing something: create the new
+datastore with the same extensions.
+
+**Cubeship's own Postgres is not affected at all.** `cubeship-postgres`
+in `internal/platform/bootstrap` is a different container with a
+different lifecycle, it has no row in `datastores`, and nothing here can
+reach it. The daemon's schema needs no extension and this feature does
+not give it one.
+
 ### Turning one off
 
 `POST /datastores/{name}/stop` stops the container and leaves it, and
@@ -182,6 +316,13 @@ provisioning failed may have neither.
   and nothing reads the column afterwards. Changing it would change
   every connection string Cubeship hands out while the database went on
   accepting only the old one.
+
+The **extensions** are the one thing that is neither fixed nor a field
+on `PATCH`: they have an endpoint of their own, because adding one can
+replace the container and that does not belong under a request whose
+other two fields are a sentence and a memory ceiling. A `PATCH` carrying
+a different list answers 409 rather than a 200 that would leave somebody
+believing their database gained one. See "Extensions".
 
 The description and its **limits** are what is left, which is why
 `PATCH` takes two fields. With no project above it to say where a

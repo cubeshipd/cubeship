@@ -25,7 +25,7 @@ func NewRepository(q database.Queryer) *Repository {
 //
 // A flat list with no joins: a datastore belongs to the instance, so
 // there is nothing above it to bring along.
-const columns = `id, slug, description, engine, version, username, password,
+const columns = `id, slug, description, engine, version, extensions, username, password,
 	database_name, exposed_port, container_id, status, error,
 	cpu_limit, memory_limit, created_at`
 
@@ -59,7 +59,7 @@ type scanner interface{ Scan(dest ...any) error }
 
 func scan(row scanner) (*Datastore, error) {
 	var d Datastore
-	if err := row.Scan(&d.ID, &d.Slug, &d.Description, &d.Engine, &d.Version,
+	if err := row.Scan(&d.ID, &d.Slug, &d.Description, &d.Engine, &d.Version, &d.Extensions,
 		&d.Username, &d.Password, &d.Database, &d.ExposedPort,
 		&d.ContainerID, &d.Status, &d.Error,
 		&d.Limits.CPU, &d.Limits.Memory, &d.CreatedAt); err != nil {
@@ -83,11 +83,11 @@ func scanAll(rows *sql.Rows) ([]*Datastore, error) {
 func (r *Repository) Create(ctx context.Context, d *Datastore) (*Datastore, error) {
 	row := r.q.QueryRowContext(ctx,
 		`INSERT INTO datastores
-		 (slug, description, engine, version, username, password,
+		 (slug, description, engine, version, extensions, username, password,
 		  database_name, exposed_port, status)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 		 RETURNING `+columns,
-		d.Slug, d.Description, string(d.Engine), d.Version,
+		d.Slug, d.Description, string(d.Engine), d.Version, d.Extensions,
 		d.Username, d.Password, d.Database, d.ExposedPort, StatusProvisioning)
 	created, err := scan(row)
 	if err != nil {
@@ -173,6 +173,20 @@ func (r *Repository) SetExposedPort(ctx context.Context, id int64, port int) err
 	if _, err := r.q.ExecContext(ctx,
 		`UPDATE datastores SET exposed_port = $1 WHERE id = $2`, port, id); err != nil {
 		return fmt.Errorf("set exposed port: %w", err)
+	}
+	return nil
+}
+
+// SetExtensions records the extensions this datastore now has.
+//
+// Written before the container is replaced, because the list is what
+// chooses the image the replacement runs — and because a provision that
+// fails halfway should leave the row saying what was asked for, so a
+// retry through `start` finishes it rather than reverting it.
+func (r *Repository) SetExtensions(ctx context.Context, id int64, x Extensions) error {
+	if _, err := r.q.ExecContext(ctx,
+		`UPDATE datastores SET extensions = $1 WHERE id = $2`, x, id); err != nil {
+		return fmt.Errorf("set extensions: %w", err)
 	}
 	return nil
 }
@@ -285,7 +299,7 @@ func (r *Repository) AttachedTo(ctx context.Context, appID int64) ([]Attached, e
 	var out []Attached
 	for rows.Next() {
 		var a Attached
-		if err := rows.Scan(&a.ID, &a.Slug, &a.Description, &a.Engine, &a.Version,
+		if err := rows.Scan(&a.ID, &a.Slug, &a.Description, &a.Engine, &a.Version, &a.Extensions,
 			&a.Username, &a.Password, &a.Database, &a.ExposedPort,
 			&a.ContainerID, &a.Status, &a.Error,
 			&a.Limits.CPU, &a.Limits.Memory, &a.CreatedAt, &a.Prefix); err != nil {

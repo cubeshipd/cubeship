@@ -257,6 +257,41 @@
           "version": {
             "type": "string"
           },
+          "extensions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "pgvector",
+                "vectorchord",
+                "pg_trgm",
+                "btree_gin",
+                "btree_gist",
+                "bloom",
+                "citext",
+                "cube",
+                "earthdistance",
+                "fuzzystrmatch",
+                "hstore",
+                "intarray",
+                "isn",
+                "ltree",
+                "pgcrypto",
+                "seg",
+                "tablefunc",
+                "tsm_system_rows",
+                "unaccent",
+                "uuid-ossp",
+                "dblink",
+                "postgres_fdw",
+                "pg_prewarm",
+                "pgstattuple",
+                "pg_buffercache",
+                "pg_stat_statements"
+              ]
+            },
+            "description": "Postgres extensions to create this database with. Permanent: they choose the image, and no later release of this template can add or remove one. \"vectorchord\" brings \"pgvector\" with it."
+          },
           "username": {
             "type": "string"
           },

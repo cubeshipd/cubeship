@@ -231,10 +231,23 @@ func (s *Service) compareDatabases(ctx context.Context, caller *user.User, up *u
 		if name, ok := up.install.resource(KindDatabase, db.Key); ok {
 			up.databases[db.Key] = name
 			for _, old := range up.old.Databases {
-				if old.Key == db.Key && (old.Engine != db.Engine || deref(old.Version) != deref(db.Version)) {
+				if old.Key != db.Key {
+					continue
+				}
+				if old.Engine != db.Engine || deref(old.Version) != deref(db.Version) {
 					up.change(ActionKeep, KindDatabase, name, fmt.Sprintf(
 						"the release asks for %s %s, and a database's engine and version are fixed once it exists",
 						db.Engine, or(deref(db.Version), "latest")))
+				}
+				// Extensions are **not** applied by an update, even
+				// though a database can gain one: installing replaces
+				// the container, and a template update is not where
+				// somebody expects their database to go away for a few
+				// seconds. It is said here instead, with where to do it.
+				if !slices.Equal(old.Extensions, db.Extensions) {
+					up.change(ActionKeep, KindDatabase, name, fmt.Sprintf(
+						"the release asks for %s; an update does not touch an existing database, so install them on the database itself",
+						or(strings.Join(db.Extensions, ", "), "no extensions")))
 				}
 			}
 			continue
@@ -250,7 +263,14 @@ func (s *Service) compareDatabases(ctx context.Context, caller *user.User, up *u
 		}
 		up.databases[db.Key] = db.Name
 		up.newDatabases[db.Key] = true
-		up.change(ActionCreate, KindDatabase, db.Name, strings.TrimSpace(db.Engine+" "+deref(db.Version)))
+		detail := strings.TrimSpace(db.Engine + " " + deref(db.Version))
+		if len(db.Extensions) > 0 {
+			// On the line that says what will be created, because this
+			// is the only moment it can be decided: extensions are fixed
+			// once the database exists.
+			detail += " with " + strings.Join(db.Extensions, ", ")
+		}
+		up.change(ActionCreate, KindDatabase, db.Name, detail)
 	}
 	up.keepRemoved(KindDatabase, func(key string) bool {
 		return slices.ContainsFunc(up.manifest.Databases, func(d template.NormalizedDatabase) bool { return d.Key == key })

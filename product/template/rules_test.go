@@ -121,3 +121,99 @@ type schemaNode struct {
 	OneOf      []*schemaNode          `json:"oneOf"`
 	Const      any                    `json:"const"`
 }
+
+// The extension rules are a copy, so this runs every engine, every
+// version and every combination through both and requires the same
+// answer — accepted or refused, and the same normalized list.
+//
+// A subset walk rather than a handful of cases: with a table this size
+// the combinations that matter are the ones nobody thought to write
+// down, and the pairs are cheap.
+func TestExtensionsAgreeWithTheDaemon(t *testing.T) {
+	daemon := datastore.AllExtensions()
+	var names []string
+	for _, x := range daemon {
+		names = append(names, string(x))
+	}
+
+	// The same list, in the same order.
+	if !slices.Equal(names, extensionNames()) {
+		t.Fatalf("templates know %v, the daemon %v", extensionNames(), names)
+	}
+	for _, x := range daemon {
+		ours := findExtension(string(x))
+		var requires []string
+		for _, dep := range x.Requires() {
+			requires = append(requires, string(dep))
+		}
+		if !slices.Equal(ours.requires, requires) {
+			t.Errorf("%s: ours needs %v, the daemon's %v", x, ours.requires, requires)
+		}
+		for _, e := range datastore.Engines() {
+			for _, v := range e.Versions() {
+				offered := slices.Contains(datastore.SupportedExtensions(e, v), x)
+				mine := e == datastore.EnginePostgres && slices.Contains(ours.versions, v)
+				if offered != mine {
+					t.Errorf("%s on %s %s: the daemon says %v, templates say %v", x, e, v, offered, mine)
+				}
+			}
+		}
+	}
+
+	// Every request either side could be given: each engine, each
+	// version, and every pair of extensions plus a name neither knows.
+	inputs := [][]string{nil, {}, {"nope"}, {"PgVector"}, {"vector"}}
+	for i, a := range names {
+		inputs = append(inputs, []string{a}, []string{a, a})
+		for _, b := range names[i+1:] {
+			inputs = append(inputs, []string{a, b}, []string{b, a})
+		}
+	}
+	for _, e := range datastore.Engines() {
+		for _, v := range e.Versions() {
+			for _, in := range inputs {
+				want, wantErr := datastore.NormalizeExtensions(e, v, in)
+				got, problem := normalizeExtensions(string(e), v, in)
+				if (wantErr != nil) != (problem.code != "") {
+					t.Fatalf("%s %s %v: the daemon says %v, templates say %q",
+						e, v, in, wantErr, problem.code)
+				}
+				if wantErr != nil {
+					continue
+				}
+				if !slices.Equal(want.Strings(), got) && !(len(want) == 0 && len(got) == 0) {
+					t.Errorf("%s %s %v: the daemon normalizes to %v, templates to %v",
+						e, v, in, want.Strings(), got)
+				}
+			}
+		}
+	}
+}
+
+// The published schema names the extensions in an enum, so an editor
+// completes them and refuses a typo before anybody publishes a release.
+// It is a file rather than generated, so this is what keeps it in step.
+func TestTheSchemaNamesEveryExtension(t *testing.T) {
+	var s struct {
+		Properties struct {
+			Databases struct {
+				Items struct {
+					Properties struct {
+						Extensions struct {
+							Items struct {
+								Enum []string `json:"enum"`
+							} `json:"items"`
+						} `json:"extensions"`
+					} `json:"properties"`
+				} `json:"items"`
+			} `json:"databases"`
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(JSONSchema, &s); err != nil {
+		t.Fatal(err)
+	}
+	got := s.Properties.Databases.Items.Properties.Extensions.Items.Enum
+	if !slices.Equal(got, extensionNames()) {
+		t.Errorf("the schema offers %v, the decoder %v", got, extensionNames())
+	}
+}

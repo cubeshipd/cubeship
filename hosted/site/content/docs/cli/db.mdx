@@ -62,6 +62,7 @@ cubeship db create <name> [flags]
 | `--description` |  | what this database is for |
 | `--engine` |  | postgres, mysql or mariadb — see `db engines` |
 | `--expose` |  | publish on a host port; 0 picks one. Off unless the flag is given — see `db expose` |
+| `--extension` |  | a Postgres extension to create the database with — pgvector, vectorchord. Repeat for more than one. `db extension add` installs more later; nothing removes one. See `db engines` |
 | `--password` |  | the password to set (default: generated) |
 | `--username` |  | the login to create (default "cubeship") |
 | `--version` |  | a version the daemon offers for that engine (default: the newest). Permanent |
@@ -124,6 +125,10 @@ Read this rather than guessing a version: a version is permanent
 once a database runs it, so the daemon only offers the ones it
 will keep running.
 
+The Postgres extensions this daemon offers are listed under the
+table, with the versions each one is available at — an extension
+is offered per version rather than per engine.
+
 ```bash
 cubeship db engines
 ```
@@ -148,6 +153,37 @@ cubeship db expose <name> [flags]
 | Flag | Default | What it does |
 | --- | --- | --- |
 | `--port` |  | which host port to publish on; 0 takes the next free one from 15000-15999 |
+
+## cubeship db extension
+
+Install Postgres extensions on a database that already exists.
+
+Adding only. An extension cannot be removed once it is there,
+because a column's type, an index or a default may already need
+it — and the image that would tell you is the one being taken
+away.
+
+`db engines` lists what this daemon offers, and at which
+versions.
+
+## cubeship db extension add
+
+Install extensions on a database.
+
+The container is replaced to pick the new image up, so the
+database is unreachable for a few seconds and comes back as
+"provisioning". Its data survives: it is a directory on the
+host, not something inside the container.
+
+Asking for what is already there does nothing.
+
+```bash
+cubeship db extension add <name> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--extension` |  | an extension to install — pgvector, vectorchord. Repeat for more than one |
 
 ## cubeship db get
 

@@ -41,6 +41,7 @@ func newDatastoreCmd() *cobra.Command {
 		newDatastoreListCmd(),
 		newDatastoreGetCmd(),
 		newDatastoreEnginesCmd(),
+		newDatastoreExtensionCmd(),
 		newDatastoreCredentialsCmd(),
 		newDatastoreAttachCmd(),
 		newDatastoreDetachCmd(),
@@ -82,6 +83,12 @@ func newDatastoreCreateCmd() *cobra.Command {
 				return err
 			}
 			fmt.Printf("Created %s (%s %s).\n", created.Name, created.Engine, created.Version)
+			if len(created.Extensions) > 0 {
+				// What came back, not what was asked for: the daemon adds
+				// what an extension requires, so asking for vectorchord
+				// creates pgvector too and this is where that is visible.
+				fmt.Printf("  extensions: %s\n", strings.Join(created.Extensions, ", "))
+			}
 			fmt.Printf("  password: %s\n", created.Password)
 			fmt.Printf("  reachable from apps at: %s:%d\n", created.Host, created.Port)
 			if created.ExposedPort != 0 {
@@ -94,11 +101,65 @@ func newDatastoreCreateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&spec.Engine, "engine", "", "postgres, mysql or mariadb — see `db engines`")
 	cmd.MarkFlagRequired("engine")
 	cmd.Flags().StringVar(&spec.Version, "version", "", "a version the daemon offers for that engine (default: the newest). Permanent")
+	cmd.Flags().StringArrayVar(&spec.Extensions, "extension", nil,
+		"a Postgres extension to create the database with — pgvector, vectorchord. Repeat for more than one. `db extension add` installs more later; nothing removes one. See `db engines`")
 	cmd.Flags().StringVar(&spec.Username, "username", "", `the login to create (default "cubeship")`)
 	cmd.Flags().StringVar(&spec.Password, "password", "", "the password to set (default: generated)")
 	cmd.Flags().StringVar(&spec.Database, "database", "", "the database to create inside the server (default: the name, with underscores)")
 	cmd.Flags().StringVar(&spec.Description, "description", "", "what this database is for")
 	cmd.Flags().IntVar(&expose, "expose", 0, "publish on a host port; 0 picks one. Off unless the flag is given — see `db expose`")
+	return cmd
+}
+
+// newDatastoreExtensionCmd is `cubeship db extension`.
+func newDatastoreExtensionCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "extension",
+		Short: "Install Postgres extensions on a database",
+		Long: "Install Postgres extensions on a database that already exists.\n\n" +
+			"Adding only. An extension cannot be removed once it is there,\n" +
+			"because a column's type, an index or a default may already need\n" +
+			"it — and the image that would tell you is the one being taken\n" +
+			"away.\n\n" +
+			"`db engines` lists what this daemon offers, and at which\n" +
+			"versions.",
+	}
+	cmd.AddCommand(newDatastoreExtensionAddCmd())
+	return cmd
+}
+
+func newDatastoreExtensionAddCmd() *cobra.Command {
+	var names []string
+	cmd := &cobra.Command{
+		Use:   "add <name>",
+		Short: "Install extensions on a database",
+		Long: "Install extensions on a database.\n\n" +
+			"The container is replaced to pick the new image up, so the\n" +
+			"database is unreachable for a few seconds and comes back as\n" +
+			"\"provisioning\". Its data survives: it is a directory on the\n" +
+			"host, not something inside the container.\n\n" +
+			"Asking for what is already there does nothing.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			d, err := c.AddDatastoreExtensions(context.Background(), args[0], names)
+			if err != nil {
+				return err
+			}
+			// What came back, not what was asked for: the daemon adds
+			// what an extension requires, and keeps what was already
+			// there.
+			fmt.Printf("%s now has: %s\n", d.Name, strings.Join(d.Extensions, ", "))
+			fmt.Printf("Its container is being replaced. `cubeship db get %s` says when it is back.\n", d.Name)
+			return nil
+		},
+	}
+	cmd.Flags().StringArrayVar(&names, "extension", nil,
+		"an extension to install — pgvector, vectorchord. Repeat for more than one")
+	cmd.MarkFlagRequired("extension")
 	return cmd
 }
 
@@ -161,6 +222,9 @@ func newDatastoreGetCmd() *cobra.Command {
 			}
 			fmt.Printf("Name:        %s\n", d.Name)
 			fmt.Printf("Engine:      %s %s\n", d.Engine, d.Version)
+			if len(d.Extensions) > 0 {
+				fmt.Printf("Extensions:  %s\n", strings.Join(d.Extensions, ", "))
+			}
 			fmt.Printf("Status:      %s\n", d.Status)
 			if d.Error != "" {
 				fmt.Printf("Error:       %s\n", d.Error)
@@ -195,7 +259,10 @@ func newDatastoreEnginesCmd() *cobra.Command {
 		Long: "List the engines this daemon can run.\n\n" +
 			"Read this rather than guessing a version: a version is permanent\n" +
 			"once a database runs it, so the daemon only offers the ones it\n" +
-			"will keep running.",
+			"will keep running.\n\n" +
+			"The Postgres extensions this daemon offers are listed under the\n" +
+			"table, with the versions each one is available at — an extension\n" +
+			"is offered per version rather than per engine.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c, err := newAPIClient()
@@ -212,7 +279,23 @@ func newDatastoreEnginesCmd() *cobra.Command {
 				fmt.Fprintf(w, "%s\t%s\t%s\t%d\n",
 					e.Engine, e.DefaultVersion, strings.Join(e.Versions, ", "), e.Port)
 			}
-			return w.Flush()
+			if err := w.Flush(); err != nil {
+				return err
+			}
+			// Below the table rather than a column in it: an extension is
+			// offered per version, not per engine, and a column would
+			// have to either lie about that or not fit.
+			for _, e := range engines {
+				for _, x := range e.Extensions {
+					fmt.Printf("\n%s extension %s (SQL: %s)\n", e.Engine, x.Name, x.SQLName)
+					fmt.Printf("  versions: %s\n", strings.Join(x.Versions, ", "))
+					if len(x.Requires) > 0 {
+						fmt.Printf("  brings:   %s\n", strings.Join(x.Requires, ", "))
+					}
+					fmt.Printf("  %s\n", x.Summary)
+				}
+			}
+			return nil
 		},
 	}
 }

@@ -30,6 +30,13 @@ type Response struct {
 
 	Engine  string `json:"engine"`
 	Version string `json:"version"`
+	// Extensions are the Postgres extensions this database has,
+	// normalized and sorted. Always present, usually empty — an array
+	// rather than an omitted field, so a client never has to tell "none"
+	// from "this daemon is too old to say".
+	//
+	// Added at creation or afterwards; never removed.
+	Extensions []string `json:"extensions"`
 	// VarStem is the middle of the variables an attached app receives:
 	// DATABASE for the engines that hold tables, REDIS and MONGO for
 	// the two that do not. Served rather than derived out here, so
@@ -153,6 +160,39 @@ type EngineResponse struct {
 	// on a Redis gets REDIS_URL, not DATABASE_URL, which is why two
 	// engines can sit on one app under the same prefix.
 	VarStem string `json:"var_stem"`
+	// Extensions are what may be asked for on this engine, and at which
+	// versions. Empty for every engine but Postgres.
+	//
+	// Per version rather than per engine, because that is how it is
+	// true: an extension is offered where there is a reviewed image
+	// carrying it, and there is not one for every version of every
+	// extension. A form that offered the union would let somebody pick a
+	// combination the daemon then refuses.
+	Extensions []EngineExtensionResponse `json:"extensions"`
+}
+
+// EngineExtensionResponse is one extension an engine offers, and where.
+type EngineExtensionResponse struct {
+	Name string `json:"name"`
+	// SQLName is what Postgres calls it — what an application's own
+	// migrations say, which is not the name asked for here.
+	SQLName string `json:"sql_name"`
+	// Summary is the sentence a form shows beside the name.
+	Summary string `json:"summary"`
+	// Requires are the extensions this one is created alongside. They
+	// are added to a request rather than demanded of it.
+	Requires []string `json:"requires"`
+	// Builtin says this extension is in every Postgres image Cubeship
+	// runs, so installing it on a database that already exists is a
+	// statement and nothing else — no new image, no new container, no
+	// interruption.
+	//
+	// It is served because it is what a screen should warn about: two of
+	// these replace the container and the rest do not, and a warning
+	// printed over both teaches people to ignore it.
+	Builtin bool `json:"builtin"`
+	// Versions are the engine versions this extension is offered for.
+	Versions []string `json:"versions"`
 }
 
 // Instance is what a response depends on that the datastore itself does
@@ -168,8 +208,9 @@ func toResponse(d *Datastore, in Instance) Response {
 	r := Response{
 		Name: d.Slug, Description: d.Description,
 		Engine: string(d.Engine), Version: d.Version,
-		VarStem:   d.Engine.VarStem(),
-		CanBackUp: d.Engine.CanBackUp(), BackupConsistency: d.Engine.Consistency(),
+		Extensions: d.Extensions.Strings(),
+		VarStem:    d.Engine.VarStem(),
+		CanBackUp:  d.Engine.CanBackUp(), BackupConsistency: d.Engine.Consistency(),
 		Status: d.Status, Error: d.Error,
 		Username: d.Username, Database: d.Database,
 		HasContainer: d.ContainerID != "",
@@ -236,6 +277,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("POST "+datastorePath+"/start", auth(http.HandlerFunc(h.start)))
 	r.Handle("POST "+datastorePath+"/expose", auth(http.HandlerFunc(h.expose)))
 	r.Handle("DELETE "+datastorePath+"/expose", auth(http.HandlerFunc(h.unexpose)))
+	r.Handle("POST "+datastorePath+"/extensions", auth(http.HandlerFunc(h.addExtensions)))
 	r.Handle("POST "+datastorePath+"/attachments", auth(http.HandlerFunc(h.attach)))
 	r.Handle("DELETE "+attachmentPath, auth(http.HandlerFunc(h.detach)))
 }
@@ -266,7 +308,11 @@ func WriteError(w http.ResponseWriter, err error) {
 		errors.Is(err, ErrPrefixTaken), errors.Is(err, ErrPortTaken),
 		errors.Is(err, ErrNoPortsLeft):
 		http.Error(w, err.Error(), http.StatusConflict)
+	case errors.Is(err, ErrExtensionsNotHere), errors.Is(err, ErrExtensionRemoval):
+		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrUnknownEngine), errors.Is(err, ErrUnknownVersion),
+		errors.Is(err, ErrUnknownExtension), errors.Is(err, ErrExtensionsUnsupported),
+		errors.Is(err, ErrExtensionVersion), errors.Is(err, ErrExtensionCombination),
 		errors.Is(err, ErrBadUsername), errors.Is(err, ErrFixedUsername),
 		errors.Is(err, ErrBadPrefix),
 		errors.Is(err, ErrBadPort), errors.Is(err, ErrReservedSlug),
@@ -287,9 +333,13 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 		Engine      string `json:"engine"`
 		Version     string `json:"version"`
-		Username    string `json:"username"`
-		Password    string `json:"password"`
-		Database    string `json:"database"`
+		// Extensions are asked for by name. More can be added later,
+		// at this datastore's own /extensions — but not here, and not
+		// by PATCH.
+		Extensions []string `json:"extensions"`
+		Username   string   `json:"username"`
+		Password   string   `json:"password"`
+		Database   string   `json:"database"`
 		// Expose asks for a host port at creation. Null is "internal
 		// only", 0 is "pick one".
 		Expose *int `json:"expose"`
@@ -300,7 +350,7 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	}
 	created, err := h.svc.Create(r.Context(), user.FromContext(r.Context()), Spec{
 		Slug: req.Name, Description: req.Description,
-		Engine: Engine(req.Engine), Version: req.Version,
+		Engine: Engine(req.Engine), Version: req.Version, Extensions: req.Extensions,
 		Username: req.Username, Password: req.Password, Database: req.Database,
 		Expose: req.Expose,
 	})
@@ -341,7 +391,36 @@ func engineResponses() []EngineResponse {
 			DefaultVersion: e.DefaultVersion(), Port: e.Port(),
 			HasDatabase: e.HasDatabase(),
 			HasUser:     e.HasUser(), DefaultUsername: e.DefaultUsername(),
-			VarStem: e.VarStem(),
+			VarStem:    e.VarStem(),
+			Extensions: engineExtensions(e),
+		})
+	}
+	return out
+}
+
+// engineExtensions is what e offers, each with the versions it is
+// offered at. Built from the same matrix the service validates against,
+// so a form cannot offer a combination creation would refuse.
+func engineExtensions(e Engine) []EngineExtensionResponse {
+	byName := map[Extension][]string{}
+	for _, v := range e.Versions() {
+		for _, x := range SupportedExtensions(e, v) {
+			byName[x] = append(byName[x], v)
+		}
+	}
+	out := make([]EngineExtensionResponse, 0, len(byName))
+	for _, x := range AllExtensions() {
+		versions, ok := byName[x]
+		if !ok {
+			continue
+		}
+		requires := make([]string, 0, len(x.Requires()))
+		for _, dep := range x.Requires() {
+			requires = append(requires, string(dep))
+		}
+		out = append(out, EngineExtensionResponse{
+			Name: string(x), SQLName: x.SQLName(), Summary: x.Summary(),
+			Requires: requires, Versions: versions, Builtin: x.Builtin(),
 		})
 	}
 	return out
@@ -361,6 +440,11 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Description *string `json:"description"`
+		// Extensions has no business here and is accepted only so that
+		// sending it is refused in words rather than dropped. Adding one
+		// replaces the container, which is not what a PATCH of a
+		// description does.
+		Extensions *[]string `json:"extensions"`
 		// Limits is how much of the machine this database may take.
 		// Sent as an object so that clearing a ceiling is a value
 		// rather than a gap: leaving the field out keeps what is
@@ -371,7 +455,8 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid JSON body", http.StatusBadRequest)
 		return
 	}
-	d, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), nameFrom(r), req.Description, req.Limits)
+	d, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), nameFrom(r),
+		req.Description, req.Limits, req.Extensions)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -476,6 +561,29 @@ func (h *Handler) unexpose(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, toResponse(d, h.instance(r)))
+}
+
+// addExtensions installs extensions on a database that already exists.
+//
+// POST rather than PATCH, and its own address rather than a field on the
+// datastore, because it is not an edit: it replaces the container, and
+// it only ever adds. What comes back is the datastore in
+// "provisioning" — the replacement happens detached, like every other
+// provision here.
+func (h *Handler) addExtensions(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Extensions []string `json:"extensions"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil || len(req.Extensions) == 0 {
+		http.Error(w, "extensions is required, and is a non-empty list of names", http.StatusBadRequest)
+		return
+	}
+	d, err := h.svc.AddExtensions(r.Context(), user.FromContext(r.Context()), nameFrom(r), req.Extensions)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusAccepted, toResponse(d, h.instance(r)))
 }
 
 func (h *Handler) attach(w http.ResponseWriter, r *http.Request) {

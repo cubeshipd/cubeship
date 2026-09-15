@@ -42,6 +42,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"description":        openapi.String("What this database is for. With no project above it to say where it belongs, this is the only place that can."),
 				"engine":             {Type: "string", Enum: []string{"postgres", "mysql", "mariadb", "redis", "mongodb"}, Description: "Which server this runs. Permanent."},
 				"version":            openapi.String("The engine's version. Permanent: a data directory written by one major version is not readable by another, so changing this would be a container that will not start with the only copy of the data inside it."),
+				"extensions":         openapi.Array(openapi.String("A Postgres extension this database has, by its Cubeship name — `pgvector`, `vectorchord`. Normalized: sorted, deduplicated, and carrying whatever one of them requires. Added at creation or afterwards, and never removed.")),
 				"status":             {Type: "string", Enum: []string{"provisioning", "running", "down", "failed"}, Description: `"provisioning" while the container is being pulled and started, which happens detached from the request that asked for it.`},
 				"error":              openapi.String("Why provisioning failed, when it did — usually the tail of what the engine printed before it exited."),
 				"can_back_up":        openapi.Bool("Whether this instance knows how to back this engine up. False for Redis, deliberately: taking a dump is easy and putting one back means stopping the server, because an RDB is read once at startup."),
@@ -57,7 +58,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"external_host":      openapi.String("The instance's own domain, which is where an exposed datastore is reached. Absent while there is no domain, or while it is not exposed."),
 				"attachments":        openapi.Array(openapi.Ref("DatastoreAttachment")),
 				"created_at":         {Type: "string", Format: "date-time"},
-			}, "name", "description", "engine", "version", "var_stem", "status", "username",
+			}, "name", "description", "engine", "version", "extensions", "var_stem", "status", "username",
 				"has_container", "host", "port", "attachments", "created_at"),
 
 			"DatastoreAttachment": openapi.Object(map[string]*openapi.Schema{
@@ -87,7 +88,17 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"has_user":         openapi.Bool("Whether the login is yours to choose. False for Redis, whose password belongs to the ACL user `default`, which already exists and cannot be renamed."),
 				"default_username": openapi.String("The login an empty username becomes — and the only one there is when `has_user` is false."),
 				"var_stem":         openapi.String("What an attached app's variables are called: an app on a Redis gets `REDIS_URL`, not `DATABASE_URL`."),
-			}, "engine", "versions", "default_version", "port", "has_database", "has_user", "default_username", "var_stem"),
+				"extensions":       openapi.Array(openapi.Ref("DatastoreEngineExtension")),
+			}, "engine", "versions", "default_version", "port", "has_database", "has_user", "default_username", "var_stem", "extensions"),
+
+			"DatastoreEngineExtension": openapi.Object(map[string]*openapi.Schema{
+				"name":     openapi.String("What to pass as an entry of `extensions` when creating a datastore."),
+				"sql_name": openapi.String("What Postgres calls it — what `CREATE EXTENSION` and an application's own migrations say. `pgvector` is the extension `vector`; `vectorchord` is `vchord`."),
+				"summary":  openapi.String("One line on what it is for, meant for a form."),
+				"requires": openapi.Array(openapi.String("An extension this one is created alongside. Cubeship adds it rather than refusing the request — `vectorchord` implies `pgvector`, `earthdistance` implies `cube`.")),
+				"builtin":  openapi.Bool("Whether it is inside every Postgres image Cubeship runs — true for the contrib modules, which is most of them. Installing one of those on an existing database is a statement and nothing else; the rest need a different image or a preloaded library, so they replace the container."),
+				"versions": openapi.Array(openapi.String("An engine version this extension is offered at. Per version rather than per engine: the contrib modules are offered at all of them, and the rest where there is a reviewed image carrying one.")),
+			}, "name", "sql_name", "summary", "requires", "versions", "builtin"),
 		}),
 		Paths: map[string]openapi.PathItem{
 			"/datastores": {
@@ -101,6 +112,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"description": openapi.String("What this database is for. Optional."),
 						"engine":      {Type: "string", Enum: []string{"postgres", "mysql", "mariadb", "redis", "mongodb"}, Description: "Which server to run. GET /datastores/engines lists what this release offers, and whether each takes a login of your choosing."},
 						"version":     openapi.String("A version this release offers for that engine. Defaults to the newest. Permanent."),
+						"extensions":  {Type: "array", Items: openapi.String("A Postgres extension name: `pgvector` or `vectorchord`."), Description: "Postgres extensions to create the database with. More can be added afterwards at `POST /datastores/{name}/extensions`; **none can ever be removed**, because the data may already depend on one.\n\nOnly names from `GET /datastores/engines` are accepted. Nothing sent here reaches a Dockerfile, a package manager or a statement: a name picks a reviewed image and a fixed `CREATE EXTENSION`.\n\nThe list is normalized before it is stored — deduplicated, sorted, and with what an extension requires added, so `[\"vectorchord\"]` comes back as `[\"pgvector\", \"vectorchord\"]`.\n\nOmit it for the normal case, which keeps the plain engine image.", Example: []string{"pgvector", "vectorchord"}},
 						"username":    openapi.String("The login to create. Defaults to the engine's own — \"cubeship\" for the ones that let you choose. MySQL and MariaDB refuse \"root\", which already exists and whose password Cubeship does not hold; Redis refuses anything but \"default\", which is the only login it has."),
 						"password":    openapi.String("Generated when omitted. Any characters: it is escaped into the connection URL rather than concatenated into it."),
 						"database":    openapi.String("The database to create inside the server. Defaults to the name with dashes turned into underscores. Ignored by an engine that has no named databases."),
@@ -108,7 +120,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					}, "name", "engine")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse("The provisioning datastore, with the password it was created with.", openapi.Ref("Datastore")),
-						"400": openapi.BadRequest,
+						"400": openapi.TextResponse("An engine, version or extension this release does not offer, a combination of extensions with no image behind it, or a login the engine will not create."),
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"409": openapi.TextResponse("A datastore with that name already exists, or the host port asked for is already taken."),
@@ -129,7 +141,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"get": {
 					OperationID: "listDatastoreEngines",
 					Summary:     "List the engines this release runs",
-					Description: "What may be passed as `engine` and `version` when creating a datastore. Read it rather than hard-coding a list: the versions offered are pinned by the release, because a version is permanent once a datastore runs it.",
+					Description: "What may be passed as `engine`, `version` and `extensions` when creating a datastore. Read it rather than hard-coding a list: the versions offered are pinned by the release, because a version is permanent once a datastore runs it, and an extension is offered per version rather than per engine — there is a reviewed image behind each combination, and not every combination has one.",
 					Tags:        []string{"Datastores"},
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The engines and their versions.", openapi.Array(openapi.Ref("DatastoreEngine"))),
@@ -158,6 +170,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Parameters:  nameParam,
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"description": openapi.String("May be empty."),
+						"extensions":  {Type: "array", Items: openapi.String(""), Description: "Accepted only to be refused in words. Adding one replaces the container, which is not what a PATCH of a description does — `POST /datastores/{name}/extensions` is where that is asked for. Sending the list the datastore already has changes nothing; sending a different one answers 409 rather than a 200 that would leave somebody believing their database gained an extension."},
 						"limits":      {Ref: "#/components/schemas/DatastoreLimits", Description: "How much of the machine this database's container may take.\n\n**It takes effect at once, without the container being replaced.** A ceiling is the one part of a container the Engine can change under a running process — which is the difference between raising a database's memory and a database going away for a few seconds, the way publishing a port makes it.\n\nRemoving one is the exception: the Engine reads a zero in an update as \"leave that one alone\", so a container goes back to uncapped by being created again, which is the next `start`.\n\nSend the whole object — a field left out of it is a zero, which is how a limit is removed."},
 					})),
 					Responses: openapi.Responses{
@@ -166,6 +179,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,
+						"409": openapi.TextResponse("A different set of extensions: they are added at their own endpoint, because doing so replaces the container."),
 					},
 				},
 				"delete": {
@@ -179,6 +193,26 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,
+					},
+				},
+			},
+			datastorePath + "/extensions": {
+				"post": {
+					OperationID: "addDatastoreExtensions",
+					Summary:     "Install extensions on a database",
+					Description: "Adds Postgres extensions to a database that already exists.\n\n**It only ever adds.** Every extension the datastore already has stays, and a list that leaves one out is refused rather than acted on: adding one is an image carrying one more library over the same data directory, and removing one is an image *without* a library that a column's type, an index or a default may already need. Nothing can tell in advance which of those it would be, and the failure is a database that comes up and cannot read its own tables.\n\n**The container is replaced**, the way publishing a port replaces it — an extension's library is in the image, and an image is chosen when a container is created. So the database is unreachable for a few seconds. Its data survives untouched, being a host bind mount.\n\nThe replacement happens detached, so this answers 202 with the datastore in `provisioning`, and how it went lands on the same row. A failure leaves the row asking for the extensions, so `POST .../start` retries it.\n\nAsking for what is already there changes nothing. Requires the admin role.",
+					Tags:        []string{"Datastores"},
+					Parameters:  nameParam,
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"extensions": {Type: "array", Items: openapi.String("A name from `GET /datastores/engines` — `pgvector` or `vectorchord`."), Description: "The extensions to install. What one of them requires is added for you, so `[\"vectorchord\"]` gives both.", Example: []string{"pgvector"}},
+					}, "extensions")),
+					Responses: openapi.Responses{
+						"202": openapi.JSONResponse("The datastore, back in `provisioning` while its container is replaced.", openapi.Ref("Datastore")),
+						"400": openapi.TextResponse("An extension this release does not offer, or one with no image at this engine's version."),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("The list leaves out an extension the database already has: an extension cannot be removed."),
 					},
 				},
 			},
