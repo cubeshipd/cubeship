@@ -75,6 +75,7 @@ var routes = map[string]phrase{
 	"DELETE /datastores/{name}":                                   {"delete database", "deleted database", "{name}", ""},
 	"POST /datastores/{name}/stop":                                {"stop database", "stopped database", "{name}", ""},
 	"POST /datastores/{name}/start":                               {"start database", "started database", "{name}", ""},
+	"POST /datastores/{name}/extensions":                          {"install extensions on database", "installed extensions on database", "{name}", ""},
 	"POST /datastores/{name}/expose":                              {"expose database", "exposed database", "{name}", ""},
 	"DELETE /datastores/{name}/expose":                            {"stop exposing database", "stopped exposing database", "{name}", ""},
 	"GET /datastores/{name}/credentials":                          {"read the credentials of database", "read the credentials of database", "{name}", ""},

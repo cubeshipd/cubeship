@@ -217,6 +217,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"POST /datastores/{name}/attachments",
 		"POST /datastores/{name}/backups",
 		"POST /datastores/{name}/expose",
+		"POST /datastores/{name}/extensions",
 		"POST /datastores/{name}/start",
 		"POST /datastores/{name}/stop",
 		"POST /dns",

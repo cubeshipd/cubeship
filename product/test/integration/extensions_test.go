@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -51,13 +50,12 @@ func TestTheExtensionImageRunsWhatCubeshipAsksOfIt(t *testing.T) {
 		Extensions: want,
 	}
 
-	dir := t.TempDir()
 	// The daemon creates it 0700 and root-owned, and the image chowns it
-	// on the way past. Reproduced here because it is half of what makes
-	// a Postgres on a bind mount work at all.
-	if err := os.Chmod(dir, 0o700); err != nil {
-		t.Fatal(err)
-	}
+	// to the postgres user on the way past. Reproduced here because it is
+	// half of what makes a Postgres on a bind mount work at all — and it
+	// is why the directory has to be emptied from inside a container
+	// afterwards: the test process cannot read what postgres now owns.
+	dir := dataDir(t)
 
 	name := "cs-ext-" + fmt.Sprint(time.Now().UnixNano())
 	t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", name).Run() })
@@ -171,11 +169,41 @@ func TestTheExtensionImageRunsWhatCubeshipAsksOfIt(t *testing.T) {
 		t.Fatalf("nearest neighbour is %q after reinstalling, want 1", got)
 	}
 
-	// The directory is the instance's, not an anonymous volume: the
-	// files are here on the host, which is what puts them in a backup.
-	if entries, err := os.ReadDir(filepath.Join(dir, "base")); err != nil || len(entries) == 0 {
-		t.Fatalf("the data is not in the bind mount: %v", err)
+	// The directory is the instance's, not an anonymous volume: the files
+	// are in the bind mount, which is what puts them in a backup of the
+	// data directory. Read from inside the container, because postgres
+	// owns them now and this process does not.
+	if out := run("exec", name, "sh", "-c", "ls "+d.DataPath()+"/base | wc -l"); out == "0" {
+		t.Fatal("the data is not in the bind mount")
 	}
+}
+
+// dataDir is a directory for a Postgres bind mount, emptied from inside
+// a container when the test ends.
+//
+// The engine chowns the mount point and everything under it to its own
+// unprivileged user, so the test process can neither list it nor delete
+// what is in it — TempDir's own cleanup fails with "permission denied"
+// and fails the test with it. The mode goes back as well as the
+// contents, because removing a directory needs to open it first.
+//
+// Registered after TempDir, so it runs before TempDir's cleanup:
+// t.Cleanup is LIFO.
+func dataDir(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.Chmod(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		out, err := exec.Command("docker", "run", "--rm", "-v", dir+":/data",
+			"busybox:1.37", "sh", "-c",
+			"rm -rf /data/* /data/..?* /data/.[!.]* ; chmod 0777 /data").CombinedOutput()
+		if err != nil {
+			t.Logf("emptying the data directory: %v\n%s", err, out)
+		}
+	})
+	return dir
 }
 
 // TestEveryExtensionCubeshipOffersCanActuallyBeCreated is the other
@@ -207,10 +235,7 @@ func TestEveryExtensionCubeshipOffersCanActuallyBeCreated(t *testing.T) {
 				Extensions: want,
 			}
 
-			dir := t.TempDir()
-			if err := os.Chmod(dir, 0o700); err != nil {
-				t.Fatal(err)
-			}
+			dir := dataDir(t)
 			name := "cs-ext-all-" + version + "-" + fmt.Sprint(time.Now().UnixNano())
 			t.Cleanup(func() { _ = exec.Command("docker", "rm", "-f", name).Run() })
 
