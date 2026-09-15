@@ -6,6 +6,24 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.8.1 — 2026-09-14
+
+Handle sign-out failures gracefully and restore your theme when saving fails.
+
+### Dashboard fixes
+
+- **Sign out without a broken screen.** If the sign-out request fails, the
+  dashboard shows the error and lets you try again instead of raising an
+  unhandled runtime error. Repeated clicks are disabled while signing out.
+- **Theme changes recover cleanly.** If saving a palette fails, the previous
+  theme is restored and the dashboard explains the failure. Palette changes
+  are held while a save is in progress to prevent overlapping requests.
+
+### Upgrade notes
+
+Update normally from the dashboard or CLI. This patch adds no database
+migrations or configuration changes.
+
 ## 0.8.0 — 2026-09-14
 
 A redesigned dashboard, smoother navigation, personal avatars, per-machine monitoring and platform component logs.
