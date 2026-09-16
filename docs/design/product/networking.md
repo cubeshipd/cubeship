@@ -51,6 +51,16 @@ configured, which is why the field is always offered.
 A container keeps the labels it was created with, so adding or removing
 a name changes nothing until the app is redeployed.
 
+**An agent can do all of it**: `list_app_domains`, `add_app_domain`,
+`set_app_domain_port` and `remove_app_domain`. They name a domain by its
+host rather than by the id the HTTP routes take, because the host is
+what a caller already has — the name it was told to fix — and turning it
+into a number first is a round trip that can only go wrong. The port is
+the one worth having: a name pointing at a port nothing listens on is a
+502 from a container that is perfectly healthy, and until these existed
+an agent could build a whole app and then had to stop and ask somebody
+to click the setting that decides whether it answers at all.
+
 ## How long a request may take
 
 **Traefik reads a request for as long as it takes.** Both entrypoints set

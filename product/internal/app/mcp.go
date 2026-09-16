@@ -85,6 +85,22 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Name:        "add_app_volume",
 		Description: "Give an app a volume: a directory at `path` inside its container whose contents survive deploys and restarts. It is mounted from the app's next deploy, so deploy it afterwards. An app with a volume runs as one copy on one machine — adding one is refused while the app is spread, scaled past one copy or autoscaled — and each deploy stops the old container before the new one starts, so the app is briefly unavailable. Removing a volume is not a tool: deleting data stays with a person. Requires the member role.",
 	}, t.addVolume)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "list_app_domains",
+		Description: "List the names an app answers at over HTTP, each with the port inside the container it reaches. Read this before changing one: a name pointing at a port nothing listens on is what a 502 from a healthy container looks like.",
+	}, t.listDomains)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "add_app_domain",
+		Description: "Give an app another name to answer at over HTTP, and the port inside its container that name reaches. Point the name's DNS at this instance yourself; the certificate is issued on the first request that arrives. The name starts being served on the app's next deploy. Requires the admin role.",
+	}, t.addDomain)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "set_app_domain_port",
+		Description: "Change which port inside the container one of an app's names reaches — the fix when the proxy answers 502 but the container is healthy, because the app listens somewhere other than where the name points. The name keeps its certificate. It takes effect on the app's next deploy. Requires the admin role.",
+	}, t.setDomainPort)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "remove_app_domain",
+		Description: "Take a name off an app. The app goes on answering there until it is next deployed, which is when the proxy is told. Requires the admin role.",
+	}, t.removeDomain)
 	// Listing only. Publishing a port puts whatever the app speaks on the
 	// open internet, and that stays with a person — the line the
 	// datastore tools draw at exposing a database.
@@ -411,4 +427,115 @@ func (t *Tools) logs(ctx context.Context, _ *mcp.CallToolRequest, in logsInput) 
 		text = "(no log output)"
 	}
 	return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: text}}}, nil, nil
+}
+
+type domainOutput struct {
+	ID   int64  `json:"id"`
+	Host string `json:"host" jsonschema:"the name a browser asks for"`
+	Port int    `json:"port" jsonschema:"the port inside the container that name reaches"`
+}
+
+type domainsOutput struct {
+	Domains []domainOutput `json:"domains"`
+}
+
+// Named by host rather than by id, in every one of these. An agent has
+// the name — it is what it was told to fix — and making it list the
+// domains to turn that name into a number is a round trip that can only
+// go wrong.
+type domainInput struct {
+	App  string `json:"app" jsonschema:"app reference: project/environment/app, or project/app for production"`
+	Host string `json:"host" jsonschema:"the name, e.g. api.example.com"`
+}
+
+type domainPortInput struct {
+	App  string `json:"app" jsonschema:"app reference: project/environment/app, or project/app for production"`
+	Host string `json:"host" jsonschema:"the name, e.g. api.example.com"`
+	Port int    `json:"port" jsonschema:"the port inside the container this name reaches. Omit for 8080"`
+}
+
+func (t *Tools) listDomains(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, domainsOutput, error) {
+	ref, err := ParseReference(in.App)
+	if err != nil {
+		return nil, domainsOutput{}, err
+	}
+	a, err := t.svc.Resolve(ctx, t.caller, ref, user.LevelView)
+	if err != nil {
+		return nil, domainsOutput{}, err
+	}
+	return nil, toDomainsOutput(a), nil
+}
+
+func (t *Tools) addDomain(ctx context.Context, _ *mcp.CallToolRequest, in domainPortInput) (*mcp.CallToolResult, domainsOutput, error) {
+	ref, err := ParseReference(in.App)
+	if err != nil {
+		return nil, domainsOutput{}, err
+	}
+	a, err := t.svc.AddDomain(ctx, t.caller, ref, in.Host, in.Port)
+	if err != nil {
+		return nil, domainsOutput{}, err
+	}
+	return nil, toDomainsOutput(a), nil
+}
+
+func (t *Tools) setDomainPort(ctx context.Context, _ *mcp.CallToolRequest, in domainPortInput) (*mcp.CallToolResult, domainsOutput, error) {
+	ref, err := ParseReference(in.App)
+	if err != nil {
+		return nil, domainsOutput{}, err
+	}
+	id, err := t.domainID(ctx, ref, in.Host)
+	if err != nil {
+		return nil, domainsOutput{}, err
+	}
+	a, err := t.svc.SetDomainPort(ctx, t.caller, ref, id, in.Port)
+	if err != nil {
+		return nil, domainsOutput{}, err
+	}
+	return nil, toDomainsOutput(a), nil
+}
+
+func (t *Tools) removeDomain(ctx context.Context, _ *mcp.CallToolRequest, in domainInput) (*mcp.CallToolResult, domainsOutput, error) {
+	ref, err := ParseReference(in.App)
+	if err != nil {
+		return nil, domainsOutput{}, err
+	}
+	id, err := t.domainID(ctx, ref, in.Host)
+	if err != nil {
+		return nil, domainsOutput{}, err
+	}
+	a, err := t.svc.RemoveDomain(ctx, t.caller, ref, id)
+	if err != nil {
+		return nil, domainsOutput{}, err
+	}
+	return nil, toDomainsOutput(a), nil
+}
+
+// domainID turns a host into the id the service takes. It reads the app
+// as a viewer: the service asks the real question about who may change a
+// name, and refusing here on a weaker one would answer "no such domain"
+// to somebody who should have been told "not yours".
+func (t *Tools) domainID(ctx context.Context, ref Reference, host string) (int64, error) {
+	a, err := t.svc.Resolve(ctx, t.caller, ref, user.LevelView)
+	if err != nil {
+		return 0, err
+	}
+	want := NormalizeHost(host)
+	for _, d := range a.Domains {
+		if d.Host == want {
+			return d.ID, nil
+		}
+	}
+	return 0, ErrDomainNotFound
+}
+
+func toDomainsOutput(a *Scoped) domainsOutput {
+	out := domainsOutput{Domains: []domainOutput{}}
+	for _, d := range a.Domains {
+		port := d.Port
+		if port == 0 {
+			port = DefaultPort
+		}
+		out.Domains = append(out.Domains, domainOutput{ID: d.ID, Host: d.Host, Port: port})
+	}
+	return out
 }

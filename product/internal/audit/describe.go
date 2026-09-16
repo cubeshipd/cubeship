@@ -171,7 +171,11 @@ var tools = map[string]phrase{
 	"update_app":     {"change", "changed", "{reference}", "an app"},
 	"delete_app":     {"delete", "deleted", "{app}", "an app"},
 	"add_app_volume": {"add a volume to", "added a volume to", "{app}", "an app"},
-	"back_up_volume": {"back up a volume of", "backed up a volume of", "{reference}", "an app"},
+
+	"add_app_domain":      {"add domain", "added domain", "{host} to {app}", ""},
+	"set_app_domain_port": {"change the port of domain", "changed the port of domain", "{host} on {app}", ""},
+	"remove_app_domain":   {"remove domain", "removed domain", "{host} from {app}", ""},
+	"back_up_volume":      {"back up a volume of", "backed up a volume of", "{reference}", "an app"},
 
 	"create_datastore":         {"create database", "created database", "{name}", ""},
 	"add_datastore_extensions": {"install extensions on database", "installed extensions on database", "{datastore}", ""},

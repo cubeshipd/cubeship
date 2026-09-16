@@ -6,6 +6,37 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.9.3 — 2026-09-16
+
+An agent can now manage the names an app answers at, including the port each one reaches — the last piece of an app's configuration that needed a person and a mouse.
+
+### Added
+
+**Domains over MCP.** Four tools, so an agent can finish setting an app up
+without handing it back: `list_app_domains`, `add_app_domain`,
+`set_app_domain_port` and `remove_app_domain`.
+
+- **The port is the one that matters.** A name pointing at a port nothing
+  listens on is a 502 from a container that is perfectly healthy — the
+  usual cause being an image that moved where it listens. Changing it kept
+  the name and its certificate; there was no tool for it, so the fix was a
+  click somebody had to make.
+- **A domain is named by its host**, not by the id the HTTP routes take. An
+  agent has the name already, and asking it to list the domains to turn
+  that name into a number is a step that can only go wrong.
+- Adding, changing and removing require the admin role. Listing needs only
+  the ability to see the app, and an account that cannot change a domain is
+  not shown the tools that do.
+- Every change is in the audit log, by host.
+
+Each of them takes effect on the app's next deploy, which is the rule every
+routing change already followed.
+
+### Upgrade notes
+
+Update normally from the dashboard or CLI. No database migrations. Your
+agent picks the new tools up when it reconnects.
+
 ## 0.9.2 — 2026-09-16
 
 Redeploying an app you push images to keeps the version it is running, instead of asking the registry for a "latest" nobody pushed.

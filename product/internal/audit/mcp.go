@@ -113,6 +113,7 @@ var naming = map[string]bool{
 	"slug": true, "datastore": true, "store": true, "bucket": true, "id": true,
 	"volume_id": true, "owner": true, "repo": true, "release": true, "tag": true,
 	"path": true, "engine": true, "access": true, "server": true,
+	"host": true,
 }
 
 // targetOf keeps the arguments that name something, as `key=value`.

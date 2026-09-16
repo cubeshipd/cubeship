@@ -261,3 +261,76 @@ func TestMCPToolOutputSchemasAreObjects(t *testing.T) {
 		}
 	}
 }
+
+// The gap this closes: every other part of an app's configuration was
+// reachable over MCP, so an agent could create a project, an app and a
+// database and then had to stop and ask somebody to click the one
+// setting that decides whether the app answers at all.
+func TestMCPManagesAnAppsDomains(t *testing.T) {
+	f := servertest.New(t)
+	session := connectMCP(t, f, f.AdminKey)
+
+	if _, result := callTool[struct{}](t, session, "create_app",
+		map[string]any{"project": "web", "name": "myapp"}); result.IsError {
+		t.Fatalf("create_app failed: %s", toolErrorText(result))
+	}
+
+	type domains struct {
+		Domains []struct {
+			ID   int64  `json:"id"`
+			Host string `json:"host"`
+			Port int    `json:"port"`
+		} `json:"domains"`
+	}
+
+	out, result := callTool[domains](t, session, "add_app_domain",
+		map[string]any{"app": "web/myapp", "host": "apiv2.example.com", "port": 3000})
+	if result.IsError {
+		t.Fatalf("add_app_domain failed: %s", toolErrorText(result))
+	}
+	if len(out.Domains) != 1 || out.Domains[0].Host != "apiv2.example.com" || out.Domains[0].Port != 3000 {
+		t.Fatalf("after adding, domains are %+v", out.Domains)
+	}
+
+	// The tool this issue is really about: the app listens on 3100 and
+	// the name points at 3000, which is a healthy container behind a
+	// proxy answering 502.
+	out, result = callTool[domains](t, session, "set_app_domain_port",
+		map[string]any{"app": "web/myapp", "host": "apiv2.example.com", "port": 3100})
+	if result.IsError {
+		t.Fatalf("set_app_domain_port failed: %s", toolErrorText(result))
+	}
+	if len(out.Domains) != 1 || out.Domains[0].Port != 3100 {
+		t.Fatalf("after changing the port, domains are %+v", out.Domains)
+	}
+
+	// HTTP sees the same thing, which is the whole claim of a second
+	// door onto one house.
+	var viaHTTP struct {
+		Domains []struct {
+			Host string `json:"host"`
+			Port int    `json:"port"`
+		} `json:"domains"`
+	}
+	servertest.RequireStatus(t, f.DoJSON(t, http.MethodGet,
+		"/apps/web/production/myapp", nil, f.AdminKey, &viaHTTP), http.StatusOK)
+	if len(viaHTTP.Domains) != 1 || viaHTTP.Domains[0].Port != 3100 {
+		t.Errorf("HTTP sees %+v, MCP set port 3100", viaHTTP.Domains)
+	}
+
+	// Naming a host the app does not have is refused, rather than
+	// silently changing whichever domain happened to be first.
+	if !refused(t, session, "set_app_domain_port",
+		map[string]any{"app": "web/myapp", "host": "nope.example.com", "port": 3100}) {
+		t.Error("a host the app does not answer at was accepted")
+	}
+
+	out, result = callTool[domains](t, session, "remove_app_domain",
+		map[string]any{"app": "web/myapp", "host": "apiv2.example.com"})
+	if result.IsError {
+		t.Fatalf("remove_app_domain failed: %s", toolErrorText(result))
+	}
+	if len(out.Domains) != 0 {
+		t.Errorf("after removing, domains are %+v", out.Domains)
+	}
+}
