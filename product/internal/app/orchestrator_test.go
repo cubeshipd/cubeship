@@ -428,3 +428,59 @@ func containerOf(t *testing.T, db *database.DB, a *App) string {
 	r, _ := a.ReplicaOn(here)
 	return r.Container
 }
+
+// The bug this pins: an app that follows this instance's registry is
+// deployed by `docker push` under whatever tag was pushed — a commit SHA
+// — and nothing ever pushes "latest". Pressing Deploy after changing an
+// environment variable asks for no tag in particular, and asking for
+// "latest" is asking the registry for an image nobody built.
+func TestRedeployingARegistryAppKeepsTheTagItIsRunning(t *testing.T) {
+	docker := &fakeDocker{nextCreateID: "new-container", running: true}
+	orch, db, a := newDeployFixture(t, docker)
+
+	if d := runDeploy(t, orch, db, a.ID, "e2a3cf5"); d.Status != DeploymentSucceeded {
+		t.Fatalf("the first deploy ended %q: %s", d.Status, d.Error)
+	}
+
+	d := runDeploy(t, orch, db, a.ID, "")
+	if d.Status != DeploymentSucceeded {
+		t.Fatalf("the redeploy ended %q: %s", d.Status, d.Error)
+	}
+	if want := testRegistry + "/web/production/myapp:e2a3cf5"; d.ImageRef != want {
+		t.Errorf("redeployed %q, want %q", d.ImageRef, want)
+	}
+}
+
+// An app pinned to a tag keeps deploying that tag, and one that has
+// never deployed at all still has "latest" to fall back on.
+func TestRedeployingFallsBackWhenThereIsNoTagToKeep(t *testing.T) {
+	docker := &fakeDocker{nextCreateID: "new-container", running: true}
+	orch, db, a := newDeployFixture(t, docker)
+
+	d := runDeploy(t, orch, db, a.ID, "")
+	if want := testRegistry + "/web/production/myapp:latest"; d.ImageRef != want {
+		t.Errorf("a never-deployed app deployed %q, want %q", d.ImageRef, want)
+	}
+
+	if _, err := NewRepository(db).Update(context.Background(), a.ID, nil, &Origin{Tag: "v1.0"}, nil, nil, nil); err != nil {
+		t.Fatalf("pin the app to a tag: %v", err)
+	}
+	d = runDeploy(t, orch, db, a.ID, "")
+	if want := testRegistry + "/web/production/myapp:v1.0"; d.ImageRef != want {
+		t.Errorf("a pinned app deployed %q, want %q", d.ImageRef, want)
+	}
+}
+
+func TestTagOf(t *testing.T) {
+	for ref, want := range map[string]string{
+		"127.0.0.1:5000/web/production/myapp:e2a3cf5": "e2a3cf5",
+		"127.0.0.1:5000/web/production/myapp":         "",
+		"nginx:1.27":                                  "1.27",
+		"nginx@sha256:abc":                            "",
+		"":                                            "",
+	} {
+		if got := tagOf(ref); got != want {
+			t.Errorf("tagOf(%q) = %q, want %q", ref, got, want)
+		}
+	}
+}

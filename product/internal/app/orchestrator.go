@@ -415,6 +415,16 @@ func (o *Orchestrator) Start(ctx context.Context, appID int64, tag string) (*Dep
 	if tag == "" {
 		tag = a.SourceTag
 	}
+	// An app that follows this instance's registry has no tag of its
+	// own: the push is the deploy, and what it is running is whatever
+	// was pushed last — a commit SHA, usually, and never "latest",
+	// which nobody pushed and the registry does not hold. So "deploy
+	// this app again" means the tag it is already on. Without this,
+	// changing an environment variable and pressing Deploy asks for an
+	// image that was never built.
+	if tag == "" && Source(a.Source) == SourceRegistry {
+		tag = o.runningTag(ctx, appID)
+	}
 
 	deployment, err := o.apps.StartDeployment(ctx, appID, tag)
 	if err != nil {
@@ -1112,4 +1122,34 @@ func (o *Orchestrator) cap(ctx context.Context, a *App, limits Limits) error {
 		}
 	}
 	return nil
+}
+
+// runningTag is the tag of the image this app should be running: the
+// newest deploy that resolved to one and did not fail — the same row a
+// machine falls back to, so a redeploy and a rollback cannot disagree
+// about which version an app is on.
+//
+// It answers "" when there is no such deploy, or when the ref is pinned
+// by digest rather than named by a tag, and the source fills that in.
+func (o *Orchestrator) runningTag(ctx context.Context, appID int64) string {
+	d, err := o.apps.DeploymentToRun(ctx, appID)
+	if err != nil || d == nil {
+		return ""
+	}
+	return tagOf(d.ImageRef)
+}
+
+// tagOf is the tag part of an image reference, or "" for one carrying a
+// digest or no tag at all. The colon it looks for is the last one, and
+// only when nothing after it is a path separator — a registry host with
+// a port has a colon too.
+func tagOf(ref string) string {
+	if strings.Contains(ref, "@") {
+		return ""
+	}
+	i := strings.LastIndex(ref, ":")
+	if i < 0 || strings.Contains(ref[i+1:], "/") {
+		return ""
+	}
+	return ref[i+1:]
 }

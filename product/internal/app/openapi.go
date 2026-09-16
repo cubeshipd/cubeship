@@ -226,9 +226,9 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Tags:        []string{"Apps"},
 					Parameters:  refParams,
 					RequestBody: &openapi.RequestBody{
-						Description: `Optional. Omit the body to deploy "latest", or, for a source that builds, its stored ref.`,
+						Description: "Optional. Omit the body to deploy the app's own tag: the one it is pinned to, the one it is already running on this instance's registry, or the stored ref of a source that builds.",
 						Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
-							"tag": openapi.String(`Image tag, or ref to build. Defaults to "latest" or the app's stored ref.`),
+							"tag": openapi.String("Image tag, or ref to build. Left out, an app pinned to a tag deploys that tag, an app following this instance's registry deploys the tag it is already running, and a source that builds uses its stored ref."),
 						})),
 					},
 					Responses: openapi.Responses{

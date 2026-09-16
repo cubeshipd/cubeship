@@ -51,7 +51,7 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.get)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "deploy_app",
-		Description: `Manually redeploy an app from an image tag already pushed to its registry path (no tag means "latest" for an image, or the stored ref for a source that builds). Waits for the deploy to finish and reports the outcome; if this call times out first, the deploy carries on regardless — check it with get_app_deployments. Requires the member role.`,
+		Description: `Manually redeploy an app from an image tag already pushed to its registry path (no tag redeploys the tag it is already running, or the stored ref for a source that builds). Waits for the deploy to finish and reports the outcome; if this call times out first, the deploy carries on regardless — check it with get_app_deployments. Requires the member role.`,
 	}, t.deploy)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_app_env",

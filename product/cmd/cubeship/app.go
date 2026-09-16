@@ -103,7 +103,14 @@ func newAppCmd() *cobra.Command {
 				return nil
 			}
 
-			fmt.Printf("Deploying %s from tag %s...\n", args[0], tag)
+			// The deploy row carries the tag that was actually
+			// resolved, which is the only place it is known when none
+			// was asked for.
+			if deployment.Image != "" {
+				fmt.Printf("Deploying %s from tag %s...\n", args[0], deployment.Image)
+			} else {
+				fmt.Printf("Deploying %s...\n", args[0])
+			}
 			finished, err := c.WaitForDeployment(context.Background(), args[0], deployment.ID)
 			if err != nil {
 				return err
@@ -121,7 +128,11 @@ func newAppCmd() *cobra.Command {
 			}
 		},
 	}
-	deployCmd.Flags().StringVar(&tag, "tag", "latest", "image tag to deploy")
+	// No default. "latest" here was sent as if somebody had asked for
+	// it, which is not the same request as asking for nothing: the
+	// daemon answers the empty one with the app's own tag — what it is
+	// pinned to, or what it is already running.
+	deployCmd.Flags().StringVar(&tag, "tag", "", "image tag to deploy (default: the tag the app is on)")
 	deployCmd.Flags().BoolVar(&detach, "detach", false, "start the deploy and return without waiting for it")
 
 	deploymentsCmd := &cobra.Command{

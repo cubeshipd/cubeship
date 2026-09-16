@@ -209,7 +209,7 @@ Delete an app and stop the container serving it. Images already pushed stay in t
 
 ### deploy_app
 
-Manually redeploy an app from an image tag already pushed to its registry path (no tag means "latest" for an image, or the stored ref for a source that builds). Waits for the deploy to finish and reports the outcome; if this call times out first, the deploy carries on regardless — check it with get_app_deployments. Requires the member role.
+Manually redeploy an app from an image tag already pushed to its registry path (no tag redeploys the tag it is already running, or the stored ref for a source that builds). Waits for the deploy to finish and reports the outcome; if this call times out first, the deploy carries on regardless — check it with get_app_deployments. Requires the member role.
 
 | Input | Type | What it is |
 | --- | --- | --- |

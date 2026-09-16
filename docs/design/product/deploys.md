@@ -66,6 +66,23 @@ the deployment row records the tag that actually ran rather than "the
 one configured at the time", so the history can still answer which
 version was live last Tuesday.
 
+**And when nothing is asked for and nothing is configured, the app keeps
+the tag it is on.** For an app following this instance's registry that
+is the only answer that exists: it was deployed by a push under a commit
+SHA, nothing ever pushed `latest`, and defaulting to `latest` asked the
+registry for an image that was never built. Editing an environment
+variable and pressing Deploy — the ordinary way anybody redeploys —
+failed with *not found*. The tag it keeps comes from
+`Repository.DeploymentToRun`, the same row a machine falls back to on
+its own, so a redeploy and a rollback cannot name two different
+versions. `latest` remains the fallback for an app that has never
+deployed, and for every other source the default is unchanged.
+
+`--tag` has **no default in the CLI** for the same reason. A flag
+defaulting to `latest` sends `latest` as though somebody typed it, and
+"the tag I asked for" and "no tag in particular" are two different
+requests the daemon has to be able to tell apart.
+
 A push under an external app's name does not deploy it — the webhook
 checks the source. Our registry will accept the push, since the
 repository path exists either way, but running an image because something

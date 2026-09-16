@@ -6,6 +6,35 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.9.2 — 2026-09-16
+
+Redeploying an app you push images to keeps the version it is running, instead of asking the registry for a "latest" nobody pushed.
+
+### Fixed
+
+**Deploy now means "this app again".** An app that follows this instance's
+registry is deployed by `docker push`, under whatever tag you pushed — a
+commit SHA, usually. Pressing **Deploy** without naming a tag asked for
+`latest` instead, which nothing had ever pushed, so changing an environment
+variable and redeploying failed with *not found*. It now redeploys the tag
+the app is already running.
+
+- Nothing else moves. An app pinned to a tag still deploys that tag, a
+  source that builds still uses its stored ref, and an app that has never
+  deployed still falls back to `latest`.
+- The tag it keeps is the one from the newest deploy that worked — the same
+  version a machine falls back to on its own, so a redeploy and a rollback
+  cannot disagree.
+- `POST /apps/{...}/deployments` with no body and the `deploy_app` tool
+  changed with it. `cubeship app deploy --tag` no longer defaults to
+  `latest`, so leaving it out now means the same thing there.
+
+### Upgrade notes
+
+Update normally from the dashboard or CLI. No database migrations. An app
+left on a failed `latest` deploy recovers on its next one — it reads past
+the failures to the version that worked.
+
 ## 0.9.1 — 2026-09-16
 
 Agents that validate an MCP server strictly can see this instance's tools again — twelve of them made the whole list unreadable.
