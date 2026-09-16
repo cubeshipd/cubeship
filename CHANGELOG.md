@@ -6,6 +6,31 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.9.1 — 2026-09-16
+
+Agents that validate an MCP server strictly can see this instance's tools again — twelve of them made the whole list unreadable.
+
+### Fixed
+
+**The MCP tool list is valid again.** Twelve tools that return a list —
+`list_apps`, `list_projects`, `list_datastores`, `list_servers`,
+`get_app_deployments` and the rest — described their result in a shape the
+MCP specification does not allow. A client that checks the list against the
+specification, which most Python-based agents do, rejected **every** tool at
+once over it, with an error naming only a number. Anything more forgiving,
+Claude Code included, never noticed.
+
+- **Those tools now answer with an `items` field** holding what they used to
+  return directly. A client that reads the results itself, rather than
+  through an agent, reads `items`.
+- An empty result is an empty list, where some of them used to send nothing
+  at all.
+
+### Upgrade notes
+
+Update normally from the dashboard or CLI. No database migrations. Point
+your agent at `https://<your-domain>/mcp` again after the daemon restarts.
+
 ## 0.9.0 — 2026-09-15
 
 Postgres extensions on managed databases — pgvector, VectorChord and PostgreSQL's contrib modules — installable at creation or afterwards, and declarable by a template.
