@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"cubeship/internal/mcpx"
 	"cubeship/internal/platform/database"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -91,24 +92,24 @@ func (t *Tools) createAPIKey(ctx context.Context, _ *mcp.CallToolRequest, in cre
 	}, nil
 }
 
-func (t *Tools) listRoles(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, []RoleResponse, error) {
+func (t *Tools) listRoles(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, mcpx.List[RoleResponse], error) {
 	roles, err := t.svc.ListRoles(ctx, t.caller)
 	if err != nil {
-		return nil, nil, err
+		return nil, mcpx.List[RoleResponse]{}, err
 	}
 	out := make([]RoleResponse, 0, len(roles))
 	for _, r := range roles {
 		out = append(out, toRoleResponse(r))
 	}
-	return nil, out, nil
+	return nil, mcpx.Of(out), nil
 }
 
-func (t *Tools) listAPIKeys(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, []APIKeyResponse, error) {
+func (t *Tools) listAPIKeys(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, mcpx.List[APIKeyResponse], error) {
 	keys, err := t.svc.ListAPIKeys(ctx, t.caller)
 	if err != nil {
-		return nil, nil, err
+		return nil, mcpx.List[APIKeyResponse]{}, err
 	}
-	return nil, toAPIKeyResponses(keys, t.keyHash, t.svc.RoleNames(ctx)), nil
+	return nil, mcpx.Of(toAPIKeyResponses(keys, t.keyHash, t.svc.RoleNames(ctx))), nil
 }
 
 type revokeAPIKeyInput struct {

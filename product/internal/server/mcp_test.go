@@ -126,12 +126,14 @@ func TestMCPToolsAreAuthorizedLikeHTTP(t *testing.T) {
 	t.Run("an outsider sees no apps", func(t *testing.T) {
 		_, outsiderKey := servertest.CreateUser(t, f.DB, "outsider", user.RoleMember)
 		session := connectMCP(t, f, outsiderKey)
-		out, result := callTool[[]map[string]any](t, session, "list_apps", nil)
+		out, result := callTool[struct {
+			Items []map[string]any `json:"items"`
+		}](t, session, "list_apps", nil)
 		if result.IsError {
 			t.Fatalf("list_apps failed: %s", toolErrorText(result))
 		}
-		if len(out) != 0 {
-			t.Fatalf("an outsider saw apps: %v", out)
+		if len(out.Items) != 0 {
+			t.Fatalf("an outsider saw apps: %v", out.Items)
 		}
 	})
 }
@@ -222,4 +224,40 @@ func refused(t *testing.T, session *mcp.ClientSession, name string, args map[str
 	t.Helper()
 	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
 	return err != nil || result.IsError
+}
+
+// A tool's output schema must be an object schema. A handler returning a
+// Go slice infers {"type": ["null", "array"]} instead, and a client that
+// validates tools/list against the MCP schema — pydantic-backed ones do —
+// rejects the whole list over a single tool, so every tool disappears at
+// once. mcpx.List is what keeps the results inside an object.
+func TestMCPToolOutputSchemasAreObjects(t *testing.T) {
+	f := servertest.New(t)
+	session := connectMCP(t, f, f.AdminKey)
+
+	tools, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	if len(tools.Tools) == 0 {
+		t.Fatal("no tools registered")
+	}
+	for _, tool := range tools.Tools {
+		if tool.OutputSchema == nil {
+			continue
+		}
+		raw, err := json.Marshal(tool.OutputSchema)
+		if err != nil {
+			t.Fatalf("marshal %s output schema: %v", tool.Name, err)
+		}
+		var schema struct {
+			Type any `json:"type"`
+		}
+		if err := json.Unmarshal(raw, &schema); err != nil {
+			t.Fatalf("unmarshal %s output schema: %v", tool.Name, err)
+		}
+		if schema.Type != "object" {
+			t.Errorf("tool %s has output schema type %v, want object", tool.Name, schema.Type)
+		}
+	}
 }

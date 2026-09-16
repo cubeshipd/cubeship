@@ -3,6 +3,7 @@ package machine
 import (
 	"context"
 
+	"cubeship/internal/mcpx"
 	"cubeship/internal/metrics"
 	"cubeship/internal/user"
 
@@ -49,10 +50,10 @@ func (t *Tools) metrics(ctx context.Context, _ *mcp.CallToolRequest, in metricsI
 	return nil, series, nil
 }
 
-func (t *Tools) containers(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, []metrics.Usage, error) {
+func (t *Tools) containers(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, mcpx.List[metrics.Usage], error) {
 	usage, err := t.svc.Containers(ctx, t.caller)
 	if err != nil {
-		return nil, nil, err
+		return nil, mcpx.List[metrics.Usage]{}, err
 	}
-	return nil, usage, nil
+	return nil, mcpx.Of(usage), nil
 }

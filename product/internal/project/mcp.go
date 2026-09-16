@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"cubeship/internal/envvar"
+	"cubeship/internal/mcpx"
 	"cubeship/internal/user"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -77,12 +78,12 @@ func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInp
 type orgScopedInput struct {
 }
 
-func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, in orgScopedInput) (*mcp.CallToolResult, []Response, error) {
+func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, in orgScopedInput) (*mcp.CallToolResult, mcpx.List[Response], error) {
 	projects, err := t.svc.List(ctx, t.caller)
 	if err != nil {
-		return nil, nil, err
+		return nil, mcpx.List[Response]{}, err
 	}
-	return nil, toResponses(projects), nil
+	return nil, mcpx.Of(toResponses(projects)), nil
 }
 
 type envOutput struct {
@@ -139,12 +140,12 @@ type projectScopedInput struct {
 	Project string `json:"project" jsonschema:"project slug"`
 }
 
-func (t *Tools) listEnvironments(ctx context.Context, _ *mcp.CallToolRequest, in projectScopedInput) (*mcp.CallToolResult, []EnvironmentResponse, error) {
+func (t *Tools) listEnvironments(ctx context.Context, _ *mcp.CallToolRequest, in projectScopedInput) (*mcp.CallToolResult, mcpx.List[EnvironmentResponse], error) {
 	envs, err := t.svc.ListEnvironments(ctx, t.caller, in.Project)
 	if err != nil {
-		return nil, nil, err
+		return nil, mcpx.List[EnvironmentResponse]{}, err
 	}
-	return nil, toEnvironmentResponses(envs), nil
+	return nil, mcpx.Of(toEnvironmentResponses(envs)), nil
 }
 
 type setEnvironmentEnvInput struct {

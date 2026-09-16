@@ -39,3 +39,19 @@ Error responses are `text/plain`, because that is what `http.Error`
 writes. `openapi.Unauthorized`, `.Forbidden`, `.NotFound` and
 `.BadRequest` carry the shared wording — including why 404 and 403 mean
 different things.
+
+## An MCP tool's output schema is always an object
+
+The SDK infers a tool's output schema from the type its handler returns,
+and a Go slice infers as `{"type": ["null", "array"]}`, because a nil
+slice is JSON null. The MCP schema says an output schema is an *object*
+schema, and a client that validates `tools/list` against it — anything
+built on the Python SDK's pydantic models — rejects the **whole list**
+over one tool that isn't. Every tool vanishes at once, and the error
+names only an index.
+
+So a handler returning many of something returns `mcpx.List[T]`, whose
+one `items` field holds them, and `mcpx.Of` turns a nil slice into an
+empty one on the way in. `TestMCPToolOutputSchemasAreObjects` walks every
+registered tool; `internal/mcpx` pins the inference itself, with no
+database to start.

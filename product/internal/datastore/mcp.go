@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"cubeship/internal/mcpx"
 	"cubeship/internal/user"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -109,19 +110,19 @@ func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (
 	return nil, toResponse(d, t.instance(ctx)), nil
 }
 
-func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, []Response, error) {
+func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, mcpx.List[Response], error) {
 	all, err := t.svc.List(ctx, t.caller)
 	if err != nil {
-		return nil, nil, err
+		return nil, mcpx.List[Response]{}, err
 	}
-	return nil, toResponses(all, t.instance(ctx)), nil
+	return nil, mcpx.Of(toResponses(all, t.instance(ctx))), nil
 }
 
-func (t *Tools) engines(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, []EngineResponse, error) {
+func (t *Tools) engines(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, mcpx.List[EngineResponse], error) {
 	if err := user.Require(t.caller, user.RoleMember); err != nil {
-		return nil, nil, err
+		return nil, mcpx.List[EngineResponse]{}, err
 	}
-	return nil, engineResponses(), nil
+	return nil, mcpx.Of(engineResponses()), nil
 }
 
 type extensionsInput struct {

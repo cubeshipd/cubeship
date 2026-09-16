@@ -3,6 +3,7 @@ package objectstore
 import (
 	"context"
 
+	"cubeship/internal/mcpx"
 	"cubeship/internal/user"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -73,17 +74,17 @@ type nameInput struct {
 	Store string `json:"store" jsonschema:"the object store's name on this instance"`
 }
 
-func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, []Response, error) {
+func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, mcpx.List[Response], error) {
 	all, err := t.svc.List(ctx, t.caller)
 	if err != nil {
-		return nil, nil, err
+		return nil, mcpx.List[Response]{}, err
 	}
 	domain := t.svc.ExternalHost(ctx)
 	out := make([]Response, 0, len(all))
 	for _, s := range all {
 		out = append(out, toResponse(s, domain))
 	}
-	return nil, out, nil
+	return nil, mcpx.Of(out), nil
 }
 
 func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, Response, error) {
@@ -94,10 +95,10 @@ func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (
 	return nil, toResponse(store, t.svc.ExternalHost(ctx)), nil
 }
 
-func (t *Tools) buckets(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, []BucketResponse, error) {
+func (t *Tools) buckets(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, mcpx.List[BucketResponse], error) {
 	found, err := t.svc.Buckets(ctx, t.caller, in.Store)
 	if err != nil {
-		return nil, nil, err
+		return nil, mcpx.List[BucketResponse]{}, err
 	}
 	out := make([]BucketResponse, 0, len(found))
 	for _, b := range found {
@@ -108,7 +109,7 @@ func (t *Tools) buckets(ctx context.Context, _ *mcp.CallToolRequest, in nameInpu
 		}
 		out = append(out, row)
 	}
-	return nil, out, nil
+	return nil, mcpx.Of(out), nil
 }
 
 type attachInput struct {

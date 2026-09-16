@@ -21,7 +21,7 @@ import (
 // mcpVersion is reported to MCP clients during their initial handshake.
 // It has no relation to the CLI's own version — bump it when a tool's
 // behavior changes in a way a client might care about.
-const mcpVersion = "0.1.0"
+const mcpVersion = "0.2.0"
 
 // mcpHandler serves /mcp. Every request builds a fresh, request-scoped
 // server (Stateless mode), so a tool call is authorized as whichever

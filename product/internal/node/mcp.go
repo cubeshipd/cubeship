@@ -3,6 +3,7 @@ package node
 import (
 	"context"
 
+	"cubeship/internal/mcpx"
 	"cubeship/internal/user"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -35,14 +36,14 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.list)
 }
 
-func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, []Response, error) {
+func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, mcpx.List[Response], error) {
 	nodes, err := t.svc.List(ctx, t.caller)
 	if err != nil {
-		return nil, nil, err
+		return nil, mcpx.List[Response]{}, err
 	}
 	out := make([]Response, 0, len(nodes))
 	for _, n := range nodes {
 		out = append(out, toResponse(n))
 	}
-	return nil, out, nil
+	return nil, mcpx.Of(out), nil
 }

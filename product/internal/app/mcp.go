@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"cubeship/internal/envvar"
+	"cubeship/internal/mcpx"
 	"cubeship/internal/user"
 
 	"github.com/docker/docker/pkg/stdcopy"
@@ -171,12 +172,12 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 	return nil, toResponse(updated, t.svc.InstanceConfig(ctx)), nil
 }
 
-func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, []Response, error) {
+func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, mcpx.List[Response], error) {
 	apps, err := t.svc.List(ctx, t.caller)
 	if err != nil {
-		return nil, nil, err
+		return nil, mcpx.List[Response]{}, err
 	}
-	return nil, toResponses(apps, t.svc.InstanceConfig(ctx)), nil
+	return nil, mcpx.Of(toResponses(apps, t.svc.InstanceConfig(ctx))), nil
 }
 
 type nameInput struct {
@@ -230,14 +231,14 @@ type deploymentOutput struct {
 	CreatedAt string `json:"created_at"`
 }
 
-func (t *Tools) deployments(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, []deploymentOutput, error) {
+func (t *Tools) deployments(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, mcpx.List[deploymentOutput], error) {
 	ref, err := ParseReference(in.App)
 	if err != nil {
-		return nil, nil, err
+		return nil, mcpx.List[deploymentOutput]{}, err
 	}
 	history, err := t.svc.Deployments(ctx, t.caller, ref)
 	if err != nil {
-		return nil, nil, err
+		return nil, mcpx.List[deploymentOutput]{}, err
 	}
 	out := make([]deploymentOutput, 0, len(history))
 	for _, d := range history {
@@ -246,7 +247,7 @@ func (t *Tools) deployments(ctx context.Context, _ *mcp.CallToolRequest, in name
 			CreatedAt: d.CreatedAt.Format(time.RFC3339),
 		})
 	}
-	return nil, out, nil
+	return nil, mcpx.Of(out), nil
 }
 
 func (t *Tools) delete(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, user.ActionResult, error) {
