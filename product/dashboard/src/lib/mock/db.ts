@@ -164,7 +164,7 @@ export const db = {
 
   resources: [
     { resource: "projects", items: true, items_are: "project", secrets: true },
-    { resource: "apps", items: true, items_are: "project", secrets: true },
+    { resource: "apps", items: true, items_are: "project", secrets: true, shell: true },
     { resource: "domains", items: true, items_are: "project", secrets: false },
     { resource: "databases", items: true, items_are: "database", secrets: true },
     { resource: "storage", items: true, items_are: "object store", secrets: true },

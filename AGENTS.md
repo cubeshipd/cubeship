@@ -45,6 +45,7 @@ re-made by accident.
 | `internal/backup` | [backups.md](docs/design/product/backups.md) — dumps, the schedule, restoring |
 | `internal/certificates`, `internal/firewall`, app domains | [networking.md](docs/design/product/networking.md) — where an app answers, TLS, and the host's ufw |
 | `internal/metrics`, `internal/machine` | [monitoring.md](docs/design/product/monitoring.md) — what is sampled, and what 100% means |
+| `internal/shell`, `internal/platform/terminal`, a shell in the dashboard or CLI | [shell.md](docs/design/product/shell.md) — one WebSocket per session, who may open one, running it in a container or on the host, and connecting a worker's back |
 | `internal/credential`, `internal/extregistry` | [credentials.md](docs/design/product/credentials.md) — one secret, named by everything that needs it |
 | `internal/user`, `internal/setup` | [authentication.md](docs/design/product/authentication.md) — API keys, sessions, the setup token |
 | `install.sh`, `internal/settings` | [installing.md](docs/design/product/installing.md) — the front door, the data directory, the instance's own settings |
@@ -128,13 +129,17 @@ product/internal/
                 Traefik's own store
   firewall/     the host's ufw, and the one thing it does not cover on a
                 machine running Docker
+  shell/        an interactive terminal in an app's container or on a
+                machine as root: who may, where it runs, and joining a
+                worker's session back to the person who asked
   templateinstall/ installing a template from the catalog: checks it,
                 creates what it declares, deploys it, and undoes it all
                 when a step fails. Above every module it creates through
   dashboard/    proxies page requests to the dashboard's container
   server/       mounts every module on the HTTP mux and the MCP endpoint
   platform/     infrastructure: database, dockerx, traefik, bootstrap,
-                buildkit, config, authkey, regauth, hostexec, httpx
+                buildkit, config, authkey, regauth, hostexec, httpx,
+                terminal
   envvar/ slug/ small shared vocabulary
   cli/          what the CLI talks to the daemon with: its client and
                 the credentials it keeps

@@ -658,6 +658,9 @@ export type Grant = {
   resource: string;
   level: Level;
   secrets?: boolean;
+  // Opening a shell in an app's container. Its own switch: manage and
+  // secrets together do not reach it.
+  shell?: boolean;
   items: string[] | null;
 };
 
@@ -666,6 +669,7 @@ export type ResourceInfo = {
   items: boolean;
   items_are?: string;
   secrets: boolean;
+  shell?: boolean;
 };
 
 export type AccessRole = {
@@ -691,6 +695,22 @@ export function can(me: Me, resource: string, level: Level = "view"): boolean {
   if (!me.grants) return true;
   const g = me.grants.find((x) => x.resource === resource);
   return !!g && RANK[g.level] >= RANK[level] && (g.items === null || g.items.length > 0);
+}
+
+// canShell is whether the signed-in request may open a shell in an app
+// of this project. Offering only, like `can`.
+export function canShell(me: Me, project: string): boolean {
+  if (!me.grants) return true;
+  const g = me.grants.find((x) => x.resource === "apps");
+  return (
+    !!g && g.level === "manage" && !!g.shell && (g.items === null || g.items.includes(project))
+  );
+}
+
+// canRootShell is whether the signed-in request may open a root shell on
+// a machine: an admin, and not one narrowed by a role. No grant reaches it.
+export function canRootShell(me: Me): boolean {
+  return me.role === "admin" && !me.grants;
 }
 
 export type AuditEvent = {

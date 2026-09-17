@@ -1770,3 +1770,39 @@ func (s *Service) resolveDomains(ctx context.Context, caller *user.User, ref Ref
 	}
 	return a, err
 }
+
+// ShellTarget is the copy of an app a shell opens in, for a caller who
+// may open one there.
+//
+// Naming no server takes the first copy that is running, rather than
+// the first copy — a shell needs a process to join, and landing on a
+// machine where the app is still being placed would refuse somebody
+// whose app is plainly up somewhere.
+func (s *Service) ShellTarget(ctx context.Context, caller *user.User, ref Reference, server string) (Replica, error) {
+	a, err := s.Resolve(ctx, caller, ref, user.LevelView)
+	if err != nil {
+		return Replica{}, err
+	}
+	if err := user.AllowShell(caller, user.ResApps, ref.Project); err != nil {
+		if errors.Is(err, user.ErrHidden) {
+			return Replica{}, ErrNotFound
+		}
+		return Replica{}, err
+	}
+	if server == "" {
+		for _, r := range a.Replicas {
+			if r.Running() {
+				return r, nil
+			}
+		}
+		return Replica{}, ErrNoContainer
+	}
+	r, err := a.pick(server)
+	if err != nil {
+		return Replica{}, err
+	}
+	if !r.Running() {
+		return Replica{}, ErrNoContainer
+	}
+	return r, nil
+}

@@ -1085,3 +1085,16 @@ allowlist and worker channel.
 `ContainerLogs` uses cancellable queries for all log viewers. Follow waits for
 in-flight requests and pauses in background tabs. A changed resource uses a new
 query key, and log results are not retained after the viewer unmounts.
+
+### A shell is a tab, and a page for a machine
+
+An app's **Shell** tab sits beside Logs and is offered only to somebody
+whose grant opens one; a root shell is a row action on **Servers** that
+goes to `/servers/<name>/shell`, a page rather than a dialog, because it is
+somewhere you stay and a URL lets it live in a tab of its own. That server
+crumb links nowhere: a machine has no screen of its own to go back to.
+
+`TerminalSession` is xterm.js through `next/dynamic`, in a box whose height
+is fixed before the chunk loads, so connecting moves nothing on the page.
+The protocol, the password and why the tab unmounts when it is closed are
+in [shell.md](shell.md).

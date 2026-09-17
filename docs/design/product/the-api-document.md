@@ -19,6 +19,8 @@ without one.
 describes what someone integrating against Cubeship would call:
 projects, environments, apps. It leaves out the daemon's
 own machinery (`/healthz`, `/openapi.json`, `/docs`, `/mcp`), the
+two shell sessions (a WebSocket is not a request with a response — see
+[shell.md](shell.md)), the
 registry's two endpoints (`docker` and the registry container call
 those, nobody else), and API-key self-service, which you do once from the
 CLI.

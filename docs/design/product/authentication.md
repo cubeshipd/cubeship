@@ -174,6 +174,14 @@ effective policy is wider than its own, revoke keys or change the
 password. A role held by anybody cannot be deleted (`ErrRoleInUse`, and
 `ON DELETE RESTRICT` under a race).
 
+**A shell is a grant of its own.** `Shell` on apps, beside `Secrets`,
+needing manage as well and never implied by either — every role written
+before shells has manage and secrets, and implying it would have given a
+shell to every deployer on the day of the upgrade. A root shell on a
+machine is an unrestricted admin's and no grant reaches it; from the
+dashboard it also asks for the password again (`ConfirmPassword`,
+throttled like a sign-in). See [shell.md](shell.md).
+
 **Over MCP a tool the caller cannot use is removed from the list** rather
 than refused (`server/access.go`): an agent cannot be talked into calling
 what it was never shown. `toolRules` names each tool's resource and level,

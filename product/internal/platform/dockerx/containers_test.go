@@ -918,3 +918,19 @@ func TestAOneShotIsAskedToRemoveItself(t *testing.T) {
 		t.Errorf("it also carries a restart policy: %q", fake.createdHostConfig.RestartPolicy.Name)
 	}
 }
+
+func (f *fakeAPI) ContainerExecResize(context.Context, string, container.ResizeOptions) error {
+	return nil
+}
+
+func (f *fakeAPI) ContainerResize(context.Context, string, container.ResizeOptions) error {
+	return nil
+}
+
+func (f *fakeAPI) ContainerAttach(context.Context, string, container.AttachOptions) (types.HijackedResponse, error) {
+	return types.HijackedResponse{}, errors.New("not faked")
+}
+
+func (f *fakeAPI) ContainerStatPath(context.Context, string, string) (container.PathStat, error) {
+	return container.PathStat{}, nil
+}

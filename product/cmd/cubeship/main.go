@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 
@@ -37,6 +38,12 @@ func main() {
 	root.AddCommand(newDocsCmd(root))
 
 	if err := root.Execute(); err != nil {
+		// A remote shell's status is passed on as this process's, with
+		// nothing printed: the shell already said whatever it had to.
+		var exit exitError
+		if errors.As(err, &exit) {
+			os.Exit(exit.code)
+		}
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}

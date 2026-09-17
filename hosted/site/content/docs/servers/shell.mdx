@@ -1,0 +1,36 @@
+---
+title: Root shell
+description: A root terminal on any machine in the instance, for an admin, with no SSH port open.
+---
+
+**Servers → Open a root shell** on a row opens a terminal on that
+machine as root — the same as signing in over SSH, with its own files,
+services and Docker.
+
+```bash
+cubeship server shell control-plane
+cubeship server shell eu-1
+```
+
+## Who can open one
+
+**Only an admin**, with a key that is not restricted. No role reaches it:
+a root prompt on the host is everything the instance is.
+
+From the dashboard it asks for **your password** again before it opens —
+a signed-in browser proves somebody signed in once, and this proves they
+are still the one at the keyboard. The CLI's API key is its own proof.
+
+## On a worker
+
+The worker is told to open the shell on its next poll and connects the
+session back to the control plane, so a worker still publishes no port.
+A worker that is offline, or on a version of Cubeship from before shells,
+is refused at once rather than after a wait.
+
+## What it is, underneath
+
+A short-lived privileged container in the host's namespaces — the same
+way Cubeship already edits the host's firewall. It is removed when the
+session ends. Every session is in the [audit log](/docs/users/audit);
+what is typed is not.

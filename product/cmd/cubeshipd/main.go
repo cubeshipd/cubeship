@@ -49,6 +49,7 @@ import (
 	"cubeship/internal/server"
 	"cubeship/internal/settings"
 	"cubeship/internal/setup"
+	"cubeship/internal/shell"
 	"cubeship/internal/templateinstall"
 	"cubeship/internal/update"
 	"cubeship/internal/user"
@@ -570,6 +571,9 @@ func run() error {
 	// rather than anything being configured. Off entirely when the
 	// daemon is a host process, where there is no such container.
 	host := hostexec.NewRunner(docker, bootstrap.OwnImage(ctx, docker, cfg), cfg.InContainer)
+	// A root shell belongs to a connection, and every connection the
+	// last run of this daemon held is gone.
+	host.Sweep(ctx)
 
 	// What lets the machine module read the box's own numbers. Where
 	// those are depends on the same fact: a container's /proc/stat is
@@ -602,6 +606,7 @@ func run() error {
 		DataDir:       cfg.DataDir,
 		SetupToken:    setupToken,
 		Host:          host,
+		Terminals:     shell.OnThisMachine(host),
 		Machine:       box,
 		Version:       version,
 		Catalog:       catalog,

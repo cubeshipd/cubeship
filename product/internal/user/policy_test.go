@@ -103,3 +103,47 @@ func TestGrantsAreValidated(t *testing.T) {
 		t.Errorf("the member default is not valid: %v", err)
 	}
 }
+
+// A shell is its own switch. Manage and secrets together still do not
+// reach it — every grant written before shells existed has both — and a
+// shell grant at view does not either, because a shell changes things.
+func TestAShellIsGrantedOnlyByItsOwnSwitch(t *testing.T) {
+	deployer := member(Grant{Resource: ResApps, Level: LevelManage, Secrets: true})
+	if err := AllowShell(deployer, ResApps, "web"); !errors.Is(err, ErrForbidden) {
+		t.Errorf("manage and secrets opened a shell: %v", err)
+	}
+	if HasShell(deployer, ResApps) {
+		t.Error("manage and secrets offered a shell")
+	}
+
+	viewer := member(Grant{Resource: ResApps, Level: LevelView, Shell: true})
+	if err := AllowShell(viewer, ResApps, "web"); !errors.Is(err, ErrForbidden) {
+		t.Errorf("a shell grant at view opened a shell: %v", err)
+	}
+
+	operator := member(Grant{Resource: ResApps, Level: LevelManage, Shell: true, Items: []string{"web"}})
+	if err := AllowShell(operator, ResApps, "web"); err != nil {
+		t.Errorf("the shell grant was refused on its own project: %v", err)
+	}
+	if err := AllowShell(operator, ResApps, "shop"); !errors.Is(err, ErrHidden) {
+		t.Errorf("the shell grant reached a project outside it: %v", err)
+	}
+
+	if err := AllowShell(&User{Role: RoleMember}, ResApps, "web"); !errors.Is(err, ErrForbidden) {
+		t.Errorf("a member with no role opened a shell: %v", err)
+	}
+}
+
+func TestAShellGrantNarrowsLikeTheOthers(t *testing.T) {
+	role := NewPolicy([]Grant{{Resource: ResApps, Level: LevelManage, Shell: true}})
+	key := NewPolicy([]Grant{{Resource: ResApps, Level: LevelManage}})
+	if Intersect(role, key)[ResApps].Shell {
+		t.Error("a key without the shell grant kept its role's")
+	}
+	if !key.Within(role) || role.Within(key) {
+		t.Error("a shell grant is not wider than no shell grant")
+	}
+	if err := ValidateGrants([]Grant{{Resource: ResDatabases, Level: LevelManage, Shell: true}}); !errors.Is(err, ErrBadGrant) {
+		t.Errorf("a shell on databases was accepted: %v", err)
+	}
+}

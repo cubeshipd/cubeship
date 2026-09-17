@@ -41,29 +41,31 @@ type ResourceInfo struct {
 	Items    bool     `json:"items"`
 	ItemsAre string   `json:"items_are,omitempty"`
 	Secrets  bool     `json:"secrets"`
+	// Shell says the grant can open a shell inside what it names.
+	Shell bool `json:"shell"`
 }
 
 // Resources is every resource, in the order a screen lists them. Users
 // and roles are not here: they stay an admin's, because whoever can
 // grant access can grant themselves all of it.
 var Resources = []ResourceInfo{
-	{ResProjects, true, "project", true},
-	{ResApps, true, "project", true},
-	{ResDomains, true, "project", false},
-	{ResDatabases, true, "database", true},
-	{ResStorage, true, "object store", true},
-	{ResServers, false, "", false},
-	{ResTemplates, false, "", false},
-	{ResBackups, false, "", true},
-	{ResRegistry, false, "", false},
-	{ResRegistries, false, "", false},
-	{ResGit, false, "", false},
-	{ResDNS, false, "", false},
-	{ResCredentials, false, "", false},
-	{ResCertificates, false, "", false},
-	{ResFirewall, false, "", false},
-	{ResSettings, false, "", false},
-	{ResAudit, false, "", false},
+	{ResProjects, true, "project", true, false},
+	{ResApps, true, "project", true, true},
+	{ResDomains, true, "project", false, false},
+	{ResDatabases, true, "database", true, false},
+	{ResStorage, true, "object store", true, false},
+	{ResServers, false, "", false, false},
+	{ResTemplates, false, "", false, false},
+	{ResBackups, false, "", true, false},
+	{ResRegistry, false, "", false, false},
+	{ResRegistries, false, "", false, false},
+	{ResGit, false, "", false, false},
+	{ResDNS, false, "", false, false},
+	{ResCredentials, false, "", false, false},
+	{ResCertificates, false, "", false, false},
+	{ResFirewall, false, "", false, false},
+	{ResSettings, false, "", false, false},
+	{ResAudit, false, "", false, false},
 }
 
 func resourceInfo(r Resource) (ResourceInfo, bool) {
@@ -101,6 +103,12 @@ type Grant struct {
 	Level    Level    `json:"level"`
 	// Secrets reads what somebody set: variables, credentials, files.
 	Secrets bool `json:"secrets,omitempty"`
+	// Shell opens a shell inside an app's container. **Its own switch,
+	// and never implied by the others**: a shell reads every secret the
+	// running process holds and changes whatever the container can, so
+	// it is more than manage and more than secrets, and a grant written
+	// before it existed must not start reaching it.
+	Shell bool `json:"shell,omitempty"`
 	// Items names which ones. **Null is every one, and an empty list is
 	// none** — never omitted, or the two would read back the same, and
 	// a grant whose items were all deleted would reach everything.
@@ -163,6 +171,9 @@ func ValidateGrants(grants []Grant) error {
 		if g.Secrets && !info.Secrets {
 			return fmt.Errorf("%w: %s has no secrets", ErrBadGrant, g.Resource)
 		}
+		if g.Shell && !info.Shell {
+			return fmt.Errorf("%w: %s has no shell", ErrBadGrant, g.Resource)
+		}
 	}
 	return nil
 }
@@ -197,7 +208,7 @@ func Intersect(p, q Policy) Policy {
 		if !ok {
 			continue
 		}
-		g := Grant{Resource: r, Level: a.Level, Secrets: a.Secrets && b.Secrets}
+		g := Grant{Resource: r, Level: a.Level, Secrets: a.Secrets && b.Secrets, Shell: a.Shell && b.Shell}
 		if b.Level.rank() < a.Level.rank() {
 			g.Level = b.Level
 		}
@@ -231,7 +242,7 @@ func (p Policy) Within(q Policy) bool {
 	}
 	for r, a := range p {
 		b := q[r]
-		if a.Level.rank() > b.Level.rank() || (a.Secrets && !b.Secrets) {
+		if a.Level.rank() > b.Level.rank() || (a.Secrets && !b.Secrets) || (a.Shell && !b.Shell) {
 			return false
 		}
 		if b.Items == nil {
@@ -284,6 +295,24 @@ func AllowSecrets(caller *User, r Resource, item string) error {
 		return denied(fmt.Sprintf("forbidden: this reads secrets on %s", r))
 	}
 	return nil
+}
+
+// AllowShell is Allow at manage, plus the grant opening a shell. Manage
+// as well, because a shell changes what it reaches, and a grant that can
+// only look must not be one switch away from a root prompt.
+func AllowShell(caller *User, r Resource, item string) error {
+	if err := Allow(caller, r, LevelManage, item); err != nil {
+		return err
+	}
+	if policy := caller.Effective(); policy != nil && !policy[r].Shell {
+		return denied(fmt.Sprintf("forbidden: this opens a shell on %s", r))
+	}
+	return nil
+}
+
+// HasShell reports whether caller opens a shell on some of a resource.
+func HasShell(caller *User, r Resource) bool {
+	return CanAny(caller, r, LevelManage) && (caller.Effective() == nil || caller.Effective()[r].Shell)
 }
 
 // denied is ErrForbidden with the grant that was missing in its message.

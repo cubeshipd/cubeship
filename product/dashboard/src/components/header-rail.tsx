@@ -310,7 +310,9 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
       key: `n:${name}`,
       label: name,
       value: name,
-      href: tail.length > 0 ? `/${section}/${name}` : undefined,
+      // A server has no screen of its own to go back to — its shell is
+      // the one page under it — so its name links nowhere.
+      href: tail.length > 0 && section !== "servers" ? `/${section}/${name}` : undefined,
       siblings,
       scope: "",
     },

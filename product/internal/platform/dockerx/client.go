@@ -42,6 +42,12 @@ type apiClient interface {
 	ContainerExecCreate(ctx context.Context, containerID string, options container.ExecOptions) (types.IDResponse, error)
 	ContainerExecAttach(ctx context.Context, execID string, options container.ExecAttachOptions) (types.HijackedResponse, error)
 	ContainerExecInspect(ctx context.Context, execID string) (container.ExecInspect, error)
+	// A terminal: resizing one, attaching to a container that has one,
+	// and asking whether a shell exists before starting it. See tty.go.
+	ContainerExecResize(ctx context.Context, execID string, options container.ResizeOptions) error
+	ContainerResize(ctx context.Context, containerID string, options container.ResizeOptions) error
+	ContainerAttach(ctx context.Context, containerID string, options container.AttachOptions) (types.HijackedResponse, error)
+	ContainerStatPath(ctx context.Context, containerID, path string) (container.PathStat, error)
 	NetworkCreate(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error)
 	NetworkConnect(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error
 	NetworkDisconnect(ctx context.Context, networkID, containerID string, force bool) error

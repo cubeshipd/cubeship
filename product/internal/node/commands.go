@@ -92,6 +92,8 @@ type Command struct {
 	Version string `json:"version,omitempty"`
 	// Volume is what a volume backup or restore is about.
 	Volume *VolumeJob `json:"volume,omitempty"`
+	// Shell is a session to open and connect back.
+	Shell *ShellJob `json:"shell,omitempty"`
 }
 
 // ErrNoAnswer is a machine that did not come back in time. It says

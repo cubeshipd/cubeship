@@ -59,10 +59,12 @@ says:
 | --- | --- |
 | **Level** | `none`, `view` or `manage`. |
 | **Secrets** | Whether it reads what somebody set: variables, credentials, files in a bucket, backup downloads. |
+| **Shell** | On apps only: whether it opens a [shell](/docs/apps/shell) inside their containers. Needs manage, and is never implied by the others. |
 | **Which** | For projects, apps, domains, databases and object storage: every one, or only those named. One outside the list is not there — it answers as not found. |
 
 Users and roles are an admin's whatever a role says — whoever can shape
-access can give themselves all of it — and so is building source. A role
+access can give themselves all of it — and so are building source and a
+[root shell](/docs/servers/shell) on a machine. A role
 still held by somebody cannot be deleted.
 
 ```bash

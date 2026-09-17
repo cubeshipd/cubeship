@@ -106,6 +106,12 @@ type ContainerOpts struct {
 	ShmSize int64
 	// Resources is the ceiling this container runs under.
 	Resources Resources
+	// TTY gives the container a terminal and an open stdin that closes
+	// when whoever attached goes — the shape of an interactive session,
+	// and of nothing else here. ConsoleSize is its first size, rows then
+	// columns, as the Engine takes it.
+	TTY         bool
+	ConsoleSize [2]uint
 }
 
 // Resources is how much of the machine a container may take: CPU quota
@@ -336,6 +342,12 @@ func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (strin
 			Cmd:          opts.Cmd,
 			Entrypoint:   opts.Entrypoint,
 			ExposedPorts: exposedPorts,
+			Tty:          opts.TTY,
+			OpenStdin:    opts.TTY,
+			StdinOnce:    opts.TTY,
+			AttachStdin:  opts.TTY,
+			AttachStdout: opts.TTY,
+			AttachStderr: opts.TTY,
 		},
 		&container.HostConfig{
 			RestartPolicy: restartPolicy(opts),
@@ -350,6 +362,7 @@ func (c *Client) CreateContainer(ctx context.Context, opts ContainerOpts) (strin
 			ShmSize:       opts.ShmSize,
 			Resources:     resources(opts.Resources),
 			AutoRemove:    opts.AutoRemove,
+			ConsoleSize:   opts.ConsoleSize,
 		},
 		networkingConfig, nil, opts.Name)
 	if err != nil {

@@ -40,6 +40,7 @@ func newServerCmd() *cobra.Command {
 		newServerGetCmd(),
 		newServerAddCmd(),
 		newServerRemoveCmd(),
+		newServerShellCmd(),
 	)
 	return serverCmd
 }

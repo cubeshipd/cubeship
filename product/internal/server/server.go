@@ -38,6 +38,7 @@ import (
 	"cubeship/internal/release"
 	"cubeship/internal/settings"
 	"cubeship/internal/setup"
+	"cubeship/internal/shell"
 	"cubeship/internal/templateinstall"
 	"cubeship/internal/update"
 	"cubeship/internal/user"
@@ -64,7 +65,10 @@ type Server struct {
 	// Nodes is the machines this instance is made of. It sits beside
 	// user at the bottom: it knows about no other module, and what runs
 	// on a node will reach it through the agent's own loop.
-	Nodes       *node.Service
+	Nodes *node.Service
+	// Shell opens a terminal in an app's container or on a machine. It
+	// sits above apps and nodes, which each answer where and for whom.
+	Shell       *shell.Service
 	Credentials *credential.Service
 	Settings    *settings.Service
 	Releases    *release.Service
@@ -147,6 +151,11 @@ type Options struct {
 	// itself a host process: both would otherwise be editing somebody's
 	// real netfilter tables.
 	Host firewall.Host
+
+	// Terminals opens shells on this machine: in a container, and on
+	// the host itself. Nil in a test, where a session answers that this
+	// daemon cannot open one.
+	Terminals shell.Local
 
 	// Machine reads what the box itself is doing — its CPU, memory,
 	// disk and network. The daemon builds it because where those
@@ -377,6 +386,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Firewall: firewall.NewService(opts.Host, ports(docker),
 			exposedPorts{datastore.NewRepository(db), objectstore.NewRepository(db), app.NewRepository(db)}, opts.DataDir),
 		Setup:       setup.NewService(db, users, opts.SetupToken),
+		Shell:       shell.NewService(apps, nodes, terminals(opts.Terminals), users),
 		Credentials: creds,
 		Registries:  registries,
 		DNS:         dnsProviders,
@@ -562,7 +572,12 @@ func (s *Server) routes() {
 	// Two surfaces on one module: the operator's behind `auth`, and the
 	// agent's behind a node's own credential, which node.Routes wires
 	// itself. A worker never reaches anything that takes a caller.
-	node.NewHandler(s.Nodes).Routes(s.router, auth)
+	nodes := node.NewHandler(s.Nodes)
+	nodes.Routes(s.router, auth)
+	// Beside the machines rather than inside them: a session is opened
+	// by a person behind `auth`, and claimed by a worker behind the
+	// node's own credential.
+	shell.NewHandler(s.Shell, s.Audit, nodes.Agent).Routes(s.router, auth)
 
 	// The registry's own two endpoints authenticate differently (Basic
 	// auth, and a shared webhook secret), so they mount unwrapped. So

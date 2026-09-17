@@ -516,6 +516,33 @@ func (s *Service) DB() *database.DB { return s.db }
 
 // --- signing in ---
 
+// ConfirmPassword asks a signed-in person for their password again, for
+// the one thing that deserves it: a root shell on a machine. A session
+// cookie proves somebody signed in once; this proves they are still the
+// one at the keyboard. Throttled like a sign-in, because it is one.
+func (s *Service) ConfirmPassword(ctx context.Context, u *User, password string) error {
+	if u == nil {
+		return ErrUnauthenticated
+	}
+	if len(password) > MaxPasswordBytes {
+		return ErrInvalidCredentials
+	}
+	release, err := s.logins.acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer release()
+	_, hash, err := s.Repo().PasswordHash(ctx, u.Username)
+	if err != nil || hash == "" {
+		VerifyPassword(dummyHash, password)
+		return ErrInvalidCredentials
+	}
+	if !VerifyPassword(hash, password) {
+		return ErrInvalidCredentials
+	}
+	return nil
+}
+
 // Login verifies a username and password and starts a session, returning
 // the token the browser carries and the session it belongs to.
 //

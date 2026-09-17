@@ -68,6 +68,10 @@ var routes = map[string]phrase{
 	"DELETE /apps/{project}/{env}/{name}/volumes/{volumeID}": {"remove a volume from", "removed a volume from", "{project}/{env}/{name}", "an app"},
 	"POST /apps/{project}/{env}/{name}/tcp-ports":            {"publish a TCP port of", "published a TCP port of", "{project}/{env}/{name}", "an app"},
 	"DELETE /apps/{project}/{env}/{name}/tcp-ports/{portID}": {"stop publishing a TCP port of", "stopped publishing a TCP port of", "{project}/{env}/{name}", "an app"},
+	"GET /apps/{project}/{env}/{name}/shell":                 {"open a shell in", "opened a shell in", "{project}/{env}/{name}", "an app"},
+	"CLOSE /apps/{project}/{env}/{name}/shell":               {"close a shell in", "closed a shell in", "{project}/{env}/{name}", "an app"},
+	"GET /nodes/{name}/shell":                                {"open a root shell on", "opened a root shell on", "{name}", "a server"},
+	"CLOSE /nodes/{name}/shell":                              {"close a root shell on", "closed a root shell on", "{name}", "a server"},
 	"DELETE /volumes/orphans/{id}":                           {"delete the data of a removed volume", "deleted the data of a removed volume", "", ""},
 
 	"POST /datastores":                                            {"create a database", "created a database", "", ""},

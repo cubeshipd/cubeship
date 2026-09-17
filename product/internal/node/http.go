@@ -376,6 +376,9 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.Is(err, ErrNoAddress), errors.Is(err, ErrHasApps):
 		http.Error(w, err.Error(), http.StatusConflict)
 
+	case errors.Is(err, ErrOffline), errors.Is(err, ErrTooOld):
+		http.Error(w, err.Error(), http.StatusConflict)
+
 	case errors.Is(err, ErrUnknownToken):
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 

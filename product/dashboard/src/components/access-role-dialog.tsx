@@ -60,13 +60,14 @@ export function summarize(role: AccessRole): string {
     .map((g) => {
       let part = `${RESOURCE_LABEL[g.resource] ?? g.resource}: ${g.level}`;
       if (g.secrets) part += " + secrets";
+      if (g.shell) part += " + shell";
       if (g.items) part += ` (${g.items.join(", ") || "none"})`;
       return part;
     })
     .join(" · ");
 }
 
-type Row = { level: Level; secrets: boolean; items: string[] };
+type Row = { level: Level; secrets: boolean; shell: boolean; items: string[] };
 
 // Composing a role: every resource, one row each — how much of it, whether
 // it reads secrets, and which ones.
@@ -105,6 +106,7 @@ export function AccessRoleDialog({
       next[info.resource] = {
         level: g?.level ?? "none",
         secrets: !!g?.secrets,
+        shell: !!g?.shell,
         items: g?.items ?? [],
       };
     }
@@ -143,6 +145,8 @@ export function AccessRoleDialog({
           resource: info.resource,
           level: row.level,
           secrets: info.secrets && row.secrets,
+          // A shell changes what it reaches, so it needs manage as well.
+          shell: !!info.shell && row.shell && row.level === "manage",
           // None picked is every one: a role that names no project is
           // not a role that reaches none.
           items: info.items && row.items.length > 0 ? row.items : null,
@@ -187,10 +191,11 @@ export function AccessRoleDialog({
             </div>
 
             <div className="border border-border">
-              <div className="grid grid-cols-[minmax(0,1fr)_7.5rem_4.5rem_minmax(0,1.4fr)] items-center gap-3 border-border border-b px-3 py-2 font-mono text-[10px] text-subtle-foreground uppercase tracking-wide">
+              <div className="grid grid-cols-[minmax(0,1fr)_7.5rem_4.5rem_4.5rem_minmax(0,1.4fr)] items-center gap-3 border-border border-b px-3 py-2 font-mono text-[10px] text-subtle-foreground uppercase tracking-wide">
                 <span>Resource</span>
                 <span>Access</span>
                 <span>Secrets</span>
+                <span>Shell</span>
                 <span>Which</span>
               </div>
               {resources.map((info) => {
@@ -200,7 +205,7 @@ export function AccessRoleDialog({
                 return (
                   <div
                     key={info.resource}
-                    className="grid grid-cols-[minmax(0,1fr)_7.5rem_4.5rem_minmax(0,1.4fr)] items-center gap-3 border-border border-b px-3 py-2 last:border-b-0"
+                    className="grid grid-cols-[minmax(0,1fr)_7.5rem_4.5rem_4.5rem_minmax(0,1.4fr)] items-center gap-3 border-border border-b px-3 py-2 last:border-b-0"
                   >
                     <span className={off ? "text-muted-foreground text-sm" : "text-sm"}>
                       {RESOURCE_LABEL[info.resource] ?? info.resource}
@@ -218,6 +223,16 @@ export function AccessRoleDialog({
                           disabled={off}
                           onCheckedChange={(on) => set(info.resource, { secrets: on })}
                           aria-label={`Read secrets on ${RESOURCE_LABEL[info.resource]}`}
+                        />
+                      )}
+                    </span>
+                    <span className="flex h-10 items-center">
+                      {info.shell && (
+                        <Switch
+                          checked={row.shell && row.level === "manage"}
+                          disabled={row.level !== "manage"}
+                          onCheckedChange={(on) => set(info.resource, { shell: on })}
+                          aria-label={`Open a shell in ${RESOURCE_LABEL[info.resource]}`}
                         />
                       )}
                     </span>
@@ -241,8 +256,9 @@ export function AccessRoleDialog({
             </div>
             <p className="text-[11px] text-muted-foreground leading-relaxed">
               Secrets are what somebody set: variables, credentials, files in a bucket, backup
-              downloads. Users and roles stay an admin's. A key given this role never reaches more
-              than its owner does.
+              downloads. A shell opens a terminal inside an app's container, which reads every
+              secret it runs with, so it needs manage. Users, roles and a root shell on a machine
+              stay an admin's. A key given this role never reaches more than its owner does.
             </p>
           </div>
 
@@ -304,6 +320,7 @@ export function AccessRoleInfo({
                     <span className="text-xs">
                       {grant?.level === "manage" ? "View and manage" : "View"}
                       {grant?.secrets ? " · reads secrets" : ""}
+                      {grant?.shell ? " · opens a shell" : ""}
                     </span>
                     {info.items && (
                       <span className="truncate font-mono text-[11px] text-muted-foreground">

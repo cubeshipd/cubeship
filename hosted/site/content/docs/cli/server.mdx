@@ -91,3 +91,18 @@ cubeship server remove <name> [flags]
 | --- | --- | --- |
 | `--yes` |  | confirm that the machine should leave the cluster |
 
+## cubeship server shell
+
+Open an interactive root shell on one of this instance's machines —
+the same as signing in to it over SSH as root, without an SSH port.
+
+Only an admin can, with a key that is not restricted. The shell
+runs on the machine itself: its files, its services, its Docker.
+A worker connects the session back to the control plane, so it
+needs no port open either. The session is in the audit log; what
+is typed into it is not.
+
+```bash
+cubeship server shell <name>
+```
+

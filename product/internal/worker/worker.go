@@ -329,6 +329,12 @@ func (a *Agent) answer(ctx context.Context, cmd node.Command) {
 			log.Printf("agent: replacing this machine with %s: %v", cmd.Version, err)
 		}
 		return
+	case node.CommandShell:
+		// Answered by connecting back, not by posting: a session is a
+		// connection somebody is waiting on, and it lasts as long as
+		// they type.
+		go a.shell(cmd)
+		return
 	case node.CommandVolumeBackup, node.CommandVolumeRestore:
 		// Answered by the job itself, when the copy is done.
 		go a.volumeJob(cmd)

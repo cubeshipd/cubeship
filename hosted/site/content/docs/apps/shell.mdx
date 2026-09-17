@@ -1,0 +1,56 @@
+---
+title: Shell
+description: A terminal inside an app's running container, from the dashboard or the CLI, on whichever machine it runs.
+---
+
+The **Shell** tab opens an interactive terminal inside the app's running
+container — what `docker exec -it` gives you, without SSH to the machine.
+
+```bash
+cubeship app shell shop/api
+cubeship app shell shop/api --server eu-1
+```
+
+It runs `bash` where the image has it and `sh` otherwise, as the
+container's own user, with the app's environment. Exiting the shell ends
+the session, and the CLI exits with the shell's status, so it works in a
+script.
+
+## Who can open one
+
+A shell reads every secret the running process holds and can change
+anything the container can, so it is **its own permission**:
+
+- An admin always can.
+- A role grants it with **Shell** on apps, which needs **manage** as well.
+  It is never implied: a role with manage and secrets still cannot open a
+  shell until the switch is on. See [roles](/docs/users/roles).
+
+## Per machine
+
+A container runs on one machine. An app on several opens on the first
+running copy; `--server` (and the tab's picker) names another.
+
+A shell on a worker runs on that worker. The worker connects the session
+back to the control plane — it opens no port for this, as it opens none
+for anything else — and the control plane only joins your terminal to it.
+
+## When it will not open
+
+| What you see | Why |
+| --- | --- |
+| **this app's image has no shell** | The image has no `/bin/sh` — distroless, or built from scratch. There is nothing to run. |
+| **that app has no running container** | Nothing is running yet, or the copy on that machine stopped. |
+| **runs a version of Cubeship without shells** | The worker it runs on needs updating first. |
+| **is not calling in** | The worker is offline, so nothing can reach it. |
+
+## How it ends
+
+Closing the tab or the terminal ends the session and the process with it:
+a program still running in the foreground is sent a hangup, as a closed
+terminal always has. A session with no keys pressed and nothing printed
+for **30 minutes** is closed. Updating the instance closes every open one.
+
+Every session is two lines in the [audit log](/docs/users/audit) — opened,
+and closed with how long it lasted and how it ended. What is typed into
+it is not recorded.

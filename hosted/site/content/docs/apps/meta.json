@@ -13,6 +13,7 @@
     "health-checks",
     "environment",
     "logs",
+    "shell",
     "metrics",
     "---Machines and ceilings---",
     "placement",

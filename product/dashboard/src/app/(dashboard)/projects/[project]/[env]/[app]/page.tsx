@@ -24,8 +24,11 @@ import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
+import { SearchableSelect } from "@/components/searchable-select";
 import { SectionHeader } from "@/components/section-header";
+import { useSession } from "@/components/session-context";
 import { StatusBadge } from "@/components/status-badge";
+import { TerminalPanel } from "@/components/terminal-panel";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import {
@@ -36,7 +39,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { type App, api, type Deployment, type EnvView, type ResolvedVar } from "@/lib/api";
+import {
+  type App,
+  api,
+  canShell,
+  type Deployment,
+  type EnvView,
+  type ResolvedVar,
+} from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // One app, under the environment it lives in — which is the only place
@@ -67,7 +77,7 @@ export default function AppPage({ params }: PageProps<"/projects/[project]/[env]
   return <Detail reference={`${project}/${env}/${app}`} project={project} env={env} name={app} />;
 }
 
-type Tab = "overview" | "environment" | "logs";
+type Tab = "overview" | "environment" | "logs" | "shell";
 
 // The one reason a deploy's record cannot be removed: the daemon is
 // still writing to it.
@@ -76,6 +86,9 @@ const stillRunning = "This deploy is still running. Wait for it to finish.";
 // Why the Logs tab is dead. Said on hover, because a disabled control
 // that explains nothing is a control somebody clicks twice.
 const noContainer = "Nothing has run yet, so there is no log. Deploy the app first.";
+
+// And why the Shell tab is.
+const noShell = "Nothing is running, so there is no container to open a shell in.";
 
 function Detail({
   reference,
@@ -88,6 +101,7 @@ function Detail({
   env: string;
   name: string;
 }) {
+  const me = useSession();
   const [app, setApp] = useState<App | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
@@ -191,6 +205,19 @@ function Detail({
               >
                 Logs
               </TabsTrigger>
+              {/* Only offered to who may open one. A shell reads every
+                  secret the container holds, so it is its own grant —
+                  and a tab that always refuses is a tab that should not
+                  be there. */}
+              {canShell(me, project) && (
+                <TabsTrigger
+                  value="shell"
+                  disabled={!app.has_container}
+                  title={app.has_container ? undefined : noShell}
+                >
+                  Shell
+                </TabsTrigger>
+              )}
             </TabsList>
           </RailTabs>
 
@@ -246,9 +273,44 @@ function Detail({
           <TabsContent value="logs">
             <ContainerLogs path={path} title={null} tall servers={servers} />
           </TabsContent>
+
+          {/* Mounted only while it is the open tab: a shell is a process
+              inside somebody's container, and one left running behind a
+              tab nobody is looking at is one nobody will close. */}
+          <TabsContent value="shell">
+            {tab === "shell" && <AppShell path={path} servers={servers} />}
+          </TabsContent>
         </Tabs>
       )}
     </>
+  );
+}
+
+// A shell in one of the app's containers.
+//
+// An app on several machines has one container on each and no combined
+// one, the same as its log — so the machine is picked here, and picking
+// another opens a new session there.
+function AppShell({ path, servers }: { path: string; servers: string[] }) {
+  const [server, setServer] = useState(servers[0] ?? "");
+  return (
+    <div className="space-y-3">
+      {servers.length > 1 && (
+        <SearchableSelect
+          label="Machine"
+          value={server}
+          onChange={setServer}
+          choices={servers.map((s) => ({ value: s, label: s }))}
+          searchable={false}
+          fieldClassName="max-w-xs"
+        />
+      )}
+      <TerminalPanel
+        key={server}
+        path={`${path}/shell`}
+        query={servers.length > 1 ? { server } : undefined}
+      />
+    </div>
   );
 }
 

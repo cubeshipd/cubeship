@@ -257,6 +257,31 @@ cubeship app place <reference> [flags]
 | `--on` |  | the machines that run it, by name |
 | `--replicas` |  | how many copies to run in total, spread over those machines (default: unchanged) |
 
+## cubeship app shell
+
+Open an interactive shell inside an app's running container.
+
+It runs bash where the image has it and sh otherwise, as the
+container's own user and with the app's environment. An image
+with no shell at all — distroless, or built from scratch — is
+refused. Exiting the shell ends the session, and the command
+exits with the shell's status.
+
+An app running on several servers opens on the first running
+copy; --server picks one.
+
+Opening a shell needs the shell permission on the app's project,
+which an admin has and a role has to grant explicitly. Every
+session is in the audit log; what is typed into it is not.
+
+```bash
+cubeship app shell <app> [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--server` |  | the server whose copy to open it in (default: the first running copy) |
+
 ## cubeship app tcp
 
 Publish a port of an app's container on a host port of the control plane,

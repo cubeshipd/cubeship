@@ -1,6 +1,7 @@
 "use client";
 
-import { PlusIcon, Trash2Icon } from "lucide-react";
+import { PlusIcon, TerminalIcon, Trash2Icon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -10,6 +11,7 @@ import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
+import { useSession } from "@/components/session-context";
 import { SlugField } from "@/components/slug-field";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
@@ -26,6 +28,7 @@ import {
   api,
   type ClusterServer,
   type ClusterServerCreated,
+  canRootShell,
   formatBytes,
   formatCPU,
   type Settings,
@@ -46,6 +49,8 @@ const REFRESH_MS = 10_000;
 // decides. A screen listing only "the other servers" would be a screen
 // that cannot answer where something runs.
 export default function Servers() {
+  const me = useSession();
+  const router = useRouter();
   const [servers, setServers] = useState<ClusterServer[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -139,23 +144,41 @@ export default function Servers() {
     {
       id: "actions",
       header: "",
-      width: 4,
+      width: 6,
       align: "right",
       // The control plane is not a machine this instance joined, so
       // there is nothing to remove it from. A missing button explains
       // nothing, but neither does a disabled one on a row whose whole
       // label already says why.
-      cell: (s) =>
-        s.control_plane ? null : (
-          <RowActions>
+      //
+      // A root shell is an admin's alone, so nobody else is shown the
+      // button; a machine that is not calling in cannot be reached, so
+      // its button says why rather than opening a terminal that fails.
+      cell: (s) => (
+        <RowActions>
+          {canRootShell(me) && (
+            <RowAction
+              icon={TerminalIcon}
+              label={`Open a root shell on ${s.name}`}
+              disabled={s.status !== "ready"}
+              title={
+                s.status === "ready"
+                  ? undefined
+                  : "This server is not calling in, so nothing can open a shell on it."
+              }
+              onClick={() => router.push(`/servers/${encodeURIComponent(s.name)}/shell`)}
+            />
+          )}
+          {!s.control_plane && (
             <RowAction
               icon={Trash2Icon}
               label={`Remove ${s.name}`}
               danger
               onClick={() => setRemoving(s)}
             />
-          </RowActions>
-        ),
+          )}
+        </RowActions>
+      ),
     },
   ];
 

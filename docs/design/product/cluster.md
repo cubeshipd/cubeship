@@ -626,6 +626,12 @@ machine an app is on beyond choosing that door — what comes back is the
 same bytes a local log is, demultiplexed out of Docker's frames by the
 machine that read them.
 
+**A shell is the one command answered by connecting rather than
+posting.** A session lasts as long as somebody types, and no answer body
+can carry that, so the worker dials the control plane back with the id it
+was given and the session runs over that connection. It still adds no
+listener to the worker. See [shell.md](shell.md).
+
 **The poll parks because the machine asked it to.** `AgentRequest.Wait`
 is the agent's own flag, which is what makes it safe to add: an agent
 from before this existed does not send it, is answered at once, and goes
