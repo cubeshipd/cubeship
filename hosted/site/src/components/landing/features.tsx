@@ -7,6 +7,7 @@ import {
   LockKeyhole,
   Network,
   Shield,
+  SquareTerminal,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -125,6 +126,13 @@ export function Features() {
             <span>
               <strong>Firewall controls</strong>
               <small>Choose what reaches the internet.</small>
+            </span>
+          </div>
+          <div>
+            <SquareTerminal size={20} />
+            <span>
+              <strong>Shell access</strong>
+              <small>A terminal in any container or server.</small>
             </span>
           </div>
           <div>

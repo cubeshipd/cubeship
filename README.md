@@ -60,6 +60,7 @@ One command on a fresh VPS, and the box is running:
 | **Builds** | from a Dockerfile, or from a repository with no Dockerfile at all |
 | **More machines** | add a second server and apps spread across both |
 | **Charts** | what every container is using, and what the machine underneath is doing |
+| **A shell** | a terminal inside any app's container, or as root on any server — in the browser or from the CLI, with no SSH port open |
 | **An API, a CLI and MCP** | everything the dashboard does, scriptable — and an endpoint an agent drives directly |
 | **Templates** | recipes for apps and the databases they need, published by the community at [cubeship.dev/templates](https://cubeship.dev/templates) |
 
@@ -306,6 +307,16 @@ cubeship app place api --everywhere            # and on every machine that joins
 
 Scaling takes effect at once, in both directions.
 
+**A shell on any of them, with no SSH.** An admin opens a root terminal on
+a machine from **Servers**, and anyone with the grant opens one inside an
+app's container from its **Shell** tab. A worker connects the session back
+to the control plane, so it still opens no port:
+
+```bash
+cubeship server shell eu-1                     # root on the machine
+cubeship app shell api                         # inside the app's container
+```
+
 ## Limits and autoscaling
 
 Cap what one copy of an app — or a database, or a store — may take:
@@ -336,6 +347,7 @@ without one, a loop of requests is a loop of replicas.
 cubeship login https://cubeship.example.com <your-api-key>
 cubeship app list
 cubeship app logs api
+cubeship app shell api
 cubeship app env set api DATABASE_POOL=10
 ```
 
