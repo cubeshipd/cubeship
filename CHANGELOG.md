@@ -6,6 +6,47 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.10.0 — 2026-09-17
+
+A shell inside any app's container, and a root shell on any machine in the instance — from the dashboard or the CLI, with no SSH port open.
+
+### Shells
+
+**A terminal inside an app's container.** An app's new **Shell** tab, or
+`cubeship app shell <app>`, opens `bash` (or `sh`) in its running
+container, as its own user and with its environment — `docker exec -it`
+without signing in to the machine. On an app spread over several
+machines, pick which copy; `--server` does the same from the CLI, which
+exits with the shell's own status.
+
+**A root shell on a machine.** **Servers → Open a root shell**, or
+`cubeship server shell <name>`, is the same as SSH as root on that box: its
+files, its services, its Docker. The dashboard asks for your password again
+before it opens.
+
+- **Workers too, with no port opened.** A worker is told to open the shell
+  on its next poll and connects the session back to the control plane, the
+  way it already reaches it for everything else.
+- **Who can.** A root shell is an admin's alone. A shell in an app is its
+  own permission — admins have it; a role grants it with the new **Shell**
+  switch on apps, which needs manage. **No existing role gets it on
+  upgrade**, including Deploy: a shell reads every secret the container
+  holds.
+- **In the audit log.** Every session is recorded when it opens and when it
+  closes, with how it ended. What is typed into it is not.
+- **How one ends.** Closing the tab or the terminal ends the session and
+  hangs up what was running in it. Thirty minutes with no key pressed and
+  nothing printed closes it too.
+- An image with no shell at all — distroless, or built from scratch — is
+  refused with that reason.
+
+### Upgrade notes
+
+Update normally from the dashboard or CLI. No database migrations. A shell
+on a worker needs that worker on 0.10.0; one still on an older version is
+refused with that reason until it updates. Updating the instance closes
+any shell that is open at the time.
+
 ## 0.9.3 — 2026-09-16
 
 An agent can now manage the names an app answers at, including the port each one reaches — the last piece of an app's configuration that needed a person and a mouse.
