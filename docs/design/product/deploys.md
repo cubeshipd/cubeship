@@ -276,6 +276,13 @@ cannot act on is not something a retry fixes.
 An app with no `source_ref` deploys on a push to any branch; naming a ref
 is how you opt out. A tag is never a branch.
 
+**The delivery's branch selects nothing.** `BuildingFromRepository` asks
+for the empty ref alone, and does not also match an app whose ref equals
+the pushed branch. That match put an app that had named a ref into a
+push it opted out of, and the deploy then built the branch rather than
+the ref — a pinned app running somebody else's commit, with nothing
+saying it had moved.
+
 ## Cloning a private repository
 
 `TokenForRepository` mints an installation token, cached until shortly
