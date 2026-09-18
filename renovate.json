@@ -1,0 +1,26 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", ":semanticCommits"],
+  "timezone": "America/Sao_Paulo",
+  "labels": ["dependencies"],
+  "prConcurrentLimit": 5,
+  "packageRules": [
+    {
+      "description": "'cubeship' is this repository's own package, wired in through a replace directive in the workspace, not a module anyone publishes. Renovate looks it up on the public proxy, finds nothing, and reports no-result. Skip it.",
+      "matchManagers": ["gomod"],
+      "matchPackageNames": ["cubeship"],
+      "enabled": false
+    },
+    {
+      "description": "Dependency bumps do not change what users deploy, so they stay out of the changelog.",
+      "matchManagers": ["gomod", "npm", "github-actions", "dockerfile"],
+      "semanticCommitType": "chore"
+    },
+    {
+      "description": "Majors get reviewed on their own, never folded into a group.",
+      "matchUpdateTypes": ["major"],
+      "labels": ["dependencies", "major-review"],
+      "addLabels": ["breaking"]
+    }
+  ]
+}
