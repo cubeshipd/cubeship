@@ -623,21 +623,25 @@ func scanScoped(row scanner) (*Scoped, error) {
 }
 
 // BuildingFromRepository finds every app that builds from a repository
-// at a branch.
+// and has named no ref of its own.
 //
 // The repository is matched on the "owner/name" a URL and a webhook
 // payload both reduce to, because the two are rarely spelled the same —
 // one may carry .git, a trailing slash, or www.
 //
-// An app with no ref of its own tracks whatever branch it is told about,
-// which is what makes "deploy on push" work without anybody naming a
-// branch twice.
-func (r *Repository) BuildingFromRepository(ctx context.Context, fullName, branch string) ([]*Scoped, error) {
+// An app with no ref tracks whatever branch it is told about, which is
+// what makes "deploy on push" work without anybody naming a branch
+// twice. A ref is how that is opted out of, so the push a ref was named
+// against is not asked for here: matching one would deploy an app
+// pinned to `main` on a push to `main`, and — because a tag is never a
+// branch — hand an app pinned to a tag the branch instead, which is a
+// pin that stops holding after the first push.
+func (r *Repository) BuildingFromRepository(ctx context.Context, fullName string) ([]*Scoped, error) {
 	rows, err := r.q.QueryContext(ctx, scopedQuery+`
 		WHERE a.source = ANY($1)
 		  AND lower(regexp_replace(regexp_replace(a.source_repo, '^https?://(www\.)?github\.com/', ''), '(\.git)?/?$', '')) = lower($2)
-		  AND (a.source_ref = '' OR a.source_ref = $3)`,
-		[]string{string(SourceDockerfile), string(SourceRailpack)}, fullName, branch)
+		  AND a.source_ref = ''`,
+		[]string{string(SourceDockerfile), string(SourceRailpack)}, fullName)
 	if err != nil {
 		return nil, err
 	}
