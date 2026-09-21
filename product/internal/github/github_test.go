@@ -297,22 +297,33 @@ func push(t *testing.T, f *servertest.Fixture, installationID int64, fullName, r
 }
 
 // A push is what makes a build happen without anybody asking for one.
+//
+// It asked to be told about `main` before this, and the app named
+// `main` was deployed by it. That was the bug: a ref is how deploying
+// on every push is opted out of, and an app pinned to a *tag* entered
+// the same push — then built the branch it was handed, because a tag is
+// never a branch. So the push reaches the app that named no ref, and
+// only that one.
 func TestAPushDeploysTheAppsBuiltFromIt(t *testing.T) {
 	f := configured(t)
 	connect(t, f, 42, "acme")
 
-	tracking := createBuildingApp(t, f, "tracking", "https://github.com/acme/api.git", "main")
+	pinnedToTheBranch := createBuildingApp(t, f, "pinned-branch", "https://github.com/acme/api.git", "main")
+	pinnedToATag := createBuildingApp(t, f, "pinned-tag", "https://github.com/acme/api.git", "v1.0.0")
 	// No ref of its own: it tracks whatever branch it is told about.
 	untracked := createBuildingApp(t, f, "untracked", "https://github.com/acme/api", "")
 	elsewhere := createBuildingApp(t, f, "elsewhere", "https://github.com/acme/other.git", "main")
 
 	push(t, f, 42, "acme/api", "refs/heads/main")
 
-	if got := deployments(t, f, tracking); got != 1 {
-		t.Errorf("the app tracking main has %d deployments, want 1", got)
-	}
 	if got := deployments(t, f, untracked); got != 1 {
 		t.Errorf("the app with no ref has %d deployments, want 1", got)
+	}
+	if got := deployments(t, f, pinnedToTheBranch); got != 0 {
+		t.Errorf("the app pinned to main has %d deployments, want 0", got)
+	}
+	if got := deployments(t, f, pinnedToATag); got != 0 {
+		t.Errorf("the app pinned to v1.0.0 has %d deployments, want 0", got)
 	}
 	if got := deployments(t, f, elsewhere); got != 0 {
 		t.Errorf("an app on another repository has %d deployments, want 0", got)
