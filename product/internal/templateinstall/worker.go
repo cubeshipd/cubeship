@@ -76,7 +76,7 @@ func (s *Service) failInstall(caller *user.User, in *Install, run *Run, cause er
 
 // iconRepository reads the repository id out of a listing's icon address,
 // as the catalog writes it or as HTTPCatalog rewrote it to the instance's.
-var iconRepository = regexp.MustCompile(`icons/([0-9]{1,20})/[0-9a-f]{7,64}\.png$`)
+var iconRepository = regexp.MustCompile(`icons/(-?[0-9]{1,20})/[0-9a-f]{7,64}\.png$`)
 
 // projectIcon gives a project the install created the icon of the release
 // installed. Only a created one: a project that already existed keeps the

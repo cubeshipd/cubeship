@@ -36,13 +36,10 @@ func main() {
 	if err != nil {
 		logger.Fatal(err)
 	}
-	topic := envOr("CATALOG_TOPIC", catalog.Topic)
-	store := &catalog.Postgres{DB: db, Topic: topic}
-	syncer := &catalog.Syncer{
-		GitHub: &catalog.Client{HTTP: &http.Client{Timeout: 30 * time.Second}, Token: need(logger, "GITHUB_TOKEN"), API: "https://api.github.com"},
+	store := &catalog.Postgres{DB: db}
+	syncer := &catalog.MonoSyncer{
+		Source: &catalog.MonoSource{HTTP: &http.Client{Timeout: 45 * time.Second}, Token: os.Getenv("GITHUB_TOKEN")},
 		Store:  store,
-		Topic:  topic,
-		Log:    logger,
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
@@ -94,7 +91,7 @@ func main() {
 	}
 }
 
-func pass(ctx context.Context, store *catalog.Postgres, syncer *catalog.Syncer, st *status, logger *log.Logger, interval time.Duration) {
+func pass(ctx context.Context, store *catalog.Postgres, syncer *catalog.MonoSyncer, st *status, logger *log.Logger, interval time.Duration) {
 	// A pass never outlives the next one's turn.
 	ctx, cancel := context.WithTimeout(ctx, interval-10*time.Second)
 	defer cancel()

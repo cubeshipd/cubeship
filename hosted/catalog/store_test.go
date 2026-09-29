@@ -222,3 +222,30 @@ func TestTheStoreReadsWhatTheAPIServes(t *testing.T) {
 		t.Error("an icon for a refused release")
 	}
 }
+
+func TestPublishIsAtomicAndKeepsThePreviousSnapshot(t *testing.T) {
+	p := testStore(t)
+	ctx := context.Background()
+	m := template.Validate(fixture(t)).Manifest
+	first := SnapshotEntry{Repository: Repo{ID: -1, NodeID: "mono:first", Owner: "cubeshipd", Name: "cubeship-first-template", URL: "https://github.com/cubeshipd/cubeship-templates", Topics: []string{}}, Indexed: Indexed{RepositoryID: -1, Tag: "aaaaaaa", Commit: "aaaaaaa", Name: "First", URL: "https://github.com/cubeshipd/cubeship-templates", PublishedAt: published, Accepted: true, Problems: []template.Diagnostic{}, Manifest: m, Source: "source", Readme: "readme", Icon: squarePNG(128)}}
+	if _, _, err := p.Publish(ctx, []SnapshotEntry{first}); err != nil {
+		t.Fatal(err)
+	}
+	second := first
+	second.Repository = Repo{ID: -2, NodeID: "mono:second", Owner: "cubeshipd", Name: "cubeship-second-template", URL: first.Repository.URL}
+	second.Indexed = first.Indexed
+	second.Indexed.RepositoryID = -2
+	conflict := first
+	conflict.Repository.ID = -3 // Same node id violates the unique constraint after second is written.
+	conflict.Indexed.RepositoryID = -3
+	if _, _, err := p.Publish(ctx, []SnapshotEntry{second, conflict}); err == nil {
+		t.Fatal("expected an aborted publish")
+	}
+	rows, _, err := p.List(ctx, Query{Limit: 48, Sort: "recent"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].Name != "cubeship-first-template" {
+		t.Fatalf("the failed publish changed the listing: %+v", rows)
+	}
+}

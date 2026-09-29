@@ -86,7 +86,7 @@ site-test: ## Run the site's unit tests
 	cd hosted/site && $(PNPM) test
 
 .PHONY: catalog-dev
-catalog-dev: ## Run the template catalog on :8080 against the local Postgres on 5434 (needs GITHUB_TOKEN)
+catalog-dev: ## Run the template catalog on :8080 against the local Postgres on 5434
 	cd $(CATALOGDIR) && DATABASE_URL="$${DATABASE_URL:-postgres://catalog:catalog@127.0.0.1:5434/catalog?sslmode=disable}" \
 		CATALOG_PUBLIC_URL="$${CATALOG_PUBLIC_URL:-http://localhost:3002/api/v1}" $(GO) run ./cmd/catalog
 

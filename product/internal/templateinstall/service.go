@@ -228,9 +228,6 @@ type Installed struct {
 	Install *Install
 	// Runs is its most recent runs, newest first.
 	Runs []*Run
-	// Available is the newest release the catalog accepted, when the
-	// installation is not on it.
-	Available *CatalogRelease
 }
 
 // Busy reports whether a run is changing the installation now.
@@ -245,7 +242,6 @@ func (s *Service) Installs(ctx context.Context, caller *user.User) ([]Installed,
 	if err != nil {
 		return nil, err
 	}
-	newest := map[string]*CatalogRelease{}
 	out := []Installed{}
 	for _, in := range all {
 		if in.Status != StatusInstalled && in.Status != StatusInstalling {
@@ -258,7 +254,7 @@ func (s *Service) Installs(ctx context.Context, caller *user.User) ([]Installed,
 		if len(runs) > 1 {
 			runs = runs[:1]
 		}
-		out = append(out, Installed{Install: in, Runs: runs, Available: s.available(ctx, in, newest)})
+		out = append(out, Installed{Install: in, Runs: runs})
 	}
 	return out, nil
 }
@@ -276,36 +272,7 @@ func (s *Service) Get(ctx context.Context, caller *user.User, id int64) (*Instal
 	if err != nil {
 		return nil, err
 	}
-	return &Installed{Install: in, Runs: runs, Available: s.available(ctx, in, map[string]*CatalogRelease{})}, nil
-}
-
-// available is the newest release the catalog accepted, when the
-// installation is not on it. A catalog that does not answer is no update
-// rather than an error: the installation is still there to look at.
-func (s *Service) available(ctx context.Context, in *Install, seen map[string]*CatalogRelease) *CatalogRelease {
-	if in.Status != StatusInstalled {
-		return nil
-	}
-	key := in.Owner + "/" + in.Repo
-	newest, asked := seen[key]
-	if !asked {
-		if c, err := s.source(); err == nil {
-			if releases, err := c.Releases(ctx, in.Owner, in.Repo); err == nil {
-				for i := range releases {
-					if releases[i].Status == "accepted" {
-						found := releases[i]
-						newest = &found
-						break
-					}
-				}
-			}
-		}
-		seen[key] = newest
-	}
-	if newest == nil || newest.Tag == in.Release {
-		return nil
-	}
-	return newest
+	return &Installed{Install: in, Runs: runs}, nil
 }
 
 func (s *Service) busy(ctx context.Context, installID int64) (bool, error) {

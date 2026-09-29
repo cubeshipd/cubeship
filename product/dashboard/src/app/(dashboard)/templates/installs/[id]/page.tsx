@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpCircleIcon, LoaderCircleIcon, Trash2Icon } from "lucide-react";
+import { LoaderCircleIcon, Trash2Icon } from "lucide-react";
 import { use, useEffect, useState } from "react";
 import { CopyField } from "@/components/copy-field";
 import { ErrorAlert } from "@/components/error-alert";
@@ -13,7 +13,6 @@ import { SectionHeader } from "@/components/section-header";
 import { StatusBadge } from "@/components/status-badge";
 import { installStatus } from "@/components/template-installs";
 import { TemplateUninstallDialog } from "@/components/template-uninstall-dialog";
-import { TemplateUpdateDialog } from "@/components/template-update-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { api, type TemplateInstall, type TemplateResource, type TemplateRun } from "@/lib/api";
@@ -25,7 +24,6 @@ import { takeSecrets } from "@/lib/install-secrets";
 // daemon, so what is left to say about one is why.
 export default function TemplateInstallPage({ params }: PageProps<"/templates/installs/[id]">) {
   const { id } = use(params);
-  const [updating, setUpdating] = useState(false);
   const [uninstalling, setUninstalling] = useState(false);
   const install = useQuery({
     queryKey: ["template-installs", id],
@@ -52,26 +50,17 @@ export default function TemplateInstallPage({ params }: PageProps<"/templates/in
     <>
       <RailPortal>
         {actionable && (
-          <>
-            {i.update_available && (
-              <Button onClick={() => setUpdating(true)}>
-                <ArrowUpCircleIcon />
-                Update to {i.update_available}
-              </Button>
-            )}
-            <Button variant="outline" onClick={() => setUninstalling(true)}>
-              <Trash2Icon />
-              Uninstall
-            </Button>
-          </>
+          <Button variant="outline" onClick={() => setUninstalling(true)}>
+            <Trash2Icon />
+            Uninstall
+          </Button>
         )}
       </RailPortal>
 
       <div className="mb-6 flex items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="truncate text-lg font-semibold">
-            {i.owner}/{i.repo}{" "}
-            <span className="font-mono text-sm text-muted-foreground">{i.release}</span>
+            {i.owner}/{i.repo}
           </h1>
           <p className="font-mono text-xs text-subtle-foreground">
             in {i.project}/{i.environment}
@@ -148,7 +137,6 @@ export default function TemplateInstallPage({ params }: PageProps<"/templates/in
         </>
       )}
 
-      {updating && <TemplateUpdateDialog install={i} open onOpenChange={setUpdating} />}
       {uninstalling && <TemplateUninstallDialog install={i} open onOpenChange={setUninstalling} />}
     </>
   );

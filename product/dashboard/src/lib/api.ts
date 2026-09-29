@@ -1524,18 +1524,6 @@ export type TemplateManifest = {
   }[];
 };
 
-// A release a template can be installed at.
-export type TemplateReleaseOption = { tag: string; commit: string; published_at?: string };
-
-// One release as the instance read and checked it. `fits` is false for a
-// release that needs a newer Cubeship, and `problem` says so.
-export type TemplateReleaseManifest = {
-  release: TemplateReleaseOption;
-  manifest: TemplateManifest;
-  fits: boolean;
-  problem?: string;
-};
-
 export type TemplateDetail = TemplateSummary & {
   readme: string;
   source: string;
@@ -1578,27 +1566,12 @@ export type TemplateInstall = {
   // Newest first; a listing carries only that one.
   runs: TemplateRun[];
   busy: boolean;
-  update_available: string | null;
   created_at: string;
   updated_at: string;
 };
 
 export type TemplateInstallStarted = { install: TemplateInstall; secrets: Record<string, string> };
 export type TemplateRunStarted = { run: TemplateRun; secrets?: Record<string, string> };
-
-export type TemplateChange = {
-  action: "create" | "change" | "keep";
-  kind: string;
-  name: string;
-  detail?: string;
-};
-
-export type TemplateUpdatePreview = {
-  from: string;
-  to: string;
-  changes: TemplateChange[];
-  inputs: TemplateInput[];
-};
 
 export type SystemComponent = {
   id: string;

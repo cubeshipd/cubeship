@@ -26,7 +26,6 @@ cubeship template install <owner/repo> [flags]
 | `--env` |  | the environment inside it; the template's by default |
 | `--input` |  | an answer to one of the template's inputs, key=value (repeatable) |
 | `--project` |  | the project to install into; the template's suggestion by default |
-| `--release` |  | a release tag; the newest the catalog accepted by default |
 | `--store-name` |  | rename an object store the template declares, key=name (repeatable) |
 
 ## cubeship template installed
@@ -43,20 +42,7 @@ Search the template catalog at cubeship.dev. The search matches a
 template's name, description or tags.
 
 ```bash
-cubeship template list [search] [flags]
-```
-
-| Flag | Default | What it does |
-| --- | --- | --- |
-| `--tag` |  | only templates with this tag |
-
-## cubeship template releases
-
-List the releases of a template the catalog accepted, newest first.
-Install one with `cubeship template install --release \<tag\>`.
-
-```bash
-cubeship template releases <owner/repo>
+cubeship template list [search]
 ```
 
 ## cubeship template uninstall
@@ -73,20 +59,4 @@ cubeship template uninstall <id> [flags]
 | --- | --- | --- |
 | `--delete-data` |  | also delete its databases and object stores, and their data |
 | `--yes` |  | confirm the uninstall |
-
-## cubeship template update
-
-Show what updating an installation would change, and with --yes apply it.
-An update creates and changes what the release does and deletes nothing;
-if a step fails, the installation is put back as it was.
-
-```bash
-cubeship template update <id> [flags]
-```
-
-| Flag | Default | What it does |
-| --- | --- | --- |
-| `--input` |  | an answer to a question the release adds, key=value (repeatable) |
-| `--release` |  | a release tag; the newest the catalog accepted by default |
-| `--yes` |  | apply the update rather than only showing it |
 

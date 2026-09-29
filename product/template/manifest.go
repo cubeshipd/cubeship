@@ -4,6 +4,7 @@ package template
 // a field that was not given; decode refuses an empty one that was.
 type Manifest struct {
 	Version     int
+	Name        string
 	MinCubeship string
 	Project     string
 	Environment string

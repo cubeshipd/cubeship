@@ -60,48 +60,20 @@ type TemplateRun struct {
 
 // TemplateInstall is a template installed on the instance.
 type TemplateInstall struct {
-	ID              int64              `json:"id"`
-	Owner           string             `json:"owner"`
-	Repo            string             `json:"repo"`
-	Release         string             `json:"release"`
-	Project         string             `json:"project"`
-	Environment     string             `json:"environment"`
-	Status          string             `json:"status"`
-	Resources       []TemplateResource `json:"resources"`
-	Runs            []TemplateRun      `json:"runs"`
-	Busy            bool               `json:"busy"`
-	UpdateAvailable *string            `json:"update_available"`
+	ID          int64              `json:"id"`
+	Owner       string             `json:"owner"`
+	Repo        string             `json:"repo"`
+	Release     string             `json:"release"`
+	Project     string             `json:"project"`
+	Environment string             `json:"environment"`
+	Status      string             `json:"status"`
+	Resources   []TemplateResource `json:"resources"`
+	Runs        []TemplateRun      `json:"runs"`
+	Busy        bool               `json:"busy"`
 }
 
 func (c *Client) ListTemplateInstalls(ctx context.Context) ([]TemplateInstall, error) {
 	return request[[]TemplateInstall](ctx, c, "list installations", http.MethodGet, "/template-installs", nil, http.StatusOK, DefaultTimeout)
-}
-
-// TemplateChange is one line of an update's preview.
-type TemplateChange struct {
-	Action string `json:"action"`
-	Kind   string `json:"kind"`
-	Name   string `json:"name"`
-	Detail string `json:"detail"`
-}
-
-type TemplateUpdatePreview struct {
-	From    string           `json:"from"`
-	To      string           `json:"to"`
-	Changes []TemplateChange `json:"changes"`
-	Inputs  []struct {
-		Key   string `json:"key"`
-		Label string `json:"label"`
-		Type  string `json:"type"`
-	} `json:"inputs"`
-}
-
-func (c *Client) PreviewTemplateUpdate(ctx context.Context, id int64, release string) (TemplateUpdatePreview, error) {
-	path := fmt.Sprintf("/template-installs/%d/update", id)
-	if release != "" {
-		path += "?release=" + url.QueryEscape(release)
-	}
-	return request[TemplateUpdatePreview](ctx, c, "preview update", http.MethodGet, path, nil, http.StatusOK, DefaultTimeout)
 }
 
 type RunStarted struct {
@@ -122,7 +94,6 @@ func (c *Client) UninstallTemplateInstall(ctx context.Context, id int64, keepDat
 }
 
 type InstallTemplateRequest struct {
-	Release     string `json:"release,omitempty"`
 	Project     string `json:"project,omitempty"`
 	Environment string `json:"environment,omitempty"`
 	Names       struct {
@@ -146,22 +117,4 @@ func (c *Client) InstallTemplate(ctx context.Context, owner, repo string, req In
 func (c *Client) GetTemplateInstall(ctx context.Context, id int64) (TemplateInstall, error) {
 	return request[TemplateInstall](ctx, c, "read install", http.MethodGet,
 		fmt.Sprintf("/template-installs/%d", id), nil, http.StatusOK, DefaultTimeout)
-}
-
-// TemplateRelease is a version a template can be installed at.
-type TemplateRelease struct {
-	Tag         string `json:"tag"`
-	Commit      string `json:"commit"`
-	PublishedAt string `json:"published_at"`
-}
-
-// ListTemplateReleases is every release of a template the catalog
-// accepted, newest first.
-func (c *Client) ListTemplateReleases(ctx context.Context, owner, repo string) ([]TemplateRelease, error) {
-	page, err := request[struct {
-		Releases []TemplateRelease `json:"releases"`
-	}](ctx, c, "list template releases", http.MethodGet,
-		fmt.Sprintf("/templates/%s/%s/releases", url.PathEscape(owner), url.PathEscape(repo)),
-		nil, http.StatusOK, DefaultTimeout)
-	return page.Releases, err
 }

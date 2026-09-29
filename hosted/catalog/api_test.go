@@ -155,9 +155,12 @@ func TestATemplateCarriesItsPage(t *testing.T) {
 
 func TestTheManifestIsTheDocumentItself(t *testing.T) {
 	f := &fakeReader{manifest: json.RawMessage(`{"schema_version":1}`)}
-	rec := serve(t, f, "/v1/templates/cubeshipd/cubeship-umami-template/manifest?release=v1.0.0")
-	if rec.Body.String() != `{"schema_version":1}` || f.tag != "v1.0.0" || rec.Header().Get("Content-Type") != "application/json" {
+	rec := serve(t, f, "/v1/templates/cubeshipd/cubeship-umami-template/manifest")
+	if rec.Body.String() != `{"schema_version":1}` || f.tag != "" || rec.Header().Get("Content-Type") != "application/json" {
 		t.Errorf("%d %s tag=%q", rec.Code, rec.Body, f.tag)
+	}
+	if rec := serve(t, f, "/v1/templates/cubeshipd/cubeship-umami-template/manifest?release=v1.0.0"); rec.Code != http.StatusBadRequest {
+		t.Errorf("a release was selectable: %d", rec.Code)
 	}
 }
 

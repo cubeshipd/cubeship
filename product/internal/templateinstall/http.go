@@ -41,12 +41,9 @@ type Response struct {
 	// Runs is the most recent first; a listing carries only that one.
 	Runs []RunResponse `json:"runs"`
 	// Busy is a run changing it now: nothing else may start until it ends.
-	Busy bool `json:"busy"`
-	// UpdateAvailable is the newest release the catalog accepted, when the
-	// installation is not on it.
-	UpdateAvailable *string   `json:"update_available"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	Busy      bool      `json:"busy"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 func toRunResponse(r *Run) RunResponse {
@@ -75,9 +72,6 @@ func toResponse(i Installed) Response {
 	for _, r := range i.Runs {
 		out.Runs = append(out.Runs, toRunResponse(r))
 	}
-	if i.Available != nil {
-		out.UpdateAvailable = &i.Available.Tag
-	}
 	return out
 }
 
@@ -96,14 +90,11 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET /templates", auth(http.HandlerFunc(h.catalog)))
 	r.Handle("GET /template-tags", auth(http.HandlerFunc(h.tags)))
 	r.Handle("GET /templates/{owner}/{repo}", auth(http.HandlerFunc(h.template)))
-	r.Handle("GET /templates/{owner}/{repo}/releases", auth(http.HandlerFunc(h.releases)))
 	r.Handle("GET /templates/{owner}/{repo}/manifest", auth(http.HandlerFunc(h.manifest)))
 	r.Handle("POST /templates/{owner}/{repo}/installs", auth(http.HandlerFunc(h.install)))
 	r.Handle("GET /template-icons/{repository}/{file}", auth(http.HandlerFunc(h.icon)))
 	r.Handle("GET /template-installs", auth(http.HandlerFunc(h.list)))
 	r.Handle("GET /template-installs/{id}", auth(http.HandlerFunc(h.get)))
-	r.Handle("GET /template-installs/{id}/update", auth(http.HandlerFunc(h.preview)))
-	r.Handle("POST /template-installs/{id}/update", auth(http.HandlerFunc(h.update)))
 	r.Handle("POST /template-installs/{id}/uninstall", auth(http.HandlerFunc(h.uninstall)))
 }
 
@@ -187,6 +178,10 @@ func (h *Handler) install(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
+	if req.Release != "" {
+		http.Error(w, "template releases are no longer selectable", http.StatusBadRequest)
+		return
+	}
 	started, secrets, err := h.svc.Install(r.Context(), user.FromContext(r.Context()), Request{
 		Owner: r.PathValue("owner"), Repo: r.PathValue("repo"), Release: req.Release,
 		Project: req.Project, Environment: req.Environment,
@@ -245,40 +240,6 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, toResponse(*found))
 }
 
-func (h *Handler) preview(w http.ResponseWriter, r *http.Request) {
-	id, ok := installID(w, r)
-	if !ok {
-		return
-	}
-	preview, err := h.svc.PreviewUpdate(r.Context(), user.FromContext(r.Context()), id, r.URL.Query().Get("release"))
-	if err != nil {
-		WriteError(w, err)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusOK, preview)
-}
-
-func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
-	id, ok := installID(w, r)
-	if !ok {
-		return
-	}
-	var req struct {
-		Release string            `json:"release"`
-		Inputs  map[string]string `json:"inputs"`
-	}
-	if err := httpx.DecodeJSON(r, &req); err != nil {
-		http.Error(w, "invalid body", http.StatusBadRequest)
-		return
-	}
-	run, secrets, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), id, UpdateRequest{Release: req.Release, Inputs: req.Inputs})
-	if err != nil {
-		WriteError(w, err)
-		return
-	}
-	httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"run": toRunResponse(run), "secrets": orEmpty(secrets)})
-}
-
 func (h *Handler) uninstall(w http.ResponseWriter, r *http.Request) {
 	id, ok := installID(w, r)
 	if !ok {
@@ -301,18 +262,12 @@ func (h *Handler) uninstall(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"run": toRunResponse(run)})
 }
 
-// releases is the versions a template can be installed at.
-func (h *Handler) releases(w http.ResponseWriter, r *http.Request) {
-	out, err := h.svc.Releases(r.Context(), user.FromContext(r.Context()), r.PathValue("owner"), r.PathValue("repo"))
-	if err != nil {
-		WriteError(w, err)
+// manifest is what the current template creates and asks, and whether it fits.
+func (h *Handler) manifest(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Query().Get("release") != "" {
+		http.Error(w, "template releases are no longer selectable", http.StatusBadRequest)
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"releases": out})
-}
-
-// manifest is what one release creates and asks, and whether it fits.
-func (h *Handler) manifest(w http.ResponseWriter, r *http.Request) {
 	out, err := h.svc.Manifest(r.Context(), user.FromContext(r.Context()),
 		r.PathValue("owner"), r.PathValue("repo"), r.URL.Query().Get("release"))
 	if err != nil {

@@ -71,8 +71,9 @@ func NewHTTPCatalog(api, iconPath string) *HTTPCatalog {
 var (
 	segment    = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 	commitSHA  = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
-	numericID  = regexp.MustCompile(`^[0-9]{1,20}$`)
+	numericID  = regexp.MustCompile(`^-?[0-9]{1,20}$`)
 	iconFile   = regexp.MustCompile(`^[0-9a-f]{7,64}\.png$`)
+	folderName = regexp.MustCompile(`^cubeship-[a-z0-9][a-z0-9-]*-template$`)
 	listParams = []string{"q", "tag", "sort", "cursor", "limit"}
 )
 
@@ -144,17 +145,18 @@ func (c *HTTPCatalog) Releases(ctx context.Context, owner, repo string) ([]Catal
 	if !segment.MatchString(owner) || !segment.MatchString(repo) {
 		return nil, ErrTemplateNotFound
 	}
-	body, err := c.readJSON(ctx, c.API+"/templates/"+owner+"/"+repo+"/releases")
+	body, err := c.Template(ctx, owner, repo)
 	if err != nil {
 		return nil, err
 	}
 	var page struct {
-		Releases []CatalogRelease `json:"releases"`
+		Release CatalogRelease `json:"release"`
 	}
 	if err := json.Unmarshal(body, &page); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrCatalogUnavailable, err)
 	}
-	return page.Releases, nil
+	page.Release.Status = "accepted"
+	return []CatalogRelease{page.Release}, nil
 }
 
 func (c *HTTPCatalog) Icon(ctx context.Context, repository, file string) ([]byte, error) {
@@ -174,10 +176,10 @@ func (c *HTTPCatalog) Icon(ctx context.Context, repository, file string) ([]byte
 }
 
 func (c *HTTPCatalog) Source(ctx context.Context, owner, repo, commit string) ([]byte, error) {
-	if !segment.MatchString(owner) || !segment.MatchString(repo) || !commitSHA.MatchString(commit) {
+	if owner != "cubeshipd" || !folderName.MatchString(repo) || !commitSHA.MatchString(commit) {
 		return nil, ErrReleaseNotFound
 	}
-	body, status, err := c.get(ctx, c.Raw+"/"+owner+"/"+repo+"/"+commit+"/template.yaml", sourceLimit+1)
+	body, status, err := c.get(ctx, c.Raw+"/cubeshipd/cubeship-templates/"+commit+"/"+repo+"/template.yaml", sourceLimit+1)
 	switch {
 	case err != nil:
 		return nil, err

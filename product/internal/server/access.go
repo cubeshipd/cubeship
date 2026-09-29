@@ -89,12 +89,9 @@ var toolRules = map[string]toolRule{
 	"list_servers":        tool(user.ResServers, user.LevelView),
 
 	"list_templates":             tool(user.ResTemplates, user.LevelView),
-	"list_template_releases":     tool(user.ResTemplates, user.LevelView),
 	"install_template":           tool(user.ResTemplates, user.LevelManage),
 	"list_template_installs":     tool(user.ResTemplates, user.LevelView),
 	"get_template_install":       tool(user.ResTemplates, user.LevelView),
-	"preview_template_update":    tool(user.ResTemplates, user.LevelView),
-	"update_template_install":    tool(user.ResTemplates, user.LevelManage),
 	"uninstall_template_install": tool(user.ResTemplates, user.LevelManage),
 }
 

@@ -7,6 +7,7 @@ import "encoding/json"
 // It is what the catalog stores and what an instance will read.
 type Normalized struct {
 	SchemaVersion int                  `json:"schema_version"`
+	Name          string               `json:"name"`
 	MinCubeship   *string              `json:"min_cubeship"`
 	Project       string               `json:"project"`
 	Environment   string               `json:"environment"`
@@ -174,6 +175,7 @@ func limitsOf(l *Limits) *NormalizedLimits {
 func normalize(m Manifest) Normalized {
 	n := Normalized{
 		SchemaVersion: SchemaVersion,
+		Name:          m.Name,
 		MinCubeship:   orNil(m.MinCubeship),
 		Project:       m.Project,
 		Environment:   m.Environment,

@@ -12,7 +12,7 @@ import (
 // keySets are the keys each kind of mapping accepts, which is also what
 // an unknown key's suggestion is picked from.
 var keySets = map[string][]string{
-	"manifest": {"version", "minCubeship", "project", "environment", "inputs", "databases", "stores", "apps"},
+	"manifest": {"version", "name", "minCubeship", "project", "environment", "inputs", "databases", "stores", "apps"},
 	"input":    {"key", "type", "label", "help", "required", "default", "pattern", "min", "max", "options", "generate"},
 	"database": {"key", "name", "engine", "version", "extensions", "username", "database", "expose", "limits"},
 	"store":    {"key", "name", "version", "buckets", "limits"},
@@ -65,6 +65,10 @@ func decode(doc *document) (Manifest, []Diagnostic) {
 		}
 	}
 	m.MinCubeship, _ = d.str(f, nil, "minCubeship", false, nil)
+	m.Name, _ = d.str(f, nil, "name", false, nil)
+	if m.Name != "" && (strings.TrimSpace(m.Name) != m.Name || strings.ContainsAny(m.Name, "\r\n\t") || len([]rune(m.Name)) > 100) {
+		d.fail("invalid_value", "name has at most 100 characters and no control whitespace", []any{"name"}, "")
+	}
 	m.Project, _ = d.str(f, nil, "project", true, slugRule)
 	if env, ok := d.str(f, nil, "environment", false, slugRule); ok {
 		m.Environment = env

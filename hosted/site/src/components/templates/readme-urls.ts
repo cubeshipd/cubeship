@@ -1,6 +1,6 @@
 // A README is written to be read on GitHub, so its relative links and
 // images are relative to the repository. Here they are resolved to the
-// commit the release was read at, so a page never shows a newer image
+// commit the template was read at, so a page never shows a newer image
 // than the file it describes.
 export function resolveReadmeUrl(
   url: string,
@@ -17,6 +17,6 @@ export function resolveReadmeUrl(
   }
   const path = url.replace(/^\.?\//, "");
   return kind === "image"
-    ? `https://raw.githubusercontent.com/${where.owner}/${where.repo}/${where.commit}/${path}`
-    : `https://github.com/${where.owner}/${where.repo}/blob/${where.commit}/${path}`;
+    ? `https://raw.githubusercontent.com/cubeshipd/cubeship-templates/${where.commit}/${where.repo}/${path}`
+    : `https://github.com/cubeshipd/cubeship-templates/blob/${where.commit}/${where.repo}/${path}`;
 }

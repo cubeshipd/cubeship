@@ -16,7 +16,6 @@ import (
 type Reader interface {
 	List(ctx context.Context, q Query) ([]Summary, string, error)
 	Template(ctx context.Context, owner, name string) (*Detail, error)
-	Releases(ctx context.Context, owner, name string) ([]ReleaseRecord, bool, error)
 	Manifest(ctx context.Context, owner, name, tag string) (json.RawMessage, error)
 	Tags(ctx context.Context) ([]string, error)
 	Icon(ctx context.Context, repositoryID int64, commit string) ([]byte, error)
@@ -40,7 +39,6 @@ type API struct {
 func (a *API) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /v1/templates", a.list)
 	mux.HandleFunc("GET /v1/templates/{owner}/{name}", a.template)
-	mux.HandleFunc("GET /v1/templates/{owner}/{name}/releases", a.releases)
 	mux.HandleFunc("GET /v1/templates/{owner}/{name}/manifest", a.manifest)
 	mux.HandleFunc("GET /v1/tags", a.tags)
 	mux.HandleFunc("GET /v1/icons/{repository}/{file}", a.icon)
@@ -122,24 +120,12 @@ func (a *API) template(w http.ResponseWriter, r *http.Request) {
 	a.write(w, shortCache, d)
 }
 
-func (a *API) releases(w http.ResponseWriter, r *http.Request) {
-	history, found, err := a.Reader.Releases(r.Context(), r.PathValue("owner"), r.PathValue("name"))
-	if err != nil {
-		a.unavailable(w, err)
-		return
-	}
-	if !found {
-		a.fail(w, http.StatusNotFound, "not_found", "no repository is known at that address")
-		return
-	}
-	a.write(w, shortCache, struct {
-		Releases []ReleaseRecord `json:"releases"`
-	}{history})
-}
-
 func (a *API) manifest(w http.ResponseWriter, r *http.Request) {
-	tag := r.URL.Query().Get("release")
-	m, err := a.Reader.Manifest(r.Context(), r.PathValue("owner"), r.PathValue("name"), tag)
+	if r.URL.Query().Get("release") != "" {
+		a.fail(w, http.StatusBadRequest, "invalid_query", "template releases are no longer selectable")
+		return
+	}
+	m, err := a.Reader.Manifest(r.Context(), r.PathValue("owner"), r.PathValue("name"), "")
 	if err != nil {
 		a.unavailable(w, err)
 		return
@@ -148,12 +134,7 @@ func (a *API) manifest(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, http.StatusNotFound, "not_found", "no accepted release at that address")
 		return
 	}
-	cache := shortCache
-	if tag != "" {
-		// A tag can move, which is a new release; five minutes is the pass.
-		cache = "public, max-age=300"
-	}
-	a.headers(w, cache)
+	a.headers(w, shortCache)
 	w.Write(m)
 }
 

@@ -1,4 +1,4 @@
-import { BadgeCheckIcon, LayoutTemplateIcon, StarIcon } from "lucide-react";
+import { BadgeCheckIcon, LayoutTemplateIcon } from "lucide-react";
 import Link from "@/components/navigation-link";
 import type { TemplateSummary } from "@/lib/api";
 
@@ -28,13 +28,6 @@ export function TemplateCard({ template }: { template: TemplateSummary }) {
         </div>
       </div>
       <p className="line-clamp-2 min-h-10 text-sm text-muted-foreground">{template.description}</p>
-      <div className="flex items-center justify-between font-mono text-xs text-subtle-foreground">
-        <span>{template.release.tag}</span>
-        <span className="flex items-center gap-1">
-          <StarIcon className="size-3.5" aria-hidden />
-          {template.stars}
-        </span>
-      </div>
     </Link>
   );
 }

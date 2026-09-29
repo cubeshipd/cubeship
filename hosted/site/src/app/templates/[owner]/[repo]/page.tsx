@@ -1,4 +1,3 @@
-import { Star } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -9,8 +8,7 @@ import { Readme } from "@/components/templates/readme";
 import { SourceBlock } from "@/components/templates/source-block";
 import { VerifiedBadge } from "@/components/templates/verified";
 import { avatarAt } from "@/lib/avatar";
-import { releasesOf, templateByPath } from "@/lib/catalog";
-import { formatDate } from "@/lib/dates";
+import { templateByPath } from "@/lib/catalog";
 
 // Reads the catalog, so this page can never be static.
 export const dynamic = "force-dynamic";
@@ -40,10 +38,6 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
   if (!found) notFound();
 
   const { release, manifest } = found;
-  const published = new Date(release.published_at);
-  const history = (await releasesOf(found.owner, found.name)).filter(
-    (r) => r.status === "accepted",
-  );
 
   return (
     <div className="site-container template-detail">
@@ -65,8 +59,6 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
       </header>
 
       <div className="template-detail-grid">
-        {/* First in the markup so a phone sees who wrote it and which release this is
-            before the README; beside the content, and following the reader, on a wide screen. */}
         <aside className="template-detail-aside">
           <div className="template-info hud-frame">
             <div className="template-info-author">
@@ -94,21 +86,6 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
             </div>
 
             <dl className="template-info-facts">
-              <dt className={term}>Stars</dt>
-              <dd className={`${row} flex items-center justify-end gap-1`}>
-                <Star className="size-3" aria-hidden />
-                {found.stars}
-              </dd>
-              <dt className={term}>Updated</dt>
-              <dd className={row}>
-                <time dateTime={published.toISOString()}>{formatDate(published)}</time>
-              </dd>
-              <dt className={term}>Release</dt>
-              <dd className={row}>
-                <a href={release.url} className="hover:text-primary">
-                  {release.tag}
-                </a>
-              </dd>
               {manifest?.min_cubeship ? (
                 <>
                   <dt className={term}>Requires</dt>
@@ -133,31 +110,6 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
                 </div>
               </div>
             ) : null}
-
-            <div className="template-info-section">
-              <p className="template-info-label">Release history</p>
-              <ul className="template-release-list">
-                {history.map((r) => (
-                  <li key={r.tag}>
-                    <a
-                      href={r.url}
-                      className="truncate font-mono text-fd-foreground hover:text-primary"
-                    >
-                      {r.tag}
-                      {r.tag === release.tag ? (
-                        <span className="ml-2 text-primary text-xs">current</span>
-                      ) : null}
-                    </a>
-                    <time
-                      dateTime={r.published_at}
-                      className="shrink-0 text-fd-muted-foreground text-xs"
-                    >
-                      {formatDate(new Date(r.published_at))}
-                    </time>
-                  </li>
-                ))}
-              </ul>
-            </div>
           </div>
         </aside>
 
@@ -182,10 +134,7 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
 
           {found.source ? (
             <section className="template-detail-section">
-              <SourceBlock
-                source={found.source}
-                fileUrl={`${found.url}/blob/${release.commit}/template.yaml`}
-              />
+              <SourceBlock source={found.source} fileUrl={found.source_url} />
             </section>
           ) : null}
         </div>

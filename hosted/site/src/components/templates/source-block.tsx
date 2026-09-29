@@ -17,8 +17,8 @@ export function SourceBlock({ source, fileUrl }: { source: string; fileUrl: stri
               href={fileUrl}
               target="_blank"
               rel="noreferrer"
-              aria-label="template.yaml on GitHub, at this release"
-              title="template.yaml on GitHub, at this release"
+              aria-label="template.yaml on GitHub, at the cataloged commit"
+              title="template.yaml on GitHub, at the cataloged commit"
               className="text-fd-muted-foreground transition-colors hover:text-primary"
             >
               <ExternalLink className="size-3.5" />

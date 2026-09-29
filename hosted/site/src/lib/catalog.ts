@@ -117,7 +117,7 @@ export async function allTemplates(
       const key = `${template.owner}/${template.name}`;
       if (!all.has(key)) all.set(key, template);
     }
-    if (!next_cursor) return [...all.values()];
+    if (!next_cursor) return [...all.values()].sort((a, b) => a.title.localeCompare(b.title));
     if (visited.has(next_cursor)) throw new Error("the catalog returned a repeated cursor");
     visited.add(next_cursor);
     cursor = next_cursor;

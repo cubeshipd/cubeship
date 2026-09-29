@@ -1,104 +1,22 @@
 ---
 title: The catalog API
-description: Read the template catalog from a program — listings, one template, its releases, and the manifest an instance installs.
+description: Read current templates and their manifests as JSON.
 ---
 
-Everything on [the catalog](/templates) is readable as JSON, with no key
-and from any origin:
+The public address is `https://cubeship.dev/api/v1`. Read endpoints need no key and allow requests from any origin.
 
-```
-https://cubeship.dev/api/v1
-```
-
-The address is permanent: a route under `/v1` never changes meaning.
-Responses are cached for a minute, and the catalog itself changes at
-most every five.
-
-## List templates
-
-```bash
-curl -s "https://cubeship.dev/api/v1/templates?sort=stars&limit=10"
-```
-
-| Parameter | Meaning |
+| Endpoint | Result |
 | --- | --- |
-| `q` | Matches the repository name, its description or one of its topics. |
-| `tag` | One of the repository's topics. |
-| `sort` | `recent` (the default, newest release first) or `stars`. |
-| `limit` | 1 to 48, 24 by default. |
-| `cursor` | The previous page's `next_cursor`. |
+| `GET /templates?q&cursor&limit` | Search by directory, display name or README description. `limit` is 1 to 48; `next_cursor` pages results. |
+| `GET /templates/{owner}/{repo}` | One template, including README, YAML source, source URL and normalized manifest. New templates use owner `cubeshipd` and the directory name as `repo`. |
+| `GET /templates/{owner}/{repo}/manifest` | The current normalized manifest. |
+| `GET /icons/{repository}/{commit}.png` | The validated icon at an immutable commit address. |
+| `GET /tags` | An empty list; the route remains for older clients. |
 
-```json
-{
-  "templates": [
-    {
-      "owner": "cubeshipd",
-      "name": "cubeship-umami-template",
-      "title": "Umami",
-      "description": "Privacy-focused web analytics, with its Postgres",
-      "url": "https://github.com/cubeshipd/cubeship-umami-template",
-      "stars": 12,
-      "tags": ["analytics"],
-      "avatar_url": "https://avatars.githubusercontent.com/u/1",
-      "icon_url": "https://cubeship.dev/api/v1/icons/1/3f2c9e1.png",
-      "verified": true,
-      "release": {
-        "tag": "v1.0.0",
-        "name": "v1.0.0",
-        "url": "https://github.com/cubeshipd/cubeship-umami-template/releases/tag/v1.0.0",
-        "commit": "3f2c9e1…",
-        "published_at": "2026-09-13T03:09:09Z"
-      }
-    }
-  ],
-  "next_cursor": null
-}
-```
-
-`verified` is true for a template published by an owner the catalog
-vouches for: [cubeshipd](https://github.com/cubeshipd) and
-[lucasaarch](https://github.com/lucasaarch).
-
-## One template
+The `title` in a listing comes from top-level `name` in `template.yaml`. The `release` object remains in JSON for older instance clients; its `commit` is the source commit, not a selectable version. The catalog serves one current template per directory.
 
 ```bash
-curl -s https://cubeship.dev/api/v1/templates/cubeshipd/cubeship-umami-template
+curl -s 'https://cubeship.dev/api/v1/templates?q=umami'
 ```
 
-The listing's fields, plus `readme`, `source` (the `template.yaml` as
-written), `source_url` (that file on GitHub at the release's commit) and
-`manifest` — the file [normalized](/docs/templates/references#the-validator-resolves-what-it-can-and-no-more):
-names filled in, defaults applied, internal hostnames spelled out.
-
-## The manifest alone
-
-```bash
-curl -s "https://cubeship.dev/api/v1/templates/cubeshipd/cubeship-umami-template/manifest?release=v1.0.0"
-```
-
-Without `release`, the listed one. This is what an instance reads.
-
-## Releases
-
-```bash
-curl -s https://cubeship.dev/api/v1/templates/cubeshipd/cubeship-umami-template/releases
-```
-
-Every release the catalog read, newest first, each with `status` —
-`accepted` or `rejected` — and `problems`, the
-[diagnostics](/docs/templates/diagnostics) that refused it or the advice
-that did not.
-
-## Tags and icons
-
-`GET /v1/tags` is every topic a listed template carries.
-`GET /v1/icons/{repository}/{commit}.png` is what `icon_url` points at,
-cached forever: the commit is in the address.
-
-## Errors
-
-```json
-{ "error": { "code": "not_found", "message": "no template is listed at that address" } }
-```
-
-`invalid_query` (400), `not_found` (404) or `unavailable` (503).
+Errors use `{ "error": { "code": "not_found", "message": "..." } }`. Codes are `invalid_query` (400), `not_found` (404) and `unavailable` (503).

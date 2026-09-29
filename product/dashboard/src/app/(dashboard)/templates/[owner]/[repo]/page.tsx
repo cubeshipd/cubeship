@@ -16,7 +16,6 @@ import { DomainInput, type PendingRecord, writeRecord } from "@/components/domai
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
-import { Notice } from "@/components/notice";
 import { SearchableSelect } from "@/components/searchable-select";
 import { SectionHeader } from "@/components/section-header";
 import { TemplateMark } from "@/components/template-card";
@@ -33,8 +32,6 @@ import {
   type TemplateInput,
   type TemplateInstallStarted,
   type TemplateManifest,
-  type TemplateReleaseManifest,
-  type TemplateReleaseOption,
 } from "@/lib/api";
 import { message } from "@/lib/errors";
 import { handOverSecrets } from "@/lib/install-secrets";
@@ -53,30 +50,10 @@ export default function TemplatePage({ params }: PageProps<"/templates/[owner]/[
     queryKey: ["templates", owner, repo],
     queryFn: () => api.get<TemplateDetail>(`/templates/${owner}/${repo}`),
   });
-  const releases = useQuery({
-    queryKey: ["templates", owner, repo, "releases"],
-    queryFn: () =>
-      api.get<{ releases: TemplateReleaseOption[] }>(`/templates/${owner}/${repo}/releases`),
-  });
-  // Empty is the newest, whose manifest the template already carries. Any
-  // other version is read the way installing it would read it.
-  const [chosen, setChosen] = useState("");
-  const newest = template.data?.release.tag ?? "";
-  const other = chosen !== "" && chosen !== newest;
-  const older = useQuery({
-    queryKey: ["templates", owner, repo, "manifest", chosen],
-    queryFn: () =>
-      api.get<TemplateReleaseManifest>(
-        `/templates/${owner}/${repo}/manifest?release=${encodeURIComponent(chosen)}`,
-      ),
-    enabled: other,
-  });
-
   if (template.error) return <ErrorAlert error={message(template.error)} />;
   if (!template.data) return <LoadingList rows={5} />;
   const t = template.data;
-  const tag = other ? chosen : newest;
-  const manifest = other ? older.data?.manifest : t.manifest;
+  const manifest = t.manifest;
 
   return (
     <>
@@ -103,48 +80,17 @@ export default function TemplatePage({ params }: PageProps<"/templates/[owner]/[
           </h1>
           <p className="text-sm text-muted-foreground">{t.description}</p>
           <p className="mt-0.5 font-mono text-xs text-subtle-foreground">
-            {t.owner}/{t.name} · {tag}
+            {t.owner}/{t.name}
           </p>
         </div>
-        <div className="ml-auto w-48 shrink-0">
-          <SearchableSelect
-            label="Version"
-            value={tag}
-            busy={releases.data === undefined && !releases.error}
-            onChange={setChosen}
-            choices={(releases.data?.releases ?? [t.release]).map((r) => ({
-              value: r.tag,
-              label: r.tag,
-              hint:
-                r.tag === newest
-                  ? "latest"
-                  : r.published_at
-                    ? new Date(r.published_at).toLocaleDateString()
-                    : undefined,
-            }))}
-          />
-        </div>
       </div>
-      {other && older.error ? (
-        <ErrorAlert error={message(older.error)} />
-      ) : other && !older.data ? (
-        <LoadingList rows={5} />
-      ) : manifest ? (
+      {manifest ? (
         <>
-          {other && older.data && !older.data.fits && (
-            <Notice tone="warning">{older.data.problem}</Notice>
-          )}
           <Creates manifest={manifest} />
-          <InstallForm
-            key={tag}
-            template={t}
-            manifest={manifest}
-            release={tag}
-            blocked={other && older.data ? !older.data.fits : false}
-          />
+          <InstallForm key={t.name} template={t} manifest={manifest} />
         </>
       ) : (
-        <ErrorAlert error="The catalog has no manifest for this template's release." />
+        <ErrorAlert error="The catalog has no manifest for this template." />
       )}
     </>
   );
@@ -195,15 +141,9 @@ function Creates({ manifest }: { manifest: TemplateManifest }) {
 function InstallForm({
   template,
   manifest,
-  release,
-  blocked,
 }: {
   template: TemplateDetail;
   manifest: TemplateManifest;
-  // The version installed.
-  release: string;
-  // A version this instance is too old for, which the daemon would refuse.
-  blocked: boolean;
 }) {
   const router = useRouter();
   // Where the apps go: a project that exists, picked, or a new one, named —
@@ -313,7 +253,6 @@ function InstallForm({
       const started = await api.post<TemplateInstallStarted>(
         `/templates/${template.owner}/${template.name}/installs`,
         {
-          release,
           project,
           environment,
           names: { apps: pick("apps"), databases: pick("databases"), stores: pick("stores") },
@@ -458,9 +397,7 @@ function InstallForm({
 
           <ErrorAlert error={error} />
           <div className="flex justify-end">
-            <ActionButton onClick={install} disabled={blocked}>
-              Install {template.title} {release}
-            </ActionButton>
+            <ActionButton onClick={install}>Install {template.title}</ActionButton>
           </div>
         </CardContent>
       </Card>

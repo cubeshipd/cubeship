@@ -96,7 +96,10 @@ func (p *Postgres) scanSummary(row interface{ Scan(...any) error }, extra ...any
 	if err := json.Unmarshal([]byte(topics), &list); err != nil {
 		return s, err
 	}
-	s.Title = DisplayName(s.Name)
+	s.Title = s.Release.Name
+	if s.Title == "" {
+		s.Title = DisplayName(s.Name)
+	}
 	s.Tags = tagsOf(list, p.topic())
 	return s, nil
 }
@@ -136,7 +139,7 @@ func (p *Postgres) List(ctx context.Context, q Query) ([]Summary, string, error)
 	if q.Q != "" {
 		like := arg("%"+escapeLike(strings.ToLower(q.Q))+"%", "text")
 		// A topic matches too, so searching "monitoring" finds what is tagged with it.
-		where = append(where, fmt.Sprintf("(lower(p.name) LIKE %[1]s OR lower(p.description) LIKE %[1]s OR EXISTS (SELECT 1 FROM unnest(p.topics) t WHERE lower(t) LIKE %[1]s))", like))
+		where = append(where, fmt.Sprintf("(lower(p.name) LIKE %[1]s OR lower(r.name) LIKE %[1]s OR lower(p.description) LIKE %[1]s OR EXISTS (SELECT 1 FROM unnest(p.topics) t WHERE lower(t) LIKE %[1]s))", like))
 	}
 	if q.Tag != "" {
 		where = append(where, arg(q.Tag, "text")+" = ANY(p.topics)")
@@ -204,6 +207,9 @@ func (p *Postgres) Template(ctx context.Context, owner, name string) (*Detail, e
 	d.Summary = s
 	d.Manifest = json.RawMessage(manifest)
 	d.SourceURL = fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", s.Owner, s.Name, s.Release.Commit, TemplateFile)
+	if s.RepositoryID < 0 {
+		d.SourceURL = fmt.Sprintf("https://raw.githubusercontent.com/%s/%s/%s/%s", templatesRepo, s.Release.Commit, s.Name, TemplateFile)
+	}
 	return &d, nil
 }
 
@@ -224,7 +230,7 @@ func (p *Postgres) Releases(ctx context.Context, owner, name string) ([]ReleaseR
 	}
 	rows, err := p.DB.QueryContext(ctx, `
 		SELECT tag, name, url, commit_sha, published_at, status, problems::text
-		FROM releases WHERE repository_id = $1
+		FROM releases WHERE repository_id = $1 AND (repository_id >= 0 OR id = (SELECT latest_release_id FROM repositories WHERE id = $1))
 		ORDER BY published_at DESC, id DESC LIMIT 50`, id)
 	if err != nil {
 		return nil, true, err
@@ -257,6 +263,7 @@ func (p *Postgres) Manifest(ctx context.Context, owner, name, tag string) (json.
 			SELECT r.manifest::text FROM repositories p JOIN releases r ON r.repository_id = p.id
 			WHERE p.hidden IS NULL AND lower(p.owner) = lower($1) AND lower(p.name) = lower($2)
 			  AND r.tag = $3 AND r.status = 'accepted'
+			  AND (p.id >= 0 OR r.id = p.latest_release_id)
 			ORDER BY r.published_at DESC, r.id DESC LIMIT 1`, owner, name, tag).Scan(&manifest)
 	}
 	if errors.Is(err, sql.ErrNoRows) {

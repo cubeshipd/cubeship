@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowUpCircleIcon, Trash2Icon } from "lucide-react";
+import { Trash2Icon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { type Column, DataTable } from "@/components/data-table";
@@ -9,7 +9,6 @@ import { ErrorAlert } from "@/components/error-alert";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { StatusBadge } from "@/components/status-badge";
 import { TemplateUninstallDialog } from "@/components/template-uninstall-dialog";
-import { TemplateUpdateDialog } from "@/components/template-update-dialog";
 import { api, type TemplateInstall } from "@/lib/api";
 import { message } from "@/lib/errors";
 
@@ -23,11 +22,9 @@ export function installStatus(i: TemplateInstall): string {
   return i.status;
 }
 
-// The Installed tab: every template on this instance, the release it is
-// on, and the two things there are to do with one.
+// The Installed tab: every template on this instance and its uninstall action.
 export function TemplateInstalls() {
   const router = useRouter();
-  const [updating, setUpdating] = useState<TemplateInstall | null>(null);
   const [uninstalling, setUninstalling] = useState<TemplateInstall | null>(null);
   const installs = useQuery({
     queryKey: ["template-installs"],
@@ -54,22 +51,6 @@ export function TemplateInstalls() {
       ),
     },
     {
-      id: "release",
-      header: "Release",
-      width: 28,
-      sortBy: (i) => i.release,
-      cell: (i) => (
-        <span className="flex items-center gap-2">
-          <span className="font-mono text-xs">{i.release}</span>
-          {i.update_available && (
-            <span className="border border-primary/40 px-1.5 py-0.5 font-mono text-[10px] text-primary">
-              {i.update_available} available
-            </span>
-          )}
-        </span>
-      ),
-    },
-    {
       id: "status",
       header: "Status",
       width: 20,
@@ -83,12 +64,6 @@ export function TemplateInstalls() {
       align: "right",
       cell: (i) => (
         <RowActions>
-          <RowAction
-            icon={ArrowUpCircleIcon}
-            label={i.update_available ? `Update to ${i.update_available}` : "Up to date"}
-            disabled={!i.update_available || i.busy || i.status !== "installed"}
-            onClick={() => setUpdating(i)}
-          />
           <RowAction
             icon={Trash2Icon}
             label={`Uninstall ${i.repo}`}
@@ -112,13 +87,6 @@ export function TemplateInstalls() {
         empty="Nothing is installed yet. Install a template from the catalog."
         onRowClick={(i) => router.push(`/templates/installs/${i.id}`)}
       />
-      {updating && (
-        <TemplateUpdateDialog
-          install={updating}
-          open
-          onOpenChange={(open) => !open && setUpdating(null)}
-        />
-      )}
       {uninstalling && (
         <TemplateUninstallDialog
           install={uninstalling}

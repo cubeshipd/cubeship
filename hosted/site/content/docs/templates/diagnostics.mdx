@@ -3,8 +3,7 @@ title: Diagnostics
 description: Every code the validator can return — what it means, and what to do about it.
 ---
 
-Every diagnostic is one object, and a refused release carries all of
-them:
+Every diagnostic is one object. An invalid directory keeps the previous catalog snapshot visible until corrected:
 
 ```ts
 type Diagnostic = {
@@ -18,9 +17,7 @@ type Diagnostic = {
 };
 ```
 
-The codes about the release rather than the file —
-`release.template-missing`, `icon.size` and the rest — are listed in
-[Publishing](/docs/templates/publishing#refused-releases).
+Missing `template.yaml`, `README.md`, or `icon.png`, and invalid icon dimensions, also prevent a commit from being cataloged.
 
 **Error** refuses a release. **Warning** is advice the author may keep
 anyway — the file still installs. **Info** is a passing remark, nothing

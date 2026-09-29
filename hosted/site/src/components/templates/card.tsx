@@ -1,12 +1,9 @@
-import { Star } from "lucide-react";
 import Link from "next/link";
 import { avatarAt } from "@/lib/avatar";
 import type { TemplateSummary } from "@/lib/catalog";
-import { formatDate } from "@/lib/dates";
 import { VerifiedBadge } from "./verified";
 
 export function TemplateCard({ template }: { template: TemplateSummary }) {
-  const updated = new Date(template.release.published_at);
   return (
     <Link
       href={`/templates/${template.owner}/${template.name}`}
@@ -38,14 +35,6 @@ export function TemplateCard({ template }: { template: TemplateSummary }) {
           />
           <span className="truncate">{template.owner}</span>
         </span>
-        <span className="template-card-stars">
-          <Star className="size-3.5" aria-hidden />
-          {template.stars}
-        </span>
-      </div>
-      <div className="template-card-release">
-        <span>{template.release.tag}</span>
-        <time dateTime={updated.toISOString()}>{formatDate(updated)}</time>
       </div>
     </Link>
   );

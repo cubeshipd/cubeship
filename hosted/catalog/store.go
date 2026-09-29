@@ -184,3 +184,64 @@ func nullJSON(b []byte) any {
 	}
 	return string(b)
 }
+
+// Publish makes a complete validated commit visible in one transaction.
+// Old releases remain for existing installation records, but only the
+// current commit is referenced by listings.
+func (p *Postgres) Publish(ctx context.Context, entries []SnapshotEntry) (accepted, hidden int, err error) {
+	tx, err := p.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer tx.Rollback()
+	nodes := make([]string, 0, len(entries))
+	for _, e := range entries {
+		r, rec := e.Repository, e.Indexed
+		nodes = append(nodes, r.NodeID)
+		if _, err = tx.ExecContext(ctx, `INSERT INTO repositories (id,node_id,owner,name,description,url,owner_avatar_url,stars,topics,hidden)
+   VALUES ($1,$2,$3,$4,$5,$6,$7,0,'{}',NULL)
+   ON CONFLICT (id) DO UPDATE SET node_id=EXCLUDED.node_id,owner=EXCLUDED.owner,name=EXCLUDED.name,
+   description=EXCLUDED.description,url=EXCLUDED.url,hidden=NULL,checked_at=now()`,
+			r.ID, r.NodeID, r.Owner, r.Name, r.Description, r.URL, r.OwnerAvatar); err != nil {
+			return 0, 0, err
+		}
+		problems, e1 := json.Marshal(rec.Problems)
+		if e1 != nil {
+			return 0, 0, e1
+		}
+		manifest, e1 := json.Marshal(rec.Manifest)
+		if e1 != nil {
+			return 0, 0, e1
+		}
+		result, e1 := tx.ExecContext(ctx, `INSERT INTO releases (repository_id,tag,commit_sha,name,url,published_at,status,problems,manifest,source,readme,icon)
+   VALUES ($1,$2,$3,$4,$5,$6,'accepted',$7,$8,$9,$10,$11)
+   ON CONFLICT (repository_id,tag,commit_sha) DO NOTHING`,
+			r.ID, rec.Tag, rec.Commit, rec.Name, rec.URL, rec.PublishedAt, string(problems), string(manifest), rec.Source, rec.Readme, rec.Icon)
+		if e1 != nil {
+			return 0, 0, e1
+		}
+		if n, _ := result.RowsAffected(); n > 0 {
+			accepted++
+		}
+		if _, err = tx.ExecContext(ctx, `UPDATE repositories SET latest_release_id = (
+   SELECT id FROM releases WHERE repository_id=$1 AND commit_sha=$2 AND status='accepted' LIMIT 1)
+   WHERE id=$1`, r.ID, rec.Commit); err != nil {
+			return 0, 0, err
+		}
+	}
+	raw, e := json.Marshal(nodes)
+	if e != nil {
+		return 0, 0, e
+	}
+	result, e := tx.ExecContext(ctx, `UPDATE repositories SET hidden='gone',checked_at=now()
+  WHERE hidden IS DISTINCT FROM 'gone' AND node_id <> ALL(ARRAY(SELECT jsonb_array_elements_text($1::jsonb)))`, string(raw))
+	if e != nil {
+		return 0, 0, e
+	}
+	n, _ := result.RowsAffected()
+	hidden = int(n)
+	if err = tx.Commit(); err != nil {
+		return 0, 0, err
+	}
+	return accepted, hidden, nil
+}

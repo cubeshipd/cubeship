@@ -3,51 +3,16 @@ package catalog
 import (
 	"bytes"
 	"context"
-	"errors"
 	"image"
 	"image/color"
 	"image/png"
 	"io"
 	"log"
+	"os"
 	"slices"
+	"testing"
 	"time"
 )
-
-type fakeGitHub struct {
-	repos   []Repo
-	lookup  map[string]Repo
-	files   map[string][]byte // "owner/name@commit:path"
-	failing map[string]bool   // same key: a transient error
-	looked  []string
-}
-
-func (f *fakeGitHub) Search(context.Context, string) ([]Repo, error) { return f.repos, nil }
-
-func (f *fakeGitHub) Lookup(_ context.Context, ids []string) (map[string]Repo, error) {
-	f.looked = append(f.looked, ids...)
-	out := map[string]Repo{}
-	for _, id := range ids {
-		if r, ok := f.lookup[id]; ok {
-			out[id] = r
-		}
-	}
-	return out, nil
-}
-
-func (f *fakeGitHub) File(_ context.Context, owner, name, commit, path string, limit int64) ([]byte, error) {
-	key := owner + "/" + name + "@" + commit + ":" + path
-	if f.failing[key] {
-		return nil, errors.New("GitHub answered 502")
-	}
-	b, ok := f.files[key]
-	if !ok {
-		return nil, ErrNotFound
-	}
-	if int64(len(b)) > limit {
-		return nil, ErrTooLarge
-	}
-	return b, nil
-}
 
 type fakeStore struct {
 	blocked  map[string]bool
@@ -58,6 +23,29 @@ type fakeStore struct {
 
 func newStore() *fakeStore {
 	return &fakeStore{blocked: map[string]bool{}, repos: map[int64]Repo{}, hidden: map[int64]string{}}
+}
+
+func (s *fakeStore) Publish(_ context.Context, entries []SnapshotEntry) (int, int, error) {
+	accepted := 0
+	seen := map[string]bool{}
+	for _, e := range entries {
+		seen[e.Repository.NodeID] = true
+		s.repos[e.Repository.ID] = e.Repository
+		s.hidden[e.Repository.ID] = ""
+		exists, _ := s.Indexed(context.Background(), e.Repository.ID, e.Indexed.Tag, e.Indexed.Commit)
+		if !exists {
+			s.releases = append(s.releases, e.Indexed)
+			accepted++
+		}
+	}
+	hidden := 0
+	for id, r := range s.repos {
+		if !seen[r.NodeID] && s.hidden[id] != HiddenGone {
+			s.hidden[id] = HiddenGone
+			hidden++
+		}
+	}
+	return accepted, hidden, nil
 }
 
 func (s *fakeStore) Blocked(context.Context) (map[string]bool, error) { return s.blocked, nil }
@@ -101,6 +89,20 @@ func squarePNG(side int) []byte {
 	return buf.Bytes()
 }
 
+var published = time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+
 func quietLog() *log.Logger { return log.New(io.Discard, "", 0) }
 
-var published = time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+func fixture(t *testing.T) []byte {
+	t.Helper()
+	b, err := os.ReadFile("../../product/template/testdata/umami.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func umamiRepo() Repo {
+	return Repo{NodeID: "R_umami", ID: 7, Owner: "lucasaarch", Name: "cubeship-umami-template",
+		URL: "https://github.com/lucasaarch/cubeship-umami-template", Stars: 3, Topics: []string{Topic, "analytics"}}
+}
