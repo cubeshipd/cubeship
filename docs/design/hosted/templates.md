@@ -1,6 +1,6 @@
 # Templates
 
-`cubeshipd/cubeship-templates` is the only source of public templates. One directory is one template, named `cubeship-<slug>-template`, with `template.yaml`, `README.md` and `icon.png`. The directory is its stable API identity; top-level `name` in the YAML is its display name. `version: 1` identifies the YAML format, not a release. Changes to an installed app are made on its instance; template updates are not offered.
+`cubeshipd/cubeship-templates` is the only source of public templates. One directory is one template, named with just the slug (for example, `umami`), with `template.yaml`, `README.md` and `icon.png`. The directory is its stable API identity; top-level `name` in the YAML is its display name. `version: 1` identifies the YAML format, not a release. Changes to an installed app are made on its instance; template updates are not offered.
 
 ## Ownership
 

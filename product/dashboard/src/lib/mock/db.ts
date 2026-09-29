@@ -271,11 +271,11 @@ export const db = {
   templates: [
     {
       owner: "cubeshipd",
-      name: "cubeship-umami-template",
+      name: "umami",
       title: "Umami",
       description:
         "Privacy-focused, cookie-free web analytics — a self-hosted alternative to Google Analytics",
-      url: "https://github.com/cubeshipd/cubeship-umami-template",
+      url: "https://github.com/cubeshipd/cubeship-templates/tree/main/umami",
       stars: 12,
       tags: ["analytics", "privacy"],
       avatar_url: "",
@@ -285,10 +285,10 @@ export const db = {
     },
     {
       owner: "cubeshipd",
-      name: "cubeship-n8n-template",
+      name: "n8n",
       title: "N8n",
       description: "Workflow automation with a visual editor and hundreds of integrations",
-      url: "https://github.com/cubeshipd/cubeship-n8n-template",
+      url: "https://github.com/cubeshipd/cubeship-templates/tree/main/n8n",
       stars: 7,
       tags: ["automation"],
       avatar_url: "",
@@ -297,11 +297,11 @@ export const db = {
       release: { tag: "v1.0.0", commit: "59ff226", published_at: ago(60 * 20) },
     },
     {
-      owner: "someone",
-      name: "cubeship-grafana-template",
+      owner: "cubeshipd",
+      name: "grafana",
       title: "Grafana",
       description: "Dashboards, visualizations and alerts for your metrics, logs and traces",
-      url: "https://github.com/someone/cubeship-grafana-template",
+      url: "https://github.com/cubeshipd/cubeship-templates/tree/main/grafana",
       stars: 3,
       tags: ["monitoring"],
       avatar_url: "",
@@ -340,7 +340,7 @@ export const db = {
     {
       id: 1,
       owner: "cubeshipd",
-      repo: "cubeship-umami-template",
+      repo: "umami",
       release: "v1.1.0",
       commit: "c79ef5b",
       project: "analytics",

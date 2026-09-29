@@ -7,7 +7,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
-	"strings"
+	"regexp"
 )
 
 func main() {
@@ -20,8 +20,14 @@ func main() {
 		panic(err)
 	}
 	count, invalid := 0, 0
+	slug := regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	for _, d := range dirs {
-		if !d.IsDir() || !strings.HasPrefix(d.Name(), "cubeship-") || !strings.HasSuffix(d.Name(), "-template") {
+		if !d.IsDir() || d.Name() == ".git" || d.Name() == ".github" || d.Name() == "_cubeship" {
+			continue
+		}
+		if !slug.MatchString(d.Name()) {
+			fmt.Fprintln(os.Stderr, "invalid template directory:", d.Name())
+			invalid++
 			continue
 		}
 		count++

@@ -19,7 +19,7 @@ import (
 
 const templatesRepo = "cubeshipd/cubeship-templates"
 
-var templateDir = regexp.MustCompile(`^cubeship-[a-z0-9][a-z0-9-]*-template$`)
+var templateDir = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 
 type MonoSource struct {
 	HTTP    *http.Client
@@ -104,7 +104,13 @@ func (m *MonoSource) Read(ctx context.Context) (string, time.Time, map[string]te
 			continue
 		}
 		parts := strings.Split(hdr.Name, "/")
-		if len(parts) != 3 || path.Clean(hdr.Name) != hdr.Name || !templateDir.MatchString(parts[1]) {
+		if len(parts) < 3 || path.Clean(hdr.Name) != hdr.Name || parts[1] == ".github" || parts[1] == "_cubeship" {
+			continue
+		}
+		if !templateDir.MatchString(parts[1]) {
+			return "", time.Time{}, nil, fmt.Errorf("invalid template directory: %s", parts[1])
+		}
+		if len(parts) != 3 {
 			continue
 		}
 		var limit int64

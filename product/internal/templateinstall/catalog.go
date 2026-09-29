@@ -73,7 +73,7 @@ var (
 	commitSHA  = regexp.MustCompile(`^[0-9a-f]{7,64}$`)
 	numericID  = regexp.MustCompile(`^-?[0-9]{1,20}$`)
 	iconFile   = regexp.MustCompile(`^[0-9a-f]{7,64}\.png$`)
-	folderName = regexp.MustCompile(`^cubeship-[a-z0-9][a-z0-9-]*-template$`)
+	folderName = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
 	listParams = []string{"q", "tag", "sort", "cursor", "limit"}
 )
 

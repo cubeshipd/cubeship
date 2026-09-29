@@ -24,7 +24,7 @@ func TestMonoSyncerReadsOneCommitAndRetainsLastGoodSnapshot(t *testing.T) {
 	gz := gzip.NewWriter(&archive)
 	tw := tar.NewWriter(gz)
 	for name, body := range files {
-		path := "cubeship-templates-abc/cubeship-umami-template/" + name
+		path := "cubeship-templates-abc/umami/" + name
 		if err := tw.WriteHeader(&tar.Header{Name: path, Mode: 0644, Size: int64(len(body)), Typeflag: tar.TypeReg}); err != nil {
 			t.Fatal(err)
 		}
@@ -59,7 +59,7 @@ func TestMonoSyncerReadsOneCommitAndRetainsLastGoodSnapshot(t *testing.T) {
 	if rep.Accepted != 1 || len(store.releases) != 1 || store.releases[0].Name != "Umami" {
 		t.Fatalf("report=%+v releases=%+v", rep, store.releases)
 	}
-	if store.repos[templateID("cubeship-umami-template")].Description != "Umami is analytics." {
+	if store.repos[templateID("umami")].Description != "Umami is analytics." {
 		t.Fatal("README description was not read")
 	}
 	// Re-reading the same commit does not create another catalog entry.

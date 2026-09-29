@@ -55,7 +55,7 @@ func newTemplateCmd() *cobra.Command {
 			"they do not exist, its databases, stores and apps, and a deploy of\n" +
 			"each app. Anything that fails is undone.\n\n" +
 			"Secrets the instance generates are printed once, here, and nowhere else.",
-		Example: "  cubeship template install cubeshipd/cubeship-umami-template --input domain=analytics.example.com",
+		Example: "  cubeship template install cubeshipd/umami --input domain=analytics.example.com",
 		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			owner, repo, ok := strings.Cut(args[0], "/")
