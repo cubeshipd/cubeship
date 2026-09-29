@@ -6,6 +6,30 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.11.0 — 2026-09-29
+
+Templates from one shared repository, plus a clearer image tag selector.
+
+### Templates
+
+The template catalog now reads `cubeshipd/cubeship-templates`, with one
+directory per template. Template names come from `template.yml`; listing and
+installation keep their existing API routes. Template releases and update
+checks are no longer part of the catalog.
+
+### App sources
+
+The Docker image tag selector hides commit SHA tags and sorts dated tags by
+publication time, newest first. GHCR dates are available when its connected
+credential can read GitHub Packages. Choosing a tag no longer reloads the
+list. An app pinned to a Git ref no longer deploys on a push to that ref.
+
+### Upgrade notes
+
+Update normally from the dashboard or CLI. No database migrations. The
+hosted catalog must be deployed separately for the new template listing to
+become available on cubeship.dev.
+
 ## 0.10.0 — 2026-09-17
 
 A shell inside any app's container, and a root shell on any machine in the instance — from the dashboard or the CLI, with no SSH port open.

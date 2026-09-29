@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { SearchableSelect } from "@/components/searchable-select";
 import { TextField } from "@/components/text-field";
 import { Label } from "@/components/ui/label";
@@ -11,6 +11,7 @@ import {
   type RegistryImage,
   type RegistryRepository,
 } from "@/lib/api";
+import { selectableImageTags } from "@/lib/image-tags";
 
 // Where a published image comes from: which registry, which image in it,
 // and which tag of that image.
@@ -235,8 +236,8 @@ function ImageField({
   );
 }
 
-// TagField lists what the image can be deployed at, newest first, and
-// chooses the newest for you.
+// TagField lists what the image can be deployed at, newest publication
+// first where the registry reports dates, and chooses the first for you.
 //
 // Chosen rather than merely offered, because an empty tag is not a
 // neutral state here: on any registry but this instance's own it means
@@ -258,12 +259,12 @@ function TagField({
   const [tags, setTags] = useState<RegistryImage[] | null>(null);
   const [listable, setListable] = useState(true);
 
-  const pick = useCallback(onChange, [onChange]);
-
   // `value` is deliberately not a dependency. This runs when the image
   // changes, and reading the current selection inside it is what keeps
   // it from overwriting a tag somebody just chose — listing it again
   // because the selection moved would be the effect fighting the field.
+  // `onChange` is recreated by the form on each render, including after
+  // a tag selection; that must not fetch the same list again either.
   // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
     if (!image && !repository) {
@@ -280,13 +281,14 @@ function TagField({
       .get<RegistryImage[]>(path)
       .then((found) => {
         if (!live) return;
-        setTags(found);
-        setListable(found.length > 0);
+        const choices = selectableImageTags(found);
+        setTags(choices);
+        setListable(choices.length > 0);
         // The newest is the answer until somebody says otherwise, and
         // it is only filled in when nothing is chosen: re-picking it
         // over what somebody just selected would be this deciding for
         // them twice.
-        if (found.length > 0 && value === "") pick(found[0].tag);
+        if (choices.length > 0 && value === "") onChange(choices[0].tag);
       })
       .catch(() => {
         if (!live) return;
@@ -296,7 +298,7 @@ function TagField({
     return () => {
       live = false;
     };
-  }, [image, repository, pick]);
+  }, [image, repository]);
 
   if (!listable) {
     return (
@@ -320,9 +322,10 @@ function TagField({
       label="Tag"
       choices={(tags ?? []).map((t) => ({ value: t.tag, label: t.tag }))}
       value={value}
+      placeholder={value || "Select a tag"}
       busy={tags === null}
       onChange={onChange}
-      hint="Newest first. This is the one the app runs until you change it."
+      hint="Newest publication first when available. This is the one the app runs until you change it."
     />
   );
 }

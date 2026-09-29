@@ -388,7 +388,7 @@ func (s *Service) Images(ctx context.Context, caller *user.User, id int64, repos
 	case ProviderDigitalOcean:
 		return listDOImages(ctx, s.client, c, repository)
 	}
-	return listV2Images(ctx, s.client, c, repository)
+	return s.listV2ImagesWithDates(ctx, c, repository)
 }
 
 // resolve finds one of this instance's credentials.
@@ -618,5 +618,13 @@ func (s *Service) TagsFor(ctx context.Context, caller *user.User, image string) 
 	case ProviderDigitalOcean:
 		return listDOImages(ctx, s.client, c, repository)
 	}
-	return listV2Images(ctx, s.client, c, repository)
+	return s.listV2ImagesWithDates(ctx, c, repository)
+}
+
+func (s *Service) listV2ImagesWithDates(ctx context.Context, c *Credential, repository string) ([]Image, error) {
+	images, err := listV2Images(ctx, s.client, c, repository)
+	if err == nil && c.Host == "ghcr.io" {
+		ghcrPublishedAt(ctx, s.client, c.Password, repository, images)
+	}
+	return images, err
 }
