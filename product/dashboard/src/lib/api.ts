@@ -628,6 +628,7 @@ export type RegistryImage = {
   digest?: string;
   size?: number;
   pushed_at?: string;
+  created_at?: string;
 };
 
 export type RegistryUsage = {

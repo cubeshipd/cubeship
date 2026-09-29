@@ -236,8 +236,8 @@ function ImageField({
   );
 }
 
-// TagField lists what the image can be deployed at, newest publication
-// first where the registry reports dates, and chooses the first for you.
+// TagField lists what the image can be deployed at, newest image date
+// first, and chooses the first for you.
 //
 // Chosen rather than merely offered, because an empty tag is not a
 // neutral state here: on any registry but this instance's own it means
@@ -325,7 +325,7 @@ function TagField({
       placeholder={value || "Select a tag"}
       busy={tags === null}
       onChange={onChange}
-      hint="Newest publication first when available. This is the one the app runs until you change it."
+      hint="Newest image first by publication or build date. This is the one the app runs until you change it."
     />
   );
 }

@@ -6,6 +6,21 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.11.1 — 2026-09-29
+
+Show public GHCR image tags in newest-first order.
+
+### Docker image tags
+
+The tag selector now reads the build date from public GHCR images when no
+GitHub Packages credential is connected. Dated tags appear newest first,
+including public images that previously fell back to GHCR's older-first
+listing. Commit SHA tags remain hidden.
+
+### Upgrade notes
+
+Update normally from the dashboard or CLI. No database migrations.
+
 ## 0.11.0 — 2026-09-29
 
 Templates from one shared repository, plus a clearer image tag selector.

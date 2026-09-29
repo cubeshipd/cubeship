@@ -398,15 +398,14 @@ to know is whether it runs the registry itself.
 
 **Every one of the three is listed.** The registry from `GET
 /registries`, the image from that registry's own catalogue, and the tag
-from the repository — newest publication first where the registry reports
-dates, and the first **chosen**, because
+from the repository — newest image date first, and the first **chosen**, because
 an empty tag is not a neutral state: it means `latest`, which is a
 different decision from the one somebody is in the middle of making.
 
 The tag selector hides commit SHA tags. ECR and DigitalOcean report push
-dates directly; for GHCR, GitHub's Packages API reports version publication
-dates when the connected GHCR credential has `read:packages`. Without dates,
-the selector keeps the registry's returned order after dated tags.
+dates directly. For GHCR, GitHub's Packages API reports version publication
+dates when the connected credential has `read:packages`; public images fall
+back to the build date in their OCI config. Undated tags come last.
 
 Two places it degrades, and both are ordinary rather than broken:
 

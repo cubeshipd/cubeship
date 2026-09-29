@@ -148,6 +148,8 @@ type Image struct {
 	Size int64 `json:"size,omitempty"`
 	// PushedAt is when it arrived, where the registry reports it.
 	PushedAt *time.Time `json:"pushed_at,omitempty"`
+	// CreatedAt is the image build time from its OCI config, when push time is unavailable.
+	CreatedAt *time.Time `json:"created_at,omitempty"`
 }
 
 // listECRRepositories asks ECR what is in the registry.

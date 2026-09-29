@@ -27,10 +27,11 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"name": openapi.String("The repository, as the registry names it."),
 			}, "name"),
 			"RegistryImage": openapi.Object(map[string]*openapi.Schema{
-				"tag":       openapi.String("The tag, or <untagged> for an image no tag points at."),
-				"digest":    openapi.String("Identifies the image itself. A tag can move; this does not."),
-				"size":      openapi.Integer("Bytes, where the registry reports one."),
-				"pushed_at": openapi.String("RFC 3339, where the registry reports it."),
+				"tag":        openapi.String("The tag, or <untagged> for an image no tag points at."),
+				"digest":     openapi.String("Identifies the image itself. A tag can move; this does not."),
+				"size":       openapi.Integer("Bytes, where the registry reports one."),
+				"pushed_at":  openapi.String("RFC 3339, where the registry reports it."),
+				"created_at": openapi.String("RFC 3339 image build time, used when the registry does not report a push time."),
 			}, "tag"),
 			"RegistryCredential": openapi.Object(map[string]*openapi.Schema{
 				"id":            openapi.Integer("Identifies it in the paths below."),

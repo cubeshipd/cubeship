@@ -625,6 +625,7 @@ func (s *Service) listV2ImagesWithDates(ctx context.Context, c *Credential, repo
 	images, err := listV2Images(ctx, s.client, c, repository)
 	if err == nil && c.Host == "ghcr.io" {
 		ghcrPublishedAt(ctx, s.client, c.Password, repository, images)
+		ghcrCreatedAt(ctx, s.client, c, repository, images)
 	}
 	return images, err
 }
