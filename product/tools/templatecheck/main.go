@@ -43,6 +43,27 @@ func main() {
 			fmt.Fprintln(os.Stderr, d.Name(), result.Diagnostics, "name is required")
 			invalid++
 		}
+		for _, app := range result.Manifest.Apps {
+			src := app.Source
+			if src.Repo != "https://github.com/cubeshipd/cubeship-templates" {
+				continue
+			}
+			if src.Ref == nil || *src.Ref != "main:"+d.Name() {
+				fmt.Fprintln(os.Stderr, d.Name(), "monorepo source must use ref main:"+d.Name())
+				invalid++
+			}
+			dockerfile := "Dockerfile"
+			if src.Dockerfile != nil {
+				dockerfile = *src.Dockerfile
+			}
+			if !filepath.IsLocal(dockerfile) {
+				fmt.Fprintln(os.Stderr, d.Name(), "invalid Dockerfile path:", dockerfile)
+				invalid++
+			} else if info, err := os.Lstat(filepath.Join(root, dockerfile)); err != nil || !info.Mode().IsRegular() {
+				fmt.Fprintln(os.Stderr, d.Name(), "missing regular Dockerfile:", dockerfile)
+				invalid++
+			}
+		}
 		for _, name := range []string{"README.md", "icon.png"} {
 			info, err := os.Stat(filepath.Join(root, name))
 			if err != nil {

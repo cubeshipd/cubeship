@@ -13,6 +13,8 @@ Each directory needs three files:
 | `README.md` | What the template installs and what to do after installing. At most 512 KB. |
 | `icon.png` | A square PNG, 128 to 1024 pixels per side, at most 512 KB. |
 
+For a source-built app, keep its Dockerfile and any files it copies inside the same directory. Set `repo: https://github.com/cubeshipd/cubeship-templates` and `ref: main:<directory>`. The installer pins the build to the cataloged commit and uses that directory as the build context.
+
 The directory name identifies the template in URLs. `name` controls how it appears in the catalog; changing it does not change the URL. Add this line to the YAML for editor checks:
 
 ```yaml

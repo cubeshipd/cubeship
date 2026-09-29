@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -28,7 +29,10 @@ type MonoSource struct {
 	Token   string
 }
 
-type templateFiles struct{ source, readme, icon []byte }
+type templateFiles struct {
+	source, readme, icon []byte
+	paths                map[string]bool
+}
 
 // Read takes one commit and one archive, so all templates in a pass share a revision.
 func (m *MonoSource) Read(ctx context.Context) (string, time.Time, map[string]templateFiles, error) {
@@ -110,6 +114,16 @@ func (m *MonoSource) Read(ctx context.Context) (string, time.Time, map[string]te
 		if !templateDir.MatchString(parts[1]) {
 			return "", time.Time{}, nil, fmt.Errorf("invalid template directory: %s", parts[1])
 		}
+		if hdr.Size < 0 || hdr.Size > 64<<20-total {
+			return "", time.Time{}, nil, fmt.Errorf("invalid archive file size: %s", hdr.Name)
+		}
+		total += hdr.Size
+		f := files[parts[1]]
+		if f.paths == nil {
+			f.paths = map[string]bool{}
+		}
+		f.paths[strings.Join(parts[2:], "/")] = true
+		files[parts[1]] = f
 		if len(parts) != 3 {
 			continue
 		}
@@ -124,7 +138,7 @@ func (m *MonoSource) Read(ctx context.Context) (string, time.Time, map[string]te
 		default:
 			continue
 		}
-		if hdr.Size < 0 || hdr.Size > limit || total+hdr.Size > 64<<20 {
+		if hdr.Size > limit {
 			return "", time.Time{}, nil, fmt.Errorf("invalid archive file size: %s", hdr.Name)
 		}
 		b, err := io.ReadAll(io.LimitReader(tr, limit+1))
@@ -134,8 +148,6 @@ func (m *MonoSource) Read(ctx context.Context) (string, time.Time, map[string]te
 		if int64(len(b)) != hdr.Size {
 			return "", time.Time{}, nil, fmt.Errorf("incomplete archive file: %s", hdr.Name)
 		}
-		total += hdr.Size
-		f := files[parts[1]]
 		switch parts[2] {
 		case TemplateFile:
 			f.source = b
@@ -174,6 +186,9 @@ func (s *MonoSyncer) Run(ctx context.Context) (Report, error) {
 		if !parsed.OK || parsed.Manifest.Name == "" {
 			return rep, fmt.Errorf("%s has an invalid template.yaml: %v", slug, parsed.Diagnostics)
 		}
+		if err := checkBuildFiles(parsed.Manifest, slug, f.paths); err != nil {
+			return rep, err
+		}
 		clean, code, _ := checkIcon(f.icon)
 		if code != "" {
 			return rep, fmt.Errorf("%s: %s", slug, code)
@@ -193,6 +208,26 @@ func (s *MonoSyncer) Run(ctx context.Context) (Report, error) {
 	}
 
 	return rep, nil
+}
+
+func checkBuildFiles(m *template.Normalized, slug string, paths map[string]bool) error {
+	for _, app := range m.Apps {
+		src := app.Source
+		if src.Repo != "https://github.com/"+templatesRepo {
+			continue
+		}
+		if src.Ref == nil || *src.Ref != "main:"+slug {
+			return fmt.Errorf("%s: monorepo source must use ref main:%s", slug, slug)
+		}
+		dockerfile := "Dockerfile"
+		if src.Dockerfile != nil {
+			dockerfile = *src.Dockerfile
+		}
+		if !filepath.IsLocal(dockerfile) || !paths[dockerfile] {
+			return fmt.Errorf("%s: missing Dockerfile %s", slug, dockerfile)
+		}
+	}
+	return nil
 }
 
 // Negative IDs cannot collide with GitHub repository IDs already stored in the catalog.

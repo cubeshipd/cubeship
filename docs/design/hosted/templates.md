@@ -1,6 +1,6 @@
 # Templates
 
-`cubeshipd/cubeship-templates` is the only source of public templates. One directory is one template, named with just the slug (for example, `umami`), with `template.yaml`, `README.md` and `icon.png`. The directory is its stable API identity; top-level `name` in the YAML is its display name. `version: 1` identifies the YAML format, not a release. Changes to an installed app are made on its instance; template updates are not offered.
+`cubeshipd/cubeship-templates` is the only source of public templates. One directory is one template, named with just the slug (for example, `umami`), with `template.yaml`, `README.md` and `icon.png`. A source-built template also keeps its Dockerfiles and build files in that directory. The directory is its stable API identity; top-level `name` in the YAML is its display name. `version: 1` identifies the YAML format, not a release. Changes to an installed app are made on its instance; template updates are not offered.
 
 ## Ownership
 
@@ -18,6 +18,8 @@ A template folder may declare apps, managed databases and stores, inputs, attach
 The API under `/api/v1` keeps the list, detail, manifest, tags and icon addresses. List and detail still use `/templates/{owner}/{repo}`; new rows use owner `cubeshipd` and the folder name as `repo`. The legacy `release` object in a response identifies the source commit for existing instance clients; it does not expose selectable versions. `/releases` and install-update routes are no longer offered. Tags and stars cannot be attributed per folder in a single GitHub repository, so the site and dashboard show search without those filters.
 
 An instance reads a template's detail from the catalog and fetches `template.yaml` directly from `raw.githubusercontent.com/cubeshipd/cubeship-templates/{commit}/{folder}/template.yaml`. It validates that file again before creating anything. Installs record the commit and normalized manifest. Existing installation rows and their run history are preserved, including historical update runs. The public HTTP, CLI, MCP and dashboard no longer offer an update or release choice. An uninstall still keeps databases and stores unless the caller explicitly asks to delete their data.
+
+Source-built apps use `repo: https://github.com/cubeshipd/cubeship-templates` and `ref: main:<slug>` in the file. The installer pins that ref to `<cataloged commit>:<slug>` before creating the app. BuildKit uses the slug as the Git context directory, so `COPY` paths and Dockerfile paths remain relative to the template's folder. The catalog and CI refuse a missing Dockerfile or a mismatched ref. Renovate updates image tags in YAML and Dockerfile base images; managed database versions are limited to those the product supports.
 
 The rollout order is: publish the templates repository; publish the daemon and site that understand its paths; then switch the catalog service to the monorepo reader. The catalog keeps its last valid snapshot if the new repository is unavailable. A daemon older than this migration reads template source from individual repositories, so it must be updated before it can install the new catalog entries. Installed resources do not depend on those repositories remaining available.
 

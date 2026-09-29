@@ -11,6 +11,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"cubeship/template"
 )
 
 func TestMonoSyncerReadsOneCommitAndRetainsLastGoodSnapshot(t *testing.T) {
@@ -19,7 +21,8 @@ func TestMonoSyncerReadsOneCommitAndRetainsLastGoodSnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	source = bytes.Replace(source, []byte("version: 1\n"), []byte("version: 1\nname: Umami\n"), 1)
-	files := map[string][]byte{"template.yaml": source, "README.md": []byte("# Umami\n\nUmami is analytics.\n"), "icon.png": squarePNG(128)}
+	source = bytes.Replace(source, []byte("    image: ghcr.io/umami-software/umami\n    tag: postgresql-v2"), []byte("    repo: https://github.com/cubeshipd/cubeship-templates\n    ref: main:umami\n    build: dockerfile"), 1)
+	files := map[string][]byte{"template.yaml": source, "README.md": []byte("# Umami\n\nUmami is analytics.\n"), "icon.png": squarePNG(128), "Dockerfile": []byte("FROM scratch\n")}
 	var archive bytes.Buffer
 	gz := gzip.NewWriter(&archive)
 	tw := tar.NewWriter(gz)
@@ -68,5 +71,18 @@ func TestMonoSyncerReadsOneCommitAndRetainsLastGoodSnapshot(t *testing.T) {
 	}
 	if len(store.releases) != 1 {
 		t.Fatalf("same commit was indexed twice: %d", len(store.releases))
+	}
+}
+
+func TestMonorepoRequiresBuildContextInTemplateDirectory(t *testing.T) {
+	ref, dockerfile := "main:signoz", "collector/Dockerfile"
+	m := &template.Normalized{Apps: []template.NormalizedApp{{Source: template.NormalizedSource{
+		Type: "dockerfile", Repo: "https://github.com/cubeshipd/cubeship-templates", Ref: &ref, Dockerfile: &dockerfile,
+	}}}}
+	if err := checkBuildFiles(m, "signoz", map[string]bool{dockerfile: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkBuildFiles(m, "signoz", nil); err == nil {
+		t.Fatal("accepted a missing Dockerfile")
 	}
 }

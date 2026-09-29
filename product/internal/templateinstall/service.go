@@ -496,7 +496,23 @@ func (s *Service) readRelease(ctx context.Context, owner, repo, release string) 
 		}
 		return CatalogRelease{}, nil, &InvalidTemplateError{Diagnostics: refused}
 	}
+	pinMonorepoSources(result.Manifest, owner, repo, chosen.Commit)
 	return *chosen, result.Manifest, nil
+}
+
+// BuildKit uses "#commit:directory" to build only this template's context.
+// Pin the cataloged commit so later edits to main cannot change an install.
+func pinMonorepoSources(m *template.Normalized, owner, repo, commit string) {
+	if owner != "cubeshipd" {
+		return
+	}
+	for i := range m.Apps {
+		src := &m.Apps[i].Source
+		if src.Repo == "https://github.com/cubeshipd/cubeship-templates" && src.Ref != nil && *src.Ref == "main:"+repo {
+			ref := commit + ":" + repo
+			src.Ref = &ref
+		}
+	}
 }
 
 func (s *Service) prepare(ctx context.Context, caller *user.User, req Request) (*plan, error) {
