@@ -30,7 +30,7 @@ import (
 // something that will be stale next month. Following `latest` would
 // have meant a server that changes underneath somebody's data on a
 // redeploy, which is the one thing a store must not do.
-const Image = "minio/minio"
+const Image = "quay.io/minio/minio"
 
 // Versions are the releases this Cubeship offers, newest first. The
 // first is what a store created without naming one runs.
