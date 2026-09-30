@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
-import { MinIOIcon } from "@/components/icons";
 import { NewObjectStoreDialog } from "@/components/new-object-store-dialog";
 import { ResourceCard, ResourceGrid } from "@/components/resource-grid";
 import { StatusBadge } from "@/components/status-badge";
@@ -51,7 +50,7 @@ export default function StoragePage() {
           <ResourceCard
             href={`/storage/${s.name}`}
             icon={
-              s.provider === "minio" ? MinIOIcon : (PROVIDER_ICONS[s.provider] ?? HardDriveIcon)
+              s.kind === "managed" ? HardDriveIcon : (PROVIDER_ICONS[s.provider] ?? HardDriveIcon)
             }
             name={s.name}
             // The kind is the one fact that changes what deleting it

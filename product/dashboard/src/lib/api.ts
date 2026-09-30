@@ -1178,7 +1178,7 @@ export type Firewall = {
 
 // --- object storage ---
 
-// Where a store is. "managed" is a MinIO this instance runs; "external"
+// Where a store is. "managed" is a SeaweedFS this instance runs; "external"
 // is an endpoint somewhere else it holds keys for. The difference shows
 // up in exactly one place that matters — deleting the first removes the
 // data, deleting the second forgets an address.

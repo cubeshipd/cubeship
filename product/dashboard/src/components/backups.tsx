@@ -812,7 +812,7 @@ export function Schedule({
 
               {/* **The destinations are S3, and the list says which of
                   them is actually somewhere else.** A managed store is
-                  a MinIO container this instance runs, with its objects
+                  a SeaweedFS container this instance runs, with its objects
                   on this same disk — so it is grouped with the local
                   disk by its icon rather than with the endpoints
                   elsewhere, and the hint names the provider a linked
@@ -864,7 +864,7 @@ export function Schedule({
               )}
 
               {/* **The same warning for two destinations, because they
-                  are the same disk.** A managed store is a MinIO this
+                  are the same disk.** A managed store is a SeaweedFS this
                   instance runs, with its objects in a bind mount under
                   the data directory — so picking one is not sending the
                   dumps anywhere, and it used to read as though it were.
@@ -878,10 +878,10 @@ export function Schedule({
               )}
               {chosen?.kind === "managed" && (
                 <Notice tone="warning">
-                  <strong>{chosen.name} runs on this machine.</strong> It is a MinIO this instance
-                  started, and its objects sit on the same disk as the database — so these dumps go
-                  no further than a local one does. Link an S3 bucket somewhere else to have a
-                  backup that survives the box.
+                  <strong>{chosen.name} runs on this machine.</strong> It is a SeaweedFS this
+                  instance started, and its objects sit on the same disk as the database — so these
+                  dumps go no further than a local one does. Link an S3 bucket somewhere else to
+                  have a backup that survives the box.
                 </Notice>
               )}
             </div>

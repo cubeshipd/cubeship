@@ -10,7 +10,7 @@ description: The vocabulary — instance, project, environment, app, database, s
 | **Environment** | A stage inside a project: `production`, which every project has and cannot lose, and any you add — `staging`, `preview`. Holds apps and its own variables. |
 | **App** | One deployable service, named `project/environment/app`. Has a source, names on the internet, an internal address, copies on machines. |
 | **Database** | A Postgres, MySQL, MariaDB, Redis or MongoDB the instance runs. Belongs to the instance and is *attached* to apps in any project. |
-| **Object store** | A MinIO the instance runs, or an S3 bucket elsewhere it holds keys to. Attached to apps the same way. |
+| **Object store** | A SeaweedFS the instance runs, or an S3 bucket elsewhere it holds keys to. Attached to apps the same way. |
 | **Server** | A machine in the cluster: the control plane, or a worker that dials it. |
 | **Registry** | The instance's own, where a push deploys; or one elsewhere it pulls from. |
 | **Credential** | A secret the instance holds — an AWS key, a Cloudflare token — named by whatever uses it. |

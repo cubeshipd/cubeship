@@ -51,7 +51,7 @@ import { message } from "@/lib/errors";
 // place you go into rather than something you read past on the way
 // somewhere: the buckets are a file browser, the attached apps are a
 // table with its own dialog, and a managed store's log is the whole of
-// what MinIO has printed. Stacked they made every visit a scroll
+// what SeaweedFS has printed. Stacked they made every visit a scroll
 // through the other three.
 //
 // A linked store gets no Logs tab at all, rather than a dead one. There
@@ -119,7 +119,7 @@ function Detail({ name }: { name: string }) {
       </RailPortal>
       <ErrorAlert error={error} />
       {!store && <LoadingList rows={5} />}
-      {/* Why it did not come up is the tail of what MinIO printed, and
+      {/* Why it did not come up is the tail of what SeaweedFS printed, and
           it appears nowhere else — the container it came from has been
           removed. */}
       {store?.status === "failed" && store.error && (

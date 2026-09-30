@@ -6,6 +6,26 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.11.4 — 2026-09-30
+
+Align the dashboard and documentation with SeaweedFS managed object storage.
+
+### Managed object storage UI
+
+The dashboard now identifies managed object storage as SeaweedFS instead of
+MinIO, including the creation dialog, storage cards, backup destinations,
+settings, logs, mock data, and the public documentation.
+
+Managed storage cards use a neutral storage icon rather than the discontinued
+MinIO brand mark. Managed S3 examples and mock endpoints now use port 8333,
+matching the SeaweedFS service.
+
+### Upgrade notes
+
+No application changes are required. Existing managed stores continue to use
+their existing API shape and credentials. Stores created or displayed after
+upgrading use the SeaweedFS name and endpoint consistently.
+
 ## 0.11.3 — 2026-09-30
 
 Replace the discontinued MinIO image with SeaweedFS for managed object storage.

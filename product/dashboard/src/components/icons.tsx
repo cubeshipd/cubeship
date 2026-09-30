@@ -12,7 +12,6 @@ export {
   SiDigitalocean as DigitalOceanIcon,
   SiGithub as GitHubIcon,
   SiMariadb as MariaDBIcon,
-  SiMinio as MinIOIcon,
   SiMongodb as MongoDBIcon,
   SiMysql as MySQLIcon,
   SiPostgresql as PostgreSQLIcon,

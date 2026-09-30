@@ -100,7 +100,7 @@ export function Features() {
           <article className="platform-storage">
             <HardDrive size={23} className="feature-icon" />
             <h3>Room for everything.</h3>
-            <p>Run MinIO on your server or connect the S3 storage you already use.</p>
+            <p>Run SeaweedFS on your server or connect the S3 storage you already use.</p>
             <Link href="/docs/object-storage" className="inline-link">
               Explore object storage <ArrowUpRight size={16} />
             </Link>
