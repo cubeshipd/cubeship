@@ -245,6 +245,12 @@ func TestAManagedStoreAnswersAtItsOwnContainerName(t *testing.T) {
 // A version is permanent once a store holds data, so offering one is a
 // promise to go on running it. An empty list would make Create pick
 // nothing and every store fail to start.
+func TestManagedImageUsesTheOfficialQuayRegistry(t *testing.T) {
+	if got, want := ImageFor(DefaultVersion()), "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"; got != want {
+		t.Errorf("managed image = %q, want %q", got, want)
+	}
+}
+
 func TestTheDefaultVersionIsOneThisReleaseOffers(t *testing.T) {
 	if len(Versions()) == 0 {
 		t.Fatal("no MinIO version is offered, so no store can be created")
