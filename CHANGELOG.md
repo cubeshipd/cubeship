@@ -6,6 +6,21 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.11.2 — 2026-09-30
+
+Fix managed MinIO storage provisioning with the official image registry.
+
+### Managed object storage
+
+Managed MinIO stores now use the official Quay registry for the pinned
+MinIO image. This fixes provisioning failures on new instances where the
+same image tag is no longer available from Docker Hub.
+
+### Upgrade notes
+
+Update normally from the dashboard or CLI. Existing managed stores are
+unchanged; newly provisioned or retried stores use the corrected image.
+
 ## 0.11.1 — 2026-09-29
 
 Show public GHCR image tags in newest-first order.
