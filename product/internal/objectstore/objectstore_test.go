@@ -1,7 +1,9 @@
 package objectstore
 
 import (
+	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -214,10 +216,10 @@ func TestOnlyTheProvidersWhoseLoginsAreScopedAskForABucket(t *testing.T) {
 // there is no column that can drift from it.
 func TestAManagedStoreAnswersAtItsOwnContainerName(t *testing.T) {
 	store := &Store{Kind: KindManaged, Slug: "uploads"}
-	if got, want := store.EndpointHost(), "cubeship-s3-uploads:9000"; got != want {
+	if got, want := store.EndpointHost(), "cubeship-s3-uploads:8333"; got != want {
 		t.Errorf("EndpointHost() = %q, want %q", got, want)
 	}
-	if got, want := store.URL(), "http://cubeship-s3-uploads:9000"; got != want {
+	if got, want := store.URL(), "http://cubeship-s3-uploads:8333"; got != want {
 		t.Errorf("URL() = %q, want %q", got, want)
 	}
 	// No domain and no published port is no external address. Guessing
@@ -245,15 +247,32 @@ func TestAManagedStoreAnswersAtItsOwnContainerName(t *testing.T) {
 // A version is permanent once a store holds data, so offering one is a
 // promise to go on running it. An empty list would make Create pick
 // nothing and every store fail to start.
-func TestManagedImageUsesTheOfficialQuayRegistry(t *testing.T) {
-	if got, want := ImageFor(DefaultVersion()), "quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z"; got != want {
+func TestManagedImageUsesPinnedSeaweedFSRelease(t *testing.T) {
+	if got, want := ImageFor(DefaultVersion()), "chrislusf/seaweedfs:4.48"; got != want {
 		t.Errorf("managed image = %q, want %q", got, want)
+	}
+}
+
+func TestManagedContainerUsesSeaweedFSS3Configuration(t *testing.T) {
+	p := NewProvisioner(nil, nil, "")
+	opts := p.containerOpts(context.Background(), &Store{
+		Slug: "files", Version: DefaultVersion(), AccessKey: "admin", SecretKey: "secret",
+		ExposedPort: 16000,
+	})
+	if got, want := opts.Cmd, []string{"mini", "-dir=/data"}; !slices.Equal(got, want) {
+		t.Errorf("managed command = %v, want %v", got, want)
+	}
+	if got, want := opts.Env, []string{"AWS_ACCESS_KEY_ID=admin", "AWS_SECRET_ACCESS_KEY=secret"}; !slices.Equal(got, want) {
+		t.Errorf("managed environment = %v, want %v", got, want)
+	}
+	if got, want := opts.Ports, []string{"16000:8333"}; !slices.Equal(got, want) {
+		t.Errorf("managed ports = %v, want %v", got, want)
 	}
 }
 
 func TestTheDefaultVersionIsOneThisReleaseOffers(t *testing.T) {
 	if len(Versions()) == 0 {
-		t.Fatal("no MinIO version is offered, so no store can be created")
+		t.Fatal("no SeaweedFS version is offered, so no store can be created")
 	}
 	if !KnowsVersion(DefaultVersion()) {
 		t.Errorf("the default version %q is not in the offered list", DefaultVersion())

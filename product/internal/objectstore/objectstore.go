@@ -2,7 +2,7 @@
 // the buckets it holds, the files inside them, and the two ways a store
 // gets here.
 //
-// **Two ways, one module.** A store is either a MinIO this instance
+// **Two ways, one module.** A store is either a SeaweedFS this instance
 // runs — a container beside the databases, on the same network, with
 // its data in the same directory — or an endpoint somewhere else that
 // this instance merely holds the keys to. They are the same thing from
@@ -41,7 +41,7 @@ import (
 type Kind string
 
 const (
-	// KindManaged is a MinIO container this instance runs.
+	// KindManaged is a SeaweedFS container this instance runs.
 	KindManaged Kind = "managed"
 	// KindExternal is an S3 endpoint somewhere else — AWS, R2, Spaces,
 	// a MinIO on another machine.
@@ -61,9 +61,10 @@ func (k Kind) Valid() bool { return k == KindManaged || k == KindExternal }
 type Provider string
 
 const (
-	// ProviderMinIO is what this instance runs. Only a managed store
-	// has it, and it is not offered when linking one — a MinIO
-	// elsewhere is reached as a generic endpoint, because from here
+	// ProviderMinIO is the legacy provider name for what this instance
+	// runs. Only a managed store has it, and it is not offered when
+	// linking one — a compatible store elsewhere is reached as a generic
+	// endpoint, because from here
 	// that is all it is.
 	ProviderMinIO Provider = "minio"
 
@@ -159,7 +160,7 @@ func (p Provider) ScopesByBucket() bool {
 func (p Provider) Label() string {
 	switch p {
 	case ProviderMinIO:
-		return "MinIO"
+		return "SeaweedFS"
 	case ProviderAWS:
 		return "Amazon S3"
 	case ProviderCloudflare:
@@ -278,11 +279,10 @@ const containerPrefix = "cubeship-s3-"
 // app on this instance connects to.
 func ContainerName(slug string) string { return containerPrefix + slug }
 
-// Port is what MinIO listens on inside its container. The console's
-// 9001 is not published or run: this dashboard is the console.
-const Port = 9000
+// Port is what SeaweedFS's S3 endpoint listens on inside its container.
+const Port = 8333
 
-// DefaultRegion is what a managed store signs for. MinIO accepts any
+// DefaultRegion is what a managed store signs for. SeaweedFS accepts any
 // region and this is the one every S3 client defaults to, so a tool
 // pointed at a managed store with no configuration at all still works.
 const DefaultRegion = "us-east-1"
@@ -312,7 +312,7 @@ var (
 
 	ErrUnknownKind     = errors.New(`kind must be "managed" or "external"`)
 	ErrUnknownProvider = errors.New("unknown object storage provider")
-	ErrUnknownVersion  = errors.New("unknown MinIO version for this release")
+	ErrUnknownVersion  = errors.New("unknown SeaweedFS version for this release")
 
 	// ErrTwoLogins is a request naming a stored account *and* typing
 	// one. Both is not a request with an obvious reading, and guessing

@@ -6,6 +6,26 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.11.3 — 2026-09-30
+
+Replace the discontinued MinIO image with SeaweedFS for managed object storage.
+
+### Managed object storage
+
+Managed object stores now run SeaweedFS 4.48 in its single-node S3 mode.
+This replaces the discontinued MinIO Community Edition image and keeps the
+existing S3 endpoint, credentials, bucket, and application integration
+model unchanged.
+
+Provisioning now fails with the image-pull error itself instead of creating
+a container that cannot start with a misleading missing-image error.
+
+### Upgrade notes
+
+Update normally from the dashboard or CLI. Existing managed stores are not
+automatically migrated: plan and verify a data migration before replacing
+one, and do not remove an existing store without a confirmed backup.
+
 ## 0.11.2 — 2026-09-30
 
 Fix managed MinIO storage provisioning with the official image registry.

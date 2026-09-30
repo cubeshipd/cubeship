@@ -5,7 +5,7 @@ in [CLAUDE.md](../../../AGENTS.md).
 
 `internal/objectstore` is the buckets this instance can reach, and the
 files inside them. There are two ways one gets here and **one module**:
-a MinIO this instance runs, or an S3 endpoint somewhere else that it
+a SeaweedFS this instance runs, or an S3 endpoint somewhere else that it
 holds the keys to. `Kind` is the only branch, and everything above the
 connection — browsing, uploading, who may look — is one code path.
 
@@ -17,7 +17,7 @@ which columns are filled in.
 **Why both exist** is the honest part. The convention for object storage
 is backups, and a backup of this machine kept on this machine is not a
 backup — so the common case is linking a bucket somewhere else. It is
-not the only case: a MinIO on the box is where an app's uploads go
+not the only case: a SeaweedFS on the box is where an app's uploads go
 without an account anywhere, where a database dump lands before
 something ships it off, and where you develop against S3 without paying
 for S3. Which of those somebody is doing is not this module's to decide.
@@ -179,9 +179,10 @@ same shape as a datastore, including that the slug is the container's
 name and therefore permanent, and that a version is permanent because a
 data directory belongs to the server that wrote it.
 
-The image is pinned, and the pin is not a chore: MinIO's community image
-stopped moving, so the tag is where the free server ends rather than a
-snapshot of something stale next month. One directory, which is
+The image is pinned, and the pin is not a chore: SeaweedFS publishes
+versioned images for its open-source S3 server, so the tag is a deliberate
+server version rather than something that changes underneath a store.
+One directory, which is
 single-node single-drive mode — erasure coding wants several drives and
 there is one disk on this machine.
 
@@ -191,7 +192,7 @@ table, and an overlap would surface as a container that will not bind,
 minutes later, for no reason visible on either screen.
 `TestTheAutomaticPortRangeCannotCollideWithADatabase` pins that.
 
-There is **no Traefik router and no domain**, though MinIO speaks HTTP
+There is **no Traefik router and no domain**, though SeaweedFS speaks HTTP
 and one would work. A hostname has to be unique across every app on the
 instance, and that is a decision `app_domains` owns; borrowing it here
 would mean two modules writing router labels for names neither can see.
