@@ -24,13 +24,12 @@ import (
 
 // Image is the server a managed store runs.
 //
-// **Pinned, and the pin is not a chore here.** The community image
-// stopped moving — MinIO's development went to a product this is not —
-// so this tag is where the free server ends rather than a snapshot of
-// something that will be stale next month. Following `latest` would
-// have meant a server that changes underneath somebody's data on a
-// redeploy, which is the one thing a store must not do.
-const Image = "quay.io/minio/minio"
+// **Pinned, and the pin is not a chore here.** SeaweedFS publishes
+// versioned multi-architecture images for its open-source S3 server.
+// Following `latest` would mean a server that changes underneath
+// somebody's data on a redeploy, which is the one thing a store must not
+// do.
+const Image = "chrislusf/seaweedfs"
 
 // Versions are the releases this Cubeship offers, newest first. The
 // first is what a store created without naming one runs.
@@ -38,7 +37,7 @@ const Image = "quay.io/minio/minio"
 // A version is permanent once a store holds data, for the reason a
 // datastore's is: the directory belongs to the server that wrote it.
 func Versions() []string {
-	return []string{"RELEASE.2025-09-07T16-13-09Z"}
+	return []string{"4.48"}
 }
 
 // DefaultVersion is what a store created without naming one runs.
@@ -57,15 +56,15 @@ func KnowsVersion(v string) bool {
 // ImageFor is the full reference for a version.
 func ImageFor(version string) string { return Image + ":" + version }
 
-// DataPath is where MinIO keeps its objects inside the container, and
+// DataPath is where SeaweedFS keeps its objects inside the container, and
 // so what the host directory is mounted over.
 //
 // The mount point itself, not a directory below it. That is the same
 // trap the database engines set: an image that chowns its data
 // directory and then drops privileges cannot traverse a mount above it
-// that is still root-owned. MinIO runs as root and does not chown, so
-// this works either way — and pointing it deeper would be inviting the
-// problem back for no gain.
+// that is still root-owned. Keeping the mount at the server's data root
+// avoids coupling it to an image-internal subdirectory and keeps the
+// host layout stable across server upgrades.
 const DataPath = "/data"
 
 // DockerAPI is the subset of dockerx.Client a store's container needs.
@@ -152,15 +151,15 @@ func (p *Provisioner) containerOpts(ctx context.Context, s *Store) dockerx.Conta
 	opts := dockerx.ContainerOpts{
 		Name:  ContainerName(s.Slug),
 		Image: ImageFor(s.Version),
-		// One directory, which is MinIO's single-node single-drive
-		// mode. Erasure coding wants several drives and there is one
-		// disk on this machine — spreading a bucket across four
-		// directories on it would buy the ceremony of redundancy and
-		// none of the redundancy.
-		Cmd: []string{"server", DataPath},
+		// `weed mini` is SeaweedFS's single-node S3 mode. A managed
+		// store has one disk on this machine, so a distributed layout
+		// would add ceremony without adding redundancy. There is no
+		// reason to spread one store across several directories.
+		//
+		Cmd: []string{"mini", "-dir=" + DataPath},
 		Env: []string{
-			"MINIO_ROOT_USER=" + s.AccessKey,
-			"MINIO_ROOT_PASSWORD=" + s.SecretKey,
+			"AWS_ACCESS_KEY_ID=" + s.AccessKey,
+			"AWS_SECRET_ACCESS_KEY=" + s.SecretKey,
 		},
 		Network:      Network,
 		AlsoNetworks: append([]string{dockerx.ManagementNetwork}, p.mesh(ctx)...),
@@ -249,6 +248,10 @@ func (p *Provisioner) provision(ctx context.Context, s *Store) error {
 	mu.Lock()
 	defer mu.Unlock()
 
+	if !KnowsVersion(s.Version) {
+		return fmt.Errorf("managed store version %q is no longer supported; migrate its data before reprovisioning", s.Version)
+	}
+
 	opts := p.containerOpts(ctx, s)
 
 	if dir := p.DataDirFor(s); dir != "" {
@@ -269,7 +272,7 @@ func (p *Provisioner) provision(ctx context.Context, s *Store) error {
 	}
 
 	if err := p.docker.PullImage(ctx, opts.Image, nil); err != nil {
-		log.Printf("object store %s: pull %s failed, trying the local image (%v)", s.Slug, opts.Image, err)
+		return fmt.Errorf("pull image %s: %w", opts.Image, err)
 	}
 
 	id, err := p.docker.CreateContainer(ctx, opts)

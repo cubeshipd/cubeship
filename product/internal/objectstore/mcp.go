@@ -46,7 +46,7 @@ func NewTools(svc *Service, caller *user.User) *Tools {
 func (t *Tools) Register(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "list_object_stores",
-		Description: "List the object storage this instance can reach: the MinIO servers it runs and the S3 endpoints it holds keys for. Each carries the endpoint an app on this instance connects to, so this is how you find out where an app should write. Keys are never reported.",
+		Description: "List the object storage this instance can reach: the SeaweedFS servers it runs and the S3 endpoints it holds keys for. Each carries the endpoint an app on this instance connects to, so this is how you find out where an app should write. Keys are never reported.",
 	}, t.list)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "get_object_store",

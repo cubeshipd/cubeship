@@ -43,7 +43,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 	return openapi.Spec{
 		Tags: []openapi.Tag{{
 			Name:        "Object storage",
-			Description: "Buckets and the files in them, from two places at once: a MinIO this instance runs, and an S3 endpoint somewhere else it holds the keys to. Both are the same resource here — an endpoint, a login and buckets inside it — and every call below works the same way on either.\n\nThe convention for object storage is backups, and a backup of this machine kept on this machine is not one, which is why linking somewhere else exists. Running one here is for the other half: an app's uploads, a dump on its way out, developing against S3 without paying for S3.",
+			Description: "Buckets and the files in them, from two places at once: a SeaweedFS this instance runs, and an S3 endpoint somewhere else it holds the keys to. Both are the same resource here — an endpoint, a login and buckets inside it — and every call below works the same way on either.\n\nThe convention for object storage is backups, and a backup of this machine kept on this machine is not one, which is why linking somewhere else exists. Running one here is for the other half: an app's uploads, a dump on its way out, developing against S3 without paying for S3.",
 		}},
 		Schemas: withMetrics(map[string]*openapi.Schema{
 			"ObjectStoreLimits": openapi.Object(map[string]*openapi.Schema{
@@ -53,7 +53,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			"ObjectStore": openapi.Object(map[string]*openapi.Schema{
 				"name":              openapi.String("Unique across the instance. For a managed store it is the container's own name, which is the host apps connect to, so it is permanent either way."),
 				"description":       openapi.String("What this storage is for. With nothing above a store to say where it belongs, this is the only place that can."),
-				"kind":              {Type: "string", Enum: []string{"managed", "external"}, Description: `"managed" is a MinIO this instance runs; "external" is an endpoint somewhere else that it holds keys for. Deleting the first removes the data; deleting the second touches nothing anywhere else.`},
+				"kind":              {Type: "string", Enum: []string{"managed", "external"}, Description: `"managed" is a SeaweedFS this instance runs; "external" is an endpoint somewhere else that it holds keys for. Deleting the first removes the data; deleting the second touches nothing anywhere else.`},
 				"provider":          {Type: "string", Enum: []string{"minio", "aws", "cloudflare", "digitalocean", "generic"}, Description: "Which S3 this is. It decides how the endpoint is spelled and whether the bucket goes in the hostname or the path."},
 				"provider_label":    openapi.String("The provider's name as a person writes it, so every surface spells it the same way."),
 				"endpoint":          openapi.String("Where this answers, as a client dials it. For a managed store it is its own container's name on the shared Docker network — which is exactly why it is reachable from an app on this instance and from nowhere else."),
@@ -61,7 +61,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"path_style":        openapi.Bool("Whether the bucket goes in the path rather than in the hostname. Half the S3 clients need telling and the other half guess wrong, so it is reported."),
 				"bucket":            openapi.String("The one bucket this store is pinned to, for a login that reaches exactly one and cannot list them. Absent for a store that lists its own, which is the normal case."),
 				"credential_id":     openapi.Integer("The stored account an external store authenticates as. Absent on a managed one, whose keys are its own."),
-				"version":           openapi.String("The MinIO release a managed store runs. Permanent: a data directory belongs to the server that wrote it."),
+				"version":           openapi.String("The SeaweedFS release a managed store runs. Permanent: a data directory belongs to the server that wrote it."),
 				"exposed_port":      openapi.Integer("The host port a managed store also answers on from outside this instance. Absent when it does not, which is the default." + exposeWarning),
 				"limits":            openapi.Ref("ObjectStoreLimits"),
 				"external_endpoint": openapi.String("Where something off this host reaches it. Present only while it is exposed and the instance has a domain to be reached at."),
@@ -92,7 +92,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 
 			"ObjectStoreProviders": openapi.Object(map[string]*openapi.Schema{
 				"providers": openapi.Array(openapi.Ref("ObjectStoreProvider")),
-				"versions":  openapi.Array(openapi.String("A MinIO release this Cubeship offers, newest first.")),
+				"versions":  openapi.Array(openapi.String("A SeaweedFS release this Cubeship offers, newest first.")),
 			}, "providers", "versions"),
 
 			"ObjectStoreProvider": openapi.Object(map[string]*openapi.Schema{
@@ -142,15 +142,15 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				},
 				"post": {
 					OperationID: "createObjectStore",
-					Summary:     "Run a MinIO here, or link one elsewhere",
-					Description: "One endpoint for both, because a store is one resource: what comes back is the same row and every call after this treats the two alike. `kind` decides which half of the body is read.\n\n**managed** provisions a MinIO on this instance. The row is written and the container started detached, so this returns while the image is still being pulled: the store comes back in `provisioning`, and how it went lands on the same row. The keys are generated when the request does not carry them, and are returned only from the credentials endpoint.\n\n**external** records an endpoint somewhere else. Nothing is checked against it here — the credential may be scoped to one bucket, and the endpoint may be behind a network this daemon reaches later — so whether the login works is answered the first time somebody opens it, where the provider's own words can be shown.\n\nRequires the admin role.",
+					Summary:     "Run SeaweedFS here, or link one elsewhere",
+					Description: "One endpoint for both, because a store is one resource: what comes back is the same row and every call after this treats the two alike. `kind` decides which half of the body is read.\n\n**managed** provisions SeaweedFS on this instance. The row is written and the container started detached, so this returns while the image is still being pulled: the store comes back in `provisioning`, and how it went lands on the same row. The keys are generated when the request does not carry them, and are returned only from the credentials endpoint.\n\n**external** records an endpoint somewhere else. Nothing is checked against it here — the credential may be scoped to one bucket, and the endpoint may be behind a network this daemon reaches later — so whether the login works is answered the first time somebody opens it, where the provider's own words can be shown.\n\nRequires the admin role.",
 					Tags:        []string{"Object storage"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"kind":        {Type: "string", Enum: []string{"managed", "external"}, Description: "Which of the two this is."},
 						"name":        openapi.String("Lowercase letters, digits and dashes, unique across the instance. For a managed store it becomes the container's name, so it is permanent. `providers` is refused — it is where this API lists what it can link."),
 						"description": openapi.String("What this storage is for. Optional."),
 
-						"version":    openapi.String("managed: a MinIO release this Cubeship offers. Defaults to the newest, and is permanent."),
+						"version":    openapi.String("managed: a SeaweedFS release this Cubeship offers. Defaults to the newest, and is permanent."),
 						"access_key": openapi.String("managed: the root access key. Generated when omitted, which is the normal answer. At least 3 characters, or the server refuses to start."),
 						"secret_key": openapi.String("managed: the root secret. Generated when omitted. At least 8 characters."),
 						"expose":     openapi.Integer("managed: publish on a host port at creation — 0 picks one from 16000-16999, or name one. Omit for internal-only, which is the normal answer." + exposeWarning),
@@ -180,7 +180,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"get": {
 					OperationID: "listObjectStoreProviders",
 					Summary:     "List what can be linked and what can be run",
-					Description: "The providers this release knows how to link, what each asks for beyond the login, and the MinIO releases it can run. Read it rather than hard-coding a list: a version is permanent once a store holds data, so the ones offered are pinned by the release.",
+					Description: "The providers this release knows how to link, what each asks for beyond the login, and the SeaweedFS releases it can run. Read it rather than hard-coding a list: a version is permanent once a store holds data, so the ones offered are pinned by the release.",
 					Tags:        []string{"Object storage"},
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The providers and versions.", openapi.Ref("ObjectStoreProviders")),
