@@ -627,9 +627,9 @@ export const db = {
       name: "uploads",
       kind: "managed",
       provider: "minio",
-      provider_label: "MinIO",
+      provider_label: "SeaweedFS",
       status: "running",
-      endpoint: "cubeship-s3-uploads:9000",
+      endpoint: "cubeship-s3-uploads:8333",
       region: "us-east-1",
       path_style: true,
       scopes_by_bucket: false,
@@ -962,15 +962,15 @@ export const db = {
         allowed: true,
         allowed_by: "rule",
       },
-      // Kept open the other way: no rule admits 9000, only the stanza's
+      // Kept open the other way: no rule admits 8333, only the stanza's
       // conntrack line for this bucket's own published port. Deliberately
       // a different inside port than the rule above, so the two rows
       // cannot be read as the same case reasoned about twice.
       {
         port: 16000,
-        inside: 9000,
+        inside: 8333,
         protocol: "tcp",
-        container: "cubeship-store-minio",
+        container: "cubeship-store-seaweedfs",
         allowed: true,
         allowed_by: "exposed",
       },

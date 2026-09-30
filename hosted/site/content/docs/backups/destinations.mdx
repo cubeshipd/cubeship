@@ -1,6 +1,6 @@
 ---
 title: Destinations
-description: A bucket off the machine, or this disk. What "off the machine" means, and why the instance's own MinIO is not it.
+description: A bucket off the machine, or this disk. What "off the machine" means, and why the instance's own SeaweedFS is not it.
 ---
 
 A dump goes to one of two places, and every backup remembers which.
@@ -29,7 +29,7 @@ machine*.
 
 ## A managed store is this machine
 
-An object store the instance runs is a MinIO container with its objects
+An object store the instance runs is a SeaweedFS container with its objects
 under the same data directory — the same disk as the database and as a
 local dump. Choosing it as a destination is choosing this machine, and
 the schedule form says so with the same warning. Cubeship records

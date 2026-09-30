@@ -1,19 +1,18 @@
 ---
 title: A managed store
-description: A MinIO the instance runs — a container beside the databases, its objects on this disk, its keys minted here.
+description: SeaweedFS the instance runs — a container beside the databases, its objects on this disk, its keys minted here.
 ---
 
-**Object storage → New store** with the kind *managed* creates a MinIO
+**Object storage → New store** with the kind *managed* creates a SeaweedFS
 container named `cubeship-s3-<name>`, with its objects in a host
 directory under `<data dir>/objectstores/<id>`. The same shape as a
 database: the name is the container's and permanent, the version is
 permanent because a data directory belongs to the server that wrote it,
 and the data is outside the container so a recreate does not touch it.
 
-The image is pinned to the last community MinIO release — the tag is
-where the free server ends, not a snapshot that goes stale. One
-directory, single-node single-drive mode; erasure coding wants several
-drives and there is one disk on this machine.
+The image is pinned to SeaweedFS 4.48. One directory, single-node
+single-drive mode; erasure coding wants several drives and there is one
+disk on this machine.
 
 ## Keys
 
@@ -27,13 +26,13 @@ without anybody copying them.
 
 ## Reaching it
 
-From an app: the container name, `cubeship-s3-<name>`, on port 9000,
+From an app: the container name, `cubeship-s3-<name>`, on port 8333,
 which is what the attachment's `S3_ENDPOINT` is.
 
 From outside: **External access** in the settings publishes a host port
 from **16000–16999** — deliberately not the databases' 15000–15999, so
 the two can never collide. There is no proxy router and no domain in
-front of it, though MinIO speaks HTTP and one would work: a hostname is
+front of it, though SeaweedFS speaks HTTP and one would work: a hostname is
 a thing an app's domains own, and borrowing it here would be two
 modules writing routes for names neither can see. So an exposed store is
 a plain port with **no TLS**, and a [firewall rule](/docs/networking/firewall)

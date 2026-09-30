@@ -55,7 +55,7 @@ function Settings({ name }: { name: string }) {
   }, [path]);
   useEffect(reload, [reload]);
 
-  // A managed store is a MinIO this instance runs; a linked one is
+  // A managed store is a SeaweedFS this instance runs; a linked one is
   // somebody else's server. Which it is decides half this screen.
   const managed = store?.kind === "managed";
 

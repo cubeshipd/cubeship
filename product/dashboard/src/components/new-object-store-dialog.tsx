@@ -156,7 +156,7 @@ export function NewObjectStoreDialog({
               onChange={(v) => setKind(v as ObjectStoreKind)}
               choices={[
                 { value: "external", label: "Link a bucket somewhere else" },
-                { value: "managed", label: "Run MinIO on this machine" },
+                { value: "managed", label: "Run SeaweedFS on this machine" },
               ]}
             />
 
