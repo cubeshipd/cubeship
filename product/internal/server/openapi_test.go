@@ -211,6 +211,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"POST /apps/{project}/{env}/{name}/volumes",
 		"POST /apps/{project}/{env}/{name}/volumes/{volumeID}/backups",
 		"POST /backups/{id}/restore",
+		"POST /bitbucket",
 		"POST /credentials",
 		"POST /datastores",
 		"POST /datastores/{name}/attachments",
