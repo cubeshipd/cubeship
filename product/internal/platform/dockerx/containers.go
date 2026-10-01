@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"sort"
 	"strings"
 
@@ -564,6 +565,36 @@ func (c *Client) InspectContainerByName(ctx context.Context, name string) (Conta
 		out.Image = info.Config.Image
 	}
 	return out, nil
+}
+
+// ProbeHTTP checks readiness from the host against the container's address on
+// the application network. Docker's process state alone is not readiness.
+func (c *Client) ProbeHTTP(ctx context.Context, id, path string) error {
+	info, err := c.api.ContainerInspect(ctx, id)
+	if err != nil {
+		return err
+	}
+	if info.NetworkSettings == nil {
+		return fmt.Errorf("container has no network")
+	}
+	network := info.NetworkSettings.Networks[ApplicationNetwork]
+	if network == nil || network.IPAddress == "" {
+		return fmt.Errorf("container has no application-network address")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+network.IPAddress+":8080"+path, nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("health probe returned HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 func (c *Client) StartContainer(ctx context.Context, id string) error {

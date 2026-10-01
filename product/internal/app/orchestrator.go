@@ -40,6 +40,10 @@ type DockerAPI interface {
 	ExecStream(ctx context.Context, id string, cmd []string, in io.Reader, out io.Writer) (string, int, error)
 }
 
+type healthProber interface {
+	ProbeHTTP(context.Context, string, string) error
+}
+
 // Orchestrator runs deploys: it is the only thing in Cubeship that
 // creates or retires an app's container.
 type Orchestrator struct {
@@ -747,7 +751,7 @@ func (o *Orchestrator) swap(ctx context.Context, a *Scoped, replica Replica, ima
 		return fmt.Errorf("start container: %w", err)
 	}
 
-	if !o.waitHealthy(ctx, newID) {
+	if !o.waitHealthy(ctx, newID, a.HealthPath) {
 		o.removeContainer(ctx, newID, "abandoning a container that never became healthy")
 		return fmt.Errorf("health check timed out for container %s", newID)
 	}
@@ -845,7 +849,7 @@ func (o *Orchestrator) swapInPlace(ctx context.Context, a *Scoped, replica Repli
 		restore()
 		return fmt.Errorf("start container: %w", err)
 	}
-	if !o.waitHealthy(ctx, newID) {
+	if !o.waitHealthy(ctx, newID, a.HealthPath) {
 		o.removeContainer(ctx, newID, "abandoning a container that never became healthy")
 		restore()
 		return fmt.Errorf("health check timed out for container %s", newID)
@@ -975,7 +979,7 @@ func (o *Orchestrator) Paused(ctx context.Context, appID int64, fn func() error)
 //
 // TODO (follow-up): an actual HTTP probe against Port would be a stronger
 // signal than the container's process state.
-func (o *Orchestrator) waitHealthy(ctx context.Context, containerID string) bool {
+func (o *Orchestrator) waitHealthy(ctx context.Context, containerID, healthPath string) bool {
 	needed := o.HealthCheckSuccesses
 	if needed < 1 {
 		needed = 1
@@ -996,6 +1000,13 @@ func (o *Orchestrator) waitHealthy(ctx context.Context, containerID string) bool
 		if err != nil || !running {
 			consecutive = 0
 			continue
+		}
+		if healthPath != "" {
+			probe, ok := o.docker.(healthProber)
+			if !ok || probe.ProbeHTTP(ctx, containerID, healthPath) != nil {
+				consecutive = 0
+				continue
+			}
 		}
 		consecutive++
 		if consecutive >= needed {
