@@ -178,10 +178,13 @@ export function GitHubSource({
     hint: r.private ? "private" : undefined,
   }));
 
-  const branchChoices: Choice[] = (branches ?? []).map((b) => ({
-    value: b.name,
-    label: b.name,
-  }));
+  const branchChoices: Choice[] = [
+    { value: "", label: "Any branch (deploy on push)" },
+    ...(branches ?? []).map((b) => ({
+      value: b.name,
+      label: b.name,
+    })),
+  ];
 
   return (
     <div className="space-y-4">

@@ -1575,12 +1575,10 @@ func (s *Service) remoteLogs(ctx context.Context, r Replica, tail string) (io.Re
 // signature, and the fact that this instance only receives events for
 // the repositories its own installation has been given.
 //
-// An app with no ref of its own deploys on a push to any branch. That is
-// what "track the default branch" means without anybody having to name
-// it, and naming a ref is how you opt out — an app that named one is
-// not here, whatever was pushed.
+// An app with no ref of its own deploys on a push to any branch. A named
+// ref deploys when that branch is pushed.
 func (s *Service) DeployOnPush(ctx context.Context, fullName, branch string) (int, error) {
-	apps, err := s.Repo().BuildingFromRepository(ctx, fullName)
+	apps, err := s.Repo().BuildingFromRepository(ctx, fullName, branch)
 	if err != nil {
 		return 0, err
 	}

@@ -720,9 +720,7 @@ function SourceSection(props: SectionProps) {
                   gitRef={gitRef}
                   onRepo={(url, defaultBranch) => {
                     setRepo(url);
-                    // A repository's default branch is the right answer
-                    // until someone says otherwise, and choosing a new
-                    // repository makes the old branch meaningless.
+                    // Choosing a new repository makes the old branch meaningless.
                     setGitRef(defaultBranch);
                     touch();
                   }}

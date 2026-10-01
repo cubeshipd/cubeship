@@ -298,12 +298,8 @@ func push(t *testing.T, f *servertest.Fixture, installationID int64, fullName, r
 
 // A push is what makes a build happen without anybody asking for one.
 //
-// It asked to be told about `main` before this, and the app named
-// `main` was deployed by it. That was the bug: a ref is how deploying
-// on every push is opted out of, and an app pinned to a *tag* entered
-// the same push — then built the branch it was handed, because a tag is
-// never a branch. So the push reaches the app that named no ref, and
-// only that one.
+// A selected branch is the filter for push events; an empty ref follows
+// every branch.
 func TestAPushDeploysTheAppsBuiltFromIt(t *testing.T) {
 	f := configured(t)
 	connect(t, f, 42, "acme")
@@ -319,8 +315,8 @@ func TestAPushDeploysTheAppsBuiltFromIt(t *testing.T) {
 	if got := deployments(t, f, untracked); got != 1 {
 		t.Errorf("the app with no ref has %d deployments, want 1", got)
 	}
-	if got := deployments(t, f, pinnedToTheBranch); got != 0 {
-		t.Errorf("the app pinned to main has %d deployments, want 0", got)
+	if got := deployments(t, f, pinnedToTheBranch); got != 1 {
+		t.Errorf("the app pinned to main has %d deployments, want 1", got)
 	}
 	if got := deployments(t, f, pinnedToATag); got != 0 {
 		t.Errorf("the app pinned to v1.0.0 has %d deployments, want 0", got)
@@ -330,8 +326,8 @@ func TestAPushDeploysTheAppsBuiltFromIt(t *testing.T) {
 	}
 }
 
-// An app pinned to a branch is pinned. Naming a ref is how you opt out
-// of deploying on every push.
+// An app pinned to a branch deploys on that branch and ignores other
+// branches.
 func TestAPushToAnotherBranchDeploysNothing(t *testing.T) {
 	f := configured(t)
 	connect(t, f, 42, "acme")
@@ -340,6 +336,11 @@ func TestAPushToAnotherBranchDeploysNothing(t *testing.T) {
 	push(t, f, 42, "acme/api", "refs/heads/develop")
 	if got := deployments(t, f, pinned); got != 0 {
 		t.Errorf("an app pinned to main deployed on a push to develop (%d deployments)", got)
+	}
+
+	push(t, f, 42, "acme/api", "refs/heads/main")
+	if got := deployments(t, f, pinned); got != 1 {
+		t.Errorf("an app pinned to main has %d deployments after a main push, want 1", got)
 	}
 
 	// And a tag is not a branch.
