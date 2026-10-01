@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ExternalLinkIcon, Trash2Icon } from "lucide-react";
+import { ExternalLinkIcon, GitBranchIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
@@ -49,12 +49,16 @@ export default function GitProviders() {
     queryKey: ["github"],
     queryFn: () => api.get<GitHubConnections>(`/github`),
   });
+  const bitbucket = useQuery({
+    queryKey: ["bitbucket"],
+    queryFn: () => api.get<{ id: number; account: string }[]>(`/bitbucket`),
+  });
 
   const slug = settings.data?.github_app_slug ?? "";
   const installations = connections.data?.installations ?? [];
 
   const providers: Provider[] | null =
-    settings.isLoading || connections.isLoading
+    settings.isLoading || connections.isLoading || bitbucket.isLoading
       ? null
       : [
           {
@@ -68,6 +72,14 @@ export default function GitProviders() {
             // page instead of starting again — which is the same door
             // for "add an organization" and "let it see one more repo".
             configureURL: slug ? `https://github.com/apps/${slug}/installations/new` : "",
+          },
+          {
+            id: "bitbucket",
+            name: "Bitbucket",
+            icon: GitBranchIcon,
+            connected: (bitbucket.data?.length ?? 0) > 0,
+            accounts: (bitbucket.data ?? []).map((c) => c.account),
+            configureURL: "",
           },
         ];
 
@@ -131,11 +143,19 @@ export default function GitProviders() {
           </RowActions>
         ) : (
           <div className="flex justify-end">
-            <ConnectGitHub
-              settings={settings.data}
-              instanceName={settings.data?.domain ?? ""}
-              size="sm"
-            />
+            {p.id === "github" ? (
+              <ConnectGitHub
+                settings={settings.data}
+                instanceName={settings.data?.domain ?? ""}
+                size="sm"
+              />
+            ) : settings.data?.bitbucket_configured ? (
+              <a href="/api/bitbucket/start" className="text-sm text-primary underline">
+                Connect
+              </a>
+            ) : (
+              <span className="text-xs text-muted-foreground">Configure in Settings</span>
+            )}
           </div>
         ),
     },
@@ -143,7 +163,15 @@ export default function GitProviders() {
 
   return (
     <>
-      <ErrorAlert error={connections.error ? message(connections.error) : null} />
+      <ErrorAlert
+        error={
+          connections.error
+            ? message(connections.error)
+            : bitbucket.error
+              ? message(bitbucket.error)
+              : null
+        }
+      />
 
       {/* An App registered before Cubeship asked for OAuth on install
           was registered private too, and a private GitHub App installs
