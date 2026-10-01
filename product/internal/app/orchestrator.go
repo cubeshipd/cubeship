@@ -1017,13 +1017,13 @@ func (o *Orchestrator) waitHealthy(ctx context.Context, containerID, healthPath 
 }
 
 func healthPort(a *Scoped) int {
-	if len(a.TCPPorts) > 0 {
-		return a.TCPPorts[0].ContainerPort
-	}
 	for _, d := range a.Domains {
 		if d.Port > 0 {
 			return d.Port
 		}
+	}
+	if len(a.TCPPorts) > 0 {
+		return a.TCPPorts[0].ContainerPort
 	}
 	return DefaultPort
 }
