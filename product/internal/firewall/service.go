@@ -749,17 +749,19 @@ func (s *Service) SyncPublished(ctx context.Context) error {
 // Keeping the lock ownership explicit avoids deadlocking operations that
 // already hold it while they update a rule and then resync the stanza.
 func (s *Service) syncPublished(ctx context.Context) error {
-	contents, err := os.ReadFile(s.rules)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("read firewall rules: %w", err)
-	}
-	if err == nil {
-		text := string(contents)
-		if !strings.Contains(text, dockerBeginMarker) {
-			return nil
+	if s.rules != afterRules {
+		contents, err := os.ReadFile(s.rules)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("read firewall rules: %w", err)
 		}
-		if !strings.Contains(text, dockerEndMarker) {
-			return fmt.Errorf("firewall rules have the begin marker but not the end marker")
+		if err == nil {
+			text := string(contents)
+			if !strings.Contains(text, dockerBeginMarker) {
+				return nil
+			}
+			if !strings.Contains(text, dockerEndMarker) {
+				return fmt.Errorf("firewall rules have the begin marker but not the end marker")
+			}
 		}
 	}
 
