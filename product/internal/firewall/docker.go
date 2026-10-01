@@ -136,8 +136,9 @@ const (
 	exposedRuleSuffix = " --ctdir ORIGINAL -j RETURN"
 )
 
-// renderDockerBlock is the base stanza. renderDockerBlockRules adds the
-// source-aware RETURNs for currently allowed apps rules.
+// renderDockerBlock is the compatibility stanza used while adopting Docker:
+// every currently published port is returned until the first rules sync.
+// renderDockerBlockRules adds the source-aware RETURNs for current app rules.
 //
 // It starts at the begin marker and ends with a newline after the end
 // marker; whoever writes it decides what goes before.
@@ -151,7 +152,27 @@ const (
 // Not a container's address, which changes on every restart and would
 // open whatever container is handed it next.
 func renderDockerBlock(exposed []int) (string, error) {
-	return renderDockerBlockRules(exposed, nil)
+	ports := slices.Clone(exposed)
+	for _, p := range ports {
+		if p < 1 || p > 65535 {
+			return "", fmt.Errorf("%w: %d is not a port", ErrBadRule, p)
+		}
+	}
+	slices.Sort(ports)
+	ports = slices.Compact(ports)
+
+	var b strings.Builder
+	b.WriteString(dockerBlockHead)
+	for _, p := range ports {
+		b.WriteString(exposedRulePrefix + strconv.Itoa(p) + exposedRuleSuffix + "\n")
+	}
+	b.WriteString(dockerBlockTail)
+	b.WriteString(dockerBlockHairpin)
+	for _, line := range hairpinRules(ports) {
+		b.WriteString(line + "\n")
+	}
+	b.WriteString(dockerBlockEnd)
+	return b.String(), nil
 }
 
 func renderDockerBlockRules(exposed []int, rules []Rule) (string, error) {
