@@ -2,6 +2,7 @@ package firewall
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -146,8 +147,6 @@ func (s *Service) Status(ctx context.Context, caller *user.User) (*Status, error
 
 	// What the host's stanza admits by published port, read off the file
 	// rather than the database: the screen says what the host has.
-	exposed := parseExposedRules(sections[5])
-
 	// What is actually exposed on a Docker host, which is rarely what
 	// the host's own services are listening on.
 	if s.ports != nil {
@@ -164,9 +163,9 @@ func (s *Service) Status(ctx context.Context, caller *user.User) (*Status, error
 				// number governs traffic that never reaches this
 				// container.
 				switch {
-				case allowsAny(status.Rules, ScopeApps, []int{admits(out)}):
+				case allowsAny(status.Rules, ScopeApps, []int{out.Port}):
 					out.Allowed, out.AllowedBy = true, AllowedByRule
-				case exposed[out.Port] && out.Protocol == string(ProtocolTCP):
+				case parseExposedRules(sections[5])[out.Port]:
 					out.Allowed, out.AllowedBy = true, AllowedByExposed
 				}
 				status.Published = append(status.Published, out)
@@ -211,7 +210,7 @@ func parsePorts(out string) []int {
 // with no way for the operator to say otherwise.
 func allowsAny(rules []Rule, scope Scope, ports []int) bool {
 	for _, r := range rules {
-		if r.Action != ActionAllow || r.Scope != scope {
+		if r.Action != ActionAllow || r.Scope != scope || r.V6 {
 			continue
 		}
 		for _, p := range ports {
@@ -440,7 +439,7 @@ func (s *Service) AddRule(ctx context.Context, caller *user.User, req Request) (
 	// the packet carries by the time the forward chain looks at it.
 	// Asking them for the second would be asking them to know how
 	// Docker translates a port.
-	specs := req.Specs(insideOf(status.Published, req.Port))
+	specs := req.Specs("")
 	for _, spec := range specs {
 		if err := spec.Check(); err != nil {
 			return nil, err
@@ -455,6 +454,11 @@ func (s *Service) AddRule(ctx context.Context, caller *user.User, req Request) (
 	}
 	for _, spec := range specs {
 		if err := s.run(ctx, spec.Args()...); err != nil {
+			return nil, err
+		}
+	}
+	if req.Scope == ScopeApps {
+		if err := s.syncPublished(ctx); err != nil {
 			return nil, err
 		}
 	}
@@ -496,7 +500,7 @@ func (s *Service) ReplaceRule(ctx context.Context, caller *user.User, index int,
 		return nil, KeepsYouInError(*found)
 	}
 
-	specs := req.Specs(insideOf(status.Published, req.Port))
+	specs := req.Specs("")
 	for _, spec := range specs {
 		if err := spec.Check(); err != nil {
 			return nil, err
@@ -527,6 +531,11 @@ func (s *Service) ReplaceRule(ctx context.Context, caller *user.User, index int,
 	}
 	if err := s.run(ctx, argv...); err != nil {
 		return nil, err
+	}
+	if req.Scope == ScopeApps || found.Scope == ScopeApps {
+		if err := s.syncPublished(ctx); err != nil {
+			return nil, err
+		}
 	}
 	return s.Status(ctx, caller)
 }
@@ -586,6 +595,11 @@ func (s *Service) DeleteRule(ctx context.Context, caller *user.User, index int, 
 	if err := s.run(ctx, argv...); err != nil {
 		return nil, err
 	}
+	if found.Scope == ScopeApps {
+		if err := s.syncPublished(ctx); err != nil {
+			return nil, err
+		}
+	}
 	return s.Status(ctx, caller)
 }
 
@@ -625,7 +639,12 @@ func (s *Service) AdoptDocker(ctx context.Context, caller *user.User, allow []in
 		return status, nil
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	locked := true
+	defer func() {
+		if locked {
+			s.mu.Unlock()
+		}
+	}()
 
 	// Read before anything is written, so a failure here changes nothing.
 	ports, err := s.exposedPorts(ctx)
@@ -676,6 +695,11 @@ func (s *Service) AdoptDocker(ctx context.Context, caller *user.User, allow []in
 	if err := s.script(ctx, adoptScript(path)); err != nil {
 		return nil, err
 	}
+	s.mu.Unlock()
+	locked = false
+	if err := s.SyncPublished(ctx); err != nil {
+		return nil, err
+	}
 	return s.Status(ctx, caller)
 }
 
@@ -718,12 +742,38 @@ func (s *Service) SyncPublished(ctx context.Context) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	return s.syncPublished(ctx)
+}
+
+// syncPublished rewrites the Docker stanza while the caller holds s.mu.
+// Keeping the lock ownership explicit avoids deadlocking operations that
+// already hold it while they update a rule and then resync the stanza.
+func (s *Service) syncPublished(ctx context.Context) error {
+	if s.rules != afterRules {
+		contents, err := os.ReadFile(s.rules)
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("read firewall rules: %w", err)
+		}
+		if err == nil {
+			text := string(contents)
+			if !strings.Contains(text, dockerBeginMarker) {
+				return nil
+			}
+			if !strings.Contains(text, dockerEndMarker) {
+				return fmt.Errorf("firewall rules have the begin marker but not the end marker")
+			}
+		}
+	}
 
 	ports, err := s.exposedPorts(ctx)
 	if err != nil {
 		return err
 	}
-	block, err := renderDockerBlock(ports)
+	rules, err := s.appsRules(ctx)
+	if err != nil {
+		return err
+	}
+	block, err := renderDockerBlockRules(ports, rules)
 	if err != nil {
 		return err
 	}
@@ -737,6 +787,18 @@ func (s *Service) SyncPublished(ctx context.Context) error {
 		return fmt.Errorf("write the docker stanza: %w", err)
 	}
 	return s.script(ctx, replaceScript(path, s.rules))
+}
+
+func (s *Service) appsRules(ctx context.Context) ([]Rule, error) {
+	// Do not touch UFW when Docker has not been adopted. Apart from avoiding
+	// needless host work, this preserves the important no-op guarantee for a
+	// local daemon that has no managed stanza yet.
+	line := "if grep -qF '" + dockerBeginMarker + "' '" + s.rules + "'; then ufw status numbered; fi"
+	res, err := s.host.Script(ctx, line)
+	if err != nil {
+		return nil, err
+	}
+	return parseRules(res.Output), nil
 }
 
 func (s *Service) exposedPorts(ctx context.Context) ([]int, error) {

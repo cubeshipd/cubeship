@@ -6,6 +6,19 @@ import (
 	"testing"
 )
 
+func TestTranslatedPublishedRuleKeepsItsPortAndSource(t *testing.T) {
+	block, err := renderDockerBlockRules([]int{15000}, []Rule{{
+		Scope: ScopeApps, Action: ActionAllow, Protocol: ProtocolTCP,
+		Ports: "15000", From: "203.0.113.4",
+	}})
+	if err != nil || !strings.Contains(block, "--ctorigdstport 15000 -s 203.0.113.4") {
+		t.Fatalf("source rule missing: %v\n%s", err, block)
+	}
+	if strings.Contains(block, "--ctorigdstport 5432") {
+		t.Fatal("stanza used the container port")
+	}
+}
+
 // With nothing exposed the stanza is the one that shipped: no conntrack
 // line, and no comment introducing one.
 func TestTheStanzaWithNothingExposed(t *testing.T) {

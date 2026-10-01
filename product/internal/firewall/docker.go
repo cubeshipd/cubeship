@@ -33,9 +33,8 @@ import (
 //     database.
 //   - RETURN for DNS answers, which arrive as UDP from port 53 to a high
 //     port and would otherwise be caught by the blanket UDP denial.
-//   - RETURN for every port this instance published on purpose — an
-//     exposed datastore or managed object store — matched on the number
-//     it was published on. See renderDockerBlock.
+//   - RETURN for each published port admitted by an apps rule, matched on
+//     the original port Docker received. Source restrictions are preserved.
 //   - Deny new connections *to* the private ranges — which is where
 //     containers live, so this is the denial that does the work. It is
 //     scoped to SYN for TCP so that established traffic is untouched.
@@ -85,16 +84,6 @@ const dockerBlockHead = dockerBeginMarker + `
 
 # DNS answers, which come back as UDP from port 53 to a high port.
 -A DOCKER-USER -p udp -m udp --sport 53 --dport 1024:65535 -j RETURN
-`
-
-// dockerBlockExposed introduces the lines renderDockerBlock adds, and is
-// left out entirely when there are none.
-const dockerBlockExposed = `
-# Ports this instance published on purpose: an exposed database or object
-# store. Matched on the port as it was published, which conntrack keeps
-# after Docker's DNAT has rewritten it; a ufw rule only ever sees the port
-# inside the container, which every database of one engine shares.
-# TCP and IPv4 only, like everything they serve and like this file.
 `
 
 const dockerBlockTail = `
@@ -147,8 +136,9 @@ const (
 	exposedRuleSuffix = " --ctdir ORIGINAL -j RETURN"
 )
 
-// renderDockerBlock is the stanza, with a RETURN for each published port
-// in exposed.
+// renderDockerBlock is the compatibility stanza used while adopting Docker:
+// every currently published port is returned until the first rules sync.
+// renderDockerBlockRules adds the source-aware RETURNs for current app rules.
 //
 // It starts at the begin marker and ends with a newline after the end
 // marker; whoever writes it decides what goes before.
@@ -173,10 +163,42 @@ func renderDockerBlock(exposed []int) (string, error) {
 
 	var b strings.Builder
 	b.WriteString(dockerBlockHead)
-	if len(ports) > 0 {
-		b.WriteString(dockerBlockExposed)
-		for _, p := range ports {
-			b.WriteString(exposedRulePrefix + strconv.Itoa(p) + exposedRuleSuffix + "\n")
+	for _, p := range ports {
+		b.WriteString(exposedRulePrefix + strconv.Itoa(p) + exposedRuleSuffix + "\n")
+	}
+	b.WriteString(dockerBlockTail)
+	b.WriteString(dockerBlockHairpin)
+	for _, line := range hairpinRules(ports) {
+		b.WriteString(line + "\n")
+	}
+	b.WriteString(dockerBlockEnd)
+	return b.String(), nil
+}
+
+func renderDockerBlockRules(exposed []int, rules []Rule) (string, error) {
+	ports := slices.Clone(exposed)
+	for _, p := range ports {
+		if p < 1 || p > 65535 {
+			return "", fmt.Errorf("%w: %d is not a port", ErrBadRule, p)
+		}
+	}
+	slices.Sort(ports)
+	ports = slices.Compact(ports)
+
+	var b strings.Builder
+	b.WriteString(dockerBlockHead)
+	for _, r := range rules {
+		if r.Scope != ScopeApps || r.Action != ActionAllow || r.V6 ||
+			(r.Protocol != ProtocolAny && r.Protocol != ProtocolTCP) ||
+			strings.Contains(r.From, ":") {
+			continue
+		}
+		for _, p := range matchingPublishedPorts(r.Ports, ports, exposed) {
+			line := exposedRulePrefix + strconv.Itoa(p)
+			if r.From != "" {
+				line += " -s " + r.From
+			}
+			b.WriteString(line + exposedRuleSuffix + "\n")
 		}
 	}
 	b.WriteString(dockerBlockTail)
@@ -186,6 +208,25 @@ func renderDockerBlock(exposed []int) (string, error) {
 	}
 	b.WriteString(dockerBlockEnd)
 	return b.String(), nil
+}
+
+func matchingPublishedPorts(spec string, published, exposed []int) []int {
+	var out []int
+	for _, p := range published {
+		if coversPort(spec, p) {
+			out = append(out, p)
+		}
+	}
+	// Compatibility with old rules written for the container port: retain
+	// that mapping only while it identifies one published port.
+	if len(out) == 0 {
+		for _, p := range exposed {
+			if coversPort(spec, p) {
+				out = append(out, p)
+			}
+		}
+	}
+	return out
 }
 
 // hairpinRules accepts, on each Docker bridge, TCP to Traefik's ports and
