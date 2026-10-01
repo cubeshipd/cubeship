@@ -149,6 +149,7 @@ var routes = map[string]phrase{
 	"POST /firewall/docker":                {"put container ports under the firewall", "put container ports under the firewall", "", ""},
 	"DELETE /firewall/docker":              {"take container ports out of the firewall", "took container ports out of the firewall", "", ""},
 	"POST /nodes":                          {"add a server", "added a server", "", ""},
+	"POST /nodes/{name}/storage/prune":     {"clean Docker storage on", "cleaned Docker storage on", "{name}", "a server"},
 	"DELETE /nodes/{name}":                 {"remove server", "removed server", "{name}", ""},
 }
 
