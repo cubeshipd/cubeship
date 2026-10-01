@@ -345,8 +345,8 @@ func TestAPushToAnotherBranchDeploysNothing(t *testing.T) {
 
 	// And a tag is not a branch.
 	push(t, f, 42, "acme/api", "refs/tags/v1.0.0")
-	if got := deployments(t, f, pinned); got != 0 {
-		t.Errorf("a tag started %d deployment(s)", got)
+	if got := deployments(t, f, pinned); got != 1 {
+		t.Errorf("a tag changed the deployment count to %d, want it unchanged at 1", got)
 	}
 }
 
