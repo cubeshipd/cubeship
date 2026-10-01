@@ -105,6 +105,10 @@ const (
 	// The secret is write-only, like the private key. The client id is
 	// not a secret — it appears in a URL the browser is sent to — but it
 	// is stored beside its half rather than derived.
+	BitbucketClientID      = "bitbucket_client_id"
+	BitbucketClientSecret  = "bitbucket_client_secret"
+	BitbucketWebhookSecret = "bitbucket_webhook_secret"
+
 	GitHubClientID     = "github_client_id"
 	GitHubClientSecret = "github_client_secret"
 
@@ -119,7 +123,7 @@ const (
 // every read of the configuration into a way out for it.
 func Secret(key string) bool {
 	return key == GitHubPrivateKey || key == GitHubWebhookSecret ||
-		key == GitHubClientSecret
+		key == GitHubClientSecret || key == BitbucketClientSecret || key == BitbucketWebhookSecret
 }
 
 // ErrUnknownKey is returned for a key this version does not define.
@@ -132,19 +136,22 @@ var ErrSuperAdminOnly = errors.New("forbidden: only a super-admin can change ins
 
 // known is every key this version recognizes, with what it is for.
 var known = map[string]string{
-	Domain:              "Base domain. The dashboard and the API are served at <domain> and the registry at registry.<domain>; both must resolve to this host.",
-	ACMEEmail:           "Contact address for Let's Encrypt. Optional: certificates are issued as soon as there is a domain.",
-	AutoUpdateAt:        "When this instance updates itself, as HH:MM. Empty is off. Only stable releases, and only when there is one: an instance already on the newest does nothing.",
-	AutoUpdateTimezone:  "What auto_update_at is in, as an IANA timezone like Europe/Lisbon. Empty is UTC, which is a server's clock rather than anybody's night.",
-	BetaVersions:        "\"true\" to be offered beta versions — betas and release candidates — as well as stable releases. Automatic updating stays on stable releases either way.",
-	PublicIP:            "What this instance's DNS records should point at. Empty means work it out — the address the dashboard is opened at, or the machine's own — which is right on a VPS and has no answer behind NAT. A private address is never the answer: one of those in a record is a domain that stops resolving.",
-	DNSProviderID:       "Which stored DNS credential writes this instance's own records. Empty means the operator keeps their DNS elsewhere and writes them by hand.",
-	GitHubAppID:         "The numeric id of the GitHub App this instance acts as.",
-	GitHubClientID:      "The App's OAuth client id, which is what someone connecting an installation is sent to GitHub with.",
-	GitHubClientSecret:  "The App's OAuth client secret. Write-only.",
-	GitHubAppSlug:       "The App's slug, which is what its install page is addressed by.",
-	GitHubPrivateKey:    "The App's private key, in PEM. Write-only.",
-	GitHubWebhookSecret: "The secret GitHub signs its webhooks with. Write-only.",
+	BitbucketClientID:      "Bitbucket Cloud OAuth consumer key.",
+	BitbucketClientSecret:  "Bitbucket Cloud OAuth consumer secret. Write-only.",
+	BitbucketWebhookSecret: "Bitbucket Cloud webhook signing secret. Write-only.",
+	Domain:                 "Base domain. The dashboard and the API are served at <domain> and the registry at registry.<domain>; both must resolve to this host.",
+	ACMEEmail:              "Contact address for Let's Encrypt. Optional: certificates are issued as soon as there is a domain.",
+	AutoUpdateAt:           "When this instance updates itself, as HH:MM. Empty is off. Only stable releases, and only when there is one: an instance already on the newest does nothing.",
+	AutoUpdateTimezone:     "What auto_update_at is in, as an IANA timezone like Europe/Lisbon. Empty is UTC, which is a server's clock rather than anybody's night.",
+	BetaVersions:           "\"true\" to be offered beta versions — betas and release candidates — as well as stable releases. Automatic updating stays on stable releases either way.",
+	PublicIP:               "What this instance's DNS records should point at. Empty means work it out — the address the dashboard is opened at, or the machine's own — which is right on a VPS and has no answer behind NAT. A private address is never the answer: one of those in a record is a domain that stops resolving.",
+	DNSProviderID:          "Which stored DNS credential writes this instance's own records. Empty means the operator keeps their DNS elsewhere and writes them by hand.",
+	GitHubAppID:            "The numeric id of the GitHub App this instance acts as.",
+	GitHubClientID:         "The App's OAuth client id, which is what someone connecting an installation is sent to GitHub with.",
+	GitHubClientSecret:     "The App's OAuth client secret. Write-only.",
+	GitHubAppSlug:          "The App's slug, which is what its install page is addressed by.",
+	GitHubPrivateKey:       "The App's private key, in PEM. Write-only.",
+	GitHubWebhookSecret:    "The secret GitHub signs its webhooks with. Write-only.",
 }
 
 // Describe returns what a key is for, and whether it is a key at all.

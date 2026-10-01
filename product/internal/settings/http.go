@@ -64,7 +64,9 @@ type Response struct {
 	// The credentials themselves are never returned: an endpoint that
 	// handed a private key back would turn every read of the
 	// configuration into a way out for it.
-	GitHubConnected bool `json:"github_connected"`
+	BitbucketConfigured   bool `json:"bitbucket_configured"`
+	BitbucketWebhookReady bool `json:"bitbucket_webhook_ready"`
+	GitHubConnected       bool `json:"github_connected"`
 }
 
 // ToResponse renders the settings for the API. Exported because the
@@ -94,6 +96,8 @@ func toResponse(v Values, publicIP string) Response {
 	r.GitHubAppSlug = v.Get(GitHubAppSlug)
 	r.GitHubConnected = v.HasGitHub()
 	r.GitHubOAuthReady = v.HasGitHubOAuth()
+	r.BitbucketConfigured = v.Get(BitbucketClientID) != "" && v.Get(BitbucketClientSecret) != ""
+	r.BitbucketWebhookReady = v.Get(BitbucketWebhookSecret) != ""
 	return r
 }
 
@@ -149,12 +153,15 @@ func (h *Handler) set(w http.ResponseWriter, r *http.Request) {
 
 		// The GitHub App's registration. Write-only, and normally
 		// written once by the connect flow rather than typed.
-		GitHubAppID         *string `json:"github_app_id"`
-		GitHubAppSlug       *string `json:"github_app_slug"`
-		GitHubPrivateKey    *string `json:"github_private_key"`
-		GitHubWebhookSecret *string `json:"github_webhook_secret"`
-		GitHubClientID      *string `json:"github_client_id"`
-		GitHubClientSecret  *string `json:"github_client_secret"`
+		BitbucketClientID      *string `json:"bitbucket_client_id"`
+		BitbucketClientSecret  *string `json:"bitbucket_client_secret"`
+		BitbucketWebhookSecret *string `json:"bitbucket_webhook_secret"`
+		GitHubAppID            *string `json:"github_app_id"`
+		GitHubAppSlug          *string `json:"github_app_slug"`
+		GitHubPrivateKey       *string `json:"github_private_key"`
+		GitHubWebhookSecret    *string `json:"github_webhook_secret"`
+		GitHubClientID         *string `json:"github_client_id"`
+		GitHubClientSecret     *string `json:"github_client_secret"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -195,12 +202,15 @@ func (h *Handler) set(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	for key, given := range map[string]*string{
-		GitHubAppID:         req.GitHubAppID,
-		GitHubAppSlug:       req.GitHubAppSlug,
-		GitHubPrivateKey:    req.GitHubPrivateKey,
-		GitHubWebhookSecret: req.GitHubWebhookSecret,
-		GitHubClientID:      req.GitHubClientID,
-		GitHubClientSecret:  req.GitHubClientSecret,
+		BitbucketClientID:      req.BitbucketClientID,
+		BitbucketClientSecret:  req.BitbucketClientSecret,
+		BitbucketWebhookSecret: req.BitbucketWebhookSecret,
+		GitHubAppID:            req.GitHubAppID,
+		GitHubAppSlug:          req.GitHubAppSlug,
+		GitHubPrivateKey:       req.GitHubPrivateKey,
+		GitHubWebhookSecret:    req.GitHubWebhookSecret,
+		GitHubClientID:         req.GitHubClientID,
+		GitHubClientSecret:     req.GitHubClientSecret,
 	} {
 		if given != nil {
 			values[key] = *given

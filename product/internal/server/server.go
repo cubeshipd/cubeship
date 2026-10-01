@@ -16,6 +16,7 @@ import (
 	"cubeship/internal/app"
 	"cubeship/internal/audit"
 	"cubeship/internal/backup"
+	"cubeship/internal/bitbucket"
 	"cubeship/internal/certificates"
 	"cubeship/internal/components"
 	"cubeship/internal/credential"
@@ -80,6 +81,7 @@ type Server struct {
 	Registries  *extregistry.Service
 	DNS         *dns.Service
 	GitHub      *github.Service
+	Bitbucket   *bitbucket.Service
 	Registry    *registry.Handler
 
 	// githubHandler is kept so a test can wait for the deploys a
@@ -226,6 +228,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	registries := extregistry.NewService(db, creds)
 	dnsProviders := dns.NewService(db, creds, cfg)
 	gh := github.NewService(db, cfg)
+	bb := bitbucket.NewService(db, cfg)
 	// One series service for every module below: an app, a database and
 	// the MinIO behind a managed store are the same question about
 	// three kinds of container.
@@ -395,6 +398,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		Registries:  registries,
 		DNS:         dnsProviders,
 		GitHub:      gh,
+		Bitbucket:   bb,
 		Registry:    registry.NewHandler(users, apps, cfg, opts.WebhookToken, opts.LocalRegistry),
 		frontend:    opts.Frontend,
 		router:      httpx.NewRouter(),
@@ -565,6 +569,7 @@ func (s *Server) routes() {
 	dns.NewHandler(s.DNS).Routes(s.router, auth)
 	s.githubHandler = github.NewHandler(s.GitHub, s.Apps)
 	s.githubHandler.Routes(s.router, auth)
+	bitbucket.NewHandler(s.Bitbucket, s.Apps).Routes(s.router, auth)
 	app.NewHandler(s.Apps).Routes(s.router, auth)
 	datastore.NewHandler(s.Datastores).Routes(s.router, auth)
 	objectstore.NewHandler(s.ObjectStores).Routes(s.router, auth)
@@ -589,6 +594,7 @@ func (s *Server) routes() {
 	s.Registry.Routes(s.router)
 	s.Registry.CatalogueRoutes(s.router, auth)
 	s.githubHandler.WebhookRoutes(s.router)
+	bitbucket.NewHandler(s.Bitbucket, s.Apps).WebhookRoutes(s.router)
 
 	// Authenticated only: MCP is one POST for every tool, so the key
 	// policy and the log both work per tool, inside it.

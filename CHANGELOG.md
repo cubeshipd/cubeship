@@ -6,6 +6,30 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.12.0-rc.4 — 2026-10-01
+
+*Prerelease.*
+
+Add the first Bitbucket Cloud provider integration for OAuth connections, repository discovery and push webhooks.
+
+### Added
+
+**Bitbucket Cloud connections.** Configure an OAuth consumer, connect an account with a single-use expiring state, and store access and refresh tokens securely with refresh-token rotation.
+
+**Repository discovery.** Bitbucket repositories and branches can be discovered through the authenticated API, with pagination and access checks before a repository is used for a build.
+
+**Push webhooks.** Bitbucket push deliveries are verified with the raw-payload HMAC signature and only trigger deploys for repositories and branches that the connected account can access.
+
+**Bitbucket settings and API surface.** Bitbucket consumer and webhook settings, connection routes, repository and branch routes, OpenAPI documentation, and the goose migration are included.
+
+### Fixed
+
+**Git provider registration.** An unconfigured provider row no longer opens the GitHub App registration flow for another provider.
+
+### Upgrade notes
+
+Update normally from the dashboard or CLI. The Bitbucket migration is applied automatically on daemon startup. Configure the Bitbucket OAuth consumer and webhook secret before connecting an account.
+
 ## 0.12.0-rc.3 — 2026-10-01
 
 *Prerelease.*
