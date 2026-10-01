@@ -284,6 +284,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"POST /auth/login",
 		"POST /auth/logout",
 		"POST /hooks/github",
+		"POST /hooks/bitbucket",
 		"POST /hooks/registry",
 		"POST /mcp",
 		"POST /nodes/agent/reconcile",
