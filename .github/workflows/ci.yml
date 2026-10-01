@@ -46,7 +46,13 @@ jobs:
 
       - name: Unit tests
         run: |
-          go -C product test -short -race -count=1 ./...
+          packages=$(go -C product list ./... | while read -r package; do
+            dir=$(go -C product list -f '{{.Dir}}' "$package")
+            if ! rg -q 'dbtest\.New|servertest\.New|RequireDatabase' "$dir" -g '*_test.go'; then
+              printf '%s\n' "$package"
+            fi
+          done)
+          go -C product test -short -race -count=1 $packages
           go -C hosted/catalog test -short -race -count=1 ./...
 
   # The full suite runs separately so database setup and migrations cannot
@@ -75,8 +81,13 @@ jobs:
           cache-dependency-path: product/go.sum
       - name: Unit tests with Postgres
         run: |
-          go -C product test -race -count=1 ./...
-          go -C hosted/catalog test -race -count=1 ./...
+          packages=$(go -C product list ./... | while read -r package; do
+            dir=$(go -C product list -f '{{.Dir}}' "$package")
+            if rg -q 'dbtest\.New|servertest\.New|RequireDatabase' "$dir" -g '*_test.go'; then
+              printf '%s\n' "$package"
+            fi
+          done)
+          go -C product test -race -count=1 $packages
 
   # Everything that boots a container: a privileged buildkitd per build
   # test, and the whole product once — install the daemon, push an image,
