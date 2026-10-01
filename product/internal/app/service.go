@@ -332,6 +332,10 @@ func (s *Service) ResolveString(ctx context.Context, caller *user.User, ref stri
 // Create registers an app in a project's environment and returns it,
 // including the registry path a push should target.
 func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, envSlug, name string, source Source, origin Origin) (*Scoped, error) {
+	return s.CreateWithPredeploy(ctx, caller, projectSlug, envSlug, name, source, origin, nil)
+}
+
+func (s *Service) CreateWithPredeploy(ctx context.Context, caller *user.User, projectSlug, envSlug, name string, source Source, origin Origin, predeploy *Predeploy) (*Scoped, error) {
 	if envSlug == "" {
 		envSlug = project.ProductionEnvSlug
 	}
@@ -340,6 +344,9 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, en
 	}
 	if !source.Valid() {
 		return nil, ErrUnknownSource
+	}
+	if predeploy != nil && !predeploy.Valid() {
+		return nil, ErrInvalidPredeploy
 	}
 	if err := checkOrigin(source, &origin); err != nil {
 		return nil, err
@@ -375,7 +382,8 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, en
 		return nil, project.ErrEnvironmentNotFound
 	}
 	ref := Reference{Project: p.Slug, Environment: env.Slug, Name: name}
-	if _, err := s.Repo().Create(ctx, p.ID, env.ID, name, source, origin); err != nil {
+	created, err := s.Repo().Create(ctx, p.ID, env.ID, name, source, origin)
+	if err != nil {
 		// The unique index is the authority, not a preceding lookup:
 		// two concurrent creates of the same name would both pass a
 		// check and the loser would surface as a 500.
@@ -383,6 +391,11 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, en
 			return nil, ErrAlreadyExists
 		}
 		return nil, err
+	}
+	if predeploy != nil {
+		if _, err := s.Repo().Update(ctx, created.ID, nil, nil, nil, nil, nil, predeploy); err != nil {
+			return nil, err
+		}
 	}
 	return s.Repo().ScopedByReference(ctx, ref.Project, ref.Environment, ref.Name)
 }
@@ -402,6 +415,10 @@ func (s *Service) Create(ctx context.Context, caller *user.User, projectSlug, en
 // whatever that repository contains — so it takes the same role, checked
 // against the source being moved to rather than the one being left.
 func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, source *Source, origin *Origin, health *string, limits *Limits, auto *Autoscale, place *Placement) (*Scoped, error) {
+	return s.UpdateWithPredeploy(ctx, caller, ref, source, origin, health, limits, auto, place, nil)
+}
+
+func (s *Service) UpdateWithPredeploy(ctx context.Context, caller *user.User, ref Reference, source *Source, origin *Origin, health *string, limits *Limits, auto *Autoscale, place *Placement, predeploy *Predeploy) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
 	if err != nil {
 		return nil, err
@@ -457,6 +474,9 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 	if auto != nil && !auto.Valid() {
 		return nil, ErrInvalidAutoscale
 	}
+	if predeploy != nil && !predeploy.Valid() {
+		return nil, ErrInvalidPredeploy
+	}
 
 	// A volume's data is on one machine and cannot be shared by two
 	// copies, so neither where the app runs nor how many of it may change.
@@ -479,7 +499,7 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 		}
 	}
 
-	if _, err := s.Repo().Update(ctx, a.ID, source, origin, health, limits, auto); err != nil {
+	if _, err := s.Repo().Update(ctx, a.ID, source, origin, health, limits, auto, predeploy); err != nil {
 		return nil, err
 	}
 
@@ -1384,6 +1404,29 @@ func (s *Service) DeleteDeployment(ctx context.Context, caller *user.User, ref R
 	}
 	if !removed {
 		return ErrDeploymentNotFound
+	}
+	return nil
+}
+
+// CancelDeployment stops an unfinished deploy and leaves the app's current
+// container in place.
+func (s *Service) CancelDeployment(ctx context.Context, caller *user.User, ref Reference, deploymentID int64) error {
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
+	if err != nil {
+		return err
+	}
+	if err := requireSource(caller, Source(a.Source)); err != nil {
+		return err
+	}
+	d, err := s.Repo().DeploymentByID(ctx, a.ID, deploymentID)
+	if err != nil {
+		return ErrDeploymentNotFound
+	}
+	if d.Done() {
+		return nil
+	}
+	if !s.orch.Cancel(deploymentID) {
+		return ErrDeploymentRunning
 	}
 	return nil
 }

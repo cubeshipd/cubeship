@@ -1,5 +1,23 @@
 # Deploying, and building
 
+## Pre-deploy command
+
+An app may store `predeploy_command` as a shell string or argv array and a
+`predeploy_timeout` in seconds (at most one hour). After the image is
+resolved and pulled, the daemon runs that command in a throwaway container
+from the image, with the app's effective environment and app network. Its
+combined stdout and stderr is appended to the deployment log. Exit zero
+allows the normal health-checked swap; a non-zero exit or timeout fails the
+deployment and leaves the previous container untouched. Deploys of one app
+are serialized, so a second deploy waits behind the first.
+
+The command is application configuration and runs with the same credentials
+the app receives. Hook output is captured as deployment stdout/stderr, with values
+from the effective environment replaced by `[REDACTED]` before storage.
+Deployment responses expose the current phase, elapsed duration, exit reason,
+and cancellation flag. `POST .../deployments/{id}/cancel` cancels a running
+deploy; cancellation is terminal and never retires the old container.
+
 Design notes for Cubeship. The conventions every change follows are
 in [CLAUDE.md](../../../AGENTS.md).
 

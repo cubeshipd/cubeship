@@ -857,7 +857,7 @@ func (c *Client) RunOneShot(ctx context.Context, opts ContainerOpts) (output str
 	defer func() {
 		// Best effort: the caller's answer is already in hand, and a
 		// failed cleanup is not a reason to lose it.
-		_ = c.RemoveContainer(ctx, id)
+		_ = c.RemoveContainer(context.Background(), id)
 	}()
 
 	// Started first, then waited on — and the order is the whole

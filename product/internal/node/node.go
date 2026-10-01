@@ -288,7 +288,10 @@ type Placement struct {
 	// id — see app.InternalHost. An agent from before this creates a
 	// container with none, which is what every container had, and the
 	// app's next deploy gives it one.
-	Aliases []string `json:"aliases,omitempty"`
+	Aliases          []string `json:"aliases,omitempty"`
+	PredeployArgs    []string `json:"predeploy_args,omitempty"`
+	PredeployShell   string   `json:"predeploy_shell,omitempty"`
+	PredeployTimeout int64    `json:"predeploy_timeout,omitempty"`
 	// Resources is the ceiling this copy runs under: CPU quota and a
 	// memory limit, zero in either meaning none.
 	//
@@ -324,6 +327,9 @@ type Result struct {
 	// Error is why it did not run, in the machine's own words. Empty on
 	// success.
 	Error string `json:"error,omitempty"`
+	// Output is redacted pre-deploy stdout/stderr. It lets the control
+	// plane persist the same hook log when the app runs on a worker.
+	Output string `json:"output,omitempty"`
 }
 
 // Reading is what one container on a machine is using, as that machine

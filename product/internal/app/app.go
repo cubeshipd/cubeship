@@ -8,6 +8,7 @@
 package app
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"time"
@@ -62,6 +63,7 @@ type App struct {
 	// the container behind a name is worth sending traffic to. Empty is
 	// no check, and it is the default: see ValidHealthPath.
 	HealthPath string
+	Predeploy  Predeploy
 	// Scale is how many copies were **asked for**, which is not how
 	// many there are — that is len(Replicas), and it is what every
 	// surface reports.
@@ -103,6 +105,53 @@ type App struct {
 	TCPPorts  []TCPPort
 	Env       envvar.Map
 	CreatedAt time.Time
+}
+
+// Predeploy is an optional command run from the new image before its
+// container replaces the old one. A JSON string is a shell command; an
+// array is argv. Empty means disabled.
+type Predeploy struct {
+	Args    []string
+	Shell   string
+	Timeout time.Duration
+}
+
+func (p Predeploy) Empty() bool { return p.Shell == "" && len(p.Args) == 0 }
+
+func (p Predeploy) MarshalJSON() ([]byte, error) {
+	if p.Shell != "" {
+		return json.Marshal(p.Shell)
+	}
+	return json.Marshal(p.Args)
+}
+
+func (p *Predeploy) UnmarshalJSON(b []byte) error {
+	var shell string
+	if err := json.Unmarshal(b, &shell); err == nil {
+		p.Shell, p.Args = shell, nil
+		return nil
+	}
+	if err := json.Unmarshal(b, &p.Args); err != nil {
+		return err
+	}
+	p.Shell = ""
+	return nil
+}
+
+func (p Predeploy) Valid() bool {
+	if p.Timeout < 0 || p.Timeout > time.Hour || p.Timeout%time.Second != 0 {
+		return false
+	}
+	if p.Empty() {
+		return true
+	}
+	if p.Shell != "" && len(p.Args) != 0 {
+		return false
+	}
+	if len(p.Args) > 0 && p.Args[0] == "" {
+		return false
+	}
+	return true
 }
 
 // Replica is one machine an app runs on, and the container that is
@@ -317,11 +366,15 @@ func (a *App) everRan() bool {
 // how a caller finds out how a deploy went after the request that
 // started it is long gone.
 type Deployment struct {
-	ID       int64
-	AppID    int64
-	ImageRef string
-	Status   string
-	Error    string
+	ID         int64
+	AppID      int64
+	ImageRef   string
+	Status     string
+	Error      string
+	Phase      string
+	StartedAt  time.Time
+	FinishedAt *time.Time
+	Cancelled  bool
 	// Stalled says this deploy is waiting on a machine that has stopped
 	// answering. Derived on read; see Stall.
 	Stalled *Stall
@@ -359,6 +412,29 @@ const (
 	DeploymentSucceeded = "succeeded"
 	DeploymentFailed    = "failed"
 )
+
+const (
+	DeploymentPhaseQueued    = "queued"
+	DeploymentPhaseResolving = "resolving"
+	DeploymentPhasePulling   = "pulling"
+	DeploymentPhasePredeploy = "predeploy"
+	DeploymentPhaseSwapping  = "swapping"
+	DeploymentPhaseWaiting   = "waiting"
+	DeploymentPhaseDone      = "done"
+	DeploymentPhaseFailed    = "failed"
+	DeploymentPhaseCancelled = "cancelled"
+)
+
+func (d *Deployment) Duration() time.Duration {
+	end := time.Now()
+	if d.FinishedAt != nil {
+		end = *d.FinishedAt
+	}
+	if d.StartedAt.IsZero() {
+		return 0
+	}
+	return end.Sub(d.StartedAt)
+}
 
 // Done reports whether the deployment has finished, either way.
 func (d *Deployment) Done() bool {
@@ -527,6 +603,8 @@ func ValidHealthPath(path string) bool {
 // the character is usually a typo and the rule is what somebody has to
 // read.
 var ErrInvalidHealthPath = errors.New("a health check path has to start with / and hold only what a URL path may: no spaces, quotes, query strings or fragments")
+
+var ErrInvalidPredeploy = errors.New("pre-deploy command must be argv or shell text with a timeout up to one hour")
 
 // MaxHostLength is what a DNS name can be, dots included.
 const MaxHostLength = 253

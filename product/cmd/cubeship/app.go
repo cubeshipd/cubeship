@@ -252,8 +252,48 @@ func newAppCmd() *cobra.Command {
 	}
 	deleteCmd.Flags().BoolVar(&deleteConfirmed, "yes", false, "confirm that the app should be deleted")
 
+	var shell string
+	var timeout int64
+	predeployCmd := &cobra.Command{
+		Use:   "predeploy <app> [--] <command> [args...]",
+		Short: "Set the command run from the new image before a deploy swap",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			var command any = args[1:]
+			if shell != "" {
+				command = shell
+			}
+			_, err = c.SetAppPredeploy(context.Background(), args[0], command, timeout)
+			return err
+		},
+	}
+	predeployCmd.Flags().StringVar(&shell, "shell", "", "run this shell command instead of argv")
+	predeployCmd.Flags().Int64Var(&timeout, "timeout", 0, "timeout in seconds (maximum 3600; default 600)")
+	cancelCmd := &cobra.Command{
+		Use: "cancel <app> <deployment-id>", Short: "Cancel a running deployment", Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			id, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid deployment id: %w", err)
+			}
+			if err := c.CancelDeployment(context.Background(), args[0], id); err != nil {
+				return err
+			}
+			fmt.Printf("Cancelled deploy %d of %s\n", id, args[0])
+			return nil
+		},
+	}
+
 	appCmd.AddCommand(createCmd, listCmd, getCmd, deployCmd, deploymentsCmd, deleteCmd, logsCmd, newAppShellCmd(),
-		newAppPlaceCmd(), newAppLimitsCmd(), newAppAutoscaleCmd(), appEnvCommands(), newAppVolumeCmd(), newAppTCPCmd())
+		newAppPlaceCmd(), newAppLimitsCmd(), newAppAutoscaleCmd(), predeployCmd, cancelCmd, appEnvCommands(), newAppVolumeCmd(), newAppTCPCmd())
 	return appCmd
 }
 

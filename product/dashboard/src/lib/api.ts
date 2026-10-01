@@ -375,6 +375,9 @@ export type App = {
   // traffic. Absent is no check, which is the default: a wrong path
   // does not degrade a name, it takes every replica out at once.
   health_path?: string;
+  // Command run from the new image before a deploy swaps containers.
+  predeploy_command?: string | string[];
+  predeploy_timeout?: number;
 };
 
 // The rule the instance scales an app by.
@@ -526,6 +529,9 @@ export type Deployment = {
   status: string;
   image: string;
   error?: string;
+  phase: string;
+  duration_ms: number;
+  cancelled: boolean;
   // What the build printed. **Absent from a listing**, whatever the
   // deploy printed: it is capped at 256 KiB a row and a history is
   // fifty of them. Read one deployment for it.

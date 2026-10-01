@@ -750,6 +750,9 @@ func TestAOneShotIsStartedBeforeItIsWaitedOn(t *testing.T) {
 	if fake.startedID == "" {
 		t.Error("nothing was started")
 	}
+	if fake.removedID == "" {
+		t.Error("one-shot container was not cleaned up")
+	}
 }
 
 // A remove asks for the container to be gone. One somebody already

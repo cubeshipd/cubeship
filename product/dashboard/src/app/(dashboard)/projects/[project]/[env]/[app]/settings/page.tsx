@@ -55,7 +55,7 @@ export default function AppSettingsPage({
   return <Settings reference={`${project}/${env}/${app}`} />;
 }
 
-const TABS = ["network", "source", "resources", "volumes", "danger"] as const;
+const TABS = ["network", "source", "deploy", "resources", "volumes", "danger"] as const;
 type Tab = (typeof TABS)[number];
 
 function Settings({ reference }: { reference: string }) {
@@ -147,6 +147,7 @@ function Settings({ reference }: { reference: string }) {
               <TabsList variant="line">
                 <TabsTrigger value="network">Network</TabsTrigger>
                 <TabsTrigger value="source">Source</TabsTrigger>
+                <TabsTrigger value="deploy">Deploy</TabsTrigger>
                 <TabsTrigger value="resources">Resources</TabsTrigger>
                 <TabsTrigger value="volumes">Volumes</TabsTrigger>
                 <TabsTrigger value="danger">Danger</TabsTrigger>
@@ -160,6 +161,10 @@ function Settings({ reference }: { reference: string }) {
 
             <TabsContent value="source">
               <SourceSection app={app} onSaved={setApp} onError={setError} />
+            </TabsContent>
+
+            <TabsContent value="deploy">
+              <PredeploySection app={app} onSaved={setApp} onError={setError} />
             </TabsContent>
 
             {/* Where it runs, how much of the machine it may take, and
@@ -279,6 +284,50 @@ function usePatch({ app, onSaved, onError }: SectionProps) {
 // The section is only here when there is a choice to make: on an
 // instance of one box there is one machine, and a set with one possible
 // member is a decision nobody has.
+function PredeploySection(props: SectionProps) {
+  const { app } = props;
+  const { busy, saved, save } = usePatch(props);
+  const initial = typeof app.predeploy_command === "string" ? app.predeploy_command : "";
+  const [command, setCommand] = useState(initial);
+  const [timeout, setTimeout] = useState(String(app.predeploy_timeout || 600));
+  const dirty = command !== initial || Number(timeout) !== (app.predeploy_timeout || 600);
+  return (
+    <Card>
+      <CardContent className="space-y-4 pt-6">
+        <SectionHeader title="Pre-deploy command" />
+        <p className="text-sm text-muted-foreground">
+          Runs from the new image with the app environment and network before the old container is
+          replaced. A non-zero exit or timeout keeps the current version serving.
+        </p>
+        <textarea
+          className="min-h-24 w-full rounded-md border bg-background p-3 font-mono text-sm"
+          value={command}
+          onChange={(e) => setCommand(e.target.value)}
+          placeholder="./bin/migrate"
+          aria-label="Pre-deploy shell command"
+        />
+        <TextField
+          label="Timeout (seconds, maximum 3600)"
+          value={timeout}
+          onChange={(e) => setTimeout(e.target.value)}
+          type="number"
+        />
+        <div className="flex items-center gap-3">
+          <Button
+            disabled={!dirty || busy}
+            onClick={() =>
+              save({ predeploy_command: command, predeploy_timeout: Number(timeout) || 0 })
+            }
+          >
+            {busy ? "Saving…" : "Save"}
+          </Button>
+          {saved && <span className="text-sm text-muted-foreground">Saved</span>}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // AutoscaleSection hands the replica count to the instance.
 //
 // Below Limits and below Servers, because it is the decision that only

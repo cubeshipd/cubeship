@@ -622,8 +622,23 @@ function DeploymentDialog({
           {shown && (
             <div className="flex flex-wrap items-center gap-x-6 gap-y-1 font-mono text-xs text-muted-foreground">
               <span className="break-all">{shown.image || "—"}</span>
+              <span>{shown.phase}</span>
+              <span>{Math.round(shown.duration_ms / 1000)}s</span>
               <span>{new Date(shown.created_at).toLocaleString()}</span>
             </div>
+          )}
+
+          {shown && !shown.cancelled && shown.status === "pending" && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={async () => {
+                await api.post(`/apps/${reference}/deployments/${shown.id}/cancel`);
+                await load();
+              }}
+            >
+              Cancel deploy
+            </Button>
           )}
 
           {shown?.error && (

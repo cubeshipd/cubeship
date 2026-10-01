@@ -29,6 +29,11 @@ type fakeEngine struct {
 	events []string
 	// ownersAsked is every image PathOwner was asked about.
 	ownersAsked []string
+	hookOutput  string
+}
+
+func (e *fakeEngine) RunOneShot(context.Context, dockerx.ContainerOpts) (string, int, error) {
+	return e.hookOutput, 0, nil
 }
 
 // errWouldNotStart is a container the Engine refuses to make.
@@ -140,6 +145,19 @@ func TestTheAgentReportsWhichCopyItRan(t *testing.T) {
 	// several copies on one machine are told apart.
 	if names := engine.createdNames(); len(names) != 2 || names[0] == names[1] {
 		t.Errorf("the copies were created as %v", names)
+	}
+}
+
+func TestTheAgentReturnsRedactedPredeployOutput(t *testing.T) {
+	engine := &fakeEngine{hookOutput: "migrated secret-value\n"}
+	a := New("https://cubeship.example.com", "token", "test", t.TempDir(), nil, engine, nil, nil)
+	a.healthInterval = 0
+	results := a.apply(context.Background(), []node.Placement{{
+		App: "production/api", Deploy: 9, Ordinal: 1, Container: "api-9-1", Image: "image",
+		Env: map[string]string{"SECRET": "secret-value"}, PredeployArgs: []string{"migrate"},
+	}}, "")
+	if len(results) != 1 || results[0].Output != "migrated [REDACTED]\n" {
+		t.Fatalf("unexpected hook output: %+v", results)
 	}
 }
 

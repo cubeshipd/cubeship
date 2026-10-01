@@ -38,10 +38,29 @@ type fakeDocker struct {
 	capped    []cappedContainer
 	logOutput string
 
-	pullErr   error
-	createErr error
-	startErr  error
-	removeErr error
+	pullErr       error
+	createErr     error
+	startErr      error
+	removeErr     error
+	oneShotOutput string
+	oneShotCode   int
+	oneShotErr    error
+	oneShotOpts   []dockerx.ContainerOpts
+}
+
+func (f *fakeDocker) RunOneShot(ctx context.Context, opts dockerx.ContainerOpts) (string, int, error) {
+	f.mu.Lock()
+	f.oneShotOpts = append(f.oneShotOpts, opts)
+	out, code, err := f.oneShotOutput, f.oneShotCode, f.oneShotErr
+	f.mu.Unlock()
+	if err != nil {
+		return out, code, err
+	}
+	if code == -1 {
+		<-ctx.Done()
+		return out, 0, ctx.Err()
+	}
+	return out, code, nil
 }
 
 func (f *fakeDocker) PullImage(_ context.Context, ref string, creds *dockerx.RegistryAuth) error {

@@ -510,13 +510,15 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 			continue
 		}
 		displaced := a.displace(ctx, running, p)
-		id, err := a.start(ctx, p, registry)
+		id, output, err := a.start(ctx, p, registry)
 		a.settleDisplaced(ctx, displaced, err)
 		// The ordinal goes back untouched. It is how the control plane
 		// knows which copy of this app on this machine the result is
 		// about, and without it every report is about a copy nothing
 		// asked for.
-		result := node.Result{App: p.App, Deploy: p.Deploy, Ordinal: p.Ordinal, Container: id}
+		result := node.Result{App: p.App, Deploy: p.Deploy, Ordinal: p.Ordinal, Container: id, Output: output}
+		// start currently returns only an error, so successful hook output is
+		// carried separately by the placement result for central persistence.
 		if err != nil {
 			log.Printf("agent: %s: %v", p.App, err)
 			result.Error = err.Error()
@@ -581,7 +583,7 @@ type copy struct {
 // The control plane is told why, and that is what the deployment's row
 // says — so a failure here reads on the app's screen exactly like a
 // failure on the control plane does.
-func (a *Agent) start(ctx context.Context, p node.Placement, registry string) (string, error) {
+func (a *Agent) start(ctx context.Context, p node.Placement, registry string) (string, string, error) {
 	auth := p.Registry
 	if auth == nil && registry != "" && strings.HasPrefix(p.Image, registry+"/") {
 		// The instance's own registry. Its credential is not in the
@@ -591,7 +593,45 @@ func (a *Agent) start(ctx context.Context, p node.Placement, registry string) (s
 		auth = &dockerx.RegistryAuth{Username: node.RegistryUsername, Password: a.token}
 	}
 	if err := a.engine.PullImage(ctx, p.Image, auth); err != nil {
-		return "", fmt.Errorf("pull %s: %w", p.Image, err)
+		return "", "", fmt.Errorf("pull %s: %w", p.Image, err)
+	}
+	var output string
+	if len(p.PredeployArgs) > 0 || p.PredeployShell != "" {
+		runner, ok := a.engine.(interface {
+			RunOneShot(context.Context, dockerx.ContainerOpts) (string, int, error)
+		})
+		if !ok {
+			return "", "", fmt.Errorf("pre-deploy command is configured but one-shot containers are unavailable")
+		}
+		hookTimeout := time.Duration(p.PredeployTimeout) * time.Second
+		if hookTimeout == 0 {
+			hookTimeout = 10 * time.Minute
+		}
+		hookCtx, cancel := context.WithTimeout(ctx, hookTimeout)
+		opts := dockerx.ContainerOpts{Image: p.Image, Env: envvar.Slice(p.Env), CapDrop: []string{"NET_RAW"}, SecurityOpt: []string{"no-new-privileges:true"}}
+		if len(p.Networks) > 0 {
+			opts.Network, opts.AlsoNetworks = p.Networks[0], p.Networks[1:]
+		}
+		if p.PredeployShell != "" {
+			opts.Entrypoint = []string{"sh"}
+			opts.Cmd = []string{"-c", p.PredeployShell}
+		} else {
+			opts.Cmd = append([]string(nil), p.PredeployArgs...)
+		}
+		var code int
+		var runErr error
+		output, code, runErr = runner.RunOneShot(hookCtx, opts)
+		output = redactOutput(output, p.Env)
+		cancel()
+		if runErr != nil {
+			if hookCtx.Err() != nil {
+				return "", output, fmt.Errorf("pre-deploy command timed out after %s", hookTimeout)
+			}
+			return "", output, fmt.Errorf("run pre-deploy command: %w", runErr)
+		}
+		if code != 0 {
+			return "", output, fmt.Errorf("pre-deploy command exited with status %d: %s", code, strings.TrimSpace(output))
+		}
 	}
 
 	network, also := "", []string(nil)
@@ -602,7 +642,7 @@ func (a *Agent) start(ctx context.Context, p node.Placement, registry string) (s
 	for _, v := range p.Volumes {
 		dir := filepath.Join(a.dataDir, "volumes", strconv.FormatInt(v.ID, 10))
 		if err := dockerx.SeedVolume(ctx, a.engine, dir, p.Image, v.Path); err != nil {
-			return "", err
+			return "", "", err
 		}
 		binds = append(binds, dir+":"+v.Path)
 	}
@@ -620,26 +660,36 @@ func (a *Agent) start(ctx context.Context, p node.Placement, registry string) (s
 		Resources:    p.Resources,
 	})
 	if err != nil {
-		return "", fmt.Errorf("create container: %w", err)
+		return "", output, fmt.Errorf("create container: %w", err)
 	}
 	if err := a.engine.StartContainer(ctx, id); err != nil {
 		a.discard(ctx, id)
-		return "", fmt.Errorf("start container: %w", err)
+		return "", output, fmt.Errorf("start container: %w", err)
 	}
 	for range a.healthAttempts {
 		select {
 		case <-ctx.Done():
 			a.discard(ctx, id)
-			return "", ctx.Err()
+			return "", output, ctx.Err()
 		case <-time.After(a.healthInterval):
 		}
 		up, err := a.engine.IsRunning(ctx, id)
 		if err != nil || !up {
 			a.discard(ctx, id)
-			return "", fmt.Errorf("it started and did not stay up")
+			return "", output, fmt.Errorf("it started and did not stay up")
 		}
 	}
-	return id, nil
+	return id, output, nil
+}
+
+func redactOutput(output string, env map[string]string) string {
+	for _, value := range env {
+		if value == "" {
+			continue
+		}
+		output = strings.ReplaceAll(output, value, "[REDACTED]")
+	}
+	return output
 }
 
 // discard removes a container that should not exist. Best effort: what

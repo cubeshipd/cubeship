@@ -138,6 +138,9 @@ func (s *Service) Placed(ctx context.Context, nodeID int64, results []node.Resul
 		}
 
 		if r.Error != "" {
+			if r.Output != "" {
+				_ = s.Repo().AppendDeploymentLogs(ctx, d.ID, r.Output)
+			}
 			// **One machine failing fails the deploy**, and it does so
 			// at once rather than when the last machine has been heard
 			// from. A deploy that is going to be reported failed should
@@ -151,6 +154,9 @@ func (s *Service) Placed(ctx context.Context, nodeID int64, results []node.Resul
 				return err
 			}
 			continue
+		}
+		if r.Output != "" {
+			_ = s.Repo().AppendDeploymentLogs(ctx, d.ID, r.Output)
 		}
 		// The container's **name** is derived rather than reported.
 		// This is where it came from: the placement chose it, from the
@@ -279,7 +285,10 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 		// The one name that outlives this deployment, so an app on
 		// another machine is reached by what it is rather than by
 		// which deploy it is on. See app.InternalHost.
-		Aliases: []string{base},
+		Aliases:          []string{base},
+		PredeployArgs:    append([]string(nil), a.Predeploy.Args...),
+		PredeployShell:   a.Predeploy.Shell,
+		PredeployTimeout: int64(a.Predeploy.Timeout / time.Second),
 		// The ceiling this copy runs under. It travels with the
 		// placement rather than being asked for, because the machine
 		// has no database — and it is re-sent on every pass, which is
