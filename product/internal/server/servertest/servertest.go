@@ -113,6 +113,9 @@ func (noDocker) IsRunning(context.Context, string) (bool, error) {
 	return false, errNoDocker
 }
 
+func (noDocker) ProbeHTTP(context.Context, string, string, int) error { return nil }
+func (noDocker) ProbeTCP(context.Context, string, int) error          { return nil }
+
 func (noDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {
 	return nil, errNoDocker
 }

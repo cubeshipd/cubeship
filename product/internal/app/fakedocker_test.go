@@ -123,6 +123,10 @@ func (f *fakeDocker) IsRunning(_ context.Context, _ string) (bool, error) {
 	return f.running, nil
 }
 
+func (f *fakeDocker) ProbeHTTP(context.Context, string, string, int) error { return nil }
+
+func (f *fakeDocker) ProbeTCP(context.Context, string, int) error { return nil }
+
 func (f *fakeDocker) Logs(_ context.Context, _, _ string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader(f.logOutput)), nil
 }

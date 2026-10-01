@@ -264,6 +264,8 @@ func (quietDocker) RemoveContainer(context.Context, string) error { return nil }
 func (quietDocker) IsRunning(context.Context, string) (bool, error) {
 	return true, nil
 }
+func (quietDocker) ProbeHTTP(context.Context, string, string, int) error { return nil }
+func (quietDocker) ProbeTCP(context.Context, string, int) error          { return nil }
 
 func (quietDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
