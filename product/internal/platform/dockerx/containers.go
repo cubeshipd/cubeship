@@ -9,7 +9,9 @@ import (
 	"io"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -569,7 +571,7 @@ func (c *Client) InspectContainerByName(ctx context.Context, name string) (Conta
 
 // ProbeHTTP checks readiness from the host against the container's address on
 // the application network. Docker's process state alone is not readiness.
-func (c *Client) ProbeHTTP(ctx context.Context, id, path string) error {
+func (c *Client) ProbeHTTP(ctx context.Context, id, path string, port int) error {
 	info, err := c.api.ContainerInspect(ctx, id)
 	if err != nil {
 		return err
@@ -581,11 +583,14 @@ func (c *Client) ProbeHTTP(ctx context.Context, id, path string) error {
 	if network == nil || network.IPAddress == "" {
 		return fmt.Errorf("container has no application-network address")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+network.IPAddress+":8080"+path, nil)
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("invalid health probe port %d", port)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+network.IPAddress+":"+strconv.Itoa(port)+path, nil)
 	if err != nil {
 		return err
 	}
-	client := &http.Client{}
+	client := &http.Client{Timeout: 5 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
 		return err
