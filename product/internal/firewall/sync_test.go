@@ -140,7 +140,7 @@ func TestSyncingReplacesTheBlockAndReloadsARunningFirewall(t *testing.T) {
 	if strings.Count(text, dockerBeginMarker) != 1 || strings.Count(text, dockerEndMarker) != 1 {
 		t.Errorf("not exactly one block:\n%s", text)
 	}
-	if !strings.Contains(text, "--ctorigdstport 15002 ") || strings.Contains(text, "--ctorigdstport 15000 ") {
+	if !strings.Contains(text, "--dports 80,443,15002 ") || strings.Contains(text, "--dports 80,443,15000 ") {
 		t.Errorf("the block is not the new set:\n%s", text)
 	}
 	if !strings.HasSuffix(text, dockerEndMarker+"\n") {
@@ -220,15 +220,19 @@ func TestSyncingHandsTheBlockOverAsAFile(t *testing.T) {
 	host := &fakeHost{}
 	dataDir := t.TempDir()
 	svc := NewService(host, nil, fakeExposed{ports: []int{15002}}, dataDir)
+	svc.rules = filepath.Join(t.TempDir(), "after.rules")
+	if err := os.WriteFile(svc.rules, []byte(adopted(t, operatorRules, 15002)), 0o640); err != nil {
+		t.Fatal(err)
+	}
 
 	if err := svc.SyncPublished(context.Background()); err != nil {
 		t.Fatalf("sync: %v", err)
 	}
-	if len(host.ran) != 1 {
+	if len(host.ran) != 2 {
 		t.Fatalf("ran %v", host.ran)
 	}
 	got, err := os.ReadFile(filepath.Join(dataDir, "ufw-docker.rules"))
-	if err != nil || !strings.Contains(string(got), "--ctorigdstport 15002 ") {
+	if err != nil || !strings.Contains(string(got), "--dports 80,443,15002 ") {
 		t.Errorf("the block in the data directory: %q %v", got, err)
 	}
 	script := replaceScript(filepath.Join(dataDir, "ufw-docker.rules"), afterRules)
@@ -261,7 +265,7 @@ func TestAdoptingKeepsWhatIsExposedReachableByItsPublishedPort(t *testing.T) {
 		t.Errorf("a port that is not exposed lost its rule: %v", host.ran)
 	}
 	got, err := os.ReadFile(filepath.Join(dataDir, "ufw-docker.rules"))
-	if err != nil || !strings.Contains(string(got), "--ctorigdstport 15002 ") {
+	if err != nil || !strings.Contains(string(got), "--dports 80,443,15002 ") {
 		t.Errorf("the stanza adopting wrote: %q %v", got, err)
 	}
 }
