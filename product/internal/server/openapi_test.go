@@ -155,6 +155,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"GET /nodes/{name}",
 		"GET /nodes/{name}/components",
 		"GET /nodes/{name}/components/{component}/logs",
+		"GET /nodes/{name}/storage",
 		"GET /objectstores",
 		"GET /objectstores/providers",
 		"GET /objectstores/{name}",
