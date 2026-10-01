@@ -30,6 +30,7 @@ type RunResponse struct {
 // Response is one installation as the API returns it.
 type Response struct {
 	ID          int64      `json:"id"`
+	Name        string     `json:"name"`
 	Owner       string     `json:"owner"`
 	Repo        string     `json:"repo"`
 	Release     string     `json:"release"`
@@ -60,12 +61,16 @@ func toRunResponse(r *Run) RunResponse {
 
 func toResponse(i Installed) Response {
 	in := i.Install
+	name := in.Repo
+	if in.Manifest != nil && in.Manifest.Name != "" {
+		name = in.Manifest.Name
+	}
 	resources := in.Resources
 	if resources == nil {
 		resources = []Resource{}
 	}
 	out := Response{
-		ID: in.ID, Owner: in.Owner, Repo: in.Repo, Release: in.Release, Commit: in.Commit,
+		ID: in.ID, Name: name, Owner: in.Owner, Repo: in.Repo, Release: in.Release, Commit: in.Commit,
 		Project: in.Project, Environment: in.Environment, Status: in.Status, Resources: resources,
 		Runs: []RunResponse{}, Busy: i.Busy(), CreatedAt: in.CreatedAt, UpdatedAt: in.UpdatedAt,
 	}

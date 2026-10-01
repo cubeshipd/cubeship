@@ -38,12 +38,10 @@ export function TemplateInstalls() {
       id: "template",
       header: "Template",
       width: 38,
-      sortBy: (i) => i.repo,
+      sortBy: (i) => i.name,
       cell: (i) => (
         <div className="min-w-0">
-          <div className="truncate font-mono text-sm">
-            {i.owner}/{i.repo}
-          </div>
+          <div className="truncate font-mono text-sm">{i.name}</div>
           <div className="truncate font-mono text-xs text-subtle-foreground">
             {i.project}/{i.environment}
           </div>
@@ -66,7 +64,7 @@ export function TemplateInstalls() {
         <RowActions>
           <RowAction
             icon={Trash2Icon}
-            label={`Uninstall ${i.repo}`}
+            label={`Uninstall ${i.name}`}
             danger
             disabled={i.busy || i.status !== "installed"}
             onClick={() => setUninstalling(i)}

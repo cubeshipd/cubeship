@@ -1,26 +1,17 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import {
-  BadgeCheckIcon,
-  BoxIcon,
-  DatabaseIcon,
-  ExternalLinkIcon,
-  HardDriveIcon,
-  PlusIcon,
-} from "lucide-react";
+import { BadgeCheckIcon, BoxIcon, DatabaseIcon, HardDriveIcon, PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ReactNode, use, useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { DomainInput, type PendingRecord, writeRecord } from "@/components/domain-input";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
 import { SearchableSelect } from "@/components/searchable-select";
 import { SectionHeader } from "@/components/section-header";
 import { TemplateMark } from "@/components/template-card";
 import { TextField } from "@/components/text-field";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   api,
@@ -57,18 +48,6 @@ export default function TemplatePage({ params }: PageProps<"/templates/[owner]/[
 
   return (
     <>
-      <RailPortal>
-        <Button
-          variant="outline"
-          nativeButton={false}
-          render={
-            <a href={t.url} target="_blank" rel="noreferrer noopener">
-              <ExternalLinkIcon />
-              GitHub
-            </a>
-          }
-        />
-      </RailPortal>
       <div className="mb-8 flex items-center gap-4">
         <TemplateMark src={t.icon_url} className="size-14" />
         <div className="min-w-0">
@@ -79,9 +58,6 @@ export default function TemplatePage({ params }: PageProps<"/templates/[owner]/[
             )}
           </h1>
           <p className="text-sm text-muted-foreground">{t.description}</p>
-          <p className="mt-0.5 font-mono text-xs text-subtle-foreground">
-            {t.owner}/{t.name}
-          </p>
         </div>
       </div>
       {manifest ? (
@@ -102,10 +78,7 @@ function Creates({ manifest }: { manifest: TemplateManifest }) {
       key: `app-${a.key}`,
       icon: <BoxIcon />,
       name: a.name,
-      detail:
-        a.source.type === "image"
-          ? `${a.source.image}:${a.source.tag ?? "latest"}`
-          : (a.source.repo ?? a.source.type),
+      detail: "Application",
     })),
     ...manifest.databases.map((d) => ({
       key: `db-${d.key}`,
@@ -117,7 +90,7 @@ function Creates({ manifest }: { manifest: TemplateManifest }) {
       key: `store-${s.key}`,
       icon: <HardDriveIcon />,
       name: s.name,
-      detail: s.buckets.length > 0 ? s.buckets.join(", ") : "object storage",
+      detail: "Object storage",
     })),
   ];
   return (

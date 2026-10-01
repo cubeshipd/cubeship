@@ -1,13 +1,11 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { GitHubIcon } from "@/components/icons";
 import { TemplateIcon } from "@/components/templates/card";
 import { Preview } from "@/components/templates/preview";
 import { Readme } from "@/components/templates/readme";
 import { SourceBlock } from "@/components/templates/source-block";
 import { VerifiedBadge } from "@/components/templates/verified";
-import { avatarAt } from "@/lib/avatar";
 import { templateByPath } from "@/lib/catalog";
 
 // Reads the catalog, so this page can never be static.
@@ -29,9 +27,6 @@ export async function generateMetadata(
   };
 }
 
-const row = "template-info-value";
-const term = "template-info-term";
-
 export default async function TemplatePage(props: PageProps<"/templates/[owner]/[repo]">) {
   const { owner, repo } = await props.params;
   const found = await templateByPath(owner, repo);
@@ -47,9 +42,6 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
       <header className="template-detail-header">
         <TemplateIcon src={found.icon_url} className="template-detail-icon" />
         <div className="min-w-0 flex-1">
-          <p className="template-detail-path">
-            {found.owner}/{found.name}
-          </p>
           <h1>
             {found.title}
             {found.verified ? <VerifiedBadge className="size-6" /> : null}
@@ -60,57 +52,12 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
 
       <div className="template-detail-grid">
         <aside className="template-detail-aside">
-          <div className="template-info hud-frame">
-            <div className="template-info-author">
-              {/* biome-ignore lint/performance/noImgElement: a GitHub avatar, not one of our own assets. */}
-              <img
-                src={avatarAt(found.avatar_url, 72)}
-                alt=""
-                width={36}
-                height={36}
-                className="size-9 shrink-0 border border-fd-border"
-              />
-              <div className="min-w-0 flex-1">
-                <p className="template-info-label">Author</p>
-                <a href={`https://github.com/${found.owner}`} className="template-info-author-link">
-                  {found.owner}
-                </a>
-              </div>
-              <a
-                href={found.url}
-                aria-label={`${found.owner}/${found.name} on GitHub`}
-                className="template-info-github"
-              >
-                <GitHubIcon className="size-4" />
-              </a>
-            </div>
-
-            <dl className="template-info-facts">
-              {manifest?.min_cubeship ? (
-                <>
-                  <dt className={term}>Requires</dt>
-                  <dd className={row}>Cubeship {manifest.min_cubeship}</dd>
-                </>
-              ) : null}
-            </dl>
-
-            {found.tags.length > 0 ? (
-              <div className="template-info-section">
-                <p className="template-info-label">Topics</p>
-                <div className="template-info-tags">
-                  {found.tags.map((tag) => (
-                    <Link
-                      key={tag}
-                      href={`/templates?tag=${encodeURIComponent(tag)}`}
-                      className="template-info-tag"
-                    >
-                      {tag}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-          </div>
+          {manifest ? (
+            <section className="template-detail-section">
+              <p className="template-section-title">What this creates</p>
+              <Preview manifest={manifest} />
+            </section>
+          ) : null}
         </aside>
 
         <div className="template-detail-main">
@@ -122,13 +69,6 @@ export default async function TemplatePage(props: PageProps<"/templates/[owner]/
                 repo={found.name}
                 commit={release.commit}
               />
-            </section>
-          ) : null}
-
-          {manifest ? (
-            <section className="template-detail-section">
-              <p className="template-section-title">What this creates</p>
-              <Preview manifest={manifest} />
             </section>
           ) : null}
 

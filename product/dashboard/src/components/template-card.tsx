@@ -22,9 +22,6 @@ export function TemplateCard({ template }: { template: TemplateSummary }) {
               />
             )}
           </h3>
-          <p className="truncate font-mono text-xs text-subtle-foreground">
-            {template.owner}/{template.name}
-          </p>
         </div>
       </div>
       <p className="line-clamp-2 min-h-10 text-sm text-muted-foreground">{template.description}</p>

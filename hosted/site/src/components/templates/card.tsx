@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { avatarAt } from "@/lib/avatar";
 import type { TemplateSummary } from "@/lib/catalog";
 import { VerifiedBadge } from "./verified";
 
@@ -16,26 +15,9 @@ export function TemplateCard({ template }: { template: TemplateSummary }) {
             <span className="truncate">{template.title}</span>
             {template.verified ? <VerifiedBadge className="size-4" /> : null}
           </h3>
-          <p className="template-card-repo">
-            {template.owner}/{template.name}
-          </p>
         </div>
       </div>
       <p className="template-card-description">{template.description}</p>
-      <div className="template-card-meta">
-        <span className="template-card-owner">
-          {/* biome-ignore lint/performance/noImgElement: a GitHub avatar, not one of our own assets. */}
-          <img
-            src={avatarAt(template.avatar_url, 40)}
-            alt=""
-            width={20}
-            height={20}
-            loading="lazy"
-            className="size-5 shrink-0 border border-fd-border"
-          />
-          <span className="truncate">{template.owner}</span>
-        </span>
-      </div>
     </Link>
   );
 }

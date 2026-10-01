@@ -1556,6 +1556,7 @@ export type TemplateRun = {
 
 export type TemplateInstall = {
   id: number;
+  name: string;
   owner: string;
   repo: string;
   release: string;

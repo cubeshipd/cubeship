@@ -339,6 +339,7 @@ export const db = {
   templateInstalls: [
     {
       id: 1,
+      name: "Umami",
       owner: "cubeshipd",
       repo: "umami",
       release: "v1.1.0",

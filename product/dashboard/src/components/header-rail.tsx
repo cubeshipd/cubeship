@@ -303,6 +303,13 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
   }
 
   const [name, ...tail] = rest;
+
+  // Template routes retain owner/name for API compatibility, but the catalog
+  // no longer has repository authorship. Show only the template slug.
+  if (section === "templates" && name !== "installs" && tail.length === 1) {
+    return [head, { key: `n:${tail[0]}`, label: tail[0] }];
+  }
+
   const siblings = SECTION_SIBLINGS[section];
   const out: CrumbSpec[] = [
     head,

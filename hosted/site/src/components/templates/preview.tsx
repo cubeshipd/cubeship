@@ -10,10 +10,8 @@ const ENGINES: Record<string, string> = {
   mongodb: "MongoDB",
 };
 
-export function sourceOf(app: NormalizedApp): string {
-  return app.source.type === "image"
-    ? `${app.source.image}:${app.source.tag ?? "latest"}`
-    : app.source.repo;
+export function sourceOf(_app: NormalizedApp): string {
+  return "Application";
 }
 
 export function engineOf(database: NormalizedManifest["databases"][number]): string {
@@ -42,7 +40,7 @@ export function Preview({ manifest }: { manifest: NormalizedManifest }) {
           key={`store-${store.key}`}
           icon={<HardDrive />}
           name={store.name}
-          detail={store.buckets.length > 0 ? store.buckets.join(", ") : "Object storage"}
+          detail="Object storage"
         />
       ))}
       {manifest.apps.flatMap((app) =>
@@ -51,7 +49,7 @@ export function Preview({ manifest }: { manifest: NormalizedManifest }) {
             key={`volume-${app.key}-${volume.path}`}
             icon={<FolderLock />}
             name={volume.path}
-            detail={`Volume of ${app.name}`}
+            detail="Volume"
           />
         )),
       )}

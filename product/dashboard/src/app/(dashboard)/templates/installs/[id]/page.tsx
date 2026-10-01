@@ -59,9 +59,7 @@ export default function TemplateInstallPage({ params }: PageProps<"/templates/in
 
       <div className="mb-6 flex items-center justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold">
-            {i.owner}/{i.repo}
-          </h1>
+          <h1 className="truncate text-lg font-semibold">{i.name}</h1>
           <p className="font-mono text-xs text-subtle-foreground">
             in {i.project}/{i.environment}
           </p>

@@ -44,8 +44,8 @@ const manifest: NormalizedManifest = {
 };
 
 describe("the preview's details", () => {
-  it("names an app by its image and tag", () => {
-    expect(sourceOf(manifest.apps[0])).toBe("nginx:1");
+  it("identifies an app by its resource type", () => {
+    expect(sourceOf(manifest.apps[0])).toBe("Application");
   });
 
   it("names a database by its engine and version", () => {

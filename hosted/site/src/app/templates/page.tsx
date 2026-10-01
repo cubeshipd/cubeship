@@ -26,17 +26,14 @@ export default async function TemplatesPage(props: PageProps<"/templates">) {
     <div className="site-container templates-catalog">
       <header className="templates-hero">
         <div>
-          <p className="section-kicker">Community templates</p>
+          <p className="section-kicker">Cubeship templates</p>
           <h1>Your next app starts here.</h1>
         </div>
         <div className="templates-hero-copy">
           <p>
-            Deploy complete projects with the apps and managed data they need, maintained in one
-            GitHub repository.
+            Deploy complete projects with the apps and managed data they need, maintained by
+            Cubeship.
           </p>
-          <Link href="/docs/templates/publishing" className="inline-link">
-            Publish a template <span aria-hidden>↗</span>
-          </Link>
         </div>
       </header>
 
