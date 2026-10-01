@@ -146,8 +146,6 @@ func (s *Service) Status(ctx context.Context, caller *user.User) (*Status, error
 
 	// What the host's stanza admits by published port, read off the file
 	// rather than the database: the screen says what the host has.
-	exposed := parseExposedRules(sections[5])
-
 	// What is actually exposed on a Docker host, which is rarely what
 	// the host's own services are listening on.
 	if s.ports != nil {
@@ -164,10 +162,8 @@ func (s *Service) Status(ctx context.Context, caller *user.User) (*Status, error
 				// number governs traffic that never reaches this
 				// container.
 				switch {
-				case allowsAny(status.Rules, ScopeApps, []int{admits(out)}):
+				case allowsAny(status.Rules, ScopeApps, []int{out.Port}):
 					out.Allowed, out.AllowedBy = true, AllowedByRule
-				case exposed[out.Port] && out.Protocol == string(ProtocolTCP):
-					out.Allowed, out.AllowedBy = true, AllowedByExposed
 				}
 				status.Published = append(status.Published, out)
 			}
@@ -211,7 +207,7 @@ func parsePorts(out string) []int {
 // with no way for the operator to say otherwise.
 func allowsAny(rules []Rule, scope Scope, ports []int) bool {
 	for _, r := range rules {
-		if r.Action != ActionAllow || r.Scope != scope {
+		if r.Action != ActionAllow || r.Scope != scope || r.V6 {
 			continue
 		}
 		for _, p := range ports {
@@ -440,7 +436,7 @@ func (s *Service) AddRule(ctx context.Context, caller *user.User, req Request) (
 	// the packet carries by the time the forward chain looks at it.
 	// Asking them for the second would be asking them to know how
 	// Docker translates a port.
-	specs := req.Specs(insideOf(status.Published, req.Port))
+	specs := req.Specs("")
 	for _, spec := range specs {
 		if err := spec.Check(); err != nil {
 			return nil, err
@@ -455,6 +451,11 @@ func (s *Service) AddRule(ctx context.Context, caller *user.User, req Request) (
 	}
 	for _, spec := range specs {
 		if err := s.run(ctx, spec.Args()...); err != nil {
+			return nil, err
+		}
+	}
+	if req.Scope == ScopeApps {
+		if err := s.SyncPublished(ctx); err != nil {
 			return nil, err
 		}
 	}
@@ -496,7 +497,7 @@ func (s *Service) ReplaceRule(ctx context.Context, caller *user.User, index int,
 		return nil, KeepsYouInError(*found)
 	}
 
-	specs := req.Specs(insideOf(status.Published, req.Port))
+	specs := req.Specs("")
 	for _, spec := range specs {
 		if err := spec.Check(); err != nil {
 			return nil, err
@@ -527,6 +528,11 @@ func (s *Service) ReplaceRule(ctx context.Context, caller *user.User, index int,
 	}
 	if err := s.run(ctx, argv...); err != nil {
 		return nil, err
+	}
+	if req.Scope == ScopeApps || found.Scope == ScopeApps {
+		if err := s.SyncPublished(ctx); err != nil {
+			return nil, err
+		}
 	}
 	return s.Status(ctx, caller)
 }
@@ -585,6 +591,11 @@ func (s *Service) DeleteRule(ctx context.Context, caller *user.User, index int, 
 	}
 	if err := s.run(ctx, argv...); err != nil {
 		return nil, err
+	}
+	if found.Scope == ScopeApps {
+		if err := s.SyncPublished(ctx); err != nil {
+			return nil, err
+		}
 	}
 	return s.Status(ctx, caller)
 }
@@ -676,6 +687,9 @@ func (s *Service) AdoptDocker(ctx context.Context, caller *user.User, allow []in
 	if err := s.script(ctx, adoptScript(path)); err != nil {
 		return nil, err
 	}
+	if err := s.SyncPublished(ctx); err != nil {
+		return nil, err
+	}
 	return s.Status(ctx, caller)
 }
 
@@ -723,7 +737,11 @@ func (s *Service) SyncPublished(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	block, err := renderDockerBlock(ports)
+	rules, err := s.appsRules(ctx)
+	if err != nil {
+		return err
+	}
+	block, err := renderDockerBlockRules(ports, rules)
 	if err != nil {
 		return err
 	}
@@ -737,6 +755,14 @@ func (s *Service) SyncPublished(ctx context.Context) error {
 		return fmt.Errorf("write the docker stanza: %w", err)
 	}
 	return s.script(ctx, replaceScript(path, s.rules))
+}
+
+func (s *Service) appsRules(ctx context.Context) ([]Rule, error) {
+	res, err := s.host.Script(ctx, "ufw status numbered")
+	if err != nil {
+		return nil, err
+	}
+	return parseRules(res.Output), nil
 }
 
 func (s *Service) exposedPorts(ctx context.Context) ([]int, error) {

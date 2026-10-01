@@ -257,13 +257,10 @@ func (s Spec) Args() []string {
 	} else {
 		args = append(args, "from", "any")
 	}
-	// The port the packet will carry when the rule is consulted. For a
-	// forwarded rule that is the container's own, because Docker has
-	// already translated it — see Spec.Inside.
+	// Docker's DOCKER-USER chain matches the original published port via
+	// conntrack. Keep that number in UFW too, so two databases sharing
+	// 5432 remain independently filterable.
 	to := s.Port
-	if s.Scope == ScopeApps && s.Inside != "" {
-		to = s.Inside
-	}
 	args = append(args, "to", "any", "port", to)
 
 	if s.Comment != "" {

@@ -197,7 +197,7 @@ func TestAForwardedRuleNamesThePortInsideTheContainer(t *testing.T) {
 		Scope: ScopeApps, Action: ActionAllow, Protocol: ProtocolTCP,
 		Port: "15000", Inside: "5432", Comment: "cubeship",
 	}.Args()
-	want := "ufw route allow proto tcp from any to any port 5432 comment cubeship"
+	want := "ufw route allow proto tcp from any to any port 15000 comment cubeship"
 	if strings.Join(exposed, " ") != want {
 		t.Errorf("exposed database: %v", exposed)
 	}
