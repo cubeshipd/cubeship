@@ -6,6 +6,29 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.12.0-rc.1 — 2026-10-01
+
+*Prerelease.*
+
+Safer instance maintenance with Docker storage visibility and cleanup, plus a simpler template preview experience.
+
+### Added
+
+**Docker storage cleanup.** Servers now show the Docker data that can be reclaimed: unused images, build cache and stopped containers. An explicit confirmation is required before cleanup runs, and unused volumes are reported for visibility but are never deleted by this action.
+
+- The storage screen is available from **Servers** on the control plane.
+- Cleanup removes only regenerable Docker data.
+- The API and OpenAPI document expose the same inspection and cleanup operations.
+- The dashboard preview includes representative storage fixtures.
+
+### Fixed
+
+**Template previews.** Preview flows are simpler and keep their sample data local to the dashboard, making the experience faster to inspect without connecting to an instance.
+
+### Upgrade notes
+
+Update normally from the dashboard or CLI. No database migrations.
+
 ## 0.11.4 — 2026-09-30
 
 Align the dashboard and documentation with SeaweedFS managed object storage.
