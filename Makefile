@@ -154,7 +154,7 @@ ship: daemon-linux ## Upload the daemon to a VPS and restart it (HOST=user@vps)
 		&& sudo systemctl --no-pager status cubeshipd'
 
 .PHONY: check
-check: fmt-check vet sh-check changelog-check reference-check test ## Everything that must pass before a commit
+check: fmt-check vet sh-check changelog-check reference-check dashboard-check test ## Everything that must pass before a commit
 
 # Postgres has no in-memory mode, so the unit tests need a real server.
 # Each test gets its own schema in this one container (see
@@ -195,6 +195,16 @@ db-down: ## Stop and remove the test Postgres, discarding its data
 # DB-backed tests are spread through the modules and cannot move, so they
 # skip on -short — see dbtest.RequireDatabase, which fails rather than
 # skipping when -short is absent.
+
+.PHONY: dashboard-check
+dashboard-check: ## Validate dashboard formatting, lint and types
+	cd $(WEBDIR) && $(PNPM) lint && $(PNPM) typecheck
+
+.PHONY: install-hooks
+install-hooks: ## Configure this checkout to run the full pre-commit gate
+	git config core.hooksPath .githooks
+	@echo "Git hooks installed: .githooks/pre-commit"
+
 .PHONY: test
 test: ## Unit tests that need nothing but this repository, race detector on
 	$(GO) -C $(GODIR) test -short -race -count=1 ./...

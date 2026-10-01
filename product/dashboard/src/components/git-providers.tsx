@@ -82,7 +82,7 @@ export function GitProviders({
               {p.name}
               <ExternalLinkIcon className="size-3.5" />
             </a>
-           ) : canRegister && p.id === "github" ? (
+          ) : canRegister && p.id === "github" ? (
             <CreateGitHubApp
               key={p.id}
               returnTo={returnTo}
