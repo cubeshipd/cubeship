@@ -6,6 +6,24 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.12.0-rc.3 — 2026-10-01
+
+*Prerelease.*
+
+Improve the Docker storage screen with correct usage values and a visible loading state.
+
+### Fixed
+
+**Docker storage screen.** Storage values now use the API's documented field names, so image, build cache and stopped-container usage render correctly instead of showing `NaN GB`.
+
+**Loading feedback.** The storage page now shows a loading skeleton while Docker usage is being read, so entering the screen no longer looks empty or stalled.
+
+**Invalid usage values.** Unexpected numeric values fall back to an em dash instead of displaying `NaN`.
+
+### Upgrade notes
+
+Update normally from the dashboard or CLI. No database migrations.
+
 ## 0.12.0-rc.2 — 2026-10-01
 
 *Prerelease.*
