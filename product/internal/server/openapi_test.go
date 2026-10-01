@@ -80,6 +80,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"DELETE /apps/{project}/{env}/{name}/volumes/{volumeID}",
 		"DELETE /apps/{project}/{env}/{name}/volumes/{volumeID}/backups/schedule",
 		"DELETE /backups/{id}",
+		"DELETE /bitbucket/{id}",
 		"DELETE /credentials/{id}",
 		"DELETE /datastores/{name}",
 		"DELETE /datastores/{name}/attachments/{project}/{env}/{app}",
