@@ -48,11 +48,11 @@ jobs:
         run: |
           packages=$(go -C product list ./... | while read -r package; do
             dir=$(go -C product list -f '{{.Dir}}' "$package")
-            if ! rg -q 'dbtest\.New|servertest\.New|RequireDatabase' "$dir" -g '*_test.go'; then
+            if ! grep -R -q --include='*_test.go' -E 'dbtest\.New|servertest\.New|RequireDatabase' "$dir"; then
               printf '%s\n' "$package"
             fi
           done)
-          go -C product test -short -race -count=1 $packages
+          test -z "$packages" || go -C product test -short -race -count=1 $packages
           go -C hosted/catalog test -short -race -count=1 ./...
 
   # The full suite runs separately so database setup and migrations cannot
@@ -83,11 +83,11 @@ jobs:
         run: |
           packages=$(go -C product list ./... | while read -r package; do
             dir=$(go -C product list -f '{{.Dir}}' "$package")
-            if rg -q 'dbtest\.New|servertest\.New|RequireDatabase' "$dir" -g '*_test.go'; then
+            if grep -R -q --include='*_test.go' -E 'dbtest\.New|servertest\.New|RequireDatabase' "$dir"; then
               printf '%s\n' "$package"
             fi
           done)
-          go -C product test -race -count=1 $packages
+          test -n "$packages" && go -C product test -race -count=1 $packages
 
   # Everything that boots a container: a privileged buildkitd per build
   # test, and the whole product once — install the daemon, push an image,
