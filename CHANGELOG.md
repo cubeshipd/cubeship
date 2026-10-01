@@ -6,6 +6,22 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.12.0-rc.2 — 2026-10-01
+
+*Prerelease.*
+
+Fixes Docker storage management in the Servers screen and deploys GitHub builds only for the selected branch.
+
+### Fixed
+
+**Docker storage management.** The Servers storage screen now works with the Docker Engine client used by Cubeship. It can inspect storage and clean unused images, stopped containers and build cache without failing before reaching Docker. Volumes remain excluded from cleanup.
+
+**GitHub branch deployments.** Apps built from a GitHub repository now deploy when their selected branch is pushed, while pushes to other branches and tags leave them unchanged. Apps without a selected branch continue to follow every branch push.
+
+### Upgrade notes
+
+Update normally from the dashboard or CLI. No database migrations.
+
 ## 0.12.0-rc.1 — 2026-10-01
 
 *Prerelease.*
