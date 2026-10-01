@@ -131,6 +131,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"GET /bitbucket",
 		"GET /bitbucket/branches",
 		"GET /bitbucket/repositories",
+		"GET /bitbucket/start",
 		"GET /certificates",
 		"GET /credentials",
 		"GET /datastores",

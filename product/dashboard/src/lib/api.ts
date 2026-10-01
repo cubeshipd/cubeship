@@ -578,6 +578,8 @@ export type Settings = {
   // they are.
   github_app_slug?: string;
   github_connected: boolean;
+  bitbucket_configured?: boolean;
+  bitbucket_webhook_ready?: boolean;
   // Whether every name under the instance's domain already resolves
   // here — true of the sslip.io address a default install takes. It is
   // what decides whether a name for an app needs a record written.

@@ -21,11 +21,20 @@ type Handler struct {
 
 func NewHandler(s *Service, d Deployer) *Handler { return &Handler{s, d} }
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
+	r.Handle("GET /bitbucket/start", auth(http.HandlerFunc(h.start)))
 	r.Handle("GET /bitbucket", auth(http.HandlerFunc(h.list)))
 	r.Handle("POST /bitbucket", auth(http.HandlerFunc(h.connect)))
 	r.Handle("DELETE /bitbucket/{id}", auth(http.HandlerFunc(h.disconnect)))
 	r.Handle("GET /bitbucket/repositories", auth(http.HandlerFunc(h.repos)))
 	r.Handle("GET /bitbucket/branches", auth(http.HandlerFunc(h.branches)))
+}
+func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
+	url, err := h.svc.Start(r.Context(), user.FromContext(r.Context()))
+	if err != nil {
+		write(w, err)
+		return
+	}
+	http.Redirect(w, r, url, http.StatusFound)
 }
 func (h *Handler) WebhookRoutes(r *httpx.Router) {
 	r.HandleRootFunc("POST /hooks/bitbucket", h.webhook)
