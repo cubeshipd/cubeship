@@ -18,6 +18,7 @@ import (
 	"cubeship/internal/mesh"
 	"cubeship/internal/platform/authkey"
 	"cubeship/internal/platform/database"
+	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/slug"
 	"cubeship/internal/user"
 )
@@ -51,6 +52,7 @@ type Service struct {
 	// registry answers where this instance's own registry is, so a
 	// machine knows which images it should authenticate as itself for.
 	registry func(ctx context.Context) string
+	storage  StorageEngine
 	// advertise is where the other machines reach this one. It is the
 	// instance's own public address, which settings already works out
 	// and refuses to guess badly — a bridge address here would build a
@@ -69,6 +71,11 @@ type Service struct {
 	networkName string
 }
 
+type StorageEngine interface {
+	Storage(context.Context) (dockerx.Storage, error)
+	Prune(context.Context) (int64, error)
+}
+
 // meshLookupTTL is how long "is there a cluster network" is believed.
 //
 // The question is asked on every container this instance creates, and
@@ -77,6 +84,42 @@ type Service struct {
 const meshLookupTTL = 30 * time.Second
 
 func NewService(db *database.DB) *Service { return &Service{db: db, hub: newHub()} }
+
+func (s *Service) SetStorage(engine StorageEngine) { s.storage = engine }
+
+func (s *Service) Storage(ctx context.Context, caller *user.User, name string) (dockerx.Storage, error) {
+	if err := user.Allow(caller, user.ResServers, user.LevelView, ""); err != nil {
+		return dockerx.Storage{}, err
+	}
+	n, err := s.Get(ctx, caller, name)
+	if err != nil {
+		return dockerx.Storage{}, err
+	}
+	if !n.ControlPlane {
+		return dockerx.Storage{}, ErrControlPlane
+	}
+	if s.storage == nil {
+		return dockerx.Storage{}, errors.New("docker storage is unavailable")
+	}
+	return s.storage.Storage(ctx)
+}
+
+func (s *Service) PruneStorage(ctx context.Context, caller *user.User, name string) (int64, error) {
+	if err := user.Allow(caller, user.ResServers, user.LevelManage, ""); err != nil {
+		return 0, err
+	}
+	n, err := s.Get(ctx, caller, name)
+	if err != nil {
+		return 0, err
+	}
+	if !n.ControlPlane {
+		return 0, ErrControlPlane
+	}
+	if s.storage == nil {
+		return 0, errors.New("docker storage is unavailable")
+	}
+	return s.storage.Prune(ctx)
+}
 
 // SetMesh wires in what the cluster's network is made of. Called once,
 // by server.New, with whatever this daemon actually has: a Docker that

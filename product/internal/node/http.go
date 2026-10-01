@@ -104,9 +104,29 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET /nodes/mesh", auth(http.HandlerFunc(h.mesh)))
 	r.Handle("GET /nodes/{name}", auth(http.HandlerFunc(h.get)))
 	r.Handle("DELETE /nodes/{name}", auth(http.HandlerFunc(h.remove)))
+	r.Handle("GET /nodes/{name}/storage", auth(http.HandlerFunc(h.storage)))
+	r.Handle("POST /nodes/{name}/storage/prune", auth(http.HandlerFunc(h.pruneStorage)))
 
 	r.HandleInternal("POST /nodes/agent/reconcile", h.agent(http.HandlerFunc(h.reconcile)))
 	r.HandleInternal("POST /nodes/agent/results/{id}", h.agent(http.HandlerFunc(h.result)))
+}
+
+func (h *Handler) storage(w http.ResponseWriter, r *http.Request) {
+	storage, err := h.svc.Storage(r.Context(), user.FromContext(r.Context()), r.PathValue("name"))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, storage)
+}
+
+func (h *Handler) pruneStorage(w http.ResponseWriter, r *http.Request) {
+	bytes, err := h.svc.PruneStorage(r.Context(), user.FromContext(r.Context()), r.PathValue("name"))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]int64{"reclaimed_bytes": bytes})
 }
 
 // nodeContextKey carries the authenticated machine into the handler.

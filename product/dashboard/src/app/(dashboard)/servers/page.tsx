@@ -1,6 +1,6 @@
 "use client";
 
-import { PlusIcon, TerminalIcon, Trash2Icon } from "lucide-react";
+import { HardDriveIcon, PlusIcon, TerminalIcon, Trash2Icon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
@@ -167,6 +167,13 @@ export default function Servers() {
                   : "This server is not calling in, so nothing can open a shell on it."
               }
               onClick={() => router.push(`/servers/${encodeURIComponent(s.name)}/shell`)}
+            />
+          )}
+          {canRootShell(me) && s.control_plane && s.status === "ready" && (
+            <RowAction
+              icon={HardDriveIcon}
+              label={`Manage Docker storage on ${s.name}`}
+              onClick={() => router.push(`/servers/${encodeURIComponent(s.name)}/storage`)}
             />
           )}
           {!s.control_plane && (

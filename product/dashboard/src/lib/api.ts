@@ -1033,6 +1033,16 @@ export type ClusterServer = {
 // shown once and never again — only its hash is stored.
 export type ClusterServerCreated = ClusterServer & { token: string };
 
+export type ServerStorage = {
+  images: number;
+  images_bytes: number;
+  build_cache_bytes: number;
+  stopped_containers: number;
+  stopped_containers_bytes: number;
+  volumes: number;
+  volumes_bytes: number;
+};
+
 // What the machine itself has been doing, from GET /instance/metrics.
 //
 // A different shape from a container's series and deliberately not the

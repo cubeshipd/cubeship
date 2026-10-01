@@ -32,6 +32,7 @@ import (
 	"cubeship/internal/objectstore"
 	"cubeship/internal/platform/bootstrap"
 	"cubeship/internal/platform/database"
+	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/project"
 	"cubeship/internal/registry"
@@ -269,6 +270,9 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// Docker that can cluster and a way to reach the host's firewall —
 	// and the third is a question for another module.
 	nodes := node.NewService(db)
+	if engine, ok := docker.(*dockerx.Client); ok {
+		nodes.SetStorage(engine)
+	}
 	if engine, ok := docker.(mesh.Engine); ok {
 		nodes.SetMesh(engine, opts.Host, func(ctx context.Context) string {
 			values, err := cfg.Load(ctx)

@@ -13,6 +13,15 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			Description: "The machines this instance is made of: the control plane — the box Cubeship was installed on, which holds the database, the dashboard, the registry and the builder — and any number of workers.\n\nA worker runs the same daemon in a mode where it decides nothing. **It dials the control plane; nothing dials it.** So a worker publishes nothing to the internet, and adding one is two steps that do not touch each other: this API mints a credential, and somebody runs the installer on the machine with it.\n\nThe private network the machines share is the part that does need them to reach **each other**, over the three cluster ports this instance opens between them — so a machine behind NAT can report in and be told what to run, and cannot be on that network.\n\nThe agent's own endpoint is not documented here. It is machinery between two daemons, like the registry's webhook, and nothing else is meant to call it.",
 		}},
 		Schemas: map[string]*openapi.Schema{
+			"ServerStorage": openapi.Object(map[string]*openapi.Schema{
+				"images":                   openapi.Integer("Unused images that can be removed."),
+				"images_bytes":             openapi.Integer("Bytes used by unused images."),
+				"build_cache_bytes":        openapi.Integer("Bytes used by unused build cache."),
+				"stopped_containers":       openapi.Integer("Stopped containers that can be removed."),
+				"stopped_containers_bytes": openapi.Integer("Bytes used by stopped containers."),
+				"volumes":                  openapi.Integer("Unused volumes. These are measured but never removed by cleanup."),
+				"volumes_bytes":            openapi.Integer("Bytes used by Docker volumes."),
+			}, "images", "images_bytes", "build_cache_bytes", "stopped_containers", "stopped_containers_bytes", "volumes", "volumes_bytes"),
 			"Mesh": openapi.Object(map[string]*openapi.Schema{
 				"network":   openapi.String("The overlay's name. Absent on an instance with no cluster."),
 				"encrypted": openapi.Bool("Whether what crosses between machines is carried over IPsec. Fixed when the network is created; Docker offers no way to change it after."),
@@ -110,6 +119,38 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,
 						"409": openapi.TextResponse("That is this machine, not a server it manages."),
+					},
+				},
+			},
+			"/nodes/{name}/storage": {
+				"get": {
+					OperationID: "getServerStorage",
+					Summary:     "Inspect Docker storage",
+					Description: "Reports reclaimable Docker data on the control plane. Volumes are reported for visibility but are never removed by cleanup.",
+					Tags:        []string{"Servers"},
+					Parameters:  nameParam,
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("Docker storage usage.", openapi.Ref("ServerStorage")),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("Storage inspection is available on the control plane."),
+					},
+				},
+			},
+			"/nodes/{name}/storage/prune": {
+				"post": {
+					OperationID: "pruneServerStorage",
+					Summary:     "Clean regenerable Docker storage",
+					Description: "Removes unused images, stopped containers and build cache. Volumes are deliberately excluded because deleting one can destroy application data.",
+					Tags:        []string{"Servers"},
+					Parameters:  nameParam,
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("Bytes reclaimed.", openapi.Object(map[string]*openapi.Schema{"reclaimed_bytes": openapi.Integer("Bytes reclaimed by Docker.")}, "reclaimed_bytes")),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("Storage cleanup is available on the control plane."),
 					},
 				},
 			},
