@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"sort"
 	"strconv"
@@ -600,6 +601,26 @@ func (c *Client) ProbeHTTP(ctx context.Context, id, path string, port int) error
 		return fmt.Errorf("health probe returned HTTP %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// ProbeTCP checks that the app accepts connections on its configured port.
+func (c *Client) ProbeTCP(ctx context.Context, id string, port int) error {
+	info, err := c.api.ContainerInspect(ctx, id)
+	if err != nil {
+		return err
+	}
+	if info.NetworkSettings == nil {
+		return fmt.Errorf("container has no network")
+	}
+	network := info.NetworkSettings.Networks[ApplicationNetwork]
+	if network == nil || network.IPAddress == "" {
+		return fmt.Errorf("container has no application-network address")
+	}
+	conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", network.IPAddress+":"+strconv.Itoa(port))
+	if err != nil {
+		return err
+	}
+	return conn.Close()
 }
 
 func (c *Client) StartContainer(ctx context.Context, id string) error {

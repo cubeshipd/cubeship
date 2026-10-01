@@ -42,6 +42,7 @@ type DockerAPI interface {
 
 type healthProber interface {
 	ProbeHTTP(context.Context, string, string, int) error
+	ProbeTCP(context.Context, string, int) error
 }
 
 // Orchestrator runs deploys: it is the only thing in Cubeship that
@@ -751,7 +752,7 @@ func (o *Orchestrator) swap(ctx context.Context, a *Scoped, replica Replica, ima
 		return fmt.Errorf("start container: %w", err)
 	}
 
-	if !o.waitHealthy(ctx, newID, a.HealthPath, healthPort(a)) {
+	if !o.waitHealthy(ctx, newID, a.HealthPath, healthPort(a), a.HealthPath == "" && len(a.TCPPorts) > 0) {
 		o.removeContainer(ctx, newID, "abandoning a container that never became healthy")
 		return fmt.Errorf("health check timed out for container %s", newID)
 	}
@@ -849,7 +850,7 @@ func (o *Orchestrator) swapInPlace(ctx context.Context, a *Scoped, replica Repli
 		restore()
 		return fmt.Errorf("start container: %w", err)
 	}
-	if !o.waitHealthy(ctx, newID, a.HealthPath, healthPort(a)) {
+	if !o.waitHealthy(ctx, newID, a.HealthPath, healthPort(a), a.HealthPath == "" && len(a.TCPPorts) > 0) {
 		o.removeContainer(ctx, newID, "abandoning a container that never became healthy")
 		restore()
 		return fmt.Errorf("health check timed out for container %s", newID)
@@ -979,7 +980,7 @@ func (o *Orchestrator) Paused(ctx context.Context, appID int64, fn func() error)
 //
 // TODO (follow-up): an actual HTTP probe against Port would be a stronger
 // signal than the container's process state.
-func (o *Orchestrator) waitHealthy(ctx context.Context, containerID, healthPath string, port int) bool {
+func (o *Orchestrator) waitHealthy(ctx context.Context, containerID, healthPath string, port int, tcp bool) bool {
 	needed := o.HealthCheckSuccesses
 	if needed < 1 {
 		needed = 1
@@ -1001,9 +1002,17 @@ func (o *Orchestrator) waitHealthy(ctx context.Context, containerID, healthPath 
 			consecutive = 0
 			continue
 		}
-		if healthPath != "" {
+		if healthPath != "" || tcp {
 			probe, ok := o.docker.(healthProber)
-			if !ok || probe.ProbeHTTP(ctx, containerID, healthPath, port) != nil {
+			var probeErr error
+			if !ok {
+				probeErr = errors.New("docker client does not support health probes")
+			} else if tcp {
+				probeErr = probe.ProbeTCP(ctx, containerID, port)
+			} else {
+				probeErr = probe.ProbeHTTP(ctx, containerID, healthPath, port)
+			}
+			if probeErr != nil {
 				consecutive = 0
 				continue
 			}
