@@ -19,8 +19,8 @@ type Storage struct {
 
 type storageAPI interface {
 	DiskUsage(context.Context, types.DiskUsageOptions) (types.DiskUsage, error)
-	ImagePrune(context.Context, filters.Args) (image.PruneReport, error)
-	ContainerPrune(context.Context, filters.Args) (container.PruneReport, error)
+	ImagesPrune(context.Context, filters.Args) (image.PruneReport, error)
+	ContainersPrune(context.Context, filters.Args) (container.PruneReport, error)
 	BuildCachePrune(context.Context, build.CachePruneOptions) (*build.CachePruneReport, error)
 }
 
@@ -77,12 +77,12 @@ func (c *Client) Prune(ctx context.Context) (int64, error) {
 		return 0, err
 	}
 	var reclaimed int64
-	if r, err := a.ImagePrune(ctx, filters.NewArgs(filters.Arg("dangling", "false"))); err != nil {
+	if r, err := a.ImagesPrune(ctx, filters.NewArgs(filters.Arg("dangling", "false"))); err != nil {
 		return 0, err
 	} else {
 		reclaimed += int64(r.SpaceReclaimed)
 	}
-	if r, err := a.ContainerPrune(ctx, filters.NewArgs()); err != nil {
+	if r, err := a.ContainersPrune(ctx, filters.NewArgs()); err != nil {
 		return 0, err
 	} else {
 		reclaimed += int64(r.SpaceReclaimed)
