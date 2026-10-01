@@ -9,10 +9,12 @@ import { RailPortal } from "@/components/header-rail";
 import { Notice } from "@/components/notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { api, type ServerStorage } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-const bytes = (n: number) => `${(n / 1024 / 1024 / 1024).toFixed(1)} GB`;
+const bytes = (n: number) =>
+  Number.isFinite(n) ? `${(n / 1024 / 1024 / 1024).toFixed(1)} GB` : "—";
 
 export default function ServerStoragePage({ params }: PageProps<"/servers/[name]/storage">) {
   const { name } = use(params);
@@ -65,6 +67,7 @@ export default function ServerStoragePage({ params }: PageProps<"/servers/[name]
         This cleans Docker's regenerable data only. Volumes are listed in usage but are never
         removed by this action.
       </Notice>
+      {!storage && !error && <StorageSkeleton />}
       {storage && (
         <>
           <div className="grid gap-4 sm:grid-cols-3">
@@ -118,6 +121,33 @@ export default function ServerStoragePage({ params }: PageProps<"/servers/[name]
           />
         </>
       )}
+    </>
+  );
+}
+
+function StorageSkeleton() {
+  return (
+    <>
+      <div className="grid gap-4 sm:grid-cols-3" role="status" aria-label="Loading Docker storage">
+        {["images", "cache", "containers"].map((key) => (
+          <Card key={key}>
+            <CardContent className="space-y-3">
+              <Skeleton className="h-4 w-32" />
+              <Skeleton className="h-8 w-28" />
+              <Skeleton className="h-3 w-24" />
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+      <Card className="mt-4">
+        <CardContent className="flex items-center justify-between gap-4">
+          <div className="space-y-2">
+            <Skeleton className="h-5 w-56" />
+            <Skeleton className="h-4 w-72" />
+          </div>
+          <Skeleton className="h-10 w-24" />
+        </CardContent>
+      </Card>
     </>
   );
 }

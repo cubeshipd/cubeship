@@ -13,8 +13,13 @@ import (
 
 // Storage is the reclaimable part of Docker's disk usage report.
 type Storage struct {
-	ImagesBytes, BuildCacheBytes, StoppedContainersBytes, VolumesBytes int64
-	Images, StoppedContainers, Volumes                                 int
+	ImagesBytes            int64 `json:"images_bytes"`
+	BuildCacheBytes        int64 `json:"build_cache_bytes"`
+	StoppedContainersBytes int64 `json:"stopped_containers_bytes"`
+	VolumesBytes           int64 `json:"volumes_bytes"`
+	Images                 int   `json:"images"`
+	StoppedContainers      int   `json:"stopped_containers"`
+	Volumes                int   `json:"volumes"`
 }
 
 type storageAPI interface {
