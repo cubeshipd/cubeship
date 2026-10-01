@@ -78,9 +78,7 @@ func TestOutputIsCappedKeepingTheEnd(t *testing.T) {
 	rec := &recorder{}
 	l := newDeploymentLog(rec.save)
 
-	for i := 0; i < 40000; i++ {
-		l.Write([]byte("noisy line of build output\n"))
-	}
+	l.Write([]byte(strings.Repeat("noisy line of build output\n", 40000)))
 	l.Write([]byte("the reason it failed\n"))
 	l.Close()
 
