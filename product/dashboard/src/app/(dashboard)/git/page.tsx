@@ -3,6 +3,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLinkIcon, GitBranchIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
+import { BitbucketConfigCard } from "@/components/bitbucket-config-card";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
@@ -154,7 +155,7 @@ export default function GitProviders() {
                 Connect
               </a>
             ) : (
-              <span className="text-xs text-muted-foreground">Configure in Settings</span>
+              <span className="text-xs text-muted-foreground">Configure below</span>
             )}
           </div>
         ),
@@ -213,6 +214,12 @@ export default function GitProviders() {
           <GitHubAppCard settings={settings.data} onSaved={() => settings.refetch()} />
         </div>
       )}
+
+      {me.role === "admin" &&
+        settings.data &&
+        (!settings.data.bitbucket_configured || !settings.data.bitbucket_webhook_ready) && (
+          <BitbucketConfigCard settings={settings.data} onSaved={() => settings.refetch()} />
+        )}
 
       <ConfirmDialog
         open={disconnecting}
