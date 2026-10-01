@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"testing"
 
@@ -40,6 +41,7 @@ type fakeAPI struct {
 	inspectedName           string
 	inspectedRunning        bool
 	inspectErr              error
+	inspectNetworks         map[string]*network.EndpointSettings
 	networkCreateErr        error
 	loggedID                string
 	loggedOptions           container.LogsOptions
@@ -227,7 +229,27 @@ func (f *fakeAPI) ContainerInspect(ctx context.Context, id string) (types.Contai
 			ID:    f.inspectedID,
 			State: &types.ContainerState{Running: f.inspectedRunning},
 		},
+		NetworkSettings: &types.NetworkSettings{Networks: f.inspectNetworks},
 	}, nil
+}
+
+func TestProbeTCPConnectsAndReportsConnectionFailure(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	fake := &fakeAPI{inspectNetworks: map[string]*network.EndpointSettings{
+		ApplicationNetwork: {IPAddress: "127.0.0.1"},
+	}}
+	c := newWithAPI(fake)
+	if err := c.ProbeTCP(context.Background(), "id", port); err != nil {
+		t.Fatalf("ProbeTCP: %v", err)
+	}
+	listener.Close()
+	if err := c.ProbeTCP(context.Background(), "id", port); err == nil {
+		t.Fatal("ProbeTCP succeeded after listener closed")
+	}
 }
 
 func TestCreateContainerForwardsLabelsAndEnv(t *testing.T) {

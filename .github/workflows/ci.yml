@@ -28,11 +28,37 @@ env:
   GO_VERSION: "1.27"
 
 jobs:
-  # The whole unit suite, without -short: the tests a laptop skips are
-  # exactly the ones this job exists for. A missing Postgres fails here
-  # rather than skipping, so a green run means the tests ran.
+  # Fast feedback: repository-only checks and tests that do not need
+  # infrastructure. Database-backed tests run in parallel below.
   check:
-    name: Format, vet and unit tests
+    name: Fast checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: product/go.sum
+
+      - run: make fmt-check
+      - run: make vet
+      - run: make sh-check
+
+      - name: Unit tests
+        run: |
+          packages=$(go -C product list ./... | while read -r package; do
+            dir=$(go -C product list -f '{{.Dir}}' "$package")
+            if ! grep -R -q --include='*_test.go' -E 'dbtest\.New|servertest\.New|RequireDatabase' "$dir"; then
+              printf '%s\n' "$package"
+            fi
+          done)
+          test -z "$packages" || go -C product test -short -race -count=1 $packages
+          go -C hosted/catalog test -short -race -count=1 ./...
+
+  # The full suite runs separately so database setup and migrations cannot
+  # delay the fast repository-only feedback above.
+  database:
+    name: Database tests
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -53,18 +79,15 @@ jobs:
         with:
           go-version: ${{ env.GO_VERSION }}
           cache-dependency-path: product/go.sum
-
-      - run: make fmt-check
-      - run: make vet
-      - run: make sh-check
-
-      # db-up is skipped: the service container above is the Postgres,
-      # already up and health-checked, at the port the tests default to.
-      # No -short, so the DB-backed tests run rather than skipping.
-      - name: Unit tests
+      - name: Unit tests with Postgres
         run: |
-          go -C product test -race -count=1 ./...
-          go -C hosted/catalog test -race -count=1 ./...
+          packages=$(go -C product list ./... | while read -r package; do
+            dir=$(go -C product list -f '{{.Dir}}' "$package")
+            if grep -R -q --include='*_test.go' -E 'dbtest\.New|servertest\.New|RequireDatabase' "$dir"; then
+              printf '%s\n' "$package"
+            fi
+          done)
+          test -n "$packages" && go -C product test -race -count=1 $packages
 
   # Everything that boots a container: a privileged buildkitd per build
   # test, and the whole product once — install the daemon, push an image,

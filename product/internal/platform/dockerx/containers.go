@@ -7,8 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -564,6 +568,59 @@ func (c *Client) InspectContainerByName(ctx context.Context, name string) (Conta
 		out.Image = info.Config.Image
 	}
 	return out, nil
+}
+
+// ProbeHTTP checks readiness from the host against the container's address on
+// the application network. Docker's process state alone is not readiness.
+func (c *Client) ProbeHTTP(ctx context.Context, id, path string, port int) error {
+	info, err := c.api.ContainerInspect(ctx, id)
+	if err != nil {
+		return err
+	}
+	if info.NetworkSettings == nil {
+		return fmt.Errorf("container has no network")
+	}
+	network := info.NetworkSettings.Networks[ApplicationNetwork]
+	if network == nil || network.IPAddress == "" {
+		return fmt.Errorf("container has no application-network address")
+	}
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("invalid health probe port %d", port)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+network.IPAddress+":"+strconv.Itoa(port)+path, nil)
+	if err != nil {
+		return err
+	}
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return fmt.Errorf("health probe returned HTTP %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// ProbeTCP checks that the app accepts connections on its configured port.
+func (c *Client) ProbeTCP(ctx context.Context, id string, port int) error {
+	info, err := c.api.ContainerInspect(ctx, id)
+	if err != nil {
+		return err
+	}
+	if info.NetworkSettings == nil {
+		return fmt.Errorf("container has no network")
+	}
+	network := info.NetworkSettings.Networks[ApplicationNetwork]
+	if network == nil || network.IPAddress == "" {
+		return fmt.Errorf("container has no application-network address")
+	}
+	conn, err := (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "tcp", network.IPAddress+":"+strconv.Itoa(port))
+	if err != nil {
+		return err
+	}
+	return conn.Close()
 }
 
 func (c *Client) StartContainer(ctx context.Context, id string) error {
