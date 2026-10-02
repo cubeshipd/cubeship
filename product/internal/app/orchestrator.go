@@ -44,9 +44,24 @@ type oneShotDocker interface {
 	RunOneShot(context.Context, dockerx.ContainerOpts) (string, int, error)
 }
 
+type policyStopper interface {
+	StopContainerWithOptions(context.Context, string, time.Duration, string) error
+}
+
 type healthProber interface {
 	ProbeHTTP(context.Context, string, string, int) error
 	ProbeTCP(context.Context, string, int) error
+}
+
+func (o *Orchestrator) stop(ctx context.Context, id string, a *App) error {
+	if s, ok := o.docker.(policyStopper); ok {
+		grace, signal := a.StopGracePeriod, a.StopSignal
+		if grace == 0 && signal == "" {
+			grace, signal = DefaultStopGracePeriod, DefaultStopSignal
+		}
+		return s.StopContainerWithOptions(ctx, id, grace, signal)
+	}
+	return o.docker.StopContainer(ctx, id)
 }
 
 // Orchestrator runs deploys: it is the only thing in Cubeship that
@@ -887,7 +902,7 @@ func (o *Orchestrator) swap(ctx context.Context, a *Scoped, replica Replica, ima
 	}
 
 	if replica.Container != "" && replica.Container != newID {
-		if err := o.docker.StopContainer(ctx, replica.Container); err != nil {
+		if err := o.stop(ctx, replica.Container, &a.App); err != nil {
 			log.Printf("deploy %s: could not stop the previous container %s: %v", appName, replica.Container, err)
 		}
 		o.removeContainer(ctx, replica.Container, "retiring the previous container")
@@ -934,7 +949,7 @@ func (o *Orchestrator) swapInPlace(ctx context.Context, a *Scoped, replica Repli
 
 	old := replica.Container
 	if old != "" {
-		if err := o.docker.StopContainer(ctx, old); err != nil {
+		if err := o.stop(ctx, old, &a.App); err != nil {
 			log.Printf("deploy %s: could not stop the previous container %s: %v", appName, old, err)
 		}
 	}
@@ -1035,7 +1050,7 @@ func (o *Orchestrator) Retire(ctx context.Context, appID int64) error {
 		if mine.Container == "" {
 			continue
 		}
-		if err := o.docker.StopContainer(ctx, mine.Container); err != nil {
+		if err := o.stop(ctx, mine.Container, a); err != nil {
 			log.Printf("retiring app %d: could not stop container %s: %v", appID, mine.Container, err)
 		}
 		// Unlike the log-and-continue cases in Deploy, this one is
@@ -1078,7 +1093,7 @@ func (o *Orchestrator) Paused(ctx context.Context, appID int64, fn func() error)
 		if mine.Container == "" {
 			continue
 		}
-		if err := o.docker.StopContainer(ctx, mine.Container); err != nil {
+		if err := o.stop(ctx, mine.Container, a); err != nil {
 			return fmt.Errorf("stop the app: %w", err)
 		}
 		stopped = append(stopped, mine.Container)

@@ -28,8 +28,10 @@ type VolumeJob struct {
 	ID int64 `json:"id"`
 	// App is the app's reference, which is its containers' LabelApp: they
 	// are stopped for the copy.
-	App string   `json:"app"`
-	S3  S3Object `json:"s3"`
+	App             string   `json:"app"`
+	StopGracePeriod int64    `json:"stop_grace_period,omitempty"`
+	StopSignal      string   `json:"stop_signal,omitempty"`
+	S3              S3Object `json:"s3"`
 }
 
 // S3Object is where the archive goes, with the login to put it there. The

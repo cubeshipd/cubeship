@@ -25,7 +25,7 @@ const columns = `id, project_id, environment_id, name, source, source_image,
 	source_tag, source_repo, source_ref, source_dockerfile, health_path, scale, spread,
 	cpu_limit, memory_limit,
 	autoscale_min, autoscale_max, autoscale_cpu, autoscaled_at,
-	env, predeploy_command, predeploy_timeout, created_at`
+	env, predeploy_command, predeploy_timeout, stop_grace_period, stop_signal, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -39,14 +39,14 @@ type scanner interface{ Scan(dest ...any) error }
 // app reported `autodeploy`, and the registry webhook redeployed apps
 // somebody had pinned to a version. Nothing failed; it just stopped
 // being true.
-func dests(a *App, envJSON, commandJSON *[]byte, timeout *int64) []any {
+func dests(a *App, envJSON, commandJSON *[]byte, timeout *int64, stopGrace *int64, stopSignal *string) []any {
 	return []any{
 		&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Name,
 		&a.Source, &a.SourceImage, &a.SourceTag, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
 		&a.HealthPath, &a.Scale, &a.Spread,
 		&a.Limits.CPU, &a.Limits.Memory,
 		&a.Autoscale.Min, &a.Autoscale.Max, &a.Autoscale.CPU, &a.Autoscale.At,
-		envJSON, commandJSON, timeout, &a.CreatedAt,
+		envJSON, commandJSON, timeout, stopGrace, stopSignal, &a.CreatedAt,
 	}
 }
 
@@ -65,7 +65,9 @@ func scan(row scanner) (*App, error) {
 	var envJSON []byte
 	var commandJSON []byte
 	var timeout int64
-	if err := row.Scan(dests(&a, &envJSON, &commandJSON, &timeout)...); err != nil {
+	var stopGrace int64
+	var stopSignal string
+	if err := row.Scan(dests(&a, &envJSON, &commandJSON, &timeout, &stopGrace, &stopSignal)...); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &a.Env); err != nil {
@@ -77,6 +79,8 @@ func scan(row scanner) (*App, error) {
 		}
 	}
 	a.Predeploy.Timeout = time.Duration(timeout) * time.Second
+	a.StopGracePeriod = time.Duration(stopGrace) * time.Second
+	a.StopSignal = stopSignal
 	return &a, nil
 }
 
@@ -150,6 +154,18 @@ func (r *Repository) Update(ctx context.Context, appID int64, source *Source, or
 	a, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("update app: %w", err)
+	}
+	return a, r.attach(ctx, []*App{a})
+}
+
+func (r *Repository) UpdateStopPolicy(ctx context.Context, appID int64, grace *int64, signal *string) (*App, error) {
+	row := r.q.QueryRowContext(ctx, `UPDATE apps SET
+		stop_grace_period = COALESCE($1, stop_grace_period),
+		stop_signal = COALESCE($2, stop_signal)
+		WHERE id = $3 RETURNING `+columns, grace, signal, appID)
+	a, err := scan(row)
+	if err != nil {
+		return nil, fmt.Errorf("update stop policy: %w", err)
 	}
 	return a, r.attach(ctx, []*App{a})
 }
@@ -660,7 +676,9 @@ func scanScoped(row scanner) (*Scoped, error) {
 	var envJSON []byte
 	var commandJSON []byte
 	var timeout int64
-	into := append(dests(&s.App, &envJSON, &commandJSON, &timeout), &s.ProjectSlug, &s.EnvironmentSlug)
+	var stopGrace int64
+	var stopSignal string
+	into := append(dests(&s.App, &envJSON, &commandJSON, &timeout, &stopGrace, &stopSignal), &s.ProjectSlug, &s.EnvironmentSlug)
 	if err := row.Scan(into...); err != nil {
 		return nil, err
 	}
@@ -673,6 +691,8 @@ func scanScoped(row scanner) (*Scoped, error) {
 		}
 	}
 	s.Predeploy.Timeout = time.Duration(timeout) * time.Second
+	s.StopGracePeriod = time.Duration(stopGrace) * time.Second
+	s.StopSignal = stopSignal
 	return &s, nil
 }
 

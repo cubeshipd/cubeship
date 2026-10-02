@@ -85,6 +85,8 @@ type Response struct {
 	HealthPath       string     `json:"health_path,omitempty"`
 	PredeployCommand *Predeploy `json:"predeploy_command,omitempty"`
 	PredeployTimeout int64      `json:"predeploy_timeout,omitempty"`
+	StopGracePeriod  int64      `json:"stop_grace_period"`
+	StopSignal       string     `json:"stop_signal"`
 	// Limits is what **one copy** of this app may take from the machine
 	// it runs on: three replicas under a one-core limit may take three
 	// cores. Zero in either half is no ceiling, which is the default
@@ -184,6 +186,8 @@ func toResponse(a *Scoped, in Instance) Response {
 		HealthPath:       a.HealthPath,
 		PredeployCommand: predeploy,
 		PredeployTimeout: int64(a.Predeploy.Timeout / time.Second),
+		StopGracePeriod:  int64(a.StopGracePeriod / time.Second),
+		StopSignal:       a.StopSignal,
 		Spread:           a.Spread,
 		Limits:           a.Limits,
 		Autoscale:        a.Autoscale,
@@ -280,7 +284,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrBadHost), errors.Is(err, ErrHostIsTheInstance),
 		errors.Is(err, ErrHostRequired), errors.Is(err, ErrInvalidHealthPath),
-		errors.Is(err, ErrInvalidLimits), errors.Is(err, ErrInvalidAutoscale), errors.Is(err, ErrInvalidPredeploy):
+		errors.Is(err, ErrInvalidLimits), errors.Is(err, ErrInvalidAutoscale), errors.Is(err, ErrInvalidPredeploy), errors.Is(err, ErrInvalidStopPolicy):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNoBuilder):
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -337,6 +341,8 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		Dockerfile       string     `json:"dockerfile"`
 		PredeployCommand *Predeploy `json:"predeploy_command"`
 		PredeployTimeout *int64     `json:"predeploy_timeout"`
+		StopGracePeriod  *int64     `json:"stop_grace_period"`
+		StopSignal       *string    `json:"stop_signal"`
 	}
 	// The domain is not required: an app is created empty and made
 	// deployable afterwards, in its own settings. Everything that says
@@ -363,6 +369,21 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		WriteError(w, err)
 		return
+	}
+	if req.StopGracePeriod != nil || req.StopSignal != nil {
+		grace := DefaultStopGracePeriod
+		signal := DefaultStopSignal
+		if req.StopGracePeriod != nil {
+			grace = time.Duration(*req.StopGracePeriod) * time.Second
+		}
+		if req.StopSignal != nil {
+			signal = *req.StopSignal
+		}
+		created, err = h.svc.UpdateStopPolicy(r.Context(), user.FromContext(r.Context()), Reference{Project: req.Project, Environment: req.Environment, Name: req.Name}, grace, signal)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
 	}
 	httpx.WriteJSON(w, http.StatusCreated, toResponse(created, h.svc.InstanceConfig(r.Context())))
 }
@@ -418,6 +439,8 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		Autoscale        *Autoscale `json:"autoscale"`
 		PredeployCommand *Predeploy `json:"predeploy_command"`
 		PredeployTimeout *int64     `json:"predeploy_timeout"`
+		StopGracePeriod  *int64     `json:"stop_grace_period"`
+		StopSignal       *string    `json:"stop_signal"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -458,7 +481,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 	if source == nil && origin == nil &&
 		req.Node == nil && req.Nodes == nil && req.HealthPath == nil && req.Scale == nil &&
-		req.Limits == nil && req.Spread == nil && req.Autoscale == nil && predeploy == nil {
+		req.Limits == nil && req.Spread == nil && req.Autoscale == nil && predeploy == nil && req.StopGracePeriod == nil && req.StopSignal == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
@@ -489,6 +512,25 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		WriteError(w, err)
 		return
+	}
+	if req.StopGracePeriod != nil || req.StopSignal != nil {
+		current, lookupErr := h.svc.Resolve(r.Context(), user.FromContext(r.Context()), refFrom(r), user.LevelManage)
+		if lookupErr != nil {
+			WriteError(w, lookupErr)
+			return
+		}
+		grace, signal := current.StopGracePeriod, current.StopSignal
+		if req.StopGracePeriod != nil {
+			grace = time.Duration(*req.StopGracePeriod) * time.Second
+		}
+		if req.StopSignal != nil {
+			signal = *req.StopSignal
+		}
+		updated, err = h.svc.UpdateStopPolicy(r.Context(), user.FromContext(r.Context()), refFrom(r), grace, signal)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
 	}
 	httpx.WriteJSON(w, http.StatusOK, toResponse(updated, h.svc.InstanceConfig(r.Context())))
 }

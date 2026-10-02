@@ -418,6 +418,21 @@ func (s *Service) Update(ctx context.Context, caller *user.User, ref Reference, 
 	return s.UpdateWithPredeploy(ctx, caller, ref, source, origin, health, limits, auto, place, nil)
 }
 
+func (s *Service) UpdateStopPolicy(ctx context.Context, caller *user.User, ref Reference, grace time.Duration, signal string) (*Scoped, error) {
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
+	if err != nil {
+		return nil, err
+	}
+	if !ValidStopPolicy(grace, signal) {
+		return nil, ErrInvalidStopPolicy
+	}
+	seconds := int64(grace / time.Second)
+	if _, err := s.Repo().UpdateStopPolicy(ctx, a.ID, &seconds, &signal); err != nil {
+		return nil, err
+	}
+	return s.Resolve(ctx, caller, ref, user.LevelView)
+}
+
 func (s *Service) UpdateWithPredeploy(ctx context.Context, caller *user.User, ref Reference, source *Source, origin *Origin, health *string, limits *Limits, auto *Autoscale, place *Placement, predeploy *Predeploy) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
 	if err != nil {

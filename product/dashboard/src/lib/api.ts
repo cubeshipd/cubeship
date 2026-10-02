@@ -378,6 +378,8 @@ export type App = {
   // Command run from the new image before a deploy swaps containers.
   predeploy_command?: string | string[];
   predeploy_timeout?: number;
+  stop_grace_period?: number;
+  stop_signal?: string;
 };
 
 // The rule the instance scales an app by.

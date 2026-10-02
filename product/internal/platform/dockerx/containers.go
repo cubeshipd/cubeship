@@ -650,7 +650,15 @@ func (c *Client) SetResources(ctx context.Context, id string, r Resources) error
 }
 
 func (c *Client) StopContainer(ctx context.Context, id string) error {
-	if err := c.api.ContainerStop(ctx, id, container.StopOptions{}); err != nil {
+	return c.StopContainerWithOptions(ctx, id, 10*time.Second, "SIGTERM")
+}
+
+func (c *Client) StopContainerWithOptions(ctx context.Context, id string, grace time.Duration, signal string) error {
+	seconds := int(grace / time.Second)
+	if grace < 0 {
+		seconds = -1
+	}
+	if err := c.api.ContainerStop(ctx, id, container.StopOptions{Timeout: &seconds, Signal: signal}); err != nil {
 		return fmt.Errorf("stop container %q: %w", id, err)
 	}
 	return nil

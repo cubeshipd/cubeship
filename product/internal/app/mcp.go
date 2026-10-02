@@ -127,6 +127,8 @@ type createInput struct {
 	Dockerfile       string          `json:"dockerfile,omitempty" jsonschema:"for a dockerfile app only, the recipe's path within the repository. Defaults to \"Dockerfile\" at the root."`
 	PredeployCommand json.RawMessage `json:"predeploy_command,omitempty" jsonschema:"shell string or argv array to run from the new image before swapping"`
 	PredeployTimeout *int64          `json:"predeploy_timeout,omitempty" jsonschema:"pre-deploy timeout in seconds, up to 3600"`
+	StopGracePeriod  *int64          `json:"stop_grace_period,omitempty" jsonschema:"container stop grace period in seconds, 0 to 3600"`
+	StopSignal       *string         `json:"stop_signal,omitempty" jsonschema:"container stop signal, for example SIGTERM"`
 }
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
@@ -151,6 +153,19 @@ func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInp
 	if err != nil {
 		return nil, Response{}, err
 	}
+	if in.StopGracePeriod != nil || in.StopSignal != nil {
+		grace, signal := DefaultStopGracePeriod, DefaultStopSignal
+		if in.StopGracePeriod != nil {
+			grace = time.Duration(*in.StopGracePeriod) * time.Second
+		}
+		if in.StopSignal != nil {
+			signal = *in.StopSignal
+		}
+		created, err = t.svc.UpdateStopPolicy(ctx, t.caller, Reference{Project: in.Project, Environment: in.Environment, Name: in.Name}, grace, signal)
+		if err != nil {
+			return nil, Response{}, err
+		}
+	}
 	return nil, toResponse(created, t.svc.InstanceConfig(ctx)), nil
 }
 
@@ -169,6 +184,8 @@ type updateInput struct {
 	HealthPath       *string         `json:"health_path,omitempty" jsonschema:"the path Traefik asks this app for before trusting a container with traffic, e.g. /healthz. Send empty to check nothing, which is the default; a path that the app does not answer 2xx or 3xx on takes every replica out of rotation"`
 	PredeployCommand json.RawMessage `json:"predeploy_command,omitempty" jsonschema:"shell string or argv array to run from the new image before swapping it in"`
 	PredeployTimeout *int64          `json:"predeploy_timeout,omitempty" jsonschema:"pre-deploy timeout in seconds, up to 3600"`
+	StopGracePeriod  *int64          `json:"stop_grace_period,omitempty" jsonschema:"container stop grace period in seconds, 0 to 3600"`
+	StopSignal       *string         `json:"stop_signal,omitempty" jsonschema:"container stop signal, for example SIGTERM"`
 }
 
 func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInput) (*mcp.CallToolResult, Response, error) {
@@ -211,7 +228,7 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 		}
 		predeploy = &p
 	}
-	if source == nil && origin == nil && in.HealthPath == nil && predeploy == nil {
+	if source == nil && origin == nil && in.HealthPath == nil && predeploy == nil && in.StopGracePeriod == nil && in.StopSignal == nil {
 		return nil, Response{}, fmt.Errorf("nothing to change")
 	}
 	// No `node` here, deliberately: moving an app between machines is
@@ -228,6 +245,23 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 	updated, err := t.svc.UpdateWithPredeploy(ctx, t.caller, ref, source, origin, in.HealthPath, nil, nil, nil, predeploy)
 	if err != nil {
 		return nil, Response{}, err
+	}
+	if in.StopGracePeriod != nil || in.StopSignal != nil {
+		current, lookupErr := t.svc.Resolve(ctx, t.caller, ref, user.LevelManage)
+		if lookupErr != nil {
+			return nil, Response{}, lookupErr
+		}
+		grace, signal := current.StopGracePeriod, current.StopSignal
+		if in.StopGracePeriod != nil {
+			grace = time.Duration(*in.StopGracePeriod) * time.Second
+		}
+		if in.StopSignal != nil {
+			signal = *in.StopSignal
+		}
+		updated, err = t.svc.UpdateStopPolicy(ctx, t.caller, ref, grace, signal)
+		if err != nil {
+			return nil, Response{}, err
+		}
 	}
 	return nil, toResponse(updated, t.svc.InstanceConfig(ctx)), nil
 }

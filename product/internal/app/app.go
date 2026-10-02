@@ -102,9 +102,29 @@ type App struct {
 	Volumes []Volume
 	// TCPPorts are its container's ports published on the control plane.
 	// Any at all pins the app there: see TCPPort.
-	TCPPorts  []TCPPort
-	Env       envvar.Map
-	CreatedAt time.Time
+	TCPPorts        []TCPPort
+	Env             envvar.Map
+	StopGracePeriod time.Duration
+	StopSignal      string
+	CreatedAt       time.Time
+}
+
+const DefaultStopGracePeriod = 10 * time.Second
+const DefaultStopSignal = "SIGTERM"
+
+func ValidStopPolicy(grace time.Duration, signal string) bool {
+	if grace < 0 || grace > time.Hour || grace%time.Second != 0 || signal == "" {
+		return false
+	}
+	if signal == "SIGKILL" || signal == "SIGSTOP" {
+		return false
+	}
+	for _, r := range signal {
+		if (r < 'A' || r > 'Z') && (r < '0' || r > '9') && r != '_' {
+			return false
+		}
+	}
+	return strings.HasPrefix(signal, "SIG")
 }
 
 // Predeploy is an optional command run from the new image before its
@@ -605,6 +625,7 @@ func ValidHealthPath(path string) bool {
 var ErrInvalidHealthPath = errors.New("a health check path has to start with / and hold only what a URL path may: no spaces, quotes, query strings or fragments")
 
 var ErrInvalidPredeploy = errors.New("pre-deploy command must be argv or shell text with a timeout up to one hour")
+var ErrInvalidStopPolicy = errors.New("stop grace period or signal is invalid")
 
 // MaxHostLength is what a DNS name can be, dots included.
 const MaxHostLength = 253
