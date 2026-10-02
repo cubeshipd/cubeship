@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"time"
 
 	"cubeship/internal/envvar"
@@ -12,6 +13,7 @@ import (
 	"cubeship/internal/user"
 
 	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -39,16 +41,20 @@ func NewTools(svc *Service, caller *user.User) *Tools {
 
 func (t *Tools) Register(srv *mcp.Server) {
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "create_app",
-		Description: `Register a new app in a project and get its registry push path. environment defaults to "production" when omitted. Requires the member role.`,
+		Name:         "create_app",
+		InputSchema:  appToolSchema[createInput](),
+		OutputSchema: appToolSchema[Response](),
+		Description:  `Register a new app in a project and get its registry push path. environment defaults to "production" when omitted. Requires the member role.`,
 	}, t.create)
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "list_apps",
-		Description: "List every app you can see, on this instance.",
+		Name:         "list_apps",
+		OutputSchema: appToolSchema[mcpx.List[Response]](),
+		Description:  "List every app you can see, on this instance.",
 	}, t.list)
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "get_app",
-		Description: "Get one app by reference: its domain, registry push path, status, and which project and environment it lives in.",
+		Name:         "get_app",
+		OutputSchema: appToolSchema[Response](),
+		Description:  "Get one app by reference: its domain, registry push path, status, and which project and environment it lives in.",
 	}, t.get)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "deploy_app",
@@ -71,8 +77,10 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Description: "Cancel an unfinished deployment before its swap, preserving the currently serving version.",
 	}, t.cancelDeployment)
 	mcp.AddTool(srv, &mcp.Tool{
-		Name:        "update_app",
-		Description: "Reconfigure an app: where its image comes from. Its domains are added and removed one at a time — an app can answer at several, each with its own port — so they are not here. A field you leave out is left as it was. The source and its settings travel together — naming a source without what it needs, or settings the source would ignore, is refused. Moving an app to a source that builds requires the admin role. The app's name cannot be changed.",
+		Name:         "update_app",
+		InputSchema:  appToolSchema[updateInput](),
+		OutputSchema: appToolSchema[Response](),
+		Description:  "Reconfigure an app: where its image comes from. Its domains are added and removed one at a time — an app can answer at several, each with its own port — so they are not here. A field you leave out is left as it was. The source and its settings travel together — naming a source without what it needs, or settings the source would ignore, is refused. Moving an app to a source that builds requires the admin role. The app's name cannot be changed.",
 	}, t.update)
 	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "delete_app",
@@ -115,6 +123,26 @@ func (t *Tools) Register(srv *mcp.Server) {
 	}, t.listTCPPorts)
 }
 
+// Command inputs keep raw JSON to distinguish omission from an explicit clear.
+// Predeploy responses marshal as that same union, not as the Go struct. Both
+// need the wire schema instead of the underlying []byte or struct schema.
+func appToolSchema[T any]() *jsonschema.Schema {
+	command := &jsonschema.Schema{
+		Types: []string{"string", "array", "null"},
+		Items: &jsonschema.Schema{Type: "string"},
+	}
+	schema, err := jsonschema.For[T](&jsonschema.ForOptions{
+		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
+			reflect.TypeFor[json.RawMessage](): command,
+			reflect.TypeFor[Predeploy]():       command,
+		},
+	})
+	if err != nil {
+		panic(fmt.Sprintf("app MCP schema: %v", err))
+	}
+	return schema
+}
+
 type createInput struct {
 	Project          string            `json:"project" jsonschema:"project slug"`
 	Environment      string            `json:"environment,omitempty" jsonschema:"environment slug (default \"production\")"`
@@ -125,7 +153,7 @@ type createInput struct {
 	Repo             string            `json:"repo,omitempty" jsonschema:"for a building app, the https:// Git repository to build from. Leave empty otherwise."`
 	Ref              string            `json:"ref,omitempty" jsonschema:"for a building app, the branch, tag or commit to build. Defaults to the repository's default branch."`
 	Dockerfile       string            `json:"dockerfile,omitempty" jsonschema:"for a dockerfile app only, the recipe's path within the repository. Defaults to \"Dockerfile\" at the root."`
-	PredeployCommand json.RawMessage   `json:"predeploy_command,omitempty" jsonschema:"shell string or argv array to run from the new image before swapping"`
+	PredeployCommand json.RawMessage   `json:"predeploy_command,omitempty" jsonschema:"shell string or argv array to run from the new image before swapping; empty string, empty array or null disables it"`
 	PredeployTimeout *int64            `json:"predeploy_timeout,omitempty" jsonschema:"pre-deploy timeout in seconds, up to 3600"`
 	StopGracePeriod  *int64            `json:"stop_grace_period,omitempty" jsonschema:"container stop grace period in seconds, 0 to 3600"`
 	StopSignal       *string           `json:"stop_signal,omitempty" jsonschema:"container stop signal, for example SIGTERM"`
@@ -204,7 +232,7 @@ type updateInput struct {
 	// wrong placement moves somebody's app to a box they were not
 	// looking at.
 	HealthPath       *string           `json:"health_path,omitempty" jsonschema:"the path Traefik asks this app for before trusting a container with traffic, e.g. /healthz. Send empty to check nothing, which is the default; a path that the app does not answer 2xx or 3xx on takes every replica out of rotation"`
-	PredeployCommand json.RawMessage   `json:"predeploy_command,omitempty" jsonschema:"shell string or argv array to run from the new image before swapping it in"`
+	PredeployCommand json.RawMessage   `json:"predeploy_command,omitempty" jsonschema:"shell string or argv array to run from the new image before swapping it in; omit to preserve, empty string, empty array or null to clear"`
 	PredeployTimeout *int64            `json:"predeploy_timeout,omitempty" jsonschema:"pre-deploy timeout in seconds, up to 3600"`
 	StopGracePeriod  *int64            `json:"stop_grace_period,omitempty" jsonschema:"container stop grace period in seconds, 0 to 3600"`
 	StopSignal       *string           `json:"stop_signal,omitempty" jsonschema:"container stop signal, for example SIGTERM"`

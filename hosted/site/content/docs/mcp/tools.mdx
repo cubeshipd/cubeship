@@ -214,7 +214,7 @@ Register a new app in a project and get its registry push path. environment defa
 | `ignore_paths` | array | exclude globs applied after watch paths |
 | `image` | string | for an external app, the image it pulls, without a tag — e.g. "registry.digitalocean.com/acme/api". Leave empty otherwise. |
 | `name` * | string | app name: lowercase letters, digits and dashes — becomes part of its registry image path. Permanent |
-| `predeploy_command` | array | shell string or argv array to run from the new image before swapping |
+| `predeploy_command` | string or array | shell string or argv array to run from the new image before swapping; empty string, empty array or null disables it |
 | `predeploy_timeout` | integer | pre-deploy timeout in seconds, up to 3600 |
 | `project` * | string | project slug |
 | `ref` | string | for a building app, the branch, tag or commit to build. Defaults to the repository's default branch. |
@@ -372,7 +372,7 @@ Reconfigure an app: where its image comes from. Its domains are added and remove
 | `health_path` | string | the path Traefik asks this app for before trusting a container with traffic, e.g. /healthz. Send empty to check nothing, which is the default; a path that the app does not answer 2xx or 3xx on takes every replica out of rotation |
 | `ignore_paths` | array | exclude globs applied after watch paths |
 | `image` | string | for an external app, the image it pulls, without a tag |
-| `predeploy_command` | array | shell string or argv array to run from the new image before swapping it in |
+| `predeploy_command` | string or array | shell string or argv array to run from the new image before swapping it in; omit to preserve, empty string, empty array or null to clear |
 | `predeploy_timeout` | integer | pre-deploy timeout in seconds, up to 3600 |
 | `ref` | string | for a building app, the branch, tag or commit to build |
 | `reference` * | string | the app's reference: project/environment/name |
