@@ -80,12 +80,22 @@ const daemonPort = 3000
 var listenAddr = fmt.Sprintf(":%d", daemonPort)
 
 func main() {
+	probe := flag.String("probe", "", "run one isolated readiness probe and exit")
+	probeAddress := flag.String("probe-address", "", "readiness target address")
+	probePath := flag.String("probe-path", "", "readiness HTTP path")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	// The one mode that is not a daemon at all: a throwaway container
 	// started by the daemon it is about to replace. See replaceDaemon.
 	replace := flag.String("replace", "", "replace this container with a new image and exit")
 	replaceImage := flag.String("replace-image", "", "the image to replace it with")
 	flag.Parse()
+	if *probe != "" {
+		if err := dockerx.RunProbe(context.Background(), *probe, *probeAddress, *probePath); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if *showVersion {
 		fmt.Printf("cubeshipd %s\n", version)
 		os.Exit(0)
@@ -207,6 +217,11 @@ func runWorker(cfg *config.Config) error {
 	// have to.
 	if err := bootstrap.PrepareNetworks(ctx, docker, cfg.InContainer); err != nil {
 		return fmt.Errorf("ensure network: %w", err)
+	}
+	if cfg.InContainer {
+		if err := docker.ConfigureProbes(ctx, bootstrap.DaemonContainerName); err != nil {
+			return err
+		}
 	}
 
 	box := machine.NewReader(cfg.DataDir, cfg.InContainer)
@@ -538,6 +553,11 @@ func run() error {
 
 	if err := bootstrap.PrepareNetworks(ctx, docker, cfg.InContainer); err != nil {
 		return fmt.Errorf("ensure network: %w", err)
+	}
+	if cfg.InContainer {
+		if err := docker.ConfigureProbes(ctx, bootstrap.DaemonContainerName); err != nil {
+			return err
+		}
 	}
 
 	dsn, err := ensureDatabase(ctx, cfg, docker)

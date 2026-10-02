@@ -47,10 +47,34 @@ A leading `/`, no `?` and no `#`, ordinary URL characters, at most 255
 of them. The value is written into the proxy's configuration and a
 container label, so the grammar is strict.
 
-## What it is not
+## Before a deployment serves traffic
 
-It is not the check a [deploy](/docs/apps/deploys) makes before
-retiring the old container — that one only asks whether the new
-container is running — and it does not apply to the
-[internal address](/docs/apps/internal-address), where nothing is in
-the path.
+On the control plane, a [deploy](/docs/apps/deploys) uses the configured
+health path too: it sends an HTTP GET to the new container's application
+network address and requires a `2xx` response. Redirects are failures.
+The first domain's port is used, then the first published TCP container
+port if present, otherwise port 8080.
+With no health path, an app with a published TCP port must accept a TCP
+connection at the selected port. Otherwise, readiness checks only that
+the container remains running.
+
+Each HTTP or TCP attempt has a **5-second** network timeout. The deploy
+retries up to **10 times**, waiting **500 milliseconds** between attempts,
+and requires three consecutive successes before switching traffic. Container
+startup overhead can add to this time. The last probe error is included
+when readiness fails.
+
+The daemon stays on its private management network. A temporary restricted
+helper, using the running daemon's own image, probes from the new app's
+network namespace and is removed after the attempt. The app image needs no
+shell, curl or wget. The helper has no Docker socket or host mounts.
+
+A failed rolling deployment removes the candidate and keeps the previous
+version serving. Apps with volumes or published ports stop the old container
+first and restart it if the replacement fails, so those deployments have
+downtime. Workers currently check that their containers remain running;
+the HTTP/TCP deployment gate described above applies to the control plane.
+
+Proxy health checks continue after deployment. They do not intercept access
+through the [internal address](/docs/apps/internal-address), where there is
+no proxy in the path.
