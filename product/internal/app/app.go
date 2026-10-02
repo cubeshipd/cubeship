@@ -16,6 +16,7 @@ import (
 	"cubeship/internal/envvar"
 	"cubeship/internal/limits"
 	"cubeship/internal/node"
+	"github.com/bmatcuk/doublestar/v4"
 )
 
 // App is one deployable service: a name, the domain Traefik routes to
@@ -106,6 +107,8 @@ type App struct {
 	Env             envvar.Map
 	StopGracePeriod time.Duration
 	StopSignal      string
+	WatchPaths      []string
+	IgnorePaths     []string
 	CreatedAt       time.Time
 }
 
@@ -125,6 +128,46 @@ func ValidStopPolicy(grace time.Duration, signal string) bool {
 		}
 	}
 	return strings.HasPrefix(signal, "SIG")
+}
+
+// ValidPathFilters accepts repository-relative doublestar globs. Empty
+// watch paths preserve the historical deploy-on-every-push behavior.
+func ValidPathFilters(watch, ignore []string) bool {
+	for _, patterns := range [][]string{watch, ignore} {
+		for _, pattern := range patterns {
+			if pattern == "" || strings.HasPrefix(pattern, "/") || strings.Contains(pattern, "\\") || !doublestar.ValidatePattern(pattern) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// WatchPathsMatch reports whether a push with these changed repository paths
+// should trigger an app. Missing paths are represented by an empty slice and
+// are handled by the webhook before calling this function.
+func WatchPathsMatch(watch, ignore, changed []string) bool {
+	for _, path := range changed {
+		skipped := false
+		for _, pattern := range ignore {
+			if doublestar.MatchUnvalidated(pattern, path) {
+				skipped = true
+				break
+			}
+		}
+		if skipped {
+			continue
+		}
+		if len(watch) == 0 {
+			return true
+		}
+		for _, pattern := range watch {
+			if doublestar.MatchUnvalidated(pattern, path) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Predeploy is an optional command run from the new image before its
@@ -431,6 +474,7 @@ const (
 	DeploymentPending   = "pending"
 	DeploymentSucceeded = "succeeded"
 	DeploymentFailed    = "failed"
+	DeploymentSkipped   = "skipped"
 )
 
 const (
@@ -626,6 +670,7 @@ var ErrInvalidHealthPath = errors.New("a health check path has to start with / a
 
 var ErrInvalidPredeploy = errors.New("pre-deploy command must be argv or shell text with a timeout up to one hour")
 var ErrInvalidStopPolicy = errors.New("stop grace period or signal is invalid")
+var ErrInvalidPathFilters = errors.New("watch paths or ignore paths are invalid")
 
 // MaxHostLength is what a DNS name can be, dots included.
 const MaxHostLength = 253

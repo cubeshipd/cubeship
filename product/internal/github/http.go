@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strconv"
 	"sync"
 	"time"
@@ -39,9 +40,11 @@ func toResponses(installations []*Installation) []Response {
 // Deployer is what a push turns into. The github module knows nothing
 // about apps beyond this.
 type Deployer interface {
-	// DeployOnPush starts a deploy for every app that builds from this
-	// repository at this branch, and reports how many it started.
 	DeployOnPush(ctx context.Context, repo, branch string) (int, error)
+}
+
+type changeAwareDeployer interface {
+	DeployOnPushWithChanges(ctx context.Context, repo, branch string, changed []string, complete bool) (int, error)
 }
 
 type Handler struct {
@@ -50,11 +53,13 @@ type Handler struct {
 
 	// deploys tracks what a webhook set going, so a test can wait for
 	// it. The daemon does not.
-	deploys sync.WaitGroup
+	deploys    sync.WaitGroup
+	deliveryMu sync.Mutex
+	deliveries map[string]struct{}
 }
 
 func NewHandler(svc *Service, deploy Deployer) *Handler {
-	return &Handler{svc: svc, deploy: deploy}
+	return &Handler{svc: svc, deploy: deploy, deliveries: make(map[string]struct{})}
 }
 
 // WaitForDeploys blocks until every deploy this handler started has
@@ -248,8 +253,15 @@ func (h *Handler) disconnect(w http.ResponseWriter, r *http.Request) {
 const maxWebhookBody = 8 << 20
 
 // pushEvent is the part of GitHub's push payload that matters here.
+type pushCommit struct {
+	Added    []string `json:"added"`
+	Modified []string `json:"modified"`
+	Removed  []string `json:"removed"`
+}
+
 type pushEvent struct {
-	Ref        string `json:"ref"`
+	Ref        string       `json:"ref"`
+	Commits    []pushCommit `json:"commits"`
 	Repository struct {
 		FullName string `json:"full_name"`
 	} `json:"repository"`
@@ -285,6 +297,24 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if delivery := r.Header.Get("X-GitHub-Delivery"); delivery != "" {
+		h.deliveryMu.Lock()
+		_, duplicate := h.deliveries[delivery]
+		if !duplicate {
+			h.deliveries[delivery] = struct{}{}
+			if len(h.deliveries) > 4096 {
+				for key := range h.deliveries {
+					delete(h.deliveries, key)
+					break
+				}
+			}
+		}
+		h.deliveryMu.Unlock()
+		if duplicate {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+	}
 	switch r.Header.Get("X-GitHub-Event") {
 	case "push":
 		h.handlePush(r, body)
@@ -296,9 +326,18 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) handlePush(r *http.Request, body []byte) {
 	var event pushEvent
+	complete := true
 	if err := json.Unmarshal(body, &event); err != nil {
-		log.Printf("github webhook: invalid push payload: %v", err)
-		return
+		log.Printf("github webhook: invalid or truncated push payload; deploying fail-open: %v", err)
+		complete = false
+		// A truncated delivery can still contain the envelope fields needed
+		// to identify the repository and branch. Preserve those fields so a
+		// malformed file list fails open into a deployment.
+		event.Ref = jsonStringField(body, "ref")
+		event.Repository.FullName = jsonStringField(body, "full_name")
+		if id := jsonInstallationID(body); id != 0 {
+			event.Installation.ID = id
+		}
 	}
 	branch, ok := BranchOf(event.Ref)
 	if !ok {
@@ -323,7 +362,14 @@ func (h *Handler) handlePush(r *http.Request, body []byte) {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 
-		started, err := h.deploy.DeployOnPush(ctx, event.Repository.FullName, branch)
+		var started int
+		var err error
+		if aware, ok := h.deploy.(changeAwareDeployer); ok {
+			changed := changedFiles(event.Commits)
+			started, err = aware.DeployOnPushWithChanges(ctx, event.Repository.FullName, branch, changed, complete && event.Commits != nil)
+		} else {
+			started, err = h.deploy.DeployOnPush(ctx, event.Repository.FullName, branch)
+		}
 		if err != nil {
 			log.Printf("github webhook: could not deploy %s@%s: %v",
 				event.Repository.FullName, branch, err)
@@ -334,6 +380,38 @@ func (h *Handler) handlePush(r *http.Request, body []byte) {
 				event.Repository.FullName, branch, started)
 		}
 	}()
+}
+
+var (
+	refFieldRE          = regexp.MustCompile(`"ref"\s*:\s*"([^"]*)"`)
+	fullNameFieldRE     = regexp.MustCompile(`"full_name"\s*:\s*"([^"]*)"`)
+	installationIDField = regexp.MustCompile(`"installation"\s*:\s*\{[^{}]*"id"\s*:\s*([0-9]+)`)
+)
+
+func jsonStringField(body []byte, key string) string {
+	var re *regexp.Regexp
+	switch key {
+	case "ref":
+		re = refFieldRE
+	case "full_name":
+		re = fullNameFieldRE
+	default:
+		return ""
+	}
+	m := re.FindSubmatch(body)
+	if len(m) == 2 {
+		return string(m[1])
+	}
+	return ""
+}
+
+func jsonInstallationID(body []byte) int64 {
+	m := installationIDField.FindSubmatch(body)
+	if len(m) != 2 {
+		return 0
+	}
+	id, _ := strconv.ParseInt(string(m[1]), 10, 64)
+	return id
 }
 
 // handleInstallation keeps the record honest when someone uninstalls the
@@ -350,4 +428,21 @@ func (h *Handler) handleInstallation(r *http.Request, body []byte) {
 	if err := h.svc.Repo().DeleteByGitHubID(r.Context(), event.Installation.ID); err != nil {
 		log.Printf("github webhook: could not forget installation %d: %v", event.Installation.ID, err)
 	}
+}
+
+func changedFiles(commits []pushCommit) []string {
+	seen := map[string]struct{}{}
+	var out []string
+	for _, commit := range commits {
+		for _, files := range [][]string{commit.Added, commit.Modified, commit.Removed} {
+			for _, file := range files {
+				if _, ok := seen[file]; ok {
+					continue
+				}
+				seen[file] = struct{}{}
+				out = append(out, file)
+			}
+		}
+	}
+	return out
 }

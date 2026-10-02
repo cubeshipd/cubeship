@@ -87,6 +87,8 @@ type Response struct {
 	PredeployTimeout int64      `json:"predeploy_timeout,omitempty"`
 	StopGracePeriod  int64      `json:"stop_grace_period"`
 	StopSignal       string     `json:"stop_signal"`
+	WatchPaths       []string   `json:"watch_paths,omitempty"`
+	IgnorePaths      []string   `json:"ignore_paths,omitempty"`
 	// Limits is what **one copy** of this app may take from the machine
 	// it runs on: three replicas under a one-core limit may take three
 	// cores. Zero in either half is no ceiling, which is the default
@@ -284,7 +286,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrBadHost), errors.Is(err, ErrHostIsTheInstance),
 		errors.Is(err, ErrHostRequired), errors.Is(err, ErrInvalidHealthPath),
-		errors.Is(err, ErrInvalidLimits), errors.Is(err, ErrInvalidAutoscale), errors.Is(err, ErrInvalidPredeploy), errors.Is(err, ErrInvalidStopPolicy):
+		errors.Is(err, ErrInvalidLimits), errors.Is(err, ErrInvalidAutoscale), errors.Is(err, ErrInvalidPredeploy), errors.Is(err, ErrInvalidStopPolicy), errors.Is(err, ErrInvalidPathFilters):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNoBuilder):
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -343,6 +345,8 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		PredeployTimeout *int64     `json:"predeploy_timeout"`
 		StopGracePeriod  *int64     `json:"stop_grace_period"`
 		StopSignal       *string    `json:"stop_signal"`
+		WatchPaths       *[]string  `json:"watch_paths"`
+		IgnorePaths      *[]string  `json:"ignore_paths"`
 	}
 	// The domain is not required: an app is created empty and made
 	// deployable afterwards, in its own settings. Everything that says
@@ -369,6 +373,20 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		WriteError(w, err)
 		return
+	}
+	if req.WatchPaths != nil || req.IgnorePaths != nil {
+		watch, ignore := []string(nil), []string(nil)
+		if req.WatchPaths != nil {
+			watch = *req.WatchPaths
+		}
+		if req.IgnorePaths != nil {
+			ignore = *req.IgnorePaths
+		}
+		created, err = h.svc.UpdatePathFilters(r.Context(), user.FromContext(r.Context()), Reference{Project: req.Project, Environment: req.Environment, Name: req.Name}, watch, ignore)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
 	}
 	if req.StopGracePeriod != nil || req.StopSignal != nil {
 		grace := DefaultStopGracePeriod
@@ -441,6 +459,8 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		PredeployTimeout *int64     `json:"predeploy_timeout"`
 		StopGracePeriod  *int64     `json:"stop_grace_period"`
 		StopSignal       *string    `json:"stop_signal"`
+		WatchPaths       *[]string  `json:"watch_paths"`
+		IgnorePaths      *[]string  `json:"ignore_paths"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -481,7 +501,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 	if source == nil && origin == nil &&
 		req.Node == nil && req.Nodes == nil && req.HealthPath == nil && req.Scale == nil &&
-		req.Limits == nil && req.Spread == nil && req.Autoscale == nil && predeploy == nil && req.StopGracePeriod == nil && req.StopSignal == nil {
+		req.Limits == nil && req.Spread == nil && req.Autoscale == nil && predeploy == nil && req.StopGracePeriod == nil && req.StopSignal == nil && req.WatchPaths == nil && req.IgnorePaths == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
@@ -512,6 +532,25 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		WriteError(w, err)
 		return
+	}
+	if req.WatchPaths != nil || req.IgnorePaths != nil {
+		current, lookupErr := h.svc.Resolve(r.Context(), user.FromContext(r.Context()), refFrom(r), user.LevelManage)
+		if lookupErr != nil {
+			WriteError(w, lookupErr)
+			return
+		}
+		watch, ignore := current.WatchPaths, current.IgnorePaths
+		if req.WatchPaths != nil {
+			watch = *req.WatchPaths
+		}
+		if req.IgnorePaths != nil {
+			ignore = *req.IgnorePaths
+		}
+		updated, err = h.svc.UpdatePathFilters(r.Context(), user.FromContext(r.Context()), refFrom(r), watch, ignore)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
 	}
 	if req.StopGracePeriod != nil || req.StopSignal != nil {
 		current, lookupErr := h.svc.Resolve(r.Context(), user.FromContext(r.Context()), refFrom(r), user.LevelManage)
@@ -575,6 +614,7 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 type DeploymentResponse struct {
 	ID             int64  `json:"id"`
 	Status         string `json:"status"`
+	Skipped        bool   `json:"skipped,omitempty"`
 	Image          string `json:"image"`
 	Error          string `json:"error,omitempty"`
 	Phase          string `json:"phase"`
@@ -609,7 +649,7 @@ type DeploymentResponse struct {
 
 func toDeploymentResponse(d *Deployment) DeploymentResponse {
 	return DeploymentResponse{
-		ID: d.ID, Status: d.Status, Image: d.ImageRef, Error: d.Error,
+		ID: d.ID, Status: d.Status, Skipped: d.Status == DeploymentSkipped, Image: d.ImageRef, Error: d.Error,
 		Phase: d.Phase, DurationMillis: d.Duration().Milliseconds(), Cancelled: d.Cancelled,
 		Logs: d.Logs, HasLogs: d.HasLogs, Deletable: d.Deletable, Live: d.Live,
 		StalledOn: stalledOn(d),

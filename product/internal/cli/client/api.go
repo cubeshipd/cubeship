@@ -71,6 +71,8 @@ type App struct {
 	PredeployTimeout int64     `json:"predeploy_timeout,omitempty"`
 	StopGracePeriod  int64     `json:"stop_grace_period,omitempty"`
 	StopSignal       string    `json:"stop_signal,omitempty"`
+	WatchPaths       []string  `json:"watch_paths,omitempty"`
+	IgnorePaths      []string  `json:"ignore_paths,omitempty"`
 }
 
 // Autoscale is the rule the instance scales an app by.
@@ -612,6 +614,7 @@ type Deployment struct {
 	Phase          string    `json:"phase"`
 	DurationMillis int64     `json:"duration_ms"`
 	Cancelled      bool      `json:"cancelled"`
+	Skipped        bool      `json:"skipped,omitempty"`
 	Logs           string    `json:"logs,omitempty"`
 	HasLogs        bool      `json:"has_logs"`
 	Deletable      bool      `json:"deletable"`
@@ -623,6 +626,7 @@ const (
 	DeploymentPending   = "pending"
 	DeploymentSucceeded = "succeeded"
 	DeploymentFailed    = "failed"
+	DeploymentSkipped   = "skipped"
 )
 
 // Done reports whether the deploy has finished, either way.

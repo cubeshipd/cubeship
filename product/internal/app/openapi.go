@@ -45,7 +45,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 		Schemas: mergeSchemas(mergeSchemas(project.EnvSchemas(), metrics.Schemas()), map[string]*openapi.Schema{
 			"Deployment": openapi.Object(map[string]*openapi.Schema{
 				"id":          openapi.Integer("Poll this deploy at .../deployments/{id}."),
-				"status":      {Type: "string", Enum: []string{"pending", "succeeded", "failed"}},
+				"status":      {Type: "string", Enum: []string{"pending", "succeeded", "failed", "skipped"}},
 				"phase":       {Type: "string", Description: "Current deploy phase: queued, resolving, pulling, predeploy, swapping, waiting, done, failed or cancelled."},
 				"duration_ms": openapi.Integer("Elapsed deploy duration in milliseconds."),
 				"cancelled":   openapi.Bool("Whether the deploy was cancelled before the swap."),
@@ -81,6 +81,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"predeploy_timeout": openapi.Integer("Pre-deploy timeout in seconds, at most 3600."),
 				"stop_grace_period": openapi.Integer("Seconds to wait for a container to stop, from 0 to 3600."),
 				"stop_signal":       openapi.String("Signal sent when stopping a container, such as SIGTERM."),
+				"watch_paths":       openapi.Array(openapi.String("Repository-relative glob.")),
+				"ignore_paths":      openapi.Array(openapi.String("Repository-relative glob excluded from watched paths.")),
 				"limits":            openapi.Ref("AppLimits"),
 				"autoscale":         openapi.Ref("AppAutoscale"),
 				"spread":            openapi.Bool("Whether this app follows the cluster: it runs on every machine there is, and is re-spread whenever one is added or taken away. Absent on an app placed by hand, which is every app until somebody turns this on."),
