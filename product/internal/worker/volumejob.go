@@ -59,7 +59,7 @@ func (a *Agent) runVolumeJob(ctx context.Context, cmd node.Command) (int64, erro
 	dir := filepath.Join(a.dataDir, "volumes", strconv.FormatInt(job.ID, 10))
 
 	var size int64
-	err = a.withAppStopped(ctx, job.App, func() error {
+	err = a.withAppStopped(ctx, job.App, job.StopGracePeriod, job.StopSignal, func() error {
 		if cmd.Kind == node.CommandVolumeRestore {
 			return download(ctx, c, dir, job.S3)
 		}
@@ -73,7 +73,7 @@ func (a *Agent) runVolumeJob(ctx context.Context, cmd node.Command) (int64, erro
 // withAppStopped stops an app's containers on this machine, runs fn, and
 // starts them again whatever fn returned. The app is paused meanwhile, so
 // apply does not take a stopped container for a missing one.
-func (a *Agent) withAppStopped(ctx context.Context, app string, fn func() error) error {
+func (a *Agent) withAppStopped(ctx context.Context, app string, grace int64, signal string, fn func() error) error {
 	a.pause(app)
 	defer a.resume(app)
 
@@ -93,7 +93,7 @@ func (a *Agent) withAppStopped(ctx context.Context, app string, fn func() error)
 		if c.Labels[node.LabelApp] != app {
 			continue
 		}
-		if err := a.engine.StopContainer(ctx, c.ID); err != nil {
+		if err := stopWithPolicy(ctx, a.engine, c.ID, grace, signal); err != nil {
 			return fmt.Errorf("stop the app: %w", err)
 		}
 		stopped = append(stopped, c.ID)

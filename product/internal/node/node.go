@@ -292,6 +292,8 @@ type Placement struct {
 	PredeployArgs    []string `json:"predeploy_args,omitempty"`
 	PredeployShell   string   `json:"predeploy_shell,omitempty"`
 	PredeployTimeout int64    `json:"predeploy_timeout,omitempty"`
+	StopGracePeriod  int64    `json:"stop_grace_period,omitempty"`
+	StopSignal       string   `json:"stop_signal,omitempty"`
 	// Resources is the ceiling this copy runs under: CPU quota and a
 	// memory limit, zero in either meaning none.
 	//

@@ -92,6 +92,23 @@ type Engine interface {
 	PathOwner(ctx context.Context, image, path string) (dockerx.Owner, error)
 }
 
+type policyStopper interface {
+	StopContainerWithOptions(context.Context, string, time.Duration, string) error
+}
+
+func stopWithPolicy(ctx context.Context, e Engine, id string, grace int64, signal string) error {
+	if grace == 0 {
+		grace = 10
+	}
+	if signal == "" {
+		signal = "SIGTERM"
+	}
+	if s, ok := e.(policyStopper); ok {
+		return s.StopContainerWithOptions(ctx, id, time.Duration(grace)*time.Second, signal)
+	}
+	return e.StopContainer(ctx, id)
+}
+
 // How long the agent watches a container it has just started before
 // calling it up, and how often.
 //
@@ -482,9 +499,11 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 	// life of the instance.
 	wanted := make(map[string]bool, len(placements))
 	byCopy := make(map[copy]string, len(placements))
+	policy := make(map[string]node.Placement, len(placements))
 	for _, p := range placements {
 		wanted[p.Container] = true
 		byCopy[copy{app: p.App, ordinal: node.OrdinalOf(p.Ordinal)}] = p.Container
+		policy[p.App] = p
 	}
 
 	for _, p := range placements {
@@ -558,7 +577,8 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 			continue
 		}
 		log.Printf("agent: removing %s, which this instance no longer runs here", c.Name)
-		if err := a.engine.StopContainer(ctx, c.ID); err != nil {
+		pol := policy[app]
+		if err := stopWithPolicy(ctx, a.engine, c.ID, pol.StopGracePeriod, pol.StopSignal); err != nil {
 			log.Printf("agent: stopping %s: %v", c.Name, err)
 		}
 		if err := a.engine.RemoveContainer(ctx, c.ID); err != nil {
@@ -712,7 +732,7 @@ func (a *Agent) displace(ctx context.Context, running []dockerx.Running, p node.
 			node.OrdinalFromLabels(c.Labels) != node.OrdinalOf(p.Ordinal) {
 			continue
 		}
-		if err := a.engine.StopContainer(ctx, c.ID); err != nil {
+		if err := stopWithPolicy(ctx, a.engine, c.ID, 10, "SIGTERM"); err != nil {
 			log.Printf("agent: stopping %s before its replacement: %v", c.Name, err)
 		}
 		stopped = append(stopped, c)

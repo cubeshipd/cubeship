@@ -294,6 +294,8 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 		PredeployArgs:    append([]string(nil), a.Predeploy.Args...),
 		PredeployShell:   a.Predeploy.Shell,
 		PredeployTimeout: int64(a.Predeploy.Timeout / time.Second),
+		StopGracePeriod:  int64(a.StopGracePeriod / time.Second),
+		StopSignal:       a.StopSignal,
 		// The ceiling this copy runs under. It travels with the
 		// placement rather than being asked for, because the machine
 		// has no database — and it is re-sent on every pass, which is

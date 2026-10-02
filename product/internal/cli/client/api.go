@@ -69,6 +69,8 @@ type App struct {
 	Autoscale        Autoscale `json:"autoscale"`
 	PredeployCommand any       `json:"predeploy_command,omitempty"`
 	PredeployTimeout int64     `json:"predeploy_timeout,omitempty"`
+	StopGracePeriod  int64     `json:"stop_grace_period,omitempty"`
+	StopSignal       string    `json:"stop_signal,omitempty"`
 }
 
 // Autoscale is the rule the instance scales an app by.
