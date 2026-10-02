@@ -61,7 +61,9 @@ type apiClient interface {
 }
 
 type Client struct {
-	api apiClient
+	api              apiClient
+	probeInContainer bool
+	probeImage       string
 
 	// registryTokenSigners holds a token-minting function per registry
 	// host (e.g. "127.0.0.1:5000"). PullImage calls the matching signer

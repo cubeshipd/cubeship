@@ -6,6 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -958,4 +961,21 @@ func (f *fakeAPI) ContainerAttach(context.Context, string, container.AttachOptio
 
 func (f *fakeAPI) ContainerStatPath(context.Context, string, string) (container.PathStat, error) {
 	return container.PathStat{}, nil
+}
+
+func TestProbeHTTPDoesNotFollowRedirects(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/health" {
+			http.Redirect(w, r, "/ok", http.StatusFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	host, rawPort, _ := net.SplitHostPort(strings.TrimPrefix(server.URL, "http://"))
+	port, _ := strconv.Atoi(rawPort)
+	c := newWithAPI(&fakeAPI{inspectNetworks: map[string]*network.EndpointSettings{ApplicationNetwork: {IPAddress: host}}})
+	if err := c.ProbeHTTP(context.Background(), "app", "/health", port); err == nil {
+		t.Fatal("redirect must not count as a healthy response")
+	}
 }

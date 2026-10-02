@@ -2,7 +2,8 @@
 #
 # It manages containers through the Docker socket and runs as one
 # itself — a sibling of the registry, Traefik, BuildKit and every app,
-# on the "cubeship" network they share.
+# on the private "cubeship-management" network. Apps use "cubeship";
+# readiness helpers temporarily share only the candidate app network namespace.
 #
 # One thing about that is load-bearing and easy to get wrong: the paths
 # this daemon passes to Docker for its siblings' bind mounts are

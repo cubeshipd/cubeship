@@ -908,9 +908,9 @@ func (o *Orchestrator) swap(ctx context.Context, a *Scoped, replica Replica, ima
 		return fmt.Errorf("start container: %w", err)
 	}
 
-	if !o.waitHealthy(ctx, newID, a.HealthPath, healthPort(a), a.HealthPath == "" && len(a.TCPPorts) > 0) {
+	if err := o.waitHealthy(ctx, newID, a.HealthPath, healthPort(a), a.HealthPath == "" && len(a.TCPPorts) > 0); err != nil {
 		o.removeContainer(ctx, newID, "abandoning a container that never became healthy")
-		return fmt.Errorf("health check timed out for container %s", newID)
+		return fmt.Errorf("health check timed out for container %s: %w", newID, err)
 	}
 
 	if err := o.apps.UpdateContainer(ctx, a.ID, replica.NodeID, replica.Ordinal, newID, newName,
@@ -935,6 +935,9 @@ func (o *Orchestrator) swap(ctx context.Context, a *Scoped, replica Replica, ima
 // failure here leaks a container, which is worth a log line: nothing else
 // will ever clean it up.
 func (o *Orchestrator) removeContainer(ctx context.Context, id, why string) {
+	// Cleanup must still work after the deployment has been canceled.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
 	if err := o.docker.RemoveContainer(ctx, id); err != nil {
 		log.Printf("%s: could not remove container %s, it is now orphaned: %v", why, id, err)
 	}
@@ -978,7 +981,9 @@ func (o *Orchestrator) swapInPlace(ctx context.Context, a *Scoped, replica Repli
 		if old == "" {
 			return
 		}
-		if err := o.docker.StartContainer(ctx, old); err != nil {
+		cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := o.docker.StartContainer(cleanup, old); err != nil {
 			log.Printf("deploy %s: could not start the previous container %s again: %v", appName, old, err)
 		}
 	}
@@ -1006,10 +1011,10 @@ func (o *Orchestrator) swapInPlace(ctx context.Context, a *Scoped, replica Repli
 		restore()
 		return fmt.Errorf("start container: %w", err)
 	}
-	if !o.waitHealthy(ctx, newID, a.HealthPath, healthPort(a), a.HealthPath == "" && len(a.TCPPorts) > 0) {
+	if err := o.waitHealthy(ctx, newID, a.HealthPath, healthPort(a), a.HealthPath == "" && len(a.TCPPorts) > 0); err != nil {
 		o.removeContainer(ctx, newID, "abandoning a container that never became healthy")
 		restore()
-		return fmt.Errorf("health check timed out for container %s", newID)
+		return fmt.Errorf("health check timed out for container %s: %w", newID, err)
 	}
 	if err := o.apps.UpdateContainer(ctx, a.ID, replica.NodeID, replica.Ordinal, newID, newName,
 		deploymentID, StatusRunning); err != nil {
@@ -1122,7 +1127,7 @@ func (o *Orchestrator) Paused(ctx context.Context, appID int64, fn func() error)
 	return fn()
 }
 
-// waitHealthy reports whether a freshly started container looks healthy.
+// waitHealthy waits for readiness and preserves the final failure diagnostic.
 //
 // It requires HealthCheckSuccesses *consecutive* running observations,
 // and waits HealthCheckInterval before each one — including the first.
@@ -1134,27 +1139,35 @@ func (o *Orchestrator) Paused(ctx context.Context, appID int64, fn func() error)
 // pure luck; requiring a run of them raises the bar without needing
 // per-app health configuration.
 //
-// TODO (follow-up): an actual HTTP probe against Port would be a stronger
-// signal than the container's process state.
-func (o *Orchestrator) waitHealthy(ctx context.Context, containerID, healthPath string, port int, tcp bool) bool {
+// Configured HTTP/TCP probes must pass on each successful observation.
+func (o *Orchestrator) waitHealthy(ctx context.Context, containerID, healthPath string, port int, tcp bool) error {
 	needed := o.HealthCheckSuccesses
 	if needed < 1 {
 		needed = 1
 	}
 
 	consecutive := 0
+	lastErr := errors.New("container did not become ready")
 	for i := 0; i < o.HealthCheckAttempts; i++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		if o.HealthCheckInterval > 0 {
 			// Waiting on ctx as well as the timer: a cancelled deploy
 			// must not keep sleeping through every remaining attempt.
 			select {
 			case <-ctx.Done():
-				return false
+				return ctx.Err()
 			case <-time.After(o.HealthCheckInterval):
 			}
 		}
 		running, err := o.docker.IsRunning(ctx, containerID)
 		if err != nil || !running {
+			if err != nil {
+				lastErr = err
+			} else {
+				lastErr = errors.New("container is not running")
+			}
 			consecutive = 0
 			continue
 		}
@@ -1169,16 +1182,17 @@ func (o *Orchestrator) waitHealthy(ctx context.Context, containerID, healthPath 
 				probeErr = probe.ProbeHTTP(ctx, containerID, healthPath, port)
 			}
 			if probeErr != nil {
+				lastErr = probeErr
 				consecutive = 0
 				continue
 			}
 		}
 		consecutive++
 		if consecutive >= needed {
-			return true
+			return nil
 		}
 	}
-	return false
+	return lastErr
 }
 
 func healthPort(a *Scoped) int {
