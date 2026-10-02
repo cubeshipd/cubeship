@@ -441,9 +441,15 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 	var predeploy *Predeploy
 	if req.PredeployCommand != nil || req.PredeployTimeout != nil {
-		p := Predeploy{}
+		current, lookupErr := h.svc.Resolve(r.Context(), user.FromContext(r.Context()), refFrom(r), user.LevelManage)
+		if lookupErr != nil {
+			WriteError(w, lookupErr)
+			return
+		}
+		p := current.Predeploy
 		if req.PredeployCommand != nil {
 			p = *req.PredeployCommand
+			p.Timeout = current.Predeploy.Timeout
 		}
 		if req.PredeployTimeout != nil {
 			p.Timeout = time.Duration(*req.PredeployTimeout) * time.Second

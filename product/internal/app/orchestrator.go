@@ -95,6 +95,8 @@ type Orchestrator struct {
 	// Tests wait on it; the daemon does not.
 	running sync.WaitGroup
 	cancels sync.Map // deployment id -> context.CancelFunc
+	phaseMu sync.Mutex
+	phases  sync.Map // deployment id -> phase
 
 	// meshNetwork answers whether this instance is a cluster, and with
 	// what network. Nil until server.New wires one in.
@@ -444,9 +446,11 @@ func (o *Orchestrator) Start(ctx context.Context, appID int64, tag string) (*Dep
 	o.running.Add(1)
 	runCtx, cancel := context.WithCancel(context.Background())
 	o.cancels.Store(deployment.ID, cancel)
+	o.phases.Store(deployment.ID, DeploymentPhaseQueued)
 	go func() {
 		defer o.running.Done()
 		defer o.cancels.Delete(deployment.ID)
+		defer o.phases.Delete(deployment.ID)
 		// A fresh context: the request that asked for this may already
 		// be gone, and that must not matter. deploy gives each half its
 		// own deadline inside this one.
@@ -460,6 +464,11 @@ func (o *Orchestrator) Start(ctx context.Context, appID int64, tag string) (*Dep
 // Cancel stops a detached deploy while it is resolving, pulling or waiting
 // in a pre-deploy command. The old container is untouched until a swap.
 func (o *Orchestrator) Cancel(deploymentID int64) bool {
+	if phase, ok := o.phases.Load(deploymentID); ok {
+		if phase.(string) == DeploymentPhaseSwapping || phase.(string) == DeploymentPhaseDone {
+			return false
+		}
+	}
 	v, ok := o.cancels.Load(deploymentID)
 	if !ok {
 		return false
@@ -487,6 +496,9 @@ func (o *Orchestrator) run(ctx context.Context, appID int64, tag string, deploym
 		}()
 		switch err := o.deploy(ctx, appID, tag, deploymentID); {
 		case errors.Is(err, errPlaced):
+			if errors.Is(ctx.Err(), context.Canceled) {
+				status, errMsg = DeploymentFailed, "deploy cancelled"
+			}
 			// Nothing for this machine to do: the app runs somewhere
 			// else, and the machines it runs on will say how it went.
 		case err != nil:
@@ -510,7 +522,7 @@ func (o *Orchestrator) run(ctx context.Context, appID int64, tag string, deploym
 		}
 		return
 	}
-	if err := o.settle(ctx, appID, deploymentID); err != nil {
+	if err := o.settle(context.Background(), appID, deploymentID); err != nil {
 		log.Printf("could not record the outcome of deployment %d: %v", deploymentID, err)
 	}
 	// Whatever this did to the containers, the proxy's file is now
@@ -641,6 +653,7 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	logs := newDeploymentLog(o.saveDeploymentLogs(deploymentID))
 	defer logs.Close()
 	setPhase := func(phase string) {
+		o.phases.Store(deploymentID, phase)
 		if err := o.apps.SetDeploymentPhase(context.Background(), deploymentID, phase); err != nil {
 			log.Printf("deploy %d: phase %s: %v", deploymentID, phase, err)
 		}
@@ -660,7 +673,6 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 		return fmt.Errorf("resolve image: %w", err)
 	}
 	deployCtx, cancel := context.WithTimeout(ctx, DeployTimeout)
-	defer cancel()
 	if err := o.apps.SetDeploymentImage(deployCtx, deploymentID, image.Ref); err != nil {
 		log.Printf("deploy %s: could not record the resolved image: %v", appName, err)
 	}
@@ -699,6 +711,7 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 		}
 	}
 	if !local {
+		cancel()
 		if err := o.apps.SetDeploymentPhase(context.Background(), deploymentID, DeploymentPhaseWaiting); err != nil {
 			log.Printf("deploy %d: waiting phase: %v", deploymentID, err)
 		}
@@ -716,7 +729,14 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	}
 	setPhase(DeploymentPhasePredeploy)
 	if err := o.predeploy(ctx, a, image, env, logs); err != nil {
+		cancel()
 		return err
+	}
+	cancel()
+	deployCtx, cancel = context.WithTimeout(ctx, DeployTimeout)
+	defer cancel()
+	if ctx.Err() != nil {
+		return ctx.Err()
 	}
 
 	base := resourceName(ref)
@@ -763,11 +783,13 @@ func (o *Orchestrator) predeploy(ctx context.Context, a *Scoped, image Image, en
 		Image: image.Ref, Env: envvar.Slice(env), Network: Network,
 		AlsoNetworks: o.mesh(ctx), CapDrop: []string{"NET_RAW"},
 		SecurityOpt: []string{"no-new-privileges:true"},
+		Resources:   a.Limits.Resources(),
 	}
 	if p.Shell != "" {
 		opts.Entrypoint = []string{"sh"}
 		opts.Cmd = []string{"-c", p.Shell}
 	} else {
+		opts.Entrypoint = nil
 		opts.Cmd = append([]string(nil), p.Args...)
 	}
 	fmt.Fprintf(logs, "Running pre-deploy command\n")

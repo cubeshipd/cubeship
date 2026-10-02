@@ -191,6 +191,17 @@ Give an app a volume: a directory at `path` inside its container whose contents 
 
 \* required
 
+### cancel_app_deployment
+
+Cancel an unfinished deployment before its swap, preserving the currently serving version.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | app reference |
+| `deployment_id` * | integer | deployment id |
+
+\* required
+
 ### create_app
 
 Register a new app in a project and get its registry push path. environment defaults to "production" when omitted. Requires the member role.
@@ -201,7 +212,7 @@ Register a new app in a project and get its registry push path. environment defa
 | `environment` | string | environment slug (default "production") |
 | `image` | string | for an external app, the image it pulls, without a tag — e.g. "registry.digitalocean.com/acme/api". Leave empty otherwise. |
 | `name` * | string | app name: lowercase letters, digits and dashes — becomes part of its registry image path. Permanent |
-| `predeploy_command` | object | command to run from the new image before swapping; string for shell or array for argv |
+| `predeploy_command` | array | shell string or argv array to run from the new image before swapping |
 | `predeploy_timeout` | integer | pre-deploy timeout in seconds, up to 3600 |
 | `project` * | string | project slug |
 | `ref` | string | for a building app, the branch, tag or commit to build. Defaults to the repository's default branch. |
@@ -354,7 +365,7 @@ Reconfigure an app: where its image comes from. Its domains are added and remove
 | `dockerfile` | string | for a dockerfile app only, the recipe's path within the repository |
 | `health_path` | string | the path Traefik asks this app for before trusting a container with traffic, e.g. /healthz. Send empty to check nothing, which is the default; a path that the app does not answer 2xx or 3xx on takes every replica out of rotation |
 | `image` | string | for an external app, the image it pulls, without a tag |
-| `predeploy_command` | object | command to run from the new image before swapping it in; send a string for shell or an array for argv |
+| `predeploy_command` | array | shell string or argv array to run from the new image before swapping it in |
 | `predeploy_timeout` | integer | pre-deploy timeout in seconds, up to 3600 |
 | `ref` | string | for a building app, the branch, tag or commit to build |
 | `reference` * | string | the app's reference: project/environment/name |

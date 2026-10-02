@@ -9,6 +9,13 @@ import (
 	"cubeship/internal/project"
 )
 
+func predeployCommandSchema(description string) *openapi.Schema {
+	return &openapi.Schema{Description: description, OneOf: []*openapi.Schema{
+		{Type: "string"},
+		{Type: "array", Items: openapi.String("argv element")},
+	}}
+}
+
 // mergeSchemas folds b into a and returns a.
 func mergeSchemas(a, b map[string]*openapi.Schema) map[string]*openapi.Schema {
 	maps.Copy(a, b)
@@ -70,7 +77,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"environment":       openapi.String(""),
 				"nodes":             arrayOf(openapi.String("A machine's name."), "The machines this app runs on. More than one is an app whose copies this instance's proxy spreads traffic across, over the cluster's private network.\n\nWhere it runs does not change where its traffic arrives: every name this instance serves arrives at the control plane, which is what makes moving an app not a DNS change and not a second certificate."),
 				"health_path":       openapi.String("What Traefik asks this app for before trusting a container with traffic. Absent is no check, which is the default."),
-				"predeploy_command": openapi.String("Optional shell command (or argv array in requests) run from the new image before the swap."),
+				"predeploy_command": predeployCommandSchema("Optional shell command or argv array run from the new image before the swap."),
 				"predeploy_timeout": openapi.Integer("Pre-deploy timeout in seconds, at most 3600."),
 				"limits":            openapi.Ref("AppLimits"),
 				"autoscale":         openapi.Ref("AppAutoscale"),
@@ -131,16 +138,18 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Description: "Returns the registry path to push to. Nothing is deployed until an image lands there.\n\nThe name only has to be unique within its environment, so the same app can exist in `production` and `staging` at once — they get different registry paths and different containers.\n\nApp containers are expected to listen on port 8080. Requires the member role in the organization.",
 					Tags:        []string{"Apps"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"name":        openapi.String("Lowercase letters, digits and dashes — it becomes a path component of the registry image. Permanent."),
-						"org":         openapi.String("Organization slug."),
-						"project":     openapi.String("Project slug."),
-						"environment": openapi.String(`Environment slug. Defaults to "production".`),
-						"source":      {Type: "string", Enum: []string{"registry", "external", "dockerfile", "railpack"}, Description: `Where the image comes from. "registry" (the default) is an image you push to Cubeship, and the push deploys it. "external" is an image in a registry Cubeship does not run. "dockerfile" builds a Dockerfile from a Git repository; "railpack" builds from a Git repository with no Dockerfile at all, working out how from the code. Both builds need the admin role — a build runs whatever the repository contains, on this host.`},
-						"image":       openapi.String(`Required for an external app, and refused for any other: the image it pulls, without a tag — e.g. "registry.digitalocean.com/acme/api". The tag has a field of its own; two places to say it is one that can disagree with the other. A private registry needs a login for its host under the instance's registries.`),
-						"tag":         openapi.String(`Which tag to run. Leave it out to follow the registry: on this instance's own that means a push deploys the app, and on any other it means ` + "`latest`" + `. Refused for a building app, which names a ref instead.`),
-						"repo":        openapi.String(`Required for a building app, and refused for any other: the Git repository to build. An https://, http:// or git:// URL — ssh needs a key this instance does not have. Only https authenticates what comes back, and a build runs whatever comes back, so use it for anything reachable from the internet. Do not put a "#ref" on it; the ref is its own field.`),
-						"ref":         openapi.String(`For a building app: the branch, tag or commit to build. Defaults to the repository's default branch, and a deploy can name a different one.`),
-						"dockerfile":  openapi.String(`For a dockerfile app only: the recipe's path within the repository. Defaults to "Dockerfile" at the root. Refused for railpack, which works the build out itself.`),
+						"name":              openapi.String("Lowercase letters, digits and dashes — it becomes a path component of the registry image. Permanent."),
+						"org":               openapi.String("Organization slug."),
+						"project":           openapi.String("Project slug."),
+						"environment":       openapi.String(`Environment slug. Defaults to "production".`),
+						"source":            {Type: "string", Enum: []string{"registry", "external", "dockerfile", "railpack"}, Description: `Where the image comes from. "registry" (the default) is an image you push to Cubeship, and the push deploys it. "external" is an image in a registry Cubeship does not run. "dockerfile" builds a Dockerfile from a Git repository; "railpack" builds from a Git repository with no Dockerfile at all, working out how from the code. Both builds need the admin role — a build runs whatever the repository contains, on this host.`},
+						"image":             openapi.String(`Required for an external app, and refused for any other: the image it pulls, without a tag — e.g. "registry.digitalocean.com/acme/api". The tag has a field of its own; two places to say it is one that can disagree with the other. A private registry needs a login for its host under the instance's registries.`),
+						"tag":               openapi.String(`Which tag to run. Leave it out to follow the registry: on this instance's own that means a push deploys the app, and on any other it means ` + "`latest`" + `. Refused for a building app, which names a ref instead.`),
+						"repo":              openapi.String(`Required for a building app, and refused for any other: the Git repository to build. An https://, http:// or git:// URL — ssh needs a key this instance does not have. Only https authenticates what comes back, and a build runs whatever comes back, so use it for anything reachable from the internet. Do not put a "#ref" on it; the ref is its own field.`),
+						"ref":               openapi.String(`For a building app: the branch, tag or commit to build. Defaults to the repository's default branch, and a deploy can name a different one.`),
+						"dockerfile":        openapi.String(`For a dockerfile app only: the recipe's path within the repository. Defaults to "Dockerfile" at the root. Refused for railpack, which works the build out itself.`),
+						"predeploy_command": predeployCommandSchema("A shell string or argv array to run from the new image before the first deploy."),
+						"predeploy_timeout": openapi.Integer("Pre-deploy timeout in seconds, at most 3600."),
 					}, "name", "org", "project")),
 					Responses: openapi.Responses{
 						"201": openapi.JSONResponse("The registered app, including its push path.", openapi.Ref("App")),
@@ -180,7 +189,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 							"ref":               openapi.String("For a building app: the branch, tag or commit to build."),
 							"dockerfile":        openapi.String("For a dockerfile app only: the recipe's path within the repository."),
 							"health_path":       openapi.String("The path Traefik asks this app for before trusting a container with traffic, e.g. `/healthz`. It has to start with `/` and hold only what a URL path may — it is interpolated into a proxy's configuration.\n\nAn empty string checks nothing, which is the default and what every app starts as. **A path the app does not answer 2xx or 3xx on takes every replica out of rotation at once**, which is a name answering 503 rather than a name degrading, so this is opted into by somebody who knows what the app answers.\n\nFor an app on several machines it is also what takes one replica out and leaves the rest serving. A dead copy needs no check to be routed around — the proxy retries against the next one — but a replica that is up and broken answers the connection, so nothing but a check catches it."),
-							"predeploy_command": openapi.String("A shell string or argv array to run from the new image before the old container is replaced."),
+							"predeploy_command": predeployCommandSchema("A shell string or argv array to run from the new image before the old container is replaced."),
 							"predeploy_timeout": openapi.Integer("Pre-deploy timeout in seconds, at most 3600."),
 							"node":              openapi.String("Shorthand for `nodes` with one machine in it: run this app there and nowhere else. It is what one machine meant before there could be more than one, and still the shortest way to say \"move this app\"."),
 							"nodes":             arrayOf(openapi.String("A machine's name."), "Which machines this app runs on. More than one puts this instance's proxy in front of all of its copies, round-robin, over the cluster's private network — which is what makes a name survive one of those machines going away.\n\nNothing about this touches DNS: every name arrives at the control plane whatever machine the app is on. Moving it takes effect on each machine's next pass — the new one starts the app before the old one stops it, so a move that fails is not an outage.\n\nOne refusal, and it is a thing that would otherwise not work in a way nobody would notice: an app that **builds** cannot leave the control plane on an instance with no domain, because a build only reaches another machine through this instance's own registry and the registry follows the domain."),

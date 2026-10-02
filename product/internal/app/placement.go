@@ -117,6 +117,11 @@ func (s *Service) Placed(ctx context.Context, nodeID int64, results []node.Resul
 			log.Printf("placement: %s reported on deploy %d, which is not here", r.App, r.Deploy)
 			continue
 		}
+		if d.Done() || d.Cancelled {
+			// A worker can finish after cancellation raced with its poll.
+			// Its late result must never resurrect a cancelled deployment.
+			continue
+		}
 		a, err := s.Repo().ScopedByID(ctx, d.AppID)
 		if err != nil {
 			continue

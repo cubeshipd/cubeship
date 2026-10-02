@@ -857,7 +857,9 @@ func (c *Client) RunOneShot(ctx context.Context, opts ContainerOpts) (output str
 	defer func() {
 		// Best effort: the caller's answer is already in hand, and a
 		// failed cleanup is not a reason to lose it.
-		_ = c.RemoveContainer(context.Background(), id)
+		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = c.RemoveContainer(cleanup, id)
 	}()
 
 	// Started first, then waited on — and the order is the whole
@@ -894,7 +896,7 @@ func (c *Client) RunOneShot(ctx context.Context, opts ContainerOpts) (output str
 		return "", exitCode, err
 	}
 	defer logs.Close()
-	body, err := io.ReadAll(logs)
+	body, err := io.ReadAll(io.LimitReader(logs, 256*1024))
 	if err != nil {
 		return "", exitCode, err
 	}

@@ -439,7 +439,7 @@ func (r *Repository) FinishDeployment(ctx context.Context, id int64, status, err
 		phase = DeploymentPhaseFailed
 	}
 	if _, err := r.q.ExecContext(ctx,
-		`UPDATE deployments SET status = $1, error = $2, phase = $3, finished_at = now(), cancelled = $4 WHERE id = $5`, status, errMsg, phase, isCancelled, id); err != nil {
+		`UPDATE deployments SET status = $1, error = $2, phase = $3, finished_at = now(), cancelled = $4 WHERE id = $5 AND status = $6`, status, errMsg, phase, isCancelled, id, DeploymentPending); err != nil {
 		return fmt.Errorf("finish deployment: %w", err)
 	}
 	return nil
