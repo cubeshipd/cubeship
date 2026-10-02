@@ -22,10 +22,10 @@ func NewRepository(q database.Queryer) *Repository {
 }
 
 const columns = `id, project_id, environment_id, name, source, source_image,
-	source_tag, source_repo, source_ref, source_dockerfile, health_path, scale, spread,
+	 source_tag, source_repo, source_ref, source_dockerfile, health_path, scale, spread,
 	cpu_limit, memory_limit,
 	autoscale_min, autoscale_max, autoscale_cpu, autoscaled_at,
-	env, predeploy_command, predeploy_timeout, stop_grace_period, stop_signal, watch_paths, ignore_paths, created_at`
+	env, predeploy_command, predeploy_timeout, stop_grace_period, stop_signal, watch_paths, ignore_paths, build_args, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -39,14 +39,14 @@ type scanner interface{ Scan(dest ...any) error }
 // app reported `autodeploy`, and the registry webhook redeployed apps
 // somebody had pinned to a version. Nothing failed; it just stopped
 // being true.
-func dests(a *App, envJSON, commandJSON, watchJSON, ignoreJSON *[]byte, timeout *int64, stopGrace *int64, stopSignal *string) []any {
+func dests(a *App, envJSON, commandJSON, watchJSON, ignoreJSON, buildJSON *[]byte, timeout *int64, stopGrace *int64, stopSignal *string) []any {
 	return []any{
 		&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Name,
 		&a.Source, &a.SourceImage, &a.SourceTag, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
 		&a.HealthPath, &a.Scale, &a.Spread,
 		&a.Limits.CPU, &a.Limits.Memory,
 		&a.Autoscale.Min, &a.Autoscale.Max, &a.Autoscale.CPU, &a.Autoscale.At,
-		envJSON, commandJSON, timeout, stopGrace, stopSignal, watchJSON, ignoreJSON, &a.CreatedAt,
+		envJSON, commandJSON, timeout, stopGrace, stopSignal, watchJSON, ignoreJSON, buildJSON, &a.CreatedAt,
 	}
 }
 
@@ -67,8 +67,8 @@ func scan(row scanner) (*App, error) {
 	var timeout int64
 	var stopGrace int64
 	var stopSignal string
-	var watchJSON, ignoreJSON []byte
-	if err := row.Scan(dests(&a, &envJSON, &commandJSON, &watchJSON, &ignoreJSON, &timeout, &stopGrace, &stopSignal)...); err != nil {
+	var watchJSON, ignoreJSON, buildJSON []byte
+	if err := row.Scan(dests(&a, &envJSON, &commandJSON, &watchJSON, &ignoreJSON, &buildJSON, &timeout, &stopGrace, &stopSignal)...); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &a.Env); err != nil {
@@ -90,6 +90,11 @@ func scan(row scanner) (*App, error) {
 	if len(ignoreJSON) != 0 && string(ignoreJSON) != "null" {
 		if err := json.Unmarshal(ignoreJSON, &a.IgnorePaths); err != nil {
 			return nil, fmt.Errorf("decode ignore paths for app %q: %w", a.Name, err)
+		}
+	}
+	if len(buildJSON) != 0 && string(buildJSON) != "null" {
+		if err := json.Unmarshal(buildJSON, &a.BuildArgs); err != nil {
+			return nil, fmt.Errorf("decode build args for app %q: %w", a.Name, err)
 		}
 	}
 	return &a, nil
@@ -194,6 +199,19 @@ func (r *Repository) UpdatePathFilters(ctx context.Context, appID int64, watch, 
 	a, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("update path filters: %w", err)
+	}
+	return a, r.attach(ctx, []*App{a})
+}
+
+func (r *Repository) UpdateBuildArgs(ctx context.Context, appID int64, args map[string]string) (*App, error) {
+	b, err := json.Marshal(args)
+	if err != nil {
+		return nil, err
+	}
+	row := r.q.QueryRowContext(ctx, `UPDATE apps SET build_args = $1::jsonb WHERE id = $2 RETURNING `+columns, b, appID)
+	a, err := scan(row)
+	if err != nil {
+		return nil, fmt.Errorf("update build args: %w", err)
 	}
 	return a, r.attach(ctx, []*App{a})
 }
@@ -710,8 +728,8 @@ func scanScoped(row scanner) (*Scoped, error) {
 	var timeout int64
 	var stopGrace int64
 	var stopSignal string
-	var watchJSON, ignoreJSON []byte
-	into := append(dests(&s.App, &envJSON, &commandJSON, &watchJSON, &ignoreJSON, &timeout, &stopGrace, &stopSignal), &s.ProjectSlug, &s.EnvironmentSlug)
+	var watchJSON, ignoreJSON, buildJSON []byte
+	into := append(dests(&s.App, &envJSON, &commandJSON, &watchJSON, &ignoreJSON, &buildJSON, &timeout, &stopGrace, &stopSignal), &s.ProjectSlug, &s.EnvironmentSlug)
 	if err := row.Scan(into...); err != nil {
 		return nil, err
 	}
@@ -724,6 +742,9 @@ func scanScoped(row scanner) (*Scoped, error) {
 		}
 	}
 	s.Predeploy.Timeout = time.Duration(timeout) * time.Second
+	if len(buildJSON) != 0 && string(buildJSON) != "null" {
+		_ = json.Unmarshal(buildJSON, &s.BuildArgs)
+	}
 	s.StopGracePeriod = time.Duration(stopGrace) * time.Second
 	s.StopSignal = stopSignal
 	if len(watchJSON) != 0 && string(watchJSON) != "null" {

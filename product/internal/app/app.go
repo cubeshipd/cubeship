@@ -109,6 +109,7 @@ type App struct {
 	StopSignal      string
 	WatchPaths      []string
 	IgnorePaths     []string
+	BuildArgs       map[string]string
 	CreatedAt       time.Time
 }
 

@@ -338,15 +338,16 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		// other it means `latest`.
 		Tag string `json:"tag"`
 		// Repo, Ref and Dockerfile are where a building app builds from.
-		Repo             string     `json:"repo"`
-		Ref              string     `json:"ref"`
-		Dockerfile       string     `json:"dockerfile"`
-		PredeployCommand *Predeploy `json:"predeploy_command"`
-		PredeployTimeout *int64     `json:"predeploy_timeout"`
-		StopGracePeriod  *int64     `json:"stop_grace_period"`
-		StopSignal       *string    `json:"stop_signal"`
-		WatchPaths       *[]string  `json:"watch_paths"`
-		IgnorePaths      *[]string  `json:"ignore_paths"`
+		Repo             string            `json:"repo"`
+		Ref              string            `json:"ref"`
+		Dockerfile       string            `json:"dockerfile"`
+		PredeployCommand *Predeploy        `json:"predeploy_command"`
+		PredeployTimeout *int64            `json:"predeploy_timeout"`
+		StopGracePeriod  *int64            `json:"stop_grace_period"`
+		StopSignal       *string           `json:"stop_signal"`
+		WatchPaths       *[]string         `json:"watch_paths"`
+		IgnorePaths      *[]string         `json:"ignore_paths"`
+		BuildArgs        map[string]string `json:"build_args"`
 	}
 	// The domain is not required: an app is created empty and made
 	// deployable afterwards, in its own settings. Everything that says
@@ -454,13 +455,14 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		// Autoscale is when this instance decides the replica count
 		// for itself. Sent as an object, and `max: 0` is how it is
 		// turned off — there is no separate flag to disagree with.
-		Autoscale        *Autoscale `json:"autoscale"`
-		PredeployCommand *Predeploy `json:"predeploy_command"`
-		PredeployTimeout *int64     `json:"predeploy_timeout"`
-		StopGracePeriod  *int64     `json:"stop_grace_period"`
-		StopSignal       *string    `json:"stop_signal"`
-		WatchPaths       *[]string  `json:"watch_paths"`
-		IgnorePaths      *[]string  `json:"ignore_paths"`
+		Autoscale        *Autoscale        `json:"autoscale"`
+		PredeployCommand *Predeploy        `json:"predeploy_command"`
+		PredeployTimeout *int64            `json:"predeploy_timeout"`
+		StopGracePeriod  *int64            `json:"stop_grace_period"`
+		StopSignal       *string           `json:"stop_signal"`
+		WatchPaths       *[]string         `json:"watch_paths"`
+		IgnorePaths      *[]string         `json:"ignore_paths"`
+		BuildArgs        map[string]string `json:"build_args"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)

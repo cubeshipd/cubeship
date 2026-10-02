@@ -298,6 +298,7 @@ func (o *Orchestrator) buildFromRepository(ctx context.Context, a *Scoped, ref s
 		Image:      image,
 		Labels:     map[string]string{"cubeship.app": ReferenceOf(a).String()},
 		GitToken:   token,
+		Args:       a.BuildArgs,
 		Push:       push.Push,
 		Registry:   push.Registry,
 	}, logs)
