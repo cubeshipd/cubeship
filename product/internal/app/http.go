@@ -389,6 +389,13 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if req.BuildArgs != nil {
+		created, err = h.svc.UpdateBuildArgs(r.Context(), user.FromContext(r.Context()), Reference{Project: req.Project, Environment: req.Environment, Name: req.Name}, req.BuildArgs)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+	}
 	if req.StopGracePeriod != nil || req.StopSignal != nil {
 		grace := DefaultStopGracePeriod
 		signal := DefaultStopSignal
@@ -503,7 +510,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 	if source == nil && origin == nil &&
 		req.Node == nil && req.Nodes == nil && req.HealthPath == nil && req.Scale == nil &&
-		req.Limits == nil && req.Spread == nil && req.Autoscale == nil && predeploy == nil && req.StopGracePeriod == nil && req.StopSignal == nil && req.WatchPaths == nil && req.IgnorePaths == nil {
+		req.Limits == nil && req.Spread == nil && req.Autoscale == nil && predeploy == nil && req.StopGracePeriod == nil && req.StopSignal == nil && req.WatchPaths == nil && req.IgnorePaths == nil && req.BuildArgs == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
@@ -549,6 +556,13 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 			ignore = *req.IgnorePaths
 		}
 		updated, err = h.svc.UpdatePathFilters(r.Context(), user.FromContext(r.Context()), refFrom(r), watch, ignore)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+	}
+	if req.BuildArgs != nil {
+		updated, err = h.svc.UpdateBuildArgs(r.Context(), user.FromContext(r.Context()), refFrom(r), req.BuildArgs)
 		if err != nil {
 			WriteError(w, err)
 			return

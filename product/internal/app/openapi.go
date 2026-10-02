@@ -85,6 +85,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"stop_signal":       openapi.String("Signal sent when stopping a container, such as SIGTERM."),
 				"watch_paths":       openapi.Array(openapi.String("Repository-relative glob.")),
 				"ignore_paths":      openapi.Array(openapi.String("Repository-relative glob excluded from watched paths.")),
+				"build_args":        {Type: "object", Description: "Write-only Dockerfile build arguments. Values are excluded from responses and may remain in image history, layers, or cache.", AdditionalProperties: &openapi.Schema{Type: "string"}},
 				"limits":            openapi.Ref("AppLimits"),
 				"autoscale":         openapi.Ref("AppAutoscale"),
 				"spread":            openapi.Bool("Whether this app follows the cluster: it runs on every machine there is, and is re-spread whenever one is added or taken away. Absent on an app placed by hand, which is every app until somebody turns this on."),

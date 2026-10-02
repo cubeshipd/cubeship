@@ -116,21 +116,22 @@ func (t *Tools) Register(srv *mcp.Server) {
 }
 
 type createInput struct {
-	Project          string          `json:"project" jsonschema:"project slug"`
-	Environment      string          `json:"environment,omitempty" jsonschema:"environment slug (default \"production\")"`
-	Name             string          `json:"name" jsonschema:"app name: lowercase letters, digits and dashes — becomes part of its registry image path. Permanent"`
-	Source           string          `json:"source,omitempty" jsonschema:"where the image comes from: \"registry\" (the default) for an image you push to Cubeship, \"external\" for one in a registry Cubeship does not run, \"dockerfile\" to build a Dockerfile from a Git repository, or \"railpack\" to build from a Git repository with no Dockerfile. Building requires the admin role."`
-	Image            string          `json:"image,omitempty" jsonschema:"for an external app, the image it pulls, without a tag — e.g. \"registry.digitalocean.com/acme/api\". Leave empty otherwise."`
-	Tag              string          `json:"tag,omitempty" jsonschema:"the tag to run. Leave empty to follow the registry: on this instance's own that means a push deploys the app, and on any other it means latest. A building app has no tag \u2014 it names a ref."`
-	Repo             string          `json:"repo,omitempty" jsonschema:"for a building app, the https:// Git repository to build from. Leave empty otherwise."`
-	Ref              string          `json:"ref,omitempty" jsonschema:"for a building app, the branch, tag or commit to build. Defaults to the repository's default branch."`
-	Dockerfile       string          `json:"dockerfile,omitempty" jsonschema:"for a dockerfile app only, the recipe's path within the repository. Defaults to \"Dockerfile\" at the root."`
-	PredeployCommand json.RawMessage `json:"predeploy_command,omitempty" jsonschema:"shell string or argv array to run from the new image before swapping"`
-	PredeployTimeout *int64          `json:"predeploy_timeout,omitempty" jsonschema:"pre-deploy timeout in seconds, up to 3600"`
-	StopGracePeriod  *int64          `json:"stop_grace_period,omitempty" jsonschema:"container stop grace period in seconds, 0 to 3600"`
-	StopSignal       *string         `json:"stop_signal,omitempty" jsonschema:"container stop signal, for example SIGTERM"`
-	WatchPaths       *[]string       `json:"watch_paths,omitempty" jsonschema:"include globs; empty preserves deploy-on-every-push"`
-	IgnorePaths      *[]string       `json:"ignore_paths,omitempty" jsonschema:"exclude globs applied after watch paths"`
+	Project          string            `json:"project" jsonschema:"project slug"`
+	Environment      string            `json:"environment,omitempty" jsonschema:"environment slug (default \"production\")"`
+	Name             string            `json:"name" jsonschema:"app name: lowercase letters, digits and dashes — becomes part of its registry image path. Permanent"`
+	Source           string            `json:"source,omitempty" jsonschema:"where the image comes from: \"registry\" (the default) for an image you push to Cubeship, \"external\" for one in a registry Cubeship does not run, \"dockerfile\" to build a Dockerfile from a Git repository, or \"railpack\" to build from a Git repository with no Dockerfile. Building requires the admin role."`
+	Image            string            `json:"image,omitempty" jsonschema:"for an external app, the image it pulls, without a tag — e.g. \"registry.digitalocean.com/acme/api\". Leave empty otherwise."`
+	Tag              string            `json:"tag,omitempty" jsonschema:"the tag to run. Leave empty to follow the registry: on this instance's own that means a push deploys the app, and on any other it means latest. A building app has no tag \u2014 it names a ref."`
+	Repo             string            `json:"repo,omitempty" jsonschema:"for a building app, the https:// Git repository to build from. Leave empty otherwise."`
+	Ref              string            `json:"ref,omitempty" jsonschema:"for a building app, the branch, tag or commit to build. Defaults to the repository's default branch."`
+	Dockerfile       string            `json:"dockerfile,omitempty" jsonschema:"for a dockerfile app only, the recipe's path within the repository. Defaults to \"Dockerfile\" at the root."`
+	PredeployCommand json.RawMessage   `json:"predeploy_command,omitempty" jsonschema:"shell string or argv array to run from the new image before swapping"`
+	PredeployTimeout *int64            `json:"predeploy_timeout,omitempty" jsonschema:"pre-deploy timeout in seconds, up to 3600"`
+	StopGracePeriod  *int64            `json:"stop_grace_period,omitempty" jsonschema:"container stop grace period in seconds, 0 to 3600"`
+	StopSignal       *string           `json:"stop_signal,omitempty" jsonschema:"container stop signal, for example SIGTERM"`
+	WatchPaths       *[]string         `json:"watch_paths,omitempty" jsonschema:"include globs; empty preserves deploy-on-every-push"`
+	IgnorePaths      *[]string         `json:"ignore_paths,omitempty" jsonschema:"exclude globs applied after watch paths"`
+	BuildArgs        map[string]string `json:"build_args,omitempty" jsonschema:"Dockerfile build arguments; values are write-only and may persist in image history"`
 }
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
@@ -168,6 +169,12 @@ func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInp
 			return nil, Response{}, err
 		}
 	}
+	if in.BuildArgs != nil {
+		created, err = t.svc.UpdateBuildArgs(ctx, t.caller, Reference{Project: in.Project, Environment: in.Environment, Name: in.Name}, in.BuildArgs)
+		if err != nil {
+			return nil, Response{}, err
+		}
+	}
 	if in.StopGracePeriod != nil || in.StopSignal != nil {
 		grace, signal := DefaultStopGracePeriod, DefaultStopSignal
 		if in.StopGracePeriod != nil {
@@ -196,13 +203,14 @@ type updateInput struct {
 	// app's names to 503 and is undone by clearing the field, where a
 	// wrong placement moves somebody's app to a box they were not
 	// looking at.
-	HealthPath       *string         `json:"health_path,omitempty" jsonschema:"the path Traefik asks this app for before trusting a container with traffic, e.g. /healthz. Send empty to check nothing, which is the default; a path that the app does not answer 2xx or 3xx on takes every replica out of rotation"`
-	PredeployCommand json.RawMessage `json:"predeploy_command,omitempty" jsonschema:"shell string or argv array to run from the new image before swapping it in"`
-	PredeployTimeout *int64          `json:"predeploy_timeout,omitempty" jsonschema:"pre-deploy timeout in seconds, up to 3600"`
-	StopGracePeriod  *int64          `json:"stop_grace_period,omitempty" jsonschema:"container stop grace period in seconds, 0 to 3600"`
-	StopSignal       *string         `json:"stop_signal,omitempty" jsonschema:"container stop signal, for example SIGTERM"`
-	WatchPaths       *[]string       `json:"watch_paths,omitempty" jsonschema:"include globs; empty preserves deploy-on-every-push"`
-	IgnorePaths      *[]string       `json:"ignore_paths,omitempty" jsonschema:"exclude globs applied after watch paths"`
+	HealthPath       *string           `json:"health_path,omitempty" jsonschema:"the path Traefik asks this app for before trusting a container with traffic, e.g. /healthz. Send empty to check nothing, which is the default; a path that the app does not answer 2xx or 3xx on takes every replica out of rotation"`
+	PredeployCommand json.RawMessage   `json:"predeploy_command,omitempty" jsonschema:"shell string or argv array to run from the new image before swapping it in"`
+	PredeployTimeout *int64            `json:"predeploy_timeout,omitempty" jsonschema:"pre-deploy timeout in seconds, up to 3600"`
+	StopGracePeriod  *int64            `json:"stop_grace_period,omitempty" jsonschema:"container stop grace period in seconds, 0 to 3600"`
+	StopSignal       *string           `json:"stop_signal,omitempty" jsonschema:"container stop signal, for example SIGTERM"`
+	WatchPaths       *[]string         `json:"watch_paths,omitempty" jsonschema:"include globs; empty preserves deploy-on-every-push"`
+	IgnorePaths      *[]string         `json:"ignore_paths,omitempty" jsonschema:"exclude globs applied after watch paths"`
+	BuildArgs        map[string]string `json:"build_args,omitempty" jsonschema:"Dockerfile build arguments; values are write-only"`
 }
 
 func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInput) (*mcp.CallToolResult, Response, error) {
@@ -245,7 +253,7 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 		}
 		predeploy = &p
 	}
-	if source == nil && origin == nil && in.HealthPath == nil && predeploy == nil && in.StopGracePeriod == nil && in.StopSignal == nil && in.WatchPaths == nil && in.IgnorePaths == nil {
+	if source == nil && origin == nil && in.HealthPath == nil && predeploy == nil && in.StopGracePeriod == nil && in.StopSignal == nil && in.WatchPaths == nil && in.IgnorePaths == nil && in.BuildArgs == nil {
 		return nil, Response{}, fmt.Errorf("nothing to change")
 	}
 	// No `node` here, deliberately: moving an app between machines is
@@ -276,6 +284,12 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 			ignore = *in.IgnorePaths
 		}
 		updated, err = t.svc.UpdatePathFilters(ctx, t.caller, ref, watch, ignore)
+		if err != nil {
+			return nil, Response{}, err
+		}
+	}
+	if in.BuildArgs != nil {
+		updated, err = t.svc.UpdateBuildArgs(ctx, t.caller, ref, in.BuildArgs)
 		if err != nil {
 			return nil, Response{}, err
 		}
