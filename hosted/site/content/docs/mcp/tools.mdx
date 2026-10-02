@@ -208,6 +208,7 @@ Register a new app in a project and get its registry push path. environment defa
 
 | Input | Type | What it is |
 | --- | --- | --- |
+| `build_args` | object | Dockerfile build arguments; values are write-only and may persist in image history |
 | `dockerfile` | string | for a dockerfile app only, the recipe's path within the repository. Defaults to "Dockerfile" at the root. |
 | `environment` | string | environment slug (default "production") |
 | `ignore_paths` | array | exclude globs applied after watch paths |
@@ -366,6 +367,7 @@ Reconfigure an app: where its image comes from. Its domains are added and remove
 
 | Input | Type | What it is |
 | --- | --- | --- |
+| `build_args` | object | Dockerfile build arguments; values are write-only |
 | `dockerfile` | string | for a dockerfile app only, the recipe's path within the repository |
 | `health_path` | string | the path Traefik asks this app for before trusting a container with traffic, e.g. /healthz. Send empty to check nothing, which is the default; a path that the app does not answer 2xx or 3xx on takes every replica out of rotation |
 | `ignore_paths` | array | exclude globs applied after watch paths |

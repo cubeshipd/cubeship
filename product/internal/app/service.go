@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"time"
 
 	"cubeship/internal/envvar"
@@ -448,6 +449,25 @@ func (s *Service) UpdatePathFilters(ctx context.Context, caller *user.User, ref 
 		return nil, ErrInvalidPathFilters
 	}
 	if _, err := s.Repo().UpdatePathFilters(ctx, a.ID, watch, ignore); err != nil {
+		return nil, err
+	}
+	return s.Resolve(ctx, caller, ref, user.LevelView)
+}
+
+func (s *Service) UpdateBuildArgs(ctx context.Context, caller *user.User, ref Reference, args map[string]string) (*Scoped, error) {
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
+	if err != nil {
+		return nil, err
+	}
+	for key := range args {
+		if key == "" || strings.HasPrefix(key, "CUBESHIP_") || strings.ContainsAny(key, "= \t\n") {
+			return nil, errors.New("invalid or reserved build argument")
+		}
+	}
+	if Source(a.Source) != SourceDockerfile {
+		return nil, errors.New("build arguments require a dockerfile source")
+	}
+	if _, err := s.Repo().UpdateBuildArgs(ctx, a.ID, args); err != nil {
 		return nil, err
 	}
 	return s.Resolve(ctx, caller, ref, user.LevelView)

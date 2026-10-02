@@ -338,15 +338,16 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		// other it means `latest`.
 		Tag string `json:"tag"`
 		// Repo, Ref and Dockerfile are where a building app builds from.
-		Repo             string     `json:"repo"`
-		Ref              string     `json:"ref"`
-		Dockerfile       string     `json:"dockerfile"`
-		PredeployCommand *Predeploy `json:"predeploy_command"`
-		PredeployTimeout *int64     `json:"predeploy_timeout"`
-		StopGracePeriod  *int64     `json:"stop_grace_period"`
-		StopSignal       *string    `json:"stop_signal"`
-		WatchPaths       *[]string  `json:"watch_paths"`
-		IgnorePaths      *[]string  `json:"ignore_paths"`
+		Repo             string            `json:"repo"`
+		Ref              string            `json:"ref"`
+		Dockerfile       string            `json:"dockerfile"`
+		PredeployCommand *Predeploy        `json:"predeploy_command"`
+		PredeployTimeout *int64            `json:"predeploy_timeout"`
+		StopGracePeriod  *int64            `json:"stop_grace_period"`
+		StopSignal       *string           `json:"stop_signal"`
+		WatchPaths       *[]string         `json:"watch_paths"`
+		IgnorePaths      *[]string         `json:"ignore_paths"`
+		BuildArgs        map[string]string `json:"build_args"`
 	}
 	// The domain is not required: an app is created empty and made
 	// deployable afterwards, in its own settings. Everything that says
@@ -383,6 +384,13 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 			ignore = *req.IgnorePaths
 		}
 		created, err = h.svc.UpdatePathFilters(r.Context(), user.FromContext(r.Context()), Reference{Project: req.Project, Environment: req.Environment, Name: req.Name}, watch, ignore)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+	}
+	if req.BuildArgs != nil {
+		created, err = h.svc.UpdateBuildArgs(r.Context(), user.FromContext(r.Context()), Reference{Project: req.Project, Environment: req.Environment, Name: req.Name}, req.BuildArgs)
 		if err != nil {
 			WriteError(w, err)
 			return
@@ -454,13 +462,14 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		// Autoscale is when this instance decides the replica count
 		// for itself. Sent as an object, and `max: 0` is how it is
 		// turned off — there is no separate flag to disagree with.
-		Autoscale        *Autoscale `json:"autoscale"`
-		PredeployCommand *Predeploy `json:"predeploy_command"`
-		PredeployTimeout *int64     `json:"predeploy_timeout"`
-		StopGracePeriod  *int64     `json:"stop_grace_period"`
-		StopSignal       *string    `json:"stop_signal"`
-		WatchPaths       *[]string  `json:"watch_paths"`
-		IgnorePaths      *[]string  `json:"ignore_paths"`
+		Autoscale        *Autoscale        `json:"autoscale"`
+		PredeployCommand *Predeploy        `json:"predeploy_command"`
+		PredeployTimeout *int64            `json:"predeploy_timeout"`
+		StopGracePeriod  *int64            `json:"stop_grace_period"`
+		StopSignal       *string           `json:"stop_signal"`
+		WatchPaths       *[]string         `json:"watch_paths"`
+		IgnorePaths      *[]string         `json:"ignore_paths"`
+		BuildArgs        map[string]string `json:"build_args"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -501,7 +510,7 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 	}
 	if source == nil && origin == nil &&
 		req.Node == nil && req.Nodes == nil && req.HealthPath == nil && req.Scale == nil &&
-		req.Limits == nil && req.Spread == nil && req.Autoscale == nil && predeploy == nil && req.StopGracePeriod == nil && req.StopSignal == nil && req.WatchPaths == nil && req.IgnorePaths == nil {
+		req.Limits == nil && req.Spread == nil && req.Autoscale == nil && predeploy == nil && req.StopGracePeriod == nil && req.StopSignal == nil && req.WatchPaths == nil && req.IgnorePaths == nil && req.BuildArgs == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
@@ -547,6 +556,13 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 			ignore = *req.IgnorePaths
 		}
 		updated, err = h.svc.UpdatePathFilters(r.Context(), user.FromContext(r.Context()), refFrom(r), watch, ignore)
+		if err != nil {
+			WriteError(w, err)
+			return
+		}
+	}
+	if req.BuildArgs != nil {
+		updated, err = h.svc.UpdateBuildArgs(r.Context(), user.FromContext(r.Context()), refFrom(r), req.BuildArgs)
 		if err != nil {
 			WriteError(w, err)
 			return
