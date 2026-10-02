@@ -66,7 +66,9 @@ type App struct {
 	// Autoscale is when the instance decides the count itself. Off
 	// when Max is zero, which is every app until somebody says
 	// otherwise.
-	Autoscale Autoscale `json:"autoscale"`
+	Autoscale        Autoscale `json:"autoscale"`
+	PredeployCommand any       `json:"predeploy_command,omitempty"`
+	PredeployTimeout int64     `json:"predeploy_timeout,omitempty"`
 }
 
 // Autoscale is the rule the instance scales an app by.
@@ -553,6 +555,19 @@ func (c *Client) SetAppLimits(ctx context.Context, ref string, limits Limits) (A
 		"/apps/"+ref, map[string]any{"limits": limits}, http.StatusOK, DefaultTimeout)
 }
 
+// SetAppPredeploy configures the command run from the new image before a
+// deploy swaps containers. command may be a shell string or []string argv.
+func (c *Client) SetAppPredeploy(ctx context.Context, ref string, command any, timeoutSeconds int64) (App, error) {
+	return request[App](ctx, c, "set app pre-deploy command", http.MethodPatch,
+		"/apps/"+ref, map[string]any{"predeploy_command": command, "predeploy_timeout": timeoutSeconds}, http.StatusOK, DefaultTimeout)
+}
+
+func (c *Client) CancelDeployment(ctx context.Context, ref string, id int64) error {
+	_, err := request[struct{}](ctx, c, "cancel deployment", http.MethodPost,
+		"/apps/"+ref+"/deployments/"+strconv.FormatInt(id, 10)+"/cancel", nil, http.StatusNoContent, DefaultTimeout)
+	return err
+}
+
 // Mesh is the cluster's private network.
 type Mesh struct {
 	// Network is the overlay's name, empty on an instance with no
@@ -588,11 +603,17 @@ func appPath(ref string) string {
 
 // Deployment is one deploy attempt.
 type Deployment struct {
-	ID        int64     `json:"id"`
-	Status    string    `json:"status"`
-	Image     string    `json:"image"`
-	Error     string    `json:"error,omitempty"`
-	CreatedAt time.Time `json:"created_at"`
+	ID             int64     `json:"id"`
+	Status         string    `json:"status"`
+	Image          string    `json:"image"`
+	Error          string    `json:"error,omitempty"`
+	Phase          string    `json:"phase"`
+	DurationMillis int64     `json:"duration_ms"`
+	Cancelled      bool      `json:"cancelled"`
+	Logs           string    `json:"logs,omitempty"`
+	HasLogs        bool      `json:"has_logs"`
+	Deletable      bool      `json:"deletable"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 // Deployment statuses.

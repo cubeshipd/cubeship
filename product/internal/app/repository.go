@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,7 +25,7 @@ const columns = `id, project_id, environment_id, name, source, source_image,
 	source_tag, source_repo, source_ref, source_dockerfile, health_path, scale, spread,
 	cpu_limit, memory_limit,
 	autoscale_min, autoscale_max, autoscale_cpu, autoscaled_at,
-	env, created_at`
+	env, predeploy_command, predeploy_timeout, created_at`
 
 type scanner interface{ Scan(dest ...any) error }
 
@@ -38,14 +39,14 @@ type scanner interface{ Scan(dest ...any) error }
 // app reported `autodeploy`, and the registry webhook redeployed apps
 // somebody had pinned to a version. Nothing failed; it just stopped
 // being true.
-func dests(a *App, envJSON *[]byte) []any {
+func dests(a *App, envJSON, commandJSON *[]byte, timeout *int64) []any {
 	return []any{
 		&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Name,
 		&a.Source, &a.SourceImage, &a.SourceTag, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
 		&a.HealthPath, &a.Scale, &a.Spread,
 		&a.Limits.CPU, &a.Limits.Memory,
 		&a.Autoscale.Min, &a.Autoscale.Max, &a.Autoscale.CPU, &a.Autoscale.At,
-		envJSON, &a.CreatedAt,
+		envJSON, commandJSON, timeout, &a.CreatedAt,
 	}
 }
 
@@ -62,12 +63,20 @@ func qualify(alias, list string) string {
 func scan(row scanner) (*App, error) {
 	var a App
 	var envJSON []byte
-	if err := row.Scan(dests(&a, &envJSON)...); err != nil {
+	var commandJSON []byte
+	var timeout int64
+	if err := row.Scan(dests(&a, &envJSON, &commandJSON, &timeout)...); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &a.Env); err != nil {
 		return nil, fmt.Errorf("decode env for app %q: %w", a.Name, err)
 	}
+	if len(commandJSON) != 0 && string(commandJSON) != "null" {
+		if err := json.Unmarshal(commandJSON, &a.Predeploy); err != nil {
+			return nil, fmt.Errorf("decode predeploy command for app %q: %w", a.Name, err)
+		}
+	}
+	a.Predeploy.Timeout = time.Duration(timeout) * time.Second
 	return &a, nil
 }
 
@@ -77,7 +86,7 @@ func scan(row scanner) (*App, error) {
 //
 // The slug is not here. It is the last component of the app's registry
 // reference, and no slug in Cubeship changes once its resource exists.
-func (r *Repository) Update(ctx context.Context, appID int64, source *Source, origin *Origin, health *string, limits *Limits, auto *Autoscale) (*App, error) {
+func (r *Repository) Update(ctx context.Context, appID int64, source *Source, origin *Origin, health *string, limits *Limits, auto *Autoscale, predeploy ...*Predeploy) (*App, error) {
 	var src *string
 	if source != nil {
 		s := string(*source)
@@ -109,6 +118,16 @@ func (r *Repository) Update(ctx context.Context, appID int64, source *Source, or
 	if auto != nil {
 		autoMin, autoMax, autoCPU = &auto.Min, &auto.Max, &auto.CPU
 	}
+	var command any
+	var timeout any
+	if len(predeploy) > 0 && predeploy[0] != nil {
+		b, err := json.Marshal(predeploy[0])
+		if err != nil {
+			return nil, fmt.Errorf("encode predeploy command: %w", err)
+		}
+		command = string(b)
+		timeout = int64(predeploy[0].Timeout / time.Second)
+	}
 	row := r.q.QueryRowContext(ctx,
 		`UPDATE apps SET
 		   source            = COALESCE($1, source),
@@ -122,10 +141,12 @@ func (r *Repository) Update(ctx context.Context, appID int64, source *Source, or
 		   memory_limit      = COALESCE($9, memory_limit),
 		   autoscale_min     = COALESCE($10, autoscale_min),
 		   autoscale_max     = COALESCE($11, autoscale_max),
-		   autoscale_cpu     = COALESCE($12, autoscale_cpu)
-		 WHERE id = $13 RETURNING `+columns,
+		   autoscale_cpu     = COALESCE($12, autoscale_cpu),
+		   predeploy_command = COALESCE($13::jsonb, predeploy_command),
+		   predeploy_timeout = COALESCE($14, predeploy_timeout)
+		 WHERE id = $15 RETURNING `+columns,
 		src, image, tag, repo, ref, dockerfile, health, cpu, memory,
-		autoMin, autoMax, autoCPU, appID)
+		autoMin, autoMax, autoCPU, command, timeout, appID)
 	a, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("update app: %w", err)
@@ -354,17 +375,17 @@ func (r *Repository) MergeEnv(ctx context.Context, appID int64, set envvar.Map, 
 	return database.MergeJSONBMap(ctx, r.q, "apps", "env", appID, setJSON, unset)
 }
 
-const deploymentColumns = `id, app_id, image_ref, status, error, logs, created_at`
+const deploymentColumns = `id, app_id, image_ref, status, error, logs, created_at, phase, started_at, finished_at, cancelled`
 
 // deploymentListColumns is the same minus the log itself, which is up
 // to MaxDeploymentLogBytes a row against fifty rows of history — and
 // which the dashboard would then re-fetch every two seconds while a
 // build is running. Whether there *is* one is all a listing needs.
-const deploymentListColumns = `id, app_id, image_ref, status, error, logs <> '' AS has_logs, created_at`
+const deploymentListColumns = `id, app_id, image_ref, status, error, logs <> '' AS has_logs, created_at, phase, started_at, finished_at, cancelled`
 
 func scanDeployment(row scanner) (*Deployment, error) {
 	var d Deployment
-	if err := row.Scan(&d.ID, &d.AppID, &d.ImageRef, &d.Status, &d.Error, &d.Logs, &d.CreatedAt); err != nil {
+	if err := row.Scan(&d.ID, &d.AppID, &d.ImageRef, &d.Status, &d.Error, &d.Logs, &d.CreatedAt, &d.Phase, &d.StartedAt, &d.FinishedAt, &d.Cancelled); err != nil {
 		return nil, err
 	}
 	// Derived rather than selected twice: a read that carries the log
@@ -381,8 +402,8 @@ func scanDeployment(row scanner) (*Deployment, error) {
 // yet an image at all; SetDeploymentImage fills in what actually ran.
 func (r *Repository) StartDeployment(ctx context.Context, appID int64, imageRef string) (*Deployment, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO deployments (app_id, image_ref, status) VALUES ($1, $2, $3) RETURNING `+deploymentColumns,
-		appID, imageRef, DeploymentPending)
+		`INSERT INTO deployments (app_id, image_ref, status, phase) VALUES ($1, $2, $3, $4) RETURNING `+deploymentColumns,
+		appID, imageRef, DeploymentPending, DeploymentPhaseQueued)
 	d, err := scanDeployment(row)
 	if err != nil {
 		return nil, fmt.Errorf("start deployment: %w", err)
@@ -400,10 +421,25 @@ func (r *Repository) SetDeploymentImage(ctx context.Context, id int64, imageRef 
 	return nil
 }
 
+func (r *Repository) SetDeploymentPhase(ctx context.Context, id int64, phase string) error {
+	if _, err := r.q.ExecContext(ctx, `UPDATE deployments SET phase = $1 WHERE id = $2`, phase, id); err != nil {
+		return fmt.Errorf("set deployment phase: %w", err)
+	}
+	return nil
+}
+
 // FinishDeployment writes a deploy's outcome.
-func (r *Repository) FinishDeployment(ctx context.Context, id int64, status, errMsg string) error {
+
+func (r *Repository) FinishDeployment(ctx context.Context, id int64, status, errMsg string, cancelled ...bool) error {
+	isCancelled := len(cancelled) > 0 && cancelled[0]
+	phase := DeploymentPhaseDone
+	if isCancelled {
+		phase = DeploymentPhaseCancelled
+	} else if status == DeploymentFailed {
+		phase = DeploymentPhaseFailed
+	}
 	if _, err := r.q.ExecContext(ctx,
-		`UPDATE deployments SET status = $1, error = $2 WHERE id = $3`, status, errMsg, id); err != nil {
+		`UPDATE deployments SET status = $1, error = $2, phase = $3, finished_at = now(), cancelled = $4 WHERE id = $5 AND status = $6`, status, errMsg, phase, isCancelled, id, DeploymentPending); err != nil {
 		return fmt.Errorf("finish deployment: %w", err)
 	}
 	return nil
@@ -419,6 +455,16 @@ func (r *Repository) SetDeploymentLogs(ctx context.Context, id int64, logs strin
 	if _, err := r.q.ExecContext(ctx,
 		`UPDATE deployments SET logs = $1 WHERE id = $2`, logs, id); err != nil {
 		return fmt.Errorf("save deployment logs: %w", err)
+	}
+	return nil
+}
+
+// AppendDeploymentLogs adds output received from a worker without racing the
+// control plane's build log writer.
+func (r *Repository) AppendDeploymentLogs(ctx context.Context, id int64, logs string) error {
+	if _, err := r.q.ExecContext(ctx,
+		`UPDATE deployments SET logs = logs || $1 WHERE id = $2`, logs, id); err != nil {
+		return fmt.Errorf("append deployment logs: %w", err)
 	}
 	return nil
 }
@@ -520,7 +566,7 @@ func (r *Repository) DeploymentToRun(ctx context.Context, appID int64) (*Deploym
 // printed.
 func scanDeploymentSummary(row scanner) (*Deployment, error) {
 	var d Deployment
-	if err := row.Scan(&d.ID, &d.AppID, &d.ImageRef, &d.Status, &d.Error, &d.HasLogs, &d.CreatedAt); err != nil {
+	if err := row.Scan(&d.ID, &d.AppID, &d.ImageRef, &d.Status, &d.Error, &d.HasLogs, &d.CreatedAt, &d.Phase, &d.StartedAt, &d.FinishedAt, &d.Cancelled); err != nil {
 		return nil, err
 	}
 	return &d, nil
@@ -612,13 +658,21 @@ var scopedQuery = `
 func scanScoped(row scanner) (*Scoped, error) {
 	var s Scoped
 	var envJSON []byte
-	into := append(dests(&s.App, &envJSON), &s.ProjectSlug, &s.EnvironmentSlug)
+	var commandJSON []byte
+	var timeout int64
+	into := append(dests(&s.App, &envJSON, &commandJSON, &timeout), &s.ProjectSlug, &s.EnvironmentSlug)
 	if err := row.Scan(into...); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &s.Env); err != nil {
 		return nil, fmt.Errorf("decode env for app %q: %w", s.Name, err)
 	}
+	if len(commandJSON) != 0 && string(commandJSON) != "null" {
+		if err := json.Unmarshal(commandJSON, &s.Predeploy); err != nil {
+			return nil, fmt.Errorf("decode predeploy command for app %q: %w", s.Name, err)
+		}
+	}
+	s.Predeploy.Timeout = time.Duration(timeout) * time.Second
 	return &s, nil
 }
 

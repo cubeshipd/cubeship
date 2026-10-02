@@ -40,6 +40,10 @@ type DockerAPI interface {
 	ExecStream(ctx context.Context, id string, cmd []string, in io.Reader, out io.Writer) (string, int, error)
 }
 
+type oneShotDocker interface {
+	RunOneShot(context.Context, dockerx.ContainerOpts) (string, int, error)
+}
+
 type healthProber interface {
 	ProbeHTTP(context.Context, string, string, int) error
 	ProbeTCP(context.Context, string, int) error
@@ -90,6 +94,9 @@ type Orchestrator struct {
 	// running tracks deploys that outlive the request that started them.
 	// Tests wait on it; the daemon does not.
 	running sync.WaitGroup
+	cancels sync.Map // deployment id -> context.CancelFunc
+	phaseMu sync.Mutex
+	phases  sync.Map // deployment id -> phase
 
 	// meshNetwork answers whether this instance is a cluster, and with
 	// what network. Nil until server.New wires one in.
@@ -437,16 +444,37 @@ func (o *Orchestrator) Start(ctx context.Context, appID int64, tag string) (*Dep
 	}
 
 	o.running.Add(1)
+	runCtx, cancel := context.WithCancel(context.Background())
+	o.cancels.Store(deployment.ID, cancel)
+	o.phases.Store(deployment.ID, DeploymentPhaseQueued)
 	go func() {
 		defer o.running.Done()
+		defer o.cancels.Delete(deployment.ID)
+		defer o.phases.Delete(deployment.ID)
 		// A fresh context: the request that asked for this may already
 		// be gone, and that must not matter. deploy gives each half its
 		// own deadline inside this one.
-		ctx, cancel := context.WithTimeout(context.Background(), BuildTimeout+DeployTimeout)
-		defer cancel()
+		ctx, deadline := context.WithTimeout(runCtx, BuildTimeout+DeployTimeout+time.Hour)
+		defer deadline()
 		o.run(ctx, appID, tag, deployment.ID)
 	}()
 	return deployment, nil
+}
+
+// Cancel stops a detached deploy while it is resolving, pulling or waiting
+// in a pre-deploy command. The old container is untouched until a swap.
+func (o *Orchestrator) Cancel(deploymentID int64) bool {
+	if phase, ok := o.phases.Load(deploymentID); ok {
+		if phase.(string) == DeploymentPhaseSwapping || phase.(string) == DeploymentPhaseDone {
+			return false
+		}
+	}
+	v, ok := o.cancels.Load(deploymentID)
+	if !ok {
+		return false
+	}
+	v.(context.CancelFunc)()
+	return true
 }
 
 // run performs one detached deploy and records how it ended.
@@ -468,10 +496,16 @@ func (o *Orchestrator) run(ctx context.Context, appID int64, tag string, deploym
 		}()
 		switch err := o.deploy(ctx, appID, tag, deploymentID); {
 		case errors.Is(err, errPlaced):
+			if errors.Is(ctx.Err(), context.Canceled) {
+				status, errMsg = DeploymentFailed, "deploy cancelled"
+			}
 			// Nothing for this machine to do: the app runs somewhere
 			// else, and the machines it runs on will say how it went.
 		case err != nil:
 			status, errMsg = DeploymentFailed, err.Error()
+			if errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled) {
+				errMsg = "deploy cancelled"
+			}
 			log.Printf("deploy of app %d failed: %v", appID, err)
 		}
 	}()
@@ -482,12 +516,13 @@ func (o *Orchestrator) run(ctx context.Context, appID int64, tag string, deploym
 	// so — but a success only closes the row once nothing is left to
 	// wait for. See settle.
 	if status == DeploymentFailed {
-		if err := o.apps.FinishDeployment(ctx, deploymentID, status, errMsg); err != nil {
+		cancelled := errMsg == "deploy cancelled"
+		if err := o.apps.FinishDeployment(context.Background(), deploymentID, status, errMsg, cancelled); err != nil {
 			log.Printf("could not record the outcome of deployment %d: %v", deploymentID, err)
 		}
 		return
 	}
-	if err := o.settle(ctx, appID, deploymentID); err != nil {
+	if err := o.settle(context.Background(), appID, deploymentID); err != nil {
 		log.Printf("could not record the outcome of deployment %d: %v", deploymentID, err)
 	}
 	// Whatever this did to the containers, the proxy's file is now
@@ -617,6 +652,13 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	// it.
 	logs := newDeploymentLog(o.saveDeploymentLogs(deploymentID))
 	defer logs.Close()
+	setPhase := func(phase string) {
+		o.phases.Store(deploymentID, phase)
+		if err := o.apps.SetDeploymentPhase(context.Background(), deploymentID, phase); err != nil {
+			log.Printf("deploy %d: phase %s: %v", deploymentID, phase, err)
+		}
+	}
+	setPhase(DeploymentPhaseResolving)
 
 	// Two deadlines rather than one: a build that took twenty minutes
 	// must not leave the swap with none of its own.
@@ -630,13 +672,12 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	if err != nil {
 		return fmt.Errorf("resolve image: %w", err)
 	}
-	ctx, cancel := context.WithTimeout(ctx, DeployTimeout)
-	defer cancel()
-	if err := o.apps.SetDeploymentImage(ctx, deploymentID, image.Ref); err != nil {
+	deployCtx, cancel := context.WithTimeout(ctx, DeployTimeout)
+	if err := o.apps.SetDeploymentImage(deployCtx, deploymentID, image.Ref); err != nil {
 		log.Printf("deploy %s: could not record the resolved image: %v", appName, err)
 	}
 
-	env, err := o.inheritedEnv(ctx, &a.App)
+	env, err := o.inheritedEnv(deployCtx, &a.App)
 	if err != nil {
 		return fmt.Errorf("resolve inherited env: %w", err)
 	}
@@ -651,7 +692,7 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	// the same one running: see settle. Nothing is polled here — a
 	// deploy nobody is holding a connection open for does not need a
 	// second thing waiting on it.
-	here, err := o.apps.ControlPlaneID(ctx)
+	here, err := o.apps.ControlPlaneID(deployCtx)
 	if err != nil {
 		return err
 	}
@@ -670,6 +711,10 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 		}
 	}
 	if !local {
+		cancel()
+		if err := o.apps.SetDeploymentPhase(context.Background(), deploymentID, DeploymentPhaseWaiting); err != nil {
+			log.Printf("deploy %d: waiting phase: %v", deploymentID, err)
+		}
 		return errPlaced
 	}
 
@@ -677,12 +722,25 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	// what put it there. Pulling would look for it in a registry that
 	// has never heard of it.
 	if !image.Local {
-		if err := o.docker.PullImage(ctx, image.Ref, image.Auth); err != nil {
+		setPhase(DeploymentPhasePulling)
+		if err := o.docker.PullImage(deployCtx, image.Ref, image.Auth); err != nil {
 			return fmt.Errorf("pull image: %w", err)
 		}
 	}
+	setPhase(DeploymentPhasePredeploy)
+	if err := o.predeploy(ctx, a, image, env, logs); err != nil {
+		cancel()
+		return err
+	}
+	cancel()
+	deployCtx, cancel = context.WithTimeout(ctx, DeployTimeout)
+	defer cancel()
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
 
 	base := resourceName(ref)
+	setPhase(DeploymentPhaseSwapping)
 
 	// **One copy at a time**, which is what makes several of them on one
 	// machine a rolling deploy rather than a moment with none of them
@@ -699,11 +757,73 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	for _, replica := range a.ReplicasOn(here) {
 		// Its own labels, because one of them says which copy it is.
 		labels := placementLabels(appName, deploymentID, replica.Ordinal)
-		if err := o.swap(ctx, a, replica, image, env, labels, base, deploymentID); err != nil {
+		if err := o.swap(deployCtx, a, replica, image, env, labels, base, deploymentID); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (o *Orchestrator) predeploy(ctx context.Context, a *Scoped, image Image, env envvar.Map, logs io.Writer) error {
+	p := a.Predeploy
+	if p.Empty() {
+		return nil
+	}
+	runner, ok := o.docker.(oneShotDocker)
+	if !ok {
+		return errors.New("pre-deploy command is configured but the Docker engine cannot run one-shot containers")
+	}
+	timeout := p.Timeout
+	if timeout == 0 {
+		timeout = 10 * time.Minute
+	}
+	hookCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	opts := dockerx.ContainerOpts{
+		Image: image.Ref, Env: envvar.Slice(env), Network: Network,
+		AlsoNetworks: o.mesh(ctx), CapDrop: []string{"NET_RAW"},
+		SecurityOpt: []string{"no-new-privileges:true"},
+		Resources:   a.Limits.Resources(),
+	}
+	if p.Shell != "" {
+		opts.Entrypoint = []string{"sh"}
+		opts.Cmd = []string{"-c", p.Shell}
+	} else {
+		opts.Entrypoint = nil
+		opts.Cmd = append([]string(nil), p.Args...)
+	}
+	fmt.Fprintf(logs, "Running pre-deploy command\n")
+	out, code, err := runner.RunOneShot(hookCtx, opts)
+	out = redactPredeployOutput(out, env)
+	if out != "" {
+		_, _ = io.WriteString(logs, out)
+		if !strings.HasSuffix(out, "\n") {
+			_, _ = io.WriteString(logs, "\n")
+		}
+	}
+	if err != nil {
+		if errors.Is(hookCtx.Err(), context.DeadlineExceeded) {
+			return fmt.Errorf("pre-deploy command timed out after %s", timeout)
+		}
+		return fmt.Errorf("run pre-deploy command: %w", err)
+	}
+	if hookCtx.Err() != nil {
+		return fmt.Errorf("pre-deploy command timed out after %s", timeout)
+	}
+	if code != 0 {
+		return fmt.Errorf("pre-deploy command exited with status %d", code)
+	}
+	return nil
+}
+
+func redactPredeployOutput(out string, env envvar.Map) string {
+	for _, value := range env {
+		if value == "" {
+			continue
+		}
+		out = strings.ReplaceAll(out, value, "[REDACTED]")
+	}
+	return out
 }
 
 // swap brings one copy of an app up and retires the one it replaces.

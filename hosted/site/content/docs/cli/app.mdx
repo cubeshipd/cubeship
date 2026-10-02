@@ -50,6 +50,14 @@ cubeship app autoscale <reference> [flags]
 | `--min` |  | fewest copies to leave running (default 1) |
 | `--off` |  | hand the count back: the app stays where it is |
 
+## cubeship app cancel
+
+Cancel a running deployment
+
+```bash
+cubeship app cancel <app> <deployment-id>
+```
+
 ## cubeship app create
 
 Register a new app and get its registry image path
@@ -256,6 +264,19 @@ cubeship app place <reference> [flags]
 | `--everywhere` |  | follow the cluster: run on every machine there is, and on any that joins |
 | `--on` |  | the machines that run it, by name |
 | `--replicas` |  | how many copies to run in total, spread over those machines (default: unchanged) |
+
+## cubeship app predeploy
+
+Set the command run from the new image before a deploy swap
+
+```bash
+cubeship app predeploy <app> [--] <command> [args...] [flags]
+```
+
+| Flag | Default | What it does |
+| --- | --- | --- |
+| `--shell` |  | run this shell command instead of argv |
+| `--timeout` |  | timeout in seconds (maximum 3600; default 600) |
 
 ## cubeship app shell
 

@@ -82,7 +82,9 @@ type Response struct {
 	Spread bool `json:"spread,omitempty"`
 	// HealthPath is what Traefik asks this app for before it trusts a
 	// container with traffic. Absent is no check, which is the default.
-	HealthPath string `json:"health_path,omitempty"`
+	HealthPath       string     `json:"health_path,omitempty"`
+	PredeployCommand *Predeploy `json:"predeploy_command,omitempty"`
+	PredeployTimeout int64      `json:"predeploy_timeout,omitempty"`
 	// Limits is what **one copy** of this app may take from the machine
 	// it runs on: three replicas under a one-core limit may take three
 	// cores. Zero in either half is no ceiling, which is the default
@@ -165,22 +167,29 @@ func toReplicas(a *Scoped) []ReplicaResponse {
 // instead of once per app in a listing.
 func toResponse(a *Scoped, in Instance) Response {
 	ref := ReferenceOf(a)
+	var predeploy *Predeploy
+	if !a.Predeploy.Empty() {
+		p := a.Predeploy
+		predeploy = &p
+	}
 	r := Response{
 		Reference: ref.String(),
 		Name:      a.Name, Domains: toDomains(a.Domains),
 		Status: a.Status(), HasContainer: a.HasContainer(), Source: a.Source,
 		Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
-		SuggestedHost: SuggestedHostFor(ref, in.Domain),
-		InternalHost:  InternalHost(ref),
-		Nodes:         a.Nodes(),
-		Scale:         len(a.Replicas),
-		HealthPath:    a.HealthPath,
-		Spread:        a.Spread,
-		Limits:        a.Limits,
-		Autoscale:     a.Autoscale,
-		Replicas:      toReplicas(a),
-		Split:         a.Split(),
-		Address:       in.PublicIP,
+		SuggestedHost:    SuggestedHostFor(ref, in.Domain),
+		InternalHost:     InternalHost(ref),
+		Nodes:            a.Nodes(),
+		Scale:            len(a.Replicas),
+		HealthPath:       a.HealthPath,
+		PredeployCommand: predeploy,
+		PredeployTimeout: int64(a.Predeploy.Timeout / time.Second),
+		Spread:           a.Spread,
+		Limits:           a.Limits,
+		Autoscale:        a.Autoscale,
+		Replicas:         toReplicas(a),
+		Split:            a.Split(),
+		Address:          in.PublicIP,
 	}
 	switch Source(a.Source) {
 	case SourceExternal:
@@ -227,6 +236,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET "+appPath+"/deployments", auth(http.HandlerFunc(h.deployments)))
 	r.Handle("GET "+appPath+"/deployments/{id}", auth(http.HandlerFunc(h.deployment)))
 	r.Handle("DELETE "+appPath+"/deployments/{id}", auth(http.HandlerFunc(h.deleteDeployment)))
+	r.Handle("POST "+appPath+"/deployments/{id}/cancel", auth(http.HandlerFunc(h.cancelDeployment)))
 	r.Handle("POST "+appPath+"/domains", auth(http.HandlerFunc(h.addDomain)))
 	r.Handle("PATCH "+appPath+"/domains/{domainID}", auth(http.HandlerFunc(h.setDomainPort)))
 	r.Handle("DELETE "+appPath+"/domains/{domainID}", auth(http.HandlerFunc(h.removeDomain)))
@@ -270,7 +280,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrBadHost), errors.Is(err, ErrHostIsTheInstance),
 		errors.Is(err, ErrHostRequired), errors.Is(err, ErrInvalidHealthPath),
-		errors.Is(err, ErrInvalidLimits), errors.Is(err, ErrInvalidAutoscale):
+		errors.Is(err, ErrInvalidLimits), errors.Is(err, ErrInvalidAutoscale), errors.Is(err, ErrInvalidPredeploy):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNoBuilder):
 		http.Error(w, err.Error(), http.StatusConflict)
@@ -322,9 +332,11 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		// other it means `latest`.
 		Tag string `json:"tag"`
 		// Repo, Ref and Dockerfile are where a building app builds from.
-		Repo       string `json:"repo"`
-		Ref        string `json:"ref"`
-		Dockerfile string `json:"dockerfile"`
+		Repo             string     `json:"repo"`
+		Ref              string     `json:"ref"`
+		Dockerfile       string     `json:"dockerfile"`
+		PredeployCommand *Predeploy `json:"predeploy_command"`
+		PredeployTimeout *int64     `json:"predeploy_timeout"`
 	}
 	// The domain is not required: an app is created empty and made
 	// deployable afterwards, in its own settings. Everything that says
@@ -334,9 +346,20 @@ func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "name and project are required", http.StatusBadRequest)
 		return
 	}
-	created, err := h.svc.Create(r.Context(), user.FromContext(r.Context()),
+	var predeploy *Predeploy
+	if req.PredeployCommand != nil || req.PredeployTimeout != nil {
+		p := Predeploy{}
+		if req.PredeployCommand != nil {
+			p = *req.PredeployCommand
+		}
+		if req.PredeployTimeout != nil {
+			p.Timeout = time.Duration(*req.PredeployTimeout) * time.Second
+		}
+		predeploy = &p
+	}
+	created, err := h.svc.CreateWithPredeploy(r.Context(), user.FromContext(r.Context()),
 		req.Project, req.Environment, req.Name, Source(req.Source),
-		Origin{Image: req.Image, Tag: req.Tag, Repo: req.Repo, Ref: req.Ref, Dockerfile: req.Dockerfile})
+		Origin{Image: req.Image, Tag: req.Tag, Repo: req.Repo, Ref: req.Ref, Dockerfile: req.Dockerfile}, predeploy)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -392,7 +415,9 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		// Autoscale is when this instance decides the replica count
 		// for itself. Sent as an object, and `max: 0` is how it is
 		// turned off — there is no separate flag to disagree with.
-		Autoscale *Autoscale `json:"autoscale"`
+		Autoscale        *Autoscale `json:"autoscale"`
+		PredeployCommand *Predeploy `json:"predeploy_command"`
+		PredeployTimeout *int64     `json:"predeploy_timeout"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -414,9 +439,26 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 			Dockerfile: deref(req.Dockerfile),
 		}
 	}
+	var predeploy *Predeploy
+	if req.PredeployCommand != nil || req.PredeployTimeout != nil {
+		current, lookupErr := h.svc.Resolve(r.Context(), user.FromContext(r.Context()), refFrom(r), user.LevelManage)
+		if lookupErr != nil {
+			WriteError(w, lookupErr)
+			return
+		}
+		p := current.Predeploy
+		if req.PredeployCommand != nil {
+			p = *req.PredeployCommand
+			p.Timeout = current.Predeploy.Timeout
+		}
+		if req.PredeployTimeout != nil {
+			p.Timeout = time.Duration(*req.PredeployTimeout) * time.Second
+		}
+		predeploy = &p
+	}
 	if source == nil && origin == nil &&
 		req.Node == nil && req.Nodes == nil && req.HealthPath == nil && req.Scale == nil &&
-		req.Limits == nil && req.Spread == nil && req.Autoscale == nil {
+		req.Limits == nil && req.Spread == nil && req.Autoscale == nil && predeploy == nil {
 		http.Error(w, "nothing to change", http.StatusBadRequest)
 		return
 	}
@@ -442,8 +484,8 @@ func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
 		// Scaling up and scaling out are separate acts.
 	}
 
-	updated, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), refFrom(r),
-		source, origin, req.HealthPath, req.Limits, req.Autoscale, place)
+	updated, err := h.svc.UpdateWithPredeploy(r.Context(), user.FromContext(r.Context()), refFrom(r),
+		source, origin, req.HealthPath, req.Limits, req.Autoscale, place, predeploy)
 	if err != nil {
 		WriteError(w, err)
 		return
@@ -489,10 +531,13 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 
 // DeploymentResponse is one deploy attempt, as the API reports it.
 type DeploymentResponse struct {
-	ID     int64  `json:"id"`
-	Status string `json:"status"`
-	Image  string `json:"image"`
-	Error  string `json:"error,omitempty"`
+	ID             int64  `json:"id"`
+	Status         string `json:"status"`
+	Image          string `json:"image"`
+	Error          string `json:"error,omitempty"`
+	Phase          string `json:"phase"`
+	DurationMillis int64  `json:"duration_ms"`
+	Cancelled      bool   `json:"cancelled"`
 	// Logs is what a build printed. Absent for a source that only
 	// pulls — and absent from a *listing* whatever the deploy printed,
 	// because a build's output is capped at 256 KiB and a history is
@@ -523,6 +568,7 @@ type DeploymentResponse struct {
 func toDeploymentResponse(d *Deployment) DeploymentResponse {
 	return DeploymentResponse{
 		ID: d.ID, Status: d.Status, Image: d.ImageRef, Error: d.Error,
+		Phase: d.Phase, DurationMillis: d.Duration().Milliseconds(), Cancelled: d.Cancelled,
 		Logs: d.Logs, HasLogs: d.HasLogs, Deletable: d.Deletable, Live: d.Live,
 		StalledOn: stalledOn(d),
 		CreatedAt: d.CreatedAt,
@@ -565,6 +611,19 @@ func (h *Handler) deleteDeployment(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	if err := h.svc.DeleteDeployment(ctx, user.FromContext(ctx), refFrom(r), id); err != nil {
+		WriteError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) cancelDeployment(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid deployment id", http.StatusBadRequest)
+		return
+	}
+	if err := h.svc.CancelDeployment(r.Context(), user.FromContext(r.Context()), refFrom(r), id); err != nil {
 		WriteError(w, err)
 		return
 	}

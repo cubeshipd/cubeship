@@ -92,6 +92,7 @@ type Schema struct {
 	Required             []string           `json:"required,omitempty"`
 	AdditionalProperties *Schema            `json:"additionalProperties,omitempty"`
 	Nullable             bool               `json:"nullable,omitempty"`
+	OneOf                []*Schema          `json:"oneOf,omitempty"`
 }
 
 type SecurityRequirement map[string][]string

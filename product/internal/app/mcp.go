@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -66,6 +67,10 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Description: "List an app's recent deploys, newest first: whether each succeeded, and why it failed if it did. A deploy runs detached from the call that started it, so this is how you find out how one ended.",
 	}, t.deployments)
 	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "cancel_app_deployment",
+		Description: "Cancel an unfinished deployment before its swap, preserving the currently serving version.",
+	}, t.cancelDeployment)
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "update_app",
 		Description: "Reconfigure an app: where its image comes from. Its domains are added and removed one at a time — an app can answer at several, each with its own port — so they are not here. A field you leave out is left as it was. The source and its settings travel together — naming a source without what it needs, or settings the source would ignore, is refused. Moving an app to a source that builds requires the admin role. The app's name cannot be changed.",
 	}, t.update)
@@ -111,21 +116,38 @@ func (t *Tools) Register(srv *mcp.Server) {
 }
 
 type createInput struct {
-	Project     string `json:"project" jsonschema:"project slug"`
-	Environment string `json:"environment,omitempty" jsonschema:"environment slug (default \"production\")"`
-	Name        string `json:"name" jsonschema:"app name: lowercase letters, digits and dashes — becomes part of its registry image path. Permanent"`
-	Source      string `json:"source,omitempty" jsonschema:"where the image comes from: \"registry\" (the default) for an image you push to Cubeship, \"external\" for one in a registry Cubeship does not run, \"dockerfile\" to build a Dockerfile from a Git repository, or \"railpack\" to build from a Git repository with no Dockerfile. Building requires the admin role."`
-	Image       string `json:"image,omitempty" jsonschema:"for an external app, the image it pulls, without a tag — e.g. \"registry.digitalocean.com/acme/api\". Leave empty otherwise."`
-	Tag         string `json:"tag,omitempty" jsonschema:"the tag to run. Leave empty to follow the registry: on this instance's own that means a push deploys the app, and on any other it means latest. A building app has no tag \u2014 it names a ref."`
-	Repo        string `json:"repo,omitempty" jsonschema:"for a building app, the https:// Git repository to build from. Leave empty otherwise."`
-	Ref         string `json:"ref,omitempty" jsonschema:"for a building app, the branch, tag or commit to build. Defaults to the repository's default branch."`
-	Dockerfile  string `json:"dockerfile,omitempty" jsonschema:"for a dockerfile app only, the recipe's path within the repository. Defaults to \"Dockerfile\" at the root."`
+	Project          string          `json:"project" jsonschema:"project slug"`
+	Environment      string          `json:"environment,omitempty" jsonschema:"environment slug (default \"production\")"`
+	Name             string          `json:"name" jsonschema:"app name: lowercase letters, digits and dashes — becomes part of its registry image path. Permanent"`
+	Source           string          `json:"source,omitempty" jsonschema:"where the image comes from: \"registry\" (the default) for an image you push to Cubeship, \"external\" for one in a registry Cubeship does not run, \"dockerfile\" to build a Dockerfile from a Git repository, or \"railpack\" to build from a Git repository with no Dockerfile. Building requires the admin role."`
+	Image            string          `json:"image,omitempty" jsonschema:"for an external app, the image it pulls, without a tag — e.g. \"registry.digitalocean.com/acme/api\". Leave empty otherwise."`
+	Tag              string          `json:"tag,omitempty" jsonschema:"the tag to run. Leave empty to follow the registry: on this instance's own that means a push deploys the app, and on any other it means latest. A building app has no tag \u2014 it names a ref."`
+	Repo             string          `json:"repo,omitempty" jsonschema:"for a building app, the https:// Git repository to build from. Leave empty otherwise."`
+	Ref              string          `json:"ref,omitempty" jsonschema:"for a building app, the branch, tag or commit to build. Defaults to the repository's default branch."`
+	Dockerfile       string          `json:"dockerfile,omitempty" jsonschema:"for a dockerfile app only, the recipe's path within the repository. Defaults to \"Dockerfile\" at the root."`
+	PredeployCommand json.RawMessage `json:"predeploy_command,omitempty" jsonschema:"shell string or argv array to run from the new image before swapping"`
+	PredeployTimeout *int64          `json:"predeploy_timeout,omitempty" jsonschema:"pre-deploy timeout in seconds, up to 3600"`
 }
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
-	created, err := t.svc.Create(ctx, t.caller, in.Project, in.Environment,
+	var predeploy *Predeploy
+	if len(in.PredeployCommand) > 0 || in.PredeployTimeout != nil {
+		p := Predeploy{}
+		if len(in.PredeployCommand) > 0 {
+			parsed, err := parsePredeployCommand(in.PredeployCommand)
+			if err != nil {
+				return nil, Response{}, err
+			}
+			p = *parsed
+		}
+		if in.PredeployTimeout != nil {
+			p.Timeout = time.Duration(*in.PredeployTimeout) * time.Second
+		}
+		predeploy = &p
+	}
+	created, err := t.svc.CreateWithPredeploy(ctx, t.caller, in.Project, in.Environment,
 		in.Name, Source(in.Source),
-		Origin{Image: in.Image, Tag: in.Tag, Repo: in.Repo, Ref: in.Ref, Dockerfile: in.Dockerfile})
+		Origin{Image: in.Image, Tag: in.Tag, Repo: in.Repo, Ref: in.Ref, Dockerfile: in.Dockerfile}, predeploy)
 	if err != nil {
 		return nil, Response{}, err
 	}
@@ -144,7 +166,9 @@ type updateInput struct {
 	// app's names to 503 and is undone by clearing the field, where a
 	// wrong placement moves somebody's app to a box they were not
 	// looking at.
-	HealthPath *string `json:"health_path,omitempty" jsonschema:"the path Traefik asks this app for before trusting a container with traffic, e.g. /healthz. Send empty to check nothing, which is the default; a path that the app does not answer 2xx or 3xx on takes every replica out of rotation"`
+	HealthPath       *string         `json:"health_path,omitempty" jsonschema:"the path Traefik asks this app for before trusting a container with traffic, e.g. /healthz. Send empty to check nothing, which is the default; a path that the app does not answer 2xx or 3xx on takes every replica out of rotation"`
+	PredeployCommand json.RawMessage `json:"predeploy_command,omitempty" jsonschema:"shell string or argv array to run from the new image before swapping it in"`
+	PredeployTimeout *int64          `json:"predeploy_timeout,omitempty" jsonschema:"pre-deploy timeout in seconds, up to 3600"`
 }
 
 func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInput) (*mcp.CallToolResult, Response, error) {
@@ -167,7 +191,27 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 			Dockerfile: deref(in.Dockerfile),
 		}
 	}
-	if source == nil && origin == nil && in.HealthPath == nil {
+	var predeploy *Predeploy
+	if len(in.PredeployCommand) > 0 || in.PredeployTimeout != nil {
+		current, lookupErr := t.svc.Resolve(ctx, t.caller, ref, user.LevelManage)
+		if lookupErr != nil {
+			return nil, Response{}, lookupErr
+		}
+		p := current.Predeploy
+		if len(in.PredeployCommand) > 0 {
+			parsed, parseErr := parsePredeployCommand(in.PredeployCommand)
+			if parseErr != nil {
+				return nil, Response{}, parseErr
+			}
+			p = *parsed
+			p.Timeout = current.Predeploy.Timeout
+		}
+		if in.PredeployTimeout != nil {
+			p.Timeout = time.Duration(*in.PredeployTimeout) * time.Second
+		}
+		predeploy = &p
+	}
+	if source == nil && origin == nil && in.HealthPath == nil && predeploy == nil {
 		return nil, Response{}, fmt.Errorf("nothing to change")
 	}
 	// No `node` here, deliberately: moving an app between machines is
@@ -181,11 +225,19 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 	// holding is an instant kill by the kernel, with no deploy, no
 	// confirmation and nothing to roll back to. An agent can read what
 	// the ceiling is — it is on every response — and cannot move it.
-	updated, err := t.svc.Update(ctx, t.caller, ref, source, origin, in.HealthPath, nil, nil, nil)
+	updated, err := t.svc.UpdateWithPredeploy(ctx, t.caller, ref, source, origin, in.HealthPath, nil, nil, nil, predeploy)
 	if err != nil {
 		return nil, Response{}, err
 	}
 	return nil, toResponse(updated, t.svc.InstanceConfig(ctx)), nil
+}
+
+func parsePredeployCommand(raw json.RawMessage) (*Predeploy, error) {
+	var p Predeploy
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return nil, fmt.Errorf("invalid predeploy_command: %w", err)
+	}
+	return &p, nil
 }
 
 func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*mcp.CallToolResult, mcpx.List[Response], error) {
@@ -198,6 +250,11 @@ func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*
 
 type nameInput struct {
 	App string `json:"app" jsonschema:"app reference: project/environment/app, or project/app for production"`
+}
+
+type cancelDeploymentInput struct {
+	App string `json:"app" jsonschema:"app reference"`
+	ID  int64  `json:"deployment_id" jsonschema:"deployment id"`
 }
 
 func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, Response, error) {
@@ -242,6 +299,9 @@ func (t *Tools) deploy(ctx context.Context, _ *mcp.CallToolRequest, in deployInp
 type deploymentOutput struct {
 	ID        int64  `json:"id"`
 	Status    string `json:"status" jsonschema:"pending, succeeded or failed"`
+	Phase     string `json:"phase"`
+	Duration  int64  `json:"duration_ms"`
+	Cancelled bool   `json:"cancelled"`
 	Image     string `json:"image"`
 	Error     string `json:"error,omitempty" jsonschema:"why it failed, when it did"`
 	CreatedAt string `json:"created_at"`
@@ -259,11 +319,22 @@ func (t *Tools) deployments(ctx context.Context, _ *mcp.CallToolRequest, in name
 	out := make([]deploymentOutput, 0, len(history))
 	for _, d := range history {
 		out = append(out, deploymentOutput{
-			ID: d.ID, Status: d.Status, Image: d.ImageRef, Error: d.Error,
+			ID: d.ID, Status: d.Status, Phase: d.Phase, Duration: d.Duration().Milliseconds(), Cancelled: d.Cancelled, Image: d.ImageRef, Error: d.Error,
 			CreatedAt: d.CreatedAt.Format(time.RFC3339),
 		})
 	}
 	return nil, mcpx.Of(out), nil
+}
+
+func (t *Tools) cancelDeployment(ctx context.Context, _ *mcp.CallToolRequest, in cancelDeploymentInput) (*mcp.CallToolResult, user.ActionResult, error) {
+	ref, err := ParseReference(in.App)
+	if err != nil {
+		return nil, user.ActionResult{}, err
+	}
+	if err := t.svc.CancelDeployment(ctx, t.caller, ref, in.ID); err != nil {
+		return nil, user.ActionResult{}, err
+	}
+	return nil, user.ActionResult{Message: fmt.Sprintf("cancelled deployment %d of %s", in.ID, ref)}, nil
 }
 
 func (t *Tools) delete(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, user.ActionResult, error) {
