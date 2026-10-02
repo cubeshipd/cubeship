@@ -1651,7 +1651,15 @@ func (s *Service) DeployOnPush(ctx context.Context, fullName, branch string) (in
 	return s.DeployOnPushWithChanges(ctx, fullName, branch, nil, false)
 }
 
+func (s *Service) DeployOnPushWithChangesAndIdentity(ctx context.Context, fullName, branch, sha string, changed []string, complete bool) (int, error) {
+	return s.deployOnPush(ctx, fullName, branch, sha, changed, complete)
+}
+
 func (s *Service) DeployOnPushWithChanges(ctx context.Context, fullName, branch string, changed []string, complete bool) (int, error) {
+	return s.deployOnPush(ctx, fullName, branch, "", changed, complete)
+}
+
+func (s *Service) deployOnPush(ctx context.Context, fullName, branch, sha string, changed []string, complete bool) (int, error) {
 	apps, err := s.Repo().BuildingFromRepository(ctx, fullName, branch)
 	if err != nil {
 		return 0, err
@@ -1666,7 +1674,7 @@ func (s *Service) DeployOnPushWithChanges(ctx context.Context, fullName, branch 
 			log.Printf("deploy on push: %s skipped: no watched path changed", ReferenceOf(a))
 			continue
 		}
-		if _, err := s.orch.Start(ctx, a.ID, branch); err != nil {
+		if _, err := s.orch.StartWithIdentity(ctx, a.ID, branch, DeploymentIdentity{GitSHA: sha, GitBranch: branch}); err != nil {
 			log.Printf("deploy on push: %s: %v", ReferenceOf(a), err)
 			continue
 		}

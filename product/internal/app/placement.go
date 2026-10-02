@@ -84,7 +84,7 @@ func (s *Service) PlacementsFor(ctx context.Context, nodeID int64) ([]node.Place
 		// container name, which is the whole of how they are told
 		// apart here and on the machine.
 		for _, replica := range a.ReplicasOn(nodeID) {
-			placement, err := s.orch.PlacementFor(ctx, a, d, replica.Ordinal)
+			placement, err := s.orch.PlacementFor(ctx, a, d, replica.Ordinal, nodeID)
 			if err != nil {
 				// One app that cannot be described is not a reason to
 				// leave the machine with no answer about the others —
@@ -244,7 +244,7 @@ func (s *Service) Sampled(ctx context.Context, nodeID int64, readings []node.Rea
 // of every level above the app, the labels are what the app's own
 // container would carry, and the networks are the machine's bridge plus
 // the cluster's overlay.
-func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deployment, ordinal int) (node.Placement, error) {
+func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deployment, ordinal int, nodeID int64) (node.Placement, error) {
 	env, err := o.inheritedEnv(ctx, &a.App)
 	if err != nil {
 		return node.Placement{}, fmt.Errorf("resolve inherited env: %w", err)
@@ -274,6 +274,7 @@ func (o *Orchestrator) PlacementFor(ctx context.Context, a *Scoped, d *Deploymen
 	base := resourceName(ref)
 	networks := append([]string{Network}, o.mesh(ctx)...)
 
+	env = deploymentEnv(a, d, env, ordinal, nodeID)
 	return node.Placement{
 		App:       ref.String(),
 		Deploy:    d.ID,

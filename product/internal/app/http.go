@@ -614,6 +614,8 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 type DeploymentResponse struct {
 	ID             int64  `json:"id"`
 	Status         string `json:"status"`
+	GitSHA         string `json:"git_sha,omitempty"`
+	GitBranch      string `json:"git_branch,omitempty"`
 	Skipped        bool   `json:"skipped,omitempty"`
 	Image          string `json:"image"`
 	Error          string `json:"error,omitempty"`
@@ -649,7 +651,7 @@ type DeploymentResponse struct {
 
 func toDeploymentResponse(d *Deployment) DeploymentResponse {
 	return DeploymentResponse{
-		ID: d.ID, Status: d.Status, Skipped: d.Status == DeploymentSkipped, Image: d.ImageRef, Error: d.Error,
+		ID: d.ID, Status: d.Status, Skipped: d.Status == DeploymentSkipped, GitSHA: d.GitSHA, GitBranch: d.GitBranch, Image: d.ImageRef, Error: d.Error,
 		Phase: d.Phase, DurationMillis: d.Duration().Milliseconds(), Cancelled: d.Cancelled,
 		Logs: d.Logs, HasLogs: d.HasLogs, Deletable: d.Deletable, Live: d.Live,
 		StalledOn: stalledOn(d),

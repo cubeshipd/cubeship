@@ -47,6 +47,10 @@ type changeAwareDeployer interface {
 	DeployOnPushWithChanges(ctx context.Context, repo, branch string, changed []string, complete bool) (int, error)
 }
 
+type identityAwareDeployer interface {
+	DeployOnPushWithChangesAndIdentity(ctx context.Context, repo, branch, sha string, changed []string, complete bool) (int, error)
+}
+
 type Handler struct {
 	svc    *Service
 	deploy Deployer
@@ -261,6 +265,7 @@ type pushCommit struct {
 
 type pushEvent struct {
 	Ref        string       `json:"ref"`
+	After      string       `json:"after"`
 	Commits    []pushCommit `json:"commits"`
 	Repository struct {
 		FullName string `json:"full_name"`
@@ -364,7 +369,10 @@ func (h *Handler) handlePush(r *http.Request, body []byte) {
 
 		var started int
 		var err error
-		if aware, ok := h.deploy.(changeAwareDeployer); ok {
+		if aware, ok := h.deploy.(identityAwareDeployer); ok {
+			changed := changedFiles(event.Commits)
+			started, err = aware.DeployOnPushWithChangesAndIdentity(ctx, event.Repository.FullName, branch, event.After, changed, complete && event.Commits != nil)
+		} else if aware, ok := h.deploy.(changeAwareDeployer); ok {
 			changed := changedFiles(event.Commits)
 			started, err = aware.DeployOnPushWithChanges(ctx, event.Repository.FullName, branch, changed, complete && event.Commits != nil)
 		} else {

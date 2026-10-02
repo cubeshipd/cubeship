@@ -419,17 +419,17 @@ func (r *Repository) MergeEnv(ctx context.Context, appID int64, set envvar.Map, 
 	return database.MergeJSONBMap(ctx, r.q, "apps", "env", appID, setJSON, unset)
 }
 
-const deploymentColumns = `id, app_id, image_ref, status, error, logs, created_at, phase, started_at, finished_at, cancelled`
+const deploymentColumns = `id, app_id, image_ref, git_sha, git_branch, status, error, logs, created_at, phase, started_at, finished_at, cancelled`
 
 // deploymentListColumns is the same minus the log itself, which is up
 // to MaxDeploymentLogBytes a row against fifty rows of history — and
 // which the dashboard would then re-fetch every two seconds while a
 // build is running. Whether there *is* one is all a listing needs.
-const deploymentListColumns = `id, app_id, image_ref, status, error, logs <> '' AS has_logs, created_at, phase, started_at, finished_at, cancelled`
+const deploymentListColumns = `id, app_id, image_ref, git_sha, git_branch, status, error, logs <> '' AS has_logs, created_at, phase, started_at, finished_at, cancelled`
 
 func scanDeployment(row scanner) (*Deployment, error) {
 	var d Deployment
-	if err := row.Scan(&d.ID, &d.AppID, &d.ImageRef, &d.Status, &d.Error, &d.Logs, &d.CreatedAt, &d.Phase, &d.StartedAt, &d.FinishedAt, &d.Cancelled); err != nil {
+	if err := row.Scan(&d.ID, &d.AppID, &d.ImageRef, &d.GitSHA, &d.GitBranch, &d.Status, &d.Error, &d.Logs, &d.CreatedAt, &d.Phase, &d.StartedAt, &d.FinishedAt, &d.Cancelled); err != nil {
 		return nil, err
 	}
 	// Derived rather than selected twice: a read that carries the log
@@ -445,9 +445,13 @@ func scanDeployment(row scanner) (*Deployment, error) {
 // imageRef is what was asked for, which for a source that builds is not
 // yet an image at all; SetDeploymentImage fills in what actually ran.
 func (r *Repository) StartDeployment(ctx context.Context, appID int64, imageRef string) (*Deployment, error) {
+	return r.StartDeploymentWithIdentity(ctx, appID, imageRef, "", "")
+}
+
+func (r *Repository) StartDeploymentWithIdentity(ctx context.Context, appID int64, imageRef, gitSHA, gitBranch string) (*Deployment, error) {
 	row := r.q.QueryRowContext(ctx,
-		`INSERT INTO deployments (app_id, image_ref, status, phase) VALUES ($1, $2, $3, $4) RETURNING `+deploymentColumns,
-		appID, imageRef, DeploymentPending, DeploymentPhaseQueued)
+		`INSERT INTO deployments (app_id, image_ref, git_sha, git_branch, status, phase) VALUES ($1, $2, $3, $4, $5, $6) RETURNING `+deploymentColumns,
+		appID, imageRef, gitSHA, gitBranch, DeploymentPending, DeploymentPhaseQueued)
 	d, err := scanDeployment(row)
 	if err != nil {
 		return nil, fmt.Errorf("start deployment: %w", err)
@@ -610,7 +614,7 @@ func (r *Repository) DeploymentToRun(ctx context.Context, appID int64) (*Deploym
 // printed.
 func scanDeploymentSummary(row scanner) (*Deployment, error) {
 	var d Deployment
-	if err := row.Scan(&d.ID, &d.AppID, &d.ImageRef, &d.Status, &d.Error, &d.HasLogs, &d.CreatedAt, &d.Phase, &d.StartedAt, &d.FinishedAt, &d.Cancelled); err != nil {
+	if err := row.Scan(&d.ID, &d.AppID, &d.ImageRef, &d.GitSHA, &d.GitBranch, &d.Status, &d.Error, &d.HasLogs, &d.CreatedAt, &d.Phase, &d.StartedAt, &d.FinishedAt, &d.Cancelled); err != nil {
 		return nil, err
 	}
 	return &d, nil
