@@ -165,6 +165,7 @@ function Settings({ reference }: { reference: string }) {
 
             <TabsContent value="deploy">
               <PredeploySection app={app} onSaved={setApp} onError={setError} />
+              <StopPolicySection app={app} onSaved={setApp} onError={setError} />
             </TabsContent>
 
             {/* Where it runs, how much of the machine it may take, and
@@ -261,7 +262,10 @@ function usePatch({ app, onSaved, onError }: SectionProps) {
   // a list of machines and a count, which is why this is not a map of
   // strings.
   async function save(
-    body: Record<string, string | string[] | number | boolean | AppLimits | AppAutoscale>,
+    body: Record<
+      string,
+      string | string[] | number | boolean | AppLimits | AppAutoscale | Record<string, string>
+    >,
   ) {
     setBusy(true);
     onError(null);
@@ -318,6 +322,53 @@ function PredeploySection(props: SectionProps) {
             onClick={() =>
               save({ predeploy_command: command, predeploy_timeout: Number(timeout) || 0 })
             }
+          >
+            {busy ? "Saving…" : "Save"}
+          </Button>
+          {saved && <span className="text-sm text-muted-foreground">Saved</span>}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function StopPolicySection(props: SectionProps) {
+  const { app } = props;
+  const { busy, saved, save } = usePatch(props);
+  const [grace, setGrace] = useState(String(app.stop_grace_period ?? 10));
+  const [signal, setSignal] = useState(app.stop_signal || "SIGTERM");
+  const dirty =
+    Number(grace) !== (app.stop_grace_period ?? 10) || signal !== (app.stop_signal || "SIGTERM");
+  const valid =
+    /^SIG[A-Z0-9_]+$/.test(signal) &&
+    signal !== "SIGKILL" &&
+    signal !== "SIGSTOP" &&
+    Number(grace) >= 0 &&
+    Number(grace) <= 3600;
+  return (
+    <Card className="mt-4">
+      <CardContent className="space-y-4 pt-6">
+        <SectionHeader
+          title="Container stop policy"
+          sub="How long a container gets to shut down cleanly before it is force-stopped."
+        />
+        <TextField
+          label="Grace period (seconds, 0–3600)"
+          type="number"
+          value={grace}
+          onChange={(e) => setGrace(e.target.value)}
+        />
+        <TextField
+          label="Stop signal"
+          hint="Defaults to SIGTERM. SIGKILL and SIGSTOP are not allowed."
+          value={signal}
+          onChange={(e) => setSignal(e.target.value.toUpperCase())}
+        />
+        {!valid && <ErrorAlert error="Enter a valid grace period and a non-forcing SIG signal." />}
+        <div className="flex items-center gap-3">
+          <Button
+            disabled={!dirty || !valid || busy}
+            onClick={() => save({ stop_grace_period: Number(grace), stop_signal: signal })}
           >
             {busy ? "Saving…" : "Save"}
           </Button>
@@ -703,6 +754,7 @@ function SourceSection(props: SectionProps) {
   const [dockerfile, setDockerfile] = useState(app.dockerfile ?? "");
   const [watchPaths, setWatchPaths] = useState((app.watch_paths ?? []).join("\n"));
   const [ignorePaths, setIgnorePaths] = useState((app.ignore_paths ?? []).join("\n"));
+  const [buildArgs, setBuildArgs] = useState("");
   // Which registry, which image and which tag are one value: changing
   // the registry invalidates the other two, and a form that held them
   // apart would let them disagree between one render and the next.
@@ -753,6 +805,17 @@ function SourceSection(props: SectionProps) {
                       .map((v) => v.trim())
                       .filter(Boolean)
                   : [],
+                ...(source === "dockerfile"
+                  ? {
+                      build_args: Object.fromEntries(
+                        buildArgs
+                          .split("\n")
+                          .map((line) => line.split("="))
+                          .filter(([key, value]) => key?.trim() && value !== undefined)
+                          .map(([key, ...value]) => [key.trim(), value.join("=")]),
+                      ),
+                    }
+                  : {}),
               });
             }}
           >
@@ -826,6 +889,36 @@ function SourceSection(props: SectionProps) {
                     }}
                     placeholder="Dockerfile"
                   />
+                )}
+                {buildWith === "dockerfile" && (
+                  <>
+                    <label htmlFor="dockerfile-build-args" className="text-sm font-medium">
+                      Dockerfile build arguments
+                    </label>
+                    <textarea
+                      className="min-h-24 w-full rounded-md border bg-background p-3 font-mono text-sm"
+                      value={buildArgs}
+                      onChange={(e) => {
+                        setBuildArgs(e.target.value);
+                        touch();
+                      }}
+                      placeholder="NODE_ENV=production"
+                      id="dockerfile-build-args"
+                      aria-label="Dockerfile build arguments"
+                    />
+                    <Notice tone="warning">
+                      Build arguments are allowlisted for Dockerfile builds only. Do not put secrets
+                      here: image history, layers, and build cache may retain their values. Values
+                      are write-only and never shown after saving.
+                    </Notice>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => api.post(`/apps/${app.reference}/deploy`, {})}
+                    >
+                      Save and rebuild
+                    </Button>
+                  </>
                 )}
                 <TextField
                   label="Watch paths"
