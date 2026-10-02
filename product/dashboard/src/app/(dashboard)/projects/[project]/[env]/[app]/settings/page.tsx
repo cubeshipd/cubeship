@@ -262,7 +262,10 @@ function usePatch({ app, onSaved, onError }: SectionProps) {
   // a list of machines and a count, which is why this is not a map of
   // strings.
   async function save(
-    body: Record<string, string | string[] | number | boolean | AppLimits | AppAutoscale>,
+    body: Record<
+      string,
+      string | string[] | number | boolean | AppLimits | AppAutoscale | Record<string, string>
+    >,
   ) {
     setBusy(true);
     onError(null);
