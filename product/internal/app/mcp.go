@@ -371,6 +371,8 @@ type deploymentOutput struct {
 	Duration  int64  `json:"duration_ms"`
 	Cancelled bool   `json:"cancelled"`
 	Image     string `json:"image"`
+	GitSHA    string `json:"git_sha,omitempty"`
+	GitBranch string `json:"git_branch,omitempty"`
 	Error     string `json:"error,omitempty" jsonschema:"why it failed, when it did"`
 	CreatedAt string `json:"created_at"`
 }
@@ -387,7 +389,7 @@ func (t *Tools) deployments(ctx context.Context, _ *mcp.CallToolRequest, in name
 	out := make([]deploymentOutput, 0, len(history))
 	for _, d := range history {
 		out = append(out, deploymentOutput{
-			ID: d.ID, Status: d.Status, Phase: d.Phase, Duration: d.Duration().Milliseconds(), Cancelled: d.Cancelled, Image: d.ImageRef, Error: d.Error,
+			ID: d.ID, Status: d.Status, Phase: d.Phase, Duration: d.Duration().Milliseconds(), Cancelled: d.Cancelled, Image: d.ImageRef, Error: d.Error, GitSHA: d.GitSHA, GitBranch: d.GitBranch,
 			CreatedAt: d.CreatedAt.Format(time.RFC3339),
 		})
 	}

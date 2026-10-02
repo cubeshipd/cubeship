@@ -132,6 +132,14 @@ type Orchestrator struct {
 	builderLogin buildkit.Login
 }
 
+// DeploymentIdentity is provenance attached to a deploy initiated by a
+// source control webhook. Empty fields mean the deploy was manual or came
+// from an image source.
+type DeploymentIdentity struct {
+	GitSHA    string
+	GitBranch string
+}
+
 // SetBuilderLogin wires in that credential. Called once, by server.New.
 func (o *Orchestrator) SetBuilderLogin(username, password string) {
 	o.builderLogin = buildkit.Login{Username: username, Password: password}
@@ -419,6 +427,10 @@ func (o *Orchestrator) registryHost(ctx context.Context) string {
 // caller now polls the returned deployment instead, and can stop
 // watching whenever it likes.
 func (o *Orchestrator) Start(ctx context.Context, appID int64, tag string) (*Deployment, error) {
+	return o.StartWithIdentity(ctx, appID, tag, DeploymentIdentity{})
+}
+
+func (o *Orchestrator) StartWithIdentity(ctx context.Context, appID int64, tag string, identity DeploymentIdentity) (*Deployment, error) {
 	// Look up and check the source first, so asking to deploy something
 	// that isn't there — or an app whose source cannot produce an image
 	// at all — is an error the caller sees rather than a background
@@ -453,7 +465,7 @@ func (o *Orchestrator) Start(ctx context.Context, appID int64, tag string) (*Dep
 		tag = o.runningTag(ctx, appID)
 	}
 
-	deployment, err := o.apps.StartDeployment(ctx, appID, tag)
+	deployment, err := o.apps.StartDeploymentWithIdentity(ctx, appID, tag, identity.GitSHA, identity.GitBranch)
 	if err != nil {
 		return nil, err
 	}
@@ -651,6 +663,13 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	if err != nil {
 		return ErrNotFound
 	}
+	d, err := o.apps.UnscopedDeployment(ctx, deploymentID)
+	if err != nil {
+		return fmt.Errorf("read deployment identity: %w", err)
+	}
+	if d == nil {
+		return errors.New("read deployment identity: deployment not found")
+	}
 	ref := ReferenceOf(a)
 	appName := ref.String()
 
@@ -711,6 +730,7 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	if err != nil {
 		return err
 	}
+	env = deploymentEnv(a, d, env, 1, here)
 	local := false
 	for _, r := range a.Replicas {
 		if r.NodeID == here {

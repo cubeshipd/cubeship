@@ -610,6 +610,8 @@ type Deployment struct {
 	ID             int64     `json:"id"`
 	Status         string    `json:"status"`
 	Image          string    `json:"image"`
+	GitSHA         string    `json:"git_sha,omitempty"`
+	GitBranch      string    `json:"git_branch,omitempty"`
 	Error          string    `json:"error,omitempty"`
 	Phase          string    `json:"phase"`
 	DurationMillis int64     `json:"duration_ms"`

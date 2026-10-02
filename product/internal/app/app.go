@@ -432,6 +432,8 @@ type Deployment struct {
 	ID         int64
 	AppID      int64
 	ImageRef   string
+	GitSHA     string
+	GitBranch  string
 	Status     string
 	Error      string
 	Phase      string

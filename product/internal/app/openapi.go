@@ -46,6 +46,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			"Deployment": openapi.Object(map[string]*openapi.Schema{
 				"id":          openapi.Integer("Poll this deploy at .../deployments/{id}."),
 				"status":      {Type: "string", Enum: []string{"pending", "succeeded", "failed", "skipped"}},
+				"git_sha":     openapi.String("Git commit SHA that triggered this deploy, when it came from a webhook."),
+				"git_branch":  openapi.String("Git branch that triggered this deploy, when it came from a webhook."),
 				"phase":       {Type: "string", Description: "Current deploy phase: queued, resolving, pulling, predeploy, swapping, waiting, done, failed or cancelled."},
 				"duration_ms": openapi.Integer("Elapsed deploy duration in milliseconds."),
 				"cancelled":   openapi.Bool("Whether the deploy was cancelled before the swap."),

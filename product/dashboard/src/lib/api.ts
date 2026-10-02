@@ -532,6 +532,8 @@ export type Deployment = {
   id: number;
   status: string;
   image: string;
+  git_sha?: string;
+  git_branch?: string;
   error?: string;
   phase: string;
   duration_ms: number;
