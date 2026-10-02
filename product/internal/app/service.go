@@ -433,6 +433,26 @@ func (s *Service) UpdateStopPolicy(ctx context.Context, caller *user.User, ref R
 	return s.Resolve(ctx, caller, ref, user.LevelView)
 }
 
+func (s *Service) UpdatePathFilters(ctx context.Context, caller *user.User, ref Reference, watch, ignore []string) (*Scoped, error) {
+	if watch == nil {
+		watch = []string{}
+	}
+	if ignore == nil {
+		ignore = []string{}
+	}
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
+	if err != nil {
+		return nil, err
+	}
+	if !ValidPathFilters(watch, ignore) {
+		return nil, ErrInvalidPathFilters
+	}
+	if _, err := s.Repo().UpdatePathFilters(ctx, a.ID, watch, ignore); err != nil {
+		return nil, err
+	}
+	return s.Resolve(ctx, caller, ref, user.LevelView)
+}
+
 func (s *Service) UpdateWithPredeploy(ctx context.Context, caller *user.User, ref Reference, source *Source, origin *Origin, health *string, limits *Limits, auto *Autoscale, place *Placement, predeploy *Predeploy) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
 	if err != nil {
@@ -1625,29 +1645,28 @@ func (s *Service) remoteLogs(ctx context.Context, r Replica, tail string) (io.Re
 	return io.NopCloser(bytes.NewReader(out)), nil
 }
 
-// DeployOnPush starts a deploy for every app in an organization that
-// builds from this repository at this branch, and reports how many.
-//
-// It authorizes nothing, deliberately: the caller is a webhook GitHub
-// signed, not a person. What stands in for a role check is the
-// signature, and the fact that this instance only receives events for
-// the repositories its own installation has been given.
-//
-// An app with no ref of its own deploys on a push to any branch. A named
-// ref deploys when that branch is pushed.
+// DeployOnPush starts a deploy for every matching app. Legacy callers have
+// no changed-file data, so they fail open and deploy all matching apps.
 func (s *Service) DeployOnPush(ctx context.Context, fullName, branch string) (int, error) {
+	return s.DeployOnPushWithChanges(ctx, fullName, branch, nil, false)
+}
+
+func (s *Service) DeployOnPushWithChanges(ctx context.Context, fullName, branch string, changed []string, complete bool) (int, error) {
 	apps, err := s.Repo().BuildingFromRepository(ctx, fullName, branch)
 	if err != nil {
 		return 0, err
 	}
-
 	started := 0
 	for _, a := range apps {
-		// The branch, not a tag: for a building source the deploy's
-		// argument is which commit-ish to build.
+		if complete && !WatchPathsMatch(a.WatchPaths, a.IgnorePaths, changed) {
+			deployment, startErr := s.Repo().StartDeployment(ctx, a.ID, branch)
+			if startErr == nil {
+				_ = s.Repo().FinishDeployment(ctx, deployment.ID, DeploymentSkipped, "no watched path changed")
+			}
+			log.Printf("deploy on push: %s skipped: no watched path changed", ReferenceOf(a))
+			continue
+		}
 		if _, err := s.orch.Start(ctx, a.ID, branch); err != nil {
-			// One app refusing must not stop the others. A repository
-			// with four apps on it should deploy the three that can.
 			log.Printf("deploy on push: %s: %v", ReferenceOf(a), err)
 			continue
 		}

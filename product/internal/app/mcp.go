@@ -129,6 +129,8 @@ type createInput struct {
 	PredeployTimeout *int64          `json:"predeploy_timeout,omitempty" jsonschema:"pre-deploy timeout in seconds, up to 3600"`
 	StopGracePeriod  *int64          `json:"stop_grace_period,omitempty" jsonschema:"container stop grace period in seconds, 0 to 3600"`
 	StopSignal       *string         `json:"stop_signal,omitempty" jsonschema:"container stop signal, for example SIGTERM"`
+	WatchPaths       *[]string       `json:"watch_paths,omitempty" jsonschema:"include globs; empty preserves deploy-on-every-push"`
+	IgnorePaths      *[]string       `json:"ignore_paths,omitempty" jsonschema:"exclude globs applied after watch paths"`
 }
 
 func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInput) (*mcp.CallToolResult, Response, error) {
@@ -152,6 +154,19 @@ func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInp
 		Origin{Image: in.Image, Tag: in.Tag, Repo: in.Repo, Ref: in.Ref, Dockerfile: in.Dockerfile}, predeploy)
 	if err != nil {
 		return nil, Response{}, err
+	}
+	if in.WatchPaths != nil || in.IgnorePaths != nil {
+		watch, ignore := []string(nil), []string(nil)
+		if in.WatchPaths != nil {
+			watch = *in.WatchPaths
+		}
+		if in.IgnorePaths != nil {
+			ignore = *in.IgnorePaths
+		}
+		created, err = t.svc.UpdatePathFilters(ctx, t.caller, Reference{Project: in.Project, Environment: in.Environment, Name: in.Name}, watch, ignore)
+		if err != nil {
+			return nil, Response{}, err
+		}
 	}
 	if in.StopGracePeriod != nil || in.StopSignal != nil {
 		grace, signal := DefaultStopGracePeriod, DefaultStopSignal
@@ -186,6 +201,8 @@ type updateInput struct {
 	PredeployTimeout *int64          `json:"predeploy_timeout,omitempty" jsonschema:"pre-deploy timeout in seconds, up to 3600"`
 	StopGracePeriod  *int64          `json:"stop_grace_period,omitempty" jsonschema:"container stop grace period in seconds, 0 to 3600"`
 	StopSignal       *string         `json:"stop_signal,omitempty" jsonschema:"container stop signal, for example SIGTERM"`
+	WatchPaths       *[]string       `json:"watch_paths,omitempty" jsonschema:"include globs; empty preserves deploy-on-every-push"`
+	IgnorePaths      *[]string       `json:"ignore_paths,omitempty" jsonschema:"exclude globs applied after watch paths"`
 }
 
 func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInput) (*mcp.CallToolResult, Response, error) {
@@ -228,7 +245,7 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 		}
 		predeploy = &p
 	}
-	if source == nil && origin == nil && in.HealthPath == nil && predeploy == nil && in.StopGracePeriod == nil && in.StopSignal == nil {
+	if source == nil && origin == nil && in.HealthPath == nil && predeploy == nil && in.StopGracePeriod == nil && in.StopSignal == nil && in.WatchPaths == nil && in.IgnorePaths == nil {
 		return nil, Response{}, fmt.Errorf("nothing to change")
 	}
 	// No `node` here, deliberately: moving an app between machines is
@@ -245,6 +262,23 @@ func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInp
 	updated, err := t.svc.UpdateWithPredeploy(ctx, t.caller, ref, source, origin, in.HealthPath, nil, nil, nil, predeploy)
 	if err != nil {
 		return nil, Response{}, err
+	}
+	if in.WatchPaths != nil || in.IgnorePaths != nil {
+		current, lookupErr := t.svc.Resolve(ctx, t.caller, ref, user.LevelManage)
+		if lookupErr != nil {
+			return nil, Response{}, lookupErr
+		}
+		watch, ignore := current.WatchPaths, current.IgnorePaths
+		if in.WatchPaths != nil {
+			watch = *in.WatchPaths
+		}
+		if in.IgnorePaths != nil {
+			ignore = *in.IgnorePaths
+		}
+		updated, err = t.svc.UpdatePathFilters(ctx, t.caller, ref, watch, ignore)
+		if err != nil {
+			return nil, Response{}, err
+		}
 	}
 	if in.StopGracePeriod != nil || in.StopSignal != nil {
 		current, lookupErr := t.svc.Resolve(ctx, t.caller, ref, user.LevelManage)

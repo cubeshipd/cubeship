@@ -380,6 +380,8 @@ export type App = {
   predeploy_timeout?: number;
   stop_grace_period?: number;
   stop_signal?: string;
+  watch_paths?: string[];
+  ignore_paths?: string[];
 };
 
 // The rule the instance scales an app by.
@@ -534,6 +536,7 @@ export type Deployment = {
   phase: string;
   duration_ms: number;
   cancelled: boolean;
+  skipped?: boolean;
   // What the build printed. **Absent from a listing**, whatever the
   // deploy printed: it is capped at 256 KiB a row and a history is
   // fifty of them. Read one deployment for it.

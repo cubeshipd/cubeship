@@ -701,6 +701,8 @@ function SourceSection(props: SectionProps) {
   const [repo, setRepo] = useState(app.repo ?? "");
   const [gitRef, setGitRef] = useState(app.ref ?? "");
   const [dockerfile, setDockerfile] = useState(app.dockerfile ?? "");
+  const [watchPaths, setWatchPaths] = useState((app.watch_paths ?? []).join("\n"));
+  const [ignorePaths, setIgnorePaths] = useState((app.ignore_paths ?? []).join("\n"));
   // Which registry, which image and which tag are one value: changing
   // the registry invalidates the other two, and a form that held them
   // apart would let them disagree between one render and the next.
@@ -739,6 +741,18 @@ function SourceSection(props: SectionProps) {
                 repo: nowBuilds ? repo.trim() : "",
                 ref: nowBuilds ? gitRef.trim() : "",
                 dockerfile: source === "dockerfile" ? dockerfile.trim() : "",
+                watch_paths: nowBuilds
+                  ? watchPaths
+                      .split("\n")
+                      .map((v) => v.trim())
+                      .filter(Boolean)
+                  : [],
+                ignore_paths: nowBuilds
+                  ? ignorePaths
+                      .split("\n")
+                      .map((v) => v.trim())
+                      .filter(Boolean)
+                  : [],
               });
             }}
           >
@@ -813,6 +827,26 @@ function SourceSection(props: SectionProps) {
                     placeholder="Dockerfile"
                   />
                 )}
+                <TextField
+                  label="Watch paths"
+                  hint="Optional. One repository-relative glob per line; empty deploys every push."
+                  value={watchPaths}
+                  onChange={(e) => {
+                    setWatchPaths(e.target.value);
+                    touch();
+                  }}
+                  placeholder="services/api/**"
+                />
+                <TextField
+                  label="Ignore paths"
+                  hint="Optional. Matching paths are excluded after watch paths."
+                  value={ignorePaths}
+                  onChange={(e) => {
+                    setIgnorePaths(e.target.value);
+                    touch();
+                  }}
+                  placeholder="docs/**"
+                />
               </div>
             ) : (
               <div className="space-y-5 border-l-2 border-primary/40 pl-4">
