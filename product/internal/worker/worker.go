@@ -97,10 +97,10 @@ type policyStopper interface {
 }
 
 func stopWithPolicy(ctx context.Context, e Engine, id string, grace int64, signal string) error {
-	if grace == 0 {
-		grace = 10
-	}
 	if signal == "" {
+		if grace == 0 {
+			grace = 10
+		}
 		signal = "SIGTERM"
 	}
 	if s, ok := e.(policyStopper); ok {
@@ -732,7 +732,7 @@ func (a *Agent) displace(ctx context.Context, running []dockerx.Running, p node.
 			node.OrdinalFromLabels(c.Labels) != node.OrdinalOf(p.Ordinal) {
 			continue
 		}
-		if err := stopWithPolicy(ctx, a.engine, c.ID, 10, "SIGTERM"); err != nil {
+		if err := stopWithPolicy(ctx, a.engine, c.ID, p.StopGracePeriod, p.StopSignal); err != nil {
 			log.Printf("agent: stopping %s before its replacement: %v", c.Name, err)
 		}
 		stopped = append(stopped, c)

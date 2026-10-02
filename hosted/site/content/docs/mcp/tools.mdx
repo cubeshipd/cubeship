@@ -218,6 +218,8 @@ Register a new app in a project and get its registry push path. environment defa
 | `ref` | string | for a building app, the branch, tag or commit to build. Defaults to the repository's default branch. |
 | `repo` | string | for a building app, the https:// Git repository to build from. Leave empty otherwise. |
 | `source` | string | where the image comes from: "registry" (the default) for an image you push to Cubeship, "external" for one in a registry Cubeship does not run, "dockerfile" to build a Dockerfile from a Git repository, or "railpack" to build from a Git repository with no Dockerfile. Building requires the admin role. |
+| `stop_grace_period` | integer | container stop grace period in seconds, 0 to 3600 |
+| `stop_signal` | string | container stop signal, for example SIGTERM |
 | `tag` | string | the tag to run. Leave empty to follow the registry: on this instance's own that means a push deploys the app, and on any other it means latest. A building app has no tag — it names a ref. |
 
 \* required
@@ -371,6 +373,8 @@ Reconfigure an app: where its image comes from. Its domains are added and remove
 | `reference` * | string | the app's reference: project/environment/name |
 | `repo` | string | for a building app, the https:// Git repository to build from |
 | `source` | string | registry, external, dockerfile or railpack. Send the settings the new source needs alongside it |
+| `stop_grace_period` | integer | container stop grace period in seconds, 0 to 3600 |
+| `stop_signal` | string | container stop signal, for example SIGTERM |
 | `tag` | string | the tag to run; send empty to follow the registry, which on this instance's own means a push deploys the app |
 
 \* required
