@@ -4,6 +4,7 @@ go 1.27.0
 
 require (
 	github.com/Masterminds/semver/v3 v3.5.0
+	github.com/bmatcuk/doublestar/v4 v4.10.0
 	github.com/coder/websocket v1.8.15
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.7.2+incompatible
@@ -22,7 +23,7 @@ require (
 	github.com/railwayapp/railpack v0.39.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/pflag v1.0.10
-	github.com/tonistiigi/fsutil v0.0.0-20260819142231-83cac42c1c52
+	github.com/tonistiigi/fsutil v0.0.0-20261009124904-c1c5bffae3b5
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/crypto v0.56.0
 	golang.org/x/sync v0.22.0
@@ -43,7 +44,6 @@ require (
 	github.com/bep/godartsass/v2 v2.5.0 // indirect
 	github.com/bep/golibsass v1.2.0 // indirect
 	github.com/bits-and-blooms/bitset v1.24.6 // indirect
-	github.com/bmatcuk/doublestar/v4 v4.10.0 // indirect
 	github.com/buger/jsonparser v1.6.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/charmbracelet/colorprofile v0.4.3 // indirect
