@@ -109,7 +109,15 @@ export async function collectSnapshot(context, transport = createTransport()) {
     const checks = await pages(`${root}/actions/workflows/ci.yml/runs?head_sha=${revision}`, 'workflow_runs', transport);
     for (const run of checks) if (run.head_sha === revision && run.path === '.github/workflows/ci.yml' && ['pull_request', 'push'].includes(run.event) && Number.isSafeInteger(run.id) && ['completed', 'queued', 'in_progress'].includes(run.status)) ci.push({ id: run.id, sha: revision, status: run.status, conclusion: ['success', 'failure', 'cancelled', 'skipped', 'timed_out', 'neutral', 'action_required', 'stale'].includes(run.conclusion) ? run.conclusion : null });
   }
+  // The files endpoint is mutable: bind its result to a fresh public identity.
+  await assertCurrentSnapshot(snapshot, transport);
   return { ...snapshot, historyComplete: true, files: filtered, ci };
+}
+async function assertCurrentSnapshot(snapshot, transport) {
+  const root = `/repos/${snapshot.repo}`;
+  const repo = await githubRead(root, transport);
+  const pr = await githubRead(`${root}/pulls/${snapshot.pr}`, transport);
+  if (repo.private !== false || repo.visibility !== 'public' || pr.number !== snapshot.pr || pr.state !== 'open' || pr.head?.repo?.private !== false || pr.base?.repo?.private !== false || pr.base.repo.full_name !== snapshot.repo || pr.head.sha !== snapshot.head || pr.base.sha !== snapshot.base) throw fixedError('SNAPSHOT_CHANGED');
 }
 const unsafe = /[`<>\x00-\x1f\x7f]|https?:|www\.|\[[^\]]*\]\(|(?:password|secret|api[_-]?key|access[_-]?token)["\']?\s*[:=]|\b(?:gh[pousr]_|github_pat_|AIza|AKIA|ASIA)|-----BEGIN|[A-Za-z0-9+/_=-]{40,}/i;
 const safeText = (text, max) => typeof text === 'string' && text.length > 0 && text.length <= max && !unsafe.test(text);
@@ -161,6 +169,8 @@ export async function generateOnce(input, transport = createTransport(), key) {
     const count = await request(`${endpoint}:countTokens`, { ...options, body: JSON.stringify({ generateContentRequest: { model: `models/${config.model}`, ...body } }), signal: AbortSignal.timeout(30000) }, transport, 16384);
     if (!integer(count.data?.totalTokens)) return { state: 'blocked', reason: 'TOKEN_COUNT_FAILED' };
     if (count.data.totalTokens > config.maxTotalTokens) return { state: 'incomplete', reason: 'TOKEN_LIMIT' };
+    // Counting may take 30 seconds; refuse a newly stale or nonpublic snapshot.
+    await assertCurrentSnapshot(current, transport);
     // This call is deliberately outside every retry loop, including transport errors.
     const response = await request(`${endpoint}:generateContent`, { ...options, body: JSON.stringify(body), signal: AbortSignal.timeout(config.generationTimeoutSeconds * 1000) }, transport, 65536);
     if (!response.data) return { state: 'blocked', reason: 'GENERATION_FAILED' };
@@ -172,12 +182,18 @@ export async function generateOnce(input, transport = createTransport(), key) {
     const decision = validateResult(parts[0].text, prepared.changedLines, sourceSnapshot(current));
     if (decision.state !== 'ready') return decision;
     return { ...decision, usage: usageSummary(response.data.usageMetadata, count.data.totalTokens, (transport.now ?? Date.now)()) };
-  } catch { return { state: 'blocked', reason: 'REQUEST_FAILED' }; }
+  } catch (error) { return error.message === 'SNAPSHOT_CHANGED' ? { state: 'obsolete', reason: 'SNAPSHOT_CHANGED' } : { state: 'blocked', reason: 'REQUEST_FAILED' }; }
 }
 const escape = text => text.replace(/[\\`*_{}\[\]()#+.!|<>@]/g, c => `&#${c.charCodeAt(0)};`);
+function sourcePath(finding, snapshot) {
+  if (finding.side !== 'LEFT') return finding.path;
+  const file = snapshot.files?.find(entry => entry.path === finding.path);
+  if (!file || (file.status === 'renamed' && !file.previousPath)) throw fixedError('SOURCE_PATH_UNAVAILABLE');
+  return file.previousPath ?? file.path;
+}
 export function renderSummary(result, snapshot) {
   const header = `Gemini advisory diagnosis — hypotheses requiring human verification.\n\nRepository: ${escape(snapshot.repo)} · PR #${snapshot.pr}\nHead: ${snapshot.head}\nBase: ${snapshot.base}\n\n`;
-  const findings = result.findings.map(f => { const revision = f.side === 'LEFT' ? snapshot.base : snapshot.head; const path = f.path.split('/').map(encodeURIComponent).join('/'); return `- ${f.severity}: [source line ${f.line}](https://github.com/${snapshot.repo}/blob/${revision}/${path}#L${f.line}) — ${escape(f.explanation)}`; }).join('\n');
+  const findings = result.findings.map(f => { const revision = f.side === 'LEFT' ? snapshot.base : snapshot.head; const path = sourcePath(f, snapshot).split('/').map(encodeURIComponent).join('/'); return `- ${f.severity}: [source line ${f.line}](https://github.com/${snapshot.repo}/blob/${revision}/${path}#L${f.line}) — ${escape(f.explanation)}`; }).join('\n');
   return (header + `Coverage: ${result.coverage}\n\n${escape(result.summary)}\n\n${findings}`).slice(0, config.maxSummaryCharacters);
 }
 

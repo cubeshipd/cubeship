@@ -227,3 +227,41 @@ test('CI projection includes only same-snapshot fixed metadata inside the byte g
 test('REST generation body keeps model in URL while countTokens embeds full request',async()=>{
  const t=synthetic();await runner.generateOnce(input(),t,'SYNTHETIC_KEY');const generation=JSON.parse(t.calls.find(c=>c.url.endsWith(':generateContent')).options.body);assert.equal(generation.model,undefined);
 });
+
+function movingSnapshot(phase,side,change='sha') {
+ const t=synthetic();const fetch=t.fetch;let moved=false;
+ t.fetch=async(u,o)=>{
+  const p=new URL(u).pathname;const response=await fetch(u,o);
+  if(p.endsWith(phase)) moved=true;
+  if(p.endsWith('/pulls/1')&&moved) {const data=await response.json();if(change==='sha')data[side].sha='c'.repeat(40);else if(change==='private')data[side].repo.private=true;else data.state='closed';return reply(data);}
+  return response;
+ };return t;
+}
+test('fresh snapshot after files and CI prevents any provider exposure when head or base moved',async()=>{
+ for(const phase of ['/pulls/1/files','/ci.yml/runs'])for(const side of ['head','base']) {
+  const t=movingSnapshot(phase,side);const out=await runner.generateOnce({context:input().context,snapshot:{...snapshot}},t,'SYNTHETIC_KEY');
+  assert.notEqual(out.state,'ready');assert.equal(t.calls.filter(c=>c.url.includes('googleapis')).length,0);assert.equal(t.generationCalls,0);
+ }
+});
+test('fresh snapshot after countTokens prevents generation when head or base moved',async()=>{
+ for(const side of ['head','base']) {const t=movingSnapshot(':countTokens',side);const out=await runner.generateOnce({context:input().context,snapshot:{...snapshot}},t,'SYNTHETIC_KEY');assert.notEqual(out.state,'ready');assert.equal(t.calls.filter(c=>c.url.endsWith(':countTokens')).length,1);assert.equal(t.generationCalls,0);}
+});
+test('provider boundary checks still require public and open PR',async()=>{
+ for(const phase of ['/pulls/1/files',':countTokens'])for(const change of ['private','closed']) {const t=movingSnapshot(phase,'head',change);assert.notEqual((await runner.generateOnce({context:input().context,snapshot:{...snapshot}},t,'SYNTHETIC_KEY')).state,'ready');assert.equal(t.generationCalls,0);if(phase==='/pulls/1/files')assert.equal(t.calls.filter(c=>c.url.includes('googleapis')).length,0);}
+});
+test('CLI dry inference without prompt refuses a snapshot moved during collection',async()=>{
+ const {mkdtemp,writeFile,access,rm}=await import('node:fs/promises');const dir=await mkdtemp('/tmp/pilot-cli-race-');
+ try {for(const side of ['head','base']) {
+  const t=movingSnapshot('/ci.yml/runs',side);const fetch=t.fetch;t.fetch=async(u,o)=>new URL(u).pathname.endsWith('/actions/runs/1')?reply(runMetadata(true)):fetch(u,o);
+  await writeFile(`${dir}/context.json`,JSON.stringify({...input().context,dryRun:true}));await writeFile(`${dir}/snapshot.json`,JSON.stringify({snapshot,decision:{state:'ready'},dryRun:true}));
+  const out=await runner.runCLI(['infer',`${dir}/context.json`,`${dir}/snapshot.json`,`${dir}/artifact.json`],{transport:t,env:{get GEMINI_API_KEY(){throw Error('KEY_READ_FORBIDDEN');}}});assert.notEqual(out.state,'ready');await assert.rejects(access(`${dir}/artifact.json`));assert.equal(t.calls.filter(c=>c.url.includes('googleapis')).length,0);
+ }}finally{await rm(dir,{recursive:true,force:true});}
+});
+test('rename LEFT source uses trusted previous path at base; RIGHT uses current path at head',()=>{
+ const f={...file(),path:'src/new.js',previousPath:'src/old.js',status:'renamed',additions:1,deletions:1,patch:'@@ -1 +1 @@\n-old\n+new'};
+ const result={...goodResult(),findings:['LEFT','RIGHT'].map(side=>({...goodResult().findings[0],path:f.path,side}))};
+ assert.equal(runner.validateResult(result,prepareInput(snapshot,[f]).changedLines,snapshot).state,'ready');
+ const rendered=runner.renderSummary(result,{...snapshot,files:[f]});assert.ok(rendered.includes(`/blob/${otherSha}/src/old.js#L1`));assert.ok(rendered.includes(`/blob/${sha}/src/new.js#L1`));assert.ok(!rendered.includes(`/blob/${otherSha}/src/new.js`));
+ assert.throws(()=>runner.renderSummary(result,snapshot));assert.throws(()=>runner.renderSummary(result,{...snapshot,files:[{...f,previousPath:undefined}]}));
+ assert.equal(runner.validateResult({...result,findings:[{...result.findings[0],previousPath:'model/path.js'}]},prepareInput(snapshot,[f]).changedLines,snapshot).state,'blocked');
+});
