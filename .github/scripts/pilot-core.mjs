@@ -26,8 +26,8 @@ export function checkHistory(snapshot, runs) {
   return ready();
 }
 const safePath = path => typeof path === 'string' && path.length > 0 && !/[\x00-\x1f\x7f\\]/.test(path) && !path.startsWith('/') && !path.split('/').some(part => ['.', '..', ''].includes(part));
-const sensitivePath = path => /(^|\/)(\.env[^/]*|id_(rsa|dsa|ecdsa|ed25519)|node_modules|dist|build|vendor|coverage|generated)(\/|$)|\.(pem|key|p12|pfx|crt|cer|sql|dump|db|sqlite|lock|min\.js|map)$/i.test(path);
-const secret = /-----BEGIN [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)-----|\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|\bgh[pousr]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b|\bAIza[A-Za-z0-9_-]{30,}\b|(?:password|secret|api[_-]?key|access[_-]?token)\s*[:=]\s*["']?[^\s"']{8,}/i;
+const sensitivePath = path => /(^|\/)(?:pnpm-lock\.yaml|package-lock\.json|npm-shrinkwrap\.json|bun\.lockb)(?:$)|(^|\/)(\.env[^/]*|id_(rsa|dsa|ecdsa|ed25519)|node_modules|dist|build|vendor|coverage|generated)(\/|$)|\.(pem|key|p12|pfx|crt|cer|sql|dump|db|sqlite|lock|min\.js|map)$/i.test(path);
+const secret = /-----BEGIN [A-Z ]*(?:PRIVATE KEY|CERTIFICATE)-----|\b(?:AKIA|ASIA)[A-Z0-9]{16}\b|\bgh[pousr]_[A-Za-z0-9]{20,}\b|\bgithub_pat_[A-Za-z0-9_]{20,}\b|\bAIza[A-Za-z0-9_-]{30,}\b|(?:password|secret|api[_-]?key|access[_-]?token)["\']?\s*[:=]\s*["']?[^\s"']{8,}/i;
 function parsePatch(patch) {
   const changed = { LEFT: [], RIGHT: [] };
   let left, right, leftRemaining = 0, rightRemaining = 0, inHunk = false;
@@ -48,7 +48,7 @@ function parsePatch(patch) {
   }
   return inHunk && !leftRemaining && !rightRemaining ? changed : null;
 }
-export function prepareInput(snapshot, files) {
+export function prepareInput(snapshot, files, ci = []) {
   const fail = (state, reason) => ({ decision: decision(state, reason), prompt: null, changedLines: {} });
   if (!Array.isArray(files) || files.historyComplete === false || files.complete === false) return fail('incomplete', 'Diff pagination incomplete');
   const lines = files.reduce((n, file) => n + file.additions + file.deletions, 0);
@@ -63,7 +63,12 @@ export function prepareInput(snapshot, files) {
     if (!changed || changed.LEFT.length !== file.deletions || changed.RIGHT.length !== file.additions || Object.hasOwn(changedLines, file.path)) return fail('incomplete', 'Patch counts inconsistent');
     changedLines[file.path] = changed;
   }
-  const prompt = JSON.stringify({ snapshot: Object.fromEntries(['repo', 'pr', 'head', 'base', 'runId', 'workflowSha'].map(key => [key, snapshot[key]])), files: files.map(({ path, previousPath, status, patch }) => ({ path, previousPath, status, patch })) });
+  if (!Array.isArray(ci) || ci.some(run => !Number.isSafeInteger(run?.id) || run.id < 1 ||
+    !(run.sha === snapshot.head || (validSha(snapshot.merge?.sha) && run.sha === snapshot.merge.sha && snapshot.merge.parents?.length === 2 && snapshot.merge.parents[0] === snapshot.base && snapshot.merge.parents[1] === snapshot.head)) ||
+    !['completed', 'queued', 'in_progress'].includes(run.status) ||
+    ![null, 'success', 'failure', 'cancelled', 'skipped', 'timed_out', 'neutral', 'action_required', 'stale'].includes(run.conclusion))) return fail('incomplete', 'CI metadata unavailable');
+  const publicCI = ci.map(({ id, sha, status, conclusion }) => ({ id, sha, status, conclusion }));
+  const prompt = JSON.stringify({ snapshot: Object.fromEntries(['repo', 'pr', 'head', 'base', 'runId', 'workflowSha'].map(key => [key, snapshot[key]])), ci: publicCI, ciCoverage: publicCI.length ? 'available' : 'unknown', files: files.map(({ path, previousPath, status, patch }) => ({ path, previousPath, status, patch })) });
   if (Buffer.byteLength(SYSTEM_INSTRUCTION, 'utf8') + Buffer.byteLength(prompt, 'utf8') > config.maxInputBytes) return fail('incomplete', 'Serialized model input exceeds byte limit');
   return { decision: ready(), prompt, changedLines };
 }
