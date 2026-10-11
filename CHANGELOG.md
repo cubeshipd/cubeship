@@ -6,6 +6,43 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.12.0-rc.8 — 2026-10-11
+
+*Prerelease.*
+
+Account for and clean the BuildKit cache, tune its garbage collection, and make the dashboard fit narrow phone screens.
+
+### Changed
+
+**Build cache storage and cleanup.** The server's storage page now counts
+reclaimable layers in BuildKit's own cache. Clean prunes those layers alongside
+unused Docker images, stopped containers, and Docker build cache. Layers held
+by a running build are retained; volumes and backups are excluded. The next
+build after cleaning starts cold and may take longer.
+
+**BuildKit garbage collection.** The builder now starts with a GC policy whose
+maximum-used target is the smaller of 20 GB and a quarter of the disk. It also
+sets a free-space target of 20% of the disk and reserves half of the maximum-used
+target. These are garbage-collection targets, not a hard quota or a guarantee
+of free space. If the disk size cannot be read, the policy uses 20 GB as its
+maximum-used target and omits the free-space target.
+
+### Fixed
+
+**Dashboard on phones.** Resource grids fit narrow screens, including 360px
+displays. The date-range picker stacks its presets above the calendar through
+760px and switches to its side-by-side layout at 761px. The mobile navigation
+drawer opens on-screen, the public demo badge wraps, and phone controls have
+larger touch targets.
+
+### Upgrade notes
+
+Select 0.12.0-rc.8 from an instance with prereleases enabled, or name this version
+when installing. No new database migrations are added after rc.7. The next
+build after upgrading may recreate the builder container to apply its GC
+configuration; its bind-mounted cache is preserved. This candidate does not
+move the stable latest release or image tags.
+
 ## 0.12.0-rc.7 — 2026-10-02
 
 *Prerelease.*
