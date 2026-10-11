@@ -106,6 +106,89 @@ function synthetic({tokens=12000,status=200,abort=false,result=goodResult(),fini
  }}; return transport;
 }
 const input=()=>({context:{...ctx,pr:1},snapshot:{...snapshot},...prepareInput(snapshot,[file()])});
+function syntheticEnvelope(change) {
+ const t=synthetic();const fetch=t.fetch;
+ t.fetch=async(u,o)=>{const response=await fetch(u,o);if(!u.endsWith(':generateContent'))return response;const data=await response.json();change(data);return reply(data);};
+ return t;
+}
+const signatureSentinel='OPAQUE_SIGNATURE_SENTINEL+/=';
+test('final-text signature is discarded before result, usage, requests and published output',async()=>{
+ const dir=await mkdtemp('/tmp/pilot-signature-');
+ const stdout=process.stdout.write,stderr=process.stderr.write;let capturedOut='',capturedErr='';
+ const t=syntheticEnvelope(data=>{data.candidates[0].content.parts[0].thoughtSignature=signatureSentinel;});
+ try {
+  process.stdout.write=chunk=>{capturedOut+=chunk;return true;};process.stderr.write=chunk=>{capturedErr+=chunk;return true;};
+  const signed=await runner.generateOnce(input(),t,'SYNTHETIC_KEY');
+  assert.equal(signed.state,'ready');assert.equal(t.generationCalls,1);
+  const plain=await runner.generateOnce(input(),synthetic(),'SYNTHETIC_KEY');
+  assert.deepEqual(signed,plain);assert.deepEqual(signed.result,goodResult());
+  assert.ok(!/thoughtSignature|OPAQUE_SIGNATURE_SENTINEL/.test(JSON.stringify(signed)));
+  assert.ok(!/thoughtSignature|OPAQUE_SIGNATURE_SENTINEL/.test(JSON.stringify(t.calls)));
+  assert.equal(runner.renderSummary(signed.result,snapshot),runner.renderSummary(plain.result,snapshot));
+  // Exercise the real artifact consumer and publication with the filtered
+  // synthetic generation. Live inference remains disabled in the config.
+  await writeFile(`${dir}/context.json`,JSON.stringify(input().context));
+  await writeFile(`${dir}/artifact.json`,JSON.stringify({...signed,origin:{...snapshot,dryRun:false}}));
+  assert.equal((await runner.runCLI(['summarize',`${dir}/context.json`,`${dir}/artifact.json`],{transport:t,env:{GITHUB_STEP_SUMMARY:`${dir}/summary.md`}})).state,'ready');
+  const {readdir}=await import('node:fs/promises');
+  assert.deepEqual((await readdir(dir)).sort(),['artifact.json','context.json','summary.md']);
+  for(const f of await readdir(dir)) assert.ok(!/thoughtSignature|OPAQUE_SIGNATURE_SENTINEL/.test(await readFile(`${dir}/${f}`,'utf8')));
+  assert.equal(await readFile(`${dir}/summary.md`,'utf8'),runner.renderSummary(plain.result,snapshot));
+ } finally {process.stdout.write=stdout;process.stderr.write=stderr;await rm(dir,{recursive:true,force:true});}
+ assert.ok(!/thoughtSignature|OPAQUE_SIGNATURE_SENTINEL/.test(capturedOut+capturedErr));
+});
+test('final-text signature requires a nonempty string bounded by UTF8 bytes',async()=>{
+ const cases=[
+  ['null',null,'blocked'],['boolean',true,'blocked'],['number',1,'blocked'],
+  ['object',{value:signatureSentinel},'blocked'],['array',[signatureSentinel],'blocked'],['empty','','blocked'],
+  ['opaque','!not-base64!','ready'],['ASCII limit','s'.repeat(16384),'ready'],['ASCII over limit','s'.repeat(16385),'blocked'],
+  ['UTF8 limit','é'.repeat(8192),'ready'],['UTF8 over limit','é'.repeat(8192)+'s','blocked'],
+ ];
+ const stdout=process.stdout.write,stderr=process.stderr.write;let captured='';
+ try {
+  process.stdout.write=process.stderr.write=chunk=>{captured+=chunk;return true;};
+  for(const [name,signature,state] of cases) {
+   const t=syntheticEnvelope(data=>{data.candidates[0].content.parts[0].thoughtSignature=signature;});
+   const out=await runner.generateOnce(input(),t,'SYNTHETIC_KEY');assert.equal(out.state,state,name);assert.equal(t.generationCalls,1,name);
+   if(state==='blocked')assert.deepEqual(out,{state:'blocked',reason:'VALIDATION_FAILED'},name);
+   assert.ok(!/thoughtSignature|OPAQUE_SIGNATURE_SENTINEL/.test(JSON.stringify(out)),name);
+   assert.ok(!/thoughtSignature|OPAQUE_SIGNATURE_SENTINEL/.test(JSON.stringify(t.calls)),name);
+  }
+ } finally {process.stdout.write=stdout;process.stderr.write=stderr;}
+ assert.ok(!/thoughtSignature|OPAQUE_SIGNATURE_SENTINEL/.test(captured));
+ for(const [,signature] of cases)if(typeof signature==='string'&&signature)assert.ok(!captured.includes(signature));
+});
+test('signed final part still refuses thoughts, tools, unknown fields and additional parts',async()=>{
+ const cases=[
+  ...['thought','functionCall','functionResponse','executableCode','codeExecutionResult','toolCalls','tools','inlineData','extra'].map(key=>[key,data=>{data.candidates[0].content.parts[0][key]=key==='thought'?true:{name:'execute'};}]),
+  ['false thought',data=>{data.candidates[0].content.parts[0].thought=false;}],
+  ['second part',data=>{data.candidates[0].content.parts.push({text:'extra'});}],
+  ['second candidate',data=>{data.candidates.push(data.candidates[0]);}],
+  ['truncation',data=>{data.candidates[0].finishReason='MAX_TOKENS';}],
+  ['non-model role',data=>{data.candidates[0].content.role='user';}],
+  ['nested envelope tool',data=>{data.usageMetadata.extra={functionCall:{name:'execute'}};}],
+ ];
+ for(const [name,change] of cases) {
+  const t=syntheticEnvelope(data=>{data.candidates[0].content.parts[0].thoughtSignature=signatureSentinel;change(data);});
+  assert.deepEqual(await runner.generateOnce(input(),t,'SYNTHETIC_KEY'),{state:'blocked',reason:'VALIDATION_FAILED'},name);
+ }
+});
+test('signature anywhere outside the sole final text part remains refused',async()=>{
+ const locations=[
+  ['root',data=>data],['candidate',data=>data.candidates[0]],['content',data=>data.candidates[0].content],
+  ['usage',data=>data.usageMetadata],['nested metadata',data=>{data.extra=[{nested:{}}];return data.extra[0].nested;}],
+ ];
+ for(const [name,location] of locations) {
+  const t=syntheticEnvelope(data=>{data.candidates[0].content.parts[0].thoughtSignature=signatureSentinel;location(data).thoughtSignature=signatureSentinel;});
+  assert.deepEqual(await runner.generateOnce(input(),t,'SYNTHETIC_KEY'),{state:'blocked',reason:'VALIDATION_FAILED'},name);
+ }
+});
+test('final part text must be a string even when it contains a valid diagnostic object',async()=>{
+ for(const text of [goodResult(),[goodResult()],null,true,1])for(const signed of [false,true]) {
+  const t=syntheticEnvelope(data=>{const part=data.candidates[0].content.parts[0];part.text=text;if(signed)part.thoughtSignature=signatureSentinel;});
+  assert.deepEqual(await runner.generateOnce(input(),t,'SYNTHETIC_KEY'),{state:'blocked',reason:'VALIDATION_FAILED'});
+ }
+});
 test('github_retries caps attempts and honors Retry-After without echoing bodies',async()=>{
  assert.equal(typeof runner.githubRead,'function'); let n=0; const sleeps=[];
  const t={fetch:async()=>{n++;return reply({message:'SECRET_SENTINEL'},503,{'retry-after':'2'});},sleep:async n=>sleeps.push(n)};

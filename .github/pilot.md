@@ -76,6 +76,12 @@ otherwise `SUMMARY_LIMIT` refuses the result before artifact publication. Raw
 source excerpts, credentials, links supplied by the model, tool output and malformed results are rejected conservatively. Filtering can refuse
 useful content and is not a guarantee against every obfuscated disclosure.
 
+The sole final text part may carry an optional `thoughtSignature`, accepted only
+as a nonempty opaque string of at most 16 KiB in UTF-8. It is discarded in memory
+before envelope validation and never decoded, reused in requests, logged, or
+included in results, usage, artifacts or summaries. Signatures elsewhere,
+thought fields, tools, unknown part fields and nonstring text remain refused.
+
 The repository concurrency group allows one running pilot with
 `cancel-in-progress: false`. GitHub may replace an older pending run; this is
 not a durable queue. Jobs have **3/5/2-minute** collection/inference/summary

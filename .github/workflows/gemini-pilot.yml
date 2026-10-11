@@ -116,7 +116,7 @@ jobs:
           done
           sha256sum -c - <<'HASHES' > /dev/null
           ad73ede8858adb35bfae61b2ee93d3deb2aa0d17c4ef9141d0c8ef1f3f8c3426  pilot-core.mjs
-          11f9e84a8e8b316a0433be4b102e3fdb3b9901acbe4daef5873d1ab83a328e31  pilot-run.mjs
+          9d5b4c77f14dc45f5ed1efaa4c0377f82c0018e614e9799e64339fda18467c59  pilot-run.mjs
           87d680c31bb5da763a15d93c0b2ec60e10b514b3a5168174f5f0c83b02c6d9b1  pilot-config.json
           HASHES
           node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"

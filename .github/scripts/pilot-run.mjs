@@ -184,11 +184,18 @@ export async function generateOnce(input, transport = createTransport(), key) {
     // This call is deliberately outside every retry loop, including transport errors.
     const response = await request(`${endpoint}:generateContent`, { ...options, body: JSON.stringify(body), signal: AbortSignal.timeout(config.generationTimeoutSeconds * 1000) }, transport, 65536);
     if (!response.data) return { state: 'blocked', reason: 'GENERATION_FAILED' };
-    if (hasToolContent(response.data)) return blocked();
     const candidates = response.data.candidates;
     if (!Array.isArray(candidates) || candidates.length !== 1 || candidates[0].finishReason !== 'STOP' || candidates[0].content?.role && candidates[0].content.role !== 'model') return blocked();
     const parts = candidates[0].content?.parts;
-    if (!Array.isArray(parts) || parts.length !== 1 || !exact(parts[0], ['text'])) return blocked();
+    if (!Array.isArray(parts) || parts.length !== 1 || typeof parts[0]?.text !== 'string' ||
+        (!exact(parts[0], ['text']) && !exact(parts[0], ['text', 'thoughtSignature']))) return blocked();
+    if (Object.hasOwn(parts[0], 'thoughtSignature')) {
+      const signature = parts[0].thoughtSignature;
+      if (typeof signature !== 'string' || signature.length === 0 || Buffer.byteLength(signature, 'utf8') > 16384) return blocked();
+      // Optional final-text metadata is opaque and never leaves this envelope.
+      delete parts[0].thoughtSignature;
+    }
+    if (hasToolContent(response.data)) return blocked();
     const decision = validateResult(parts[0].text, prepared.changedLines, sourceSnapshot(current));
     if (decision.state !== 'ready') return decision;
     return { ...decision, usage: usageSummary(response.data.usageMetadata, count.data.totalTokens, (transport.now ?? Date.now)()) };
