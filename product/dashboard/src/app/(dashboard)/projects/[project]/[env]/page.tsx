@@ -155,7 +155,7 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
           aria-label="New environment"
           title="New environment"
           onClick={() => setAdding(true)}
-          className="flex shrink-0 items-center px-3 text-subtle-foreground transition-colors hover:bg-secondary hover:text-foreground"
+          className="flex shrink-0 items-center justify-center px-3 text-subtle-foreground transition-colors hover:bg-secondary hover:text-foreground max-[760px]:min-w-11"
         >
           <PlusIcon className="size-3.5" />
         </button>
@@ -165,7 +165,7 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
             href={`/projects/${project}/${env}/settings`}
             aria-label={`Settings for ${env}`}
             title={`Settings for ${env}`}
-            className="ml-auto flex shrink-0 items-center px-3 text-subtle-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            className="ml-auto flex shrink-0 items-center justify-center px-3 text-subtle-foreground transition-colors hover:bg-secondary hover:text-foreground max-[760px]:min-w-11"
           >
             <SlidersHorizontalIcon className="size-3.5" />
           </Link>

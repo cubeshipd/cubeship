@@ -67,7 +67,9 @@ export function ResourceGrid<T>({
       ) : (
         // Three columns only from xl: below it a card is too narrow for a
         // name beside its mark and a status badge.
-        <div className="dashboard-resource-grid grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        // grid-cols-1 rather than the implicit auto column: a long address in a
+        // card would otherwise widen the whole page past the screen.
+        <div className="dashboard-resource-grid grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {matched == null
             ? LOADING.map((k) => <LoadingCard key={k} />)
             : matched.map((row) => <div key={rowKey(row)}>{card(row)}</div>)}
