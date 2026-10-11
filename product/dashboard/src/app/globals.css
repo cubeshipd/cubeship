@@ -1062,6 +1062,16 @@
 .dashboard-header-actions [data-slot="button"] {
   min-height: 34px;
 }
+/* These rules are tighter than the touch-target rule in dashboard.css, so
+   the phone sizes are restated here, after them. */
+@media (max-width: 760px) {
+  [data-slot="dialog-footer"] [data-slot="button"],
+  .dashboard-header-actions [data-slot="button"],
+  [data-slot="dropdown-menu-item"],
+  [data-slot="select-item"] {
+    min-height: 44px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   [data-slot="dialog-content"],
   [data-slot="dialog-overlay"] {

@@ -537,11 +537,11 @@
   font-size: 12px;
   line-height: 1.7;
 }
-.auth-main [data-slot="input"] {
-  min-height: 42px;
-}
-.auth-main form > [data-slot="button"] {
-  min-height: 42px;
+@media (max-width: 760px) {
+  .auth-main [data-slot="input"],
+  .auth-main form > [data-slot="button"] {
+    min-height: 44px;
+  }
 }
 
 @media (max-width: 1200px) {
@@ -596,8 +596,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
     flex-shrink: 0;
     color: var(--muted-foreground);
   }
@@ -658,11 +658,78 @@
     padding: 40px 24px;
   }
 }
+/* Touch targets. 44px is the least a fingertip lands on without hitting the
+   neighbour, so on a phone every control grows to it; the desktop keeps its
+   denser sizes. The rail heights are what the sticky tab strip hangs from, so
+   they follow the 44px controls inside the rail. */
+@media (max-width: 760px) {
+  :root {
+    --dashboard-rail-height: 69px;
+  }
+  .dashboard-header:has(.dashboard-header-actions:not(:empty)),
+  .dashboard-main:has(.dashboard-header-actions:not(:empty)) {
+    --dashboard-rail-height: 125px;
+  }
+  .dashboard-subrail {
+    height: 46px;
+  }
+  /* Controls are matched by what they are rather than by component, because
+     half of them are a plain <button> and a link wearing the button classes. */
+  :is(
+    button:not([data-slot="checkbox"], [data-slot="switch"]),
+    [class~="group/button"],
+    [role="tab"],
+    [role="option"],
+    [role^="menuitem"],
+    select,
+    summary,
+    input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="file"]),
+    .dashboard-nav-link
+  ) {
+    min-height: 44px;
+  }
+  :is(button:not([data-slot="checkbox"], [data-slot="switch"]), [class~="group/button"]) {
+    min-width: 44px;
+  }
+  /* The switch and the checkbox stay small to look at; the area that answers a
+     touch is what grows. */
+  :is([data-slot="checkbox"], [data-slot="switch"])::after {
+    inset: -14px;
+  }
+  /* The switch clips its own overflow (see globals.css), which would clip
+     that area too. */
+  [role="switch"][data-slot="switch"] {
+    overflow: visible;
+  }
+  /* Crumbs and sortable column heads are text: they get the height of the row
+     they sit in rather than the height of their letters. */
+  .dashboard-breadcrumb :is(a, button),
+  [data-slot="table-head"] button {
+    display: inline-flex;
+    align-items: center;
+    min-width: 44px;
+  }
+  .dashboard-breadcrumb a {
+    min-height: 44px;
+  }
+  /* A link inside a sentence cannot be taller than the line, so the area that
+     answers the touch reaches past it instead. */
+  a:is([class~="underline"], [class~="hover:underline"]) {
+    position: relative;
+  }
+  a:is([class~="underline"], [class~="hover:underline"])::after {
+    content: "";
+    position: absolute;
+    inset: -14px -4px;
+  }
+}
 [data-slot="dialog-content"].dashboard-mobile-navigation {
   top: 0;
   left: 0;
-  translate: 0 0;
-  transform: none;
+  /* Alone on purpose: next to `transform: none` the CSS optimiser drops this
+     line, and the dialog's own -50% shift leaves the drawer centred on the
+     top-left corner of the screen. */
+  translate: none;
   width: min(320px, calc(100% - 40px));
   max-width: none;
   height: 100dvh;
@@ -961,5 +1028,8 @@
   .public-demo-badge {
     font-size: 9px;
     gap: 8px;
+  }
+  .public-demo-badge span {
+    white-space: normal;
   }
 }
