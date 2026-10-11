@@ -194,6 +194,7 @@ test('CLI dry collect infer summarize publishes metadata without secrets, prompt
   for(const path of ['snapshot.json','artifact.json','summary.md']) {const data=await readFile(`${dir}/${path}`,'utf8');assert.ok(!/SECRET_SENTINEL|SYNTHETIC_KEY|patch|permission|systemInstruction/.test(data));assert.ok(!data.includes(input().prompt));}
   assert.ok((await readFile(`${dir}/summary.md`,'utf8')).includes('Dry run'));
   assert.equal(t.generationCalls,0);assert.equal(t.calls.filter(c=>c.url.includes('googleapis')).length,0);
+  assert.equal(t.calls.filter(c => (c.options.method ?? 'GET') !== 'GET').length, 0);
   for(const c of t.calls) assert.equal(Boolean(c.options.headers.Authorization),c.url.includes('/permission'));
  } finally {process.stdout.write=stdout;process.stderr.write=stderr;await rm(dir,{recursive:true,force:true});}
  assert.ok(!captured.includes('SECRET_SENTINEL'));assert.ok(!captured.includes(input().prompt));
@@ -283,4 +284,119 @@ test('CLI collect authorizes canonical maintain/admin roles and denies write or 
    assert.equal(out.state,state);if(state==='ready')await access(target);else await assert.rejects(access(target));
   }
  }finally{await rm(dir,{recursive:true,force:true});}
+});
+
+// A3 contracts exercise the literal workflow shell, not a second bootstrap implementation.
+import { readFileSync } from 'node:fs';
+import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises';
+import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+const workflowPath = new URL('../workflows/gemini-pilot.yml', import.meta.url);
+const workflow = () => readFileSync(workflowPath, 'utf8');
+function stepBody(yaml, name) {
+ const section=yaml.split(`      - name: ${name}\n`)[1];
+ assert.ok(section, `missing step ${name}`);
+ const lines=section.split('\n');const start=lines.indexOf('        run: |');assert.ok(start>=0);
+ const body=[];for(const line of lines.slice(start+1)){if(line && !line.startsWith('          '))break;body.push(line.slice(10));}return body.join('\n');
+}
+test('workflow_contract isolates permissions, dispatch, budgets, credentials and filtered artifacts',()=>{
+ const y=workflow();
+ assert.match(y,/on:\n  workflow_dispatch:\n/);assert.doesNotMatch(y,/pull_request_target:|pull_request:|push:|schedule:|workflow_call:/);
+ assert.deepEqual([...y.matchAll(/^      (\w+):$/gm)].map(m=>m[1]),['pr','sha','dry_run']);
+ assert.match(y,/dry_run:\n        description:.*\n        type: boolean\n        default: true\n        required: true/);
+ assert.match(y,/group: gemini-pilot-\$\{\{ github.repository \}\}\n  cancel-in-progress: false/);
+ assert.deepEqual([...y.matchAll(/timeout-minutes: (\d+)/g)].map(m=>Number(m[1])),[3,5,2]);
+ assert.doesNotMatch(y,/\bwrite\b|persist-credentials: true|run-id:|github-token:|repository: \$\{\{ inputs/);
+ for(const pin of y.matchAll(/uses: ([^\s]+)/g))assert.match(pin[1],/@[a-f0-9]{40}$/);
+ const infer=y.split('\n  infer:\n')[1].split('\n  summarize:\n')[0];
+ assert.match(infer,/permissions: \{\}/);assert.doesNotMatch(infer,/checkout|github.token|GH_TOKEN|GITHUB_TOKEN|Authorization|\bgit\b/);
+ assert.match(infer,/SOURCE_SHA: \$\{\{ github.workflow_sha \}\}/);assert.match(infer,/token: ''/);
+ assert.equal((y.match(/secrets\.GEMINI_API_KEY/g)||[]).length,1);
+ assert.match(infer,/name: Live inference\n        if: \$\{\{ !inputs.dry_run && steps.bootstrap.outputs.live_enabled == 'true' \}\}/);
+ assert.match(y,/name: gemini-pilot-result\n          path: \$\{\{ runner.temp \}\}\/pilot-artifact\/artifact.json\n          retention-days: 1\n          if-no-files-found: error/);
+ assert.match(y,/name: gemini-pilot-result\n          path: \$\{\{ runner.temp \}\}\/pilot-artifact/);
+ const summarize=y.split('\n  summarize:\n')[1];
+ assert.match(summarize,/name: Prepare fresh artifact directory\n        run: mkdir -m 700 \"\$RUNNER_TEMP\/pilot-artifact\"/);
+ assert.match(y,/readArtifactDirectory/);assert.match(y,/github.ref == format\('refs\/heads\/\{0\}', github.event.repository.default_branch\)/);
+ const ci=readFileSync(new URL('../workflows/ci.yml',import.meta.url),'utf8');
+ assert.match(ci,/name: Offline pilot and workflow tests\n        run: node --test .github\/scripts\/\*.test.mjs/);
+ assert.doesNotMatch(ci,/GEMINI_API_KEY|generativelanguage/);
+});
+test('anonymous_scripts execute only after all three trusted literal hashes pass',async()=>{
+ const y=workflow(), body=stepBody(y,'Bootstrap trusted inference scripts');
+ assert.match(body,/curl --disable --fail --silent --show-error --proto '=https' --max-time 20/);
+ assert.doesNotMatch(body,/--location|--config|--header|Authorization|GITHUB_TOKEN|GH_TOKEN|github.token/);
+ const files=['pilot-core.mjs','pilot-run.mjs','pilot-config.json'];
+ for(const f of files){const hash=createHash('sha256').update(readFileSync(new URL(f,import.meta.url))).digest('hex');assert.ok(body.includes(`${hash}  ${f}`),`literal hash ${f}`);}
+ const dir=await mkdtemp('/tmp/pilot-bootstrap-');
+ try {
+  await mkdir(`${dir}/bin`);await mkdir(`${dir}/fixture`);
+  for(const f of files)await writeFile(`${dir}/fixture/${f}`,readFileSync(new URL(f,import.meta.url)));
+  await writeFile(`${dir}/bin/curl`, `#!/bin/sh\nset -eu\nfor arg do case "$arg" in https://raw.githubusercontent.com/cubeshipd/cubeship/${'c'.repeat(40)}/.github/scripts/*) url="$arg";; esac; done\nfile="\${url##*/}"\nif [ "$file" = "$FAIL_FILE" ]; then exit 22; fi\nif [ "$file" = "$CORRUPT_FILE" ]; then printf corrupt > "$file"; else cp "$FIXTURE/$file" "$file"; fi\n`,{mode:0o700});
+  // A fake node records any execution, including configuration import. Failed
+  // download/digest checks must not reach this boundary at all.
+  await writeFile(`${dir}/bin/node`,'#!/bin/sh\nprintf executed >> "$EXECUTED"\n',{mode:0o700});
+  for(const [index,change] of [{},...files.map(f=>({FAIL_FILE:f})),...files.map(f=>({CORRUPT_FILE:f})),{SOURCE_SHA:'not-a-sha'},{SOURCE_SHA:sha},{PILOT_REPOSITORY:'evil/repo'}].entries()){
+   const temp=`${dir}/run-${index}`;await mkdir(temp);
+   const env={PATH:`${dir}/bin:${process.env.PATH}`,RUNNER_TEMP:temp,GITHUB_OUTPUT:`${temp}/output`,PILOT_REPOSITORY:ctx.repo,SOURCE_SHA:'c'.repeat(40),FIXTURE:`${dir}/fixture`,FAIL_FILE:'',CORRUPT_FILE:'',EXECUTED:`${temp}/executed`,...change};
+   const out=spawnSync('bash',['-e','-o','pipefail','-c',body],{env,encoding:'utf8'});
+   if(index===0){assert.equal(out.status,0,out.stderr);assert.equal(await readFile(env.EXECUTED,'utf8'),'executed');}
+   else {assert.notEqual(out.status,0,JSON.stringify(change));await assert.rejects(readFile(env.EXECUTED));}
+  }
+ } finally {await rm(dir,{recursive:true,force:true});}
+});
+test('artifact_origin only accepts a bounded regular fixed file and rejects extras before publication',async()=>{
+ assert.equal(typeof runner.readArtifactDirectory,'function');
+ const dir=await mkdtemp('/tmp/pilot-artifact-');
+ const artifact={state:'ready',reason:'DRY_RUN_VALIDATED',origin:{...snapshot,dryRun:true}};
+ try {
+  await writeFile(`${dir}/artifact.json`,JSON.stringify(artifact));assert.deepEqual(await runner.readArtifactDirectory(dir),artifact);
+  const live={state:'ready',result:goodResult(),usage:{measurement:'uncertain'},origin:{...snapshot,dryRun:false}};
+  await writeFile(`${dir}/artifact.json`,JSON.stringify(live));assert.deepEqual(await runner.readArtifactDirectory(dir),live);
+  await writeFile(`${dir}/artifact.json`,JSON.stringify(artifact));
+  await writeFile(`${dir}/extra.json`,'{}');await assert.rejects(runner.readArtifactDirectory(dir));await rm(`${dir}/extra.json`);
+  await rm(`${dir}/artifact.json`);await writeFile(`${dir}/arbitrary.json`,JSON.stringify(artifact));await assert.rejects(runner.readArtifactDirectory(dir));await rm(`${dir}/arbitrary.json`);
+  await symlink('/dev/null',`${dir}/artifact.json`);await assert.rejects(runner.readArtifactDirectory(dir));await rm(`${dir}/artifact.json`);
+  await writeFile(`${dir}/artifact.json`,' '.repeat(16385));await assert.rejects(runner.readArtifactDirectory(dir));
+  for(const bad of [{...artifact,prompt:'raw'},{...artifact,origin:{...artifact.origin,extra:'raw'}},{...artifact,usage:{measurement:'uncertain',raw:'raw'}}]){await writeFile(`${dir}/artifact.json`,JSON.stringify(bad));await assert.rejects(runner.readArtifactDirectory(dir));}
+ } finally {await rm(dir,{recursive:true,force:true});}
+});
+test('artifact_origin refuses foreign run, SHA, mode and workflow source through actual summarize',async()=>{
+ const dir=await mkdtemp('/tmp/pilot-origin-');
+ try {
+  await writeFile(`${dir}/context.json`,JSON.stringify({...input().context,dryRun:true}));
+  for(const change of [{runId:2},{workflowSha:otherSha},{head:otherSha},{base:sha},{repo:'evil/repo'},{pr:2},{dryRun:false}]){
+   const t=synthetic();const fetch=t.fetch;t.fetch=async(u,o)=>new URL(u).pathname.endsWith('/actions/runs/1')?reply(runMetadata(true)):fetch(u,o);
+   await writeFile(`${dir}/artifact.json`,JSON.stringify({state:'ready',reason:'DRY_RUN_VALIDATED',origin:{...snapshot,dryRun:true,...change}}));
+   const out=await runner.runCLI(['summarize',`${dir}/context.json`,`${dir}/artifact.json`],{transport:t,env:{GITHUB_STEP_SUMMARY:`${dir}/summary`}});
+   assert.notEqual(out.state,'ready');await assert.rejects(readFile(`${dir}/summary`));assert.equal(t.calls.filter(c=>(c.options.method??'GET')!=='GET').length,0);
+  }
+ } finally {await rm(dir,{recursive:true,force:true});}
+});
+test('live_disabled refuses synthetic key before any network or key access',async()=>{
+ const dir=await mkdtemp('/tmp/pilot-disabled-');
+ try {
+  await writeFile(`${dir}/context.json`,JSON.stringify({...input().context,dryRun:false}));await writeFile(`${dir}/snapshot.json`,JSON.stringify({snapshot,decision:{state:'ready'},dryRun:false}));
+  for(const env of [{GEMINI_API_KEY:'SYNTHETIC_KEY'},{get GEMINI_API_KEY(){throw Error('KEY_READ_FORBIDDEN');}}]){
+   const t=synthetic();const out=await runner.runCLI(['infer',`${dir}/context.json`,`${dir}/snapshot.json`,`${dir}/artifact.json`],{transport:t,env});
+   assert.deepEqual(out,{state:'blocked',reason:'LIVE_DISABLED'});assert.equal(t.calls.length,0);await assert.rejects(readFile(`${dir}/artifact.json`));
+  }
+ } finally {await rm(dir,{recursive:true,force:true});}
+});
+test('dispatch context parses untrusted inputs as data and preserves separate source SHA and explicit mode',async()=>{
+ const y=workflow();const body=stepBody(y,'Build explicit dispatch context');
+ assert.equal((y.match(/name: Build explicit dispatch context/g)||[]).length,3);
+ for(const job of ['collect','infer','summarize']) assert.equal(stepBody(y.split(`\n  ${job}:\n`)[1],'Build explicit dispatch context'),body);
+ assert.doesNotMatch(body,/\$\{\{/);
+ const dir=await mkdtemp('/tmp/pilot-context-');
+ try {
+  for(const [index,change] of [{},{PILOT_DRY_RUN:'false'},{PILOT_DRY_RUN:''},{PILOT_DRY_RUN:'TRUE'},{PILOT_PR:'1; touch sentinel'},{PILOT_PR:'1e2'},{PILOT_SHA:'$(touch sentinel)'}].entries()){
+   const temp=`${dir}/run-${index}`;await mkdir(temp);
+   const env={PATH:process.env.PATH,RUNNER_TEMP:temp,PILOT_REPOSITORY:ctx.repo,PILOT_PR:'1',PILOT_SHA:sha,PILOT_DRY_RUN:'true',PILOT_REF:ctx.ref,PILOT_DEFAULT_BRANCH:'master',PILOT_ACTOR:'a',PILOT_TRIGGERING_ACTOR:'b',PILOT_RUN_ID:'1',PILOT_RUN_ATTEMPT:'1',PILOT_WORKFLOW_SHA:otherSha,...change};
+   const out=spawnSync('bash',['-e','-o','pipefail','-c',body],{env,cwd:temp,encoding:'utf8'});
+   if(index<2){assert.equal(out.status,0,out.stderr);const c=JSON.parse(await readFile(`${temp}/pilot-context.json`));assert.equal(c.dryRun,index===0);assert.equal(c.sha,sha);assert.equal(c.workflowSha,otherSha);assert.equal(c.pr,1);}
+   else {assert.notEqual(out.status,0);await assert.rejects(readFile(`${temp}/pilot-context.json`));}
+   await assert.rejects(readFile(`${temp}/sentinel`));
+  }
+ } finally {await rm(dir,{recursive:true,force:true});}
 });

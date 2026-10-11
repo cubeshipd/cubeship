@@ -1,4 +1,4 @@
-import { readFile, writeFile, appendFile, rename, rm } from 'node:fs/promises';
+import { readFile, writeFile, appendFile, rename, rm, readdir, lstat } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { config, SYSTEM_INSTRUCTION, authorize, checkHistory, prepareInput, sameSnapshot } from './pilot-core.mjs';
 
@@ -204,6 +204,34 @@ async function atomicJSON(path, value) {
   const temporary = `${path}.tmp`;
   try { await writeFile(temporary, JSON.stringify(value), { mode: 0o600, flag: 'wx' }); await rename(temporary, path); }
   finally { await rm(temporary, { force: true }); }
+}
+// Native artifact downloads go into one fresh fixed directory. Refuse a
+// different filename, extra entries, links, oversized data or unfiltered fields
+// before the summary command can consume anything from it.
+export async function readArtifactDirectory(directory) {
+  const root = await lstat(directory);
+  if (!root.isDirectory() || root.isSymbolicLink()) throw fixedError('ARTIFACT_REFUSED');
+  const entries = await readdir(directory);
+  if (entries.length !== 1 || entries[0] !== 'artifact.json') throw fixedError('ARTIFACT_REFUSED');
+  const path = `${directory}/artifact.json`;
+  const stat = await lstat(path);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > 16384) throw fixedError('ARTIFACT_REFUSED');
+  const artifact = JSON.parse(await readFile(path, 'utf8'));
+  if (!object(artifact) || artifact.state !== 'ready' ||
+      Object.keys(artifact).some(k => !['state', 'reason', 'result', 'usage', 'origin'].includes(k)) ||
+      !exact(artifact.origin, [...ids, 'dryRun']) || typeof artifact.origin.dryRun !== 'boolean') throw fixedError('ARTIFACT_REFUSED');
+  if (artifact.origin.dryRun) {
+    if (!exact(artifact, ['state', 'reason', 'origin']) || artifact.reason !== 'DRY_RUN_VALIDATED') throw fixedError('ARTIFACT_REFUSED');
+  } else {
+    if (!exact(artifact, ['state', 'result', 'usage', 'origin']) || !exact(artifact.result, ['snapshot', 'coverage', 'summary', 'findings'])) throw fixedError('ARTIFACT_REFUSED');
+    const usage = artifact.usage;
+    const counts = ['promptTokenCount', 'candidatesTokenCount', 'thoughtsTokenCount', 'totalTokenCount'];
+    if (!object(usage) || !['measured', 'uncertain'].includes(usage.measurement) ||
+        Object.keys(usage).some(k => ![...counts, 'measurement', 'estimatedCostUSD'].includes(k)) ||
+        counts.some(k => Object.hasOwn(usage, k) && !integer(usage[k])) ||
+        (Object.hasOwn(usage, 'estimatedCostUSD') && (!Number.isFinite(usage.estimatedCostUSD) || usage.estimatedCostUSD < 0))) throw fixedError('ARTIFACT_REFUSED');
+  }
+  return artifact;
 }
 export async function runCLI(argv, { env = process.env, transport = createTransport() } = {}) {
   const [command, contextPath, inputPath, outputPath] = argv;
