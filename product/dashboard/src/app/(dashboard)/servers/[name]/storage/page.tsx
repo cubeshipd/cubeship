@@ -61,11 +61,11 @@ export default function ServerStoragePage({ params }: PageProps<"/servers/[name]
       </RailPortal>
       <ErrorAlert error={error} />
       {done !== null && (
-        <Notice>Docker reclaimed {bytes(done)}. Refresh this page to read the new usage.</Notice>
+        <Notice>Reclaimed {bytes(done)}. Refresh this page to read the new usage.</Notice>
       )}
       <Notice tone="warning">
-        This cleans Docker's regenerable data only. Volumes are listed in usage but are never
-        removed by this action.
+        This cleans regenerable data only: Docker's and the image builder's. Volumes are listed in
+        usage but are never removed by this action.
       </Notice>
       {!storage && !error && <StorageSkeleton />}
       {storage && (
@@ -101,7 +101,8 @@ export default function ServerStoragePage({ params }: PageProps<"/servers/[name]
               <div>
                 <div className="font-medium">Clean regenerable Docker data</div>
                 <div className="mt-1 text-xs text-muted-foreground">
-                  Images, stopped containers and build cache.
+                  Images, stopped containers and build cache, including the image builder's layers.
+                  The next build starts cold.
                 </div>
               </div>
               <ActionButton variant="destructive" busy={busy} onClick={() => setConfirming(true)}>
@@ -116,7 +117,7 @@ export default function ServerStoragePage({ params }: PageProps<"/servers/[name]
             title="Clean Docker storage?"
             confirmWord="CLEAN"
             confirmLabel="Clean storage"
-            description="This removes unused images, stopped containers and build cache on this server. Volumes are never removed."
+            description="This removes unused images, stopped containers and build cache, including the image builder's layers, on this server. Volumes and backups are never removed."
             onConfirm={prune}
           />
         </>

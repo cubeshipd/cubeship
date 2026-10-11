@@ -13,6 +13,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"cubeship/internal/platform/config"
 	"cubeship/internal/platform/dockerx"
@@ -422,9 +423,9 @@ func BuildKitContainerOpts(cfg *config.Config) dockerx.ContainerOpts {
 	// is root too; on the host (`make dev`, CI) it is whoever ran it, and
 	// a socket it cannot open is a builder that is never available.
 	// buildkitd's --group hands the socket to that user's group instead.
-	var cmd []string
+	cmd := []string{"--oci-worker-gc-keepstorage=" + buildKitGCKeepStorage(diskTotal(cfg.DataDir+"/buildkit"))}
 	if !cfg.InContainer {
-		cmd = []string{"--group", strconv.Itoa(os.Getgid())}
+		cmd = append(cmd, "--group", strconv.Itoa(os.Getgid()))
 	}
 	return dockerx.ContainerOpts{
 		Name:       BuildKitContainerName,
@@ -437,6 +438,43 @@ func BuildKitContainerOpts(cfg *config.Config) dockerx.ContainerOpts {
 		},
 		Network: dockerx.ManagementNetwork,
 	}
+}
+
+// buildKitGCKeepStorage is the layer cache's size limit, in the
+// "Reserved,Free,Maximum" megabytes buildkitd's own flag reads.
+//
+// buildkitd collects its cache by default, but against a ceiling of 80%
+// of the disk (up to 100 GB): on a 150 GB box almost nothing was removed
+// before the disk was nearly full, and every deploy added a build's worth
+// of layers. The ceiling here is 20 GB, or a quarter of the disk when that
+// is less, so the cache stays warm for the next few deploys and stops
+// there. Collection keeps it under that ceiling, and when free
+// space falls under 20% of the disk it may go down to half of it, never lower; that is buildkitd's own floor and
+// which one explicit value would otherwise drop.
+//
+// A total of zero is a disk that could not be read: the fixed ceiling
+// stays and the free-space floor is left out.
+func buildKitGCKeepStorage(total int64) string {
+	const mb = int64(1e6)
+	maxUsed := 20 * 1000 * mb
+	if total > 0 && total/4 < maxUsed {
+		maxUsed = total / 4
+	}
+	var free int64
+	if total > 0 {
+		free = total / 5
+	}
+	return fmt.Sprintf("%d,%d,%d", maxUsed/2/mb, free/mb, maxUsed/mb)
+}
+
+// diskTotal is the size of the filesystem path is on, or zero when it
+// cannot be read (a directory that does not exist yet, as in a test).
+func diskTotal(path string) int64 {
+	var st syscall.Statfs_t
+	if err := syscall.Statfs(path, &st); err != nil {
+		return 0
+	}
+	return int64(st.Blocks) * int64(st.Bsize)
 }
 
 // The dashboard, which runs as a Next server in its own container.

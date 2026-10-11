@@ -224,11 +224,28 @@ with different environments are two different builds.
 Mount caches are keyed per app (`cache-key`), because two apps sharing
 one would fight over it.
 
-**Nothing prunes the build cache.** It lives in the data directory and
-grows with every build. The registry's own disk has a pass somebody can
-press — see "Deleting" — and this has nothing at all:
-`docker exec cubeship-buildkit buildctl prune` is the manual answer for
-now.
+**The build cache has a ceiling, and the Clean button reaches it.** The
+layers live in buildkitd's own store (`<data dir>/buildkit`), which the
+Engine does not report: `docker system df` shows build cache as zero
+while that directory holds tens of gigabytes. buildkitd collects it by
+default, but against 80% of the disk (up to 100 GB), so on a 150 GB box
+an instance with a 13-minute build gained about 3.5 GB per deploy and
+nothing was removed before the disk was nearly full (issue #40).
+
+Two things bound it now. The builder container starts with
+`--oci-worker-gc-keepstorage=Reserved,Free,Max`: 20 GB at most (a quarter
+of the disk when that is less), kept under that ceiling, and when free space drops under 20% of the disk it may go down to half of it, never lower; collection
+also runs then. And the storage
+screen's *Clean* asks buildkitd to prune whatever no running build holds
+(`PruneAll`: the largest records are the ones it marks internal), and
+*Build cache* counts those bytes. Neither starts the builder; the first
+build after a clean is cold, 13 to 14 minutes rather than 3. Changing the
+limit changes the container's configuration, so the first build after an
+upgrade replaces it; the cache is a bind mount and stays.
+
+What the ceiling does not cover: the image the Engine holds for each
+build (below) and the instance's own registry, which has its own pass —
+see "Deleting".
 
 **And a built image is on the disk twice.** The builder keeps its layers
 in that cache, base image included, and the `docker` exporter streams the

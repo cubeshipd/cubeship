@@ -53,6 +53,10 @@ type Service struct {
 	// machine knows which images it should authenticate as itself for.
 	registry func(ctx context.Context) string
 	storage  StorageEngine
+	// builderCache is the image builder's own layer store, which the
+	// Engine does not report and cannot clean. Nil on a server without a
+	// builder.
+	builderCache BuilderCache
 	// advertise is where the other machines reach this one. It is the
 	// instance's own public address, which settings already works out
 	// and refuses to guess badly — a bridge address here would build a
@@ -76,6 +80,19 @@ type StorageEngine interface {
 	Prune(context.Context) (int64, error)
 }
 
+// BuilderCache is the layer cache of the image builder.
+//
+// It is a store of its own, beside the Engine's: the build cache the
+// Engine reports is empty on an instance that builds only through
+// BuildKit, while this one grows by a build's worth of layers per deploy.
+type BuilderCache interface {
+	// CacheUsage is the bytes a clean would free.
+	CacheUsage(context.Context) (int64, error)
+	// PruneCache removes what no running build holds, and returns the
+	// bytes freed.
+	PruneCache(context.Context) (int64, error)
+}
+
 // meshLookupTTL is how long "is there a cluster network" is believed.
 //
 // The question is asked on every container this instance creates, and
@@ -86,6 +103,8 @@ const meshLookupTTL = 30 * time.Second
 func NewService(db *database.DB) *Service { return &Service{db: db, hub: newHub()} }
 
 func (s *Service) SetStorage(engine StorageEngine) { s.storage = engine }
+
+func (s *Service) SetBuilderCache(cache BuilderCache) { s.builderCache = cache }
 
 func (s *Service) Storage(ctx context.Context, caller *user.User, name string) (dockerx.Storage, error) {
 	if err := user.Allow(caller, user.ResServers, user.LevelView, ""); err != nil {
@@ -101,7 +120,41 @@ func (s *Service) Storage(ctx context.Context, caller *user.User, name string) (
 	if s.storage == nil {
 		return dockerx.Storage{}, errors.New("docker storage is unavailable")
 	}
-	return s.storage.Storage(ctx)
+	storage, err := s.storage.Storage(ctx)
+	if err != nil {
+		return dockerx.Storage{}, err
+	}
+	return withBuilderCache(ctx, storage, s.builderCache), nil
+}
+
+// withBuilderCache counts the builder's layers as build cache, which is
+// what they are: the card must read what Clean will free. A builder that
+// does not answer leaves the Engine's numbers as they were.
+func withBuilderCache(ctx context.Context, storage dockerx.Storage, cache BuilderCache) dockerx.Storage {
+	if cache == nil {
+		return storage
+	}
+	bytes, err := cache.CacheUsage(ctx)
+	if err != nil {
+		log.Printf("node: builder cache size: %v", err)
+		return storage
+	}
+	storage.BuildCacheBytes += bytes
+	return storage
+}
+
+// pruneStorage cleans the Engine, then the builder. A failure in the
+// builder still reports what the Engine freed.
+func pruneStorage(ctx context.Context, engine StorageEngine, cache BuilderCache) (int64, error) {
+	reclaimed, err := engine.Prune(ctx)
+	if err != nil {
+		return 0, err
+	}
+	if cache == nil {
+		return reclaimed, nil
+	}
+	freed, err := cache.PruneCache(ctx)
+	return reclaimed + freed, err
 }
 
 func (s *Service) PruneStorage(ctx context.Context, caller *user.User, name string) (int64, error) {
@@ -118,7 +171,7 @@ func (s *Service) PruneStorage(ctx context.Context, caller *user.User, name stri
 	if s.storage == nil {
 		return 0, errors.New("docker storage is unavailable")
 	}
-	return s.storage.Prune(ctx)
+	return pruneStorage(ctx, s.storage, s.builderCache)
 }
 
 // SetMesh wires in what the cluster's network is made of. Called once,

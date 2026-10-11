@@ -887,8 +887,44 @@ func TestBuildKitSocketIsReachableByAHostDaemon(t *testing.T) {
 	}
 
 	cfg.InContainer = true
-	if got := BuildKitContainerOpts(cfg).Cmd; len(got) != 0 {
+	if got := BuildKitContainerOpts(cfg).Cmd; slices.Contains(got, "--group") {
 		t.Errorf("a containerised daemon passes buildkitd flags it does not need: %v", got)
+	}
+}
+
+// The builder's layer cache is what filled the disk: buildkitd's default
+// ceiling is 80% of it, so nothing was ever collected. Every container the
+// daemon starts for it carries an explicit, smaller one.
+func TestBuildKitCacheHasACeiling(t *testing.T) {
+	for _, inContainer := range []bool{true, false} {
+		cfg := testConfig()
+		cfg.InContainer = inContainer
+		var found string
+		for _, arg := range BuildKitContainerOpts(cfg).Cmd {
+			if v, ok := strings.CutPrefix(arg, "--oci-worker-gc-keepstorage="); ok {
+				found = v
+			}
+		}
+		if found == "" {
+			t.Errorf("InContainer=%v: buildkitd runs with its default cache limit", inContainer)
+		}
+	}
+}
+
+func TestBuildKitCacheLimitFollowsTheDisk(t *testing.T) {
+	const gb = int64(1e9)
+	for _, tc := range []struct {
+		name  string
+		total int64
+		want  string // Reserved,Free,Maximum in MB
+	}{
+		{"a disk that cannot be read keeps the fixed ceiling", 0, "10000,0,20000"},
+		{"a large disk is capped at 20 GB", 155 * gb, "10000,31000,20000"},
+		{"a small disk gives the cache a quarter", 40 * gb, "5000,8000,10000"},
+	} {
+		if got := buildKitGCKeepStorage(tc.total); got != tc.want {
+			t.Errorf("%s: buildKitGCKeepStorage(%d) = %q, want %q", tc.name, tc.total, got, tc.want)
+		}
 	}
 }
 

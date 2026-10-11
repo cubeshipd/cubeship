@@ -16,7 +16,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			"ServerStorage": openapi.Object(map[string]*openapi.Schema{
 				"images":                   openapi.Integer("Unused images that can be removed."),
 				"images_bytes":             openapi.Integer("Bytes used by unused images."),
-				"build_cache_bytes":        openapi.Integer("Bytes used by unused build cache."),
+				"build_cache_bytes":        openapi.Integer("Bytes used by unused build cache: Docker's plus the image builder's own layer cache, which Docker does not report."),
 				"stopped_containers":       openapi.Integer("Stopped containers that can be removed."),
 				"stopped_containers_bytes": openapi.Integer("Bytes used by stopped containers."),
 				"volumes":                  openapi.Integer("Unused volumes. These are measured but never removed by cleanup."),
@@ -142,11 +142,11 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"post": {
 					OperationID: "pruneServerStorage",
 					Summary:     "Clean regenerable Docker storage",
-					Description: "Removes unused images, stopped containers and build cache. Volumes are deliberately excluded because deleting one can destroy application data.",
+					Description: "Removes unused images, stopped containers and build cache, including the image builder's layers; the next build starts cold. Volumes and backups are deliberately excluded because deleting one can destroy application data.",
 					Tags:        []string{"Servers"},
 					Parameters:  nameParam,
 					Responses: openapi.Responses{
-						"200": openapi.JSONResponse("Bytes reclaimed.", openapi.Object(map[string]*openapi.Schema{"reclaimed_bytes": openapi.Integer("Bytes reclaimed by Docker.")}, "reclaimed_bytes")),
+						"200": openapi.JSONResponse("Bytes reclaimed.", openapi.Object(map[string]*openapi.Schema{"reclaimed_bytes": openapi.Integer("Bytes reclaimed.")}, "reclaimed_bytes")),
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,

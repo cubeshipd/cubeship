@@ -276,6 +276,11 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	if engine, ok := docker.(*dockerx.Client); ok {
 		nodes.SetStorage(engine)
 	}
+	// The builder keeps its layers in a store the Engine cannot see, so
+	// the storage screen asks it directly.
+	if cache, ok := opts.Builder.(node.BuilderCache); ok {
+		nodes.SetBuilderCache(cache)
+	}
 	if engine, ok := docker.(mesh.Engine); ok {
 		nodes.SetMesh(engine, opts.Host, func(ctx context.Context) string {
 			values, err := cfg.Load(ctx)
