@@ -66,9 +66,14 @@ including after 429, server errors or ambiguous timeouts. Public GitHub reads
 allow at most three total attempts (two retries with backoff). Output must fit
 **8 KiB JSON, three findings, and a 4,000-character summary**. Findings must
 refer to actual changed lines. Links are assembled locally from validated
-paths and immutable head/base SHAs; renamed LEFT findings use the trusted old
-path. Raw source excerpts, credentials, links supplied by the model, tool
-output and malformed results are rejected conservatively. Filtering can refuse
+paths and immutable SHAs. The fixed target-to-head comparison supplies a
+validated `diffBase` (merge base) for old trees and LEFT links, including renamed
+old paths. `base` remains the target tip for freshness and CI merge parents.
+The closed snapshot, model schema and artifact origin include both identities.
+URLs strictly encode path components, including parentheses. The final rendered
+summary, including escaped prose and complete links, must fit 4,000 characters;
+otherwise `SUMMARY_LIMIT` refuses the result before artifact publication. Raw
+source excerpts, credentials, links supplied by the model, tool output and malformed results are rejected conservatively. Filtering can refuse
 useful content and is not a guarantee against every obfuscated disclosure.
 
 The repository concurrency group allows one running pilot with
@@ -77,7 +82,12 @@ not a durable queue. Jobs have **3/5/2-minute** collection/inference/summary
 budgets, totaling ten runner minutes; queue and startup time are not a hard
 workflow wall-clock guarantee. History protects each repo/PR/head on a
 best-effort basis: another live attempt reserves that SHA even if it failed.
-Dry history does not consume the live reservation. This is not exactly-once
+Dry history does not consume the live reservation. The canonical title
+`gemini:<repo>:dry` is independent of raw PR/SHA inputs, so refused malformed dry
+dispatches cannot poison later history. Live titles remain
+`gemini:<repo>:<PR>:<headSHA>:live`; unknown or malformed live history fails closed.
+Only canonical dry entries with the expected workflow path, default branch and
+valid workflow SHA are recognized as nonbillable. This is not exactly-once
 billing or a global quota.
 
 ## Visibility, outcomes, and cost
@@ -87,7 +97,7 @@ identity/decision metadata via outputs. The sole uploaded file is filtered
 `artifact.json`, retained **one day**, with no prompt, diff, logs, raw model
 response, context, credential or permission response. Summary downloads only
 the current run's fixed named artifact, rejects extra files, links, wrong
-paths, oversized or unexpected envelopes, and checks repo/PR/head/base/run/
+paths, oversized or unexpected envelopes, and checks repo/PR/head/base/diffBase/run/
 workflow/mode origin against fresh public metadata before publication.
 
 A run may be **blocked**, **incomplete**, or **obsolete** and provide no

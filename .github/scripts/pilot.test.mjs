@@ -6,7 +6,7 @@ const sha='a'.repeat(40), otherSha='b'.repeat(40);
 const ctx={repo:'cubeshipd/cubeship',ref:'refs/heads/master',defaultBranch:'master',actor:'a',triggeringActor:'b',runId:1,runAttempt:1,sha,workflowSha:sha,historyComplete:true};
 const pr={number:1,state:'open',isPublic:true,head:sha,base:otherSha};
 const perms={a:'maintain',b:'admin'};
-const snapshot={repo:ctx.repo,pr:1,head:sha,base:otherSha,runId:1,workflowSha:sha};
+const snapshot={repo:ctx.repo,pr:1,head:sha,base:otherSha,diffBase:otherSha,runId:1,workflowSha:sha};
 const file=(n=1)=>({path:'src/a.js',mode:'100644',status:'modified',additions:n,deletions:0,patch:`@@ -0,0 +1,${n} @@\n`+Array(n).fill('+x').join('\n')});
 test('authorization requires public open PR, trusted branch, actors and explicit SHAs',()=>{
  assert.equal(authorize(ctx,pr,perms).state,'ready');
@@ -50,7 +50,7 @@ test('injection stays data; sensitive files and secret patterns block',()=>{
 });
 test('snapshot requires unchanged identity, head and base',()=>{
  assert.equal(sameSnapshot(snapshot,{...snapshot}),true);
- for(const change of [{head:otherSha},{base:sha},{repo:'other/repo'},{pr:2},{workflowSha:otherSha}]) assert.equal(sameSnapshot(snapshot,{...snapshot,...change}),false);
+ for(const change of [{head:otherSha},{base:sha},{diffBase:sha},{repo:'other/repo'},{pr:2},{workflowSha:otherSha}]) assert.equal(sameSnapshot(snapshot,{...snapshot,...change}),false);
 });
 test('removed lines and context map to the correct sides',()=>{
  const f={...file(),additions:1,deletions:1,patch:'@@ -8,2 +8,2 @@\n context\n-old\n+new'};
@@ -96,7 +96,7 @@ function synthetic({tokens=12000,status=200,abort=false,result=goodResult(),fini
   if(path.endsWith(':generateContent')) {transport.generationCalls++; if(abort) throw new DOMException('SECRET_SENTINEL','AbortError'); return reply({candidates:[{finishReason:finish,content:{parts:[{text:JSON.stringify(result)}]}}],usageMetadata:usage??{promptTokenCount:tokens,candidatesTokenCount:100,thoughtsTokenCount:50,totalTokenCount:tokens+150}},status);}
   if(path.endsWith('/collaborators/a/permission')||path.endsWith('/collaborators/b/permission')) return reply({permission:'admin',role_name:'admin'});
   if(path.endsWith('/actions/runs/1')) return reply(runMetadata());
-  if(path.endsWith('/pulls/1/files')) return reply([{filename:'src/a.js',status:'modified',additions:1,deletions:0,patch:file().patch}]);
+  if(path.includes('/compare/')) return reply({base_commit:{sha:otherSha},merge_base_commit:{sha:otherSha},files:[{filename:'src/a.js',status:'modified',additions:1,deletions:0,patch:file().patch}]});
   if(path.includes('/git/trees/')) return reply({truncated:false,tree:[{path:'src/a.js',mode:'100644',type:'blob'}]});
   if(path.endsWith('/actions/workflows/gemini-pilot.yml/runs')) return reply({total_count:1,workflow_runs:[{id:1,run_attempt:1,event:'workflow_dispatch',display_title:`gemini:${ctx.repo}:1:${sha}:live`,head_sha:sha}]});
   if(path.endsWith('/actions/workflows/ci.yml/runs')) return reply({total_count:0,workflow_runs:[]});
@@ -120,7 +120,7 @@ test('token_gate counts system and prompt together and accepts exactly 12000',as
  for(const tokens of [12000,12001]) {const t=synthetic({tokens});const out=await runner.generateOnce(input(),t,'SYNTHETIC_KEY');assert.equal(t.generationCalls,tokens===12000?1:0);assert.equal(out.state,tokens===12000?'ready':'incomplete');
  const request=JSON.parse(t.calls.find(c=>c.url.endsWith(':countTokens')).options.body).generateContentRequest;
  assert.equal(request.systemInstruction.parts[0].text,core.SYSTEM_INSTRUCTION);assert.equal(request.contents[0].parts[0].text,input().prompt);
- if(tokens===12000) {const g=JSON.parse(t.calls.find(c=>c.url.endsWith(':generateContent')).options.body);const {model,...countedBody}=request;assert.equal(model,`models/${core.config.model}`);assert.deepEqual(g,countedBody);assert.equal(g.generationConfig.maxOutputTokens,4096);assert.equal(g.generationConfig.candidateCount,1);assert.deepEqual(g.generationConfig.thinkingConfig,{thinkingLevel:'LOW',includeThoughts:false});assert.equal(g.tools,undefined);}}
+ if(tokens===12000) {const g=JSON.parse(t.calls.find(c=>c.url.endsWith(':generateContent')).options.body);const {model,...countedBody}=request;assert.equal(model,`models/${core.config.model}`);assert.deepEqual(g,countedBody);assert.deepEqual(g.generationConfig.responseJsonSchema.properties.snapshot.properties.diffBase.enum,[otherSha]);assert.equal(g.generationConfig.maxOutputTokens,4096);assert.equal(g.generationConfig.candidateCount,1);assert.deepEqual(g.generationConfig.thinkingConfig,{thinkingLevel:'LOW',includeThoughts:false});assert.equal(g.tools,undefined);}}
 });
 test('response_gate rejects unsafe structures, locations and source excerpts',()=>{
  assert.equal(typeof runner.validateResult,'function');const lines=input().changedLines;
@@ -152,9 +152,9 @@ test('run identity is independently bound to trusted workflow, actors and dispat
   assert.equal((await runner.generateOnce(input(),t,'SYNTHETIC_KEY')).state,'blocked');assert.equal(t.generationCalls,0);
  }
 });
-function runMetadata(dry=false) {return {id:1,run_attempt:1,event:'workflow_dispatch',path:'.github/workflows/gemini-pilot.yml',head_sha:sha,head_branch:'master',actor:{login:'a'},triggering_actor:{login:'b'},repository:{full_name:ctx.repo},display_title:`gemini:${ctx.repo}:1:${sha}:${dry?'dry':'live'}`};}
+function runMetadata(dry=false) {return {id:1,run_attempt:1,event:'workflow_dispatch',path:'.github/workflows/gemini-pilot.yml',head_sha:sha,head_branch:'master',actor:{login:'a'},triggering_actor:{login:'b'},repository:{full_name:ctx.repo},display_title:dry?`gemini:${ctx.repo}:dry`:`gemini:${ctx.repo}:1:${sha}:live`};}
 test('dry history permits live analysis but failed live attempt reserves the SHA',async()=>{
- for(const [mode,expected] of [['dry','ready'],['live','blocked'],['bad','blocked']]) {const t=synthetic();const fetch=t.fetch;t.fetch=async(u,o)=>u.includes('/gemini-pilot.yml/runs')?reply({total_count:1,workflow_runs:[{...runMetadata(),id:2,conclusion:'failure',display_title:`gemini:${ctx.repo}:1:${sha}:${mode}`}]}):fetch(u,o);const out=await runner.generateOnce(input(),t,'SYNTHETIC_KEY');assert.equal(out.state,expected);assert.equal(t.generationCalls,expected==='ready'?1:0);}
+ for(const [mode,expected] of [['dry','ready'],['live','blocked'],['bad','blocked']]) {const t=synthetic();const fetch=t.fetch;t.fetch=async(u,o)=>u.includes('/gemini-pilot.yml/runs')?reply({total_count:1,workflow_runs:[{...runMetadata(),id:2,conclusion:'failure',display_title:mode==='dry'?`gemini:${ctx.repo}:dry`:`gemini:${ctx.repo}:1:${sha}:${mode}`}]}):fetch(u,o);const out=await runner.generateOnce(input(),t,'SYNTHETIC_KEY');assert.equal(out.state,expected);assert.equal(t.generationCalls,expected==='ready'?1:0);}
 });
 test('dry run works while live is disabled and never reads provider key or calls provider',async()=>{
  const t=synthetic();const fetch=t.fetch;t.fetch=async(u,o)=>new URL(u).pathname.endsWith('/actions/runs/1')?reply(runMetadata(true)):fetch(u,o);
@@ -166,19 +166,20 @@ test('fixed host and path restrictions refuse attacker supplied destinations',as
 });
 
 test('collection follows complete pagination and only accepts correct CI SHA and merge parents',async()=>{
- const t=synthetic(); const fetch=t.fetch;const merge='c'.repeat(40);
+ const t=synthetic(); const fetch=t.fetch;const merge='c'.repeat(40),diffBase='d'.repeat(40);
  t.fetch=async(u,o)=>{
   const url=new URL(u);const p=url.pathname;
   if(p.endsWith('/pulls/1')) {const res=await fetch(u,o);const data=await res.json();return reply({...data,merge_commit_sha:merge});}
+  if(p.includes('/compare/')) {const data=await (await fetch(u,o)).json();return reply({...data,merge_base_commit:{sha:diffBase}});}
   if(p.endsWith(`/commits/${merge}`)) return reply({parents:[{sha:otherSha},{sha}]});
   if(p.endsWith('/ci.yml/runs')) return reply({total_count:2,workflow_runs:[{id:4,head_sha:url.searchParams.get('head_sha'),path:'.github/workflows/ci.yml',event:'pull_request',status:'completed',conclusion:'failure'},{id:5,head_sha:otherSha,path:'.github/workflows/evil.yml',event:'pull_request',status:'completed',conclusion:'success'}]});
   if(p.endsWith('/gemini-pilot.yml/runs')) return reply({total_count:101,workflow_runs:Array.from({length:url.searchParams.get('page')==='1'?100:1},(_,i)=>({...runMetadata(true),id:10+i+Number(url.searchParams.get('page'))*100}))});
   return fetch(u,o);
  };
- const out=await runner.collectSnapshot(input().context,t);assert.deepEqual(out.ci.map(c=>c.sha),[sha,merge]);assert.equal(out.ci.every(c=>c.conclusion==='failure'),true);assert.ok(!t.calls.some(c=>c.url.includes('/logs')));
+ const out=await runner.collectSnapshot(input().context,t);assert.equal(out.diffBase,diffBase);assert.deepEqual(out.merge.parents,[otherSha,sha]);assert.deepEqual(out.ci.map(c=>c.sha),[sha,merge]);assert.equal(out.ci.every(c=>c.conclusion==='failure'),true);assert.ok(!t.calls.some(c=>c.url.includes('/logs')));
 });
 test('incomplete trees, file counts, and history pages fail before provider boundary',async()=>{
- for(const [fragment,data] of [['/git/trees/',{truncated:true,tree:[]}],['/pulls/1/files',[]],['/gemini-pilot.yml/runs',{total_count:2,workflow_runs:[]}]]) {const t=synthetic();const fetch=t.fetch;t.fetch=async(u,o)=>u.includes(fragment)?reply(data):fetch(u,o);assert.equal((await runner.generateOnce(input(),t,'SYNTHETIC_KEY')).state,'blocked');assert.equal(t.generationCalls,0);}
+ for(const [fragment,data] of [['/git/trees/',{truncated:true,tree:[]}],[`/compare/${otherSha}...${sha}`,[]],['/gemini-pilot.yml/runs',{total_count:2,workflow_runs:[]}]]) {const t=synthetic();const fetch=t.fetch;t.fetch=async(u,o)=>u.includes(fragment)?reply(data):fetch(u,o);assert.equal((await runner.generateOnce(input(),t,'SYNTHETIC_KEY')).state,'blocked');assert.equal(t.generationCalls,0);}
 });
 test('CLI dry collect infer summarize publishes metadata without secrets, prompts or model calls',async()=>{
  const {mkdtemp,readFile,writeFile,rm}=await import('node:fs/promises');const dir=await mkdtemp('/tmp/pilot-cli-');
@@ -239,7 +240,7 @@ function movingSnapshot(phase,side,change='sha') {
  };return t;
 }
 test('fresh snapshot after files and CI prevents any provider exposure when head or base moved',async()=>{
- for(const phase of ['/pulls/1/files','/ci.yml/runs'])for(const side of ['head','base']) {
+ for(const phase of [`/compare/${otherSha}...${sha}`,'/ci.yml/runs'])for(const side of ['head','base']) {
   const t=movingSnapshot(phase,side);const out=await runner.generateOnce({context:input().context,snapshot:{...snapshot}},t,'SYNTHETIC_KEY');
   assert.notEqual(out.state,'ready');assert.equal(t.calls.filter(c=>c.url.includes('googleapis')).length,0);assert.equal(t.generationCalls,0);
  }
@@ -248,7 +249,7 @@ test('fresh snapshot after countTokens prevents generation when head or base mov
  for(const side of ['head','base']) {const t=movingSnapshot(':countTokens',side);const out=await runner.generateOnce({context:input().context,snapshot:{...snapshot}},t,'SYNTHETIC_KEY');assert.notEqual(out.state,'ready');assert.equal(t.calls.filter(c=>c.url.endsWith(':countTokens')).length,1);assert.equal(t.generationCalls,0);}
 });
 test('provider boundary checks still require public and open PR',async()=>{
- for(const phase of ['/pulls/1/files',':countTokens'])for(const change of ['private','closed']) {const t=movingSnapshot(phase,'head',change);assert.notEqual((await runner.generateOnce({context:input().context,snapshot:{...snapshot}},t,'SYNTHETIC_KEY')).state,'ready');assert.equal(t.generationCalls,0);if(phase==='/pulls/1/files')assert.equal(t.calls.filter(c=>c.url.includes('googleapis')).length,0);}
+ for(const phase of [`/compare/${otherSha}...${sha}`,':countTokens'])for(const change of ['private','closed']) {const t=movingSnapshot(phase,'head',change);assert.notEqual((await runner.generateOnce({context:input().context,snapshot:{...snapshot}},t,'SYNTHETIC_KEY')).state,'ready');assert.equal(t.generationCalls,0);if(phase===`/compare/${otherSha}...${sha}`)assert.equal(t.calls.filter(c=>c.url.includes('googleapis')).length,0);}
 });
 test('CLI dry inference without prompt refuses a snapshot moved during collection',async()=>{
  const {mkdtemp,writeFile,access,rm}=await import('node:fs/promises');const dir=await mkdtemp('/tmp/pilot-cli-race-');
@@ -261,7 +262,7 @@ test('CLI dry inference without prompt refuses a snapshot moved during collectio
 test('rename LEFT source uses trusted previous path at base; RIGHT uses current path at head',()=>{
  const f={...file(),path:'src/new.js',previousPath:'src/old.js',status:'renamed',additions:1,deletions:1,patch:'@@ -1 +1 @@\n-old\n+new'};
  const result={...goodResult(),findings:['LEFT','RIGHT'].map(side=>({...goodResult().findings[0],path:f.path,side}))};
- assert.equal(runner.validateResult(result,prepareInput(snapshot,[f]).changedLines,snapshot).state,'ready');
+ assert.equal(runner.validateResult(result,prepareInput(snapshot,[f]).changedLines,{...snapshot,files:[f]}).state,'ready');
  const rendered=runner.renderSummary(result,{...snapshot,files:[f]});assert.ok(rendered.includes(`/blob/${otherSha}/src/old.js#L1`));assert.ok(rendered.includes(`/blob/${sha}/src/new.js#L1`));assert.ok(!rendered.includes(`/blob/${otherSha}/src/new.js`));
  assert.throws(()=>runner.renderSummary(result,snapshot));assert.throws(()=>runner.renderSummary(result,{...snapshot,files:[{...f,previousPath:undefined}]}));
  assert.equal(runner.validateResult({...result,findings:[{...result.findings[0],previousPath:'model/path.js'}]},prepareInput(snapshot,[f]).changedLines,snapshot).state,'blocked');
@@ -365,7 +366,7 @@ test('artifact_origin refuses foreign run, SHA, mode and workflow source through
  const dir=await mkdtemp('/tmp/pilot-origin-');
  try {
   await writeFile(`${dir}/context.json`,JSON.stringify({...input().context,dryRun:true}));
-  for(const change of [{runId:2},{workflowSha:otherSha},{head:otherSha},{base:sha},{repo:'evil/repo'},{pr:2},{dryRun:false}]){
+  for(const change of [{runId:2},{workflowSha:otherSha},{head:otherSha},{base:sha},{diffBase:sha},{repo:'evil/repo'},{pr:2},{dryRun:false}]){
    const t=synthetic();const fetch=t.fetch;t.fetch=async(u,o)=>new URL(u).pathname.endsWith('/actions/runs/1')?reply(runMetadata(true)):fetch(u,o);
    await writeFile(`${dir}/artifact.json`,JSON.stringify({state:'ready',reason:'DRY_RUN_VALIDATED',origin:{...snapshot,dryRun:true,...change}}));
    const out=await runner.runCLI(['summarize',`${dir}/context.json`,`${dir}/artifact.json`],{transport:t,env:{GITHUB_STEP_SUMMARY:`${dir}/summary`}});
@@ -390,7 +391,7 @@ test('dispatch context parses untrusted inputs as data and preserves separate so
  assert.doesNotMatch(body,/\$\{\{/);
  const dir=await mkdtemp('/tmp/pilot-context-');
  try {
-  for(const [index,change] of [{},{PILOT_DRY_RUN:'false'},{PILOT_DRY_RUN:''},{PILOT_DRY_RUN:'TRUE'},{PILOT_PR:'1; touch sentinel'},{PILOT_PR:'1e2'},{PILOT_SHA:'$(touch sentinel)'}].entries()){
+  for(const [index,change] of [{},{PILOT_DRY_RUN:'false'},{PILOT_DRY_RUN:''},{PILOT_DRY_RUN:'TRUE'},{PILOT_PR:'1; touch sentinel'},{PILOT_PR:'1e2'},{PILOT_PR:'01'},{PILOT_SHA:sha.toUpperCase()},{PILOT_SHA:'$(touch sentinel)'}].entries()){
    const temp=`${dir}/run-${index}`;await mkdir(temp);
    const env={PATH:process.env.PATH,RUNNER_TEMP:temp,PILOT_REPOSITORY:ctx.repo,PILOT_PR:'1',PILOT_SHA:sha,PILOT_DRY_RUN:'true',PILOT_REF:ctx.ref,PILOT_DEFAULT_BRANCH:'master',PILOT_ACTOR:'a',PILOT_TRIGGERING_ACTOR:'b',PILOT_RUN_ID:'1',PILOT_RUN_ATTEMPT:'1',PILOT_WORKFLOW_SHA:otherSha,...change};
    const out=spawnSync('bash',['-e','-o','pipefail','-c',body],{env,cwd:temp,encoding:'utf8'});
@@ -399,4 +400,83 @@ test('dispatch context parses untrusted inputs as data and preserves separate so
    await assert.rejects(readFile(`${temp}/sentinel`));
   }
  } finally {await rm(dir,{recursive:true,force:true});}
+});
+
+// Final review regressions: trusted diff provenance, history, and complete links.
+test('diff base binds divergent target, renamed and removed LEFT source and prompt',async()=>{
+ const diffBase='d'.repeat(40);
+ for(const status of ['modified','renamed','removed']) {
+  const t=synthetic(),fetch=t.fetch,seen=[];
+  const f={filename:'src/a.js',status,additions:status==='removed'?0:1,deletions:1,patch:status==='removed'?'@@ -1 +0,0 @@\n-oldValue':'@@ -1 +1 @@\n-oldValue\n+newValue',...(status==='renamed'?{previous_filename:'src/old.js'}:{})};
+  t.fetch=async(u,o)=>{
+   seen.push(u);const p=new URL(u).pathname;
+   if(p.includes('/compare/')) return reply({base_commit:{sha:otherSha},merge_base_commit:{sha:diffBase},files:[f]});
+   if(p.endsWith(`/git/trees/${diffBase}`)) return reply({truncated:false,tree:[{path:f.previous_filename??f.filename,type:'blob',mode:'100644'}]});
+   if(p.endsWith(`/git/trees/${otherSha}`)) return reply({truncated:false,tree:[]});
+   return fetch(u,o);
+  };
+  const current=await runner.collectSnapshot(input().context,t);
+  assert.equal(current.diffBase,diffBase);assert.equal(current.base,otherSha);
+  const prepared=prepareInput(current,current.files,current.ci);assert.equal(prepared.decision.state,'ready');assert.equal(JSON.parse(prepared.prompt).snapshot.diffBase,diffBase);
+  const result={...goodResult(),snapshot:{...snapshot,diffBase},findings:[{...goodResult().findings[0],side:'LEFT'}]};
+  assert.equal(runner.validateResult(result,prepared.changedLines,current).state,'ready');
+  assert.ok(runner.renderSummary(result,current).includes(`/blob/${diffBase}/${f.previous_filename??f.filename}#L1`));
+  assert.equal(sameSnapshot(current,{...current,diffBase:otherSha}),false);
+  assert.ok(seen.some(u=>u.endsWith(`/compare/${otherSha}...${sha}?per_page=1&page=1`)));
+  assert.ok(!seen.some(u=>u.includes('/pulls/1/files')||u.includes(`/git/trees/${otherSha}`)));
+  assert.ok(seen.some(u=>u.includes(`/git/trees/${diffBase}`)));
+ }
+});
+test('fixed comparison rejects absent merge base, mismatched base, incomplete files and traversal',async()=>{
+ for(const change of [{merge_base_commit:null},{merge_base_commit:{sha:'bad'}},{base_commit:{sha}},{files:[]}]) {
+  const t=synthetic(),fetch=t.fetch;t.fetch=async(u,o)=>u.includes('/compare/')?reply({base_commit:{sha:otherSha},merge_base_commit:{sha:otherSha},files:[{filename:'src/a.js',...file()}],...change}):fetch(u,o);
+  await assert.rejects(runner.collectSnapshot(input().context,t));
+ }
+ const t=synthetic();for(const suffix of [`compare/${otherSha}...${sha}/../${sha}`,`compare/%2e%2e/pulls/1`,`compare/${otherSha}....${sha}`,`compare/master...${sha}`]) await assert.rejects(runner.githubRead(`/repos/${ctx.repo}/${suffix}`,t));assert.equal(t.calls.length,0);
+});
+test('canonical malformed dry dispatch history permits next dry and synthetic live while ambiguous live blocks',async()=>{
+ assert.ok(workflow().includes("inputs.dry_run && format('gemini:{0}:dry', github.repository)"));
+ // Execute the actual dispatch parser: these refused inputs still receive the
+ // canonical dry title above, independent of their raw PR/SHA strings.
+ const dir=await mkdtemp('/tmp/pilot-invalid-dry-');
+ try {for(const bad of [{PILOT_PR:'01'},{PILOT_SHA:sha.toUpperCase()}]) {
+  const out=spawnSync('bash',['-e','-o','pipefail','-c',stepBody(workflow(),'Build explicit dispatch context')],{encoding:'utf8',env:{PATH:process.env.PATH,RUNNER_TEMP:dir,PILOT_REPOSITORY:ctx.repo,PILOT_PR:'1',PILOT_SHA:sha,PILOT_DRY_RUN:'true',PILOT_REF:ctx.ref,PILOT_DEFAULT_BRANCH:'master',PILOT_ACTOR:'a',PILOT_TRIGGERING_ACTOR:'b',PILOT_RUN_ID:'2',PILOT_RUN_ATTEMPT:'1',PILOT_WORKFLOW_SHA:otherSha,...bad}});
+  assert.notEqual(out.status,0);await assert.rejects(readFile(`${dir}/pilot-context.json`));
+ }}finally{await rm(dir,{recursive:true,force:true});}
+
+ for(const dry of [true,false]) {
+  const t=synthetic(),fetch=t.fetch;
+  t.fetch=async(u,o)=>u.includes('/gemini-pilot.yml/runs')?reply({total_count:1,workflow_runs:[{...runMetadata(true),id:2,display_title:`gemini:${ctx.repo}:dry`}]}):new URL(u).pathname.endsWith('/actions/runs/1')?reply({...runMetadata(dry),display_title:dry?`gemini:${ctx.repo}:dry`:runMetadata().display_title}):fetch(u,o);
+  const i=input();i.context.dryRun=dry;
+  assert.equal((await runner.generateOnce(i,t,dry?undefined:'SYNTHETIC_KEY')).state,'ready');assert.equal(t.generationCalls,dry?0:1);
+ }
+ for(const title of [`gemini:${ctx.repo}:01:${sha}:live`,`gemini:${ctx.repo}:1:INVALID:live`,'unknown']) {
+  const t=synthetic(),fetch=t.fetch;t.fetch=async(u,o)=>u.includes('/gemini-pilot.yml/runs')?reply({total_count:1,workflow_runs:[{...runMetadata(),id:2,display_title:title}]}):fetch(u,o);
+  assert.equal((await runner.generateOnce(input(),t,'SYNTHETIC_KEY')).state,'blocked');assert.equal(t.generationCalls,0);
+ }
+});
+test('canonical dry history requires trusted workflow provenance',async()=>{
+ for(const change of [{path:'.github/workflows/evil.yml'},{head_branch:'feature'},{head_sha:'bad'},{event:'push'},{display_title:`gemini:evil/repo:dry`}]) {
+  const t=synthetic(),fetch=t.fetch;t.fetch=async(u,o)=>u.includes('/gemini-pilot.yml/runs')?reply({total_count:1,workflow_runs:[{...runMetadata(true),id:2,...change}]}):fetch(u,o);
+  await assert.rejects(runner.collectSnapshot(input().context,t));assert.equal(t.generationCalls,0);
+ }
+});
+test('rendered budget rejects escaping and long URL expansion before accepting result',()=>{
+ const path='src/'+Array(12).fill('nested-directory-with-long-name').join('/')+'/file.js';
+ const f={...file(),path};const current={...snapshot,files:[f]};
+ const result={...goodResult(),summary:'Review these changes.',findings:Array.from({length:3},()=>({...goodResult().findings[0],path,explanation:'Check validation. '.repeat(35)}))};
+ assert.deepEqual(runner.validateResult(result,prepareInput(current,[f]).changedLines,current),{state:'blocked',reason:'SUMMARY_LIMIT'});
+ assert.throws(()=>runner.renderSummary(result,current),/^Error: SUMMARY_LIMIT$/);
+ const boundary={...result,summary:' ',findings:result.findings.map(f=>({...f,explanation:'Check validation. '.repeat(25)}))};
+ const initial=runner.renderSummary(boundary,current).length;boundary.summary=' '.repeat(4001-initial);assert.ok(boundary.summary.length<=900);
+ assert.equal(runner.renderSummary(boundary,current).length,4000);assert.equal(runner.validateResult(boundary,prepareInput(current,[f]).changedLines,current).state,'ready');
+ boundary.summary+=' ';assert.deepEqual(runner.validateResult(boundary,prepareInput(current,[f]).changedLines,current),{state:'blocked',reason:'SUMMARY_LIMIT'});
+});
+test('unusual valid path components produce complete strict encoded CommonMark destinations',()=>{
+ const f={...file(),path:"src/file).js",previousPath:"src/old('é)!*.js",status:'renamed',additions:1,deletions:1,patch:'@@ -1 +1 @@\n-old\n+new'};
+ const current={...snapshot,files:[f]};const result={...goodResult(),findings:['LEFT','RIGHT'].map(side=>({...goodResult().findings[0],path:f.path,side}))};
+ assert.equal(runner.validateResult(result,prepareInput(current,[f]).changedLines,current).state,'ready');
+ const text=runner.renderSummary(result,current);
+ assert.ok(text.includes(`/blob/${otherSha}/src/old%28%27%C3%A9%29%21%2A.js#L1)`));assert.ok(text.includes(`/blob/${sha}/src/file%29.js#L1)`));
+ assert.equal((text.match(/\]\(https:[^ )]+#L1\)/g)||[]).length,2);
 });

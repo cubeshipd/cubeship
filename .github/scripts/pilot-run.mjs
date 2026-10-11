@@ -2,7 +2,7 @@ import { readFile, writeFile, appendFile, rename, rm, readdir, lstat } from 'nod
 import { pathToFileURL } from 'node:url';
 import { config, SYSTEM_INSTRUCTION, authorize, checkHistory, prepareInput, sameSnapshot } from './pilot-core.mjs';
 
-const ids = ['repo', 'pr', 'head', 'base', 'runId', 'workflowSha'];
+const ids = ['repo', 'pr', 'head', 'base', 'diffBase', 'runId', 'workflowSha'];
 const identity = snapshot => Object.fromEntries(ids.map(k => [k, snapshot[k]]));
 const blocked = () => ({ state: 'blocked', reason: 'VALIDATION_FAILED' });
 const integer = n => Number.isSafeInteger(n) && n >= 0;
@@ -30,10 +30,10 @@ async function request(url, options, transport, limit = 2 * 1024 * 1024) {
   } catch { throw fixedError('INVALID_RESPONSE'); }
 }
 function githubPath(path) {
-  if (typeof path !== 'string' || !path.startsWith('/repos/') || /[\\#\x00-\x20]/.test(path) || path.includes('..')) throw fixedError('GITHUB_PATH_REFUSED');
+  if (typeof path !== 'string' || !path.startsWith('/repos/') || /[\\#\x00-\x20]/.test(path) || path.includes('%') || path.split(/[/?]/).some(part => part === '.' || part === '..')) throw fixedError('GITHUB_PATH_REFUSED');
   const url = new URL(`https://api.github.com${path}`);
   const repo = url.pathname.split('/').slice(2, 4).join('/');
-  if (!config.repositories.includes(repo) || !/^\/repos\/[^/]+\/[^/]+(?:\/(?:pulls\/\d+(?:\/files)?|git\/trees\/[a-f0-9]{40}|commits\/[a-f0-9]{40}|actions\/workflows\/(?:gemini-pilot|ci)\.yml\/runs|actions\/runs\/\d+|collaborators\/[A-Za-z0-9-]+\/permission))?$/.test(url.pathname)) throw fixedError('GITHUB_PATH_REFUSED');
+  if (!config.repositories.includes(repo) || !/^\/repos\/[^/]+\/[^/]+(?:\/(?:pulls\/\d+|compare\/[a-f0-9]{40}\.\.\.[a-f0-9]{40}|git\/trees\/[a-f0-9]{40}|commits\/[a-f0-9]{40}|actions\/workflows\/(?:gemini-pilot|ci)\.yml\/runs|actions\/runs\/\d+|collaborators\/[A-Za-z0-9-]+\/permission))?$/.test(url.pathname)) throw fixedError('GITHUB_PATH_REFUSED');
   for (const [key, value] of url.searchParams) if (!['page', 'per_page', 'recursive', 'head_sha'].includes(key) || !/^(?:\d+|[a-f0-9]{40})$/.test(value)) throw fixedError('GITHUB_PATH_REFUSED');
   return url.href;
 }
@@ -76,24 +76,33 @@ export async function collectSnapshot(context, transport = createTransport()) {
   const rawRuns = await pages(`${root}/actions/workflows/gemini-pilot.yml/runs`, 'workflow_runs', transport);
   const runs = [];
   for (const run of rawRuns) {
-    const match = /^gemini:([^:]+):([1-9]\d*):([a-f0-9]{40}):(dry|live)$/.exec(run.display_title ?? '');
+    if (run.event !== 'workflow_dispatch' || !Number.isSafeInteger(run.id) || !Number.isSafeInteger(run.run_attempt)) throw fixedError('HISTORY_INCOMPLETE');
+    // The trusted workflow assigns this constant before parsing raw inputs.
+    // It can never reach a provider call, even when those inputs are invalid.
+    if (run.display_title === `gemini:${context.repo}:dry` && run.path === '.github/workflows/gemini-pilot.yml' && run.head_branch === context.defaultBranch && sha(run.head_sha)) continue;
+    const match = /^gemini:([^:]+):([1-9]\d*):([a-f0-9]{40}):(live)$/.exec(run.display_title ?? '');
     if (!match || match[1] !== context.repo || run.event !== 'workflow_dispatch' || !Number.isSafeInteger(run.id) || !Number.isSafeInteger(run.run_attempt)) throw fixedError('HISTORY_INCOMPLETE');
     if (match[4] === 'live') runs.push({ repo: match[1], pr: Number(match[2]), head: match[3], runId: run.id, runAttempt: run.run_attempt });
   }
   const history = context.dryRun === true ? { state: 'ready' } : checkHistory(snapshot, runs);
   if (history.state !== 'ready') throw fixedError('HISTORY_REFUSED');
   const run = await githubRead(`${root}/actions/runs/${context.runId}`, transport);
-  if (run.id !== context.runId || run.run_attempt !== 1 || run.event !== 'workflow_dispatch' || run.path !== '.github/workflows/gemini-pilot.yml' || run.head_sha !== context.workflowSha || run.head_branch !== context.defaultBranch || run.actor?.login !== context.actor || run.triggering_actor?.login !== context.triggeringActor || run.repository?.full_name !== context.repo || run.display_title !== `gemini:${context.repo}:${context.pr}:${context.sha}:${context.dryRun === true ? 'dry' : 'live'}`) throw fixedError('RUN_ORIGIN_REFUSED');
-  const files = await pages(`${root}/pulls/${context.pr}/files`, null, transport, 1);
-  if (files.length !== pr.changed_files || files.length > config.maxFiles) throw fixedError('DIFF_INCOMPLETE');
+  if (run.id !== context.runId || run.run_attempt !== 1 || run.event !== 'workflow_dispatch' || run.path !== '.github/workflows/gemini-pilot.yml' || run.head_sha !== context.workflowSha || run.head_branch !== context.defaultBranch || run.actor?.login !== context.actor || run.triggering_actor?.login !== context.triggeringActor || run.repository?.full_name !== context.repo || run.display_title !== (context.dryRun === true ? `gemini:${context.repo}:dry` : `gemini:${context.repo}:${context.pr}:${context.sha}:live`)) throw fixedError('RUN_ORIGIN_REFUSED');
+  // Fixed SHA comparison supplies the PR three-dot diff and its old-tree identity.
+  // GitHub returns all changed files on page one (up to 300); our cap is 20.
+  const comparison = await githubRead(`${root}/compare/${snapshot.base}...${snapshot.head}?per_page=1&page=1`, transport);
+  if (comparison.base_commit?.sha !== snapshot.base || !sha(comparison.merge_base_commit?.sha)) throw fixedError('DIFF_PROVENANCE_REFUSED');
+  snapshot.diffBase = comparison.merge_base_commit.sha;
+  const files = comparison.files;
+  if (!Array.isArray(files) || files.length !== pr.changed_files || files.length > config.maxFiles) throw fixedError('DIFF_INCOMPLETE');
   const trees = {};
-  for (const revision of [snapshot.head, snapshot.base]) {
+  for (const revision of [snapshot.head, snapshot.diffBase]) {
     const tree = await githubRead(`${root}/git/trees/${revision}?recursive=1`, transport);
     if (tree.truncated !== false || !Array.isArray(tree.tree)) throw fixedError('TREE_INCOMPLETE');
     trees[revision] = new Map(tree.tree.map(entry => [entry.path, entry]));
   }
   const filtered = files.map(f => {
-    const old = trees[snapshot.base].get(f.previous_filename ?? f.filename);
+    const old = trees[snapshot.diffBase].get(f.previous_filename ?? f.filename);
     const current = trees[snapshot.head].get(f.filename);
     const entry = f.status === 'removed' ? old : current;
     const modes = [old, current].filter(Boolean);
@@ -109,7 +118,7 @@ export async function collectSnapshot(context, transport = createTransport()) {
     const checks = await pages(`${root}/actions/workflows/ci.yml/runs?head_sha=${revision}`, 'workflow_runs', transport);
     for (const run of checks) if (run.head_sha === revision && run.path === '.github/workflows/ci.yml' && ['pull_request', 'push'].includes(run.event) && Number.isSafeInteger(run.id) && ['completed', 'queued', 'in_progress'].includes(run.status)) ci.push({ id: run.id, sha: revision, status: run.status, conclusion: ['success', 'failure', 'cancelled', 'skipped', 'timed_out', 'neutral', 'action_required', 'stale'].includes(run.conclusion) ? run.conclusion : null });
   }
-  // The files endpoint is mutable: bind its result to a fresh public identity.
+  // Target/head and public eligibility may change while collecting fixed inputs.
   await assertCurrentSnapshot(snapshot, transport);
   return { ...snapshot, historyComplete: true, files: filtered, ci };
 }
@@ -130,6 +139,7 @@ export function validateResult(json, changedLines, snapshot) {
     for (const f of result.findings) if (!exact(f, ['severity', 'path', 'side', 'line', 'explanation']) || !['low', 'medium', 'high'].includes(f.severity) || !['LEFT', 'RIGHT'].includes(f.side) || !Number.isSafeInteger(f.line) || !Object.hasOwn(changedLines, f.path) || !changedLines[f.path][f.side].includes(f.line) || !safeText(f.explanation, 650)) return blocked();
     const prose = [result.summary, ...result.findings.map(f => f.explanation)].join(' ').toLowerCase();
     if ((snapshot.sourceLines ?? []).some(line => line.trim().length >= 12 && prose.includes(line.trim().toLowerCase()))) return blocked();
+    if (summaryText(result, snapshot).length > config.maxSummaryCharacters) return { state: 'blocked', reason: 'SUMMARY_LIMIT' };
     return { state: 'ready', result: JSON.parse(JSON.stringify(result)) };
   } catch { return blocked(); }
 }
@@ -191,10 +201,16 @@ function sourcePath(finding, snapshot) {
   if (!file || (file.status === 'renamed' && !file.previousPath)) throw fixedError('SOURCE_PATH_UNAVAILABLE');
   return file.previousPath ?? file.path;
 }
+const encodeSegment = value => encodeURIComponent(value).replace(/[!'()*]/g, c => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+function summaryText(result, snapshot) {
+  const header = `Gemini advisory diagnosis — hypotheses requiring human verification.\n\nRepository: ${escape(snapshot.repo)} · PR #${snapshot.pr}\nHead: ${snapshot.head}\nTarget base: ${snapshot.base}\nDiff base: ${snapshot.diffBase}\n\n`;
+  const findings = result.findings.map(f => { const revision = f.side === 'LEFT' ? snapshot.diffBase : snapshot.head; const path = sourcePath(f, snapshot).split('/').map(encodeSegment).join('/'); return `- ${f.severity}: [source line ${f.line}](https://github.com/${snapshot.repo}/blob/${revision}/${path}#L${f.line}) — ${escape(f.explanation)}`; }).join('\n');
+  return header + `Coverage: ${result.coverage}\n\n${escape(result.summary)}\n\n${findings}`;
+}
 export function renderSummary(result, snapshot) {
-  const header = `Gemini advisory diagnosis — hypotheses requiring human verification.\n\nRepository: ${escape(snapshot.repo)} · PR #${snapshot.pr}\nHead: ${snapshot.head}\nBase: ${snapshot.base}\n\n`;
-  const findings = result.findings.map(f => { const revision = f.side === 'LEFT' ? snapshot.base : snapshot.head; const path = sourcePath(f, snapshot).split('/').map(encodeURIComponent).join('/'); return `- ${f.severity}: [source line ${f.line}](https://github.com/${snapshot.repo}/blob/${revision}/${path}#L${f.line}) — ${escape(f.explanation)}`; }).join('\n');
-  return (header + `Coverage: ${result.coverage}\n\n${escape(result.summary)}\n\n${findings}`).slice(0, config.maxSummaryCharacters);
+  const summary = summaryText(result, snapshot);
+  if (summary.length > config.maxSummaryCharacters) throw fixedError('SUMMARY_LIMIT');
+  return summary;
 }
 
 // CLI: context is trusted dispatch metadata, never PR content. collect writes only

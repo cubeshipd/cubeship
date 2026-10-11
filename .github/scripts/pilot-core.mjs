@@ -15,7 +15,7 @@ export function authorize(context, pr, permissions) {
   return ready();
 }
 export function sameSnapshot(expected, current) {
-  return ['repo', 'pr', 'head', 'base', 'runId', 'workflowSha'].every(key => expected?.[key] !== undefined && expected[key] === current?.[key]);
+  return ['repo', 'pr', 'head', 'base', 'diffBase', 'runId', 'workflowSha'].every(key => expected?.[key] !== undefined && expected[key] === current?.[key]);
 }
 export function checkHistory(snapshot, runs) {
   if (snapshot.runAttempt !== undefined && snapshot.runAttempt !== 1) return decision('blocked', 'Rerun refused');
@@ -68,7 +68,7 @@ export function prepareInput(snapshot, files, ci = []) {
     !['completed', 'queued', 'in_progress'].includes(run.status) ||
     ![null, 'success', 'failure', 'cancelled', 'skipped', 'timed_out', 'neutral', 'action_required', 'stale'].includes(run.conclusion))) return fail('incomplete', 'CI metadata unavailable');
   const publicCI = ci.map(({ id, sha, status, conclusion }) => ({ id, sha, status, conclusion }));
-  const prompt = JSON.stringify({ snapshot: Object.fromEntries(['repo', 'pr', 'head', 'base', 'runId', 'workflowSha'].map(key => [key, snapshot[key]])), ci: publicCI, ciCoverage: publicCI.length ? 'available' : 'unknown', files: files.map(({ path, previousPath, status, patch }) => ({ path, previousPath, status, patch })) });
+  const prompt = JSON.stringify({ snapshot: Object.fromEntries(['repo', 'pr', 'head', 'base', 'diffBase', 'runId', 'workflowSha'].map(key => [key, snapshot[key]])), ci: publicCI, ciCoverage: publicCI.length ? 'available' : 'unknown', files: files.map(({ path, previousPath, status, patch }) => ({ path, previousPath, status, patch })) });
   if (Buffer.byteLength(SYSTEM_INSTRUCTION, 'utf8') + Buffer.byteLength(prompt, 'utf8') > config.maxInputBytes) return fail('incomplete', 'Serialized model input exceeds byte limit');
   return { decision: ready(), prompt, changedLines };
 }
