@@ -94,7 +94,7 @@ function synthetic({tokens=12000,status=200,abort=false,result=goodResult(),fini
   calls.push({url,options}); const path=new URL(url).pathname;
   if(path.endsWith(':countTokens')) return reply({totalTokens:tokens});
   if(path.endsWith(':generateContent')) {transport.generationCalls++; if(abort) throw new DOMException('SECRET_SENTINEL','AbortError'); return reply({candidates:[{finishReason:finish,content:{parts:[{text:JSON.stringify(result)}]}}],usageMetadata:usage??{promptTokenCount:tokens,candidatesTokenCount:100,thoughtsTokenCount:50,totalTokenCount:tokens+150}},status);}
-  if(path.endsWith('/collaborators/a/permission')||path.endsWith('/collaborators/b/permission')) return reply({permission:'admin'});
+  if(path.endsWith('/collaborators/a/permission')||path.endsWith('/collaborators/b/permission')) return reply({permission:'admin',role_name:'admin'});
   if(path.endsWith('/actions/runs/1')) return reply(runMetadata());
   if(path.endsWith('/pulls/1/files')) return reply([{filename:'src/a.js',status:'modified',additions:1,deletions:0,patch:file().patch}]);
   if(path.includes('/git/trees/')) return reply({truncated:false,tree:[{path:'src/a.js',mode:'100644',type:'blob'}]});
@@ -264,4 +264,23 @@ test('rename LEFT source uses trusted previous path at base; RIGHT uses current 
  const rendered=runner.renderSummary(result,{...snapshot,files:[f]});assert.ok(rendered.includes(`/blob/${otherSha}/src/old.js#L1`));assert.ok(rendered.includes(`/blob/${sha}/src/new.js#L1`));assert.ok(!rendered.includes(`/blob/${otherSha}/src/new.js`));
  assert.throws(()=>runner.renderSummary(result,snapshot));assert.throws(()=>runner.renderSummary(result,{...snapshot,files:[{...f,previousPath:undefined}]}));
  assert.equal(runner.validateResult({...result,findings:[{...result.findings[0],previousPath:'model/path.js'}]},prepareInput(snapshot,[f]).changedLines,snapshot).state,'blocked');
+});
+
+test('CLI collect authorizes canonical maintain/admin roles and denies write or unknown roles',async()=>{
+ const {mkdtemp,writeFile,access,rm}=await import('node:fs/promises');const dir=await mkdtemp('/tmp/pilot-role-contract-');
+ try {
+  await writeFile(`${dir}/context.json`,JSON.stringify(input().context));
+  const cases=[
+   [{permission:'write',role_name:'maintain'},'ready'],
+   [{permission:'admin',role_name:'admin'},'ready'],
+   [{permission:'write',role_name:'write'},'blocked'],
+   [{permission:'admin'},'blocked'],
+   [{permission:'admin',role_name:'custom-admin'},'blocked'],
+  ];
+  for(const [i,[response,state]] of cases.entries()) {
+   const t=synthetic();const fetch=t.fetch;t.fetch=async(u,o)=>new URL(u).pathname.endsWith('/permission')?reply(response):fetch(u,o);
+   const target=`${dir}/snapshot-${i}.json`;const out=await runner.runCLI(['collect',`${dir}/context.json`,target],{transport:t,env:{}});
+   assert.equal(out.state,state);if(state==='ready')await access(target);else await assert.rejects(access(target));
+  }
+ }finally{await rm(dir,{recursive:true,force:true});}
 });

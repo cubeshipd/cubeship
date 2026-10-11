@@ -217,7 +217,7 @@ export async function runCLI(argv, { env = process.env, transport = createTransp
       for (const actor of new Set([context.actor, context.triggeringActor])) {
         const permissionTransport = { ...transport, fetch: (url, options) => transport.fetch(url, { ...options, headers: { ...options.headers, ...(env.GITHUB_TOKEN ? { Authorization: `Bearer ${env.GITHUB_TOKEN}` } : {}) } }) };
         const data = await githubRead(`/repos/${context.repo}/collaborators/${actor}/permission`, permissionTransport);
-        permissions[actor] = data.permission;
+        permissions[actor] = ['maintain', 'admin'].includes(data.role_name) ? data.role_name : undefined;
       }
       const decision = authorize({ ...context, historyComplete: current.historyComplete }, { number: current.pr, state: 'open', isPublic: true, head: current.head, base: current.base }, permissions);
       if (decision.state !== 'ready') return decision;
