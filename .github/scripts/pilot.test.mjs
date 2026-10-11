@@ -1,4 +1,5 @@
 import test from 'node:test';
+import * as core from './pilot-core.mjs';
 import assert from 'node:assert/strict';
 import {authorize, checkHistory, prepareInput, sameSnapshot} from './pilot-core.mjs';
 const sha='a'.repeat(40), otherSha='b'.repeat(40);
@@ -19,8 +20,13 @@ test('input_boundaries counts whole diff and exact bytes',()=>{
  assert.equal(prepareInput(snapshot,[...files,{...file(),path:'src/extra.js'}]).decision.state,'incomplete');
  assert.equal(prepareInput(snapshot,[file(1000)]).decision.state,'ready');
  assert.equal(prepareInput(snapshot,[file(1001)]).decision.state,'incomplete');
- const f=file(); f.patch+=' '.repeat(131072-Buffer.byteLength(f.patch));
- assert.equal(prepareInput(snapshot,[f]).decision.state,'ready');
+ const f=file();
+ const baseline=prepareInput(snapshot,[f]);
+ const inputBytes=Buffer.byteLength(baseline.prompt)+Buffer.byteLength(core.SYSTEM_INSTRUCTION ?? '');
+ f.patch+=' '.repeat(131072-inputBytes);
+ const exact=prepareInput(snapshot,[f]);
+ assert.equal(exact.decision.state,'ready');
+ assert.equal(Buffer.byteLength(exact.prompt)+Buffer.byteLength(core.SYSTEM_INSTRUCTION ?? ''),131072);
  f.patch+=' '; assert.equal(prepareInput(snapshot,[f]).decision.state,'incomplete');
 });
 test('incomplete_diff refuses pagination, absent/truncated patches, symlinks and inconsistent hunks',()=>{
@@ -63,4 +69,17 @@ test('unknown authorization history and actor permissions fail closed',()=>{
 });
 test('malformed history records cannot silently permit generation',()=>{
  assert.equal(checkHistory(snapshot,[{}]).state,'incomplete');
+});
+
+test('serialized model input accounts for paths, escaping and UTF8',()=>{
+ for(const change of [
+  {path:'src/'+ 'p'.repeat(131072)+'.js'},
+  {patch:file().patch.replace('+x','+'+'"'.repeat(66000))},
+  {patch:file().patch.replace('+x','+'+'\\'.repeat(66000))},
+  {patch:file().patch.replace('+x','+'+'é'.repeat(65400))},
+ ]) assert.equal(prepareInput(snapshot,[{...file(),...change}]).decision.state,'incomplete');
+ const f={...file(),path:'src/é.js',patch:file().patch.replace('+x','+é')};
+ const result=prepareInput(snapshot,[f]);
+ assert.equal(result.decision.state,'ready');
+ assert.ok(Buffer.byteLength(result.prompt)>result.prompt.length);
 });
