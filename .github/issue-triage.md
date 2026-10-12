@@ -163,8 +163,8 @@ tests and ordinary repository CI alone cannot prove those integrations.
 
 Proposed public synthetic test titles are “Falha simulada ao salvar”,
 “Synthetic save failure duplicate”, “Melhoria simulada de filtro” and
-“Synthetic security refusal”. None has been created and no Issue numbers are
-assigned. Verify useful translation, native type/Priority,
+“Synthetic security refusal”. Create them only for authorized end-to-end
+validation and record the actual Issue/run URLs. Verify useful translation, native type/Priority,
 verified duplicate links, human fields/Effort/original preservation, repetition
 without new effects, security refusal and actual usage. Stop on unknown API or
 read-limit outcomes. Replication to `cubeshipd/cubeship-templates` and

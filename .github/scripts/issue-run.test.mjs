@@ -107,6 +107,7 @@ for (const mode of ['status-400', 'status-429', 'status-500', 'status-503', 'abo
   test(`generation ${mode} never retries or publishes raw responses`, async t => {
     const s = await setup(t), a = await collected(s); s.f.mode = mode;
     const r = await s.run.generateOnce(a, s.tr, 'fixture-google'); assert.equal(r.state, 'blocked'); assert.equal(s.f.generation, 1); assert.equal(s.f.mutations.length, 0);
+    if (mode.startsWith('status-')) assert.equal(r.httpStatus, Number(mode.slice(7)));
     assert.ok(!/payload|key|SECRET|fixture-google|Bearer/.test(JSON.stringify(r)));
   });
 }

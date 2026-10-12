@@ -223,7 +223,7 @@ export async function generateOnce(a, transport = createTransport(), key) {
     if (count.data.totalTokens > config.maxInputTokens) return result('TOKEN_LIMIT');
     await currentUnchanged(input, transport);
     const response = await request(`${base}:generateContent`, { ...options, body: JSON.stringify(body), signal: AbortSignal.timeout(config.generationTimeoutSeconds * 1000) }, transport, [200], 65536);
-    if (!response.data) return result('GENERATION_FAILED');
+    if (!response.data) return { ...result('GENERATION_FAILED'), httpStatus: response.status };
     const decision = validateProposal(finalText(response.data), input);
     if (decision.state !== 'ready') return decision;
     return { state: 'ready', reason: 'INFERRED', proposal: decision.proposal, usage: usage(response.data.usageMetadata, count.data.totalTokens) };
