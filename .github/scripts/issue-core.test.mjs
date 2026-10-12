@@ -255,3 +255,25 @@ test('technical command and code text is preserved as escaped data rather than i
   }
   ready(input({ title: 'Falha', body: 'npm test\ndocker restart cubeship\nconst result = 3;' }));
 });
+test('informative title permits a safely omitted code-only body', () => {
+  const i = input({ body: '```\nnpm test\n```' }, []); ready(i); assert.equal(i.prose.body, '');
+  assert.equal(i.snapshot.contentHash, core.fingerprint({ title: 'Deploy button fails', body: '```\nnpm test\n```' }));
+});
+test('primary prose bound follows whole-source safety scan and complete log omission', () => {
+  const logs = '```\n' + 'safe log line\n'.repeat(600) + '```';
+  ready(input({ body: 'The deployment fails.\n' + logs }, []));
+  blocked(input({ body: logs.replace('safe log line', 'password=SECRET_SENTINEL') }, []));
+  blocked(input({ body: 'actual prose '.repeat(400) }, []));
+  blocked(input({ body: '```\n' + 'log\n'.repeat(600) }, []));
+  blocked(input({ body: '```\n' + 'x'.repeat(2 * 1024 * 1024) + '\n```' }, []));
+});
+test('title-only translation may leave an omitted source body empty without inventing text', () => {
+  const i = input({ body: '' }, []), p = proposal(i); p.duplicates = []; p.translation = { title: 'Failure', body: '', sourceLanguage: 'pt', targetLanguage: 'en' };
+  ready(core.validateProposal(p, i)); assert.equal(core.responseSchema(i).properties.translation.anyOf[1].properties.body.minLength, 0);
+  assert.ok(core.renderComment(p, i).includes('Failure')); assert.ok(core.planEffects(p, { ...issue(), repo: repoName, body: '' }, []).comment.includes('Failure'));
+  blocked(core.validateProposal({ ...p, snapshot: input({}, []).snapshot }, input({}, [])));
+});
+test('omitted source body cannot acquire invented translated body prose', () => {
+  const i = input({ body: '' }, []), p = proposal(i); p.duplicates = []; p.translation = { title: 'Failure', body: 'Invented body prose.', sourceLanguage: 'pt', targetLanguage: 'en' }; blocked(core.validateProposal(p, i));
+  assert.equal(core.responseSchema(i).properties.translation.anyOf[1].properties.body.maxLength, 0);
+});

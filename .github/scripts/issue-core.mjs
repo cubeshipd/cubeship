@@ -35,7 +35,7 @@ export function fingerprint(issue) {
 }
 
 export function sanitizeProse(raw) {
-  if (!text(raw)) return blocked('INVALID_PROSE');
+  if (!text(raw) || bytes(raw) > 2 * 1024 * 1024) return blocked('INVALID_PROSE');
   if (secret.test(raw) || privateText.test(raw)) return blocked('SENSITIVE_INPUT');
   const lines = [], source = raw.split(/\r?\n/); let fence = null;
   for (const line of source) {
@@ -54,6 +54,8 @@ export function sanitizeProse(raw) {
   return prose ? { ...ready(), prose } : blocked('EMPTY_PROSE');
 }
 
+const bodyProse = raw => { const out = raw ? sanitizeProse(raw) : { ...ready(), prose: '' }; return out.reason === 'EMPTY_PROSE' ? { ...ready(), prose: '' } : out; };
+
 const snapshotKeys = ['repo', 'issueNumber', 'issueId', 'contentHash', 'workflowSha', 'runId'];
 const origin = x => record(x) && config.repositories.includes(x.repo) && positive(x.issueNumber) && positive(x.issueId) && hex(x.contentHash, 64) && hex(x.workflowSha, 40) && positive(x.runId);
 const sameOrigin = (a, b) => origin(a) && origin(b) && snapshotKeys.every(k => a[k] === b[k]);
@@ -66,9 +68,10 @@ export function prepareInput(snapshot, candidates, catalog) {
   const fail = reason => ({ decision: blocked(reason) });
   if (!origin(snapshot) || !catalogValid(catalog) || !Array.isArray(candidates) || candidates.complete === false || candidates.length > config.maxCandidates) return fail('INVALID_INPUT_METADATA');
   const issue = snapshot.issue ?? snapshot;
-  if (fingerprint(issue) !== snapshot.contentHash || bytes(issue.title) + bytes(issue.body ?? '') > config.maxPrimaryBytes) return fail('INVALID_PRIMARY_INPUT');
-  const title = sanitizeProse(issue.title), body = issue.body ? sanitizeProse(issue.body) : { ...ready(), prose: '' };
+  if (!text(issue.title) || !(issue.body == null || text(issue.body)) || bytes(issue.title) + bytes(issue.body ?? '') > 2 * 1024 * 1024 || fingerprint(issue) !== snapshot.contentHash) return fail('INVALID_PRIMARY_INPUT');
+  const title = sanitizeProse(issue.title), body = bodyProse(issue.body);
   if (title.state !== 'ready' || body.state !== 'ready') return fail('UNSAFE_PRIMARY_INPUT');
+  if (bytes(title.prose) + bytes(body.prose) > config.maxPrimaryBytes) return fail('INVALID_PRIMARY_INPUT');
   const safeCandidates = [], numbers = new Set(), ids = new Set();
   for (const c of candidates) {
     if (!candidateValid(c, snapshot) || numbers.has(c.number) || ids.has(c.id)) return fail('INVALID_CANDIDATE');
@@ -94,7 +97,7 @@ export function responseSchema(input) {
     type: nullable(choiceSchema(config.types.map(t => t.name))),
     priority: nullable(choiceSchema(config.priority.options.map(o => o.name))),
     labels: { type: 'array', maxItems: config.maxLabels, items: choiceSchema(config.labels) },
-    translation: nullable(objectSchema({ title: { type: 'string', minLength: 1, maxLength: config.maxCommentCharacters }, body: { type: 'string', minLength: 1, maxLength: config.maxCommentCharacters }, sourceLanguage: { type: 'string', pattern: '^[a-z]{2,3}(?:-[A-Z]{2})?$' }, targetLanguage: { type: 'string', enum: [config.targetLanguage] } })),
+    translation: nullable(objectSchema({ title: { type: 'string', minLength: 1, maxLength: config.maxCommentCharacters }, body: { type: 'string', minLength: input.prose?.body === '' ? 0 : 1, maxLength: input.prose?.body === '' ? 0 : config.maxCommentCharacters }, sourceLanguage: { type: 'string', pattern: '^[a-z]{2,3}(?:-[A-Z]{2})?$' }, targetLanguage: { type: 'string', enum: [config.targetLanguage] } })),
     duplicates: { type: 'array', maxItems: config.maxDuplicates, items: objectSchema({ number: input.candidates.length ? { type: 'integer', enum: input.candidates.map(c => c.number) } : { type: 'integer', maximum: 0 }, confidence: confidenceSchema }) },
   });
 }
@@ -111,7 +114,7 @@ function proposalValid(p, input) {
   if (!exact(p, ['snapshot', 'type', 'priority', 'labels', 'translation', 'duplicates']) || !exact(p.snapshot, snapshotKeys) || !exact(input?.snapshot, snapshotKeys) || !sameOrigin(p.snapshot, input.snapshot) || !catalogValid(input?.catalog) || !candidatesValid(input?.candidates, input.snapshot)) return false;
   if (!choice(p.type, config.types.map(t => t.name)) || !choice(p.priority, config.priority.options.map(o => o.name)) || !Array.isArray(p.labels) || p.labels.length > config.maxLabels || p.labels.some(l => l === null || !choice(l, config.labels)) || new Set(p.labels.map(l => l.name)).size !== p.labels.length) return false;
   if (!Array.isArray(p.duplicates) || p.duplicates.length > config.maxDuplicates || new Set(p.duplicates.map(d => d?.number)).size !== p.duplicates.length || p.duplicates.some(d => !exact(d, ['number', 'confidence']) || !confidence(d.confidence) || !input.candidates.some(c => candidateValid(c, input.snapshot) && c.number === d.number))) return false;
-  if (p.translation !== null && (!exact(p.translation, ['title', 'body', 'sourceLanguage', 'targetLanguage']) || !safeOutput(p.translation.title, input.prose) || !safeOutput(p.translation.body, input.prose) || !/^[a-z]{2,3}(?:-[A-Z]{2})?$/.test(p.translation.sourceLanguage) || p.translation.targetLanguage !== config.targetLanguage || p.translation.sourceLanguage.split('-')[0] === config.targetLanguage)) return false;
+  if (p.translation !== null && (!exact(p.translation, ['title', 'body', 'sourceLanguage', 'targetLanguage']) || !safeOutput(p.translation.title, input.prose) || !(input.prose?.body === '' ? p.translation.body === '' : safeOutput(p.translation.body, input.prose)) || !/^[a-z]{2,3}(?:-[A-Z]{2})?$/.test(p.translation.sourceLanguage) || p.translation.targetLanguage !== config.targetLanguage || p.translation.sourceLanguage.split('-')[0] === config.targetLanguage)) return false;
   return true;
 }
 const escape = s => s.replace(/\\/g, '\\\\').replace(/([`*_\[\]{}()#!|~])/g, '\\$1').replace(/@/g, '@\u200b').replace(/\r\n/g, '\n');
@@ -145,7 +148,7 @@ export function renderComment(proposal, input) {
 export function planEffects(proposal, current, candidates) {
   const none = () => ({ labelsToAdd: [], typeToSet: null, priorityToSet: null, comment: '' });
   if (!origin(proposal?.snapshot) || !record(current) || current.repo !== proposal.snapshot.repo || current.number !== proposal.snapshot.issueNumber || current.id !== proposal.snapshot.issueId || current.state !== 'open' || Object.hasOwn(current, 'pull_request') || fingerprint(current) !== proposal.snapshot.contentHash || !Array.isArray(current.labels) || !Array.isArray(current.fieldValues) || current.fieldValues.complete === false || !Object.hasOwn(current, 'type')) return none();
-  const title = sanitizeProse(current.title), body = current.body ? sanitizeProse(current.body) : { ...ready(), prose: '' };
+  const title = sanitizeProse(current.title), body = bodyProse(current.body);
   if (title.state !== 'ready' || body.state !== 'ready') return none();
   const input = { snapshot: proposal.snapshot, prose: { title: title.prose, body: body.prose }, candidates, catalog: { types: config.types, priority: config.priority, labels: config.labels } }, validated = validateProposal(proposal, input);
   if (validated.state !== 'ready') return none();
