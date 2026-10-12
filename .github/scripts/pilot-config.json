@@ -2,7 +2,7 @@
   "repositories": ["cubeshipd/cubeship", "cubeshipd/cubeship-templates", "lucasaarch/jian"],
   "model": "gemini-3.8-flash",
   "thinking": "low",
-  "liveEnabled": false,
+  "liveEnabled": true,
   "maxFiles": 20,
   "maxChangedLines": 1000,
   "maxInputBytes": 131072,

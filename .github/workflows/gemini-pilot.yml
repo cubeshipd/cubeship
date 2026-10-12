@@ -1,4 +1,4 @@
-# Advisory public-only pilot. Live stays disabled in the hash-pinned config.
+# Advisory public-only pilot. Manual live capability is enabled in the hash-pinned config; dry remains the default.
 name: Gemini pilot
 run-name: ${{ inputs.dry_run && format('gemini:{0}:dry', github.repository) || format('gemini:{0}:{1}:{2}:live', github.repository, inputs.pr, inputs.sha) }}
 on:
@@ -117,7 +117,7 @@ jobs:
           sha256sum -c - <<'HASHES' > /dev/null
           ad73ede8858adb35bfae61b2ee93d3deb2aa0d17c4ef9141d0c8ef1f3f8c3426  pilot-core.mjs
           9d5b4c77f14dc45f5ed1efaa4c0377f82c0018e614e9799e64339fda18467c59  pilot-run.mjs
-          87d680c31bb5da763a15d93c0b2ec60e10b514b3a5168174f5f0c83b02c6d9b1  pilot-config.json
+          279bc8610b2a4912a40aa065e5825176726f45a6d0ab3d60d22306d84673f6c5  pilot-config.json
           HASHES
           node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
           import { config } from './pilot-core.mjs';

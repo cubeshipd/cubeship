@@ -126,7 +126,7 @@ test('final-text signature is discarded before result, usage, requests and publi
   assert.ok(!/thoughtSignature|OPAQUE_SIGNATURE_SENTINEL/.test(JSON.stringify(t.calls)));
   assert.equal(runner.renderSummary(signed.result,snapshot),runner.renderSummary(plain.result,snapshot));
   // Exercise the real artifact consumer and publication with the filtered
-  // synthetic generation. Live inference remains disabled in the config.
+  // synthetic generation without contacting a provider.
   await writeFile(`${dir}/context.json`,JSON.stringify(input().context));
   await writeFile(`${dir}/artifact.json`,JSON.stringify({...signed,origin:{...snapshot,dryRun:false}}));
   assert.equal((await runner.runCLI(['summarize',`${dir}/context.json`,`${dir}/artifact.json`],{transport:t,env:{GITHUB_STEP_SUMMARY:`${dir}/summary.md`}})).state,'ready');
@@ -239,7 +239,7 @@ function runMetadata(dry=false) {return {id:1,run_attempt:1,event:'workflow_disp
 test('dry history permits live analysis but failed live attempt reserves the SHA',async()=>{
  for(const [mode,expected] of [['dry','ready'],['live','blocked'],['bad','blocked']]) {const t=synthetic();const fetch=t.fetch;t.fetch=async(u,o)=>u.includes('/gemini-pilot.yml/runs')?reply({total_count:1,workflow_runs:[{...runMetadata(),id:2,conclusion:'failure',display_title:mode==='dry'?`gemini:${ctx.repo}:dry`:`gemini:${ctx.repo}:1:${sha}:${mode}`}]}):fetch(u,o);const out=await runner.generateOnce(input(),t,'SYNTHETIC_KEY');assert.equal(out.state,expected);assert.equal(t.generationCalls,expected==='ready'?1:0);}
 });
-test('dry run works while live is disabled and never reads provider key or calls provider',async()=>{
+test('dry run never calls provider regardless of configured live capability',async()=>{
  const t=synthetic();const fetch=t.fetch;t.fetch=async(u,o)=>new URL(u).pathname.endsWith('/actions/runs/1')?reply(runMetadata(true)):fetch(u,o);
  const native=runner.createTransport(t.fetch,{sleep:t.sleep,now:t.now});const i=input();i.context.dryRun=true;
  assert.deepEqual(await runner.generateOnce(i,native),{state:'ready',reason:'DRY_RUN_VALIDATED'});assert.equal(t.calls.filter(c=>c.url.includes('googleapis')).length,0);
@@ -264,20 +264,22 @@ test('collection follows complete pagination and only accepts correct CI SHA and
 test('incomplete trees, file counts, and history pages fail before provider boundary',async()=>{
  for(const [fragment,data] of [['/git/trees/',{truncated:true,tree:[]}],[`/compare/${otherSha}...${sha}`,[]],['/gemini-pilot.yml/runs',{total_count:2,workflow_runs:[]}]]) {const t=synthetic();const fetch=t.fetch;t.fetch=async(u,o)=>u.includes(fragment)?reply(data):fetch(u,o);assert.equal((await runner.generateOnce(input(),t,'SYNTHETIC_KEY')).state,'blocked');assert.equal(t.generationCalls,0);}
 });
-test('CLI dry collect infer summarize publishes metadata without secrets, prompts or model calls',async()=>{
+test('configured CLI default dry collect infer summarize never reads key or calls provider',async()=>{
  const {mkdtemp,readFile,writeFile,rm}=await import('node:fs/promises');const dir=await mkdtemp('/tmp/pilot-cli-');
  const t=synthetic();const fetch=t.fetch;t.fetch=async(u,o)=>new URL(u).pathname.endsWith('/actions/runs/1')?reply(runMetadata(true)):fetch(u,o);
- let captured='';const stdout=process.stdout.write,stderr=process.stderr.write;
+ let captured='',keyReads=0;const stdout=process.stdout.write,stderr=process.stderr.write;
  try {
-  await writeFile(`${dir}/context.json`,JSON.stringify({...input().context,dryRun:true}));
-  const env={GITHUB_TOKEN:'SECRET_SENTINEL',GITHUB_STEP_SUMMARY:`${dir}/summary.md`,get GEMINI_API_KEY(){throw Error('KEY_READ_FORBIDDEN');}};
+  const defaultDry=/dry_run:\n        description:.*\n        type: boolean\n        default: (true)\n/.exec(workflow());assert.ok(defaultDry);
+  await writeFile(`${dir}/context.json`,JSON.stringify({...input().context,dryRun:defaultDry[1]==='true'}));
+  const env={GITHUB_TOKEN:'SECRET_SENTINEL',GITHUB_STEP_SUMMARY:`${dir}/summary.md`,get GEMINI_API_KEY(){keyReads++;throw Error('KEY_READ_FORBIDDEN');}};
+  const transport=runner.createTransport(t.fetch,{sleep:t.sleep,now:t.now});
   process.stdout.write=process.stderr.write=chunk=>{captured+=chunk;return true;};
-  assert.equal((await runner.runCLI(['collect',`${dir}/context.json`,`${dir}/snapshot.json`],{transport:t,env})).state,'ready');
-  assert.equal((await runner.runCLI(['infer',`${dir}/context.json`,`${dir}/snapshot.json`,`${dir}/artifact.json`],{transport:t,env})).state,'ready');
-  assert.equal((await runner.runCLI(['summarize',`${dir}/context.json`,`${dir}/artifact.json`],{transport:t,env})).state,'ready');
+  assert.equal((await runner.runCLI(['collect',`${dir}/context.json`,`${dir}/snapshot.json`],{transport,env})).state,'ready');
+  assert.equal((await runner.runCLI(['infer',`${dir}/context.json`,`${dir}/snapshot.json`,`${dir}/artifact.json`],{transport,env})).state,'ready');
+  assert.equal((await runner.runCLI(['summarize',`${dir}/context.json`,`${dir}/artifact.json`],{transport,env})).state,'ready');
   for(const path of ['snapshot.json','artifact.json','summary.md']) {const data=await readFile(`${dir}/${path}`,'utf8');assert.ok(!/SECRET_SENTINEL|SYNTHETIC_KEY|patch|permission|systemInstruction/.test(data));assert.ok(!data.includes(input().prompt));}
   assert.ok((await readFile(`${dir}/summary.md`,'utf8')).includes('Dry run'));
-  assert.equal(t.generationCalls,0);assert.equal(t.calls.filter(c=>c.url.includes('googleapis')).length,0);
+  assert.equal(keyReads,0);assert.equal(t.generationCalls,0);assert.equal(t.calls.filter(c=>c.url.includes('googleapis')).length,0);
   assert.equal(t.calls.filter(c => (c.options.method ?? 'GET') !== 'GET').length, 0);
   for(const c of t.calls) assert.equal(Boolean(c.options.headers.Authorization),c.url.includes('/permission'));
  } finally {process.stdout.write=stdout;process.stderr.write=stderr;await rm(dir,{recursive:true,force:true});}
@@ -375,6 +377,7 @@ import { readFileSync } from 'node:fs';
 import { mkdtemp, mkdir, writeFile, readFile, rm, symlink } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 const workflowPath = new URL('../workflows/gemini-pilot.yml', import.meta.url);
 const workflow = () => readFileSync(workflowPath, 'utf8');
 function stepBody(yaml, name) {
@@ -427,6 +430,13 @@ test('anonymous_scripts execute only after all three trusted literal hashes pass
    if(index===0){assert.equal(out.status,0,out.stderr);assert.equal(await readFile(env.EXECUTED,'utf8'),'executed');}
    else {assert.notEqual(out.status,0,JSON.stringify(change));await assert.rejects(readFile(env.EXECUTED));}
   }
+  // Run the same verified bootstrap with real Node and fixture-only curl.
+  // This proves the downloaded trusted core imports the pinned config.
+  await rm(`${dir}/bin/node`);await symlink(process.execPath,`${dir}/bin/node`);
+  const temp=`${dir}/real-node`;await mkdir(temp);
+  const out=spawnSync('bash',['-e','-o','pipefail','-c',body],{encoding:'utf8',env:{PATH:`${dir}/bin:${process.env.PATH}`,RUNNER_TEMP:temp,GITHUB_OUTPUT:`${temp}/output`,PILOT_REPOSITORY:ctx.repo,SOURCE_SHA:'c'.repeat(40),FIXTURE:`${dir}/fixture`,FAIL_FILE:'',CORRUPT_FILE:''}});
+  assert.equal(out.status,0,out.stderr);
+  assert.equal(await readFile(`${temp}/output`,'utf8'),`live_enabled=${core.config.liveEnabled===true}\n`);
  } finally {await rm(dir,{recursive:true,force:true});}
 });
 test('artifact_origin only accepts a bounded regular fixed file and rejects extras before publication',async()=>{
@@ -457,15 +467,54 @@ test('artifact_origin refuses foreign run, SHA, mode and workflow source through
   }
  } finally {await rm(dir,{recursive:true,force:true});}
 });
-test('live_disabled refuses synthetic key before any network or key access',async()=>{
+test('live_disabled trusted fixture refuses synthetic key before any network or key access',async()=>{
  const dir=await mkdtemp('/tmp/pilot-disabled-');
  try {
+  // Isolate the trusted production modules; only the copied config changes.
+  // This keeps the kill-switch regression independent of the reviewed flag.
+  for(const name of ['pilot-run.mjs','pilot-core.mjs'])await writeFile(`${dir}/${name}`,readFileSync(new URL(name,import.meta.url)));
+  const disabledConfig=JSON.parse(readFileSync(new URL('pilot-config.json',import.meta.url)));
+  await writeFile(`${dir}/pilot-config.json`,JSON.stringify({...disabledConfig,liveEnabled:false}));
+  const disabled=await import(pathToFileURL(`${dir}/pilot-run.mjs`).href);
   await writeFile(`${dir}/context.json`,JSON.stringify({...input().context,dryRun:false}));await writeFile(`${dir}/snapshot.json`,JSON.stringify({snapshot,decision:{state:'ready'},dryRun:false}));
-  for(const env of [{GEMINI_API_KEY:'SYNTHETIC_KEY'},{get GEMINI_API_KEY(){throw Error('KEY_READ_FORBIDDEN');}}]){
-   const t=synthetic();const out=await runner.runCLI(['infer',`${dir}/context.json`,`${dir}/snapshot.json`,`${dir}/artifact.json`],{transport:t,env});
-   assert.deepEqual(out,{state:'blocked',reason:'LIVE_DISABLED'});assert.equal(t.calls.length,0);await assert.rejects(readFile(`${dir}/artifact.json`));
+  let keyReads=0;
+  for(const env of [{GEMINI_API_KEY:'SYNTHETIC_KEY'},{get GEMINI_API_KEY(){keyReads++;throw Error('KEY_READ_FORBIDDEN');}}]){
+   const t=synthetic(),transport=disabled.createTransport(t.fetch,{sleep:t.sleep,now:t.now});
+   const out=await disabled.runCLI(['infer',`${dir}/context.json`,`${dir}/snapshot.json`,`${dir}/artifact.json`],{transport,env});
+   assert.deepEqual(out,{state:'blocked',reason:'LIVE_DISABLED'});assert.equal(keyReads,0);assert.equal(t.calls.length,0);await assert.rejects(readFile(`${dir}/artifact.json`));
+   assert.deepEqual(await disabled.generateOnce({...input(),context:{...input().context,dryRun:false}},transport,'SYNTHETIC_KEY'),{state:'blocked',reason:'LIVE_DISABLED'});assert.equal(t.calls.length,0);
   }
  } finally {await rm(dir,{recursive:true,force:true});}
+});
+test('configured CLI live makes one synthetic generation and publishes only filtered artifact and summary',async()=>{
+ const dir=await mkdtemp('/tmp/pilot-enabled-');
+ const t=syntheticEnvelope(data=>{data.candidates[0].content.parts[0].thoughtSignature=signatureSentinel;});
+ const transport=runner.createTransport(t.fetch,{sleep:t.sleep,now:t.now});
+ let keyReads=0,captured='';const stdout=process.stdout.write,stderr=process.stderr.write;
+ try {
+  await mkdir(`${dir}/artifacts`);
+  await writeFile(`${dir}/context.json`,JSON.stringify({...input().context,dryRun:false}));
+  const env={GITHUB_TOKEN:'SECRET_SENTINEL',GITHUB_STEP_SUMMARY:`${dir}/summary.md`,get GEMINI_API_KEY(){keyReads++;return 'SYNTHETIC_KEY';}};
+  process.stdout.write=process.stderr.write=chunk=>{captured+=chunk;return true;};
+  assert.deepEqual(await runner.runCLI(['collect',`${dir}/context.json`,`${dir}/snapshot.json`],{transport,env}),{state:'ready',reason:'COLLECTED'});
+  assert.deepEqual(await runner.runCLI(['infer',`${dir}/context.json`,`${dir}/snapshot.json`,`${dir}/artifacts/artifact.json`],{transport,env}),{state:'ready',reason:'INFERRED'});
+  assert.equal(keyReads,1);assert.equal(t.generationCalls,1);
+  assert.equal(t.calls.filter(c=>c.url.endsWith(':countTokens')).length,1);
+  assert.equal(t.calls.filter(c=>(c.options.method??'GET')!=='GET').length,2);
+  for(const c of t.calls)assert.equal(Boolean(c.options.headers.Authorization),c.url.includes('/permission'));
+  const artifact=await runner.readArtifactDirectory(`${dir}/artifacts`);
+  assert.deepEqual(artifact,{state:'ready',result:goodResult(),usage:{promptTokenCount:12000,candidatesTokenCount:100,thoughtsTokenCount:50,totalTokenCount:12150,measurement:'measured',estimatedCostUSD:0.0095625},origin:{...snapshot,dryRun:false}});
+  assert.deepEqual(await runner.runCLI(['summarize',`${dir}/context.json`,`${dir}/artifacts/artifact.json`],{transport,env}),{state:'ready',reason:'SUMMARIZED'});
+  assert.equal(t.generationCalls,1);assert.equal(keyReads,1);
+  assert.equal(await readFile(`${dir}/summary.md`,'utf8'),runner.renderSummary(goodResult(),snapshot));
+  for(const path of ['snapshot.json','artifacts/artifact.json','summary.md']){
+   const data=await readFile(`${dir}/${path}`,'utf8');
+   assert.doesNotMatch(data,/SECRET_SENTINEL|SYNTHETIC_KEY|thoughtSignature|OPAQUE_SIGNATURE_SENTINEL|patch|permission|systemInstruction/);
+   assert.ok(!data.includes(input().prompt));
+  }
+ } finally {process.stdout.write=stdout;process.stderr.write=stderr;await rm(dir,{recursive:true,force:true});}
+ assert.doesNotMatch(captured,/SECRET_SENTINEL|SYNTHETIC_KEY|thoughtSignature|OPAQUE_SIGNATURE_SENTINEL/);
+ assert.ok(!captured.includes(input().prompt));
 });
 test('dispatch context parses untrusted inputs as data and preserves separate source SHA and explicit mode',async()=>{
  const y=workflow();const body=stepBody(y,'Build explicit dispatch context');

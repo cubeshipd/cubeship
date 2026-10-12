@@ -5,25 +5,27 @@ comment on a PR, create a check, approve, fix, push, merge, or publish code.
 Findings are hypotheses for a maintainer to verify. The workflow is separate
 from CI, RC releases, and the base mobile integration.
 
-**Live execution is disabled** by `liveEnabled: false` in
-[scripts/pilot-config.json](scripts/pilot-config.json). Dry runs validate real
-public metadata and the complete eligible diff, but never request a model
+**Manual live capability is enabled** by `liveEnabled: true` in
+[scripts/pilot-config.json](scripts/pilot-config.json). The workflow runs only
+by explicit manual dispatch and **dry_run remains true by default**. Dry runs
+validate real public metadata and the complete eligible diff, but never request a model
 diagnosis. Their artifact and summary identify this as a dry simulation, with
 no fabricated findings. Dry mode checks metadata, patch, byte and line gates,
 but does not call `countTokens`: it cannot measure the provider token count or
 validate the live Gemini model/schema contract. The 12,000-token provider gate
 and actual provider interoperability remain unvalidated until an authorized
-live workflow run. Selecting `dry_run: false` currently refuses the run
-before the secret-bearing step. A secret existing in the repository does not
-enable live execution. No billing, quota, secret, or permission setup is
-performed by this change.
+live workflow run. Selecting `dry_run: false` permits the existing secret-bearing
+inference step only after collection and trusted bootstrap gates pass. Offline
+synthetic CLI tests verify this capability and both kill-switch states; they do
+not establish successful real-provider interoperability. No billing, quota,
+secret, or permission setup is performed by this change.
 
 ## Requirements and manual use
 
-The workflow must first be reviewed and registered on the repository's default
-branch before GitHub accepts a dispatch. That deployment and a real workflow
-run remain unvalidated here; do not bypass this restriction with a PR or another
-branch. Once it is registered:
+The reviewed workflow must be registered on the repository's default branch
+before GitHub accepts a dispatch; do not bypass this restriction with a PR or
+another branch. Real Gemini model/schema interoperability remains unvalidated
+by the offline tests. Once the workflow is registered:
 
 1. Choose **Actions → Gemini pilot → Run workflow**, on the default branch.
 2. Enter the open public PR number and its exact current lowercase 40-character
@@ -31,6 +33,10 @@ branch. Once it is registered:
 3. Inspect the run's job summaries and `gemini-pilot-result` artifact. A dry
    summary confirms validation only; it is not evidence that Gemini diagnosed
    the PR.
+4. For a separately authorized controlled live attempt, use the exact eligible
+   public PR/head and explicitly uncheck **dry_run**. Another live attempt for
+   that same head is refused even if the first failed. Inspect the filtered
+   result and provider usage before treating any diagnosis as verified.
 
 Both the original actor and triggering actor must have the canonical GitHub
 `maintain` or `admin` role. An ordinary write role is insufficient. The workflow
@@ -60,7 +66,7 @@ complete. CI input is limited to verified same-SHA status metadata, never logs.
 Empty CI metadata means unknown coverage, not successful CI.
 
 The configured model is `gemini-3.8-flash`, low thinking, one candidate, no tools.
-An eventual enabled live run makes at most one generation attempt with a
+An explicitly dispatched live run makes at most one generation attempt with a
 90-second timeout and **4,096 output tokens**. There is no generation retry,
 including after 429, server errors or ambiguous timeouts. Public GitHub reads
 allow at most three total attempts (two retries with backoff). Output must fit
@@ -114,9 +120,12 @@ provider usage and stop before exceeding the budget. Neither output limits
 nor this workflow guarantee a hard financial cap. Numeric estimates include
 candidate and thinking tokens at Standard rates, without discount assumptions.
 
-Keep `liveEnabled: false` to disable live requests. Enabling it requires a
-separate reviewed change, updated trusted hash, and authorized provider setup
-and validation. Private code is excluded; there is no Free-tier fallback.
+To disable live requests, set `liveEnabled: false` and update the matching
+literal config SHA-256 in the workflow through a reviewed change. The kill
+switch refuses live inference before any provider-key read or transport call.
+Re-enabling also requires review and the matching hash; real provider setup and
+validation need separate authorization. Private code is excluded; there is no
+Free-tier fallback.
 Any future private-code use requires a separately authorized Paid setup and
 policy change, not a flag workaround.
 
