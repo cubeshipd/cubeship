@@ -50,7 +50,7 @@ export function sanitizeProse(raw) {
   let prose = lines.join('\n');
   if ((prose.match(/`/g) ?? []).length % 2) return blocked('INCOMPLETE_CODE_BLOCK');
   prose = prose.replace(/`+[^`]*`+/g, '').replace(/!\[[^\]]*\]\([^)]*\)/g, '').replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
-    .replace(/<[^>]*>/g, '').replace(/(?:https?:\/\/|www\.)[^\s]+/gi, '').replace(/^\s*\[[^\]]+\]:.*$/gm, '').replace(/\n{3,}/g, '\n\n').replace(/[<>]/g, '').trim();
+    .replace(/<[^>]*>/g, ' ').replace(/(?:https?:\/\/|www\.)[^\s]+/gi, '').replace(/^\s*\[[^\]]+\]:.*$/gm, '').replace(/\n{3,}/g, '\n\n').replace(/[<>]/g, '').trim();
   return prose ? { ...ready(), prose } : blocked('EMPTY_PROSE');
 }
 

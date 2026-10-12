@@ -64,7 +64,7 @@ jobs:
           set -euo pipefail
           cd .github/scripts
           sha256sum -c - <<'HASHES' > /dev/null
-          043e7d5826ec3f2cdb96c4f3e63bf598e55bab50cd2b00b2a7846bfcb58cfca8  issue-core.mjs
+          b7a889a87c2f874807a097c83dc6334614baf9985c6df9b8979007fc30a1fd7f  issue-core.mjs
           f38587c00754e34e5359c82f90ac38ed42e832f9fe2610cba4c86827ee4c8332  issue-run.mjs
           5ee98997db885b67ad04e732af5dfca68991ec9019812514ea90b0a74d0143c5  issue-config.json
           HASHES
@@ -189,7 +189,7 @@ jobs:
               "https://raw.githubusercontent.com/cubeshipd/cubeship/$SOURCE_SHA/.github/scripts/$file" --output "$file"
           done
           sha256sum -c - <<'HASHES' > /dev/null
-          043e7d5826ec3f2cdb96c4f3e63bf598e55bab50cd2b00b2a7846bfcb58cfca8  issue-core.mjs
+          b7a889a87c2f874807a097c83dc6334614baf9985c6df9b8979007fc30a1fd7f  issue-core.mjs
           f38587c00754e34e5359c82f90ac38ed42e832f9fe2610cba4c86827ee4c8332  issue-run.mjs
           5ee98997db885b67ad04e732af5dfca68991ec9019812514ea90b0a74d0143c5  issue-config.json
           HASHES
@@ -258,7 +258,7 @@ jobs:
           set -euo pipefail
           cd .github/scripts
           sha256sum -c - <<'HASHES' > /dev/null
-          043e7d5826ec3f2cdb96c4f3e63bf598e55bab50cd2b00b2a7846bfcb58cfca8  issue-core.mjs
+          b7a889a87c2f874807a097c83dc6334614baf9985c6df9b8979007fc30a1fd7f  issue-core.mjs
           f38587c00754e34e5359c82f90ac38ed42e832f9fe2610cba4c86827ee4c8332  issue-run.mjs
           5ee98997db885b67ad04e732af5dfca68991ec9019812514ea90b0a74d0143c5  issue-config.json
           HASHES
