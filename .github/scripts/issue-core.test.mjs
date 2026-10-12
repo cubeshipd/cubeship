@@ -28,8 +28,8 @@ const blocked = x => assert.equal(x.state ?? x.decision?.state, 'blocked');
 test('English translation replaces native title and body without losing protected technical content', () => {
   const source = { title: 'Falha ao salvar', body: 'O botão falha.\n\n```sh\ndocker logs cubeship\n```\nUse `npm test` e [documentação](https://example.test/help).' };
   const i = input(source), p = proposal(i);
-  assert.ok(!i.prompt.includes('docker logs') && !i.prompt.includes('npm test') && !i.prompt.includes('https://example.test'));
-  p.translation = { title: 'Save failure', body: i.prose.body.replace('O botão falha.', 'The button fails.').replace('Use ', 'Use ').replace(' e ', ' and '), sourceLanguage: 'pt', targetLanguage: 'en' };
+  assert.ok(!i.prompt.includes('docker logs') && !i.prompt.includes('npm test')); assert.doesNotMatch(i.prompt, /https?:\/\//);
+  p.translation = { title: 'Save failure', body: i.prose.body.replace('O botão falha.', 'The button fails.').replace(' e ', ' and '), sourceLanguage: 'pt', targetLanguage: 'en' };
   ready(core.validateProposal(p, i));
   const effects = core.planEffects(p, { ...issue(), ...source, repo: repoName }, i.candidates);
   assert.equal(effects.translationToSet.title, 'Save failure');
