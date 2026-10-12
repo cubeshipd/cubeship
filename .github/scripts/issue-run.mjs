@@ -192,6 +192,16 @@ function usage(metadata, counted) {
   if (fields.slice(0, 3).every(k => integer(metadata?.[k]))) u.estimatedCostUSD = (metadata.promptTokenCount * config.inputUSDPerMillionTokens + (metadata.candidatesTokenCount + metadata.thoughtsTokenCount) * config.outputUSDPerMillionTokens) / 1e6;
   return u;
 }
+const providerStatuses = [200, 400, 401, 403, 404, 429, 500, 502, 503, 504];
+function providerFailure(reason, response) {
+  const out = result(reason);
+  if (integer(response.status) && response.status >= 100 && response.status <= 599) out.httpStatus = response.status;
+  const error = response.data?.error;
+  if (['INVALID_ARGUMENT', 'PERMISSION_DENIED', 'RESOURCE_EXHAUSTED', 'NOT_FOUND', 'UNAVAILABLE', 'INTERNAL', 'UNAUTHENTICATED', 'FAILED_PRECONDITION', 'DEADLINE_EXCEEDED'].includes(error?.status)) out.providerStatus = error.status;
+  const parameter = ['responseFormat', 'response_format', 'responseJsonSchema', 'response_json_schema', 'thinkingConfig', 'thinking_config', 'includeThoughts', 'include_thoughts', 'candidateCount', 'candidate_count', 'maxOutputTokens', 'max_output_tokens', 'enum', 'billing'].find(name => typeof error?.message === 'string' && error.message.includes(name));
+  if (parameter) out.parameter = parameter;
+  return out;
+}
 function toolContent(value) {
   return value && typeof value === 'object' && Object.entries(value).some(([key, child]) => /^(?:thought|functionCall|functionResponse|executableCode|codeExecutionResult|toolCalls|tools)$/.test(key) || toolContent(child));
 }
@@ -218,12 +228,12 @@ export async function generateOnce(a, transport = createTransport(), key) {
     const body = { systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] }, contents: [{ role: 'user', parts: [{ text: input.prompt }] }], generationConfig: { candidateCount: 1, responseFormat: { text: { mimeType: 'application/json', schema: responseSchema(input) } }, maxOutputTokens: config.maxOutputTokens, thinkingConfig: { includeThoughts: false } } };
     const base = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}`, options = { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key } };
     await currentUnchanged(input, transport);
-    const count = await request(`${base}:countTokens`, { ...options, body: JSON.stringify({ generateContentRequest: { model: `models/${config.model}`, ...body } }), signal: AbortSignal.timeout(config.countTimeoutSeconds * 1000) }, transport, [200], 16384);
-    if (!integer(count.data?.totalTokens)) return result('TOKEN_COUNT_FAILED');
+    const count = await request(`${base}:countTokens`, { ...options, body: JSON.stringify({ generateContentRequest: { model: `models/${config.model}`, ...body } }), signal: AbortSignal.timeout(config.countTimeoutSeconds * 1000) }, transport, providerStatuses, 16384);
+    if (count.status !== 200 || !integer(count.data?.totalTokens)) return providerFailure('TOKEN_COUNT_FAILED', count);
     if (count.data.totalTokens > config.maxInputTokens) return result('TOKEN_LIMIT');
     await currentUnchanged(input, transport);
-    const response = await request(`${base}:generateContent`, { ...options, body: JSON.stringify(body), signal: AbortSignal.timeout(config.generationTimeoutSeconds * 1000) }, transport, [200], 65536);
-    if (!response.data) return { ...result('GENERATION_FAILED'), httpStatus: response.status };
+    const response = await request(`${base}:generateContent`, { ...options, body: JSON.stringify(body), signal: AbortSignal.timeout(config.generationTimeoutSeconds * 1000) }, transport, providerStatuses, 65536);
+    if (response.status !== 200 || !response.data) return providerFailure('GENERATION_FAILED', response);
     const decision = validateProposal(finalText(response.data), input);
     if (decision.state !== 'ready') return decision;
     return { state: 'ready', reason: 'INFERRED', proposal: decision.proposal, usage: usage(response.data.usageMetadata, count.data.totalTokens) };
@@ -323,7 +333,7 @@ export async function runCLI(argv, { env = process.env, transport = createTransp
       const a = await readTransfer(inputPath); inputArtifact(a); if (contextKeys.some(k => c[k] !== a.context[k])) fail('ARTIFACT_REFUSED');
       const generated = await generateOnce(a, transport, c.dryRun ? undefined : env.GEMINI_API_KEY);
       if (generated.state === 'ready') await atomicJSON(outputPath, { ...generated, origin: a });
-      return { ...result(generated.reason, generated.state), ...(integer(generated.httpStatus) && generated.httpStatus >= 100 && generated.httpStatus <= 599 ? { httpStatus: generated.httpStatus } : {}) };
+      return generated.state === 'ready' ? result(generated.reason, generated.state) : generated;
     }
     if (c.dryRun) return result('DRY_RUN_VALIDATED', 'ready');
     const artifact = await readTransfer(inputPath); proposalArtifact(artifact); if (contextKeys.some(k => c[k] !== artifact.origin.context[k])) fail('ARTIFACT_REFUSED');

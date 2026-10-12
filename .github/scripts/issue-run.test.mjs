@@ -110,6 +110,13 @@ test('inference CLI reports only a bounded HTTP status for provider failures', a
   assert.deepEqual(out, { state: 'blocked', reason: 'GENERATION_FAILED', httpStatus: 503 });
   await assert.rejects(readFile(join(s.dir, 'proposal.json')), { code: 'ENOENT' });
 });
+test('provider diagnostics expose only fixed codes and parameter names', async t => {
+  const s = await setup(t), a = await collected(s), ctx = join(s.dir, 'context.json'), snapshot = join(s.dir, 'snapshot.json');
+  await writeFile(ctx, JSON.stringify(context)); await writeFile(snapshot, JSON.stringify(a));
+  const tr = s.run.createTransport(async (url, opts) => url.endsWith(':countTokens') ? Response.json({ error: { status: 'INVALID_ARGUMENT', message: 'Unknown name responseFormat; private provider payload and fixture-google MUST NOT ESCAPE' } }, { status: 400 }) : s.f.fetch(url, opts), { now: s.tr.now, sleep: s.tr.sleep });
+  assert.deepEqual(await s.run.runCLI(['infer', ctx, snapshot, join(s.dir, 'proposal.json')], { env: { GEMINI_API_KEY: 'fixture-google' }, transport: tr }), { state: 'blocked', reason: 'TOKEN_COUNT_FAILED', httpStatus: 400, providerStatus: 'INVALID_ARGUMENT', parameter: 'responseFormat' });
+  assert.equal(s.f.generation, 0); assert.equal(s.f.mutations.length, 0);
+});
 for (const mode of ['status-400', 'status-429', 'status-500', 'status-503', 'abort', 'invalid', 'thought']) {
   test(`generation ${mode} never retries or publishes raw responses`, async t => {
     const s = await setup(t), a = await collected(s); s.f.mode = mode;
