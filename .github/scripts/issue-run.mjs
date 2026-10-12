@@ -323,7 +323,7 @@ export async function runCLI(argv, { env = process.env, transport = createTransp
       const a = await readTransfer(inputPath); inputArtifact(a); if (contextKeys.some(k => c[k] !== a.context[k])) fail('ARTIFACT_REFUSED');
       const generated = await generateOnce(a, transport, c.dryRun ? undefined : env.GEMINI_API_KEY);
       if (generated.state === 'ready') await atomicJSON(outputPath, { ...generated, origin: a });
-      return result(generated.reason, generated.state);
+      return { ...result(generated.reason, generated.state), ...(integer(generated.httpStatus) && generated.httpStatus >= 100 && generated.httpStatus <= 599 ? { httpStatus: generated.httpStatus } : {}) };
     }
     if (c.dryRun) return result('DRY_RUN_VALIDATED', 'ready');
     const artifact = await readTransfer(inputPath); proposalArtifact(artifact); if (contextKeys.some(k => c[k] !== artifact.origin.context[k])) fail('ARTIFACT_REFUSED');

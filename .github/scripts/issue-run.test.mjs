@@ -103,6 +103,13 @@ test('authenticated catalog failures still block collection and publication', as
   assert.equal((await s.run.publishProposal(s.f.proposal(), a, tr, { GITHUB_TOKEN: 'fixture-github' })).reason, 'GITHUB_READ_FAILED');
   assert.equal(s.f.mutations.length, 0); assert.equal(s.f.generation, 0);
 });
+test('inference CLI reports only a bounded HTTP status for provider failures', async t => {
+  const s = await setup(t), a = await collected(s), ctx = join(s.dir, 'context.json'), snapshot = join(s.dir, 'snapshot.json');
+  await writeFile(ctx, JSON.stringify(context)); await writeFile(snapshot, JSON.stringify(a)); s.f.mode = 'status-503';
+  const out = await s.run.runCLI(['infer', ctx, snapshot, join(s.dir, 'proposal.json')], { env: { GEMINI_API_KEY: 'fixture-google' }, transport: s.tr });
+  assert.deepEqual(out, { state: 'blocked', reason: 'GENERATION_FAILED', httpStatus: 503 });
+  await assert.rejects(readFile(join(s.dir, 'proposal.json')), { code: 'ENOENT' });
+});
 for (const mode of ['status-400', 'status-429', 'status-500', 'status-503', 'abort', 'invalid', 'thought']) {
   test(`generation ${mode} never retries or publishes raw responses`, async t => {
     const s = await setup(t), a = await collected(s); s.f.mode = mode;
