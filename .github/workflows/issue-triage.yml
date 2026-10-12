@@ -1,0 +1,289 @@
+# Public Issue triage preparation: both checked-in activation flags remain false.
+name: Issue triage
+run-name: ${{ github.event_name == 'workflow_dispatch' && format('issue-triage:{0}:dry', github.repository) || format('issue-triage:{0}:{1}:{2}:live', github.repository, github.event.issue.number, github.event.issue.id) }}
+on:
+  issues:
+    types: [opened]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: Open public Issue number to validate
+        type: string
+        required: true
+      dry_run:
+        description: Validate without Google requests or publication (must remain true)
+        type: boolean
+        default: true
+        required: true
+
+permissions: {}
+concurrency:
+  group: issue-triage-${{ github.repository }}
+  cancel-in-progress: false
+  queue: max
+
+env:
+  ISSUE_REPOSITORY: ${{ github.repository }}
+  ISSUE_EVENT: ${{ github.event_name }}
+  ISSUE_NUMBER: ${{ inputs.issue_number }}
+  ISSUE_DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
+  ISSUE_REF: ${{ github.ref }}
+  ISSUE_DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+  ISSUE_ACTOR: ${{ github.actor }}
+  ISSUE_RUN_ID: ${{ github.run_id }}
+  ISSUE_RUN_ATTEMPT: ${{ github.run_attempt }}
+  SOURCE_SHA: ${{ github.workflow_sha }}
+
+jobs:
+  collect:
+    if: ${{ github.repository == 'cubeshipd/cubeship' && github.event.repository.private == false && github.ref == format('refs/heads/{0}', github.event.repository.default_branch) && github.run_attempt == 1 && (github.event_name == 'issues' && github.event.action == 'opened' || github.event_name == 'workflow_dispatch' && inputs.dry_run) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: read
+      actions: read
+    outputs:
+      ready: ${{ steps.collect.outputs.ready }}
+      context: ${{ steps.collect.outputs.context }}
+      enabled: ${{ steps.flags.outputs.enabled }}
+      publish_enabled: ${{ steps.flags.outputs.publish_enabled }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          token: ''
+      - name: Verify trusted collection scripts
+        id: flags
+        run: |
+          set -euo pipefail
+          cd .github/scripts
+          sha256sum -c - <<'HASHES' > /dev/null
+          732929d6c0e909b27af35647707c5543f2f7cc58f99a31cddb5f66742baba98e  issue-core.mjs
+          f38587c00754e34e5359c82f90ac38ed42e832f9fe2610cba4c86827ee4c8332  issue-run.mjs
+          9b27eab3087332f01a9ba7127f441b68a1b7dd82ff3e7117ff07f5e5deb19cdc  issue-config.json
+          HASHES
+          node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
+          import { config } from './issue-core.mjs';
+          console.log(`enabled=${config.enabled === true}`);
+          console.log(`publish_enabled=${config.publishEnabled === true}`);
+          NODE
+      - name: Build trusted Issue context
+        if: ${{ steps.flags.outputs.enabled == 'true' || github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFileSync, writeFileSync, lstatSync } from 'node:fs';
+          const e = process.env;
+          const positive = value => /^[1-9][0-9]*$/.test(String(value)) && Number.isSafeInteger(Number(value));
+          const refuse = () => { console.log('Context refused.'); process.exit(1); };
+          try {
+            if (e.ISSUE_REPOSITORY !== 'cubeshipd/cubeship' || !/^[a-f0-9]{40}$/.test(e.SOURCE_SHA) ||
+                !/^[A-Za-z0-9_./-]+$/.test(e.ISSUE_DEFAULT_BRANCH) || e.ISSUE_REF !== `refs/heads/${e.ISSUE_DEFAULT_BRANCH}` ||
+                !positive(e.ISSUE_RUN_ID) || e.ISSUE_RUN_ATTEMPT !== '1' || !/^[A-Za-z0-9-]+$/.test(e.ISSUE_ACTOR) ||
+                !['true','false'].includes(e.ISSUE_DRY_RUN)) refuse();
+            const stat = lstatSync(e.GITHUB_EVENT_PATH);
+            if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > 3 * 1024 * 1024) refuse();
+            const event = JSON.parse(readFileSync(e.GITHUB_EVENT_PATH, 'utf8'));
+            if (event.repository?.full_name !== e.ISSUE_REPOSITORY || event.repository?.private !== false) refuse();
+            let issueNumber, issueId, mode;
+            if (e.ISSUE_EVENT === 'issues' && event.action === 'opened' && e.ISSUE_DRY_RUN === 'false') {
+              issueNumber = event.issue?.number; issueId = event.issue?.id; mode = 'opened';
+              if (Object.hasOwn(event.issue ?? {}, 'pull_request')) refuse();
+            } else if (e.ISSUE_EVENT === 'workflow_dispatch' && e.ISSUE_DRY_RUN === 'true' && positive(e.ISSUE_NUMBER)) {
+              issueNumber = Number(e.ISSUE_NUMBER); mode = 'manualdry';
+              // Resolve only an ID, using one bounded trusted public route; the collector verifies actor role and fresh source.
+              const response = await fetch(`https://api.github.com/repos/cubeshipd/cubeship/issues/${issueNumber}`, {
+                method: 'GET', redirect: 'error', signal: AbortSignal.timeout(30000),
+                headers: { Accept: 'application/vnd.github+json', 'X-GitHub-Api-Version': '2026-03-10', Authorization: `Bearer ${e.GITHUB_TOKEN}` }
+              });
+              if (response.status !== 200 || !response.body) refuse();
+              const reader = response.body.getReader(); const chunks = []; let bytes = 0;
+              for (;;) {
+                const { value, done } = await reader.read(); if (done) break;
+                bytes += value.byteLength; if (bytes > 2 * 1024 * 1024) { await reader.cancel(); refuse(); }
+                chunks.push(value);
+              }
+              const issue = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+              if (issue.number !== issueNumber || issue.state !== 'open' || Object.hasOwn(issue, 'pull_request') ||
+                  issue.url !== `https://api.github.com/repos/cubeshipd/cubeship/issues/${issueNumber}`) refuse();
+              issueId = issue.id;
+            } else refuse();
+            if (!positive(issueNumber) || !positive(issueId)) refuse();
+            const context = { repo: e.ISSUE_REPOSITORY, issueNumber: Number(issueNumber), issueId: Number(issueId), event: mode,
+              ref: e.ISSUE_REF, defaultBranch: e.ISSUE_DEFAULT_BRANCH, workflowSha: e.SOURCE_SHA,
+              runId: Number(e.ISSUE_RUN_ID), runAttempt: Number(e.ISSUE_RUN_ATTEMPT), actor: e.ISSUE_ACTOR, dryRun: e.ISSUE_DRY_RUN === 'true' };
+            writeFileSync(`${e.RUNNER_TEMP}/issue-context.json`, JSON.stringify(context), {mode:0o600, flag:'wx'});
+          } catch { refuse(); }
+          NODE
+      - name: Collect verified public Issue metadata
+        id: collect
+        if: ${{ steps.flags.outputs.enabled == 'true' || github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$RUNNER_TEMP/issue-snapshot"
+          node .github/scripts/issue-run.mjs collect "$RUNNER_TEMP/issue-context.json" "$RUNNER_TEMP/issue-snapshot/artifact.json"
+          node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
+          import { readFileSync } from 'node:fs';
+          console.log('ready=true');
+          console.log(`context=${readFileSync(`${process.env.RUNNER_TEMP}/issue-context.json`, 'utf8')}`);
+          NODE
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ steps.collect.outputs.ready == 'true' && steps.flags.outputs.enabled == 'true' && github.event_name == 'issues' }}
+        with:
+          name: issue-triage-snapshot
+          path: ${{ runner.temp }}/issue-snapshot/artifact.json
+          retention-days: 1
+          if-no-files-found: error
+      - name: Collection status
+        if: ${{ always() }}
+        run: echo 'Collection finished; disabled, dry or refused runs do not request Gemini.' >> "$GITHUB_STEP_SUMMARY"
+
+  infer:
+    name: Gemini inference
+    if: ${{ always() }}
+    needs: collect
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    outputs:
+      ready: ${{ steps.generate.outputs.ready }}
+    steps:
+      - name: Decide inference readiness
+        id: gate
+        env:
+          COLLECT_RESULT: ${{ needs.collect.result }}
+          COLLECT_READY: ${{ needs.collect.outputs.ready }}
+          LIVE_ENABLED: ${{ needs.collect.outputs.enabled }}
+          DRY_RUN: ${{ env.ISSUE_DRY_RUN }}
+        run: |
+          node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
+          const e = process.env;
+          console.log(`ready=${!Object.hasOwn(e, 'GITHUB_TOKEN') && e.COLLECT_RESULT === 'success' && e.COLLECT_READY === 'true' && e.LIVE_ENABLED === 'true' && e.DRY_RUN === 'false'}`);
+          NODE
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: ${{ steps.gate.outputs.ready == 'true' }}
+        with:
+          node-version: '24'
+          token: ''
+      - name: Bootstrap trusted inference scripts
+        id: bootstrap
+        if: ${{ steps.gate.outputs.ready == 'true' }}
+        run: |
+          set -euo pipefail
+          test "$ISSUE_REPOSITORY" = 'cubeshipd/cubeship'
+          [[ "$SOURCE_SHA" =~ ^[a-f0-9]{40}$ ]]
+          mkdir -m 700 "$RUNNER_TEMP/issue-source"
+          cd "$RUNNER_TEMP/issue-source"
+          for file in issue-core.mjs issue-run.mjs issue-config.json; do
+            curl --disable --fail --silent --show-error --proto '=https' --max-time 20 \
+              "https://raw.githubusercontent.com/cubeshipd/cubeship/$SOURCE_SHA/.github/scripts/$file" --output "$file"
+          done
+          sha256sum -c - <<'HASHES' > /dev/null
+          732929d6c0e909b27af35647707c5543f2f7cc58f99a31cddb5f66742baba98e  issue-core.mjs
+          f38587c00754e34e5359c82f90ac38ed42e832f9fe2610cba4c86827ee4c8332  issue-run.mjs
+          9b27eab3087332f01a9ba7127f441b68a1b7dd82ff3e7117ff07f5e5deb19cdc  issue-config.json
+          HASHES
+          node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
+          import { config } from './issue-core.mjs';
+          console.log(`enabled=${config.enabled === true}`);
+          console.log(`publish_enabled=${config.publishEnabled === true}`);
+          NODE
+      - name: Prepare fresh inference directories
+        if: ${{ steps.gate.outputs.ready == 'true' }}
+        env:
+          ISSUE_CONTEXT: ${{ needs.collect.outputs.context }}
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$RUNNER_TEMP/issue-snapshot" "$RUNNER_TEMP/issue-proposal"
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from 'node:fs';
+          writeFileSync(`${process.env.RUNNER_TEMP}/issue-context.json`, process.env.ISSUE_CONTEXT, {mode:0o600, flag:'wx'});
+          NODE
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        if: ${{ steps.gate.outputs.ready == 'true' }}
+        with:
+          name: issue-triage-snapshot
+          path: ${{ runner.temp }}/issue-snapshot
+      - name: Generate Gemini proposal
+        id: generate
+        if: ${{ steps.gate.outputs.ready == 'true' }}
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -euo pipefail
+          node "$RUNNER_TEMP/issue-source/issue-run.mjs" infer "$RUNNER_TEMP/issue-context.json" "$RUNNER_TEMP/issue-snapshot" "$RUNNER_TEMP/issue-proposal/artifact.json"
+          echo 'ready=true' >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: ${{ steps.generate.outputs.ready == 'true' }}
+        with:
+          name: issue-triage-proposal
+          path: ${{ runner.temp }}/issue-proposal/artifact.json
+          retention-days: 1
+          if-no-files-found: error
+      - name: Inference status
+        if: ${{ always() }}
+        run: echo 'Generation step history records skipped versus started; attempted usage may be uncertain.' >> "$GITHUB_STEP_SUMMARY"
+
+  publish:
+    needs: [collect, infer]
+    if: ${{ needs.collect.outputs.publish_enabled == 'true' && needs.infer.outputs.ready == 'true' && github.event_name == 'issues' && needs.collect.result == 'success' && needs.infer.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+      actions: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+          sparse-checkout: .github/scripts
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24'
+          token: ''
+      - name: Verify trusted publication scripts
+        run: |
+          set -euo pipefail
+          cd .github/scripts
+          sha256sum -c - <<'HASHES' > /dev/null
+          732929d6c0e909b27af35647707c5543f2f7cc58f99a31cddb5f66742baba98e  issue-core.mjs
+          f38587c00754e34e5359c82f90ac38ed42e832f9fe2610cba4c86827ee4c8332  issue-run.mjs
+          9b27eab3087332f01a9ba7127f441b68a1b7dd82ff3e7117ff07f5e5deb19cdc  issue-config.json
+          HASHES
+          node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
+          import { config } from './issue-core.mjs';
+          console.log(`enabled=${config.enabled === true}`);
+          console.log(`publish_enabled=${config.publishEnabled === true}`);
+          NODE
+      - name: Prepare fresh publication directory
+        env:
+          ISSUE_CONTEXT: ${{ needs.collect.outputs.context }}
+        run: |
+          set -euo pipefail
+          mkdir -m 700 "$RUNNER_TEMP/issue-proposal"
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from 'node:fs';
+          writeFileSync(`${process.env.RUNNER_TEMP}/issue-context.json`, process.env.ISSUE_CONTEXT, {mode:0o600, flag:'wx'});
+          NODE
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: issue-triage-proposal
+          path: ${{ runner.temp }}/issue-proposal
+      - name: Publish verified additive triage
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          node .github/scripts/issue-run.mjs publish "$RUNNER_TEMP/issue-context.json" "$RUNNER_TEMP/issue-proposal"

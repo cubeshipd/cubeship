@@ -1,3 +1,5 @@
+> Historical: superseded by the disabled Issue triage design and plan dated 2026-10-12.
+
 # Piloto Gemini em GitHub Actions
 
 2026-10-11 — desenho aprovado por Lucas às 21:17 UTC. Este documento registra a especificação aprovada; o estado de implementação será documentado em `.github/pilot.md`. Na entrega inicial do desenho, nenhum workflow, dependência, secret, billing ou permissão havia sido configurado.
