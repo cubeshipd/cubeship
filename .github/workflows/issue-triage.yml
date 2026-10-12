@@ -1,4 +1,4 @@
-# Public Issue triage preparation: both checked-in activation flags remain false.
+# Public Issue triage: enabled only for cubeshipd/cubeship.
 name: Issue triage
 run-name: ${{ github.event_name == 'workflow_dispatch' && format('issue-triage:{0}:dry', github.repository) || format('issue-triage:{0}:{1}:{2}:live', github.repository, github.event.issue.number, github.event.issue.id) }}
 on:
@@ -64,9 +64,9 @@ jobs:
           set -euo pipefail
           cd .github/scripts
           sha256sum -c - <<'HASHES' > /dev/null
-          732929d6c0e909b27af35647707c5543f2f7cc58f99a31cddb5f66742baba98e  issue-core.mjs
+          043e7d5826ec3f2cdb96c4f3e63bf598e55bab50cd2b00b2a7846bfcb58cfca8  issue-core.mjs
           f38587c00754e34e5359c82f90ac38ed42e832f9fe2610cba4c86827ee4c8332  issue-run.mjs
-          9b27eab3087332f01a9ba7127f441b68a1b7dd82ff3e7117ff07f5e5deb19cdc  issue-config.json
+          5ee98997db885b67ad04e732af5dfca68991ec9019812514ea90b0a74d0143c5  issue-config.json
           HASHES
           node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
           import { config } from './issue-core.mjs';
@@ -189,9 +189,9 @@ jobs:
               "https://raw.githubusercontent.com/cubeshipd/cubeship/$SOURCE_SHA/.github/scripts/$file" --output "$file"
           done
           sha256sum -c - <<'HASHES' > /dev/null
-          732929d6c0e909b27af35647707c5543f2f7cc58f99a31cddb5f66742baba98e  issue-core.mjs
+          043e7d5826ec3f2cdb96c4f3e63bf598e55bab50cd2b00b2a7846bfcb58cfca8  issue-core.mjs
           f38587c00754e34e5359c82f90ac38ed42e832f9fe2610cba4c86827ee4c8332  issue-run.mjs
-          9b27eab3087332f01a9ba7127f441b68a1b7dd82ff3e7117ff07f5e5deb19cdc  issue-config.json
+          5ee98997db885b67ad04e732af5dfca68991ec9019812514ea90b0a74d0143c5  issue-config.json
           HASHES
           node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
           import { config } from './issue-core.mjs';
@@ -258,9 +258,9 @@ jobs:
           set -euo pipefail
           cd .github/scripts
           sha256sum -c - <<'HASHES' > /dev/null
-          732929d6c0e909b27af35647707c5543f2f7cc58f99a31cddb5f66742baba98e  issue-core.mjs
+          043e7d5826ec3f2cdb96c4f3e63bf598e55bab50cd2b00b2a7846bfcb58cfca8  issue-core.mjs
           f38587c00754e34e5359c82f90ac38ed42e832f9fe2610cba4c86827ee4c8332  issue-run.mjs
-          9b27eab3087332f01a9ba7127f441b68a1b7dd82ff3e7117ff07f5e5deb19cdc  issue-config.json
+          5ee98997db885b67ad04e732af5dfca68991ec9019812514ea90b0a74d0143c5  issue-config.json
           HASHES
           node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
           import { config } from './issue-core.mjs';

@@ -1,12 +1,13 @@
-# Public Issue triage (disabled preparation)
+# Public Issue triage
 
-`issue-triage.yml` is an offline-tested preparation for `cubeshipd/cubeship`.
-Both `enabled` and `publishEnabled` in `scripts/issue-config.json` remain **false**.
-No Google request or GitHub mutation has been tested live. The previous PR AI
-workflow and scripts were removed locally; PR52 has not been closed or merged.
+`issue-triage.yml` enables automatic triage for `cubeshipd/cubeship` when installed
+on its default branch. Both `enabled` and `publishEnabled` in
+`scripts/issue-config.json` are **true**, using the existing `GEMINI_API_KEY` secret.
+Activation was authorized on 2026-10-12. The previous PR AI workflow and scripts
+are replaced by this Issue-only workflow.
 
-After the remaining activation approval, only newly opened public Issues would
-enter automatic triage. The workflow does not listen to edits, comments or PRs.
+Only newly opened public Issues enter automatic triage. The workflow does not
+listen to edits, comments or PRs.
 It accepts a maintainer-only manual `workflow_dispatch` with an Issue number and
 `dry_run=true`: the collector verifies maintain/admin permission through GitHub,
 validates public source and history, and makes no Google request or write.
@@ -68,7 +69,7 @@ this public repository. The Google secret appears only on the conditional
 `Generate Gemini proposal` step, after successful collection and verified
 bootstrap. No key is present in gates, downloads, summaries or publication.
 
-Future per-job token permissions are:
+Per-job token permissions are:
 
 | Job | Permissions | Reason |
 | --- | --- | --- |
@@ -77,8 +78,8 @@ Future per-job token permissions are:
 | Publisher | contents: read, issues: write, actions: read | Trusted source, authorized additive effects and its own-run provenance proof |
 
 There is no Actions write, organization/Projects scope, new token, account grant
-or settings change. This describes disabled workflow permissions; it does not
-activate them. Snapshot transfer contains only exact context, identity,
+or settings change. Permissions remain limited to the three stages above.
+Snapshot transfer contains only exact context, identity,
 fingerprints and candidate IDs/hashes. Proposal transfer adds only validated
 filtered output and filtered usage. Same-run named artifacts retain one day;
 raw source, prompts, raw responses and logs are never uploaded. Downloads use a
@@ -137,7 +138,7 @@ The current stop mechanism is the two config flags/repository allowlist; no
 per-Issue opt-out label or new label/field/type/Project setup is implemented.
 Do not delete history or retry uncertain generation to clear a refusal.
 
-## Verification and remaining activation
+## Verification and rollout
 
 Offline verification runs `node --test .github/scripts/*.test.mjs` and the
 repository `make check`. Tests execute the literal shell bootstrap with fixture
@@ -150,21 +151,20 @@ The workflow structurally verifies the exact official group/cancel/queue shape;
 a temporary lint copy removes **only** that key to expose any other errors.
 No linter install, broad ignore or production queue removal is used.
 
-Before persistent activation, present one concrete approval for the remaining
-security scope: activation in `cubeshipd/cubeship`, use of the existing Gemini
-secret, public data sent to Google/model/cost and external end-to-end tests.
-Existing authorization for labels/type/Priority/comments on new Issues remains;
-do not ask again for those effects. No key read, grant, field/type/label setup,
-Projects setup, push, PR merge or remote cleanup is authorized by this preparation.
+Persistent activation in `cubeshipd/cubeship`, use of the existing secret and
+public Issue input sent to Google were authorized on 2026-10-12. No additional
+repositories, permissions or account grants are enabled. A real end-to-end
+run must confirm provider compatibility and native GitHub effects; offline
+tests and ordinary repository CI alone cannot prove those integrations.
 
 Proposed public synthetic test titles are “Falha simulada ao salvar”,
 “Synthetic save failure duplicate”, “Melhoria simulada de filtro” and
 “Synthetic security refusal”. None has been created and no Issue numbers are
-assigned. After approval, verify useful translation, native type/Priority,
+assigned. Verify useful translation, native type/Priority,
 verified duplicate links, human fields/Effort/original preservation, repetition
 without new effects, security refusal and actual usage. Stop on unknown API or
 read-limit outcomes. Replication to `cubeshipd/cubeship-templates` and
-`lucasaarch/jian` follows successful Cubeship testing, not this local preparation.
+`lucasaarch/jian` follows successful Cubeship testing, not activation alone.
 Recoverable closing of only those four future test Issues and obsolete PR52
 requires the separate proposed cleanup approval; preserve branches and history,
 never delete or merge PR52 during cleanup.

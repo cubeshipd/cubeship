@@ -87,7 +87,7 @@ test('literal anonymous bootstrap verifies all three pinned hashes before import
   writeFileSync(join(bin,'sha256sum'), '#!/bin/sh\nexec /usr/bin/shasum -a 256 "$@"\n', {mode:0o700});
   const env = { PATH:`${bin}:${process.env.PATH}`, FIXTURES:fixtures, CURL_LOG:join(dir,'curl-log'), SOURCE_SHA:'a'.repeat(40), ISSUE_REPOSITORY:'cubeshipd/cubeship' };
   const good = runShell(body,dir,env); assert.equal(good.status,0,good.stderr);
-  assert.match(readFileSync(join(dir,'output'),'utf8'), /enabled=false\npublish_enabled=false/);
+  assert.match(readFileSync(join(dir,'output'),'utf8'), /enabled=true\npublish_enabled=true/);
   assert.equal(readFileSync(join(dir,'curl-log'),'utf8').trim().split('\n').length,3);
   for (const file of files) {
     rmSync(join(dir,'issue-source'), {recursive:true,force:true}); rmSync(join(dir,'output'), {force:true});

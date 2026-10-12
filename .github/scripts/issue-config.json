@@ -1,6 +1,6 @@
 {
-  "enabled": false,
-  "publishEnabled": false,
+  "enabled": true,
+  "publishEnabled": true,
   "repositories": ["cubeshipd/cubeship"],
   "model": "gemini-3.5-flash-lite",
   "targetLanguage": "en",

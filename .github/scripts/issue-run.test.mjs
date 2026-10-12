@@ -98,7 +98,7 @@ for (const mode of ['overflow', 'change-after-count', 'private']) {
 }
 test('count request includes exact system, schema and prose with bounded config and no tools', async t => {
   const s = await setup(t), a = await collected(s); assert.equal((await s.run.generateOnce(a, s.tr, 'fixture-google')).state, 'ready');
-  const requests = s.f.calls.filter(c => c.url.includes('googleapis.com')); assert.equal(requests.length, 2);
+  const requests = s.f.calls.filter(c => new URL(c.url).hostname === 'generativelanguage.googleapis.com'); assert.equal(requests.length, 2);
   const counted = JSON.parse(requests[0].opts.body).generateContentRequest, generated = JSON.parse(requests[1].opts.body);
   assert.equal(counted.model, 'models/gemini-3.5-flash-lite'); delete counted.model; assert.deepEqual(counted, generated);
   assert.equal(generated.generationConfig.maxOutputTokens, 2048); assert.equal(generated.generationConfig.candidateCount, 1); assert.equal(generated.generationConfig.thinkingConfig.includeThoughts, false);
@@ -111,7 +111,7 @@ test('manual dry run validates trusted maintainer context without key getter pro
   const env = {}; Object.defineProperty(env, 'GEMINI_API_KEY', { get() { throw Error('read key'); } });
   assert.equal((await s.run.runCLI(['collect', path, a], { env, transport: s.tr })).state, 'ready');
   assert.equal((await s.run.runCLI(['infer', path, a, p], { env, transport: s.tr })).reason, 'DRY_RUN_VALIDATED');
-  assert.equal((await s.run.runCLI(['publish', path, p], { env, transport: s.tr })).state, 'ready'); assert.equal(s.f.calls.filter(c => c.url.includes('googleapis.com')).length, 0); assert.equal(s.f.mutations.length, 0);
+  assert.equal((await s.run.runCLI(['publish', path, p], { env, transport: s.tr })).state, 'ready'); assert.equal(s.f.calls.filter(c => new URL(c.url).hostname === 'generativelanguage.googleapis.com').length, 0); assert.equal(s.f.mutations.length, 0);
 });
 for (const kind of ['bot', 'PR', 'closed', 'private', 'rerun', 'ref', 'runOrigin', 'unknownHistory', 'incompleteJobs', 'concurrent']) {
   test(`collection refuses ${kind} without provider or writes`, async t => {
@@ -220,7 +220,7 @@ test('candidate secret beyond excerpt or inside omitted code refuses before coun
   for (const body of ['safe prose '.repeat(100) + '\npassword=SECRET_SENTINEL', 'Similar failure.\n```\n' + 'safe logs\n'.repeat(100) + 'api_key=SECRET_SENTINEL\n```']) {
     const c = candidateFixture(s, body), r = await s.run.collectSnapshot(context, c.tr); assert.equal(r.reason, 'CANDIDATE_REFUSED'); assert.ok(!JSON.stringify(r).includes('SECRET_SENTINEL'));
   }
-  assert.equal(s.f.calls.filter(x => x.url.includes('googleapis.com')).length, 0);
+  assert.equal(s.f.calls.filter(x => new URL(x.url).hostname === 'generativelanguage.googleapis.com').length, 0);
 });
 test('candidate original expected hash survives refetch and changed body blocks publication', async t => {
   const s = await setup(t), c = candidateFixture(s), a = await s.run.collectSnapshot(context, c.tr), p = s.f.proposal(); p.duplicates = [{ number: 13, confidence: .99 }]; c.candidate.body += ' changed';
