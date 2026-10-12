@@ -17,9 +17,9 @@ access has no private or credential fallback.
 
 ## What triage may change
 
-The deterministic publisher can add up to three existing labels from `bug`,
-`enhancement`, `documentation`, `question`, `accessibility`, `area: app` and
-`dependencies`. It fills absent native Issue type (Task, Bug or Feature) and
+The deterministic publisher can add up to three existing labels from the
+allowlist in `scripts/issue-config.json`: one classification and the relevant
+product areas below. Labels need confidence >=0.85. Existing labels are kept. It fills absent native Issue type (Task, Bug or Feature) and
 absent native **Priority** (Urgent, High, Medium or Low) only at confidence >=0.85.
 Priority is Issue field `46483201`, independent of Projects: its POST payload is
 an object with an additive nonempty `issue_field_values` list containing the
@@ -46,6 +46,38 @@ and a human value can race between the last read and write. Unknown API outcomes
 or an unconfirmed native receipt are reported without blind retry or broader
 permissions. Original-content checks and comment markers provide best-effort
 idempotency; duplicate comments and uncertain usage remain possible.
+
+
+## Repository labels
+
+Use `bug` for broken behavior, `enhancement` for new or improved behavior,
+`documentation` for writing, `question` for usage questions, `accessibility` for
+disability-related barriers, and `dependencies` for dependency maintenance.
+Combine these with the most specific relevant areas, normally one or two.
+
+| Area | Scope |
+| --- | --- |
+| `area: app` | Applications, image builds, deployments and environment variables. |
+| `area: dashboard` | Dashboard pages, forms, navigation and visual interaction. |
+| `area: api` | HTTP API, OpenAPI contracts and server routing. |
+| `area: cli` | Operator CLI commands, output and saved credentials. |
+| `area: mcp` | MCP tools, schemas and parity with the HTTP API. |
+| `area: datastores` | Managed databases, connections, extensions and app attachments. |
+| `area: storage` | Object stores, buckets, files, volumes and disk cleanup. |
+| `area: backups` | Backup schedules, dumps, downloads and restores. |
+| `area: networking` | Domains, DNS, TLS, proxy routes, ports and firewall rules. |
+| `area: cluster` | Nodes, workers, mesh networking, placement and scaling. |
+| `area: monitoring` | Metrics, host telemetry, resource usage and operational logs. |
+| `area: security` | Authentication, access roles, sessions and stored credentials. |
+| `area: templates` | Template definitions, validation, catalog and installation. |
+| `area: site` | cubeship.dev landing pages, documentation site and public demo. |
+| `area: automation` | CI, releases, repository bots and Issue triage workflows. |
+
+`duplicate`, `invalid`, `wontfix`, `good first issue` and `help wanted` are
+maintainer decisions and are outside automatic triage. `breaking` and
+`major-review` describe dependency updates that need compatibility review.
+The existing `priority: P1/P2/P3` labels are legacy metadata, not new triage
+choices; native Priority remains authoritative and is never inferred from them.
 
 ## Data and credentials
 

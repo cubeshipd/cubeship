@@ -28,8 +28,22 @@ const catalog = {
     "documentation",
     "question",
     "accessibility",
-    "area: app",
     "dependencies",
+    "area: app",
+    "area: dashboard",
+    "area: api",
+    "area: cli",
+    "area: mcp",
+    "area: datastores",
+    "area: storage",
+    "area: backups",
+    "area: networking",
+    "area: cluster",
+    "area: monitoring",
+    "area: security",
+    "area: templates",
+    "area: site",
+    "area: automation",
   ],
 };
 const issue = () => ({
@@ -945,4 +959,22 @@ test("a discarded candidate removes only its suggestion and still rejects malfor
       candidateOrigins: [{ ...i.candidateOrigins[0], repo: "foreign/repo" }],
     }),
   );
+});
+
+test("configured product areas are valid additive labels, while manual policy labels stay excluded", () => {
+  const i = input();
+  for (const name of core.config.labels.filter((label) => label.startsWith("area: "))) {
+    const p = proposal(i);
+    p.labels = [{ name, confidence: 0.99 }];
+    ready(core.validateProposal(p, i));
+    assert.deepEqual(
+      core.planEffects(p, { ...issue(), repo: repoName }, i.candidates).labelsToAdd,
+      [name],
+    );
+  }
+  for (const name of ["duplicate", "invalid", "wontfix", "priority: P1", "major-review"]) {
+    const p = proposal(i);
+    p.labels = [{ name, confidence: 0.99 }];
+    blocked(core.validateProposal(p, i));
+  }
 });
