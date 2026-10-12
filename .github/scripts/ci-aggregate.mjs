@@ -1,17 +1,22 @@
-export const REQUIRED = ['check', 'database', 'integration', 'scripts', 'dashboard', 'site'];
+export const REQUIRED = ["check", "database", "integration", "scripts", "dashboard", "site"];
 
-const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const own = (value, key) => Object.hasOwn(value, key);
 
 export function evaluate(required, needs, optional = {}) {
   const reasons = [];
-  if (!Array.isArray(required) || required.length === 0 ||
-      required.some(id => typeof id !== 'string' || !/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(id)) ||
-      new Set(required).size !== required.length || !record(needs) || !record(optional)) {
-    return { ok: false, reasons: ['Invalid aggregate input'] };
+  if (
+    !Array.isArray(required) ||
+    required.length === 0 ||
+    required.some((id) => typeof id !== "string" || !/^[a-zA-Z_][a-zA-Z0-9_-]*$/.test(id)) ||
+    new Set(required).size !== required.length ||
+    !record(needs) ||
+    !record(optional)
+  ) {
+    return { ok: false, reasons: ["Invalid aggregate input"] };
   }
   for (const [id, selector] of Object.entries(optional)) {
-    if (required.includes(id) || !record(selector) || typeof selector.applicable !== 'boolean') {
+    if (required.includes(id) || !record(selector) || typeof selector.applicable !== "boolean") {
       reasons.push(`Invalid optional selector: ${id}`);
     }
   }
@@ -21,25 +26,26 @@ export function evaluate(required, needs, optional = {}) {
   }
   for (const id of allowed) {
     const job = own(needs, id) ? needs[id] : undefined;
-    if (!record(job) || !own(job, 'result') || typeof job.result !== 'string') {
+    if (!record(job) || !own(job, "result") || typeof job.result !== "string") {
       reasons.push(`Missing or malformed job: ${id}`);
       continue;
     }
-    if (job.result === 'success') continue;
-    if (!required.includes(id) && job.result === 'skipped' && optional[id]?.applicable === false) continue;
+    if (job.result === "success") continue;
+    if (!required.includes(id) && job.result === "skipped" && optional[id]?.applicable === false)
+      continue;
     reasons.push(`Job ${id}: ${job.result}`);
   }
   return { ok: reasons.length === 0, reasons };
 }
 
 // The workflow executes this literal body without checking out pull request code.
-if (process.argv[1] === undefined || process.argv[1].endsWith('/ci-aggregate.mjs')) {
+if (process.argv[1] === undefined || process.argv[1].endsWith("/ci-aggregate.mjs")) {
   try {
     const result = evaluate(REQUIRED, JSON.parse(process.env.NEEDS_JSON));
     console.log(JSON.stringify(result));
     process.exitCode = result.ok ? 0 : 1;
   } catch {
-    console.error('Invalid NEEDS_JSON');
+    console.error("Invalid NEEDS_JSON");
     process.exitCode = 1;
   }
 }

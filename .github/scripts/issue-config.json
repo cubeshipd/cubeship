@@ -5,14 +5,52 @@
   "model": "gemini-3.5-flash-lite",
   "targetLanguage": "en",
   "apiVersion": "2026-03-10",
-  "types": [{"id":858946828,"name":"Task"},{"id":858946829,"name":"Bug"},{"id":858946830,"name":"Feature"}],
+  "types": [
+    {
+      "id": 858946828,
+      "name": "Task"
+    },
+    {
+      "id": 858946829,
+      "name": "Bug"
+    },
+    {
+      "id": 858946830,
+      "name": "Feature"
+    }
+  ],
   "priority": {
     "id": 46483201,
     "name": "Priority",
     "type": "single_select",
-    "options": [{"id":81364764,"name":"Urgent"},{"id":81364765,"name":"High"},{"id":81364766,"name":"Medium"},{"id":81364767,"name":"Low"}]
+    "options": [
+      {
+        "id": 81364764,
+        "name": "Urgent"
+      },
+      {
+        "id": 81364765,
+        "name": "High"
+      },
+      {
+        "id": 81364766,
+        "name": "Medium"
+      },
+      {
+        "id": 81364767,
+        "name": "Low"
+      }
+    ]
   },
-  "labels": ["bug", "enhancement", "documentation", "question", "accessibility", "area: app", "dependencies"],
+  "labels": [
+    "bug",
+    "enhancement",
+    "documentation",
+    "question",
+    "accessibility",
+    "area: app",
+    "dependencies"
+  ],
   "metadataConfidence": 0.85,
   "duplicateConfidence": 0.9,
   "maxLabels": 3,
