@@ -203,3 +203,31 @@ test('unknown current native metadata cannot be assumed empty by the writer plan
     const current = { ...issue(), repo: repoName }; delete current[key]; assert.deepEqual(core.planEffects(p, current, i.candidates), none);
   }
 });
+test('undefined or unverified current native type returns no effects', () => {
+  const i = input(), p = proposal(i), none = { labelsToAdd: [], typeToSet: null, priorityToSet: null, comment: '' };
+  for (const type of [undefined, {}, { name: 'Bug' }, { id: 858946830, name: 'Bug' }]) assert.deepEqual(core.planEffects(p, { ...issue(), repo: repoName, type }, i.candidates), none);
+});
+test('explicitly incomplete current field values returns no effects', () => {
+  const i = input(), p = proposal(i), fieldValues = [];
+  fieldValues.complete = false;
+  assert.deepEqual(core.planEffects(p, { ...issue(), repo: repoName, fieldValues }, i.candidates), { labelsToAdd: [], typeToSet: null, priorityToSet: null, comment: '' });
+});
+test('translation preserves source filenames and ordinary Node Docker npm prose through planning', () => {
+  const source = { title: 'Falha de alocação', body: 'A implantação falha em settings.tsx, issue-core.mjs e readme.md.' }, i = input(source), p = proposal(i);
+  for (const title of ['Node allocation fails', 'Docker deployment is slow', 'npm dependencies cause failures']) {
+    p.translation = { title, body: 'The failure affects settings.tsx, issue-core.mjs and readme.md.', sourceLanguage: 'pt', targetLanguage: 'en' };
+    ready(core.validateProposal(p, i));
+    const out = core.renderComment(p, i); assert.ok(out.includes('settings.tsx')); assert.ok(out.includes(title));
+    const e = core.planEffects(p, { ...issue(), ...source, repo: repoName }, i.candidates); assert.equal(e.comment, out);
+  }
+});
+test('filename allowances never accept new domains, links, credentials or actual command/code constructs', () => {
+  const i = input({ title: 'Falha', body: 'A falha ocorre em settings.tsx, issue-core.mjs e readme.md.' }), p = proposal(i);
+  for (const body of ['A change in unknown.tsx.', 'Visit evil.xyz/path', 'See https://example.com/settings.tsx', '[readme.md](readme.md)', '<a>readme.md</a>', 'api_key=secret', 'node --eval "run()"', 'node issue-core.mjs', 'docker run alpine', 'npm install package', 'sudo reboot', 'const result = 3;']) {
+    p.translation = { title: 'Failure', body, sourceLanguage: 'pt', targetLanguage: 'en' }; blocked(core.validateProposal(p, i));
+  }
+  for (const source of ['Falha.\n```\nsettings.tsx\n```', 'Falha. https://example.com/settings.tsx']) {
+    const filtered = input({ title: 'Falha', body: source }); p.snapshot = filtered.snapshot;
+    p.translation = { title: 'Failure', body: 'The issue affects settings.tsx.', sourceLanguage: 'pt', targetLanguage: 'en' }; blocked(core.validateProposal(p, filtered));
+  }
+});

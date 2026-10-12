@@ -101,12 +101,17 @@ export function responseSchema(input) {
 
 const confidence = x => typeof x === 'number' && Number.isFinite(x) && x >= 0 && x <= 1;
 const choice = (x, names) => x === null || (exact(x, ['name', 'confidence']) && names.includes(x.name) && confidence(x.confidence));
-const safeOutput = s => text(s) && s.trim() && !secret.test(s) && !privateText.test(s) && !/(?:[a-z][a-z\d+.-]*:\/\/|(?:mailto|javascript|data|file):|www\.|\b[a-z\d-]+\.[a-z]{2,}\b|<|>|&(?:lt|gt|#\d+|#x[a-f\d]+);|`|~~~|\[[^\]]*\]\s*\(|\$\(|^\s*(?:\$\s+|(?:sudo|curl|wget|bash|sh|eval|exec|rm|docker|kubectl|npm|pnpm|python|node)\s)|\b(?:const|let|var)\s+\w+\s*=|\bfunction\s*\w*\s*\(|^\s{4}\S)/im.test(s);
+const dottedTokens = s => s.match(/\b[\w-]+(?:\.[\w-]+)+\b/g) ?? [];
+const safeOutput = (s, prose) => {
+  if (!text(s) || !s.trim() || secret.test(s) || privateText.test(s) || /(?:[a-z][a-z\d+.-]*:\/\/|(?:mailto|javascript|data|file):|www\.|<|>|&(?:lt|gt|#\d+|#x[a-f\d]+);|`|~~~|\[[^\]]*\]\s*\(|\$\(|^\s*(?:\$\s+|(?:sudo|curl|wget|bash|sh|eval|exec|rm|kubectl|python)\s|(?:node|npm|pnpm|docker)\s+-|node\s+\S+\.(?:[cm]?js|tsx?)\b|(?:npm|pnpm)\s+(?:install|i|ci|run|exec|add|remove|update|publish)\b|docker\s+(?:run|exec|build|pull|push|compose|cp|rm|stop|start|logs)\b)|\b(?:const|let|var)\s+\w+\s*=|\bfunction\s*\w*\s*\(|^\s{4}\S)/im.test(s)) return false;
+  const source = record(prose) && text(prose.title) && text(prose.body) ? dottedTokens(prose.title + '\n' + prose.body) : [];
+  return dottedTokens(s).every(token => /\.(?:tsx?|jsx?|mjs|cjs|md|go|rs|py|json|ya?ml|toml|css|html|txt|sh|sql)$/.test(token) && source.includes(token));
+};
 function proposalValid(p, input) {
   if (!exact(p, ['snapshot', 'type', 'priority', 'labels', 'translation', 'duplicates']) || !exact(p.snapshot, snapshotKeys) || !exact(input?.snapshot, snapshotKeys) || !sameOrigin(p.snapshot, input.snapshot) || !catalogValid(input?.catalog) || !candidatesValid(input?.candidates, input.snapshot)) return false;
   if (!choice(p.type, config.types.map(t => t.name)) || !choice(p.priority, config.priority.options.map(o => o.name)) || !Array.isArray(p.labels) || p.labels.length > config.maxLabels || p.labels.some(l => l === null || !choice(l, config.labels)) || new Set(p.labels.map(l => l.name)).size !== p.labels.length) return false;
   if (!Array.isArray(p.duplicates) || p.duplicates.length > config.maxDuplicates || new Set(p.duplicates.map(d => d?.number)).size !== p.duplicates.length || p.duplicates.some(d => !exact(d, ['number', 'confidence']) || !confidence(d.confidence) || !input.candidates.some(c => candidateValid(c, input.snapshot) && c.number === d.number))) return false;
-  if (p.translation !== null && (!exact(p.translation, ['title', 'body', 'sourceLanguage', 'targetLanguage']) || !safeOutput(p.translation.title) || !safeOutput(p.translation.body) || !/^[a-z]{2,3}(?:-[A-Z]{2})?$/.test(p.translation.sourceLanguage) || p.translation.targetLanguage !== config.targetLanguage || p.translation.sourceLanguage.split('-')[0] === config.targetLanguage)) return false;
+  if (p.translation !== null && (!exact(p.translation, ['title', 'body', 'sourceLanguage', 'targetLanguage']) || !safeOutput(p.translation.title, input.prose) || !safeOutput(p.translation.body, input.prose) || !/^[a-z]{2,3}(?:-[A-Z]{2})?$/.test(p.translation.sourceLanguage) || p.translation.targetLanguage !== config.targetLanguage || p.translation.sourceLanguage.split('-')[0] === config.targetLanguage)) return false;
   return true;
 }
 const escape = s => s.replace(/\\/g, '\\\\').replace(/([*_\[\]{}()#!|~])/g, '\\$1').replace(/@/g, '@\u200b').replace(/\r\n/g, '\n');
@@ -139,16 +144,18 @@ export function renderComment(proposal, input) {
 
 export function planEffects(proposal, current, candidates) {
   const none = () => ({ labelsToAdd: [], typeToSet: null, priorityToSet: null, comment: '' });
-  if (!origin(proposal?.snapshot) || !record(current) || current.repo !== proposal.snapshot.repo || current.number !== proposal.snapshot.issueNumber || current.id !== proposal.snapshot.issueId || current.state !== 'open' || Object.hasOwn(current, 'pull_request') || fingerprint(current) !== proposal.snapshot.contentHash || !Array.isArray(current.labels) || !Array.isArray(current.fieldValues) || !Object.hasOwn(current, 'type')) return none();
-  const input = { snapshot: proposal.snapshot, candidates, catalog: { types: config.types, priority: config.priority, labels: config.labels } }, validated = validateProposal(proposal, input);
+  if (!origin(proposal?.snapshot) || !record(current) || current.repo !== proposal.snapshot.repo || current.number !== proposal.snapshot.issueNumber || current.id !== proposal.snapshot.issueId || current.state !== 'open' || Object.hasOwn(current, 'pull_request') || fingerprint(current) !== proposal.snapshot.contentHash || !Array.isArray(current.labels) || !Array.isArray(current.fieldValues) || current.fieldValues.complete === false || !Object.hasOwn(current, 'type')) return none();
+  const title = sanitizeProse(current.title), body = current.body ? sanitizeProse(current.body) : { ...ready(), prose: '' };
+  if (title.state !== 'ready' || body.state !== 'ready') return none();
+  const input = { snapshot: proposal.snapshot, prose: { title: title.prose, body: body.prose }, candidates, catalog: { types: config.types, priority: config.priority, labels: config.labels } }, validated = validateProposal(proposal, input);
   if (validated.state !== 'ready') return none();
   const p = validated.proposal, labels = current.labels.map(l => typeof l === 'string' ? l : l?.name), values = current.fieldValues ?? [];
-  if (labels.some(l => !text(l)) || values.some(v => !record(v) || !positive(v.field_id)) || (current.type != null && !record(current.type))) return none();
+  if (labels.some(l => !text(l)) || values.some(v => !record(v) || !positive(v.field_id)) || (current.type !== null && (!record(current.type) || !config.types.some(t => t.id === current.type.id && t.name === current.type.name)))) return none();
   const legacy = labels.some(l => /^(?:p[0-3]|priority\s*[:/ -])/i.test(l));
   const priority = values.some(v => v.field_id === config.priority.id);
   return {
     labelsToAdd: p.labels.map(l => l.name).filter(l => !labels.includes(l)),
-    typeToSet: current.type == null ? p.type?.name ?? null : null,
+    typeToSet: current.type === null ? p.type?.name ?? null : null,
     priorityToSet: !priority && !legacy && p.priority ? { field_id: config.priority.id, value: p.priority.name } : null,
     comment: renderComment(p, input),
   };
