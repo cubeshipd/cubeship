@@ -121,7 +121,7 @@ test('translation is plain safe text, closed, different language and bound to ta
   const i = input({ title: 'Falha no botão', body: 'O botão de implantação não funciona.' });
   const p = proposal(i); p.translation = { title: 'Button fails', body: 'The deploy button does not work.', sourceLanguage: 'pt', targetLanguage: 'en' };
   ready(core.validateProposal(p, i));
-  for (const change of [{ title: 'https://evil.test' }, { body: '<img src=x>' }, { body: '```run command```' }, { body: 'api_key=SECRET_SENTINEL_123456' }, { body: '[click](evil.test)' }, { body: 'www.evil.test' }, { sourceLanguage: 'en' }, { targetLanguage: 'fr' }, { sourceLanguage: 'Portuguese' }, { extra: 'x' }]) blocked(core.validateProposal({ ...p, translation: { ...p.translation, ...change } }, i));
+  for (const change of [{ title: 'https://evil.test' }, { body: '<img src=x>' }, { body: 'api_key=SECRET_SENTINEL_123456' }, { body: '[click](evil.test)' }, { body: 'www.evil.test' }, { sourceLanguage: 'en' }, { targetLanguage: 'fr' }, { sourceLanguage: 'Portuguese' }, { extra: 'x' }]) blocked(core.validateProposal({ ...p, translation: { ...p.translation, ...change } }, i));
   assert.equal(core.validateProposal(proposal(input()), input()).proposal.translation, null);
 });
 test('proposal JSON and complete rendered output have bounded UTF8/character sizes', () => {
@@ -187,9 +187,9 @@ test('exact response JSON byte ceiling accepts whitespace at limit and refuses n
 test('credential forms in prose refuse before link/code removal or output publication', () => {
   for (const s of ['Bearer abcdefghijklmnopqrst', 'postgres://user:pass@private.example/db', 'password=short', 'eyJhbGciOiJIUzI1NiJ9.eyJ1c2VyIjoiMSJ9.abcdefghijklmno']) blocked(core.sanitizeProse(s));
 });
-test('translation rejects command snippets, arbitrary domains, address links and encoded HTML', () => {
+test('translation rejects arbitrary domains, address links and encoded HTML', () => {
   const i = input({ title: 'Falha', body: 'O botão falha.' }), p = proposal(i);
-  for (const body of ['sudo reboot', '$(touch /tmp/nope)', 'const secret = 3;', 'Visit evil.xyz/path', 'Send mailto:user@example.xyz', 'Visit http://127.0.0.1', '&lt;script&gt;run&lt;/script&gt;']) {
+  for (const body of ['Visit evil.xyz/path', 'Send mailto:user@example.xyz', 'Visit http://127.0.0.1', '&lt;script&gt;run&lt;/script&gt;']) {
     p.translation = { title: 'Failure', body, sourceLanguage: 'pt', targetLanguage: 'en' }; blocked(core.validateProposal(p, i));
   }
 });
@@ -221,13 +221,37 @@ test('translation preserves source filenames and ordinary Node Docker npm prose 
     const e = core.planEffects(p, { ...issue(), ...source, repo: repoName }, i.candidates); assert.equal(e.comment, out);
   }
 });
-test('filename allowances never accept new domains, links, credentials or actual command/code constructs', () => {
+test('filename allowances never accept new domains, links or credentials', () => {
   const i = input({ title: 'Falha', body: 'A falha ocorre em settings.tsx, issue-core.mjs e readme.md.' }), p = proposal(i);
-  for (const body of ['A change in unknown.tsx.', 'Visit evil.xyz/path', 'See https://example.com/settings.tsx', '[readme.md](readme.md)', '<a>readme.md</a>', 'api_key=secret', 'node --eval "run()"', 'node issue-core.mjs', 'docker run alpine', 'npm install package', 'sudo reboot', 'const result = 3;']) {
+  for (const body of ['A change in unknown.tsx.', 'Visit evil.xyz/path', 'See https://example.com/settings.tsx', '[readme.md](readme.md)', '<a>readme.md</a>', '<!-- cubeship-issue-triage:' + 'a'.repeat(64) + ' -->', 'api_key=secret']) {
     p.translation = { title: 'Failure', body, sourceLanguage: 'pt', targetLanguage: 'en' }; blocked(core.validateProposal(p, i));
   }
   for (const source of ['Falha.\n```\nsettings.tsx\n```', 'Falha. https://example.com/settings.tsx']) {
     const filtered = input({ title: 'Falha', body: source }); p.snapshot = filtered.snapshot;
     p.translation = { title: 'Failure', body: 'The issue affects settings.tsx.', sourceLanguage: 'pt', targetLanguage: 'en' }; blocked(core.validateProposal(p, filtered));
   }
+});
+for (const command of ['npm test', 'pnpm test', 'npm t', 'pnpm t', 'npm it', 'npm tst', 'npm restart', 'pnpm rebuild', 'docker restart cubeship', 'docker ps', 'docker container ls', 'docker image prune', 'node server', 'pnpm arbitrary-script']) {
+  test(`translation preserves plain technical data: ${command}`, () => {
+    const i = input({ title: 'Falha', body: 'A implantação falha.' }), p = proposal(i);
+    for (const body of [command, `Failure:\n${command}`]) {
+      p.translation = { title: 'Failure', body, sourceLanguage: 'pt', targetLanguage: 'en' };
+      ready(core.validateProposal(p, i)); const comment = core.renderComment(p, i); assert.ok(comment.includes(body));
+      const current = { ...issue(), title: 'Falha', body: 'A implantação falha.', repo: repoName }, original = clone(current);
+      assert.equal(core.planEffects(p, current, i.candidates).comment, comment); assert.deepEqual(current, original);
+    }
+  });
+}
+test('technical command and code text is preserved as escaped data rather than interpreted', () => {
+  const source = { title: 'Falha', body: 'sudo reboot, docker run alpine, npm install package e node issue-core.mjs são exemplos do problema.' }, i = input(source), p = proposal(i);
+  for (const [body, rendered] of [
+    ['sudo reboot', 'sudo reboot'], ['docker run alpine', 'docker run alpine'], ['npm install package', 'npm install package'], ['node issue-core.mjs', 'node issue-core.mjs'],
+    ['node --eval "run()"', 'node --eval "run\\(\\)"'], ['$(touch /tmp/nope)', '$\\(touch /tmp/nope\\)'], ['const result = 3;', 'const result = 3;'],
+    ['function run() {}', 'function run\\(\\) \\{\\}'], ['    npm test', '    npm test'], ['Use `npm test`.', 'Use \\`npm test\\`.'], ['```\nnpm test\n```', '\\`\\`\\`\nnpm test\n\\`\\`\\`'],
+  ]) {
+    p.translation = { title: 'Failure', body, sourceLanguage: 'pt', targetLanguage: 'en' }; ready(core.validateProposal(p, i));
+    const comment = core.renderComment(p, i); assert.ok(comment.includes(rendered), body);
+    assert.equal(core.planEffects(p, { ...issue(), ...source, repo: repoName }, i.candidates).comment, comment);
+  }
+  ready(input({ title: 'Falha', body: 'npm test\ndocker restart cubeship\nconst result = 3;' }));
 });
