@@ -153,10 +153,12 @@ const safeOutput = (s, prose) => {
   const source = record(prose) && text(prose.title) && text(prose.body) ? dottedTokens(prose.title + '\n' + prose.body) : [];
   return dottedTokens(s).every(token => /\.(?:tsx?|jsx?|mjs|cjs|md|go|rs|py|json|ya?ml|toml|css|html|txt|sh|sql)$/.test(token) && source.includes(token));
 };
+const candidateOriginsValid = (os, input) => Array.isArray(os) && os.length <= config.maxCandidates && new Set(os.map(o => o?.number)).size === os.length && new Set(os.map(o => o?.id)).size === os.length && os.every(o => exact(o, ['repo', 'number', 'id', 'expectedContentHash']) && o.repo === input.snapshot.repo && positive(o.number) && o.number !== input.snapshot.issueNumber && positive(o.id) && o.id !== input.snapshot.issueId && hex(o.expectedContentHash, 64)) && input.candidates.every(c => os.some(o => o.number === c.number && o.id === c.id && o.expectedContentHash === c.contentHash));
 function proposalValid(p, input) {
   if (!exact(p, ['snapshot', 'type', 'priority', 'labels', 'translation', 'duplicates']) || !exact(p.snapshot, snapshotKeys) || !exact(input?.snapshot, snapshotKeys) || !sameOrigin(p.snapshot, input.snapshot) || !catalogValid(input?.catalog) || !candidatesValid(input?.candidates, input.snapshot)) return false;
   if (!choice(p.type, config.types.map(t => t.name)) || !choice(p.priority, config.priority.options.map(o => o.name)) || !Array.isArray(p.labels) || p.labels.length > config.maxLabels || p.labels.some(l => l === null || !choice(l, config.labels)) || new Set(p.labels.map(l => l.name)).size !== p.labels.length) return false;
-  if (!Array.isArray(p.duplicates) || p.duplicates.length > config.maxDuplicates || new Set(p.duplicates.map(d => d?.number)).size !== p.duplicates.length || p.duplicates.some(d => !exact(d, ['number', 'confidence']) || !confidence(d.confidence) || !input.candidates.some(c => candidateValid(c, input.snapshot) && c.number === d.number))) return false;
+  if (Object.hasOwn(input, 'candidateOrigins') && !candidateOriginsValid(input.candidateOrigins, input)) return false;
+  if (!Array.isArray(p.duplicates) || p.duplicates.length > config.maxDuplicates || new Set(p.duplicates.map(d => d?.number)).size !== p.duplicates.length || p.duplicates.some(d => !exact(d, ['number', 'confidence']) || !confidence(d.confidence) || !(input.candidateOrigins ?? input.candidates).some(c => c.number === d.number))) return false;
   if (!exact(p.translation, ['title', 'body', 'sourceLanguage', 'targetLanguage']) || !safeOutput(p.translation.title, input.prose) || !(input.prose?.body === '' ? p.translation.body === '' : safeOutput(p.translation.body, input.prose)) || !/^[a-z]{2,3}(?:-[A-Z]{2})?$/.test(p.translation.sourceLanguage) || p.translation.targetLanguage !== config.targetLanguage || !protectionValid(p.translation.title, input.protectedTokens?.title) || !protectionValid(p.translation.body, input.protectedTokens?.body)) return false;
   return true;
 }
@@ -177,7 +179,7 @@ export function validateProposal(raw, input) {
     const proposal = structuredClone(p);
     for (const k of ['type', 'priority']) if (proposal[k]?.confidence < config.metadataConfidence) proposal[k] = null;
     proposal.labels = proposal.labels.filter(l => l.confidence >= config.metadataConfidence);
-    proposal.duplicates = proposal.duplicates.filter(d => d.confidence >= config.duplicateConfidence);
+    proposal.duplicates = proposal.duplicates.filter(d => d.confidence >= config.duplicateConfidence && input.candidates.some(c => c.number === d.number));
     if (escape(proposal.translation.title).length + escape(proposal.translation.body).length > config.maxCommentCharacters || commentText(proposal).length > config.maxCommentCharacters) return blocked('COMMENT_TOO_LARGE');
     return { ...ready(), proposal };
   } catch { return blocked('INVALID_PROPOSAL'); }

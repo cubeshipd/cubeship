@@ -272,14 +272,14 @@ test('candidate secret beyond excerpt or inside omitted code refuses before coun
   }
   assert.equal(s.f.calls.filter(x => new URL(x.url).hostname === 'generativelanguage.googleapis.com').length, 0);
 });
-test('candidate original expected hash survives refetch and changed body blocks publication', async t => {
+test('changed candidate is omitted while native triage still publishes', async t => {
   const s = await setup(t), c = candidateFixture(s), a = await s.run.collectSnapshot(context, c.tr), p = s.f.proposal(); p.duplicates = [{ number: 13, confidence: .99 }]; c.candidate.body += ' changed';
-  assert.equal((await s.run.publishProposal(p, a, c.tr, { GITHUB_TOKEN: 'fixture-github' })).reason, 'CANDIDATE_CHANGED'); assert.equal(s.f.mutations.length, 0);
+  assert.equal((await s.run.publishProposal(p, a, c.tr, { GITHUB_TOKEN: 'fixture-github' })).reason, 'PUBLISHED'); assert.equal(s.f.issue.title, 'Save failure'); assert.equal(s.f.comments.length, 1); assert.ok(!s.f.comments[0].body.includes('issues/13'));
 });
 test('candidate changed after metadata writes is checked again before comment', async t => {
   const s = await setup(t), c = candidateFixture(s), a = await s.run.collectSnapshot(context, c.tr), p = s.f.proposal(); p.duplicates = [{ number: 13, confidence: .99 }];
   const tr = s.run.createTransport(async (url, opts) => { const r = await c.tr.fetch(url, opts); if (opts.method === 'POST' && url.endsWith('/labels')) c.candidate.body += ' changed'; return r; }, { now: s.tr.now, sleep: s.tr.sleep });
-  assert.equal((await s.run.publishProposal(p, a, tr, { GITHUB_TOKEN: 'fixture-github' })).reason, 'CANDIDATE_CHANGED'); assert.equal(s.f.comments.length, 0); assert.equal(s.f.mutations.length, 3);
+  assert.equal((await s.run.publishProposal(p, a, tr, { GITHUB_TOKEN: 'fixture-github' })).reason, 'PUBLISHED'); assert.equal(s.f.issue.title, 'Save failure'); assert.equal(s.f.comments.length, 1); assert.ok(!s.f.comments[0].body.includes('issues/13'));
 });
 test('private PR foreign self and unverified search candidates cannot expand read routes', async t => {
   const s = await setup(t);
@@ -433,7 +433,7 @@ test('translated native content retains technical blocks and original marker pre
   assert.equal(s.f.mutations.length, writes); assert.equal(s.f.comments.length, 1);
 });
 
- test('bot-maintained dashboards are excluded before candidate reads and cannot block later publication', async t => {
+test('bot-maintained dashboards are excluded before candidate reads and cannot block later publication', async t => {
   const s = await setup(t), c = candidateFixture(s);
   c.candidate.user = { login: 'renovate[bot]', type: 'Bot' };
   const a = await s.run.collectSnapshot(context, c.tr);
@@ -442,4 +442,25 @@ test('translated native content retains technical blocks and original marker pre
   const generated = await s.run.generateOnce(a, c.tr, 'fixture-google'); assert.equal(generated.state, 'ready');
   assert.equal((await s.run.publishProposal(generated.proposal, a, c.tr, { GITHUB_TOKEN: 'fixture-github' })).reason, 'PUBLISHED');
   assert.equal(c.reads, 0);
+});
+
+test('changed candidate is omitted before inference without weakening unknown duplicate validation', async t => {
+  const s = await setup(t), c = candidateFixture(s), a = await s.run.collectSnapshot(context, c.tr);
+  c.candidate.body += ' changed';
+  const generated = await s.run.generateOnce(a, c.tr, 'fixture-google'); assert.equal(generated.state, 'ready');
+  const sent = JSON.parse(JSON.parse(s.f.calls.find(x => x.url.endsWith(':generateContent')).opts.body).contents[0].parts[0].text);
+  assert.deepEqual(sent.candidates, []);
+  const p = s.f.proposal(); p.duplicates = [{ number: 999, confidence: .99 }];
+  assert.equal((await s.run.publishProposal(p, a, c.tr, { GITHUB_TOKEN: 'fixture-github' })).reason, 'INVALID_PROPOSAL'); assert.equal(s.f.mutations.length, 0);
+});
+
+test('candidate changed after native translation is omitted from the final comment', async t => {
+  const s = await setup(t), c = candidateFixture(s), a = await s.run.collectSnapshot(context, c.tr), p = s.f.proposal(); p.duplicates = [{ number: 13, confidence: .99 }];
+  const tr = s.run.createTransport(async (url, opts) => {
+    const r = await c.tr.fetch(url, opts);
+    if (opts.method === 'PATCH' && Object.hasOwn(JSON.parse(opts.body), 'title')) c.candidate.body += ' changed';
+    return r;
+  }, { now: s.tr.now, sleep: s.tr.sleep });
+  assert.equal((await s.run.publishProposal(p, a, tr, { GITHUB_TOKEN: 'fixture-github' })).reason, 'PUBLISHED');
+  assert.equal(s.f.issue.title, 'Save failure'); assert.equal(s.f.comments.length, 1); assert.ok(!s.f.comments[0].body.includes('issues/13'));
 });

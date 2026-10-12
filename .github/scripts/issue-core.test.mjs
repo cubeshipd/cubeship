@@ -316,3 +316,13 @@ test('omitted source body cannot acquire invented translated body prose', () => 
   const i = input({ body: '' }, []), p = proposal(i); p.duplicates = []; p.translation = { title: 'Failure', body: 'Invented body prose.', sourceLanguage: 'pt', targetLanguage: 'en' }; blocked(core.validateProposal(p, i));
   assert.deepEqual(core.responseSchema(i).properties.translation.properties.body.enum, ['']);
 });
+
+test('a discarded candidate removes only its suggestion and still rejects malformed duplicate data', () => {
+  const i = input(), p = proposal(i);
+  i.candidateOrigins = i.candidates.map(({ repo, number, id, expectedContentHash }) => ({ repo, number, id, expectedContentHash }));
+  i.candidates = [];
+  const checked = core.validateProposal(p, i); ready(checked); assert.deepEqual(checked.proposal.duplicates, []); assert.deepEqual(checked.proposal.translation, p.translation); assert.deepEqual(checked.proposal.type, p.type);
+  blocked(core.validateProposal({ ...p, duplicates: [{ ...p.duplicates[0], url: 'https://evil.test' }] }, i));
+  blocked(core.validateProposal({ ...p, duplicates: [{ number: 999, confidence: .99 }] }, i));
+  blocked(core.validateProposal(p, { ...i, candidateOrigins: [{ ...i.candidateOrigins[0], repo: 'foreign/repo' }] }));
+});

@@ -1,6 +1,6 @@
 import { readFile, writeFile, rename, rm, lstat, readdir, realpath } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
-import { config, SYSTEM_INSTRUCTION, eligibility, fingerprint, sanitizeProse, prepareInput, responseSchema, validateProposal, planEffects } from './issue-core.mjs';
+import { config, SYSTEM_INSTRUCTION, eligibility, fingerprint, sanitizeProse, prepareInput, responseSchema, validateProposal, planEffects, renderComment } from './issue-core.mjs';
 
 const workflow = '.github/workflows/issue-triage.yml';
 const generationStep = 'Generate Gemini proposal';
@@ -148,7 +148,12 @@ async function candidate(c, number, transport, token, expected) {
 async function candidates(c, transport, token, expected) {
   if (expected) {
     if (!Array.isArray(expected) || expected.length > config.maxCandidates || new Set(expected.map(x => x.number)).size !== expected.length || expected.some(x => !exact(x, ['repo', 'number', 'id', 'expectedContentHash']) || x.repo !== c.repo || !positive(x.number) || !positive(x.id) || !hash(x.expectedContentHash))) fail('ARTIFACT_REFUSED');
-    const out = []; for (const e of expected) out.push(await candidate(c, e.number, transport, token, e)); return out;
+    const out = [];
+    for (const e of expected) {
+      try { out.push(await candidate(c, e.number, transport, token, e)); }
+      catch (err) { if (!['CANDIDATE_CHANGED', 'CANDIDATE_REFUSED', 'GITHUB_READ_FAILED', 'INVALID_RESPONSE'].includes(err.message)) throw err; }
+    }
+    return out;
   }
   const search = await githubRead(`/search/issues?${new URLSearchParams({ q: `repo:${c.repo} is:issue`, sort: 'updated', order: 'desc', per_page: String(config.maxCandidates) })}`, transport, token);
   if (!integer(search.total_count) || search.incomplete_results !== false || !Array.isArray(search.items) || search.items.length > config.maxCandidates || search.items.length !== Math.min(search.total_count, config.maxCandidates)) fail('CANDIDATE_SEARCH_INCOMPLETE');
@@ -168,7 +173,7 @@ async function prepared(c, transport, token, expectedSnapshot, expectedCandidate
   const cs = await candidates(c, transport, token, expectedCandidates), cat = await catalog(c, transport, token, verifiedTypes);
   const input = prepareInput({ ...fresh.snapshot, issue: fresh.issue }, cs, cat);
   if (input.decision.state !== 'ready') fail(input.decision.reason);
-  return { ...input, context: c, issue: fresh.issue };
+  return { ...input, candidateOrigins: expectedCandidates ?? candidateMetadata(input.candidates), context: c, issue: fresh.issue };
 }
 export async function collectSnapshot(c, transport = createTransport(), env = {}) {
   if (!config.enabled && !c?.dryRun) return result('DISABLED');
@@ -287,7 +292,7 @@ export async function publishProposal(proposal, a, transport = createTransport()
     if (prior) return result('ALREADY_PUBLISHED', 'ready');
     const input = await prepared(a.context, transport, token, a.snapshot, a.candidates);
     const checked = validateProposal(proposal, input); if (checked.state !== 'ready') return checked;
-    let before, working = input, comment = '';
+    let before, working = input, translated = false;
     for (const kind of ['type', 'priority', 'labels', 'translation']) {
       if (kind === 'translation') await prepared(a.context, transport, token, working.snapshot, a.candidates);
       before = await publicationCurrent(working, transport, token);
@@ -296,10 +301,10 @@ export async function publishProposal(proposal, a, transport = createTransport()
       if (kind === 'type' && effects.typeToSet) { body = { type: effects.typeToSet }; path = root; method = 'PATCH'; }
       if (kind === 'priority' && effects.priorityToSet) { body = { issue_field_values: [effects.priorityToSet] }; path = `${root}/issue-field-values`; method = 'POST'; }
       if (kind === 'labels' && effects.labelsToAdd.length) { body = { labels: effects.labelsToAdd }; path = `${root}/labels`; method = 'POST'; }
-      if (kind === 'translation') { comment = effects.comment; if (effects.translationToSet) { body = effects.translationToSet; path = root; method = 'PATCH'; } }
+      if (kind === 'translation' && effects.translationToSet) { body = effects.translationToSet; path = root; method = 'PATCH'; }
       if (!body) continue;
       try { await mutation(path, method, body, transport, token, [200]); } catch { fail('WRITE_UNCONFIRMED'); }
-      if (kind === 'translation') working = { ...input, snapshot: { ...input.snapshot, contentHash: fingerprint(body) } };
+      if (kind === 'translation') { translated = true; working = { ...input, snapshot: { ...input.snapshot, contentHash: fingerprint(body) } }; }
       let after;
       try { after = await publicationCurrent(working, transport, token); } catch (e) { if (kind === 'translation') fail('WRITE_UNCONFIRMED'); throw e; }
       unchangedHuman(kind === 'translation' ? { ...before, ...body } : before, after);
@@ -308,6 +313,9 @@ export async function publishProposal(proposal, a, transport = createTransport()
     // Refresh original candidate expectations immediately before the comment.
     const final = await prepared(a.context, transport, token, working.snapshot, a.candidates);
     await publicationCurrent(final, transport, token);
+    const finalInput = { ...input, candidates: final.candidates, catalog: final.catalog }, finalProposal = validateProposal(checked.proposal, finalInput);
+    if (finalProposal.state !== 'ready') return finalProposal;
+    const comment = translated || finalProposal.proposal.duplicates.length ? renderComment(finalProposal.proposal, finalInput) : '';
     if (!comment) return result('PUBLISHED', 'ready');
     const existing = markerComments(await pages(`${root}/comments`, null, transport, token), input.snapshot);
     if (existing) return result('ALREADY_PUBLISHED', 'ready');

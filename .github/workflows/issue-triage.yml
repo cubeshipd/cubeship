@@ -64,8 +64,8 @@ jobs:
           set -euo pipefail
           cd .github/scripts
           sha256sum -c - <<'HASHES' > /dev/null
-          02f52ed0ed478ee3f973dd10eada053795a3a49f351b5b0f29723d5e47e4d7dc  issue-core.mjs
-          be03a6f7c56ff957062e10084fd537fca4c82ee1a5e6f980d13ef961c7501162  issue-run.mjs
+          d91df1cff6875aaf62beee3b8fb3df6bbc417a4e7d28fbd32c3ed9b66830d057  issue-core.mjs
+          9ee04e6512e10f5799f4fb90d5daa3ac06ec3e0ca43becfd352423884cf1f3f8  issue-run.mjs
           5ee98997db885b67ad04e732af5dfca68991ec9019812514ea90b0a74d0143c5  issue-config.json
           HASHES
           node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
@@ -189,8 +189,8 @@ jobs:
               "https://raw.githubusercontent.com/cubeshipd/cubeship/$SOURCE_SHA/.github/scripts/$file" --output "$file"
           done
           sha256sum -c - <<'HASHES' > /dev/null
-          02f52ed0ed478ee3f973dd10eada053795a3a49f351b5b0f29723d5e47e4d7dc  issue-core.mjs
-          be03a6f7c56ff957062e10084fd537fca4c82ee1a5e6f980d13ef961c7501162  issue-run.mjs
+          d91df1cff6875aaf62beee3b8fb3df6bbc417a4e7d28fbd32c3ed9b66830d057  issue-core.mjs
+          9ee04e6512e10f5799f4fb90d5daa3ac06ec3e0ca43becfd352423884cf1f3f8  issue-run.mjs
           5ee98997db885b67ad04e732af5dfca68991ec9019812514ea90b0a74d0143c5  issue-config.json
           HASHES
           node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
@@ -258,8 +258,8 @@ jobs:
           set -euo pipefail
           cd .github/scripts
           sha256sum -c - <<'HASHES' > /dev/null
-          02f52ed0ed478ee3f973dd10eada053795a3a49f351b5b0f29723d5e47e4d7dc  issue-core.mjs
-          be03a6f7c56ff957062e10084fd537fca4c82ee1a5e6f980d13ef961c7501162  issue-run.mjs
+          d91df1cff6875aaf62beee3b8fb3df6bbc417a4e7d28fbd32c3ed9b66830d057  issue-core.mjs
+          9ee04e6512e10f5799f4fb90d5daa3ac06ec3e0ca43becfd352423884cf1f3f8  issue-run.mjs
           5ee98997db885b67ad04e732af5dfca68991ec9019812514ea90b0a74d0143c5  issue-config.json
           HASHES
           node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"

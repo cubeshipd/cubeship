@@ -37,7 +37,10 @@ created only when translation or duplicates add information; reuse requires the
 stable original-content fingerprint marker and ownership by the bot.
 
 Content is refetched before generation and each publication phase. A changed
-original, target state or candidate blocks stale effects. Checks and additive
+primary Issue or target state blocks stale effects. A changed or unavailable candidate
+is omitted from possible duplicates and never blocks translation or native metadata.
+Duplicate proposals remain restricted to the verified collector identities, and
+remaining candidates are refreshed before commenting. Checks and additive
 requests are not a transaction: some effects can complete before a later refusal,
 and a human value can race between the last read and write. Unknown API outcomes
 or an unconfirmed native receipt are reported without blind retry or broader
