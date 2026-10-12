@@ -132,9 +132,8 @@ for (const kind of ['bot', 'PR', 'closed', 'private', 'rerun', 'ref', 'runOrigin
 for (const conclusion of ['failure', 'timed_out', 'cancelled', 'success']) {
   test(`persistent ${conclusion} generation step reserves Issue across fresh calls`, async t => {
     const s = await setup(t); s.f.history.push(s.f.runRecord(100)); s.f.jobs.set(100, { total_count: 1, jobs: [{ steps: [{ name: 'Generate Gemini proposal', status: 'completed', conclusion, started_at: '2026-10-12T05:59:00Z' }] }] });
-    const a = { state: 'ready', reason: 'COLLECTED', context, snapshot: s.f.origin(), candidates: [] };
     assert.equal((await s.run.collectSnapshot(context, s.tr)).reason, 'GENERATION_RESERVED');
-    assert.equal((await s.run.generateOnce(a, transport(s.run, s.f), 'fixture-google')).reason, 'GENERATION_RESERVED'); assert.equal(s.f.generation, 0);
+    assert.equal((await s.run.collectSnapshot(context, transport(s.run, s.f))).reason, 'GENERATION_RESERVED'); assert.equal(s.f.generation, 0);
   });
 }
 test('skipped and provenance-verified dry histories consume no admission slots', async t => {
@@ -288,8 +287,7 @@ test('receipt verification catches unrelated human type loss on additive labels'
 test('historical rerun cannot hide an earlier generation behind a later skipped attempt', async t => {
   const s = await setup(t); s.f.history.push({ ...s.f.runRecord(100, 30), run_attempt: 2 });
   s.f.jobs.set(100, { total_count: 1, jobs: [{ steps: [{ name: 'Generate Gemini proposal', status: 'completed', conclusion: 'skipped', started_at: null }] }] });
-  const a = { state: 'ready', reason: 'COLLECTED', context, snapshot: s.f.origin(), candidates: [] };
-  assert.equal((await s.run.collectSnapshot(context, s.tr)).reason, 'HISTORY_INCOMPLETE'); assert.equal((await s.run.generateOnce(a, s.tr, 'fixture-google')).reason, 'HISTORY_INCOMPLETE'); assert.equal(s.f.generation, 0);
+  assert.equal((await s.run.collectSnapshot(context, s.tr)).reason, 'HISTORY_INCOMPLETE'); assert.equal((await s.run.collectSnapshot(context, transport(s.run, s.f))).reason, 'HISTORY_INCOMPLETE'); assert.equal(s.f.generation, 0);
 });
 test('actual verified native field read fixture preserves Bug High and Effort Low', async t => {
   const s = await setup(t), a = await collected(s); s.f.issue.type = s.config.types[1];
@@ -317,12 +315,57 @@ test('actual CLI accepts a guarded single-file downloaded artifact directory and
   await writeFile(join(dir, 'extra.json'), '{}'); const env = {}; Object.defineProperty(env, 'GEMINI_API_KEY', { get() { throw Error('must not read key'); } });
   assert.equal((await s.run.runCLI(['infer', ctx, dir, join(s.dir, 'blocked.json')], { env, transport: s.tr })).reason, 'ARTIFACT_REFUSED'); assert.equal(s.f.generation, 1);
 });
-test('source changed during post-count history refresh is checked immediately before generation', async t => {
+test('source changed after count is checked immediately before generation', async t => {
   const s = await setup(t), a = await collected(s);
-  const tr = s.run.createTransport(async (url, opts) => { if (url.endsWith('/actions/runs/500') && s.f.calls.some(c => c.url.endsWith(':countTokens'))) s.f.issue.body += ' edited during history'; return s.f.fetch(url, opts); }, { now: s.tr.now, sleep: s.tr.sleep });
+  const tr = s.run.createTransport(async (url, opts) => { const response = await s.f.fetch(url, opts); if (url.endsWith(':countTokens')) s.f.issue.body += ' edited after count'; return response; }, { now: s.tr.now, sleep: s.tr.sleep });
   assert.equal((await s.run.generateOnce(a, tr, 'fixture-google')).reason, 'SNAPSHOT_CHANGED'); assert.equal(s.f.generation, 0);
 });
 test('independently reconstructed trusted context tolerates JSON property order across stages', async t => {
   const s = await setup(t), a = await collected(s), ctx = join(s.dir, 'ctx.json'), snapshot = join(s.dir, 'snapshot.json'); await writeFile(ctx, JSON.stringify(Object.fromEntries(Object.entries(context).reverse()))); await writeFile(snapshot, JSON.stringify(a));
   assert.equal((await s.run.runCLI(['infer', ctx, snapshot, join(s.dir, 'proposal.json')], { env: { GEMINI_API_KEY: 'fixture-google' }, transport: s.tr })).state, 'ready');
 });
+for (const priorRuns of [0, 1, 2]) {
+  test(`serialized collector admission gives inference 19 anonymous reads independent of ${priorRuns} prior runs`, async t => {
+    const s = await setup(t), cs = Array.from({ length: 10 }, (_, i) => ({ number: 1001 + i, id: 10010 + i, title: 'Similar public issue', body: 'A similar public failure.', state: 'open' }));
+    for (let id = 1; id <= priorRuns; id++) { s.f.history.push(s.f.runRecord(id, 30 + id)); s.f.jobs.set(id, { total_count: 1, jobs: [{ steps: [{ name: 'Generate Gemini proposal', status: 'completed', conclusion: 'failure', started_at: '2026-10-12T05:59:00Z' }] }] }); }
+    let infer = false, reads = 0, beforeCount, beforeGeneration; const inferPaths = [];
+    const tr = s.run.createTransport(async (url, opts) => {
+      const u = new URL(url);
+      if (infer && u.hostname === 'api.github.com' && opts.method === 'GET') { assert.equal(opts.headers.Authorization, undefined); reads++; inferPaths.push(u.pathname); }
+      if (infer && url.endsWith(':countTokens')) beforeCount = reads;
+      if (infer && url.endsWith(':generateContent')) beforeGeneration = reads;
+      if (u.pathname === '/search/issues') return Response.json({ total_count: cs.length, incomplete_results: false, items: cs.map(c => ({ number: c.number, id: c.id, repository_url: `https://api.github.com/repos/${repo}` })) });
+      const c = cs.find(c => u.pathname === `/repos/${repo}/issues/${c.number}`); if (c) return Response.json(c);
+      return s.f.fetch(url, opts);
+    }, { now: s.tr.now, sleep: s.tr.sleep });
+    const a = await s.run.collectSnapshot(context, tr, { GITHUB_TOKEN: 'fixture-github' }); assert.equal(a.state, 'ready'); assert.equal(a.candidates.length, 10);
+    infer = true; assert.equal((await s.run.generateOnce(a, tr, 'fixture-google')).state, 'ready');
+    assert.deepEqual({ beforeCount, beforeGeneration, total: reads }, { beforeCount: 17, beforeGeneration: 19, total: 19 });
+    assert.equal(inferPaths.filter(p => p.endsWith('/actions/runs/500')).length, 1); assert.ok(inferPaths.every(p => !p.endsWith('/jobs') && !p.endsWith('/issue-triage.yml/runs')));
+    assert.equal(inferPaths.filter(p => p === `/repos/${repo}`).length, 3); assert.equal(s.f.generation, 1);
+  });
+}
+test('writer verifies current run without rereading admitted full history', async t => {
+  const s = await setup(t), a = await collected(s), paths = [];
+  const tr = s.run.createTransport(async (url, opts) => { paths.push(new URL(url).pathname); if (url.includes('/issue-triage.yml/runs') || url.includes('/jobs')) return Response.json({}, { status: 403 }); return s.f.fetch(url, opts); }, { now: s.tr.now, sleep: s.tr.sleep });
+  assert.equal((await s.run.publishProposal(s.f.proposal(), a, tr, { GITHUB_TOKEN: 'fixture-github' })).state, 'ready');
+  assert.equal(paths.filter(p => p.endsWith('/actions/runs/500')).length, 1); assert.ok(paths.every(p => !p.endsWith('/jobs') && !p.endsWith('/issue-triage.yml/runs')));
+});
+for (const reason of ['HISTORY_INCOMPLETE', 'BUDGET_EXHAUSTED']) {
+  test(`actual CLI ${reason} admission cannot produce an inference artifact or provider call`, async t => {
+    const s = await setup(t), ctx = join(s.dir, 'ctx.json'), snapshot = join(s.dir, 'snapshot.json'), proposal = join(s.dir, 'proposal.json'); await writeFile(ctx, JSON.stringify(context));
+    if (reason === 'HISTORY_INCOMPLETE') s.f.history.push({ ...s.f.runRecord(1, 30), display_title: 'ambiguous' });
+    else for (let id = 1; id <= 10; id++) { s.f.history.push(s.f.runRecord(id, 30 + id)); s.f.jobs.set(id, { total_count: 1, jobs: [{ steps: [{ name: 'Generate Gemini proposal', status: 'completed', conclusion: 'failure', started_at: '2026-10-12T05:59:00Z' }] }] }); }
+    assert.equal((await s.run.runCLI(['collect', ctx, snapshot], { env: { GITHUB_TOKEN: 'fixture-github' }, transport: s.tr })).reason, reason);
+    await assert.rejects(readFile(snapshot), { code: 'ENOENT' });
+    const env = {}; Object.defineProperty(env, 'GEMINI_API_KEY', { get() { throw Error('key cannot be read without artifact'); } });
+    assert.equal((await s.run.runCLI(['infer', ctx, snapshot, proposal], { env, transport: s.tr })).state, 'blocked'); await assert.rejects(readFile(proposal), { code: 'ENOENT' }); assert.equal(s.f.generation, 0);
+  });
+}
+for (const stage of ['infer', 'publish']) {
+  test(`${stage} refuses collected origin when current run provenance changes`, async t => {
+    const s = await setup(t), a = await collected(s); s.f.own.head_sha = 'b'.repeat(40);
+    const r = stage === 'infer' ? await s.run.generateOnce(a, s.tr, 'fixture-google') : await s.run.publishProposal(s.f.proposal(), a, s.tr, { GITHUB_TOKEN: 'fixture-github' });
+    assert.equal(r.reason, 'RUN_ORIGIN_REFUSED'); assert.equal(s.f.generation, 0); assert.equal(s.f.mutations.length, 0);
+  });
+}

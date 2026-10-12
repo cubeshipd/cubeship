@@ -83,9 +83,12 @@ function provenance(run, c, current = false) {
   if (current && (run.id !== c.runId || run.head_sha !== c.workflowSha || run.actor?.login !== c.actor || run.display_title !== titleFor(c) || dry !== c.dryRun || run.status !== 'in_progress')) fail('RUN_ORIGIN_REFUSED');
   return { dry, number: match ? Number(match[1]) : null, id: match ? Number(match[2]) : null };
 }
+async function currentRun(c, transport, token) {
+  provenance(await githubRead(`/repos/${c.repo}/actions/runs/${c.runId}`, transport, token), c, true);
+}
 async function history(c, transport, token, admit = true) {
-  const root = `/repos/${c.repo}`, own = await githubRead(`${root}/actions/runs/${c.runId}`, transport, token);
-  provenance(own, c, true);
+  const root = `/repos/${c.repo}`;
+  await currentRun(c, transport, token);
   const runs = await pages(`${root}/actions/workflows/issue-triage.yml/runs`, 'workflow_runs', transport, token);
   if (new Set(runs.map(r => r?.id)).size !== runs.length || !runs.some(r => r.id === c.runId)) fail('HISTORY_INCOMPLETE');
   const reservations = [];
@@ -133,8 +136,9 @@ function excerpt(prose) {
   let value = ''; for (const char of prose) { if (Buffer.byteLength(value + char) > config.maxCandidateBytes) break; value += char; } return value;
 }
 async function candidate(c, number, transport, token, expected) {
-  const repo = await githubRead(`/repos/${c.repo}`, transport, token), issue = await githubRead(`/repos/${c.repo}/issues/${number}`, transport, token);
-  if (repo.full_name !== c.repo || repo.private !== false || repo.visibility !== 'public' || issue.number !== number || !positive(issue.id) || issue.id === c.issueId || number === c.issueNumber || !['open', 'closed'].includes(issue.state) || Object.hasOwn(issue, 'pull_request') || !hash(fingerprint(issue))) fail('CANDIDATE_REFUSED');
+  // prepared established this repository's public identity before candidate reads.
+  const issue = await githubRead(`/repos/${c.repo}/issues/${number}`, transport, token);
+  if (issue.number !== number || !positive(issue.id) || issue.id === c.issueId || number === c.issueNumber || !['open', 'closed'].includes(issue.state) || Object.hasOwn(issue, 'pull_request') || !hash(fingerprint(issue))) fail('CANDIDATE_REFUSED');
   const title = sanitizeProse(issue.title), body = issue.body ? sanitizeProse(issue.body) : { state: 'ready', prose: '' };
   if (title.state !== 'ready' || body.state !== 'ready') fail('CANDIDATE_REFUSED');
   const contentHash = fingerprint(issue);
@@ -205,7 +209,8 @@ export async function generateOnce(a, transport = createTransport(), key) {
   try {
     inputArtifact(a);
     const c = a.context;
-    await history(c, transport, undefined);
+    // The serialized trusted collector admitted this exact same-run artifact.
+    await currentRun(c, transport);
     const input = await prepared(c, transport, undefined, a.snapshot, a.candidates);
     if (c.dryRun) return { state: 'ready', reason: 'DRY_RUN_VALIDATED' };
     if (typeof key !== 'string' || !key) return result('KEY_REQUIRED');
@@ -215,7 +220,6 @@ export async function generateOnce(a, transport = createTransport(), key) {
     const count = await request(`${base}:countTokens`, { ...options, body: JSON.stringify({ generateContentRequest: { model: `models/${config.model}`, ...body } }), signal: AbortSignal.timeout(config.countTimeoutSeconds * 1000) }, transport, [200], 16384);
     if (!integer(count.data?.totalTokens)) return result('TOKEN_COUNT_FAILED');
     if (count.data.totalTokens > config.maxInputTokens) return result('TOKEN_LIMIT');
-    await history(c, transport, undefined);
     await currentUnchanged(input, transport);
     const response = await request(`${base}:generateContent`, { ...options, body: JSON.stringify(body), signal: AbortSignal.timeout(config.generationTimeoutSeconds * 1000) }, transport, [200], 65536);
     if (!response.data) return result('GENERATION_FAILED');
@@ -257,7 +261,7 @@ export async function publishProposal(proposal, a, transport = createTransport()
   try {
     if (Object.hasOwn(env, 'GEMINI_API_KEY')) fail('CREDENTIAL_ISOLATION');
     inputArtifact(a); const token = env.GITHUB_TOKEN; if (typeof token !== 'string' || !token) fail('CREDENTIAL_ISOLATION');
-    await history(a.context, transport, token, false);
+    await currentRun(a.context, transport, token);
     const input = await prepared(a.context, transport, token, a.snapshot, a.candidates);
     const checked = validateProposal(proposal, input); if (checked.state !== 'ready') return checked;
     const root = `/repos/${a.context.repo}/issues/${a.context.issueNumber}`, comments = await pages(`${root}/comments`, null, transport, token), prior = markerComments(comments, input.snapshot);
