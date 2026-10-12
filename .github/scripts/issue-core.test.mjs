@@ -28,6 +28,12 @@ const blocked = x => assert.equal(x.state ?? x.decision?.state, 'blocked');
 test('pure Issue policy exports exist', () => {
   for (const name of ['eligibility', 'fingerprint', 'sanitizeProse', 'prepareInput', 'responseSchema', 'validateProposal', 'planEffects', 'renderComment']) assert.equal(typeof core[name], 'function', name);
 });
+test('provider schema uses supported keywords while local validation rejects invalid translations', () => {
+  const i = input(), schema = core.responseSchema(i);
+  assert.doesNotMatch(JSON.stringify(schema), /"(?:minLength|maxLength|pattern)":/);
+  const p = proposal(i); p.translation = { title: 'Translated', body: 'Translated', sourceLanguage: 'invalid language', targetLanguage: 'en' };
+  blocked(core.validateProposal(p, i));
+});
 test('checked-in configuration is enabled, scoped, immutable and uses verified Issue catalogs', () => {
   const c = JSON.parse(readFileSync(new URL('./issue-config.json', import.meta.url)));
   assert.deepEqual(c.repositories, [repoName]); assert.equal(c.enabled, true); assert.equal(c.publishEnabled, true);
@@ -277,11 +283,11 @@ test('primary prose bound follows whole-source safety scan and complete log omis
 });
 test('title-only translation may leave an omitted source body empty without inventing text', () => {
   const i = input({ body: '' }, []), p = proposal(i); p.duplicates = []; p.translation = { title: 'Failure', body: '', sourceLanguage: 'pt', targetLanguage: 'en' };
-  ready(core.validateProposal(p, i)); assert.equal(core.responseSchema(i).properties.translation.anyOf[1].properties.body.minLength, 0);
+  ready(core.validateProposal(p, i)); assert.deepEqual(core.responseSchema(i).properties.translation.anyOf[1].properties.body.enum, ['']);
   assert.ok(core.renderComment(p, i).includes('Failure')); assert.ok(core.planEffects(p, { ...issue(), repo: repoName, body: '' }, []).comment.includes('Failure'));
   blocked(core.validateProposal({ ...p, snapshot: input({}, []).snapshot }, input({}, [])));
 });
 test('omitted source body cannot acquire invented translated body prose', () => {
   const i = input({ body: '' }, []), p = proposal(i); p.duplicates = []; p.translation = { title: 'Failure', body: 'Invented body prose.', sourceLanguage: 'pt', targetLanguage: 'en' }; blocked(core.validateProposal(p, i));
-  assert.equal(core.responseSchema(i).properties.translation.anyOf[1].properties.body.maxLength, 0);
+  assert.deepEqual(core.responseSchema(i).properties.translation.anyOf[1].properties.body.enum, ['']);
 });

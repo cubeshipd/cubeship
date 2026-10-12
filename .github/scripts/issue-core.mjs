@@ -97,7 +97,7 @@ export function responseSchema(input) {
     type: nullable(choiceSchema(config.types.map(t => t.name))),
     priority: nullable(choiceSchema(config.priority.options.map(o => o.name))),
     labels: { type: 'array', maxItems: config.maxLabels, items: choiceSchema(config.labels) },
-    translation: nullable(objectSchema({ title: { type: 'string', minLength: 1, maxLength: config.maxCommentCharacters }, body: { type: 'string', minLength: input.prose?.body === '' ? 0 : 1, maxLength: input.prose?.body === '' ? 0 : config.maxCommentCharacters }, sourceLanguage: { type: 'string', pattern: '^[a-z]{2,3}(?:-[A-Z]{2})?$' }, targetLanguage: { type: 'string', enum: [config.targetLanguage] } })),
+    translation: nullable(objectSchema({ title: { type: 'string' }, body: input.prose?.body === '' ? { type: 'string', enum: [''] } : { type: 'string' }, sourceLanguage: { type: 'string' }, targetLanguage: { type: 'string', enum: [config.targetLanguage] } })),
     duplicates: { type: 'array', maxItems: config.maxDuplicates, items: objectSchema({ number: input.candidates.length ? { type: 'integer', enum: input.candidates.map(c => c.number) } : { type: 'integer', maximum: 0 }, confidence: confidenceSchema }) },
   });
 }
