@@ -22,7 +22,8 @@ The deterministic publisher can add up to three existing labels from `bug`,
 `dependencies`. It fills absent native Issue type (Task, Bug or Feature) and
 absent native **Priority** (Urgent, High, Medium or Low) only at confidence >=0.85.
 Priority is Issue field `46483201`, independent of Projects: its POST payload is
-an additive nonempty list with the field ID and option **name**, never a PUT or
+an object with an additive nonempty `issue_field_values` list containing the
+field ID and option **name**, never a PUT or
 replacement of all fields. Human type/Priority, Effort (`46483204`), other fields,
 existing labels, title and body are preserved. A legacy priority label blocks
 Priority inference; there is no automatic P1/P2/P3 conversion or migration.
@@ -63,6 +64,9 @@ redirects or source-body logging.
 
 Every stage executes trusted default-branch source at `github.workflow_sha`.
 All three script/config literal SHA256 digests must pass before any module import.
+The authenticated collector verifies the pinned native type catalog; inference
+reuses those verified names because GitHub does not expose the catalog anonymously.
+Publication still refetches the authenticated catalog before writes.
 Inference has no checkout, GitHub token property (even an empty one is refused)
 or repository permissions. Its three-file bootstrap is anonymous and fixed to
 this public repository. The Google secret appears only on the conditional
@@ -125,9 +129,9 @@ thinking; the configured-limit estimate is US$0.00752 per attempt. Actual model
 compatibility and measured provider consumption await authorized live testing.
 These limits do not bound other account uses.
 
-Synthetic ten-candidate inference now uses 19 anonymous GitHub GETs independent
+Synthetic ten-candidate inference now uses 18 anonymous GitHub GETs independent
 of prior history length; authenticated collector history reads remain separate.
-Three positive cases and one collector-blocked sensitive case would use 57
+Three positive cases and one collector-blocked sensitive case would use 54
 inference GETs with no retries or extra pages. A shared anonymous 60/hour bucket,
 unrelated traffic, bootstrap, pagination and retries can consume the small
 margin. Ten/hour is an admission ceiling, not promised throughput. Pace and stop

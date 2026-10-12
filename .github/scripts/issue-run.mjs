@@ -125,8 +125,8 @@ async function current(c, transport, token) {
   if (decision.state !== 'ready') fail(decision.reason);
   return { repo, issue, snapshot: { repo: c.repo, issueNumber: issue.number, issueId: issue.id, contentHash: fingerprint(issue), workflowSha: c.workflowSha, runId: c.runId } };
 }
-async function catalog(c, transport, token) {
-  const root = `/repos/${c.repo}`, types = await pages(`${root}/issue-types`, null, transport, token), labels = await pages(`${root}/labels`, null, transport, token);
+async function catalog(c, transport, token, verifiedTypes) {
+  const root = `/repos/${c.repo}`, types = verifiedTypes ?? await pages(`${root}/issue-types`, null, transport, token), labels = await pages(`${root}/labels`, null, transport, token);
   // Native Priority identities were verified out of band and pinned in trusted
   // source. Repository-token runtime needs neither organization nor Projects scope.
   return { types: types.map(t => ({ id: t.id, name: t.name })), priority: structuredClone(config.priority), labels: labels.map(l => l.name).filter(name => config.labels.includes(name)) };
@@ -162,10 +162,10 @@ async function candidates(c, transport, token, expected) {
   return out;
 }
 function candidateMetadata(cs) { return cs.map(c => ({ repo: c.repo, number: c.number, id: c.id, expectedContentHash: c.expectedContentHash })); }
-async function prepared(c, transport, token, expectedSnapshot, expectedCandidates) {
+async function prepared(c, transport, token, expectedSnapshot, expectedCandidates, verifiedTypes) {
   const fresh = await current(c, transport, token);
   if (expectedSnapshot && !same(expectedSnapshot, fresh.snapshot)) fail('SNAPSHOT_CHANGED');
-  const cs = await candidates(c, transport, token, expectedCandidates), cat = await catalog(c, transport, token);
+  const cs = await candidates(c, transport, token, expectedCandidates), cat = await catalog(c, transport, token, verifiedTypes);
   const input = prepareInput({ ...fresh.snapshot, issue: fresh.issue }, cs, cat);
   if (input.decision.state !== 'ready') fail(input.decision.reason);
   return { ...input, context: c, issue: fresh.issue };
@@ -211,7 +211,8 @@ export async function generateOnce(a, transport = createTransport(), key) {
     const c = a.context;
     // The serialized trusted collector admitted this exact same-run artifact.
     await currentRun(c, transport);
-    const input = await prepared(c, transport, undefined, a.snapshot, a.candidates);
+    // GitHub requires authentication for types; this same-run collector verified the pinned catalog.
+    const input = await prepared(c, transport, undefined, a.snapshot, a.candidates, config.types);
     if (c.dryRun) return { state: 'ready', reason: 'DRY_RUN_VALIDATED' };
     if (typeof key !== 'string' || !key) return result('KEY_REQUIRED');
     const body = { systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] }, contents: [{ role: 'user', parts: [{ text: input.prompt }] }], generationConfig: { candidateCount: 1, responseMimeType: 'application/json', responseJsonSchema: responseSchema(input), maxOutputTokens: config.maxOutputTokens, thinkingConfig: { includeThoughts: false } } };
@@ -272,12 +273,12 @@ export async function publishProposal(proposal, a, transport = createTransport()
       const effects = planEffects(checked.proposal, before, input.candidates);
       let body, path, method;
       if (kind === 'type' && effects.typeToSet) { body = { type: effects.typeToSet }; path = root; method = 'PATCH'; }
-      if (kind === 'priority' && effects.priorityToSet) { body = [effects.priorityToSet]; path = `${root}/issue-field-values`; method = 'POST'; }
+      if (kind === 'priority' && effects.priorityToSet) { body = { issue_field_values: [effects.priorityToSet] }; path = `${root}/issue-field-values`; method = 'POST'; }
       if (kind === 'labels' && effects.labelsToAdd.length) { body = { labels: effects.labelsToAdd }; path = `${root}/labels`; method = 'POST'; }
       if (!body) continue;
       try { await mutation(path, method, body, transport, token, [200]); } catch { fail('WRITE_UNCONFIRMED'); }
       const after = await publicationCurrent(input, transport, token); unchangedHuman(before, after);
-      if ((kind === 'type' && (after.type?.name !== body.type || !config.types.some(t => t.id === after.type?.id && t.name === body.type))) || (kind === 'priority' && !after.fieldValues.some(v => v.field_id === config.priority.id && v.value === body[0].value)) || (kind === 'labels' && body.labels.some(name => !after.labels.some(l => l.name === name)))) fail('WRITE_UNCONFIRMED');
+      if ((kind === 'type' && (after.type?.name !== body.type || !config.types.some(t => t.id === after.type?.id && t.name === body.type))) || (kind === 'priority' && !after.fieldValues.some(v => v.field_id === config.priority.id && v.value === body.issue_field_values[0].value)) || (kind === 'labels' && body.labels.some(name => !after.labels.some(l => l.name === name)))) fail('WRITE_UNCONFIRMED');
     }
     // Refresh original candidate expectations immediately before the comment.
     const final = await prepared(a.context, transport, token, a.snapshot, a.candidates), latest = await publicationCurrent(final, transport, token), effects = planEffects(checked.proposal, latest, final.candidates);

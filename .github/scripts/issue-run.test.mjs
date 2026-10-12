@@ -41,7 +41,7 @@ function fixture(config, core) {
     if (method !== 'GET') {
       const body = JSON.parse(opts.body); mutations.push({ path, method, body });
       if (mode === 'write-abort') throw new Error('Bearer token secret');
-      if (path.endsWith('/issue-field-values')) { assert.ok(Array.isArray(body) && body.length === 1); if (mode !== 'ignored-priority') fields.push({ issue_field_id: body[0].field_id, issue_field_name: 'Priority', data_type: 'single_select', value: 81364765, single_select_option: { id: 81364765, name: body[0].value } }); return Response.json(fields); }
+      if (path.endsWith('/issue-field-values')) { assert.deepEqual(Object.keys(body), ['issue_field_values']); assert.ok(Array.isArray(body.issue_field_values) && body.issue_field_values.length === 1); if (mode !== 'ignored-priority') fields.push({ issue_field_id: body.issue_field_values[0].field_id, issue_field_name: 'Priority', data_type: 'single_select', value: 81364765, single_select_option: { id: 81364765, name: body.issue_field_values[0].value } }); return Response.json(fields); }
       if (path.endsWith('/labels')) { issue.labels.push(...body.labels.map(name => ({ name }))); return Response.json(issue.labels); }
       if (path.endsWith('/issues/12')) { if (mode !== 'ignored-type') issue.type = config.types.find(t => t.name === body.type); return Response.json(issue); }
       if (path.endsWith('/comments')) { const c = { id: 77, body: body.body, user: { login: 'github-actions[bot]', type: 'Bot', id: 41898282 } }; comments.push(c); return Response.json(c, { status: 201 }); }
@@ -77,12 +77,32 @@ test('actual CLI isolates credentials and adds native metadata preserving origin
   assert.equal((await run.runCLI(['infer', ctx, snapshot, artifact], { env: { GEMINI_API_KEY: 'fixture-google' }, transport: tr })).state, 'ready');
   assert.equal(f.generation, 1); const output = await readFile(artifact, 'utf8'); assert.ok(!output.includes('fixture-google') && !output.includes('opaque') && !output.includes(original.body));
   assert.equal((await run.runCLI(['publish', ctx, artifact], { env: { GITHUB_TOKEN: 'fixture-github' }, transport: tr })).state, 'ready');
-  assert.deepEqual(f.mutations.map(m => [m.method, m.body]), [['PATCH', { type: 'Bug' }], ['POST', [{ field_id: 46483201, value: 'High' }]], ['POST', { labels: ['bug'] }], ['POST', { body: f.comments[0].body }]]);
+  assert.deepEqual(f.mutations.map(m => [m.method, m.body]), [['PATCH', { type: 'Bug' }], ['POST', { issue_field_values: [{ field_id: 46483201, value: 'High' }] }], ['POST', { labels: ['bug'] }], ['POST', { body: f.comments[0].body }]]);
   assert.equal(f.issue.title, original.title); assert.equal(f.issue.body, original.body); assert.equal(f.fields[0].issue_field_id, 46483204);
   const before = f.mutations.length; assert.equal((await run.runCLI(['publish', ctx, artifact], { env: { GITHUB_TOKEN: 'fixture-github' }, transport: tr })).state, 'ready'); assert.equal(f.mutations.length, before);
 });
 async function setup(t) { const m = await modules(t); const f = fixture(m.config, m.core); return { ...m, f, tr: transport(m.run, f) }; }
 async function collected(s, c = context) { const a = await s.run.collectSnapshot(c, s.tr, {}); assert.equal(a.state, 'ready', JSON.stringify(a)); return a; }
+test('inference reuses collector-verified types without anonymous catalog access', async t => {
+  const s = await setup(t), anonymousTypes = [];
+  const tr = s.run.createTransport(async (url, opts) => {
+    if (new URL(url).pathname.endsWith('/issue-types') && !opts.headers.Authorization) {
+      anonymousTypes.push(url); return Response.json({}, { status: 404 });
+    }
+    return s.f.fetch(url, opts);
+  }, { now: s.tr.now, sleep: s.tr.sleep });
+  const a = await s.run.collectSnapshot(context, tr, { GITHUB_TOKEN: 'fixture-github' });
+  assert.equal(a.state, 'ready');
+  assert.equal((await s.run.generateOnce(a, tr, 'fixture-google')).state, 'ready');
+  assert.deepEqual(anonymousTypes, []); assert.equal(s.f.generation, 1);
+});
+test('authenticated catalog failures still block collection and publication', async t => {
+  const s = await setup(t), a = await collected(s);
+  const tr = s.run.createTransport(async (url, opts) => new URL(url).pathname.endsWith('/issue-types') ? Response.json({}, { status: 404 }) : s.f.fetch(url, opts), { now: s.tr.now, sleep: s.tr.sleep });
+  assert.equal((await s.run.collectSnapshot(context, tr, { GITHUB_TOKEN: 'fixture-github' })).reason, 'GITHUB_READ_FAILED');
+  assert.equal((await s.run.publishProposal(s.f.proposal(), a, tr, { GITHUB_TOKEN: 'fixture-github' })).reason, 'GITHUB_READ_FAILED');
+  assert.equal(s.f.mutations.length, 0); assert.equal(s.f.generation, 0);
+});
 for (const mode of ['status-400', 'status-429', 'status-500', 'status-503', 'abort', 'invalid', 'thought']) {
   test(`generation ${mode} never retries or publishes raw responses`, async t => {
     const s = await setup(t), a = await collected(s); s.f.mode = mode;
@@ -325,7 +345,7 @@ test('independently reconstructed trusted context tolerates JSON property order 
   assert.equal((await s.run.runCLI(['infer', ctx, snapshot, join(s.dir, 'proposal.json')], { env: { GEMINI_API_KEY: 'fixture-google' }, transport: s.tr })).state, 'ready');
 });
 for (const priorRuns of [0, 1, 2]) {
-  test(`serialized collector admission gives inference 19 anonymous reads independent of ${priorRuns} prior runs`, async t => {
+  test(`serialized collector admission gives inference 18 anonymous reads independent of ${priorRuns} prior runs`, async t => {
     const s = await setup(t), cs = Array.from({ length: 10 }, (_, i) => ({ number: 1001 + i, id: 10010 + i, title: 'Similar public issue', body: 'A similar public failure.', state: 'open' }));
     for (let id = 1; id <= priorRuns; id++) { s.f.history.push(s.f.runRecord(id, 30 + id)); s.f.jobs.set(id, { total_count: 1, jobs: [{ steps: [{ name: 'Generate Gemini proposal', status: 'completed', conclusion: 'failure', started_at: '2026-10-12T05:59:00Z' }] }] }); }
     let infer = false, reads = 0, beforeCount, beforeGeneration; const inferPaths = [];
@@ -340,7 +360,7 @@ for (const priorRuns of [0, 1, 2]) {
     }, { now: s.tr.now, sleep: s.tr.sleep });
     const a = await s.run.collectSnapshot(context, tr, { GITHUB_TOKEN: 'fixture-github' }); assert.equal(a.state, 'ready'); assert.equal(a.candidates.length, 10);
     infer = true; assert.equal((await s.run.generateOnce(a, tr, 'fixture-google')).state, 'ready');
-    assert.deepEqual({ beforeCount, beforeGeneration, total: reads }, { beforeCount: 17, beforeGeneration: 19, total: 19 });
+    assert.deepEqual({ beforeCount, beforeGeneration, total: reads }, { beforeCount: 16, beforeGeneration: 18, total: 18 });
     assert.equal(inferPaths.filter(p => p.endsWith('/actions/runs/500')).length, 1); assert.ok(inferPaths.every(p => !p.endsWith('/jobs') && !p.endsWith('/issue-triage.yml/runs')));
     assert.equal(inferPaths.filter(p => p === `/repos/${repo}`).length, 3); assert.equal(s.f.generation, 1);
   });
