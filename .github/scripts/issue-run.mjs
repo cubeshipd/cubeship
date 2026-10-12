@@ -155,7 +155,7 @@ async function candidates(c, transport, token, expected) {
   const out = [];
   for (const item of search.items) {
     if (!positive(item.number) || !positive(item.id) || Object.hasOwn(item, 'pull_request') || item.repository_url !== `https://api.github.com/repos/${c.repo}`) fail('CANDIDATE_REFUSED');
-    if (item.number === c.issueNumber && item.id === c.issueId) continue;
+    if ((item.number === c.issueNumber && item.id === c.issueId) || item.user?.type === 'Bot' || /\[bot\]$/i.test(item.user?.login ?? '')) continue;
     const fresh = await candidate(c, item.number, transport, token);
     if (fresh.id !== item.id) fail('CANDIDATE_REFUSED'); out.push(fresh);
   }

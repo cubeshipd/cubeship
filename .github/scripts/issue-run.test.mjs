@@ -252,7 +252,7 @@ function candidateFixture(s, candidateBody = 'A similar failure.\n' + 'safe pros
   let candidateReads = 0;
   const tr = s.run.createTransport(async (url, opts) => {
     const u = new URL(url);
-    if (u.pathname === '/search/issues') return Response.json({ total_count: 1, incomplete_results: false, items: [{ number: candidate.number, id: candidate.id, repository_url: `https://api.github.com/repos/${repo}` }] });
+    if (u.pathname === '/search/issues') return Response.json({ total_count: 1, incomplete_results: false, items: [{ number: candidate.number, id: candidate.id, user: candidate.user, repository_url: `https://api.github.com/repos/${repo}` }] });
     if (u.pathname.endsWith('/issues/13')) { candidateReads++; return Response.json(candidate); }
     return base(url, opts);
   }, { now: s.tr.now, sleep: s.tr.sleep });
@@ -431,4 +431,15 @@ test('translated native content retains technical blocks and original marker pre
   const writes = s.f.mutations.length;
   assert.equal((await s.run.publishProposal(generated.proposal, a, s.tr, { GITHUB_TOKEN: 'fixture-github' })).reason, 'ALREADY_PUBLISHED');
   assert.equal(s.f.mutations.length, writes); assert.equal(s.f.comments.length, 1);
+});
+
+ test('bot-maintained dashboards are excluded before candidate reads and cannot block later publication', async t => {
+  const s = await setup(t), c = candidateFixture(s);
+  c.candidate.user = { login: 'renovate[bot]', type: 'Bot' };
+  const a = await s.run.collectSnapshot(context, c.tr);
+  assert.equal(a.state, 'ready'); assert.deepEqual(a.candidates, []); assert.equal(c.reads, 0);
+  c.candidate.body += ' changed';
+  const generated = await s.run.generateOnce(a, c.tr, 'fixture-google'); assert.equal(generated.state, 'ready');
+  assert.equal((await s.run.publishProposal(generated.proposal, a, c.tr, { GITHUB_TOKEN: 'fixture-github' })).reason, 'PUBLISHED');
+  assert.equal(c.reads, 0);
 });

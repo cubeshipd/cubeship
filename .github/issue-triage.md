@@ -47,7 +47,7 @@ idempotency; duplicate comments and uncertain usage remain possible.
 ## Data and credentials
 
 Google would receive only sanitized public title/body prose and public titles
-and short snippets of at most ten candidates from this repository. Authors,
+and short snippets of at most ten candidates from this repository. Bot-authored Issues such as the Renovate dashboard are excluded from duplicate candidates. Authors,
 profiles, comments, native field values, Projects, attachments, code, logs and
 credentials are excluded. Sensitive/private markers and credentials are checked
 in the full bounded original before omission. Complete safe code/log blocks and technical assets are
