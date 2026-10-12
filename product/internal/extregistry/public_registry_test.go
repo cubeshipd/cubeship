@@ -10,12 +10,12 @@ import (
 )
 
 func TestPublicRegistrySocketRefusesInternalDestinations(t *testing.T) {
-	for _, ip := range []string{"127.0.0.1", "0.0.0.0", "10.2.3.4", "172.16.1.2", "192.168.1.2", "169.254.169.254", "100.64.0.1", "::1", "::", "fc00::1", "fe80::1", "::ffff:127.0.0.1", "224.0.0.1"} {
+	for _, ip := range []string{"127.0.0.1", "0.0.0.0", "0.1.2.3", "10.2.3.4", "172.16.1.2", "192.168.1.2", "169.254.169.254", "100.64.0.1", "198.18.0.1", "240.0.0.1", "::1", "::", "fc00::1", "fec0::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:0.1.2.3", "64:ff9b::7f00:1", "2002:7f00:1::", "224.0.0.1"} {
 		if err := publicRegistrySocket("tcp", net.JoinHostPort(ip, "443"), nil); !errors.Is(err, errPrivateRegistry) {
 			t.Errorf("internal destination %s was allowed: %v", ip, err)
 		}
 	}
-	for _, ip := range []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111"} {
+	for _, ip := range []string{"1.1.1.1", "8.8.8.8", "2606:4700:4700::1111", "64:ff9b::808:808"} {
 		if err := publicRegistrySocket("tcp", net.JoinHostPort(ip, "443"), nil); err != nil {
 			t.Errorf("public destination %s was refused: %v", ip, err)
 		}
