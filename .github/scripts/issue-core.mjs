@@ -81,7 +81,7 @@ export function prepareInput(snapshot, candidates, catalog) {
     safeCandidates.push({ repo: c.repo, number: c.number, id: c.id, isPublic: true, state: c.state, contentHash: c.contentHash, expectedContentHash: c.contentHash, title: t.prose, excerpt: e.prose });
   }
   const result = { decision: ready(), snapshot: Object.fromEntries(snapshotKeys.map(k => [k, snapshot[k]])), prose: { title: title.prose, body: body.prose }, candidates: safeCandidates, catalog: structuredClone(catalog) };
-  result.prompt = JSON.stringify({ snapshot: result.snapshot, prose: result.prose, candidates: safeCandidates.map(({ number, title, excerpt }) => ({ number, title, excerpt })), types: config.types.map(t => t.name), priorities: config.priority.options.map(o => o.name), labels: config.labels, targetLanguage: config.targetLanguage });
+  result.prompt = JSON.stringify({ prose: result.prose, candidates: safeCandidates.map(({ number, title, excerpt }) => ({ number, title, excerpt })), types: config.types.map(t => t.name), priorities: config.priority.options.map(o => o.name), labels: config.labels, targetLanguage: config.targetLanguage });
   if (bytes(SYSTEM_INSTRUCTION) + bytes(result.prompt) + bytes(JSON.stringify(responseSchema(result))) > config.maxInputBytes) return fail('SERIALIZED_INPUT_TOO_LARGE');
   return result;
 }

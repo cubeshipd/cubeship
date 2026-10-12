@@ -33,6 +33,7 @@ function fixture(config, core) {
       generation++; if (mode === 'abort') throw new Error('key and payload MUST NOT ESCAPE');
       if (/^status-/.test(mode)) return Response.json({ error: 'private provider payload' }, { status: Number(mode.slice(7)) });
       const p = proposal(); if (core.sanitizeProse(issue.body).reason === 'EMPTY_PROSE' || issue.body === '') p.translation.body = ''; if (mode === 'invalid') p.tools = [];
+      if (mode !== 'forged-origin') delete p.snapshot;
       const part = { text: JSON.stringify(p), thoughtSignature: 'opaque' };
       if (mode === 'thought') part.thought = true;
       return Response.json({ candidates: [{ finishReason: 'STOP', content: { role: 'model', parts: [part] } }], usageMetadata: { promptTokenCount: count, candidatesTokenCount: 100, thoughtsTokenCount: 0, totalTokenCount: count + 100 } });
@@ -127,7 +128,7 @@ test('structured provider violations remain filtered when the top-level error is
   const tr = s.run.createTransport(async (url, opts) => url.endsWith(':generateContent') ? Response.json({ error: { status: 'INVALID_ARGUMENT', message: 'Request contains an invalid argument.', details: [{ fieldViolations: [{ field: 'generation_config.response_json_schema', description: 'The schema has too many states. PRIVATE_SENTINEL' }] }] } }, { status: 400 }) : s.f.fetch(url, opts), { now: s.tr.now, sleep: s.tr.sleep });
   assert.deepEqual(await s.run.generateOnce(a, tr, 'fixture-google'), { state: 'blocked', reason: 'GENERATION_FAILED', httpStatus: 400, providerStatus: 'INVALID_ARGUMENT', parameter: 'response_json_schema', category: 'SCHEMA_COMPLEXITY' });
 });
-for (const mode of ['status-400', 'status-429', 'status-500', 'status-503', 'abort', 'invalid', 'thought']) {
+for (const mode of ['status-400', 'status-429', 'status-500', 'status-503', 'abort', 'invalid', 'thought', 'forged-origin']) {
   test(`generation ${mode} never retries or publishes raw responses`, async t => {
     const s = await setup(t), a = await collected(s); s.f.mode = mode;
     const r = await s.run.generateOnce(a, s.tr, 'fixture-google'); assert.equal(r.state, 'blocked'); assert.equal(s.f.generation, 1); assert.equal(s.f.mutations.length, 0);
@@ -150,6 +151,8 @@ test('count request includes exact system, schema and prose with bounded config 
   assert.ok(generated.systemInstruction.parts[0].text.includes('untrusted data')); assert.equal(generated.generationConfig.responseJsonSchema.additionalProperties, false);
   assert.equal(generated.generationConfig.responseMimeType, 'application/json');
   assert.equal(generated.generationConfig.responseFormat, undefined);
+  assert.equal(generated.generationConfig.responseJsonSchema.properties.snapshot, undefined);
+  assert.ok(!generated.generationConfig.responseJsonSchema.required.includes('snapshot'));
   assert.ok(!/"tools"|"author"|Effort|github-actions/.test(JSON.stringify(generated))); assert.equal(requests[0].opts.headers.Authorization, undefined);
 });
 test('manual dry run validates trusted maintainer context without key getter provider or writes', async t => {

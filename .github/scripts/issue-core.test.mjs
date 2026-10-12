@@ -83,7 +83,7 @@ test('prepared input excludes author, current native fields, raw blocks and arbi
   assert.deepEqual(Object.keys(i.snapshot).sort(), ['contentHash', 'issueId', 'issueNumber', 'repo', 'runId', 'workflowSha']);
   assert.ok(!/PRIVATE_AUTHOR|PRIVATE_EFFORT|PRIVATE_EXTRA|RAW_CODE_SENTINEL|user|fieldValues/.test(JSON.stringify(i)));
   assert.deepEqual(i.prose, { title: 'Deploy button fails', body: 'Public prose.' });
-  assert.deepEqual(JSON.parse(i.prompt).snapshot, i.snapshot);
+  assert.equal(JSON.parse(i.prompt).snapshot, undefined);
 });
 test('input requires intact origin hash and verified exact catalog', () => {
   for (const change of [{ contentHash: 'a'.repeat(64) }, { workflowSha: 'a'.repeat(39) }, { repo: 'foreign/repo' }, { issueId: 0 }, { runId: '1' }]) blocked(input(change));

@@ -229,7 +229,9 @@ export async function generateOnce(a, transport = createTransport(), key) {
     const input = await prepared(c, transport, undefined, a.snapshot, a.candidates, config.types);
     if (c.dryRun) return { state: 'ready', reason: 'DRY_RUN_VALIDATED' };
     if (typeof key !== 'string' || !key) return result('KEY_REQUIRED');
-    const body = { systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] }, contents: [{ role: 'user', parts: [{ text: input.prompt }] }], generationConfig: { candidateCount: 1, responseMimeType: 'application/json', responseJsonSchema: responseSchema(input), maxOutputTokens: config.maxOutputTokens, thinkingConfig: { includeThoughts: false } } };
+    const schema = responseSchema(input);
+    delete schema.properties.snapshot; schema.required = schema.required.filter(name => name !== 'snapshot');
+    const body = { systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] }, contents: [{ role: 'user', parts: [{ text: input.prompt }] }], generationConfig: { candidateCount: 1, responseMimeType: 'application/json', responseJsonSchema: schema, maxOutputTokens: config.maxOutputTokens, thinkingConfig: { includeThoughts: false } } };
     const base = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}`, options = { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key } };
     await currentUnchanged(input, transport);
     const count = await request(`${base}:countTokens`, { ...options, body: JSON.stringify({ generateContentRequest: { model: `models/${config.model}`, ...body } }), signal: AbortSignal.timeout(config.countTimeoutSeconds * 1000) }, transport, providerStatuses, 16384);
@@ -238,7 +240,10 @@ export async function generateOnce(a, transport = createTransport(), key) {
     await currentUnchanged(input, transport);
     const response = await request(`${base}:generateContent`, { ...options, body: JSON.stringify(body), signal: AbortSignal.timeout(config.generationTimeoutSeconds * 1000) }, transport, providerStatuses, 65536);
     if (response.status !== 200 || !response.data) return providerFailure('GENERATION_FAILED', response);
-    const decision = validateProposal(finalText(response.data), input);
+    const proposal = JSON.parse(finalText(response.data));
+    if (!record(proposal) || Object.hasOwn(proposal, 'snapshot')) return result('INVALID_PROPOSAL');
+    // Workflow identity comes from the verified collector, never from model output.
+    const decision = validateProposal({ ...proposal, snapshot: input.snapshot }, input);
     if (decision.state !== 'ready') return decision;
     return { state: 'ready', reason: 'INFERRED', proposal: decision.proposal, usage: usage(response.data.usageMetadata, count.data.totalTokens) };
   } catch (e) { return safeFailure(e); }
