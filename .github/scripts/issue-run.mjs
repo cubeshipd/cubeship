@@ -200,6 +200,8 @@ function providerFailure(reason, response) {
   if (['INVALID_ARGUMENT', 'PERMISSION_DENIED', 'RESOURCE_EXHAUSTED', 'NOT_FOUND', 'UNAVAILABLE', 'INTERNAL', 'UNAUTHENTICATED', 'FAILED_PRECONDITION', 'DEADLINE_EXCEEDED'].includes(error?.status)) out.providerStatus = error.status;
   const parameter = ['responseFormat', 'response_format', 'responseJsonSchema', 'response_json_schema', 'thinkingConfig', 'thinking_config', 'includeThoughts', 'include_thoughts', 'candidateCount', 'candidate_count', 'maxOutputTokens', 'max_output_tokens', 'enum', 'billing'].find(name => typeof error?.message === 'string' && error.message.includes(name));
   if (parameter) out.parameter = parameter;
+  const category = [['SCHEMA_COMPLEXITY', /too many states|schema.*(?:too large|too complex|complexity)/i], ['SCHEMA_INVALID', /schema|enum|anyof|nullable/i], ['BILLING_REQUIRED', /billing|paid tier|payment/i], ['REGION_UNSUPPORTED', /location|region|country/i], ['MODEL_UNSUPPORTED', /model.*(?:not supported|not found|unavailable)/i], ['KEY_INVALID', /api[ _-]?key/i]].find(([, pattern]) => typeof error?.message === 'string' && pattern.test(error.message));
+  if (category) out.category = category[0];
   return out;
 }
 function toolContent(value) {

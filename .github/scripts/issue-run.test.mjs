@@ -117,6 +117,11 @@ test('provider diagnostics expose only fixed codes and parameter names', async t
   assert.deepEqual(await s.run.runCLI(['infer', ctx, snapshot, join(s.dir, 'proposal.json')], { env: { GEMINI_API_KEY: 'fixture-google' }, transport: tr }), { state: 'blocked', reason: 'TOKEN_COUNT_FAILED', httpStatus: 400, providerStatus: 'INVALID_ARGUMENT', parameter: 'responseFormat' });
   assert.equal(s.f.generation, 0); assert.equal(s.f.mutations.length, 0);
 });
+test('complex schema refusals emit a fixed category without raw provider prose', async t => {
+  const s = await setup(t), a = await collected(s);
+  const tr = s.run.createTransport(async (url, opts) => url.endsWith(':generateContent') ? Response.json({ error: { status: 'INVALID_ARGUMENT', message: 'The specified schema produces a constraint that has too many states for serving; fixture-google and private provider payload MUST NOT ESCAPE' } }, { status: 400 }) : s.f.fetch(url, opts), { now: s.tr.now, sleep: s.tr.sleep });
+  assert.deepEqual(await s.run.generateOnce(a, tr, 'fixture-google'), { state: 'blocked', reason: 'GENERATION_FAILED', httpStatus: 400, providerStatus: 'INVALID_ARGUMENT', category: 'SCHEMA_COMPLEXITY' });
+});
 for (const mode of ['status-400', 'status-429', 'status-500', 'status-503', 'abort', 'invalid', 'thought']) {
   test(`generation ${mode} never retries or publishes raw responses`, async t => {
     const s = await setup(t), a = await collected(s); s.f.mode = mode;
