@@ -15,7 +15,7 @@
   "dependencies": {
     "@modelcontextprotocol/server": "^2.0.0",
     "cn": "^0.2.6",
-    "fumadocs-core": "16.15.9",
+    "fumadocs-core": "16.17.1",
     "fumadocs-mdx": "15.4.0",
     "fumadocs-ui": "npm:@fumadocs/base-ui@16.15.9",
     "lucide-react": "^1.43.0",
