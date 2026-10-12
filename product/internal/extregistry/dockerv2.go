@@ -131,6 +131,9 @@ func (v *v2Client) mintToken(ctx context.Context, realm, service, scope string) 
 	if err != nil {
 		return "", fmt.Errorf("the registry named an unusable token server: %w", err)
 	}
+	if u.Scheme != "https" || u.Host == "" || u.User != nil {
+		return "", errors.New("the registry token server must be an HTTPS URL without embedded credentials")
+	}
 	q := u.Query()
 	if service != "" {
 		q.Set("service", service)

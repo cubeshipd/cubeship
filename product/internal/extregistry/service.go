@@ -12,6 +12,7 @@ import (
 	"cubeship/internal/credential"
 	"cubeship/internal/platform/database"
 	"cubeship/internal/user"
+	"github.com/distribution/reference"
 )
 
 // Service holds the use cases for registry credentials. Both the HTTP
@@ -25,9 +26,10 @@ type Service struct {
 	// become a credential in the same transaction.
 	creds *credential.Service
 
-	// client talks to a provider's API — AWS's, so far. Only a
-	// credential whose token has to be fetched needs one.
-	client *http.Client
+	// Registered endpoints are trusted by the administrator. Anonymous
+	// lookups use publicClient to keep member-chosen destinations off the LAN.
+	client       *http.Client
+	publicClient *http.Client
 	// tokens holds fetched registry logins until shortly before they
 	// expire. An ECR token lasts twelve hours and a pull takes seconds
 	// of that; fetching one per pull would be a signed round trip
@@ -37,9 +39,10 @@ type Service struct {
 
 func NewService(db *database.DB, creds *credential.Service) *Service {
 	return &Service{
-		db:     db,
-		creds:  creds,
-		client: &http.Client{Timeout: 30 * time.Second},
+		db:           db,
+		creds:        creds,
+		client:       &http.Client{Timeout: 30 * time.Second},
+		publicClient: newPublicRegistryClient(),
 	}
 }
 
@@ -388,7 +391,7 @@ func (s *Service) Images(ctx context.Context, caller *user.User, id int64, repos
 	case ProviderDigitalOcean:
 		return listDOImages(ctx, s.client, c, repository)
 	}
-	return s.listV2ImagesWithDates(ctx, c, repository)
+	return listV2ImagesWithDates(ctx, s.client, c, repository)
 }
 
 // resolve finds one of this instance's credentials.
@@ -597,6 +600,9 @@ func (s *Service) TagsFor(ctx context.Context, caller *user.User, image string) 
 	if err := user.Require(caller, user.RoleMember); err != nil {
 		return nil, err
 	}
+	if _, err := reference.ParseNormalizedNamed(image); err != nil {
+		return nil, fmt.Errorf("name a valid image to list tags for")
+	}
 	repository := RepositoryOf(image)
 	if repository == "" {
 		return nil, fmt.Errorf("name the image to list tags for")
@@ -606,11 +612,13 @@ func (s *Service) TagsFor(ctx context.Context, caller *user.User, image string) 
 	if err != nil {
 		return nil, err
 	}
+	client := s.client
 	if !found {
 		// No login, which is not a failure: a public repository answers
 		// an anonymous token request, and the v2 client already asks
 		// for one when it holds no password.
 		c = &Credential{Host: HostOf(image), Provider: ProviderGeneric}
+		client = s.publicClient
 	}
 	switch c.Provider {
 	case ProviderAWS:
@@ -618,14 +626,14 @@ func (s *Service) TagsFor(ctx context.Context, caller *user.User, image string) 
 	case ProviderDigitalOcean:
 		return listDOImages(ctx, s.client, c, repository)
 	}
-	return s.listV2ImagesWithDates(ctx, c, repository)
+	return listV2ImagesWithDates(ctx, client, c, repository)
 }
 
-func (s *Service) listV2ImagesWithDates(ctx context.Context, c *Credential, repository string) ([]Image, error) {
-	images, err := listV2Images(ctx, s.client, c, repository)
+func listV2ImagesWithDates(ctx context.Context, client *http.Client, c *Credential, repository string) ([]Image, error) {
+	images, err := listV2Images(ctx, client, c, repository)
 	if err == nil && c.Host == "ghcr.io" {
-		ghcrPublishedAt(ctx, s.client, c.Password, repository, images)
-		ghcrCreatedAt(ctx, s.client, c, repository, images)
+		ghcrPublishedAt(ctx, client, c.Password, repository, images)
+		ghcrCreatedAt(ctx, client, c, repository, images)
 	}
 	return images, err
 }

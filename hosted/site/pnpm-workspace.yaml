@@ -1,2 +1,4 @@
+# Match the dashboard: new dependency releases are allowed deliberately.
+minimumReleaseAge: 0
 allowBuilds:
   esbuild: true

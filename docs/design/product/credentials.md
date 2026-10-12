@@ -130,3 +130,11 @@ applies.
 
 There are no MCP tools for any of this, deliberately: creating a
 credential means a registry password passing through a model's context.
+
+Anonymous tag lookup for an image in an unregistered registry uses a separate
+HTTPS client. Its socket guard checks the resolved address, including every
+redirect and token-server connection, and refuses loopback, private, link-local
+and carrier-grade addresses. It does not use environment proxies, which would
+resolve destinations outside that guard. An administrator can still register a
+private registry explicitly; that stored endpoint keeps the normal client.
+Token-server URLs must always use HTTPS without embedded credentials.

@@ -21,6 +21,12 @@
       "matchUpdateTypes": ["major"],
       "labels": ["dependencies", "major-review"],
       "addLabels": ["breaking"]
+    },
+    {
+      "description": "Fumadocs MDX requires matching core and UI APIs; update the family together.",
+      "matchManagers": ["npm"],
+      "matchPackageNames": ["fumadocs-core", "fumadocs-mdx", "fumadocs-ui", "@fumadocs/base-ui"],
+      "groupName": "fumadocs"
     }
   ]
 }
