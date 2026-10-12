@@ -1,3 +1,5 @@
+> Historical: superseded by the disabled Issue triage design and plan dated 2026-10-12.
+
 # Gemini GitHub Automation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

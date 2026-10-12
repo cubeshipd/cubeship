@@ -44,7 +44,7 @@ jobs:
         with:
           node-version: '24'
           token: ''
-      - name: Offline pilot and workflow tests
+      - name: Offline Issue and workflow tests
         run: node --test .github/scripts/*.test.mjs
 
       - run: make fmt-check
