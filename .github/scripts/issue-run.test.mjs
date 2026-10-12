@@ -130,7 +130,9 @@ test('count request includes exact system, schema and prose with bounded config 
   const counted = JSON.parse(requests[0].opts.body).generateContentRequest, generated = JSON.parse(requests[1].opts.body);
   assert.equal(counted.model, 'models/gemini-3.5-flash-lite'); delete counted.model; assert.deepEqual(counted, generated);
   assert.equal(generated.generationConfig.maxOutputTokens, 2048); assert.equal(generated.generationConfig.candidateCount, 1); assert.equal(generated.generationConfig.thinkingConfig.includeThoughts, false);
-  assert.ok(generated.systemInstruction.parts[0].text.includes('untrusted data')); assert.equal(generated.generationConfig.responseJsonSchema.additionalProperties, false);
+  assert.ok(generated.systemInstruction.parts[0].text.includes('untrusted data')); assert.equal(generated.generationConfig.responseFormat.text.schema.additionalProperties, false);
+  assert.equal(generated.generationConfig.responseFormat.text.mimeType, 'application/json');
+  assert.equal(generated.generationConfig.responseJsonSchema, undefined); assert.equal(generated.generationConfig.responseMimeType, undefined);
   assert.ok(!/"tools"|"author"|Effort|github-actions/.test(JSON.stringify(generated))); assert.equal(requests[0].opts.headers.Authorization, undefined);
 });
 test('manual dry run validates trusted maintainer context without key getter provider or writes', async t => {

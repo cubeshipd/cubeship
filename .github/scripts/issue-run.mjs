@@ -215,7 +215,7 @@ export async function generateOnce(a, transport = createTransport(), key) {
     const input = await prepared(c, transport, undefined, a.snapshot, a.candidates, config.types);
     if (c.dryRun) return { state: 'ready', reason: 'DRY_RUN_VALIDATED' };
     if (typeof key !== 'string' || !key) return result('KEY_REQUIRED');
-    const body = { systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] }, contents: [{ role: 'user', parts: [{ text: input.prompt }] }], generationConfig: { candidateCount: 1, responseMimeType: 'application/json', responseJsonSchema: responseSchema(input), maxOutputTokens: config.maxOutputTokens, thinkingConfig: { includeThoughts: false } } };
+    const body = { systemInstruction: { parts: [{ text: SYSTEM_INSTRUCTION }] }, contents: [{ role: 'user', parts: [{ text: input.prompt }] }], generationConfig: { candidateCount: 1, responseFormat: { text: { mimeType: 'application/json', schema: responseSchema(input) } }, maxOutputTokens: config.maxOutputTokens, thinkingConfig: { includeThoughts: false } } };
     const base = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}`, options = { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key } };
     await currentUnchanged(input, transport);
     const count = await request(`${base}:countTokens`, { ...options, body: JSON.stringify({ generateContentRequest: { model: `models/${config.model}`, ...body } }), signal: AbortSignal.timeout(config.countTimeoutSeconds * 1000) }, transport, [200], 16384);

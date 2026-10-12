@@ -65,7 +65,7 @@ jobs:
           cd .github/scripts
           sha256sum -c - <<'HASHES' > /dev/null
           b7a889a87c2f874807a097c83dc6334614baf9985c6df9b8979007fc30a1fd7f  issue-core.mjs
-          ba9d58ba13ff3108340e373316a60882e2afa59d83c001adc00d6edd97d6199d  issue-run.mjs
+          e96a3e5a8dc7982a6e29e0569da510da81ba11321924ceddba7a28b1c52e96d2  issue-run.mjs
           5ee98997db885b67ad04e732af5dfca68991ec9019812514ea90b0a74d0143c5  issue-config.json
           HASHES
           node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
@@ -190,7 +190,7 @@ jobs:
           done
           sha256sum -c - <<'HASHES' > /dev/null
           b7a889a87c2f874807a097c83dc6334614baf9985c6df9b8979007fc30a1fd7f  issue-core.mjs
-          ba9d58ba13ff3108340e373316a60882e2afa59d83c001adc00d6edd97d6199d  issue-run.mjs
+          e96a3e5a8dc7982a6e29e0569da510da81ba11321924ceddba7a28b1c52e96d2  issue-run.mjs
           5ee98997db885b67ad04e732af5dfca68991ec9019812514ea90b0a74d0143c5  issue-config.json
           HASHES
           node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
@@ -259,7 +259,7 @@ jobs:
           cd .github/scripts
           sha256sum -c - <<'HASHES' > /dev/null
           b7a889a87c2f874807a097c83dc6334614baf9985c6df9b8979007fc30a1fd7f  issue-core.mjs
-          ba9d58ba13ff3108340e373316a60882e2afa59d83c001adc00d6edd97d6199d  issue-run.mjs
+          e96a3e5a8dc7982a6e29e0569da510da81ba11321924ceddba7a28b1c52e96d2  issue-run.mjs
           5ee98997db885b67ad04e732af5dfca68991ec9019812514ea90b0a74d0143c5  issue-config.json
           HASHES
           node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
