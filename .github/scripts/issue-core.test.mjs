@@ -20,10 +20,33 @@ const snapshot = (change = {}) => {
 };
 const candidate = (change = {}) => ({ repo: repoName, number: 13, id: 1300, state: 'open', isPublic: true, title: 'Deploy button issue', excerpt: 'A similar dashboard failure.', contentHash: 'b'.repeat(64), expectedContentHash: 'b'.repeat(64), ...change });
 const input = (change = {}, candidates = [candidate()], cat = catalog) => core.prepareInput(snapshot(change), candidates, cat);
-const proposal = (i = input()) => ({ snapshot: { ...i.snapshot }, type: { name: 'Bug', confidence: 0.85 }, priority: { name: 'High', confidence: 0.85 }, labels: [{ name: 'bug', confidence: 0.85 }], translation: null, duplicates: [{ number: 13, confidence: 0.90 }] });
+const proposal = (i = input()) => ({ snapshot: { ...i.snapshot }, type: { name: 'Bug', confidence: 0.85 }, priority: { name: 'High', confidence: 0.85 }, labels: [{ name: 'bug', confidence: 0.85 }], translation: { title: i.prose.title, body: i.prose.body, sourceLanguage: 'en', targetLanguage: 'en' }, duplicates: [{ number: 13, confidence: 0.90 }] });
 const clone = x => structuredClone(x);
 const ready = x => assert.equal(x.state ?? x.decision?.state, 'ready');
 const blocked = x => assert.equal(x.state ?? x.decision?.state, 'blocked');
+
+test('English translation replaces native title and body without losing protected technical content', () => {
+  const source = { title: 'Falha ao salvar', body: 'O botão falha.\n\n```sh\ndocker logs cubeship\n```\nUse `npm test` e [documentação](https://example.test/help).' };
+  const i = input(source), p = proposal(i);
+  assert.ok(!i.prompt.includes('docker logs') && !i.prompt.includes('npm test') && !i.prompt.includes('https://example.test'));
+  p.translation = { title: 'Save failure', body: i.prose.body.replace('O botão falha.', 'The button fails.').replace('Use ', 'Use ').replace(' e ', ' and '), sourceLanguage: 'pt', targetLanguage: 'en' };
+  ready(core.validateProposal(p, i));
+  const effects = core.planEffects(p, { ...issue(), ...source, repo: repoName }, i.candidates);
+  assert.equal(effects.translationToSet.title, 'Save failure');
+  assert.ok(effects.translationToSet.body.includes('```sh\ndocker logs cubeship\n```'));
+  assert.ok(effects.translationToSet.body.includes('`npm test`'));
+  assert.ok(effects.translationToSet.body.includes('[documentação](https://example.test/help)'));
+  const token = i.protectedTokens.body[0].token;
+  for (const body of [p.translation.body.replace(token, ''), p.translation.body + '\n' + token, p.translation.body.replace(token, 'prefix ' + token), p.translation.body + ' CUBESHIP_KEEP_unknown']) blocked(core.validateProposal({ ...p, translation: { ...p.translation, body } }, i));
+});
+
+test('English source remains unchanged and a missing English translation refuses all effects', () => {
+  const i = input(), p = proposal(i);
+  p.translation = { title: i.prose.title, body: i.prose.body, sourceLanguage: 'en', targetLanguage: 'en' };
+  ready(core.validateProposal(p, i));
+  assert.equal(core.planEffects(p, { ...issue(), repo: repoName }, i.candidates).translationToSet, null);
+  blocked(core.validateProposal({ ...p, translation: null }, i));
+});
 
 test('pure Issue policy exports exist', () => {
   for (const name of ['eligibility', 'fingerprint', 'sanitizeProse', 'prepareInput', 'responseSchema', 'validateProposal', 'planEffects', 'renderComment']) assert.equal(typeof core[name], 'function', name);
@@ -82,7 +105,7 @@ test('prepared input excludes author, current native fields, raw blocks and arbi
   const i = input({ user: { login: 'PRIVATE_AUTHOR' }, fieldValues: [{ field_id: 46483204, value: 'PRIVATE_EFFORT' }], arbitrary: 'PRIVATE_EXTRA', body: 'Public prose.\n```\nRAW_CODE_SENTINEL\n```' }); ready(i);
   assert.deepEqual(Object.keys(i.snapshot).sort(), ['contentHash', 'issueId', 'issueNumber', 'repo', 'runId', 'workflowSha']);
   assert.ok(!/PRIVATE_AUTHOR|PRIVATE_EFFORT|PRIVATE_EXTRA|RAW_CODE_SENTINEL|user|fieldValues/.test(JSON.stringify(i)));
-  assert.deepEqual(i.prose, { title: 'Deploy button fails', body: 'Public prose.' });
+  assert.equal(i.prose.title, 'Deploy button fails'); assert.match(i.prose.body, /^Public prose\.\nCUBESHIP_KEEP_/);
   assert.equal(JSON.parse(i.prompt).snapshot, undefined);
 });
 test('input requires intact origin hash and verified exact catalog', () => {
@@ -112,7 +135,7 @@ test('schema closes every object and binds origin, catalogs, counts and target l
   assert.deepEqual(s.properties.priority.anyOf[1].properties.name.enum, ['Urgent', 'High', 'Medium', 'Low']);
   assert.equal(s.properties.labels.maxItems, 3); assert.equal(s.properties.duplicates.maxItems, 3);
   assert.deepEqual(s.properties.duplicates.items.properties.number.enum, [13]);
-  assert.deepEqual(s.properties.translation.anyOf[1].properties.targetLanguage.enum, ['en']);
+  assert.deepEqual(s.properties.translation.properties.targetLanguage.enum, ['en']);
 });
 test('validator accepts a closed proposal and abstains below confidence thresholds', () => {
   const i = input(), p = proposal(i); ready(core.validateProposal(JSON.stringify(p), i));
@@ -135,8 +158,9 @@ test('translation is plain safe text, closed, different language and bound to ta
   const i = input({ title: 'Falha no botão', body: 'O botão de implantação não funciona.' });
   const p = proposal(i); p.translation = { title: 'Button fails', body: 'The deploy button does not work.', sourceLanguage: 'pt', targetLanguage: 'en' };
   ready(core.validateProposal(p, i));
-  for (const change of [{ title: 'https://evil.test' }, { body: '<img src=x>' }, { body: 'api_key=SECRET_SENTINEL_123456' }, { body: '[click](evil.test)' }, { body: 'www.evil.test' }, { sourceLanguage: 'en' }, { targetLanguage: 'fr' }, { sourceLanguage: 'Portuguese' }, { extra: 'x' }]) blocked(core.validateProposal({ ...p, translation: { ...p.translation, ...change } }, i));
-  assert.equal(core.validateProposal(proposal(input()), input()).proposal.translation, null);
+  for (const change of [{ title: 'https://evil.test' }, { body: '<img src=x>' }, { body: 'api_key=SECRET_SENTINEL_123456' }, { body: '[click](evil.test)' }, { body: 'www.evil.test' }, { targetLanguage: 'fr' }, { sourceLanguage: 'Portuguese' }, { extra: 'x' }]) blocked(core.validateProposal({ ...p, translation: { ...p.translation, ...change } }, i));
+  ready(core.validateProposal({ ...p, translation: { ...p.translation, sourceLanguage: 'en' } }, i));
+  blocked(core.validateProposal({ ...p, translation: null }, i));
 });
 test('proposal JSON and complete rendered output have bounded UTF8/character sizes', () => {
   const i = input({ title: 'Falha', body: 'O botão falha.' }), p = proposal(i);
@@ -147,7 +171,7 @@ test('proposal JSON and complete rendered output have bounded UTF8/character siz
 test('effect planning fills only absent metadata and uses one additive Priority item', () => {
   const i = input(), p = core.validateProposal(proposal(i), i).proposal;
   const effects = core.planEffects(p, { ...issue(), repo: repoName, fieldValues: [{ field_id: 46483204, value: 'Low' }] }, i.candidates);
-  assert.deepEqual(Object.keys(effects).sort(), ['comment', 'labelsToAdd', 'priorityToSet', 'typeToSet']);
+  assert.deepEqual(Object.keys(effects).sort(), ['comment', 'labelsToAdd', 'priorityToSet', 'translationToSet', 'typeToSet']);
   assert.deepEqual(effects.labelsToAdd, ['bug']); assert.equal(effects.typeToSet, 'Bug'); assert.deepEqual(effects.priorityToSet, { field_id: 46483201, value: 'High' });
   assert.ok(!/46483204|Effort|title|assignees/.test(JSON.stringify(effects)));
 });
@@ -159,7 +183,7 @@ test('Issue12 native Bug High Effort Low, human labels and originals survive pro
   for (const label of ['P1', 'priority: P2', 'priority/P3', 'priority: high']) assert.equal(core.planEffects(p, { ...issue(), repo: repoName, labels: [label] }, i.candidates).priorityToSet, null);
 });
 test('planner refuses stale content, malformed current metadata and changed duplicate candidates', () => {
-  const i = input(), p = core.validateProposal(proposal(i), i).proposal, empty = { labelsToAdd: [], typeToSet: null, priorityToSet: null, comment: '' };
+  const i = input(), p = core.validateProposal(proposal(i), i).proposal, empty = { labelsToAdd: [], typeToSet: null, priorityToSet: null, translationToSet: null, comment: '' };
   for (const change of [{ body: 'Changed' }, { repo: 'foreign/repo' }, { state: 'closed' }, { pull_request: {} }, { fieldValues: null }, { labels: null }]) assert.deepEqual(core.planEffects(p, { ...issue(), repo: repoName, ...change }, i.candidates), empty);
   assert.equal(core.planEffects(p, { ...issue(), repo: repoName }, [candidate({ contentHash: 'c'.repeat(64) })]).comment, '');
 });
@@ -170,12 +194,13 @@ test('comment combines escaped translation and verified possible duplicates with
   const out = core.renderComment(validated.proposal, i);
   assert.ok(out.startsWith(`<!-- cubeship-issue-triage:${i.snapshot.contentHash} -->`));
   assert.ok(out.includes('Possible duplicates')); assert.ok(out.split('\n').includes('- https://github.com/cubeshipd/cubeship/issues/13'));
-  assert.ok(out.includes('@\u200beveryone')); assert.ok(out.includes('\\*bold\\*')); assert.ok(!out.includes('@maintainer'));
+  const native = core.planEffects(p, { ...issue(), title: original.title, body: original.body, repo: repoName }, i.candidates).translationToSet;
+  assert.ok(native.title.includes('@\u200beveryone')); assert.ok(native.body.includes('\\_text\\_')); assert.ok(!out.includes('@maintainer'));
   assert.equal(core.renderComment(validated.proposal, i), out); assert.equal(original.title, 'Falha'); assert.equal(original.body, 'O botão falha.');
-  assert.equal(core.renderComment({ ...validated.proposal, translation: null, duplicates: [] }, i), '');
+  assert.equal(core.planEffects({ ...validated.proposal, translation: { title: i.prose.title, body: i.prose.body, sourceLanguage: 'en', targetLanguage: 'en' }, duplicates: [] }, { ...issue(), title: original.title, body: original.body, repo: repoName }, []).comment, '');
 });
 test('malformed public entrypoint values fail closed without exceptions or raw values', () => {
-  const none = { labelsToAdd: [], typeToSet: null, priorityToSet: null, comment: '' };
+  const none = { labelsToAdd: [], typeToSet: null, priorityToSet: null, translationToSet: null, comment: '' };
   assert.deepEqual(core.planEffects(null, {}, []), none);
   assert.equal(core.responseSchema({ snapshot: input().snapshot, candidates: [null] }), null);
   blocked(core.validateProposal(proposal(), { ...input(), candidates: [null] }));
@@ -212,27 +237,27 @@ test('rehydrated input must keep bounded, unique verified candidates even withou
   for (const candidates of [[null], Array(11).fill(candidate()), [candidate(), candidate()], [candidate({ isPublic: false })]]) blocked(core.validateProposal(p, { ...i, candidates }));
 });
 test('unknown current native metadata cannot be assumed empty by the writer plan', () => {
-  const i = input(), p = proposal(i), none = { labelsToAdd: [], typeToSet: null, priorityToSet: null, comment: '' };
+  const i = input(), p = proposal(i), none = { labelsToAdd: [], typeToSet: null, priorityToSet: null, translationToSet: null, comment: '' };
   for (const key of ['fieldValues', 'type']) {
     const current = { ...issue(), repo: repoName }; delete current[key]; assert.deepEqual(core.planEffects(p, current, i.candidates), none);
   }
 });
 test('undefined or unverified current native type returns no effects', () => {
-  const i = input(), p = proposal(i), none = { labelsToAdd: [], typeToSet: null, priorityToSet: null, comment: '' };
+  const i = input(), p = proposal(i), none = { labelsToAdd: [], typeToSet: null, priorityToSet: null, translationToSet: null, comment: '' };
   for (const type of [undefined, {}, { name: 'Bug' }, { id: 858946830, name: 'Bug' }]) assert.deepEqual(core.planEffects(p, { ...issue(), repo: repoName, type }, i.candidates), none);
 });
 test('explicitly incomplete current field values returns no effects', () => {
   const i = input(), p = proposal(i), fieldValues = [];
   fieldValues.complete = false;
-  assert.deepEqual(core.planEffects(p, { ...issue(), repo: repoName, fieldValues }, i.candidates), { labelsToAdd: [], typeToSet: null, priorityToSet: null, comment: '' });
+  assert.deepEqual(core.planEffects(p, { ...issue(), repo: repoName, fieldValues }, i.candidates), { labelsToAdd: [], typeToSet: null, priorityToSet: null, translationToSet: null, comment: '' });
 });
 test('translation preserves source filenames and ordinary Node Docker npm prose through planning', () => {
   const source = { title: 'Falha de alocação', body: 'A implantação falha em settings.tsx, issue-core.mjs e readme.md.' }, i = input(source), p = proposal(i);
   for (const title of ['Node allocation fails', 'Docker deployment is slow', 'npm dependencies cause failures']) {
     p.translation = { title, body: 'The failure affects settings.tsx, issue-core.mjs and readme.md.', sourceLanguage: 'pt', targetLanguage: 'en' };
     ready(core.validateProposal(p, i));
-    const out = core.renderComment(p, i); assert.ok(out.includes('settings.tsx')); assert.ok(out.includes(title));
-    const e = core.planEffects(p, { ...issue(), ...source, repo: repoName }, i.candidates); assert.equal(e.comment, out);
+    const out = core.renderComment(p, i);
+    const e = core.planEffects(p, { ...issue(), ...source, repo: repoName }, i.candidates); assert.equal(e.comment, out); assert.equal(e.translationToSet.title, title); assert.ok(e.translationToSet.body.includes('settings.tsx'));
   }
 });
 test('filename allowances never accept new domains, links or credentials', () => {
@@ -250,9 +275,9 @@ for (const command of ['npm test', 'pnpm test', 'npm t', 'pnpm t', 'npm it', 'np
     const i = input({ title: 'Falha', body: 'A implantação falha.' }), p = proposal(i);
     for (const body of [command, `Failure:\n${command}`]) {
       p.translation = { title: 'Failure', body, sourceLanguage: 'pt', targetLanguage: 'en' };
-      ready(core.validateProposal(p, i)); const comment = core.renderComment(p, i); assert.ok(comment.includes(body));
+      ready(core.validateProposal(p, i)); const comment = core.renderComment(p, i);
       const current = { ...issue(), title: 'Falha', body: 'A implantação falha.', repo: repoName }, original = clone(current);
-      assert.equal(core.planEffects(p, current, i.candidates).comment, comment); assert.deepEqual(current, original);
+      assert.equal(core.planEffects(p, current, i.candidates).translationToSet.body, body); assert.equal(core.planEffects(p, current, i.candidates).comment, comment); assert.deepEqual(current, original);
     }
   });
 }
@@ -264,13 +289,13 @@ test('technical command and code text is preserved as escaped data rather than i
     ['function run() {}', 'function run\\(\\) \\{\\}'], ['    npm test', '    npm test'], ['Use `npm test`.', 'Use \\`npm test\\`.'], ['```\nnpm test\n```', '\\`\\`\\`\nnpm test\n\\`\\`\\`'],
   ]) {
     p.translation = { title: 'Failure', body, sourceLanguage: 'pt', targetLanguage: 'en' }; ready(core.validateProposal(p, i));
-    const comment = core.renderComment(p, i); assert.ok(comment.includes(rendered), body);
+    const comment = core.renderComment(p, i); assert.ok(core.planEffects(p, { ...issue(), ...source, repo: repoName }, i.candidates).translationToSet.body.includes(rendered), body);
     assert.equal(core.planEffects(p, { ...issue(), ...source, repo: repoName }, i.candidates).comment, comment);
   }
   ready(input({ title: 'Falha', body: 'npm test\ndocker restart cubeship\nconst result = 3;' }));
 });
-test('informative title permits a safely omitted code-only body', () => {
-  const i = input({ body: '```\nnpm test\n```' }, []); ready(i); assert.equal(i.prose.body, '');
+test('informative title preserves a protected code-only body', () => {
+  const i = input({ body: '```\nnpm test\n```' }, []); ready(i); assert.match(i.prose.body, /^CUBESHIP_KEEP_/); assert.ok(!i.prompt.includes('npm test'));
   assert.equal(i.snapshot.contentHash, core.fingerprint({ title: 'Deploy button fails', body: '```\nnpm test\n```' }));
 });
 test('primary prose bound follows whole-source safety scan and complete log omission', () => {
@@ -283,11 +308,11 @@ test('primary prose bound follows whole-source safety scan and complete log omis
 });
 test('title-only translation may leave an omitted source body empty without inventing text', () => {
   const i = input({ body: '' }, []), p = proposal(i); p.duplicates = []; p.translation = { title: 'Failure', body: '', sourceLanguage: 'pt', targetLanguage: 'en' };
-  ready(core.validateProposal(p, i)); assert.deepEqual(core.responseSchema(i).properties.translation.anyOf[1].properties.body.enum, ['']);
-  assert.ok(core.renderComment(p, i).includes('Failure')); assert.ok(core.planEffects(p, { ...issue(), repo: repoName, body: '' }, []).comment.includes('Failure'));
+  ready(core.validateProposal(p, i)); assert.deepEqual(core.responseSchema(i).properties.translation.properties.body.enum, ['']);
+  assert.deepEqual(core.planEffects(p, { ...issue(), repo: repoName, body: '' }, []).translationToSet, { title: 'Failure', body: '' });
   blocked(core.validateProposal({ ...p, snapshot: input({}, []).snapshot }, input({}, [])));
 });
 test('omitted source body cannot acquire invented translated body prose', () => {
   const i = input({ body: '' }, []), p = proposal(i); p.duplicates = []; p.translation = { title: 'Failure', body: 'Invented body prose.', sourceLanguage: 'pt', targetLanguage: 'en' }; blocked(core.validateProposal(p, i));
-  assert.deepEqual(core.responseSchema(i).properties.translation.anyOf[1].properties.body.enum, ['']);
+  assert.deepEqual(core.responseSchema(i).properties.translation.properties.body.enum, ['']);
 });

@@ -25,11 +25,11 @@ Priority is Issue field `46483201`, independent of Projects: its POST payload is
 an object with an additive nonempty `issue_field_values` list containing the
 field ID and option **name**, never a PUT or
 replacement of all fields. Human type/Priority, Effort (`46483204`), other fields,
-existing labels, title and body are preserved. A legacy priority label blocks
+existing labels are preserved. The title and body are translated to English; already-English text stays unchanged. Protected code, logs, inline code and links are restored unchanged, and GitHub edit history retains the original text. A legacy priority label blocks
 Priority inference; there is no automatic P1/P2/P3 conversion or migration.
 
-A bot comment may contain an escaped English translation and up to three
-possible duplicates at confidence >=0.90. English remains provisional. Links
+An English translation is required before publishing any effects. A bot comment confirms the English title/body and may list up to three
+possible duplicates at confidence >=0.90. Links
 are built locally from verified same-repository candidates; the model cannot
 choose arbitrary URLs or field IDs. There is no automatic duplicate/invalid/
 wontfix policy label, closing, reopening, assignment or deletion. A comment is
@@ -50,14 +50,15 @@ Google would receive only sanitized public title/body prose and public titles
 and short snippets of at most ten candidates from this repository. Authors,
 profiles, comments, native field values, Projects, attachments, code, logs and
 credentials are excluded. Sensitive/private markers and credentials are checked
-in the full bounded original before omission. Complete safe code/log blocks are
-omitted, with that omission represented in the model input; an omitted empty
-body cannot cause an invented translation. Ordinary technical commands and
+in the full bounded original before omission. Complete safe code/log blocks and technical assets are
+replaced with opaque tokens in the model input and restored locally. Every token
+must occur exactly once; block tokens must remain on their own lines. An empty
+body cannot acquire invented prose. Ordinary technical commands and
 code-like prose are inert data and are never executed, fetched or used as tools.
 Conservative filtering cannot detect every secret in public prose.
 
 The fingerprint remains SHA256 of original `title + NUL + body`; sanitization
-does not replace the Issue or silently truncate prose. Raw title/body is bounded
+never silently truncates prose. Publication advances the expected fingerprint only after writing the English title/body and verifies the native result before commenting. Raw title/body is bounded
 at 2 MiB; sanitized primary prose at 4,096 UTF-8 bytes. A GitHub manual-ID response
 is independently capped at 2 MiB, read through a fixed trusted GET without
 redirects or source-body logging.
@@ -165,13 +166,11 @@ Proposed public synthetic test titles are “Falha simulada ao salvar”,
 “Synthetic save failure duplicate”, “Melhoria simulada de filtro” and
 “Synthetic security refusal”. Create them only for authorized end-to-end
 validation and record the actual Issue/run URLs. Verify useful translation, native type/Priority,
-verified duplicate links, human fields/Effort/original preservation, repetition
+verified duplicate links, human fields/Effort and technical-content preservation, repetition
 without new effects, security refusal and actual usage. Stop on unknown API or
 read-limit outcomes. Replication to `cubeshipd/cubeship-templates` and
 `lucasaarch/jian` follows successful Cubeship testing, not activation alone.
-Recoverable closing of only those four future test Issues and obsolete PR52
-requires the separate proposed cleanup approval; preserve branches and history,
-never delete or merge PR52 during cleanup.
+The ten synthetic Issues created during activation (#56–63, #66 and #67) were deleted at the maintainer’s request. Preserve branches and history; PR52 is outside that cleanup.
 
 Current design: [Issue triage](../docs/superpowers/specs/2026-10-12-gemini-issue-triage-design.md).
 Official contracts: [Issue field values](https://docs.github.com/en/rest/issues/issue-field-values),

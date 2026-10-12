@@ -282,34 +282,41 @@ export async function publishProposal(proposal, a, transport = createTransport()
     if (Object.hasOwn(env, 'GEMINI_API_KEY')) fail('CREDENTIAL_ISOLATION');
     inputArtifact(a); const token = env.GITHUB_TOKEN; if (typeof token !== 'string' || !token) fail('CREDENTIAL_ISOLATION');
     await currentRun(a.context, transport, token);
+    await current(a.context, transport, token);
+    const root = `/repos/${a.context.repo}/issues/${a.context.issueNumber}`, comments = await pages(`${root}/comments`, null, transport, token), prior = markerComments(comments, a.snapshot);
+    if (prior) return result('ALREADY_PUBLISHED', 'ready');
     const input = await prepared(a.context, transport, token, a.snapshot, a.candidates);
     const checked = validateProposal(proposal, input); if (checked.state !== 'ready') return checked;
-    const root = `/repos/${a.context.repo}/issues/${a.context.issueNumber}`, comments = await pages(`${root}/comments`, null, transport, token), prior = markerComments(comments, input.snapshot);
-    if (prior) return result('ALREADY_PUBLISHED', 'ready');
-    let before;
-    for (const kind of ['type', 'priority', 'labels']) {
-      before = await publicationCurrent(input, transport, token);
+    let before, working = input, comment = '';
+    for (const kind of ['type', 'priority', 'labels', 'translation']) {
+      if (kind === 'translation') await prepared(a.context, transport, token, working.snapshot, a.candidates);
+      before = await publicationCurrent(working, transport, token);
       const effects = planEffects(checked.proposal, before, input.candidates);
       let body, path, method;
       if (kind === 'type' && effects.typeToSet) { body = { type: effects.typeToSet }; path = root; method = 'PATCH'; }
       if (kind === 'priority' && effects.priorityToSet) { body = { issue_field_values: [effects.priorityToSet] }; path = `${root}/issue-field-values`; method = 'POST'; }
       if (kind === 'labels' && effects.labelsToAdd.length) { body = { labels: effects.labelsToAdd }; path = `${root}/labels`; method = 'POST'; }
+      if (kind === 'translation') { comment = effects.comment; if (effects.translationToSet) { body = effects.translationToSet; path = root; method = 'PATCH'; } }
       if (!body) continue;
       try { await mutation(path, method, body, transport, token, [200]); } catch { fail('WRITE_UNCONFIRMED'); }
-      const after = await publicationCurrent(input, transport, token); unchangedHuman(before, after);
+      if (kind === 'translation') working = { ...input, snapshot: { ...input.snapshot, contentHash: fingerprint(body) } };
+      let after;
+      try { after = await publicationCurrent(working, transport, token); } catch (e) { if (kind === 'translation') fail('WRITE_UNCONFIRMED'); throw e; }
+      unchangedHuman(kind === 'translation' ? { ...before, ...body } : before, after);
       if ((kind === 'type' && (after.type?.name !== body.type || !config.types.some(t => t.id === after.type?.id && t.name === body.type))) || (kind === 'priority' && !after.fieldValues.some(v => v.field_id === config.priority.id && v.value === body.issue_field_values[0].value)) || (kind === 'labels' && body.labels.some(name => !after.labels.some(l => l.name === name)))) fail('WRITE_UNCONFIRMED');
     }
     // Refresh original candidate expectations immediately before the comment.
-    const final = await prepared(a.context, transport, token, a.snapshot, a.candidates), latest = await publicationCurrent(final, transport, token), effects = planEffects(checked.proposal, latest, final.candidates);
-    if (!effects.comment) return result('PUBLISHED', 'ready');
+    const final = await prepared(a.context, transport, token, working.snapshot, a.candidates);
+    await publicationCurrent(final, transport, token);
+    if (!comment) return result('PUBLISHED', 'ready');
     const existing = markerComments(await pages(`${root}/comments`, null, transport, token), input.snapshot);
     if (existing) return result('ALREADY_PUBLISHED', 'ready');
     await currentUnchanged(final, transport, token);
     let receipt;
-    try { receipt = await mutation(`${root}/comments`, 'POST', { body: effects.comment }, transport, token, [201]); } catch { fail('WRITE_UNCONFIRMED'); }
-    if (!botComment(receipt) || receipt.body !== effects.comment) fail('WRITE_UNCONFIRMED');
+    try { receipt = await mutation(`${root}/comments`, 'POST', { body: comment }, transport, token, [201]); } catch { fail('WRITE_UNCONFIRMED'); }
+    if (!botComment(receipt) || receipt.body !== comment) fail('WRITE_UNCONFIRMED');
     const confirmed = markerComments(await pages(`${root}/comments`, null, transport, token), input.snapshot);
-    if (!confirmed || confirmed.id !== receipt.id || confirmed.body !== effects.comment) fail('WRITE_UNCONFIRMED');
+    if (!confirmed || confirmed.id !== receipt.id || confirmed.body !== comment) fail('WRITE_UNCONFIRMED');
     return result('PUBLISHED', 'ready');
   } catch (e) { return safeFailure(e); }
 }

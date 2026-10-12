@@ -32,7 +32,7 @@ function fixture(config, core) {
       if (path.endsWith(':countTokens')) { if (mode === 'change-after-count') issue.body += ' changed'; return Response.json({ totalTokens: count }); }
       generation++; if (mode === 'abort') throw new Error('key and payload MUST NOT ESCAPE');
       if (/^status-/.test(mode)) return Response.json({ error: 'private provider payload' }, { status: Number(mode.slice(7)) });
-      const p = proposal(); if (core.sanitizeProse(issue.body).reason === 'EMPTY_PROSE' || issue.body === '') p.translation.body = ''; if (mode === 'invalid') p.tools = [];
+      const p = proposal(), prompt = JSON.parse(JSON.parse(opts.body).contents[0].parts[0].text); p.translation.title = prompt.prose.title.replace('Falha ao salvar', 'Save failure'); p.translation.body = prompt.prose.body.replace('A operação falha.', 'The operation fails.'); if (mode === 'invalid') p.tools = [];
       if (mode !== 'forged-origin') delete p.snapshot;
       const part = { text: JSON.stringify(p), thoughtSignature: 'opaque' };
       if (mode === 'thought') part.thought = true;
@@ -44,7 +44,7 @@ function fixture(config, core) {
       if (mode === 'write-abort') throw new Error('Bearer token secret');
       if (path.endsWith('/issue-field-values')) { assert.deepEqual(Object.keys(body), ['issue_field_values']); assert.ok(Array.isArray(body.issue_field_values) && body.issue_field_values.length === 1); if (mode !== 'ignored-priority') fields.push({ issue_field_id: body.issue_field_values[0].field_id, issue_field_name: 'Priority', data_type: 'single_select', value: 81364765, single_select_option: { id: 81364765, name: body.issue_field_values[0].value } }); return Response.json(fields); }
       if (path.endsWith('/labels')) { issue.labels.push(...body.labels.map(name => ({ name }))); return Response.json(issue.labels); }
-      if (path.endsWith('/issues/12')) { if (mode !== 'ignored-type') issue.type = config.types.find(t => t.name === body.type); return Response.json(issue); }
+      if (path.endsWith('/issues/12')) { if (Object.hasOwn(body, 'type') && mode !== 'ignored-type') issue.type = config.types.find(t => t.name === body.type); if (Object.hasOwn(body, 'title') && mode !== 'ignored-translation') { issue.title = body.title; issue.body = body.body; } return Response.json(issue); }
       if (path.endsWith('/comments')) { const c = { id: 77, body: body.body, user: { login: 'github-actions[bot]', type: 'Bot', id: 41898282 } }; comments.push(c); return Response.json(c, { status: 201 }); }
       throw Error('unexpected mutation');
     }
@@ -78,8 +78,8 @@ test('actual CLI isolates credentials and adds native metadata preserving origin
   assert.equal((await run.runCLI(['infer', ctx, snapshot, artifact], { env: { GEMINI_API_KEY: 'fixture-google' }, transport: tr })).state, 'ready');
   assert.equal(f.generation, 1); const output = await readFile(artifact, 'utf8'); assert.ok(!output.includes('fixture-google') && !output.includes('opaque') && !output.includes(original.body));
   assert.equal((await run.runCLI(['publish', ctx, artifact], { env: { GITHUB_TOKEN: 'fixture-github' }, transport: tr })).state, 'ready');
-  assert.deepEqual(f.mutations.map(m => [m.method, m.body]), [['PATCH', { type: 'Bug' }], ['POST', { issue_field_values: [{ field_id: 46483201, value: 'High' }] }], ['POST', { labels: ['bug'] }], ['POST', { body: f.comments[0].body }]]);
-  assert.equal(f.issue.title, original.title); assert.equal(f.issue.body, original.body); assert.equal(f.fields[0].issue_field_id, 46483204);
+  assert.deepEqual(f.mutations.map(m => [m.method, m.body]), [['PATCH', { type: 'Bug' }], ['POST', { issue_field_values: [{ field_id: 46483201, value: 'High' }] }], ['POST', { labels: ['bug'] }], ['PATCH', { title: 'Save failure', body: 'The operation fails. npm test' }], ['POST', { body: f.comments[0].body }]]);
+  assert.equal(f.issue.title, 'Save failure'); assert.equal(f.issue.body, 'The operation fails. npm test'); assert.equal(f.fields[0].issue_field_id, 46483204);
   const before = f.mutations.length; assert.equal((await run.runCLI(['publish', ctx, artifact], { env: { GITHUB_TOKEN: 'fixture-github' }, transport: tr })).state, 'ready'); assert.equal(f.mutations.length, before);
 });
 async function setup(t) { const m = await modules(t); const f = fixture(m.config, m.core); return { ...m, f, tr: transport(m.run, f) }; }
@@ -211,11 +211,11 @@ test('persistent monthly quota blocks the hundredth reservation and resets at UT
   assert.equal((await s.run.collectSnapshot(context, transport(s.run, s.f))).reason, 'BUDGET_EXHAUSTED');
   const later = s.run.createTransport(s.f.fetch, { now: () => Date.parse('2026-11-01T00:00:00Z'), sleep: async () => {} }); assert.equal((await s.run.collectSnapshot(context, later)).state, 'ready');
 });
-for (const mode of ['ignored-type', 'ignored-priority', 'write-abort']) {
+for (const mode of ['ignored-type', 'ignored-priority', 'ignored-translation', 'write-abort']) {
   test(`publication ${mode} reports unconfirmed without blind retry or later effects`, async t => {
     const s = await setup(t), a = await collected(s); s.f.mode = mode;
     assert.equal((await s.run.publishProposal(s.f.proposal(), a, s.tr, { GITHUB_TOKEN: 'fixture-github' })).reason, 'WRITE_UNCONFIRMED');
-    assert.equal(s.f.comments.length, 0); assert.equal(s.f.mutations.length, mode === 'ignored-priority' ? 2 : 1);
+    assert.equal(s.f.comments.length, 0); assert.equal(s.f.mutations.length, mode === 'ignored-translation' ? 4 : mode === 'ignored-priority' ? 2 : 1);
   });
 }
 test('writer preserves existing human type Priority Effort labels and legacy priority', async t => {
@@ -419,3 +419,16 @@ for (const stage of ['infer', 'publish']) {
     assert.equal(r.reason, 'RUN_ORIGIN_REFUSED'); assert.equal(s.f.generation, 0); assert.equal(s.f.mutations.length, 0);
   });
 }
+
+test('translated native content retains technical blocks and original marker prevents repeated writes', async t => {
+  const s = await setup(t);
+  const code = '```sh\ndocker logs cubeship\n```';
+  s.f.issue.body = 'A operação falha.\n' + code + '\nUse `npm test`.';
+  const a = await collected(s), generated = await s.run.generateOnce(a, s.tr, 'fixture-google');
+  assert.equal(generated.state, 'ready');
+  assert.equal((await s.run.publishProposal(generated.proposal, a, s.tr, { GITHUB_TOKEN: 'fixture-github' })).reason, 'PUBLISHED');
+  assert.equal(s.f.issue.title, 'Save failure'); assert.ok(s.f.issue.body.includes(code)); assert.ok(s.f.issue.body.includes('`npm test`'));
+  const writes = s.f.mutations.length;
+  assert.equal((await s.run.publishProposal(generated.proposal, a, s.tr, { GITHUB_TOKEN: 'fixture-github' })).reason, 'ALREADY_PUBLISHED');
+  assert.equal(s.f.mutations.length, writes); assert.equal(s.f.comments.length, 1);
+});
