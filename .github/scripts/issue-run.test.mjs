@@ -122,6 +122,11 @@ test('complex schema refusals emit a fixed category without raw provider prose',
   const tr = s.run.createTransport(async (url, opts) => url.endsWith(':generateContent') ? Response.json({ error: { status: 'INVALID_ARGUMENT', message: 'The specified schema produces a constraint that has too many states for serving; fixture-google and private provider payload MUST NOT ESCAPE' } }, { status: 400 }) : s.f.fetch(url, opts), { now: s.tr.now, sleep: s.tr.sleep });
   assert.deepEqual(await s.run.generateOnce(a, tr, 'fixture-google'), { state: 'blocked', reason: 'GENERATION_FAILED', httpStatus: 400, providerStatus: 'INVALID_ARGUMENT', category: 'SCHEMA_COMPLEXITY' });
 });
+test('structured provider violations remain filtered when the top-level error is generic', async t => {
+  const s = await setup(t), a = await collected(s);
+  const tr = s.run.createTransport(async (url, opts) => url.endsWith(':generateContent') ? Response.json({ error: { status: 'INVALID_ARGUMENT', message: 'Request contains an invalid argument.', details: [{ fieldViolations: [{ field: 'generation_config.response_json_schema', description: 'The schema has too many states. PRIVATE_SENTINEL' }] }] } }, { status: 400 }) : s.f.fetch(url, opts), { now: s.tr.now, sleep: s.tr.sleep });
+  assert.deepEqual(await s.run.generateOnce(a, tr, 'fixture-google'), { state: 'blocked', reason: 'GENERATION_FAILED', httpStatus: 400, providerStatus: 'INVALID_ARGUMENT', parameter: 'response_json_schema', category: 'SCHEMA_COMPLEXITY' });
+});
 for (const mode of ['status-400', 'status-429', 'status-500', 'status-503', 'abort', 'invalid', 'thought']) {
   test(`generation ${mode} never retries or publishes raw responses`, async t => {
     const s = await setup(t), a = await collected(s); s.f.mode = mode;

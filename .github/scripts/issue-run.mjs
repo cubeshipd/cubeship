@@ -198,9 +198,11 @@ function providerFailure(reason, response) {
   if (integer(response.status) && response.status >= 100 && response.status <= 599) out.httpStatus = response.status;
   const error = response.data?.error;
   if (['INVALID_ARGUMENT', 'PERMISSION_DENIED', 'RESOURCE_EXHAUSTED', 'NOT_FOUND', 'UNAVAILABLE', 'INTERNAL', 'UNAUTHENTICATED', 'FAILED_PRECONDITION', 'DEADLINE_EXCEEDED'].includes(error?.status)) out.providerStatus = error.status;
-  const parameter = ['responseFormat', 'response_format', 'responseJsonSchema', 'response_json_schema', 'thinkingConfig', 'thinking_config', 'includeThoughts', 'include_thoughts', 'candidateCount', 'candidate_count', 'maxOutputTokens', 'max_output_tokens', 'enum', 'billing'].find(name => typeof error?.message === 'string' && error.message.includes(name));
+  const details = Array.isArray(error?.details) ? error.details : [];
+  const descriptions = [error?.message, ...details.flatMap(d => Array.isArray(d?.fieldViolations) ? d.fieldViolations.flatMap(v => [v?.field, v?.description]) : [])].filter(v => typeof v === 'string').join('\n');
+  const parameter = ['responseFormat', 'response_format', 'responseJsonSchema', 'response_json_schema', 'thinkingConfig', 'thinking_config', 'includeThoughts', 'include_thoughts', 'candidateCount', 'candidate_count', 'maxOutputTokens', 'max_output_tokens', 'maxLength', 'minLength', 'pattern', 'nullable', 'enum', 'billing'].find(name => descriptions.toLowerCase().includes(name.toLowerCase()));
   if (parameter) out.parameter = parameter;
-  const category = [['SCHEMA_COMPLEXITY', /too many states|schema.*(?:too large|too complex|complexity)/i], ['SCHEMA_INVALID', /schema|enum|anyof|nullable/i], ['BILLING_REQUIRED', /billing|paid tier|payment/i], ['REGION_UNSUPPORTED', /location|region|country/i], ['MODEL_UNSUPPORTED', /model.*(?:not supported|not found|unavailable)/i], ['KEY_INVALID', /api[ _-]?key/i]].find(([, pattern]) => typeof error?.message === 'string' && pattern.test(error.message));
+  const category = [['SCHEMA_COMPLEXITY', /too many states|schema.*(?:too large|too complex|complexity)/i], ['SCHEMA_INVALID', /schema|enum|anyof|nullable/i], ['BILLING_REQUIRED', /billing|paid tier|payment/i], ['REGION_UNSUPPORTED', /location|region|country/i], ['MODEL_UNSUPPORTED', /model.*(?:not supported|not found|unavailable)/i], ['KEY_INVALID', /api[ _-]?key/i]].find(([, pattern]) => pattern.test(descriptions));
   if (category) out.category = category[0];
   return out;
 }
