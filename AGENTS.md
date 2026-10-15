@@ -4,9 +4,8 @@ Self-hosted PaaS for one VPS. Go, module `cubeship`, no external services
 beyond Docker. `README.md` is the operator's intro; this file is for
 whoever (or whatever) edits the code.
 
-**This file is the part that applies to every change.** How each area
-actually works is in `docs/design/`, one file per area — indexed below,
-and worth opening before touching the area it covers.
+**This file is the part that applies to every change.** Operator documentation lives in `site/content/docs/`, also available through
+the root `docs` symlink. Site and template publication notes are in `site/README.md`.
 
 ## Before you commit
 
@@ -25,73 +24,42 @@ or code comments.
 
 Work happens on `master`, in the repository root. No worktrees.
 
-## Where the rest is written down
+## Documentation
 
-Go paths below (`internal/…`, `cmd/…`) are relative to `product/`, the
-Go module. Read the file for the area before changing it. Each one carries the
-reasoning as well as the rule, including the things that were tried the
-other way and were wrong — which is the part that stops a decision being
-re-made by accident.
-
-| Opening | Read |
-| --- | --- |
-| Anything under `product/dashboard/` | [dashboard.md](docs/design/product/dashboard.md) — the layers, the navigation, the components, the look |
-| Anything under `hosted/site/` | [site.md](docs/design/hosted/site.md) — cubeship.dev: the landing page, the docs, and where `install.sh` comes from |
-| `product/template`, `hosted/catalog`, `internal/templateinstall`, `/templates` in the site or the dashboard | [templates.md](docs/design/hosted/templates.md) — the validator, the catalog that indexes GitHub releases and serves them, installing one on an instance, the site's pages, and what a template may never carry |
-| `internal/node`, `internal/mesh`, `internal/worker` | [cluster.md](docs/design/product/cluster.md) — placement, replicas, the agent, the network between machines, the one front door, autoscaling, limits |
-| `internal/app` | [deploys.md](docs/design/product/deploys.md) — where an image comes from, the two builders, the GitHub App, who may build, what deleting takes |
-| `internal/datastore` | [datastores.md](docs/design/product/datastores.md) — the engines, attaching, exposing, what is fixed after creation |
-| `internal/objectstore` | [object-storage.md](docs/design/product/object-storage.md) — managed MinIO, linked S3, what a folder is |
-| `internal/backup` | [backups.md](docs/design/product/backups.md) — dumps, the schedule, restoring |
-| `internal/certificates`, `internal/firewall`, app domains | [networking.md](docs/design/product/networking.md) — where an app answers, TLS, and the host's ufw |
-| `internal/metrics`, `internal/machine` | [monitoring.md](docs/design/product/monitoring.md) — what is sampled, and what 100% means |
-| `internal/shell`, `internal/platform/terminal`, a shell in the dashboard or CLI | [shell.md](docs/design/product/shell.md) — one WebSocket per session, who may open one, running it in a container or on the host, and connecting a worker's back |
-| `internal/credential`, `internal/extregistry` | [credentials.md](docs/design/product/credentials.md) — one secret, named by everything that needs it |
-| `internal/user`, `internal/setup` | [authentication.md](docs/design/product/authentication.md) — API keys, sessions, the setup token |
-| `install.sh`, `internal/settings` | [installing.md](docs/design/product/installing.md) — the front door, the data directory, the instance's own settings |
-| `internal/release`, `internal/update` | [releasing.md](docs/design/product/releasing.md) — tags, notes, and replacing the daemon that is running |
-| `internal/platform/bootstrap` | [infrastructure.md](docs/design/product/infrastructure.md) — the config hash, and why state must be a bind mount |
-| Adding or moving a route | [the-api-document.md](docs/design/product/the-api-document.md) — `Handle` vs `HandleInternal` |
+`docs` is a symlink to `site/content/docs`, the documentation published on
+cubeship.dev. Edit that source once; do not create a second documentation tree.
+Read [site/README.md](site/README.md) before changing template publication or
+the site's API. Daemon and CLI Go paths are relative to `core/`.
 
 ## Layout
 
-The repository splits on one question: **does it run on somebody's
-instance, or only on ours?**
+The top-level directories name the components, each with its own build:
 
 ```
-product/        what a person installs — one Go module and the dashboard
-  cmd/cubeshipd/  the daemon, on the VPS
-  cmd/cubeship/   the CLI, on the operator's laptop
-  internal/       everything both are made of (below)
-  dashboard/      the dashboard: Next.js standalone, its own image and
-                  container on the VPS
-  template/       the template file and its validator — outside internal/
-                  because hosted/catalog imports it
-  tools/          changelog, sitedocs — run by make, never shipped
-  test/           integration and installer tests
-hosted/         what only we run, on one instance we operate — never
-                part of an install
-  site/           cubeship.dev — the landing page, the docs and the
-                  template pages. No database: it reads catalog/'s API
-  catalog/        the template catalog: indexes GitHub releases and
-                  serves them at cubeship.dev/api/v1 — its own Go module,
-                  compiling product/template
-docs/design/    product/ and hosted/, one file per area
-install.sh, uninstall.sh  stay at the root: the published install
-                command fetches `master/install.sh` by that path
+core/           one Go module: daemon, CLI, domain modules and template validator
+  cmd/          cubeshipd on the VPS, cubeship on the operator's laptop
+  internal/     the domains and their infrastructure
+  template/     parsing, validation, normalization and schema
+  tools/        changelog, sitedocs, templatecheck and templatecatalog
+  test/         integration and installer tests
+dashboard/      the instance's Next.js dashboard and the site's demo build
+site/           cubeship.dev, documentation and the read-only template API
+docs -> site/content/docs/  the published documentation
+install.sh, uninstall.sh  published entry points, kept at the root
 ```
 
-Every Dockerfile — `product/Dockerfile`, `product/dashboard/Dockerfile`,
-`hosted/site/Dockerfile`, `hosted/catalog/Dockerfile` — is built with the **repository root** as its
-context, which is also how an instance builds an app whose Dockerfile is
-in a subdirectory.
+Every Dockerfile — `core/Dockerfile`, `dashboard/Dockerfile` and
+`site/Dockerfile` — is built with the **repository root** as its context.
+Daemon and CLI share the `cubeship` Go module. The site reads a validated
+snapshot published by cubeship-templates; there is no separate catalog
+service or catalog database.
 
 The code is organized by domain, not by technical layer. A module owns
 everything about one concept — its entity, its persistence, its use
 cases, and every surface it is reached through.
 
 ```
-product/internal/
+core/internal/
   user/         identities, the API keys they authenticate with, and the
                 one authorization question on the instance
   project/      projects and the environments inside them

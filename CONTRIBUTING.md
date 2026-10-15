@@ -16,7 +16,7 @@ Everything a person installing Cubeship needs is in the
 
 ## What you need
 
-- **Go** (the version in [go.mod](product/go.mod)) and **pnpm** for the dashboard.
+- **Go** (the version in [go.mod](core/go.mod)) and **pnpm** for the dashboard.
 - **Docker**, for the Postgres the tests run against — and for anything
   that starts a container, which is most of what this daemon does.
 
@@ -109,12 +109,9 @@ call one service method, and render the result — a rule that lives in a
 handler is a rule the MCP surface does not have, which is exactly how
 the two drifted apart before this layout.
 
-**[AGENTS.md](AGENTS.md) is the conventions every change follows**, and
-it is worth reading before a first one. The long version is
-[docs/design/](docs/design), one file per area — `product/` for what an instance runs, `hosted/` for cubeship.dev and what else only we run: every decision in this
-codebase is written down there with the reason it was made, including
-the ones that were made twice. AGENTS.md indexes them, and says which to
-open for what you are about to touch.
+**[AGENTS.md](AGENTS.md) contains the conventions every change follows.**
+Operator documentation is in [docs/](docs), a symlink to `site/content/docs/`.
+Read [site/README.md](site/README.md) for site and template-publication details.
 
 ## The license your contribution carries
 
@@ -149,7 +146,7 @@ GitHub release, `CHANGELOG.md`, and the dialog the dashboard shows after
 an upgrade.
 
 ```bash
-$EDITOR product/internal/release/notes/0.2.0.md   # version, date, summary, then the notes
+$EDITOR core/internal/release/notes/0.2.0.md   # version, date, summary, then the notes
 make changelog                            # regenerate CHANGELOG.md
 git commit -am "Release notes for 0.2.0"
 make release VERSION=0.2.0

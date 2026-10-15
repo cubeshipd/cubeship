@@ -3,12 +3,9 @@
 GO      ?= go
 BINDIR  ?= bin
 COVER   ?= coverage.out
-# The Go module — the daemon and the CLI — and the dashboard beside it:
-# everything an instance runs. hosted/ is what only we run, cubeship.dev among it.
-GODIR   ?= product
-# The template catalog — its indexer and its API — a Go module of its own.
-CATALOGDIR ?= hosted/catalog
-WEBDIR  ?= $(GODIR)/dashboard
+# The daemon and CLI share one Go module; each web app has its own build.
+GODIR   ?= core
+WEBDIR  ?= dashboard
 PNPM    ?= pnpm
 RELEASEDIR ?= dist
 
@@ -79,29 +76,16 @@ dashboard-preview: ## Run the dashboard on invented data, with no daemon behind 
 
 .PHONY: site-dev
 site-dev: ## Run cubeship.dev — the landing page and the docs — with hot reload
-	cd hosted/site && $(PNPM) run dev
+	cd site && $(PNPM) run dev
 
 .PHONY: site-test
 site-test: ## Run the site's unit tests
-	cd hosted/site && $(PNPM) test
+	cd site && $(PNPM) test
 
-.PHONY: catalog-dev
-catalog-dev: ## Run the template catalog on :8080 against the local Postgres on 5434
-	cd $(CATALOGDIR) && DATABASE_URL="$${DATABASE_URL:-postgres://catalog:catalog@127.0.0.1:5434/catalog?sslmode=disable}" \
-		CATALOG_PUBLIC_URL="$${CATALOG_PUBLIC_URL:-http://localhost:3002/api/v1}" $(GO) run ./cmd/catalog
-
-.PHONY: catalog-image
-catalog-image: ## Build the template catalog's image
-	docker build -f $(CATALOGDIR)/Dockerfile -t cubeship-catalog:$(VERSION) .
-
-.PHONY: catalog-db-up
-catalog-db-up: ## Start the catalog's Postgres for development, on 5434
-	docker run -d --rm --name cubeship-catalog-db -p 5434:5432 \
-		-e POSTGRES_PASSWORD=catalog -e POSTGRES_USER=catalog -e POSTGRES_DB=catalog postgres:18-alpine
-
-.PHONY: catalog-db-down
-catalog-db-down: ## Stop it
-	docker stop cubeship-catalog-db
+TEMPLATES_DIR ?= ../cubeship-templates
+.PHONY: catalog
+catalog: ## Validate a templates commit and publish its snapshot
+	$(GO) -C $(GODIR) run ./tools/templatecatalog -repo $(abspath $(TEMPLATES_DIR)) -out $(abspath $(TEMPLATES_DIR))/_catalog/snapshot.json
 
 .PHONY: install
 install: ## Install the CLI into GOBIN
@@ -121,7 +105,7 @@ image: ## Build the daemon's image, dashboard included
 
 .PHONY: site-image
 site-image: ## Build cubeship.dev's image
-	docker build -f hosted/site/Dockerfile -t cubeship-site:$(VERSION) .
+	docker build -f site/Dockerfile -t cubeship-site:$(VERSION) .
 
 # Releasing is a tag, and the rest is .github/workflows/release.yml:
 # both images for both architectures, the GitHub release with the notes
@@ -208,13 +192,11 @@ install-hooks: ## Configure this checkout to run the full pre-commit gate
 .PHONY: test
 test: ## Unit tests that need nothing but this repository, race detector on
 	$(GO) -C $(GODIR) test -short -race -count=1 ./...
-	$(GO) -C $(CATALOGDIR) test -short -race -count=1 ./...
 
 # The same tests with the database they want. This is what CI runs.
 .PHONY: test-db
 test-db: db-up ## Unit tests including the DB-backed ones (starts Postgres)
 	$(GO) -C $(GODIR) test -race -count=1 ./...
-	$(GO) -C $(CATALOGDIR) test -race -count=1 ./...
 
 # The installer is the first thing every user runs, and no Go test can
 # reach it. This runs it on a real Linux against a release built here.
@@ -263,16 +245,16 @@ changelog-check: ## Fail if CHANGELOG.md is not what the release notes say
 # and `check` refuses it the way it refuses a stale changelog.
 .PHONY: reference
 reference: ## Write the CLI and MCP references into the site's docs
-	$(GO) -C $(GODIR) run ./cmd/cubeship docs ../hosted/site/content/docs/cli
-	$(GO) -C $(GODIR) run ./tools/sitedocs ../hosted/site/content/docs/mcp/tools.mdx
-	cp $(GODIR)/template/schema.json hosted/site/public/schema/template/v1.json
+	$(GO) -C $(GODIR) run ./cmd/cubeship docs ../site/content/docs/cli
+	$(GO) -C $(GODIR) run ./tools/sitedocs ../site/content/docs/mcp/tools.mdx
+	cp $(GODIR)/template/schema.json site/public/schema/template/v1.json
 
 .PHONY: reference-check
 reference-check: ## Fail if the site's references are not what the code says
-	$(GO) -C $(GODIR) run ./cmd/cubeship docs --check ../hosted/site/content/docs/cli
-	$(GO) -C $(GODIR) run ./tools/sitedocs -check ../hosted/site/content/docs/mcp/tools.mdx
-	@cmp -s $(GODIR)/template/schema.json hosted/site/public/schema/template/v1.json || { \
-		echo "the site's template schema is not product/template/schema.json: run make reference"; exit 1; }
+	$(GO) -C $(GODIR) run ./cmd/cubeship docs --check ../site/content/docs/cli
+	$(GO) -C $(GODIR) run ./tools/sitedocs -check ../site/content/docs/mcp/tools.mdx
+	@cmp -s $(GODIR)/template/schema.json site/public/schema/template/v1.json || { \
+		echo "the site's template schema is not core/template/schema.json: run make reference"; exit 1; }
 
 .PHONY: sh-check
 sh-check: ## Syntax-check the shell scripts
@@ -285,21 +267,19 @@ sh-check: ## Syntax-check the shell scripts
 vet: ## go vet, including the build-tagged integration test
 	$(GO) -C $(GODIR) vet ./...
 	$(GO) -C $(GODIR) vet -tags integration ./test/integration/...
-	$(GO) -C $(CATALOGDIR) vet ./...
 
 .PHONY: fmt
 fmt: ## Rewrite badly formatted files in place
-	gofmt -w $(GODIR) $(CATALOGDIR)
+	gofmt -w $(GODIR)
 
 .PHONY: fmt-check
 fmt-check: ## Fail if anything needs gofmt
-	@out=$$(gofmt -l $(GODIR) $(CATALOGDIR)); \
+	@out=$$(gofmt -l $(GODIR)); \
 	if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
 
 .PHONY: tidy
 tidy: ## Sync go.mod/go.sum with the imports
 	$(GO) -C $(GODIR) mod tidy
-	$(GO) -C $(CATALOGDIR) mod tidy
 
 .PHONY: clean
 clean: ## Remove build output

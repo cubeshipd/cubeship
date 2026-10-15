@@ -1,6 +1,6 @@
 <div align="center">
 
-<h1><img src="product/dashboard/public/logo/banner.png" alt="Cubeship — Your infrastructure. Ready to ship." width="960"></h1>
+<h1><img src="dashboard/public/logo/banner.png" alt="Cubeship — Your infrastructure. Ready to ship." width="960"></h1>
 
 **A PaaS you run on your own server.** `docker push`, and it is live —
 with HTTPS, a database beside it, and a second machine when one stops
@@ -436,7 +436,7 @@ Three things leave the box, and all three are yours to look at:
   opens the update screen, and when the automatic update timer comes
   round. It is a plain `GET` on the public releases API with no
   credential and nothing about your instance in it
-  ([the whole of it](product/internal/update/releases.go)). An instance that
+  ([the whole of it](core/internal/update/releases.go)). An instance that
   cannot reach GitHub simply never offers an update and says so, rather
   than claiming to be current.
 - **Let's Encrypt**, for certificates — and only once you have given the

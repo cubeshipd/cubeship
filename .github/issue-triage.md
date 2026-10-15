@@ -207,6 +207,5 @@ read-limit outcomes. Replication to `cubeshipd/cubeship-templates` and
 `lucasaarch/jian` follows successful Cubeship testing, not activation alone.
 The ten synthetic Issues created during activation (#56–63, #66 and #67) were deleted at the maintainer’s request. Preserve branches and history; PR52 is outside that cleanup.
 
-Current design: [Issue triage](../docs/superpowers/specs/2026-10-12-gemini-issue-triage-design.md).
 Official contracts: [Issue field values](https://docs.github.com/en/rest/issues/issue-field-values),
 [workflow concurrency](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency).

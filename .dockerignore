@@ -2,13 +2,15 @@
 # explicitly; what is left here is output, caches and local state that
 # would only invalidate the layer cache.
 .git
-product/.air
+core/.air
 bin
 dist
-product/dashboard/node_modules
-product/dashboard/.next
-product/dashboard/.next-demo
-hosted/site/node_modules
-hosted/site/.next
-hosted/site/.source
+dashboard/node_modules
+dashboard/.next
+dashboard/.next-demo
+site/node_modules
+site/.next
+site/.source
 coverage.out
+
+site/.catalog

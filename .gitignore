@@ -3,14 +3,14 @@
 bin/
 node_modules/
 coverage.out
-# Release output. The dashboard's own build output is ignored by product/dashboard/.
+# Release output. The dashboard's own build output is ignored by dashboard/.
 dist/
 
 # What `go build ./cmd/...` drops in the root when nobody passed -o. Named
 # exactly like the things they build, so a stray one reads as a source
 # directory in a listing and goes in with a `git add .`.
-/product/cubeship
-/product/cubeshipd
+/core/cubeship
+/core/cubeshipd
 .air/
 
 /templates/
