@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Elasticsearch'
+# The first release that gives a volume to the user its image runs as;
+# Elasticsearch runs as 1000 and cannot write to one owned by root.
+minCubeship: "0.7.0"
+project: elasticsearch
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where the Elasticsearch API answers
+  - key: password
+    type: secret
+    label: The password for the elastic superuser
+    generate: 24
+
+apps:
+  - key: search
+    name: elasticsearch
+    image: docker.elastic.co/elasticsearch/elasticsearch
+    tag: "9.5.4"
+    port: 9200
+    # No health: every route asks for credentials, and a check answered
+    # 401 would take the domain down.
+    domains:
+      - host: ${input.domain}
+    volumes:
+      - path: /usr/share/elasticsearch/data
+    # The heap is sized from this limit: half of it.
+    limits: { cpu: 2, memory: 2Gi }
+    env:
+      # Settings have dots in their names, which a variable cannot: after
+      # ES_SETTING_ an underscore is a dot and a double one an underscore.
+      ES_SETTING_DISCOVERY_TYPE: single-node
+      ES_SETTING_XPACK_SECURITY_ENABLED: "true"
+      # TLS ends at the instance's proxy, which speaks plain HTTP to the app.
+      ES_SETTING_XPACK_SECURITY_HTTP_SSL_ENABLED: "false"
+      # Memory-mapped indices need vm.max_map_count raised on the host,
+      # which a template cannot do.
+      ES_SETTING_NODE_STORE_ALLOW__MMAP: "false"
+      ELASTIC_PASSWORD: ${input.password}

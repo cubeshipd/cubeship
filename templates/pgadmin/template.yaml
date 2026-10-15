@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'pgAdmin'
+# The first release that gives a volume to the user its image runs as;
+# pgAdmin runs as 5050 and cannot write to one owned by root.
+minCubeship: "0.7.0"
+project: pgadmin
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where pgAdmin answers
+  - key: email
+    type: text
+    label: The email you sign in with
+    help: pgAdmin refuses special-use domains, like example.com or anything ending in .local.
+    pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+  - key: password
+    type: secret
+    label: The password you sign in with
+    generate: 24
+
+apps:
+  - key: web
+    name: pgadmin
+    image: dpage/pgadmin4
+    tag: "9.18"
+    port: 80
+    health: /misc/ping
+    domains:
+      - host: ${input.domain}
+    volumes:
+      - path: /var/lib/pgadmin
+    limits: { cpu: 1, memory: 1Gi }
+    env:
+      PGADMIN_DEFAULT_EMAIL: ${input.email}
+      PGADMIN_DEFAULT_PASSWORD: ${input.password}

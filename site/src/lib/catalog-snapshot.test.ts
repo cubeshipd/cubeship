@@ -20,7 +20,7 @@ vi.mock("node:fs/promises", () => ({
 }));
 
 const snapshot = {
-  version: 1,
+  version: 2,
   commit: "a".repeat(40),
   published_at: "2026-10-15T12:00:00Z",
   templates: [
@@ -91,4 +91,15 @@ describe("published catalog", () => {
       ),
     ).toThrow();
   });
+});
+
+it("serves the frozen v1 catalog without GitHub or a writable cache", async () => {
+  const fetcher = vi.fn().mockRejectedValue(new Error("offline"));
+  vi.stubGlobal("fetch", fetcher);
+  const catalog = await import("./catalog-snapshot");
+  const legacy = await catalog.catalogSnapshot(1);
+  expect(legacy.version).toBe(1);
+  expect(legacy.templates).toHaveLength(46);
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(await catalog.catalogSnapshotAt(legacy.commit, 1)).toBe(legacy);
 });

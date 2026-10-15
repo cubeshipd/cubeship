@@ -1,0 +1,33 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Jellyfin'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: jellyfin
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Jellyfin answers
+
+apps:
+  - key: web
+    name: jellyfin
+    image: jellyfin/jellyfin
+    # From 12.1 Jellyfin versions are X.Y, and a hotfix is a new Y: this tag
+    # is one release, not a moving line.
+    tag: "12.1"
+    port: 8096
+    # Answers 200 without signing in, and while the first start migrates.
+    health: /health
+    domains:
+      - host: ${input.domain}
+    volumes:
+      - path: /config
+      - path: /cache
+      - path: /media
+    limits: { cpu: 2, memory: 2Gi }
+    env:
+      # The address Jellyfin gives clients for itself. TLS ends at the proxy,
+      # so it cannot work out the https:// on its own.
+      JELLYFIN_PublishedServerUrl: https://${input.domain}

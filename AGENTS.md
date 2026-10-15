@@ -44,6 +44,7 @@ core/           one Go module: daemon, CLI, domain modules and template validato
   test/         integration and installer tests
 dashboard/      the instance's Next.js dashboard and the site's demo build
 site/           cubeship.dev, documentation and the read-only template API
+templates/      template manifests, READMEs, icons and build contexts
 docs -> site/content/docs/  the published documentation
 install.sh, uninstall.sh  published entry points, kept at the root
 ```
@@ -51,7 +52,7 @@ install.sh, uninstall.sh  published entry points, kept at the root
 Every Dockerfile — `core/Dockerfile`, `dashboard/Dockerfile` and
 `site/Dockerfile` — is built with the **repository root** as its context.
 Daemon and CLI share the `cubeship` Go module. The site reads a validated
-snapshot published by cubeship-templates; there is no separate catalog
+snapshot published from `templates/` to the `template-catalog` branch; there is no separate catalog
 service or catalog database.
 
 The code is organized by domain, not by technical layer. A module owns

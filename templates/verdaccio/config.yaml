@@ -1,0 +1,69 @@
+# Verdaccio's configuration, built into the image as
+# /verdaccio/conf/config.yaml. Based on the one the image ships
+# (@verdaccio/config's docker.yaml), changed where commented.
+
+# Packages under a subdirectory of the volume, so nothing Verdaccio stores
+# can collide with the htpasswd file beside it.
+storage: /verdaccio/storage/data
+plugins: /verdaccio/plugins
+
+web:
+  title: Verdaccio
+  login: true
+
+auth:
+  htpasswd:
+    # In the volume, so accounts survive a deploy.
+    file: /verdaccio/storage/htpasswd
+    # Registration is closed: `npm adduser` answers 409. The first account
+    # is created when the container starts, from VERDACCIO_ADMIN_USER and
+    # VERDACCIO_ADMIN_PASSWORD; later ones with `htpasswd-add`, over SSH.
+    # Signing in to an existing account still works.
+    max_users: -1
+
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+
+# Private by default: nothing is read without signing in, public packages
+# fetched through the uplink included. `$all` would also serve every
+# private package to anyone who knows its name.
+packages:
+  '@*/*':
+    access: $authenticated
+    publish: $authenticated
+    unpublish: $authenticated
+    proxy: npmjs
+
+  '**':
+    access: $authenticated
+    publish: $authenticated
+    unpublish: $authenticated
+    proxy: npmjs
+
+  # A scope of your own, listed above the two patterns, with no proxy: a
+  # name missing here is then never fetched from npmjs, where anybody could
+  # publish it.
+  # '@your-company/*':
+  #   access: $authenticated
+  #   publish: $authenticated
+  #   unpublish: $authenticated
+
+server:
+  keepAliveTimeout: 60
+
+# The public address is VERDACCIO_PUBLIC_URL, which the template sets to
+# the domain. The registry answers at the root of it.
+url_prefix: /
+
+middlewares:
+  audit:
+    enabled: true
+
+log:
+  type: stdout
+  format: pretty
+  level: http
+
+i18n:
+  web: en-US

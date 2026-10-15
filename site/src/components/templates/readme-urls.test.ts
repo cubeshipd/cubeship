@@ -6,13 +6,13 @@ const where = { owner: "cubeshipd", repo: "umami", commit: "abc" };
 describe("resolveReadmeUrl", () => {
   it("pins a relative image to the template's commit", () => {
     expect(resolveReadmeUrl("./docs/shot.png", "image", where)).toBe(
-      "https://raw.githubusercontent.com/cubeshipd/cubeship-templates/abc/umami/docs/shot.png",
+      "https://raw.githubusercontent.com/cubeshipd/cubeship/abc/templates/umami/docs/shot.png",
     );
   });
 
   it("sends a relative link to the file on GitHub", () => {
     expect(resolveReadmeUrl("LICENSE", "link", where)).toBe(
-      "https://github.com/cubeshipd/cubeship-templates/blob/abc/umami/LICENSE",
+      "https://github.com/cubeshipd/cubeship/blob/abc/templates/umami/LICENSE",
     );
   });
 

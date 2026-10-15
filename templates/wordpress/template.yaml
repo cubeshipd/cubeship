@@ -1,0 +1,45 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'WordPress'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: wordpress
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where the site answers
+
+databases:
+  - key: db
+    name: wordpress-db
+    # WordPress asks for MySQL 8.0 or newer, and its tests run on 8.4.
+    engine: mysql
+    version: "8.4"
+    database: wordpress
+
+apps:
+  - key: web
+    name: wordpress
+    image: wordpress
+    tag: "7.1.2-php8.3-apache"
+    port: 80
+    # A file Apache serves without WordPress: / redirects, to the install
+    # wizard before setup and to https:// after, and the probe is plain HTTP.
+    health: /wp-includes/images/blank.gif
+    domains:
+      - host: ${input.domain}
+    attach:
+      - database: db
+    volumes:
+      - path: /var/www/html
+    limits: { cpu: 1, memory: 1Gi }
+    env:
+      # WordPress reads its connection piece by piece, not from DATABASE_URL.
+      WORDPRESS_DB_HOST: ${db.db.host}:${db.db.port}
+      WORDPRESS_DB_USER: ${db.db.user}
+      WORDPRESS_DB_PASSWORD: ${db.db.password}
+      WORDPRESS_DB_NAME: ${db.db.name}
+      # The image already treats X-Forwarded-Proto: https as HTTPS. This pins
+      # the address, so a first visit over http:// cannot store the wrong one.
+      WORDPRESS_CONFIG_EXTRA: "define('WP_HOME', 'https://${input.domain}'); define('WP_SITEURL', 'https://${input.domain}');"

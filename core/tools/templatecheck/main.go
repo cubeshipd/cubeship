@@ -1,4 +1,4 @@
-// Command templatecheck validates every directory of cubeship-templates.
+// Command templatecheck validates every directory of templates/.
 package main
 
 import (
@@ -48,11 +48,11 @@ func main() {
 		}
 		for _, app := range result.Manifest.Apps {
 			src := app.Source
-			if src.Repo != "https://github.com/cubeshipd/cubeship-templates" {
+			if src.Repo != "https://github.com/cubeshipd/cubeship" {
 				continue
 			}
-			if src.Ref == nil || *src.Ref != "main:"+d.Name() {
-				fmt.Fprintln(os.Stderr, d.Name(), "monorepo source must use ref main:"+d.Name())
+			if src.Ref == nil || *src.Ref != "master:templates/"+d.Name() {
+				fmt.Fprintln(os.Stderr, d.Name(), "monorepo source must use ref master:templates/"+d.Name())
 				invalid++
 			}
 			dockerfile := "Dockerfile"

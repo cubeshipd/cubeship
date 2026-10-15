@@ -1,5 +1,10 @@
 import { cache } from "react";
-import { catalogSnapshot, type Snapshot, type SnapshotEntry } from "@/lib/catalog-snapshot";
+import {
+  type CatalogVersion,
+  catalogSnapshot,
+  type Snapshot,
+  type SnapshotEntry,
+} from "@/lib/catalog-snapshot";
 import type { NormalizedManifest } from "@/lib/manifest";
 
 export type Sort = "recent" | "stars";
@@ -33,11 +38,16 @@ export type TemplateDetail = TemplateSummary & {
   manifest: NormalizedManifest | null;
 };
 
-const publicAPI = "https://cubeship.dev/api/v1";
-const repository = "https://github.com/cubeshipd/cubeship-templates";
+function sourceLocation(snapshot: Snapshot, slug: string) {
+  return snapshot.version === 1
+    ? { repository: "cubeshipd/cubeship-templates", directory: slug }
+    : { repository: "cubeshipd/cubeship", directory: `templates/${slug}` };
+}
 
 export function summary(snapshot: Snapshot, entry: SnapshotEntry): TemplateSummary {
-  const url = `${repository}/tree/${snapshot.commit}/${entry.slug}`;
+  const { repository, directory } = sourceLocation(snapshot, entry.slug);
+  const url = `https://github.com/${repository}/tree/${snapshot.commit}/${directory}`;
+  const publicAPI = `https://cubeship.dev/api/v${snapshot.version}`;
   return {
     owner: "cubeshipd",
     name: entry.slug,
@@ -63,7 +73,14 @@ export function summary(snapshot: Snapshot, entry: SnapshotEntry): TemplateSumma
 export class InvalidCatalogQuery extends Error {}
 
 export async function listTemplates(
-  options: { q?: string; tag?: string; sort?: Sort; cursor?: string; limit?: number },
+  options: {
+    q?: string;
+    tag?: string;
+    sort?: Sort;
+    cursor?: string;
+    limit?: number;
+    version?: CatalogVersion;
+  },
   _signal?: AbortSignal,
 ): Promise<{ templates: TemplateSummary[]; next_cursor: string | null }> {
   const q = (options.q || "").trim().toLowerCase();
@@ -78,7 +95,7 @@ export async function listTemplates(
   ) {
     throw new InvalidCatalogQuery("invalid search, sort or limit");
   }
-  const snapshot = await catalogSnapshot();
+  const snapshot = await catalogSnapshot(options.version);
   let after: bigint | undefined;
   if (options.cursor) {
     if (options.cursor.length > 64) throw new InvalidCatalogQuery("invalid cursor");
@@ -111,16 +128,21 @@ export async function listTemplates(
 }
 
 export const templateByPath = cache(
-  async (owner: string, repo: string): Promise<TemplateDetail | null> => {
+  async (
+    owner: string,
+    repo: string,
+    version: CatalogVersion = 2,
+  ): Promise<TemplateDetail | null> => {
     if (owner.toLowerCase() !== "cubeshipd") return null;
-    const snapshot = await catalogSnapshot();
+    const snapshot = await catalogSnapshot(version);
     const entry = snapshot.templates.find((t) => t.slug === repo.toLowerCase());
     if (!entry) return null;
+    const { repository, directory } = sourceLocation(snapshot, entry.slug);
     return {
       ...summary(snapshot, entry),
       readme: entry.readme,
       source: entry.source,
-      source_url: `https://raw.githubusercontent.com/cubeshipd/cubeship-templates/${snapshot.commit}/${entry.slug}/template.yaml`,
+      source_url: `https://raw.githubusercontent.com/${repository}/${snapshot.commit}/${directory}/template.yaml`,
       manifest: entry.manifest as NormalizedManifest,
     };
   },

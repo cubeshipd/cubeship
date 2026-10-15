@@ -44,7 +44,7 @@ type CatalogRelease struct {
 // recorded. Never the file the catalog stored: the instance validates
 // what the repository holds, not somebody else's copy of it.
 type HTTPCatalog struct {
-	// API is the catalog's /v1, e.g. https://cubeship.dev/api/v1.
+	// API is the catalog's versioned API, e.g. https://cubeship.dev/api/v2.
 	API string
 	// Raw is where a repository's files are read, e.g.
 	// https://raw.githubusercontent.com.
@@ -57,7 +57,7 @@ type HTTPCatalog struct {
 }
 
 // DefaultCatalogURL is the catalog an instance reads unless told otherwise.
-const DefaultCatalogURL = "https://cubeship.dev/api/v1"
+const DefaultCatalogURL = "https://cubeship.dev/api/v2"
 
 func NewHTTPCatalog(api, iconPath string) *HTTPCatalog {
 	return &HTTPCatalog{
@@ -179,7 +179,11 @@ func (c *HTTPCatalog) Source(ctx context.Context, owner, repo, commit string) ([
 	if owner != "cubeshipd" || !folderName.MatchString(repo) || !commitSHA.MatchString(commit) {
 		return nil, ErrReleaseNotFound
 	}
-	body, status, err := c.get(ctx, c.Raw+"/cubeshipd/cubeship-templates/"+commit+"/"+repo+"/template.yaml", sourceLimit+1)
+	body, status, err := c.get(ctx, c.Raw+"/cubeshipd/cubeship/"+commit+"/templates/"+repo+"/template.yaml", sourceLimit+1)
+	// Old catalog commits remain in the preserved templates repository.
+	if err == nil && status == http.StatusNotFound {
+		body, status, err = c.get(ctx, c.Raw+"/cubeshipd/cubeship-templates/"+commit+"/"+repo+"/template.yaml", sourceLimit+1)
+	}
 	switch {
 	case err != nil:
 		return nil, err

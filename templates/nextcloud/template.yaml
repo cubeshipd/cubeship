@@ -1,0 +1,73 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Nextcloud'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: nextcloud
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Nextcloud answers
+  - key: adminUser
+    type: text
+    label: The admin's username
+    default: admin
+    pattern: ^[A-Za-z0-9_.@-]+$
+  - key: adminPassword
+    type: secret
+    label: The admin's password
+    generate: 32
+
+databases:
+  - key: db
+    name: nextcloud-db
+    # Nextcloud recommends PostgreSQL 18. Its other recommendation, MariaDB,
+    # also needs READ COMMITTED and row-based binary logging on the server.
+    engine: postgres
+    version: "18"
+    database: nextcloud
+  - key: cache
+    name: nextcloud-redis
+    engine: redis
+    version: "7.4"
+
+apps:
+  - key: web
+    name: nextcloud
+    # The published image runs Apache alone, and background jobs need cron.
+    # The Dockerfile in this repository is that image running Apache and cron
+    # under supervisord.
+    repo: https://github.com/cubeshipd/cubeship
+    ref: master:templates/nextcloud
+    build: dockerfile
+    port: 80
+    # A file Apache serves without Nextcloud. status.php and every page answer
+    # 400 to a Host that is not a trusted domain, and the probe's is not.
+    health: /core/img/favicon.ico
+    domains:
+      - host: ${input.domain}
+    attach:
+      - database: db
+      # Writes the REDIS_HOST the image reads; its port and password are below.
+      - database: cache
+    volumes:
+      - path: /var/www/html
+    limits: { cpu: 2, memory: 2Gi }
+    env:
+      # Read on the first start, which installs Nextcloud before Apache answers.
+      POSTGRES_HOST: ${db.db.host}:${db.db.port}
+      POSTGRES_DB: ${db.db.name}
+      POSTGRES_USER: ${db.db.user}
+      POSTGRES_PASSWORD: ${db.db.password}
+      NEXTCLOUD_ADMIN_USER: ${input.adminUser}
+      NEXTCLOUD_ADMIN_PASSWORD: ${input.adminPassword}
+      NEXTCLOUD_TRUSTED_DOMAINS: ${input.domain}
+      REDIS_HOST_PORT: ${db.cache.port}
+      REDIS_HOST_PASSWORD: ${db.cache.password}
+      OVERWRITEHOST: ${input.domain}
+      OVERWRITEPROTOCOL: https
+      OVERWRITECLIURL: https://${input.domain}
+      # Docker's default address pools, bridge and overlay: the proxy reaches
+      # the app from one of them, and Cubeship does not pin which.
+      TRUSTED_PROXIES: 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16

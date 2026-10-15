@@ -485,6 +485,10 @@ func pinMonorepoSources(m *template.Normalized, owner, repo, commit string) {
 	}
 	for i := range m.Apps {
 		src := &m.Apps[i].Source
+		if src.Repo == "https://github.com/cubeshipd/cubeship" && src.Ref != nil && *src.Ref == "master:templates/"+repo {
+			ref := commit + ":templates/" + repo
+			src.Ref = &ref
+		}
 		if src.Repo == "https://github.com/cubeshipd/cubeship-templates" && src.Ref != nil && *src.Ref == "main:"+repo {
 			ref := commit + ":" + repo
 			src.Ref = &ref

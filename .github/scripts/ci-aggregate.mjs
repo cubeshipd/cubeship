@@ -1,4 +1,13 @@
-export const REQUIRED = ["check", "database", "integration", "scripts", "dashboard", "site"];
+export const REQUIRED = [
+  "scope",
+  "templates",
+  "check",
+  "database",
+  "integration",
+  "scripts",
+  "dashboard",
+  "site",
+];
 
 const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const own = (value, key) => Object.hasOwn(value, key);
@@ -38,10 +47,24 @@ export function evaluate(required, needs, optional = {}) {
   return { ok: reasons.length === 0, reasons };
 }
 
+export function evaluateRun(needs) {
+  if (!record(needs) || !["true", "false"].includes(needs.scope?.outputs?.full)) {
+    return { ok: false, reasons: ["Missing CI scope"] };
+  }
+  if (needs.scope.outputs.full === "true") return evaluate(REQUIRED, needs);
+  const optional = Object.fromEntries(
+    REQUIRED.filter((id) => !["scope", "templates"].includes(id)).map((id) => [
+      id,
+      { applicable: false },
+    ]),
+  );
+  return evaluate(["scope", "templates"], needs, optional);
+}
+
 // The workflow executes this literal body without checking out pull request code.
 if (process.argv[1] === undefined || process.argv[1].endsWith("/ci-aggregate.mjs")) {
   try {
-    const result = evaluate(REQUIRED, JSON.parse(process.env.NEEDS_JSON));
+    const result = evaluateRun(JSON.parse(process.env.NEEDS_JSON));
     console.log(JSON.stringify(result));
     process.exitCode = result.ok ? 0 : 1;
   } catch {

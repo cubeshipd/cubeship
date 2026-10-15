@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'OpenClaw'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: openclaw
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where the Control UI answers
+  - key: gatewayToken
+    type: secret
+    label: The gateway token you sign in with
+    generate: 48
+
+apps:
+  - key: gateway
+    name: openclaw
+    # The published image listens on loopback only and will not start on an
+    # empty volume. The Dockerfile in this repository is that image with a
+    # start script that configures it for the domain first.
+    repo: https://github.com/cubeshipd/cubeship
+    ref: master:templates/openclaw
+    build: dockerfile
+    # The gateway: the Control UI and its WebSocket on one port.
+    port: 18789
+    # Liveness, and answers without the token.
+    health: /healthz
+    domains:
+      - host: ${input.domain}
+    volumes:
+      - path: /home/node/.openclaw
+    limits: { cpu: 2, memory: 4Gi }
+    env:
+      OPENCLAW_GATEWAY_TOKEN: ${input.gatewayToken}
+      # The one browser origin the gateway accepts.
+      OPENCLAW_PUBLIC_URL: https://${input.domain}

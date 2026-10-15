@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Ackee'
+minCubeship: "0.6.0"
+project: ackee
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where the dashboard answers
+  - key: username
+    type: text
+    label: The username you sign in with
+    default: admin
+  - key: password
+    type: secret
+    label: The password you sign in with
+    generate: 24
+  - key: allowOrigin
+    type: text
+    label: The sites allowed to send visits
+    help: Their full origins, comma-separated, like https://example.com,https://www.example.com. The tracker on any other site is refused.
+    pattern: ^https?://[^,\s]+(,https?://[^,\s]+)*$
+
+databases:
+  - key: db
+    name: ackee-db
+    engine: mongodb
+    version: "8.0"
+    database: ackee
+
+apps:
+  - key: web
+    name: ackee
+    image: electerious/ackee
+    tag: "3.6.1"
+    port: 3000
+    # Ackee has no health route; the dashboard's page is the lightest one.
+    health: /
+    domains:
+      - host: ${input.domain}
+    attach:
+      - database: db
+    limits: { cpu: 0.5, memory: 512Mi }
+    env:
+      # Ackee reads only ACKEE_MONGODB or MONGODB_URI, never MONGO_URL.
+      # The root user lives in admin, whatever database the URL names.
+      ACKEE_MONGODB: mongodb://${db.db.user}:${db.db.password}@${db.db.host}:${db.db.port}/${db.db.name}?authSource=admin
+      ACKEE_USERNAME: ${input.username}
+      ACKEE_PASSWORD: ${input.password}
+      ACKEE_ALLOW_ORIGIN: ${input.allowOrigin}

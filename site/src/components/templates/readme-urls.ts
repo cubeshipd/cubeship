@@ -17,6 +17,6 @@ export function resolveReadmeUrl(
   }
   const path = url.replace(/^\.?\//, "");
   return kind === "image"
-    ? `https://raw.githubusercontent.com/cubeshipd/cubeship-templates/${where.commit}/${where.repo}/${path}`
-    : `https://github.com/cubeshipd/cubeship-templates/blob/${where.commit}/${where.repo}/${path}`;
+    ? `https://raw.githubusercontent.com/cubeshipd/cubeship/${where.commit}/templates/${where.repo}/${path}`
+    : `https://github.com/cubeshipd/cubeship/blob/${where.commit}/templates/${where.repo}/${path}`;
 }

@@ -28,9 +28,45 @@ env:
   GO_VERSION: "1.27"
 
 jobs:
+  scope:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ steps.scope.outputs.full }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - id: scope
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
+            echo 'full=true' >> "$GITHUB_OUTPUT"
+          else
+            git diff --name-only -z "$BASE" HEAD | node .github/scripts/ci-scope.mjs >> "$GITHUB_OUTPUT"
+          fi
+
+  templates:
+    name: Validate templates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache-dependency-path: core/go.sum
+      - run: go -C core test -short ./template ./tools/internal/catalog ./tools/templatecatalog
+      - run: make catalog
+
   # Fast feedback: repository-only checks and tests that do not need
   # infrastructure. Database-backed tests run in parallel below.
   check:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
     name: Fast checks
     runs-on: ubuntu-latest
     steps:
@@ -64,6 +100,8 @@ jobs:
   # The full suite runs separately so database setup and migrations cannot
   # delay the fast repository-only feedback above.
   database:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
     name: Database tests
     runs-on: ubuntu-latest
     services:
@@ -100,6 +138,8 @@ jobs:
   # watch it come up behind Traefik. All of it behind the integration
   # build tag, so a laptop never compiles it, let alone runs it.
   integration:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
     name: End to end
     runs-on: ubuntu-latest
     steps:
@@ -113,6 +153,8 @@ jobs:
   # install.sh is the product's front door and uninstall.sh deletes
   # things. Both run for real, on a Linux, with Docker stubbed.
   scripts:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
     name: Installer scripts
     runs-on: ubuntu-latest
     steps:
@@ -123,6 +165,8 @@ jobs:
   # The dashboard is its own image, so it fails on its own terms rather
   # than inside a Docker build.
   dashboard:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
     name: Dashboard
     runs-on: ubuntu-latest
     defaults:
@@ -156,6 +200,8 @@ jobs:
   # The site is the same shape as the dashboard — a Next app with its own
   # lockfile — and fails on its own terms the same way.
   site:
+    needs: scope
+    if: needs.scope.outputs.full == 'true'
     name: Site
     runs-on: ubuntu-latest
     defaults:
@@ -183,7 +229,7 @@ jobs:
 
   aggregate:
     name: CI / aggregate
-    needs: [check, database, integration, scripts, dashboard, site]
+    needs: [scope, templates, check, database, integration, scripts, dashboard, site]
     if: always()
     runs-on: ubuntu-latest
     permissions: {}
@@ -193,7 +239,16 @@ jobs:
           NEEDS_JSON: ${{ toJSON(needs) }}
         run: |
           node --input-type=module <<'NODE'
-          export const REQUIRED = ["check", "database", "integration", "scripts", "dashboard", "site"];
+          export const REQUIRED = [
+            "scope",
+            "templates",
+            "check",
+            "database",
+            "integration",
+            "scripts",
+            "dashboard",
+            "site",
+          ];
 
           const record = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
           const own = (value, key) => Object.hasOwn(value, key);
@@ -233,10 +288,24 @@ jobs:
             return { ok: reasons.length === 0, reasons };
           }
 
+          export function evaluateRun(needs) {
+            if (!record(needs) || !["true", "false"].includes(needs.scope?.outputs?.full)) {
+              return { ok: false, reasons: ["Missing CI scope"] };
+            }
+            if (needs.scope.outputs.full === "true") return evaluate(REQUIRED, needs);
+            const optional = Object.fromEntries(
+              REQUIRED.filter((id) => !["scope", "templates"].includes(id)).map((id) => [
+                id,
+                { applicable: false },
+              ]),
+            );
+            return evaluate(["scope", "templates"], needs, optional);
+          }
+
           // The workflow executes this literal body without checking out pull request code.
           if (process.argv[1] === undefined || process.argv[1].endsWith("/ci-aggregate.mjs")) {
             try {
-              const result = evaluate(REQUIRED, JSON.parse(process.env.NEEDS_JSON));
+              const result = evaluateRun(JSON.parse(process.env.NEEDS_JSON));
               console.log(JSON.stringify(result));
               process.exitCode = result.ok ? 0 : 1;
             } catch {

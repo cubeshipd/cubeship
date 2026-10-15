@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Grafana'
+minCubeship: "0.6.0"
+project: grafana
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Grafana answers
+  - key: adminPassword
+    type: secret
+    label: The password for the admin account
+    generate: 24
+  - key: secretKey
+    type: secret
+    label: The key Grafana encrypts data source credentials with
+    help: Keep a copy. Without it, the passwords saved in data sources cannot be read again.
+    generate: 32
+
+databases:
+  - key: db
+    name: grafana-db
+    engine: postgres
+    version: "18"
+    database: grafana
+
+apps:
+  - key: web
+    name: grafana
+    image: grafana/grafana
+    tag: "13.2.3"
+    port: 3000
+    health: /api/health
+    domains:
+      - host: ${input.domain}
+    attach:
+      - database: db
+    limits: { cpu: 1, memory: 512Mi }
+    env:
+      GF_DATABASE_TYPE: postgres
+      # host:port in one value, which is how Grafana reads it.
+      GF_DATABASE_HOST: ${db.db.host}:${db.db.port}
+      GF_DATABASE_NAME: ${db.db.name}
+      GF_DATABASE_USER: ${db.db.user}
+      GF_DATABASE_PASSWORD: ${db.db.password}
+      GF_DATABASE_SSL_MODE: disable
+      GF_SECURITY_ADMIN_PASSWORD: ${input.adminPassword}
+      GF_SECURITY_SECRET_KEY: ${input.secretKey}
+      GF_SERVER_ROOT_URL: https://${input.domain}/

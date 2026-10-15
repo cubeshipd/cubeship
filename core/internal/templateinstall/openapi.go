@@ -17,7 +17,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 		Tags: []openapi.Tag{{
 			Name: "Templates",
 			Description: "Ready-made apps from the catalog at cubeship.dev, with the databases and stores they need. " +
-				"The instance reads the catalog and, to install one, the template's file in cubeship-templates at the cataloged commit, which it validates itself before changing anything.",
+				"The instance reads the catalog and, to install one, the template's file in the source repository at the cataloged commit, which it validates itself before changing anything.",
 		}},
 		Schemas: map[string]*openapi.Schema{
 			"TemplateRun": openapi.Object(map[string]*openapi.Schema{
@@ -103,7 +103,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"get": {
 					OperationID: "getTemplateManifest",
 					Summary:     "Read what a template creates",
-					Description: "The current `template.yaml`, read from cubeship-templates at a commit and validated on this instance. `fits` is false when it needs a newer Cubeship.",
+					Description: "The current `template.yaml`, read from its source repository at a commit and validated on this instance. `fits` is false when it needs a newer Cubeship.",
 					Tags:        []string{"Templates"},
 					Parameters:  []openapi.Parameter{owner, repo},
 					Responses: openapi.Responses{

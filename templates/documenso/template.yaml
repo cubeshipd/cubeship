@@ -1,0 +1,98 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Documenso'
+minCubeship: "0.6.0"
+project: documenso
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Documenso answers
+  - key: certificate
+    type: secret
+    label: The signing certificate, as base64
+    help: A .p12 file, base64 on one line. Make a self-signed one with the commands in the README, then paste the output of `openssl base64 -A -in certificate.p12`.
+  - key: certificatePassphrase
+    type: secret
+    label: The certificate's password
+    help: The one set when the .p12 was exported. A certificate without a password cannot sign.
+  - key: smtpHost
+    type: text
+    label: Your SMTP server
+    help: Signing requests, completed documents and account verification all go out by email.
+  - key: smtpPort
+    type: number
+    label: Its port
+    help: 587 upgrades to TLS with STARTTLS. For 465, see the README.
+    default: 587
+    min: 1
+    max: 65535
+  - key: smtpUser
+    type: text
+    label: The SMTP username
+  - key: smtpPassword
+    type: secret
+    label: The SMTP password
+  - key: mailFrom
+    type: text
+    label: The address Documenso sends from
+    help: One your SMTP provider lets you send as, like sign@example.com.
+    pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+  - key: authSecret
+    type: secret
+    label: The key session cookies are signed with
+    generate: 32
+  - key: encryptionKey
+    type: secret
+    label: The primary encryption key
+    help: Keep a copy. Without it, secrets Documenso stored cannot be read again.
+    generate: 32
+  - key: encryptionSecondaryKey
+    type: secret
+    label: The secondary encryption key
+    help: Keep a copy, for the same reason.
+    generate: 32
+
+databases:
+  - key: db
+    name: documenso-db
+    engine: postgres
+    version: "17"
+    database: documenso
+
+apps:
+  - key: web
+    name: documenso
+    image: documenso/documenso
+    tag: "v2.19.0"
+    port: 3000
+    # Answers 200 without signing in, and 500 only when the database is down.
+    health: /api/health
+    domains:
+      - host: ${input.domain}
+    attach:
+      - database: db
+    limits: { cpu: 1, memory: 1Gi }
+    env:
+      # The image leaves it unset, and Documenso marks cookies Secure only in production.
+      NODE_ENV: production
+      NEXT_PUBLIC_WEBAPP_URL: https://${input.domain}
+      # Background jobs and PDF fonts are fetched from the app itself.
+      NEXT_PRIVATE_INTERNAL_WEBAPP_URL: http://localhost:3000
+      NEXT_PRIVATE_DATABASE_URL: postgresql://${db.db.user}:${db.db.password}@${db.db.host}:${db.db.port}/${db.db.name}
+      NEXT_PRIVATE_DIRECT_DATABASE_URL: postgresql://${db.db.user}:${db.db.password}@${db.db.host}:${db.db.port}/${db.db.name}
+      NEXTAUTH_SECRET: ${input.authSecret}
+      NEXT_PRIVATE_ENCRYPTION_KEY: ${input.encryptionKey}
+      NEXT_PRIVATE_ENCRYPTION_SECONDARY_KEY: ${input.encryptionSecondaryKey}
+      NEXT_PRIVATE_SIGNING_TRANSPORT: local
+      NEXT_PRIVATE_SIGNING_LOCAL_FILE_CONTENTS: ${input.certificate}
+      NEXT_PRIVATE_SIGNING_PASSPHRASE: ${input.certificatePassphrase}
+      NEXT_PRIVATE_SMTP_TRANSPORT: smtp-auth
+      NEXT_PRIVATE_SMTP_HOST: ${input.smtpHost}
+      NEXT_PRIVATE_SMTP_PORT: ${input.smtpPort}
+      # true is TLS from the first byte, for port 465.
+      NEXT_PRIVATE_SMTP_SECURE: "false"
+      NEXT_PRIVATE_SMTP_USERNAME: ${input.smtpUser}
+      NEXT_PRIVATE_SMTP_PASSWORD: ${input.smtpPassword}
+      NEXT_PRIVATE_SMTP_FROM_ADDRESS: ${input.mailFrom}
+      NEXT_PRIVATE_SMTP_FROM_NAME: Documenso

@@ -1,0 +1,55 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Jian'
+minCubeship: "0.7.0"
+project: jian
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where the gateway and its panel answer
+  - key: apiToken
+    type: secret
+    label: The token you sign in with
+    generate: 48
+  - key: masterKey
+    type: secret
+    label: The key the vault encrypts credentials with
+    help: Keep a copy outside the database backups. Without it, a restored backup cannot open a single stored credential.
+    generate: 43
+
+databases:
+  - key: db
+    name: jian-db
+    engine: postgres
+    version: "17"
+    database: jian
+    limits: { cpu: 1, memory: 1Gi }
+
+apps:
+  - key: gateway
+    name: jian
+    image: ghcr.io/lucasaarch/jian-gateway
+    tag: "0.5.0"
+    # The API and the panel, under /ui/, on one port.
+    port: 4310
+    # The one route that answers without the token.
+    health: /health
+    domains:
+      - host: ${input.domain}
+    attach:
+      # Writes DATABASE_URL, which is all Jian reads. It migrates on start.
+      - database: db
+    volumes:
+      # The agents' workbench: tools installed per user, SSH keys, and Git and
+      # gh logins. Everything else Jian keeps is in the database.
+      - path: /home/node
+    limits: { cpu: 1, memory: 1Gi }
+    env:
+      JIAN_API_TOKEN: ${input.apiToken}
+      # Where an MCP server that signs in with OAuth sends the owner back.
+      JIAN_PUBLIC_URL: https://${input.domain}
+      JIAN_ACTIVE_KEY_ID: v1
+      # Jian wants 32 bytes in base64: 43 characters and one `=`. Letters and
+      # digits are all base64, so a generated 43-character secret is a key.
+      JIAN_MASTER_KEYS: '{"v1":"${input.masterKey}="}'

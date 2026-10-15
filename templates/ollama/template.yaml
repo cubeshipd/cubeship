@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Ollama'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: ollama
+
+apps:
+  - key: server
+    name: ollama
+    image: ollama/ollama
+    tag: "0.40.3"
+    port: 11434
+    health: /
+    # No domain: Ollama's API has no authentication, and a public one would
+    # let anyone run models on this machine and pull new ones onto its disk.
+    # Other apps reach it at its internal address.
+    volumes:
+      - path: /root/.ollama
+    # Ollama reads this memory limit, not the machine's, when it loads a model.
+    limits: { cpu: 4, memory: 8Gi }
+    env:
+      # Without a GPU the default is three, and two models in memory at
+      # once leave room for neither.
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      # Fixed rather than guessed: every doubling costs memory, and on a
+      # CPU, speed.
+      OLLAMA_CONTEXT_LENGTH: "4096"

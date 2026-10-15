@@ -1,0 +1,80 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Cal.com'
+minCubeship: "0.6.0"
+project: cal-com
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Cal.com answers
+  - key: authSecret
+    type: secret
+    label: The secret sessions are signed with
+    generate: 32
+  - key: encryptionKey
+    type: secret
+    label: The key Cal.com encrypts stored credentials with
+    help: Keep a copy. Without it, connected calendars and apps cannot be read again.
+    # AES-256 takes the string's bytes as the key, so it must be exactly 32.
+    generate: 32
+  - key: smtpHost
+    type: text
+    label: Your SMTP server
+    help: Every booking, cancellation and password reset is an email, so without working mail nobody hears about a booking.
+  - key: smtpPort
+    type: number
+    label: Its port
+    help: 465 connects with TLS from the first byte; any other port upgrades with STARTTLS.
+    default: 587
+    min: 1
+    max: 65535
+  - key: smtpUser
+    type: text
+    label: The SMTP username
+  - key: smtpPassword
+    type: secret
+    label: The SMTP password
+  - key: mailFrom
+    type: text
+    label: The address Cal.com sends from
+    help: One your SMTP provider lets you send as, like bookings@example.com.
+    pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+
+databases:
+  - key: db
+    name: cal-com-db
+    engine: postgres
+    version: "18"
+    database: calcom
+
+apps:
+  - key: web
+    name: cal-com
+    image: calcom/cal.com
+    tag: v6.2.0
+    port: 3000
+    # Answers 200 without signing in and without touching the database.
+    health: /api/version
+    domains:
+      - host: ${input.domain}
+    attach:
+      - database: db
+    limits: { cpu: 1, memory: 2Gi }
+    env:
+      # The image is built for http://localhost:3000; its start script
+      # rewrites that into the built pages when this differs.
+      NEXT_PUBLIC_WEBAPP_URL: https://${input.domain}
+      NEXTAUTH_URL: https://${input.domain}
+      NEXTAUTH_SECRET: ${input.authSecret}
+      CALENDSO_ENCRYPTION_KEY: ${input.encryptionKey}
+      # Prisma's schema names a direct URL too, and refuses to start without it.
+      DATABASE_DIRECT_URL: postgresql://${db.db.user}:${db.db.password}@${db.db.host}:${db.db.port}/${db.db.name}?sslmode=disable
+      # The start script waits for this before migrating, and needs host:port.
+      DATABASE_HOST: ${db.db.host}:${db.db.port}
+      CALCOM_TELEMETRY_DISABLED: "1"
+      EMAIL_SERVER_HOST: ${input.smtpHost}
+      EMAIL_SERVER_PORT: ${input.smtpPort}
+      EMAIL_SERVER_USER: ${input.smtpUser}
+      EMAIL_SERVER_PASSWORD: ${input.smtpPassword}
+      EMAIL_FROM: ${input.mailFrom}

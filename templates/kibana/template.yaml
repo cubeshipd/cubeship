@@ -1,0 +1,58 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Kibana'
+minCubeship: "0.6.0"
+project: kibana
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Kibana answers
+  - key: elasticsearchUrl
+    type: text
+    label: Your Elasticsearch's address
+    help: The internal address of the Elasticsearch template, with the names it suggests. Kibana must run the same version, 9.5.3.
+    default: http://cubeship-elasticsearch-production-elasticsearch:9200
+    pattern: ^https?://[^\s/]+(:[0-9]+)?/?$
+  - key: serviceToken
+    type: secret
+    label: A service account token for Kibana
+    help: Kibana refuses the elastic superuser. Create a token for elastic/kibana first — the README has the command.
+  - key: savedObjectsKey
+    type: secret
+    label: The key that encrypts saved objects
+    generate: 32
+  - key: sessionKey
+    type: secret
+    label: The key that encrypts sessions
+    generate: 32
+  - key: reportingKey
+    type: secret
+    label: The key that encrypts reports
+    generate: 32
+
+apps:
+  - key: web
+    name: kibana
+    image: docker.elastic.co/kibana/kibana
+    tag: "9.5.4"
+    port: 5601
+    # Answers without signing in, with a redacted body: 200 while Kibana
+    # can serve, 503 while it starts or cannot reach Elasticsearch.
+    health: /api/status
+    domains:
+      - host: ${input.domain}
+    limits: { cpu: 1, memory: 2Gi }
+    env:
+      # The image turns a variable into a setting by replacing each
+      # underscore with a dot.
+      ELASTICSEARCH_HOSTS: ${input.elasticsearchUrl}
+      ELASTICSEARCH_SERVICEACCOUNTTOKEN: ${input.serviceToken}
+      SERVER_PUBLICBASEURL: https://${input.domain}
+      # TLS ends at the instance's proxy, and the browser only sees HTTPS.
+      XPACK_SECURITY_SECURECOOKIES: "true"
+      # Without fixed keys, every restart makes a new one: sessions end and
+      # encrypted saved objects can no longer be read.
+      XPACK_ENCRYPTEDSAVEDOBJECTS_ENCRYPTIONKEY: ${input.savedObjectsKey}
+      XPACK_SECURITY_ENCRYPTIONKEY: ${input.sessionKey}
+      XPACK_REPORTING_ENCRYPTIONKEY: ${input.reportingKey}

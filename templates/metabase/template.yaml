@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Metabase'
+minCubeship: "0.6.0"
+project: metabase
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Metabase answers
+  - key: encryptionKey
+    type: secret
+    label: The key Metabase encrypts saved database credentials with
+    help: Keep a copy, and never change it. Without it, the connections saved in Metabase cannot be read again.
+    generate: 32
+
+databases:
+  - key: db
+    name: metabase-db
+    engine: postgres
+    version: "18"
+    database: metabase
+
+apps:
+  - key: web
+    name: metabase
+    image: metabase/metabase
+    tag: v0.64.1.5
+    port: 3000
+    # 503 while Metabase starts and migrates its database, 200 once it serves.
+    health: /api/health
+    domains:
+      - host: ${input.domain}
+    attach:
+      - database: db
+    # The JVM sizes its heap from this limit.
+    limits: { cpu: 1, memory: 2Gi }
+    env:
+      # Metabase reads its connection piece by piece, not from DATABASE_URL.
+      MB_DB_TYPE: postgres
+      MB_DB_HOST: ${db.db.host}
+      MB_DB_PORT: ${db.db.port}
+      MB_DB_DBNAME: ${db.db.name}
+      MB_DB_USER: ${db.db.user}
+      MB_DB_PASS: ${db.db.password}
+      MB_ENCRYPTION_SECRET_KEY: ${input.encryptionKey}
+      MB_SITE_URL: https://${input.domain}
+      MB_ANON_TRACKING_ENABLED: "false"

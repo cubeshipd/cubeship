@@ -1,0 +1,209 @@
+<?xml version="1.0"?>
+<!--
+  Foundry's config-0-0.yaml for SigNoz's Docker install, as XML, with two
+  changes a single app needs:
+
+  - ClickHouse Keeper runs inside this server (keeper_server) instead of in a
+    container of its own. SigNoz's schema creates every table ON CLUSTER and
+    replicated, and both need a coordinator.
+  - The host and the password come from the environment, because the
+    internal name follows the names the template is installed with.
+-->
+<clickhouse>
+    <logger>
+        <level>information</level>
+        <console>1</console>
+        <formatting>
+            <type>console</type>
+        </formatting>
+        <size>1000M</size>
+        <count>10</count>
+    </logger>
+
+    <display_name>cluster</display_name>
+    <listen_host>0.0.0.0</listen_host>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <interserver_http_port>9009</interserver_http_port>
+
+    <path>/var/lib/clickhouse/</path>
+    <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+    <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+    <!-- Outside the volume, so the binary built into the image is what runs. -->
+    <user_scripts_path>/opt/clickhouse/user_scripts/</user_scripts_path>
+    <user_defined_executable_functions_config>*functions.yaml</user_defined_executable_functions_config>
+    <dictionaries_config>*_dictionary.xml</dictionaries_config>
+
+    <user_directories>
+        <users_xml>
+            <path>config.xml</path>
+        </users_xml>
+    </user_directories>
+
+    <profiles>
+        <default>
+            <allow_simdjson>0</allow_simdjson>
+            <load_balancing>random</load_balancing>
+            <log_queries>1</log_queries>
+        </default>
+    </profiles>
+
+    <users>
+        <default>
+            <password from_env="CLICKHOUSE_SIGNOZ_PASSWORD"/>
+            <networks>
+                <ip>::/0</ip>
+            </networks>
+            <profile>default</profile>
+            <quota>default</quota>
+            <access_management>1</access_management>
+            <named_collection_control>1</named_collection_control>
+            <show_named_collections>1</show_named_collections>
+            <show_named_collections_secrets>1</show_named_collections_secrets>
+        </default>
+    </users>
+
+    <quotas>
+        <default>
+            <interval>
+                <duration>3600</duration>
+                <queries>0</queries>
+                <errors>0</errors>
+                <result_rows>0</result_rows>
+                <read_rows>0</read_rows>
+                <execution_time>0</execution_time>
+            </interval>
+        </default>
+    </quotas>
+
+    <remote_servers>
+        <cluster>
+            <shard>
+                <replica>
+                    <host from_env="CLICKHOUSE_HOST"/>
+                    <port>9000</port>
+                    <user>default</user>
+                    <password from_env="CLICKHOUSE_SIGNOZ_PASSWORD"/>
+                </replica>
+            </shard>
+        </cluster>
+    </remote_servers>
+
+    <macros>
+        <shard>00</shard>
+        <replica>00</replica>
+    </macros>
+
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
+
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <four_letter_word_white_list>*</four_letter_word_white_list>
+        <coordination_settings>
+            <force_sync>false</force_sync>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>warning</raft_logs_level>
+            <snapshot_distance>100000</snapshot_distance>
+            <snapshots_to_keep>3</snapshots_to_keep>
+        </coordination_settings>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>127.0.0.1</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+
+    <zookeeper>
+        <node>
+            <host>127.0.0.1</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+
+    <!-- ClickHouse's own logs, kept a day, as upstream does. -->
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+        <flush_interval_milliseconds>30000</flush_interval_milliseconds>
+    </query_log>
+    <query_thread_log>
+        <database>system</database>
+        <table>query_thread_log</table>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+    </query_thread_log>
+    <query_views_log>
+        <database>system</database>
+        <table>query_views_log</table>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+    </query_views_log>
+    <query_metric_log>
+        <database>system</database>
+        <table>query_metric_log</table>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+    </query_metric_log>
+    <part_log>
+        <database>system</database>
+        <table>part_log</table>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+    </part_log>
+    <metric_log>
+        <database>system</database>
+        <table>metric_log</table>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+        <flush_interval_milliseconds>30000</flush_interval_milliseconds>
+    </metric_log>
+    <asynchronous_metric_log>
+        <database>system</database>
+        <table>asynchronous_metric_log</table>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+    </asynchronous_metric_log>
+    <trace_log>
+        <database>system</database>
+        <table>trace_log</table>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+        <flush_interval_milliseconds>30000</flush_interval_milliseconds>
+    </trace_log>
+    <text_log>
+        <database>system</database>
+        <table>text_log</table>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+        <flush_interval_milliseconds>30000</flush_interval_milliseconds>
+    </text_log>
+    <error_log>
+        <database>system</database>
+        <table>error_log</table>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+    </error_log>
+    <latency_log>
+        <database>system</database>
+        <table>latency_log</table>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+    </latency_log>
+    <processors_profile_log>
+        <database>system</database>
+        <table>processors_profile_log</table>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+        <flush_interval_milliseconds>30000</flush_interval_milliseconds>
+    </processors_profile_log>
+    <session_log>
+        <database>system</database>
+        <table>session_log</table>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+    </session_log>
+    <zookeeper_log>
+        <database>system</database>
+        <table>zookeeper_log</table>
+        <ttl>event_date + INTERVAL 1 DAY DELETE</ttl>
+    </zookeeper_log>
+</clickhouse>

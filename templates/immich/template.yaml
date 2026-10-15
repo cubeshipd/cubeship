@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Immich'
+# The first release whose instances create a managed Postgres with
+# extensions. Before it, the database would come up without pgvector and
+# VectorChord, and Immich fails on its first search.
+minCubeship: "0.9.0"
+project: immich
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Immich answers
+
+databases:
+  - key: db
+    name: immich-db
+    engine: postgres
+    version: "17"
+    database: immich
+    # Immich stores its embeddings as pgvector columns and indexes them
+    # with VectorChord. Cubeship adds pgvector for you; both are named
+    # here so the template says what it needs.
+    extensions:
+      - pgvector
+      - vectorchord
+
+  - key: redis
+    name: immich-redis
+    engine: redis
+    version: "7.4"
+
+apps:
+  - key: ml
+    name: machine-learning
+    image: ghcr.io/immich-app/immich-machine-learning
+    tag: v3.2.4
+    port: 3003
+    health: /ping
+    # The models it downloads on first use.
+    volumes:
+      - path: /cache
+    limits: { cpu: 2, memory: 2Gi }
+
+  - key: server
+    name: immich
+    image: ghcr.io/immich-app/immich-server
+    tag: v3.2.4
+    port: 2283
+    health: /api/server/ping
+    domains:
+      - host: ${input.domain}
+    volumes:
+      - path: /data
+    limits: { cpu: 2, memory: 2Gi }
+    env:
+      # Named rather than attached: Immich reads DB_* and REDIS_HOSTNAME,
+      # and an attachment writes DATABASE_* and REDIS_HOST.
+      DB_HOSTNAME: ${db.db.host}
+      DB_PORT: ${db.db.port}
+      DB_USERNAME: ${db.db.user}
+      DB_PASSWORD: ${db.db.password}
+      DB_DATABASE_NAME: ${db.db.name}
+      # Which extension holds the embeddings. Immich checks it at
+      # startup, and the default is not this one.
+      DB_VECTOR_EXTENSION: vectorchord
+      REDIS_HOSTNAME: ${db.redis.host}
+      REDIS_PORT: ${db.redis.port}
+      REDIS_PASSWORD: ${db.redis.password}
+      IMMICH_MACHINE_LEARNING_URL: http://${app.ml.internal}:${app.ml.port}

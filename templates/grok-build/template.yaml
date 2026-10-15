@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Grok Build'
+minCubeship: "0.7.0"
+project: grok-build
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where the agent server answers
+  - key: agentSecret
+    type: secret
+    label: The token clients connect with
+    generate: 48
+  - key: xaiApiKey
+    type: secret
+    label: Your xAI API key
+    help: From console.x.ai. The agent has no screen to enter it on later.
+
+apps:
+  - key: agent
+    name: grok
+    # There is no published image. The Dockerfile in this repository downloads
+    # a pinned Grok Build binary and runs `grok agent serve`.
+    repo: https://github.com/cubeshipd/cubeship
+    ref: master:templates/grok-build
+    build: dockerfile
+    port: 2419
+    # No health check: the server answers only an authenticated WebSocket
+    # upgrade on /ws, and 404 on every other path.
+    domains:
+      - host: ${input.domain}
+    volumes:
+      - path: /home/grok
+    limits: { cpu: 2, memory: 4Gi }
+    env:
+      GROK_AGENT_SECRET: ${input.agentSecret}
+      XAI_API_KEY: ${input.xaiApiKey}

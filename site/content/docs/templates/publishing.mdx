@@ -3,7 +3,7 @@ title: Publishing a template
 description: Suggest a template or change through an issue.
 ---
 
-Templates live in [cubeshipd/cubeship-templates](https://github.com/cubeshipd/cubeship-templates). To suggest a template or change, open an issue in the repository. Cubeship maintains the catalog and its source files.
+Templates live in [cubeshipd/cubeship/templates](https://github.com/cubeshipd/cubeship/tree/master/templates). To suggest a template or change, open an issue in the repository. Cubeship maintains the catalog and its source files.
 
 Each directory needs three files:
 
@@ -13,7 +13,7 @@ Each directory needs three files:
 | `README.md` | What the template installs and what to do after installing. At most 512 KB. |
 | `icon.png` | A square PNG, 128 to 1024 pixels per side, at most 512 KB. |
 
-For a source-built app, keep its Dockerfile and any files it copies inside the same directory. Set `repo: https://github.com/cubeshipd/cubeship-templates` and `ref: main:<directory>`. The installer pins the build to the cataloged commit and uses that directory as the build context.
+For a source-built app, keep its Dockerfile and any files it copies inside the same directory. Set `repo: https://github.com/cubeshipd/cubeship` and `ref: master:templates/<directory>`. The installer pins the build to the cataloged commit and uses that directory as the build context.
 
 The directory name identifies the template in URLs. `name` controls how it appears in the catalog; changing it does not change the URL. Add this line to the YAML for editor checks:
 
@@ -21,6 +21,6 @@ The directory name identifies the template in URLs. `name` controls how it appea
 # yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
 ```
 
-CI validates every directory with Cubeship's validator. The catalog reads the current `main` commit about every five minutes and publishes all directories together. If any directory is invalid, it keeps the previous valid snapshot and logs the error until it is corrected. Relative links and images in a README resolve within that directory at the cataloged commit.
+CI validates every directory with Cubeship's validator. Changes on `master` publish all directories together to the `template-catalog` branch. The site refreshes that snapshot every 60 seconds without a redeploy. If any directory is invalid, publication fails and the previous valid snapshot remains available. Relative links and images in a README resolve within that directory at the cataloged commit.
 
 There are no template releases or updates to existing installations. `version: 1` in the YAML identifies the file format. Image tags and source refs inside apps still describe what a **new install** will run. To change an existing installation, change its apps on that Cubeship instance.

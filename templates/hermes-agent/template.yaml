@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Hermes Agent'
+# The first release that gives a volume to the user its image runs as.
+minCubeship: "0.7.0"
+project: hermes
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where the dashboard answers
+  - key: username
+    type: text
+    label: The username you sign in with
+    default: admin
+  - key: password
+    type: secret
+    label: The password you sign in with
+    generate: 24
+  - key: sessionSecret
+    type: secret
+    label: The key sign-in sessions are signed with
+    generate: 48
+
+apps:
+  - key: agent
+    name: hermes
+    # The published image starts an interactive chat when given no command
+    # and exits without a terminal. The Dockerfile in this repository is that
+    # image with `gateway run` as its command.
+    repo: https://github.com/cubeshipd/cubeship
+    # The tag this release carries: release-please rewrites it on every release,
+    # so an install always builds the Dockerfile that shipped with the template.
+    ref: master:templates/hermes-agent
+    build: dockerfile
+    # The dashboard. The gateway's API server stays off.
+    port: 9119
+    # The one dashboard route that answers without signing in.
+    health: /api/status
+    domains:
+      - host: ${input.domain}
+    volumes:
+      - path: /opt/data
+    limits: { cpu: 2, memory: 4Gi }
+    env:
+      HERMES_DASHBOARD: "1"
+      HERMES_DASHBOARD_BASIC_AUTH_USERNAME: ${input.username}
+      HERMES_DASHBOARD_BASIC_AUTH_PASSWORD: ${input.password}
+      # Without it every restart signs everybody out.
+      HERMES_DASHBOARD_BASIC_AUTH_SECRET: ${input.sessionSecret}

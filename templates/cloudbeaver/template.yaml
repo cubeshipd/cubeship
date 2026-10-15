@@ -1,0 +1,47 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'CloudBeaver'
+minCubeship: "0.7.0"
+project: cloudbeaver
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where CloudBeaver answers
+  - key: adminName
+    type: text
+    label: The administrator you sign in as
+    help: Lowercase. Not admin or user — those are CloudBeaver's own team names.
+    default: cbadmin
+    pattern: ^[a-z0-9][a-z0-9._-]*$
+  - key: adminPassword
+    type: secret
+    label: The administrator's password
+    generate: 32
+
+apps:
+  - key: web
+    name: cloudbeaver
+    image: dbeaver/cloudbeaver
+    tag: "26.2.1"
+    port: 8978
+    health: /status
+    domains:
+      - host: ${input.domain}
+    # The configuration, its H2 database, saved connections and scripts.
+    # The image starts as root, hands this directory to uid 8978 and runs
+    # as it, so an empty volume works.
+    volumes:
+      - path: /opt/cloudbeaver/workspace
+    limits: { cpu: 1, memory: 2Gi }
+    env:
+      # All three set means the server configures itself on first start
+      # and the setup wizard never opens. No CB_SERVER_URL: 26.2 reads
+      # none, and takes its address from the proxy's X-Forwarded headers.
+      CB_SERVER_NAME: CloudBeaver
+      CB_ADMIN_NAME: ${input.adminName}
+      CB_ADMIN_PASSWORD: ${input.adminPassword}
+      # The image's default is on.
+      CLOUDBEAVER_APP_ANONYMOUS_ACCESS_ENABLED: "false"
+      # The JVM otherwise takes a quarter of the memory limit.
+      JAVA_OPTS: -XX:MaxRAMPercentage=75

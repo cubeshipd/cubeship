@@ -82,10 +82,9 @@ site-dev: ## Run cubeship.dev — the landing page and the docs — with hot rel
 site-test: ## Run the site's unit tests
 	cd site && $(PNPM) test
 
-TEMPLATES_DIR ?= ../cubeship-templates
 .PHONY: catalog
 catalog: ## Validate a templates commit and publish its snapshot
-	$(GO) -C $(GODIR) run ./tools/templatecatalog -repo $(abspath $(TEMPLATES_DIR)) -out $(abspath $(TEMPLATES_DIR))/_catalog/snapshot.json
+	$(GO) -C $(GODIR) run ./tools/templatecatalog -repo $(CURDIR) -out $(CURDIR)/bin/catalog/snapshot.json
 
 .PHONY: install
 install: ## Install the CLI into GOBIN

@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Drizzle Gateway'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: drizzle-gateway
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Drizzle Gateway answers
+  - key: masterpass
+    type: secret
+    label: The master password you sign in with
+    generate: 24
+
+apps:
+  - key: web
+    name: drizzle-gateway
+    image: ghcr.io/drizzle-team/gateway
+    tag: "1.6.2"
+    port: 4983
+    # Answers 200 without signing in, once the store in the volume is writable.
+    health: /health
+    domains:
+      - host: ${input.domain}
+    volumes:
+      - path: /app
+    limits: { cpu: 1, memory: 1Gi }
+    env:
+      # Without it the gateway asks for no password at all.
+      MASTERPASS: ${input.masterpass}

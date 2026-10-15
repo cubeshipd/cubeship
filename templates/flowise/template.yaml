@@ -1,0 +1,51 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Flowise'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: flowise
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Flowise answers
+  - key: encryptionKey
+    type: secret
+    label: The key Flowise encrypts stored credentials with
+    help: Keep a copy, and never change it. Without it, the credentials saved in Flowise cannot be read again.
+    generate: 32
+
+databases:
+  - key: db
+    name: flowise-db
+    engine: postgres
+    version: "18"
+    database: flowise
+
+apps:
+  - key: web
+    name: flowise
+    image: flowiseai/flowise
+    tag: "3.1.4"
+    port: 3000
+    # Answers 200 without signing in.
+    health: /api/v1/ping
+    domains:
+      - host: ${input.domain}
+    # Flowise reads DATABASE_HOST, _PORT, _USER, _PASSWORD and _NAME, exactly
+    # the names the attachment writes.
+    attach:
+      - database: db
+    # Uploaded files, local vector stores, and the secrets sessions are signed
+    # with, which Flowise generates on first start.
+    volumes:
+      - path: /home/node/.flowise
+    limits: { cpu: 1, memory: 2Gi }
+    env:
+      DATABASE_TYPE: postgres
+      DATABASE_SSL: "false"
+      # Unset, the key is generated into the volume, and losing the volume
+      # would make every stored credential unreadable.
+      FLOWISE_SECRETKEY_OVERWRITE: ${input.encryptionKey}
+      # Also makes the session cookie Secure.
+      APP_URL: https://${input.domain}

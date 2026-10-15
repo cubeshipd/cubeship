@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'LiteLLM'
+minCubeship: "0.6.0"
+project: litellm
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where the proxy and its admin UI answer
+  - key: masterKey
+    type: secret
+    label: The master key, without its sk- prefix
+    help: The key is sk- followed by this value. It is the proxy's admin credential; keep a copy.
+    generate: 48
+  - key: saltKey
+    type: secret
+    label: The key provider credentials are encrypted with, without its sk- prefix
+    help: Keep a copy, and never change it. Changing it makes every provider key stored in the proxy unreadable.
+    generate: 48
+  - key: uiUsername
+    type: text
+    label: The username you sign in to the admin UI with
+    default: admin
+  - key: uiPassword
+    type: secret
+    label: The password you sign in to the admin UI with
+    generate: 24
+
+databases:
+  - key: db
+    name: litellm-db
+    engine: postgres
+    version: "18"
+    database: litellm
+
+apps:
+  - key: proxy
+    name: litellm
+    # The published stable release; main-stable points at the same image.
+    image: ghcr.io/berriai/litellm
+    tag: "v1.105.0"
+    port: 4000
+    # Answers without a key, and does not wait on the database.
+    health: /health/liveliness
+    domains:
+      - host: ${input.domain}
+    attach:
+      - database: db
+    limits: { cpu: 1, memory: 4Gi }
+    env:
+      # LiteLLM expects both keys to start with sk-; generated secrets are
+      # alphanumeric only.
+      LITELLM_MASTER_KEY: sk-${input.masterKey}
+      LITELLM_SALT_KEY: sk-${input.saltKey}
+      # Models and their provider keys are added in the admin UI and kept in
+      # the database, so no config file is needed.
+      STORE_MODEL_IN_DB: "True"
+      UI_USERNAME: ${input.uiUsername}
+      UI_PASSWORD: ${input.uiPassword}

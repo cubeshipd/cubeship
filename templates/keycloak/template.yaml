@@ -1,0 +1,60 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Keycloak'
+minCubeship: "0.7.0"
+project: keycloak
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Keycloak answers
+  - key: adminUsername
+    type: text
+    label: The temporary admin's username
+    default: admin
+  - key: adminPassword
+    type: secret
+    label: The temporary admin's password
+    help: Sign in with it once, create a permanent admin, then delete this one.
+    generate: 32
+
+databases:
+  - key: db
+    name: keycloak-db
+    engine: postgres
+    version: "18"
+    database: keycloak
+
+apps:
+  - key: server
+    name: keycloak
+    # The published image's entrypoint, kc.sh, starts no server without a
+    # command. The Dockerfile in this repository is Keycloak's optimized
+    # container: built for Postgres, running `start --optimized`.
+    repo: https://github.com/cubeshipd/cubeship
+    ref: master:templates/keycloak
+    build: dockerfile
+    port: 8080
+    # /health/* is on the management port, 9000, not this one. The master
+    # realm's public description answers 200 without signing in.
+    health: /realms/master
+    domains:
+      - host: ${input.domain}
+    attach:
+      - database: db
+    # The image sizes the heap to 70% of the limit; 2 GiB is what Keycloak
+    # recommends for a small production server.
+    limits: { cpu: 2, memory: 2Gi }
+    env:
+      # Keycloak reads a JDBC URL, not DATABASE_URL.
+      KC_DB_URL: jdbc:postgresql://${db.db.host}:${db.db.port}/${db.db.name}
+      KC_DB_USERNAME: ${db.db.user}
+      KC_DB_PASSWORD: ${db.db.password}
+      KC_HOSTNAME: https://${input.domain}
+      # TLS ends at Cubeship's proxy.
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      # Only read the first time Keycloak starts, while the master realm does
+      # not exist yet.
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${input.adminUsername}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${input.adminPassword}

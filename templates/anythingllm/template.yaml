@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'AnythingLLM'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: anythingllm
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where AnythingLLM answers
+
+apps:
+  - key: web
+    name: anythingllm
+    # The published image keeps the settings made in its UI in a file outside
+    # its storage directory, so every deploy would forget them. The Dockerfile
+    # in this repository is that image with the file moved into the volume.
+    repo: https://github.com/cubeshipd/cubeship
+    ref: master:templates/anythingllm
+    build: dockerfile
+    port: 3001
+    health: /api/ping
+    domains:
+      - host: ${input.domain}
+    # SQLite, uploaded documents, the LanceDB vectors, downloaded models and
+    # the settings file, together, so one backup holds all of them in step.
+    volumes:
+      - path: /app/server/storage
+    # The embedding model, speech-to-text and Chromium run inside this container.
+    limits: { cpu: 2, memory: 4Gi }
+    env:
+      STORAGE_DIR: /app/server/storage
+      SERVER_PORT: "3001"
+      DISABLE_TELEMETRY: "true"
+      # Chromium, which reads links and websites, cannot start its sandbox
+      # without the SYS_ADMIN capability upstream adds, and Cubeship adds none.
+      ANYTHINGLLM_CHROMIUM_ARGS: "--no-sandbox,--disable-setuid-sandbox"

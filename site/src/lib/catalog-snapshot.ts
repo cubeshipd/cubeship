@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
+import legacySnapshot from "../../catalog/v1.json";
 
 const entry = z.object({
   slug: z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/),
@@ -33,7 +34,7 @@ const entry = z.object({
 });
 const schema = z
   .object({
-    version: z.literal(1),
+    version: z.union([z.literal(1), z.literal(2)]),
     commit: z.string().regex(/^[a-f0-9]{40}$/),
     published_at: z.iso.datetime({ offset: true }),
     templates: z.array(entry).min(1),
@@ -44,14 +45,16 @@ const schema = z
       new Set(s.templates.map((t) => t.id)).size === s.templates.length,
     "duplicate template identity",
   );
+export type CatalogVersion = 1 | 2;
 export type Snapshot = z.infer<typeof schema>;
 export type SnapshotEntry = Snapshot["templates"][number];
 
 const source =
-  "https://raw.githubusercontent.com/cubeshipd/cubeship-templates/main/_catalog/snapshot.json";
+  "https://raw.githubusercontent.com/cubeshipd/cubeship/template-catalog/snapshot.json";
 const directory = join(process.cwd(), ".catalog");
 const file = join(directory, "snapshot.json");
 const maxBytes = 32 * 1024 * 1024;
+let legacy: Snapshot | undefined;
 let current: Snapshot | undefined;
 let checkedAt = 0;
 let pending: Promise<Snapshot> | undefined;
@@ -85,7 +88,8 @@ async function download(): Promise<string> {
 async function refresh(): Promise<Snapshot> {
   if (!current) {
     try {
-      current = parseSnapshot(await readFile(file, "utf8"));
+      const saved = parseSnapshot(await readFile(file, "utf8"));
+      if (saved.version === 2) current = saved;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT")
         console.error("catalog cache:", error);
@@ -94,6 +98,7 @@ async function refresh(): Promise<Snapshot> {
   try {
     const text = await download();
     const next = parseSnapshot(text);
+    if (next.version !== 2) throw new Error("expected a v2 catalog snapshot");
     // Persist before swapping: a failed refresh must also survive a process restart.
     await mkdir(directory, { recursive: true });
     await atomicWrite(join(directory, `${next.commit}.json`), text);
@@ -109,7 +114,8 @@ async function refresh(): Promise<Snapshot> {
   return current;
 }
 
-export async function catalogSnapshot(): Promise<Snapshot> {
+export async function catalogSnapshot(version: CatalogVersion = 2): Promise<Snapshot> {
+  if (version === 1) return (legacy ??= parseSnapshot(JSON.stringify(legacySnapshot)));
   if (current && Date.now() - checkedAt < 60_000) return current;
   if (!pending)
     pending = refresh().finally(() => {
@@ -118,13 +124,16 @@ export async function catalogSnapshot(): Promise<Snapshot> {
   return pending;
 }
 
-export async function catalogSnapshotAt(commit: string): Promise<Snapshot | null> {
+export async function catalogSnapshotAt(
+  commit: string,
+  version: CatalogVersion = 2,
+): Promise<Snapshot | null> {
   if (!/^[a-f0-9]{40}$/.test(commit)) return null;
-  const snapshot = await catalogSnapshot();
+  const snapshot = await catalogSnapshot(version);
   if (snapshot.commit === commit) return snapshot;
   try {
     const previous = parseSnapshot(await readFile(join(directory, `${commit}.json`), "utf8"));
-    return previous.commit === commit ? previous : null;
+    return previous.commit === commit && previous.version === version ? previous : null;
   } catch {
     return null;
   }

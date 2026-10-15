@@ -1,0 +1,57 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Gitea'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: gitea
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Gitea answers
+  - key: secretKey
+    type: secret
+    label: The key Gitea encrypts stored secrets with
+    help: Keep a copy. Without it, two-factor secrets and other encrypted settings cannot be read again.
+    generate: 64
+
+databases:
+  - key: db
+    name: gitea-db
+    engine: postgres
+    version: "16"
+    database: gitea
+
+apps:
+  - key: web
+    name: gitea
+    image: gitea/gitea
+    # The rootless image: no OpenSSH server to supervise, and SSH cannot be
+    # exposed here anyway.
+    tag: "28.0.0-rootless"
+    port: 3000
+    health: /api/healthz
+    domains:
+      - host: ${input.domain}
+    volumes:
+      # Repositories, LFS objects, attachments and avatars.
+      - path: /var/lib/gitea
+      # app.ini, where Gitea saves the tokens it generates on first start.
+      - path: /etc/gitea
+    limits: { cpu: 1, memory: 1Gi }
+    env:
+      # Written into app.ini on every start, so these always win over it.
+      GITEA__database__DB_TYPE: postgres
+      GITEA__database__HOST: ${db.db.host}:${db.db.port}
+      GITEA__database__NAME: ${db.db.name}
+      GITEA__database__USER: ${db.db.user}
+      GITEA__database__PASSWD: ${db.db.password}
+      GITEA__database__SSL_MODE: disable
+      GITEA__server__ROOT_URL: https://${input.domain}/
+      GITEA__server__DOMAIN: ${input.domain}
+      GITEA__server__DISABLE_SSH: "true"
+      GITEA__server__START_SSH_SERVER: "false"
+      GITEA__server__LFS_START_SERVER: "true"
+      # Skips the web installer.
+      GITEA__security__INSTALL_LOCK: "true"
+      GITEA__security__SECRET_KEY: ${input.secretKey}

@@ -291,17 +291,17 @@ test("old PR automation is removed and CI gate and essential jobs are unchanged"
   }
   assert.equal(
     digest(readFileSync(join(root, ".github/scripts/ci-aggregate.mjs"))),
-    "d592691b2ef9095483e13d1c3fdddd3fa84e5d5ebec13f41478684973c3a3079",
+    "a778861588b63abb4bbb64ee3194f11ebb18af86747998fc2f747acea086ece3",
   );
   assert.equal(
     digest(readFileSync(join(root, ".github/scripts/ci-aggregate.test.mjs"))),
-    "1174be81854cc59cf91159da5c16887f25f97008b31863f51085b9b10dd9495b",
+    "0476bc646293280cfad7458c58906971e174dcdeb9181adbff2ab90d7993a7a2",
   );
   const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8").replace(
     "Offline Issue and workflow tests",
     "Offline pilot and workflow tests",
   );
-  assert.equal(digest(ci), "9fc86b37016c953e7db6291dba5406ceadedd757ee62a383dcccc173a18f74f9");
+  assert.equal(digest(ci), "217ea04688a299fce0e5fdb5bc8720e95754f3feae118c8465b6bebc515a2020");
 });
 
 test("literal manual ID resolution is bounded, read-only and never logs source bodies", () =>

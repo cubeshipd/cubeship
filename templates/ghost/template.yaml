@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Ghost'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: ghost
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where the site answers
+  - key: smtpHost
+    type: text
+    label: Your SMTP server
+    help: Ghost emails a code to sign in from a new device, so without working mail nobody can sign in twice.
+  - key: smtpPort
+    type: number
+    label: Its TLS port
+    help: Ghost connects with TLS from the first byte, which providers offer on 465.
+    default: 465
+    min: 1
+    max: 65535
+  - key: smtpUser
+    type: text
+    label: The SMTP username
+  - key: smtpPassword
+    type: secret
+    label: The SMTP password
+  - key: mailFrom
+    type: text
+    label: The address Ghost sends from
+    help: One your SMTP provider lets you send as, like hello@example.com.
+    pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+
+databases:
+  - key: db
+    name: ghost-db
+    # Ghost supports MySQL 8 only, and tests against 8.0.
+    engine: mysql
+    version: "8.0"
+    database: ghost
+
+apps:
+  - key: web
+    name: ghost
+    image: ghost
+    tag: "6.67.0"
+    port: 2368
+    # Every other route redirects a probe that did not arrive over HTTPS;
+    # this one is outside that check and answers 200 without signing in.
+    health: /ghost/.well-known/jwks.json
+    domains:
+      - host: ${input.domain}
+    attach:
+      - database: db
+    volumes:
+      - path: /var/lib/ghost/content
+    limits: { cpu: 1, memory: 1Gi }
+    env:
+      url: https://${input.domain}
+      # Ghost reads its connection piece by piece, not from DATABASE_URL.
+      database__client: mysql
+      database__connection__host: ${db.db.host}
+      database__connection__port: ${db.db.port}
+      database__connection__user: ${db.db.user}
+      database__connection__password: ${db.db.password}
+      database__connection__database: ${db.db.name}
+      mail__transport: SMTP
+      mail__options__host: ${input.smtpHost}
+      mail__options__port: ${input.smtpPort}
+      mail__options__secure: "true"
+      mail__options__auth__user: ${input.smtpUser}
+      mail__options__auth__pass: ${input.smtpPassword}
+      mail__from: ${input.mailFrom}

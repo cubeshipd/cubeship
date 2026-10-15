@@ -1,0 +1,32 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Vault'
+minCubeship: "0.7.0"
+project: vault
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Vault answers
+
+apps:
+  - key: server
+    name: vault
+    # The published image runs a development server, in memory, when given no
+    # command. The Dockerfile in this repository is that image running
+    # `server` with the configuration in vault.hcl.
+    repo: https://github.com/cubeshipd/cubeship
+    ref: master:templates/vault
+    build: dockerfile
+    port: 8200
+    # Answers 200 sealed or not. /v1/sys/health answers 501 before init and
+    # 503 while sealed, which would take the domain down exactly when the UI
+    # is needed to initialize and unseal.
+    health: /v1/sys/seal-status
+    domains:
+      - host: ${input.domain}
+    volumes:
+      - path: /vault/file
+    limits: { cpu: 1, memory: 1Gi }
+    env:
+      VAULT_API_ADDR: https://${input.domain}

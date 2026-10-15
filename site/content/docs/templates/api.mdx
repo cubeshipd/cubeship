@@ -3,7 +3,7 @@ title: The catalog API
 description: Read current templates and their manifests as JSON.
 ---
 
-The public address is `https://cubeship.dev/api/v1`. Read endpoints need no key and allow requests from any origin.
+The public address is `https://cubeship.dev/api/v2`. Read endpoints need no key and allow requests from any origin.
 
 | Endpoint | Result |
 | --- | --- |
@@ -16,7 +16,11 @@ The public address is `https://cubeship.dev/api/v1`. Read endpoints need no key 
 The `title` in a listing comes from top-level `name` in `template.yaml`. The `release` object remains in JSON for older instance clients; its `commit` is the source commit, not a selectable version. The catalog serves one current template per directory.
 
 ```bash
-curl -s 'https://cubeship.dev/api/v1/templates?q=umami'
+curl -s 'https://cubeship.dev/api/v2/templates?q=umami'
 ```
 
 Errors use `{ "error": { "code": "not_found", "message": "..." } }`. Codes are `invalid_query` (400), `not_found` (404) and `unavailable` (503).
+
+`/api/v1` remains available with a frozen legacy catalog for older daemons.
+New templates and updates to template definitions are published through `/api/v2`.
+Existing installations are not updated automatically.

@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Vaultwarden'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: vaultwarden
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where the vault answers
+
+apps:
+  - key: web
+    name: vaultwarden
+    image: vaultwarden/server
+    tag: "1.37.3"
+    port: 80
+    health: /alive
+    domains:
+      - host: ${input.domain}
+    volumes:
+      - path: /data
+    limits: { cpu: 1, memory: 512Mi }
+    env:
+      # Attachment and invitation links, and WebAuthn, are built from it.
+      DOMAIN: https://${input.domain}
+      # Open so the first account can be created. Set it to false afterwards.
+      SIGNUPS_ALLOWED: "true"

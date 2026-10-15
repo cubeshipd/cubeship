@@ -1,0 +1,100 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'GitLab'
+# The first release that publishes an app's TCP ports.
+minCubeship: "0.7.2"
+project: gitlab
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where GitLab answers
+    help: It becomes external_url. Changing it later means changing GITLAB_OMNIBUS_CONFIG on the app.
+  - key: rootPassword
+    type: secret
+    label: The password for the root account
+    help: Read once, on the first start, while GitLab creates root. Keep a copy.
+    generate: 32
+  - key: sshPort
+    type: number
+    label: The port Git over SSH answers on
+    help: 22 is the server's own SSH, so Git gets another. Open it in your provider's firewall too.
+    default: 2222
+    min: 1024
+    max: 65535
+
+# The database is the one inside the image, and it has to be. GitLab loads its
+# schema with `psql --single-transaction`, which takes a lock per partition and
+# needs max_locks_per_transaction well above Postgres's default of 64 —
+# omnibus sets 128 for its own. A managed Postgres here runs the image's
+# defaults and takes no server parameters, so the load ends in `out of shared
+# memory` every time. Its data is in /var/opt/gitlab with the repositories.
+databases:
+  - key: cache
+    name: gitlab-redis
+    # Sessions and the background queues. 7.0 is the minimum, 7.2 the
+    # recommendation.
+    engine: redis
+    version: "7.4"
+
+apps:
+  - key: web
+    name: gitlab
+    image: gitlab/gitlab-ce
+    tag: "19.4.1-ce.0"
+    # nginx inside the image, with TLS left to Traefik.
+    port: 80
+    # A page Rails renders for anyone signed out, so it proves Rails is up.
+    # Not /-/health: like /-/readiness and /-/liveness it answers 404 to any
+    # address off the monitoring allowlist, which is localhost, so the proxy's
+    # probe never passes and the domain stays down. Widening the allowlist to
+    # the proxy's network would open them to every visitor too, since GitLab
+    # sees each request arrive from the proxy.
+    health: /users/sign_in
+    domains:
+      - host: ${input.domain}
+    # sshd inside the image, on the instance's address. GitLab writes this
+    # port into every SSH clone URL it shows.
+    tcp:
+      - port: 22
+        host: ${input.sshPort}
+    volumes:
+      # gitlab.rb and gitlab-secrets.json, which holds the keys every encrypted
+      # column in the database is readable with. Lose it and lose them.
+      - path: /etc/gitlab
+      # Repositories, LFS objects, uploads, artifacts, the package registry.
+      - path: /var/opt/gitlab
+      # Kept across deploys because it is where a failed reconfigure explains
+      # itself; logrotate inside the image bounds it.
+      - path: /var/log/gitlab
+    limits: { cpu: 4, memory: 4Gi }
+    env:
+      # One long Ruby string written into gitlab.rb on every start, so it always
+      # wins over the file in the volume. Most of it is upstream's
+      # memory-constrained set, which is what makes this fit on one VPS.
+      #
+      # shared_buffers and effective_cache_size are spelled out because omnibus
+      # sizes them from what it reads as the machine's memory, and inside a
+      # container that is the host's — a 32 GB host would hand a 4 GiB
+      # container 8 GB of shared buffers and Postgres would not start.
+      GITLAB_OMNIBUS_CONFIG: >-
+        external_url 'https://${input.domain}';
+        gitlab_rails['nginx'] = { 'listen_port' => 80, 'listen_https' => false, 'proxy_set_headers' => { 'X-Forwarded-Proto' => 'https', 'X-Forwarded-Ssl' => 'on' } };
+        gitlab_rails['gitlab_shell_ssh_port'] = ${input.sshPort};
+        letsencrypt['enable'] = false;
+        registry['enable'] = false;
+        postgresql['shared_buffers'] = '256MB';
+        postgresql['effective_cache_size'] = '1GB';
+        redis['enable'] = false;
+        gitlab_rails['redis_host'] = '${db.cache.host}';
+        gitlab_rails['redis_port'] = '${db.cache.port}'.to_i;
+        gitlab_rails['redis_password'] = '${db.cache.password}';
+        gitlab_rails['initial_root_password'] = '${input.rootPassword}';
+        gitlab_rails['display_initial_root_password'] = false;
+        puma['worker_processes'] = 0;
+        sidekiq['concurrency'] = 10;
+        prometheus_monitoring['enable'] = false;
+        gitlab_kas['enable'] = false;
+        gitlab_rails['env'] = { 'MALLOC_CONF' => 'dirty_decay_ms:1000,muzzy_decay_ms:1000' };
+        gitaly['env'] = { 'MALLOC_CONF' => 'dirty_decay_ms:1000,muzzy_decay_ms:1000', 'GITALY_COMMAND_SPAWN_MAX_PARALLEL' => '2' };
+        gitaly['configuration'] = { concurrency: [ { 'rpc' => '/gitaly.SmartHTTPService/PostReceivePack', 'max_per_repo' => 3 }, { 'rpc' => '/gitaly.SSHService/SSHUploadPack', 'max_per_repo' => 3 } ] };

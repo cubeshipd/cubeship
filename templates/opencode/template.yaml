@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'OpenCode'
+minCubeship: "0.7.0"
+project: opencode
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where OpenCode answers
+  - key: password
+    type: secret
+    label: The password you sign in with
+    generate: 32
+
+apps:
+  - key: server
+    name: opencode
+    # The published image starts the terminal UI when given no command. The
+    # Dockerfile in this repository is that image running `serve`, with git.
+    repo: https://github.com/cubeshipd/cubeship
+    ref: master:templates/opencode
+    build: dockerfile
+    port: 4096
+    # Every other route asks for the password once one is set; the web app's
+    # manifest icons are the only files served without it.
+    health: /web-app-manifest-192x192.png
+    domains:
+      - host: ${input.domain}
+    volumes:
+      # Config, provider keys, sessions, and the SSH keys and git identity
+      # you give it.
+      - path: /root
+      - path: /workspace
+    limits: { cpu: 2, memory: 4Gi }
+    env:
+      OPENCODE_SERVER_PASSWORD: ${input.password}

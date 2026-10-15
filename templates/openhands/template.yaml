@@ -1,0 +1,37 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'OpenHands'
+# The first release that gives a volume to the user its image runs as;
+# OpenHands runs as openhands and cannot write to a volume owned by root.
+minCubeship: "0.7.0"
+project: openhands
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where OpenHands answers
+  - key: apiKey
+    type: secret
+    label: The API key you sign in with
+    generate: 48
+
+apps:
+  - key: canvas
+    name: openhands
+    # The published image writes its API key into the page it serves, so
+    # anyone who opens the domain is signed in. The Dockerfile in this
+    # repository is that image asking for the key instead.
+    repo: https://github.com/cubeshipd/cubeship
+    ref: master:templates/openhands
+    build: dockerfile
+    port: 8000
+    # The agent server's own check, and the one route that asks for no key.
+    health: /health
+    domains:
+      - host: ${input.domain}
+    volumes:
+      - path: /home/openhands/.openhands
+      - path: /projects
+    limits: { cpu: 2, memory: 4Gi }
+    env:
+      LOCAL_BACKEND_API_KEY: ${input.apiKey}

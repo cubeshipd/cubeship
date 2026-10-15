@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Verdaccio'
+minCubeship: "0.7.0"
+project: verdaccio
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where the registry answers
+  - key: adminUser
+    type: text
+    label: The admin's user name
+    help: Letters, digits, dot, dash and underscore.
+    default: admin
+    pattern: ^[A-Za-z0-9._-]+$
+  - key: adminPassword
+    type: secret
+    label: The admin's password
+    generate: 24
+
+apps:
+  - key: registry
+    name: verdaccio
+    # The published image lets anyone register and read everything. The
+    # Dockerfile in this repository is that image with config.yaml, which
+    # closes registration and requires signing in, and a start command that
+    # creates the admin account.
+    repo: https://github.com/cubeshipd/cubeship
+    ref: master:templates/verdaccio
+    build: dockerfile
+    port: 4873
+    health: /-/ping
+    domains:
+      - host: ${input.domain}
+    volumes:
+      - path: /verdaccio/storage
+    limits: { cpu: 1, memory: 1Gi }
+    env:
+      VERDACCIO_PUBLIC_URL: https://${input.domain}
+      # Read once, when the volume has no htpasswd file yet.
+      VERDACCIO_ADMIN_USER: ${input.adminUser}
+      VERDACCIO_ADMIN_PASSWORD: ${input.adminPassword}

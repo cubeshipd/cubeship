@@ -1,0 +1,50 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Inngest'
+minCubeship: "0.7.0"
+project: inngest
+
+inputs:
+  - key: eventKey
+    type: secret
+    label: The key apps send events with
+    generate: 32
+  - key: signingKey
+    type: secret
+    label: The key Inngest and your apps sign requests with
+    help: It must be hexadecimal, which a generated secret is not. Run `openssl rand -hex 32` and paste the output.
+
+databases:
+  - key: db
+    name: inngest-db
+    engine: postgres
+    version: "18"
+    database: inngest
+  - key: redis
+    name: inngest-redis
+    engine: redis
+    version: "7.4"
+
+apps:
+  - key: server
+    name: inngest
+    # The published image prints its help and exits when given no command.
+    # The Dockerfile in this repository is that image running `inngest start`.
+    repo: https://github.com/cubeshipd/cubeship
+    ref: master:templates/inngest
+    build: dockerfile
+    port: 8288
+    health: /health
+    # No domain: the dashboard and the GraphQL API behind it have no sign-in,
+    # and they read every event and run and can replay and cancel them. Apps
+    # on the instance send events and sync at the internal address.
+    attach:
+      - database: db
+      - database: redis
+    limits: { cpu: 1, memory: 1Gi }
+    env:
+      # Inngest reads its own variables, not DATABASE_URL and REDIS_URL.
+      INNGEST_POSTGRES_URI: postgresql://${db.db.user}:${db.db.password}@${db.db.host}:${db.db.port}/${db.db.name}?sslmode=disable
+      INNGEST_REDIS_URI: redis://${db.redis.user}:${db.redis.password}@${db.redis.host}:${db.redis.port}
+      INNGEST_EVENT_KEY: ${input.eventKey}
+      INNGEST_SIGNING_KEY: ${input.signingKey}

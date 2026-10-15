@@ -2,10 +2,22 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
-import { evaluate, REQUIRED } from "./ci-aggregate.mjs";
+import { evaluate, evaluateRun, REQUIRED } from "./ci-aggregate.mjs";
 
-const required = ["check", "database", "integration", "scripts", "dashboard", "site"];
-const success = () => Object.fromEntries(required.map((id) => [id, { result: "success" }]));
+const required = [
+  "scope",
+  "templates",
+  "check",
+  "database",
+  "integration",
+  "scripts",
+  "dashboard",
+  "site",
+];
+const success = () => ({
+  ...Object.fromEntries(required.map((id) => [id, { result: "success" }])),
+  scope: { result: "success", outputs: { full: "true" } },
+});
 test("essential_matrix", () => {
   assert.deepEqual(REQUIRED, required);
   assert.equal(evaluate(required, success()).ok, true);
@@ -84,8 +96,26 @@ test("workflow embeds the trusted script verbatim and preserves fixed dependenci
   );
   const aggregate = workflow.split("\n  aggregate:\n")[1];
   assert.match(aggregate, /name: CI \/ aggregate/);
-  assert.match(aggregate, /needs: \[check, database, integration, scripts, dashboard, site\]/);
+  assert.match(
+    aggregate,
+    /needs: \[scope, templates, check, database, integration, scripts, dashboard, site\]/,
+  );
   assert.match(aggregate, /if: always\(\)/);
   assert.match(aggregate, /NEEDS_JSON: \$\{\{ toJSON\(needs\) \}\}/);
   assert.doesNotMatch(aggregate, /checkout|secrets\./);
+});
+
+test("only an explicit successful template-only scope allows skipped full-suite jobs", () => {
+  const needs = success();
+  needs.scope.outputs.full = "false";
+  for (const id of required.filter((id) => !["scope", "templates"].includes(id)))
+    needs[id].result = "skipped";
+  assert.equal(evaluateRun(needs).ok, true);
+  needs.templates.result = "failure";
+  assert.equal(evaluateRun(needs).ok, false);
+  needs.templates.result = "success";
+  needs.scope.outputs.full = "true";
+  assert.equal(evaluateRun(needs).ok, false);
+  delete needs.scope.outputs.full;
+  assert.equal(evaluateRun(needs).ok, false);
 });

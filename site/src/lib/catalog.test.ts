@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { GET } from "@/app/api/v1/[...path]/route";
+import { GET as GETv2 } from "@/app/api/v2/[...path]/route";
 import { listTemplates } from "./catalog";
 
 vi.mock("./catalog-snapshot", () => {
@@ -19,8 +20,9 @@ vi.mock("./catalog-snapshot", () => {
     })),
   };
   return {
-    catalogSnapshot: async () => snapshot,
-    catalogSnapshotAt: async (sha: string) => (sha === snapshot.commit ? snapshot : null),
+    catalogSnapshot: async (version = 2) => ({ ...snapshot, version }),
+    catalogSnapshotAt: async (sha: string, version = 2) =>
+      sha === snapshot.commit ? { ...snapshot, version } : null,
   };
 });
 
@@ -67,5 +69,17 @@ describe("catalog v1 compatibility", () => {
       expect(response.status).toBe(400);
       expect(response.headers.get("cache-control")).toBe("no-store");
     }
+  });
+});
+
+it("v2 names the main repository while v1 keeps its original source", async () => {
+  const response = await GETv2(
+    new Request("https://cubeship.dev/api/v2/templates/cubeshipd/umami"),
+    { params: Promise.resolve({ path: ["templates", "cubeshipd", "umami"] }) },
+  );
+  expect(await response.json()).toMatchObject({
+    source_url: `https://raw.githubusercontent.com/cubeshipd/cubeship/${"a".repeat(40)}/templates/umami/template.yaml`,
+    url: `https://github.com/cubeshipd/cubeship/tree/${"a".repeat(40)}/templates/umami`,
+    icon_url: `https://cubeship.dev/api/v2/icons/-9007199254740999/${"a".repeat(40)}.png`,
   });
 });

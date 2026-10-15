@@ -1,0 +1,85 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Odoo'
+# The first release that gives a volume to the user its image runs as;
+# Odoo runs as odoo and cannot write to one owned by root.
+minCubeship: "0.7.0"
+project: odoo
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Odoo answers
+  - key: adminLogin
+    type: text
+    label: The email you sign in with
+    help: Also set as the company's email address.
+    pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+  - key: adminPassword
+    type: secret
+    label: The password you sign in with
+    help: Read once, when the database is created. Change it in Odoo afterwards — changing it here does nothing.
+    generate: 24
+  - key: masterPassword
+    type: secret
+    label: Odoo's master password
+    help: Guards creating, copying, dumping and deleting databases. The database manager is off; keep this for the day you turn it on.
+    generate: 32
+  - key: language
+    type: text
+    label: The language the database is created in
+    help: An Odoo language code, like en_US, fr_FR, pt_BR or es_419. More can be installed later.
+    default: en_US
+    pattern: '[a-z]{2,3}(_[A-Z]{2}|_[0-9]{3})?(@[a-z]+)?'
+  - key: country
+    type: text
+    label: The company's country
+    help: A two-letter code, like US, FR or BR. Sets the company's currency and, for a country with one timezone, everyone's timezone. Leave it empty to set it later.
+    required: false
+    # An unanswered optional input is still checked, as an empty string.
+    pattern: '([A-Z]{2})?'
+
+databases:
+  - key: db
+    name: odoo-db
+    engine: postgres
+    version: "17"
+    # Anything but `postgres`, which Odoo refuses to run as.
+    username: odoo
+    database: odoo
+
+apps:
+  - key: web
+    name: odoo
+    # The published image creates no database: it expects someone to make
+    # one in its web database manager, which would be open on the domain
+    # and would not be the database Cubeship backs up. The Dockerfile in
+    # this repository is that image creating this one on first start, with
+    # the manager off and proxy mode on.
+    repo: https://github.com/cubeshipd/cubeship
+    ref: master:templates/odoo
+    build: dockerfile
+    # Threaded mode: the websocket is on this port too. With workers it
+    # moves to 8072, and a domain reaches one port.
+    port: 8069
+    health: /web/health
+    domains:
+      - host: ${input.domain}
+    attach:
+      - database: db
+    volumes:
+      - path: /var/lib/odoo
+    limits: { cpu: 2, memory: 2Gi }
+    env:
+      # Odoo and psql both read libpq's own variables, and with them set the
+      # image's entrypoint adds no connection flags of its own.
+      PGHOST: ${db.db.host}
+      PGPORT: ${db.db.port}
+      PGUSER: ${db.db.user}
+      PGPASSWORD: ${db.db.password}
+      PGDATABASE: ${db.db.name}
+      ODOO_MASTER_PASSWORD: ${input.masterPassword}
+      ODOO_ADMIN_LOGIN: ${input.adminLogin}
+      ODOO_ADMIN_PASSWORD: ${input.adminPassword}
+      ODOO_LANGUAGE: ${input.language}
+      ODOO_COUNTRY: ${input.country}

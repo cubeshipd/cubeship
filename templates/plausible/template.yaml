@@ -1,0 +1,102 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Plausible'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: plausible
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Plausible answers
+  - key: secretKeyBase
+    type: secret
+    label: The key sessions are signed with
+    generate: 64
+  - key: totpVaultKey
+    type: secret
+    label: The key two-factor secrets are encrypted with
+    help: Run `openssl rand -base64 32` and paste what it prints. Plausible needs Base64 of exactly 32 bytes, which a generated value cannot be.
+  - key: clickhousePassword
+    type: secret
+    label: The password Plausible uses for ClickHouse
+    generate: 32
+  - key: smtpHost
+    type: text
+    label: Your SMTP server
+    help: Invites, password resets and email reports all go out by mail.
+  - key: smtpPort
+    type: number
+    label: Its port
+    help: 587 for STARTTLS; 465 connects with TLS from the first byte.
+    default: 587
+    min: 1
+    max: 65535
+  - key: smtpUser
+    type: text
+    label: The SMTP username
+  - key: smtpPassword
+    type: secret
+    label: The SMTP password
+  - key: mailFrom
+    type: text
+    label: The address Plausible sends from
+    help: One your SMTP provider lets you send as, like plausible@example.com.
+    pattern: ^[^@\s]+@[^@\s]+\.[^@\s]+$
+
+databases:
+  - key: db
+    name: plausible-db
+    # Plausible's CI tests against Postgres 18.
+    engine: postgres
+    version: "18"
+    database: plausible
+
+apps:
+  - key: events
+    name: clickhouse
+    # The published image runs with its stock configuration; the Dockerfile
+    # adds the files Plausible's compose file mounts.
+    repo: https://github.com/cubeshipd/cubeship
+    ref: master:templates/plausible
+    build: dockerfile
+    dockerfile: clickhouse/Dockerfile
+    port: 8123
+    health: /ping
+    # No domain: only Plausible talks to it.
+    volumes:
+      - path: /var/lib/clickhouse
+    limits: { cpu: 1, memory: 2Gi }
+    env:
+      # Replaces the passwordless default user, which any app on the
+      # instance could otherwise reach.
+      CLICKHOUSE_USER: plausible
+      CLICKHOUSE_PASSWORD: ${input.clickhousePassword}
+
+  - key: web
+    name: plausible
+    # The published image starts without creating or migrating its
+    # databases; the Dockerfile runs both first, as upstream's compose does.
+    repo: https://github.com/cubeshipd/cubeship
+    ref: master:templates/plausible
+    build: dockerfile
+    dockerfile: plausible/Dockerfile
+    port: 8000
+    # /api/health also checks both databases, and would take the domain down
+    # whenever ClickHouse restarts.
+    health: /api/system/health/live
+    domains:
+      - host: ${input.domain}
+    attach:
+      - database: db
+    limits: { cpu: 1, memory: 1Gi }
+    env:
+      BASE_URL: https://${input.domain}
+      SECRET_KEY_BASE: ${input.secretKeyBase}
+      TOTP_VAULT_KEY: ${input.totpVaultKey}
+      CLICKHOUSE_DATABASE_URL: http://plausible:${input.clickhousePassword}@${app.events.internal}:${app.events.port}/plausible_events_db
+      MAILER_EMAIL: ${input.mailFrom}
+      SMTP_HOST_ADDR: ${input.smtpHost}
+      SMTP_HOST_PORT: ${input.smtpPort}
+      SMTP_USER_NAME: ${input.smtpUser}
+      SMTP_USER_PWD: ${input.smtpPassword}

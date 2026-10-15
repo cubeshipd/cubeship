@@ -1,0 +1,26 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Prometheus'
+# The first release that gives a volume to the user its image runs as;
+# Prometheus runs as nobody and cannot write to one owned by root.
+minCubeship: "0.7.0"
+project: prometheus
+
+apps:
+  - key: server
+    name: prometheus
+    # The published image scrapes only itself, and its configuration is a
+    # file. The Dockerfile in this repository is that image with the
+    # prometheus.yml beside it.
+    repo: https://github.com/cubeshipd/cubeship
+    ref: master:templates/prometheus
+    build: dockerfile
+    port: 9090
+    health: /-/healthy
+    # No domain: Prometheus has no sign-in, and its only protection is
+    # basic auth with bcrypt hashes written into a file, which an input
+    # cannot produce. Grafana and other apps reach it at its internal
+    # address.
+    volumes:
+      - path: /prometheus
+    limits: { cpu: 1, memory: 1Gi }

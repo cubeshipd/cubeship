@@ -17,7 +17,7 @@ import (
 	"time"
 )
 
-const templatesRepo = "cubeshipd/cubeship-templates"
+const templatesRepo = "cubeshipd/cubeship"
 const (
 	TemplateFile  = "template.yaml"
 	ReadmeFile    = "README.md"
@@ -70,7 +70,7 @@ func Build(repo string) (*Snapshot, error) {
 	if err != nil {
 		return nil, err
 	}
-	archive, err := git("archive", "--format=tar", "--prefix=templates/", sha)
+	archive, err := git("archive", "--format=tar", sha, "templates")
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +153,7 @@ func readArchive(tr *tar.Reader) (map[string]templateFiles, error) {
 }
 
 func snapshot(sha string, at time.Time, files map[string]templateFiles) (*Snapshot, error) {
-	out := &Snapshot{Version: 1, Commit: sha, PublishedAt: at}
+	out := &Snapshot{Version: 2, Commit: sha, PublishedAt: at}
 	for slug, f := range files {
 		if len(f.source) == 0 || len(f.readme) == 0 || len(f.icon) == 0 {
 			return nil, fmt.Errorf("%s is missing template.yaml, README.md or icon.png", slug)
@@ -184,8 +184,8 @@ func checkBuildFiles(m *template.Normalized, slug string, paths map[string]bool)
 		if src.Repo != "https://github.com/"+templatesRepo {
 			continue
 		}
-		if src.Ref == nil || *src.Ref != "main:"+slug {
-			return fmt.Errorf("%s: monorepo source must use ref main:%s", slug, slug)
+		if src.Ref == nil || *src.Ref != "master:templates/"+slug {
+			return fmt.Errorf("%s: monorepo source must use ref master:templates/%s", slug, slug)
 		}
 		dockerfile := "Dockerfile"
 		if src.Dockerfile != nil {

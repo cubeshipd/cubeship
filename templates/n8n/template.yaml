@@ -1,0 +1,48 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'n8n'
+minCubeship: "0.6.0"
+project: n8n
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where the editor answers
+  - key: encryptionKey
+    type: secret
+    label: The key n8n encrypts stored credentials with
+    help: Keep a copy. Without it, credentials saved in n8n cannot be read again.
+    generate: 32
+
+databases:
+  - key: db
+    name: n8n-db
+    engine: postgres
+    version: "18"
+    database: n8n
+
+apps:
+  - key: web
+    name: n8n
+    image: n8nio/n8n
+    tag: "2.43.4"
+    port: 5678
+    health: /healthz
+    domains:
+      - host: ${input.domain}
+    attach:
+      - database: db
+    limits: { cpu: 1, memory: 1Gi }
+    env:
+      # n8n reads its connection piece by piece, not from DATABASE_URL.
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: ${db.db.host}
+      DB_POSTGRESDB_PORT: ${db.db.port}
+      DB_POSTGRESDB_DATABASE: ${db.db.name}
+      DB_POSTGRESDB_USER: ${db.db.user}
+      DB_POSTGRESDB_PASSWORD: ${db.db.password}
+      N8N_ENCRYPTION_KEY: ${input.encryptionKey}
+      N8N_HOST: ${input.domain}
+      N8N_PROTOCOL: https
+      N8N_PROXY_HOPS: 1
+      WEBHOOK_URL: https://${input.domain}/

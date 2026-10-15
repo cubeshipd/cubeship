@@ -1,0 +1,109 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Outline'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: outline
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Outline answers
+  - key: secretKey
+    type: secret
+    label: The key Outline encrypts stored data with
+    help: Run `openssl rand -hex 32` and paste the 64 characters. Outline refuses anything else, and nobody can sign in again if it changes.
+  - key: utilsSecret
+    type: secret
+    label: The secret for Outline's internal task endpoint
+    generate: 32
+  - key: oidcIssuer
+    type: text
+    label: Your OpenID Connect issuer URL
+    help: Like https://sso.example.com/realms/outline for a Keycloak realm. Outline has no passwords of its own; everyone signs in through this.
+    pattern: ^https?://\S+$
+  - key: oidcClientId
+    type: text
+    label: The client ID
+  - key: oidcClientSecret
+    type: secret
+    label: The client secret
+  - key: oidcDisplayName
+    type: text
+    label: The name on the sign-in button
+    default: OpenID Connect
+  - key: smtpHost
+    type: text
+    label: Your SMTP server
+    help: Optional. Without it Outline sends no invitations, notifications or sign-in links.
+    required: false
+  - key: smtpPort
+    type: number
+    label: Its TLS port
+    help: Outline connects with TLS from the first byte, which providers offer on 465.
+    default: 465
+    min: 1
+    max: 65535
+    required: false
+  - key: smtpUser
+    type: text
+    label: The SMTP username
+    required: false
+  - key: smtpPassword
+    type: secret
+    label: The SMTP password
+    required: false
+  - key: mailFrom
+    type: text
+    label: The address Outline sends from
+    help: One your SMTP provider lets you send as, like wiki@example.com.
+    required: false
+
+databases:
+  - key: db
+    name: outline-db
+    engine: postgres
+    version: "16"
+    database: outline
+  - key: redis
+    name: outline-redis
+    engine: redis
+    version: "7.4"
+
+apps:
+  - key: web
+    name: outline
+    image: outlinewiki/outline
+    tag: "1.10.1"
+    port: 3000
+    # Checks the database and Redis, and is answered before Outline
+    # redirects plain HTTP to HTTPS.
+    health: /_health
+    domains:
+      - host: ${input.domain}
+    attach:
+      # Prefixed because Outline refuses DATABASE_URL beside DATABASE_HOST
+      # and the other parts an attachment writes.
+      - database: db
+        prefix: POSTGRES_
+      - database: redis
+    volumes:
+      - path: /var/lib/outline/data
+    limits: { cpu: 1, memory: 2Gi }
+    env:
+      URL: https://${input.domain}
+      SECRET_KEY: ${input.secretKey}
+      UTILS_SECRET: ${input.utilsSecret}
+      DATABASE_URL: postgres://${db.db.user}:${db.db.password}@${db.db.host}:${db.db.port}/${db.db.name}
+      PGSSLMODE: disable
+      # The default is s3, which has browsers upload straight to the bucket.
+      FILE_STORAGE: local
+      OIDC_ISSUER_URL: ${input.oidcIssuer}
+      OIDC_CLIENT_ID: ${input.oidcClientId}
+      OIDC_CLIENT_SECRET: ${input.oidcClientSecret}
+      OIDC_DISPLAY_NAME: ${input.oidcDisplayName}
+      SMTP_HOST: ${input.smtpHost}
+      SMTP_PORT: ${input.smtpPort}
+      SMTP_USERNAME: ${input.smtpUser}
+      SMTP_PASSWORD: ${input.smtpPassword}
+      SMTP_FROM_EMAIL: ${input.mailFrom}

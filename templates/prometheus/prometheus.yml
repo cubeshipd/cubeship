@@ -1,0 +1,28 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+storage:
+  tsdb:
+    # Whichever is reached first. The size leaves room on a small VPS for
+    # compaction, which briefly needs the old and new blocks at once.
+    retention:
+      time: 15d
+      size: 2GB
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]
+
+  # An app on the same Cubeship instance is reached at
+  # cubeship-<project>-<environment>-<app>, on the port its metrics are on.
+  #
+  # - job_name: api
+  #   static_configs:
+  #     - targets: ["cubeship-shop-production-api:8080"]
+  #
+  # - job_name: worker
+  #   metrics_path: /internal/metrics
+  #   static_configs:
+  #     - targets: ["cubeship-shop-production-worker:9100"]

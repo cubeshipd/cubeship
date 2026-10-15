@@ -1,0 +1,28 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Uptime Kuma'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: uptime-kuma
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Uptime Kuma answers
+
+apps:
+  - key: web
+    name: uptime-kuma
+    image: louislam/uptime-kuma
+    tag: "2.5.5"
+    port: 3001
+    # Answers 200 without signing in; / only redirects.
+    health: /robots.txt
+    domains:
+      - host: ${input.domain}
+    volumes:
+      - path: /app/data
+    limits: { cpu: 1, memory: 1Gi }
+    env:
+      # Skips the page that asks which database to use on first start.
+      UPTIME_KUMA_DB_TYPE: sqlite

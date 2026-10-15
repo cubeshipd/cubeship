@@ -1,0 +1,43 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Open WebUI'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: open-webui
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Open WebUI answers
+  - key: secretKey
+    type: secret
+    label: The key sessions are signed with
+    generate: 32
+  - key: ollamaUrl
+    type: text
+    label: Your Ollama server
+    help: The Ollama template's address with its suggested names. Leave it empty if you have no Ollama; connections can be added later under Admin Settings → Connections.
+    default: http://cubeship-ollama-production-ollama:11434
+    required: false
+
+apps:
+  - key: web
+    name: open-webui
+    image: ghcr.io/open-webui/open-webui
+    tag: v0.11.4
+    port: 8080
+    health: /health
+    domains:
+      - host: ${input.domain}
+    # SQLite, uploads and the Chroma vector store, together, so one backup
+    # holds all three in step.
+    volumes:
+      - path: /app/backend/data
+    # The embedding model runs inside this process.
+    limits: { cpu: 2, memory: 2Gi }
+    env:
+      # Unset, the image generates one into /app/backend, outside the volume,
+      # so every deploy would sign everyone out.
+      WEBUI_SECRET_KEY: ${input.secretKey}
+      WEBUI_URL: https://${input.domain}
+      OLLAMA_BASE_URL: ${input.ollamaUrl}

@@ -1,0 +1,41 @@
+# yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
+version: 1
+name: 'Mattermost'
+# The first release that keeps a volume's data across deploys.
+minCubeship: "0.7.0"
+project: mattermost
+
+inputs:
+  - key: domain
+    type: domain
+    label: Where Mattermost answers
+
+databases:
+  - key: db
+    name: mattermost-db
+    engine: postgres
+    version: "18"
+    database: mattermost
+
+apps:
+  - key: web
+    name: mattermost
+    image: mattermost/mattermost-team-edition
+    # 11.7 is the Extended Support Release, supported until May 2027.
+    tag: "11.11.1"
+    port: 8065
+    health: /api/v4/system/ping
+    domains:
+      - host: ${input.domain}
+    # Uploaded files, and the bundles of installed plugins, which Mattermost
+    # unpacks again from here every time it starts.
+    volumes:
+      - path: /mattermost/data
+    limits: { cpu: 1, memory: 2Gi }
+    env:
+      MM_SQLSETTINGS_DRIVERNAME: postgres
+      MM_SQLSETTINGS_DATASOURCE: postgres://${db.db.user}:${db.db.password}@${db.db.host}:${db.db.port}/${db.db.name}?sslmode=disable&connect_timeout=10
+      # Keeps the configuration in the database instead of config.json, so
+      # System Console changes survive a deploy without a volume for them.
+      MM_CONFIG: postgres://${db.db.user}:${db.db.password}@${db.db.host}:${db.db.port}/${db.db.name}?sslmode=disable&connect_timeout=10
+      MM_SERVICESETTINGS_SITEURL: https://${input.domain}
