@@ -20,7 +20,9 @@ generated content onto `master`. Invalid manifests, missing Dockerfiles or
 invalid icons fail the entire publication; icons are re-encoded as PNG.
 Concurrent publications are serialized and pushes are never forced.
 
-The site's Route Handler serves `/api/v1/*` and `/api/v2/*`; server-rendered pages call the same
+The legacy Route Handler serves `/api/v1/*`. In v2, the optional catch-all is scoped
+to `/api/v2/templates`; `/api/v2/tags` and `/api/v2/icons/*` have explicit handlers,
+leaving other v2 routes available to other resources. Server-rendered pages call the same
 catalog functions directly. There is no catalog process, Postgres or discovery
 job. At most once per minute on demand, the site downloads the published snapshot
 with a five-second timeout and a 32 MiB bound, validates its envelope and identities,

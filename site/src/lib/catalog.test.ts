@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { GET } from "@/app/api/v1/[...path]/route";
-import { GET as GETv2 } from "@/app/api/v2/[...path]/route";
+import { GET as GETv2 } from "@/app/api/v2/templates/[[...path]]/route";
+import { GET as GETicons } from "@/app/api/v2/icons/[...path]/route";
+import { GET as GETtags } from "@/app/api/v2/tags/route";
 import { listTemplates } from "./catalog";
 
 vi.mock("./catalog-snapshot", () => {
@@ -75,11 +77,30 @@ describe("catalog v1 compatibility", () => {
 it("v2 names the main repository while v1 keeps its original source", async () => {
   const response = await GETv2(
     new Request("https://cubeship.dev/api/v2/templates/cubeshipd/umami"),
-    { params: Promise.resolve({ path: ["templates", "cubeshipd", "umami"] }) },
+    { params: Promise.resolve({ path: ["cubeshipd", "umami"] }) },
   );
   expect(await response.json()).toMatchObject({
     source_url: `https://raw.githubusercontent.com/cubeshipd/cubeship/${"a".repeat(40)}/templates/umami/template.yaml`,
     url: `https://github.com/cubeshipd/cubeship/tree/${"a".repeat(40)}/templates/umami`,
     icon_url: `https://cubeship.dev/api/v2/icons/-9007199254740999/${"a".repeat(40)}.png`,
   });
+});
+
+it("v2 exposes the template list and explicit tags and icon routes", async () => {
+  const response = await GETv2(new Request("https://cubeship.dev/api/v2/templates"), {
+    params: Promise.resolve({}),
+  });
+  expect((await response.json()).templates).toHaveLength(2);
+  expect(await (await GETtags(new Request("https://cubeship.dev/api/v2/tags"))).json()).toEqual({
+    tags: [],
+  });
+  const file = `${"a".repeat(40)}.png`;
+  const icon = await GETicons(
+    new Request(`https://cubeship.dev/api/v2/icons/-9007199254740999/${file}`),
+    {
+      params: Promise.resolve({ path: ["-9007199254740999", file] }),
+    },
+  );
+  expect(icon.headers.get("content-type")).toBe("image/png");
+  expect(icon.status).toBe(200);
 });
