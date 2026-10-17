@@ -277,7 +277,8 @@ func TestWhatIsUsingTheMachineIsNamedByTheModulesThatOwnIt(t *testing.T) {
 	var names []string
 	for _, u := range usage {
 		names = append(names, u.Name)
-		if u.Name == "memo/production/backend" && (u.StartedAt == nil || !u.StartedAt.Equal(startedAt)) {
+		// Postgres stores timestamptz to microsecond precision.
+		if u.Name == "memo/production/backend" && (u.StartedAt == nil || !u.StartedAt.Truncate(time.Microsecond).Equal(startedAt.Truncate(time.Microsecond))) {
 			t.Errorf("container started at %v, want %v", u.StartedAt, startedAt)
 		}
 	}

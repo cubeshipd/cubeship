@@ -53,7 +53,9 @@ var routes = map[string]phrase{
 	"PUT /projects/{projectSlug}/environments/{envSlug}/env":   {"replace the variables of", "replaced the variables of", "{projectSlug}/{envSlug}", ""},
 	"PATCH /projects/{projectSlug}/environments/{envSlug}/env": {"change the variables of", "changed the variables of", "{projectSlug}/{envSlug}", ""},
 
-	"POST /apps":                                                {"create an app", "created an app", "", ""},
+	"POST /apps": {"create an app", "created an app", "", ""},
+	"POST /apps/{project}/{env}/{name}/start":                   {"start app", "started app", "{project}/{env}/{name}", ""},
+	"POST /apps/{project}/{env}/{name}/stop":                    {"stop app", "stopped app", "{project}/{env}/{name}", ""},
 	"PATCH /apps/{project}/{env}/{name}":                        {"change", "changed", "{project}/{env}/{name}", "an app"},
 	"DELETE /apps/{project}/{env}/{name}":                       {"delete", "deleted", "{project}/{env}/{name}", "an app"},
 	"POST /apps/{project}/{env}/{name}/deploy":                  {"deploy", "deployed", "{project}/{env}/{name}", "an app"},
@@ -84,6 +86,7 @@ var routes = map[string]phrase{
 	"POST /datastores/{name}/expose":                              {"expose database", "exposed database", "{name}", ""},
 	"DELETE /datastores/{name}/expose":                            {"stop exposing database", "stopped exposing database", "{name}", ""},
 	"GET /datastores/{name}/credentials":                          {"read the credentials of database", "read the credentials of database", "{name}", ""},
+	"POST /datastores/{name}/credentials/rotate":                  {"rotate credentials of database", "rotated credentials of database", "{name}", ""},
 	"POST /datastores/{name}/attachments":                         {"attach database", "attached database", "{name} to an app", ""},
 	"DELETE /datastores/{name}/attachments/{project}/{env}/{app}": {"detach database", "detached database", "{name} from {project}/{env}/{app}", ""},
 
@@ -95,6 +98,7 @@ var routes = map[string]phrase{
 	"POST /objectstores/{name}/expose":                              {"expose object store", "exposed object store", "{name}", ""},
 	"DELETE /objectstores/{name}/expose":                            {"stop exposing object store", "stopped exposing object store", "{name}", ""},
 	"GET /objectstores/{name}/credentials":                          {"read the credentials of object store", "read the credentials of object store", "{name}", ""},
+	"POST /objectstores/{name}/credentials/rotate":                  {"rotate credentials of object store", "rotated credentials of object store", "{name}", ""},
 	"POST /objectstores/{name}/attachments":                         {"attach object store", "attached object store", "{name} to an app", ""},
 	"DELETE /objectstores/{name}/attachments/{project}/{env}/{app}": {"detach object store", "detached object store", "{name} from {project}/{env}/{app}", ""},
 	"POST /objectstores/{name}/buckets":                             {"create a bucket in", "created a bucket in", "{name}", ""},
