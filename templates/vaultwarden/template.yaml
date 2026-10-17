@@ -14,7 +14,7 @@ apps:
   - key: web
     name: vaultwarden
     image: vaultwarden/server
-    tag: "1.37.3"
+    tag: "1.37.4"
     port: 80
     health: /alive
     domains:
