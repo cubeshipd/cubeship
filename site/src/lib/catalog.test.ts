@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { GET } from "@/app/api/v1/[...path]/route";
-import { GET as GETv2 } from "@/app/api/v2/templates/[[...path]]/route";
 import { GET as GETicons } from "@/app/api/v2/icons/[...path]/route";
 import { GET as GETtags } from "@/app/api/v2/tags/route";
+import { GET as GETv2 } from "@/app/api/v2/templates/[[...path]]/route";
 import { listTemplates } from "./catalog";
 
 vi.mock("./catalog-snapshot", () => {

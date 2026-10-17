@@ -115,7 +115,10 @@ async function refresh(): Promise<Snapshot> {
 }
 
 export async function catalogSnapshot(version: CatalogVersion = 2): Promise<Snapshot> {
-  if (version === 1) return (legacy ??= parseSnapshot(JSON.stringify(legacySnapshot)));
+  if (version === 1) {
+    if (!legacy) legacy = parseSnapshot(JSON.stringify(legacySnapshot));
+    return legacy;
+  }
   if (current && Date.now() - checkedAt < 60_000) return current;
   if (!pending)
     pending = refresh().finally(() => {
