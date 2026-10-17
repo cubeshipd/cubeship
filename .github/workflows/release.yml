@@ -76,7 +76,7 @@ jobs:
       - name: The changelog matches the notes
         run: go -C core run ./tools/changelog -check
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: notes
           path: notes.md
@@ -144,7 +144,7 @@ jobs:
         env:
           DIGEST: ${{ steps.push.outputs.digest }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: digest-${{ matrix.image }}-${{ matrix.arch }}
           path: /tmp/digests/*
@@ -160,7 +160,7 @@ jobs:
     outputs:
       digest: ${{ steps.digest.outputs.digest }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: digest-${{ matrix.image }}-*
           path: /tmp/digests
@@ -255,7 +255,7 @@ jobs:
         env:
           VERSION: ${{ needs.notes.outputs.version }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: cli
           path: dist/*
@@ -266,10 +266,10 @@ jobs:
     needs: [notes, manifest, cli]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: notes
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: cli
           path: dist
