@@ -2,7 +2,7 @@
 # jobs need cron every 5 minutes. Cubeship runs no sidecar and no cron, so this
 # is the image's own example (.examples/dockerfiles/cron in nextcloud/docker):
 # supervisord running Apache and the image's /cron.sh side by side.
-FROM nextcloud:35.0.1-apache
+FROM nextcloud:35.0.2-apache
 
 RUN set -ex; \
     apt-get update; \
