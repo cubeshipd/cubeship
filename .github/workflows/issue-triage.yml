@@ -49,7 +49,7 @@ jobs:
       enabled: ${{ steps.flags.outputs.enabled }}
       publish_enabled: ${{ steps.flags.outputs.publish_enabled }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
@@ -137,7 +137,7 @@ jobs:
           console.log('ready=true');
           console.log(`context=${readFileSync(`${process.env.RUNNER_TEMP}/issue-context.json`, 'utf8')}`);
           NODE
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ steps.collect.outputs.ready == 'true' && steps.flags.outputs.enabled == 'true' && github.event_name == 'issues' }}
         with:
           name: issue-triage-snapshot
@@ -209,7 +209,7 @@ jobs:
           import { writeFileSync } from 'node:fs';
           writeFileSync(`${process.env.RUNNER_TEMP}/issue-context.json`, process.env.ISSUE_CONTEXT, {mode:0o600, flag:'wx'});
           NODE
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: ${{ steps.gate.outputs.ready == 'true' }}
         with:
           name: issue-triage-snapshot
@@ -223,7 +223,7 @@ jobs:
           set -euo pipefail
           node "$RUNNER_TEMP/issue-source/issue-run.mjs" infer "$RUNNER_TEMP/issue-context.json" "$RUNNER_TEMP/issue-snapshot" "$RUNNER_TEMP/issue-proposal/artifact.json"
           echo 'ready=true' >> "$GITHUB_OUTPUT"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ steps.generate.outputs.ready == 'true' }}
         with:
           name: issue-triage-proposal
@@ -244,7 +244,7 @@ jobs:
       issues: write
       actions: read
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.workflow_sha }}
           persist-credentials: false
@@ -277,7 +277,7 @@ jobs:
           import { writeFileSync } from 'node:fs';
           writeFileSync(`${process.env.RUNNER_TEMP}/issue-context.json`, process.env.ISSUE_CONTEXT, {mode:0o600, flag:'wx'});
           NODE
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: issue-triage-proposal
           path: ${{ runner.temp }}/issue-proposal
