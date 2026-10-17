@@ -84,7 +84,7 @@ apps:
   - key: signoz
     name: signoz
     image: signoz/signoz
-    tag: v0.144.0
+    tag: v0.146.0
     port: 8080
     health: /api/v1/health
     domains:
