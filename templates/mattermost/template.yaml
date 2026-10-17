@@ -22,7 +22,7 @@ apps:
     name: mattermost
     image: mattermost/mattermost-team-edition
     # 11.7 is the Extended Support Release, supported until May 2027.
-    tag: "11.11.1"
+    tag: "12.0.0"
     port: 8065
     health: /api/v4/system/ping
     domains:
