@@ -118,7 +118,38 @@ export function DatabaseAccess({
   }
 
   return (
-    <>
+    <div className="space-y-6">
+      {canRotate && (
+        <Card>
+          <CardContent className="space-y-5">
+            <header className="space-y-1">
+              <h2 className="text-lg font-medium tracking-tight">Database credentials</h2>
+              <p className="text-sm text-muted-foreground">
+                Generate a new password for this database login.
+              </p>
+            </header>
+            {rotatedCredentials && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <CopyField label="New password" value={rotatedCredentials.password} masked />
+                <CopyField
+                  label="New internal connection string"
+                  value={rotatedCredentials.internal_uri}
+                  masked
+                  fieldClassName="sm:col-span-2"
+                />
+              </div>
+            )}
+            <ActionButton
+              variant="outline"
+              disabled={!datastore.has_container || datastore.status !== "running"}
+              onClick={() => setRotating(true)}
+            >
+              Rotate credentials
+            </ActionButton>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardContent className="space-y-5">
           <header className="space-y-1">
@@ -172,41 +203,6 @@ export function DatabaseAccess({
         </CardContent>
       </Card>
 
-      {canRotate && (
-        <Card>
-          <CardContent className="space-y-5">
-            <header className="space-y-1">
-              <h2 className="text-lg font-medium tracking-tight">Database credentials</h2>
-              <p className="text-sm text-muted-foreground">
-                Generate a new password for this database login.
-              </p>
-            </header>
-            <Notice tone="warning">
-              The current password stops working immediately. Attached apps receive the new password
-              on their next deploy.
-            </Notice>
-            {rotatedCredentials && (
-              <div className="grid gap-4 sm:grid-cols-2">
-                <CopyField label="New password" value={rotatedCredentials.password} masked />
-                <CopyField
-                  label="New internal connection string"
-                  value={rotatedCredentials.internal_uri}
-                  masked
-                  fieldClassName="sm:col-span-2"
-                />
-              </div>
-            )}
-            <ActionButton
-              variant="outline"
-              disabled={!datastore.has_container || datastore.status !== "running"}
-              onClick={() => setRotating(true)}
-            >
-              Rotate credentials
-            </ActionButton>
-          </CardContent>
-        </Card>
-      )}
-
       <ConfirmDialog
         open={unpublishing}
         onOpenChange={setUnpublishing}
@@ -231,6 +227,6 @@ export function DatabaseAccess({
           onChanged();
         }}
       />
-    </>
+    </div>
   );
 }
