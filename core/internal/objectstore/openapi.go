@@ -252,6 +252,22 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
+			"/objectstores/{name}/credentials/rotate": {
+				"post": {
+					OperationID: "rotateObjectStoreCredentials",
+					Summary:     "Rotate a managed store's keys",
+					Description: "Changes the managed store's S3 keys and returns the new pair. External stores use shared provider credentials and cannot be rotated here. Requires manage access and permission to read storage secrets.",
+					Tags:        []string{"Object storage"},
+					Parameters:  nameParam,
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The new keys and endpoints.", openapi.Ref("ObjectStoreCredentials")),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("Only a running managed store can rotate keys."),
+					},
+				},
+			},
 
 			"/objectstores/{name}/metrics": {
 				"get": {

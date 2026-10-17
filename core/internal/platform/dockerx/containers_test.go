@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
@@ -43,6 +44,7 @@ type fakeAPI struct {
 	inspectedID             string
 	inspectedName           string
 	inspectedRunning        bool
+	startedAt               string
 	inspectErr              error
 	inspectNetworks         map[string]*network.EndpointSettings
 	networkCreateErr        error
@@ -230,10 +232,22 @@ func (f *fakeAPI) ContainerInspect(ctx context.Context, id string) (types.Contai
 	return types.ContainerJSON{
 		ContainerJSONBase: &types.ContainerJSONBase{
 			ID:    f.inspectedID,
-			State: &types.ContainerState{Running: f.inspectedRunning},
+			State: &types.ContainerState{Running: f.inspectedRunning, StartedAt: f.startedAt},
 		},
 		NetworkSettings: &types.NetworkSettings{Networks: f.inspectNetworks},
 	}, nil
+}
+
+func TestContainerStartedAtReadsCurrentDockerStart(t *testing.T) {
+	want := time.Date(2026, 10, 15, 12, 30, 0, 0, time.UTC)
+	fake := &fakeAPI{inspectedRunning: true, startedAt: want.Format(time.RFC3339Nano)}
+	got, err := newWithAPI(fake).ContainerStartedAt(context.Background(), "container-id")
+	if err != nil {
+		t.Fatalf("ContainerStartedAt: %v", err)
+	}
+	if got == nil || !got.Equal(want) {
+		t.Fatalf("ContainerStartedAt = %v, want %v", got, want)
+	}
 }
 
 func TestProbeTCPConnectsAndReportsConnectionFailure(t *testing.T) {

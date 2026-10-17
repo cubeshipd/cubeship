@@ -37,6 +37,9 @@ func Reconcile(ctx context.Context, repo *Repository, d reconcileDocker) error {
 	}
 
 	for _, a := range apps {
+		if a.Status() == StatusStopped {
+			continue
+		}
 		for _, mine := range a.ReplicasOn(here) {
 			if mine.Container == "" {
 				continue

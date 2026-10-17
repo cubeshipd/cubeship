@@ -1,32 +1,41 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import {
+  AppWindowIcon,
+  ArchiveIcon,
+  BlocksIcon,
   CheckIcon,
+  CpuIcon,
   EyeIcon,
   EyeOffIcon,
-  PlayIcon,
-  PlugIcon,
-  PowerIcon,
-  SettingsIcon,
+  LayoutDashboardIcon,
+  NetworkIcon,
+  PlusIcon,
   Trash2Icon,
 } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { ContainerLogs } from "@/components/container-logs";
+import { ContainerLogsDialog } from "@/components/container-logs";
 import { CopyField } from "@/components/copy-field";
 import { type Column, DataTable } from "@/components/data-table";
+import {
+  DatabaseAccess,
+  DatabaseBackups,
+  DatabaseLimits,
+} from "@/components/database-settings-panels";
+import { useDatabaseWorkspaceActions } from "@/components/database-workspace";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal, RailTabs } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
-import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
 import { SearchableSelect } from "@/components/searchable-select";
 import { SectionHeader } from "@/components/section-header";
+import { useSession } from "@/components/session-context";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -43,6 +52,7 @@ import {
   ApiError,
   type App,
   api,
+  can,
   DATASTORE_STOPPED,
   type Datastore,
   type DatastoreAttachment,
@@ -66,12 +76,18 @@ import { message } from "@/lib/errors";
 // So the page opens on what is short and always wanted, and what is
 // long, or is somewhere you go rather than something you read, is a tab
 // beside it.
-const TABS = ["overview", "extensions", "apps", "logs"] as const;
-type Tab = (typeof TABS)[number];
+type Tab = "overview" | "extensions" | "apps" | "backups" | "access" | "resources";
 
-// Why the Logs tab is dead. Said on hover, because a disabled control
-// that explains nothing is a control somebody clicks twice.
-const noContainer = "This database has no container, so there is nothing to have printed a log.";
+const TAB_ALIASES: Record<string, Tab> = {
+  overview: "overview",
+  extensions: "extensions",
+  apps: "apps",
+  backups: "backups",
+  access: "access",
+  network: "access",
+  resources: "resources",
+  danger: "resources",
+};
 
 export default function DatastorePage({ params }: PageProps<"/databases/[name]">) {
   const { name } = use(params);
@@ -93,14 +109,21 @@ function Detail({ name }: { name: string }) {
   // and silently thrown away. This hook is the one thing that has the
   // same answer on both sides.
   const asked = useSearchParams().get("tab");
-  const [initial] = useState<Tab>(() =>
-    TABS.includes(asked as Tab) ? (asked as Tab) : "overview",
-  );
+  const [initial] = useState<Tab>(() => TAB_ALIASES[asked ?? ""] ?? "overview");
+  const router = useRouter();
+  const queryClient = useQueryClient();
+  const me = useSession();
+  const setWorkspaceActions = useDatabaseWorkspaceActions();
   const [datastore, setDatastore] = useState<Datastore | null>(null);
   const [error, setError] = useState<string | null>(null);
   // Only the arrival decides it. After that the tab row does, and a
   // stale parameter must not drag somebody back when they click away.
   const [tab, setTab] = useState<Tab>(initial);
+  const [stopOpen, setStopOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [powerBusy, setPowerBusy] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const path = datastorePath(name);
   const reload = useCallback(() => {
@@ -110,6 +133,53 @@ function Detail({ name }: { name: string }) {
       .catch((e) => setError(message(e)));
   }, [path]);
   useEffect(reload, [reload]);
+
+  const canManage = can(me, "databases", "manage");
+  const isStopped = datastore?.status === DATASTORE_STOPPED || datastore?.status === "failed";
+  const activeTab = datastore
+    ? tab === "backups" && !datastore.can_back_up
+      ? "access"
+      : tab === "extensions" && datastore.engine !== "postgres"
+        ? "overview"
+        : tab
+    : tab;
+  const power = useCallback(
+    async (action: "start" | "stop") => {
+      if (!datastore) return;
+      setPowerBusy(true);
+      setActionError(null);
+      try {
+        await api.post(`${path}/${action}`);
+        reload();
+        await queryClient.invalidateQueries({ queryKey: ["datastores"] });
+      } catch (cause) {
+        setActionError(message(cause));
+      } finally {
+        setPowerBusy(false);
+        setStopOpen(false);
+      }
+    },
+    [datastore, path, queryClient, reload],
+  );
+
+  useEffect(() => {
+    setWorkspaceActions({
+      canStart: canManage && !!isStopped,
+      canStop:
+        canManage &&
+        !!datastore?.has_container &&
+        !isStopped &&
+        datastore.status !== "provisioning",
+      start: () => void power("start"),
+      stop: () => setStopOpen(true),
+      hasLogs: !!datastore?.has_container,
+      logs: () => setLogsOpen(true),
+      delete: canManage ? () => setDeleteOpen(true) : undefined,
+      busy: powerBusy,
+      error: actionError,
+    });
+    return () => setWorkspaceActions({});
+  }, [actionError, canManage, datastore, isStopped, power, powerBusy, setWorkspaceActions]);
 
   // Provisioning is a container being pulled and started, detached from
   // the request that asked for it — so this is the one screen that has
@@ -125,32 +195,6 @@ function Detail({ name }: { name: string }) {
   return (
     <>
       {" "}
-      {/* The header does not wait. Its name is in the URL — we are on
-          this page because somebody asked for this database by name —
-          so rendering it needs no round trip, and the page has a title
-          the instant it is navigated to.
-          
-          It used to return null until the fetch landed, which meant
-          every navigation blanked the content area and then filled it.
-          A page that disappears before it appears reads as slow however
-          fast the request was. */}
-      <RailPortal>
-        {datastore && (
-          <>
-            <PowerButton datastore={datastore} onChanged={reload} />
-            <Button
-              variant="outline"
-              nativeButton={false}
-              render={
-                <Link href={`/databases/${datastore.name}/settings`}>
-                  <SettingsIcon />
-                  Settings
-                </Link>
-              }
-            />
-          </>
-        )}
-      </RailPortal>
       <ErrorAlert error={error} />
       {!datastore && <LoadingList rows={5} />}
       {/* The reason a database did not come up is the tail of what the
@@ -169,49 +213,129 @@ function Detail({ name }: { name: string }) {
         </Card>
       )}
       {datastore && (
-        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="subrail-page">
-          <RailTabs>
-            <TabsList variant="line">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              {/* Only Postgres has any, and the daemon is what says so.
-                  A tab that could never hold anything is not offered —
-                  the same rule the Logs tab follows one line down, for
-                  the same reason. */}
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setTab(value as Tab)}
+          className="subrail-page"
+        >
+          <div className="app-tab-navigation">
+            <TabsList variant="default" className="app-tab-list">
+              <TabsTrigger value="overview">
+                <LayoutDashboardIcon />
+                Overview
+              </TabsTrigger>
               {datastore.engine === "postgres" && (
-                <TabsTrigger value="extensions">Extensions</TabsTrigger>
+                <TabsTrigger value="extensions">
+                  <BlocksIcon />
+                  Extensions
+                </TabsTrigger>
               )}
-              <TabsTrigger value="apps">Apps</TabsTrigger>
-              {/* Nothing has printed anything until there is a container.
-                  The daemon refuses this endpoint with a 409 in that
-                  state, and a tab whose whole content is that refusal is
-                  a tab that should not have been offered. */}
-              <TabsTrigger
-                value="logs"
-                disabled={!datastore.has_container}
-                title={datastore.has_container ? undefined : noContainer}
-              >
-                Logs
+              <TabsTrigger value="apps">
+                <AppWindowIcon />
+                Apps
+              </TabsTrigger>
+              {datastore.can_back_up && (
+                <TabsTrigger value="backups">
+                  <ArchiveIcon />
+                  Backups
+                </TabsTrigger>
+              )}
+              <TabsTrigger value="access">
+                <NetworkIcon />
+                Access
+              </TabsTrigger>
+              <TabsTrigger value="resources">
+                <CpuIcon />
+                Resources
               </TabsTrigger>
             </TabsList>
-          </RailTabs>
+          </div>
 
           <TabsContent value="overview">
             <MetricsSection path={path} />
             <Connection datastore={datastore} />
           </TabsContent>
-
-          <TabsContent value="extensions">
-            <Extensions datastore={datastore} onChanged={reload} />
-          </TabsContent>
-
+          {datastore.engine === "postgres" && (
+            <TabsContent value="extensions">
+              <Extensions datastore={datastore} onChanged={reload} />
+            </TabsContent>
+          )}
           <TabsContent value="apps">
             <Attachments datastore={datastore} onChanged={reload} />
           </TabsContent>
-
-          <TabsContent value="logs">
-            <ContainerLogs path={path} title={null} tall />
+          {datastore.can_back_up && (
+            <TabsContent value="backups">
+              <DatabaseBackups datastore={datastore} />
+            </TabsContent>
+          )}
+          <TabsContent value="access">
+            <DatabaseAccess key={datastore.name} datastore={datastore} onChanged={reload} />
+          </TabsContent>
+          <TabsContent value="resources">
+            <DatabaseLimits datastore={datastore} onSaved={setDatastore} />
           </TabsContent>
         </Tabs>
+      )}
+      {datastore && (
+        <>
+          <ConfirmDialog
+            open={stopOpen}
+            onOpenChange={setStopOpen}
+            title={`Stop ${datastore.name}?`}
+            description={
+              <>
+                The container stops and its data stays where it is — starting it again brings it
+                back unchanged.{" "}
+                {datastore.attachments.length > 0 ? (
+                  <>
+                    <strong>
+                      {datastore.attachments.map((attachment) => attachment.app).join(", ")}
+                    </strong>{" "}
+                    will keep running and start failing to connect.
+                  </>
+                ) : (
+                  "No app is attached to it."
+                )}
+              </>
+            }
+            confirmLabel="Stop it"
+            onConfirm={() => power("stop")}
+          />
+          <ConfirmDialog
+            open={deleteOpen}
+            onOpenChange={setDeleteOpen}
+            title={`Delete ${datastore.name}?`}
+            description={
+              <>
+                The container is stopped and the data on disk goes with it. Nothing is kept, and{" "}
+                {datastore.attachments.length > 0 ? (
+                  <>
+                    <strong>
+                      {datastore.attachments.map((attachment) => attachment.app).join(", ")}
+                    </strong>{" "}
+                    will come up without a connection string the next time they are deployed.
+                  </>
+                ) : (
+                  "no app is attached to it."
+                )}
+              </>
+            }
+            holdToConfirm
+            confirmLabel="Delete database"
+            onConfirm={async () => {
+              await api.del(path);
+              await queryClient.invalidateQueries({ queryKey: ["datastores"] });
+              router.push("/databases");
+            }}
+          />
+          <ContainerLogsDialog
+            open={logsOpen}
+            onOpenChange={setLogsOpen}
+            path={path}
+            name={datastore.name}
+            hasContainer={datastore.has_container}
+          />
+        </>
       )}
     </>
   );
@@ -314,7 +438,7 @@ function Extensions({ datastore, onChanged }: { datastore: Datastore; onChanged:
     <>
       <SectionHeader
         title="Extensions"
-        sub="Most install without interrupting the database. The two that need their own image or a preloaded library replace its container, which takes a few seconds; either way the data is untouched, and nothing removes an extension afterwards."
+        sub="Install PostgreSQL extensions. Some replace the container briefly; database files stay untouched."
       />
 
       {offered !== null && offered.length > 0 && (
@@ -323,11 +447,7 @@ function Extensions({ datastore, onChanged }: { datastore: Datastore; onChanged:
           onChange={setQuery}
           placeholder="Filter extensions"
           className="mb-4"
-          trailing={
-            <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-              {matches.length}/{offered.length}
-            </span>
-          }
+          count={{ value: matches.length, singular: "extension", plural: "extensions" }}
         />
       )}
 
@@ -436,12 +556,16 @@ function Connection({ datastore }: { datastore: Datastore }) {
   }, [datastore.name]);
 
   return (
-    <>
-      <SectionHeader
-        title="Connection"
-        sub="Apps on this instance reach it by container name on the shared network. Nothing else can, unless it is published."
-        actions={
-          creds && (
+    <Card className="mb-4">
+      <CardContent className="space-y-5">
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-1">
+            <h2 className="text-lg font-medium tracking-tight">Connection settings</h2>
+            <p className="max-w-2xl text-sm text-muted-foreground">
+              Apps on this instance reach it by container name on the shared network.
+            </p>
+          </div>
+          {creds && (
             <Button
               variant="ghost"
               size="xs"
@@ -453,21 +577,15 @@ function Connection({ datastore }: { datastore: Datastore }) {
               {revealed ? <EyeOffIcon /> : <EyeIcon />}
               {revealed ? "Hide" : "Reveal"}
             </Button>
-          )
-        }
-      />
+          )}
+        </header>
 
-      <ErrorAlert error={error} />
+        <ErrorAlert error={error} />
+        {forbidden && (
+          <Notice>The password and connection strings are available to administrators only.</Notice>
+        )}
 
-      {forbidden && (
-        <Notice>
-          The password and the connection strings need the admin role. Everything else about this
-          database is below.
-        </Notice>
-      )}
-
-      <Card className="mb-4">
-        <CardContent className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-4 sm:grid-cols-2">
           <CopyField label="Username" value={datastore.username} />
           {datastore.database && <CopyField label="Database" value={datastore.database} />}
 
@@ -509,9 +627,9 @@ function Connection({ datastore }: { datastore: Datastore }) {
               hint="From off this host, on the port this database is published on. There is no TLS in front of it."
             />
           )}
-        </CardContent>
-      </Card>
-    </>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -599,10 +717,10 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
     <>
       <SectionHeader
         title="Attached apps"
-        sub={`Each one receives ${datastore.var_stem}_URL and its parts, from its next deploy onwards. They may be in any project.`}
+        sub={`Attached apps receive ${datastore.var_stem}_URL and its connection details on their next deploy.`}
         actions={
-          <Button variant="outline" size="sm" onClick={() => setAttaching(true)}>
-            <PlugIcon />
+          <Button onClick={() => setAttaching(true)}>
+            <PlusIcon />
             Attach an app
           </Button>
         }
@@ -613,7 +731,11 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
       <DataTable
         columns={attachmentColumns((app) => setDetaching(app))}
         rows={datastore.attachments}
-        search={{ placeholder: "Filter apps", by: (a) => [a.app, a.prefix] }}
+        search={{
+          placeholder: "Filter apps",
+          countLabel: { singular: "app", plural: "apps" },
+          by: (a) => [a.app, a.prefix],
+        }}
         rowKey={(a) => a.app}
         onRowClick={(a) => router.push(`/projects/${a.app}`)}
         empty="Nothing is attached yet."
@@ -646,73 +768,6 @@ function Attachments({ datastore, onChanged }: { datastore: Datastore; onChanged
           if (detaching) await detach(detaching);
           setDetaching(null);
         }}
-      />
-    </>
-  );
-}
-
-// Turning a database off and on.
-//
-// In the header rather than in settings, because it is not a setting:
-// it is a thing you do, in the moment you decide to, and its result is
-// the status badge two inches away. Deleting stays in settings, where
-// what cannot be undone belongs.
-function PowerButton({ datastore, onChanged }: { datastore: Datastore; onChanged: () => void }) {
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const off = datastore.status === DATASTORE_STOPPED || datastore.status === "failed";
-  const path = datastorePath(datastore.name);
-
-  async function run(action: "start" | "stop") {
-    setBusy(true);
-    setError(null);
-    try {
-      await api.post(`${path}/${action}`);
-      onChanged();
-    } catch (err) {
-      setError(message(err));
-    }
-    setBusy(false);
-    setConfirming(false);
-  }
-
-  return (
-    <>
-      <ErrorAlert error={error} />
-      <ActionButton
-        variant="outline"
-        busy={busy}
-        // Nothing to turn off while it is still coming up, and nothing
-        // to turn on until it has a container to have been off.
-        disabled={datastore.status === "provisioning"}
-        onClick={() => (off ? run("start") : setConfirming(true))}
-      >
-        {off ? <PlayIcon /> : <PowerIcon />}
-        {off ? "Start" : "Stop"}
-      </ActionButton>
-
-      <ConfirmDialog
-        open={confirming}
-        onOpenChange={setConfirming}
-        title={`Stop ${datastore.name}?`}
-        description={
-          <>
-            The container stops and its data stays where it is — starting it again brings it back
-            unchanged.{" "}
-            {datastore.attachments.length > 0 ? (
-              <>
-                <strong>{datastore.attachments.map((a) => a.app).join(", ")}</strong> will keep
-                running and start failing to connect.
-              </>
-            ) : (
-              "No app is attached to it."
-            )}
-          </>
-        }
-        confirmLabel="Stop it"
-        onConfirm={() => run("stop")}
       />
     </>
   );

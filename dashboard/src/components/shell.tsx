@@ -1,5 +1,6 @@
 "use client";
 
+import { SiGithub } from "@icons-pack/react-simple-icons";
 import {
   ActivityIcon,
   ArchiveIcon,
@@ -26,15 +27,18 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
+import { BranchedMenu } from "@/components/branched-menu";
 import { Wordmark } from "@/components/brand";
 import { CommandPalette } from "@/components/command-palette";
-import { GitHubStar } from "@/components/github-star";
+import { abbreviateGitHubStars, GitHubStar, useGitHubStars } from "@/components/github-star";
+import { GlideSelect } from "@/components/glide-select";
 import { HeaderRail } from "@/components/header-rail";
 import { InstanceUpdate } from "@/components/instance-update";
 import Link from "@/components/navigation-link";
 import { SessionLoading } from "@/components/page-loading";
 import { QueryProvider } from "@/components/query-provider";
 import { ReleaseNotes, useReleaseNotes } from "@/components/release-notes";
+import { ScrollToTop } from "@/components/scroll-to-top";
 import { SessionProvider } from "@/components/session-context";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
@@ -50,36 +54,30 @@ import { UserAvatar } from "@/components/user-avatar";
 import { api, can, type Me, personName } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-// The two layers, and what separates them.
-//
-// **Workspace** is what you deploy: an organization's projects, the
-// environments in them, the apps in those. It is the work.
-//
-// **Platform** is what the instance is wired to — the registries it can
-// pull from, the DNS accounts it can write to, and the instance's own
-// domain and credentials. Nothing in it belongs to a project, and
-// almost none of it is touched twice: you connect a registry once and
-// then deploy through it for a year.
-//
-// Flat, those two read as one list of five peers, and "Registries" sat
-// beside "Projects" as though choosing between them were a normal thing
-// to do. They are not peers: one is where you work and the other is the
-// wiring behind it.
-//
-// `owns` is the rest of a section: the pages you reach from an entry
-// that have no entry of their own. Projects is a section rather than a
-// page — a project, an environment and an app all live under it, and
-// all four keep it lit. Adding a page under one is an edit here, not a
-// new special case in the component below.
-export const sections: { label?: string; items: NavItem[] }[] = [
+// Sidebar groups also feed the command palette below. `owns` keeps
+// nested pages active under the entry that contains them.
+export const sections: { label: string; items: NavItem[] }[] = [
   {
+    label: "General",
+    items: [{ href: "/", label: "Overview", icon: ActivityIcon }],
+  },
+  {
+    label: "Workloads",
     items: [
-      // The address you land on, and the one thing on this instance
-      // that is about the instance rather than about something in it:
-      // what the machine is doing, and what is deployed on it. It is
-      // above Projects because it is what you want before you know
-      // which project you want.
-      { href: "/", label: "Overview", icon: ActivityIcon },
+      {
+        href: "/servers",
+        label: "Nodes",
+        icon: ServerIcon,
+        owns: ["/servers"],
+        resource: "servers",
+      },
+      {
+        href: "/workloads",
+        label: "Containers",
+        icon: ContainerIcon,
+        owns: ["/workloads"],
+        resource: ["apps", "databases", "storage"],
+      },
       {
         href: "/projects",
         label: "Projects",
@@ -87,35 +85,6 @@ export const sections: { label?: string; items: NavItem[] }[] = [
         owns: ["/projects", "/environments", "/apps"],
         resource: ["projects", "apps"],
       },
-      // Beside Projects rather than under Platform: a database belongs
-      // to the instance, but it is a thing you deploy against, not a
-      // thing the instance is wired to. It is opened as often as an app
-      // is, which is what the Platform section is not for.
-      {
-        href: "/databases",
-        label: "Databases",
-        icon: DatabaseIcon,
-        owns: ["/databases"],
-        resource: "databases",
-      },
-      // Beside Databases for the same reason it is beside Projects: a
-      // bucket belongs to the instance, and it is a thing you deploy
-      // against rather than a thing the instance is wired to. It sits
-      // here even when the store itself is somebody else's — where the
-      // bytes are is not what decides which half of the sidebar a
-      // screen belongs in.
-      // "Object storage" rather than "Storage", which said nothing:
-      // beside Databases in the same section it read as the place disks
-      // are, and the URL stays /storage because a label is not a route.
-      {
-        href: "/storage",
-        label: "Object storage",
-        icon: HardDriveIcon,
-        owns: ["/storage"],
-        resource: "storage",
-      },
-      // Ready-made apps from the catalog. In Workspace, because an
-      // install is a project and the apps and data inside it.
       {
         href: "/templates",
         label: "Templates",
@@ -126,27 +95,41 @@ export const sections: { label?: string; items: NavItem[] }[] = [
     ],
   },
   {
-    label: "Platform",
+    label: "Data",
     items: [
-      // First in the section, because the others are configured
-      // *through* it: a registry and a DNS account both name a
-      // credential now rather than holding a secret of their own.
       {
-        href: "/credentials",
-        label: "Credentials",
-        icon: KeyRoundIcon,
-        owns: ["/credentials"],
-        resource: "credentials",
+        href: "/databases",
+        label: "Databases",
+        icon: DatabaseIcon,
+        owns: ["/databases"],
+        resource: "databases",
       },
-      // Beside Credentials, and for the same reason it is in this
-      // section at all: who can reach this instance is a fact about
-      // the instance, the same kind as which registry it pulls from.
-      // What is *yours* — your password, the colours you see — is
-      // under your own name at the foot of this list.
-      { href: "/users", label: "Users", icon: UsersIcon, owns: ["/users"], admin: true },
-      // Beside Users: what those people, and the keys they handed to
-      // agents, actually did.
-      { href: "/audit", label: "Audit log", icon: ScrollTextIcon, resource: "audit" },
+      {
+        href: "/storage",
+        label: "Object storage",
+        icon: HardDriveIcon,
+        owns: ["/storage"],
+        resource: "storage",
+      },
+      {
+        href: "/backups",
+        label: "Backups",
+        icon: ArchiveIcon,
+        owns: ["/backups"],
+        resource: "backups",
+      },
+    ],
+  },
+  {
+    label: "Network",
+    items: [
+      { href: "/dns", label: "DNS Providers", icon: GlobeIcon, owns: ["/dns"], resource: "dns" },
+      { href: "/firewall", label: "Firewall", icon: ShieldIcon, resource: "firewall" },
+    ],
+  },
+  {
+    label: "Config",
+    items: [
       {
         href: "/registries",
         label: "Registries",
@@ -161,39 +144,6 @@ export const sections: { label?: string; items: NavItem[] }[] = [
         owns: ["/git"],
         resource: "git",
       },
-      { href: "/dns", label: "DNS Providers", icon: GlobeIcon, owns: ["/dns"], resource: "dns" },
-      {
-        href: "/certificates",
-        label: "Certificates",
-        icon: ShieldCheckIcon,
-        resource: "certificates",
-      },
-      // Here rather than beside Databases: what is on this screen is not
-      // about any one database, and half of it is about databases that
-      // no longer exist — which is the one thing a database's own tab
-      // can never show.
-      {
-        href: "/backups",
-        label: "Backups",
-        icon: ArchiveIcon,
-        owns: ["/backups"],
-        resource: "backups",
-      },
-      // Next to Certificates rather than under Instance: both are about
-      // how the outside reaches this machine, and both are read far
-      // more often than they are changed.
-      { href: "/firewall", label: "Firewall", icon: ShieldIcon, resource: "firewall" },
-      // Above Instance, and the two read as a pair: the machines this
-      // instance is made of, then the instance itself. A server is not
-      // something you deploy *to* yet — when it is, this may well
-      // belong beside Projects rather than here.
-      {
-        href: "/servers",
-        label: "Servers",
-        icon: ServerIcon,
-        owns: ["/servers"],
-        resource: "servers",
-      },
       {
         href: "/components",
         label: "Components",
@@ -201,13 +151,34 @@ export const sections: { label?: string; items: NavItem[] }[] = [
         owns: ["/components"],
         admin: true,
       },
-      { href: "/settings", label: "Settings", icon: ServerCogIcon, resource: "settings" },
+      { href: "/settings", label: "Settings", icon: SettingsIcon, resource: "settings" },
     ],
   },
-  // There is no "You" section any more. It held one item, and what is
-  // yours — how you sign in, what colour you see, and who else can get
-  // in at all — is under your own name at the foot of this list rather
-  // than filed beside what the instance is made of.
+  {
+    label: "Security",
+    items: [
+      {
+        href: "/credentials",
+        label: "Credentials",
+        icon: KeyRoundIcon,
+        owns: ["/credentials"],
+        resource: "credentials",
+      },
+      {
+        href: "/certificates",
+        label: "Certificates",
+        icon: ShieldCheckIcon,
+        resource: "certificates",
+      },
+    ],
+  },
+  {
+    label: "Access",
+    items: [
+      { href: "/users", label: "Users", icon: UsersIcon, owns: ["/users"], admin: true },
+      { href: "/audit", label: "Audit log", icon: ScrollTextIcon, resource: "audit" },
+    ],
+  },
 ];
 
 // Every destination the sidebar offers, flattened — what the command
@@ -241,6 +212,7 @@ function offered(me: Me, item: NavItem) {
 // rendering, and sends you to sign in when the answer is nobody.
 export function Shell({ children }: { children: ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [me, setMe] = useState<Me | null>(null);
 
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -286,9 +258,9 @@ export function Shell({ children }: { children: ReactNode }) {
               Skip to content
             </a>
             <aside className="dashboard-sidebar">
-              <Link href="/" aria-label="Cubeship home" className="dashboard-brand">
+              <div className="dashboard-brand">
                 <Wordmark className="text-sm" markClassName="size-6" />
-              </Link>
+              </div>
               <Navigation me={me} />
               <div className="dashboard-account">
                 <UserMenu me={me} />
@@ -299,15 +271,43 @@ export function Shell({ children }: { children: ReactNode }) {
 
             <main className="dashboard-main">
               <CommandPalette screens={SCREENS} />
-              <HeaderRail navigation={<MobileNavigation me={me} />}>
+              {pathname === "/projects" ||
+              pathname.startsWith("/projects/") ||
+              pathname === "/databases" ||
+              pathname.startsWith("/databases/") ||
+              pathname === "/storage" ||
+              pathname.startsWith("/storage/") ||
+              pathname === "/templates" ||
+              pathname.startsWith("/templates/") ? (
                 <div
                   id="dashboard-content"
                   tabIndex={-1}
                   className="dashboard-container dashboard-content"
                 >
+                  {(pathname === "/templates" || pathname.startsWith("/templates/")) && (
+                    <div className="-mt-4 mb-3 hidden justify-end max-[760px]:flex">
+                      <MobileNavigation me={me} />
+                    </div>
+                  )}
                   {children}
                 </div>
-              </HeaderRail>
+              ) : (
+                <HeaderRail
+                  navigation={<MobileNavigation me={me} />}
+                  bare={
+                    pathname === "/workloads" || pathname === "/servers" || pathname === "/backups"
+                  }
+                >
+                  <div
+                    id="dashboard-content"
+                    tabIndex={-1}
+                    className="dashboard-container dashboard-content"
+                  >
+                    {children}
+                  </div>
+                </HeaderRail>
+              )}
+              <ScrollToTop />
             </main>
           </div>
         </ReleaseNotes>
@@ -317,25 +317,43 @@ export function Shell({ children }: { children: ReactNode }) {
 }
 
 function Navigation({ me, onNavigate }: { me: Me; onNavigate?: () => void }) {
+  const pathname = usePathname();
+  const items = sections
+    .map((section) => ({
+      label: section.label ?? "Workspace",
+      children: section.items
+        .filter((item) => offered(me, item))
+        .map((item) => {
+          const Icon = item.icon;
+          return {
+            value: item.href,
+            label: item.label,
+            icon: <Icon className="size-4" />,
+          };
+        }),
+    }))
+    .filter((section) => section.children.length > 0);
+  const activeValue =
+    sections
+      .flatMap((section) => section.items)
+      .find(
+        (item) =>
+          offered(me, item) &&
+          (pathname === item.href ||
+            item.owns?.some((path) => pathname === path || pathname.startsWith(`${path}/`))),
+      )?.href ?? "";
+
   return (
-    <nav className="dashboard-navigation" aria-label="Main navigation">
-      {sections.map((section) => {
-        const items = section.items.filter((item) => offered(me, item));
-        if (!items.length) return null;
-        return (
-          <div key={section.label ?? "workspace"} className="dashboard-nav-section">
-            <p className="dashboard-nav-label">{section.label ?? "Workspace"}</p>
-            {items.map((item) => (
-              <NavLink key={item.href} {...item} onNavigate={onNavigate} />
-            ))}
-          </div>
-        );
-      })}
-    </nav>
+    <BranchedMenu
+      className="dashboard-navigation"
+      items={items}
+      activeValue={activeValue}
+      onSelect={onNavigate}
+    />
   );
 }
 
-function MobileNavigation({ me }: { me: Me }) {
+export function MobileNavigation({ me }: { me: Me }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
   // biome-ignore lint/correctness/useExhaustiveDependencies: close the mobile drawer after a route change
@@ -349,44 +367,119 @@ function MobileNavigation({ me }: { me: Me }) {
       </DialogTrigger>
       <DialogContent className="dashboard-mobile-navigation">
         <DialogTitle className="sr-only">Navigation</DialogTitle>
-        <Link href="/" className="dashboard-brand" onClick={() => setOpen(false)}>
+        <div className="dashboard-brand">
           <Wordmark className="text-sm" markClassName="size-6" />
-        </Link>
+        </div>
         <Navigation me={me} onNavigate={() => setOpen(false)} />
         <div className="dashboard-account">
-          <UserMenu me={me} />
+          <UserMenu me={me} mobile />
         </div>
       </DialogContent>
     </Dialog>
   );
 }
 
-function NavLink({
-  href,
-  label,
-  owns = [],
-  icon: Icon,
-  onNavigate,
-}: NavItem & { onNavigate?: () => void }) {
-  const pathname = usePathname();
-  const active =
-    pathname === href || owns.some((p) => pathname === p || pathname.startsWith(`${p}/`));
+function UserMenu({ me, mobile = false }: { me: Me; mobile?: boolean }) {
+  return mobile ? <MobileUserMenu me={me} /> : <DesktopUserMenu me={me} />;
+}
+
+function useSignOut() {
+  const router = useRouter();
+  const [signingOut, setSigningOut] = useState(false);
+
+  async function signOut() {
+    if (signingOut) return;
+    setSigningOut(true);
+    try {
+      await api.post("/auth/logout");
+      router.replace("/login");
+    } catch (error) {
+      toast.error(message(error));
+      setSigningOut(false);
+    }
+  }
+
+  return { signingOut, signOut };
+}
+
+function MobileUserMenu({ me }: { me: Me }) {
+  const router = useRouter();
+  const releaseNotes = useReleaseNotes();
+  const { signingOut, signOut } = useSignOut();
+  const stars = useGitHubStars();
+
   return (
-    <Link
-      href={href}
-      onClick={onNavigate}
-      aria-current={active ? "page" : undefined}
-      className="dashboard-nav-link"
-    >
-      <Icon className="size-4 shrink-0" aria-hidden="true" />
-      <span>{label}</span>
-    </Link>
+    <GlideSelect
+      className="w-full"
+      value=""
+      ariaLabel="Account menu"
+      align="right"
+      triggerClassName="dashboard-user-trigger"
+      triggerContent={
+        <>
+          <UserAvatar person={me} className="size-8" />
+          <span className="dashboard-user-name">
+            <span>{personName(me)}</span>
+            <small>{me.role === "admin" ? "Administrator" : "Your account"}</small>
+          </span>
+          <ChevronsUpDownIcon
+            className="ml-auto size-3.5 shrink-0 text-muted-foreground"
+            aria-hidden="true"
+          />
+        </>
+      }
+      options={[
+        {
+          value: "account",
+          label: (
+            <span className="inline-flex items-center gap-2">
+              <SettingsIcon className="size-4" /> Your settings
+            </span>
+          ),
+        },
+        {
+          value: "release-notes",
+          label: (
+            <span className="inline-flex items-center gap-2">
+              <SparklesIcon className="size-4" /> Release notes
+            </span>
+          ),
+        },
+        {
+          value: "github",
+          label: (
+            <span className="inline-flex items-center gap-2">
+              <SiGithub className="size-4" /> Star on GitHub
+              {stars !== null && (
+                <span className="ml-auto font-mono text-xs text-muted-foreground">
+                  {abbreviateGitHubStars(stars)}
+                </span>
+              )}
+            </span>
+          ),
+        },
+        {
+          value: "sign-out",
+          label: (
+            <span className="inline-flex items-center gap-2 text-destructive">
+              <LogOutIcon className="size-4" /> {signingOut ? "Signing out…" : "Sign out"}
+            </span>
+          ),
+        },
+      ]}
+      onChange={(action) => {
+        if (action === "account") router.push("/account");
+        else if (action === "release-notes") releaseNotes();
+        else if (action === "github")
+          window.open("https://github.com/cubeshipd/cubeship", "_blank", "noopener,noreferrer");
+        else if (action === "sign-out") void signOut();
+      }}
+    />
   );
 }
 
-function UserMenu({ me }: { me: Me }) {
-  const router = useRouter();
-  const [signingOut, setSigningOut] = useState(false);
+function DesktopUserMenu({ me }: { me: Me }) {
+  const { signingOut, signOut } = useSignOut();
   const releaseNotes = useReleaseNotes();
   return (
     <DropdownMenu>
@@ -405,21 +498,8 @@ function UserMenu({ me }: { me: Me }) {
           </button>
         }
       />
-      {/* Out to the side, not up over the sidebar.
-          
-          The trigger is the last thing in a full-height column, so a
-          menu below it has nowhere to go and Base UI flips it upward —
-          over the navigation, which is the one part of the screen that
-          is supposed to stay put. To the right it opens into the page,
-          and `align="end"` keeps its own bottom on the trigger's so it
-          grows away from the edge rather than into it. */}
       <DropdownMenuContent side="right" align="end" className="w-52">
-        {/* GroupLabel is a Base UI group part and throws outside a Group. */}
         <DropdownMenuGroup>
-          {/* The name on top and the address under it. A username is
-              what a confirmation asks you to type and what `docker
-              login` sends, so it stays visible and stays mono — but it
-              is not what somebody is called. */}
           <DropdownMenuLabel className="text-xs">
             <span className="block truncate">{personName(me)}</span>
             <span className="block truncate font-mono text-[11px] text-subtle-foreground">
@@ -430,33 +510,15 @@ function UserMenu({ me }: { me: Me }) {
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
         <DropdownMenuItem render={<Link href="/account" />}>
-          <SettingsIcon />
-          Your settings
+          <SettingsIcon /> Your settings
         </DropdownMenuItem>
-        {/* Reading them again is not an event, so it opens the history
-            rather than whatever is unread. */}
         <DropdownMenuItem onClick={releaseNotes}>
-          <SparklesIcon />
-          Release notes
+          <SparklesIcon /> Release notes
         </DropdownMenuItem>
         <GitHubStar />
         <DropdownMenuSeparator />
-        <DropdownMenuItem
-          disabled={signingOut}
-          onClick={async () => {
-            if (signingOut) return;
-            setSigningOut(true);
-            try {
-              await api.post("/auth/logout");
-              router.replace("/login");
-            } catch (error) {
-              toast.error(message(error));
-              setSigningOut(false);
-            }
-          }}
-        >
-          <LogOutIcon />
-          Sign out
+        <DropdownMenuItem disabled={signingOut} onClick={() => void signOut()}>
+          <LogOutIcon /> Sign out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

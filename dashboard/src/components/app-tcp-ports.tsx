@@ -98,44 +98,42 @@ export function AppTCPPorts({
 
   return (
     <>
-      <SectionHeader
-        title="TCP ports"
-        sub="Ports of the container published on this instance's own address, for what is not HTTP — SSH into a Git server, a game server, a broker. Nothing proxies them and there is no TLS: the app's own authentication is what protects them."
-        actions={
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={cannotPublish !== null}
-            onClick={() => setAdding(true)}
-          >
-            <PlusIcon />
-            Publish port
-          </Button>
-        }
-      />
+      <section className="app-network-tcp-ports">
+        <SectionHeader
+          title="TCP ports"
+          sub="Publish container ports on this instance for non-HTTP services. Changes take effect on the next deploy."
+          actions={
+            <Button disabled={cannotPublish !== null} onClick={() => setAdding(true)}>
+              <PlusIcon />
+              Publish port
+            </Button>
+          }
+        />
 
-      {cannotPublish && <Notice>{cannotPublish}</Notice>}
+        <div className="space-y-4">
+          {cannotPublish && <Notice>{cannotPublish}</Notice>}
 
-      <DataTable
-        columns={columns}
-        rows={ports}
-        rowKey={(p) => String(p.id)}
-        empty="This app publishes no TCP port."
-      />
+          <DataTable
+            columns={columns}
+            rows={ports}
+            rowKey={(p) => String(p.id)}
+            empty="This app publishes no TCP port."
+          />
 
-      {added && (
-        <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-success">
-          <CheckIcon className="size-3.5" />
-          Published. Redeploy to open it.
-        </p>
-      )}
-      {(ports?.length ?? 0) > 0 && (
-        <Notice className="mt-3">
-          With a TCP port this app runs as one copy on {app.nodes[0]}, and each deploy stops the old
-          container before the new one starts — the new one could not bind the port while the old
-          one holds it — so the app is unavailable for a few seconds per deploy.
-        </Notice>
-      )}
+          {added && (
+            <p className="inline-flex items-center gap-1.5 text-xs text-success">
+              <CheckIcon className="size-3.5" />
+              Published. Redeploy to open it.
+            </p>
+          )}
+          {(ports?.length ?? 0) > 0 && (
+            <Notice>
+              TCP ports require one copy on {app.nodes[0]}; deploys briefly stop the current
+              container so the new one can bind the port.
+            </Notice>
+          )}
+        </div>
+      </section>
 
       <PublishDialog
         base={base}
@@ -155,7 +153,8 @@ export function AppTCPPorts({
         onOpenChange={(v) => !v && setRemoving(null)}
         title={`Stop publishing port ${removing?.container_port}?`}
         description="The container running now keeps the port open until the app is deployed again."
-        confirmLabel="Stop publishing"
+        confirmLabel="Delete"
+        holdToConfirm
         onConfirm={async () => {
           if (!removing) return;
           await api.del(`${base}/${removing.id}`);

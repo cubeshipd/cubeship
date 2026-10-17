@@ -169,11 +169,11 @@ export default function Registries() {
           value={query}
           onChange={setQuery}
           placeholder="Filter registries"
-          trailing={
-            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-              {shown.length + (ownShown ? 1 : 0)}/{creds.length + 1}
-            </span>
-          }
+          count={{
+            value: shown.length + (ownShown ? 1 : 0),
+            singular: "registry",
+            plural: "registries",
+          }}
         />
       )}
 

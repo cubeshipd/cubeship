@@ -1,14 +1,15 @@
-import { BadgeCheckIcon, LayoutTemplateIcon } from "lucide-react";
+import { BadgeCheckIcon, LayoutTemplateIcon, StarIcon } from "lucide-react";
 import Link from "@/components/navigation-link";
+import { Badge } from "@/components/ui/badge";
 import type { TemplateSummary } from "@/lib/api";
 
-// One template in the grid: its icon, name, who published it and what
-// it is. Opening it is where the install is.
+// One template in the catalog: the name, what it does, and enough
+// release detail to choose it without opening every card.
 export function TemplateCard({ template }: { template: TemplateSummary }) {
   return (
     <Link
       href={`/templates/${template.owner}/${template.name}`}
-      className="dashboard-template-card group flex flex-col gap-4 border border-border bg-card p-5 transition-all hover:border-primary/40 hover:bg-secondary/40 focus-visible:border-primary focus-visible:outline-none"
+      className="dashboard-template-card group flex flex-col gap-4 rounded-xl border border-border bg-card p-5 transition-colors hover:border-primary/40 hover:bg-secondary/30 focus-visible:border-primary focus-visible:outline-none"
     >
       <div className="flex items-center gap-3">
         <TemplateMark src={template.icon_url} className="size-11" />
@@ -24,7 +25,30 @@ export function TemplateCard({ template }: { template: TemplateSummary }) {
           </h3>
         </div>
       </div>
-      <p className="line-clamp-2 min-h-10 text-sm text-muted-foreground">{template.description}</p>
+      <p className="line-clamp-2 min-h-10 text-sm leading-relaxed text-muted-foreground">
+        {template.description}
+      </p>
+      {template.tags.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {template.tags.slice(0, 3).map((tag) => (
+            <Badge key={tag} variant="secondary" className="font-normal">
+              {tag}
+            </Badge>
+          ))}
+          {template.tags.length > 3 && (
+            <span className="px-1.5 py-0.5 text-xs text-muted-foreground">
+              +{template.tags.length - 3}
+            </span>
+          )}
+        </div>
+      )}
+      <div className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-4 text-xs text-muted-foreground">
+        <span className="truncate font-mono">{template.release.tag}</span>
+        <span className="inline-flex shrink-0 items-center gap-1">
+          <StarIcon className="size-3.5" aria-hidden="true" />
+          {template.stars}
+        </span>
+      </div>
     </Link>
   );
 }

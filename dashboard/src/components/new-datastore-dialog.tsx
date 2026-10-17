@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { CopyButton } from "@/components/copy-button";
 import { ErrorAlert } from "@/components/error-alert";
-import { SearchableSelect } from "@/components/searchable-select";
+import { GlideSelect } from "@/components/glide-select";
 import { SlugField } from "@/components/slug-field";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -142,15 +142,18 @@ export function NewDatastoreDialog({
               className="scroll-mt-12"
             />
 
-            <SearchableSelect
+            <GlideSelect
               label="Engine"
-              searchable={false}
+              searchable
               value={engine}
-              onChange={pickEngine}
-              choices={(engines ?? []).map((e) => ({
+              busy={engines === null}
+              onChange={(next) => pickEngine(next)}
+              options={(engines ?? []).map((e) => ({
                 value: e.engine,
                 label: datastoreLabel(e.engine),
               }))}
+              className="w-full"
+              triggerClassName="flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             />
 
             <div className="space-y-2">

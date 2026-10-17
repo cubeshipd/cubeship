@@ -8,7 +8,7 @@ import {
   useTable,
 } from "@tanstack/react-table";
 import { cn } from "cn";
-import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, InboxIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { LoadingRows } from "@/components/loading";
 import { SearchBar } from "@/components/search-bar";
@@ -77,6 +77,7 @@ export function DataTable<T extends object>({
   loadingRows = 6,
   rowKey,
   onRowClick,
+  mobileRow,
   className,
   maxHeight,
 }: {
@@ -105,13 +106,17 @@ export function DataTable<T extends object>({
   // words it looks at, which is all a caller says.
   search?: {
     placeholder?: string;
+    countLabel: { singular: string; plural: string };
     // The row's text, in parts so a caller does not have to join them.
     // Undefined entries are skipped, which is what an absent field is.
     by: (row: T) => (string | undefined)[];
+    filter?: (row: T) => boolean;
+    trailing?: ReactNode;
   };
   loadingRows?: number;
   rowKey?: (row: T, index: number) => string;
   onRowClick?: (row: T) => void;
+  mobileRow?: (row: T) => ReactNode;
   className?: string;
   // maxHeight bounds the table and scrolls it inside itself, for a list
   // long enough that the page would otherwise be the list — fifty
@@ -128,9 +133,11 @@ export function DataTable<T extends object>({
   // Case-insensitive substring, which is what somebody typing three
   // letters of a name means — no tokens, no ranking, nothing to learn.
   const matched = useMemo(() => {
-    if (!rows || !search || query.trim() === "") return rows ?? null;
+    if (!rows || !search) return rows ?? null;
+    const filtered = search.filter ? rows.filter(search.filter) : rows;
+    if (query.trim() === "") return filtered;
     const needle = query.trim().toLowerCase();
-    return rows.filter((row) =>
+    return filtered.filter((row) =>
       search.by(row).some((part) => part?.toLowerCase().includes(needle)),
     );
   }, [rows, search, query]);
@@ -154,25 +161,22 @@ export function DataTable<T extends object>({
   // empty list it is a control that can only ever return the same
   // nothing.
   const filter = search && rows != null && rows.length > 0 && (
-    <SearchBar
-      className="mb-4"
-      value={query}
-      onChange={setQuery}
-      placeholder={search.placeholder ?? "Filter"}
-      trailing={
-        <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-          {matched?.length ?? 0}/{rows.length}
-        </span>
-      }
-    />
+    <div
+      className={cn("mb-4", search.trailing && "grid gap-3 sm:grid-cols-[minmax(16rem,1fr)_auto]")}
+    >
+      <SearchBar
+        className={cn(search.trailing && "min-w-0")}
+        value={query}
+        onChange={setQuery}
+        placeholder={search.placeholder ?? "Filter"}
+        count={{ value: matched?.length ?? 0, ...search.countLabel }}
+      />
+      {search.trailing}
+    </div>
   );
 
   if (rows != null && rows.length === 0 && empty) {
-    return (
-      <Card className="dashboard-empty">
-        <CardContent className="py-2 text-sm text-muted-foreground">{empty}</CardContent>
-      </Card>
-    );
+    return <TableEmpty>{empty}</TableEmpty>;
   }
 
   // A filter that matched nothing is a different sentence from a list
@@ -182,11 +186,7 @@ export function DataTable<T extends object>({
     return (
       <>
         {filter}
-        <Card className="dashboard-empty">
-          <CardContent className="py-2 text-sm text-muted-foreground">
-            Nothing matches that.
-          </CardContent>
-        </Card>
+        <TableEmpty>Nothing matches that.</TableEmpty>
       </>
     );
   }
@@ -194,12 +194,21 @@ export function DataTable<T extends object>({
   return (
     <>
       {filter}
-      <Card className={cn("dashboard-data-table py-0", className)}>
+      <Card
+        className={cn(
+          "dashboard-data-table py-0",
+          mobileRow && "dashboard-data-table-has-mobile",
+          className,
+        )}
+      >
         {/* The scroll container is here rather than on the page, so a
           table that is genuinely wider than the pane scrolls inside its
           own card and the page body never does. */}
         <div
-          className={cn("w-full overflow-x-auto", maxHeight && "overflow-y-auto")}
+          className={cn(
+            "dashboard-data-table-scroll w-full overflow-x-auto",
+            maxHeight && "overflow-y-auto",
+          )}
           style={maxHeight ? { maxHeight } : undefined}
         >
           <Table className="w-full table-fixed">
@@ -280,7 +289,37 @@ export function DataTable<T extends object>({
             </TableBody>
           </Table>
         </div>
+        {mobileRow && (
+          <div className="dashboard-data-table-mobile">
+            {rows == null
+              ? ["one", "two", "three", "four", "five"]
+                  .slice(0, Math.min(loadingRows, 5))
+                  .map((key) => (
+                    <div key={key} className="h-24 animate-pulse rounded-lg bg-muted/40" />
+                  ))
+              : table
+                  .getRowModel()
+                  .rows.map((row, index) => (
+                    <div key={rowKey ? rowKey(row.original, index) : row.id}>
+                      {mobileRow(row.original)}
+                    </div>
+                  ))}
+          </div>
+        )}
       </Card>
     </>
+  );
+}
+
+function TableEmpty({ children }: { children: ReactNode }) {
+  return (
+    <Card className="dashboard-empty">
+      <CardContent className="flex flex-col items-center gap-3 px-6 py-7 text-center">
+        <span className="grid size-10 place-items-center rounded-full border border-border bg-muted/40 text-muted-foreground">
+          <InboxIcon className="size-5" aria-hidden="true" />
+        </span>
+        <div className="max-w-[70ch] text-sm leading-relaxed text-muted-foreground">{children}</div>
+      </CardContent>
+    </Card>
   );
 }

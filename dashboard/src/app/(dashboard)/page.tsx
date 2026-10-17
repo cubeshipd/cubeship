@@ -2,29 +2,26 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { ArrowUpRightIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useTransition } from "react";
 import { CubeMark } from "@/components/brand";
-import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
 import { RailPortal } from "@/components/header-rail";
 import { InstanceMetrics } from "@/components/instance-metrics";
 import { MachineSelector, useMachineSelection } from "@/components/machine-selector";
-import Link, { NavigationProgress } from "@/components/navigation-link";
+import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
-import { SectionHeader } from "@/components/section-header";
+import { useSession } from "@/components/session-context";
+import { StatusDot } from "@/components/status-badge";
 import {
   type App,
-  type ContainerUsage,
+  type BackupCoverage,
+  can,
   type Datastore,
-  formatBytes,
-  formatCPU,
   type ObjectStore,
   type Project,
 } from "@/lib/api";
 import {
   appsQuery,
-  containersQuery,
+  backupCoverageQuery,
   datastoresQuery,
   projectsQuery,
   storesQuery,
@@ -47,11 +44,13 @@ import { message } from "@/lib/errors";
 // hard the box is working, then which of the things in the first list is
 // the reason.
 export default function Overview() {
+  const me = useSession();
   const machine = useMachineSelection();
   const projects = useQuery(projectsQuery);
   const apps = useQuery(appsQuery);
   const datastores = useQuery(datastoresQuery);
   const stores = useQuery(storesQuery);
+  const backups = useQuery({ ...backupCoverageQuery, enabled: can(me, "backups") });
 
   return (
     <>
@@ -71,6 +70,21 @@ export default function Overview() {
         datastores={datastores.data ?? null}
         stores={stores.data ?? null}
       />
+      <OperationalStatus
+        me={me}
+        machines={machine.query.data}
+        apps={apps.data}
+        datastores={datastores.data}
+        stores={stores.data}
+        backups={backups.data}
+        loaded={
+          (!can(me, "servers") || machine.query.isSuccess) &&
+          (!can(me, "apps") || apps.isSuccess) &&
+          (!can(me, "databases") || datastores.isSuccess) &&
+          (!can(me, "storage") || stores.isSuccess) &&
+          (!can(me, "backups") || backups.isSuccess)
+        }
+      />
       <ErrorAlert error={machine.query.error ? message(machine.query.error) : null} />
       {machine.selected && machine.selected.status !== "ready" && (
         <Notice tone="warning">
@@ -79,115 +93,94 @@ export default function Overview() {
         </Notice>
       )}
       <InstanceMetrics server={machine.server} />
-      <Containers />
     </>
   );
 }
 
-// How often the list of what is using the box is re-read. The daemon
-// samples every 30 seconds, so anything faster is two requests for one
-// reading.
+function OperationalStatus({
+  me,
+  machines,
+  apps,
+  datastores,
+  stores,
+  backups,
+  loaded,
+}: {
+  me: ReturnType<typeof useSession>;
+  machines?: ReturnType<typeof useMachineSelection>["query"]["data"];
+  apps?: App[];
+  datastores?: Datastore[];
+  stores?: ObjectStore[];
+  backups?: BackupCoverage[];
+  loaded: boolean;
+}) {
+  if (!loaded) return null;
 
-// What every container on this instance is using, heaviest first.
-//
-// The counterpart to the charts above it: those say the box is at 80%,
-// and this says which of the twenty things on it is the reason. It
-// crosses apps, databases and object stores, because the question does
-// — and it is the one screen in the dashboard that does, which is why
-// it is served at the instance's own address rather than any module's.
-function Containers() {
-  const router = useRouter();
-  const [navigating, startTransition] = useTransition();
-  const containers = useQuery(containersQuery);
-  const usage = containers.data ?? (containers.isError ? [] : null);
-  const refused = containers.isError;
+  const issues = [
+    {
+      visible: can(me, "servers"),
+      singular: "machine waiting or offline",
+      plural: "machines waiting or offline",
+      count: (machines ?? []).filter((machine) => machine.status !== "ready").length,
+      href: "/servers",
+    },
+    {
+      visible: can(me, "apps"),
+      singular: "app not serving",
+      plural: "apps not serving",
+      count: (apps ?? []).filter((app) => app.status === "down" || app.status === "degraded")
+        .length,
+      href: "/projects",
+    },
+    {
+      visible: can(me, "databases"),
+      singular: "database unavailable",
+      plural: "databases unavailable",
+      count: (datastores ?? []).filter((db) => db.status === "down" || db.status === "failed")
+        .length,
+      href: "/databases",
+    },
+    {
+      visible: can(me, "storage"),
+      singular: "object store unavailable",
+      plural: "object stores unavailable",
+      count: (stores ?? []).filter((store) => store.status === "down" || store.status === "failed")
+        .length,
+      href: "/storage",
+    },
+    {
+      visible: can(me, "backups"),
+      singular: "backup target needs attention",
+      plural: "backup targets need attention",
+      count: (backups ?? []).filter(
+        (backup) => backup.can_back_up && (!backup.protected || backup.failing),
+      ).length,
+      href: "/backups",
+    },
+  ].filter((issue) => issue.visible && issue.count > 0);
 
-  const columns: Column<ContainerUsage>[] = [
-    {
-      id: "name",
-      header: "Container",
-      width: 56,
-      sortBy: (u) => u.name,
-      cell: (u) => (
-        <span className="flex min-w-0 items-baseline gap-3">
-          <span className="w-20 shrink-0 text-[11px] tracking-[0.12em] text-subtle-foreground uppercase">
-            {kinds[u.kind] ?? u.kind}
-          </span>
-          <span className="truncate font-mono text-sm">{u.name}</span>
-        </span>
-      ),
-    },
-    {
-      id: "cpu",
-      header: "CPU",
-      width: 22,
-      align: "right",
-      sortBy: (u) => u.cpu_percent,
-      cell: (u) => <span className="font-mono text-sm">{formatCPU(u.cpu_percent)}</span>,
-    },
-    {
-      id: "memory",
-      header: "Memory",
-      width: 22,
-      align: "right",
-      sortBy: (u) => u.memory_bytes,
-      cell: (u) => <span className="font-mono text-sm">{formatBytes(u.memory_bytes)}</span>,
-    },
-  ];
+  if (!issues.length) return null;
 
   return (
-    <>
-      <NavigationProgress pending={navigating} />
-      <SectionHeader
-        title="Workloads · all machines"
-        // The convention is the one thing about this number that
-        // surprises people, and it is the opposite of the chart above.
-        sub="Cluster-wide application, database and storage usage. App replicas are combined across machines. CPU 100% is one core; machine selection applies to the monitoring charts above."
-      />
-      <DataTable
-        columns={columns}
-        rows={usage}
-        rowKey={(u) => `${u.kind}:${u.name}`}
-        onRowClick={(u) => {
-          const href = hrefFor(u);
-          if (href) startTransition(() => router.push(href));
-        }}
-        loadingRows={4}
-        // Bounded, because an instance with thirty containers would
-        // otherwise be a page that is the list.
-        maxHeight="24rem"
-        empty={
-          refused
-            ? "This account may not read what the instance is running."
-            : "Nothing has been sampled yet — the first reading lands within a minute of a container starting."
-        }
-        className="mb-4"
-      />
-    </>
+    <section
+      className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 border border-warning/30 bg-warning/5 px-4 py-3"
+      aria-label="Operational status"
+    >
+      <span className="inline-flex items-center gap-2 text-sm font-medium">
+        <StatusDot value="failed" />
+        Needs attention
+      </span>
+      {issues.map((issue) => (
+        <Link
+          key={issue.href}
+          href={issue.href}
+          className="text-xs text-muted-foreground underline decoration-border underline-offset-4 hover:text-foreground"
+        >
+          {issue.count} {issue.count === 1 ? issue.singular : issue.plural}
+        </Link>
+      ))}
+    </section>
   );
-}
-
-// What a kind is called on screen. The daemon's words are the module
-// names; these are the product's.
-const kinds: Record<string, string> = {
-  app: "App",
-  datastore: "Database",
-  objectstore: "Storage",
-};
-
-// Where a row goes. Derived here rather than served, because it is a
-// fact about this dashboard's routes and not about the daemon.
-function hrefFor(u: ContainerUsage): string | null {
-  switch (u.kind) {
-    case "app":
-      return `/projects/${u.name}`;
-    case "datastore":
-      return `/databases/${u.name}`;
-    case "objectstore":
-      return `/storage/${u.name}`;
-    default:
-      return null;
-  }
 }
 
 // What this instance holds, as four counts.

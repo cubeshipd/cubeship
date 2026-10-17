@@ -238,6 +238,8 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET "+appPath, auth(http.HandlerFunc(h.get)))
 	r.Handle("PATCH "+appPath, auth(http.HandlerFunc(h.update)))
 	r.Handle("DELETE "+appPath, auth(http.HandlerFunc(h.delete)))
+	r.Handle("POST "+appPath+"/stop", auth(http.HandlerFunc(h.stop)))
+	r.Handle("POST "+appPath+"/start", auth(http.HandlerFunc(h.start)))
 	r.Handle("POST "+appPath+"/deploy", auth(http.HandlerFunc(h.deploy)))
 	r.Handle("GET "+appPath+"/deployments", auth(http.HandlerFunc(h.deployments)))
 	r.Handle("GET "+appPath+"/deployments/{id}", auth(http.HandlerFunc(h.deployment)))
@@ -259,6 +261,24 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("DELETE "+appPath+"/tcp-ports/{portID}", auth(http.HandlerFunc(h.removeTCPPort)))
 	r.Handle("GET /volumes/orphans", auth(http.HandlerFunc(h.volumeOrphans)))
 	r.Handle("DELETE /volumes/orphans/{id}", auth(http.HandlerFunc(h.deleteVolumeOrphan)))
+}
+
+func (h *Handler) stop(w http.ResponseWriter, r *http.Request) {
+	a, err := h.svc.Stop(r.Context(), user.FromContext(r.Context()), refFrom(r))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toResponse(a, h.svc.InstanceConfig(r.Context())))
+}
+
+func (h *Handler) start(w http.ResponseWriter, r *http.Request) {
+	a, err := h.svc.Start(r.Context(), user.FromContext(r.Context()), refFrom(r))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toResponse(a, h.svc.InstanceConfig(r.Context())))
 }
 
 // refFrom builds the app reference from the request path.

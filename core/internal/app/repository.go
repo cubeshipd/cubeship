@@ -412,6 +412,14 @@ func (r *Repository) SetStatus(ctx context.Context, appID, nodeID int64, ordinal
 	return nil
 }
 
+// SetAppStatus records an intentional stop or resume for every replica.
+func (r *Repository) SetAppStatus(ctx context.Context, appID int64, status string) error {
+	if _, err := r.q.ExecContext(ctx, `UPDATE app_nodes SET status = $2, updated_at = now() WHERE app_id = $1`, appID, status); err != nil {
+		return fmt.Errorf("set app status: %w", err)
+	}
+	return nil
+}
+
 // SetEnv replaces the app's variables wholesale. Callers that mean "add
 // these" want MergeEnv — this one deletes every key not in env.
 func (r *Repository) SetEnv(ctx context.Context, appID int64, env envvar.Map) error {

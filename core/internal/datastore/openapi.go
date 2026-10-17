@@ -231,6 +231,22 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					},
 				},
 			},
+			datastorePath + "/credentials/rotate": {
+				"post": {
+					OperationID: "rotateDatastoreCredentials",
+					Summary:     "Rotate a database password",
+					Description: "Changes the engine password and returns the new credentials. Attached apps receive the new value on their next deploy. Requires manage access and permission to read database secrets.",
+					Tags:        []string{"Datastores"},
+					Parameters:  nameParam,
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The new login and connection strings.", openapi.Ref("DatastoreCredentials")),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("The database is not running."),
+					},
+				},
+			},
 			datastorePath + "/metrics": {
 				"get": {
 					OperationID: "getDatastoreMetrics",

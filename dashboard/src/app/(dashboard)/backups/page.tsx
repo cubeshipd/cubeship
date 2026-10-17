@@ -1,10 +1,12 @@
 "use client";
 
+import { DatabaseIcon, HardDriveIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { BackupTable } from "@/components/backups";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { GlideSelect } from "@/components/glide-select";
 import { SectionHeader } from "@/components/section-header";
 import { api, type Backup, type BackupCoverage } from "@/lib/api";
 import { message } from "@/lib/errors";
@@ -31,6 +33,8 @@ export default function BackupsPage() {
   const router = useRouter();
   const [rows, setRows] = useState<BackupCoverage[] | null>(null);
   const [orphans, setOrphans] = useState<Backup[] | null>(null);
+  const [kind, setKind] = useState("");
+  const [engine, setEngine] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(() => {
@@ -52,6 +56,11 @@ export default function BackupsPage() {
   // after a glance. The columns are still sortable for anybody who
   // wants it the other way.
   const sorted = rows ? [...rows].sort((a, b) => rank(a) - rank(b)) : null;
+  const engines = [
+    ...new Set((rows ?? []).filter((row) => row.kind !== "volume").map((row) => row.engine)),
+  ].sort();
+  const filterTriggerClass =
+    "flex h-[38px] w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
 
   const columns: Column<BackupCoverage>[] = [
     {
@@ -129,6 +138,7 @@ export default function BackupsPage() {
 
   return (
     <>
+      <SectionHeader title="Backups" sub="Check backup coverage for databases and volumes." />
       <ErrorAlert error={error} />
 
       <DataTable
@@ -136,8 +146,70 @@ export default function BackupsPage() {
         rows={sorted}
         rowKey={(c) => (c.kind === "volume" ? `volume:${c.volume_id}` : c.database)}
         search={{
-          placeholder: "Filter databases and volumes",
+          placeholder: "Search databases and volumes",
+          countLabel: { singular: "backup target", plural: "backup targets" },
           by: (c) => [c.database, c.engine, c.volume ?? ""],
+          filter: (row) =>
+            (!kind || (row.kind === "volume" ? "volume" : "datastore") === kind) &&
+            (kind !== "datastore" || !engine || row.engine === engine),
+          trailing: (
+            <div
+              className={`grid w-full min-w-0 gap-2 ${kind === "datastore" ? "grid-cols-2 sm:w-[28rem]" : "grid-cols-1 sm:w-56"}`}
+            >
+              <GlideSelect
+                ariaLabel="Filter backups by target type"
+                value={kind}
+                options={[
+                  { value: "", label: "All targets" },
+                  {
+                    value: "datastore",
+                    label: (
+                      <span className="inline-flex items-center gap-2">
+                        <DatabaseIcon className="size-4 text-muted-foreground" aria-hidden="true" />
+                        Databases
+                      </span>
+                    ),
+                  },
+                  {
+                    value: "volume",
+                    label: (
+                      <span className="inline-flex items-center gap-2">
+                        <HardDriveIcon
+                          className="size-4 text-muted-foreground"
+                          aria-hidden="true"
+                        />
+                        Volumes
+                      </span>
+                    ),
+                  },
+                ]}
+                onChange={(value) => {
+                  setKind(value);
+                  if (value !== "datastore") setEngine("");
+                }}
+                placeholder="All targets"
+                startIcon={<HardDriveIcon className="size-4" />}
+                className="w-full min-w-0"
+                triggerClassName={filterTriggerClass}
+              />
+              {kind === "datastore" && (
+                <GlideSelect
+                  ariaLabel="Filter databases by engine"
+                  value={engine}
+                  options={[
+                    { value: "", label: "All engines" },
+                    ...engines.map((value) => ({ value, label: value })),
+                  ]}
+                  onChange={setEngine}
+                  placeholder="All engines"
+                  startIcon={<DatabaseIcon className="size-4" />}
+                  searchable={engines.length >= 8}
+                  className="w-full min-w-0"
+                  triggerClassName={filterTriggerClass}
+                />
+              )}
+            </div>
+          ),
         }}
         // Straight to the tab that acts on it, rather than to the
         // database's Overview and two more clicks to find Backups.
@@ -155,7 +227,7 @@ export default function BackupsPage() {
         <div className="mt-8">
           <SectionHeader
             title="Backups of deleted databases"
-            sub="Kept on purpose — deleting a database is exactly when its backups matter — and reachable nowhere else. They can be downloaded and deleted; restoring one would mean choosing which database to load it into, which this release does not do."
+            sub="Backups kept after their databases were deleted."
           />
           {/* Their own table rather than rows mixed into the one above.
               Nothing here can be restored, and a table where some rows

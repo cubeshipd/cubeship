@@ -58,6 +58,9 @@ func (exposeFakeDocker) IsRunning(context.Context, string) (bool, error) { retur
 func (exposeFakeDocker) Logs(context.Context, string, string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
 }
+func (exposeFakeDocker) ExecStream(context.Context, string, []string, io.Reader, io.Writer) (string, int, error) {
+	return "", 0, nil
+}
 
 var exposeTestAdmin = &user.User{Username: "admin", Role: user.RoleAdmin}
 

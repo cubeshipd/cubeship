@@ -127,14 +127,14 @@ export function SearchableSelect({
             </button>
           }
         />
-        <PopoverContent align="start" className="w-(--anchor-width) p-0">
+        <PopoverContent align="start" className="w-(--anchor-width) overflow-hidden rounded-lg p-0">
           {searchable && (
             <SearchBar
               inputRef={search}
               value={query}
               onChange={setQuery}
               placeholder="Search"
-              className="border-0 border-b focus-within:ring-0"
+              className="rounded-none border-0 border-b focus-within:ring-0"
             />
           )}
 

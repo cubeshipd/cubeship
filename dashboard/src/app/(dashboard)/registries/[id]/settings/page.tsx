@@ -341,7 +341,7 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
         open={deleting}
         onOpenChange={setDeleting}
         title={`Delete the login for ${credential?.host || "this registry"}?`}
-        confirmWord={credential?.host}
+        holdToConfirm
         description="Nothing in the registry is touched. What goes is this instance's ability to pull from it."
         onConfirm={async () => {
           await api.del(`/registries/${id}`);

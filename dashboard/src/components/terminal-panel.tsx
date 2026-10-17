@@ -2,7 +2,8 @@
 
 import { cn } from "cn";
 import dynamic from "next/dynamic";
-import { Notice } from "@/components/notice";
+import { useState } from "react";
+import { SearchableSelect } from "@/components/searchable-select";
 
 // The size a terminal holds before it has loaded, which is the size it
 // has after. A panel that grew into its space would push everything
@@ -34,11 +35,55 @@ export function TerminalPanel({
 }) {
   if (PREVIEW) {
     return (
-      <Notice>
-        A shell runs on a real machine, and this preview has none behind it. On an instance, this is
-        a terminal inside the container.
-      </Notice>
+      <div className="space-y-2">
+        <p className="font-mono text-[11px] tracking-wide text-muted-foreground">
+          SIMULATED · SAMPLE OUTPUT ONLY
+        </p>
+        <pre
+          role="img"
+          aria-label="Simulated terminal preview"
+          className={cn(
+            "overflow-auto border border-border bg-black p-4 font-mono text-[13px] leading-relaxed text-(--ansi-white)",
+            HEIGHT,
+          )}
+        >
+          <span className="text-(--ansi-green)">app@api</span>:
+          <span className="text-(--ansi-blue)">/app</span>$ pwd{"\n"}
+          /app{"\n"}
+          <span className="text-(--ansi-green)">app@api</span>:
+          <span className="text-(--ansi-blue)">/app</span>$ ls{"\n"}
+          package.json src dist{"\n"}
+          <span className="text-(--ansi-green)">app@api</span>:
+          <span className="text-(--ansi-blue)">/app</span>$ node --version{"\n"}
+          v22.14.0{"\n"}
+          <span className="text-(--ansi-green)">app@api</span>:
+          <span className="text-(--ansi-blue)">/app</span>$ <span className="animate-pulse">█</span>
+        </pre>
+      </div>
     );
   }
   return <Session path={path} query={query} password={password} className={HEIGHT} />;
+}
+
+export function AppShell({ path, servers }: { path: string; servers: string[] }) {
+  const [server, setServer] = useState(servers[0] ?? "");
+  return (
+    <div className="space-y-3">
+      {servers.length > 1 && (
+        <SearchableSelect
+          label="Machine"
+          value={server}
+          onChange={setServer}
+          choices={servers.map((s) => ({ value: s, label: s }))}
+          searchable={false}
+          fieldClassName="max-w-xs"
+        />
+      )}
+      <TerminalPanel
+        key={server}
+        path={`${path}/shell`}
+        query={servers.length > 1 ? { server } : undefined}
+      />
+    </div>
+  );
 }

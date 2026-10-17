@@ -38,17 +38,21 @@ export function SearchBar({
   value,
   onChange,
   placeholder = "Filter",
+  count,
   trailing,
   autoFocus,
   inputRef,
+  onKeyDown,
   className,
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
+  count?: { value: number; singular: string; plural: string; loading?: boolean };
   trailing?: ReactNode;
   autoFocus?: boolean;
   inputRef?: Ref<HTMLInputElement>;
+  onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
   className?: string;
 }) {
   return (
@@ -59,7 +63,7 @@ export function SearchBar({
     <div
       data-slot="search-bar"
       className={cn(
-        "flex items-center gap-2 border border-border px-3 transition-colors",
+        "flex items-center gap-2 rounded-lg border border-border px-3 transition-colors",
         className,
       )}
     >
@@ -72,6 +76,7 @@ export function SearchBar({
         placeholder={placeholder}
         spellCheck={false}
         autoFocus={autoFocus}
+        onKeyDown={onKeyDown}
         className="h-9 min-w-0 flex-1 bg-transparent font-mono text-sm outline-none placeholder:font-sans placeholder:text-muted-foreground"
       />
       {value && (
@@ -83,6 +88,18 @@ export function SearchBar({
         >
           <XIcon className="size-3.5" />
         </button>
+      )}
+      {count && (
+        <span
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+          className="shrink-0 font-mono text-[11px] text-muted-foreground"
+        >
+          {count.loading
+            ? "…"
+            : `${count.value} ${count.value === 1 ? count.singular : count.plural}`}
+        </span>
       )}
       {trailing}
     </div>

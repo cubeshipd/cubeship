@@ -3,6 +3,7 @@
 import { type ReactNode, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
+import HoldButton from "@/components/hold-button";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,10 +16,8 @@ import {
 } from "@/components/ui/dialog";
 import { message } from "@/lib/errors";
 
-// Anything irreversible goes through here. The guard is typing the
-// thing's own name, not an "are you sure": the dangerous case is the one
-// where the daemon would happily comply, and a second button is no
-// obstacle to a misclick.
+// Shared confirmation state and error handling. Deletions can require a
+// hold; non-delete operations that need a target word keep that prompt.
 export function ConfirmDialog({
   open,
   onOpenChange,
@@ -26,6 +25,7 @@ export function ConfirmDialog({
   description,
   confirmWord,
   confirmLabel = "Delete",
+  holdToConfirm = false,
   onConfirm,
   children,
 }: {
@@ -39,14 +39,14 @@ export function ConfirmDialog({
   // needs a deliberate second click.
   confirmWord?: string;
   confirmLabel?: string;
+  holdToConfirm?: boolean;
   onConfirm: () => Promise<unknown>;
 }) {
   const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function confirm() {
     setBusy(true);
     setError(null);
     try {
@@ -57,6 +57,11 @@ export function ConfirmDialog({
       setError(message(err));
     }
     setBusy(false);
+  }
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault();
+    await confirm();
   }
 
   return (
@@ -71,7 +76,7 @@ export function ConfirmDialog({
           <div className="space-y-4 py-5">
             <ErrorAlert error={error} />
             {children}
-            {confirmWord && (
+            {confirmWord && !holdToConfirm && (
               <TextField
                 label={`Type ${confirmWord} to confirm`}
                 spellCheck={false}
@@ -86,14 +91,31 @@ export function ConfirmDialog({
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <ActionButton
-              type="submit"
-              busy={busy}
-              variant="destructive"
-              disabled={confirmWord ? typed !== confirmWord : false}
-            >
-              {confirmLabel}
-            </ActionButton>
+            {holdToConfirm ? (
+              <HoldButton
+                className="w-full sm:w-auto"
+                backgroundColor="var(--muted)"
+                fillColor="var(--destructive)"
+                textColor="var(--foreground)"
+                fillTextColor="var(--destructive-foreground)"
+                size="sm"
+                radius={8}
+                disabled={busy}
+                doneLabel="Working…"
+                onHold={() => void confirm()}
+              >
+                Hold to {confirmLabel.toLowerCase()}
+              </HoldButton>
+            ) : (
+              <ActionButton
+                type="submit"
+                busy={busy}
+                variant="destructive"
+                disabled={confirmWord ? typed !== confirmWord : false}
+              >
+                {confirmLabel}
+              </ActionButton>
+            )}
           </DialogFooter>
         </form>
       </DialogContent>

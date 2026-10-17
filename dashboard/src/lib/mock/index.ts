@@ -272,7 +272,10 @@ const routes: [string, string, Handler][] = [
     "/projects/:project/environments/:env/env",
     (p) => ({
       vars: db.env.environment[`${p[0]}/${p[1]}`] ?? {},
-      effective: resolved(db.env.project[p[0]], db.env.environment[`${p[0]}/${p[1]}`]),
+      effective: resolved(
+        { source: "project", vars: db.env.project[p[0]] },
+        { source: "environment", vars: db.env.environment[`${p[0]}/${p[1]}`] },
+      ),
     }),
   ],
 
@@ -307,6 +310,16 @@ const routes: [string, string, Handler][] = [
     },
   ],
   ["GET", "/apps/:a/:b/:c", (p) => appOr404(p.join("/"))],
+  [
+    "POST",
+    "/apps/:a/:b/:c/stop",
+    (p) => Object.assign(appOr404(p.join("/")), { status: "stopped", has_container: true }),
+  ],
+  [
+    "POST",
+    "/apps/:a/:b/:c/start",
+    (p) => Object.assign(appOr404(p.join("/")), { status: "running", has_container: true }),
+  ],
   ["PATCH", "/apps/:a/:b/:c", (p, body) => Object.assign(appOr404(p.join("/")), body as Row)],
   [
     "DELETE",
@@ -317,7 +330,41 @@ const routes: [string, string, Handler][] = [
     },
   ],
   ["GET", "/apps/:a/:b/:c/env", (p) => appEnv(p.join("/"))],
+  [
+    "PATCH",
+    "/apps/:a/:b/:c/env",
+    (p, body) => {
+      const reference = p.join("/");
+      let own = db.env.app[reference];
+      if (!own) {
+        own = {};
+        db.env.app[reference] = own;
+      }
+      const patch = body as { set?: Record<string, string>; unset?: string[] };
+      Object.assign(own, patch.set ?? {});
+      for (const key of patch.unset ?? []) delete own[key];
+      return {};
+    },
+  ],
   ["GET", "/apps/:a/:b/:c/deployments", (p) => db.deployments[p.join("/")] ?? []],
+  [
+    "GET",
+    "/apps/:a/:b/:c/deployments/:id",
+    (p) => {
+      const deployment = row(db.deployments[p.slice(0, 3).join("/")] ?? [], "id", p[3]);
+      return {
+        ...deployment,
+        phase: deployment.status === "failed" ? "failed" : "done",
+        duration_ms: 42_000,
+        cancelled: false,
+        logs:
+          deployment.logs ??
+          (deployment.status === "failed"
+            ? "Building image…\nStarting container…"
+            : "Image pulled successfully.\nContainer is healthy."),
+      };
+    },
+  ],
   [
     "POST",
     "/apps/:a/:b/:c/deploy",
@@ -653,8 +700,60 @@ const routes: [string, string, Handler][] = [
   ],
   ["GET", "/datastores/engines", () => engines],
   ["GET", "/datastores", () => db.datastores],
+  [
+    "POST",
+    "/datastores",
+    (_p, body) => {
+      const input = body as Row;
+      const engine = engines.find((item) => item.engine === input.engine) ?? notFound();
+      const created: Row = {
+        name: input.name,
+        engine: input.engine,
+        version: input.version,
+        username: input.username,
+        password: input.password,
+        var_stem: engine.var_stem,
+        host: `cubeship-db-${input.name}`,
+        port: engine.port,
+        status: "running",
+        has_container: true,
+        extensions: [],
+        limits: { cpu: 0, memory: 0 },
+        attachments: [],
+      };
+      db.datastores.push(created);
+      return created;
+    },
+  ],
+  [
+    "DELETE",
+    "/datastores/:name",
+    (p) => {
+      db.datastores = db.datastores.filter((item) => item.name !== p[0]);
+      return {};
+    },
+  ],
+  [
+    "POST",
+    "/datastores/:name/stop",
+    (p) => Object.assign(row(db.datastores, "name", p[0]), { status: "stopped" }),
+  ],
+  [
+    "POST",
+    "/datastores/:name/start",
+    (p) => Object.assign(row(db.datastores, "name", p[0]), { status: "running" }),
+  ],
   ["GET", "/datastores/:name", (p) => row(db.datastores, "name", p[0])],
   ["GET", "/datastores/:name/credentials", (p) => credentialsFor(p[0])],
+  [
+    "POST",
+    "/datastores/:name/credentials/rotate",
+    (p) => {
+      const d = row(db.datastores, "name", p[0]);
+      d.password = "preview-rotated-password";
+      return credentialsFor(p[0]);
+    },
+  ],
   ["GET", "/datastores/:name/attachments", (p) => row(db.datastores, "name", p[0]).attachments],
   ["GET", "/datastores/:name/logs", () => sampleLog],
   ["GET", "/datastores/:name/metrics", () => containerSeries(24, 2 * 1024 * 1024 * 1024)],
@@ -789,6 +888,24 @@ const routes: [string, string, Handler][] = [
   // --- object storage ---
   ["GET", "/objectstores/providers", () => providers],
   ["GET", "/objectstores", () => db.objectStores],
+  [
+    "DELETE",
+    "/objectstores/:name",
+    (p) => {
+      db.objectStores = db.objectStores.filter((item) => item.name !== p[0]);
+      return {};
+    },
+  ],
+  [
+    "POST",
+    "/objectstores/:name/stop",
+    (p) => Object.assign(row(db.objectStores, "name", p[0]), { status: "stopped" }),
+  ],
+  [
+    "POST",
+    "/objectstores/:name/start",
+    (p) => Object.assign(row(db.objectStores, "name", p[0]), { status: "running" }),
+  ],
   ["GET", "/objectstores/:name", (p) => row(db.objectStores, "name", p[0])],
   ["GET", "/objectstores/:name/buckets", () => buckets],
   ["GET", "/objectstores/:name/buckets/:bucket/objects", () => listing],
@@ -810,9 +927,20 @@ const routes: [string, string, Handler][] = [
   ],
   ["GET", "/objectstores/:name/attachments", () => []],
   [
+    "POST",
+    "/objectstores/:name/credentials/rotate",
+    (p) => {
+      const store = row(db.objectStores, "name", p[0]);
+      if (store.kind !== "managed") throw new Error("Only managed stores can rotate keys.");
+      store.access_key = "PREVIEWROTATEDKEY";
+      store.secret_key = "preview-rotated-secret";
+      return objectStoreCredentials(store);
+    },
+  ],
+  [
     "GET",
     "/objectstores/:name/credentials",
-    () => ({ access_key: "AKIAPREVIEW", secret_key: "s3cr3t-preview" }),
+    (p) => objectStoreCredentials(row(db.objectStores, "name", p[0])),
   ],
   ["GET", "/objectstores/:name/logs", () => sampleLog],
   ["GET", "/objectstores/:name/metrics", () => containerSeries(24, 1024 * 1024 * 1024)],
@@ -867,6 +995,40 @@ const routes: [string, string, Handler][] = [
       ].join("\n"),
   ],
   ["GET", "/nodes", () => db.nodes],
+  [
+    "POST",
+    "/nodes",
+    (_p, body) => {
+      const { name, description } = body as { name: string; description?: string };
+      const created = {
+        name,
+        description,
+        control_plane: false,
+        status: "pending" as const,
+        cores: 0,
+        memory_total_bytes: 0,
+        disk_total_bytes: 0,
+        in_mesh: false,
+        created_at: new Date().toISOString(),
+      };
+      db.nodes.push(created);
+      return { ...created, token: "csk_mock_node_token_preview_only" };
+    },
+  ],
+  [
+    "DELETE",
+    "/nodes/:name",
+    (p) => {
+      const node = db.nodes.find((item) => item.name === p[0]);
+      if (!node) return notFound();
+      if (node.control_plane)
+        throw Object.assign(new Error("that is this machine, not a server it manages"), {
+          status: 409,
+        });
+      db.nodes = db.nodes.filter((item) => item.name !== p[0]);
+      return node;
+    },
+  ],
   [
     "GET",
     "/nodes/:name/storage",
@@ -1017,13 +1179,14 @@ function appOr404(reference: string): Row {
   return row(db.apps, "reference", reference);
 }
 
-function resolved(...layers: (Record<string, string> | undefined)[]) {
-  const out: Record<string, { value: string; source: string }> = {};
-  const names = ["project", "environment", "app"];
-  layers.forEach((layer, i) => {
-    for (const [k, v] of Object.entries(layer ?? {})) out[k] = { value: v, source: names[i] };
-  });
-  return out;
+function resolved(...layers: { source: string; vars?: Record<string, string> }[]) {
+  const out = new Map<string, { key: string; value: string; source: string }>();
+  for (const layer of layers) {
+    for (const [key, value] of Object.entries(layer.vars ?? {})) {
+      out.set(key, { key, value, source: layer.source });
+    }
+  }
+  return [...out.values()].sort((a, b) => a.key.localeCompare(b.key));
 }
 
 function appEnv(reference: string) {
@@ -1031,11 +1194,41 @@ function appEnv(reference: string) {
   return {
     vars: db.env.app[reference] ?? {},
     effective: resolved(
-      db.env.project[app.project as string],
-      db.env.environment[`${app.project}/${app.environment}`],
-      db.env.app[reference],
+      { source: "project", vars: db.env.project[app.project as string] },
+      {
+        source: "environment",
+        vars: db.env.environment[`${app.project}/${app.environment}`],
+      },
+      { source: "datastore", vars: datastoreEnv(reference) },
+      { source: "objectstore" },
+      { source: "app", vars: db.env.app[reference] },
     ),
   };
+}
+
+function datastoreEnv(reference: string) {
+  const vars: Record<string, string> = {};
+  for (const datastore of db.datastores) {
+    const attachment = ((datastore.attachments as Row[] | undefined) ?? []).find(
+      (item) => item.app === reference,
+    );
+    if (!attachment) continue;
+
+    const stem = `${String(attachment.prefix ?? "")}${String(datastore.var_stem ?? "DATABASE")}`;
+    const host = String(datastore.host);
+    const port = String(datastore.port);
+    const username = String(datastore.username ?? "app");
+    const password = "preview-only-not-a-real-secret";
+    const name = String(datastore.database ?? "app");
+    vars[`${stem}_URL`] =
+      `postgres://${encodeURIComponent(username)}:${encodeURIComponent(password)}@${host}:${port}/${name}?sslmode=disable`;
+    vars[`${stem}_HOST`] = host;
+    vars[`${stem}_PORT`] = port;
+    vars[`${stem}_USER`] = username;
+    vars[`${stem}_PASSWORD`] = password;
+    vars[`${stem}_NAME`] = name;
+  }
+  return vars;
 }
 
 function containerSeries(points: number, limit: number) {
@@ -1101,11 +1294,13 @@ const mockTCPPorts: Record<string, Row[]> = {};
 
 function containers() {
   const at = new Date().toISOString();
+  const started = (hours: number) => new Date(Date.now() - hours * 3_600_000).toISOString();
   return [
     {
       kind: "datastore",
       name: "pg",
       at,
+      started_at: started(72),
       cpu_percent: 62,
       memory_bytes: 910_000_000,
       memory_limit_bytes: 2147483648,
@@ -1114,6 +1309,7 @@ function containers() {
       kind: "app",
       name: "web/production/api",
       at,
+      started_at: started(35),
       cpu_percent: 41,
       memory_bytes: 180_000_000,
       memory_limit_bytes: 0,
@@ -1122,6 +1318,7 @@ function containers() {
       kind: "app",
       name: "web/production/worker",
       at,
+      started_at: started(8),
       cpu_percent: 118,
       memory_bytes: 640_000_000,
       memory_limit_bytes: 1024 ** 3,
@@ -1130,6 +1327,7 @@ function containers() {
       kind: "app",
       name: "web/staging/api",
       at,
+      started_at: started(2),
       cpu_percent: 6,
       memory_bytes: 150_000_000,
       memory_limit_bytes: 16 * 1024 ** 3,
@@ -1138,6 +1336,7 @@ function containers() {
       kind: "app",
       name: "internal/production/docs",
       at,
+      started_at: started(120),
       cpu_percent: 3,
       memory_bytes: 24_000_000,
       memory_limit_bytes: 0,
@@ -1146,6 +1345,7 @@ function containers() {
       kind: "objectstore",
       name: "uploads",
       at,
+      started_at: started(240),
       cpu_percent: 1,
       memory_bytes: 61_000_000,
       memory_limit_bytes: 8 * 1024 ** 3,
@@ -1154,6 +1354,7 @@ function containers() {
       kind: "datastore",
       name: "orders",
       at,
+      started_at: started(520),
       cpu_percent: 12,
       memory_bytes: 420_000_000,
       memory_limit_bytes: 1024 ** 3,
@@ -1162,6 +1363,7 @@ function containers() {
       kind: "datastore",
       name: "events",
       at,
+      started_at: started(26),
       cpu_percent: 290,
       memory_bytes: 1_700_000_000,
       memory_limit_bytes: 2 * 1024 ** 3,
@@ -1170,6 +1372,7 @@ function containers() {
       kind: "datastore",
       name: "billing",
       at,
+      started_at: started(16),
       cpu_percent: 4,
       memory_bytes: 190_000_000,
       memory_limit_bytes: 8 * 1024 ** 3,
@@ -1178,6 +1381,7 @@ function containers() {
       kind: "datastore",
       name: "cache",
       at,
+      started_at: started(190),
       cpu_percent: 2,
       memory_bytes: 38_000_000,
       memory_limit_bytes: 512 * 1024 ** 2,
@@ -1187,13 +1391,25 @@ function containers() {
 
 function credentialsFor(name: string) {
   const d = row(db.datastores, "name", name);
+  const password = String(d.password ?? "preview-password");
   return {
     username: d.username,
-    password: "preview-password",
+    password,
     database: d.database,
-    host: d.host,
-    port: d.port,
-    uri: `postgres://${d.username}:preview-password@${d.host}:${d.port}/${d.database}`,
+    internal_uri: `${d.engine === "redis" ? "redis" : d.engine === "mongodb" ? "mongodb" : "postgres"}://${d.username}:${password}@${d.host}:${d.port}/${d.database ?? ""}`,
+    internal_host: d.host,
+    internal_port: d.port,
+  };
+}
+
+function objectStoreCredentials(store: Row) {
+  return {
+    access_key: String(store.access_key ?? "AKIAPREVIEW"),
+    secret_key: String(store.secret_key ?? "s3cr3t-preview"),
+    region: String(store.region ?? "us-east-1"),
+    endpoint: String(store.endpoint ?? ""),
+    external_endpoint: store.external_endpoint,
+    path_style: Boolean(store.path_style),
   };
 }
 

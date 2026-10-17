@@ -1338,11 +1338,40 @@ func (s *Service) Deploy(ctx context.Context, caller *user.User, ref Reference, 
 	if err := requireSource(caller, Source(a.Source)); err != nil {
 		return nil, nil, err
 	}
+	if a.Status() == StatusStopped {
+		if err := s.orch.StartApp(ctx, a.ID); err != nil {
+			return nil, nil, err
+		}
+	}
 	deployment, err := s.orch.Start(ctx, a.ID, tag)
 	if err != nil {
 		return nil, nil, err
 	}
 	return a, deployment, nil
+}
+
+func (s *Service) Stop(ctx context.Context, caller *user.User, ref Reference) (*Scoped, error) {
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.orch.StopApp(ctx, a.ID); err != nil {
+		return nil, err
+	}
+	s.announceRoutes()
+	return s.Resolve(ctx, caller, ref, user.LevelView)
+}
+
+func (s *Service) Start(ctx context.Context, caller *user.User, ref Reference) (*Scoped, error) {
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.orch.StartApp(ctx, a.ID); err != nil {
+		return nil, err
+	}
+	s.announceRoutes()
+	return s.Resolve(ctx, caller, ref, user.LevelView)
 }
 
 // WaitForDeploys blocks until every deploy the orchestrator has running

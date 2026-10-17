@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { cn } from "cn";
-import { CopyIcon, DownloadIcon, RefreshCwIcon } from "lucide-react";
+import { CopyIcon, DownloadIcon, FileTextIcon, RefreshCwIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { ActionButton } from "@/components/action-button";
@@ -12,6 +12,7 @@ import { ErrorAlert } from "@/components/error-alert";
 import { FieldRow, FieldRowIcon, SearchBar } from "@/components/search-bar";
 import { SectionHeader } from "@/components/section-header";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,6 +43,35 @@ const TAILS = [200, 1000, 5000] as const;
 // FOLLOW_MS is how often a followed log is re-read. Slower than a
 // metric because a log is read rather than glanced at.
 const FOLLOW_MS = 3000;
+
+export function ContainerLogsDialog({
+  open,
+  onOpenChange,
+  path,
+  name,
+  hasContainer,
+  servers = [],
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  path: string;
+  name: string;
+  hasContainer: boolean;
+  servers?: string[];
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="w-[calc(100vw-2rem)] max-w-6xl sm:max-w-6xl">
+        <DialogTitle className="flex items-center gap-2 pr-8 font-mono text-sm">
+          <span className="sr-only">Logs</span>
+          <FileTextIcon className="size-5 shrink-0" aria-hidden="true" />
+          <span>{name}</span>
+        </DialogTitle>
+        {open && hasContainer && <ContainerLogs path={path} title={null} tall servers={servers} />}
+      </DialogContent>
+    </Dialog>
+  );
+}
 
 export function ContainerLogs({
   path,
@@ -242,12 +272,8 @@ export function LogView({
           onChange={setFilter}
           placeholder="Filter lines"
           className="min-w-0 flex-1"
-          trailing={
-            filter.trim() ? (
-              <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-                {lines.length}
-              </span>
-            ) : undefined
+          count={
+            filter.trim() ? { value: lines.length, singular: "line", plural: "lines" } : undefined
           }
         />
         {trailing}

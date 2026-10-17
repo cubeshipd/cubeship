@@ -80,6 +80,7 @@ type Engine interface {
 
 	PullImage(ctx context.Context, ref string, auth *dockerx.RegistryAuth) error
 	ContainerStats(ctx context.Context, id string) (dockerx.Stats, error)
+	ContainerStartedAt(ctx context.Context, id string) (*time.Time, error)
 	Logs(ctx context.Context, id, tail string) (io.ReadCloser, error)
 	CreateContainer(ctx context.Context, opts dockerx.ContainerOpts) (string, error)
 	StartContainer(ctx context.Context, id string) error
@@ -89,6 +90,7 @@ type Engine interface {
 	SpecOf(ctx context.Context, name string) (dockerx.ContainerOpts, error)
 	IsRunning(ctx context.Context, id string) (bool, error)
 	RunningContainers(ctx context.Context) ([]dockerx.Running, error)
+	AllContainers(ctx context.Context) ([]dockerx.Running, error)
 	PathOwner(ctx context.Context, image, path string) (dockerx.Owner, error)
 }
 
@@ -486,6 +488,11 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 		log.Printf("agent: listing what is running: %v", err)
 		return nil
 	}
+	allContainers, err := a.engine.AllContainers(ctx)
+	if err != nil {
+		log.Printf("agent: listing containers for cleanup: %v", err)
+		return nil
+	}
 
 	var results []node.Result
 	// What should be running here, twice over: by container name, which
@@ -511,7 +518,19 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 			// Stopped on purpose for a volume job, which starts it again.
 			continue
 		}
+		if p.Stopped {
+			if id := named(running, p.Container); id != "" {
+				if err := stopWithPolicy(ctx, a.engine, id, p.StopGracePeriod, p.StopSignal); err != nil {
+					log.Printf("agent: stopping %s: %v", p.Container, err)
+				}
+			}
+			continue
+		}
 		if id := named(running, p.Container); id != "" {
+			if p.ContainerID != "" && id == p.ContainerID {
+				results = append(results, node.Result{App: p.App, Deploy: p.Deploy, Ordinal: p.Ordinal, Container: id, Resumed: true})
+				continue
+			}
 			// Already running it. Not news, and reporting it every ten
 			// seconds would mark one deploy succeeded forever.
 			//
@@ -527,6 +546,17 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 					log.Printf("agent: %s: applying its ceiling: %v", p.App, err)
 				}
 			}
+			continue
+		}
+		if p.ContainerID != "" {
+			err := a.startExisting(ctx, p.ContainerID)
+			result := node.Result{App: p.App, Deploy: p.Deploy, Ordinal: p.Ordinal, Resumed: true}
+			if err != nil {
+				result.Error = err.Error()
+			} else {
+				result.Container = p.ContainerID
+			}
+			results = append(results, result)
 			continue
 		}
 		id, output, displaced, err := a.start(ctx, p, registry, running)
@@ -553,9 +583,12 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 		if refreshed, err := a.engine.RunningContainers(ctx); err == nil {
 			running = refreshed
 		}
+		if refreshed, err := a.engine.AllContainers(ctx); err == nil {
+			allContainers = refreshed
+		}
 	}
 
-	for _, c := range running {
+	for _, c := range allContainers {
 		app := c.Labels[node.LabelApp]
 		if app == "" {
 			// Not a container this instance placed here. The daemon
@@ -578,14 +611,34 @@ func (a *Agent) apply(ctx context.Context, placements []node.Placement, registry
 		}
 		log.Printf("agent: removing %s, which this instance no longer runs here", c.Name)
 		pol := policy[app]
-		if err := stopWithPolicy(ctx, a.engine, c.ID, pol.StopGracePeriod, pol.StopSignal); err != nil {
-			log.Printf("agent: stopping %s: %v", c.Name, err)
+		if c.Running {
+			if err := stopWithPolicy(ctx, a.engine, c.ID, pol.StopGracePeriod, pol.StopSignal); err != nil {
+				log.Printf("agent: stopping %s: %v", c.Name, err)
+			}
 		}
 		if err := a.engine.RemoveContainer(ctx, c.ID); err != nil {
 			log.Printf("agent: removing %s: %v", c.Name, err)
 		}
 	}
 	return results
+}
+
+func (a *Agent) startExisting(ctx context.Context, id string) error {
+	if err := a.engine.StartContainer(ctx, id); err != nil {
+		return fmt.Errorf("start stopped container: %w", err)
+	}
+	for range a.healthAttempts {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(a.healthInterval):
+		}
+		up, err := a.engine.IsRunning(ctx, id)
+		if err == nil && up {
+			return nil
+		}
+	}
+	return errors.New("container did not stay up")
 }
 
 // copy names one copy of one app on this machine: an app running three
@@ -952,8 +1005,10 @@ func (a *Agent) readings(ctx context.Context) []node.Reading {
 		if !seen {
 			continue
 		}
+		startedAt, _ := a.engine.ContainerStartedAt(ctx, c.ID)
 		out = append(out, node.Reading{
 			Container:        c.ID,
+			StartedAt:        startedAt,
 			CPUPercent:       metrics.CPUPercent(last, stats),
 			MemoryBytes:      int64(stats.MemoryBytes),
 			MemoryLimitBytes: int64(stats.MemoryLimit),

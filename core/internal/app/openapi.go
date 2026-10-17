@@ -68,7 +68,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"image":             openapi.String("For a registry app, the path to push to — a push there deploys. For an external app, the image it pulls."),
 				"tag":               openapi.String("The tag this app runs. Absent means it follows the registry: on this instance's own that is whatever is pushed — see `autodeploy` — and anywhere else it is `latest`."),
 				"autodeploy":        openapi.Bool("Whether a push to this instance's registry deploys this app. True exactly when the app is on that registry and pinned to no tag — derived from those two, so nothing can say it is on while a tag says otherwise."),
-				"status":            {Type: "string", Enum: []string{"pending", "running", "down", "degraded"}, Description: "`pending` until the first image is pushed, and `degraded` when some of the machines an app runs on are serving it and some are not — which cannot happen to an app on one."},
+				"status":            {Type: "string", Enum: []string{"pending", "running", "down", "degraded", "stopped", "starting"}, Description: "`stopped` means an operator intentionally stopped every replica; it stays stopped until started again. `starting` means those replicas are being resumed."},
 				"has_container":     openapi.Bool("Whether a container currently backs this app, which is what decides whether there is a log to read. The status cannot answer it: an app that has never been deployed and one whose container went away both read as not running, and only the second has anything to say."),
 				"source":            {Type: "string", Enum: []string{"registry", "external", "dockerfile", "railpack"}, Description: "Where this app's image comes from. \"registry\" is an image pushed to Cubeship, and the push is what deploys it; \"external\" is an image in a registry Cubeship does not run; \"dockerfile\" and \"railpack\" are built here from a Git repository, the first from a Dockerfile you wrote and the second worked out from the code. Only a push to Cubeship's own registry deploys on its own — the other two deploy when asked."},
 				"repo":              openapi.String("For a building app, the Git repository it builds from."),
@@ -243,6 +243,24 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"404": openapi.NotFound,
 						"500": openapi.TextResponse("The container could not be stopped, so the app was left in place rather than orphaning it."),
 					},
+				},
+			},
+			appPath + "/stop": {
+				"post": {
+					OperationID: "stopApp",
+					Summary:     "Stop an app",
+					Description: "Stops every replica and keeps the app and its stopped containers. It remains stopped across restarts and worker reconciliation until explicitly started. Requires manage access.",
+					Tags:        []string{"Apps"}, Parameters: refParams,
+					Responses: openapi.Responses{"200": openapi.JSONResponse("The stopped app.", openapi.Ref("App")), "401": openapi.Unauthorized, "403": openapi.Forbidden, "404": openapi.NotFound},
+				},
+			},
+			appPath + "/start": {
+				"post": {
+					OperationID: "startApp",
+					Summary:     "Start an app",
+					Description: "Starts the stopped containers on their assigned machines. Requires manage access.",
+					Tags:        []string{"Apps"}, Parameters: refParams,
+					Responses: openapi.Responses{"200": openapi.JSONResponse("The resumed app.", openapi.Ref("App")), "401": openapi.Unauthorized, "403": openapi.Forbidden, "404": openapi.NotFound},
 				},
 			},
 			appPath + "/deploy": {

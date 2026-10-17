@@ -62,12 +62,7 @@ function ComponentsContent() {
         title={machine.server}
         sub={`${machine.selected?.control_plane === false ? "Worker" : "Control plane"} services. Application containers, databases and buckets remain in Workspace.`}
         actions={
-          <ActionButton
-            variant="outline"
-            size="sm"
-            busy={inventory.isFetching}
-            onClick={() => void inventory.refetch()}
-          >
+          <ActionButton busy={inventory.isFetching} onClick={() => void inventory.refetch()}>
             <RefreshCwIcon />
             Refresh
           </ActionButton>

@@ -1,34 +1,41 @@
 "use client";
 
 import {
+  ArrowLeftIcon,
+  BracesIcon,
+  CpuIcon,
   EyeIcon,
   EyeOffIcon,
+  GitBranchIcon,
+  LayoutDashboardIcon,
+  NetworkIcon,
   PencilIcon,
   PlusIcon,
-  RocketIcon,
-  SettingsIcon,
+  TerminalSquareIcon,
   Trash2Icon,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { use, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { AppAddresses } from "@/components/app-addresses";
+import { AppConfiguration, type AppConfigurationSection } from "@/components/app-configuration";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { ContainerLogs, LogView } from "@/components/container-logs";
+import { ContainerLogsDialog, LogView } from "@/components/container-logs";
 import { CopyButton } from "@/components/copy-button";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal, RailTabs } from "@/components/header-rail";
+import { GlideSelect } from "@/components/glide-select";
 import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
 import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
+import { useAppWorkspaceActions } from "@/components/project-workspace";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
-import { SearchableSelect } from "@/components/searchable-select";
 import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { StatusBadge } from "@/components/status-badge";
-import { TerminalPanel } from "@/components/terminal-panel";
+import { AppShell } from "@/components/terminal-panel";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import {
@@ -42,6 +49,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   type App,
   api,
+  can,
   canShell,
   type Deployment,
   type EnvView,
@@ -54,14 +62,9 @@ import { message } from "@/lib/errors";
 // nowhere else, so the URL is the reference and the reference is the
 // URL.
 //
-// **Tabs, not one column of sections.** The databases' page argues the
-// other way and is right about itself: three short sections that are not
-// alternatives, all worth seeing at once. An app is not that. Its
-// environment is fifty rows on a real app and its log is five thousand
-// lines, and stacked they push everything else off the screen — so
-// "how is it doing" stops being visible the moment an app is big enough
-// to care about. Each tab here is a question somebody arrives with:
-// how is it running, how is it configured, what is it saying.
+// **Tabs, not one column of sections.** The environment and configuration
+// can each be large enough to bury the overview, while logs and shell are
+// transient tools that open in dialogs from Actions.
 //
 // PageProps comes from Next's generated route types, so the params this
 // destructures are the segments the directory actually has. Spelling one
@@ -74,40 +77,44 @@ export default function AppPage({ params }: PageProps<"/projects/[project]/[env]
   // what lets the page draw its own heading before the daemon has said
   // anything, which is the difference between a navigation that feels
   // instant and one that blinks.
-  return <Detail reference={`${project}/${env}/${app}`} project={project} env={env} name={app} />;
+  return <Detail reference={`${project}/${env}/${app}`} project={project} env={env} />;
 }
 
-type Tab = "overview" | "environment" | "logs" | "shell";
+type Tab = "overview" | "environment" | AppConfigurationSection;
+
+const tabAliases: Record<string, Tab> = {
+  overview: "overview",
+  environment: "environment",
+  build: "build",
+  source: "build",
+  deploy: "build",
+  network: "network",
+  resources: "resources",
+  volumes: "resources",
+  danger: "resources",
+};
 
 // The one reason a deploy's record cannot be removed: the daemon is
 // still writing to it.
 const stillRunning = "This deploy is still running. Wait for it to finish.";
 
-// Why the Logs tab is dead. Said on hover, because a disabled control
-// that explains nothing is a control somebody clicks twice.
-const noContainer = "Nothing has run yet, so there is no log. Deploy the app first.";
-
-// And why the Shell tab is.
-const noShell = "Nothing is running, so there is no container to open a shell in.";
-
-function Detail({
-  reference,
-  project,
-  env,
-  name,
-}: {
-  reference: string;
-  project: string;
-  env: string;
-  name: string;
-}) {
+function Detail({ reference, project, env }: { reference: string; project: string; env: string }) {
+  const router = useRouter();
   const me = useSession();
+  const { setActions } = useAppWorkspaceActions();
   const [app, setApp] = useState<App | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
-  // Bumped by the header's Deploy button, which is not inside the
-  // section that has to react to it.
+  // Bumped by Deploy so the deployment list reloads after it completes.
   const [deployed, setDeployed] = useState(0);
+  const [deploying, setDeploying] = useState(false);
+  const [deployError, setDeployError] = useState<string | null>(null);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [stopOpen, setStopOpen] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [logsOpen, setLogsOpen] = useState(false);
+  const [shellOpen, setShellOpen] = useState(false);
 
   const path = `/apps/${reference}`;
   const reload = useCallback(() => {
@@ -117,7 +124,87 @@ function Detail({
       .then(setApp)
       .catch((e) => setError(message(e)));
   }, [path, reference]);
+  const onDeployed = useCallback(() => {
+    setDeployed((n) => n + 1);
+    setTab("overview");
+    reload();
+  }, [reload]);
+  const deploy = useCallback(async () => {
+    if (deploying) return;
+    setDeploying(true);
+    setDeployError(null);
+    try {
+      await api.post(`/apps/${reference}/deploy`, {});
+      onDeployed();
+    } catch (cause) {
+      setDeployError(message(cause));
+    } finally {
+      setDeploying(false);
+    }
+  }, [deploying, onDeployed, reference]);
+  const deleteApp = useCallback(() => {
+    setTab("resources");
+    setDeleteOpen(true);
+  }, []);
+  const requestStop = useCallback(() => {
+    setActionError(null);
+    setStopOpen(true);
+  }, []);
+  const startApp = useCallback(async () => {
+    setStarting(true);
+    setActionError(null);
+    try {
+      setApp(await api.post<App>(`${path}/start`, {}));
+    } catch (cause) {
+      setActionError(message(cause));
+    } finally {
+      setStarting(false);
+    }
+  }, [path]);
+  const canManageApp = can(me, "apps", "manage");
+  const openLogs = useCallback(() => setLogsOpen(true), []);
+  const openShell = useCallback(() => setShellOpen(true), []);
+  useEffect(() => {
+    setActions({
+      deploy,
+      deleteApp,
+      logs: app?.has_container ? openLogs : undefined,
+      shell: app?.has_container && canShell(me, project) ? openShell : undefined,
+      stop: requestStop,
+      start: startApp,
+      canStop: canManageApp && app?.status === "running",
+      canStart: canManageApp && app?.status === "stopped",
+      deploying,
+      starting,
+      deployError,
+      actionError,
+    });
+    return () => setActions({});
+  }, [
+    app?.has_container,
+    app?.status,
+    actionError,
+    canManageApp,
+    deleteApp,
+    deploy,
+    deployError,
+    deploying,
+    me,
+    openLogs,
+    openShell,
+    project,
+    requestStop,
+    setActions,
+    startApp,
+    starting,
+  ]);
   useEffect(reload, [reload]);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const requested = new URLSearchParams(window.location.search).get("tab");
+    const next = requested ? tabAliases[requested] : undefined;
+    if (next) setTab(next);
+  }, []);
 
   if (!reference) {
     return (
@@ -154,72 +241,45 @@ function Detail({
           blanked the content area on every route change and then
           filled it — a page that disappears before it appears reads as
           slow however fast the request was. */}
-      <RailPortal>
-        {
-          <>
-            <DeployButton
-              reference={reference}
-              onDeployed={() => {
-                setDeployed((n) => n + 1);
-                // Deploying from the header is worth watching, and what
-                // there is to watch is on the first tab.
-                setTab("overview");
-                reload();
-              }}
-            />
-            <Button
-              variant="outline"
-              nativeButton={false}
-              render={
-                <Link href={`/projects/${reference}/settings`}>
-                  <SettingsIcon />
-                  Settings
-                </Link>
-              }
-            />
-          </>
-        }
-      </RailPortal>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <Link
+          href={_environment}
+          className="inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <ArrowLeftIcon className="size-4" />
+          Back to apps
+        </Link>
+      </div>
       {!app && <LoadingList rows={5} />}
       {app && (
         <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="subrail-page">
           {/* The line variant: labels on a rule with the live one lit,
               rather than a filled box that draws more of itself than
               what it switches. See globals.css. */}
-          <RailTabs>
-            <TabsList variant="line">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="environment">Environment</TabsTrigger>
-              {/* Nothing has printed anything until something has run.
-                  The daemon refuses this endpoint with a 409 in that
-                  state, and a tab whose whole content is that refusal is
-                  a tab that should not have been offered. */}
-              {/* An app on another machine has a readable log like any
-                  other: the request is parked here and that machine's own
-                  poll carries the question. What differs is the second it
-                  takes, not whether it works. */}
-              <TabsTrigger
-                value="logs"
-                disabled={!app.has_container}
-                title={app.has_container ? undefined : noContainer}
-              >
-                Logs
+          <div className="app-tab-navigation">
+            <TabsList variant="default" className="app-tab-list">
+              <TabsTrigger value="overview">
+                <LayoutDashboardIcon />
+                Overview
               </TabsTrigger>
-              {/* Only offered to who may open one. A shell reads every
-                  secret the container holds, so it is its own grant —
-                  and a tab that always refuses is a tab that should not
-                  be there. */}
-              {canShell(me, project) && (
-                <TabsTrigger
-                  value="shell"
-                  disabled={!app.has_container}
-                  title={app.has_container ? undefined : noShell}
-                >
-                  Shell
-                </TabsTrigger>
-              )}
+              <TabsTrigger value="environment">
+                <BracesIcon />
+                Environment
+              </TabsTrigger>
+              <TabsTrigger value="build">
+                <GitBranchIcon />
+                Build
+              </TabsTrigger>
+              <TabsTrigger value="network">
+                <NetworkIcon />
+                Networking
+              </TabsTrigger>
+              <TabsTrigger value="resources">
+                <CpuIcon />
+                Resources
+              </TabsTrigger>
             </TabsList>
-          </RailTabs>
+          </div>
 
           <TabsContent value="overview">
             {/* Where it runs, said once and only when it is somewhere
@@ -270,51 +330,84 @@ function Detail({
             <EnvVars reference={reference} />
           </TabsContent>
 
-          <TabsContent value="logs">
-            <ContainerLogs path={path} title={null} tall servers={servers} />
+          <TabsContent value="build">
+            {tab === "build" && (
+              <AppConfiguration
+                reference={reference}
+                app={app}
+                section="build"
+                deleteOpen={deleteOpen}
+                onDeleteOpenChange={setDeleteOpen}
+                onAppChange={setApp}
+                onDeleted={() => router.push(_environment)}
+              />
+            )}
           </TabsContent>
 
-          {/* Mounted only while it is the open tab: a shell is a process
-              inside somebody's container, and one left running behind a
-              tab nobody is looking at is one nobody will close. */}
-          <TabsContent value="shell">
-            {tab === "shell" && <AppShell path={path} servers={servers} />}
+          <TabsContent value="network">
+            {tab === "network" && (
+              <AppConfiguration
+                reference={reference}
+                app={app}
+                section="network"
+                deleteOpen={deleteOpen}
+                onDeleteOpenChange={setDeleteOpen}
+                onAppChange={setApp}
+                onDeleted={() => router.push(_environment)}
+              />
+            )}
+          </TabsContent>
+
+          <TabsContent value="resources">
+            {tab === "resources" && (
+              <AppConfiguration
+                reference={reference}
+                app={app}
+                section="resources"
+                deleteOpen={deleteOpen}
+                onDeleteOpenChange={setDeleteOpen}
+                onAppChange={setApp}
+                onDeleted={() => router.push(_environment)}
+              />
+            )}
           </TabsContent>
         </Tabs>
       )}
+      <ContainerLogsDialog
+        open={logsOpen}
+        onOpenChange={setLogsOpen}
+        path={path}
+        name={app?.name ?? ""}
+        hasContainer={!!app?.has_container}
+        servers={servers}
+      />
+      <Dialog open={shellOpen} onOpenChange={setShellOpen}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-6xl sm:max-w-6xl">
+          <DialogTitle className="flex items-center gap-2 pr-8 font-mono text-sm">
+            <span className="sr-only">Shell</span>
+            <TerminalSquareIcon className="size-5 shrink-0" aria-hidden="true" />
+            <span>{app?.name}</span>
+          </DialogTitle>
+          {shellOpen && app?.has_container && canShell(me, project) && (
+            <AppShell path={path} servers={servers} />
+          )}
+        </DialogContent>
+      </Dialog>
+      <ConfirmDialog
+        open={stopOpen}
+        onOpenChange={setStopOpen}
+        title="Stop this container?"
+        confirmLabel="Stop"
+        description="Stops every replica and keeps the app and its data. It stays stopped until you start it again."
+        onConfirm={async () => {
+          setApp(await api.post<App>(`${path}/stop`, {}));
+        }}
+      />
     </>
   );
 }
 
-// A shell in one of the app's containers.
-//
-// An app on several machines has one container on each and no combined
-// one, the same as its log — so the machine is picked here, and picking
-// another opens a new session there.
-function AppShell({ path, servers }: { path: string; servers: string[] }) {
-  const [server, setServer] = useState(servers[0] ?? "");
-  return (
-    <div className="space-y-3">
-      {servers.length > 1 && (
-        <SearchableSelect
-          label="Machine"
-          value={server}
-          onChange={setServer}
-          choices={servers.map((s) => ({ value: s, label: s }))}
-          searchable={false}
-          fieldClassName="max-w-xs"
-        />
-      )}
-      <TerminalPanel
-        key={server}
-        path={`${path}/shell`}
-        query={servers.length > 1 ? { server } : undefined}
-      />
-    </div>
-  );
-}
-
-// Deploying, from the header, with nothing to fill in.
+// Deploying from Actions, with nothing to fill in.
 //
 // **No tag field.** What a deploy runs is the app's source and the ref
 // it is configured with — a branch for something built here, a tag for
@@ -323,37 +416,6 @@ function AppShell({ path, servers }: { path: string; servers: string[] }) {
 // Typing a branch beside the button made every deploy a fresh decision
 // about which code this app is, taken in the moment and remembered
 // nowhere.
-function DeployButton({ reference, onDeployed }: { reference: string; onDeployed: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  return (
-    <>
-      <ActionButton
-        busy={busy}
-        onClick={async () => {
-          setBusy(true);
-          setError(null);
-          try {
-            await api.post(`/apps/${reference}/deploy`, {});
-            onDeployed();
-          } catch (err) {
-            setError(message(err));
-          }
-          setBusy(false);
-        }}
-      >
-        <RocketIcon />
-        Deploy
-      </ActionButton>
-      {/* In the header, because that is where the button is. An error
-          from it below the fold is an error nobody connects to the
-          thing they just pressed. */}
-      {error && <span className="max-w-md text-xs leading-relaxed text-destructive">{error}</span>}
-    </>
-  );
-}
-
 function Deployments({
   reference,
   deployed,
@@ -382,8 +444,7 @@ function Deployments({
   }, [path]);
   useEffect(reload, [reload]);
 
-  // The header's Deploy button is outside this section, so a bump is
-  // how it says there is a new row to go and fetch.
+  // A bump from Deploy tells this list there is a new row to fetch.
   useEffect(() => {
     if (deployed === 0) return;
     reload();
@@ -426,21 +487,11 @@ function Deployments({
       id: "image",
       header: "Image",
       width: 56,
-      // wrap, and the error under it in the same cell. A build's
-      // failure is a paragraph: given a column of its own it made the
-      // table wider than the page and put a horizontal scrollbar under
-      // everything, which is how the one thing worth reading ended up
-      // being the one thing off screen.
+      // The full failure detail belongs with the build output in the
+      // deployment dialog, not repeated as a paragraph in every row.
       wrap: true,
       cell: (d) => (
-        <>
-          <div className="font-mono text-xs break-all text-muted-foreground">{d.image}</div>
-          {d.error && (
-            <div className="mt-1.5 text-xs leading-relaxed wrap-break-word text-destructive">
-              {d.error}
-            </div>
-          )}
-        </>
+        <div className="font-mono text-xs break-all text-muted-foreground">{d.image}</div>
       ),
     },
     {
@@ -497,7 +548,6 @@ function Deployments({
         loadingRows={3}
         maxHeight="50vh"
         empty="Nothing deployed yet."
-        className="mb-4"
         // Every row opens, not only the ones that built something. What
         // is behind it is the deploy — what ran, when, why it stopped
         // and what it printed — and a row that opened for some deploys
@@ -511,17 +561,13 @@ function Deployments({
         onOpenChange={(shown) => !shown && setOpen(null)}
       />
 
-      {/* Two confirmations, because these are two different acts. An
-          old row is history and a second click is guard enough; the
-          live one takes the app off the air, and that asks for the
-          app's own name — the house rule for anything a misclick must
-          not reach. */}
+      {/* Holding confirms removal of the app record or stopping a live app. */}
       <ConfirmDialog
         open={deleting !== null}
         onOpenChange={(shown) => !shown && setDeleting(null)}
         title={deleting?.live ? "Take the app down?" : "Delete this record?"}
+        holdToConfirm
         confirmLabel={deleting?.live ? "Take it down" : "Delete"}
-        confirmWord={deleting?.live ? name : undefined}
         description={
           deleting?.live ? (
             <>
@@ -598,6 +644,16 @@ function DeploymentDialog({
   }, [id, running, load]);
 
   const shown = full ?? deployment;
+  const buildLogs = full
+    ? [
+        full.logs?.trimEnd(),
+        full.error && !full.logs?.includes(full.error)
+          ? `\u001b[31mDeployment error: ${full.error}\u001b[0m`
+          : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n") || null
+    : null;
 
   // Focus lands on the panel rather than on the first thing in it.
   // The first thing in it is the log's filter, and a dialog opened to
@@ -641,14 +697,8 @@ function DeploymentDialog({
             </Button>
           )}
 
-          {shown?.error && (
-            <div className="border-l-2 border-destructive bg-destructive/8 px-3 py-2 text-xs leading-relaxed wrap-break-word text-destructive">
-              {shown.error}
-            </div>
-          )}
-
           <LogView
-            text={full?.logs ?? null}
+            text={buildLogs}
             busy={full === null}
             name={`${reference.split("/").pop()}-deploy-${deployment?.id ?? ""}`}
             follow={running}
@@ -694,17 +744,13 @@ function SecretValue({ value }: { value: string }) {
 
 // What the app's container runs with, and where each value came from.
 //
-// Built for fifty of them rather than five, which is what a real app
-// has. Three things follow from that and none of them was true before:
-// there is a filter, because scrolling fifty rows to find one is not
-// reading; the list is bounded and scrolls inside itself, because
-// otherwise the list *is* the page; and adding one is a dialog at the
-// top rather than a pair of fields under the fiftieth row, which is a
-// scroll away from wherever you were.
+// The filter keeps a long list searchable; the table stays in the page
+// flow so every variable can be scanned with the page's normal scroll.
 function EnvVars({ reference }: { reference: string }) {
   const [view, setView] = useState<EnvView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [sourceFilter, setSourceFilter] = useState("");
   const [editing, setEditing] = useState<ResolvedVar | null>(null);
   const [adding, setAdding] = useState(false);
   const [unsetting, setUnsetting] = useState<ResolvedVar | null>(null);
@@ -719,12 +765,31 @@ function EnvVars({ reference }: { reference: string }) {
   useEffect(reload, [reload]);
 
   const all = view?.effective ?? null;
+  const sourceOptions = useMemo(() => {
+    const labels: Record<string, string> = {
+      app: "App",
+      datastore: "Database",
+      environment: "Environment",
+      objectstore: "Object storage",
+      project: "Project",
+    };
+    const sources = [...new Set((all ?? []).map((variable) => variable.source))].sort((a, b) =>
+      (labels[a] ?? a).localeCompare(labels[b] ?? b),
+    );
+    return [
+      { value: "", label: "All sources" },
+      ...sources.map((source) => ({ value: source, label: labels[source] ?? source })),
+    ];
+  }, [all]);
   const rows = useMemo(() => {
     if (all === null) return null;
     const needle = filter.trim().toLowerCase();
-    if (!needle) return all;
-    return all.filter((v) => v.key.toLowerCase().includes(needle));
-  }, [all, filter]);
+    return all.filter(
+      (variable) =>
+        (!needle || variable.key.toLowerCase().includes(needle)) &&
+        (!sourceFilter || variable.source === sourceFilter),
+    );
+  }, [all, filter, sourceFilter]);
 
   const columns: Column<ResolvedVar>[] = [
     {
@@ -745,7 +810,11 @@ function EnvVars({ reference }: { reference: string }) {
       header: "Set at",
       width: 14,
       sortBy: (v) => v.source,
-      cell: (v) => <span className="text-xs text-muted-foreground">{v.source}</span>,
+      cell: (v) => (
+        <span className="text-xs text-muted-foreground">
+          {sourceOptions.find((option) => option.value === v.source)?.label ?? v.source}
+        </span>
+      ),
     },
     {
       id: "actions",
@@ -778,7 +847,7 @@ function EnvVars({ reference }: { reference: string }) {
         title="Environment"
         sub="The project's variables, then the environment's, then any database or bucket attached to this app, then the app's own. Setting one here overrides the levels above it."
         actions={
-          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+          <Button onClick={() => setAdding(true)}>
             <PlusIcon />
             Add variable
           </Button>
@@ -786,33 +855,34 @@ function EnvVars({ reference }: { reference: string }) {
       />
       <ErrorAlert error={error} />
 
-      {/* The field and nothing beside it. There was a "Set here" toggle
-          here, for the app's own variables — but the table already says
-          which level set each row, and a filter with a second control
-          attached asks somebody to work out how the two combine before
-          typing the name they came with. */}
-      <SearchBar
-        value={filter}
-        onChange={setFilter}
-        placeholder="Filter by name"
-        className="mb-4"
-        trailing={
-          all && rows ? (
-            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-              {rows.length === all.length ? all.length : `${rows.length}/${all.length}`}
-            </span>
-          ) : undefined
-        }
-      />
+      <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
+        <SearchBar
+          value={filter}
+          onChange={setFilter}
+          placeholder="Filter by name"
+          className="mb-0 min-w-0"
+          count={
+            all && rows
+              ? { value: rows.length, singular: "variable", plural: "variables" }
+              : undefined
+          }
+        />
+        <GlideSelect
+          value={sourceFilter}
+          options={sourceOptions}
+          onChange={setSourceFilter}
+          ariaLabel="Filter variables by source"
+          className="w-full"
+          triggerClassName="flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-md border border-border-strong bg-secondary px-3 text-left text-sm text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+        />
+      </div>
 
       <DataTable
         columns={columns}
         rows={rows}
         rowKey={(v) => v.key}
         loadingRows={6}
-        maxHeight="60vh"
-        empty={filter.trim() ? "Nothing matches." : "No variables."}
-        className="mb-4"
+        empty={filter.trim() || sourceFilter ? "Nothing matches these filters." : "No variables."}
       />
 
       <EnvVarDialog

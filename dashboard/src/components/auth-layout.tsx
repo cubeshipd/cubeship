@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { Wordmark } from "@/components/brand";
+import GradientASCII from "@/components/gradient-ascii";
 
 // Sign-in and setup share the same product identity and form layout.
 export function AuthLayout({
@@ -7,15 +8,33 @@ export function AuthLayout({
   description,
   children,
   footer,
+  variant = "split",
 }: {
   title: string;
   description: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
+  variant?: "split" | "overlay";
 }) {
   return (
-    <div className="auth-layout">
+    <div className={`auth-layout${variant === "overlay" ? " auth-layout-overlay" : ""}`}>
       <aside className="auth-brand-panel">
+        <div className="auth-ascii-bg" aria-hidden="true">
+          <GradientASCII
+            colors={["#0b2430", "#14515c", "#19828b", "#36b5bb"]}
+            shape="horizon"
+            characters=" .:-=+*#@"
+            cellSize={18}
+            density={0.38}
+            glyphOpacity={0.52}
+            glow={0.1}
+            flow={0.1}
+            speed={0.1}
+            grain={0.01}
+            mouseInteraction={false}
+            clickEffect="none"
+          />
+        </div>
         <Wordmark className="relative text-sm" markClassName="size-7" />
         <div className="auth-brand-copy">
           <h2>
@@ -27,14 +46,13 @@ export function AuthLayout({
             Deploy apps, connect your data and keep everything in reach. On servers you control.
           </p>
         </div>
-        <InfrastructureMark />
         <div className="auth-brand-footer">
           <span>Open source.</span>
           <span>Self hosted.</span>
           <span>All yours.</span>
         </div>
       </aside>
-      <main className="auth-main">
+      <main className={`auth-main${variant === "overlay" ? " auth-main-overlay" : ""}`}>
         <div className="auth-form-wrap">
           <Wordmark className="auth-mobile-brand text-sm" markClassName="size-6" />
           <header className="auth-form-heading">
@@ -46,54 +64,5 @@ export function AuthLayout({
         </div>
       </main>
     </div>
-  );
-}
-
-function InfrastructureMark() {
-  const dots: { key: string; x: number; y: number; opacity: number }[] = [];
-  for (let face = 0; face < 3; face++) {
-    for (let row = 0; row <= 20; row++) {
-      for (let col = 0; col <= 20; col++) {
-        const u = col / 20;
-        const v = row / 20;
-        const x = face === 0 ? 270 + (u - v) * 170 : face === 1 ? 100 + u * 170 : 270 + u * 170;
-        const y =
-          face === 0
-            ? 14 + (u + v) * 72
-            : face === 1
-              ? 86 + u * 72 + v * 166
-              : 158 - u * 72 + v * 166;
-        dots.push({
-          key: `${face}-${row}-${col}`,
-          x,
-          y,
-          opacity:
-            row === 0 || col === 0 || row === 20 || col === 20
-              ? 0.8
-              : 0.22 + ((row + col) % 5) * 0.08,
-        });
-      }
-    }
-  }
-  return (
-    <svg viewBox="0 0 540 350" fill="none" className="auth-art" aria-hidden="true">
-      {dots.map((dot) => (
-        <circle
-          key={dot.key}
-          cx={dot.x}
-          cy={dot.y}
-          r="1"
-          fill="currentColor"
-          opacity={dot.opacity}
-        />
-      ))}
-      <path
-        d="M0 242H110L270 312L435 240H540M0 132H102L270 202L438 131H540"
-        stroke="currentColor"
-        strokeOpacity=".22"
-        strokeWidth=".7"
-      />
-      <path d="M8 242H58M468 131H498" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
   );
 }

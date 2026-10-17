@@ -170,6 +170,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("PATCH /objectstores/{name}", auth(http.HandlerFunc(h.update)))
 	r.Handle("DELETE /objectstores/{name}", auth(http.HandlerFunc(h.delete)))
 	r.Handle("GET /objectstores/{name}/credentials", auth(http.HandlerFunc(h.credentials)))
+	r.Handle("POST /objectstores/{name}/credentials/rotate", auth(http.HandlerFunc(h.rotateCredentials)))
 	r.Handle("GET /objectstores/{name}/logs", auth(http.HandlerFunc(h.logs)))
 	r.Handle("GET /objectstores/{name}/metrics", auth(http.HandlerFunc(h.metrics)))
 	r.Handle("POST /objectstores/{name}/start", auth(http.HandlerFunc(h.start)))
@@ -392,6 +393,23 @@ func (h *Handler) delete(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) credentials(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	creds, err := h.svc.Credentials(ctx, user.FromContext(ctx), r.PathValue("name"))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, struct {
+		AccessKey string `json:"access_key"`
+		SecretKey string `json:"secret_key"`
+		Region    string `json:"region"`
+		Endpoint  string `json:"endpoint"`
+		External  string `json:"external_endpoint,omitempty"`
+		PathStyle bool   `json:"path_style"`
+	}{creds.AccessKey, creds.SecretKey, creds.Region, creds.Endpoint, creds.External, creds.PathStyle})
+}
+
+func (h *Handler) rotateCredentials(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	creds, err := h.svc.RotateCredentials(ctx, user.FromContext(ctx), r.PathValue("name"))
 	if err != nil {
 		WriteError(w, err)
 		return

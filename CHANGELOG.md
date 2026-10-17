@@ -6,6 +6,30 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.12.0-rc.9 — 2026-10-17
+
+*Prerelease.*
+
+Rework resource workspaces in the dashboard, manage nodes, and control service lifecycle and credentials.
+
+### Added
+
+**Node management.** The dashboard has a Nodes workspace under Workloads. Connect a worker with a one-time install command, inspect its status and capacity, open a root shell, and remove it from the cluster.
+
+**Service lifecycle controls.** Start and stop apps, databases, and object stores from their resource pages. Stopped apps remain stopped as worker agents reconcile placements.
+
+**Credential rotation.** Rotate credentials for managed databases and object stores from Access. The live service is updated before the new credentials are saved; a failed save attempts to restore the previous credentials.
+
+### Changed
+
+**Resource workspaces.** Projects, apps, databases, object stores, and templates use a consistent navigation and action layout. Settings are grouped with each resource's tabs, and forms use searchable selects and compact controls.
+
+**Backups and resource lists.** Backups can be filtered by resource kind and database engine. Search, filters, tables, and empty states now follow the same dashboard patterns.
+
+### Upgrade notes
+
+Select 0.12.0-rc.9 from an instance with prereleases enabled, or name this version when installing. Migration 00068 adds container start times to metric samples; existing samples remain unchanged. This candidate does not move the stable latest release or image tags.
+
 ## 0.12.0-rc.8 — 2026-10-11
 
 *Prerelease.*

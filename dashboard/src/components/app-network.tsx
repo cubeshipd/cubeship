@@ -19,6 +19,7 @@ import { ErrorAlert } from "@/components/error-alert";
 import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
+import { SearchBar } from "@/components/search-bar";
 import { SearchableSelect } from "@/components/searchable-select";
 import { SectionHeader } from "@/components/section-header";
 import { TextField } from "@/components/text-field";
@@ -78,6 +79,7 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
   const [adding, setAdding] = useState(false);
   const [added, setAdded] = useState(false);
   const [copied, setCopied] = useState<number | null>(null);
+  const [domainFilter, setDomainFilter] = useState("");
 
   const settings = useQuery({
     queryKey: ["settings"],
@@ -86,6 +88,14 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
 
   const base = `/apps/${app.reference}`;
   const urlOf = (d: AppDomain) => publicUrl(d.host, settings.data?.tls_enabled);
+  const filteredDomains = useMemo(() => {
+    const query = domainFilter.trim().toLowerCase();
+    return query
+      ? app.domains.filter((domain) =>
+          `${domain.host} ${domain.port || DEFAULT_PORT}`.toLowerCase().includes(query),
+        )
+      : app.domains;
+  }, [app.domains, domainFilter]);
 
   async function copyUrl(d: AppDomain) {
     if (await copyText(urlOf(d))) {
@@ -149,37 +159,50 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
   ];
 
   return (
-    <>
-      <SectionHeader
-        title="Network"
-        sub="Every name this app answers at, and what each one reaches inside the container. A container keeps the routing it was deployed with — redeploy to pick up a change here."
-        actions={
-          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
-            <PlusIcon />
-            Add domain
-          </Button>
-        }
-      />
+    <div className="space-y-8">
+      <section className="app-network-domains">
+        <SectionHeader
+          title="Domains"
+          sub="Names routed to this app. Changes take effect on the next deploy."
+          actions={
+            <Button onClick={() => setAdding(true)}>
+              <PlusIcon />
+              Add domain
+            </Button>
+          }
+        />
 
-      <ErrorAlert error={error} />
+        <ErrorAlert error={error} />
 
-      <DataTable
-        columns={columns}
-        rows={app.domains}
-        rowKey={(d) => String(d.id)}
-        search={{ placeholder: "Filter domains", by: (d) => [d.host, String(d.port)] }}
-        empty="This app answers at no name yet."
-      />
+        <div className="mb-4">
+          <SearchBar
+            className="mb-0"
+            value={domainFilter}
+            onChange={setDomainFilter}
+            placeholder="Filter domains"
+            count={{ value: filteredDomains.length, singular: "domain", plural: "domains" }}
+          />
+        </div>
 
-      {/* Said here rather than in the dialog, because the dialog closes
-          on success and this is the part that is still outstanding: the
-          name is routed once the app is deployed again. */}
-      {added && (
-        <p className="mt-3 inline-flex items-center gap-1.5 text-xs text-success">
-          <CheckIcon className="size-3.5" />
-          Added. Redeploy to serve it.
-        </p>
-      )}
+        <DataTable
+          columns={columns}
+          rows={filteredDomains}
+          rowKey={(d) => String(d.id)}
+          empty={
+            domainFilter.trim()
+              ? "Nothing matches these filters."
+              : "This app answers at no name yet."
+          }
+        />
+
+        {/* The dialog closes after adding; the routing still needs a deploy. */}
+        {added && (
+          <p className="inline-flex items-center gap-1.5 text-xs text-success">
+            <CheckIcon className="size-3.5" />
+            Added. Redeploy to serve it.
+          </p>
+        )}
+      </section>
 
       <AddDomainDialog
         base={base}
@@ -216,76 +239,29 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
         open={removing !== null}
         onOpenChange={(v) => !v && setRemoving(null)}
         title={`Stop serving ${removing?.host}?`}
-        confirmWord={removing?.host}
         description="The DNS record stays where it is — this only stops Cubeship routing that name here. The container keeps the routing it was deployed with, so it goes on answering until the app is redeployed."
-        confirmLabel="Remove"
+        confirmLabel="Delete"
+        holdToConfirm
         onConfirm={async () => {
           if (!removing) return;
           onSaved(await api.del<App>(`${base}/domains/${removing.id}`));
           setRemoving(null);
         }}
       />
-    </>
+    </div>
   );
 }
 
-// Where another app on this instance reaches this one.
-//
-// **It is here because the public name does not work from inside.** An
-// app that calls its neighbour at the name the world uses sends the
-// request out of the box, to a record that points back at it — and a
-// host that does not hairpin its own NAT answers nothing at all, which
-// reads as the other app being down rather than as the wrong address.
-//
-// A copy field rather than a line of prose: it is a string somebody
-// pastes into an environment variable, and the whole reason it exists
-// is that it must be exact.
+// The host apps use to reach this one on the instance's private network.
 function InternalAddress({ app }: { app: App }) {
   return (
-    <>
-      <SectionHeader
-        title="Internal address"
-        sub="Where another app, a job or a container on this instance reaches this one. It resolves from every machine in the cluster and to every copy of the app, and it does not change when the app is deployed."
-      />
-      <Card>
-        <CardContent className="space-y-4">
-          <CopyField
-            label="Host"
-            value={app.internal_host}
-            copyValue={internalUrl(app)}
-            hint={
-              <>
-                Reach it on the port the app listens on — {portHint(app)}. Nothing proxies this, so
-                there is no TLS to terminate and the health check below does not apply: it is the
-                container, directly.
-              </>
-            }
-          />
-          {/* The alias is attached when the container is created, so an
-              app whose container predates this instance's upgrade does
-              not answer to it. Said always rather than detected,
-              because detecting it would mean asking the Engine about
-              every app on every settings screen — and being told once
-              is cheaper than a name that quietly resolves to nothing. */}
-          <Notice className="mb-0">
-            A container answers to this name from the moment it is created, so an app that has not
-            been deployed since this instance was updated does not answer to it yet. Deploy it once
-            and it is live.
-          </Notice>
-        </CardContent>
-      </Card>
-    </>
+    <Card>
+      <CardContent className="space-y-4">
+        <SectionHeader title="Internal address" />
+        <CopyField label="Host" value={app.internal_host} copyValue={internalUrl(app)} />
+      </CardContent>
+    </Card>
   );
-}
-
-// What to suggest for the port. Cubeship knows it only when a name
-// routes to it: a worker declares its port to nobody, so the honest
-// answer there is that the app knows and this screen does not.
-function portHint(app: App): string {
-  const ports = [...new Set(app.domains.map((d) => d.port || DEFAULT_PORT))];
-  if (ports.length === 0) return `${DEFAULT_PORT} unless it was built to listen elsewhere`;
-  if (ports.length === 1) return `${ports[0]}, which is where its names route`;
-  return `one of ${ports.join(", ")}, which are where its names route`;
 }
 
 // The port behind one name, and nothing else.
@@ -699,66 +675,64 @@ function HealthCheck({
   const dirty = path !== current;
 
   return (
-    <>
-      <SectionHeader
-        title="Health check"
-        sub="What Traefik asks this app for before sending it traffic. Leave it empty to check nothing, which is what every app starts as."
-      />
-      <Card>
-        <CardContent>
-          <form
-            className="space-y-4"
-            onSubmit={async (e) => {
-              e.preventDefault();
-              setBusy(true);
-              onError(null);
+    <Card>
+      <CardContent className="space-y-4">
+        <SectionHeader
+          title="Health check"
+          sub="Traefik checks this path before sending traffic. Leave it empty to disable health checks."
+        />
+        <form
+          className="space-y-4"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setBusy(true);
+            onError(null);
+            setSaved(false);
+            try {
+              onSaved(await api.patch<App>(`/apps/${app.reference}`, { health_path: path }));
+              setSaved(true);
+            } catch (err) {
+              onError(message(err));
+            }
+            setBusy(false);
+          }}
+        >
+          <TextField
+            label="Path"
+            placeholder="/healthz"
+            value={path}
+            onChange={(e) => {
+              setPath(e.target.value);
               setSaved(false);
-              try {
-                onSaved(await api.patch<App>(`/apps/${app.reference}`, { health_path: path }));
-                setSaved(true);
-              } catch (err) {
-                onError(message(err));
-              }
-              setBusy(false);
             }}
-          >
-            <TextField
-              label="Path"
-              placeholder="/healthz"
-              value={path}
-              onChange={(e) => {
-                setPath(e.target.value);
-                setSaved(false);
-              }}
-              hint="It has to start with / and hold only what a URL path may — it goes into the proxy's own configuration. Checked every 10 seconds, with 5 seconds to answer."
-            />
-            {dirty && path !== "" && (
-              <Notice tone="warning">
-                A path this app does not answer 2xx or 3xx on takes every copy of it out of
-                rotation, and {app.domains.length > 0 ? "its names answer" : "it would answer"} 503
-                rather than degrading. Check what the app actually serves before saving.
-              </Notice>
+            hint="Must start with /. Checked every 10 seconds, with 5 seconds to respond."
+          />
+          {dirty && path !== "" && (
+            <Notice tone="warning">
+              A path this app does not answer 2xx or 3xx on takes every copy of it out of rotation,
+              and {app.domains.length > 0 ? "its names answer" : "it would answer"} 503 rather than
+              degrading. Check what the app actually serves before saving.
+            </Notice>
+          )}
+          {!dirty && current !== "" && app.nodes.length > 1 && (
+            <Notice>
+              A copy of this app that stops answering <code>{current}</code> is taken out of the
+              balancer and the rest go on serving. One that has gone needs no check — the edge
+              retries against the next machine on its own.
+            </Notice>
+          )}
+          <div className="flex items-center gap-3">
+            <ActionButton type="submit" busy={busy} disabled={!dirty}>
+              Save
+            </ActionButton>
+            {saved && !dirty && (
+              <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-success">
+                <CheckIcon className="size-3.5" /> Saved
+              </span>
             )}
-            {!dirty && current !== "" && app.nodes.length > 1 && (
-              <Notice>
-                A copy of this app that stops answering <code>{current}</code> is taken out of the
-                balancer and the rest go on serving. One that has gone needs no check — the edge
-                retries against the next machine on its own.
-              </Notice>
-            )}
-            <div className="flex items-center gap-3">
-              <ActionButton type="submit" busy={busy} disabled={!dirty}>
-                Save
-              </ActionButton>
-              {saved && !dirty && (
-                <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-success">
-                  <CheckIcon className="size-3.5" /> Saved
-                </span>
-              )}
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

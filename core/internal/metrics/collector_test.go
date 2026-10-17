@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"cubeship/internal/platform/dockerx"
 )
@@ -24,6 +25,10 @@ func (f *fakeStats) ContainerStats(_ context.Context, id string) (dockerx.Stats,
 		return dockerx.Stats{}, errors.New("no such container")
 	}
 	return s, nil
+}
+
+func (f *fakeStats) ContainerStartedAt(context.Context, string) (*time.Time, error) {
+	return nil, nil
 }
 
 // A CPU percentage is a difference, and the Engine's one-shot has

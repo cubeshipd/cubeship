@@ -85,11 +85,7 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
           value={query}
           onChange={setQuery}
           placeholder="Filter zones"
-          trailing={
-            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-              {filtered.length}/{zones.length}
-            </span>
-          }
+          count={{ value: filtered.length, singular: "zone", plural: "zones" }}
         />
       )}
       <ErrorAlert error={error} />

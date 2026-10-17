@@ -256,6 +256,24 @@ func (r Replica) Running() bool { return r.Status == StatusRunning && r.Containe
 // real state, and reporting it as `running` hides an outage while
 // reporting it as `down` invents one.
 func (a *App) Status() string {
+	if len(a.Replicas) > 0 {
+		stopped := 0
+		starting := 0
+		for _, r := range a.Replicas {
+			if r.Status == StatusStopped {
+				stopped++
+			}
+			if r.Status == StatusStarting {
+				starting++
+			}
+		}
+		if stopped == len(a.Replicas) {
+			return StatusStopped
+		}
+		if starting == len(a.Replicas) {
+			return StatusStarting
+		}
+	}
 	up := 0
 	for _, r := range a.Replicas {
 		if r.Running() {
@@ -553,9 +571,11 @@ const StuckAfter = 15 * time.Minute
 const (
 	// StatusPending is a freshly created app: nothing has been deployed
 	// and, until it has a domain, nothing can be.
-	StatusPending = "pending"
-	StatusRunning = "running"
-	StatusDown    = "down"
+	StatusPending  = "pending"
+	StatusRunning  = "running"
+	StatusDown     = "down"
+	StatusStopped  = "stopped"
+	StatusStarting = "starting"
 	// StatusDegraded is some of an app's machines serving and some not.
 	// It cannot happen to an app on one machine, which is why it did not
 	// exist before there was more than one.

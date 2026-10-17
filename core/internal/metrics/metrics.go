@@ -48,12 +48,13 @@ type Subject struct {
 // deliberately reports the same CPU convention as the rest of this
 // package: 100 is one core.
 type Usage struct {
-	Kind             string    `json:"kind"`
-	Name             string    `json:"name"`
-	At               time.Time `json:"at"`
-	CPUPercent       float64   `json:"cpu_percent"`
-	MemoryBytes      int64     `json:"memory_bytes"`
-	MemoryLimitBytes int64     `json:"memory_limit_bytes"`
+	Kind             string     `json:"kind"`
+	Name             string     `json:"name"`
+	At               time.Time  `json:"at"`
+	StartedAt        *time.Time `json:"started_at,omitempty"`
+	CPUPercent       float64    `json:"cpu_percent"`
+	MemoryBytes      int64      `json:"memory_bytes"`
+	MemoryLimitBytes int64      `json:"memory_limit_bytes"`
 }
 
 // Sample is one reading, already turned into the numbers a chart shows.
@@ -64,7 +65,8 @@ type Usage struct {
 // collection time is what keeps a gap in the series from becoming a
 // spike in it.
 type Sample struct {
-	At time.Time `json:"at"`
+	At        time.Time  `json:"at"`
+	StartedAt *time.Time `json:"-"`
 	// CPUPercent is percent of one core: 250 is two and a half cores.
 	CPUPercent float64 `json:"cpu_percent"`
 	// MemoryBytes is usage minus reclaimable page cache — what `docker

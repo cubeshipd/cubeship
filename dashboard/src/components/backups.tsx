@@ -13,9 +13,9 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { GlideSelect } from "@/components/glide-select";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
-import { SearchableSelect } from "@/components/searchable-select";
 import { SectionHeader } from "@/components/section-header";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
@@ -65,6 +65,10 @@ function when(value: string): string {
 // the row is the only thing that knows how it went; a dump of anything
 // worth taking is minutes, and a second is fast enough to watch.
 const POLL = 2000;
+const SELECT_TRIGGER_CLASS =
+  "flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
+const TIMEZONES =
+  typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
 
 export function Backups({
   database,
@@ -354,7 +358,7 @@ export function VolumeBackups({
                 </Notice>
               ) : (
                 <>
-                  <SearchableSelect
+                  <GlideSelect
                     label="Store"
                     value={store}
                     busy={stores === null}
@@ -362,22 +366,30 @@ export function VolumeBackups({
                       setStore(v);
                       setBucket("");
                     }}
-                    choices={(stores ?? []).map((s) => ({
+                    options={(stores ?? []).map((s) => ({
                       value: s.name,
                       label: s.name,
-                      icon: CloudIcon,
-                      hint: s.provider_label,
+                      icon: <CloudIcon className="size-4" />,
+                      tag: s.provider_label,
                     }))}
+                    searchable
+                    className="w-full"
+                    triggerClassName={SELECT_TRIGGER_CLASS}
                   />
                   {/* Always there, so choosing a store does not grow the
                       dialog under the pointer. */}
-                  <SearchableSelect
+                  <GlideSelect
                     label="Bucket"
                     value={bucket}
                     busy={Boolean(store) && buckets === null}
                     onChange={setBucket}
-                    choices={(buckets ?? []).map((b) => ({ value: b.name, label: b.name }))}
-                    empty={store ? "That store holds no buckets yet." : "Choose a store first."}
+                    options={(buckets ?? []).map((b) => ({ value: b.name, label: b.name }))}
+                    emptyMessage={
+                      store ? "That store holds no buckets yet." : "Choose a store first."
+                    }
+                    searchable
+                    className="w-full"
+                    triggerClassName={SELECT_TRIGGER_CLASS}
                   />
                 </>
               )}
@@ -594,19 +606,27 @@ export function BackupTable({
         }}
       >
         {asksServer && (
-          <SearchableSelect
-            label="Restore on"
-            value={server}
-            busy={servers === null}
-            onChange={setServer}
-            choices={(servers ?? []).map((name) => ({
-              value: name,
-              label: name,
-              icon: ServerIcon,
-              hint: name === volumeNode ? "where it is now" : undefined,
-            }))}
-            hint="Another server moves the app there. It needs a backup in a bucket linked from outside this instance."
-          />
+          <div className="space-y-2">
+            <GlideSelect
+              label="Restore on"
+              value={server}
+              busy={servers === null}
+              onChange={setServer}
+              options={(servers ?? []).map((name) => ({
+                value: name,
+                label: name,
+                icon: <ServerIcon className="size-4" />,
+                tag: name === volumeNode ? "where it is now" : undefined,
+              }))}
+              searchable
+              className="w-full"
+              triggerClassName={SELECT_TRIGGER_CLASS}
+            />
+            <p className="text-xs text-muted-foreground">
+              Another server moves the app there. It needs a backup in a bucket linked from outside
+              this instance.
+            </p>
+          </div>
         )}
       </ConfirmDialog>
 
@@ -614,6 +634,7 @@ export function BackupTable({
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
         title="Delete this backup?"
+        holdToConfirm
         description="The dump goes with it, wherever it is. Nothing else has a copy."
         onConfirm={async () => {
           setError(null);
@@ -754,63 +775,68 @@ export function Schedule({
   }
 
   return (
-    <>
-      <SectionHeader title="On a schedule" />
-      <Card className="mb-6">
-        <CardContent className="space-y-5">
-          <ErrorAlert error={error} />
+    <Card className="mb-6">
+      <CardContent className="space-y-5 [&>.dashboard-section-header]:mb-0">
+        <SectionHeader title="On a schedule" />
+        <ErrorAlert error={error} />
 
-          <div className="flex items-start gap-3">
-            <Switch
-              id="scheduled"
-              checked={on}
-              onCheckedChange={(v) => {
-                setOn(v);
-                setSaved(false);
-              }}
-            />
-            <div className="space-y-1">
-              <Label htmlFor="scheduled">
-                <ClockIcon className="mr-1 inline size-3.5" />
-                {label}
-              </Label>
-              <p className="max-w-prose text-xs text-muted-foreground">
-                A time of day rather than an interval, because what you are choosing is when it may
-                be busy and slow. A window this instance was down for runs late rather than being
-                skipped.
-                {note && ` ${note}`}
-                {schedule?.last_run_at && ` Last run ${when(schedule.last_run_at)}.`}
+        <div className="flex items-start gap-3">
+          <Switch
+            id="scheduled"
+            checked={on}
+            onCheckedChange={(v) => {
+              setOn(v);
+              setSaved(false);
+            }}
+          />
+          <div className="space-y-1">
+            <Label htmlFor="scheduled">
+              <ClockIcon className="mr-1 inline size-3.5" />
+              {label}
+            </Label>
+            <p className="max-w-prose text-sm text-muted-foreground">
+              Runs daily at this time. If the instance is offline, the backup runs when it returns.
+              {note && ` ${note}`}
+            </p>
+            {schedule?.last_run_at && (
+              <p className="text-xs text-muted-foreground">
+                Last run {when(schedule.last_run_at)}.
               </p>
-            </div>
+            )}
           </div>
+        </div>
 
-          {on && (
-            <div className="space-y-5 border-l-2 border-primary/40 pl-4">
-              <div className="grid gap-4 sm:grid-cols-[8rem_1fr_8rem]">
-                <TextField
-                  label="At"
-                  value={at}
-                  spellCheck={false}
-                  placeholder="03:00"
-                  onChange={(e) => setAt(e.target.value)}
-                />
-                <TextField
-                  label="Timezone"
-                  value={timezone}
-                  spellCheck={false}
-                  onChange={(e) => setTimezone(e.target.value)}
-                  hint="An IANA name, like America/Bahia."
-                />
-                <TextField
-                  label="Keep"
-                  value={keep}
-                  spellCheck={false}
-                  onChange={(e) => setKeep(e.target.value)}
-                  hint="0 keeps every one."
-                />
-              </div>
+        {on && (
+          <div className="space-y-5">
+            <div className="grid gap-4 sm:grid-cols-[8rem_1fr_8rem]">
+              <TextField
+                label="At"
+                value={at}
+                spellCheck={false}
+                placeholder="03:00"
+                onChange={(e) => setAt(e.target.value)}
+              />
+              <GlideSelect
+                label="Timezone"
+                value={timezone}
+                onChange={setTimezone}
+                options={[...new Set(["UTC", timezone, ...TIMEZONES])]
+                  .sort((a, b) => a.localeCompare(b))
+                  .map((zone) => ({ value: zone, label: zone }))}
+                searchable
+                className="w-full"
+                triggerClassName={SELECT_TRIGGER_CLASS}
+              />
+              <TextField
+                label="Keep"
+                value={keep}
+                spellCheck={false}
+                onChange={(e) => setKeep(e.target.value)}
+                hint="0 keeps every one."
+              />
+            </div>
 
-              {/* **The destinations are S3, and the list says which of
+            {/* **The destinations are S3, and the list says which of
                   them is actually somewhere else.** A managed store is
                   a SeaweedFS container this instance runs, with its objects
                   on this same disk — so it is grouped with the local
@@ -818,23 +844,24 @@ export function Schedule({
                   elsewhere, and the hint names the provider a linked
                   one speaks. Reading the list, the two that are not a
                   backup look like each other. */}
-              <SearchableSelect
+            <div className="space-y-2">
+              <GlideSelect
                 label="Where they go"
-                searchable={stores.length > 8}
+                searchable
                 value={storeID}
                 onChange={(v) => {
                   setStoreID(v);
                   setBucket("");
                 }}
-                choices={[
+                options={[
                   ...(offsiteOnly
                     ? []
                     : [
                         {
                           value: "",
                           label: "This machine's disk",
-                          icon: ServerIcon,
-                          hint: "not a backup",
+                          icon: <ServerIcon className="size-4" />,
+                          tag: "not a backup",
                         },
                       ]),
                   ...stores
@@ -842,71 +869,84 @@ export function Schedule({
                     .map((s) => ({
                       value: s.name,
                       label: s.name,
-                      icon: s.kind === "managed" ? ServerIcon : CloudIcon,
-                      hint:
+                      icon:
+                        s.kind === "managed" ? (
+                          <ServerIcon className="size-4" />
+                        ) : (
+                          <CloudIcon className="size-4" />
+                        ),
+                      tag:
                         s.kind === "managed"
                           ? `${s.provider_label} on this machine`
                           : s.provider_label,
                     })),
                 ]}
-                hint="An S3 bucket, on a provider this instance is connected to. Somewhere else is the whole point: a dump on this disk goes with the machine."
+                className="w-full"
+                triggerClassName={SELECT_TRIGGER_CLASS}
               />
+              <p className="text-xs text-muted-foreground">
+                Choose a bucket on a connected S3 provider. A dump on this machine&rsquo;s disk is
+                not an offsite backup.
+              </p>
+            </div>
 
-              {chosen && (
-                <SearchableSelect
-                  label="Bucket"
-                  value={bucket}
-                  busy={buckets === null}
-                  onChange={setBucket}
-                  choices={(buckets ?? []).map((b) => ({ value: b.name, label: b.name }))}
-                  empty="That store holds no buckets yet."
-                />
-              )}
+            {chosen && (
+              <GlideSelect
+                label="Bucket"
+                value={bucket}
+                busy={buckets === null}
+                onChange={setBucket}
+                options={(buckets ?? []).map((b) => ({ value: b.name, label: b.name }))}
+                emptyMessage="That store holds no buckets yet."
+                searchable
+                className="w-full"
+                triggerClassName={SELECT_TRIGGER_CLASS}
+              />
+            )}
 
-              {/* **The same warning for two destinations, because they
+            {/* **The same warning for two destinations, because they
                   are the same disk.** A managed store is a SeaweedFS this
                   instance runs, with its objects in a bind mount under
                   the data directory — so picking one is not sending the
                   dumps anywhere, and it used to read as though it were.
                   Only a linked store is somewhere else. */}
-              {!chosen && !offsiteOnly && (
-                <Notice tone="warning">
-                  With no store chosen these land beside the database, on this machine&rsquo;s own
-                  disk. That survives somebody dropping a table and nothing else — not the disk, not
-                  the box. Link an S3 bucket under Object storage and pick it here.
-                </Notice>
-              )}
-              {chosen?.kind === "managed" && (
-                <Notice tone="warning">
-                  <strong>{chosen.name} runs on this machine.</strong> It is a SeaweedFS this
-                  instance started, and its objects sit on the same disk as the database — so these
-                  dumps go no further than a local one does. Link an S3 bucket somewhere else to
-                  have a backup that survives the box.
-                </Notice>
-              )}
-            </div>
-          )}
-
-          <div className="flex items-center gap-3">
-            <ActionButton busy={busy} onClick={save}>
-              Save
-            </ActionButton>
-            {saved && <span className="text-xs text-success">Saved.</span>}
-            {on && !schedule && (
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => {
-                  setOn(false);
-                  setSaved(false);
-                }}
-              >
-                Cancel
-              </Button>
+            {!chosen && !offsiteOnly && (
+              <Notice tone="warning">
+                With no store chosen these land beside the database, on this machine&rsquo;s own
+                disk. That survives somebody dropping a table and nothing else — not the disk, not
+                the box. Link an S3 bucket under Object storage and pick it here.
+              </Notice>
+            )}
+            {chosen?.kind === "managed" && (
+              <Notice tone="warning">
+                <strong>{chosen.name} runs on this machine.</strong> It is a SeaweedFS this instance
+                started, and its objects sit on the same disk as the database — so these dumps go no
+                further than a local one does. Link an S3 bucket somewhere else to have a backup
+                that survives the box.
+              </Notice>
             )}
           </div>
-        </CardContent>
-      </Card>
-    </>
+        )}
+
+        <div className="flex items-center gap-3">
+          <ActionButton busy={busy} onClick={save}>
+            Save
+          </ActionButton>
+          {saved && <span className="text-xs text-success">Saved.</span>}
+          {on && !schedule && (
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setOn(false);
+                setSaved(false);
+              }}
+            >
+              Cancel
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }

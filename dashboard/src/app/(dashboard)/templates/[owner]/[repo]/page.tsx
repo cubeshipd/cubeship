@@ -1,14 +1,23 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { BadgeCheckIcon, BoxIcon, DatabaseIcon, HardDriveIcon, PlusIcon } from "lucide-react";
+import {
+  ArrowLeftIcon,
+  BadgeCheckIcon,
+  BoxIcon,
+  DatabaseIcon,
+  ExternalLinkIcon,
+  HardDriveIcon,
+  PlusIcon,
+} from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type ReactNode, use, useEffect, useMemo, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { DomainInput, type PendingRecord, writeRecord } from "@/components/domain-input";
 import { ErrorAlert } from "@/components/error-alert";
+import { GlideSelect } from "@/components/glide-select";
 import { LoadingList } from "@/components/loading";
-import { SearchableSelect } from "@/components/searchable-select";
+import Link from "@/components/navigation-link";
 import { SectionHeader } from "@/components/section-header";
 import { TemplateMark } from "@/components/template-card";
 import { TextField } from "@/components/text-field";
@@ -48,23 +57,51 @@ export default function TemplatePage({ params }: PageProps<"/templates/[owner]/[
 
   return (
     <>
-      <div className="mb-8 flex items-center gap-4">
-        <TemplateMark src={t.icon_url} className="size-14" />
-        <div className="min-w-0">
-          <h1 className="flex items-center gap-2 text-lg font-semibold">
-            {t.title}
+      <Link
+        href="/templates"
+        className="mb-5 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <ArrowLeftIcon className="size-4" />
+        Back to templates
+      </Link>
+      <div className="mb-8 flex flex-wrap items-start gap-4">
+        <TemplateMark src={t.icon_url} className="size-14 rounded-xl" />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <h1 className="text-2xl font-semibold tracking-tight">{t.title}</h1>
             {t.verified && (
               <BadgeCheckIcon className="size-5 text-primary" aria-label="Verified publisher" />
             )}
-          </h1>
-          <p className="text-sm text-muted-foreground">{t.description}</p>
+          </div>
+          <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+            {t.description}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {t.tags.slice(0, 5).map((tag) => (
+              <span
+                key={tag}
+                className="rounded-full bg-secondary px-2.5 py-1 text-xs text-muted-foreground"
+              >
+                {tag}
+              </span>
+            ))}
+            <span className="font-mono text-xs text-subtle-foreground">{t.release.tag}</span>
+            <a
+              href={t.source_url}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+            >
+              Source <ExternalLinkIcon className="size-3" />
+            </a>
+          </div>
         </div>
       </div>
       {manifest ? (
-        <>
+        <div className="space-y-6">
           <Creates manifest={manifest} />
           <InstallForm key={t.name} template={t} manifest={manifest} />
-        </>
+        </div>
       ) : (
         <ErrorAlert error="The catalog has no manifest for this template." />
       )}
@@ -94,20 +131,20 @@ function Creates({ manifest }: { manifest: TemplateManifest }) {
     })),
   ];
   return (
-    <>
-      <SectionHeader title="What this creates" />
-      <Card className="gap-0 divide-y divide-border py-0">
-        {rows.map((r) => (
-          <div key={r.key} className="flex items-center gap-3 px-4 py-2.5">
-            <span className="text-primary [&_svg]:size-4">{r.icon}</span>
-            <span className="font-mono text-sm">{r.name}</span>
-            <span className="min-w-0 truncate font-mono text-xs text-muted-foreground">
-              {r.detail}
-            </span>
-          </div>
-        ))}
-      </Card>
-    </>
+    <Card>
+      <CardContent className="[&>.dashboard-section-header]:mb-4">
+        <SectionHeader title="Included" sub="Resources this template will create." />
+        <div className="divide-y divide-border">
+          {rows.map((r) => (
+            <div key={r.key} className="flex min-w-0 items-center gap-3 py-3 last:pb-0">
+              <span className="text-primary [&_svg]:size-4">{r.icon}</span>
+              <span className="min-w-0 flex-1 truncate font-mono text-sm">{r.name}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{r.detail}</span>
+            </div>
+          ))}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -247,134 +284,136 @@ function InstallForm({
   const lonely = otherInputs.length % 2 === 1 ? otherInputs[otherInputs.length - 1].key : "";
 
   return (
-    <>
-      <SectionHeader
-        title="Install"
-        sub="The project and environment are created when they do not exist. Anything that fails is undone."
-      />
-      <Card>
-        <CardContent className="space-y-6">
-          {/* Two fields or three, one row either way: a third that wrapped
+    <Card>
+      <CardContent className="space-y-6 [&>.dashboard-section-header]:mb-0">
+        <SectionHeader
+          title="Install template"
+          sub="The project and environment are created if needed. Failed installs are rolled back."
+        />
+        {/* Two fields or three, one row either way: a third that wrapped
               left a hole beside it. */}
-          <div
-            className={`grid gap-4 ${projectPick === NEW || envPick === NEW ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
-          >
-            <SearchableSelect
-              label="Project"
-              value={projectPick}
-              busy={projects.isLoading}
-              onChange={(v) => {
-                setProjectPick(v);
-                setEnvPick(NEW);
-              }}
-              choices={[
+        <div
+          className={`grid gap-4 ${projectPick === NEW || envPick === NEW ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
+        >
+          <GlideSelect
+            label="Project"
+            value={projectPick}
+            busy={projects.isLoading}
+            searchable
+            onChange={(v) => {
+              setProjectPick(v);
+              setEnvPick(NEW);
+            }}
+            options={[
+              {
+                value: NEW,
+                label: "New project",
+                icon: <PlusIcon className="size-4" />,
+                tag: "New",
+              },
+              ...(projects.data ?? []).map((p) => ({ value: p.slug, label: p.slug })),
+            ]}
+            triggerClassName="flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          />
+          {projectPick === NEW ? (
+            <TextField
+              label="Project name"
+              spellCheck={false}
+              value={newProject}
+              onChange={(e) => setNewProject(e.target.value)}
+            />
+          ) : (
+            <GlideSelect
+              label="Environment"
+              value={envPick}
+              busy={environments.isLoading}
+              onChange={setEnvPick}
+              searchable
+              options={[
                 {
                   value: NEW,
-                  label: "New project",
-                  icon: PlusIcon,
-                  hint: "Created by the install",
+                  label: "New environment",
+                  icon: <PlusIcon className="size-4" />,
+                  tag: "New",
                 },
-                ...(projects.data ?? []).map((p) => ({ value: p.slug, label: p.slug })),
+                ...(environments.data ?? []).map((e) => ({ value: e.slug, label: e.slug })),
               ]}
+              triggerClassName="flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             />
-            {projectPick === NEW ? (
-              <TextField
-                label="Project name"
-                spellCheck={false}
-                value={newProject}
-                onChange={(e) => setNewProject(e.target.value)}
-              />
-            ) : (
-              <SearchableSelect
-                label="Environment"
-                value={envPick}
-                busy={environments.isLoading}
-                onChange={setEnvPick}
-                choices={[
-                  { value: NEW, label: "New environment", icon: PlusIcon },
-                  ...(environments.data ?? []).map((e) => ({ value: e.slug, label: e.slug })),
-                ]}
-              />
-            )}
-            {(projectPick === NEW || envPick === NEW) && (
-              <TextField
-                label={projectPick === NEW ? "Environment" : "Environment name"}
-                spellCheck={false}
-                value={newEnvironment}
-                onChange={(e) => setNewEnvironment(e.target.value)}
-              />
-            )}
-          </div>
+          )}
+          {(projectPick === NEW || envPick === NEW) && (
+            <TextField
+              label={projectPick === NEW ? "Environment" : "Environment name"}
+              spellCheck={false}
+              value={newEnvironment}
+              onChange={(e) => setNewEnvironment(e.target.value)}
+            />
+          )}
+        </div>
 
-          {manifest.inputs.length > 0 && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              {ordered.map((input) =>
-                input.type === "domain" ? (
-                  <DomainInput
-                    key={input.key}
-                    label={input.required ? input.label : `${input.label} (optional)`}
-                    hint={input.help}
+        {manifest.inputs.length > 0 && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            {ordered.map((input) =>
+              input.type === "domain" ? (
+                <DomainInput
+                  key={input.key}
+                  label={input.required ? input.label : `${input.label} (optional)`}
+                  hint={input.help}
+                  value={inputs[input.key] ?? ""}
+                  onChange={(value) => setInputs((current) => ({ ...current, [input.key]: value }))}
+                  onRecord={(record) =>
+                    setRecords((current) => {
+                      const next = { ...current };
+                      if (record) next[input.key] = record;
+                      else delete next[input.key];
+                      return next;
+                    })
+                  }
+                  suggested={suggested[input.key]}
+                  settings={settings.data}
+                  address={settings.data?.public_ip}
+                />
+              ) : (
+                <div key={input.key} className={input.key === lonely ? "sm:col-span-2" : undefined}>
+                  <InputField
+                    input={input}
                     value={inputs[input.key] ?? ""}
                     onChange={(value) =>
                       setInputs((current) => ({ ...current, [input.key]: value }))
                     }
-                    onRecord={(record) =>
-                      setRecords((current) => {
-                        const next = { ...current };
-                        if (record) next[input.key] = record;
-                        else delete next[input.key];
-                        return next;
-                      })
-                    }
-                    suggested={suggested[input.key]}
-                    settings={settings.data}
+                    stores={stores.data ?? []}
                     address={settings.data?.public_ip}
                   />
-                ) : (
-                  <div
-                    key={input.key}
-                    className={input.key === lonely ? "sm:col-span-2" : undefined}
-                  >
-                    <InputField
-                      input={input}
-                      value={inputs[input.key] ?? ""}
-                      onChange={(value) =>
-                        setInputs((current) => ({ ...current, [input.key]: value }))
-                      }
-                      stores={stores.data ?? []}
-                      address={settings.data?.public_ip}
-                    />
-                  </div>
-                ),
-              )}
-            </div>
-          )}
-
-          <details className="group">
-            <summary className="cursor-pointer text-xs text-muted-foreground select-none hover:text-foreground">
-              Names on this instance
-            </summary>
-            <div className="mt-4 grid gap-4 sm:grid-cols-2">
-              {nameFields.map((f) => (
-                <TextField
-                  key={f.id}
-                  label={f.label}
-                  placeholder={f.fallback}
-                  value={names[f.id] ?? ""}
-                  onChange={(e) => setNames((current) => ({ ...current, [f.id]: e.target.value }))}
-                  hint={f.id.startsWith("apps.") ? undefined : "Unique on the whole instance."}
-                />
-              ))}
-            </div>
-          </details>
-
-          <ErrorAlert error={error} />
-          <div className="flex justify-end">
-            <ActionButton onClick={install}>Install {template.title}</ActionButton>
+                </div>
+              ),
+            )}
           </div>
-        </CardContent>
-      </Card>
-    </>
+        )}
+
+        <details className="group">
+          <summary className="cursor-pointer text-xs text-muted-foreground select-none hover:text-foreground">
+            Names on this instance
+          </summary>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            {nameFields.map((f) => (
+              <TextField
+                key={f.id}
+                label={f.label}
+                placeholder={f.fallback}
+                value={names[f.id] ?? ""}
+                onChange={(e) => setNames((current) => ({ ...current, [f.id]: e.target.value }))}
+                hint={f.id.startsWith("apps.") ? undefined : "Unique on the whole instance."}
+              />
+            ))}
+          </div>
+        </details>
+
+        <ErrorAlert error={error} />
+        <div className="flex justify-end border-t border-border pt-5">
+          <ActionButton onClick={install}>Install {template.title}</ActionButton>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -395,25 +434,33 @@ function InputField({
   switch (input.type) {
     case "choice":
       return (
-        <SearchableSelect
-          label={label}
-          hint={input.help}
-          value={value || String(input.default ?? "")}
-          onChange={onChange}
-          choices={(input.options ?? []).map((o) => ({ value: o, label: o }))}
-        />
+        <div className="space-y-2">
+          <GlideSelect
+            label={label}
+            value={value || String(input.default ?? "")}
+            onChange={onChange}
+            options={(input.options ?? []).map((o) => ({ value: o, label: o }))}
+            searchable
+            triggerClassName="flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          />
+          {input.help && <p className="text-xs text-muted-foreground">{input.help}</p>}
+        </div>
       );
     case "store":
       return (
-        <SearchableSelect
-          label={label}
-          hint={input.help}
-          value={value}
-          onChange={onChange}
-          placeholder="Pick an object store"
-          empty="This instance has no object store yet."
-          choices={stores.map((s) => ({ value: s.name, label: s.name }))}
-        />
+        <div className="space-y-2">
+          <GlideSelect
+            label={label}
+            value={value}
+            onChange={onChange}
+            placeholder="Pick an object store"
+            emptyMessage="This instance has no object store yet."
+            options={stores.map((s) => ({ value: s.name, label: s.name, tag: s.provider_label }))}
+            searchable
+            triggerClassName="flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          />
+          {input.help && <p className="text-xs text-muted-foreground">{input.help}</p>}
+        </div>
       );
     case "secret":
       return (

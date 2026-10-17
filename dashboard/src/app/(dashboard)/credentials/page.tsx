@@ -107,7 +107,11 @@ export default function Credentials() {
         columns={columns}
         rows={creds}
         rowKey={(c) => String(c.id)}
-        search={{ placeholder: "Filter credentials", by: (c) => [c.label, c.username] }}
+        search={{
+          placeholder: "Filter credentials",
+          countLabel: { singular: "credential", plural: "credentials" },
+          by: (c) => [c.label, c.username],
+        }}
       />
 
       <CredentialDialog open={adding} onOpenChange={setAdding} onSaved={reload} />
@@ -123,7 +127,7 @@ export default function Credentials() {
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
         title={`Delete ${deleting?.label}?`}
-        confirmWord={deleting?.label}
+        holdToConfirm
         description={
           deleting?.in_use_by?.length ? (
             <>

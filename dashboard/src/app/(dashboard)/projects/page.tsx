@@ -1,196 +1,85 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { PlusIcon } from "lucide-react";
-import { useState } from "react";
-import { ActionButton } from "@/components/action-button";
+import { BoxesIcon, PlusIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
+import { NewWorkloadAppDialog } from "@/components/new-workload-app-dialog";
 import { PageLoading } from "@/components/page-loading";
-import { ProjectCard } from "@/components/project-card";
-import { SearchBar } from "@/components/search-bar";
-import { SlugField } from "@/components/slug-field";
+import { useSession } from "@/components/session-context";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { api } from "@/lib/api";
-import { appsQuery, projectsQuery } from "@/lib/dashboard-queries";
+import { can } from "@/lib/api";
+import { projectsQuery } from "@/lib/dashboard-queries";
 import { message } from "@/lib/errors";
-import { useOpenOnArrival } from "@/lib/open-on-arrival";
-import { projectShares, useContainerUsage } from "@/lib/usage";
 
-// An unclaimed instance is not this page's problem: the shell above
-// sends anyone it cannot identify to sign in, and sign-in is where an
-// instance with no account at all redirects to setup. Checking here as
-// well only added a blank frame to every visit.
-//
-// It was `/` for as long as there was nothing else to land on. What
-// took that address is the Overview, and this moved to the address it
-// was always the index of: an app is `/projects/<project>/<env>/<app>`,
-// so the list of projects is `/projects`.
 export default function ProjectsPage() {
-  return <Projects />;
-}
+  const router = useRouter();
+  const me = useSession();
+  const projects = useQuery(projectsQuery);
+  const [creatingApp, setCreatingApp] = useState(false);
+  const canCreateProject =
+    me.grants === null ||
+    me.grants.some(
+      (grant) => grant.resource === "projects" && grant.level === "manage" && grant.items === null,
+    );
+  const canCreateApp = can(me, "apps", "manage");
+  const canCreateWorkspace = canCreateProject && canCreateApp;
 
-// The instance's projects, as cards. Apps are not
-// listed here: an app only means something inside an environment, and
-// which environment is a choice you make after opening the project.
-function Projects() {
-  const projectList = useQuery(projectsQuery);
-  const appList = useQuery(appsQuery);
-  const projects = projectList.data ?? null;
-  const apps = appList.data ?? [];
-  const [creating, setCreating] = useState(false);
-  useOpenOnArrival("new", setCreating);
-  const [query, setQuery] = useState("");
-  const error = projectList.error ? message(projectList.error) : null;
-  const reload = () => {
-    void projectList.refetch();
-  };
-
-  const { usage, machine } = useContainerUsage("app");
-
-  const needle = query.trim().toLowerCase();
-  const shown = (projects ?? []).filter((p) => p.slug.toLowerCase().includes(needle));
-
-  return (
-    <>
-      <RailPortal>
-        {
-          <Button onClick={() => setCreating(true)}>
-            <PlusIcon />
-            New project
-          </Button>
-        }
-      </RailPortal>
-      <ErrorAlert error={error} />
-      {projectList.isPending && <PageLoading kind="grid" label="Loading projects" />}
-
-      {projects?.length === 0 && (
-        <Card>
-          <CardContent className="py-2 text-sm text-muted-foreground">
-            No projects yet. A project holds your environments, and each environment holds the apps
-            you deploy — start with{" "}
-            <button
-              type="button"
-              onClick={() => setCreating(true)}
-              className="text-foreground underline underline-offset-4"
-            >
-              New project
-            </button>
-            .
-          </CardContent>
-        </Card>
-      )}
-
-      {/* The grid is not a DataTable, so the filter is written out
-          here — the same control, the same gap, and the same rule about
-          what it filters: the page, not one card. */}
-      {projects && projects.length > 0 && (
-        <SearchBar
-          className="mb-4"
-          value={query}
-          onChange={setQuery}
-          placeholder="Filter projects"
-          trailing={
-            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-              {shown.length}/{projects.length}
-            </span>
-          }
-        />
-      )}
-
-      {projects && projects.length > 0 && shown.length === 0 && (
-        <Card>
-          <CardContent className="py-2 text-sm text-muted-foreground">
-            Nothing matches that.
-          </CardContent>
-        </Card>
-      )}
-
-      {shown.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {shown.map((p) => (
-            <ProjectCard
-              key={p.slug}
-              slug={p.slug}
-              hasImage={p.has_image}
-              apps={apps.filter((a) => a.project === p.slug)}
-              shares={projectShares(usage, p.slug, machine)}
-            />
-          ))}
-        </div>
-      )}
-
-      <NewProjectDialog open={creating} onOpenChange={setCreating} onCreated={reload} />
-    </>
-  );
-}
-
-function NewProjectDialog({
-  open,
-  onOpenChange,
-  onCreated,
-}: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  onCreated: () => void;
-}) {
-  const [slug, setSlug] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setBusy(true);
-    setError(null);
-    try {
-      // No name: the daemon derives one from the slug, and it is edited
-      // afterwards in settings if the guess is wrong.
-      await api.post(`/projects`, { slug });
-      setSlug("");
-      onCreated();
-      onOpenChange(false);
-    } catch (err) {
-      setError(message(err));
+  useEffect(() => {
+    const first = projects.data?.[0];
+    if (first && !projects.isFetching && !projects.isError) {
+      router.replace(`/projects/${first.slug}/production`);
     }
-    setBusy(false);
+  }, [projects.data, projects.isError, projects.isFetching, router]);
+
+  if (projects.isError) {
+    return (
+      <div className="max-w-xl space-y-4">
+        <ErrorAlert error={message(projects.error)} />
+        <Button variant="outline" onClick={() => void projects.refetch()}>
+          Try again
+        </Button>
+      </div>
+    );
+  }
+
+  if (projects.isPending || projects.isFetching || projects.data?.length) {
+    return <PageLoading kind="grid" label="Opening projects" />;
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <form onSubmit={submit}>
-          <DialogHeader>
-            <DialogTitle>New project</DialogTitle>
-            <DialogDescription>
-              It starts with a <code>production</code> environment. Others are added from inside the
-              project.
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4 py-5">
-            <ErrorAlert error={error} />
-            <SlugField autoFocus value={slug} onChange={setSlug} placeholder="public-api" />
-          </div>
-
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <ActionButton type="submit" busy={busy} disabled={!slug}>
-              Create
-            </ActionButton>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Card className="w-full flex-1 text-center">
+        <CardContent className="flex h-full min-h-[24rem] flex-col items-center justify-center px-6 py-12">
+          <span className="mb-5 flex size-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/5 text-primary">
+            <BoxesIcon className="size-7" />
+          </span>
+          <h1 className="text-xl font-medium tracking-tight">Your workspace is ready</h1>
+          <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+            {canCreateWorkspace
+              ? "Create your first app and project together. You can configure its source and deploy it after creation."
+              : "There are no projects you can use yet. Ask an administrator to create or share one with you."}
+          </p>
+          <Button
+            className="mt-6"
+            disabled={!canCreateWorkspace}
+            onClick={() => setCreatingApp(true)}
+          >
+            <PlusIcon />
+            Create your first app
+          </Button>
+        </CardContent>
+      </Card>
+      <NewWorkloadAppDialog
+        open={creatingApp}
+        onOpenChange={setCreatingApp}
+        onCreated={(reference) => {
+          setCreatingApp(false);
+          router.replace(`/projects/${reference}`);
+        }}
+      />
+    </>
   );
 }

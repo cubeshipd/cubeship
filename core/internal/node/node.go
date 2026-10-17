@@ -274,11 +274,13 @@ type Placement struct {
 	// placement applied twice is the same container rather than a
 	// second one — the agent asks "is this name running" and does
 	// nothing when it is.
-	Container string                `json:"container"`
-	Image     string                `json:"image"`
-	Registry  *dockerx.RegistryAuth `json:"registry,omitempty"`
-	Env       map[string]string     `json:"env"`
-	Labels    map[string]string     `json:"labels"`
+	Container   string                `json:"container"`
+	ContainerID string                `json:"container_id,omitempty"`
+	Stopped     bool                  `json:"stopped,omitempty"`
+	Image       string                `json:"image"`
+	Registry    *dockerx.RegistryAuth `json:"registry,omitempty"`
+	Env         map[string]string     `json:"env"`
+	Labels      map[string]string     `json:"labels"`
 	// Networks are what the container joins: the machine's own bridge
 	// and, when there is one, the cluster's overlay.
 	Networks []string `json:"networks"`
@@ -331,7 +333,8 @@ type Result struct {
 	Error string `json:"error,omitempty"`
 	// Output is redacted pre-deploy stdout/stderr. It lets the control
 	// plane persist the same hook log when the app runs on a worker.
-	Output string `json:"output,omitempty"`
+	Output  string `json:"output,omitempty"`
+	Resumed bool   `json:"resumed,omitempty"`
 }
 
 // Reading is what one container on a machine is using, as that machine
@@ -345,10 +348,11 @@ type Result struct {
 type Reading struct {
 	// Container is the id the machine reported when it started it,
 	// which is how the control plane works out whose reading this is.
-	Container        string  `json:"container"`
-	CPUPercent       float64 `json:"cpu_percent"`
-	MemoryBytes      int64   `json:"memory_bytes"`
-	MemoryLimitBytes int64   `json:"memory_limit_bytes"`
+	Container        string     `json:"container"`
+	StartedAt        *time.Time `json:"started_at,omitempty"`
+	CPUPercent       float64    `json:"cpu_percent"`
+	MemoryBytes      int64      `json:"memory_bytes"`
+	MemoryLimitBytes int64      `json:"memory_limit_bytes"`
 }
 
 // Apps is the module that knows what runs on which machine.

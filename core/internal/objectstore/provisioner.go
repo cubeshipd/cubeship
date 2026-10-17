@@ -79,6 +79,7 @@ type DockerAPI interface {
 	RemoveContainer(ctx context.Context, id string) error
 	IsRunning(ctx context.Context, id string) (bool, error)
 	Logs(ctx context.Context, id, tail string) (io.ReadCloser, error)
+	ExecStream(ctx context.Context, id string, cmd []string, in io.Reader, out io.Writer) (string, int, error)
 }
 
 // ProvisionTimeout bounds a detached provision. It is nobody's request

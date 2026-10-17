@@ -4,87 +4,84 @@ import { cn } from "cn";
 // decided. A status with no entry here is shown plainly rather than
 // guessed at — a new deployment state should look unfamiliar, not
 // green.
-type Tone = { dot: string; text: string; edge: string; pulse?: boolean };
+type Tone = { dot: string; text: string; surface: string; pulse?: boolean };
 
 const tones: Record<string, Tone> = {
-  unhealthy: { dot: "bg-destructive", text: "text-destructive", edge: "border-destructive/40" },
-  dead: { dot: "bg-destructive", text: "text-destructive", edge: "border-destructive/40" },
-  restarting: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
-  paused: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40" },
-  running: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
+  unhealthy: { dot: "bg-destructive", text: "text-destructive", surface: "bg-destructive/10" },
+  dead: { dot: "bg-destructive", text: "text-destructive", surface: "bg-destructive/10" },
+  restarting: { dot: "bg-warning", text: "text-warning", surface: "bg-warning/10", pulse: true },
+  starting: { dot: "bg-warning", text: "text-warning", surface: "bg-warning/10", pulse: true },
+  paused: { dot: "bg-warning", text: "text-warning", surface: "bg-warning/10" },
+  running: { dot: "bg-success", text: "text-success", surface: "bg-success/10" },
+  stopped: { dot: "bg-subtle-foreground", text: "text-muted-foreground", surface: "bg-muted" },
   // A server in the cluster that is calling in. Green for the same
   // reason `running` is: it is the state where nothing needs doing.
-  ready: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
-  succeeded: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
-  installed: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
-  installing: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
-  updating: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
-  uninstalling: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
+  ready: { dot: "bg-success", text: "text-success", surface: "bg-success/10" },
+  succeeded: { dot: "bg-success", text: "text-success", surface: "bg-success/10" },
+  installed: { dot: "bg-success", text: "text-success", surface: "bg-success/10" },
+  installing: { dot: "bg-warning", text: "text-warning", surface: "bg-warning/10", pulse: true },
+  updating: { dot: "bg-warning", text: "text-warning", surface: "bg-warning/10", pulse: true },
+  uninstalling: { dot: "bg-warning", text: "text-warning", surface: "bg-warning/10", pulse: true },
   uninstalled: {
     dot: "bg-subtle-foreground",
     text: "text-muted-foreground",
-    edge: "border-border-strong",
+    surface: "bg-muted",
   },
-  deploying: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
-  building: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
-  pending: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
+  deploying: { dot: "bg-warning", text: "text-warning", surface: "bg-warning/10", pulse: true },
+  building: { dot: "bg-warning", text: "text-warning", surface: "bg-warning/10", pulse: true },
+  pending: { dot: "bg-warning", text: "text-warning", surface: "bg-warning/10", pulse: true },
   // A dump in flight. Amber and pulsing rather than green, because a
   // backup that is still being taken is not one yet — and `running`,
   // which would be the natural word, is already a healthy container
   // here and is painted green.
-  taking: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40", pulse: true },
-  failed: { dot: "bg-destructive", text: "text-destructive", edge: "border-destructive/40" },
+  taking: { dot: "bg-warning", text: "text-warning", surface: "bg-warning/10", pulse: true },
+  failed: { dot: "bg-destructive", text: "text-destructive", surface: "bg-destructive/10" },
   // Some of an app's machines serving and some not. Amber rather than
   // red because the name still answers — what is lost is the headroom
   // that was the reason for the second machine — and rather than green
   // because something is down and nothing will notice on its own. It
   // cannot happen to an app on one machine.
-  degraded: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40" },
+  degraded: { dot: "bg-warning", text: "text-warning", surface: "bg-warning/10" },
   // A registry's three answers. Unauthorized is red rather than amber
   // because it is the one somebody has to act on: nothing recovers a
   // revoked key on its own, and the next deploy that pulls will fail.
-  available: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
+  available: { dot: "bg-success", text: "text-success", surface: "bg-success/10" },
   unauthorized: {
     dot: "bg-destructive",
     text: "text-destructive",
-    edge: "border-destructive/40",
+    surface: "bg-destructive/10",
   },
-  unreachable: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40" },
+  unreachable: { dot: "bg-warning", text: "text-warning", surface: "bg-warning/10" },
   checking: {
     dot: "bg-subtle-foreground",
     text: "text-muted-foreground",
-    edge: "border-border-strong",
+    surface: "bg-muted",
     pulse: true,
   },
   // A certificate's three. Traefik renews thirty days before expiry, so
   // a certificate still inside two weeks is one whose renewal is not
   // working — amber, not green — and an expired one is already failing
   // handshakes.
-  valid: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
+  valid: { dot: "bg-success", text: "text-success", surface: "bg-success/10" },
   // A firewall rule's verb. Allow is green because it is what makes
   // something work; deny and reject are red because they are what stops
   // it — the colour is about what the rule does, not about whether
   // having it is good news.
-  allow: { dot: "bg-success", text: "text-success", edge: "border-success/40" },
-  deny: { dot: "bg-destructive", text: "text-destructive", edge: "border-destructive/40" },
-  reject: { dot: "bg-destructive", text: "text-destructive", edge: "border-destructive/40" },
-  expiring: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40" },
-  expired: { dot: "bg-destructive", text: "text-destructive", edge: "border-destructive/40" },
-  stopped: {
-    dot: "bg-subtle-foreground",
-    text: "text-muted-foreground",
-    edge: "border-border-strong",
-  },
+  allow: { dot: "bg-success", text: "text-success", surface: "bg-success/10" },
+  deny: { dot: "bg-destructive", text: "text-destructive", surface: "bg-destructive/10" },
+  reject: { dot: "bg-destructive", text: "text-destructive", surface: "bg-destructive/10" },
+  expiring: { dot: "bg-warning", text: "text-warning", surface: "bg-warning/10" },
+  expired: { dot: "bg-destructive", text: "text-destructive", surface: "bg-destructive/10" },
   // A name routed here with no certificate behind it. Amber and not
   // red: it is the ordinary state for the minute after a deploy, and
   // the row carries the reason for when it is not.
-  waiting: { dot: "bg-warning", text: "text-warning", edge: "border-warning/40" },
+  waiting: { dot: "bg-warning", text: "text-warning", surface: "bg-warning/10" },
   // Served by another machine in the cluster, which holds its own. Not
   // a problem, and the only entry in the missing half that is not.
   elsewhere: {
     dot: "bg-subtle-foreground",
     text: "text-muted-foreground",
-    edge: "border-border-strong",
+    surface: "bg-muted",
   },
   // A certificate nothing answers at any more. Grey rather than amber:
   // it is still valid and still renewing, and the only thing wrong with
@@ -92,14 +89,14 @@ const tones: Record<string, Tone> = {
   unused: {
     dot: "bg-subtle-foreground",
     text: "text-muted-foreground",
-    edge: "border-border-strong",
+    surface: "bg-muted",
   },
 };
 
 const unknown: Tone = {
   dot: "bg-subtle-foreground",
   text: "text-muted-foreground",
-  edge: "border-border-strong",
+  surface: "bg-muted",
 };
 
 export function statusTone(value: string): Tone {
@@ -138,28 +135,14 @@ export function StatusBadge({ value, className }: { value: string; className?: s
   return (
     <span
       className={cn(
-        "inline-flex h-5 items-center gap-1.5 border bg-background px-2 font-mono text-[10px] uppercase",
-        t.edge,
+        "inline-flex h-6 items-center gap-1.5 rounded-full px-2.5 font-sans text-[11px] font-medium capitalize tracking-normal",
+        t.surface,
         t.text,
         className,
       )}
     >
-      <StatusDot value={value} />
-      {/* Centred by eye rather than by box, which is not the same thing
-          for a line of capitals.
-          
-          `items-center` centres the text's *line box*, and that box
-          holds descender room no capital uses — so the ink sat about a
-          pixel above the dot beside it, which is exactly where the eye
-          looks for the difference. `leading-none` takes the slack out
-          and the nudge spends what is left.
-          
-          The negative margin is the other half of the same problem:
-          letter-spacing is applied after the last character too, so a
-          tracked word inside equal padding is not equally padded. */}
-      <span className="-mr-[0.14em] translate-y-[0.5px] leading-none tracking-[0.14em]">
-        {value}
-      </span>
+      <span aria-hidden="true" className={cn("size-1.5 shrink-0 rounded-full", t.dot)} />
+      <span>{value}</span>
     </span>
   );
 }

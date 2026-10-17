@@ -14,6 +14,7 @@ import (
 // *dockerx.Client satisfies it; a test supplies a fake.
 type StatsAPI interface {
 	ContainerStats(ctx context.Context, containerID string) (dockerx.Stats, error)
+	ContainerStartedAt(ctx context.Context, containerID string) (*time.Time, error)
 }
 
 // Source is a module that has containers worth sampling.
@@ -125,6 +126,9 @@ func (c *Collector) Collect(ctx context.Context) error {
 			MemoryBytes:      int64(stats.MemoryBytes),
 			MemoryLimitBytes: int64(stats.MemoryLimit),
 			CPUPercent:       c.cpuPercent(s.ContainerID, stats),
+		}
+		if startedAt, err := c.docker.ContainerStartedAt(ctx, s.ContainerID); err == nil {
+			sample.StartedAt = startedAt
 		}
 		c.previous[s.ContainerID] = stats
 

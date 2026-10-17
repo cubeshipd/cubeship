@@ -8,9 +8,8 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyField } from "@/components/copy-field";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
-import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
+import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { SlugField } from "@/components/slug-field";
 import { StatusBadge } from "@/components/status-badge";
@@ -41,14 +40,14 @@ import { useOpenOnArrival } from "@/lib/open-on-arrival";
 // answer.
 const REFRESH_MS = 10_000;
 
-// The machines this instance is made of.
+// The nodes this instance is made of.
 //
 // The control plane is in the table rather than beside it. It is a
-// machine like the others — the same daemon, the same numbers — and it
+// node like the others — the same daemon, the same numbers — and it
 // differs in one thing that the list already says: it is the one that
-// decides. A screen listing only "the other servers" would be a screen
+// decides. A screen listing only "the other nodes" would be a screen
 // that cannot answer where something runs.
-export default function Servers() {
+export default function Nodes() {
   const me = useSession();
   const router = useRouter();
   const [servers, setServers] = useState<ClusterServer[] | null>(null);
@@ -76,7 +75,7 @@ export default function Servers() {
   const columns: Column<ClusterServer>[] = [
     {
       id: "name",
-      header: "Server",
+      header: "Node",
       width: 22,
       sortBy: (s) => s.name,
       // No badge saying which one is the control plane: it is the row
@@ -159,12 +158,12 @@ export default function Servers() {
           {canRootShell(me) && (
             <RowAction
               icon={TerminalIcon}
-              label={`Open a root shell on ${s.name}`}
+              label={`Open a root shell on node ${s.name}`}
               disabled={s.status !== "ready"}
               title={
                 s.status === "ready"
                   ? undefined
-                  : "This server is not calling in, so nothing can open a shell on it."
+                  : "This node is not calling in, so nothing can open a shell on it."
               }
               onClick={() => router.push(`/servers/${encodeURIComponent(s.name)}/shell`)}
             />
@@ -172,14 +171,14 @@ export default function Servers() {
           {canRootShell(me) && s.control_plane && s.status === "ready" && (
             <RowAction
               icon={HardDriveIcon}
-              label={`Manage Docker storage on ${s.name}`}
+              label={`Manage Docker storage on node ${s.name}`}
               onClick={() => router.push(`/servers/${encodeURIComponent(s.name)}/storage`)}
             />
           )}
           {!s.control_plane && (
             <RowAction
               icon={Trash2Icon}
-              label={`Remove ${s.name}`}
+              label={`Remove node ${s.name}`}
               danger
               onClick={() => setRemoving(s)}
             />
@@ -191,42 +190,47 @@ export default function Servers() {
 
   return (
     <>
-      <RailPortal>
-        {
-          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+      <SectionHeader
+        title="Nodes"
+        sub="Connect and manage the machines in this instance. The control plane appears alongside worker nodes."
+        actions={
+          <Button onClick={() => setAdding(true)}>
             <PlusIcon />
-            Add a server
+            Connect Node
           </Button>
         }
-      </RailPortal>
+      />
       <ErrorAlert error={error} />
 
       <DataTable
         columns={columns}
         rows={servers}
-        search={{ placeholder: "Filter servers", by: (s) => [s.name, s.address, s.version] }}
+        search={{
+          placeholder: "Search nodes",
+          countLabel: { singular: "node", plural: "nodes" },
+          by: (s) => [s.name, s.address, s.version],
+        }}
         rowKey={(s) => s.name}
         loadingRows={2}
-        empty="No servers yet."
+        empty="No nodes yet."
         className="mb-4"
       />
 
       <AddDialog open={adding} onOpenChange={setAdding} onAdded={reload} />
 
-      {/* No word to type. Removing a server is a local act — the row
+      {/* No word to type. Removing a node is a local act — the row
           goes and its credential with it, and nothing on that machine
           is touched — so the guard only has to stop the misclick. */}
       <ConfirmDialog
         open={removing !== null}
         onOpenChange={(open) => !open && setRemoving(null)}
-        title="Remove this server?"
+        title="Remove this node?"
         confirmLabel="Remove"
+        holdToConfirm
         description={
           <>
-            <code className="text-foreground">{removing?.name}</code> stops being part of this
-            cluster and its credential stops working, so its agent is refused on its next call.{" "}
-            <strong>Nothing on that machine is touched</strong> — whatever is running there goes on
-            running until somebody stops it.
+            Remove <code className="text-foreground">{removing?.name}</code> from the cluster. Its
+            agent can no longer connect, but anything already running on the machine keeps running.
           </>
         }
         onConfirm={async () => {
@@ -246,7 +250,7 @@ export default function Servers() {
 // So the dialog has two states rather than closing on success. The
 // command carries the credential, it is the only time it exists in a
 // form anybody can read, and closing the dialog on somebody before they
-// have copied it would mean removing the server and adding it back.
+// have copied it would mean removing the node and adding it back.
 function AddDialog({
   open,
   onOpenChange,
@@ -275,7 +279,7 @@ function AddDialog({
       .catch(() => setSettings(null));
   }, [open]);
 
-  // Where the new machine will dial. The instance's domain when it has
+  // Where the new node will dial. The instance's domain when it has
   // one, and otherwise the address this dashboard was opened at — which
   // is by construction an address that reaches this box, and is what a
   // fresh install is reached at before there is a domain.
@@ -310,24 +314,19 @@ function AddDialog({
       <DialogContent className="sm:max-w-lg">
         {created ? (
           <>
-            <DialogHeader>
+            <DialogHeader className="mb-0 gap-1">
               <DialogTitle>Run this on {created.name}</DialogTitle>
               <DialogDescription>
-                One command on the new machine. It installs Docker if it is missing, starts the
-                daemon in worker mode, and the server appears here as soon as it calls in.
+                Run this command on the new machine to connect it to the control plane.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="space-y-4 py-4">
+            <div className="space-y-2 py-1">
               <CopyField
-                label="On the new server, as root"
+                label="On the new node, as root"
                 value={command}
                 hint="The credential is in this command and in no other. It is stored here only as a hash, so nothing can show it again."
               />
-              <Notice>
-                The machine needs to reach <code>{controlPlane}</code>. Nothing needs to reach it: a
-                worker publishes no port.
-              </Notice>
             </div>
 
             <DialogFooter>
@@ -339,10 +338,10 @@ function AddDialog({
         ) : (
           <form onSubmit={submit}>
             <DialogHeader>
-              <DialogTitle>Add a server</DialogTitle>
+              <DialogTitle>Connect a node</DialogTitle>
               <DialogDescription>
-                A second machine this instance manages. It holds no database and serves nothing of
-                its own — it dials this control plane and does what it is told.
+                Connect a worker machine to this control plane. It dials this instance and runs
+                workloads assigned to it.
               </DialogDescription>
             </DialogHeader>
 
@@ -362,7 +361,7 @@ function AddDialog({
                 Cancel
               </Button>
               <ActionButton type="submit" busy={busy} disabled={!name}>
-                Add
+                Connect Node
               </ActionButton>
             </DialogFooter>
           </form>

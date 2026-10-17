@@ -166,6 +166,13 @@ func (r *Repository) UpdateContainer(ctx context.Context, id int64, containerID,
 	return nil
 }
 
+func (r *Repository) SetPassword(ctx context.Context, id int64, password string) error {
+	if _, err := r.q.ExecContext(ctx, `UPDATE datastores SET password = $1 WHERE id = $2`, password, id); err != nil {
+		return fmt.Errorf("save rotated datastore password: %w", err)
+	}
+	return nil
+}
+
 // SetExposedPort records the host port this datastore answers on, or 0
 // for none. The unique index is what decides a collision, not a
 // preceding lookup — two callers exposing at once would both pass one.

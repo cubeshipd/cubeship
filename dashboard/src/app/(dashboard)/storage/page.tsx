@@ -2,94 +2,31 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { HardDriveIcon, PlusIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
-import { NewObjectStoreDialog } from "@/components/new-object-store-dialog";
-import { ResourceCard, ResourceGrid } from "@/components/resource-grid";
-import { StatusBadge } from "@/components/status-badge";
+import { useCreateStorage } from "@/components/storage-workspace";
 import { Button } from "@/components/ui/button";
-import { PROVIDER_ICONS } from "@/lib/credentials";
+import { Card, CardContent } from "@/components/ui/card";
 import { storesQuery } from "@/lib/dashboard-queries";
-import { message } from "@/lib/errors";
-import { useOpenOnArrival } from "@/lib/open-on-arrival";
-import { usageShares, useContainerUsage } from "@/lib/usage";
 
-// Every object store this instance can reach, both kinds in one grid.
-//
-// One grid rather than two sections, because they are one thing to
-// scan: "where can this instance put a file". Which kind each is is a
-// fact about a card, not a reason for two lists.
 export default function StoragePage() {
-  const router = useRouter();
   const inventory = useQuery(storesQuery);
-  const stores = inventory.data ?? null;
-  const [adding, setAdding] = useState(false);
-  useOpenOnArrival("new", setAdding);
-  const error = inventory.error ? message(inventory.error) : null;
-  const { usage, machine } = useContainerUsage("objectstore");
+  const create = useCreateStorage();
+  if (inventory.isError || inventory.isPending || (inventory.data?.length ?? 0) > 0) return null;
 
   return (
-    <>
-      <RailPortal>
-        {
-          <Button onClick={() => setAdding(true)}>
-            <PlusIcon />
-            Add storage
-          </Button>
-        }
-      </RailPortal>
-      <ErrorAlert error={error} />
-
-      <ResourceGrid
-        rows={stores}
-        search={{ placeholder: "Filter stores", by: (s) => [s.name, s.provider, s.kind] }}
-        rowKey={(s) => s.name}
-        card={(s) => (
-          <ResourceCard
-            href={`/storage/${s.name}`}
-            icon={
-              s.kind === "managed" ? HardDriveIcon : (PROVIDER_ICONS[s.provider] ?? HardDriveIcon)
-            }
-            name={s.name}
-            // The kind is the one fact that changes what deleting it
-            // means, so it is on the card rather than a page deeper.
-            detail={
-              s.kind === "managed"
-                ? `${s.provider_label} · on this host`
-                : `${s.provider_label} · ${s.endpoint.replace(/^https?:\/\//, "")}`
-            }
-            status={
-              <span className="flex items-center gap-2">
-                <StatusBadge value={s.status} />
-                {/* A published port is the difference between a private
-                    network and the internet, worth a glance. */}
-                {s.exposed_port ? (
-                  <span className="font-mono text-xs text-warning">:{s.exposed_port}</span>
-                ) : null}
-              </span>
-            }
-            // A linked store is somebody else's server: nothing here to
-            // read, so its bars stay at 0 like anything not running.
-            usage={usageShares(usage?.get(s.name), s.limits, machine)}
-          />
-        )}
-        empty={
-          <span className="flex items-center justify-between gap-4">
-            This instance reaches no object storage yet.
-            <Button variant="outline" onClick={() => setAdding(true)}>
-              Add one
-            </Button>
-          </span>
-        }
-      />
-
-      <NewObjectStoreDialog
-        open={adding}
-        onOpenChange={setAdding}
-        onCreated={(created) => router.push(`/storage/${created.name}`)}
-      />
-    </>
+    <Card className="w-full flex-1 text-center">
+      <CardContent className="flex h-full min-h-[24rem] flex-col items-center justify-center px-6 py-12">
+        <span className="mb-5 flex size-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/5 text-primary">
+          <HardDriveIcon className="size-7" />
+        </span>
+        <h1 className="text-xl font-medium tracking-tight">No object storage yet</h1>
+        <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+          Connect an S3 bucket or run managed storage for your apps and backups.
+        </p>
+        <Button className="mt-6" onClick={create}>
+          <PlusIcon />
+          Add your first storage
+        </Button>
+      </CardContent>
+    </Card>
   );
 }

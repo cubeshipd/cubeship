@@ -19,7 +19,11 @@ export function ResourceGrid<T>({
   empty,
 }: {
   rows: T[] | null;
-  search: { placeholder: string; by: (row: T) => (string | undefined)[] };
+  search: {
+    placeholder: string;
+    countLabel: { singular: string; plural: string };
+    by: (row: T) => (string | undefined)[];
+  };
   rowKey: (row: T) => string;
   card: (row: T) => ReactNode;
   empty: ReactNode;
@@ -51,11 +55,7 @@ export function ResourceGrid<T>({
         value={query}
         onChange={setQuery}
         placeholder={search.placeholder}
-        trailing={
-          <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-            {matched?.length ?? 0}/{rows?.length ?? 0}
-          </span>
-        }
+        count={{ value: matched?.length ?? 0, ...search.countLabel }}
       />
 
       {matched != null && matched.length === 0 ? (

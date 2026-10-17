@@ -1,10 +1,10 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { GitProviders } from "@/components/git-providers";
+import { GlideSelect, type GlideSelectOption } from "@/components/glide-select";
 import { GitHubIcon } from "@/components/icons";
-import { type Choice, SearchableSelect } from "@/components/searchable-select";
 import { useSession } from "@/components/session-context";
 import {
   api,
@@ -26,11 +26,15 @@ import { message } from "@/lib/errors";
 // there is no point choosing between Railpack and a Dockerfile for a
 // repository Cubeship cannot reach.
 export function GitHubSource({
+  sourceControl,
+  buildControl,
   repo,
   gitRef,
   onRepo,
   onRef,
 }: {
+  sourceControl: ReactNode;
+  buildControl: ReactNode;
   repo: string;
   gitRef: string;
   onRepo: (url: string, defaultBranch: string) => void;
@@ -155,14 +159,18 @@ export function GitHubSource({
 
   if (!checked || !connected) {
     return (
-      <div className="space-y-3">
-        {checked && <ErrorAlert error={error} />}
-        <GitProviders
-          providers={providers}
-          canRegister={me.role === "admin"}
-          returnTo={returnTo}
-          checking={!checked}
-        />
+      <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+        {sourceControl}
+        <div className="space-y-3">
+          {checked && <ErrorAlert error={error} />}
+          <GitProviders
+            providers={providers}
+            canRegister={me.role === "admin"}
+            returnTo={returnTo}
+            checking={!checked}
+          />
+        </div>
+        <div className="sm:col-span-2">{buildControl}</div>
       </div>
     );
   }
@@ -171,15 +179,20 @@ export function GitHubSource({
   // every row here is GitHub's, but this list is what a second provider
   // would land in — and a list of names from two places, unmarked, is a
   // list where you cannot tell which `acme/api` you are picking.
-  const repoChoices: Choice[] = (repos ?? []).map((r) => ({
+  const repoChoices: GlideSelectOption[] = (repos ?? []).map((r) => ({
     value: r.full_name,
-    label: r.full_name,
-    icon: GitHubIcon,
-    hint: r.private ? "private" : undefined,
+    label: (
+      <span className="inline-flex min-w-0 items-center gap-2">
+        <GitHubIcon className="size-4 shrink-0" />
+        <span className="truncate">{r.full_name}</span>
+      </span>
+    ),
+    searchText: r.full_name,
+    tag: r.private ? "private" : undefined,
   }));
 
-  const branchChoices: Choice[] = [
-    { value: "", label: "Any branch (deploy on push)" },
+  const branchChoices: GlideSelectOption[] = [
+    { value: "", label: "Any branch" },
     ...(branches ?? []).map((b) => ({
       value: b.name,
       label: b.name,
@@ -190,36 +203,42 @@ export function GitHubSource({
     <div className="space-y-4">
       <ErrorAlert error={error} />
 
-      {/* Side by side, because they are one decision: a branch only
-          means anything inside a repository, and stacked they read as
-          two independent questions with the answer to the second
-          waiting on the first. */}
-      <div className="grid grid-cols-2 items-start gap-4">
-        <SearchableSelect
-          label="Repository"
-          hint="What the App was granted. Install it on more from GitHub if one is missing."
-          placeholder="Choose a repository"
-          empty="The App is connected but was granted no repositories."
-          busy={loading}
-          choices={repoChoices}
-          value={fullName}
-          onChange={(picked) => {
-            const chosen = repos?.find((r) => r.full_name === picked);
-            onRepo(`https://github.com/${picked}`, chosen?.default_branch ?? "");
-          }}
-        />
+      <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+        {sourceControl}
+        <div>
+          <GlideSelect
+            label="Repository"
+            placeholder="Choose a repository"
+            emptyMessage="The App is connected but was granted no repositories."
+            busy={loading}
+            options={repoChoices}
+            value={fullName}
+            onChange={(picked) => {
+              const chosen = repos?.find((r) => r.full_name === picked);
+              onRepo(`https://github.com/${picked}`, chosen?.default_branch ?? "");
+            }}
+            searchable
+            className="w-full"
+            triggerClassName="flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          />
+        </div>
 
-        <SearchableSelect
-          label="Branch"
-          hint="What a deploy builds when it names nothing else. Leave it and a push to any branch deploys."
-          placeholder={fullName ? "Choose a branch" : "Choose a repository first"}
-          empty="No branches — or the App cannot read this repository."
-          busy={loadingBranches}
-          disabled={!fullName}
-          choices={branchChoices}
-          value={gitRef}
-          onChange={onRef}
-        />
+        <div>
+          <GlideSelect
+            label="Branch"
+            placeholder={fullName ? "Choose a branch" : "Choose a repository first"}
+            emptyMessage="No branches — or the App cannot read this repository."
+            busy={loadingBranches}
+            disabled={!fullName}
+            options={branchChoices}
+            value={gitRef}
+            onChange={onRef}
+            searchable
+            className="w-full"
+            triggerClassName="flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
+          />
+        </div>
+        {buildControl}
       </div>
     </div>
   );

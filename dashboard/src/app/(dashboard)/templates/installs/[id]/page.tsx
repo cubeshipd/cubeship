@@ -1,16 +1,15 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { LoaderCircleIcon, Trash2Icon } from "lucide-react";
+import { ArrowLeftIcon, Trash2Icon } from "lucide-react";
 import { use, useEffect, useState } from "react";
 import { CopyField } from "@/components/copy-field";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
 import { LoadingList } from "@/components/loading";
 import Link from "@/components/navigation-link";
-import { Notice } from "@/components/notice";
 import { SectionHeader } from "@/components/section-header";
 import { StatusBadge } from "@/components/status-badge";
+import StatusMark from "@/components/status-mark";
 import { installStatus } from "@/components/template-installs";
 import { TemplateUninstallDialog } from "@/components/template-uninstall-dialog";
 import { Button } from "@/components/ui/button";
@@ -48,92 +47,117 @@ export default function TemplateInstallPage({ params }: PageProps<"/templates/in
 
   return (
     <>
-      <RailPortal>
-        {actionable && (
-          <Button variant="outline" onClick={() => setUninstalling(true)}>
-            <Trash2Icon />
-            Uninstall
-          </Button>
-        )}
-      </RailPortal>
-
-      <div className="mb-6 flex items-center justify-between gap-4">
+      <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
-          <h1 className="truncate text-lg font-semibold">{i.name}</h1>
-          <p className="font-mono text-xs text-subtle-foreground">
-            in {i.project}/{i.environment}
+          <Link
+            href="/templates?tab=installed"
+            className="mb-4 inline-flex items-center gap-2 text-sm text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <ArrowLeftIcon className="size-4" />
+            Installed templates
+          </Link>
+          <h1 className="truncate text-2xl font-semibold tracking-tight">{i.name}</h1>
+          <p className="mt-1 font-mono text-sm text-muted-foreground">
+            {i.project}/{i.environment}
           </p>
         </div>
-        <StatusBadge value={installStatus(i)} />
+        <div className="flex items-center gap-3">
+          {!i.busy && i.status !== "installed" && <StatusBadge value={installStatus(i)} />}
+          {actionable && (
+            <Button variant="outline" onClick={() => setUninstalling(true)}>
+              <Trash2Icon />
+              Uninstall
+            </Button>
+          )}
+        </div>
       </div>
 
-      {run?.status === "running" && (
-        <p className="mb-6 flex items-center gap-2 text-sm text-muted-foreground">
-          <LoaderCircleIcon className="size-4 animate-spin text-primary" aria-hidden />
-          {run.step}
-        </p>
-      )}
-      {run?.status === "failed" && <ErrorAlert error={failure(run)} />}
-
-      {Object.keys(secrets).length > 0 && (
-        <>
-          <SectionHeader title="Generated secrets" />
-          <Notice tone="warning" className="mb-3">
-            Shown this once. Keep a copy — they are in the apps' variables, and nowhere else.
-          </Notice>
+      <div className="space-y-6">
+        {(run?.status === "running" || run?.status === "succeeded") && (
           <Card>
-            <CardContent className="grid gap-4 sm:grid-cols-2">
-              {Object.entries(secrets).map(([key, value]) => (
-                <CopyField key={key} label={key} value={value} masked />
-              ))}
+            <CardContent className="flex items-center gap-3">
+              <div className="min-w-0">
+                <StatusMark
+                  status={run.status === "running" ? "running" : "done"}
+                  label={
+                    run.status === "running"
+                      ? (run.step ?? "In progress")
+                      : run.kind === "install"
+                        ? "Installation completed"
+                        : run.kind === "update"
+                          ? "Update completed"
+                          : "Uninstall completed"
+                  }
+                  size={20}
+                  strike={false}
+                />
+              </div>
             </CardContent>
           </Card>
-        </>
-      )}
+        )}
+        {run?.status === "failed" && <ErrorAlert error={failure(run)} />}
 
-      {owned.length > 0 && (
-        <>
-          <SectionHeader title={gone ? "What it had" : "What it owns"} />
-          <Card className="gap-0 divide-y divide-border py-0">
-            {owned.map((r) => (
-              <div key={`${r.kind}-${r.name}`} className="flex items-center gap-3 px-4 py-2.5">
-                <span className="w-24 shrink-0 text-xs uppercase tracking-[0.14em] text-muted-foreground">
-                  {r.kind}
-                </span>
-                {gone ? (
-                  <span className="font-mono text-sm text-muted-foreground line-through">
-                    {r.name}
-                  </span>
-                ) : (
-                  <Link href={hrefFor(r)} className="font-mono text-sm hover:text-primary">
-                    {r.name}
-                  </Link>
-                )}
+        {Object.keys(secrets).length > 0 && (
+          <Card>
+            <CardContent className="space-y-4 [&>.dashboard-section-header]:mb-0">
+              <SectionHeader title="Generated secrets" />
+              <div className="grid gap-4 sm:grid-cols-2">
+                {Object.entries(secrets).map(([key, value]) => (
+                  <CopyField key={key} label={key} value={value} masked />
+                ))}
               </div>
-            ))}
+            </CardContent>
           </Card>
-        </>
-      )}
+        )}
 
-      {i.runs.length > 0 && (
-        <>
-          <SectionHeader title="History" />
-          <Card className="gap-0 divide-y divide-border py-0">
-            {i.runs.map((r) => (
-              <div key={r.id} className="flex items-center gap-3 px-4 py-2.5">
-                <span className="w-24 shrink-0 text-xs uppercase tracking-[0.14em] text-muted-foreground">
-                  {r.kind}
-                </span>
-                <span className="min-w-0 flex-1 truncate font-mono text-xs">{releases(r)}</span>
-                <span className="shrink-0 text-xs text-subtle-foreground">
-                  {new Date(r.created_at).toLocaleString()}
-                </span>
-                <StatusBadge value={r.status} />
+        {owned.length > 0 && (
+          <Card>
+            <CardContent className="space-y-4 [&>.dashboard-section-header]:mb-0">
+              <SectionHeader title={gone ? "What it had" : "What it owns"} />
+              <div className="divide-y divide-border">
+                {owned.map((r) => (
+                  <div key={`${r.kind}-${r.name}`} className="flex items-center gap-3 py-3">
+                    <span className="w-24 shrink-0 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                      {r.kind}
+                    </span>
+                    {gone ? (
+                      <span className="font-mono text-sm text-muted-foreground line-through">
+                        {r.name}
+                      </span>
+                    ) : (
+                      <Link href={hrefFor(r)} className="font-mono text-sm hover:text-primary">
+                        {r.name}
+                      </Link>
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
+            </CardContent>
           </Card>
-        </>
-      )}
+        )}
+
+        {i.runs.length > 0 && (
+          <Card>
+            <CardContent className="space-y-4 [&>.dashboard-section-header]:mb-0">
+              <SectionHeader title="History" />
+              <div className="divide-y divide-border">
+                {i.runs.map((r) => (
+                  <div key={r.id} className="flex flex-wrap items-center gap-3 py-3">
+                    <span className="w-24 shrink-0 text-xs uppercase tracking-[0.14em] text-muted-foreground">
+                      {r.kind}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate font-mono text-xs">{releases(r)}</span>
+                    <span className="shrink-0 text-xs text-subtle-foreground">
+                      {new Date(r.created_at).toLocaleString()}
+                    </span>
+                    <StatusBadge value={r.status} />
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {uninstalling && <TemplateUninstallDialog install={i} open onOpenChange={setUninstalling} />}
     </>

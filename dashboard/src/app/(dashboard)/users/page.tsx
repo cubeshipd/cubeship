@@ -276,6 +276,7 @@ export default function UsersPage() {
           rowKey={(u) => u.username}
           search={{
             placeholder: "Filter users",
+            countLabel: { singular: "user", plural: "users" },
             by: (u) => [u.display_name, u.username, u.role],
           }}
           empty="Nobody but you."
@@ -395,6 +396,7 @@ export default function UsersPage() {
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
         title={`Delete ${deleting?.name}?`}
+        holdToConfirm
         confirmLabel="Delete role"
         description="Nobody holds it, so nothing changes for anybody."
         onConfirm={async () => {
@@ -438,7 +440,7 @@ export default function UsersPage() {
         onOpenChange={(open) => !open && setRemoving(null)}
         title="Delete account"
         description="The account goes and its keys and sessions go with it, in one transaction, so nothing that authenticates outlives it. Anything they deployed keeps running. To shut somebody out without losing the account, block it instead."
-        confirmWord={removing?.username ?? ""}
+        holdToConfirm
         confirmLabel="Delete account"
         onConfirm={async () => {
           await api.del(`/users/${removing?.username}`);

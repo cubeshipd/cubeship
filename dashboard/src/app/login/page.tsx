@@ -42,6 +42,7 @@ export default function Login() {
   if (PUBLIC_DEMO) {
     return (
       <AuthLayout
+        variant="overlay"
         title="You're out. Jump back in."
         description="Explore Cubeship with sample infrastructure. No account or password needed."
         footer="Your demo changes are still here. Reset the demo to start fresh."
@@ -58,14 +59,9 @@ export default function Login() {
 
   return (
     <AuthLayout
+      variant="overlay"
       title="Sign in"
       description="Use the account this instance was claimed with, or one an admin made for you."
-      footer={
-        <>
-          Signing in from a terminal instead?{" "}
-          <code className="text-muted-foreground">cubeship login</code> uses an API key.
-        </>
-      }
     >
       <form onSubmit={submit} className="space-y-5">
         <ErrorAlert error={error} />

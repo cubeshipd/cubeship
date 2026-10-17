@@ -30,7 +30,7 @@ const TTL = 6 * 60 * 60 * 1000;
 // makes it concrete, and a number that turns into an error message is
 // worse than one that is absent.
 export function GitHubStar() {
-  const stars = useStars();
+  const stars = useGitHubStars();
 
   return (
     <DropdownMenuItem
@@ -39,7 +39,9 @@ export function GitHubStar() {
       <SiGithub />
       Star on GitHub
       {stars !== null && (
-        <DropdownMenuShortcut className="font-mono">{abbreviate(stars)}</DropdownMenuShortcut>
+        <DropdownMenuShortcut className="font-mono">
+          {abbreviateGitHubStars(stars)}
+        </DropdownMenuShortcut>
       )}
     </DropdownMenuItem>
   );
@@ -51,7 +53,7 @@ export function GitHubStar() {
 // content is mounted when it opens and thrown away when it closes, so
 // an effect-only read would make the number arrive a frame late on
 // every open, on a value that was already known.
-function useStars(): number | null {
+export function useGitHubStars(): number | null {
   const [stars, setStars] = useState<number | null>(cached);
 
   useEffect(() => {
@@ -93,7 +95,7 @@ function cached(): number | null {
 //
 // The decimal is dropped once the integer part has two digits, because
 // "12.3k" is precision nobody reads at this size.
-function abbreviate(n: number): string {
+export function abbreviateGitHubStars(n: number): string {
   for (const [limit, suffix] of [
     [1_000_000_000, "b"],
     [1_000_000, "m"],

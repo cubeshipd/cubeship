@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
+import HoldButton from "@/components/hold-button";
 import { Notice } from "@/components/notice";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -15,14 +16,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, type TemplateInstall, type TemplateRunStarted } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-// Uninstalling keeps the data unless somebody says otherwise twice: once by
-// unticking the box, and again by typing the installation's name, because
-// that half cannot be undone.
+// Data stays by default; a hold confirms uninstalling, including when data is removed.
 export function TemplateUninstallDialog({
   install,
   open,
@@ -35,15 +33,13 @@ export function TemplateUninstallDialog({
   const router = useRouter();
   const queryClient = useQueryClient();
   const [keepData, setKeepData] = useState(true);
-  const [typed, setTyped] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const data = install.resources.filter((r) => r.kind === "database" || r.kind === "store");
   const deletingData = !keepData && data.length > 0;
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
+  async function submit() {
     setBusy(true);
     setError(null);
     try {
@@ -65,7 +61,7 @@ export function TemplateUninstallDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
-        <form onSubmit={submit} className="space-y-4">
+        <div className="space-y-4">
           <DialogHeader>
             <DialogTitle>Uninstall {install.repo}</DialogTitle>
             <DialogDescription>
@@ -88,37 +84,31 @@ export function TemplateUninstallDialog({
           )}
 
           {deletingData && (
-            <>
-              <Notice tone="warning">
-                Their data is deleted permanently, and there is no backup of it here.
-              </Notice>
-              <div className="space-y-2">
-                <Label htmlFor="uninstall-confirm" className="text-xs text-muted-foreground">
-                  Type <span className="font-mono text-foreground">{install.repo}</span> to confirm
-                </Label>
-                <Input
-                  id="uninstall-confirm"
-                  value={typed}
-                  onChange={(e) => setTyped(e.target.value)}
-                  autoComplete="off"
-                />
-              </div>
-            </>
+            <Notice tone="warning">
+              Their data is deleted permanently, and there is no backup of it here.
+            </Notice>
           )}
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button
-              type="submit"
-              variant="destructive"
-              disabled={busy || (deletingData && typed !== install.repo)}
+            <HoldButton
+              className="w-full sm:w-auto"
+              backgroundColor="var(--muted)"
+              fillColor="var(--destructive)"
+              textColor="var(--foreground)"
+              fillTextColor="var(--destructive-foreground)"
+              size="sm"
+              radius={8}
+              disabled={busy}
+              doneLabel="Starting…"
+              onHold={() => void submit()}
             >
-              {busy ? "Starting…" : "Uninstall"}
-            </Button>
+              Hold to uninstall
+            </HoldButton>
           </DialogFooter>
-        </form>
+        </div>
       </DialogContent>
     </Dialog>
   );

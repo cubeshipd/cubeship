@@ -203,7 +203,7 @@ export default function FirewallPage() {
             title="This machine"
             sub={hostSub}
             actions={
-              <Button variant="outline" size="sm" onClick={() => setAdding("host")}>
+              <Button onClick={() => setAdding("host")}>
                 <PlusIcon />
                 Add rule
               </Button>
@@ -229,7 +229,7 @@ export default function FirewallPage() {
             sub={appsSub}
             actions={
               data.docker_adopted ? (
-                <Button variant="outline" size="sm" onClick={() => setAdding("apps")}>
+                <Button onClick={() => setAdding("apps")}>
                   <PlusIcon />
                   Add rule
                 </Button>
@@ -353,6 +353,7 @@ export default function FirewallPage() {
         open={deleting !== null}
         onOpenChange={(open) => !open && setDeleting(null)}
         title="Delete this rule?"
+        holdToConfirm
         confirmLabel="Delete"
         description={
           <>

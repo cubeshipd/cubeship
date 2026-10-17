@@ -1,22 +1,29 @@
 "use client";
 
-import { PlayIcon, PlugIcon, PlusIcon, PowerIcon, SettingsIcon, Trash2Icon } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  AppWindowIcon,
+  CpuIcon,
+  FolderIcon,
+  LayoutDashboardIcon,
+  PlugIcon,
+  PlusIcon,
+  Trash2Icon,
+} from "lucide-react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
-import { ContainerLogs } from "@/components/container-logs";
 import { CopyField } from "@/components/copy-field";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal, RailTabs } from "@/components/header-rail";
+import { GlideSelect } from "@/components/glide-select";
 import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
-import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
-import { SearchableSelect } from "@/components/searchable-select";
 import { SectionHeader } from "@/components/section-header";
+import { ObjectStoreAccess, ObjectStoreResources } from "@/components/storage-configuration";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -39,6 +46,7 @@ import {
   type ObjectStoreCredentials,
   objectStorePath,
 } from "@/lib/api";
+import { storesQuery } from "@/lib/dashboard-queries";
 import { message } from "@/lib/errors";
 
 // One object store, on one page, in tabs — like a database's, and for
@@ -58,12 +66,16 @@ import { message } from "@/lib/errors";
 // is no container here to have printed anything — the store is
 // somewhere else — which is a different thing from a log that does not
 // exist yet.
-type Tab = "overview" | "buckets" | "apps" | "logs";
+type Tab = "overview" | "buckets" | "apps" | "access" | "resources";
 
-// Why the Logs tab is dead on a managed store that has none. Said on
-// hover: a disabled control that explains nothing is one somebody
-// clicks twice.
-const noContainer = "This store has no container, so there is nothing to have printed a log.";
+const TABS: Record<string, Tab> = {
+  overview: "overview",
+  buckets: "buckets",
+  apps: "apps",
+  access: "access",
+  general: "access",
+  resources: "resources",
+};
 
 export default function ObjectStorePage({ params }: PageProps<"/storage/[name]">) {
   const { name } = use(params);
@@ -71,52 +83,34 @@ export default function ObjectStorePage({ params }: PageProps<"/storage/[name]">
 }
 
 function Detail({ name }: { name: string }) {
-  const [store, setStore] = useState<ObjectStore | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>("overview");
-
+  const client = useQueryClient();
+  const asked = useSearchParams().get("tab");
+  const [initialTab] = useState<Tab>(() => TABS[asked ?? ""] ?? "overview");
+  const [tab, setTab] = useState<Tab>(initialTab);
+  const inventory = useQuery(storesQuery);
+  const store = inventory.data?.find((item) => item.name === name) ?? null;
+  const error = inventory.error ? message(inventory.error) : null;
   const path = objectStorePath(name);
-  const reload = useCallback(() => {
-    api
-      .get<ObjectStore>(path)
-      .then(setStore)
-      .catch((e) => setError(message(e)));
-  }, [path]);
-  useEffect(reload, [reload]);
+  const reload = useCallback(
+    () => client.invalidateQueries({ queryKey: ["objectstores"] }),
+    [client],
+  );
 
   // Provisioning is a container being pulled and started, detached from
   // the request that asked for it — so this is the one screen that has
   // to go back and look. It stops the moment it settles.
   useEffect(() => {
     if (store?.status !== "provisioning") return;
-    const timer = setInterval(reload, 2000);
+    const timer = setInterval(() => void reload(), 2000);
     return () => clearInterval(timer);
   }, [store?.status, reload]);
 
   if (error && !store) return <ErrorAlert error={error} />;
+  if (!inventory.isPending && !store) return <ErrorAlert error="Object storage was not found." />;
+  const activeTab = store?.kind !== "managed" && tab === "resources" ? "access" : tab;
 
   return (
     <>
-      {" "}
-      {/* The title does not wait on the fetch: its name is in the URL,
-          because we are here having asked for this store by name. */}
-      <RailPortal>
-        {store && (
-          <>
-            {store.kind === "managed" && <PowerButton store={store} onChanged={reload} />}
-            <Button
-              variant="outline"
-              nativeButton={false}
-              render={
-                <Link href={`/storage/${store.name}/settings`}>
-                  <SettingsIcon />
-                  Settings
-                </Link>
-              }
-            />
-          </>
-        )}
-      </RailPortal>
       <ErrorAlert error={error} />
       {!store && <LoadingList rows={5} />}
       {/* Why it did not come up is the tail of what SeaweedFS printed, and
@@ -135,23 +129,37 @@ function Detail({ name }: { name: string }) {
         </Card>
       )}
       {store && (
-        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="subrail-page">
-          <RailTabs>
-            <TabsList variant="line">
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="buckets">Buckets</TabsTrigger>
-              <TabsTrigger value="apps">Apps</TabsTrigger>
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setTab(value as Tab)}
+          className="subrail-page"
+        >
+          <div className="app-tab-navigation">
+            <TabsList variant="default" className="app-tab-list">
+              <TabsTrigger value="overview">
+                <LayoutDashboardIcon />
+                Overview
+              </TabsTrigger>
+              <TabsTrigger value="buckets">
+                <FolderIcon />
+                Buckets
+              </TabsTrigger>
+              <TabsTrigger value="apps">
+                <AppWindowIcon />
+                Apps
+              </TabsTrigger>
+              <TabsTrigger value="access">
+                <PlugIcon />
+                Access
+              </TabsTrigger>
               {store.kind === "managed" && (
-                <TabsTrigger
-                  value="logs"
-                  disabled={!store.has_container}
-                  title={store.has_container ? undefined : noContainer}
-                >
-                  Logs
+                <TabsTrigger value="resources">
+                  <CpuIcon />
+                  Resources
                 </TabsTrigger>
               )}
             </TabsList>
-          </RailTabs>
+          </div>
 
           <TabsContent value="overview">
             {/* Only for a store this instance runs. A linked one is
@@ -169,10 +177,12 @@ function Detail({ name }: { name: string }) {
           <TabsContent value="apps">
             <Attachments store={store} onChanged={reload} />
           </TabsContent>
-
+          <TabsContent value="access">
+            <ObjectStoreAccess key={store.name} store={store} onChanged={reload} />
+          </TabsContent>
           {store.kind === "managed" && (
-            <TabsContent value="logs">
-              <ContainerLogs path={path} title={null} tall />
+            <TabsContent value="resources">
+              <ObjectStoreResources store={store} onSaved={reload} />
             </TabsContent>
           )}
         </Tabs>
@@ -208,45 +218,47 @@ function Connection({ store }: { store: ObjectStore }) {
   }, [store.name]);
 
   return (
-    <>
-      <SectionHeader
-        title="Connecting"
-        sub={
-          store.kind === "managed"
-            ? "The endpoint is this store's own container name, which apps on this instance resolve on the shared network — and nothing off this host can."
-            : `${store.provider_label}, reached with the account this store authenticates as.`
-        }
-      />
-      <ErrorAlert error={error} />
+    <Card className="mb-4">
+      <CardContent className="space-y-5">
+        <header className="space-y-1">
+          <h2 className="text-lg font-medium tracking-tight">Connection settings</h2>
+          <p className="max-w-2xl text-sm text-muted-foreground">
+            {store.kind === "managed"
+              ? "Apps on this instance reach the store on the shared network."
+              : `${store.provider_label}, reached with the account this store authenticates as.`}
+          </p>
+        </header>
+        <ErrorAlert error={error} />
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <CopyField label="Endpoint" value={store.endpoint} />
-        <CopyField label="Region" value={store.region} />
-        {creds && (
-          <>
-            <CopyField label="Access key id" value={creds.access_key} />
-            <CopyField label="Secret access key" value={creds.secret_key} masked />
-          </>
-        )}
-        {store.external_endpoint && (
-          <CopyField
-            label="From outside this host"
-            value={store.external_endpoint}
-            hint="Published on a host port, with no TLS in front of it. A firewall rule is what makes that safe."
-          />
-        )}
-      </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <CopyField label="Endpoint" value={store.endpoint} />
+          <CopyField label="Region" value={store.region} />
+          {creds && (
+            <>
+              <CopyField label="Access key id" value={creds.access_key} />
+              <CopyField label="Secret access key" value={creds.secret_key} masked />
+            </>
+          )}
+          {store.external_endpoint && (
+            <CopyField
+              label="From outside this host"
+              value={store.external_endpoint}
+              hint="Published on a host port, without TLS. Restrict access with a firewall rule."
+            />
+          )}
+        </div>
 
-      {forbidden && (
-        <p className="mt-3 text-xs text-subtle-foreground">The keys are an admin's to read.</p>
-      )}
-      {store.path_style && (
-        <p className="mt-3 text-xs leading-relaxed text-subtle-foreground">
-          This endpoint addresses buckets by path. Most clients need telling —{" "}
-          <code>--endpoint-url</code> plus <code>--force-path-style</code> for the AWS CLI.
-        </p>
-      )}
-    </>
+        {forbidden && (
+          <p className="text-xs text-subtle-foreground">The keys are an admin's to read.</p>
+        )}
+        {store.path_style && (
+          <p className="text-xs leading-relaxed text-subtle-foreground">
+            This endpoint addresses buckets by path. Most clients need telling —{" "}
+            <code>--endpoint-url</code> plus <code>--force-path-style</code> for the AWS CLI.
+          </p>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -338,7 +350,7 @@ function Buckets({ store }: { store: ObjectStore }) {
         }
         actions={
           store.bucket ? undefined : (
-            <Button variant="outline" size="sm" onClick={() => setCreating(true)}>
+            <Button onClick={() => setCreating(true)}>
               <PlusIcon />
               New bucket
             </Button>
@@ -351,7 +363,11 @@ function Buckets({ store }: { store: ObjectStore }) {
       <DataTable
         columns={columns}
         rows={buckets}
-        search={{ placeholder: "Filter buckets", by: (b) => [b.name] }}
+        search={{
+          placeholder: "Filter buckets",
+          countLabel: { singular: "bucket", plural: "buckets" },
+          by: (b) => [b.name],
+        }}
         rowKey={(b) => b.name}
         onRowClick={(b) =>
           router.push(`/storage/${store.name}/buckets/${encodeURIComponent(b.name)}`)
@@ -371,7 +387,7 @@ function Buckets({ store }: { store: ObjectStore }) {
         onOpenChange={(open) => !open && setDeleting(null)}
         title="Delete this bucket?"
         confirmLabel="Delete"
-        confirmWord={deleting?.name}
+        holdToConfirm
         description={
           <>
             <code className="text-foreground">{deleting?.name}</code> has to be empty first — the
@@ -527,10 +543,10 @@ function Attachments({ store, onChanged }: { store: ObjectStore; onChanged: () =
     <>
       <SectionHeader
         title="Attached apps"
-        sub="Each receives S3_ENDPOINT and its parts from its next deploy onwards. They may be in any project."
+        sub="Attached apps receive S3 connection variables on their next deploy."
         actions={
-          <Button variant="outline" size="sm" onClick={() => setAttaching(true)}>
-            <PlugIcon />
+          <Button onClick={() => setAttaching(true)}>
+            <PlusIcon />
             Attach an app
           </Button>
         }
@@ -541,7 +557,11 @@ function Attachments({ store, onChanged }: { store: ObjectStore; onChanged: () =
       <DataTable
         columns={columns}
         rows={store.attachments}
-        search={{ placeholder: "Filter apps", by: (a) => [a.app, a.bucket, a.prefix] }}
+        search={{
+          placeholder: "Filter apps",
+          countLabel: { singular: "app", plural: "apps" },
+          by: (a) => [a.app, a.bucket, a.prefix],
+        }}
         rowKey={(a) => `${a.app}:${a.bucket}`}
         onRowClick={(a) => router.push(`/projects/${a.app}`)}
         empty="Nothing is attached yet."
@@ -642,18 +662,23 @@ function AttachDialog({
           </DialogHeader>
           <div className="space-y-4 py-5">
             <ErrorAlert error={error} />
-            <SearchableSelect
+            <GlideSelect
               label="App"
               value={app}
               onChange={setApp}
-              choices={(apps ?? []).map((a) => ({ value: a.reference, label: a.reference }))}
+              options={(apps ?? []).map((a) => ({ value: a.reference, label: a.reference }))}
+              searchable
+              className="w-full"
+              triggerClassName="flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             />
-            <SearchableSelect
+            <GlideSelect
               label="Bucket"
-              searchable={buckets.length > 8}
               value={bucket}
               onChange={setBucket}
-              choices={buckets.map((b) => ({ value: b.name, label: b.name }))}
+              options={buckets.map((b) => ({ value: b.name, label: b.name }))}
+              searchable
+              className="w-full"
+              triggerClassName="flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
             />
             <TextField
               label="Prefix"
@@ -674,53 +699,5 @@ function AttachDialog({
         </form>
       </DialogContent>
     </Dialog>
-  );
-}
-
-// Stop and start, for a store this instance runs.
-//
-// Stopping is not a small act — every app writing to it starts failing
-// — so it asks, and says what it costs.
-function PowerButton({ store, onChanged }: { store: ObjectStore; onChanged: () => void }) {
-  const [confirming, setConfirming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const stopped = store.status === "stopped";
-
-  async function run(action: "start" | "stop") {
-    setBusy(true);
-    try {
-      await api.post(`${objectStorePath(store.name)}/${action}`);
-      onChanged();
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (stopped || !store.has_container) {
-    return (
-      <ActionButton busy={busy} variant="outline" onClick={() => run("start")}>
-        <PlayIcon />
-        Start
-      </ActionButton>
-    );
-  }
-  return (
-    <>
-      <Button variant="outline" onClick={() => setConfirming(true)}>
-        <PowerIcon />
-        Stop
-      </Button>
-      <ConfirmDialog
-        open={confirming}
-        onOpenChange={setConfirming}
-        title="Stop this store?"
-        confirmLabel="Stop"
-        description="Every app reading or writing to it starts failing. The container is stopped rather than removed, so its log survives — which is usually what you want next."
-        onConfirm={async () => {
-          await run("stop");
-          setConfirming(false);
-        }}
-      />
-    </>
   );
 }

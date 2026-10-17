@@ -62,14 +62,17 @@ export function CopyButton({
     <Button
       type="button"
       variant="ghost"
-      size="xs"
+      size="icon-sm"
       aria-label={label}
       title={value}
       onClick={(e) => {
         e.stopPropagation();
         copy();
       }}
-      className={cn("text-muted-foreground", className)}
+      className={cn(
+        "p-0 text-muted-foreground hover:bg-transparent hover:text-foreground dark:hover:bg-transparent",
+        className,
+      )}
     >
       {copied ? <CheckIcon className="size-3.5 text-primary" /> : <CopyIcon className="size-3.5" />}
     </Button>

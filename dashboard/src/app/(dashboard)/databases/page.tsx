@@ -2,85 +2,40 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { DatabaseIcon, PlusIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { type ComponentType, useState } from "react";
+import { useCreateDatabase } from "@/components/database-workspace";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
-import { MariaDBIcon, MongoDBIcon, MySQLIcon, PostgreSQLIcon, RedisIcon } from "@/components/icons";
-import { NewDatastoreDialog } from "@/components/new-datastore-dialog";
-import { ResourceCard, ResourceGrid } from "@/components/resource-grid";
-import { StatusBadge } from "@/components/status-badge";
+import { useSession } from "@/components/session-context";
 import { Button } from "@/components/ui/button";
-import { datastoreLabel } from "@/lib/api";
+import { Card, CardContent } from "@/components/ui/card";
+import { can } from "@/lib/api";
 import { datastoresQuery } from "@/lib/dashboard-queries";
 import { message } from "@/lib/errors";
-import { useOpenOnArrival } from "@/lib/open-on-arrival";
-import { usageShares, useContainerUsage } from "@/lib/usage";
 
-const ENGINE_ICONS: Record<string, ComponentType<{ className?: string }>> = {
-  postgres: PostgreSQLIcon,
-  mysql: MySQLIcon,
-  mariadb: MariaDBIcon,
-  redis: RedisIcon,
-  mongodb: MongoDBIcon,
-};
-
-// Every database this instance runs, as cards: the engine's mark is
-// what you find one by, before its name.
-//
-// What is attached to each is not on the card. It is a list as long as
-// the number of apps, and it belongs on the database's own page, where
-// it is a table of its own.
 export default function DatabasesPage() {
-  const router = useRouter();
   const inventory = useQuery(datastoresQuery);
-  const datastores = inventory.data ?? null;
-  const [creating, setCreating] = useState(false);
-  useOpenOnArrival("new", setCreating);
-  const error = inventory.error ? message(inventory.error) : null;
-  const { usage, machine } = useContainerUsage("datastore");
+  const createDatabase = useCreateDatabase();
+  const me = useSession();
+
+  if (inventory.isError) return <ErrorAlert error={message(inventory.error)} />;
+  if (inventory.isPending || (inventory.data?.length ?? 0) > 0) return null;
 
   return (
-    <>
-      <RailPortal>
-        {
-          <Button onClick={() => setCreating(true)}>
+    <Card className="w-full flex-1 text-center">
+      <CardContent className="flex h-full min-h-[24rem] flex-col items-center justify-center px-6 py-12">
+        <span className="mb-5 flex size-14 items-center justify-center rounded-2xl border border-primary/20 bg-primary/5 text-primary">
+          <DatabaseIcon className="size-7" />
+        </span>
+        <h1 className="text-xl font-medium tracking-tight">No databases yet</h1>
+        <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+          Create a database to give your apps a shared, managed data store.
+        </p>
+        {can(me, "databases", "manage") && (
+          <Button className="mt-6" onClick={createDatabase}>
             <PlusIcon />
-            New database
+            Create your first database
           </Button>
-        }
-      </RailPortal>
-      <ErrorAlert error={error} />
-
-      <ResourceGrid
-        rows={datastores}
-        search={{ placeholder: "Filter databases", by: (d) => [d.name, d.engine, d.version] }}
-        rowKey={(d) => d.name}
-        card={(d) => (
-          <ResourceCard
-            href={`/databases/${d.name}`}
-            icon={ENGINE_ICONS[d.engine] ?? DatabaseIcon}
-            name={d.name}
-            detail={`${datastoreLabel(d.engine)} ${d.version}`}
-            status={<StatusBadge value={d.status} />}
-            usage={usageShares(usage?.get(d.name), d.limits, machine)}
-          />
         )}
-        empty={
-          <span className="flex items-center justify-between gap-4">
-            This instance runs no databases yet.
-            <Button variant="outline" onClick={() => setCreating(true)}>
-              Create one
-            </Button>
-          </span>
-        }
-      />
-
-      <NewDatastoreDialog
-        open={creating}
-        onOpenChange={setCreating}
-        onCreated={(created) => router.push(`/databases/${created.name}`)}
-      />
-    </>
+      </CardContent>
+    </Card>
   );
 }

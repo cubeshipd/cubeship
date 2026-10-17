@@ -1062,6 +1062,7 @@ func (o *Orchestrator) Retire(ctx context.Context, appID int64) error {
 	if err != nil {
 		return ErrNotFound
 	}
+	stopped := a.Status() == StatusStopped
 	here, err := o.apps.ControlPlaneID(ctx)
 	if err != nil {
 		return err
@@ -1076,14 +1077,88 @@ func (o *Orchestrator) Retire(ctx context.Context, appID int64) error {
 		if mine.Container == "" {
 			continue
 		}
-		if err := o.stop(ctx, mine.Container, a); err != nil {
-			log.Printf("retiring app %d: could not stop container %s: %v", appID, mine.Container, err)
+		if !stopped {
+			if err := o.stop(ctx, mine.Container, a); err != nil {
+				log.Printf("retiring app %d: could not stop container %s: %v", appID, mine.Container, err)
+			}
 		}
 		// Unlike the log-and-continue cases in Deploy, this one is
 		// returned: the caller is about to delete the row, and doing
 		// that while a container survives is exactly the state to
 		// avoid.
 		if err := o.docker.RemoveContainer(ctx, mine.Container); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// StopApp and StartApp serialize manual lifecycle changes with deploys.
+func (o *Orchestrator) StopApp(ctx context.Context, appID int64) error {
+	mu := o.lockApp(appID)
+	mu.Lock()
+	defer mu.Unlock()
+	a, err := o.apps.ByID(ctx, appID)
+	if err != nil {
+		return ErrNotFound
+	}
+	if a.Status() == StatusStopped {
+		return nil
+	}
+	here, err := o.apps.ControlPlaneID(ctx)
+	if err != nil {
+		return err
+	}
+	for _, replica := range a.ReplicasOn(here) {
+		if replica.Container == "" {
+			continue
+		}
+		if err := o.stop(ctx, replica.Container, a); err != nil {
+			return fmt.Errorf("stop app container %s: %w", replica.Name, err)
+		}
+	}
+	return o.apps.SetAppStatus(ctx, appID, StatusStopped)
+}
+
+func (o *Orchestrator) StartApp(ctx context.Context, appID int64) error {
+	mu := o.lockApp(appID)
+	mu.Lock()
+	defer mu.Unlock()
+	a, err := o.apps.ByID(ctx, appID)
+	if err != nil {
+		return ErrNotFound
+	}
+	if a.Status() != StatusStopped {
+		return nil
+	}
+	if err := o.apps.SetAppStatus(ctx, appID, StatusStarting); err != nil {
+		return err
+	}
+	here, err := o.apps.ControlPlaneID(ctx)
+	if err != nil {
+		_ = o.apps.SetAppStatus(ctx, appID, StatusStopped)
+		return err
+	}
+	var started []Replica
+	rollback := func() {
+		for _, replica := range started {
+			if err := o.stop(ctx, replica.Container, a); err != nil {
+				log.Printf("app %d: could not roll back started container %s: %v", appID, replica.Name, err)
+			}
+		}
+		_ = o.apps.SetAppStatus(ctx, appID, StatusStopped)
+	}
+	for _, replica := range a.ReplicasOn(here) {
+		if replica.Container == "" {
+			continue
+		}
+		if err := o.docker.StartContainer(ctx, replica.Container); err != nil {
+			rollback()
+			return fmt.Errorf("start app container %s: %w", replica.Name, err)
+		}
+		started = append(started, replica)
+		if err := o.apps.SetStatus(ctx, appID, here, replica.Ordinal, StatusRunning); err != nil {
+			rollback()
 			return err
 		}
 	}

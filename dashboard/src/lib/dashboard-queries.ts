@@ -4,6 +4,7 @@ import { queryOptions } from "@tanstack/react-query";
 import {
   type App,
   api,
+  type BackupCoverage,
   type ClusterServer,
   type ContainerUsage,
   type Datastore,
@@ -40,6 +41,12 @@ export const storesQuery = queryOptions({
 export const containersQuery = queryOptions({
   queryKey: ["instance-containers"],
   queryFn: () => api.get<ContainerUsage[]>("/instance/containers"),
+  staleTime: 10_000,
+  refetchInterval: 30_000,
+});
+export const backupCoverageQuery = queryOptions({
+  queryKey: ["backup-coverage"],
+  queryFn: ({ signal }) => api.get<BackupCoverage[]>("/backups/coverage", { signal }),
   staleTime: 10_000,
   refetchInterval: 30_000,
 });

@@ -1,10 +1,16 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import {
+  AppWindowIcon,
+  ArrowLeftIcon,
+  CpuIcon,
   DownloadIcon,
   FileIcon,
   FolderIcon,
   FolderPlusIcon,
+  LayoutDashboardIcon,
+  PlugIcon,
   Trash2Icon,
   UploadIcon,
 } from "lucide-react";
@@ -14,8 +20,8 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
 import { RowAction, RowActions } from "@/components/row-actions";
+import { SectionHeader } from "@/components/section-header";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,6 +31,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   api,
   bucketPath,
@@ -35,6 +42,7 @@ import {
   type StoredObject,
   uploadObject,
 } from "@/lib/api";
+import { storesQuery } from "@/lib/dashboard-queries";
 import { startDownload } from "@/lib/demo";
 import { message } from "@/lib/errors";
 
@@ -71,6 +79,8 @@ export default function BucketPage({ params }: PageProps<"/storage/[name]/bucket
 function Browser({ store, bucket }: { store: string; bucket: string }) {
   const router = useRouter();
   const search = useSearchParams();
+  const inventory = useQuery(storesQuery);
+  const selectedStore = inventory.data?.find((item) => item.name === store);
   const prefix = search.get("prefix") ?? "";
 
   const [listing, setListing] = useState<ObjectListing | null>(null);
@@ -99,6 +109,14 @@ function Browser({ store, bucket }: { store: string; bucket: string }) {
   function go(next: string) {
     const query = next ? `?prefix=${encodeURIComponent(next)}` : "";
     router.push(`/storage/${store}/buckets/${encodeURIComponent(bucket)}${query}`);
+  }
+
+  function selectTab(tab: "overview" | "buckets" | "apps" | "access" | "resources") {
+    if (tab === "buckets") {
+      router.push(`/storage/${encodeURIComponent(store)}?tab=buckets`);
+      return;
+    }
+    router.push(`/storage/${encodeURIComponent(store)}?tab=${tab}`);
   }
 
   // A plain navigation, not a link and not a fetch. The response is
@@ -216,69 +234,121 @@ function Browser({ store, bucket }: { store: string; bucket: string }) {
 
   return (
     <>
-      {" "}
-      <RailPortal>
-        {
-          <>
-            <Button variant="outline" onClick={() => setCreatingFolder(true)}>
-              <FolderPlusIcon />
-              New folder
-            </Button>
-            <ActionButton busy={uploading} onClick={() => filePicker.current?.click()}>
-              <UploadIcon />
-              Upload
-            </ActionButton>
-            <input
-              ref={filePicker}
-              type="file"
-              multiple
-              hidden
-              onChange={(e) => upload(e.target.files)}
-            />
-          </>
+      <Tabs
+        value="buckets"
+        onValueChange={(value) =>
+          selectTab(value as "overview" | "buckets" | "apps" | "access" | "resources")
         }
-      </RailPortal>
-      <ErrorAlert error={error} />
-      <DataTable
-        columns={columns}
-        rows={listing === null ? null : entries}
-        search={{ placeholder: "Filter this folder", by: (e) => [e.name] }}
-        rowKey={(e) => (e.kind === "folder" ? e.prefix : e.object.key)}
-        // Opening a row is opening the thing in it: a folder is
-        // somewhere to go, a file is something to save. Leaving files
-        // inert would give every one of them a pointer cursor and no
-        // answer to the click it invites.
-        onRowClick={(e) => (e.kind === "folder" ? go(e.prefix) : download(e.object))}
-        empty={prefix ? "This folder is empty." : "This bucket is empty."}
-      />
-      {/* One page at a time, because a bucket has no size worth
+        className="subrail-page"
+      >
+        <div className="app-tab-navigation">
+          <TabsList variant="default" className="app-tab-list">
+            <TabsTrigger value="overview">
+              <LayoutDashboardIcon />
+              Overview
+            </TabsTrigger>
+            <TabsTrigger value="buckets">
+              <FolderIcon />
+              Buckets
+            </TabsTrigger>
+            <TabsTrigger value="apps">
+              <AppWindowIcon />
+              Apps
+            </TabsTrigger>
+            <TabsTrigger value="access">
+              <PlugIcon />
+              Access
+            </TabsTrigger>
+            {selectedStore?.kind === "managed" && (
+              <TabsTrigger value="resources">
+                <CpuIcon />
+                Resources
+              </TabsTrigger>
+            )}
+          </TabsList>
+        </div>
+        <TabsContent value="buckets">
+          <SectionHeader
+            title={
+              <span className="flex items-center gap-2">
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label="Back to buckets"
+                  onClick={() => router.push(`/storage/${encodeURIComponent(store)}?tab=buckets`)}
+                >
+                  <ArrowLeftIcon />
+                </Button>
+                <Breadcrumbs bucket={bucket} prefix={prefix} onGo={go} />
+              </span>
+            }
+            actions={
+              <div className="flex items-center gap-2">
+                <Button variant="outline" onClick={() => setCreatingFolder(true)}>
+                  <FolderPlusIcon />
+                  New folder
+                </Button>
+                <ActionButton busy={uploading} onClick={() => filePicker.current?.click()}>
+                  <UploadIcon />
+                  Upload
+                </ActionButton>
+                <input
+                  ref={filePicker}
+                  type="file"
+                  multiple
+                  hidden
+                  onChange={(e) => upload(e.target.files)}
+                />
+              </div>
+            }
+          />
+          <ErrorAlert error={error} />
+          <DataTable
+            columns={columns}
+            rows={listing === null ? null : entries}
+            search={{
+              placeholder: "Filter this folder",
+              countLabel: { singular: "item", plural: "items" },
+              by: (e) => [e.name],
+            }}
+            rowKey={(e) => (e.kind === "folder" ? e.prefix : e.object.key)}
+            // Opening a row is opening the thing in it: a folder is
+            // somewhere to go, a file is something to save. Leaving files
+            // inert would give every one of them a pointer cursor and no
+            // answer to the click it invites.
+            onRowClick={(e) => (e.kind === "folder" ? go(e.prefix) : download(e.object))}
+            empty={prefix ? "This folder is empty." : "This bucket is empty."}
+          />
+          {/* One page at a time, because a bucket has no size worth
           rendering all of. The cursor is the store's own, not an
           offset: pages of a listing that is being written to do not
           line up any other way. */}
-      {listing?.cursor && (
-        <div className="mt-4 flex justify-center">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              api
-                .get<ObjectListing>(
-                  `${path}/objects?prefix=${encodeURIComponent(prefix)}&cursor=${encodeURIComponent(listing.cursor ?? "")}`,
-                )
-                .then((next) =>
-                  setListing({
-                    ...next,
-                    folders: [...listing.folders, ...next.folders],
-                    objects: [...listing.objects, ...next.objects],
-                  }),
-                )
-                .catch((e) => setError(message(e)));
-            }}
-          >
-            Show more
-          </Button>
-        </div>
-      )}
+          {listing?.cursor && (
+            <div className="mt-4 flex justify-center">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  api
+                    .get<ObjectListing>(
+                      `${path}/objects?prefix=${encodeURIComponent(prefix)}&cursor=${encodeURIComponent(listing.cursor ?? "")}`,
+                    )
+                    .then((next) =>
+                      setListing({
+                        ...next,
+                        folders: [...listing.folders, ...next.folders],
+                        objects: [...listing.objects, ...next.objects],
+                      }),
+                    )
+                    .catch((e) => setError(message(e)));
+                }}
+              >
+                Show more
+              </Button>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
       <NewFolderDialog
         store={store}
         bucket={bucket}
@@ -292,7 +362,7 @@ function Browser({ store, bucket }: { store: string; bucket: string }) {
         onOpenChange={(open) => !open && setDeleting(null)}
         title={deleting?.kind === "folder" ? "Delete this folder?" : "Delete this file?"}
         confirmLabel="Delete"
-        confirmWord={deleting?.kind === "folder" ? deleting.name : undefined}
+        holdToConfirm
         description={
           deleting?.kind === "folder" ? (
             <>

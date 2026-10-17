@@ -295,7 +295,7 @@ function Keys() {
         title="API keys"
         sub="What the CLI and an MCP client carry. Docker takes one too, alongside your username, when you push to this instance."
         actions={
-          <Button variant="outline" size="sm" onClick={() => setAdding(true)}>
+          <Button onClick={() => setAdding(true)}>
             <PlusIcon />
             New key
           </Button>
@@ -319,12 +319,8 @@ function Keys() {
         onChange={setFilter}
         placeholder="Filter by name"
         className="mb-4"
-        trailing={
-          keys && rows ? (
-            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-              {rows.length === keys.length ? keys.length : `${rows.length}/${keys.length}`}
-            </span>
-          ) : undefined
+        count={
+          keys && rows ? { value: rows.length, singular: "API key", plural: "API keys" } : undefined
         }
       />
 

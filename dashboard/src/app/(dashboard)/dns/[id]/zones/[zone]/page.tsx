@@ -175,11 +175,7 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
           value={query}
           onChange={setQuery}
           placeholder="Filter by name, type or value"
-          trailing={
-            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-              {filtered?.length ?? 0}/{all.length}
-            </span>
-          }
+          count={{ value: filtered?.length ?? 0, singular: "record", plural: "records" }}
         />
       )}
       <ErrorAlert error={error ? message(error) : null} />
@@ -219,7 +215,7 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
         onOpenChange={(v) => !v && setDeleting(null)}
         title={`Delete the ${deleting?.type} record for ${deleting?.name}?`}
         description="Everything at that name and type goes, however many values it holds. Whatever was resolving through it stops."
-        confirmWord={deleting?.name}
+        holdToConfirm
         onConfirm={async () => {
           if (!deleting || !zone) return;
           await api.del(

@@ -2,6 +2,7 @@ package metrics
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
@@ -21,9 +22,9 @@ func NewRepository(q database.Queryer) *Repository {
 // Insert records one reading.
 func (r *Repository) Insert(ctx context.Context, kind string, subjectID int64, s Sample) error {
 	_, err := r.q.ExecContext(ctx,
-		`INSERT INTO metric_samples (kind, subject_id, at, cpu_percent, memory_bytes, memory_limit_bytes)
-		 VALUES ($1, $2, $3, $4, $5, $6)`,
-		kind, subjectID, s.At, s.CPUPercent, s.MemoryBytes, s.MemoryLimitBytes)
+		`INSERT INTO metric_samples (kind, subject_id, at, cpu_percent, memory_bytes, memory_limit_bytes, container_started_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		kind, subjectID, s.At, s.CPUPercent, s.MemoryBytes, s.MemoryLimitBytes, s.StartedAt)
 	if err != nil {
 		return fmt.Errorf("record sample: %w", err)
 	}
@@ -45,18 +46,18 @@ func (r *Repository) InsertMany(ctx context.Context, kinds []string, ids []int64
 		return nil
 	}
 	var values strings.Builder
-	args := make([]any, 0, len(samples)*6)
+	args := make([]any, 0, len(samples)*7)
 	for i, s := range samples {
 		if i > 0 {
 			values.WriteString(", ")
 		}
-		n := i * 6
-		fmt.Fprintf(&values, "($%d, $%d, $%d, $%d, $%d, $%d)",
-			n+1, n+2, n+3, n+4, n+5, n+6)
-		args = append(args, kinds[i], ids[i], s.At, s.CPUPercent, s.MemoryBytes, s.MemoryLimitBytes)
+		n := i * 7
+		fmt.Fprintf(&values, "($%d, $%d, $%d, $%d, $%d, $%d, $%d)",
+			n+1, n+2, n+3, n+4, n+5, n+6, n+7)
+		args = append(args, kinds[i], ids[i], s.At, s.CPUPercent, s.MemoryBytes, s.MemoryLimitBytes, s.StartedAt)
 	}
 	_, err := r.q.ExecContext(ctx,
-		`INSERT INTO metric_samples (kind, subject_id, at, cpu_percent, memory_bytes, memory_limit_bytes)
+		`INSERT INTO metric_samples (kind, subject_id, at, cpu_percent, memory_bytes, memory_limit_bytes, container_started_at)
 		 VALUES `+values.String(), args...)
 	if err != nil {
 		return fmt.Errorf("record samples: %w", err)
@@ -146,7 +147,7 @@ func (r *Repository) Series(ctx context.Context, kind string, subjectID int64, w
 // predecessor's last reading.
 func (r *Repository) Latest(ctx context.Context, since time.Time) ([]Usage, error) {
 	rows, err := r.q.QueryContext(ctx,
-		`SELECT DISTINCT ON (kind, subject_id) kind, subject_id, at, cpu_percent, memory_bytes, memory_limit_bytes
+		`SELECT DISTINCT ON (kind, subject_id) kind, subject_id, at, cpu_percent, memory_bytes, memory_limit_bytes, container_started_at
 		 FROM metric_samples
 		 WHERE at >= $1
 		 ORDER BY kind, subject_id, at DESC`, since)
@@ -159,8 +160,12 @@ func (r *Repository) Latest(ctx context.Context, since time.Time) ([]Usage, erro
 	for rows.Next() {
 		var u Usage
 		var id int64
-		if err := rows.Scan(&u.Kind, &id, &u.At, &u.CPUPercent, &u.MemoryBytes, &u.MemoryLimitBytes); err != nil {
+		var startedAt sql.NullTime
+		if err := rows.Scan(&u.Kind, &id, &u.At, &u.CPUPercent, &u.MemoryBytes, &u.MemoryLimitBytes, &startedAt); err != nil {
 			return nil, err
+		}
+		if startedAt.Valid {
+			u.StartedAt = &startedAt.Time
 		}
 		// The id is the join key and never leaves this package: what a
 		// caller gets is the name its own module supplied.

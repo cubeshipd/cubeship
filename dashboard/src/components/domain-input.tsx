@@ -2,9 +2,9 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { GlideSelect } from "@/components/glide-select";
 import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
-import { SearchableSelect } from "@/components/searchable-select";
 import { TextField } from "@/components/text-field";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -112,39 +112,44 @@ export function DomainInput({
   return (
     <div className="space-y-4 sm:col-span-2">
       <div className="grid gap-4 sm:grid-cols-2">
-        <SearchableSelect
-          label={label}
-          hint={hint}
-          placeholder="My DNS is elsewhere"
-          empty="No DNS providers connected yet."
-          value={providerID}
-          onChange={(v) => {
-            setTouched(true);
-            setProviderID(v);
-            setZoneID("");
-          }}
-          busy={providers.isLoading}
-          choices={[
-            { value: "", label: "My DNS is elsewhere", hint: "Type the name" },
-            ...(suggested
-              ? [
-                  {
-                    value: INSTANCE_DOMAIN,
-                    label: "This instance's domain",
-                    hint: settings?.wildcard_domain
-                      ? "Resolves here already"
-                      : "Needs a wildcard record",
-                  },
-                ]
-              : []),
-            ...(providers.data ?? []).map((p) => ({
-              value: String(p.id),
-              label: p.provider_name,
-              hint: p.label,
-              icon: providerIcon(p.provider),
-            })),
-          ]}
-        />
+        <div className="space-y-2">
+          <GlideSelect
+            label={label}
+            placeholder="My DNS is elsewhere"
+            emptyMessage="No DNS providers connected yet."
+            value={providerID}
+            onChange={(v) => {
+              setTouched(true);
+              setProviderID(v);
+              setZoneID("");
+            }}
+            busy={providers.isLoading}
+            searchable
+            options={[
+              { value: "", label: "My DNS is elsewhere", tag: "Manual" },
+              ...(suggested
+                ? [
+                    {
+                      value: INSTANCE_DOMAIN,
+                      label: "This instance's domain",
+                      tag: settings?.wildcard_domain ? "Instance" : "Wildcard needed",
+                    },
+                  ]
+                : []),
+              ...(providers.data ?? []).map((p) => ({
+                value: String(p.id),
+                label: p.provider_name,
+                tag: p.label,
+                icon: (() => {
+                  const Icon = providerIcon(p.provider);
+                  return <Icon className="size-4" />;
+                })(),
+              })),
+            ]}
+            triggerClassName="flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          />
+          {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+        </div>
         {onInstanceDomain ? (
           <div className="space-y-2">
             <Label className="text-xs text-muted-foreground">Name</Label>
@@ -153,14 +158,16 @@ export function DomainInput({
             </div>
           </div>
         ) : automatic ? (
-          <SearchableSelect
+          <GlideSelect
             label="Zone"
             placeholder="Pick a domain"
-            empty="This credential reaches no zones."
+            emptyMessage="This credential reaches no zones."
             value={zoneID}
             onChange={setZoneID}
             busy={zones.isLoading}
-            choices={(zones.data ?? []).map((z) => ({ value: z.id, label: z.name }))}
+            options={(zones.data ?? []).map((z) => ({ value: z.id, label: z.name }))}
+            searchable
+            triggerClassName="flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
           />
         ) : (
           <TextField

@@ -27,6 +27,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"kind":               {Type: "string", Enum: []string{"app", "datastore", "objectstore"}, Description: "What the container is running, which is also which listing names it."},
 				"name":               openapi.String("What to call it: an app's full `project/environment/name` reference, a database's or a store's name. A bare app name would identify nothing — it is unique inside one environment and nowhere else."),
 				"at":                 {Type: "string", Format: "date-time", Description: "When this reading was taken. At most two sampling intervals old, or the container is not reported at all."},
+				"started_at":         {Type: "string", Format: "date-time", Description: "When this running container started its current run. Absent when the Docker Engine or worker has not reported it yet."},
 				"cpu_percent":        openapi.Number("Percent of **one core**, the container convention: 250 is two and a half cores. Not the machine's, which is what /instance/metrics reports."),
 				"memory_bytes":       openapi.Integer("Usage minus reclaimable page cache, which is what `docker stats` shows."),
 				"memory_limit_bytes": openapi.Integer("The cgroup's ceiling, or the machine's memory for a container with no limit of its own."),

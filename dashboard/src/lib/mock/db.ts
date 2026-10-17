@@ -532,9 +532,27 @@ export const db = {
   } as Record<string, Row[]>,
 
   env: {
-    project: { web: { NODE_ENV: "production" }, internal: {} },
-    environment: { "web/production": { LOG_LEVEL: "info" }, "web/staging": { LOG_LEVEL: "debug" } },
-    app: { "web/production/api": { PORT: "3000" } },
+    project: {
+      web: { NODE_ENV: "production", APP_REGION: "us-east-1", LOG_LEVEL: "warn" },
+      internal: {},
+    },
+    environment: {
+      "web/production": {
+        LOG_LEVEL: "info",
+        FEATURE_BILLING: "true",
+        PUBLIC_URL: "https://api.example.com",
+      },
+      "web/staging": { LOG_LEVEL: "debug" },
+    },
+    app: {
+      "web/production/api": {
+        PORT: "3000",
+        LOG_LEVEL: "debug",
+        STRIPE_SECRET_KEY: "sk_test_preview_only_0123456789",
+        JWT_SECRET: "preview-only-not-a-real-secret",
+        ENABLE_SIGNUP: "false",
+      },
+    },
   } as Record<string, Record<string, Record<string, string>>>,
 
   datastores: [

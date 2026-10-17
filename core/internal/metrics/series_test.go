@@ -239,9 +239,14 @@ func TestWhatIsUsingTheMachineIsNamedByTheModulesThatOwnIt(t *testing.T) {
 	repo := NewRepository(db)
 
 	now := time.Now()
+	startedAt := now.Add(-3 * time.Hour)
 	write := func(kind string, id int64, at time.Time, cpu float64, mem int64) {
 		t.Helper()
-		if err := repo.Insert(ctx, kind, id, Sample{At: at, CPUPercent: cpu, MemoryBytes: mem, MemoryLimitBytes: 1 << 31}); err != nil {
+		sample := Sample{At: at, CPUPercent: cpu, MemoryBytes: mem, MemoryLimitBytes: 1 << 31}
+		if id == 1 && kind == KindApp && at.Equal(now.Add(-5*time.Second)) {
+			sample.StartedAt = &startedAt
+		}
+		if err := repo.Insert(ctx, kind, id, sample); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -272,6 +277,9 @@ func TestWhatIsUsingTheMachineIsNamedByTheModulesThatOwnIt(t *testing.T) {
 	var names []string
 	for _, u := range usage {
 		names = append(names, u.Name)
+		if u.Name == "memo/production/backend" && (u.StartedAt == nil || !u.StartedAt.Equal(startedAt)) {
+			t.Errorf("container started at %v, want %v", u.StartedAt, startedAt)
+		}
 	}
 	// Heaviest CPU first, memory breaking the tie — a box at rest is a
 	// column of zeroes, and ordering that by name buries whichever one

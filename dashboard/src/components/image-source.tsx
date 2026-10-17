@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { SearchableSelect } from "@/components/searchable-select";
 import { TextField } from "@/components/text-field";
 import { Label } from "@/components/ui/label";
@@ -50,11 +50,13 @@ export type ImageSourceValue = {
 };
 
 export function ImageSource({
+  sourceControl,
   value,
   onChange,
   pushPath,
   appReference,
 }: {
+  sourceControl: ReactNode;
   value: ImageSourceValue;
   onChange: (next: ImageSourceValue) => void;
   // Where a push to this instance's registry goes, which is what an app
@@ -89,20 +91,22 @@ export function ImageSource({
 
   return (
     <div className="space-y-5">
-      <SearchableSelect
-        label="Registry"
-        choices={choices}
-        value={value.registry}
-        busy={registries === null}
-        hint="Connect another under Registries. Docker Hub needs no login for a public image."
-        onChange={(registry) =>
-          // The image and the tag belong to the registry that was left,
-          // so neither survives the move. Carrying them over is how a
-          // field ends up naming something the new registry has never
-          // heard of.
-          onChange({ registry, image: "", tag: "" })
-        }
-      />
+      <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-2">
+        {sourceControl}
+        <SearchableSelect
+          label="Registry"
+          choices={choices}
+          value={value.registry}
+          busy={registries === null}
+          onChange={(registry) =>
+            // The image and the tag belong to the registry that was left,
+            // so neither survives the move. Carrying them over is how a
+            // field ends up naming something the new registry has never
+            // heard of.
+            onChange({ registry, image: "", tag: "" })
+          }
+        />
+      </div>
 
       {onCubeship ? (
         <TextField
@@ -112,7 +116,6 @@ export function ImageSource({
           disabled
           spellCheck={false}
           onChange={() => {}}
-          hint="An app on this registry runs its own path — pushing there is the deploy. It is not a choice: the push is matched to an app by its reference."
         />
       ) : (
         <ImageField
@@ -213,11 +216,6 @@ function ImageField({
         spellCheck={false}
         onChange={(e) => onChange(e.target.value)}
         placeholder={host === DOCKER_HUB ? "nginx" : `${host}/acme/api`}
-        hint={
-          host === DOCKER_HUB
-            ? "Docker Hub has no public catalogue to list, so type the image. Its tags are listed once you have."
-            : "This registry does not list what it holds, so type the image. Without a tag — the tag is the field below."
-        }
       />
     );
   }
@@ -231,7 +229,6 @@ function ImageField({
       busy={repos === null}
       empty="This registry holds nothing yet."
       onChange={onChange}
-      hint="What this registry holds. The tag is the field below."
     />
   );
 }

@@ -327,16 +327,17 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
           value={query}
           onChange={setQuery}
           placeholder="Filter repositories"
+          count={{ value: filtered.length, singular: "repository", plural: "repositories" }}
           trailing={
-            <span className="shrink-0 font-mono text-[11px] text-muted-foreground">
-              {filtered.length}/{repos.length}
-              {usage && (
-                <span title="Layers shared between images are counted once per image, so this is an upper bound.">
-                  {" · ~"}
-                  {bytes(usage.total_bytes)}
-                </span>
-              )}
-            </span>
+            usage ? (
+              <span
+                className="shrink-0 font-mono text-[11px] text-muted-foreground"
+                title="Layers shared between images are counted once per image, so this is an upper bound."
+              >
+                {" · ~"}
+                {bytes(usage.total_bytes)}
+              </span>
+            ) : undefined
           }
         />
       )}
@@ -362,9 +363,7 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
           </CardContent>
         </Card>
       )}
-      {/* One dialog for both, because the question is the same shape
-          and the count is what makes it dangerous. Typing "delete" is
-          the guard rather than a name — there is no one name to type. */}
+      {/* One hold dialog for both; the count is what makes deletion dangerous. */}
       <ConfirmDialog
         open={bulk !== null}
         onOpenChange={(open) => !open && setBulk(null)}
@@ -382,7 +381,7 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
             ? "Every tag in each of them goes. Apps pulling from any of them keep running — a container already exists — and their next deploy fails."
             : "Anything pinned to one of these stops being able to pull."
         }
-        confirmWord={bulk === "repos" ? "delete my repositories" : "delete my tags"}
+        holdToConfirm
         onConfirm={() => deletePicked(bulk ?? "repos")}
       />
       {/* Deleting a tag makes it unpullable and frees nothing: a
@@ -414,13 +413,13 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
         open={deletingRepo !== null}
         onOpenChange={(open) => !open && setDeletingRepo(null)}
         title={`Delete ${deletingRepo}?`}
+        holdToConfirm
         description={
           <>
             Every tag in it goes. Apps pulling from it keep running — a container already exists —
             and their next deploy fails.
           </>
         }
-        confirmWord={deletingRepo ?? undefined}
         onConfirm={async () => {
           await api.del(
             `${base}/repositories?repository=${encodeURIComponent(deletingRepo ?? "")}`,
@@ -437,6 +436,7 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
             ? "Delete this untagged image?"
             : `Delete ${deletingTag?.ref}?`
         }
+        holdToConfirm
         description={
           <>
             Only this image, out of <code>{deletingTag?.repo}</code>. Anything pinned to it stops

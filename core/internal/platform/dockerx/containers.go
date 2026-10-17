@@ -567,6 +567,26 @@ func (c *Client) InspectContainerByName(ctx context.Context, name string) (Conta
 	return out, nil
 }
 
+// ContainerStartedAt is when a running container began this run. Docker
+// uses the zero time for a container that has never started.
+func (c *Client) ContainerStartedAt(ctx context.Context, id string) (*time.Time, error) {
+	info, err := c.api.ContainerInspect(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("inspect container %q start time: %w", id, err)
+	}
+	if info.State == nil || !info.State.Running {
+		return nil, nil
+	}
+	startedAt, err := time.Parse(time.RFC3339Nano, info.State.StartedAt)
+	if err != nil {
+		return nil, fmt.Errorf("parse container %q start time: %w", id, err)
+	}
+	if startedAt.IsZero() {
+		return nil, nil
+	}
+	return &startedAt, nil
+}
+
 func (c *Client) StartContainer(ctx context.Context, id string) error {
 	if err := c.api.ContainerStart(ctx, id, container.StartOptions{}); err != nil {
 		return fmt.Errorf("start container %q: %w", id, err)
@@ -902,9 +922,10 @@ type PublishedPort struct {
 // Running is one container this Engine has up, as the agent needs it:
 // what it is called, what id it has, and what it was labelled with.
 type Running struct {
-	ID     string
-	Name   string
-	Labels map[string]string
+	ID      string
+	Name    string
+	Labels  map[string]string
+	Running bool
 }
 
 // RunningContainers is every container up on this Engine.
@@ -924,7 +945,25 @@ func (c *Client) RunningContainers(ctx context.Context) ([]Running, error) {
 		if len(item.Names) > 0 {
 			name = strings.TrimPrefix(item.Names[0], "/")
 		}
-		out = append(out, Running{ID: item.ID, Name: name, Labels: item.Labels})
+		out = append(out, Running{ID: item.ID, Name: name, Labels: item.Labels, Running: true})
+	}
+	return out, nil
+}
+
+// AllContainers includes stopped containers so the worker can remove one
+// after its app is deleted; RunningContainers remains the start/reconcile view.
+func (c *Client) AllContainers(ctx context.Context) ([]Running, error) {
+	list, err := c.api.ContainerList(ctx, container.ListOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+	out := make([]Running, 0, len(list))
+	for _, item := range list {
+		name := ""
+		if len(item.Names) > 0 {
+			name = strings.TrimPrefix(item.Names[0], "/")
+		}
+		out = append(out, Running{ID: item.ID, Name: name, Labels: item.Labels, Running: item.State == "running"})
 	}
 	return out, nil
 }

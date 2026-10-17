@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
-import { SearchableSelect } from "@/components/searchable-select";
+import { GlideSelect } from "@/components/glide-select";
 import { SlugField } from "@/components/slug-field";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,9 @@ import {
   type ObjectStoreProviders,
 } from "@/lib/api";
 import { message } from "@/lib/errors";
+
+const SELECT_TRIGGER_CLASS =
+  "flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
 
 // Adding object storage, both ways.
 //
@@ -149,15 +152,16 @@ export function NewObjectStoreDialog({
           <div className="-mx-2 max-h-[65vh] space-y-4 overflow-y-auto px-2 py-5">
             <ErrorAlert error={error} />
 
-            <SearchableSelect
+            <GlideSelect
               label="Kind"
-              searchable={false}
               value={kind}
               onChange={(v) => setKind(v as ObjectStoreKind)}
-              choices={[
+              options={[
                 { value: "external", label: "Link a bucket somewhere else" },
                 { value: "managed", label: "Run SeaweedFS on this machine" },
               ]}
+              className="w-full"
+              triggerClassName={SELECT_TRIGGER_CLASS}
             />
 
             <SlugField
@@ -176,15 +180,17 @@ export function NewObjectStoreDialog({
 
             {kind === "external" && (
               <>
-                <SearchableSelect
+                <GlideSelect
                   label="Provider"
-                  searchable={false}
                   value={provider}
                   onChange={setProvider}
-                  choices={(catalogue?.providers ?? []).map((p) => ({
+                  busy={catalogue === null}
+                  options={(catalogue?.providers ?? []).map((p) => ({
                     value: p.provider,
                     label: p.label,
                   }))}
+                  className="w-full"
+                  triggerClassName={SELECT_TRIGGER_CLASS}
                 />
 
                 {/* One field, whichever it is: each provider's endpoint
@@ -218,15 +224,17 @@ export function NewObjectStoreDialog({
                   />
                 )}
 
-                <SearchableSelect
+                <GlideSelect
                   label="Account"
-                  searchable={credentials.length > 8}
                   value={credentialId}
                   onChange={setCredentialId}
-                  choices={[
+                  options={[
                     { value: "", label: "Type the keys here" },
                     ...credentials.map((c) => ({ value: String(c.id), label: c.label })),
                   ]}
+                  searchable
+                  className="w-full"
+                  triggerClassName={SELECT_TRIGGER_CLASS}
                 />
 
                 {/* Typed keys become a stored account in the same

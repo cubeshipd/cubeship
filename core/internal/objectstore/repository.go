@@ -168,6 +168,19 @@ func (r *Repository) UpdateContainer(ctx context.Context, id int64, containerID,
 	return err
 }
 
+func (r *Repository) SetManagedCredentials(ctx context.Context, id int64, accessKey, secretKey string) error {
+	res, err := r.q.ExecContext(ctx,
+		`UPDATE object_stores SET access_key = $1, secret_key = $2, updated_at = now() WHERE id = $3 AND kind = 'managed'`,
+		accessKey, secretKey, id)
+	if err != nil {
+		return fmt.Errorf("save rotated object store credentials: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return database.ErrNotFound
+	}
+	return nil
+}
+
 func (r *Repository) SetExposedPort(ctx context.Context, id int64, port int) error {
 	_, err := r.q.ExecContext(ctx,
 		`UPDATE object_stores SET exposed_port = $1, updated_at = now() WHERE id = $2`, port, id)

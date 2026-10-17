@@ -1112,6 +1112,7 @@ export type ContainerUsage = {
   // or store's name. A bare app name would identify nothing.
   name: string;
   at: string;
+  started_at?: string;
   cpu_percent: number;
   memory_bytes: number;
   memory_limit_bytes: number;

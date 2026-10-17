@@ -71,6 +71,14 @@ func (s *Service) PlacementsFor(ctx context.Context, nodeID int64) ([]node.Place
 	}
 	out := make([]node.Placement, 0, len(apps))
 	for _, a := range apps {
+		if a.Status() == StatusStopped {
+			for _, replica := range a.ReplicasOn(nodeID) {
+				if replica.Container != "" {
+					out = append(out, node.Placement{App: ReferenceOf(a).String(), Deploy: replica.Deploy, Ordinal: replica.Ordinal, Container: replica.Name, ContainerID: replica.Container, Stopped: true, StopGracePeriod: int64(a.StopGracePeriod / time.Second), StopSignal: a.StopSignal})
+				}
+			}
+			continue
+		}
 		d, err := s.Repo().DeploymentToRun(ctx, a.ID)
 		if err != nil {
 			return nil, err
@@ -92,6 +100,9 @@ func (s *Service) PlacementsFor(ctx context.Context, nodeID int64) ([]node.Place
 				// not stop them, it only stops hearing about them.
 				log.Printf("placement %s: %v", ReferenceOf(a), err)
 				break
+			}
+			if replica.Status == StatusStarting {
+				placement.ContainerID = replica.Container
 			}
 			out = append(out, placement)
 		}
@@ -117,23 +128,40 @@ func (s *Service) Placed(ctx context.Context, nodeID int64, results []node.Resul
 			log.Printf("placement: %s reported on deploy %d, which is not here", r.App, r.Deploy)
 			continue
 		}
+		a, err := s.Repo().ScopedByID(ctx, d.AppID)
+		if err != nil {
+			continue
+		}
+		ordinal := r.Ordinal
+		if ordinal == 0 {
+			ordinal = 1
+		}
+		if r.Resumed {
+			if a.Status() == StatusStopped || !hasOrdinal(a.ReplicasOn(nodeID), ordinal) {
+				continue
+			}
+			if r.Error != "" {
+				if err := s.Repo().SetStatus(ctx, a.ID, nodeID, ordinal, StatusDown); err != nil {
+					return err
+				}
+				continue
+			}
+			name := containerNameFor(resourceName(ReferenceOf(a)), d.ID, ordinal)
+			if err := s.Repo().UpdateContainer(ctx, a.ID, nodeID, ordinal, r.Container, name, d.ID, StatusRunning); err != nil {
+				return err
+			}
+			s.announceRoutes()
+			continue
+		}
 		if d.Done() || d.Cancelled {
 			// A worker can finish after cancellation raced with its poll.
 			// Its late result must never resurrect a cancelled deployment.
-			continue
-		}
-		a, err := s.Repo().ScopedByID(ctx, d.AppID)
-		if err != nil {
 			continue
 		}
 		// A missing ordinal is the first copy. An agent from before
 		// there could be more than one sends none, and the first is the
 		// only copy such an agent can be running — reading zero as
 		// "no copy at all" would drop every report it ever makes.
-		ordinal := r.Ordinal
-		if ordinal == 0 {
-			ordinal = 1
-		}
 		if !hasOrdinal(a.ReplicasOn(nodeID), ordinal) {
 			// The app has been taken off this machine since it was told
 			// to run it, or scaled down past this copy. What it did is
@@ -229,6 +257,7 @@ func (s *Service) Sampled(ctx context.Context, nodeID int64, readings []node.Rea
 		ids = append(ids, id)
 		samples = append(samples, metrics.Sample{
 			At:               now,
+			StartedAt:        r.StartedAt,
 			CPUPercent:       r.CPUPercent,
 			MemoryBytes:      r.MemoryBytes,
 			MemoryLimitBytes: r.MemoryLimitBytes,

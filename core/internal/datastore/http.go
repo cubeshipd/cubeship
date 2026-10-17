@@ -271,6 +271,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("PATCH "+datastorePath, auth(http.HandlerFunc(h.update)))
 	r.Handle("DELETE "+datastorePath, auth(http.HandlerFunc(h.delete)))
 	r.Handle("GET "+datastorePath+"/credentials", auth(http.HandlerFunc(h.credentials)))
+	r.Handle("POST "+datastorePath+"/credentials/rotate", auth(http.HandlerFunc(h.rotateCredentials)))
 	r.Handle("GET "+datastorePath+"/metrics", auth(http.HandlerFunc(h.metrics)))
 	r.Handle("GET "+datastorePath+"/logs", auth(http.HandlerFunc(h.logs)))
 	r.Handle("POST "+datastorePath+"/stop", auth(http.HandlerFunc(h.stop)))
@@ -528,6 +529,19 @@ func (h *Handler) credentials(w http.ResponseWriter, r *http.Request) {
 		WriteError(w, err)
 		return
 	}
+	h.credentialsResponse(w, creds)
+}
+
+func (h *Handler) rotateCredentials(w http.ResponseWriter, r *http.Request) {
+	creds, err := h.svc.RotatePassword(r.Context(), user.FromContext(r.Context()), nameFrom(r))
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	h.credentialsResponse(w, creds)
+}
+
+func (h *Handler) credentialsResponse(w http.ResponseWriter, creds Credentials) {
 	httpx.WriteJSON(w, http.StatusOK, CredentialsResponse{
 		Username: creds.Username, Password: creds.Password, Database: creds.Database,
 		InternalURI: creds.Internal, InternalHost: creds.InternalHost, InternalPort: creds.InternalPort,

@@ -86,7 +86,7 @@ export function RailPortal({ children }: { children: ReactNode }) {
 // rail.
 export function RailTabs({ children }: { children: ReactNode }) {
   const { tabs } = useContext(Rail);
-  if (!tabs) return null;
+  if (!tabs) return <div className="project-inline-tabs">{children}</div>;
   return createPortal(
     // The same container the rail and the page use, so a tab's left
     // edge lines up with the first crumb above it and the first card
@@ -99,9 +99,11 @@ export function RailTabs({ children }: { children: ReactNode }) {
 export function HeaderRail({
   children,
   navigation,
+  bare = false,
 }: {
   children: ReactNode;
   navigation?: ReactNode;
+  bare?: boolean;
 }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const [tabs, setTabs] = useState<HTMLElement | null>(null);
@@ -115,22 +117,26 @@ export function HeaderRail({
       {/* Sticky, because the reason it exists is to be reachable — and
           the screens where switching saves the most are the long ones:
           a log, fifty environment variables, a deploy history. */}
-      <div className="dashboard-header">
+      <div className="dashboard-header" data-bare={bare ? "" : undefined}>
         <div className="dashboard-container dashboard-header-inner">
           {navigation}
-          <nav aria-label="Breadcrumb" className="dashboard-breadcrumb">
-            {crumbs.map((crumb, i) => (
-              <div key={crumb.key} className="flex min-w-0 items-center gap-1.5">
-                {i > 0 && (
-                  <span aria-hidden="true" className="text-subtle-foreground">
-                    /
-                  </span>
-                )}
-                <Crumb crumb={crumb} last={i === crumbs.length - 1} />
-              </div>
-            ))}
-          </nav>
-          <div ref={setSlot} className="dashboard-header-actions" />
+          {!bare && (
+            <>
+              <nav aria-label="Breadcrumb" className="dashboard-breadcrumb">
+                {crumbs.map((crumb, i) => (
+                  <div key={crumb.key} className="flex min-w-0 items-center gap-1.5">
+                    {i > 0 && (
+                      <span aria-hidden="true" className="text-subtle-foreground">
+                        /
+                      </span>
+                    )}
+                    <Crumb crumb={crumb} last={i === crumbs.length - 1} />
+                  </div>
+                ))}
+              </nav>
+              <div ref={setSlot} className="dashboard-header-actions" />
+            </>
+          )}
         </div>
       </div>
       {/* Under the rail and stuck to it, so scrolling a long screen
@@ -247,7 +253,7 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
   const [section, ...rest] = parts;
   const head: CrumbSpec = {
     key: section,
-    label: section,
+    label: section === "servers" ? "nodes" : section,
     href: rest.length > 0 ? `/${section}` : undefined,
   };
   if (rest.length === 0) return [head];
@@ -317,7 +323,7 @@ export function crumbsFor(pathname: string): CrumbSpec[] {
       key: `n:${name}`,
       label: name,
       value: name,
-      // A server has no screen of its own to go back to — its shell is
+      // A node has no screen of its own to go back to — its shell is
       // the one page under it — so its name links nowhere.
       href: tail.length > 0 && section !== "servers" ? `/${section}/${name}` : undefined,
       siblings,
@@ -386,13 +392,12 @@ function title(word: string): string {
 // path — and the largest of them was often the least informative word
 // on the screen.
 //
-// So: mono throughout, one size, written the way the URL writes it.
-// The only thing that separates the last crumb is that it is lit and
-// the rest are not, which is what a breadcrumb has always done, and it
-// is enough to say which of them you are standing on.
+// So: one sans face and one size, with the current location carrying a
+// little more weight. Technical identifiers stay mono where they are
+// shown as values elsewhere in the interface.
 function Crumb({ crumb, last }: { crumb: CrumbSpec; last: boolean }) {
-  const text = "font-mono text-sm";
-  const tone = last ? "text-foreground" : "text-muted-foreground";
+  const text = "font-sans text-sm";
+  const tone = last ? "font-medium text-foreground" : "text-muted-foreground";
 
   if (crumb.siblings) {
     return <CrumbMenu crumb={crumb} className={`${text} ${tone}`} />;

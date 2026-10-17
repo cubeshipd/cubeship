@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"cubeship/internal/node"
 	"cubeship/internal/platform/dockerx"
@@ -20,6 +21,7 @@ type fakeEngine struct {
 	// running is what RunningContainers answers, so a test can put the
 	// agent in front of a machine that already has containers on it.
 	running []dockerx.Running
+	stopped []dockerx.Running
 	removed []string
 	// capped is every SetResources call, newest last.
 	capped []dockerx.Resources
@@ -69,9 +71,20 @@ func (e *fakeEngine) RunningNames(context.Context) ([]string, error) { return ni
 func (e *fakeEngine) RunningContainers(context.Context) ([]dockerx.Running, error) {
 	return e.running, nil
 }
+func (e *fakeEngine) AllContainers(context.Context) ([]dockerx.Running, error) {
+	all := make([]dockerx.Running, 0, len(e.running)+len(e.stopped))
+	for _, item := range e.running {
+		item.Running = true
+		all = append(all, item)
+	}
+	return append(all, e.stopped...), nil
+}
 func (e *fakeEngine) PullImage(context.Context, string, *dockerx.RegistryAuth) error { return nil }
 func (e *fakeEngine) ContainerStats(context.Context, string) (dockerx.Stats, error) {
 	return dockerx.Stats{}, nil
+}
+func (e *fakeEngine) ContainerStartedAt(context.Context, string) (*time.Time, error) {
+	return nil, nil
 }
 func (e *fakeEngine) Logs(context.Context, string, string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
@@ -309,6 +322,23 @@ func TestAnOldCopyWaitsForItsOwnReplacement(t *testing.T) {
 	}
 }
 
+func TestTheAgentResumesAnExistingStoppedContainer(t *testing.T) {
+	engine := &fakeEngine{}
+	a := New("https://cubeship.example.com", "token", "test", t.TempDir(), nil, engine, nil, nil)
+	a.healthInterval = 0
+
+	results := a.apply(context.Background(), []node.Placement{{
+		App: "web/production/api", Deploy: 7, Ordinal: 1,
+		Container: "cubeship-web-production-api-7", ContainerID: "stopped-id",
+	}}, "")
+	if len(results) != 1 || !results[0].Resumed || results[0].Container != "stopped-id" {
+		t.Fatalf("resume results = %+v", results)
+	}
+	if len(engine.created) != 0 || !contains(engine.events, "start stopped-id") {
+		t.Fatalf("resume created a replacement or did not start the old container: events=%v", engine.events)
+	}
+}
+
 // A copy that has been scaled away goes, because nothing is coming to
 // replace it.
 func TestACopyThatWasScaledAwayIsRemoved(t *testing.T) {
@@ -327,6 +357,20 @@ func TestACopyThatWasScaledAwayIsRemoved(t *testing.T) {
 
 	if len(engine.removed) != 1 || engine.removed[0] != "id-2" {
 		t.Errorf("it removed %v, want the second copy alone", engine.removed)
+	}
+}
+
+func TestAStoppedContainerForADeletedAppIsRemoved(t *testing.T) {
+	engine := &fakeEngine{stopped: []dockerx.Running{{
+		ID: "stopped-id", Name: "cubeship-web-production-api-7",
+		Labels: map[string]string{node.LabelApp: "web/production/api"},
+	}}}
+	a := New("https://cubeship.example.com", "token", "test", t.TempDir(), nil, engine, nil, nil)
+
+	a.apply(context.Background(), nil, "")
+
+	if len(engine.removed) != 1 || engine.removed[0] != "stopped-id" {
+		t.Errorf("removed containers = %v, want stopped-id", engine.removed)
 	}
 }
 

@@ -392,19 +392,16 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  --font-sans: var(--font-chakra), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jbmono), ui-monospace, SFMono-Regular, monospace;
 
-  /* The shadcn primitives reach for rounded-sm … rounded-4xl by name.
-     Zeroing the scale squares every one of them at once, rather than
-     one className at a time. */
-  --radius-sm: 0px;
-  --radius-md: 0px;
-  --radius-lg: 0px;
-  --radius-xl: 0px;
-  --radius-2xl: 0px;
-  --radius-3xl: 0px;
-  --radius-4xl: 0px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 10px;
+  --radius-2xl: 14px;
+  --radius-3xl: 18px;
+  --radius-4xl: 22px;
 }
 
 @layer base {
@@ -457,6 +454,22 @@
   ::-webkit-scrollbar-thumb:hover {
     background: color-mix(in srgb, var(--primary) 55%, var(--border-strong));
   }
+
+  [data-slot="dialog-content"]:is(.overflow-auto, .overflow-y-auto, .overflow-x-auto),
+  [data-slot="dialog-content"] :is(.overflow-auto, .overflow-y-auto, .overflow-x-auto) {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  [data-slot="dialog-content"]:is(
+    .overflow-auto,
+    .overflow-y-auto,
+    .overflow-x-auto
+  )::-webkit-scrollbar,
+  [data-slot="dialog-content"]
+    :is(.overflow-auto, .overflow-y-auto, .overflow-x-auto)::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 /* Everything below themes the generated shadcn primitives through their
@@ -467,25 +480,22 @@
   [data-slot="badge"],
   [data-slot="alert-title"] {
     font-family: var(--font-sans);
-    font-weight: 600;
+    font-weight: 500;
     letter-spacing: 0;
     text-transform: none;
   }
 
-  /* shadcn's checkbox hard-codes its own corner radius, which is the
-     one thing in this interface that is never round. Squared here
-     rather than in ui/, so a re-run of `shadcn add` cannot take the
-     house style with it. */
+  /* Keep checkbox geometry consistent with the other controls. */
   [data-slot="checkbox"] {
-    border-radius: 0;
+    border-radius: 4px;
   }
 
-  /* Labels read as interface text; entered values stay monospace. */
+  /* Labels read as interface text. */
   [data-slot="label"],
   [data-slot="table"] thead [data-slot="table-head"],
   [data-slot="table-head-sort"] {
     font-family: var(--font-sans);
-    font-weight: 600;
+    font-weight: 500;
     font-size: 0.75rem;
     letter-spacing: 0;
     text-transform: none;
@@ -506,12 +516,9 @@
     border-color: var(--border-strong);
   }
 
-  /* shadcn's checkbox ships `rounded-[4px]`, an arbitrary value the
-     zeroed --radius scale cannot reach. Squared here rather than by
-     editing ui/, so a re-run of `shadcn add` does not take the house
-     style with it. */
+  /* Match the generated checkbox to the shared control shape. */
   [data-slot="checkbox"] {
-    border-radius: 0;
+    border-radius: 4px;
     border-color: var(--input);
   }
 
@@ -534,11 +541,19 @@
 [data-slot="input"],
 [data-slot="textarea"],
 [data-slot="select-trigger"] {
-  /* Mono, all of it. What goes in a field here is read character by
-     character — a slug, a host, an image reference, a key — and prose
-     that is the exception is still prose someone will compare. */
+  font-family: var(--font-sans);
+  background-color: color-mix(in srgb, var(--card) 72%, var(--background));
+  border-radius: 6px;
+}
+
+[data-slot="input"][data-copyable] {
   font-family: var(--font-mono);
-  background-color: var(--background);
+}
+
+[data-slot="input"].font-mono,
+[data-slot="textarea"].font-mono,
+[data-slot="select-trigger"].font-mono {
+  font-family: var(--font-mono);
 }
 
 /* A field that is a value to copy, never one to edit — see CopyField.
@@ -626,6 +641,38 @@
   height: 1px;
   background: var(--primary);
   box-shadow: 0 0 8px var(--primary);
+}
+
+/* The filled tab selector uses Base UI's measured indicator so the active
+   surface slides between tabs without changing their layout. */
+[data-slot="tabs-list"][data-variant="default"] [data-slot="tabs-indicator"] {
+  position: absolute;
+  z-index: 0;
+  top: var(--active-tab-top);
+  left: var(--active-tab-left);
+  width: var(--active-tab-width);
+  height: var(--active-tab-height);
+  border: 1px solid var(--input);
+  border-radius: 0.375rem;
+  background: var(--background);
+  pointer-events: none;
+  transition:
+    left 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    top 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    width 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    height 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+[data-slot="tabs-list"][data-variant="default"] [data-slot="tabs-trigger"] {
+  z-index: 1;
+  background: transparent;
+  box-shadow: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="tabs-list"][data-variant="default"] [data-slot="tabs-indicator"] {
+    transition: none;
+  }
 }
 
 /* The sub-rail: a detail screen's tabs, attached to the header rail
@@ -764,13 +811,11 @@
  *
  * Off it is an empty socket with a 1px edge; on, the track lights and
  * the thumb takes the accent, so the lit half is the state rather than
- * the position of a knob. Square, because the only round things in this
- * interface are the status dots, and that is what makes them read as
- * lamps. */
+ * the position of a knob. */
 [data-slot="switch"] {
   position: relative;
   overflow: hidden;
-  border-radius: 0;
+  border-radius: 999px;
   height: 18px;
   width: 36px;
   padding: 2px;
@@ -785,11 +830,11 @@
 [data-slot="switch"][data-checked] {
   border-color: var(--primary);
   background-color: color-mix(in srgb, var(--primary) 18%, transparent);
-  box-shadow: 0 0 12px -3px color-mix(in srgb, var(--primary) 80%, transparent);
+  box-shadow: none;
 }
 
 [data-slot="switch-thumb"] {
-  border-radius: 0;
+  border-radius: 999px;
   width: 16px;
   height: 12px;
   background-color: var(--border-strong);
@@ -798,17 +843,15 @@
 
 [data-slot="switch"][data-checked] [data-slot="switch-thumb"] {
   background-color: var(--primary);
-  box-shadow: 0 0 8px -1px var(--primary);
+  box-shadow: none;
 }
 
 [data-slot="switch"]:hover:not(:focus-visible) {
   border-color: var(--ring);
 }
 
-/* Focus is a light coming on, not a fatter outline: the ring stays 1px
-   and the glow does the shouting.
- *
- * The search bar is :focus-within rather than :focus-visible, because
+/* Use a restrained focus ring without a neon halo. The search bar uses
+   :focus-within rather than :focus-visible, because
  * the thing that takes focus is the input inside it and the thing that
  * lights up is the whole control — the mark and the count are part of
  * it, and a ring around only the middle reads as a mistake. */
@@ -819,27 +862,12 @@
 [data-slot="textarea"]:focus-visible,
 [data-slot="select-trigger"]:focus-visible,
 [data-slot="dropdown-menu-trigger"]:focus-visible {
-  box-shadow:
-    0 0 0 1px var(--ring),
-    0 0 16px -2px color-mix(in srgb, var(--ring) 70%, transparent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 32%, transparent);
 }
 
-/* The 1px ring sits on top of the border rather than beside it, so the
-   border has to become the ring's colour or it shows through as a
-   second, duller line under the first. */
+/* Keep the search field border aligned with the focus ring. */
 [data-slot="search-bar"]:focus-within {
   border-color: var(--ring);
-}
-
-/* Except the one inside a select's popup, which lights up nothing.
-   Focus goes there the moment the popup opens — it is the reason the
-   popup exists — so a ring on it is a light that is always on, drawn
-   around the top of a surface that is already the thing you are looking
-   at. */
-[data-slot="popover-content"] [data-slot="search-bar"],
-[data-slot="popover-content"] [data-slot="search-bar"]:focus-within {
-  border-color: var(--border);
-  box-shadow: none;
 }
 
 @utility bg-grid {
@@ -977,7 +1005,8 @@
 [data-slot="card"] {
   --card-spacing: 1.25rem;
   border: 1px solid var(--border);
-  box-shadow: none;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--background) 48%, transparent);
 }
 [data-slot="card"][data-size="sm"] {
   --card-spacing: 1rem;
@@ -988,16 +1017,17 @@
   letter-spacing: -0.02em;
 }
 [data-slot="button"] {
+  border-radius: 6px;
+  font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
-  transition-duration: 140ms;
+  transition-duration: 160ms;
 }
 [data-slot="input"],
 [data-slot="textarea"],
 [data-slot="select-trigger"] {
   border-color: var(--input);
-  border-radius: 0;
-  font-size: 13px;
+  font-size: 14px;
 }
 [data-slot="textarea"] {
   line-height: 1.7;
@@ -1005,6 +1035,14 @@
 [data-slot="search-bar"] {
   background: var(--card);
   border-color: var(--border-strong);
+}
+/* Popup search is focused on open, so keep its field visually integrated. */
+[data-slot="popover-content"] [data-slot="search-bar"],
+[data-slot="popover-content"] [data-slot="search-bar"]:focus-within,
+[data-glide-select-content] [data-slot="search-bar"],
+[data-glide-select-content] [data-slot="search-bar"]:focus-within {
+  border-color: var(--border);
+  box-shadow: none;
 }
 [data-slot="dialog-content"] {
   border: 1px solid var(--border-strong);
@@ -1050,7 +1088,9 @@
 [data-slot="table-head"],
 [data-slot="table-head-sort"] {
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: color-mix(in srgb, var(--foreground) 78%, var(--muted-foreground));
   letter-spacing: 0;
   text-transform: none;
 }
