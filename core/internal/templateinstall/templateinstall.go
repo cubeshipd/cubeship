@@ -25,7 +25,7 @@ import (
 	"strings"
 	"time"
 
-	"cubeship/template"
+	"cubeship/internal/template"
 )
 
 // Statuses an installation can be in. A failed one never finished

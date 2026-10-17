@@ -10,7 +10,7 @@ export function prCIScope(paths) {
     templates: paths.some(
       (path) =>
         path.startsWith("templates/") ||
-        path.startsWith("core/template/") ||
+        path.startsWith("core/internal/template/") ||
         path.startsWith("core/internal/slug/") ||
         path.startsWith("core/tools/internal/catalog/") ||
         path.startsWith("core/tools/templatecatalog/") ||

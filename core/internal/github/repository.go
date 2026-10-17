@@ -67,9 +67,7 @@ func (r *Repo) List(ctx context.Context) ([]*Installation, error) {
 	return out, rows.Err()
 }
 
-// ForAccount is the clone-time lookup: an organization, the GitHub
-// account a repository belongs to, and whether there is an installation
-// joining the two.
+// ForAccount finds the installation connected to a repository's GitHub account.
 func (r *Repo) ForAccount(ctx context.Context, account string) (*Installation, bool, error) {
 	row := r.q.QueryRowContext(ctx,
 		`SELECT `+columns+` FROM github_installations WHERE lower(account_login) = lower($1)`, account)
@@ -108,8 +106,7 @@ func (r *Repo) Delete(ctx context.Context, id int64) error {
 }
 
 // DeleteByGitHubID removes an installation GitHub says is gone. It is
-// not scoped to an organization: the event is GitHub telling us the
-// grant no longer exists, whoever held it.
+// triggered by GitHub when an installation grant no longer exists.
 func (r *Repo) DeleteByGitHubID(ctx context.Context, installationID int64) error {
 	if _, err := r.q.ExecContext(ctx,
 		`DELETE FROM github_installations WHERE installation_id = $1`, installationID); err != nil {

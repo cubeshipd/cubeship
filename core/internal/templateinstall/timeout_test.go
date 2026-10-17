@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"cubeship/internal/app"
-	"cubeship/template"
+	"cubeship/internal/template"
 )
 
 // Apps deploy one after another, so each one that builds adds a build's

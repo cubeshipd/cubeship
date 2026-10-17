@@ -75,10 +75,10 @@ func (t *Tools) create(ctx context.Context, _ *mcp.CallToolRequest, in createInp
 	return nil, Response{Slug: p.Slug, Environments: []string{env.Slug}}, nil
 }
 
-type orgScopedInput struct {
+type listInput struct {
 }
 
-func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, in orgScopedInput) (*mcp.CallToolResult, mcpx.List[Response], error) {
+func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, in listInput) (*mcp.CallToolResult, mcpx.List[Response], error) {
 	projects, err := t.svc.List(ctx, t.caller)
 	if err != nil {
 		return nil, mcpx.List[Response]{}, err

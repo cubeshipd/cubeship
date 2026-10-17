@@ -2,7 +2,7 @@
 package main
 
 import (
-	"cubeship/template"
+	"cubeship/internal/template"
 	"fmt"
 	"image/png"
 	"os"

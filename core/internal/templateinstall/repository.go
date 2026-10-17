@@ -8,7 +8,7 @@ import (
 	"fmt"
 
 	"cubeship/internal/platform/database"
-	"cubeship/template"
+	"cubeship/internal/template"
 )
 
 // Repository reads and writes template_installs and their runs.

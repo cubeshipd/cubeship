@@ -58,14 +58,13 @@ func mergeEnvBody(level string) *openapi.RequestBody {
 }
 
 func (h *Handler) OpenAPI() openapi.Spec {
-	orgParam := openapi.PathParam("orgSlug", "The organization's slug.")
 	projectParam := openapi.PathParam("projectSlug", "The project's slug.")
 	envParam := openapi.PathParam("envSlug", "The environment's slug.")
 
 	return openapi.Spec{
 		Tags: []openapi.Tag{{
 			Name:        "Projects & environments",
-			Description: "Apps live in an environment, inside a project, inside an organization. Environment variables can be set at each level, and an app inherits the levels above it: project, then environment, then the app's own — each overriding the last.",
+			Description: "Apps live in an environment inside a project. Environment variables can be set at each level, and an app inherits the levels above it: project, then environment, then the app's own — each overriding the last.",
 		}},
 		Schemas: mergeSchemas(EnvSchemas(), map[string]*openapi.Schema{
 			"Project": openapi.Object(map[string]*openapi.Schema{
@@ -83,9 +82,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"post": {
 					OperationID: "createProject",
 					Summary:     "Create a project",
-					Description: `Comes with a "production" environment, which can never be deleted — so an app can be created in the project immediately. Requires the admin role in the organization.`,
+					Description: `Comes with a "production" environment, which can never be deleted — so an app can be created in the project immediately. Requires the admin role.`,
 					Tags:        []string{"Projects & environments"},
-					Parameters:  []openapi.Parameter{orgParam},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"slug": openapi.String("Lowercase letters, digits and dashes."),
 					}, "slug")),
@@ -95,16 +93,15 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,
-						"409": openapi.TextResponse("A project with that slug already exists in this organization."),
+						"409": openapi.TextResponse("A project with that slug already exists."),
 					},
 				},
 				"get": {
 					OperationID: "listProjects",
-					Summary:     "List an organization's projects",
+					Summary:     "List projects",
 					Tags:        []string{"Projects & environments"},
-					Parameters:  []openapi.Parameter{orgParam},
 					Responses: openapi.Responses{
-						"200": openapi.JSONResponse("The organization's projects.", openapi.Array(openapi.Ref("Project"))),
+						"200": openapi.JSONResponse("The instance's projects.", openapi.Array(openapi.Ref("Project"))),
 						"401": openapi.Unauthorized,
 						"404": openapi.NotFound,
 					},
@@ -116,7 +113,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Delete a project",
 					Description: "Removes the project, every environment in it and **every app inside those** — each app's container is stopped and removed first. Requires the admin role, and it cannot be undone.",
 					Tags:        []string{"Projects & environments"},
-					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					Parameters:  []openapi.Parameter{projectParam},
 					Responses: openapi.Responses{
 						"200": openapi.Empty("The project, its environments and its apps are gone."),
 						"401": openapi.Unauthorized,
@@ -131,7 +128,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Fetch a project's picture",
 					Description: "The bytes, with the media type they were stored as. 404 when the project wears none, which is what every project starts as — `has_image` on the project itself is what to check rather than asking and being refused.\n\nA **member's**: it is drawn on the projects grid, which every member opens.",
 					Tags:        []string{"Projects & environments"},
-					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					Parameters:  []openapi.Parameter{projectParam},
 					Responses: openapi.Responses{
 						"200": {Description: "The picture.", Content: map[string]openapi.MediaType{
 							"image/png": {Schema: &openapi.Schema{Type: "string", Format: "binary"}},
@@ -146,7 +143,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Give a project a picture",
 					Description: "The body is the image itself, raw — not a multipart form. There is one value and no others, and an envelope around a single value is a form where there is no form.\n\n**The bytes decide the type, not the header.** What arrives is sniffed, and that is what is stored and what it is served back as: a caller who could name the type would be choosing what this instance serves from its own origin, beside the session cookie. PNG, JPEG and WebP; no SVG, which is a document with scripting in it.\n\n**Nothing here resizes.** The ceiling is 512 KiB and the dashboard sends something it has already scaled to a square — the browser has the file decoded to show a preview, so it is the one place that can. Larger is refused rather than shrunk, while whoever chose it still has it.\n\nRequires the admin role.",
 					Tags:        []string{"Projects & environments"},
-					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					Parameters:  []openapi.Parameter{projectParam},
 					RequestBody: &openapi.RequestBody{Required: true, Content: map[string]openapi.MediaType{
 						"image/png":  {Schema: &openapi.Schema{Type: "string", Format: "binary"}},
 						"image/jpeg": {Schema: &openapi.Schema{Type: "string", Format: "binary"}},
@@ -166,7 +163,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Take a project's picture off",
 					Description: "The project goes back to the mark the dashboard draws for one with no picture. A project that wears none already is not an error — asking for the state it is in is not a mistake.\n\nRequires the admin role.",
 					Tags:        []string{"Projects & environments"},
-					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					Parameters:  []openapi.Parameter{projectParam},
 					Responses: openapi.Responses{
 						"204": openapi.Empty("It wears none now."),
 						"401": openapi.Unauthorized,
@@ -181,7 +178,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Read a project's environment variables",
 					Description: "What is set on the project itself. Every environment and every app below inherits these.",
 					Tags:        []string{"Projects & environments"},
-					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					Parameters:  []openapi.Parameter{projectParam},
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The project's variables.", openapi.Ref("EnvVars")),
 						"401": openapi.Unauthorized,
@@ -193,7 +190,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Add, change or remove some of a project's variables",
 					Description: "The safe way to change configuration: only the keys you name are touched. Requires the admin role.",
 					Tags:        []string{"Projects & environments"},
-					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					Parameters:  []openapi.Parameter{projectParam},
 					RequestBody: mergeEnvBody("project"),
 					Responses: openapi.Responses{
 						"200": openapi.Empty("The variables are stored. Running containers pick them up on their next deploy."),
@@ -208,7 +205,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Set a project's environment variables",
 					Description: "Shared by every environment, and every app, in the project. Requires the admin role.",
 					Tags:        []string{"Projects & environments"},
-					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					Parameters:  []openapi.Parameter{projectParam},
 					RequestBody: envVarsBody("project"),
 					Responses: openapi.Responses{
 						"200": openapi.Empty("The variables are stored. Running containers pick them up on their next deploy."),
@@ -225,7 +222,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Create an environment",
 					Description: "An additional environment within a project — staging, preview, whatever the project needs. Requires the admin role.",
 					Tags:        []string{"Projects & environments"},
-					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					Parameters:  []openapi.Parameter{projectParam},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"slug": openapi.String("Lowercase letters, digits and dashes."),
 					}, "slug")),
@@ -242,7 +239,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					OperationID: "listEnvironments",
 					Summary:     "List a project's environments",
 					Tags:        []string{"Projects & environments"},
-					Parameters:  []openapi.Parameter{orgParam, projectParam},
+					Parameters:  []openapi.Parameter{projectParam},
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The project's environments.", openapi.Array(openapi.Ref("Environment"))),
 						"401": openapi.Unauthorized,
@@ -256,7 +253,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Read an environment's variables",
 					Description: "`vars` is what this environment sets; `effective` is what an app here inherits — the project's, overridden by this environment's — with each value labelled by the level that won it.",
 					Tags:        []string{"Projects & environments"},
-					Parameters:  []openapi.Parameter{orgParam, projectParam, envParam},
+					Parameters:  []openapi.Parameter{projectParam, envParam},
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The environment's own and effective variables.", openapi.Ref("EnvVars")),
 						"401": openapi.Unauthorized,
@@ -268,7 +265,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Add, change or remove some of an environment's variables",
 					Description: "Only the keys you name are touched. Requires the admin role.",
 					Tags:        []string{"Projects & environments"},
-					Parameters:  []openapi.Parameter{orgParam, projectParam, envParam},
+					Parameters:  []openapi.Parameter{projectParam, envParam},
 					RequestBody: mergeEnvBody("environment"),
 					Responses: openapi.Responses{
 						"200": openapi.Empty("The variables are stored. Running containers pick them up on their next deploy."),
@@ -283,7 +280,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Set an environment's variables",
 					Description: "Shared by every app in this one environment, and overriding the project's. Requires the admin role.",
 					Tags:        []string{"Projects & environments"},
-					Parameters:  []openapi.Parameter{orgParam, projectParam, envParam},
+					Parameters:  []openapi.Parameter{projectParam, envParam},
 					RequestBody: envVarsBody("environment"),
 					Responses: openapi.Responses{
 						"200": openapi.Empty("The variables are stored. Running containers pick them up on their next deploy."),
@@ -300,7 +297,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Summary:     "Delete an environment",
 					Description: "Removes the environment and **every app deployed in it**, container first. Refused for `production`, which every project must keep. Requires the admin role, and it cannot be undone.",
 					Tags:        []string{"Projects & environments"},
-					Parameters:  []openapi.Parameter{orgParam, projectParam, envParam},
+					Parameters:  []openapi.Parameter{projectParam, envParam},
 					Responses: openapi.Responses{
 						"200": openapi.Empty("The environment and its apps are gone."),
 						"401": openapi.Unauthorized,

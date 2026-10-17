@@ -3,7 +3,7 @@ package catalog
 import (
 	"archive/tar"
 	"bytes"
-	"cubeship/template"
+	"cubeship/internal/template"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,7 +13,7 @@ import (
 )
 
 func TestSnapshotValidatesWholeCommit(t *testing.T) {
-	source, err := os.ReadFile("../../../template/testdata/umami.yaml")
+	source, err := os.ReadFile("../../../internal/template/testdata/umami.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestBuildReadsOnlyCommittedTemplates(t *testing.T) {
 		}
 		return strings.TrimSpace(string(out))
 	}
-	source, err := os.ReadFile("../../../template/testdata/umami.yaml")
+	source, err := os.ReadFile("../../../internal/template/testdata/umami.yaml")
 	if err != nil {
 		t.Fatal(err)
 	}

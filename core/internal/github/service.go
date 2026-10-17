@@ -50,7 +50,7 @@ func (s *Service) Repo() *Repo { return NewRepository(s.db) }
 // and run, so it takes the same role building does.
 const manageRole = user.RoleAdmin
 
-// Connect records that an organization has installed the App on a GitHub
+// Connect records a GitHub App installation connected to this instance on a GitHub
 // account. The installation id comes back from GitHub when someone
 // finishes the install, and the account is which login it landed on.
 func (s *Service) Connect(ctx context.Context, caller *user.User, installationID int64, code string) (*Installation, error) {
@@ -116,7 +116,7 @@ func (s *Service) Disconnect(ctx context.Context, caller *user.User, id int64) e
 }
 
 // TokenForRepository is what a clone authenticates with: a token scoped
-// to the installation this organization holds on that repository's
+// to the installation this instance holds on that repository's
 // account, or nothing when there is none.
 //
 // Nothing is not an error. A public repository needs no token, and
@@ -183,7 +183,7 @@ func (s *Service) InstallURL(ctx context.Context) string {
 	return "https://github.com/apps/" + slug + "/installations/new"
 }
 
-// Repositories lists what this organization's installations were
+// Repositories lists what this instance's installations were
 // granted, across all of them.
 //
 // It is what the dashboard offers instead of a URL field: someone
@@ -209,7 +209,7 @@ func (s *Service) Repositories(ctx context.Context, caller *user.User) ([]Reposi
 		if err != nil {
 			return nil, err
 		}
-		// One organization can hold installations on several accounts,
+		// This instance can hold installations on several accounts,
 		// and a repository reachable through two of them is still one
 		// repository.
 		for _, r := range repos {

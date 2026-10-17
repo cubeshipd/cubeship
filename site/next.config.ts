@@ -16,7 +16,7 @@ const config: NextConfig = {
   // and the CLI print, so the script is served from here — from the
   // repository's master, so the site never carries a stale copy of it.
   // A rewrite rather than a redirect: `sh` never sees a Location header.
-  // The template schema is a file copied from core/template (make
+  // The template schema is a file copied from core/internal/template (make
   // reference); editors and agents fetch it from anywhere.
   async headers() {
     return [

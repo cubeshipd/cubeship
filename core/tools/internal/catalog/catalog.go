@@ -4,7 +4,7 @@ package catalog
 import (
 	"archive/tar"
 	"bytes"
-	"cubeship/template"
+	"cubeship/internal/template"
 	"errors"
 	"fmt"
 	"io"

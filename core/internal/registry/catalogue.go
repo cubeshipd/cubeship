@@ -126,7 +126,7 @@ func (h *Handler) callRegistry(ctx context.Context, path string, access []regaut
 	return json.NewDecoder(resp.Body).Decode(into)
 }
 
-// DeleteImage removes one tag from this organization's own registry.
+// DeleteImage removes one tag from this instance's registry.
 //
 // The v2 API deletes by digest, never by tag, so the tag is resolved
 // first — which means every other tag pointing at the same image goes
@@ -154,8 +154,7 @@ func (h *Handler) DeleteImage(ctx context.Context, caller *user.User, repository
 	return h.deleteManifest(ctx, repository, digest, access)
 }
 
-// DeleteRepository removes every tag in one of this organization's
-// repositories.
+// DeleteRepository removes every tag in a repository on this instance.
 //
 // There is no delete-a-repository in the v2 API: a repository is
 // whatever its manifests say it is, and it stops existing once they are
@@ -191,8 +190,7 @@ func (h *Handler) DeleteRepository(ctx context.Context, caller *user.User, repos
 	return nil
 }
 
-// ownRepository is the tenancy check every write shares. A repository
-// path in this registry is an app's reference, so an organization's own
+// ownRepository checks the caller's role and the repository name.
 // Deleting is an admin's job. Reading the catalogue is a member's:
 // removing an image is the same kind of act as deleting the app that
 // pushed it.

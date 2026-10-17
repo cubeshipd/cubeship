@@ -77,7 +77,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 }
 
 // WriteError maps this module's domain errors onto status codes, falling
-// through to org's for the authorization failures it re-raises.
+// through to user's mapping for authorization failures it re-raises.
 func WriteError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrNotFound), errors.Is(err, ErrEnvironmentNotFound):

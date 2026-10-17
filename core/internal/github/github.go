@@ -1,11 +1,9 @@
 // Package github is what lets Cubeship act as a GitHub App: clone a
 // private repository, and deploy when someone pushes to one.
 //
-// One App per instance, registered by whoever runs the VPS. An
-// organization then installs it on its own GitHub account, and that
-// installation is what grants access — which is why installations belong
-// to an organization here. Without that, one tenant could deploy
-// another's private code just by naming its URL.
+// One App per instance, registered by whoever runs the VPS. A user
+// installs it on a GitHub account they administer; the recorded
+// installation grants this instance access to that account's private code.
 package github
 
 import (
@@ -14,8 +12,7 @@ import (
 	"time"
 )
 
-// Installation is one GitHub App installation, held by a Cubeship
-// organization.
+// Installation is one GitHub App installation, held by this instance.
 type Installation struct {
 	ID        int64
 	GitHubID  int64
@@ -25,7 +22,7 @@ type Installation struct {
 
 var (
 	ErrNotConfigured   = errors.New("this instance is not registered as a GitHub App")
-	ErrNoInstallation  = errors.New("this organization has not installed the GitHub App on that account")
+	ErrNoInstallation  = errors.New("this instance has not connected the GitHub App on that account")
 	ErrNotFound        = errors.New("no such installation")
 	ErrBadSignature    = errors.New("the webhook signature does not match")
 	ErrNoWebhookSecret = errors.New("no webhook secret is configured, so a webhook cannot be trusted")

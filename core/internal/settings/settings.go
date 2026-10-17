@@ -92,8 +92,8 @@ const (
 	ACMEEmail = "acme_email"
 
 	// The GitHub App this instance acts as. One App per instance: it is
-	// registered by whoever runs the VPS, and organizations install it
-	// on their own accounts.
+	// registered by whoever runs the VPS, and users install it
+	// on accounts they administer.
 	//
 	// GitHubPrivateKey and GitHubWebhookSecret are credentials. Nothing
 	// reads them back out through the API — the settings endpoint
@@ -130,9 +130,9 @@ func Secret(key string) bool {
 // Settings are a fixed set, not arbitrary storage.
 var ErrUnknownKey = errors.New("unknown setting")
 
-// ErrSuperAdminOnly guards writes: instance configuration is the VPS
-// operator's, not an organization's.
-var ErrSuperAdminOnly = errors.New("forbidden: only a super-admin can change instance settings")
+// ErrAdminOnly guards writes: instance configuration is the VPS
+// operator's.
+var ErrAdminOnly = errors.New("forbidden: only an admin can change instance settings")
 
 // known is every key this version recognizes, with what it is for.
 var known = map[string]string{
@@ -180,7 +180,7 @@ func (v Values) HasGitHub() bool {
 // The two go together, which is why one flag answers for both. An App
 // registered before Cubeship asked for OAuth on install was also
 // registered private, and a private GitHub App can only be installed on
-// its owner's account — so it can never reach an organization. There is
+// its owner's account — so it can only reach its owner's account. There is
 // no way to change either from here: both are decided when the App is
 // created, so the answer to an old App is a new one.
 func (v Values) HasGitHubOAuth() bool {

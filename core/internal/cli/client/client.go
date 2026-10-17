@@ -2,7 +2,7 @@
 // CLI is built on.
 //
 // The wire types here are declared rather than imported from the server
-// modules on purpose: importing internal/app or internal/org would drag
+// modules on purpose: importing internal/app or internal/user would drag
 // Postgres and the Docker SDK into the CLI binary. What keeps them from
 // drifting is client_test.go, which runs these calls against a real
 // server rather than a mock — a renamed field or a changed status code

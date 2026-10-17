@@ -14,6 +14,8 @@ test("catalog publication creates and advances only its branch and is idempotent
     .split("\n")
     .map((line) => line.slice(10))
     .join("\n");
+  assert.match(readFileSync(".github/workflows/templates.yml", "utf8"), /core\/internal\/template\/\*\*/);
+  assert.match(readFileSync(".github/workflows/templates.yml", "utf8"), /core\/internal\/slug\/\*\*/);
   const git = (...args) =>
     execFileSync("git", ["-C", repo, ...args], {
       encoding: "utf8",

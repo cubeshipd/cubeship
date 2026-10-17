@@ -82,9 +82,8 @@ func (s *Server) OpenAPI() openapi.Document {
 			Description: "The HTTP API of a Cubeship daemon.\n\n" +
 				"Authenticate with your API key as a bearer token: `Authorization: Bearer <key>`. " +
 				"The same key authenticates the MCP endpoint and `docker login` against the embedded registry.\n\n" +
-				"**On 403 versus 404:** a resource you cannot see returns 404, identical to one that does not exist, " +
-				"so a valid API key cannot be used to discover other tenants' organizations or app names. " +
-				"403 is reserved for a caller who does belong to the organization and merely lacks the role.",
+				"**On 401 versus 403:** an unsigned request returns 401; a signed-in caller without the required role gets 403. " +
+				"All authorized users share this instance's resource namespace.",
 		},
 		Servers: s.servers(""),
 		Tags:    merged.Tags,
@@ -108,8 +107,8 @@ func (s *Server) OpenAPI() openapi.Document {
 // there is one.
 //
 // Every URL ends in the API prefix, which is why the paths themselves do
-// not carry it: the document describes /orgs, and the server says where
-// /orgs lives.
+// not carry it: the document describes /projects, and the server says where
+// /projects lives.
 //
 // Listing the request's own origin first is what makes the reference
 // page's "try it" actually work: whatever address you opened the docs on

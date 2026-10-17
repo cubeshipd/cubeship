@@ -2,7 +2,7 @@
 // claiming a fresh instance.
 //
 // Cubeship is installed with one command and reached at its IP. There is
-// no user, no organization, and no way to sign in until someone opens it
+// no user and no way to sign in until someone opens it
 // and creates the first account — which is also the only moment an
 // account can be created without already having one.
 package setup
@@ -11,7 +11,7 @@ import "errors"
 
 var (
 	// ErrAlreadySetUp reports that the instance has been claimed. Setup
-	// is not a way to add users — that is an organization admin's job,
+	// is not a way to add users — that is an admin's job,
 	// and it requires already being one.
 	ErrAlreadySetUp = errors.New("this instance has already been set up")
 

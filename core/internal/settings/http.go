@@ -114,7 +114,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 
 func WriteError(w http.ResponseWriter, err error) {
 	switch {
-	case errors.Is(err, ErrSuperAdminOnly):
+	case errors.Is(err, ErrAdminOnly):
 		http.Error(w, err.Error(), http.StatusForbidden)
 	case errors.Is(err, ErrUnknownKey):
 		http.Error(w, err.Error(), http.StatusBadRequest)

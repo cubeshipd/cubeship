@@ -12,8 +12,7 @@ import (
 // setupLock is the advisory lock key setup takes.
 //
 // Without it two requests arriving together would both count zero users
-// and both succeed, leaving the instance with two super-admins and two
-// organizations. The username's unique index does not help: they may
+// and both succeed, leaving the instance with two admins. The username's unique index does not help: they may
 // well pick different names. Postgres holds this for the length of the
 // transaction, so the second request waits, then finds the first one's
 // user and is refused.
@@ -50,8 +49,7 @@ type Result struct {
 // Claim creates the instance's first account: an admin, with the
 // password they chose.
 //
-// Nothing else. There is no organization to invent any more, and a
-// project is something you create when you have something to put in it —
+// Nothing else. A project is something you create when you have something to put in it —
 // a slug is permanent, so a name picked on someone's behalf is one they
 // are stuck with.
 //

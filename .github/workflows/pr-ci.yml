@@ -57,6 +57,7 @@ jobs:
         with:
           node-version: "24"
       - run: make fmt-check
+      - run: make core-size-check
       - run: go -C core test -short ./...
       - run: node --test .github/scripts/*.test.mjs
       - run: make sh-check
@@ -75,7 +76,7 @@ jobs:
         with:
           go-version: "1.27"
           cache-dependency-path: core/go.sum
-      - run: go -C core test -short ./template ./tools/internal/catalog ./tools/templatecatalog
+      - run: go -C core test -short ./internal/template ./tools/internal/catalog ./tools/templatecatalog
       - run: make catalog
 
   dashboard:

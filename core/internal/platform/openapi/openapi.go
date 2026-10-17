@@ -237,15 +237,10 @@ func TextResponse(description string) Response {
 var (
 	Unauthorized = TextResponse("The Authorization header is missing, malformed, or carries an unknown API key.")
 
-	// Forbidden is only ever returned to someone who already belongs to
-	// the organization — see NotFound.
-	Forbidden = TextResponse("You belong to this organization but lack the role this action requires.")
+	// Forbidden means the caller is signed in but lacks the required role.
+	Forbidden = TextResponse("Your role does not permit this action.")
 
-	// NotFound deliberately covers two cases: the resource does not
-	// exist, and you are not a member of the organization that owns it.
-	// They are indistinguishable on purpose, so a valid API key cannot be
-	// used to enumerate other tenants.
-	NotFound = TextResponse("The resource does not exist, or belongs to an organization you are not a member of.")
+	NotFound = TextResponse("The resource does not exist.")
 
 	BadRequest = TextResponse("A required field is missing, or a slug is not lowercase letters, digits and dashes.")
 )

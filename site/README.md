@@ -8,7 +8,7 @@ with `make site-image`, using the repository root as Docker context.
 
 | Piece | Owns |
 | --- | --- |
-| `core/template` | Parsing, validation, normalization and the published schema |
+| `core/internal/template` | Parsing, validation, normalization and the published schema |
 | `core/tools/templatecatalog` | Reading one committed templates tree, validating every directory and generating the snapshot |
 | `site` | Reading and persisting the last valid snapshot, the read-only API, and the template pages |
 | `core/internal/templateinstall` | Revalidating the source on an instance, installing, recording its commit and resources, and uninstalling |
@@ -43,7 +43,7 @@ the committed tree, only after all templates pass. The workflow runs the
 same generator. `templatecheck` remains available for validating working-tree
 files before committing.
 
-A template folder may declare apps, managed databases and stores, inputs, attachments, paths for volumes and published TCP ports. It may not carry instance-local domains, machine names, push-registry apps, command overrides, DNS providers, backups, certificates, firewall settings, registries or credentials. The validator in `core/template` owns those rules. The published `schema.json` is copied to the site by `make reference` and checked by `make check`.
+A template folder may declare apps, managed databases and stores, inputs, attachments, paths for volumes and published TCP ports. It may not carry instance-local domains, machine names, push-registry apps, command overrides, DNS providers, backups, certificates, firewall settings, registries or credentials. The validator in `core/internal/template` owns those rules. The published `schema.json` is copied to the site by `make reference` and checked by `make check`.
 
 The API under `/api/v2` keeps the list, detail, manifest, tags and icon addresses. List and detail still use `/templates/{owner}/{repo}`; entries use owner `cubeshipd` and the folder name as `repo`. The legacy `release` object in a response identifies the source commit for existing instance clients; it does not expose selectable versions. `/releases` and install-update routes are no longer offered. Tags and stars cannot be attributed per folder in a single GitHub repository, so the site and dashboard show search without those filters.
 

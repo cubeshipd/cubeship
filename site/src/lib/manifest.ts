@@ -1,5 +1,5 @@
 // The normalized manifest published in the catalog snapshot, as written by
-// core/template/normalize.go. Only types: the site validates nothing,
+// core/internal/template/normalize.go. Only types: the site validates nothing,
 // it shows what the validator already accepted.
 
 export type NormalizedLimits = { cpu: number | null; memory_bytes: number | null };

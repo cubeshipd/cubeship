@@ -304,7 +304,7 @@ test("old PR automation is removed and CI gate and essential jobs are unchanged"
     .replace(/(actions\/(?:checkout|setup-go|setup-node)|pnpm\/action-setup)@(?:v\d+|[a-f0-9]{40})(?: # v\d+)?/g, "$1@<version>")
     .replace(/(node-version: )"?(?:22|24)"?/g, "$1<version>")
     .replace(/(image: postgres:)\d+-alpine/g, "$1<version>");
-  assert.equal(digest(ci), "57083d868b6b09e25597394c837a2ad22f8dedb52354da545eeebf0090c855c1");
+  assert.equal(digest(ci), "513fdaef20d02106cf99e3e66111dd4c51ac0716edef8e9d25d1251faf7205b4");
 });
 
 test("literal manual ID resolution is bounded, read-only and never logs source bodies", () =>

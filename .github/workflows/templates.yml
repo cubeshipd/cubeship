@@ -4,7 +4,8 @@ on:
     branches: [master]
     paths:
       - 'templates/**'
-      - 'core/template/**'
+      - 'core/internal/template/**'
+      - 'core/internal/slug/**'
       - 'core/tools/internal/catalog/**'
       - 'core/tools/templatecatalog/**'
       - 'core/go.mod'

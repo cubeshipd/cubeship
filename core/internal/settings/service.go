@@ -95,15 +95,14 @@ func (s *Service) Load(ctx context.Context) (Values, error) {
 }
 
 // Set writes settings and re-applies the infrastructure they describe.
-// Super-admin only: this is the VPS's configuration, not an
-// organization's.
+// Admin only: this is the VPS's configuration.
 //
 // The whole map is applied, then the reconcile runs once — setting a
 // domain and a contact address together should rebuild Traefik once, not
 // twice.
 func (s *Service) Set(ctx context.Context, caller *user.User, values map[string]string) (Values, error) {
 	if err := user.Allow(caller, user.ResSettings, user.LevelManage, ""); err != nil {
-		return nil, ErrSuperAdminOnly
+		return nil, ErrAdminOnly
 	}
 	for key := range values {
 		if _, ok := Describe(key); !ok {

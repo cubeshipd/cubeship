@@ -34,8 +34,8 @@ type Router struct {
 // only has to happen once.
 //
 // Patterns are recorded WITHOUT the prefix. It is one constant applied
-// in one place, so the OpenAPI document keeps describing /orgs and says
-// where /orgs is by ending its server URL in the prefix.
+// in one place, so the OpenAPI document keeps describing /projects and says
+// where /projects is by ending its server URL in the prefix.
 const APIPrefix = "/api"
 
 func NewRouter() *Router {

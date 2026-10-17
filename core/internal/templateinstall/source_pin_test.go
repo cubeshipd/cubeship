@@ -3,7 +3,7 @@ package templateinstall
 import (
 	"testing"
 
-	"cubeship/template"
+	"cubeship/internal/template"
 )
 
 func TestMonorepoBuildUsesCatalogedCommitAndOwnDirectory(t *testing.T) {

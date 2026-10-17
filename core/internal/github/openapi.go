@@ -11,15 +11,14 @@ import (
 var manifestStateTTLWords = fmt.Sprintf("%d minutes", int(ManifestStateTTL.Minutes()))
 
 func (h *Handler) OpenAPI() openapi.Spec {
-	orgParam := openapi.PathParam("orgSlug", "Organization slug.")
 	idParam := openapi.PathParam("id", "Installation id, as Cubeship numbers it.")
 
 	return openapi.Spec{
 		Tags: []openapi.Tag{{
 			Name: "GitHub",
-			Description: "Which GitHub accounts an organization has connected. " +
+			Description: "Which GitHub accounts this instance has connected. " +
 				"A connection is what lets Cubeship clone that account's private repositories, and what makes a push to one deploy the apps built from it.\n\n" +
-				"The instance acts as a single GitHub App, registered by whoever runs it. Organizations install that App on their own accounts.",
+				"The instance acts as a single GitHub App, registered by whoever runs it. Users install that App on accounts they administer.",
 		}},
 		Schemas: map[string]*openapi.Schema{
 			"GitHubInstallation": openapi.Object(map[string]*openapi.Schema{
@@ -45,12 +44,11 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			"/github": {
 				"get": {
 					OperationID: "listGitHubConnections",
-					Summary:     "List an organization's connected GitHub accounts",
-					Description: "Also returns where to send someone to connect another. Organization admins only.",
+					Summary:     "List connected GitHub accounts",
+					Description: "Also returns where to send someone to connect another. Admins only.",
 					Tags:        []string{"GitHub"},
-					Parameters:  []openapi.Parameter{orgParam},
 					Responses: openapi.Responses{
-						"200": openapi.JSONResponse("The organization's connections.", openapi.Ref("GitHubConnections")),
+						"200": openapi.JSONResponse("The instance's connections.", openapi.Ref("GitHubConnections")),
 						"401": openapi.Unauthorized,
 						"403": openapi.Forbidden,
 						"404": openapi.NotFound,
@@ -59,13 +57,12 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"post": {
 					OperationID: "connectGitHubAccount",
 					Summary:     "Record a GitHub App installation",
-					Description: "Called after someone finishes installing the App: GitHub sends them back with the installation's id **and a code**, and this is what ties the installation to an organization.\n\n" +
-						"**The code is required, and it is what makes this safe.** The App is public — a private one can only be installed on the account that owns it, so no organization could use it — which means anyone can install it and every installation id is somebody's real id. The code comes from the OAuth round trip GitHub runs on install; the daemon spends it, asks GitHub which installations that person administers, and refuses any id that is not among them. Without that, connecting an installation would mint tokens for a stranger's installation, which is read access to their private code.\n\n" +
+					Description: "Called after someone finishes installing the App: GitHub sends them back with the installation's id **and a code**, and this is what ties the installation to this instance.\n\n" +
+						"**The code is required, and it is what makes this safe.** The App is public — a private one can only be installed on the account that owns it, so no other account could use it — which means anyone can install it and every installation id is somebody's real id. The code comes from the OAuth round trip GitHub runs on install; the daemon spends it, asks GitHub which installations that person administers, and refuses any id that is not among them. Without that, connecting an installation would mint tokens for a stranger's installation, which is read access to their private code.\n\n" +
 						"The account is **not** taken from the request. It comes back from GitHub with the installation, because it is what every repository lookup matches against and a mismatched one would silently stop matching.\n\n" +
 						"Connecting an account decides what code this instance will build and run, so it takes the admin role — the same one building does.\n\n" +
-						"Recording an installation that is already recorded moves it to this organization rather than failing: reinstalling reuses an id, and moving one between organizations is a real thing to do.",
-					Tags:       []string{"GitHub"},
-					Parameters: []openapi.Parameter{orgParam},
+						"Recording an installation that is already recorded updates it: reinstalling reuses an id.",
+					Tags: []string{"GitHub"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"installation_id": openapi.Integer("GitHub's id for the installation."),
 						"code":            openapi.String("The OAuth code GitHub redirects back with after the install. Proof the installation is yours."),
@@ -125,12 +122,11 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			"/github/repositories": {
 				"get": {
 					OperationID: "listGitHubRepositories",
-					Summary:     "List the repositories this organization can build",
+					Summary:     "List repositories this instance can build",
 					Description: "Exactly what its installations were granted, across all of them — someone who installed the App on three repositories sees three, not everything they own.\n\n" +
 						"This is what a dashboard offers instead of asking for a URL: picking from a list cannot mistype an owner, and cannot name a repository this instance has no way to clone.\n\n" +
-						"Organization admins only.",
-					Tags:       []string{"GitHub"},
-					Parameters: []openapi.Parameter{orgParam},
+						"Admins only.",
+					Tags: []string{"GitHub"},
 					Responses: openapi.Responses{
 						"200": openapi.JSONResponse("The repositories.", openapi.Array(openapi.Ref("GitHubRepository"))),
 						"401": openapi.Unauthorized,
@@ -144,10 +140,10 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"get": {
 					OperationID: "listGitHubBranches",
 					Summary:     "List a repository's branches",
-					Description: "For the same reason the repository listing exists: a branch is chosen, not spelled. Organization admins only.",
+					Description: "For the same reason the repository listing exists: a branch is chosen, not spelled. Admins only.",
 					Tags:        []string{"GitHub"},
 					Parameters: []openapi.Parameter{
-						orgParam,
+
 						openapi.QueryParam("repo", "The repository, as owner/name."),
 					},
 					Responses: openapi.Responses{
@@ -156,7 +152,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"401": openapi.Unauthorized,
 						"403": openapi.TextResponse("The App was not granted access to that repository."),
 						"404": openapi.NotFound,
-						"409": openapi.TextResponse("This organization has not connected that repository's account."),
+						"409": openapi.TextResponse("This instance has not connected that repository's account."),
 					},
 				},
 			},
@@ -165,9 +161,9 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					OperationID: "disconnectGitHubAccount",
 					Summary:     "Forget a GitHub App installation",
 					Description: "Apps built from that account's repositories keep running, but their next build clones anonymously and will fail if the repository is private. Pushes to it stop deploying.\n\n" +
-						"This does not uninstall the App on GitHub — do that from GitHub. Organization admins only.",
+						"This does not uninstall the App on GitHub — do that from GitHub. Admins only.",
 					Tags:       []string{"GitHub"},
-					Parameters: []openapi.Parameter{orgParam, idParam},
+					Parameters: []openapi.Parameter{idParam},
 					Responses: openapi.Responses{
 						"204": openapi.Empty("Forgotten."),
 						"401": openapi.Unauthorized,

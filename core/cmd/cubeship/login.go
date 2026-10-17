@@ -43,7 +43,7 @@ func newRegistryCmd() *cobra.Command {
 		Short: "Run 'docker login' against the Cubeship registry as your own user",
 		// Registry push/pull is per-user token auth now: your saved API
 		// key is your registry password too, and the registry only
-		// grants access to the orgs you actually belong to. No flags —
+		// grants access according to your role on this instance. No flags —
 		// there's nothing to choose, unlike the old shared-credential
 		// model.
 		Args: cobra.NoArgs,

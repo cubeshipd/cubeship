@@ -2,10 +2,8 @@
 // describing apps, the managed data they need, and the questions an
 // installer has to answer.
 //
-// It is outside internal/ on purpose. The catalog that indexes
-// the published templates snapshot (tools/templatecatalog) and the daemon that will one
-// day install them must agree on what a valid file is, and the only
-// way two programs never disagree about that is running the same code.
+// The catalog publisher and the daemon share this validator, so both
+// enforce the same rules for a published template.
 package template
 
 import _ "embed"

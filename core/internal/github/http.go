@@ -76,7 +76,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("DELETE /github/{id}", auth(http.HandlerFunc(h.disconnect)))
 	r.Handle("GET /github/repositories", auth(http.HandlerFunc(h.repositories)))
 	r.Handle("GET /github/branches", auth(http.HandlerFunc(h.branches)))
-	// Instance configuration rather than an organization's: this is how
+	// This is instance configuration: it is how
 	// the instance becomes a GitHub App at all.
 	r.Handle("POST /settings/github/manifest", auth(http.HandlerFunc(h.registerFromManifest)))
 	// The nonce that flow carries. It is a separate call because the
@@ -109,7 +109,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusForbidden)
 	case errors.Is(err, ErrAlreadyRegistered):
 		http.Error(w, err.Error(), http.StatusConflict)
-	case errors.Is(err, settings.ErrSuperAdminOnly):
+	case errors.Is(err, settings.ErrAdminOnly):
 		http.Error(w, err.Error(), http.StatusForbidden)
 	case errors.Is(err, user.ErrUnauthenticated):
 		http.Error(w, "unauthorized", http.StatusUnauthorized)

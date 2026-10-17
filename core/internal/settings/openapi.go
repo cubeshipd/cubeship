@@ -45,7 +45,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Description: "Only the fields you send are changed; the rest are left alone.\n\n" +
 						"Applying a change reconfigures the containers that depend on it — setting a domain brings the registry up, setting a contact address gives Traefik a certificate resolver — which replaces those containers and costs a few seconds of downtime for them.\n\n" +
 						"Apps already running keep the routing they were deployed with. Redeploy them to serve over HTTPS.\n\n" +
-						"Super-admin only: this is the VPS's configuration, not an organization's.",
+						"Admin only: this is the VPS's configuration.",
 					Tags: []string{"Instance"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"domain":                openapi.String("The instance's own name, e.g. cubeship.example.com."),
@@ -66,7 +66,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"200": openapi.JSONResponse("The configuration as it now stands.", openapi.Ref("Settings")),
 						"400": openapi.TextResponse("No recognized field was given."),
 						"401": openapi.Unauthorized,
-						"403": openapi.TextResponse("You are not a super-admin."),
+						"403": openapi.Forbidden,
 					},
 				},
 			},

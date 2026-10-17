@@ -1,0 +1,431 @@
+package app
+
+import (
+	"errors"
+	"strings"
+	"time"
+
+	"cubeship/internal/limits"
+)
+
+// Spread divides a number of copies over a number of machines.
+//
+// Round-robin in the machines' own order, so the first few take the
+// remainder: four over three machines is 2, 1, 1. Deterministic,
+// because the answer decides which containers exist — a spread that
+// moved between two reads would be a machine told to start a copy and
+// then told to stop it.
+func Spread(replicas, machines int) []int {
+	if machines <= 0 {
+		return nil
+	}
+	if replicas < machines {
+		// Never fewer copies than machines: a machine an app was placed
+		// on and given nothing to run is a machine somebody put it on
+		// for no effect. Asking for fewer copies than machines is asking
+		// for fewer machines.
+		replicas = machines
+	}
+	out := make([]int, machines)
+	for i := range out {
+		out[i] = replicas / machines
+		if i < replicas%machines {
+			out[i]++
+		}
+	}
+	return out
+}
+
+// everRan distinguishes an app nothing has ever deployed from one whose
+// container has gone. Both have nothing running; only the second is a
+// fault.
+func (a *App) everRan() bool {
+	for _, r := range a.Replicas {
+		if r.Deploy != 0 || r.Status != StatusPending {
+			return true
+		}
+	}
+	return false
+}
+
+// Deployment is one attempt to run a new image for an app. It is created
+// when the deploy is accepted and finished when it ends, so it is also
+// how a caller finds out how a deploy went after the request that
+// started it is long gone.
+type Deployment struct {
+	ID         int64
+	AppID      int64
+	ImageRef   string
+	GitSHA     string
+	GitBranch  string
+	Status     string
+	Error      string
+	Phase      string
+	StartedAt  time.Time
+	FinishedAt *time.Time
+	Cancelled  bool
+	// Stalled says this deploy is waiting on a machine that has stopped
+	// answering. Derived on read; see Stall.
+	Stalled *Stall
+	// Logs is what the build printed, when the source builds. It lives
+	// here because a detached deploy has nobody on the connection to
+	// tell, and a build that failed is only explicable by its output.
+	//
+	// **Empty in a listing, whatever the row holds.** It is capped at
+	// 256 KiB and a history is fifty rows, so a list that carried them
+	// would be twelve megabytes — fetched every two seconds while a
+	// deploy is running, which is exactly when somebody is looking at
+	// it. HasLogs is what a listing answers instead, and one deployment
+	// read on its own carries the log itself.
+	Logs string
+	// HasLogs says the row holds output, so a caller knows whether
+	// there is anything to open without being sent it.
+	HasLogs bool
+	// Deletable says this record may be removed. Only one may not be:
+	// a deploy still running, because the orchestrator is writing to
+	// that row.
+	Deletable bool
+	// Live says this is the deploy the app is running — and therefore
+	// that deleting it takes the app down, which is the whole reason it
+	// is reported separately from Deletable rather than folded into it.
+	//
+	// Filled by the service, which is what knows whether the app has a
+	// container at all.
+	Live      bool
+	CreatedAt time.Time
+}
+
+// Deployment statuses.
+const (
+	DeploymentPending   = "pending"
+	DeploymentSucceeded = "succeeded"
+	DeploymentFailed    = "failed"
+	DeploymentSkipped   = "skipped"
+)
+
+const (
+	DeploymentPhaseQueued    = "queued"
+	DeploymentPhaseResolving = "resolving"
+	DeploymentPhasePulling   = "pulling"
+	DeploymentPhasePredeploy = "predeploy"
+	DeploymentPhaseSwapping  = "swapping"
+	DeploymentPhaseWaiting   = "waiting"
+	DeploymentPhaseDone      = "done"
+	DeploymentPhaseFailed    = "failed"
+	DeploymentPhaseCancelled = "cancelled"
+)
+
+func (d *Deployment) Duration() time.Duration {
+	end := time.Now()
+	if d.FinishedAt != nil {
+		end = *d.FinishedAt
+	}
+	if d.StartedAt.IsZero() {
+		return 0
+	}
+	return end.Sub(d.StartedAt)
+}
+
+// Done reports whether the deployment has finished, either way.
+func (d *Deployment) Done() bool {
+	return d.Status == DeploymentSucceeded || d.Status == DeploymentFailed
+}
+
+// Stalled is a deploy that is waiting on a machine that has stopped
+// answering, and has been for long enough that it is not a blip.
+//
+// **It is still `pending`, and deliberately so.** A pending deploy is
+// what a machine picks up when it comes back — DeploymentToRun takes
+// the newest that resolved to an image and did not *fail* — so a
+// machine that reboots finishes the rollout it missed. Marking it
+// failed instead would send that machine to the deployment below this
+// one while the machines that took it stay on this one, which is an app
+// running two versions with nothing on any screen saying so.
+//
+// So what this changes is what is *said*, not what is run: a screen can
+// name the machine everyone is waiting for instead of showing a
+// spinner, and the record can be cleared by somebody who decides the
+// rollout is not happening. That decision has a consequence — the
+// machine that returns will run the version below — and it belongs to a
+// person rather than to a timer.
+//
+// Derived on read like every other status here. Nothing writes it.
+type Stall struct {
+	// Waiting is the machines that have not taken this deploy and are
+	// not answering, by name.
+	Waiting []string
+}
+
+// StuckAfter is how long a machine has to have been silent before a
+// deploy waiting on it stops being called "in progress".
+//
+// It is the **machine's** silence, not the deploy's age: a deploy
+// started two minutes ago onto a box that died this morning is stalled
+// now, and waiting another quarter of an hour would not make that
+// truer.
+//
+// Long because the cheap answer is already taken. `unreachable` is
+// three missed passes, which is the right patience for taking a machine
+// out of a load balancer — where being wrong costs one interval of
+// traffic — and nowhere near enough here, where being wrong tells
+// somebody a rollout is never happening while the box is rebooting.
+const StuckAfter = 15 * time.Minute
+
+// Statuses an app can be in. "pending" is the initial state of an app
+// that has never had an image pushed to it.
+const (
+	// StatusPending is a freshly created app: nothing has been deployed
+	// and, until it has a domain, nothing can be.
+	StatusPending  = "pending"
+	StatusRunning  = "running"
+	StatusDown     = "down"
+	StatusStopped  = "stopped"
+	StatusStarting = "starting"
+	// StatusDegraded is some of an app's machines serving and some not.
+	// It cannot happen to an app on one machine, which is why it did not
+	// exist before there was more than one.
+	StatusDegraded = "degraded"
+)
+
+// ErrNoSuchNode is placing an app on a machine that is not in this
+// cluster.
+var ErrNoSuchNode = errors.New("no server of that name is in this cluster")
+
+// ErrRemote is something this machine cannot do for an app that runs on
+// another one. It is not a refusal of the act — it is the act not
+// reaching that far yet.
+var ErrRemote = errors.New("that app runs on another machine")
+
+// ErrNotPlaceable refuses a placement that would not work, and says
+// which half of it. See Service.checkPlacement.
+var ErrNotPlaceable = errors.New("this app cannot run on another machine yet")
+
+// DefaultPort is what a name reaches when nobody said otherwise. It is
+// the most common answer rather than a detected one — see Domain.Port.
+const DefaultPort = 8080
+
+// Network is the Docker network app containers must join. Traefik
+// resolves a container's backend IP on this network specifically (see the
+// traefik.docker.network label), so a container left on the default
+// bridge is invisible to the proxy and its domain serves 503.
+const Network = "cubeship"
+
+// NormalizeHost renders a name the way a browser sends one and Traefik
+// matches it: lowercase, without a trailing dot. A name stored any other
+// way is a name that never matches.
+func NormalizeHost(host string) string {
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+}
+
+// SuggestedHostFor is the name an app answers at when nobody has a
+// domain of their own to give it: the app's reference, most specific
+// first, under the instance's own domain.
+//
+// It is a suggestion rather than a default. An app is created with no
+// domain and that is a real state — plenty of them should never answer
+// on the internet — so nothing assigns this. What it removes is the
+// other side of the same problem: giving an app an address used to mean
+// owning a domain, pointing a record at this host, and waiting for it,
+// before anything could be reached at all.
+//
+// Whether it resolves without further work depends on the instance's
+// domain. An install that took its default has an sslip.io address, and
+// every name under one of those already resolves to the same host — so
+// this is a name that works the moment it is added. Under a real
+// domain it needs a wildcard record, or the DNS provider that writes
+// the instance's own records.
+func SuggestedHostFor(ref Reference, instanceDomain string) string {
+	if instanceDomain == "" {
+		return ""
+	}
+	host := NormalizeHost(strings.Join(
+		[]string{ref.Name, ref.Environment, ref.Project, instanceDomain}, "."))
+	if !ValidHost(host) {
+		return ""
+	}
+	return host
+}
+
+// MaxHealthPathLength bounds the path. Generous for a path and far
+// short of anything that would make a label or a YAML line unwieldy.
+const MaxHealthPathLength = 255
+
+// ValidHealthPath reports whether a health check path is one this
+// instance will hand to Traefik.
+//
+// **Empty is valid, and means no check.** A health check needs a path,
+// the path is something only the app's author knows, and a wrong one
+// does not degrade anything by halves: Traefik marks every replica down
+// at once and the name answers 503. So no check is the default, and
+// turning one on is a deliberate act by somebody who knows what the app
+// answers.
+//
+// The rule is strict for the same reason ValidHost's is: this value is
+// interpolated into a Traefik dynamic YAML document *and* into a
+// container label, so a quote, a newline or a colon in it is
+// configuration somebody else wrote. A leading slash is required
+// because Traefik uses it as a request URI, and one without it silently
+// checks something else.
+func ValidHealthPath(path string) bool {
+	if path == "" {
+		return true
+	}
+	if path[0] != '/' || len(path) > MaxHealthPathLength {
+		return false
+	}
+	for i := 0; i < len(path); i++ {
+		c := path[i]
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case strings.IndexByte("/-._~%!$&'()*+,;=:@", c) >= 0:
+			// The unreserved and sub-delimiter characters a path
+			// segment may hold, per RFC 3986, and nothing else. `?` and
+			// `#` are left out deliberately: a health check with a
+			// query string is not something this refuses to *do* so
+			// much as something it will not guess the meaning of.
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// ErrInvalidHealthPath is a path this instance will not hand to
+// Traefik. It names the two rules rather than the character, because
+// the character is usually a typo and the rule is what somebody has to
+// read.
+var ErrInvalidHealthPath = errors.New("a health check path has to start with / and hold only what a URL path may: no spaces, quotes, query strings or fragments")
+
+var ErrInvalidPredeploy = errors.New("pre-deploy command must be argv or shell text with a timeout up to one hour")
+var ErrInvalidStopPolicy = errors.New("stop grace period or signal is invalid")
+var ErrInvalidPathFilters = errors.New("watch paths or ignore paths are invalid")
+
+// MaxHostLength is what a DNS name can be, dots included.
+const MaxHostLength = 253
+
+// ValidHost reports whether host is a DNS name, on an already
+// normalised value.
+//
+// The rule is the grammar, not a guess at what resolves: labels of
+// letters, digits and dashes, none of them starting or ending with a
+// dash, none empty, and 253 characters in total.
+//
+// It is checked because the name is interpolated into a Traefik rule —
+// Host(`%s`) — and a backtick, a space or a `||` in it is a routing rule
+// somebody else wrote. An admin is the only caller today and already
+// controls the instance's own domain, so this is not the boundary that
+// makes the instance safe; it is the one that keeps a typo from becoming
+// a rule nobody can see. A name that cannot appear in DNS could never
+// have reached the app anyway.
+func ValidHost(host string) bool {
+	if host == "" || len(host) > MaxHostLength {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if label == "" || len(label) > 63 {
+			return false
+		}
+		if label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for i := 0; i < len(label); i++ {
+			c := label[i]
+			switch {
+			case c >= 'a' && c <= 'z', c >= '0' && c <= '9', c == '-':
+			default:
+				return false
+			}
+		}
+	}
+	return true
+}
+
+var (
+	// ErrDomainTaken is a name another app already answers at. Traefik
+	// routes by host and nothing else, so two apps claiming one name
+	// would give it two answers.
+	ErrDomainTaken = errors.New("another app is already served at that name")
+
+	// ErrBadHost is a name that is not a DNS name. It goes into a
+	// Traefik routing rule, so what it may contain is the grammar and
+	// nothing wider.
+	ErrBadHost = errors.New("that is not a valid host name")
+
+	// ErrHostIsTheInstance is one of the names this instance answers at
+	// itself. Traefik routes by host and nothing else, so an app
+	// claiming it would fight the daemon's own router for the dashboard
+	// or the registry, and which one won would be a detail of label
+	// ordering.
+	ErrHostIsTheInstance = errors.New("that name is this instance's own; the dashboard and registry answer there")
+
+	// ErrDomainNotFound is a domain id that is not this app's.
+	ErrDomainNotFound = errors.New("no such domain on this app")
+
+	// ErrBadPort is a port outside what a port can be.
+	ErrBadPort = errors.New("a port is between 1 and 65535")
+
+	// ErrNotFound reports an app that does not exist in this instance.
+	ErrNotFound = errors.New("app not found")
+
+	// ErrAlreadyExists reports a name already taken in that environment.
+	ErrAlreadyExists = errors.New("app already exists")
+
+	// ErrNoContainer reports an app that has never had an image pushed
+	// to it, so there is nothing to read logs from.
+	ErrNoContainer = errors.New("app has no running container")
+
+	// ErrDeploymentNotFound covers a deployment id that does not belong
+	// to the app it was asked for.
+	ErrDeploymentNotFound = errors.New("deployment not found")
+
+	// ErrDeploymentRunning refuses deleting a deploy that has not
+	// finished. The orchestrator is still writing that row.
+	ErrDeploymentRunning = errors.New("this deploy is still running; wait for it to finish")
+
+	// ErrNoRegistry reports that the instance has no domain yet, so
+	// there is no registry to push to or pull from.
+	ErrNoRegistry = errors.New("no registry: set a domain in the instance settings first")
+	// ErrNoBuilder reports a daemon built without one. It cannot happen
+	// in a real install; it exists so a test wiring the orchestrator
+	// without a builder fails loudly rather than at a nil pointer.
+	ErrNoBuilder = errors.New("this daemon has no image builder")
+)
+
+// Domain is one name an app is served at, and the port behind it.
+//
+// The pair is the unit, and it has to be: a container can expose several
+// ports, so "which port does this app listen on" stops having one answer
+// as soon as the app has more than one name. api.example.com and
+// admin.example.com on one image are two ports on one container.
+type Domain struct {
+	ID   int64
+	Host string
+	// Port is what this name reaches inside the container. Zero falls
+	// back to DefaultPort.
+	//
+	// It is asked for rather than detected. Cubeship used to read the
+	// image's EXPOSE, and that was a guess dressed as an answer: EXPOSE
+	// is a hint the image's author wrote, an image exposing several has
+	// no single answer, and an app that has not been built yet has no
+	// image to ask. When the guess was wrong the container came up
+	// answering nothing, at a name that resolved, for a reason nobody
+	// could see.
+	Port int
+}
+
+// Hosts is every name this app answers at.
+func (a *App) Hosts() []string {
+	out := make([]string, 0, len(a.Domains))
+	for _, d := range a.Domains {
+		out = append(out, d.Host)
+	}
+	return out
+}
+
+// Limits is what one copy of an app may take. An alias rather than a
+// type of its own: a database's ceiling is the same idea, and the two
+// modules meet on it without either importing the other.
+type Limits = limits.Limits
+
+// ErrInvalidLimits is a ceiling this instance will not set.
+var ErrInvalidLimits = limits.ErrInvalid

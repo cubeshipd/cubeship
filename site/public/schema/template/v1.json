@@ -51,11 +51,7 @@
                 "const": "domain"
               }
             },
-            "required": [
-              "key",
-              "label",
-              "type"
-            ],
+            "required": [ "key", "label", "type" ],
             "additionalProperties": false
           },
           {
@@ -87,11 +83,7 @@
                 "type": "string"
               }
             },
-            "required": [
-              "key",
-              "label",
-              "type"
-            ],
+            "required": [ "key", "label", "type" ],
             "additionalProperties": false
           },
           {
@@ -126,11 +118,7 @@
                 "type": "number"
               }
             },
-            "required": [
-              "key",
-              "label",
-              "type"
-            ],
+            "required": [ "key", "label", "type" ],
             "additionalProperties": false
           },
           {
@@ -166,12 +154,7 @@
                 }
               }
             },
-            "required": [
-              "key",
-              "label",
-              "type",
-              "options"
-            ],
+            "required": [ "key", "label", "type", "options" ],
             "additionalProperties": false
           },
           {
@@ -202,11 +185,7 @@
                 "maximum": 9007199254740991
               }
             },
-            "required": [
-              "key",
-              "label",
-              "type"
-            ],
+            "required": [ "key", "label", "type" ],
             "additionalProperties": false
           },
           {
@@ -232,11 +211,7 @@
                 "const": "store"
               }
             },
-            "required": [
-              "key",
-              "label",
-              "type"
-            ],
+            "required": [ "key", "label", "type" ],
             "additionalProperties": false
           }
         ]
@@ -322,19 +297,13 @@
                 "type": "number"
               },
               "memory": {
-                "type": [
-                  "string",
-                  "number"
-                ]
+                "type": [ "string", "number" ]
               }
             },
             "additionalProperties": false
           }
         },
-        "required": [
-          "key",
-          "engine"
-        ],
+        "required": [ "key", "engine" ],
         "additionalProperties": false
       }
     },
@@ -369,18 +338,13 @@
                 "type": "number"
               },
               "memory": {
-                "type": [
-                  "string",
-                  "number"
-                ]
+                "type": [ "string", "number" ]
               }
             },
             "additionalProperties": false
           }
         },
-        "required": [
-          "key"
-        ],
+        "required": [ "key" ],
         "additionalProperties": false
       }
     },
@@ -413,10 +377,7 @@
           },
           "build": {
             "type": "string",
-            "enum": [
-              "dockerfile",
-              "railpack"
-            ]
+            "enum": [ "dockerfile", "railpack" ]
           },
           "dockerfile": {
             "type": "string"
@@ -445,9 +406,7 @@
                   "maximum": 65535
                 }
               },
-              "required": [
-                "host"
-              ],
+              "required": [ "host" ],
               "additionalProperties": false
             }
           },
@@ -483,11 +442,7 @@
               "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
             },
             "additionalProperties": {
-              "type": [
-                "string",
-                "number",
-                "boolean"
-              ]
+              "type": [ "string", "number", "boolean" ]
             }
           },
           "limits": {
@@ -497,10 +452,7 @@
                 "type": "number"
               },
               "memory": {
-                "type": [
-                  "string",
-                  "number"
-                ]
+                "type": [ "string", "number" ]
               }
             },
             "additionalProperties": false
@@ -530,10 +482,7 @@
                 "type": "number"
               }
             },
-            "required": [
-              "max",
-              "cpu"
-            ],
+            "required": [ "max", "cpu" ],
             "additionalProperties": false
           },
           "volumes": {
@@ -545,9 +494,7 @@
                   "type": "string"
                 }
               },
-              "required": [
-                "path"
-              ],
+              "required": [ "path" ],
               "additionalProperties": false
             },
             "markdownDescription": "Paths inside the container whose contents survive deploys. **Available from Cubeship 0.7.0**: needs `minCubeship: \"0.7.0\"` or later."
@@ -576,32 +523,22 @@
                   ]
                 }
               },
-              "required": [
-                "port"
-              ],
+              "required": [ "port" ],
               "additionalProperties": false
             },
             "markdownDescription": "Ports of the container published on a host port of the instance, for protocols that are not HTTP, such as SSH. `host` is 1024-65535, `${input.<key>}` naming a number input, or left out for the instance to pick one. The app runs as one copy. **Available from Cubeship 0.7.2**: needs `minCubeship: \"0.7.2\"` or later."
           }
         },
-        "required": [
-          "key"
-        ],
+        "required": [ "key" ],
         "additionalProperties": false
       }
     }
   },
-  "required": [
-    "version",
-    "project",
-    "apps"
-  ],
+  "required": [ "version", "project", "apps" ],
   "additionalProperties": false,
   "if": {
     "not": {
-      "required": [
-        "minCubeship"
-      ],
+      "required": [ "minCubeship" ],
       "properties": {
         "minCubeship": {
           "pattern": "^\\s*(?:>=|>|\\^|~|=)?\\s*v?(?:(?:0\\.7\\.0-rc\\.(?:[6-9]|[1-9][0-9]+)|0\\.7\\.[1-9][0-9]*-[0-9A-Za-z.-]+|0\\.(?:[89]|[1-9][0-9]+)\\.[0-9]+-[0-9A-Za-z.-]+|[1-9][0-9]*\\.[0-9]+\\.[0-9]+-[0-9A-Za-z.-]+)|(?:0\\.(?:[7-9]|[1-9][0-9]+)(?:\\.(?:[0-9]+|[xX*]))?|[1-9][0-9]*(?:\\.(?:[0-9]+|[xX*])){0,2}))(?:\\s+<=?\\s*v?[0-9]+(?:\\.[0-9]+){0,2}(?:-[0-9A-Za-z.-]+)?)?(?:\\s*\\|\\|\\s*(?:>=|>|\\^|~|=)?\\s*v?(?:(?:0\\.7\\.0-rc\\.(?:[6-9]|[1-9][0-9]+)|0\\.7\\.[1-9][0-9]*-[0-9A-Za-z.-]+|0\\.(?:[89]|[1-9][0-9]+)\\.[0-9]+-[0-9A-Za-z.-]+|[1-9][0-9]*\\.[0-9]+\\.[0-9]+-[0-9A-Za-z.-]+)|(?:0\\.(?:[7-9]|[1-9][0-9]+)(?:\\.(?:[0-9]+|[xX*]))?|[1-9][0-9]*(?:\\.(?:[0-9]+|[xX*])){0,2}))(?:\\s+<=?\\s*v?[0-9]+(?:\\.[0-9]+){0,2}(?:-[0-9A-Za-z.-]+)?)?)*\\s*$"

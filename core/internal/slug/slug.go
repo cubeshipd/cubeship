@@ -1,5 +1,5 @@
 // Package slug defines the one shape every user-chosen identifier in
-// Cubeship has to take: organization, project, environment and app names
+// Cubeship has to take: project, environment and app names
 // alike.
 package slug
 
@@ -10,8 +10,8 @@ import (
 
 // pattern is kebab-case with no accents or other special characters.
 //
-// Organization and app name both become path components of an app's
-// registry image reference (registry.<domain>/<org>/<app>), and Docker
+// Project, environment and app names become path components of an app's
+// registry image reference (registry.<domain>/<project>/<environment>/<app>), and Docker
 // rejects a repository path with uppercase letters, accents, spaces or an
 // extra "/" in it — a push against such a name could never work. Project
 // and environment slugs carry no such constraint from Docker, but are

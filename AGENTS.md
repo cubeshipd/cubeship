@@ -38,8 +38,7 @@ The top-level directories name the components, each with its own build:
 ```
 core/           one Go module: daemon, CLI, domain modules and template validator
   cmd/          cubeshipd on the VPS, cubeship on the operator's laptop
-  internal/     the domains and their infrastructure
-  template/     parsing, validation, normalization and schema
+  internal/     the domains, template validator and infrastructure
   tools/        changelog, sitedocs, templatecheck and templatecatalog
   test/         integration and installer tests
 dashboard/      the instance's Next.js dashboard and the site's demo build
@@ -61,6 +60,7 @@ cases, and every surface it is reached through.
 
 ```
 core/internal/
+  template/     shared template parser, validator, normalizer and schema
   user/         identities, the API keys they authenticate with, and the
                 one authorization question on the instance
   project/      projects and the environments inside them
@@ -104,12 +104,17 @@ core/internal/
   templateinstall/ installing a template from the catalog: checks it,
                 creates what it declares, deploys it, and undoes it all
                 when a step fails. Above every module it creates through
+  backup/       database, volume and instance backups and schedules
+  audit/        records and reads actions on the instance
+  bitbucket/    Bitbucket repository connections and push handling
+  components/   inspects the containers that make up the instance
+  release/ update/ release notes and daemon update operations
   dashboard/    proxies page requests to the dashboard's container
   server/       mounts every module on the HTTP mux and the MCP endpoint
   platform/     infrastructure: database, dockerx, traefik, bootstrap,
                 buildkit, config, authkey, regauth, hostexec, httpx,
                 terminal
-  envvar/ slug/ small shared vocabulary
+  envvar/ slug/ limits/ mcpx/ small shared vocabulary and MCP helpers
   cli/          what the CLI talks to the daemon with: its client and
                 the credentials it keeps
 cmd/cubeshipd/  the daemon
@@ -117,7 +122,10 @@ cmd/cubeship/   the CLI (cobra), one file per noun — the noun is what the
                 API's own tag calls it, so `/nodes` is `cubeship server`
 ```
 
-Every domain module has the same shape:
+Domain modules normally use these file roles. Split a role into cohesive files
+when needed; keep each maintained Go source, test, and hand-edited schema file
+at **600 lines or fewer**. Machine-managed files such as `go.sum` follow their
+own format. Name the split after its responsibility, not an arbitrary part number.
 
 | File | Holds |
 | --- | --- |
@@ -128,14 +136,21 @@ Every domain module has the same shape:
 | `mcp.go` | the MCP tools |
 | `openapi.go` | the OpenAPI operations for the routes in `http.go` |
 
+For Core ownership and refactors, read
+[core-layout](.agents/skills/core-layout/SKILL.md). For template changes, read
+[core-template](.agents/skills/core-template/SKILL.md). For repositories and
+migrations, read [core-database](.agents/skills/core-database/SKILL.md).
+
 **`http.go` and `mcp.go` are adapters and nothing else.** They parse
 input, call one service method, and render the result. A rule that lives
 in a handler is a rule the MCP surface doesn't have — that is exactly how
 the two drifted apart before this layout.
 
-Dependencies run one way: `metrics ← user ← project ← app ← datastore`,
-with `registry` and `server` on top. `server` is the only package that knows
-every module exists.
+Domain dependencies run toward the concepts they need: `app` uses `project`,
+while `datastore` and `objectstore` use `app`. `server` composes the HTTP and MCP
+surfaces; `cmd/cubeshipd` boots infrastructure and starts the daemon or worker.
+Keep cross-domain wiring in those composition roots rather than introducing
+imports back up the dependency graph.
 
 Two things travel back down, and both do it as an interface the lower
 module declares and `server` satisfies at wiring time:
@@ -148,7 +163,7 @@ hand it the containers worth sampling.
 ## The API lives under /api, and the root is the dashboard
 
 `httpx.APIPrefix` is applied in one place — `Router.Handle` and
-`Router.HandleInternal` — so a module still registers `GET /orgs` and
+`Router.HandleInternal` — so a module still registers `GET /projects` and
 still reads that way.
 
 The split exists because the two collided head-on: `GET /setup` is the
@@ -163,7 +178,7 @@ addresses are typed by a person or written into another program's
 configuration.
 
 Recorded patterns stay unprefixed, so the OpenAPI document keeps
-describing `/orgs` and says where `/orgs` is by ending every server URL
+describing `/projects` and says where `/projects` is by ending every server URL
 in the prefix. `servertest`'s `Do` prefixes for you; `DoRoot` does not.
 
 ## Database
@@ -173,22 +188,15 @@ Postgres through `pgx/v5/stdlib` over `database/sql`. Placeholders are
 the new row returns it with `INSERT ... RETURNING <columns>`.
 
 Schema changes are [goose](https://github.com/pressly/goose) migrations
-in [`internal/platform/database/migrations`](internal/platform/database/migrations),
+in [`core/internal/platform/database/migrations`](core/internal/platform/database/migrations),
 embedded into the binary. Add a numbered file with `-- +goose Up` and
 `-- +goose Down`; never edit one that has shipped. Postgres has
 transactional DDL, so each applies atomically, and they run on every
 daemon start.
 
 A `Repository` is a thin value over a `database.Queryer`, so the same code
-runs on the pool or inside a transaction:
-
-```go
-db.WithTx(ctx, func(tx database.Queryer) error {
-    users := user.NewRepository(tx)
-    orgs  := org.NewRepository(tx)
-    ...
-})
-```
+runs on the pool or inside a transaction. In `db.WithTx`, build each
+repository from the provided `tx` and use it for every write in the operation.
 
 Each table has a `columns` constant its scan function reads in order —
 change one, change both. **And find the queries that spell the list
@@ -275,17 +283,17 @@ it behind `env replace --yes`, and the MCP tools do not expose it at all.
 
 ## Tests
 
-Unit tests need a real Postgres; there is no in-memory mode. `make test`
-starts one (`make db-up`, a container on port 5433) and
-[`dbtest.New(t)`](internal/platform/database/dbtest) gives each test its
+DB-backed unit tests need a real Postgres; there is no in-memory mode.
+`make test-db` starts one (`make db-up`, a container on port 5433) and
+[`dbtest.New(t)`](core/internal/platform/database/dbtest) gives each test its
 own schema inside it, dropped on cleanup — so tests stay isolated and can
 run in parallel against one server.
 
-A test with no database reachable **fails**, deliberately: skipping would
-let `make check` report success for tests that never ran.
+A DB-backed test without `-short` and no database reachable **fails**,
+deliberately: skipping would let CI report success for tests that never ran.
 
 For anything above the repository,
-[`servertest.New(t)`](internal/server/servertest) builds a fully wired
+[`servertest.New(t)`](core/internal/server/servertest) builds a fully wired
 server and drives it through its real router. Use it from an external test
 package (`package app_test`) — that is what keeps it from being an import
 cycle.

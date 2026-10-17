@@ -24,7 +24,7 @@ type scopeContext = context.Context
 //
 // Both are internal: `docker` and the registry container call them, no
 // API consumer ever does, so they stay out of the OpenAPI document.
-// CatalogueRoutes are the documented ones: what this organization has
+// CatalogueRoutes are the documented ones: what this instance has
 // pushed to Cubeship's own registry. They are separate from Routes
 // because those two are the registry container's and Docker's, and
 // authenticate differently.
@@ -123,7 +123,7 @@ func (h *Handler) WaitForDeploys() {
 // issueToken implements the realm the registry's config.yml points at:
 // docker login/push/pull exchange the caller's username and API key
 // (HTTP Basic auth) plus a requested scope for a short-lived JWT scoped
-// to exactly what that user's organization membership authorizes.
+// to exactly what that user's instance role authorizes.
 //
 // This route is deliberately NOT behind the bearer-key middleware —
 // Basic auth is what the registry sends here — but it is not open
@@ -246,7 +246,7 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		// The repository a push landed in *is* the app's reference —
-		// org/project/environment/app — so the notification resolves
+		// project/environment/app — so the notification resolves
 		// without consulting a stored path.
 		ref, err := app.ParseReference(ev.Target.Repository)
 		if err != nil {

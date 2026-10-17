@@ -1,0 +1,496 @@
+package app
+
+import (
+	"strconv"
+
+	"cubeship/internal/metrics"
+	"cubeship/internal/platform/openapi"
+)
+
+func appPaths(refParams []openapi.Parameter, envRole, appPath string) map[string]openapi.PathItem {
+	return map[string]openapi.PathItem{
+		"/apps": {
+			"post": {
+				OperationID: "createApp",
+				Summary:     "Register an app",
+				Description: "Returns the registry path to push to. Nothing is deployed until an image lands there.\n\nThe name only has to be unique within its environment, so the same app can exist in `production` and `staging` at once — they get different registry paths and different containers.\n\nApp containers are expected to listen on port 8080. Requires the member role.",
+				Tags:        []string{"Apps"},
+				RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+					"name":              openapi.String("Lowercase letters, digits and dashes — it becomes a path component of the registry image. Permanent."),
+					"project":           openapi.String("Project slug."),
+					"environment":       openapi.String(`Environment slug. Defaults to "production".`),
+					"source":            {Type: "string", Enum: []string{"registry", "external", "dockerfile", "railpack"}, Description: `Where the image comes from. "registry" (the default) is an image you push to Cubeship, and the push deploys it. "external" is an image in a registry Cubeship does not run. "dockerfile" builds a Dockerfile from a Git repository; "railpack" builds from a Git repository with no Dockerfile at all, working out how from the code. Both builds need the admin role — a build runs whatever the repository contains, on this host.`},
+					"image":             openapi.String(`Required for an external app, and refused for any other: the image it pulls, without a tag — e.g. "registry.digitalocean.com/acme/api". The tag has a field of its own; two places to say it is one that can disagree with the other. A private registry needs a login for its host under the instance's registries.`),
+					"tag":               openapi.String(`Which tag to run. Leave it out to follow the registry: on this instance's own that means a push deploys the app, and on any other it means ` + "`latest`" + `. Refused for a building app, which names a ref instead.`),
+					"repo":              openapi.String(`Required for a building app, and refused for any other: the Git repository to build. An https://, http:// or git:// URL — ssh needs a key this instance does not have. Only https authenticates what comes back, and a build runs whatever comes back, so use it for anything reachable from the internet. Do not put a "#ref" on it; the ref is its own field.`),
+					"ref":               openapi.String(`For a building app: the branch, tag or commit to build. Defaults to the repository's default branch, and a deploy can name a different one.`),
+					"dockerfile":        openapi.String(`For a dockerfile app only: the recipe's path within the repository. Defaults to "Dockerfile" at the root. Refused for railpack, which works the build out itself.`),
+					"predeploy_command": predeployCommandSchema("A shell string or argv array to run from the new image before the first deploy."),
+					"predeploy_timeout": openapi.Integer("Pre-deploy timeout in seconds, at most 3600."),
+					"stop_grace_period": openapi.Integer("Seconds to wait for a container to stop, from 0 to 3600."),
+					"stop_signal":       openapi.String("Signal sent when stopping a container, such as SIGTERM."),
+				}, "name", "project")),
+				Responses: openapi.Responses{
+					"201": openapi.JSONResponse("The registered app, including its push path.", openapi.Ref("App")),
+					"400": openapi.BadRequest,
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.TextResponse("The project or environment does not exist."),
+					"409": openapi.TextResponse("An app with that name already exists."),
+				},
+			},
+			"get": {
+				OperationID: "listApps",
+				Summary:     "List apps",
+				Description: "Every app on this instance.",
+				Tags:        []string{"Apps"},
+				Responses: openapi.Responses{
+					"200": openapi.JSONResponse("Apps you can see.", openapi.Array(openapi.Ref("App"))),
+					"401": openapi.Unauthorized,
+				},
+			},
+		},
+		appPath: {
+			"patch": {
+				OperationID: "updateApp",
+				Summary:     "Reconfigure an app",
+				Description: "Changes the domain and where the image comes from. **A field you leave out is left as it was.**\n\nAn app is created with almost none of this, so this is what makes one deployable. The source and its settings are judged together: naming a source without what it needs, or settings the source would ignore, is refused the same way it is at creation. Moving an app to a source that builds requires the admin role, because it decides that this instance will execute whatever that repository contains. The app's name is not editable.",
+				Tags:        []string{"Apps"},
+				Parameters:  refParams,
+				RequestBody: &openapi.RequestBody{
+					Required:    true,
+					Description: "Any of the fields below. Omit one to leave it alone.",
+					Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
+						"source":            {Type: "string", Enum: []string{"registry", "external", "dockerfile", "railpack"}, Description: "Send the settings the new source needs alongside it."},
+						"image":             openapi.String("For an external app: the image it pulls, without a tag."),
+						"tag":               openapi.String("Which tag to run. Send empty to follow the registry, which on this instance's own means a push deploys the app — pinning a tag is how that is turned off."),
+						"repo":              openapi.String("For a building app: the https://, http:// or git:// repository to build."),
+						"ref":               openapi.String("For a building app: the branch, tag or commit to build."),
+						"dockerfile":        openapi.String("For a dockerfile app only: the recipe's path within the repository."),
+						"health_path":       openapi.String("The path Traefik asks this app for before trusting a container with traffic, e.g. `/healthz`. It has to start with `/` and hold only what a URL path may — it is interpolated into a proxy's configuration.\n\nAn empty string checks nothing, which is the default and what every app starts as. **A path the app does not answer 2xx or 3xx on takes every replica out of rotation at once**, which is a name answering 503 rather than a name degrading, so this is opted into by somebody who knows what the app answers.\n\nFor an app on several machines it is also what takes one replica out and leaves the rest serving. A dead copy needs no check to be routed around — the proxy retries against the next one — but a replica that is up and broken answers the connection, so nothing but a check catches it."),
+						"predeploy_command": predeployCommandSchema("A shell string or argv array to run from the new image before the old container is replaced."),
+						"predeploy_timeout": openapi.Integer("Pre-deploy timeout in seconds, at most 3600."),
+						"stop_grace_period": openapi.Integer("Seconds to wait for a container to stop, from 0 to 3600."),
+						"stop_signal":       openapi.String("Signal sent when stopping a container, such as SIGTERM."),
+						"node":              openapi.String("Shorthand for `nodes` with one machine in it: run this app there and nowhere else. It is what one machine meant before there could be more than one, and still the shortest way to say \"move this app\"."),
+						"nodes":             arrayOf(openapi.String("A machine's name."), "Which machines this app runs on. More than one puts this instance's proxy in front of all of its copies, round-robin, over the cluster's private network — which is what makes a name survive one of those machines going away.\n\nNothing about this touches DNS: every name arrives at the control plane whatever machine the app is on. Moving it takes effect on each machine's next pass — the new one starts the app before the old one stops it, so a move that fails is not an outage.\n\nOne refusal, and it is a thing that would otherwise not work in a way nobody would notice: an app that **builds** cannot leave the control plane on an instance with no domain, because a build only reaches another machine through this instance's own registry and the registry follows the domain."),
+						"limits":            {Ref: "#/components/schemas/AppLimits", Description: "What **one copy** of this app may take from the machine it runs on. `cpu` is cores and may be fractional; `memory_bytes` is a hard ceiling. Zero in either is no limit, independently — capping memory and leaving CPU alone is an ordinary thing to want, and no limit at all is the default.\n\nPer copy, not per app: three replicas under a one-core limit may take three cores between them.\n\n**It takes effect at once, without a deploy.** A ceiling is the one part of a container the Engine can change under a running process, so raising an app's memory is a request rather than a redeploy — on this machine and, within one pass, on every other machine the app runs on.\n\nRemoving one is the exception: the Engine reads a zero in an update as \"leave that one alone\", so a container goes back to uncapped by being created again, which is the app's next deploy.\n\nSend the whole object — a field left out of it is a zero, which is how a limit is removed."},
+						"spread":            openapi.Bool("Make this app follow the cluster: run it on every machine there is, now and whenever one is added or taken away.\n\nA switch rather than a third way of naming machines. `nodes` and `scale` already say where an app runs and how many of it; what they cannot say is \"wherever the cluster goes\", which otherwise means editing every such app every time a server joins.\n\nSending `nodes` alongside it turns it off — naming machines is choosing by hand, and that is what this exists to stop being necessary.\n\nA machine with one of these on it can still be removed: the app leaves it as the machine goes. A machine carrying an app somebody placed by hand cannot, because where that one should go is a decision."),
+						"autoscale":         {Ref: "#/components/schemas/AppAutoscale", Description: "Let this instance decide the replica count.\n\nThe reading is the **average CPU across the app's copies** over the last three minutes — what the app's own chart shows — and the arithmetic is the usual one: if each of the copies running is averaging more than the target, the count goes to what would put them at it, rounded up, clamped to `min` and `max`.\n\nIt is damped on purpose, and none of it is configurable: a ratio within 10% of target moves nothing, a window with fewer than three readings is waited out, and after any change it waits three minutes before another — ten before a smaller one, because an extra copy costs some memory and one copy too few costs the app its latency exactly as load returns.\n\nSend `max: 0` to turn it off. Sending it alongside `scale` is two answers to how many copies to run; the number is taken now and the rule moves it on the next pass."},
+						"scale":             openapi.Integer("How many copies to run in total, spread over those machines round-robin in their own order: four over three machines is 2, 1, 1.\n\nNever fewer than there are machines — a machine an app was placed on and given nothing to run is a machine somebody put it on for no effect, so asking for that is asking for fewer machines. Left out keeps however many it has, which is what makes adding a machine a re-spread rather than a change of count.\n\nSent on its own, the machines stay as they are: scaling up and scaling out are separate acts."),
+					})),
+				},
+				Responses: openapi.Responses{
+					"200": openapi.JSONResponse("The app as it now stands.", openapi.Ref("App")),
+					"400": openapi.TextResponse("Nothing to change, a source the daemon cannot act on, a health check path that is not one, a limit smaller than the smallest one that means anything (0.01 of a core, 6MiB of memory), or an autoscaling rule that cannot settle."),
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.TextResponse("No such app, or no server of that name is in this cluster."),
+					"409": openapi.TextResponse("This app cannot run on another machine: it is built here and this instance has no registry to push to, or the machine named to serve it is not one of the machines it runs on."),
+				},
+			},
+			"get": {
+				OperationID: "getApp",
+				Summary:     "Get one app",
+				Tags:        []string{"Apps"},
+				Parameters:  refParams,
+				Responses: openapi.Responses{
+					"200": openapi.JSONResponse("The app.", openapi.Ref("App")),
+					"401": openapi.Unauthorized,
+					"404": openapi.NotFound,
+				},
+			},
+			"delete": {
+				OperationID: "deleteApp",
+				Summary:     "Delete an app",
+				Description: "Stops and removes the container serving the app, then deletes it. **This cannot be undone.**\n\nImages already pushed stay in the registry; reclaiming that disk needs a registry garbage collection pass, which is a separate operation. The app's volumes' data is kept unless `delete_volume_data=true`, and kept data is listed at `/volumes/orphans`. Requires the member role.",
+				Tags:        []string{"Apps"},
+				Parameters: append(refParams,
+					openapi.QueryParam("delete_volume_data", "`true` deletes the data of the app's volumes on this machine too, which cannot be undone.")),
+				Responses: openapi.Responses{
+					"200": openapi.Empty("The app is gone and its container is stopped."),
+					"401": openapi.Unauthorized,
+					"404": openapi.NotFound,
+					"500": openapi.TextResponse("The container could not be stopped, so the app was left in place rather than orphaning it."),
+				},
+			},
+		},
+		appPath + "/stop": {
+			"post": {
+				OperationID: "stopApp",
+				Summary:     "Stop an app",
+				Description: "Stops every replica and keeps the app and its stopped containers. It remains stopped across restarts and worker reconciliation until explicitly started. Requires manage access.",
+				Tags:        []string{"Apps"}, Parameters: refParams,
+				Responses: openapi.Responses{"200": openapi.JSONResponse("The stopped app.", openapi.Ref("App")), "401": openapi.Unauthorized, "403": openapi.Forbidden, "404": openapi.NotFound},
+			},
+		},
+		appPath + "/start": {
+			"post": {
+				OperationID: "startApp",
+				Summary:     "Start an app",
+				Description: "Starts the stopped containers on their assigned machines. Requires manage access.",
+				Tags:        []string{"Apps"}, Parameters: refParams,
+				Responses: openapi.Responses{"200": openapi.JSONResponse("The resumed app.", openapi.Ref("App")), "401": openapi.Unauthorized, "403": openapi.Forbidden, "404": openapi.NotFound},
+			},
+		},
+		appPath + "/deploy": {
+			"post": {
+				OperationID: "deployApp",
+				Summary:     "Redeploy an app",
+				Description: "Deploys a tag already pushed to the app's registry path. Which image that tag names is the app's source's answer; the daemon pulls it, starts a container, waits for it to look healthy, and only then retires the previous one — so a bad image never takes down a working app.\n\n**Returns immediately.** The deploy runs detached from this request, so hanging up does not stop it. Poll the returned deployment — `GET .../deployments/{id}?wait=true` holds the response open until it finishes — to find out how it went.",
+				Tags:        []string{"Apps"},
+				Parameters:  refParams,
+				RequestBody: &openapi.RequestBody{
+					Description: "Optional. Omit the body to deploy the app's own tag: the one it is pinned to, the one it is already running on this instance's registry, or the stored ref of a source that builds.",
+					Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
+						"tag": openapi.String("Image tag, or ref to build. Left out, an app pinned to a tag deploys that tag, an app following this instance's registry deploys the tag it is already running, and a source that builds uses its stored ref."),
+					})),
+				},
+				Responses: openapi.Responses{
+					"202": openapi.JSONResponse("The deploy was accepted and is running.", openapi.Ref("Deployment")),
+					"401": openapi.Unauthorized,
+					"404": openapi.NotFound,
+					"409": openapi.TextResponse("The app's source cannot produce an image — for an app pushed to Cubeship's registry, that means the instance has no domain configured yet."),
+				},
+			},
+		},
+		appPath + "/deployments": {
+			"get": {
+				OperationID: "listDeployments",
+				Summary:     "List an app's deploy history",
+				Description: "Newest first, capped at the most recent " + strconv.Itoa(MaxDeploymentHistory) + ".",
+				Tags:        []string{"Apps"},
+				Parameters:  refParams,
+				Responses: openapi.Responses{
+					"200": openapi.JSONResponse("The app's recent deploys.", openapi.Array(openapi.Ref("Deployment"))),
+					"401": openapi.Unauthorized,
+					"404": openapi.NotFound,
+				},
+			},
+		},
+		appPath + "/deployments/{id}": {
+			"get": {
+				OperationID: "getDeployment",
+				Summary:     "Check one deploy",
+				Description: "How a deploy went, or how far it has got.\n\nWith `wait=true` the response is held open until the deploy finishes. If your own timeout runs out first you get the deployment as it stands and can ask again — the deploy is not affected either way.",
+				Tags:        []string{"Apps"},
+				Parameters: append(refParams,
+					openapi.PathParam("id", "The deployment's id, from the deploy response."),
+					openapi.QueryParam("wait", `"true" to hold the response open until the deploy finishes.`)),
+				Responses: openapi.Responses{
+					"200": openapi.JSONResponse("The deployment.", openapi.Ref("Deployment")),
+					"400": openapi.TextResponse("The id is not a number."),
+					"401": openapi.Unauthorized,
+					"404": openapi.NotFound,
+				},
+			},
+			"delete": {
+				OperationID: "deleteDeployment",
+				Summary:     "Remove one deploy's record",
+				Description: "For a deploy the app is not running, this removes a record: the container it produced is long gone, and what goes with the row is the build log. A failed deploy is history nobody wants to keep looking at.\n\n**For the deploy the app *is* running — the one with `live` — this takes the app down.** Its container is stopped and removed and the app's status becomes `down`. That is the point of it: an app whose running version has to go now, because it is compromised or doing what it should not, should not force you to delete the app and lose its domains, its environment and everything attached to it. The app stays, with all of it, and comes back on the next deploy.\n\nOne is refused: a deploy that has not finished, because the daemon is still writing to that row. `deletable` says so in advance — and a deploy waiting on a machine that has stopped answering is the exception, since nothing is writing to that one. Deleting it has a consequence worth knowing: the machine that returns will then run the deployment below it.\n\nThe image stays in the registry either way, and reclaiming that disk is a garbage collection pass nothing schedules — the same thing that is true when an app itself is deleted. The role is the one that deploys this app: somebody who may replace what is running may take it off.",
+				Tags:        []string{"Apps"},
+				Parameters: append(refParams,
+					openapi.PathParam("id", "The deployment's id.")),
+				Responses: openapi.Responses{
+					"204": openapi.Empty("The record is gone — and with it the container, if this was the deploy the app was running."),
+					"400": openapi.TextResponse("The id is not a number."),
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.NotFound,
+					"409": openapi.TextResponse("The deploy has not finished."),
+				},
+			},
+		},
+		appPath + "/deployments/{id}/cancel": {
+			"post": {
+				OperationID: "cancelDeployment",
+				Summary:     "Cancel a running deploy",
+				Description: "Cancels a deploy while it is resolving, pulling or running its pre-deploy command. The old container remains serving and the deployment records a cancelled outcome.",
+				Tags:        []string{"Apps"},
+				Parameters:  append(refParams, openapi.PathParam("id", "The deployment's id.")),
+				Responses: openapi.Responses{
+					"204": openapi.Empty("The deploy was cancelled."),
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.NotFound,
+					"409": openapi.TextResponse("The deploy is no longer running or cannot be cancelled."),
+				},
+			},
+		},
+		appPath + "/tcp-ports": {
+			"get": {
+				OperationID: "listAppTCPPorts",
+				Summary:     "List an app's published TCP ports",
+				Description: "Ports of the app's container published on a host port of the control plane, for protocols that are not HTTP.",
+				Tags:        []string{"Apps"},
+				Parameters:  refParams,
+				Responses: openapi.Responses{
+					"200": openapi.JSONResponse("The app's published ports.", openapi.Array(openapi.Ref("AppTCPPort"))),
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.NotFound,
+				},
+			},
+			"post": {
+				OperationID: "addAppTCPPort",
+				Summary:     "Publish a TCP port of an app",
+				Description: "Publishes `container_port` on `host_port` of the control plane — SSH into a Git server, a game server, a broker — from the app's next deploy. Traefik routes HTTP by name and these carry none, so the container publishes the port itself.\n\n**There is no TLS and no proxy in front of it**: whatever the app speaks on that port is on the open internet, and what makes that safe is the app's own authentication. On a host whose Docker ports are under ufw, the port is admitted by Cubeship's stanza.\n\n**A published port pins the app.** It runs as one copy on the control plane, and changing its machines, its count, spread or autoscaling is refused. Each deploy stops the old container before the new one starts, so the app is briefly unavailable.\n\nRefused (409) while the app is anywhere but the control plane, runs more than one copy, is spread or autoscales. Requires the member role.",
+				Tags:        []string{"Apps"},
+				Parameters:  refParams,
+				RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+					"container_port": openapi.Integer("What the app listens on inside its container, 1-65535."),
+					"host_port":      openapi.Integer("Where to publish it, 1024-65535. Left out or 0 picks a free one from 17000-17999."),
+				}, "container_port")),
+				Responses: openapi.Responses{
+					"201": openapi.JSONResponse("The published port.", openapi.Ref("AppTCPPort")),
+					"400": openapi.TextResponse("A port is out of range."),
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.NotFound,
+					"409": openapi.TextResponse("The app already publishes that container port, the host port is taken, none is left to pick, or the app is not one copy on the control plane."),
+				},
+			},
+		},
+		appPath + "/tcp-ports/{portID}": {
+			"delete": {
+				OperationID: "removeAppTCPPort",
+				Summary:     "Stop publishing a TCP port of an app",
+				Description: "The container running now keeps the port until the next deploy. Requires the member role.",
+				Tags:        []string{"Apps"},
+				Parameters:  append(refParams, openapi.PathParam("portID", "The published port's id.")),
+				Responses: openapi.Responses{
+					"204": openapi.Empty("The port is no longer published from the next deploy."),
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.NotFound,
+				},
+			},
+		},
+		appPath + "/volumes": {
+			"get": {
+				OperationID: "listAppVolumes",
+				Summary:     "List an app's volumes",
+				Description: "Directories mounted into the app's container whose contents survive deploys and restarts.",
+				Tags:        []string{"Apps"},
+				Parameters:  refParams,
+				Responses: openapi.Responses{
+					"200": openapi.JSONResponse("The app's volumes.", openapi.Array(openapi.Ref("AppVolume"))),
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.NotFound,
+				},
+			},
+			"post": {
+				OperationID: "addAppVolume",
+				Summary:     "Give an app a volume",
+				Description: "Mounted from the app's next deploy.\n\n**A volume pins the app.** Its data is on the machine the app runs on and does not move, and two containers writing one directory is how a database or a queue corrupts itself — so an app with a volume runs as one copy on that machine, and changing its machines, its count, spread or autoscaling is refused. Each deploy stops the old container before the new one starts, so the app is briefly unavailable.\n\nRefused (409) while the app is on more than one machine, runs more than one copy, is spread or autoscales. Requires the member role.",
+				Tags:        []string{"Apps"},
+				Parameters:  refParams,
+				RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+					"path": openapi.String("An absolute path inside the container, e.g. `/var/lib/rabbitmq`. Not `/`, not under `/proc`, `/sys` or `/dev`, and without a colon or a comma."),
+				}, "path")),
+				Responses: openapi.Responses{
+					"201": openapi.JSONResponse("The volume.", openapi.Ref("AppVolume")),
+					"400": openapi.TextResponse("The path is not one a volume may have."),
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.NotFound,
+					"409": openapi.TextResponse("The app already has a volume there, or is not one copy on one machine."),
+				},
+			},
+		},
+		appPath + "/volumes/{volumeID}": {
+			"delete": {
+				OperationID: "removeAppVolume",
+				Summary:     "Take a volume off an app",
+				Description: "The data is **kept** unless `delete_data=true`, and kept data is listed at `/volumes/orphans`. The container running now keeps the directory until the next deploy.\n\nDeleting the data of a volume on a machine other than the control plane is refused: this instance cannot delete files there.",
+				Tags:        []string{"Apps"},
+				Parameters: append(refParams,
+					openapi.PathParam("volumeID", "The volume's id."),
+					openapi.QueryParam("delete_data", "`true` deletes the volume's data too, which cannot be undone.")),
+				Responses: openapi.Responses{
+					"204": openapi.Empty("The volume is gone, and its data with it if that was asked."),
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.NotFound,
+					"409": openapi.TextResponse("The data is on another machine."),
+				},
+			},
+		},
+		"/volumes/orphans": {
+			"get": {
+				OperationID: "listVolumeOrphans",
+				Summary:     "List volume data kept after its volume was removed",
+				Description: "Directories on this machine that no volume names any more — kept when a volume was removed or its app deleted. They are not reattachable; delete one when it is no longer wanted.",
+				Tags:        []string{"Apps"},
+				Responses: openapi.Responses{
+					"200": openapi.JSONResponse("The kept data.", openapi.Array(openapi.Ref("VolumeOrphan"))),
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+				},
+			},
+		},
+		"/volumes/orphans/{id}": {
+			"delete": {
+				OperationID: "deleteVolumeOrphan",
+				Summary:     "Delete kept volume data",
+				Description: "Deletes the directory for good. Requires the admin role: nothing but a record on disk says whose it was.",
+				Tags:        []string{"Apps"},
+				Parameters:  []openapi.Parameter{openapi.PathParam("id", "The id from the list.")},
+				Responses: openapi.Responses{
+					"204": openapi.Empty("The data is gone."),
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.NotFound,
+				},
+			},
+		},
+		appPath + "/env": {
+			"get": {
+				OperationID: "getAppEnv",
+				Summary:     "Read an app's environment variables",
+				Description: "`vars` is what the app itself sets. `effective` is what its container actually runs with — the project's variables, overridden by the environment's, overridden by the app's — with each value labelled by the level that won it.\n\nRead this before changing anything: it is the only way to see what an app is configured with.",
+				Tags:        []string{"Apps"},
+				Parameters:  refParams,
+				Responses: openapi.Responses{
+					"200": openapi.JSONResponse("The app's own and effective variables.", openapi.Ref("EnvVars")),
+					"401": openapi.Unauthorized,
+					"404": openapi.NotFound,
+				},
+			},
+			"patch": {
+				OperationID: "mergeAppEnv",
+				Summary:     "Add, change or remove some of an app's variables",
+				Description: "The safe way to change configuration: only the keys you name are touched, so you cannot delete a variable by forgetting to mention it." +
+					envRole,
+				Tags:       []string{"Apps"},
+				Parameters: refParams,
+				RequestBody: &openapi.RequestBody{
+					Required:    true,
+					Description: "Adds or overwrites the variables in `set` and removes those named in `unset`. Every other app-level variable is left exactly as it was.",
+					Content:     openapi.JSON(openapi.Ref("MergeEnv")),
+				},
+				Responses: openapi.Responses{
+					"200": openapi.Empty("The variables are stored. The running container picks them up on its next deploy."),
+					"400": openapi.BadRequest,
+					"401": openapi.Unauthorized,
+					"403": openapi.TextResponse("The app builds, and you lack the admin role its build takes."),
+					"404": openapi.NotFound,
+				},
+			},
+			"put": {
+				OperationID: "setAppEnv",
+				Summary:     "Set an app's environment variables",
+				Description: "These are layered on top of, and override, the app's environment's and project's variables." +
+					envRole,
+				Tags:       []string{"Apps"},
+				Parameters: refParams,
+				RequestBody: &openapi.RequestBody{
+					Required:    true,
+					Description: "**Replaces** the full set of app-level variables: any key you omit is deleted. Use PATCH to change some without disturbing the rest.",
+					Content: openapi.JSON(openapi.Object(map[string]*openapi.Schema{
+						"vars": openapi.StringMap("The complete set of app-level variables."),
+					}, "vars")),
+				},
+				Responses: openapi.Responses{
+					"200": openapi.Empty("The variables are stored. The running container picks them up on its next deploy."),
+					"400": openapi.BadRequest,
+					"401": openapi.Unauthorized,
+					"403": openapi.TextResponse("The app builds, and you lack the admin role its build takes."),
+					"404": openapi.NotFound,
+				},
+			},
+		},
+		appPath + "/metrics": {
+			"get": {
+				OperationID: "getAppMetrics",
+				Summary:     "Read an app's CPU and memory",
+				Description: "What the container serving this app has been using.\n\n" + metrics.Description,
+				Tags:        []string{"Apps"},
+				Parameters:  append(append([]openapi.Parameter{}, refParams...), metrics.WindowParam()),
+				Responses: openapi.Responses{
+					"200": openapi.JSONResponse("The series.", openapi.Ref("MetricSeries")),
+					"400": openapi.TextResponse("No such window."),
+					"401": openapi.Unauthorized,
+					"404": openapi.NotFound,
+				},
+			},
+		},
+		appPath + "/logs": {
+			"get": {
+				OperationID: "getAppLogs",
+				Summary:     "Read an app's container logs",
+				Description: "Stdout and stderr, already demultiplexed out of Docker's frame format. Returns the last " + DefaultLogTail + " lines unless `tail` says otherwise.",
+				Tags:        []string{"Apps"},
+				Parameters: append(refParams,
+					openapi.QueryParam("tail", `Number of trailing lines, e.g. "1000", or "all" for the entire log. Defaults to `+DefaultLogTail+"."),
+					openapi.QueryParam("server", "Which machine's copy to read, for an app that runs on more than one. A log belongs to one container and so to one machine, and there is no combined one — interleaving them would need a clock those machines do not share. Defaults to the machine serving the app's names.")),
+				Responses: openapi.Responses{
+					"200": {
+						Description: "The log output.",
+						Content:     map[string]openapi.MediaType{"text/plain": {Schema: openapi.String("")}},
+					},
+					"401": openapi.Unauthorized,
+					"404": openapi.NotFound,
+					"409": openapi.TextResponse("The app has no container yet — nothing has been pushed to it."),
+				},
+			},
+		},
+		"/apps/{project}/{env}/{name}/domains": {
+			"post": {
+				OperationID: "addAppDomain",
+				Summary:     "Give an app a name to answer at",
+				Description: "An app can answer at several, and each names its own port — one image can expose more than one, and `api.example.com` and `admin.example.com` on one container are two of them.\n\n" +
+					"`port` is what this name reaches inside the container; omitted or 0 falls back to 8080.\n\n" +
+					"A name is unique across the instance, not per app: Traefik routes by host and nothing else, so two apps claiming one name would give it two answers.\n\n" +
+					"**The container keeps the labels it was created with**, so a new name is not served until the app is redeployed. Admins only — where an app is served is a routing decision, the same weight as changing its source.",
+				Tags:       []string{"Apps"},
+				Parameters: refParams,
+				RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+					"host": openapi.String("The name to serve this app at, as a DNS name. It has to resolve to this host before a certificate can issue, and it cannot be the instance's own domain or its registry's."),
+					"port": openapi.Integer("What it reaches inside the container. Omit to read it from the image."),
+				}, "host")),
+				Responses: openapi.Responses{
+					"201": openapi.JSONResponse("The app, with the name added.", openapi.Ref("App")),
+					"400": openapi.TextResponse("The name is not a DNS name, or it is one this instance answers at itself — the dashboard and the registry have Traefik routers of their own."),
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.NotFound,
+					"409": openapi.TextResponse("Another app is already served at that name."),
+				},
+			},
+		},
+		"/apps/{project}/{env}/{name}/domains/{domainID}": {
+			"patch": {
+				OperationID: "setAppDomainPort",
+				Summary:     "Change what one of an app's names reaches",
+				Description: "0 puts it back to reading the port from the image. Takes effect on the next deploy — a container keeps the labels it was created with.",
+				Tags:        []string{"Apps"},
+				Parameters:  append(refParams, openapi.PathParam("domainID", "The domain's id, from the app.")),
+				RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+					"port": openapi.Integer("The port inside the container, or 0 to read it from the image."),
+				}, "port")),
+				Responses: openapi.Responses{
+					"200": openapi.JSONResponse("The app, with the port changed.", openapi.Ref("App")),
+					"400": openapi.BadRequest,
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.NotFound,
+				},
+			},
+			"delete": {
+				OperationID: "removeAppDomain",
+				Summary:     "Take a name off an app",
+				Description: "The container keeps the labels it was created with, so the name goes on being served until the app is redeployed. Admins only.",
+				Tags:        []string{"Apps"},
+				Parameters:  append(refParams, openapi.PathParam("domainID", "The domain's id, from the app.")),
+				Responses: openapi.Responses{
+					"200": openapi.JSONResponse("The app, with the name removed.", openapi.Ref("App")),
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.NotFound,
+				},
+			},
+		},
+	}
+}

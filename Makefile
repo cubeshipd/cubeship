@@ -137,7 +137,7 @@ ship: daemon-linux ## Upload the daemon to a VPS and restart it (HOST=user@vps)
 		&& sudo systemctl --no-pager status cubeshipd'
 
 .PHONY: check
-check: fmt-check vet sh-check changelog-check reference-check dashboard-check test ## Everything that must pass before a commit
+check: fmt-check core-size-check vet sh-check changelog-check reference-check dashboard-check test ## Everything that must pass before a commit
 
 # Postgres has no in-memory mode, so the unit tests need a real server.
 # Each test gets its own schema in this one container (see
@@ -246,14 +246,14 @@ changelog-check: ## Fail if CHANGELOG.md is not what the release notes say
 reference: ## Write the CLI and MCP references into the site's docs
 	$(GO) -C $(GODIR) run ./cmd/cubeship docs ../site/content/docs/cli
 	$(GO) -C $(GODIR) run ./tools/sitedocs ../site/content/docs/mcp/tools.mdx
-	cp $(GODIR)/template/schema.json site/public/schema/template/v1.json
+	cp $(GODIR)/internal/template/schema.json site/public/schema/template/v1.json
 
 .PHONY: reference-check
 reference-check: ## Fail if the site's references are not what the code says
 	$(GO) -C $(GODIR) run ./cmd/cubeship docs --check ../site/content/docs/cli
 	$(GO) -C $(GODIR) run ./tools/sitedocs -check ../site/content/docs/mcp/tools.mdx
-	@cmp -s $(GODIR)/template/schema.json site/public/schema/template/v1.json || { \
-		echo "the site's template schema is not core/template/schema.json: run make reference"; exit 1; }
+	@cmp -s $(GODIR)/internal/template/schema.json site/public/schema/template/v1.json || { \
+		echo "the site's template schema is not core/internal/template/schema.json: run make reference"; exit 1; }
 
 .PHONY: sh-check
 sh-check: ## Syntax-check the shell scripts
@@ -275,6 +275,11 @@ fmt: ## Rewrite badly formatted files in place
 fmt-check: ## Fail if anything needs gofmt
 	@out=$$(gofmt -l $(GODIR)); \
 	if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
+
+.PHONY: core-size-check
+core-size-check: ## Keep maintained Core source files at 600 lines or fewer
+	@find $(GODIR) -type f \( -name '*.go' -o -path '$(GODIR)/internal/template/schema.json' \) \
+		-exec awk 'FNR == 601 { print FILENAME " exceeds 600 lines"; bad = 1 } END { exit bad }' {} +
 
 .PHONY: tidy
 tidy: ## Sync go.mod/go.sum with the imports

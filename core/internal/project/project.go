@@ -3,7 +3,7 @@
 // set at.
 //
 // A project always contains at least one environment; creating one
-// creates that environment too. See internal/environment.
+// creates that environment too.
 package project
 
 import (
@@ -14,7 +14,7 @@ import (
 	"cubeship/internal/envvar"
 )
 
-// Project groups an organization's environments, and holds the variables
+// Project groups an instance's environments, and holds the variables
 // every app in every one of them inherits.
 // A project has no display name. Its slug is its name, the same rule an
 // app has always followed: the slug is a path component of every

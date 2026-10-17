@@ -1,6 +1,6 @@
 // Package registry is the embedded container registry's side of
-// Cubeship: it authorizes docker login/push/pull against organization
-// membership, and it receives the push notifications that trigger a
+// Cubeship: it authorizes docker login/push/pull against instance roles,
+// and it receives the push notifications that trigger a
 // deploy.
 //
 // The token signing itself lives in internal/platform/regauth; this
@@ -177,7 +177,7 @@ func (h *Handler) nodeAccess(ctx context.Context, nodeID int64, scope string) []
 
 // authorizeScope parses one "type:name:actions" scope string (the shape
 // the Docker client sends, e.g. "repository:acme/myapp:pull,push") and
-// returns it back with only the actions the caller's org membership
+// returns it back with only the actions the caller's instance role
 // actually grants for it.
 //
 // An action the caller isn't authorized for is silently dropped rather

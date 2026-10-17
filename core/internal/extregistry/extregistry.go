@@ -46,8 +46,8 @@ func (p Provider) Valid() bool {
 // that differs between accounts is the first path segment, not the host.
 const DigitalOceanHost = "registry.digitalocean.com"
 
-// Credential is one login, held by an organization and reusable by every
-// app in it that pulls from that host.
+// Credential is one login, held by this instance and reusable by every
+// app on it that pulls from that host.
 //
 // The secret is stored as given, not hashed: a hash cannot be sent to a
 // registry, nor signed with. Nothing reads it back out through the API.
@@ -64,8 +64,7 @@ type Credential struct {
 	// token may be reaching two things. Fixed once the row exists, like
 	// the host it decides.
 	Provider Provider
-	// Host is the registry, and the identity: one per host per
-	// organization.
+	// Host is the registry, and the identity: one per host on this instance.
 	Host string
 	// Namespace is the path segment between the host and the image
 	// where the provider has one — DigitalOcean's registry name. Not
@@ -131,7 +130,7 @@ var (
 	ErrNamespaceRequired  = errors.New("the registry name is required — it is what follows registry.digitalocean.com/ in an image path")
 	ErrRegionRequired     = errors.New("an AWS region is required: an ECR registry lives in one, and it cannot be guessed")
 	ErrInvalidRegion      = errors.New(`an AWS region is a name like "eu-central-1": lowercase letters, digits and hyphens`)
-	ErrHostTaken          = errors.New("this organization already has a credential for that registry")
+	ErrHostTaken          = errors.New("this instance already has a credential for that registry")
 	ErrNotFound           = errors.New("no such registry credential")
 )
 

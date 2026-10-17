@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { NormalizedManifest } from "@/lib/manifest";
 import { engineOf, sourceOf } from "./preview";
 
-// What core/template normalizes the fixture in its own tests to.
+// What core/internal/template normalizes the fixture in its own tests to.
 const manifest: NormalizedManifest = {
   schema_version: 1,
   min_cubeship: null,

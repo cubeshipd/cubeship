@@ -8,12 +8,11 @@ import (
 	"cubeship/internal/slug"
 )
 
-// Reference identifies one app: the organization, project and
-// environment that contain it, plus its name.
+// Reference identifies one app: its project, environment and name.
 //
 // An app's name is unique only within its environment, so a name alone
 // no longer identifies anything. The reference's string form —
-// "acme/web/production/myapp" — is also the app's registry repository
+// "web/production/myapp" — is also the app's registry repository
 // path, so what you push to and what you name it are the same thing.
 type Reference struct {
 	Project     string

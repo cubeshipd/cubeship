@@ -21,7 +21,7 @@ test("master CI runs only the affected components", () => {
     dashboard: true,
     site: false,
   });
-  assert.deepEqual(ciScope(["core/template/parse.go"]), {
+  assert.deepEqual(ciScope(["core/internal/template/parse.go"]), {
     core: true,
     templates: true,
     dashboard: false,
