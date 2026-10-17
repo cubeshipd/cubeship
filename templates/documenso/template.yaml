@@ -64,7 +64,7 @@ apps:
   - key: web
     name: documenso
     image: documenso/documenso
-    tag: "v2.19.0"
+    tag: "v2.20.0"
     port: 3000
     # Answers 200 without signing in, and 500 only when the database is down.
     health: /api/health
