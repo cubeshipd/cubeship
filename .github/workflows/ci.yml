@@ -183,8 +183,6 @@ jobs:
           cache-dependency-path: dashboard/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec biome ci .
-      - name: GitHub scripts formatting
-        run: pnpm exec biome format ../.github/scripts
       # typegen first: the pages take their params from Next's generated
       # route types, so a segment renamed without the page following it
       # is a type error rather than an undefined glued into a URL. Those

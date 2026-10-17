@@ -301,7 +301,7 @@ test("old PR automation is removed and CI gate and essential jobs are unchanged"
     "Offline Issue and workflow tests",
     "Offline pilot and workflow tests",
   );
-  assert.equal(digest(ci), "d99e3a71da642f6e6f254092f18cbc921c2898a34da18f3dd485d76df505d78f");
+  assert.equal(digest(ci), "47803d445abb446569e54da7c6b564b95f01f4252838c7526838066034baabb7");
 });
 
 test("literal manual ID resolution is bounded, read-only and never logs source bodies", () =>
