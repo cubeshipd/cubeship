@@ -41,7 +41,7 @@ apps:
   - key: web
     name: gitlab
     image: gitlab/gitlab-ce
-    tag: "19.4.1-ce.0"
+    tag: "19.5.0-ce.0"
     # nginx inside the image, with TLS left to Traefik.
     port: 80
     # A page Rails renders for anyone signed out, so it proves Rails is up.
