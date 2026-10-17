@@ -8,7 +8,7 @@
 # performs itself. The public dashboard demo uses browser-local fixtures;
 # its loopback server is packaged here, never in the installed product.
 
-FROM node:22-alpine AS demo
+FROM node:24-alpine AS demo
 WORKDIR /src
 RUN corepack enable
 COPY dashboard/package.json dashboard/pnpm-lock.yaml dashboard/pnpm-workspace.yaml ./
@@ -19,7 +19,7 @@ RUN cp -r .next-demo/static .next-demo/standalone/.next-demo/static && \
     cp -r public .next-demo/standalone/public
 
 # --- the build ---------------------------------------------------------
-FROM node:22-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /src
 
 RUN corepack enable
@@ -39,7 +39,7 @@ RUN cp -r .next/static .next/standalone/.next/static && \
     if [ -d public ]; then cp -r public .next/standalone/public; fi
 
 # --- what runs ---------------------------------------------------------
-FROM node:22-alpine
+FROM node:24-alpine
 WORKDIR /app
 
 RUN mkdir -p /app/site/.catalog && chown -R node:node /app/site
