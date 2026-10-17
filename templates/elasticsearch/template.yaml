@@ -19,7 +19,7 @@ apps:
   - key: search
     name: elasticsearch
     image: docker.elastic.co/elasticsearch/elasticsearch
-    tag: "9.5.4"
+    tag: "9.5.5"
     port: 9200
     # No health: every route asks for credentials, and a check answered
     # 401 would take the domain down.
