@@ -1,0 +1,64 @@
+name: PR Size Label
+
+on:
+  pull_request_target:
+    branches: [master]
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  issues: write
+  pull-requests: read
+
+concurrency:
+  group: pr-size-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Apply size label
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const { data: pr } = await github.rest.pulls.get({ owner, repo, pull_number: issue_number });
+            const changed = pr.additions + pr.deletions;
+            if (!Number.isSafeInteger(changed) || changed < 0) throw new Error("Invalid PR size");
+
+            const sizes = [
+              { max: 9, name: "size: XS", color: "c2e0c6", description: "0–9 changed lines" },
+              { max: 99, name: "size: S", color: "0e8a16", description: "10–99 changed lines" },
+              { max: 499, name: "size: M", color: "fbca04", description: "100–499 changed lines" },
+              { max: 999, name: "size: L", color: "f9a602", description: "500–999 changed lines" },
+              { max: Infinity, name: "size: XL", color: "d73a4a", description: "1,000+ changed lines" },
+            ];
+            const desired = sizes.find(({ max }) => changed <= max);
+            const labels = await github.paginate(github.rest.issues.listLabelsOnIssue, {
+              owner, repo, issue_number,
+            });
+
+            if (!labels.some(({ name }) => name === desired.name)) {
+              try {
+                await github.rest.issues.getLabel({ owner, repo, name: desired.name });
+              } catch (error) {
+                if (error.status !== 404) throw error;
+                try {
+                  await github.rest.issues.createLabel({
+                    owner, repo, name: desired.name, color: desired.color, description: desired.description,
+                  });
+                } catch (createError) {
+                  if (createError.status !== 422) throw createError;
+                  await github.rest.issues.getLabel({ owner, repo, name: desired.name });
+                }
+              }
+              await github.rest.issues.addLabels({ owner, repo, issue_number, labels: [desired.name] });
+            }
+
+            const sizeNames = new Set(sizes.map(({ name }) => name));
+            for (const { name } of labels) {
+              if (sizeNames.has(name) && name !== desired.name) {
+                await github.rest.issues.removeLabel({ owner, repo, issue_number, name });
+              }
+            }
