@@ -3,7 +3,7 @@
 # signed in. This image changes only that, the way `agent-canvas --public`
 # does: the page asks for the key instead. The build fails if the entrypoint
 # no longer reads the way this expects.
-FROM ghcr.io/openhands/agent-canvas:1.24.0
+FROM ghcr.io/openhands/agent-canvas:1.27.1
 USER root
 RUN sed -i 's|--session-api-key "\$EFFECTIVE_SESSION_KEY"|--auth-required|' /opt/agent-canvas/entrypoint.sh \
  && ! grep -q -- '--session-api-key' /opt/agent-canvas/entrypoint.sh
