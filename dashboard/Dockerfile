@@ -13,7 +13,7 @@
 # an app — that stopped being a constraint worth paying.
 
 # --- the build ---------------------------------------------------------
-FROM node:22-alpine AS build
+FROM node:24-alpine AS build
 WORKDIR /src
 
 RUN corepack enable
@@ -37,7 +37,7 @@ RUN cp -r .next/static .next/standalone/.next/static && \
     if [ -d public ]; then cp -r public .next/standalone/public; fi
 
 # --- what runs ---------------------------------------------------------
-FROM node:22-alpine
+FROM node:24-alpine
 WORKDIR /app
 
 # Not root. This container renders HTML and talks to nothing but the
