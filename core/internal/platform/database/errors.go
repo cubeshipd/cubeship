@@ -25,6 +25,9 @@ func IsUniqueViolation(err error) bool {
 // still points at.
 const foreignKeyViolation = "23503"
 
+// restrictViolation is PostgreSQL's SQLSTATE for a RESTRICT constraint.
+const restrictViolation = "23001"
+
 // IsForeignKeyViolation reports whether err is a row that cannot go
 // because something references it.
 //
@@ -34,7 +37,7 @@ const foreignKeyViolation = "23503"
 // sentence its own module means — which rows, and what to do about them.
 func IsForeignKeyViolation(err error) bool {
 	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == foreignKeyViolation
+	return errors.As(err, &pgErr) && (pgErr.Code == foreignKeyViolation || pgErr.Code == restrictViolation)
 }
 
 // UniqueViolationOn is IsUniqueViolation for a table that has more than

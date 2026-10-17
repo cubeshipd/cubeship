@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jackc/pgx/v5/pgconn"
+
 	"cubeship/internal/platform/database"
 	"cubeship/internal/platform/database/dbtest"
 )
@@ -31,6 +33,17 @@ func TestMigrateIsIdempotent(t *testing.T) {
 	}
 	if got != want {
 		t.Errorf("%d migrations applied after migrating twice, want %d", got, want)
+	}
+}
+
+func TestIsForeignKeyViolation(t *testing.T) {
+	for _, code := range []string{"23503", "23001"} {
+		if !database.IsForeignKeyViolation(&pgconn.PgError{Code: code}) {
+			t.Errorf("SQLSTATE %s was not recognized as a foreign key violation", code)
+		}
+	}
+	if database.IsForeignKeyViolation(&pgconn.PgError{Code: "23505"}) {
+		t.Error("unique violation was recognized as a foreign key violation")
 	}
 }
 
