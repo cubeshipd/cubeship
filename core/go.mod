@@ -17,7 +17,7 @@ require (
 	github.com/minio/minio-go/v7 v7.3.0
 	github.com/moby/buildkit v0.32.2
 	github.com/moby/docker-image-spec v1.3.1
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pressly/goose/v3 v3.26.0
 	github.com/railwayapp/railpack v0.39.0
