@@ -5,6 +5,8 @@ import (
 	"net"
 	"net/http"
 	"net/netip"
+	"net/url"
+	"strings"
 	"syscall"
 	"time"
 
@@ -58,11 +60,53 @@ func publicRegistrySocket(_, address string, _ syscall.RawConn) error {
 }
 
 func newPublicRegistryClient() *http.Client {
+	return publicRegistryClient(nil)
+}
+
+func tokenRealmClient(base *http.Client, registryHost string, realm *url.URL) *http.Client {
+	registryName, registryPort, err := net.SplitHostPort(registryHost)
+	if err != nil {
+		registryName, registryPort = registryHost, "443"
+	}
+	if realmPort := realm.Port(); realmPort != "" {
+		if strings.EqualFold(registryName, realm.Hostname()) && registryPort == realmPort {
+			return sameHostTokenClient(base, realm)
+		}
+	} else if registryPort == "443" && strings.EqualFold(registryName, realm.Hostname()) {
+		return sameHostTokenClient(base, realm)
+	}
+	return publicRegistryClient(base)
+}
+
+func sameHostTokenClient(base *http.Client, realm *url.URL) *http.Client {
+	client := *base
+	previous := client.CheckRedirect
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if req.URL.Scheme != "https" || !strings.EqualFold(req.URL.Host, realm.Host) {
+			return errors.New("the registry token redirect must stay on the token server over HTTPS")
+		}
+		if previous != nil {
+			return previous(req, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after ten registry token redirects")
+		}
+		return nil
+	}
+	return &client
+}
+
+func publicRegistryClient(base *http.Client) *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if base != nil {
+		if original, ok := base.Transport.(*http.Transport); ok {
+			transport = original.Clone()
+		}
+	}
 	// An environment proxy would resolve the destination outside this guard.
 	transport.Proxy = nil
 	transport.DialContext = (&net.Dialer{Timeout: 10 * time.Second, Control: publicRegistrySocket}).DialContext
-	return &http.Client{
+	client := &http.Client{
 		Timeout:   30 * time.Second,
 		Transport: transport,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
@@ -72,4 +116,9 @@ func newPublicRegistryClient() *http.Client {
 			return nil
 		},
 	}
+	if base != nil {
+		client.Timeout = base.Timeout
+		client.Jar = base.Jar
+	}
+	return client
 }

@@ -41,6 +41,28 @@ func TestAnonymousRegistryClientGuardsTheActualSocket(t *testing.T) {
 	}
 }
 
+func TestTokenRealmClientGuardsUnrelatedHostsAndRedirects(t *testing.T) {
+	u, _ := url.Parse("https://auth.example.com/token")
+	client := tokenRealmClient(&http.Client{}, "registry.example.com", u)
+	transport := client.Transport.(*http.Transport)
+	if transport.Proxy != nil {
+		t.Fatal("a proxy could bypass token realm destination validation")
+	}
+	if _, err := transport.DialContext(context.Background(), "tcp", "127.0.0.1:443"); !errors.Is(err, errPrivateRegistry) {
+		t.Fatalf("private token destination was allowed: %v", err)
+	}
+
+	u, _ = url.Parse("https://registry.example.com:5000/token")
+	client = tokenRealmClient(&http.Client{}, "registry.example.com:5000", u)
+	for _, target := range []string{"https://registry.example.com:5000/next", "https://127.0.0.1/token", "http://registry.example.com:5000/token"} {
+		redirect, _ := url.Parse(target)
+		err := client.CheckRedirect(&http.Request{URL: redirect}, []*http.Request{{}})
+		if (err == nil) != (target == "https://registry.example.com:5000/next") {
+			t.Errorf("wrong same-host redirect decision for %s: %v", target, err)
+		}
+	}
+}
+
 func TestTokenRealmCannotDowngradeOrEmbedCredentials(t *testing.T) {
 	client := &http.Client{Transport: packageTransport(func(*http.Request) (*http.Response, error) {
 		t.Fatal("an unsafe token realm reached the transport")

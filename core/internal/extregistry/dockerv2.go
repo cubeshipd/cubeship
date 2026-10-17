@@ -150,7 +150,7 @@ func (v *v2Client) mintToken(ctx context.Context, realm, service, scope string) 
 	if v.username != "" || v.password != "" {
 		req.SetBasicAuth(v.username, v.password)
 	}
-	resp, err := v.http.Do(req)
+	resp, err := tokenRealmClient(v.http, v.host, u).Do(req)
 	if err != nil {
 		return "", fmt.Errorf("reach the token server: %w", err)
 	}
