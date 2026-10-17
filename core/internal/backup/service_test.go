@@ -241,6 +241,8 @@ func newFixture(t *testing.T) *fixture {
 	docker := newFakeDocker()
 	store := newFakeStore("dumps")
 	f := servertest.NewWithDocker(t, docker)
+	f.Server.Datastores.Provisioner().ReadyInterval = time.Millisecond
+	f.Server.ObjectStores.Provisioner().ReadyInterval = time.Millisecond
 	f.Server.ObjectStores.SetConnector(store)
 
 	return &fixture{Fixture: f, docker: docker, store: store}

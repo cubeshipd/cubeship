@@ -11,8 +11,10 @@ export function prCIScope(paths) {
       (path) =>
         path.startsWith("templates/") ||
         path.startsWith("core/template/") ||
+        path.startsWith("core/internal/slug/") ||
         path.startsWith("core/tools/internal/catalog/") ||
-        path.startsWith("core/tools/templatecatalog/"),
+        path.startsWith("core/tools/templatecatalog/") ||
+        ["core/go.mod", "core/go.sum"].includes(path),
     ),
     dashboard: paths.some((path) => path.startsWith("dashboard/")),
     site: paths.some((path) => path.startsWith("site/")),

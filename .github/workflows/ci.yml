@@ -1,11 +1,11 @@
-# This is where every test that needs infrastructure runs.
+# Core changes run the tests that need infrastructure here.
 #
 # `make check` on a laptop passes -short, so anything wanting a Postgres
 # or a Docker daemon skips there: standing that up to find out whether a
 # function returns the right string is time taken out of the edit-run
-# loop. Here nobody is waiting, so nothing is skipped.
+# loop. The matching master check runs them with infrastructure.
 #
-# It also runs the two things a Mac cannot: the integration test, which
+# Core changes also run the two things a Mac cannot: the integration test, which
 # needs `--network host` to reach the host (Docker Desktop runs the
 # Engine in a VM, so it never does), and the installer scripts, which
 # need a real Linux.
@@ -23,6 +23,12 @@ on:
 permissions:
   contents: read
 
+# The scope job compares against the last successful CI run, so a newer
+# push still checks any changes whose earlier run was cancelled or failed.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   GO_VERSION: "1.27"
 
@@ -30,8 +36,14 @@ jobs:
   scope:
     name: Changed paths
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
     outputs:
-      full: ${{ steps.scope.outputs.full }}
+      core: ${{ steps.scope.outputs.core }}
+      templates: ${{ steps.scope.outputs.templates }}
+      dashboard: ${{ steps.scope.outputs.dashboard }}
+      site: ${{ steps.scope.outputs.site }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -41,16 +53,28 @@ jobs:
           node-version: '24'
       - id: scope
         env:
-          BASE: ${{ github.event.before }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
-            echo 'full=true' >> "$GITHUB_OUTPUT"
+          base=
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            while IFS= read -r candidate; do
+              if git merge-base --is-ancestor "$candidate" HEAD; then
+                base=$candidate
+                break
+              fi
+            done < <(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=master&status=success&per_page=100" \
+              --jq '.workflow_runs[].head_sha' || true)
+          fi
+          if [ -z "$base" ]; then
+            node .github/scripts/ci-scope.mjs </dev/null >> "$GITHUB_OUTPUT"
           else
-            git diff --name-only -z "$BASE" HEAD | node .github/scripts/ci-scope.mjs >> "$GITHUB_OUTPUT"
+            git diff --name-only -z "$base" HEAD | node .github/scripts/ci-scope.mjs >> "$GITHUB_OUTPUT"
           fi
 
   templates:
     name: Validate templates
+    needs: scope
+    if: needs.scope.outputs.templates == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -65,7 +89,7 @@ jobs:
   # infrastructure. Database-backed tests run in parallel below.
   check:
     needs: scope
-    if: needs.scope.outputs.full == 'true'
+    if: needs.scope.outputs.core == 'true'
     name: Fast checks
     runs-on: ubuntu-latest
     steps:
@@ -100,7 +124,7 @@ jobs:
   # delay the fast repository-only feedback above.
   database:
     needs: scope
-    if: needs.scope.outputs.full == 'true'
+    if: needs.scope.outputs.core == 'true'
     name: Database tests
     runs-on: ubuntu-latest
     services:
@@ -112,7 +136,7 @@ jobs:
           POSTGRES_DB: cubeship_test
         ports: ["5433:5432"]
         options: >-
-          --health-cmd "pg_isready -U cubeship"
+          --health-cmd "pg_isready -U cubeship -d cubeship_test"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
@@ -138,7 +162,7 @@ jobs:
   # build tag, so a laptop never compiles it, let alone runs it.
   integration:
     needs: scope
-    if: needs.scope.outputs.full == 'true'
+    if: needs.scope.outputs.core == 'true'
     name: End to end
     runs-on: ubuntu-latest
     steps:
@@ -153,7 +177,7 @@ jobs:
   # things. Both run for real, on a Linux, with Docker stubbed.
   scripts:
     needs: scope
-    if: needs.scope.outputs.full == 'true'
+    if: needs.scope.outputs.core == 'true'
     name: Installer scripts
     runs-on: ubuntu-latest
     steps:
@@ -165,7 +189,7 @@ jobs:
   # than inside a Docker build.
   dashboard:
     needs: scope
-    if: needs.scope.outputs.full == 'true'
+    if: needs.scope.outputs.dashboard == 'true'
     name: Dashboard
     runs-on: ubuntu-latest
     defaults:
@@ -198,7 +222,7 @@ jobs:
   # lockfile — and fails on its own terms the same way.
   site:
     needs: scope
-    if: needs.scope.outputs.full == 'true'
+    if: needs.scope.outputs.site == 'true'
     name: Site
     runs-on: ubuntu-latest
     defaults:
@@ -286,17 +310,31 @@ jobs:
           }
 
           export function evaluateRun(needs) {
-            if (!record(needs) || !["true", "false"].includes(needs.scope?.outputs?.full)) {
+            const scope = needs?.scope?.outputs;
+            if (
+              !record(needs) ||
+              needs.scope?.result !== "success" ||
+              !record(scope) ||
+              ["core", "templates", "dashboard", "site"].some((id) => !["true", "false"].includes(scope[id]))
+            ) {
               return { ok: false, reasons: ["Missing CI scope"] };
             }
-            if (needs.scope.outputs.full === "true") return evaluate(REQUIRED, needs);
-            const optional = Object.fromEntries(
-              REQUIRED.filter((id) => !["scope", "templates"].includes(id)).map((id) => [
-                id,
-                { applicable: false },
-              ]),
-            );
-            return evaluate(["scope", "templates"], needs, optional);
+            const jobScope = {
+              templates: "templates",
+              check: "core",
+              database: "core",
+              integration: "core",
+              scripts: "core",
+              dashboard: "dashboard",
+              site: "site",
+            };
+            const required = ["scope"];
+            const optional = {};
+            for (const [job, component] of Object.entries(jobScope)) {
+              if (scope[component] === "true") required.push(job);
+              else optional[job] = { applicable: false };
+            }
+            return evaluate(required, needs, optional);
           }
 
           // The workflow executes this literal body without checking out pull request code.

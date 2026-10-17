@@ -28,4 +28,7 @@ test("workflow and build coordination changes run core checks", () => {
     assert.equal(prCIScope([path]).core, true);
   }
   assert.equal(prCIScope(["README.md"]).core, false);
+  for (const path of ["core/internal/slug/slug.go", "core/go.mod", "core/go.sum"]) {
+    assert.equal(prCIScope([path]).templates, true);
+  }
 });

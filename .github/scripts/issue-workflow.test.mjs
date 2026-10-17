@@ -291,11 +291,11 @@ test("old PR automation is removed and CI gate and essential jobs are unchanged"
   }
   assert.equal(
     digest(readFileSync(join(root, ".github/scripts/ci-aggregate.mjs"))),
-    "a778861588b63abb4bbb64ee3194f11ebb18af86747998fc2f747acea086ece3",
+    "e32d0c7bba6660b7b5c0a32c6c0280224bc5eabca1c9948ec861c813c8213740",
   );
   assert.equal(
     digest(readFileSync(join(root, ".github/scripts/ci-aggregate.test.mjs"))),
-    "0476bc646293280cfad7458c58906971e174dcdeb9181adbff2ab90d7993a7a2",
+    "8a8595645c6abb0f4f361521f173ea21d5bb291f52d9d23afbb64cb1dde20550",
   );
   const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8").replace(
     "Offline Issue and workflow tests",
@@ -304,7 +304,7 @@ test("old PR automation is removed and CI gate and essential jobs are unchanged"
     .replace(/(actions\/(?:checkout|setup-go|setup-node)|pnpm\/action-setup)@(?:v\d+|[a-f0-9]{40})(?: # v\d+)?/g, "$1@<version>")
     .replace(/(node-version: )"?(?:22|24)"?/g, "$1<version>")
     .replace(/(image: postgres:)\d+-alpine/g, "$1<version>");
-  assert.equal(digest(ci), "6e3728f74bdc4c9b6d553b6a0f47b7c665c14e40ce3ed73e5c613fa134421c24");
+  assert.equal(digest(ci), "57083d868b6b09e25597394c837a2ad22f8dedb52354da545eeebf0090c855c1");
 });
 
 test("literal manual ID resolution is bounded, read-only and never logs source bodies", () =>

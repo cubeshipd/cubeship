@@ -48,17 +48,31 @@ export function evaluate(required, needs, optional = {}) {
 }
 
 export function evaluateRun(needs) {
-  if (!record(needs) || !["true", "false"].includes(needs.scope?.outputs?.full)) {
+  const scope = needs?.scope?.outputs;
+  if (
+    !record(needs) ||
+    needs.scope?.result !== "success" ||
+    !record(scope) ||
+    ["core", "templates", "dashboard", "site"].some((id) => !["true", "false"].includes(scope[id]))
+  ) {
     return { ok: false, reasons: ["Missing CI scope"] };
   }
-  if (needs.scope.outputs.full === "true") return evaluate(REQUIRED, needs);
-  const optional = Object.fromEntries(
-    REQUIRED.filter((id) => !["scope", "templates"].includes(id)).map((id) => [
-      id,
-      { applicable: false },
-    ]),
-  );
-  return evaluate(["scope", "templates"], needs, optional);
+  const jobScope = {
+    templates: "templates",
+    check: "core",
+    database: "core",
+    integration: "core",
+    scripts: "core",
+    dashboard: "dashboard",
+    site: "site",
+  };
+  const required = ["scope"];
+  const optional = {};
+  for (const [job, component] of Object.entries(jobScope)) {
+    if (scope[component] === "true") required.push(job);
+    else optional[job] = { applicable: false };
+  }
+  return evaluate(required, needs, optional);
 }
 
 // The workflow executes this literal body without checking out pull request code.
