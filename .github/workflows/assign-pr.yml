@@ -1,0 +1,18 @@
+name: Assign PR
+
+on:
+  pull_request_target:
+    types: [opened]
+
+permissions:
+  issues: write
+
+jobs:
+  assign:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Assign Lucas
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/assignees" -f 'assignees[]=lucasaarch'

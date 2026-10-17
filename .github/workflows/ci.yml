@@ -14,7 +14,6 @@ name: CI
 on:
   push:
     branches: [master]
-  pull_request:
   workflow_dispatch:
 
 # Nothing here writes anything back: it checks out, builds and runs
@@ -42,7 +41,7 @@ jobs:
           node-version: '24'
       - id: scope
         env:
-          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          BASE: ${{ github.event.before }}
         run: |
           if [ -z "$BASE" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ]; then
             echo 'full=true' >> "$GITHUB_OUTPUT"

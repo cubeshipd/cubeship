@@ -1,0 +1,147 @@
+name: PR CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
+  pull_request_review:
+    types: [submitted, edited, dismissed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  approval:
+    name: Approval for current commit
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      approved: ${{ steps.review.outputs.approved }}
+    steps:
+      - name: Require an approval for the current commit
+        id: review
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_DRAFT: ${{ github.event.pull_request.draft }}
+        run: |
+          if [ "$PR_DRAFT" = true ]; then
+            echo 'approved=false' >> "$GITHUB_OUTPUT"
+            echo 'Draft PR; checks will start when it is marked ready for review.'
+            exit 0
+          fi
+          if [ -z "$PR_NUMBER" ] || [ -z "$PR_HEAD_SHA" ] || [ -z "$PR_AUTHOR" ]; then
+            echo 'Could not identify the pull request; refusing to run checks.'
+            exit 1
+          fi
+          reviews=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/reviews" \
+            --jq '.[] | {login: .user.login, state, commit_id}' | jq -s -c '.')
+          approved=$(CI_APPROVAL_CLI=1 PR_HEAD_SHA="$PR_HEAD_SHA" PR_AUTHOR="$PR_AUTHOR" REVIEWS_JSON="$reviews" node --input-type=module <<'NODE'
+          export function hasCurrentApproval(reviews, headSHA, author) {
+            if (!Array.isArray(reviews) || typeof headSHA !== "string" || typeof author !== "string")
+              return false;
+            const latestByReviewer = new Map();
+            for (const review of reviews) {
+              if (typeof review?.login === "string") latestByReviewer.set(review.login, review);
+            }
+            return [...latestByReviewer].some(
+              ([login, review]) =>
+                login !== author && review.state === "APPROVED" && review.commit_id === headSHA,
+            );
+          }
+
+          if (process.env.CI_APPROVAL_CLI === "1") {
+            const reviews = JSON.parse(process.env.REVIEWS_JSON);
+            console.log(hasCurrentApproval(reviews, process.env.PR_HEAD_SHA, process.env.PR_AUTHOR));
+          }
+          NODE
+          )
+          echo "approved=$approved" >> "$GITHUB_OUTPUT"
+          if [ "$approved" != true ]; then
+            echo "No approval for current commit $PR_HEAD_SHA; checks will not run."
+            exit 1
+          fi
+
+  fast-checks:
+    name: Fast checks
+    needs: approval
+    if: needs.approval.outputs.approved == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache-dependency-path: core/go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - run: make fmt-check
+      - run: go -C core test -short ./...
+      - run: node --test .github/scripts/*.test.mjs
+      - run: make sh-check
+
+  templates:
+    name: Template validation
+    needs: approval
+    if: needs.approval.outputs.approved == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.27"
+          cache-dependency-path: core/go.sum
+      - run: go -C core test -short ./template ./tools/internal/catalog ./tools/templatecatalog
+      - run: make catalog
+
+  dashboard:
+    name: Dashboard lint and types
+    needs: approval
+    if: needs.approval.outputs.approved == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: dashboard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: dashboard/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: dashboard/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+
+  site:
+    name: Site lint, tests and types
+    needs: approval
+    if: needs.approval.outputs.approved == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: site/package.json
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+          cache-dependency-path: site/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm test
+      - run: pnpm typecheck
