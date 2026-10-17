@@ -32,7 +32,7 @@ RUN CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=$VERSION" \
     -o /cubeshipd ./cmd/cubeshipd
 
 # --- what runs ---------------------------------------------------------
-FROM alpine:3.21
+FROM alpine:3.24
 
 # ca-certificates: the daemon reaches GitHub and third-party registries
 # over TLS, and an image with no roots fails every one of them with an
