@@ -37,7 +37,7 @@ apps:
   - key: web
     name: mailpit
     image: axllent/mailpit
-    tag: v1.31.5
+    tag: v1.31.6
     port: 8025
     # Outside the sign-in, and 200 only once the database answers.
     health: /readyz

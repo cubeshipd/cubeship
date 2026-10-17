@@ -124,7 +124,7 @@ export default function TerminalSession({
     fit.current = f;
 
     const encoder = new TextEncoder();
-    const send = (data: Uint8Array) => {
+    const send = (data: Uint8Array<ArrayBuffer>) => {
       if (socket.current?.readyState === WebSocket.OPEN) socket.current.send(data);
     };
     const typed = t.onData((d) => send(encoder.encode(d)));
