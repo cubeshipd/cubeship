@@ -61,10 +61,10 @@ test("publishes CI / aggregate only when every applicable PR check succeeds", ()
   assert.equal(run(needs).status, 1);
 });
 
-test("assigns new PRs to the maintainer without checking out PR code", () => {
+test("assigns opened or reopened PRs to the maintainer without checking out PR code", () => {
   const workflow = readFileSync(".github/workflows/assign-pr.yml", "utf8");
-  assert.match(workflow, /pull_request_target:\n    types: \[opened\]/);
-  assert.match(workflow, /issues: write/);
-  assert.match(workflow, /assignees\[\]=lucasaarch/);
+  assert.match(workflow, /pull_request_target:\n    types: \[opened, reopened\]/);
+  assert.match(workflow, /pull-requests: write/);
+  assert.match(workflow, /gh pr edit .*--add-assignee lucasaarch/);
   assert.doesNotMatch(workflow, /actions\/checkout/);
 });
