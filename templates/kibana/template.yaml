@@ -35,7 +35,7 @@ apps:
   - key: web
     name: kibana
     image: docker.elastic.co/kibana/kibana
-    tag: "9.5.4"
+    tag: "9.5.5"
     port: 5601
     # Answers without signing in, with a redacted body: 200 while Kibana
     # can serve, 503 while it starts or cannot reach Elasticsearch.
