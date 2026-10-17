@@ -44,7 +44,7 @@ apps:
   - key: web
     name: ghost
     image: ghost
-    tag: "6.67.0"
+    tag: "6.71.0"
     port: 2368
     # Every other route redirects a probe that did not arrive over HTTPS;
     # this one is outside that check and answers 200 without signing in.
