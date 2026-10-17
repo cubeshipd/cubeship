@@ -24,7 +24,7 @@ const FrontendImage = "ghcr.io/railwayapp/railpack-frontend:v" + railpackVersion
 // railpackVersion must equal the github.com/railwayapp/railpack version
 // in go.mod. There is no way to read a dependency's version at compile
 // time, so a test asserts the two agree.
-const railpackVersion = "0.39.0"
+const railpackVersion = "0.42.0"
 
 // ErrNoStartCommand reports a repository Railpack understood but could
 // not find a way to run.
