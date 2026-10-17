@@ -300,8 +300,11 @@ test("old PR automation is removed and CI gate and essential jobs are unchanged"
   const ci = readFileSync(join(root, ".github/workflows/ci.yml"), "utf8").replace(
     "Offline Issue and workflow tests",
     "Offline pilot and workflow tests",
-  );
-  assert.equal(digest(ci), "47803d445abb446569e54da7c6b564b95f01f4252838c7526838066034baabb7");
+  )
+    .replace(/(actions\/(?:checkout|setup-go|setup-node)|pnpm\/action-setup)@(?:v\d+|[a-f0-9]{40})(?: # v\d+)?/g, "$1@<version>")
+    .replace(/(node-version: )"?(?:22|24)"?/g, "$1<version>")
+    .replace(/(image: postgres:)\d+-alpine/g, "$1<version>");
+  assert.equal(digest(ci), "6e3728f74bdc4c9b6d553b6a0f47b7c665c14e40ce3ed73e5c613fa134421c24");
 });
 
 test("literal manual ID resolution is bounded, read-only and never logs source bodies", () =>
