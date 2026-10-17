@@ -205,7 +205,7 @@ jobs:
       # somebody pulls is the manifest, and it is the thing worth being
       # able to trace back to a commit.
       - name: Attest
-        uses: actions/attest-build-provenance@v2
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ${{ env.REGISTRY }}/${{ github.repository_owner }}/${{ matrix.image }}
           subject-digest: ${{ steps.digest.outputs.digest }}
