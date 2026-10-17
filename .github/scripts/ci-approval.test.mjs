@@ -40,10 +40,35 @@ test("workflow embeds the same approval check and keeps CI behind it", () => {
       .join("\n") + "\n",
     readFileSync(".github/scripts/ci-approval.mjs", "utf8"),
   );
+  assert.match(
+    workflow,
+    /pull_request_target:\n    branches: \[master\]\n    types: \[opened, synchronize, reopened, ready_for_review, converted_to_draft\]/,
+  );
   assert.match(workflow, /pull_request_review:\n    types: \[submitted, edited, dismissed\]/);
   assert.match(workflow, /converted_to_draft/);
-  assert.match(workflow, /needs: approval\n    if: needs\.approval\.outputs\.approved == 'true'/);
+  for (const [job, scope] of [
+    ["fast-checks", "core"],
+    ["templates", "templates"],
+    ["dashboard", "dashboard"],
+    ["site", "site"],
+  ]) {
+    const section = workflow.match(
+      new RegExp(`  ${job}:\\n([\\s\\S]*?)(?=\\n  [a-z-]+:\\n|$)`),
+    )?.[1];
+    assert.match(section ?? "", /needs: \[approval, changes\]/);
+    assert.match(
+      section ?? "",
+      new RegExp(`needs\\.approval\\.outputs\\.approved == 'true' && needs\\.changes\\.outputs\\.${scope} == 'true'`),
+    );
+  }
   assert.match(workflow, /No approval for current commit \$PR_HEAD_SHA/);
+  assert.equal(
+    (workflow.match(/ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/g) ?? []).length,
+    4,
+  );
+  assert.equal((workflow.match(/persist-credentials: false/g) ?? []).length, 5);
+  assert.match(workflow, /ref: \$\{\{ github\.sha \}\}/);
+  assert.match(workflow, /contents: read\n      pull-requests: read/);
   assert.doesNotMatch(
     readFileSync(".github/workflows/ci.yml", "utf8").split("\njobs:\n")[0],
     /pull_request:/,

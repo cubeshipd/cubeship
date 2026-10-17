@@ -1,7 +1,8 @@
 name: PR CI
 
 on:
-  pull_request:
+  pull_request_target:
+    branches: [master]
     types: [opened, synchronize, reopened, ready_for_review, converted_to_draft]
   pull_request_review:
     types: [submitted, edited, dismissed]
@@ -14,6 +15,32 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Detect changed components
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      core: ${{ steps.scope.outputs.core }}
+      templates: ${{ steps.scope.outputs.templates }}
+      dashboard: ${{ steps.scope.outputs.dashboard }}
+      site: ${{ steps.scope.outputs.site }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Detect changed files
+        id: scope
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER/files" | node .github/scripts/pr-ci-scope.mjs >> "$GITHUB_OUTPUT"
+
   approval:
     name: Approval for current commit
     runs-on: ubuntu-latest
@@ -70,11 +97,14 @@ jobs:
 
   fast-checks:
     name: Fast checks
-    needs: approval
-    if: needs.approval.outputs.approved == 'true'
+    needs: [approval, changes]
+    if: needs.approval.outputs.approved == 'true' && needs.changes.outputs.core == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version: "1.27"
@@ -89,11 +119,14 @@ jobs:
 
   templates:
     name: Template validation
-    needs: approval
-    if: needs.approval.outputs.approved == 'true'
+    needs: [approval, changes]
+    if: needs.approval.outputs.approved == 'true' && needs.changes.outputs.templates == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
       - uses: actions/setup-go@v5
         with:
           go-version: "1.27"
@@ -103,14 +136,17 @@ jobs:
 
   dashboard:
     name: Dashboard lint and types
-    needs: approval
-    if: needs.approval.outputs.approved == 'true'
+    needs: [approval, changes]
+    if: needs.approval.outputs.approved == 'true' && needs.changes.outputs.dashboard == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: dashboard
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: dashboard/package.json
@@ -125,14 +161,17 @@ jobs:
 
   site:
     name: Site lint, tests and types
-    needs: approval
-    if: needs.approval.outputs.approved == 'true'
+    needs: [approval, changes]
+    if: needs.approval.outputs.approved == 'true' && needs.changes.outputs.site == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: site
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
         with:
           package_json_file: site/package.json
