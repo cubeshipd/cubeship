@@ -23,7 +23,7 @@ apps:
   - key: web
     name: cloudbeaver
     image: dbeaver/cloudbeaver
-    tag: "26.2.1"
+    tag: "26.2.2"
     port: 8978
     health: /status
     domains:
