@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 test("runs PR checks without approval and keeps component filters", () => {
@@ -32,6 +33,32 @@ test("runs PR checks without approval and keeps component filters", () => {
     readFileSync(".github/workflows/ci.yml", "utf8").split("\njobs:\n")[0],
     /pull_request:/,
   );
+});
+
+test("publishes CI / aggregate only when every applicable PR check succeeds", () => {
+  const workflow = readFileSync(".github/workflows/pr-ci.yml", "utf8");
+  const aggregate = workflow.split("\n  aggregate:\n")[1];
+  assert.match(aggregate ?? "", /name: CI \/ aggregate/);
+  assert.match(aggregate ?? "", /needs: \[changes, fast-checks, templates, dashboard, site\]/);
+  assert.match(aggregate ?? "", /if: always\(\)/);
+  assert.doesNotMatch(aggregate ?? "", /actions\/checkout|secrets\./);
+  const body = aggregate?.split("          node --input-type=module <<'NODE'\n")[1]?.split("          NODE\n")[0];
+  assert.ok(body);
+  const needs = {
+    changes: { result: "success", outputs: { core: "true", templates: "false", dashboard: "false", site: "false" } },
+    "fast-checks": { result: "success" },
+    templates: { result: "skipped" },
+    dashboard: { result: "skipped" },
+    site: { result: "skipped" },
+  };
+  const run = (input) =>
+    spawnSync(process.execPath, ["--input-type=module", "--eval", body], {
+      env: { ...process.env, NEEDS_JSON: JSON.stringify(input) },
+      encoding: "utf8",
+    });
+  assert.equal(run(needs).status, 0);
+  needs["fast-checks"].result = "failure";
+  assert.equal(run(needs).status, 1);
 });
 
 test("assigns new PRs to the maintainer without checking out PR code", () => {

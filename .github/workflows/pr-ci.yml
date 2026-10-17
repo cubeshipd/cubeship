@@ -128,3 +128,52 @@ jobs:
       - run: pnpm lint
       - run: pnpm test
       - run: pnpm typecheck
+
+  aggregate:
+    name: CI / aggregate
+    needs: [changes, fast-checks, templates, dashboard, site]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Evaluate scoped results
+        env:
+          NEEDS_JSON: ${{ toJSON(needs) }}
+        run: |
+          node --input-type=module <<'NODE'
+          export function evaluatePR(needs) {
+            if (!needs || typeof needs !== "object" || Array.isArray(needs))
+              return { ok: false, reasons: ["Invalid aggregate input"] };
+            const changes = needs.changes;
+            if (!changes || changes.result !== "success" || !changes.outputs)
+              return { ok: false, reasons: ["Changed components did not complete"] };
+            const checks = [
+              ["core", "fast-checks"],
+              ["templates", "templates"],
+              ["dashboard", "dashboard"],
+              ["site", "site"],
+            ];
+            const reasons = [];
+            for (const [scope, job] of checks) {
+              const applicable = changes.outputs[scope];
+              const result = needs[job]?.result;
+              if (applicable !== "true" && applicable !== "false") {
+                reasons.push(`Invalid scope: ${scope}`);
+              } else if (applicable === "true" && result !== "success") {
+                reasons.push(`Job ${job}: ${result ?? "missing"}`);
+              } else if (applicable === "false" && result !== "skipped") {
+                reasons.push(`Job ${job} should be skipped, got ${result ?? "missing"}`);
+              }
+            }
+            return { ok: reasons.length === 0, reasons };
+          }
+
+          try {
+            const result = evaluatePR(JSON.parse(process.env.NEEDS_JSON));
+            console.log(JSON.stringify(result));
+            process.exitCode = result.ok ? 0 : 1;
+          } catch {
+            console.error("Invalid NEEDS_JSON");
+            process.exitCode = 1;
+          }
+          NODE
