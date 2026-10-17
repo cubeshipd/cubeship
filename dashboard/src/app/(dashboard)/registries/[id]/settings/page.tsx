@@ -18,7 +18,6 @@ import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { api, type Credential, type RegistryCredential, type RegistryStatus } from "@/lib/api";
-import { providerIcon } from "@/lib/credentials";
 import { message } from "@/lib/errors";
 
 // A registry's settings: which account it logs in as, and getting rid
@@ -107,7 +106,6 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
   const provider = credential?.provider ?? "generic";
   const aws = provider === "aws";
   const digitalocean = provider === "digitalocean";
-  const Icon = providerIcon(provider);
 
   // Every credential is offered. A credential is a secret, not a kind
   // of registry, so nothing here can rule one out in advance — whether

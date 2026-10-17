@@ -140,6 +140,10 @@ For Core ownership and refactors, read
 [core-layout](.agents/skills/core-layout/SKILL.md). For template changes, read
 [core-template](.agents/skills/core-template/SKILL.md). For repositories and
 migrations, read [core-database](.agents/skills/core-database/SKILL.md).
+For dashboard visual work, read
+[dashboard-visual-consistency](.agents/skills/dashboard-visual-consistency/SKILL.md).
+For dashboard dead-code and duplication reviews, read
+[dashboard-reuse-audit](.agents/skills/dashboard-reuse-audit/SKILL.md).
 
 **`http.go` and `mcp.go` are adapters and nothing else.** They parse
 input, call one service method, and render the result. A rule that lives

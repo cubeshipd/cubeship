@@ -197,42 +197,10 @@ export type InstanceUser = {
 // cannot change and the one everybody reads.
 export type Org = { slug: string };
 
-// projectImageSrc is where a project's picture is.
-//
-// Served by the daemon rather than from the dashboard's own files: it
-// is somebody's upload, kept in the data directory, and the request
-// carries the session cookie like every other read here. `has_image` on
-// the project says whether to ask at all — without it a grid makes one
-// request per project and, on an instance where nobody has chosen one,
-// every single one answers 404.
-export function projectImageSrc(slug: string): string {
-  // **The preview has no bytes to serve.** Everything else there goes
-  // through `handle`, which an <img> does not — so without this the one
-  // screen the picture is for shows an empty frame, and a screen that
-  // looks broken in the preview is one somebody reviews as broken.
-  // A stand-in drawn from the slug, so two projects differ the way two
-  // real pictures would.
-  if (PREVIEW) return previewImage(slug);
-  return `/api/projects/${encodeURIComponent(slug)}/image`;
-}
-
-function previewImage(slug: string): string {
-  let hash = 0;
-  for (const ch of slug) hash = (hash * 31 + ch.charCodeAt(0)) >>> 0;
-  const hue = hash % 360;
-  const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">` +
-    `<rect width="64" height="64" fill="hsl(${hue} 70% 12%)"/>` +
-    `<circle cx="32" cy="32" r="17" fill="none" stroke="hsl(${hue} 90% 60%)" stroke-width="3"/>` +
-    `<rect x="24" y="24" width="16" height="16" fill="hsl(${(hue + 140) % 360} 90% 60%)"/>` +
-    `</svg>`;
-  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
-}
 export type Project = {
   slug: string;
   environments?: string[];
-  // Whether this project wears a picture. Absent for one that does not,
-  // which is what every project starts as — see projectImageSrc.
+  // Whether this project wears a picture, as reported by the API.
   has_image?: boolean;
 };
 export type Environment = { slug: string };

@@ -7,12 +7,11 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyField } from "@/components/copy-field";
 import { ErrorAlert } from "@/components/error-alert";
 import { Notice } from "@/components/notice";
+import { PublishPortForm } from "@/components/publish-port-form";
 import { ResourceLimitFields } from "@/components/resource-limit-fields";
 import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { api, can, type Datastore, type DatastoreCredentials, datastorePath } from "@/lib/api";
 import { message } from "@/lib/errors";
 
@@ -121,13 +120,11 @@ export function DatabaseAccess({
     <div className="space-y-6">
       {canRotate && (
         <Card>
-          <CardContent className="space-y-5">
-            <header className="space-y-1">
-              <h2 className="text-lg font-medium tracking-tight">Database credentials</h2>
-              <p className="text-sm text-muted-foreground">
-                Generate a new password for this database login.
-              </p>
-            </header>
+          <CardContent className="space-y-5 [&>.dashboard-section-header]:mb-0">
+            <SectionHeader
+              title="Credentials"
+              sub="Generate a new password for this database login."
+            />
             {rotatedCredentials && (
               <div className="grid gap-4 sm:grid-cols-2">
                 <CopyField label="New password" value={rotatedCredentials.password} masked />
@@ -140,7 +137,6 @@ export function DatabaseAccess({
               </div>
             )}
             <ActionButton
-              variant="outline"
               disabled={!datastore.has_container || datastore.status !== "running"}
               onClick={() => setRotating(true)}
             >
@@ -151,13 +147,11 @@ export function DatabaseAccess({
       )}
 
       <Card>
-        <CardContent className="space-y-5">
-          <header className="space-y-1">
-            <h2 className="text-lg font-medium tracking-tight">External access</h2>
-            <p className="text-sm text-muted-foreground">
-              Publish a host port for connections from outside this instance.
-            </p>
-          </header>
+        <CardContent className="space-y-5 [&>.dashboard-section-header]:mb-0">
+          <SectionHeader
+            title="External access"
+            sub="Publish a host port for connections from outside this instance."
+          />
           <ErrorAlert error={error} />
           {datastore.exposed_port ? (
             <div className="space-y-4">
@@ -174,31 +168,16 @@ export function DatabaseAccess({
               </ActionButton>
             </div>
           ) : (
-            <div className="max-w-xl space-y-2">
-              <Label htmlFor="db-host-port">Host port</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="db-host-port"
-                  value={port}
-                  inputMode="numeric"
-                  spellCheck={false}
-                  placeholder="Choose automatically"
-                  onChange={(event) => setPort(event.target.value.replace(/\D/g, ""))}
-                  className="h-10 min-w-0 flex-1"
-                />
-                <ActionButton
-                  variant="outline"
-                  busy={busy}
-                  className="h-10 shrink-0"
-                  onClick={() =>
-                    run(() => api.post(`${path}/expose`, { port: port ? Number(port) : 0 }))
-                  }
-                >
-                  Publish port
-                </ActionButton>
-              </div>
-              <p className="text-xs text-muted-foreground">Automatic ports use 15000–15999.</p>
-            </div>
+            <PublishPortForm
+              id="db-host-port"
+              port={port}
+              onPortChange={setPort}
+              onPublish={() =>
+                run(() => api.post(`${path}/expose`, { port: port ? Number(port) : 0 }))
+              }
+              busy={busy}
+              hint="Automatic ports use 15000–15999."
+            />
           )}
         </CardContent>
       </Card>

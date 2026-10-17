@@ -17,8 +17,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { api, type DNSProvider, type DNSZone } from "@/lib/api";
-import { providerIcon } from "@/lib/credentials";
+import { api, type DNSZone } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // One provider's zones. Clicking one opens it.
@@ -30,19 +29,11 @@ import { message } from "@/lib/errors";
 export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
   const { id } = use(params);
 
-  const [provider, setProvider] = useState<DNSProvider | null>(null);
   const [zones, setZones] = useState<DNSZone[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
   const base = `/dns/${id}`;
-
-  useEffect(() => {
-    api
-      .get<DNSProvider[]>("/dns")
-      .then((list) => setProvider(list.find((p) => String(p.id) === id) ?? null))
-      .catch(() => setProvider(null));
-  }, [id]);
 
   const load = useCallback(() => {
     if (!base) return;
@@ -53,8 +44,6 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
       .catch((e) => setError(message(e)));
   }, [base]);
   useEffect(load, [load]);
-
-  const Icon = providerIcon(provider?.provider ?? "");
 
   const filtered = zones
     ? zones.filter((z) => z.name.toLowerCase().includes(query.trim().toLowerCase()))

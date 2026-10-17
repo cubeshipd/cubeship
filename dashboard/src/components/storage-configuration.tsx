@@ -9,14 +9,13 @@ import { ErrorAlert } from "@/components/error-alert";
 import { GlideSelect } from "@/components/glide-select";
 import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
+import { PublishPortForm } from "@/components/publish-port-form";
 import { ResourceLimitFields } from "@/components/resource-limit-fields";
 import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   api,
   type Credential,
@@ -186,12 +185,8 @@ function RotateStoreCredentials({
   return (
     <>
       <Card>
-        <CardContent className="space-y-5">
+        <CardContent className="space-y-5 [&>.dashboard-section-header]:mb-0">
           <SectionHeader title="Credentials" sub="Generate new S3 keys for this managed store." />
-          <Notice tone="warning">
-            The current keys stop working immediately. Attached apps receive the new keys on their
-            next deploy.
-          </Notice>
           {credentials && (
             <div className="grid gap-4 sm:grid-cols-2">
               <CopyField label="New access key id" value={credentials.access_key} />
@@ -199,7 +194,6 @@ function RotateStoreCredentials({
             </div>
           )}
           <ActionButton
-            variant="outline"
             disabled={!store.has_container || store.status !== "running"}
             onClick={() => setConfirming(true)}
           >
@@ -270,35 +264,14 @@ function Exposure({ store, onChanged }: { store: ObjectStore; onChanged: () => v
             </div>
           </>
         ) : (
-          <form
-            className="max-w-xl space-y-4"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void expose();
-            }}
-          >
-            <div className="max-w-xl space-y-2">
-              <Label htmlFor="object-store-host-port">Host port</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="object-store-host-port"
-                  value={port}
-                  inputMode="numeric"
-                  spellCheck={false}
-                  placeholder="Choose automatically"
-                  onChange={(event) => setPort(event.target.value.replace(/\D/g, ""))}
-                  className="h-10 min-w-0 flex-1"
-                />
-                <ActionButton type="submit" variant="outline" busy={busy} className="h-10 shrink-0">
-                  Publish port
-                </ActionButton>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Automatic ports use 16000–16999. Publishing replaces the container briefly; its data
-                is preserved.
-              </p>
-            </div>
-          </form>
+          <PublishPortForm
+            id="object-store-host-port"
+            port={port}
+            onPortChange={setPort}
+            onPublish={expose}
+            busy={busy}
+            hint="Automatic ports use 16000–16999. Publishing replaces the container briefly; its data is preserved."
+          />
         )}
         <ConfirmDialog
           open={unexposing}

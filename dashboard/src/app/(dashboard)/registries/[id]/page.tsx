@@ -30,7 +30,6 @@ import {
   type RegistryUsage,
   type Settings,
 } from "@/lib/api";
-import { providerIcon } from "@/lib/credentials";
 import { message } from "@/lib/errors";
 
 // What a registry holds.
@@ -133,11 +132,6 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
       .then((list) => setImages((prev) => ({ ...prev, [name]: list })))
       .catch((e) => setError(message(e)));
   }
-
-  // The mark belongs to the provider, and the detail page knows which
-  // one only from what the listing passed it.
-  const provider = credential?.provider ?? "";
-  const Icon = providerIcon(provider);
 
   // Cubeship's own registry has no host in the query string — it is
   // instance configuration, and it is empty until there is a domain.

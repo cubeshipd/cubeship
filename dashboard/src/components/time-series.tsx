@@ -67,7 +67,9 @@ export function TimeSeries({
 
   if (points.length === 0) {
     return (
-      <div className={cn("dashboard-chart-empty", className)}>{empty ?? "No samples yet."}</div>
+      <div className={cn("dashboard-chart-empty", className)} role={loading ? "status" : undefined}>
+        {loading ? "Loading metrics…" : (empty ?? "No samples yet.")}
+      </div>
     );
   }
 
