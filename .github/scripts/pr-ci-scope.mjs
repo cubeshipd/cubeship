@@ -1,8 +1,9 @@
 export function prCIScope(paths) {
-  const core = paths.some((path) =>
-    path.startsWith("core/") ||
-    path.startsWith(".github/") ||
-    ["Makefile", "go.work", "go.work.sum", "install.sh", "uninstall.sh"].includes(path),
+  const core = paths.some(
+    (path) =>
+      path.startsWith("core/") ||
+      path.startsWith(".github/") ||
+      ["Makefile", "go.work", "go.work.sum", "install.sh", "uninstall.sh"].includes(path),
   );
   return {
     core,

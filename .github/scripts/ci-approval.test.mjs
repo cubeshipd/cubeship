@@ -58,7 +58,9 @@ test("workflow embeds the same approval check and keeps CI behind it", () => {
     assert.match(section ?? "", /needs: \[approval, changes\]/);
     assert.match(
       section ?? "",
-      new RegExp(`needs\\.approval\\.outputs\\.approved == 'true' && needs\\.changes\\.outputs\\.${scope} == 'true'`),
+      new RegExp(
+        `needs\\.approval\\.outputs\\.approved == 'true' && needs\\.changes\\.outputs\\.${scope} == 'true'`,
+      ),
     );
   }
   assert.match(workflow, /No approval for current commit \$PR_HEAD_SHA/);
