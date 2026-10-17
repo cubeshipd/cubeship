@@ -4,3 +4,11 @@
 # quickly. Turned off deliberately rather than worked around per package,
 # which is what the exclude list here was becoming.
 minimumReleaseAge: 0
+
+# The pnpm 12 native executable needs its install script to replace the Node.js fallback.
+allowBuilds:
+  '@pnpm/exe': true
+  pnpm: true
+
+# Keep the store on the same filesystem as this workspace's node_modules.
+storeDir: ../../.pnpm-store

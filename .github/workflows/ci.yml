@@ -193,6 +193,8 @@ jobs:
     if: needs.scope.outputs.dashboard == 'true'
     name: Dashboard
     runs-on: ubuntu-latest
+    env:
+      PNPM_CONFIG_STORE_DIR: ${{ github.workspace }}/../.pnpm-store
     defaults:
       run:
         working-directory: dashboard
