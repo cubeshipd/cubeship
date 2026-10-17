@@ -105,6 +105,11 @@ func (r *Repo) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (r *Repo) DeleteAll(ctx context.Context) error {
+	_, err := r.q.ExecContext(ctx, `DELETE FROM github_installations`)
+	return err
+}
+
 // DeleteByGitHubID removes an installation GitHub says is gone. It is
 // triggered by GitHub when an installation grant no longer exists.
 func (r *Repo) DeleteByGitHubID(ctx context.Context, installationID int64) error {

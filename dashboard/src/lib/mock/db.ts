@@ -1034,6 +1034,7 @@ export const db = {
   github: {
     connected: true,
     app_slug: "cubeship-example",
+    app_status: "available",
     installations: [{ id: 501, account: "acme" }],
   },
 

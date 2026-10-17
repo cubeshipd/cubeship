@@ -128,6 +128,62 @@ func (s *Service) Connect(ctx context.Context, caller *user.User, code, state st
 	}
 	return s.Repo().Save(ctx, &Connection{UserID: caller.ID, UUID: account.UUID, Account: account.DisplayName, consumerID: id, accessToken: token.AccessToken, refreshToken: token.RefreshToken, expiresAt: s.now().Add(time.Duration(token.ExpiresIn) * time.Second)})
 }
+
+// ConnectToken records a scoped Bitbucket API token after asking Bitbucket
+// who owns it and whether it can list the user's workspaces.
+func (s *Service) ConnectToken(ctx context.Context, caller *user.User, token string) (*Connection, error) {
+	if err := user.Allow(caller, user.ResGit, user.LevelManage, ""); err != nil {
+		return nil, err
+	}
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, ErrInvalidToken
+	}
+	var account struct {
+		UUID        string `json:"uuid"`
+		DisplayName string `json:"display_name"`
+	}
+	if err := s.get(ctx, token, apiURL+"/user", &account); err != nil {
+		if errors.Is(err, ErrReconnect) || errors.Is(err, ErrRepository) {
+			return nil, ErrInvalidToken
+		}
+		return nil, err
+	}
+	if account.UUID == "" || account.DisplayName == "" {
+		return nil, ErrProvider
+	}
+	var workspaces struct {
+		Values []struct {
+			Workspace struct {
+				Slug string `json:"slug"`
+			} `json:"workspace"`
+		} `json:"values"`
+	}
+	if err := s.get(ctx, token, apiURL+"/user/workspaces?pagelen=1", &workspaces); err != nil {
+		if errors.Is(err, ErrReconnect) || errors.Is(err, ErrRepository) {
+			return nil, ErrInvalidToken
+		}
+		return nil, err
+	}
+	if len(workspaces.Values) > 0 {
+		slug := workspaces.Values[0].Workspace.Slug
+		if !repositoryPart.MatchString(slug) {
+			return nil, ErrProvider
+		}
+		var repositories struct {
+			Values []json.RawMessage `json:"values"`
+		}
+		if err := s.get(ctx, token, apiURL+"/repositories/"+slug+"?pagelen=1", &repositories); err != nil {
+			if errors.Is(err, ErrReconnect) || errors.Is(err, ErrRepository) {
+				return nil, ErrInvalidToken
+			}
+			return nil, err
+		}
+	}
+	return s.Repo().SaveToken(ctx, &Connection{
+		UserID: caller.ID, UUID: account.UUID, Account: account.DisplayName, apiToken: token,
+	})
+}
 func (s *Service) List(ctx context.Context, caller *user.User) ([]*Connection, error) {
 	if err := user.Allow(caller, user.ResGit, user.LevelView, ""); err != nil {
 		return nil, err
@@ -143,14 +199,18 @@ func (s *Service) Disconnect(ctx context.Context, caller *user.User, id int64) e
 
 // The row lock covers the refresh request and rotation together, including other daemon processes.
 func (s *Service) tokenFor(ctx context.Context, id int64) (string, error) {
-	consumer, secret, err := s.consumer(ctx)
-	if err != nil {
-		return "", err
-	}
 	var token string
-	err = s.db.WithTx(ctx, func(tx database.Queryer) error {
+	err := s.db.WithTx(ctx, func(tx database.Queryer) error {
 		repo := NewRepository(tx)
 		c, err := repo.Lock(ctx, id)
+		if err != nil {
+			return err
+		}
+		if c.apiToken != "" {
+			token = c.apiToken
+			return nil
+		}
+		consumer, secret, err := s.consumer(ctx)
 		if err != nil {
 			return err
 		}
@@ -253,22 +313,29 @@ func (s *Service) Repositories(ctx context.Context, caller *user.User) ([]Reposi
 		if err != nil {
 			return nil, err
 		}
-		err = s.pages(ctx, token, apiURL+"/user/permissions/repositories?pagelen=100", func(raw json.RawMessage) error {
+		err = s.pages(ctx, token, apiURL+"/user/workspaces?pagelen=100", func(raw json.RawMessage) error {
 			var entry struct {
-				Repository remoteRepository `json:"repository"`
+				Workspace struct {
+					Slug string `json:"slug"`
+				} `json:"workspace"`
 			}
-			if json.Unmarshal(raw, &entry) != nil {
+			if json.Unmarshal(raw, &entry) != nil || !repositoryPart.MatchString(entry.Workspace.Slug) {
 				return ErrProvider
 			}
-			r := entry.Repository
-			if _, ok := ParseRepositoryURL("https://bitbucket.org/" + r.FullName); !ok {
-				return ErrProvider
-			}
-			if !seen[r.FullName] {
-				seen[r.FullName] = true
-				out = append(out, RepositoryRef{r.FullName, r.Private, r.MainBranch.Name})
-			}
-			return nil
+			return s.pages(ctx, token, apiURL+"/repositories/"+entry.Workspace.Slug+"?pagelen=100", func(raw json.RawMessage) error {
+				var r remoteRepository
+				if json.Unmarshal(raw, &r) != nil {
+					return ErrProvider
+				}
+				if _, ok := ParseRepositoryURL("https://bitbucket.org/" + r.FullName); !ok {
+					return ErrProvider
+				}
+				if !seen[r.FullName] {
+					seen[r.FullName] = true
+					out = append(out, RepositoryRef{r.FullName, r.Private, r.MainBranch.Name})
+				}
+				return nil
+			})
 		})
 		if err != nil {
 			return nil, err

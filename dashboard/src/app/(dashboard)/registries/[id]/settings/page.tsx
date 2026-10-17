@@ -6,8 +6,8 @@ import { use, useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { DangerAction, DangerZone } from "@/components/danger-zone";
+import { DetailSectionHeader } from "@/components/detail-section-header";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
 import { LoadingNote } from "@/components/loading";
 import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
@@ -174,10 +174,13 @@ export default function RegistrySettings({ params }: PageProps<"/registries/[id]
 
   return (
     <>
-      {/* Back to the registry, not to the list: this screen is reached
-          from that one, and a settings screen that returns you two
-          levels up loses your place. */}{" "}
-      <RailPortal>{<StatusBadge value={status?.state ?? "checking"} />}</RailPortal>
+      <DetailSectionHeader
+        backHref={`/registries/${id}`}
+        backLabel="Back to registry"
+        title={credential?.host ?? "Registry settings"}
+        sub="Manage this registry's connection and login."
+        actions={<StatusBadge value={status?.state ?? "checking"} />}
+      />
       <ErrorAlert error={error} />
       {!status && !error && <LoadingNote>Checking this login against the registry</LoadingNote>}
       {status?.state === "unauthorized" && (

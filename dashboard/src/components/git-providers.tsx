@@ -19,6 +19,8 @@ export type Provider = {
   // registered with this provider yet, and the button creates the
   // registration instead of sending someone off to find it.
   href: string;
+  replace?: boolean;
+  blocked?: boolean;
 };
 
 export function GitProviders({
@@ -68,6 +70,10 @@ export function GitProviders({
               {p.name}
               <CheckIcon className="size-3.5 shrink-0 text-primary" />
             </span>
+          ) : p.blocked ? (
+            <span key={p.id} className="text-sm text-muted-foreground">
+              GitHub could not be checked. Retry from Git providers.
+            </span>
           ) : p.href ? (
             // A real anchor: Base UI's Button wants a native button in
             // `render`, and this opens a page on GitHub.
@@ -89,6 +95,7 @@ export function GitProviders({
               label={p.name}
               icon={p.icon}
               note={false}
+              replace={p.replace}
             />
           ) : (
             <span key={p.id} className="text-sm text-muted-foreground">

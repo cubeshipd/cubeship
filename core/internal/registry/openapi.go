@@ -18,7 +18,10 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"name": openapi.String("The repository path, which is also an app's reference: project/environment/app."),
 			}, "name"),
 			"PushedImage": openapi.Object(map[string]*openapi.Schema{
-				"tag": openapi.String(""),
+				"tag":        openapi.String(""),
+				"digest":     openapi.String("The manifest digest, when available."),
+				"size":       openapi.Integer("Compressed bytes of the image's distinct blobs, when available."),
+				"created_at": {Type: "string", Format: "date-time", Description: "Image build time from its config, when available. The registry does not report push time."},
 			}, "tag"),
 		},
 		Paths: map[string]openapi.PathItem{

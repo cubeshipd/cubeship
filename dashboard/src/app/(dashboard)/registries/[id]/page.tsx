@@ -4,8 +4,8 @@ import { ChevronRightIcon, SettingsIcon, Trash2Icon } from "lucide-react";
 import { use, useCallback, useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CopyButton } from "@/components/copy-button";
+import { DetailSectionHeader } from "@/components/detail-section-header";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
 import { LoadingList, LoadingNote } from "@/components/loading";
 import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
@@ -288,25 +288,31 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
 
   return (
     <>
-      <RailPortal>
-        {own ? (
-          <Button variant="outline" onClick={() => setCollecting(true)}>
-            <Trash2Icon />
-            Reclaim disk
-          </Button>
-        ) : (
-          <Button
-            variant="outline"
-            nativeButton={false}
-            render={
-              <Link href={`/registries/${id}/settings`}>
-                <SettingsIcon />
-                Settings
-              </Link>
-            }
-          />
-        )}
-      </RailPortal>
+      <DetailSectionHeader
+        backHref="/registries"
+        backLabel="Back to registries"
+        title={own ? "Cubeship registry" : host || "Registry"}
+        sub="Browse repositories and image tags in this registry."
+        actions={
+          own ? (
+            <Button variant="outline" onClick={() => setCollecting(true)}>
+              <Trash2Icon />
+              Reclaim disk
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              nativeButton={false}
+              render={
+                <Link href={`/registries/${id}/settings`}>
+                  <SettingsIcon />
+                  Settings
+                </Link>
+              }
+            />
+          )
+        }
+      />
       {repos && repos.length > 0 && (
         // Above the separator, because it filters the page rather
         // than the table: what it hides is gone from everything
@@ -477,20 +483,16 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
                 {/* No padding on the right of the box: the name's own
                     `px-4` is the gap, and two paddings put the box a
                     column away from the thing it selects. */}
-                {!own && (
-                  <TableHead className="w-10 pr-0 pl-4">
-                    <Checkbox
-                      aria-label="Select every repository shown"
-                      checked={allShownPicked}
-                      indeterminate={
-                        !allShownPicked && filtered.some((r) => pickedRepos.has(r.name))
-                      }
-                      onCheckedChange={(on) => {
-                        for (const r of filtered) setRepoPicked(r.name, Boolean(on));
-                      }}
-                    />
-                  </TableHead>
-                )}
+                <TableHead className="w-10 pr-0 pl-4">
+                  <Checkbox
+                    aria-label="Select every repository shown"
+                    checked={allShownPicked}
+                    indeterminate={!allShownPicked && filtered.some((r) => pickedRepos.has(r.name))}
+                    onCheckedChange={(on) => {
+                      for (const r of filtered) setRepoPicked(r.name, Boolean(on));
+                    }}
+                  />
+                </TableHead>
                 <TableHead className="px-4">Repository</TableHead>
                 <TableHead className="px-4" />
               </TableRow>
@@ -582,29 +584,30 @@ function SelectionBar({
   onDeleteTags: () => void;
 }) {
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-3 border border-primary/30 bg-primary/5 px-4 py-2.5">
-      <span className="font-mono text-[11px] tracking-[0.12em] text-primary uppercase">
+    <div className="mb-3 flex w-fit max-w-full flex-wrap items-center gap-2 rounded-xl border border-border bg-card px-3 py-2 shadow-sm">
+      <span className="text-sm font-medium text-foreground">
         {repos > 0 && `${repos} ${repos === 1 ? "repository" : "repositories"}`}
         {repos > 0 && tags > 0 && " · "}
         {tags > 0 && `${tags} ${tags === 1 ? "tag" : "tags"}`}
         {" selected"}
       </span>
-      <span className="flex-1" />
-      {tags > 0 && (
-        <Button variant="outline" size="sm" onClick={onDeleteTags}>
-          <Trash2Icon />
-          Delete tags
+      <div className="flex flex-wrap items-center gap-1">
+        <Button variant="ghost" size="sm" onClick={onClear}>
+          Clear selection
         </Button>
-      )}
-      {repos > 0 && (
-        <Button variant="destructive" size="sm" onClick={onDeleteRepos}>
-          <Trash2Icon />
-          Delete repositories
-        </Button>
-      )}
-      <Button variant="ghost" size="sm" onClick={onClear}>
-        Clear
-      </Button>
+        {tags > 0 && (
+          <Button variant="destructive" size="sm" onClick={onDeleteTags}>
+            <Trash2Icon />
+            Delete tags
+          </Button>
+        )}
+        {repos > 0 && (
+          <Button variant="destructive" size="sm" onClick={onDeleteRepos}>
+            <Trash2Icon />
+            Delete repositories
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
@@ -732,8 +735,13 @@ function RepoRows({
                     <span className="w-20 shrink-0 text-right text-muted-foreground">
                       {image.size ? `${(image.size / 1_048_576).toFixed(0)} MB` : ""}
                     </span>
-                    <span className="w-24 shrink-0 text-right text-muted-foreground">
-                      {image.pushed_at ? new Date(image.pushed_at).toLocaleDateString() : ""}
+                    <span
+                      className="w-24 shrink-0 text-right text-muted-foreground"
+                      title={image.pushed_at ? "Push date" : image.created_at ? "Build date" : ""}
+                    >
+                      {image.pushed_at || image.created_at
+                        ? new Date(image.pushed_at ?? image.created_at ?? "").toLocaleDateString()
+                        : ""}
                     </span>
                     {/* The whole reference, which is what you paste
                         somewhere else — the tag on its own is not

@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
 import { LoadingRows } from "@/components/loading";
 import { SearchBar } from "@/components/search-bar";
 import { SearchableSelect } from "@/components/searchable-select";
+import { SectionHeader } from "@/components/section-header";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -148,14 +148,17 @@ export default function Registries() {
 
   return (
     <>
-      <RailPortal>
-        {
+      <SectionHeader
+        page
+        title="Registries"
+        sub="Connect image registries and browse the repositories they contain."
+        actions={
           <Button onClick={() => setAdding(true)}>
             <PlusIcon />
             New registry
           </Button>
         }
-      </RailPortal>
+      />
       <ErrorAlert error={error} />
 
       {/* Hand-written rather than the DataTable's own, because this

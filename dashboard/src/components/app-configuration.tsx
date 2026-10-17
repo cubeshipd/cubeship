@@ -8,7 +8,7 @@ import { AppTCPPorts } from "@/components/app-tcp-ports";
 import { AppVolumes } from "@/components/app-volumes";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
-import { GitHubSource } from "@/components/github-source";
+import { GitSource } from "@/components/git-source";
 import { GlideSelect } from "@/components/glide-select";
 import { CUBESHIP, ImageSource, type ImageSourceValue } from "@/components/image-source";
 import { Notice } from "@/components/notice";
@@ -724,7 +724,7 @@ function SourceSection(props: SectionProps) {
         >
           {origin === "github" ? (
             <div className="space-y-5">
-              <GitHubSource
+              <GitSource
                 sourceControl={sourceSelect}
                 buildControl={buildMethodSelect}
                 repo={repo}

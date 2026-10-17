@@ -3,7 +3,8 @@
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLinkIcon, GitBranchIcon, Trash2Icon } from "lucide-react";
 import { useState } from "react";
-import { BitbucketConfigCard } from "@/components/bitbucket-config-card";
+import { BitbucketConnectDialog } from "@/components/bitbucket-connect-dialog";
+import { BitbucketWebhookCard } from "@/components/bitbucket-webhook-card";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
@@ -12,12 +13,13 @@ import { ConnectGitHub } from "@/components/github-connect";
 import { GitHubIcon } from "@/components/icons";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
+import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { StatusBadge } from "@/components/status-badge";
 import { api, type GitHubConnections, type Settings } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-// One row per provider, and today there is one provider.
+// One row per provider.
 //
 // A connection is a whole relationship with a provider, not one account
 // inside it: connecting GitHub once and then adding a second
@@ -39,7 +41,7 @@ type Provider = {
 
 export default function GitProviders() {
   const me = useSession();
-  const [disconnecting, setDisconnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState<"github" | "bitbucket" | null>(null);
 
   const settings = useQuery({
     queryKey: ["settings"],
@@ -66,13 +68,19 @@ export default function GitProviders() {
             id: "github",
             name: "GitHub",
             icon: GitHubIcon,
-            connected: installations.length > 0,
+            connected:
+              installations.length > 0 &&
+              connections.data?.app_status === "available" &&
+              settings.data?.github_oauth_ready !== false,
             accounts: installations.map((i) => i.account),
             // `installations/new` is the App's own entry point: for an
             // account that already has it, GitHub shows the configure
             // page instead of starting again — which is the same door
             // for "add an organization" and "let it see one more repo".
-            configureURL: slug ? `https://github.com/apps/${slug}/installations/new` : "",
+            configureURL:
+              connections.data?.app_status === "available" && slug
+                ? `https://github.com/apps/${slug}/installations/new`
+                : "",
           },
           {
             id: "bitbucket",
@@ -84,7 +92,6 @@ export default function GitProviders() {
           },
         ];
 
-  const _github = providers?.[0];
   const columns: Column<Provider>[] = [
     {
       id: "provider",
@@ -139,7 +146,7 @@ export default function GitProviders() {
               icon={Trash2Icon}
               label="Disconnect"
               danger
-              onClick={() => setDisconnecting(true)}
+              onClick={() => setDisconnecting(p.id as "github" | "bitbucket")}
             />
           </RowActions>
         ) : (
@@ -149,13 +156,11 @@ export default function GitProviders() {
                 settings={settings.data}
                 instanceName={settings.data?.domain ?? ""}
                 size="sm"
+                appStatus={connections.data?.app_status}
+                onRetry={() => void connections.refetch()}
               />
-            ) : settings.data?.bitbucket_configured ? (
-              <a href="/api/bitbucket/start" className="text-sm text-primary underline">
-                Connect
-              </a>
             ) : (
-              <span className="text-xs text-muted-foreground">Configure below</span>
+              <BitbucketConnectDialog onConnected={() => void bitbucket.refetch()} />
             )}
           </div>
         ),
@@ -164,6 +169,11 @@ export default function GitProviders() {
 
   return (
     <>
+      <SectionHeader
+        page
+        title="Git providers"
+        sub="Connect source providers for private builds and deploys on push."
+      />
       <ErrorAlert
         error={
           connections.error
@@ -216,39 +226,54 @@ export default function GitProviders() {
       )}
 
       {me.role === "admin" &&
-        settings.data &&
-        (!settings.data.bitbucket_configured || !settings.data.bitbucket_webhook_ready) && (
-          <BitbucketConfigCard settings={settings.data} onSaved={() => settings.refetch()} />
+        (bitbucket.data?.length ?? 0) > 0 &&
+        !settings.data?.bitbucket_webhook_ready && (
+          <BitbucketWebhookCard onSaved={() => void settings.refetch()} />
         )}
 
       <ConfirmDialog
-        open={disconnecting}
-        onOpenChange={setDisconnecting}
+        open={disconnecting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDisconnecting(null);
+        }}
         title={
-          installations.length > 1
-            ? `Disconnect GitHub, and all ${installations.length} accounts with it?`
-            : "Disconnect GitHub?"
+          disconnecting === "bitbucket"
+            ? "Disconnect Bitbucket?"
+            : installations.length > 1
+              ? `Disconnect GitHub, and all ${installations.length} accounts with it?`
+              : "Disconnect GitHub?"
         }
         confirmWord="disconnect"
         description={
-          <>
-            The App stays installed on GitHub — this only stops Cubeship using it. Apps built from
-            private repositories on{" "}
-            <code>{installations.map((i) => i.account).join(", ") || "those accounts"}</code> stop
-            being able to clone, and a push to one stops deploying anything. Containers already
-            running keep serving.
-          </>
+          disconnecting === "bitbucket" ? (
+            <>
+              Private Bitbucket repositories stop being available for new builds, and pushes stop
+              deploying apps. Containers already running keep serving.
+            </>
+          ) : (
+            <>
+              The App stays installed on GitHub — this only stops Cubeship using it. Apps built from
+              private repositories on{" "}
+              <code>{installations.map((i) => i.account).join(", ") || "those accounts"}</code> stop
+              being able to clone, and a push to one stops deploying anything. Containers already
+              running keep serving.
+            </>
+          )
         }
         confirmLabel="Disconnect"
         onConfirm={async () => {
           // Every installation, because the connection is the thing
           // being ended — leaving one behind would be a connection the
           // page says is gone.
-          for (const i of installations) {
-            await api.del(`/github/${i.id}`);
+          if (disconnecting === "bitbucket") {
+            for (const connection of bitbucket.data ?? [])
+              await api.del(`/bitbucket/${connection.id}`);
+            await bitbucket.refetch();
+          } else {
+            for (const i of installations) await api.del(`/github/${i.id}`);
+            await connections.refetch();
           }
-          await connections.refetch();
-          setDisconnecting(false);
+          setDisconnecting(null);
         }}
       />
     </>

@@ -37,6 +37,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			}, "name"),
 			"GitHubConnections": openapi.Object(map[string]*openapi.Schema{
 				"installations": openapi.Array(openapi.Ref("GitHubInstallation")),
+				"app_status":    openapi.String("available, missing, unavailable, or unconfigured. A missing App must be replaced before installing it."),
 				"install_url":   openapi.String("Where to send someone to install the App on an account. Empty until the instance is registered as a GitHub App."),
 			}, "installations"),
 		},

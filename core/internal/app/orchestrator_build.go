@@ -53,14 +53,13 @@ func (o *Orchestrator) buildTarget(ctx context.Context, a *Scoped, ref string) (
 	return ReferenceOf(a).ImageFor(host) + ":" + tag, pushTarget{Push: true, Registry: login}, nil
 }
 
-// cloneToken is what authenticates a clone of a private repository, or
-// "" for one that needs nothing.
-func (o *Orchestrator) cloneToken(ctx context.Context, a *Scoped) (string, error) {
+// cloneCredentials authenticates a private repository, or returns empty
+// strings for a public repository.
+func (o *Orchestrator) cloneCredentials(ctx context.Context, a *Scoped) (string, string, error) {
 	if o.git == nil {
-		return "", nil
+		return "", "", nil
 	}
-	token, _, err := o.git.TokenForRepository(ctx, a.SourceRepo)
-	return token, err
+	return o.git.CredentialsForRepository(ctx, a.SourceRepo)
 }
 
 // buildWithRailpack clones, plans and builds.
@@ -69,9 +68,9 @@ func (o *Orchestrator) cloneToken(ctx context.Context, a *Scoped) (string, error
 // Railpack reads it for the versions and commands a project pins, so two
 // apps on the same repository with different NODE_VERSION are two
 // different builds.
-func (o *Orchestrator) buildWithRailpack(ctx context.Context, a *Scoped, ref, image string, push pushTarget, token string, logs io.Writer) error {
+func (o *Orchestrator) buildWithRailpack(ctx context.Context, a *Scoped, ref, image string, push pushTarget, username, token string, logs io.Writer) error {
 	fmt.Fprintf(logs, "Fetching %s\n", a.SourceRepo)
-	dir, cleanupSource, err := buildkit.Clone(ctx, a.SourceRepo, ref, token)
+	dir, cleanupSource, err := buildkit.Clone(ctx, a.SourceRepo, ref, username, token)
 	if err != nil {
 		return err
 	}

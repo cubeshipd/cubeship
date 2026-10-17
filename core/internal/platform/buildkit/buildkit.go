@@ -9,6 +9,7 @@ package buildkit
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -107,7 +108,8 @@ type Request struct {
 	// which is the whole point: a URL appears in the build's own
 	// progress output, and that output goes into a deployment row and
 	// then into a browser.
-	GitToken string
+	GitToken    string
+	GitUsername string
 }
 
 // Build runs one build, writing BuildKit's progress to logs as it goes,
@@ -159,13 +161,14 @@ func (b *Builder) Build(ctx context.Context, req Request, logs io.Writer) error 
 	}
 
 	return b.solve(ctx, solveRequest{
-		image:     req.Image,
-		frontend:  "dockerfile.v0",
-		attrs:     frontendAttrs,
-		localDirs: localDirs,
-		gitToken:  req.GitToken,
-		push:      req.Push,
-		registry:  req.Registry,
+		image:       req.Image,
+		frontend:    "dockerfile.v0",
+		attrs:       frontendAttrs,
+		localDirs:   localDirs,
+		gitToken:    req.GitToken,
+		gitUsername: req.GitUsername,
+		push:        req.Push,
+		registry:    req.Registry,
 	}, logs)
 }
 
@@ -215,23 +218,23 @@ func GitContext(remote string) string {
 // plan — both come down to. They differ only in which frontend reads the
 // source and what it is told; everything after that is one code path.
 type solveRequest struct {
-	image     string
-	frontend  string
-	attrs     map[string]string
-	localDirs map[string]string
-	gitToken  string
-	push      bool
-	registry  Login
+	image       string
+	frontend    string
+	attrs       map[string]string
+	localDirs   map[string]string
+	gitToken    string
+	gitUsername string
+	push        bool
+	registry    Login
 }
 
 // gitAuth hands a clone credential to BuildKit as a session secret.
 //
-// GIT_AUTH_TOKEN is BuildKit's own name for it, and it means Basic auth
-// with the user "x-access-token" — which is exactly what a GitHub App
-// installation token is used as. The secret never reaches a Dockerfile
+// GIT_AUTH_HEADER lets each provider supply its required Basic username.
+// The secret never reaches a Dockerfile
 // instruction or the build's output; it authenticates the fetch and
 // nothing else.
-const gitAuthSecret = "GIT_AUTH_TOKEN"
+const gitAuthSecret = "GIT_AUTH_HEADER"
 
 // Login is a username and password for one registry host.
 type Login struct {
@@ -273,12 +276,15 @@ func authConfigFor(login Login, host string) authtypes.AuthConfig {
 	}
 }
 
-func gitAuth(token string) []session.Attachable {
+func gitAuth(username, token string) []session.Attachable {
 	if token == "" {
 		return nil
 	}
+	if username == "" {
+		username = "x-access-token"
+	}
 	return []session.Attachable{secretsprovider.FromMap(map[string][]byte{
-		gitAuthSecret: []byte(token),
+		gitAuthSecret: []byte("Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+token))),
 	})}
 }
 
@@ -326,7 +332,7 @@ func (b *Builder) solve(ctx context.Context, req solveRequest, logs io.Writer) e
 		return err
 	}
 
-	session := gitAuth(req.gitToken)
+	session := gitAuth(req.gitUsername, req.gitToken)
 
 	// Where the result goes, and it is one of two places.
 	//

@@ -23,6 +23,8 @@ export type GlideSelectOption = {
   tag?: string;
   searchText?: string;
 };
+export const GLIDE_FIELD_TRIGGER_CLASS =
+  "flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-md border border-border px-3 text-left text-sm text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50";
 type Phase = "closed" | "open";
 
 export function GlideSelect({
@@ -31,11 +33,14 @@ export function GlideSelect({
   value,
   defaultValue,
   onChange,
+  selectedValues,
+  closeOnSelect = true,
   placeholder = "Select…",
   ariaLabel = "Select",
   startIcon,
   triggerContent,
   triggerClassName,
+  field = false,
   accent = false,
   align = "left",
   mobileAlign,
@@ -50,11 +55,14 @@ export function GlideSelect({
   value?: string;
   defaultValue?: string;
   onChange: (value: string, option: GlideSelectOption) => void;
+  selectedValues?: string[];
+  closeOnSelect?: boolean;
   placeholder?: string;
   ariaLabel?: string;
   startIcon?: ReactNode;
   triggerContent?: ReactNode;
   triggerClassName?: string;
+  field?: boolean;
   accent?: boolean;
   align?: "left" | "right";
   mobileAlign?: "left" | "right";
@@ -177,7 +185,7 @@ export function GlideSelect({
     if (!option) return;
     if (value === undefined) setInner(option.value);
     onChange(option.value, option);
-    close();
+    if (closeOnSelect) close();
   }
 
   function open() {
@@ -207,7 +215,10 @@ export function GlideSelect({
       return;
     }
     if (event.key === "Escape" || event.key === "Tab") {
-      if (event.key === "Escape") event.preventDefault();
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+      }
       close();
     } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
@@ -265,7 +276,7 @@ export function GlideSelect({
       <button
         ref={trigger}
         id={triggerId}
-        data-slot={label ? "select-trigger" : undefined}
+        data-slot={label || field ? "select-trigger" : undefined}
         type="button"
         role="combobox"
         aria-label={label ? undefined : ariaLabel}
@@ -350,7 +361,8 @@ export function GlideSelect({
             <div
               id={listId}
               role="listbox"
-              aria-label={label ?? ariaLabel}
+              aria-label={label || ariaLabel}
+              aria-multiselectable={selectedValues ? true : undefined}
               className="relative grid max-h-64 gap-px overflow-y-auto"
             >
               {visibleOptions.length > 0 && (
@@ -365,7 +377,11 @@ export function GlideSelect({
                   key={option.value}
                   type="button"
                   role="option"
-                  aria-selected={option.value === selected}
+                  aria-selected={
+                    selectedValues
+                      ? selectedValues.includes(option.value)
+                      : option.value === selected
+                  }
                   id={`${id}-${index}`}
                   className="relative z-[1] flex h-10 cursor-pointer items-center gap-2 rounded-lg px-3 text-left text-sm text-foreground hover:bg-transparent focus-visible:outline-none"
                   onPointerEnter={() => setActive(index)}
@@ -386,14 +402,18 @@ export function GlideSelect({
                   {option.tag && (
                     <span className="text-xs text-muted-foreground">{option.tag}</span>
                   )}
-                  {option.value === selected && (
+                  {(selectedValues
+                    ? selectedValues.includes(option.value)
+                    : option.value === selected) && (
                     <HugeiconsIcon icon={Tick02Icon} size={14} className="text-primary" />
                   )}
                 </button>
               ))}
             </div>
             {visibleOptions.length === 0 && (
-              <p className="px-3 py-4 text-center text-xs text-muted-foreground">{emptyMessage}</p>
+              <p className="px-3 py-4 text-center text-xs text-muted-foreground">
+                {options.length === 0 || !query ? emptyMessage : `Nothing matches "${query}".`}
+              </p>
             )}
           </div>,
           document.body,

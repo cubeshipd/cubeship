@@ -1,18 +1,23 @@
 import type { ReactNode } from "react";
 
-// Section titles sit below the shared path rail. Sentence case and a
-// larger type size establish the reading hierarchy without a second page title.
+// The first section can also serve as the page title when the rail is absent.
 export function SectionHeader({
   title,
   sub,
   actions,
+  page = false,
 }: {
   title: ReactNode;
   sub?: ReactNode;
   actions?: ReactNode;
+  page?: boolean;
 }) {
   return (
-    <div className="dashboard-section-header">
+    <div
+      className={
+        page ? "dashboard-section-header dashboard-page-header" : "dashboard-section-header"
+      }
+    >
       <div className="min-w-0">
         <h2>{title}</h2>
         {sub && <p>{sub}</p>}

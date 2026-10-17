@@ -24,10 +24,14 @@ export function ConnectGitHub({
   settings,
   instanceName,
   size,
+  appStatus,
+  onRetry,
 }: {
   settings: Settings | undefined;
   instanceName: string;
   size?: "sm" | "xs";
+  appStatus?: "available" | "missing" | "unavailable" | "unconfigured";
+  onRetry?: () => void;
 }) {
   if (!settings) return null;
 
@@ -39,7 +43,19 @@ export function ConnectGitHub({
   const usable = settings.github_oauth_ready ?? false;
 
   // Already a usable App: skip straight to installing it.
-  if (settings.github_connected && settings.github_app_slug && usable) {
+  if (settings.github_connected && appStatus === "unavailable") {
+    return (
+      <Button size={size} onClick={onRetry}>
+        Retry GitHub
+      </Button>
+    );
+  }
+  if (
+    settings.github_connected &&
+    appStatus === "available" &&
+    settings.github_app_slug &&
+    usable
+  ) {
     return (
       <Button
         size={size}

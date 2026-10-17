@@ -1,20 +1,15 @@
 "use client";
 
-import { cn } from "cn";
-import { CheckIcon, ChevronDownIcon } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
-import { SearchBar } from "@/components/search-bar";
+import { ArrowDown01Icon } from "@hugeicons/core-free-icons";
+import { HugeiconsIcon } from "@hugeicons/react";
+import { GLIDE_FIELD_TRIGGER_CLASS, GlideSelect } from "@/components/glide-select";
 import type { Choice } from "@/components/searchable-select";
-import { Label } from "@/components/ui/label";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 const SEARCH_FROM = 8;
 
-// SearchableSelect for more than one: the same field, and a list that
-// stays open while you tick. Nothing chosen is a value of its own —
-// `none` names what it means.
 export function MultiSelect({
   label,
+  ariaLabel,
   hint,
   none,
   empty = "Nothing to choose from.",
@@ -24,6 +19,7 @@ export function MultiSelect({
   disabled,
 }: {
   label?: string;
+  ariaLabel?: string;
   hint?: string;
   none: string;
   empty?: string;
@@ -32,126 +28,61 @@ export function MultiSelect({
   onChange: (values: string[]) => void;
   disabled?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const search = useRef<HTMLInputElement>(null);
-  const searchable = choices.length >= SEARCH_FROM;
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return choices;
-    return choices.filter(
-      (c) => c.label.toLowerCase().includes(q) || c.value.toLowerCase().includes(q),
-    );
-  }, [choices, query]);
-
-  const chosen = choices.filter((c) => values.includes(c.value));
-  const toggle = (value: string) =>
-    onChange(values.includes(value) ? values.filter((v) => v !== value) : [...values, value]);
+  const chosen = choices.filter((choice) => values.includes(choice.value));
 
   return (
-    // A margin on the label rather than space-y: see SearchableSelect.
     <div>
-      {label && <Label className="mb-2 block text-xs text-muted-foreground">{label}</Label>}
-      <Popover
-        open={open}
-        onOpenChange={(next) => {
-          setOpen(next);
-          if (next) {
-            setQuery("");
-            if (searchable) requestAnimationFrame(() => search.current?.focus());
-          }
-        }}
-      >
-        <PopoverTrigger
-          render={
-            <button
-              type="button"
-              data-slot="select-trigger"
-              disabled={disabled}
-              className="flex h-10 w-full items-center justify-between gap-2 border border-border px-3 text-left text-sm disabled:cursor-not-allowed disabled:opacity-50"
+      <GlideSelect
+        label={label}
+        ariaLabel={ariaLabel ?? label ?? none}
+        className="w-full"
+        field
+        triggerClassName={GLIDE_FIELD_TRIGGER_CLASS}
+        triggerContent={
+          <>
+            <span
+              className={
+                chosen.length === 0
+                  ? "min-w-0 truncate text-muted-foreground"
+                  : "min-w-0 truncate font-mono text-xs"
+              }
             >
-              <span
-                className={cn(
-                  "min-w-0 truncate",
-                  chosen.length === 0 ? "text-muted-foreground" : "font-mono text-xs",
-                )}
-              >
-                {chosen.length === 0 ? none : chosen.map((c) => c.label).join(", ")}
-              </span>
-              <span className="flex shrink-0 items-center gap-2">
-                {chosen.length > 1 && (
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    {chosen.length}
-                  </span>
-                )}
-                <ChevronDownIcon className="size-4 text-muted-foreground" />
-              </span>
-            </button>
-          }
-        />
-        <PopoverContent align="start" className="w-(--anchor-width) p-0">
-          {searchable && (
-            <SearchBar
-              inputRef={search}
-              value={query}
-              onChange={setQuery}
-              placeholder="Search"
-              className="border-0 border-b focus-within:ring-0"
-            />
-          )}
-          <div className="max-h-64 overflow-y-auto p-1">
-            <button
-              type="button"
-              onClick={() => onChange([])}
-              className={cn(
-                "flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-secondary",
-                values.length === 0 && "bg-secondary",
+              {chosen.length === 0 ? none : chosen.map((choice) => choice.label).join(", ")}
+            </span>
+            <span className="flex shrink-0 items-center gap-2">
+              {chosen.length > 1 && (
+                <span className="font-mono text-[11px] text-muted-foreground">{chosen.length}</span>
               )}
-            >
-              <span className="min-w-0 flex-1 truncate text-xs">{none}</span>
-              <CheckIcon
-                className={cn(
-                  "size-3.5 shrink-0",
-                  values.length === 0 ? "text-primary" : "invisible",
-                )}
-              />
-            </button>
-            <div className="my-1 border-t border-border" />
-            {filtered.length === 0 && (
-              <p className="px-3 py-6 text-center text-xs text-muted-foreground">
-                {choices.length === 0 ? empty : `Nothing matches "${query}".`}
-              </p>
-            )}
-            {filtered.map((choice) => {
-              const on = values.includes(choice.value);
-              return (
-                <button
-                  key={choice.value}
-                  type="button"
-                  aria-pressed={on}
-                  onClick={() => toggle(choice.value)}
-                  className={cn(
-                    "flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-secondary",
-                    on && "bg-secondary",
-                  )}
-                >
-                  <span className="min-w-0 flex-1 truncate font-mono text-xs">{choice.label}</span>
-                  {choice.hint && (
-                    <span className="shrink-0 text-[11px] text-muted-foreground">
-                      {choice.hint}
-                    </span>
-                  )}
-                  <CheckIcon
-                    className={cn("size-3.5 shrink-0", on ? "text-primary" : "invisible")}
-                  />
-                </button>
-              );
-            })}
-          </div>
-        </PopoverContent>
-      </Popover>
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+              <HugeiconsIcon icon={ArrowDown01Icon} size={14} className="text-muted-foreground" />
+            </span>
+          </>
+        }
+        options={[
+          { value: "", label: none },
+          ...choices.map((choice) => ({
+            value: choice.value,
+            label: choice.label,
+            icon: choice.icon ? <choice.icon className="size-4" /> : undefined,
+            tag: choice.hint,
+          })),
+        ]}
+        value={values[0] ?? ""}
+        selectedValues={values.length === 0 ? [""] : values}
+        onChange={(value) =>
+          onChange(
+            value === ""
+              ? []
+              : values.includes(value)
+                ? values.filter((item) => item !== value)
+                : [...values, value],
+          )
+        }
+        closeOnSelect={false}
+        searchable={choices.length >= SEARCH_FROM}
+        emptyMessage={empty}
+        disabled={disabled}
+      />
+      {hint && <p className="mt-1 text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }

@@ -188,6 +188,7 @@ export default function AuditLog() {
           className="h-10 sm:col-span-2 lg:col-span-4 2xl:col-span-1"
         />
         <SearchableSelect
+          ariaLabel="Actor"
           value={who}
           onChange={setWho}
           choices={[
@@ -195,8 +196,13 @@ export default function AuditLog() {
             ...people.map((p) => ({ value: p.username, label: p.username })),
           ]}
         />
-        <SearchableSelect value={via} onChange={setVia} choices={VIA} />
-        <SearchableSelect value={outcome} onChange={setOutcome} choices={OUTCOMES} />
+        <SearchableSelect ariaLabel="Access method" value={via} onChange={setVia} choices={VIA} />
+        <SearchableSelect
+          ariaLabel="Outcome"
+          value={outcome}
+          onChange={setOutcome}
+          choices={OUTCOMES}
+        />
         <DateRangePicker value={range} onChange={setRange} className="h-10 w-full" />
       </div>
 

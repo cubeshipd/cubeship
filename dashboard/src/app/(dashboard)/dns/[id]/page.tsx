@@ -1,13 +1,12 @@
 "use client";
 
-import { ChevronRightIcon, KeyRoundIcon } from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import { use, useCallback, useEffect, useState } from "react";
+import { DetailSectionHeader } from "@/components/detail-section-header";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
 import { LoadingList, LoadingNote } from "@/components/loading";
 import Link from "@/components/navigation-link";
 import { SearchBar } from "@/components/search-bar";
-import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -17,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { api, type DNSZone } from "@/lib/api";
+import { api, type DNSProvider, type DNSZone } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // One provider's zones. Clicking one opens it.
@@ -30,10 +29,18 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
   const { id } = use(params);
 
   const [zones, setZones] = useState<DNSZone[] | null>(null);
+  const [provider, setProvider] = useState<DNSProvider | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
 
   const base = `/dns/${id}`;
+
+  useEffect(() => {
+    api
+      .get<DNSProvider[]>("/dns")
+      .then((list) => setProvider(list.find((item) => String(item.id) === id) ?? null))
+      .catch((cause) => setError(message(cause)));
+  }, [id]);
 
   const load = useCallback(() => {
     if (!base) return;
@@ -51,23 +58,12 @@ export default function DNSZones({ params }: PageProps<"/dns/[id]">) {
 
   return (
     <>
-      <RailPortal>
-        {
-          <Button
-            variant="outline"
-            nativeButton={false}
-            render={
-              // The secret is edited where it lives, not here: this
-              // credential may be pulling images somewhere else at the
-              // same time.
-              <Link href="/credentials">
-                <KeyRoundIcon />
-                Credential
-              </Link>
-            }
-          />
-        }
-      </RailPortal>
+      <DetailSectionHeader
+        backHref="/dns"
+        backLabel="Back to DNS providers"
+        title={provider?.provider_name ?? "DNS zones"}
+        sub="Zones this provider's credential can manage."
+      />
       {zones && zones.length > 0 && (
         <SearchBar
           className="mb-4"

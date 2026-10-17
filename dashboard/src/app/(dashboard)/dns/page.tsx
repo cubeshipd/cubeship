@@ -7,8 +7,8 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { DNSProviderDialog } from "@/components/dns-provider-dialog";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
 import { RowAction, RowActions } from "@/components/row-actions";
+import { SectionHeader } from "@/components/section-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -148,14 +148,17 @@ export default function DNSProviders() {
 
   return (
     <>
-      <RailPortal>
-        {
+      <SectionHeader
+        page
+        title="DNS providers"
+        sub="Connect providers to manage DNS zones and records from this instance."
+        actions={
           <Button onClick={() => setAdding(true)}>
             <PlusIcon />
             New DNS provider
           </Button>
         }
-      </RailPortal>
+      />
       <ErrorAlert error={error} />
 
       <DataTable

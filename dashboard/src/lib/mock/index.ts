@@ -37,6 +37,7 @@ import { db, type Row, series } from "./db";
 // the skeletons are never reviewed.
 const LATENCY_MS = 180;
 let signedIn = true;
+let bitbucketConnections: { id: number; account: string }[] = [];
 
 type Handler = (p: string[], body?: unknown, query?: URLSearchParams) => unknown;
 
@@ -951,7 +952,11 @@ const routes: [string, string, Handler][] = [
   // dashboard addresses it there rather than under an id, because it
   // has no credential row to have one.
   ["GET", "/registry/repositories", () => repositories],
-  ["GET", "/registry/images", () => images],
+  [
+    "GET",
+    "/registry/images",
+    () => images.map(({ pushed_at, ...image }) => ({ ...image, created_at: pushed_at })),
+  ],
   ["GET", "/registry/usage", () => usage],
   ["GET", "/registries/tags", () => ({ tags: ["v1.4.0", "v1.3.2", "latest"] })],
   ["GET", "/registries/:id", (p) => row(db.registries, "id", p[0])],
@@ -970,6 +975,22 @@ const routes: [string, string, Handler][] = [
   ["PUT", "/dns/:id/records", () => ({})],
   ["GET", "/certificates", () => db.certificates],
   ["GET", "/firewall", () => db.firewall],
+  [
+    "POST",
+    "/firewall/docker",
+    () => {
+      db.firewall.docker_adopted = true;
+      return db.firewall;
+    },
+  ],
+  [
+    "DELETE",
+    "/firewall/docker",
+    () => {
+      db.firewall.docker_adopted = false;
+      return db.firewall;
+    },
+  ],
   [
     "POST",
     "/firewall/:action",
@@ -1045,7 +1066,35 @@ const routes: [string, string, Handler][] = [
   ["POST", "/nodes/:name/storage/prune", () => ({ reclaimed_bytes: 5.2 * 1024 ** 3 })],
   ["GET", "/nodes/mesh", () => db.mesh],
   ["GET", "/github", () => db.github],
+  ["GET", "/bitbucket", () => bitbucketConnections],
+  [
+    "POST",
+    "/bitbucket",
+    () => {
+      const connection = { id: 1, account: "Demo workspace" };
+      bitbucketConnections = [connection];
+      return connection;
+    },
+  ],
+  [
+    "DELETE",
+    "/bitbucket/:id",
+    (p) => {
+      bitbucketConnections = bitbucketConnections.filter(
+        (connection) => connection.id !== Number(p[0]),
+      );
+    },
+  ],
   ["GET", "/github/repositories", () => githubRepos],
+  [
+    "GET",
+    "/bitbucket/repositories",
+    () =>
+      bitbucketConnections.length
+        ? [{ full_name: "demo/web", private: true, default_branch: "main" }]
+        : [],
+  ],
+  ["GET", "/bitbucket/branches", () => [{ name: "main" }]],
 ];
 
 // --- the switchboard ---

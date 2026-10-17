@@ -127,6 +127,7 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"installations": toResponses(installations),
+		"app_status":    h.svc.AppStatus(ctx),
 		// Where to send someone to install the App. Empty until this
 		// instance is registered as one.
 		"install_url": h.svc.InstallURL(ctx),

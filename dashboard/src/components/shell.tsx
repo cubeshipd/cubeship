@@ -243,6 +243,20 @@ export function Shell({ children }: { children: ReactNode }) {
     setMe((current) => (current ? { ...current, ...change } : current));
   }, []);
 
+  const headerless = [
+    "/projects",
+    "/databases",
+    "/storage",
+    "/templates",
+    "/dns",
+    "/firewall",
+    "/registries",
+    "/git",
+  ].some((route) => pathname === route || pathname.startsWith(`${route}/`));
+  const inlineMobileNav = ["/templates", "/dns", "/firewall", "/registries", "/git"].some(
+    (route) => pathname === route || pathname.startsWith(`${route}/`),
+  );
+
   if (!me)
     return <SessionLoading error={sessionError} onRetry={() => setAttempt((value) => value + 1)} />;
 
@@ -271,20 +285,13 @@ export function Shell({ children }: { children: ReactNode }) {
 
             <main className="dashboard-main">
               <CommandPalette screens={SCREENS} />
-              {pathname === "/projects" ||
-              pathname.startsWith("/projects/") ||
-              pathname === "/databases" ||
-              pathname.startsWith("/databases/") ||
-              pathname === "/storage" ||
-              pathname.startsWith("/storage/") ||
-              pathname === "/templates" ||
-              pathname.startsWith("/templates/") ? (
+              {headerless ? (
                 <div
                   id="dashboard-content"
                   tabIndex={-1}
                   className="dashboard-container dashboard-content"
                 >
-                  {(pathname === "/templates" || pathname.startsWith("/templates/")) && (
+                  {inlineMobileNav && (
                     <div className="-mt-4 mb-3 hidden justify-end max-[760px]:flex">
                       <MobileNavigation me={me} />
                     </div>

@@ -5,9 +5,12 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -183,6 +186,48 @@ func (s *Service) InstallURL(ctx context.Context) string {
 	return "https://github.com/apps/" + slug + "/installations/new"
 }
 
+// AppStatus checks the public App against the id registered on this instance.
+// A deleted App's slug can eventually be reused, so a matching URL alone is
+// not proof that an install would grant this instance any repositories.
+func (s *Service) AppStatus(ctx context.Context) string {
+	values, err := s.settings.Load(ctx)
+	if err != nil {
+		return "unavailable"
+	}
+	if !values.HasGitHub() || values.Get(settings.GitHubAppSlug) == "" {
+		return "unconfigured"
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		APIBase+"/apps/"+url.PathEscape(values.Get(settings.GitHubAppSlug)), nil)
+	if err != nil {
+		return "unavailable"
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "unavailable"
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return "missing"
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "unavailable"
+	}
+	var app struct {
+		ID int64 `json:"id"`
+	}
+	if json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&app) != nil {
+		return "unavailable"
+	}
+	if strconv.FormatInt(app.ID, 10) != values.Get(settings.GitHubAppID) {
+		return "missing"
+	}
+	return "available"
+}
+
 // Repositories lists what this instance's installations were
 // granted, across all of them.
 //
@@ -340,7 +385,7 @@ func (s *Service) RegisterFromManifest(ctx context.Context, caller *user.User, c
 	if err != nil {
 		return nil, err
 	}
-	return s.settings.Set(ctx, caller, map[string]string{
+	values, err := s.settings.Set(ctx, caller, map[string]string{
 		settings.GitHubAppID:         strconv.FormatInt(app.ID, 10),
 		settings.GitHubAppSlug:       app.Slug,
 		settings.GitHubPrivateKey:    app.PEM,
@@ -348,4 +393,15 @@ func (s *Service) RegisterFromManifest(ctx context.Context, caller *user.User, c
 		settings.GitHubClientID:      app.ClientID,
 		settings.GitHubClientSecret:  app.ClientSecret,
 	})
+	if err != nil {
+		return values, err
+	}
+	if started.replace {
+		// Installations belong to the previous App, even if the account
+		// names match. Its IDs cannot be used with the new App's key.
+		if err := s.Repo().DeleteAll(ctx); err != nil {
+			return values, err
+		}
+	}
+	return values, nil
 }

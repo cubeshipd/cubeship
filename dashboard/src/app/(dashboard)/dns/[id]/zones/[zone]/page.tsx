@@ -6,8 +6,8 @@ import { use, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
+import { DetailSectionHeader } from "@/components/detail-section-header";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
@@ -44,6 +44,7 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
   const [editing, setEditing] = useState<{ record?: DNSRecord } | null>(null);
   const [deleting, setDeleting] = useState<DNSRecord | null>(null);
   const [query, setQuery] = useState("");
+  const [recordType, setRecordType] = useState("");
 
   const base = `/dns/${id}`;
 
@@ -87,9 +88,10 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
       ? null
       : all.filter(
           (r) =>
-            r.name.toLowerCase().includes(q) ||
-            r.type.toLowerCase().includes(q) ||
-            r.values.some((v) => v.toLowerCase().includes(q)),
+            (!recordType || r.type === recordType) &&
+            (r.name.toLowerCase().includes(q) ||
+              r.type.toLowerCase().includes(q) ||
+              r.values.some((v) => v.toLowerCase().includes(q))),
         );
 
   // The widths add up to 100 and are proportions, not pixels. Value
@@ -160,23 +162,40 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
 
   return (
     <>
-      {" "}
-      <RailPortal>
-        {zone && (
-          <Button onClick={() => setEditing({})}>
-            <PlusIcon />
-            New record
-          </Button>
-        )}
-      </RailPortal>
+      <DetailSectionHeader
+        backHref={`/dns/${id}`}
+        backLabel="Back to zones"
+        title={name}
+        sub={`DNS records${provider ? ` via ${provider.provider_name}` : ""}.`}
+        actions={
+          zone && (
+            <Button onClick={() => setEditing({})}>
+              <PlusIcon />
+              New record
+            </Button>
+          )
+        }
+      />
       {all && all.length > 0 && (
-        <SearchBar
-          className="mb-4"
-          value={query}
-          onChange={setQuery}
-          placeholder="Filter by name, type or value"
-          count={{ value: filtered?.length ?? 0, singular: "record", plural: "records" }}
-        />
+        <div className="mb-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_12rem]">
+          <SearchBar
+            value={query}
+            onChange={setQuery}
+            placeholder="Filter records"
+            count={{ value: filtered?.length ?? 0, singular: "record", plural: "records" }}
+          />
+          <SearchableSelect
+            ariaLabel="Record type"
+            value={recordType}
+            onChange={setRecordType}
+            choices={[
+              { value: "", label: "All types" },
+              ...Array.from(new Set(all.map((record) => record.type)))
+                .sort()
+                .map((type) => ({ value: type, label: type })),
+            ]}
+          />
+        </div>
       )}
       <ErrorAlert error={error ? message(error) : null} />
       {missing && (
@@ -191,8 +210,8 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
           rows={filtered}
           rowKey={(r) => `${r.name}-${r.type}`}
           empty={
-            query
-              ? `Nothing matches \u201c${query}\u201d.`
+            query || recordType
+              ? "No records match these filters."
               : "This zone has no records the provider will report."
           }
         />
@@ -274,7 +293,7 @@ function RecordDialog({
       await api.put(`${base}/records?zone=${encodeURIComponent(zone.id)}`, {
         name,
         type,
-        values,
+        values: type === "CNAME" ? values.slice(0, 1) : values,
         ttl: Number(ttl) || 300,
         proxied: proxiable ? proxied : false,
       });
@@ -308,7 +327,7 @@ function RecordDialog({
               <SearchableSelect
                 label="Type"
                 fieldClassName="col-span-3"
-                searchable={false}
+                searchable
                 value={type}
                 onChange={setType}
                 choices={RECORD_TYPES.map((t) => ({ value: t, label: t }))}
@@ -324,7 +343,7 @@ function RecordDialog({
 
               <div className="col-span-9 space-y-2">
                 <Label className="text-xs text-muted-foreground">Value</Label>
-                {values.map((value, i) => (
+                {(type === "CNAME" ? values.slice(0, 1) : values).map((value, i) => (
                   // The index is the identity: these are positions in a
                   // list someone is editing, and two identical values
                   // are two rows that must stay two rows.
@@ -338,7 +357,7 @@ function RecordDialog({
                         setValues(values.map((v, j) => (j === i ? e.target.value : v)))
                       }
                     />
-                    {values.length > 1 && (
+                    {type !== "CNAME" && values.length > 1 && (
                       <Button
                         type="button"
                         variant="ghost"
@@ -352,13 +371,15 @@ function RecordDialog({
                     )}
                   </div>
                 ))}
-                <button
-                  type="button"
-                  onClick={() => setValues([...values, ""])}
-                  className="text-xs text-muted-foreground hover:text-foreground"
-                >
-                  + Add another value
-                </button>
+                {type !== "CNAME" && (
+                  <button
+                    type="button"
+                    onClick={() => setValues([...values, ""])}
+                    className="text-xs text-muted-foreground hover:text-foreground"
+                  >
+                    + Add another value
+                  </button>
+                )}
               </div>
 
               <TextField
@@ -400,7 +421,9 @@ function RecordDialog({
             <ActionButton
               type="submit"
               busy={busy}
-              disabled={!name || values.every((v) => !v.trim())}
+              disabled={
+                !name || (type === "CNAME" ? !values[0]?.trim() : values.every((v) => !v.trim()))
+              }
             >
               Save
             </ActionButton>

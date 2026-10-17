@@ -431,6 +431,9 @@
 .dashboard-section-header:first-child {
   margin-top: 0;
 }
+.dashboard-section-header.dashboard-page-header {
+  margin-top: 0;
+}
 .dashboard-section-header h2 {
   font-size: 20px;
   font-weight: 500;

@@ -37,10 +37,11 @@ func BranchOf(ref string) (string, bool) {
 var (
 	ErrBadSignature  = errors.New("the webhook signature does not match")
 	ErrNotConfigured = errors.New("configure the Bitbucket OAuth consumer first")
+	ErrInvalidToken  = errors.New("Bitbucket rejected the API token or its required scopes")
 	ErrState         = errors.New("this OAuth state is expired, already used, or belongs to another user")
 	ErrReconnect     = errors.New("reconnect the Bitbucket account")
 	ErrRepository    = errors.New("name an accessible Bitbucket repository as workspace/repository")
-	ErrProvider      = errors.New("Bitbucket request failed; retry or check the consumer permissions")
+	ErrProvider      = errors.New("Bitbucket request failed; retry or check the token scopes")
 )
 
 func VerifyWebhook(body []byte, secret, signature string) error {
@@ -66,6 +67,7 @@ type Connection struct {
 	refreshToken string
 	expiresAt    time.Time
 	consumerID   string
+	apiToken     string
 }
 type RepositoryRef struct {
 	FullName      string `json:"full_name"`

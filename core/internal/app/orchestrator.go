@@ -69,7 +69,7 @@ type Orchestrator struct {
 	settings *settings.Service
 	creds    CredentialLookup
 	builder  ImageBuilder
-	git      GitTokens
+	git      GitCredentials
 	// datastores is what an attached database contributes to a
 	// container's environment. Nil until the daemon wires it in.
 	datastores DatastoreVars
@@ -198,14 +198,12 @@ type ImageBuilder interface {
 	BuildPlanned(ctx context.Context, req buildkit.PlannedRequest, logs io.Writer) error
 }
 
-// GitTokens answers what credential a clone of a connected account's
-// repository should use. Only a private repository ever needs one, so it
-// may be nil.
-type GitTokens interface {
-	TokenForRepository(ctx context.Context, repoURL string) (string, bool, error)
+// GitCredentials answers the username and password for a connected repository.
+type GitCredentials interface {
+	CredentialsForRepository(ctx context.Context, repoURL string) (string, string, error)
 }
 
-func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds CredentialLookup, builder ImageBuilder, git GitTokens, localRegistry string) *Orchestrator {
+func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds CredentialLookup, builder ImageBuilder, git GitCredentials, localRegistry string) *Orchestrator {
 	return &Orchestrator{
 		db:                   db,
 		docker:               d,
@@ -270,13 +268,13 @@ func (o *Orchestrator) buildFromRepository(ctx context.Context, a *Scoped, ref s
 	// one only for accounts it has connected. Nothing found means a
 	// public repository — letting the clone be refused is better than
 	// refusing one that would have worked.
-	token, err := o.cloneToken(ctx, a)
+	username, token, err := o.cloneCredentials(ctx, a)
 	if err != nil {
 		return Image{}, err
 	}
 
 	if Source(a.Source) == SourceRailpack {
-		if err := o.buildWithRailpack(ctx, a, ref, image, push, token, logs); err != nil {
+		if err := o.buildWithRailpack(ctx, a, ref, image, push, username, token, logs); err != nil {
 			return Image{}, err
 		}
 		return Image{Ref: image, Local: !push.Push}, nil
@@ -287,14 +285,15 @@ func (o *Orchestrator) buildFromRepository(ctx context.Context, a *Scoped, ref s
 		target += "#" + ref
 	}
 	err = o.builder.Build(ctx, buildkit.Request{
-		ContextGit: target,
-		Dockerfile: a.SourceDockerfile,
-		Image:      image,
-		Labels:     map[string]string{"cubeship.app": ReferenceOf(a).String()},
-		GitToken:   token,
-		Args:       a.BuildArgs,
-		Push:       push.Push,
-		Registry:   push.Registry,
+		ContextGit:  target,
+		Dockerfile:  a.SourceDockerfile,
+		Image:       image,
+		Labels:      map[string]string{"cubeship.app": ReferenceOf(a).String()},
+		GitToken:    token,
+		GitUsername: username,
+		Args:        a.BuildArgs,
+		Push:        push.Push,
+		Registry:    push.Registry,
 	}, logs)
 	if err != nil {
 		return Image{}, err

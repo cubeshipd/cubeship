@@ -230,7 +230,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	// three kinds of container.
 	series := metrics.NewService(db)
 	apps := app.NewService(db, projects,
-		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gh, opts.PullRegistry),
+		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gitCredentials{gh, bb}, opts.PullRegistry),
 		cfg, series)
 	apps.SetDataDir(opts.DataDir)
 

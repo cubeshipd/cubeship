@@ -1,12 +1,11 @@
 "use client";
 
-import { PencilIcon, PlusIcon, ShieldAlertIcon, Trash2Icon, XIcon } from "lucide-react";
+import { PencilIcon, PlusIcon, ShieldOffIcon, Trash2Icon, XIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
 import { LoadingControl, LoadingNote } from "@/components/loading";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
@@ -15,7 +14,6 @@ import { SectionHeader } from "@/components/section-header";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -25,6 +23,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { api, type Firewall, type FirewallPublishedPort, type FirewallRule } from "@/lib/api";
 import { message } from "@/lib/errors";
@@ -37,9 +36,8 @@ const keepsYouIn =
 // The two groups, said once. They are facts about the page rather than
 // about the answer, which is what lets the skeleton below use them —
 // and what keeps the heading from being written twice and drifting.
-const hostSub = "Traffic to the host itself, not to anything in a container.";
-const appsSub =
-  "Traffic forwarded to a container. Docker routes it around ufw, so it is governed separately — and a firewall at your provider sits in front of both, which this page cannot see.";
+const hostSub = "Incoming traffic to the server.";
+const appsSub = "Incoming traffic to published container ports.";
 
 // The host's firewall.
 //
@@ -58,6 +56,8 @@ export default function FirewallPage() {
   const [deleting, setDeleting] = useState<FirewallRule | null>(null);
   const [editing, setEditing] = useState<FirewallRule | null>(null);
   const [adopting, setAdopting] = useState(false);
+  const [turningOff, setTurningOff] = useState(false);
+  const [releasingPorts, setReleasingPorts] = useState(false);
 
   const reload = useCallback(() => {
     api
@@ -145,37 +145,38 @@ export default function FirewallPage() {
 
   return (
     <>
-      <RailPortal>
-        {!data && !error ? (
-          <LoadingControl className="h-8 w-[94px]" />
-        ) : data?.installed ? (
-          <ActionButton
-            busy={busy}
-            variant={data.enabled ? "outline" : "default"}
-            onClick={() =>
-              act(() => api.post<Firewall>(`/firewall/${data.enabled ? "disable" : "enable"}`))
-            }
-          >
-            {data.enabled ? "Turn off" : "Turn on"}
-          </ActionButton>
-        ) : undefined}
-      </RailPortal>
+      <SectionHeader
+        page
+        title="Firewall"
+        sub="Allow or block incoming traffic to the server and its containers."
+        actions={
+          !data && !error ? (
+            <LoadingControl className="h-8 w-[94px]" />
+          ) : data?.available && data.installed ? (
+            <ActionButton
+              busy={busy}
+              variant={data.enabled ? "outline" : "default"}
+              onClick={() =>
+                data.enabled
+                  ? setTurningOff(true)
+                  : act(() => api.post<Firewall>("/firewall/enable"))
+              }
+            >
+              {data.enabled && <ShieldOffIcon />}
+              {data.enabled ? "Turn off" : "Turn on"}
+            </ActionButton>
+          ) : undefined
+        }
+      />
       <ErrorAlert error={error} />
 
       {!data && !error && <Skeleton columns={columns} />}
 
-      {data && !data.available && (
-        <Notice>
-          This daemon is running as a host process rather than as a container, so it has no way to
-          read the machine&apos;s firewall. An installed instance does.
-        </Notice>
-      )}
+      {data && !data.available && <Notice>Firewall status is unavailable on this instance.</Notice>}
 
       {data?.available && !data.installed && (
         <Notice>
-          This host has no <code>ufw</code> installed. Installing it is yours to do —{" "}
-          <code>apt install ufw</code> on a Debian or Ubuntu — and this page picks it up once it is
-          there. Cubeship does not install software on your machine uninvited.
+          Install <code>ufw</code> on the host to manage firewall rules here.
         </Notice>
       )}
 
@@ -183,12 +184,10 @@ export default function FirewallPage() {
         <>
           {!data.enabled && (
             <Notice tone="warning">
-              The firewall is off, so the rules below are waiting rather than applying. Everything
-              this machine listens on is offered to the network — whether anything reaches it
-              depends on what is in front, which this page cannot see —{" "}
+              Firewall is off. Rules below are saved but inactive.{" "}
               {data.ssh_allowed || (data.ssh_ports ?? []).length > 0
-                ? "turning it on puts them in force."
-                : "and this daemon could not find out which port sshd is on, so turning it on is refused: add the rule for the port you connect on first, or you would not get back in."}
+                ? "Turn it on to apply them."
+                : "Add a rule for your SSH port before turning it on, or you may lose access."}
             </Notice>
           )}
           {data.enabled && !data.ssh_allowed && (
@@ -200,7 +199,7 @@ export default function FirewallPage() {
           )}
 
           <SectionHeader
-            title="This machine"
+            title="Server rules"
             sub={hostSub}
             actions={
               <Button onClick={() => setAdding("host")}>
@@ -219,13 +218,13 @@ export default function FirewallPage() {
             className="mb-4"
             empty={
               data.enabled
-                ? "No rules. With the default policy denying incoming, that means nothing reaches this host."
-                : "No rules yet. Add the one for SSH before turning the firewall on — with none, turning it on would end this session."
+                ? "No server rules. Incoming traffic is blocked by default."
+                : "No server rules. Add an SSH rule before turning on the firewall."
             }
           />
 
           <SectionHeader
-            title="Published ports"
+            title="Container rules"
             sub={appsSub}
             actions={
               data.docker_adopted ? (
@@ -238,67 +237,20 @@ export default function FirewallPage() {
           />
 
           {!data.docker_adopted ? (
-            <Card className="mb-4">
-              <CardContent className="space-y-4">
-                <div className="flex items-start gap-3">
-                  <ShieldAlertIcon className="mt-0.5 size-4 shrink-0 text-warning" />
-                  <div className="space-y-2 text-sm text-muted-foreground">
-                    <p className="text-foreground">
-                      Published container ports are not behind this firewall.
-                    </p>
-                    <p>
-                      Docker writes its own rules ahead of ufw&apos;s, so <code>ufw deny</code>{" "}
-                      never sees these. Turning this on routes Docker&apos;s chain through ufw first
-                      — after it, <strong>a published port with no rule is closed.</strong>
-                    </p>
-                  </div>
-                </div>
-
-                {data.published.length > 0 && (
-                  <div className="border border-border">
-                    <div className="border-border border-b px-3 py-2 text-[11px] tracking-[0.12em] text-muted-foreground uppercase">
-                      Open right now
-                    </div>
-                    <ul className="divide-y divide-border">
-                      {data.published.map((p) => (
-                        <li
-                          key={`${p.port}/${p.protocol}`}
-                          className="flex items-center justify-between px-3 py-2 font-mono text-xs"
-                        >
-                          <span>
-                            {p.port}/{p.protocol}
-                            {p.inside ? (
-                              <span className="text-muted-foreground"> &rarr; {p.inside}</span>
-                            ) : null}
-                          </span>
-                          <span className="flex items-center gap-2 text-muted-foreground">
-                            {p.allowed_by && (
-                              <span className="text-[10px] text-subtle-foreground uppercase tracking-wide">
-                                {p.allowed_by === "exposed" ? "exposed" : "rule"}
-                              </span>
-                            )}
-                            {p.container}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                <div className="flex items-center gap-3">
-                  <Button onClick={() => setAdopting(true)}>Put them behind the firewall</Button>
-                  <span className="text-xs text-muted-foreground">You choose which stay open.</span>
-                </div>
-              </CardContent>
-            </Card>
+            <Notice tone="warning">
+              Published container ports currently bypass these rules. Choose which ports to keep
+              open before protecting them.
+              <div className="mt-3">
+                <Button onClick={() => setAdopting(true)}>Protect container ports</Button>
+              </div>
+            </Notice>
           ) : (
             <>
               {exposed.length > 0 && (
                 <Notice tone="warning">
                   {exposed.map((p) => `${p.port}/${p.protocol} (${p.container})`).join(", ")}{" "}
-                  {exposed.length === 1 ? "is" : "are"} published and admitted by no rule, so
-                  nothing outside this host can reach {exposed.length === 1 ? "it" : "them"} any
-                  more.
+                  {exposed.length === 1 ? "is" : "are"} blocked. Add an allow rule to open{" "}
+                  {exposed.length === 1 ? "it" : "them"}.
                 </Notice>
               )}
               {admittedByStanza.length > 0 && (
@@ -306,9 +258,8 @@ export default function FirewallPage() {
                   {admittedByStanza
                     .map((p) => `${p.port}/${p.protocol} (${p.container})`)
                     .join(", ")}{" "}
-                  {admittedByStanza.length === 1 ? "stays" : "stay"} open because{" "}
-                  {admittedByStanza.length === 1 ? "it is" : "they are"} an exposed database or
-                  bucket, not by a rule below — it will not appear in the table.
+                  {admittedByStanza.length === 1 ? "is" : "are"} open through database or bucket
+                  exposure settings.
                 </Notice>
               )}
               <DataTable
@@ -316,20 +267,17 @@ export default function FirewallPage() {
                 rows={appRules}
                 rowKey={(r) => `apps-${r.index}`}
                 className="mb-4"
-                empty="No rules, so every published port is closed to the outside."
+                empty="No container rules. Ports without an explicit exception are blocked."
               />
               <div className="mb-6 flex items-center gap-3">
                 <Button
                   variant="ghost"
                   size="xs"
                   className="text-muted-foreground hover:text-destructive"
-                  onClick={() => act(() => api.del<Firewall>("/firewall/docker"))}
+                  onClick={() => setReleasingPorts(true)}
                 >
-                  Stop governing published ports
+                  Stop protecting container ports
                 </Button>
-                <span className="text-xs text-subtle-foreground">
-                  They go back to being reachable regardless of any rule.
-                </span>
               </div>
             </>
           )}
@@ -347,6 +295,30 @@ export default function FirewallPage() {
           setEditing(null);
         }}
         onSaved={setData}
+      />
+
+      <ConfirmDialog
+        open={turningOff}
+        onOpenChange={setTurningOff}
+        title="Turn off the firewall?"
+        description="Incoming traffic will no longer be blocked by these rules. Hold to turn it off."
+        confirmLabel="Turn off"
+        holdToConfirm
+        onConfirm={async () => {
+          setData(await api.post<Firewall>("/firewall/disable"));
+        }}
+      />
+
+      <ConfirmDialog
+        open={releasingPorts}
+        onOpenChange={setReleasingPorts}
+        title="Stop protecting container ports?"
+        description="Published container ports will become reachable without these rules."
+        confirmLabel="Stop protecting"
+        holdToConfirm
+        onConfirm={async () => {
+          setData(await api.del<Firewall>("/firewall/docker"));
+        }}
       />
 
       <ConfirmDialog
@@ -400,9 +372,9 @@ export default function FirewallPage() {
 function Skeleton({ columns }: { columns: Column<FirewallRule>[] }) {
   return (
     <>
-      <SectionHeader title="This machine" sub={hostSub} actions={<LoadingControl />} />
+      <SectionHeader title="Server rules" sub={hostSub} actions={<LoadingControl />} />
       <DataTable columns={columns} rows={null} loadingRows={3} className="mb-4" />
-      <SectionHeader title="Published ports" sub={appsSub} actions={<LoadingControl />} />
+      <SectionHeader title="Container rules" sub={appsSub} actions={<LoadingControl />} />
       <DataTable columns={columns} rows={null} loadingRows={2} className="mb-4" />
       <LoadingNote>Reading the host&apos;s firewall</LoadingNote>
     </>
@@ -476,7 +448,7 @@ function AdoptDialog({
       <DialogContent className="sm:max-w-lg">
         <form onSubmit={submit}>
           <DialogHeader>
-            <DialogTitle>Put published ports behind the firewall</DialogTitle>
+            <DialogTitle>Protect container ports</DialogTitle>
             <DialogDescription>
               Everything not ticked stops being reachable from outside this host.
             </DialogDescription>
@@ -540,7 +512,7 @@ function AdoptDialog({
               Cancel
             </Button>
             <ActionButton type="submit" busy={busy}>
-              Do it
+              Protect ports
             </ActionButton>
           </DialogFooter>
         </form>
@@ -645,12 +617,12 @@ function RuleDialog({
         <form onSubmit={submit}>
           <DialogHeader>
             <DialogTitle>
-              {rule ? "Edit rule" : apps ? "Rule for a published port" : "Rule for this machine"}
+              {rule ? "Edit rule" : apps ? "Add container rule" : "Add server rule"}
             </DialogTitle>
             <DialogDescription>
               {apps
-                ? "Traffic forwarded to a container. This is what governs a port you published — a database, an app Traefik does not front."
-                : "Traffic to the host itself. This does not touch anything running in a container."}
+                ? "Choose how to handle a published port."
+                : "Choose how to handle traffic to the server."}
             </DialogDescription>
           </DialogHeader>
 
@@ -662,8 +634,8 @@ function RuleDialog({
                 label="Action"
                 choices={[
                   { value: "allow", label: "Allow" },
-                  { value: "deny", label: "Deny", hint: "drops silently" },
-                  { value: "reject", label: "Reject", hint: "answers" },
+                  { value: "deny", label: "Block", hint: "drops silently" },
+                  { value: "reject", label: "Reject", hint: "sends a response" },
                 ]}
                 value={action}
                 onChange={setAction}
@@ -726,36 +698,41 @@ function RuleDialog({
                 // about it is stable while they type.
                 // biome-ignore lint/suspicious/noArrayIndexKey: see above
                 <div key={i} className="flex items-center gap-2">
-                  <SearchableSelect
-                    label=""
-                    fieldClassName="w-44 shrink-0"
-                    choices={[
-                      { value: "any", label: "Anywhere" },
-                      {
-                        value: "mine",
-                        label: "This computer",
-                        hint: yourIP,
-                      },
-                      { value: "custom", label: "An address…" },
-                    ]}
-                    value={source.kind}
-                    onChange={(kind) => setSource(i, { kind: kind as Source["kind"] })}
-                  />
-                  {source.kind === "custom" && (
-                    <TextField
+                  <div
+                    className={`grid min-w-0 flex-1 items-center gap-2 ${source.kind === "any" ? "" : "grid-cols-2"}`}
+                  >
+                    <SearchableSelect
                       label=""
-                      fieldClassName="flex-1"
-                      value={source.value}
-                      spellCheck={false}
-                      placeholder="203.0.113.4 or 10.0.0.0/8"
-                      onChange={(e) => setSource(i, { value: e.target.value })}
+                      ariaLabel={`Source ${i + 1}`}
+                      fieldClassName="min-w-0"
+                      choices={[
+                        { value: "any", label: "Anywhere" },
+                        {
+                          value: "mine",
+                          label: "This computer",
+                          hint: yourIP,
+                        },
+                        { value: "custom", label: "An address…" },
+                      ]}
+                      value={source.kind}
+                      onChange={(kind) => setSource(i, { kind: kind as Source["kind"] })}
                     />
-                  )}
-                  {source.kind === "mine" && (
-                    <span className="font-mono text-xs text-muted-foreground">
-                      {yourIP ?? "unknown"}
-                    </span>
-                  )}
+                    {source.kind === "custom" && (
+                      <Input
+                        aria-label={`Source ${i + 1} address or CIDR`}
+                        className="h-10 min-w-0 px-3 text-sm"
+                        value={source.value}
+                        spellCheck={false}
+                        placeholder="203.0.113.4 or 10.0.0.0/8"
+                        onChange={(e) => setSource(i, { value: e.target.value })}
+                      />
+                    )}
+                    {source.kind === "mine" && (
+                      <span className="truncate font-mono text-xs text-muted-foreground">
+                        {yourIP ?? "unknown"}
+                      </span>
+                    )}
+                  </div>
                   {sources.length > 1 && (
                     <RowAction
                       icon={XIcon}
@@ -781,7 +758,7 @@ function RuleDialog({
               value={comment}
               spellCheck={false}
               onChange={(e) => setComment(e.target.value)}
-              hint="Carried into ufw's own comment, so the rule explains itself over ssh."
+              hint="Optional label for this rule."
             />
           </div>
 

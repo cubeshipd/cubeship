@@ -211,6 +211,7 @@ export function AccessRoleDialog({
                       {RESOURCE_LABEL[info.resource] ?? info.resource}
                     </span>
                     <SearchableSelect
+                      ariaLabel={`${RESOURCE_LABEL[info.resource] ?? info.resource} access level`}
                       value={row.level}
                       onChange={(v) => set(info.resource, { level: v as Level })}
                       choices={LEVELS}
@@ -238,6 +239,7 @@ export function AccessRoleDialog({
                     </span>
                     {info.items ? (
                       <MultiSelect
+                        ariaLabel={`${RESOURCE_LABEL[info.resource] ?? info.resource} scope`}
                         none={`Every ${info.items_are}`}
                         values={row.items}
                         onChange={(v) => set(info.resource, { items: v })}

@@ -5,10 +5,10 @@ import (
 	"cubeship/internal/platform/httpx"
 	"cubeship/internal/user"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 )
 
 type Deployer interface {
@@ -40,10 +40,15 @@ func (h *Handler) WebhookRoutes(r *httpx.Router) {
 	r.HandleRootFunc("POST /hooks/bitbucket", h.webhook)
 }
 func write(w http.ResponseWriter, e error) {
-	if e == user.ErrUnauthenticated {
-		http.Error(w, "unauthorized", 401)
-	} else {
-		http.Error(w, e.Error(), 409)
+	switch {
+	case errors.Is(e, user.ErrUnauthenticated):
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+	case errors.Is(e, user.ErrForbidden):
+		http.Error(w, "forbidden", http.StatusForbidden)
+	case errors.Is(e, ErrInvalidToken):
+		http.Error(w, e.Error(), http.StatusBadRequest)
+	default:
+		http.Error(w, e.Error(), http.StatusConflict)
 	}
 }
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
@@ -55,12 +60,26 @@ func (h *Handler) list(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, 200, v)
 }
 func (h *Handler) connect(w http.ResponseWriter, r *http.Request) {
-	var q struct{ Code, State string }
+	var q struct {
+		Code     string `json:"code"`
+		State    string `json:"state"`
+		APIToken string `json:"api_token"`
+	}
 	if json.NewDecoder(r.Body).Decode(&q) != nil {
 		http.Error(w, "invalid body", 400)
 		return
 	}
-	v, e := h.svc.Connect(r.Context(), user.FromContext(r.Context()), q.Code, q.State)
+	var v *Connection
+	var e error
+	if q.APIToken != "" {
+		if q.Code != "" || q.State != "" {
+			http.Error(w, "choose one connection method", http.StatusBadRequest)
+			return
+		}
+		v, e = h.svc.ConnectToken(r.Context(), user.FromContext(r.Context()), q.APIToken)
+	} else {
+		v, e = h.svc.Connect(r.Context(), user.FromContext(r.Context()), q.Code, q.State)
+	}
 	if e != nil {
 		write(w, e)
 		return
@@ -105,7 +124,7 @@ func (h *Handler) webhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, b := range branches {
-		_, _ = h.deploy.DeployOnPush(r.Context(), strings.TrimPrefix(repo, "bitbucket.org/"), b)
+		_, _ = h.deploy.DeployOnPush(r.Context(), repo, b)
 	}
 	w.WriteHeader(200)
 }

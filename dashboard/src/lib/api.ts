@@ -578,16 +578,17 @@ export type GitHubInstallation = {
   created_at: string;
 };
 
-export type GitHubRepository = {
+export type GitRepository = {
   full_name: string;
   private: boolean;
   default_branch: string;
 };
 
-export type GitHubBranch = { name: string };
+export type GitBranch = { name: string };
 
 export type GitHubConnections = {
   installations: GitHubInstallation[];
+  app_status?: "available" | "missing" | "unavailable" | "unconfigured";
   // Where to send someone to install the App. Empty until the instance
   // is registered as one.
   install_url: string;

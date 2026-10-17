@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
+	"sync"
 	"time"
 
 	"cubeship/internal/platform/regauth"
@@ -22,7 +24,10 @@ type Repo struct {
 }
 
 type Image struct {
-	Tag string `json:"tag"`
+	Tag       string     `json:"tag"`
+	Digest    string     `json:"digest,omitempty"`
+	Size      int64      `json:"size,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
 }
 
 var (
@@ -71,21 +76,128 @@ func (h *Handler) Images(ctx context.Context, caller *user.User, repository stri
 		return nil, ErrNotFound
 	}
 
-	var answer struct {
-		Tags []string `json:"tags"`
-	}
-	if err := h.callRegistry(ctx, "/v2/"+repository+"/tags/list",
-		[]regauth.AccessEntry{{Type: "repository", Name: repository, Actions: []string{"pull"}}},
-		&answer); err != nil {
+	tags, err := h.tags(ctx, repository)
+	if err != nil {
 		return nil, err
 	}
 
-	out := []Image{}
-	for _, tag := range answer.Tags {
-		out = append(out, Image{Tag: tag})
+	out := make([]Image, len(tags))
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, 8)
+	for i, tag := range tags {
+		out[i] = Image{Tag: tag}
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+			// A tag remains visible if its metadata cannot be read.
+			if metadata, err := h.imageMetadata(ctx, repository, tag); err == nil {
+				out[i] = metadata
+			}
+		}()
 	}
+	wg.Wait()
 	sort.Slice(out, func(i, j int) bool { return out[i].Tag < out[j].Tag })
 	return out, nil
+}
+
+func (h *Handler) tags(ctx context.Context, repository string) ([]string, error) {
+	var answer struct {
+		Tags []string `json:"tags"`
+	}
+	err := h.callRegistry(ctx, "/v2/"+repository+"/tags/list",
+		[]regauth.AccessEntry{{Type: "repository", Name: repository, Actions: []string{"pull"}}}, &answer)
+	return answer.Tags, err
+}
+
+type imageDescriptor struct {
+	Digest string `json:"digest"`
+	Size   int64  `json:"size"`
+}
+
+type imageManifest struct {
+	Config    imageDescriptor   `json:"config"`
+	Layers    []imageDescriptor `json:"layers"`
+	Manifests []struct {
+		Digest   string `json:"digest"`
+		Platform struct {
+			OS string `json:"os"`
+		} `json:"platform"`
+	} `json:"manifests"`
+}
+
+func (h *Handler) imageMetadata(ctx context.Context, repository, tag string) (Image, error) {
+	access := []regauth.AccessEntry{{Type: "repository", Name: repository, Actions: []string{"pull"}}}
+	manifest, digest, err := h.readManifest(ctx, repository, tag, access)
+	if err != nil {
+		return Image{}, err
+	}
+	image := Image{Tag: tag, Digest: digest}
+	seen := map[string]bool{}
+	var configDigest string
+	add := func(m imageManifest) {
+		if configDigest == "" {
+			configDigest = m.Config.Digest
+		}
+		for _, blob := range append([]imageDescriptor{m.Config}, m.Layers...) {
+			if blob.Digest != "" && !seen[blob.Digest] && blob.Size > 0 {
+				image.Size += blob.Size
+				seen[blob.Digest] = true
+			}
+		}
+	}
+	if manifest.Config.Digest != "" {
+		add(manifest)
+	} else {
+		for _, child := range manifest.Manifests {
+			if child.Platform.OS == "unknown" {
+				continue // BuildKit attestations are not runnable images.
+			}
+			m, _, err := h.readManifest(ctx, repository, child.Digest, access)
+			if err != nil {
+				return Image{}, err
+			}
+			add(m)
+		}
+	}
+	if configDigest != "" {
+		var config struct {
+			Created *time.Time `json:"created"`
+		}
+		if err := h.readRegistryJSON(ctx, "/v2/"+repository+"/blobs/"+configDigest, access, &config); err == nil {
+			image.CreatedAt = config.Created
+		}
+	}
+	return image, nil
+}
+
+func (h *Handler) readManifest(ctx context.Context, repository, reference string, access []regauth.AccessEntry) (imageManifest, string, error) {
+	var manifest imageManifest
+	resp, err := h.registryRequest(ctx, http.MethodGet, "/v2/"+repository+"/manifests/"+reference, access)
+	if err != nil {
+		return manifest, "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return manifest, "", fmt.Errorf("the registry answered %s", resp.Status)
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(&manifest); err != nil {
+		return manifest, "", err
+	}
+	return manifest, resp.Header.Get("Docker-Content-Digest"), nil
+}
+
+func (h *Handler) readRegistryJSON(ctx context.Context, path string, access []regauth.AccessEntry, into any) error {
+	resp, err := h.registryRequest(ctx, http.MethodGet, path, access)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("the registry answered %s", resp.Status)
+	}
+	return json.NewDecoder(io.LimitReader(resp.Body, 8<<20)).Decode(into)
 }
 
 // callRegistry reads from the registry container with a token the daemon
@@ -165,7 +277,7 @@ func (h *Handler) DeleteRepository(ctx context.Context, caller *user.User, repos
 		return err
 	}
 
-	images, err := h.Images(ctx, caller, repository)
+	tags, err := h.tags(ctx, repository)
 	if err != nil {
 		return err
 	}
@@ -174,8 +286,8 @@ func (h *Handler) DeleteRepository(ctx context.Context, caller *user.User, repos
 		{Type: "repository", Name: repository, Actions: []string{"pull", "delete"}},
 	}
 	seen := map[string]bool{}
-	for _, img := range images {
-		digest, err := h.digestOf(ctx, repository, img.Tag, access)
+	for _, tag := range tags {
+		digest, err := h.digestOf(ctx, repository, tag, access)
 		if err != nil {
 			return err
 		}
