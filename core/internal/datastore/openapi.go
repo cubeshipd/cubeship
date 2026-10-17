@@ -25,7 +25,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 		openapi.PathParam("app", "The attached app's own name."),
 	}
 
-	const exposeWarning = "\n\n**There is no TLS in front of this.** Traefik terminates HTTPS for HTTP; a database speaks its own protocol on its own port, so an exposed datastore is a password on the open internet. What makes that safe is the password — generated, 24 characters — and a firewall rule, which is yours to write. Leave it off for anything an app on this instance can reach."
+	const exposeWarning = "\n\n**There is no TLS in front of this.** Traefik terminates HTTPS for HTTP; a database speaks its own protocol on its own port. A password — generated, 24 characters — and a firewall rule limit who can connect, but do not encrypt traffic from an allowed client. Use a private network or TLS tunnel across an untrusted path. Leave exposure off for anything an app on this instance can reach."
 
 	return openapi.Spec{
 		Tags: []openapi.Tag{{
@@ -105,7 +105,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"post": {
 					OperationID: "createDatastore",
 					Summary:     "Provision a database",
-					Description: "Creates the row and starts the container detached, so this returns while the image is still being pulled: the datastore comes back in `provisioning`, and how it went lands on the same row.\n\nIt belongs to the instance. Attaching it to an app is a separate call, and one database may be attached to apps in several projects.\n\nThe password is generated when the request does not carry one, so a database with no password is not something anyone can create by leaving a field empty. It is returned here once, and afterwards only from the credentials endpoint.\n\nRequires the admin role: this starts a container and claims disk on the host that nothing reclaims on its own.",
+					Description: "Creates the row and starts the container detached, so this returns while the image is still being pulled: the datastore comes back in `provisioning`, and how it went lands on the same row.\n\nIt belongs to the instance. Attaching it to an app is a separate call, and one database may be attached to apps in several projects.\n\nThe password is generated when the request does not carry one, so a database with no password is not something anyone can create by leaving a field empty. It is returned here once, and afterwards only from the credentials endpoint.\n\nRequires database manage access: this starts a container and claims disk on the host that nothing reclaims on its own.",
 					Tags:        []string{"Datastores"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 						"name":        openapi.String("Lowercase letters, digits and dashes, unique across the instance. It becomes the container's name, so it is permanent. `engines` is refused — it is where this API lists what it can run."),
@@ -200,7 +200,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"post": {
 					OperationID: "addDatastoreExtensions",
 					Summary:     "Install extensions on a database",
-					Description: "Adds Postgres extensions to a database that already exists.\n\n**It only ever adds.** Every extension the datastore already has stays, and a list that leaves one out is refused rather than acted on: adding one is an image carrying one more library over the same data directory, and removing one is an image *without* a library that a column's type, an index or a default may already need. Nothing can tell in advance which of those it would be, and the failure is a database that comes up and cannot read its own tables.\n\n**The container is replaced**, the way publishing a port replaces it — an extension's library is in the image, and an image is chosen when a container is created. So the database is unreachable for a few seconds. Its data survives untouched, being a host bind mount.\n\nThe replacement happens detached, so this answers 202 with the datastore in `provisioning`, and how it went lands on the same row. A failure leaves the row asking for the extensions, so `POST .../start` retries it.\n\nAsking for what is already there changes nothing. Requires the admin role.",
+					Description: "Adds Postgres extensions to a database that already exists.\n\n**It only ever adds.** Every extension the datastore already has stays, and a list that leaves one out is refused rather than acted on: adding one is an image carrying one more library over the same data directory, and removing one is an image *without* a library that a column's type, an index or a default may already need. Nothing can tell in advance which of those it would be, and the failure is a database that comes up and cannot read its own tables.\n\n**The container is replaced**, the way publishing a port replaces it — an extension's library is in the image, and an image is chosen when a container is created. So the database is unreachable for a few seconds. Its data survives untouched, being a host bind mount.\n\nThe replacement happens detached, so this answers 202 with the datastore in `provisioning`, and how it went lands on the same row. A failure leaves the row asking for the extensions, so `POST .../start` retries it.\n\nAsking for what is already there changes nothing. Requires database manage access.",
 					Tags:        []string{"Datastores"},
 					Parameters:  nameParam,
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
@@ -220,7 +220,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"get": {
 					OperationID: "getDatastoreCredentials",
 					Summary:     "Read a database's login",
-					Description: "The username, the password and the connection strings to use them with — from inside the instance, and from outside it when the datastore is exposed.\n\nIts own request rather than a field on the datastore: everything else is worth listing on a screen, and a credential is worth asking for on purpose. Requires the admin role.",
+					Description: "The username, the password and the connection strings to use them with — from inside the instance, and from outside it when the datastore is exposed.\n\nIts own request rather than a field on the datastore: everything else is worth listing on a screen, and a credential is worth asking for on purpose. Requires permission to read database secrets.",
 					Tags:        []string{"Datastores"},
 					Parameters:  nameParam,
 					Responses: openapi.Responses{
@@ -352,7 +352,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"post": {
 					OperationID: "attachDatastore",
 					Summary:     "Wire an app to a database",
-					Description: "The app's container is given `DATABASE_URL` and its parts — host, port, name, user, password — **from its next deploy onwards**. A container keeps the environment it was created with, the same rule that makes adding a domain take effect on redeploy.\n\nThe variables sit between the environment's and the app's own in the layering, so an app can override one without detaching anything.\n\nThe app is named by its full reference and may be in any project: one database serving apps in several is the reason a datastore belongs to the instance. Requires the admin role, because attaching hands the database's password to an app.",
+					Description: "The app's container is given `DATABASE_URL` and its parts — host, port, name, user, password — **from its next deploy onwards**. A container keeps the environment it was created with, the same rule that makes adding a domain take effect on redeploy.\n\nThe variables sit between the environment's and the app's own in the layering, so an app can override one without detaching anything.\n\nThe app is named by its full reference and may be in any project: one database serving apps in several is the reason a datastore belongs to the instance. Requires manage access to the database and app, because attaching hands the database's password to an app.",
 					Tags:        []string{"Datastores"},
 					Parameters:  nameParam,
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{

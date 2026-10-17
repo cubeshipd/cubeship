@@ -12,8 +12,8 @@ body:
     id: version
     attributes:
       label: Version
-      description: "`cubeship version`, or the Settings screen in the dashboard."
-      placeholder: "0.5.1"
+      description: "`cubeship version`, the Settings screen, or the commit SHA for a local build. If installation failed, say so."
+      placeholder: "vX.Y.Z, commit SHA, or installation failed"
     validations:
       required: true
 
@@ -31,19 +31,17 @@ body:
     id: host
     attributes:
       label: The host
-      description: Distribution and architecture, and the provider if it is one of the known ones.
+      description: For install, networking or container problems, give the distribution, architecture and provider.
       placeholder: "Ubuntu 24.04, arm64, Hetzner"
-    validations:
-      required: true
 
   - type: textarea
     id: what
     attributes:
       label: What happened, and what you expected instead
       description: |
-        The steps that get there, if they are not obvious. If it involves an
-        app, say where its image comes from — a push to this instance's
-        registry, an image elsewhere, or a build from a repository.
+        Include the steps to reproduce it, what happened and what you expected.
+        If it involves an app, say where its image comes from — a push to
+        this instance's registry, an image elsewhere, or a repository build.
     validations:
       required: true
 
@@ -54,4 +52,6 @@ body:
       description: |
         `docker logs cubeship-daemon` is the daemon's. A failed deploy keeps
         its output on the deployment itself, in the dashboard.
+        Remove passwords, tokens, cookies and private keys before posting.
+        If a log itself exposes a secret, use the private advisory instead.
       render: shell

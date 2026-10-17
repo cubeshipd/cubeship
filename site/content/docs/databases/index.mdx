@@ -65,9 +65,10 @@ its settings are Backups, External access, Resources and Danger.
 
 ## Roles
 
-Reading — the list, a database, its logs and charts — is a **member's**.
-Everything that changes one — creating, attaching, exposing, stopping,
-the ceiling, the credentials, deleting — is an **admin's**.
+The default member grants allow reading databases, logs and charts.
+Managing one — creating, attaching, exposing, stopping, changing its
+ceiling or deleting it — requires database manage access. Reading its
+credentials also requires permission to read database secrets.
 
 <Cards>
   <Card title="Creating a database" href="/docs/databases/creating" />

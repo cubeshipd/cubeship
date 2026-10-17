@@ -26,7 +26,7 @@ reason on it, and **Start** retries it.
 | `engine` | — | `postgres`, `mysql`, `mariadb`, `redis`, `mongodb` |
 | `version` | the newest offered | see [Engines](/docs/databases/engines) for the list |
 | `username` | `cubeship` | Redis has one login, `default`, and refuses another; MySQL and MariaDB refuse `root` |
-| `password` | generated | 32 characters when left empty, so a weak one is never the default |
+| `password` | generated | 24 characters when left empty, so a weak one is never the default |
 | `database` | the name | the database created on first start; Redis has none |
 
 The default login is `cubeship` rather than the engine's own:
@@ -43,13 +43,12 @@ tries first.
   data inside a directory it will not read. Running a new version is a
   second database and the engine's own migration tools — or a
   [backup](/docs/backups) restored into it.
-- **The password.** It is used once, when the engine initialises
-  itself, and nothing reads the column afterwards. Changing it would
-  change every connection string handed out while the database went on
-  accepting the old one. Rotating one is an `ALTER USER` inside the
-  database, by you.
 
-What can change is the description and the
+The password can be [rotated](/docs/databases/credentials) while the
+database is running. Cubeship changes the engine login and then stores
+the new value.
+
+You can also change the description and
 [ceiling](/docs/databases/running#limits).
 
 ## Where the data lives

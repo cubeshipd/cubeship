@@ -7,6 +7,8 @@
 
 **Why** — only if it is not obvious from the above.
 
-**How you checked it** — the command, or the steps in the dashboard.
+**How you checked it** — commands, or dashboard steps and screenshots for UI changes.
 
 - [ ] `make check` passes
+
+**Operator impact** — migration, downtime, configuration change, or other action needed. Omit if none.

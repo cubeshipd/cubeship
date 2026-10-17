@@ -30,9 +30,9 @@ untouched.
 
 A database speaks its own protocol, and nothing here terminates TLS in
 front of it. An exposed database is a password on the open internet.
-What makes that safe:
+These controls limit who can connect:
 
-1. **The password**, which is 32 generated characters unless you chose
+1. **The password**, which is 24 generated characters unless you chose
    one.
 2. **A firewall rule**, which is yours. The instance's
    [Firewall](/docs/networking/firewall) screen writes one for the
@@ -42,6 +42,9 @@ What makes that safe:
 
 A firewall at your provider (Hetzner, DigitalOcean, AWS, …) is a third
 layer this instance cannot see, and it does not have the Docker problem.
+Neither a password nor a firewall encrypts traffic from an allowed
+client. Use a private network or a TLS tunnel for sensitive data across
+an untrusted path.
 
 ## Where the data goes
 

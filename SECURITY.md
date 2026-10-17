@@ -75,8 +75,9 @@ The things this daemon promises, in the order it would hurt to lose them:
   cross-site; the same-origin check on state-changing requests is what
   stands in for a CSRF token, and a way around it is a way to act as
   whoever visits a page.
-- **A member doing an admin's job** — building from source, writing a
-  building app's environment, reading credentials, adding a user.
+- **A caller acting outside their grants** — building from source,
+  changing an app's environment or reading resource secrets without the
+  required permission, or adding a user without being an admin.
 - **A deployed app reaching the daemon**, the instance's database, another
   app's environment, or the registry as anything but itself.
 - **A worker's credential doing more than it should.** It may report in,
@@ -84,10 +85,12 @@ The things this daemon promises, in the order it would hurt to lose them:
   machine's work is not its to do.
 - **A registry token outside its scope** — pushing to a repository it was
   not minted for, or deleting anything at all.
-- **A secret coming back out.** Datastore passwords, stored credentials,
-  the GitHub App's private key and webhook secret are write-only by
-  design; a build log, an API response, an error message or the OpenAPI
-  document handing one over is a bug.
+- **A secret leaking through the wrong surface.** API keys after creation,
+  stored provider credentials, and the GitHub App's private key and webhook
+  secret must not appear in responses, logs, errors or the OpenAPI document.
+  Database passwords and object-store keys are intentionally readable from
+  their dedicated credentials endpoints by callers granted access to those
+  secrets; returning them elsewhere or without that grant is a bug.
 - **A forged GitHub delivery** starting a deploy, or an installation being
   connected to an instance by somebody who does not administer it.
 - **Escaping validation into something that is interpreted** — a slug, an
@@ -122,8 +125,9 @@ worth having in an issue rather than an advisory.
   nothing to offer, and none of the three says anything about what is on
   the instance.
 - **An exposed database or object store has no TLS.** Publishing one is
-  opt-in, the endpoint says so, and what protects it is the password and a
-  firewall rule.
+  opt-in, and the endpoint says so. A password and firewall rule limit
+  access; they do not encrypt traffic on an allowed path. Use a private
+  network or a TLS tunnel when sending sensitive data across one.
 - **Stored secrets are stored, not hashed.** A datastore's password and a
   registry's login have to be given back to the thing they authenticate
   to. Passwords that a person types — the only ones that can be — go

@@ -35,8 +35,9 @@ the two can never collide. There is no proxy router and no domain in
 front of it, though SeaweedFS speaks HTTP and one would work: a hostname is
 a thing an app's domains own, and borrowing it here would be two
 modules writing routes for names neither can see. So an exposed store is
-a plain port with **no TLS**, and a [firewall rule](/docs/networking/firewall)
-is what makes it safe.
+a plain port with **no TLS**. A [firewall rule](/docs/networking/firewall)
+limits who can connect; it does not encrypt uploads. Use a private network
+or a TLS tunnel for sensitive data across an untrusted path.
 
 ## Stop, start, logs, charts, limits
 

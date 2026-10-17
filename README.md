@@ -453,6 +453,7 @@ never checks for a release at all.
 - **API reference** — `https://your-instance/docs`, and the OpenAPI
   document at `/openapi.json`.
 - **Working on Cubeship itself** — [CONTRIBUTING.md](CONTRIBUTING.md).
+- **Question or usage help?** [Ask in Discussions](https://github.com/cubeshipd/cubeship/discussions).
 - **Found a security problem?** [SECURITY.md](SECURITY.md) — report it
   privately rather than in an issue.
 

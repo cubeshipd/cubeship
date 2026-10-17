@@ -55,9 +55,9 @@ container the tests use.
 make check
 ```
 
-gofmt, `go vet` — including the build-tagged integration test, which a
-plain `go vet ./...` never compiles — the generated changelog, shell
-syntax, and the unit tests under `-race`.
+gofmt, the 600-line Core limit, `go vet` (including the build-tagged
+integration test), shell syntax, generated reference checks, dashboard
+lint and types, and the short Go tests under `-race`.
 
 **It needs no Docker, no Postgres and no network.** Standing those up to
 find out whether a function returns the right string is time taken out
@@ -71,14 +71,16 @@ green-looking tail is not a green run.
 | | |
 | --- | --- |
 | `make check` | what must pass before a commit — nothing to start |
+| `make test` | short Go tests with the race detector; DB-backed tests skip |
 | `make test-db` | the same tests with the Postgres they want |
 | `make test-integration` | a real daemon, registry and Traefik. Linux only |
 | `make test-install` | `install.sh` end to end, on a real Debian |
 | CI | all of it, including the two a Mac cannot run |
 
-Unit tests need a real Postgres; there is no in-memory mode. `make test`
-starts one in a container on port 5433 and gives each test its own
-schema, so tests stay isolated and run in parallel against one server.
+DB-backed unit tests need a real Postgres; there is no in-memory mode.
+`make test-db` starts one in a container on port 5433 and gives each test
+its own schema, so tests stay isolated and run in parallel against one
+server. `make test` uses `-short` and skips those DB-backed tests.
 
 **A test with no database reachable fails rather than skipping**, except
 under `-short`, which is what a laptop passes. Skipping would let a green
@@ -93,7 +95,9 @@ says the same thing the HTTP one does. Docker is always faked.
 
 By domain, not by technical layer. A module owns everything about one
 concept — its entity, its persistence, its use cases, and every surface
-it is reached through:
+it is reached through. These are the usual file roles; split large roles
+into cohesive files, keeping each maintained Core source and test file
+at 600 lines or fewer:
 
 | File | Holds |
 | --- | --- |
@@ -110,6 +114,8 @@ handler is a rule the MCP surface does not have, which is exactly how
 the two drifted apart before this layout.
 
 **[AGENTS.md](AGENTS.md) contains the conventions every change follows.**
+The [Core layout skill](.agents/skills/core-layout/SKILL.md) explains
+package ownership and structural changes.
 Operator documentation is in [docs/](docs), a symlink to `site/content/docs/`.
 Read [site/README.md](site/README.md) for site and template-publication details.
 
@@ -137,7 +143,7 @@ And there is a [code of conduct](CODE_OF_CONDUCT.md).
   people read.
 - **Never credit an AI agent** — not in a commit, a pull request, or a
   code comment.
-- Work happens on `master`, in the repository root.
+- Open pull requests against `master`, and run repository commands from its root.
 
 ## Cutting a release
 

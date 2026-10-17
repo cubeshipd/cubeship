@@ -184,7 +184,7 @@ Offline verification runs `node --test .github/scripts/*.test.mjs` and the
 repository `make check`. Tests execute the literal shell bootstrap with fixture
 curl and real Node/cryptographic verification, including every bad hash before
 import; real CLI runs use only synthetic native HTTP transports. CI still keeps
-its six essential jobs and always-running aggregate gate unchanged.
+its essential jobs and always-running aggregate gate unchanged.
 
 Local actionlint 1.7.12 reports only its unsupported `concurrency.queue` key.
 The workflow structurally verifies the exact official group/cancel/queue shape;
