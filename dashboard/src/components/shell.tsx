@@ -32,7 +32,6 @@ import { Wordmark } from "@/components/brand";
 import { CommandPalette } from "@/components/command-palette";
 import { abbreviateGitHubStars, GitHubStar, useGitHubStars } from "@/components/github-star";
 import { GlideSelect } from "@/components/glide-select";
-import { HeaderRail } from "@/components/header-rail";
 import { InstanceUpdate } from "@/components/instance-update";
 import Link from "@/components/navigation-link";
 import { SessionLoading } from "@/components/page-loading";
@@ -211,7 +210,6 @@ function offered(me: Me, item: NavItem) {
 // rendering, and sends you to sign in when the answer is nobody.
 export function Shell({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const pathname = usePathname();
   const [me, setMe] = useState<Me | null>(null);
 
   const [sessionError, setSessionError] = useState<string | null>(null);
@@ -245,25 +243,6 @@ export function Shell({ children }: { children: ReactNode }) {
     setMe((current) => (current ? { ...current, ...change } : current));
   }, []);
 
-  const headerless =
-    pathname === "/" ||
-    [
-      "/projects",
-      "/databases",
-      "/storage",
-      "/templates",
-      "/dns",
-      "/firewall",
-      "/registries",
-      "/git",
-      "/components",
-      "/settings",
-      "/credentials",
-      "/certificates",
-      "/users",
-      "/audit",
-      "/account",
-    ].some((route) => pathname === route || pathname.startsWith(`${route}/`));
   if (!me)
     return <SessionLoading error={sessionError} onRetry={() => setAttempt((value) => value + 1)} />;
 
@@ -290,29 +269,13 @@ export function Shell({ children }: { children: ReactNode }) {
 
             <main className="dashboard-main">
               <CommandPalette screens={SCREENS} />
-              {headerless ? (
-                <div
-                  id="dashboard-content"
-                  tabIndex={-1}
-                  className="dashboard-container dashboard-content"
-                >
-                  {children}
-                </div>
-              ) : (
-                <HeaderRail
-                  bare={
-                    pathname === "/workloads" || pathname === "/servers" || pathname === "/backups"
-                  }
-                >
-                  <div
-                    id="dashboard-content"
-                    tabIndex={-1}
-                    className="dashboard-container dashboard-content"
-                  >
-                    {children}
-                  </div>
-                </HeaderRail>
-              )}
+              <div
+                id="dashboard-content"
+                tabIndex={-1}
+                className="dashboard-container dashboard-content"
+              >
+                {children}
+              </div>
               <ScrollToTop />
             </main>
             <MobileTabBar me={me} />

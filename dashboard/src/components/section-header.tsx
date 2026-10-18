@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-// The first section can also serve as the page title when the rail is absent.
+// The first section also serves as the page title.
 export function SectionHeader({
   title,
   sub,

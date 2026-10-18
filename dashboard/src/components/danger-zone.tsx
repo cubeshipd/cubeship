@@ -8,8 +8,8 @@ import type { ReactNode } from "react";
 // carried `mt-10` for the distance it wanted from a form, which was
 // invisible while every settings screen had one — and a lie on the two
 // that are now the delete and nothing else, where it pushed the only
-// thing on the page a long way down from a rail it was already clear
-// of. A caller that wants the distance says so.
+// thing on the page a long way down from its heading. A caller that
+// wants the distance says so.
 export function DangerZone({ children, className }: { children: ReactNode; className?: string }) {
   return (
     <section className={cn("border border-destructive/30", className)}>

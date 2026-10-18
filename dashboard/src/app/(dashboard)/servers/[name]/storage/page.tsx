@@ -4,8 +4,8 @@ import { BroomIcon, TerminalIcon } from "lucide-react";
 import { use, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { DetailSectionHeader } from "@/components/detail-section-header";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
 import { Notice } from "@/components/notice";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -47,26 +47,28 @@ export default function ServerStoragePage({ params }: PageProps<"/servers/[name]
 
   return (
     <>
-      <RailPortal>
-        <Button
-          variant="outline"
-          nativeButton={false}
-          render={
-            <a href={`/servers/${encodeURIComponent(name)}/shell`}>
-              <TerminalIcon />
-              Shell
-            </a>
-          }
-        />
-      </RailPortal>
+      <DetailSectionHeader
+        backHref="/servers"
+        backLabel="Back to nodes"
+        title={`${name} storage`}
+        sub="Docker images, build cache and stopped containers on this node."
+        actions={
+          <Button
+            variant="outline"
+            nativeButton={false}
+            render={
+              <a href={`/servers/${encodeURIComponent(name)}/shell`}>
+                <TerminalIcon />
+                Shell
+              </a>
+            }
+          />
+        }
+      />
       <ErrorAlert error={error} />
       {done !== null && (
         <Notice>Reclaimed {bytes(done)}. Refresh this page to read the new usage.</Notice>
       )}
-      <Notice tone="warning">
-        This cleans regenerable data only: Docker's and the image builder's. Volumes are listed in
-        usage but are never removed by this action.
-      </Notice>
       {!storage && !error && <StorageSkeleton />}
       {storage && (
         <>

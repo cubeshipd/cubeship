@@ -136,7 +136,7 @@ export default function BackupsPage() {
 
   return (
     <>
-      <SectionHeader title="Backups" sub="Check backup coverage for databases and volumes." />
+      <SectionHeader page title="Backups" sub="Check backup coverage for databases and volumes." />
       <ErrorAlert error={error} />
 
       <FilterPanel>

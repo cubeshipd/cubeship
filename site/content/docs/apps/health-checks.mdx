@@ -59,10 +59,10 @@ connection at the selected port. Otherwise, readiness checks only that
 the container remains running.
 
 Each HTTP or TCP attempt has a **5-second** network timeout. The deploy
-retries up to **10 times**, waiting **500 milliseconds** between attempts,
+retries up to **150 times**, waiting **2 seconds** between attempts,
 and requires three consecutive successes before switching traffic. Container
-startup overhead can add to this time. The last probe error is included
-when readiness fails.
+startup overhead can add to this five-minute window. The last probe error is
+included when readiness fails.
 
 The daemon stays on its private management network. A temporary restricted
 helper, using the running daemon's own image, probes from the new app's

@@ -254,7 +254,7 @@ function Detail({ reference, project, env }: { reference: string; project: strin
       </div>
       {!app && <LoadingList rows={5} />}
       {app && (
-        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="subrail-page">
+        <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="workspace-tabs">
           {/* The line variant: labels on a rule with the live one lit,
               rather than a filled box that draws more of itself than
               what it switches. See globals.css. */}

@@ -6,6 +6,20 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.12.1 — 2026-10-18
+
+Give slow-starting apps time to become ready and finish the dashboard header refresh.
+
+### Fixed
+
+**App deployment readiness.** Deployments now allow up to five minutes for an app to answer its health check. Apps such as Cal.com can finish first-start database migrations before Cubeship decides they failed. The overall deploy deadline remains ten minutes.
+
+**Dashboard navigation.** Node storage and shell pages now use the same page headers and return navigation as other resource details. Nodes, Containers and Backups no longer carry the old header rail. Removed its unused components and styles.
+
+### Upgrade notes
+
+No database migration is needed. Updating the daemon and dashboard applies both fixes; an earlier failed template installation can then be retried.
+
 ## 0.12.0 — 2026-10-18
 
 Safer deployments, more Git providers, better instance maintenance, and a dashboard that works across desktop and mobile.

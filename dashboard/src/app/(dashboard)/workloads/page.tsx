@@ -446,6 +446,7 @@ export default function WorkloadsPage() {
   return (
     <>
       <SectionHeader
+        page
         title="Containers"
         sub="Every app, database and managed object store running on this instance. CPU 100% is one core."
         actions={

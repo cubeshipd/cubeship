@@ -2,7 +2,6 @@
    Every colour comes from the active palette; status and terminal colours
    remain independent of the brand. Primitive field rules stay in globals.css. */
 :root {
-  --dashboard-rail-height: 72px;
   --dashboard-sidebar-width: 248px;
   --dashboard-content-end-space: 80px;
 }
@@ -28,7 +27,7 @@
   align-items: center;
   flex-shrink: 0;
   gap: 12px;
-  height: calc(var(--dashboard-rail-height) - 1px);
+  height: 71px;
   padding: 0 16px;
   color: var(--foreground);
 }
@@ -261,117 +260,6 @@
   .dashboard-scroll-to-top {
     transition: none;
   }
-}
-.dashboard-header {
-  position: sticky;
-  top: 0;
-  z-index: 30;
-  min-height: var(--dashboard-rail-height);
-  border-bottom: 1px solid var(--border);
-  background: color-mix(in srgb, var(--background) 93%, transparent);
-  backdrop-filter: blur(16px);
-}
-.dashboard-header[data-bare] {
-  display: none;
-}
-.dashboard-header-inner {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  min-height: calc(var(--dashboard-rail-height) - 1px);
-}
-.dashboard-breadcrumb {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-}
-.dashboard-breadcrumb > div {
-  flex-shrink: 1;
-}
-.dashboard-breadcrumb > div:last-child {
-  flex-shrink: 0;
-  max-width: 65%;
-}
-.dashboard-breadcrumb > div:only-child {
-  max-width: 100%;
-}
-.dashboard-header-actions {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  flex-shrink: 0;
-}
-.dashboard-header-actions:empty {
-  display: none;
-}
-.dashboard-subrail {
-  position: sticky;
-  top: var(--dashboard-rail-height);
-  z-index: 20;
-  display: flex;
-  height: 44px;
-  border-bottom: 1px solid var(--border);
-  background: var(--card);
-}
-.dashboard-tabs {
-  display: flex;
-  align-items: stretch;
-  /* Include the strip border in the scroll viewport so the active tab can cover it. */
-  height: calc(100% + 1px);
-  margin-bottom: -1px;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.dashboard-tabs::-webkit-scrollbar {
-  display: none;
-}
-.dashboard-tabs [data-slot="tabs-list"][data-variant="line"] [data-slot="tabs-trigger"] {
-  height: calc(100% - 1px);
-}
-.dashboard-tabs
-  [data-slot="tabs-list"][data-variant="line"]
-  [data-slot="tabs-trigger"][data-active] {
-  height: 100%;
-  margin-bottom: 0;
-}
-.project-inline-tabs {
-  display: flex;
-  min-height: 44px;
-  align-items: stretch;
-  gap: 0;
-  margin-bottom: 20px;
-  overflow-x: auto;
-  border-bottom: 1px solid var(--border);
-  scrollbar-width: none;
-}
-.project-inline-tabs::-webkit-scrollbar {
-  display: none;
-}
-.project-inline-tabs [data-slot="tabs-list"][data-variant="line"] {
-  width: auto;
-  height: 44px;
-  align-items: stretch;
-  gap: 0;
-  border-bottom: 0;
-}
-.project-inline-tabs [data-slot="tabs-list"][data-variant="line"] [data-slot="tabs-trigger"] {
-  height: 100%;
-  padding: 0 1rem;
-  border: 1px solid transparent;
-  border-bottom: 0;
-  color: var(--subtle-foreground);
-}
-.project-inline-tabs
-  [data-slot="tabs-list"][data-variant="line"]
-  [data-slot="tabs-trigger"][data-active] {
-  height: calc(100% + 1px);
-  margin-bottom: -1px;
-  border-color: var(--border);
-  background: var(--background);
-  color: var(--primary);
 }
 .app-tab-navigation {
   margin-bottom: 20px;
@@ -726,9 +614,6 @@
   }
 }
 @media (max-width: 760px) {
-  :root {
-    --dashboard-rail-height: 64px;
-  }
   /* iOS Safari zooms focused fields whose computed type is smaller than 16px. */
   :is(
     input,
@@ -786,32 +671,6 @@
     outline: 2px solid var(--ring);
     outline-offset: -2px;
   }
-  .dashboard-header-inner {
-    flex-wrap: wrap;
-    gap: 10px;
-    padding-block: 12px;
-  }
-  .dashboard-header[data-bare] {
-    display: none;
-  }
-  .dashboard-header:has(.dashboard-header-actions:not(:empty)) {
-    --dashboard-rail-height: 110px;
-  }
-  .dashboard-main:has(.dashboard-header-actions:not(:empty)) {
-    --dashboard-rail-height: 110px;
-  }
-  .dashboard-header-actions:not(:empty) {
-    order: 4;
-    width: 100%;
-    overflow-x: auto;
-    padding-bottom: 2px;
-  }
-  .dashboard-breadcrumb {
-    gap: 5px;
-  }
-  .dashboard-breadcrumb .font-mono {
-    font-size: 12px;
-  }
   .dashboard-section-header {
     align-items: flex-start;
     flex-wrap: wrap;
@@ -846,19 +705,8 @@
 }
 /* Touch targets. 44px is the least a fingertip lands on without hitting the
    neighbour, so on a phone every control grows to it; the desktop keeps its
-   denser sizes. The rail heights are what the sticky tab strip hangs from, so
-   they follow the 44px controls inside the rail. */
+   denser sizes. */
 @media (max-width: 760px) {
-  :root {
-    --dashboard-rail-height: 69px;
-  }
-  .dashboard-header:has(.dashboard-header-actions:not(:empty)),
-  .dashboard-main:has(.dashboard-header-actions:not(:empty)) {
-    --dashboard-rail-height: 125px;
-  }
-  .dashboard-subrail {
-    height: 46px;
-  }
   /* Controls are matched by what they are rather than by component, because
      half of them are a plain <button> and a link wearing the button classes. */
   :is(
@@ -887,16 +735,10 @@
   [role="switch"][data-slot="switch"] {
     overflow: visible;
   }
-  /* Crumbs and sortable column heads are text: they get the height of the row
-     they sit in rather than the height of their letters. */
-  .dashboard-breadcrumb :is(a, button),
   [data-slot="table-head"] button {
     display: inline-flex;
     align-items: center;
     min-width: 44px;
-  }
-  .dashboard-breadcrumb a {
-    min-height: 44px;
   }
   .dashboard-scroll-to-top {
     bottom: calc(76px + env(safe-area-inset-bottom));
