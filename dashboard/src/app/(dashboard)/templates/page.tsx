@@ -5,7 +5,8 @@ import { ChevronDownIcon, LayoutTemplateIcon, PackageCheckIcon, TagsIcon } from 
 import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
-import { GlideSelect } from "@/components/glide-select";
+import { FilterPanel } from "@/components/filter-panel";
+import { GLIDE_FIELD_TRIGGER_CLASS, GlideSelect } from "@/components/glide-select";
 import { SearchBar } from "@/components/search-bar";
 import { TemplateCard } from "@/components/template-card";
 import { TemplateInstalls } from "@/components/template-installs";
@@ -114,21 +115,9 @@ function Catalog() {
 
   return (
     <>
-      <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(16rem,1fr)_14rem]">
-        <SearchBar
-          value={query}
-          onChange={setQuery}
-          placeholder="Search templates"
-          className="min-w-0 flex-1 basis-64"
-          count={{
-            value: templates?.length ?? 0,
-            singular: "template",
-            plural: "templates",
-            loading: page.isFetching,
-          }}
-        />
+      <FilterPanel>
         <GlideSelect
-          ariaLabel="Filter templates by category"
+          label="Category"
           placeholder="All categories"
           startIcon={<TagsIcon className="size-4" />}
           triggerContent={
@@ -150,9 +139,21 @@ function Catalog() {
           busy={tags.isLoading || categoryCatalog.isLoading}
           emptyMessage="No categories found."
           className="w-full"
-          triggerClassName="flex h-[38px] w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          triggerClassName={GLIDE_FIELD_TRIGGER_CLASS}
         />
-      </div>
+      </FilterPanel>
+      <SearchBar
+        value={query}
+        onChange={setQuery}
+        placeholder="Search templates"
+        className="mb-4"
+        count={{
+          value: templates?.length ?? 0,
+          singular: "template",
+          plural: "templates",
+          loading: page.isFetching,
+        }}
+      />
 
       <ErrorAlert error={page.error ? message(page.error) : null} />
       <ErrorAlert error={tags.error ? message(tags.error) : null} />

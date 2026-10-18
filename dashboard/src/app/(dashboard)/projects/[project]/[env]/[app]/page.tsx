@@ -7,6 +7,7 @@ import {
   EyeIcon,
   EyeOffIcon,
   GitBranchIcon,
+  GitCommitHorizontalIcon,
   LayoutDashboardIcon,
   NetworkIcon,
   PencilIcon,
@@ -24,7 +25,8 @@ import { ContainerLogsDialog, LogView } from "@/components/container-logs";
 import { CopyButton } from "@/components/copy-button";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { GlideSelect } from "@/components/glide-select";
+import { FilterPanel } from "@/components/filter-panel";
+import { GLIDE_FIELD_TRIGGER_CLASS, GlideSelect } from "@/components/glide-select";
 import { LoadingList } from "@/components/loading";
 import { MetricsSection } from "@/components/metrics-section";
 import Link from "@/components/navigation-link";
@@ -484,15 +486,29 @@ function Deployments({
       ),
     },
     {
-      id: "image",
-      header: "Image",
+      id: "commit",
+      header: "Commit / Image",
       width: 56,
-      // The full failure detail belongs with the build output in the
-      // deployment dialog, not repeated as a paragraph in every row.
       wrap: true,
-      cell: (d) => (
-        <div className="font-mono text-xs break-all text-muted-foreground">{d.image}</div>
-      ),
+      cell: (d) =>
+        d.git_sha ? (
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-xs text-muted-foreground">
+            <span className="inline-flex items-center gap-1.5" title={d.git_sha}>
+              <GitCommitHorizontalIcon className="size-3.5" />
+              {d.git_sha.slice(0, 7)}
+            </span>
+            {d.git_branch && (
+              <span className="inline-flex min-w-0 items-center gap-1.5">
+                <GitBranchIcon className="size-3.5 shrink-0" />
+                <span className="truncate" title={d.git_branch}>
+                  {d.git_branch}
+                </span>
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="font-mono text-xs break-all text-muted-foreground">{d.image || "—"}</div>
+        ),
     },
     {
       id: "when",
@@ -855,27 +871,28 @@ function EnvVars({ reference }: { reference: string }) {
       />
       <ErrorAlert error={error} />
 
-      <div className="mb-4 grid gap-3 sm:grid-cols-[minmax(0,1fr)_12rem]">
-        <SearchBar
-          value={filter}
-          onChange={setFilter}
-          placeholder="Filter by name"
-          className="mb-0 min-w-0"
-          count={
-            all && rows
-              ? { value: rows.length, singular: "variable", plural: "variables" }
-              : undefined
-          }
-        />
+      <FilterPanel>
         <GlideSelect
+          label="Source"
           value={sourceFilter}
+          startIcon={<BracesIcon className="size-4" />}
           options={sourceOptions}
           onChange={setSourceFilter}
-          ariaLabel="Filter variables by source"
           className="w-full"
-          triggerClassName="flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-md border border-border-strong bg-secondary px-3 text-left text-sm text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
+          triggerClassName={GLIDE_FIELD_TRIGGER_CLASS}
         />
-      </div>
+      </FilterPanel>
+      <SearchBar
+        value={filter}
+        onChange={setFilter}
+        placeholder="Filter by name"
+        className="mb-4"
+        count={
+          all && rows
+            ? { value: rows.length, singular: "variable", plural: "variables" }
+            : undefined
+        }
+      />
 
       <DataTable
         columns={columns}

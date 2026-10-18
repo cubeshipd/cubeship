@@ -1,14 +1,6 @@
 "use client";
 
-import {
-  createContext,
-  type ReactNode,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -29,26 +21,9 @@ import { api, type Releases } from "@/lib/api";
 // Marked read when it is closed rather than when it is opened: closing
 // is the act of having finished with it, and a dialog that marks itself
 // read on the way up loses the notes to a stray refresh.
-// ReleaseNotesContext is how the sidebar opens this on purpose.
-//
-// A context rather than a prop, because the two are not near each
-// other: the dialog belongs to the shell — it has to be able to appear
-// over any page — and what opens it is an item in a menu three
-// components away.
-const ReleaseNotesContext = createContext<() => void>(() => {});
-
-/** useReleaseNotes opens the release notes on demand. */
-export function useReleaseNotes() {
-  return useContext(ReleaseNotesContext);
-}
-
 export function ReleaseNotes({ children }: { children?: ReactNode }) {
   const [state, setState] = useState<Releases | null>(null);
   const [open, setOpen] = useState(false);
-  // **Opened by an upgrade, or opened on purpose.** The first shows
-  // what is new and marks it read; the second is the history, and
-  // reading it again is not an event.
-  const [asked, setAsked] = useState(false);
   // Where focus lands when it opens. The dialog's default is the first
   // focusable element, which is a link somewhere down the notes, so it
   // opened scrolled to an old release instead of the newest.
@@ -67,23 +42,8 @@ export function ReleaseNotes({ children }: { children?: ReactNode }) {
       .catch(() => {});
   }, []);
 
-  // **Marking it read is not the dialog closing.** `onOpenChange` fires
-  // for the dialog's own triggers — the X, Escape, a click outside —
-  // and not for a button that sets `open` itself. Wiring the POST there
-  // alone meant "Got it" closed the dialog and told the daemon nothing,
-  // so the next reload showed the same notes again.
-  //
-  // Awaited before closing, because a reload a moment later would
-  // otherwise cancel a request that is still in flight — which is
-  // exactly the sequence somebody who just read the notes performs.
   const dismiss = useCallback(async () => {
     setOpen(false);
-    if (asked) {
-      // Somebody who opened the history has not been told anything
-      // new, so there is nothing to mark as told.
-      setAsked(false);
-      return;
-    }
     try {
       await api.post("/releases/seen", undefined);
       setState((s) => (s ? { ...s, unseen: [] } : s));
@@ -91,21 +51,16 @@ export function ReleaseNotes({ children }: { children?: ReactNode }) {
       // Nothing to do about it and nothing worth saying: the worst
       // case is the same notes once more.
     }
-  }, [asked]);
-
-  const show = useCallback(() => {
-    setAsked(true);
-    setOpen(true);
   }, []);
 
-  const pending = asked ? (state?.notes ?? []) : (state?.unseen ?? []);
+  const pending = state?.unseen ?? [];
   if (pending.length === 0) {
-    return <ReleaseNotesContext.Provider value={show}>{children}</ReleaseNotesContext.Provider>;
+    return <>{children}</>;
   }
 
   const many = pending.length > 1;
   return (
-    <ReleaseNotesContext.Provider value={show}>
+    <>
       {children}
       <Dialog open={open} onOpenChange={(next) => !next && dismiss()}>
         {/* A column rather than the primitive's grid: the header and the
@@ -118,18 +73,12 @@ export function ReleaseNotes({ children }: { children?: ReactNode }) {
         >
           <DialogHeader className="shrink-0 border-border border-b p-4 pr-12">
             <DialogTitle>
-              {asked
-                ? "Release notes"
-                : many
-                  ? `What changed in ${pending.length} releases`
-                  : `Cubeship ${pending[0].version}`}
+              {many
+                ? `What changed in ${pending.length} releases`
+                : `Cubeship ${pending[0].version}`}
             </DialogTitle>
             <DialogDescription>
-              {asked
-                ? `Every release up to ${state?.version ?? "this one"}, newest first.`
-                : many
-                  ? "This instance has been upgraded past more than one release. Newest first."
-                  : pending[0].summary}
+              {many ? "Changes since your last visit, newest first." : pending[0].summary}
             </DialogDescription>
           </DialogHeader>
 
@@ -152,11 +101,11 @@ export function ReleaseNotes({ children }: { children?: ReactNode }) {
           </div>
 
           <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none border-border border-t p-4">
-            <Button onClick={dismiss}>{asked ? "Close" : "Got it"}</Button>
+            <Button onClick={dismiss}>Got it</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </ReleaseNotesContext.Provider>
+    </>
   );
 }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ComponentType } from "react";
+import type { ComponentType, ReactNode } from "react";
 import { GLIDE_FIELD_TRIGGER_CLASS, GlideSelect } from "@/components/glide-select";
 
 const SEARCH_FROM = 8;
@@ -25,6 +25,7 @@ export function SearchableSelect({
   searchable,
   fieldClassName,
   ariaLabel,
+  startIcon,
 }: {
   label?: string;
   hint?: string;
@@ -38,12 +39,14 @@ export function SearchableSelect({
   searchable?: boolean;
   fieldClassName?: string;
   ariaLabel?: string;
+  startIcon?: ReactNode;
 }) {
   return (
     <div className={fieldClassName}>
       <GlideSelect
         label={label}
         ariaLabel={ariaLabel ?? label ?? placeholder}
+        startIcon={startIcon}
         className="w-full"
         field
         triggerClassName={GLIDE_FIELD_TRIGGER_CLASS}

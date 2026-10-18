@@ -16,8 +16,7 @@ import (
 type UserResponse struct {
 	Username string `json:"username"`
 	Role     Role   `json:"role"`
-	// Theme is which palette this person sees the dashboard in. Absent
-	// for the default one.
+	// Theme is the chosen base and accent. Absent for dark-cyan.
 	Theme string `json:"theme,omitempty"`
 	// What the account says about its holder. Absent when unset, which
 	// is the normal state — a username is what identifies somebody
@@ -62,9 +61,8 @@ func userResponseFor(u *User) UserResponse {
 // is.
 func (h *Handler) setPreferences(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		// Theme is one of the names in the themes list on GET
-		// /users/me. An empty string is the default palette, which is
-		// how it is turned off rather than a second field saying so.
+		// Theme is one of the combinations in the themes list on GET
+		// /users/me. Empty selects the default dark-cyan combination.
 		Theme *string `json:"theme"`
 		// The rest is what the account says about its holder. Every one
 		// of them is a pointer: an absent field is left alone, and an

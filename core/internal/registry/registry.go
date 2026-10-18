@@ -66,11 +66,12 @@ type Handler struct {
 	signingCert []byte
 }
 
-// Maintainer is what runs a command inside the registry container, and
-// what stops and starts it around one. *dockerx.Client satisfies it.
+// Maintainer stops the registry and runs collection against its mounts
+// in a short-lived container. *dockerx.Client satisfies it.
 type Maintainer interface {
 	InspectContainerByName(ctx context.Context, name string) (dockerx.ContainerInfo, error)
-	Exec(ctx context.Context, containerID string, cmd []string) (string, int, error)
+	SpecOf(ctx context.Context, name string) (dockerx.ContainerOpts, error)
+	RunOneShot(ctx context.Context, opts dockerx.ContainerOpts) (string, int, error)
 	StopContainer(ctx context.Context, id string) error
 	StartContainer(ctx context.Context, id string) error
 }

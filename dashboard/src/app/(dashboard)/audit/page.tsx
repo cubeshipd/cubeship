@@ -1,13 +1,16 @@
 "use client";
 
 import { cn } from "cn";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { CircleCheckIcon, UsersIcon, WorkflowIcon } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { type Column, DataTable } from "@/components/data-table";
 import { type DateRange, DateRangePicker } from "@/components/date-range";
 import { ErrorAlert } from "@/components/error-alert";
+import { FilterPanel } from "@/components/filter-panel";
 import { SearchBar } from "@/components/search-bar";
 import { SearchableSelect } from "@/components/searchable-select";
+import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { UserAvatar } from "@/components/user-avatar";
 import { type AuditEvent, type AuditPage, api, type InstanceUser } from "@/lib/api";
@@ -52,6 +55,7 @@ export default function AuditLog() {
   const [older, setOlder] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [people, setPeople] = useState<InstanceUser[]>([]);
+  const queryGeneration = useRef(0);
 
   const [who, setWho] = useState("");
   const [via, setVia] = useState("");
@@ -78,20 +82,32 @@ export default function AuditLog() {
 
   const load = useCallback(
     async (before?: number) => {
+      const generation = queryGeneration.current;
       const q = new URLSearchParams(query);
       if (before) q.set("before", String(before));
       const s = q.toString();
-      const page = await api.get<AuditPage>(s ? `/audit?${s}` : "/audit");
-      setEvents((prev) => (before && prev ? [...prev, ...page.events] : page.events));
-      setNext(page.next);
+      try {
+        const page = await api.get<AuditPage>(s ? `/audit?${s}` : "/audit");
+        if (generation !== queryGeneration.current) return;
+        setEvents((prev) => (before && prev ? [...prev, ...page.events] : page.events));
+        setNext(page.next);
+      } catch (e) {
+        if (generation === queryGeneration.current) setError(message(e));
+      }
     },
     [query],
   );
 
   useEffect(() => {
     if (me.role !== "admin") return;
+    queryGeneration.current++;
     setEvents(null);
-    load().catch((e) => setError(message(e)));
+    setNext(undefined);
+    setError(null);
+    void load();
+    return () => {
+      queryGeneration.current++;
+    };
   }, [load, me.role]);
 
   useEffect(() => {
@@ -130,10 +146,10 @@ export default function AuditLog() {
           <span className="flex min-w-0 items-center gap-2.5">
             <UserAvatar
               person={person ?? { username: e.username }}
-              className={cn("size-6", !person && "opacity-40 grayscale")}
+              className={cn("size-8 rounded-full", !person && "opacity-50 grayscale")}
             />
             <span className="flex min-w-0 flex-col">
-              <span className="truncate text-xs">{e.username}</span>
+              <span className="truncate text-sm">{e.username}</span>
               <span className="truncate font-mono text-[11px] text-subtle-foreground">
                 {e.key_name ? `${e.via} · ${e.key_name}` : e.via}
               </span>
@@ -176,19 +192,17 @@ export default function AuditLog() {
 
   return (
     <>
+      <SectionHeader
+        page
+        title="Audit log"
+        sub="Changes and refused requests across this instance."
+      />
       <ErrorAlert error={error} />
 
-      {/* The search takes its own row until there is room for it beside
-          the four filters; squeezed in with them it showed three letters. */}
-      <div className="mb-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-[minmax(0,1fr)_repeat(3,10rem)_13rem]">
-        <SearchBar
-          value={search}
-          onChange={setSearch}
-          placeholder="An app, a database, a project…"
-          className="h-10 sm:col-span-2 lg:col-span-4 2xl:col-span-1"
-        />
+      <FilterPanel>
         <SearchableSelect
-          ariaLabel="Actor"
+          label="Actor"
+          startIcon={<UsersIcon className="size-4" />}
           value={who}
           onChange={setWho}
           choices={[
@@ -196,15 +210,31 @@ export default function AuditLog() {
             ...people.map((p) => ({ value: p.username, label: p.username })),
           ]}
         />
-        <SearchableSelect ariaLabel="Access method" value={via} onChange={setVia} choices={VIA} />
         <SearchableSelect
-          ariaLabel="Outcome"
+          label="Access method"
+          startIcon={<WorkflowIcon className="size-4" />}
+          value={via}
+          onChange={setVia}
+          choices={VIA}
+        />
+        <SearchableSelect
+          label="Outcome"
+          startIcon={<CircleCheckIcon className="size-4" />}
           value={outcome}
           onChange={setOutcome}
           choices={OUTCOMES}
         />
-        <DateRangePicker value={range} onChange={setRange} className="h-10 w-full" />
-      </div>
+        <fieldset className="min-w-0">
+          <legend className="mb-2 block text-xs font-medium text-foreground">Time</legend>
+          <DateRangePicker value={range} onChange={setRange} className="h-10 w-full" />
+        </fieldset>
+      </FilterPanel>
+      <SearchBar
+        value={search}
+        onChange={setSearch}
+        placeholder="An app, a database, a project…"
+        className="mb-4"
+      />
 
       <DataTable
         columns={columns}
@@ -225,11 +255,7 @@ export default function AuditLog() {
             busy={older}
             onClick={async () => {
               setOlder(true);
-              try {
-                await load(next);
-              } catch (e) {
-                setError(message(e));
-              }
+              await load(next);
               setOlder(false);
             }}
           >

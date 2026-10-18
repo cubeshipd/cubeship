@@ -195,7 +195,7 @@ export function InstanceBackups() {
 
       <SectionHeader
         title="Instance backups"
-        sub="The instance's own database and the files beside it that nothing else has a copy of — the certificate store, and the pictures on projects. Not the data in your databases or buckets: each of those has its own, and folding them in would make the one thing small enough to take nightly the one too big to take at all."
+        sub="Copies of Cubeship's settings and local files. Databases and buckets have their own backups."
         actions={
           <ActionButton
             busy={busy}
@@ -217,11 +217,9 @@ export function InstanceBackups() {
       />
       <ErrorAlert error={error} />
       <Notice>
-        <strong>There is no restore button, and that is deliberate.</strong> The thing being
-        replaced is the database this dashboard is running on. Putting an instance back is a fresh
-        install, the daemon stopped, the dump loaded with <code>psql</code> and the files put back —
-        download the archive and keep it somewhere you would still have it if this machine were
-        gone.
+        <strong>Restore is manual.</strong> Keep the downloaded archive off this machine. To
+        restore, install a fresh instance, stop its daemon, load the dump with <code>psql</code>,
+        and put the files back.
       </Notice>
       <BackupTable rows={rows} onChanged={load} showDatabase={false} />
     </>
@@ -777,7 +775,10 @@ export function Schedule({
   return (
     <Card className="mb-6">
       <CardContent className="space-y-5 [&>.dashboard-section-header]:mb-0">
-        <SectionHeader title="On a schedule" />
+        <SectionHeader
+          title="Backup schedule"
+          sub="Choose when and where automatic backups are kept."
+        />
         <ErrorAlert error={error} />
 
         <div className="flex items-start gap-3">

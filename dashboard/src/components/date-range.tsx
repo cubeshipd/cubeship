@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "cn";
-import { CalendarIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
+import { CalendarIcon, ChevronDownIcon, ChevronLeftIcon, ChevronRightIcon } from "lucide-react";
 import { useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
@@ -124,19 +124,13 @@ export function DateRangePicker({
             type="button"
             data-slot="select-trigger"
             className={cn(
-              "flex h-[38px] items-center gap-2 border border-border px-3 text-left text-sm",
+              "flex h-10 cursor-pointer items-center gap-2 border border-border px-3 text-left text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40",
               className,
             )}
           >
-            <CalendarIcon className="size-3.5 shrink-0 text-muted-foreground" />
-            <span
-              className={cn(
-                "min-w-0 flex-1 truncate",
-                !value.from && !value.to && "text-muted-foreground",
-              )}
-            >
-              {describe(value, empty)}
-            </span>
+            <CalendarIcon className="size-4 shrink-0 text-primary" aria-hidden="true" />
+            <span className="min-w-0 flex-1 truncate">{describe(value, empty)}</span>
+            <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
           </button>
         }
       />

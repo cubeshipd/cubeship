@@ -1,15 +1,10 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ChevronDownIcon, ServerIcon } from "lucide-react";
+import { ServerIcon } from "lucide-react";
 import { useSearchParams } from "next/navigation";
+import { GLIDE_FIELD_TRIGGER_CLASS, GlideSelect } from "@/components/glide-select";
 import { useSession } from "@/components/session-context";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { can } from "@/lib/api";
 import { machinesQuery } from "@/lib/dashboard-queries";
 
@@ -35,36 +30,27 @@ export function MachineSelector({
 }) {
   const { server, query, select } = selection;
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <button type="button" className="machine-selector" aria-label={`Machine: ${server}`} />
-        }
-      >
-        <ServerIcon className="size-4 shrink-0 text-primary" />
-        <span className="truncate">{server}</span>
-        <ChevronDownIcon className="size-3 shrink-0 text-muted-foreground" />
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="min-w-64">
-        {(query.data ?? [{ name: "control-plane", control_plane: true, status: "ready" }]).map(
-          (machine) => (
-            <DropdownMenuItem
-              key={machine.name}
-              onClick={() => select(machine.name)}
-              className="justify-between gap-6"
-            >
-              <span className={server === machine.name ? "text-primary" : ""}>{machine.name}</span>
-              <span className="text-[11px] text-muted-foreground">
-                {machine.status === "ready"
-                  ? machine.control_plane
-                    ? "Control plane"
-                    : "Worker"
-                  : machine.status}
-              </span>
-            </DropdownMenuItem>
-          ),
-        )}
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <GlideSelect
+      ariaLabel="Machine"
+      value={server}
+      onChange={select}
+      options={(
+        query.data ?? [{ name: server, control_plane: server === "control-plane", status: "ready" }]
+      ).map((machine) => ({
+        value: machine.name,
+        label: machine.name,
+        tag:
+          machine.status === "ready"
+            ? machine.control_plane
+              ? "Control plane"
+              : "Worker"
+            : machine.status,
+      }))}
+      startIcon={<ServerIcon className="size-4" />}
+      searchable
+      align="right"
+      className="w-64 max-w-[50vw]"
+      triggerClassName={`${GLIDE_FIELD_TRIGGER_CLASS} font-mono`}
+    />
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  ActivityIcon,
   InfoIcon,
   KeyRoundIcon,
   LockIcon,
@@ -17,9 +18,11 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal, RailTabs } from "@/components/header-rail";
+import { FilterPanel } from "@/components/filter-panel";
+import { GLIDE_FIELD_TRIGGER_CLASS, GlideSelect } from "@/components/glide-select";
 import { RowAction, RowActions, RowMenu, RowMenuItem } from "@/components/row-actions";
 import { SearchableSelect } from "@/components/searchable-select";
+import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
@@ -30,31 +33,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UserAvatar } from "@/components/user-avatar";
 import { ValueCard } from "@/components/value-card";
 import { type AccessRole, type AccessRoles, api, type InstanceUser, personName } from "@/lib/api";
 import { message } from "@/lib/errors";
 import { useOpenOnArrival } from "@/lib/open-on-arrival";
 
-// Who can reach this instance at all.
-//
-// **In Platform rather than under your own settings**, because it is
-// about the instance and not about you: who holds a way in is the same
-// kind of fact as which registry it pulls from and which machines it is
-// made of. Your own password and the colours you see are the other
-// thing, and they are under your name.
-//
-// An **admin's screen including the reading**. The list says who can get
-// in, which is not something a member needs and is exactly what somebody
-// probing would want — so a member is sent away rather than shown an
-// empty table.
-//
-// **The screen is the table.** Adding somebody used to be a card above
-// it, on the grounds that it is what brings anybody here — which was
-// true and was still the wrong shape: it is one act, it belongs in the
-// rail with every other screen's one act, and a form taking up the top
-// third pushed the thing the screen is named after below the fold.
+// Account and role membership is admin-only, including the list itself.
 export default function UsersPage() {
   const me = useSession();
   const [users, setUsers] = useState<InstanceUser[] | null>(null);
@@ -73,7 +58,7 @@ export default function UsersPage() {
   const [composing, setComposing] = useState(false);
   const [deleting, setDeleting] = useState<AccessRole | null>(null);
   const [inspecting, setInspecting] = useState<AccessRole | null>(null);
-  const [tab, setTab] = useState<"users" | "roles">("users");
+  const [status, setStatus] = useState("");
 
   useOpenOnArrival("new", setAdding);
 
@@ -228,38 +213,20 @@ export default function UsersPage() {
   ];
 
   return (
-    // Two tabs rather than one page: the roles are given to the people in
-    // the first, and a second table under the first made both scroll.
-    <Tabs
-      value={tab}
-      // Only a click moves it: Base UI also reports a fallback while the
-      // list mounts into the rail, which opened the page on the last tab.
-      onValueChange={(v, details) => details.reason === "none" && setTab(v as "users" | "roles")}
-      className="subrail-page"
-    >
-      <RailTabs>
-        <TabsList variant="line">
-          <TabsTrigger value="users">Users</TabsTrigger>
-          <TabsTrigger value="roles">Access roles</TabsTrigger>
-        </TabsList>
-      </RailTabs>
-      <RailPortal>
-        {tab === "users" ? (
-          <Button onClick={() => setAdding(true)}>
-            <PlusIcon />
-            Add user
-          </Button>
-        ) : (
-          <Button onClick={() => setComposing(true)}>
-            <PlusIcon />
-            New role
-          </Button>
-        )}
-      </RailPortal>
-
+    <>
       <ErrorAlert error={error} />
 
-      <TabsContent value="users">
+      <section className="mb-8">
+        <SectionHeader
+          title="Accounts"
+          sub="People with access to this instance."
+          actions={
+            <Button onClick={() => setAdding(true)}>
+              <PlusIcon />
+              Add user
+            </Button>
+          }
+        />
         {/* Above the table, because it cannot be asked for again and the
           next click must not be able to lose it. */}
         {issued && (
@@ -270,6 +237,22 @@ export default function UsersPage() {
           />
         )}
 
+        <FilterPanel>
+          <GlideSelect
+            label="Status"
+            startIcon={<ActivityIcon className="size-4" />}
+            value={status}
+            onChange={setStatus}
+            options={[
+              { value: "", label: "All statuses" },
+              { value: "active", label: "Active" },
+              { value: "blocked", label: "Blocked" },
+            ]}
+            className="w-full"
+            triggerClassName={GLIDE_FIELD_TRIGGER_CLASS}
+          />
+        </FilterPanel>
+
         <DataTable
           columns={columns}
           rows={users}
@@ -278,6 +261,7 @@ export default function UsersPage() {
             placeholder: "Filter users",
             countLabel: { singular: "user", plural: "users" },
             by: (u) => [u.display_name, u.username, u.role],
+            filter: (u) => !status || (u.blocked_at ? "blocked" : "active") === status,
           }}
           empty="Nobody but you."
         />
@@ -298,13 +282,19 @@ export default function UsersPage() {
           onOpenChange={(open) => !open && setChanging(null)}
           onSaved={reload}
         />
-      </TabsContent>
+      </section>
 
-      <TabsContent value="roles">
-        <p className="mb-4 text-muted-foreground text-xs">
-          What an account, or an API key, may reach. Admin, Read only and Deploy ship with the
-          instance and cannot be changed; a key given a role never reaches more than its owner.
-        </p>
+      <section>
+        <SectionHeader
+          title="Access roles"
+          sub="Control what accounts and API keys can access."
+          actions={
+            <Button onClick={() => setComposing(true)}>
+              <PlusIcon />
+              New role
+            </Button>
+          }
+        />
         <DataTable
           columns={[
             {
@@ -370,9 +360,14 @@ export default function UsersPage() {
           rows={roles?.roles ?? null}
           rowKey={(r) => String(r.id)}
           loadingRows={2}
+          search={{
+            placeholder: "Filter roles",
+            countLabel: { singular: "role", plural: "roles" },
+            by: (r) => [r.name, r.description],
+          }}
           empty="No roles."
         />
-      </TabsContent>
+      </section>
 
       <AccessRoleInfo
         role={inspecting}
@@ -462,16 +457,14 @@ export default function UsersPage() {
           reload();
         }}
       />
-    </Tabs>
+    </>
   );
 }
 
 // A blocked account's face is dimmed, because the row is otherwise the
 // same row and the word in the status column is small.
 function cnFace(u: InstanceUser) {
-  return u.blocked_at
-    ? "size-6 shrink-0 border border-border object-cover opacity-40 grayscale"
-    : "size-6 shrink-0 border border-primary/40 object-cover";
+  return u.blocked_at ? "size-8 rounded-full opacity-50 grayscale" : "size-8 rounded-full";
 }
 
 // Adding an account.

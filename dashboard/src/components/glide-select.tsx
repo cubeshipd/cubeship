@@ -288,7 +288,7 @@ export function GlideSelect({
         disabled={disabled || busy}
         className={
           triggerClassName ??
-          `inline-flex h-9 cursor-pointer items-center gap-2 rounded-lg border px-3 text-sm font-medium shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${accent ? "border-primary bg-primary text-primary-foreground hover:bg-primary/85" : "border-border-strong bg-secondary text-foreground hover:border-primary/40 hover:bg-accent"}`
+          `inline-flex h-9 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border px-3 text-sm font-medium shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 ${accent ? "border-primary bg-primary text-primary-foreground hover:bg-primary/85" : "border-border-strong bg-secondary text-foreground hover:border-primary/40 hover:bg-accent"}`
         }
         onClick={(event) => {
           event.stopPropagation();

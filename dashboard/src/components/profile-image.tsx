@@ -99,15 +99,22 @@ export function ProfileImage() {
   }
 
   return (
-    <section aria-label="Profile image" className="profile-image" aria-busy={busy}>
-      <div className="profile-image-preview">
-        <UserAvatar person={me} src={preview} className="size-20" />
+    <section
+      aria-label="Profile photo"
+      className="flex flex-col gap-4 border-border border-b pb-6 sm:flex-row sm:items-center"
+      aria-busy={busy}
+    >
+      <div className="relative size-18 shrink-0">
+        <UserAvatar person={me} src={preview} className="size-18 rounded-full text-xl!" />
+        <span className="absolute right-0 bottom-0 grid size-6 place-items-center rounded-full border border-card bg-secondary text-muted-foreground">
+          <ImagePlusIcon className="size-3.5" aria-hidden="true" />
+        </span>
       </div>
-      <div className="min-w-0 flex-1 space-y-3">
+      <div className="min-w-0 flex-1 space-y-2">
         <div>
-          <h3 className="text-sm font-medium">Profile image</h3>
+          <h3 className="text-sm font-medium">Profile photo</h3>
           <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-            PNG, JPEG or WebP, up to 10 MB. Your image is cropped to a square.
+            PNG, JPEG or WebP · 10 MB max
           </p>
         </div>
         <input
@@ -132,12 +139,12 @@ export function ProfileImage() {
             onClick={() => input.current?.click()}
           >
             <ImagePlusIcon />
-            {me.avatar_url || chosen ? "Change image" : "Upload image"}
+            {me.avatar_url || chosen ? "Change photo" : "Upload photo"}
           </Button>
           {chosen && (
             <>
               <ActionButton type="button" size="sm" busy={busy} onClick={() => void save()}>
-                Save image
+                Save photo
               </ActionButton>
               <Button
                 type="button"
@@ -166,12 +173,12 @@ export function ProfileImage() {
             </Button>
           )}
         </div>
-        <ErrorAlert error={error} />
-        <p role="status" className="text-xs text-success">
-          {busy
-            ? "Updating image…"
-            : status || (chosen ? "Preview ready. Save to apply your new image." : "")}
-        </p>
+        <ErrorAlert error={error} className="mb-0" />
+        {(busy || status || chosen) && (
+          <p role="status" className="text-xs text-success">
+            {busy ? "Updating photo…" : status || "Preview ready. Save to apply."}
+          </p>
+        )}
       </div>
     </section>
   );

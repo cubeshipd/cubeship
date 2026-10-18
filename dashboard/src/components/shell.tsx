@@ -37,16 +37,15 @@ import { InstanceUpdate } from "@/components/instance-update";
 import Link from "@/components/navigation-link";
 import { SessionLoading } from "@/components/page-loading";
 import { QueryProvider } from "@/components/query-provider";
-import { ReleaseNotes, useReleaseNotes } from "@/components/release-notes";
+import { ReleaseNotes } from "@/components/release-notes";
 import { ScrollToTop } from "@/components/scroll-to-top";
 import { SessionProvider } from "@/components/session-context";
+import { applyTheme } from "@/components/theme";
 import { Dialog, DialogContent, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -224,7 +223,10 @@ export function Shell({ children }: { children: ReactNode }) {
     api
       .get<Me>("/users/me")
       .then((account) => {
-        if (live) setMe(account);
+        if (live) {
+          applyTheme(account.theme);
+          setMe(account);
+        }
       })
       .catch((error) => {
         if (!live) return;
@@ -252,10 +254,30 @@ export function Shell({ children }: { children: ReactNode }) {
     "/firewall",
     "/registries",
     "/git",
+    "/components",
+    "/settings",
+    "/credentials",
+    "/certificates",
+    "/users",
+    "/audit",
+    "/account",
+    "/release-notes",
   ].some((route) => pathname === route || pathname.startsWith(`${route}/`));
-  const inlineMobileNav = ["/templates", "/dns", "/firewall", "/registries", "/git"].some(
-    (route) => pathname === route || pathname.startsWith(`${route}/`),
-  );
+  const inlineMobileNav = [
+    "/templates",
+    "/dns",
+    "/firewall",
+    "/registries",
+    "/git",
+    "/components",
+    "/settings",
+    "/credentials",
+    "/certificates",
+    "/users",
+    "/audit",
+    "/account",
+    "/release-notes",
+  ].some((route) => pathname === route || pathname.startsWith(`${route}/`));
 
   if (!me)
     return <SessionLoading error={sessionError} onRetry={() => setAttempt((value) => value + 1)} />;
@@ -263,9 +285,7 @@ export function Shell({ children }: { children: ReactNode }) {
   return (
     <SessionProvider me={me} update={updateSession}>
       <QueryProvider>
-        {/* What changed, once, after an upgrade — and on demand from
-            the menu below, which is why it wraps rather than sits
-            beside: the item that opens it is three components down. */}
+        {/* Show unread changes once after an upgrade. */}
         <ReleaseNotes>
           <div className="dashboard-shell">
             <a className="dashboard-skip" href="#dashboard-content">
@@ -411,7 +431,6 @@ function useSignOut() {
 
 function MobileUserMenu({ me }: { me: Me }) {
   const router = useRouter();
-  const releaseNotes = useReleaseNotes();
   const { signingOut, signOut } = useSignOut();
   const stars = useGitHubStars();
 
@@ -424,7 +443,7 @@ function MobileUserMenu({ me }: { me: Me }) {
       triggerClassName="dashboard-user-trigger"
       triggerContent={
         <>
-          <UserAvatar person={me} className="size-8" />
+          <UserAvatar person={me} className="size-8 rounded-full" />
           <span className="dashboard-user-name">
             <span>{personName(me)}</span>
             <small>{me.role === "admin" ? "Administrator" : "Your account"}</small>
@@ -476,7 +495,7 @@ function MobileUserMenu({ me }: { me: Me }) {
       ]}
       onChange={(action) => {
         if (action === "account") router.push("/account");
-        else if (action === "release-notes") releaseNotes();
+        else if (action === "release-notes") router.push("/release-notes");
         else if (action === "github")
           window.open("https://github.com/cubeshipd/cubeship", "_blank", "noopener,noreferrer");
         else if (action === "sign-out") void signOut();
@@ -487,13 +506,12 @@ function MobileUserMenu({ me }: { me: Me }) {
 
 function DesktopUserMenu({ me }: { me: Me }) {
   const { signingOut, signOut } = useSignOut();
-  const releaseNotes = useReleaseNotes();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
           <button type="button" className="dashboard-user-trigger">
-            <UserAvatar person={me} className="size-8" />
+            <UserAvatar person={me} className="size-8 rounded-full" />
             <span className="dashboard-user-name">
               <span>{personName(me)}</span>
               <small>{me.role === "admin" ? "Administrator" : "Your account"}</small>
@@ -505,21 +523,11 @@ function DesktopUserMenu({ me }: { me: Me }) {
           </button>
         }
       />
-      <DropdownMenuContent side="right" align="end" className="w-52">
-        <DropdownMenuGroup>
-          <DropdownMenuLabel className="text-xs">
-            <span className="block truncate">{personName(me)}</span>
-            <span className="block truncate font-mono text-[11px] text-subtle-foreground">
-              {me.username}
-              {me.role === "admin" && <span className="ml-1.5">· admin</span>}
-            </span>
-          </DropdownMenuLabel>
-        </DropdownMenuGroup>
-        <DropdownMenuSeparator />
+      <DropdownMenuContent side="right" align="end" className="w-52 p-1.5">
         <DropdownMenuItem render={<Link href="/account" />}>
           <SettingsIcon /> Your settings
         </DropdownMenuItem>
-        <DropdownMenuItem onClick={releaseNotes}>
+        <DropdownMenuItem render={<Link href="/release-notes" />}>
           <SparklesIcon /> Release notes
         </DropdownMenuItem>
         <GitHubStar />

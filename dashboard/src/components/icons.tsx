@@ -10,7 +10,9 @@ import type { SVGProps } from "react";
 export {
   SiCloudflare as CloudflareIcon,
   SiDigitalocean as DigitalOceanIcon,
+  SiGitea as GiteaIcon,
   SiGithub as GitHubIcon,
+  SiGitlab as GitLabIcon,
   SiMariadb as MariaDBIcon,
   SiMongodb as MongoDBIcon,
   SiMysql as MySQLIcon,

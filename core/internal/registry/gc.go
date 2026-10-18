@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"cubeship/internal/platform/bootstrap"
+	"cubeship/internal/platform/dockerx"
 	"cubeship/internal/user"
 )
 
@@ -18,8 +19,8 @@ import (
 // layers stay on disk, referenced by nothing, until something walks the
 // storage and removes what no manifest names. In the distribution
 // registry that something is a subcommand of the registry binary itself
-// — `registry garbage-collect <config>` — so it runs inside the
-// container, over the same bind mount, with no API in front of it.
+// — `registry garbage-collect <config>` — so it runs in a temporary
+// container with the registry's bind mounts, with no API in front of it.
 //
 // It is unsafe to run while the registry accepts pushes, and not
 // subtly: the pass marks which blobs are referenced, then deletes the
@@ -63,7 +64,7 @@ var ErrNoMaintenance = errors.New("this daemon cannot run maintenance on the reg
 // maintenance action into an outage.
 //
 // It takes an admin, which is the same bar as deleting an image.
-func (h *Handler) GarbageCollect(ctx context.Context, caller *user.User) (*GCResult, error) {
+func (h *Handler) GarbageCollect(ctx context.Context, caller *user.User) (result *GCResult, err error) {
 	if err := user.Allow(caller, user.ResRegistry, user.LevelManage, ""); err != nil {
 		return nil, err
 	}
@@ -75,6 +76,13 @@ func (h *Handler) GarbageCollect(ctx context.Context, caller *user.User) (*GCRes
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrNoMaintenance, err)
 	}
+	if !info.Running {
+		return nil, fmt.Errorf("%w: registry container is not running", ErrNoMaintenance)
+	}
+	spec, err := h.maintenance.SpecOf(ctx, info.ID)
+	if err != nil {
+		return nil, fmt.Errorf("inspect registry mounts: %w", err)
+	}
 
 	started := time.Now()
 	if err := h.maintenance.StopContainer(ctx, info.ID); err != nil {
@@ -83,18 +91,22 @@ func (h *Handler) GarbageCollect(ctx context.Context, caller *user.User) (*GCRes
 	// Whatever happens, it comes back. A pass that fails with the
 	// registry left down is a far worse outcome than one that fails.
 	defer func() {
-		if err := h.maintenance.StartContainer(context.WithoutCancel(ctx), info.ID); err != nil {
-			// Nothing above can act on this, and the pass's own result
-			// is the more useful thing to return.
-			_ = err
+		if startErr := h.maintenance.StartContainer(context.WithoutCancel(ctx), info.ID); startErr != nil {
+			result = nil
+			err = errors.Join(err, fmt.Errorf("restart the registry: %w", startErr))
 		}
 	}()
 
 	// --delete-untagged also removes manifests no tag points at, which
 	// is what an overwritten tag leaves behind — the common case here,
 	// since a redeploy pushes the same tag again.
-	output, code, err := h.maintenance.Exec(ctx, info.ID, []string{
-		"registry", "garbage-collect", "--delete-untagged", "/etc/docker/registry/config.yml",
+	// Docker cannot exec in a stopped container. A one-shot with the
+	// same image and mounts can collect while the serving container is down.
+	output, code, err := h.maintenance.RunOneShot(ctx, dockerx.ContainerOpts{
+		Image:      spec.Image,
+		Binds:      spec.Binds,
+		Entrypoint: []string{"registry"},
+		Cmd:        []string{"garbage-collect", "--delete-untagged", "/etc/docker/registry/config.yml"},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("run the collection: %w", err)

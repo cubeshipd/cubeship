@@ -17,7 +17,7 @@ import (
 	"github.com/coder/websocket"
 )
 
-// PasswordTimeout is how long a root shell waits for the password it
+// PasswordTimeout is how long a privileged shell waits for the password it
 // asks for. A person typing it, not a program.
 var PasswordTimeout = 2 * time.Minute
 
@@ -33,7 +33,7 @@ func NewHandler(svc *Service, audit Recorder, agent func(http.Handler) http.Hand
 	return &Handler{svc: svc, audit: audit, agent: agent}
 }
 
-// Routes mounts the two sessions and the door workers connect back
+// Routes mounts the sessions and the door workers connect back
 // through.
 //
 // **All internal.** The OpenAPI document describes requests and their
@@ -41,6 +41,7 @@ func NewHandler(svc *Service, audit Recorder, agent func(http.Handler) http.Hand
 // as long as somebody types. See docs/servers/shell.mdx.
 func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) {
 	r.HandleInternal("GET /apps/{project}/{env}/{name}/shell", auth(http.HandlerFunc(h.appShell)))
+	r.HandleInternal("GET /nodes/{name}/components/{component}/shell", auth(http.HandlerFunc(h.componentShell)))
 	r.HandleInternal("GET /nodes/{name}/shell", auth(http.HandlerFunc(h.hostShell)))
 	r.HandleInternal("GET /nodes/agent/shell/{id}", h.agent(http.HandlerFunc(h.claim)))
 }
@@ -70,20 +71,44 @@ func (h *Handler) hostShell(w http.ResponseWriter, r *http.Request) {
 	// root prompt opens. An API key is its own proof — it is a secret
 	// the CLI holds, not a cookie a browser left signed in.
 	if err == nil && caller.Key == nil {
-		wait, stop := context.WithTimeout(ctx, PasswordTimeout)
-		m, rerr := terminal.ReadMessage(wait, conn)
-		stop()
-		switch {
-		case rerr != nil:
-			conn.CloseNow()
+		var connected bool
+		err, connected = h.confirmBrowserPassword(ctx, conn, caller)
+		if !connected {
 			return
-		case m.Type != terminal.TypeAuth:
-			err = ErrPasswordRequired
-		default:
-			err = h.svc.ConfirmPassword(ctx, caller, m.Password)
 		}
 	}
 	h.session(ctx, r, conn, caller, "/nodes/{name}/shell", t, err)
+}
+
+func (h *Handler) componentShell(w http.ResponseWriter, r *http.Request) {
+	conn, caller, ok := h.accept(w, r)
+	if !ok {
+		return
+	}
+	ctx := context.WithoutCancel(r.Context())
+	t, err := h.svc.ComponentTarget(ctx, caller, r.PathValue("name"), r.PathValue("component"))
+	if err == nil && caller.Key == nil {
+		var connected bool
+		err, connected = h.confirmBrowserPassword(ctx, conn, caller)
+		if !connected {
+			return
+		}
+	}
+	h.session(ctx, r, conn, caller, "/nodes/{name}/components/{component}/shell", t, err)
+}
+
+func (h *Handler) confirmBrowserPassword(ctx context.Context, conn *websocket.Conn, caller *user.User) (error, bool) {
+	wait, stop := context.WithTimeout(ctx, PasswordTimeout)
+	m, err := terminal.ReadMessage(wait, conn)
+	stop()
+	if err != nil {
+		conn.CloseNow()
+		return nil, false
+	}
+	if m.Type != terminal.TypeAuth {
+		return ErrPasswordRequired, true
+	}
+	return h.svc.ConfirmPassword(ctx, caller, m.Password), true
 }
 
 // accept upgrades the request, once the caller is known to be allowed

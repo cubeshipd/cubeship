@@ -1,21 +1,30 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { cn } from "cn";
-import { BoxesIcon, RefreshCwIcon, TerminalIcon } from "lucide-react";
+import { useQueries, useQuery } from "@tanstack/react-query";
+import { FileTextIcon, ServerIcon, TerminalSquareIcon } from "lucide-react";
 import { useState } from "react";
-import { ActionButton } from "@/components/action-button";
-import { ContainerLogs } from "@/components/container-logs";
+import { ContainerLogsDialog } from "@/components/container-logs";
+import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
-import { MachineSelector, useMachineSelection } from "@/components/machine-selector";
+import { FilterPanel } from "@/components/filter-panel";
+import { GLIDE_FIELD_TRIGGER_CLASS, GlideSelect } from "@/components/glide-select";
 import { Notice } from "@/components/notice";
-import { PageLoading } from "@/components/page-loading";
+import { RowAction, RowActions } from "@/components/row-actions";
 import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { StatusBadge } from "@/components/status-badge";
-import { api, type ComponentInventory } from "@/lib/api";
+import { TerminalPanel } from "@/components/terminal-panel";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { api, type ClusterServer, type ComponentInventory, type SystemComponent } from "@/lib/api";
+import { machinesQuery } from "@/lib/dashboard-queries";
 import { message } from "@/lib/errors";
+
+type ComponentRow = {
+  server: ClusterServer;
+  component: SystemComponent;
+  status: string;
+  available: boolean;
+};
 
 export default function Components() {
   const me = useSession();
@@ -27,138 +36,186 @@ export default function Components() {
 }
 
 function ComponentsContent() {
-  const machine = useMachineSelection();
-  const [chosen, setChosen] = useState("daemon");
-  const inventory = useQuery({
-    queryKey: ["components", machine.server],
-    queryFn: ({ signal }) =>
-      api.get<ComponentInventory>(`/nodes/${encodeURIComponent(machine.server)}/components`, {
-        signal,
-      }),
-    staleTime: 10_000,
-    refetchInterval: 30_000,
-    retry: false,
+  const [node, setNode] = useState("");
+  const [logs, setLogs] = useState<ComponentRow | null>(null);
+  const [shell, setShell] = useState<ComponentRow | null>(null);
+  const machines = useQuery({ ...machinesQuery, refetchInterval: 5_000 });
+  const servers = machines.data ?? [];
+  const inventories = useQueries({
+    queries: servers.map((server) => ({
+      queryKey: ["components", server.name],
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        api.get<ComponentInventory>(`/nodes/${encodeURIComponent(server.name)}/components`, {
+          signal,
+        }),
+      enabled: server.status === "ready",
+      staleTime: 10_000,
+      refetchInterval: 5_000,
+      retry: false,
+    })),
   });
-  const items = inventory.data?.components ?? [];
-  const component = items.find((item) => item.id === chosen) ?? items[0];
-  const offline = machine.selected && machine.selected.status !== "ready";
-  const healthy = items.filter(
-    (item) => item.status === "running" && item.health !== "unhealthy",
-  ).length;
+  const rows: ComponentRow[] = servers.flatMap((server, index) => {
+    const inventory = inventories[index];
+    const available = server.status === "ready" && !inventory.isError;
+    return (inventory.data?.components ?? []).map((component) => ({
+      server,
+      component,
+      available,
+      status: !available
+        ? server.status === "ready"
+          ? "unavailable"
+          : server.status
+        : component.health === "unhealthy"
+          ? "unhealthy"
+          : component.status,
+    }));
+  });
+  const pending =
+    machines.isPending ||
+    (rows.length === 0 &&
+      servers.some((server, index) => server.status === "ready" && inventories[index].isPending));
+  const disconnected = servers.filter((server) => server.status !== "ready");
+  const columns: Column<ComponentRow>[] = [
+    {
+      id: "component",
+      header: "Component",
+      width: 22,
+      sortBy: (row) => row.component.name,
+      cell: (row) => <span className="text-sm font-medium">{row.component.name}</span>,
+    },
+    {
+      id: "container",
+      header: "Container",
+      width: 24,
+      cell: (row) => (
+        <span className="font-mono text-xs text-muted-foreground">{row.component.container}</span>
+      ),
+    },
+    {
+      id: "node",
+      header: "Node",
+      width: 18,
+      sortBy: (row) => row.server.name,
+      cell: (row) => <span className="font-mono text-xs">{row.server.name}</span>,
+    },
+    {
+      id: "status",
+      header: "Status",
+      width: 16,
+      sortBy: (row) => row.status,
+      cell: (row) => <StatusBadge value={row.status} />,
+    },
+    {
+      id: "restarts",
+      header: "Restarts",
+      width: 10,
+      align: "right",
+      sortBy: (row) => row.component.restarts,
+      cell: (row) => row.component.restarts || "—",
+    },
+    {
+      id: "actions",
+      header: "",
+      width: 10,
+      align: "right",
+      cell: (row) => (
+        <RowActions>
+          <RowAction
+            icon={FileTextIcon}
+            label={`View ${row.component.name} logs on ${row.server.name}`}
+            disabled={!row.available || !row.component.logs_available}
+            onClick={() => setLogs(row)}
+          />
+          <RowAction
+            icon={TerminalSquareIcon}
+            label={`Open ${row.component.name} shell on ${row.server.name}`}
+            disabled={!row.available || row.component.status !== "running"}
+            onClick={() => setShell(row)}
+          />
+        </RowActions>
+      ),
+    },
+  ];
 
   return (
     <>
-      <RailPortal>
-        <MachineSelector selection={machine} />
-      </RailPortal>
-      <header className="dashboard-overview-intro">
-        <div>
-          <h1>Inside Cubeship.</h1>
-          <p>The services behind your platform, one machine at a time.</p>
-        </div>
-        <BoxesIcon className="size-12 text-primary/60" strokeWidth={1} />
-      </header>
-      <SectionHeader
-        title={machine.server}
-        sub={`${machine.selected?.control_plane === false ? "Worker" : "Control plane"} services. Application containers, databases and buckets remain in Workspace.`}
-        actions={
-          <ActionButton busy={inventory.isFetching} onClick={() => void inventory.refetch()}>
-            <RefreshCwIcon />
-            Refresh
-          </ActionButton>
-        }
-      />
-      <ErrorAlert error={machine.query.error ? message(machine.query.error) : null} />
-      <ErrorAlert error={inventory.error ? message(inventory.error) : null} />
-      {offline && (
+      <SectionHeader page title="Components" sub="Internal services across your nodes." />
+      <ErrorAlert error={machines.error ? message(machines.error) : null} />
+      {servers.map((server, index) => (
+        <ErrorAlert
+          key={server.name}
+          error={
+            inventories[index].error ? `${server.name}: ${message(inventories[index].error)}` : null
+          }
+        />
+      ))}
+      {disconnected.length > 0 && (
         <Notice tone="warning">
-          This machine is {machine.selected?.status}. Component state cannot be confirmed and logs
-          are unavailable until it reconnects.
+          {disconnected.map((server) => server.name).join(", ")} cannot refresh component data until
+          connected.
         </Notice>
       )}
-      {inventory.isPending ? (
-        <PageLoading kind="grid" />
-      ) : items.length > 0 ? (
+      {(rows.length > 0 || !machines.isError) && (
         <>
-          <p role="status" className="mb-4 font-mono text-xs text-muted-foreground">
-            {inventory.isError || offline
-              ? "Last known inventory"
-              : `${healthy} running · ${items.length} components`}{" "}
-            · Updated {new Date(inventory.dataUpdatedAt).toLocaleTimeString()}
-          </p>
-          <div className="component-grid">
-            {items.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                aria-pressed={item.id === component?.id}
-                onClick={() => setChosen(item.id)}
-                className={cn("component-card", item.id === component?.id && "is-selected")}
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <h3>{item.name}</h3>
-                  <StatusBadge value={item.health === "unhealthy" ? "unhealthy" : item.status} />
-                </div>
-                <p>{item.description}</p>
-                <code>{item.container}</code>
-                <div className="component-card-footer">
-                  <span>
-                    {item.restarts
-                      ? `${item.restarts} restarts`
-                      : item.logs_available
-                        ? "Logs available"
-                        : "No container"}
-                  </span>
-                  <TerminalIcon className="size-4" />
-                </div>
-              </button>
-            ))}
-          </div>
-          {component && (
-            <section className="component-detail" aria-label={`${component.name} details`}>
-              <div className="component-facts">
-                <span>
-                  <strong>Component</strong>
-                  {component.name}
-                </span>
-                <span>
-                  <strong>Image</strong>
-                  <code>{component.image || "Not installed on this machine"}</code>
-                </span>
-                <span>
-                  <strong>Started</strong>
-                  {component.started_at && !component.started_at.startsWith("0001")
-                    ? new Date(component.started_at).toLocaleString()
-                    : "—"}
-                </span>
-                {component.health && (
-                  <span>
-                    <strong>Health check</strong>
-                    {component.health}
-                  </span>
-                )}
-              </div>
-              {component.detail && <Notice>{component.detail}</Notice>}
-              {component.logs_available && !offline ? (
-                <ContainerLogs
-                  key={`${machine.server}:${component.id}`}
-                  path={`/nodes/${encodeURIComponent(machine.server)}/components/${component.id}`}
-                  title={`${component.name} logs`}
-                  sub={`stdout and stderr from ${machine.server}. Follow is optional; logs stay separated by component and machine.`}
-                  tall
-                />
-              ) : (
-                <Notice>
-                  There is no container log available here. A service running outside Docker must be
-                  inspected on its host.
-                </Notice>
-              )}
-            </section>
-          )}
+          <FilterPanel>
+            <GlideSelect
+              label="Node"
+              value={node}
+              onChange={setNode}
+              options={[
+                { value: "", label: "All nodes" },
+                ...servers.map((server) => ({ value: server.name, label: server.name })),
+              ]}
+              startIcon={<ServerIcon className="size-4" />}
+              searchable
+              className="w-full"
+              triggerClassName={GLIDE_FIELD_TRIGGER_CLASS}
+            />
+          </FilterPanel>
+          <DataTable
+            columns={columns}
+            rows={pending ? null : rows}
+            rowKey={(row) => `${row.server.name}:${row.component.id}`}
+            search={{
+              placeholder: "Filter components",
+              countLabel: { singular: "component", plural: "components" },
+              by: (row) => [
+                row.component.name,
+                row.component.container,
+                row.server.name,
+                row.status,
+              ],
+              filter: (row) => !node || row.server.name === node,
+            }}
+            empty={node ? "No components on this node." : "No components reported by these nodes."}
+          />
         </>
-      ) : (
-        !inventory.isError && <Notice>No Cubeship components reported by this machine.</Notice>
       )}
+      <ContainerLogsDialog
+        open={logs !== null}
+        onOpenChange={(open) => !open && setLogs(null)}
+        path={
+          logs
+            ? `/nodes/${encodeURIComponent(logs.server.name)}/components/${logs.component.id}`
+            : ""
+        }
+        name={logs?.component.name ?? ""}
+        hasContainer={logs !== null}
+      />
+      <Dialog open={shell !== null} onOpenChange={(open) => !open && setShell(null)}>
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-6xl sm:max-w-6xl">
+          <DialogTitle className="flex items-center gap-2 pr-8 font-mono text-sm">
+            <TerminalSquareIcon className="size-5 shrink-0" aria-hidden="true" />
+            <span>{shell?.component.name} shell</span>
+          </DialogTitle>
+          {shell && (
+            <TerminalPanel
+              path={`/nodes/${encodeURIComponent(shell.server.name)}/components/${shell.component.id}/shell`}
+              password
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

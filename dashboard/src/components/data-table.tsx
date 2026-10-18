@@ -111,7 +111,6 @@ export function DataTable<T extends object>({
     // Undefined entries are skipped, which is what an absent field is.
     by: (row: T) => (string | undefined)[];
     filter?: (row: T) => boolean;
-    trailing?: ReactNode;
   };
   loadingRows?: number;
   rowKey?: (row: T, index: number) => string;
@@ -161,17 +160,13 @@ export function DataTable<T extends object>({
   // empty list it is a control that can only ever return the same
   // nothing.
   const filter = search && rows != null && rows.length > 0 && (
-    <div
-      className={cn("mb-4", search.trailing && "grid gap-3 sm:grid-cols-[minmax(16rem,1fr)_auto]")}
-    >
+    <div className="mb-4">
       <SearchBar
-        className={cn(search.trailing && "min-w-0")}
         value={query}
         onChange={setQuery}
         placeholder={search.placeholder ?? "Filter"}
         count={{ value: matched?.length ?? 0, ...search.countLabel }}
       />
-      {search.trailing}
     </div>
   );
 

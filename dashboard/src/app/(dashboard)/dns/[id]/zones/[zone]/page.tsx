@@ -1,13 +1,14 @@
 "use client";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { PencilIcon, PlusIcon, ShapesIcon, Trash2Icon } from "lucide-react";
 import { use, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { DetailSectionHeader } from "@/components/detail-section-header";
 import { ErrorAlert } from "@/components/error-alert";
+import { FilterPanel } from "@/components/filter-panel";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SearchBar } from "@/components/search-bar";
@@ -177,25 +178,29 @@ export default function ZoneRecords({ params }: PageProps<"/dns/[id]/zones/[zone
         }
       />
       {all && all.length > 0 && (
-        <div className="mb-4 grid gap-2 sm:grid-cols-[minmax(0,1fr)_12rem]">
+        <>
+          <FilterPanel>
+            <SearchableSelect
+              label="Type"
+              startIcon={<ShapesIcon className="size-4" />}
+              value={recordType}
+              onChange={setRecordType}
+              choices={[
+                { value: "", label: "All types" },
+                ...Array.from(new Set(all.map((record) => record.type)))
+                  .sort()
+                  .map((type) => ({ value: type, label: type })),
+              ]}
+            />
+          </FilterPanel>
           <SearchBar
             value={query}
             onChange={setQuery}
             placeholder="Filter records"
+            className="mb-4"
             count={{ value: filtered?.length ?? 0, singular: "record", plural: "records" }}
           />
-          <SearchableSelect
-            ariaLabel="Record type"
-            value={recordType}
-            onChange={setRecordType}
-            choices={[
-              { value: "", label: "All types" },
-              ...Array.from(new Set(all.map((record) => record.type)))
-                .sort()
-                .map((type) => ({ value: type, label: type })),
-            ]}
-          />
-        </div>
+        </>
       )}
       <ErrorAlert error={error ? message(error) : null} />
       {missing && (

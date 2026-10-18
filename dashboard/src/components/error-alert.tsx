@@ -22,7 +22,9 @@ export function ErrorAlert({ error, className }: { error: string | null; classNa
       )}
     >
       <OctagonXIcon />
-      <AlertTitle className="font-mono text-xs normal-case">{error}</AlertTitle>
+      <AlertTitle className="min-w-0 font-mono text-xs wrap-break-word normal-case">
+        {error}
+      </AlertTitle>
     </Alert>
   );
 }

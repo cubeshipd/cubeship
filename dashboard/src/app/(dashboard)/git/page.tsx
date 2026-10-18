@@ -8,15 +8,17 @@ import { BitbucketWebhookCard } from "@/components/bitbucket-webhook-card";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { GitRemoteConnectDialog } from "@/components/git-remote-connect-dialog";
+import { GitRemoteWebhookDialog } from "@/components/git-remote-webhook-dialog";
 import { GitHubAppCard } from "@/components/github-app-card";
 import { ConnectGitHub } from "@/components/github-connect";
-import { GitHubIcon } from "@/components/icons";
+import { GiteaIcon, GitHubIcon, GitLabIcon } from "@/components/icons";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { StatusBadge } from "@/components/status-badge";
-import { api, type GitHubConnections, type Settings } from "@/lib/api";
+import { api, type GitHubConnections, type GitRemoteConnection, type Settings } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // One row per provider.
@@ -27,9 +29,9 @@ import { message } from "@/lib/errors";
 // another. So the accounts it covers are a column, and both actions —
 // widen it, or end it — act on the connection.
 type Provider = {
-  id: string;
+  id: "github" | "bitbucket" | "gitlab" | "gitea";
   name: string;
-  icon: typeof GitHubIcon;
+  icon: typeof GitHubIcon | typeof GitBranchIcon;
   connected: boolean;
   // The GitHub accounts this connection reaches: a personal account, an
   // organization, several organizations.
@@ -42,6 +44,7 @@ type Provider = {
 export default function GitProviders() {
   const me = useSession();
   const [disconnecting, setDisconnecting] = useState<"github" | "bitbucket" | null>(null);
+  const [disconnectRemote, setDisconnectRemote] = useState<GitRemoteConnection | null>(null);
 
   const settings = useQuery({
     queryKey: ["settings"],
@@ -56,12 +59,16 @@ export default function GitProviders() {
     queryKey: ["bitbucket"],
     queryFn: () => api.get<{ id: number; account: string }[]>(`/bitbucket`),
   });
+  const remotes = useQuery({
+    queryKey: ["gitremotes"],
+    queryFn: () => api.get<GitRemoteConnection[]>("/gitremotes"),
+  });
 
   const slug = settings.data?.github_app_slug ?? "";
   const installations = connections.data?.installations ?? [];
 
   const providers: Provider[] | null =
-    settings.isLoading || connections.isLoading || bitbucket.isLoading
+    settings.isLoading || connections.isLoading || bitbucket.isLoading || remotes.isLoading
       ? null
       : [
           {
@@ -90,6 +97,16 @@ export default function GitProviders() {
             accounts: (bitbucket.data ?? []).map((c) => c.account),
             configureURL: "",
           },
+          ...(["gitlab", "gitea"] as const).map((id) => ({
+            id,
+            name: id === "gitlab" ? "GitLab" : "Gitea",
+            icon: id === "gitlab" ? GitLabIcon : GiteaIcon,
+            connected: (remotes.data ?? []).some((c) => c.provider === id),
+            accounts: (remotes.data ?? [])
+              .filter((c) => c.provider === id)
+              .map((c) => `${c.account} · ${c.base_url}`),
+            configureURL: "",
+          })),
         ];
 
   const columns: Column<Provider>[] = [
@@ -132,7 +149,15 @@ export default function GitProviders() {
       // provider's row — not in the page header, which is where the
       // page's own actions go and where it read as "connect something".
       cell: (p) =>
-        p.connected ? (
+        p.id === "gitlab" || p.id === "gitea" ? (
+          <div className="flex justify-end">
+            <GitRemoteConnectDialog
+              provider={p.id}
+              connected={p.connected}
+              onConnected={() => void remotes.refetch()}
+            />
+          </div>
+        ) : p.connected ? (
           <RowActions>
             {p.configureURL && (
               <RowAction
@@ -180,7 +205,9 @@ export default function GitProviders() {
             ? message(connections.error)
             : bitbucket.error
               ? message(bitbucket.error)
-              : null
+              : remotes.error
+                ? message(remotes.error)
+                : null
         }
       />
 
@@ -216,6 +243,57 @@ export default function GitProviders() {
 
       <DataTable columns={columns} rows={providers} rowKey={(p) => p.id} loadingRows={1} />
 
+      {(remotes.data?.length ?? 0) > 0 && (
+        <div className="mt-8 space-y-4">
+          <SectionHeader title="Connected instances" />
+          <DataTable
+            columns={[
+              {
+                id: "provider",
+                header: "Provider",
+                width: 18,
+                cell: (c: GitRemoteConnection) => (c.provider === "gitlab" ? "GitLab" : "Gitea"),
+              },
+              {
+                id: "instance",
+                header: "Instance",
+                width: 42,
+                cell: (c: GitRemoteConnection) => (
+                  <span className="font-mono text-xs">{c.base_url}</span>
+                ),
+              },
+              {
+                id: "account",
+                header: "Account",
+                width: 22,
+                cell: (c: GitRemoteConnection) => c.account,
+              },
+              {
+                id: "actions",
+                header: "",
+                width: 18,
+                align: "right" as const,
+                cell: (c: GitRemoteConnection) => (
+                  <div className="flex items-center justify-end gap-2">
+                    <GitRemoteWebhookDialog connection={c} />
+                    <button
+                      type="button"
+                      className="inline-flex size-9 items-center justify-center text-muted-foreground hover:text-danger"
+                      aria-label={`Disconnect ${c.account} from ${c.base_url}`}
+                      onClick={() => setDisconnectRemote(c)}
+                    >
+                      <Trash2Icon className="size-4" />
+                    </button>
+                  </div>
+                ),
+              },
+            ]}
+            rows={remotes.data ?? []}
+            rowKey={(c) => String(c.id)}
+          />
+        </div>
+      )}
+
       {/* The escape hatch, and deliberately a link rather than a
           section: an App made by hand is a real thing to have and not
           something anyone should read about on the way to connecting. */}
@@ -230,6 +308,23 @@ export default function GitProviders() {
         !settings.data?.bitbucket_webhook_ready && (
           <BitbucketWebhookCard onSaved={() => void settings.refetch()} />
         )}
+
+      <ConfirmDialog
+        open={disconnectRemote !== null}
+        onOpenChange={(open) => {
+          if (!open) setDisconnectRemote(null);
+        }}
+        title={`Disconnect ${disconnectRemote?.account ?? "this account"}?`}
+        description="Private builds and push deployments from this connection will stop. Running containers keep serving."
+        confirmWord="disconnect"
+        confirmLabel="Disconnect"
+        onConfirm={async () => {
+          if (!disconnectRemote) return;
+          await api.del(`/gitremotes/${disconnectRemote.id}`);
+          setDisconnectRemote(null);
+          await remotes.refetch();
+        }}
+      />
 
       <ConfirmDialog
         open={disconnecting !== null}

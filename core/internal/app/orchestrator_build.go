@@ -68,13 +68,22 @@ func (o *Orchestrator) cloneCredentials(ctx context.Context, a *Scoped) (string,
 // Railpack reads it for the versions and commands a project pins, so two
 // apps on the same repository with different NODE_VERSION are two
 // different builds.
-func (o *Orchestrator) buildWithRailpack(ctx context.Context, a *Scoped, ref, image string, push pushTarget, username, token string, logs io.Writer) error {
+func (o *Orchestrator) buildWithRailpack(ctx context.Context, a *Scoped, ref, commit, image string, push pushTarget, username, token string, logs io.Writer) error {
 	fmt.Fprintf(logs, "Fetching %s\n", a.SourceRepo)
 	dir, cleanupSource, err := buildkit.Clone(ctx, a.SourceRepo, ref, username, token)
 	if err != nil {
 		return err
 	}
 	defer cleanupSource()
+	if commit != "" {
+		cloned, err := buildkit.CommitOf(dir)
+		if err != nil {
+			return err
+		}
+		if cloned != commit {
+			return fmt.Errorf("Git ref %q moved from %s to %s during the build; deploy again", ref, commit, cloned)
+		}
+	}
 
 	env, err := o.inheritedEnv(ctx, &a.App)
 	if err != nil {

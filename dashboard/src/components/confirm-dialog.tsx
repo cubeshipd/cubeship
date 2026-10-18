@@ -67,7 +67,7 @@ export function ConfirmDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
-        <form onSubmit={submit}>
+        <form className="min-w-0" onSubmit={submit}>
           <DialogHeader>
             <DialogTitle className="text-destructive">{title}</DialogTitle>
             <DialogDescription>{description}</DialogDescription>

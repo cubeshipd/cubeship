@@ -6,7 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 import { BackupTable } from "@/components/backups";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { GlideSelect } from "@/components/glide-select";
+import { FilterPanel } from "@/components/filter-panel";
+import { GLIDE_FIELD_TRIGGER_CLASS, GlideSelect } from "@/components/glide-select";
 import { SectionHeader } from "@/components/section-header";
 import { api, type Backup, type BackupCoverage } from "@/lib/api";
 import { message } from "@/lib/errors";
@@ -59,9 +60,6 @@ export default function BackupsPage() {
   const engines = [
     ...new Set((rows ?? []).filter((row) => row.kind !== "volume").map((row) => row.engine)),
   ].sort();
-  const filterTriggerClass =
-    "flex h-[38px] w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40";
-
   const columns: Column<BackupCoverage>[] = [
     {
       id: "database",
@@ -141,6 +139,40 @@ export default function BackupsPage() {
       <SectionHeader title="Backups" sub="Check backup coverage for databases and volumes." />
       <ErrorAlert error={error} />
 
+      <FilterPanel>
+        <GlideSelect
+          label="Target"
+          value={kind}
+          options={[
+            { value: "", label: "All targets" },
+            { value: "datastore", label: "Databases" },
+            { value: "volume", label: "Volumes" },
+          ]}
+          onChange={(value) => {
+            setKind(value);
+            if (value !== "datastore") setEngine("");
+          }}
+          startIcon={<HardDriveIcon className="size-4" />}
+          className="w-full min-w-0"
+          triggerClassName={GLIDE_FIELD_TRIGGER_CLASS}
+        />
+        {kind === "datastore" && (
+          <GlideSelect
+            label="Engine"
+            value={engine}
+            options={[
+              { value: "", label: "All engines" },
+              ...engines.map((value) => ({ value, label: value })),
+            ]}
+            onChange={setEngine}
+            startIcon={<DatabaseIcon className="size-4" />}
+            searchable={engines.length >= 8}
+            className="w-full min-w-0"
+            triggerClassName={GLIDE_FIELD_TRIGGER_CLASS}
+          />
+        )}
+      </FilterPanel>
+
       <DataTable
         columns={columns}
         rows={sorted}
@@ -152,64 +184,6 @@ export default function BackupsPage() {
           filter: (row) =>
             (!kind || (row.kind === "volume" ? "volume" : "datastore") === kind) &&
             (kind !== "datastore" || !engine || row.engine === engine),
-          trailing: (
-            <div
-              className={`grid w-full min-w-0 gap-2 ${kind === "datastore" ? "grid-cols-2 sm:w-[28rem]" : "grid-cols-1 sm:w-56"}`}
-            >
-              <GlideSelect
-                ariaLabel="Filter backups by target type"
-                value={kind}
-                options={[
-                  { value: "", label: "All targets" },
-                  {
-                    value: "datastore",
-                    label: (
-                      <span className="inline-flex items-center gap-2">
-                        <DatabaseIcon className="size-4 text-muted-foreground" aria-hidden="true" />
-                        Databases
-                      </span>
-                    ),
-                  },
-                  {
-                    value: "volume",
-                    label: (
-                      <span className="inline-flex items-center gap-2">
-                        <HardDriveIcon
-                          className="size-4 text-muted-foreground"
-                          aria-hidden="true"
-                        />
-                        Volumes
-                      </span>
-                    ),
-                  },
-                ]}
-                onChange={(value) => {
-                  setKind(value);
-                  if (value !== "datastore") setEngine("");
-                }}
-                placeholder="All targets"
-                startIcon={<HardDriveIcon className="size-4" />}
-                className="w-full min-w-0"
-                triggerClassName={filterTriggerClass}
-              />
-              {kind === "datastore" && (
-                <GlideSelect
-                  ariaLabel="Filter databases by engine"
-                  value={engine}
-                  options={[
-                    { value: "", label: "All engines" },
-                    ...engines.map((value) => ({ value, label: value })),
-                  ]}
-                  onChange={setEngine}
-                  placeholder="All engines"
-                  startIcon={<DatabaseIcon className="size-4" />}
-                  searchable={engines.length >= 8}
-                  className="w-full min-w-0"
-                  triggerClassName={filterTriggerClass}
-                />
-              )}
-            </div>
-          ),
         }}
         // Straight to the tab that acts on it, rather than to the
         // database's Overview and two more clicks to find Backups.

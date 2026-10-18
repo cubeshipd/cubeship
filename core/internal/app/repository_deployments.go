@@ -166,6 +166,14 @@ func (r *Repository) SetDeploymentImage(ctx context.Context, id int64, imageRef 
 	return nil
 }
 
+func (r *Repository) SetDeploymentGitIdentity(ctx context.Context, id int64, sha, branch string) error {
+	if _, err := r.q.ExecContext(ctx,
+		`UPDATE deployments SET git_sha = $1, git_branch = $2 WHERE id = $3`, sha, branch, id); err != nil {
+		return fmt.Errorf("record deployment Git commit: %w", err)
+	}
+	return nil
+}
+
 func (r *Repository) SetDeploymentPhase(ctx context.Context, id int64, phase string) error {
 	if _, err := r.q.ExecContext(ctx, `UPDATE deployments SET phase = $1 WHERE id = $2`, phase, id); err != nil {
 		return fmt.Errorf("set deployment phase: %w", err)

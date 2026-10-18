@@ -4,12 +4,76 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
+	"github.com/go-git/go-git/v5/storage/memory"
 )
+
+// ResolveCommit reads the current commit and ref of a branch, tag or
+// default HEAD without cloning. It uses the same credentials as Clone.
+func ResolveCommit(ctx context.Context, url, ref, username, token string) (sha, resolvedRef string, err error) {
+	if plumbing.IsHash(ref) {
+		return ref, "", nil
+	}
+	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{Name: "origin", URLs: []string{url}})
+	refs, err := remote.ListContext(ctx, &git.ListOptions{Auth: basicAuth(username, token), PeelingOption: git.AppendPeeled})
+	if err != nil {
+		return "", "", fmt.Errorf("read Git refs from %s: %w", url, err)
+	}
+	name := plumbing.HEAD
+	if ref != "" {
+		name = plumbing.NewBranchReferenceName(ref)
+	}
+	find := func(name plumbing.ReferenceName) *plumbing.Reference {
+		for _, candidate := range refs {
+			if candidate.Name() == name {
+				return candidate
+			}
+		}
+		return nil
+	}
+	selected := find(name)
+	if selected == nil && ref != "" {
+		selected = find(plumbing.ReferenceName(plumbing.NewTagReferenceName(ref).String() + "^{}"))
+		if selected == nil {
+			selected = find(plumbing.NewTagReferenceName(ref))
+		}
+	}
+	if selected == nil {
+		return "", "", fmt.Errorf("no Git branch or tag called %q in %s", ref, url)
+	}
+	if selected.Type() == plumbing.SymbolicReference {
+		if ref == "" {
+			resolvedRef = strings.TrimPrefix(selected.Target().String(), "refs/heads/")
+		}
+		selected = find(selected.Target())
+	}
+	if selected == nil || selected.Hash().IsZero() {
+		return "", "", fmt.Errorf("Git ref %q in %s has no commit", ref, url)
+	}
+	if resolvedRef == "" {
+		resolvedRef = ref
+	}
+	return selected.Hash().String(), resolvedRef, nil
+}
+
+// CommitOf reports the checked-out commit in a cloned source directory.
+func CommitOf(dir string) (string, error) {
+	repo, err := git.PlainOpen(dir)
+	if err != nil {
+		return "", fmt.Errorf("open cloned repository: %w", err)
+	}
+	head, err := repo.Head()
+	if err != nil {
+		return "", fmt.Errorf("read cloned commit: %w", err)
+	}
+	return head.Hash().String(), nil
+}
 
 // Clone fetches a repository to a temporary directory.
 //

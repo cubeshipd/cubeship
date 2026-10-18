@@ -138,8 +138,8 @@ export type Me = {
   // Whether this account can sign in without an API key. It is what
   // says how much revoking the last key costs — see the account screen.
   has_password: boolean;
-  // Which palette this person sees the dashboard in, absent for the
-  // default, and which ones this instance offers. The list is served
+  // Selected base and accent, absent for dark-cyan, and the combinations
+  // this instance offers. The list is served
   // rather than written here: the daemon is what refuses a name.
   theme?: string;
   themes?: string[];
@@ -582,6 +582,16 @@ export type GitRepository = {
   full_name: string;
   private: boolean;
   default_branch: string;
+  url?: string;
+  provider?: "github" | "bitbucket" | "gitlab" | "gitea";
+};
+
+export type GitRemoteConnection = {
+  id: number;
+  provider: "gitlab" | "gitea";
+  base_url: string;
+  account: string;
+  created_at: string;
 };
 
 export type GitBranch = { name: string };

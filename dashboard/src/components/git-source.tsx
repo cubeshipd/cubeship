@@ -4,14 +4,16 @@ import { GitBranchIcon } from "lucide-react";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { GlideSelect, type GlideSelectOption } from "@/components/glide-select";
-import { GitHubIcon } from "@/components/icons";
+import { GiteaIcon, GitHubIcon, GitLabIcon } from "@/components/icons";
 import { ApiError, api, type GitBranch, type GitRepository } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 type RepositoryChoice = GitRepository & {
-  provider: "github" | "bitbucket";
+  provider: "github" | "bitbucket" | "gitlab" | "gitea";
   url: string;
 };
+
+const comparableURL = (url: string) => url.replace(/\.git\/?$/i, "").replace(/\/$/, "");
 
 export function GitSource({
   sourceControl,
@@ -39,8 +41,9 @@ export function GitSource({
     Promise.allSettled([
       api.get<GitRepository[]>("/github/repositories"),
       api.get<GitRepository[]>("/bitbucket/repositories"),
+      api.get<GitRepository[]>("/gitremotes/repositories"),
     ])
-      .then(([github, bitbucket]) => {
+      .then(([github, bitbucket, remotes]) => {
         const from = (
           result: PromiseSettledResult<GitRepository[]>,
           provider: "github" | "bitbucket",
@@ -52,13 +55,25 @@ export function GitSource({
                 url: `https://${provider === "github" ? "github.com" : "bitbucket.org"}/${entry.full_name}`,
               }))
             : [];
-        setRepositories([...from(github, "github"), ...from(bitbucket, "bitbucket")]);
+        const remoteRepos =
+          remotes.status === "fulfilled"
+            ? remotes.value.filter(
+                (entry): entry is RepositoryChoice =>
+                  !!entry.url && (entry.provider === "gitlab" || entry.provider === "gitea"),
+              )
+            : [];
+        setRepositories([
+          ...from(github, "github"),
+          ...from(bitbucket, "bitbucket"),
+          ...remoteRepos,
+        ]);
         const failure = [
           github.status === "rejected" &&
           (!(github.reason instanceof ApiError) || github.reason.status !== 409)
             ? github.reason
             : null,
           bitbucket.status === "rejected" ? bitbucket.reason : null,
+          remotes.status === "rejected" ? remotes.reason : null,
         ].find(Boolean);
         setError(failure ? message(failure) : null);
       })
@@ -74,24 +89,28 @@ export function GitSource({
     return () => window.removeEventListener("visibilitychange", recheck);
   }, [loadRepositories]);
 
+  const selected = repositories.find((entry) => comparableURL(entry.url) === comparableURL(repo));
   const match = repo.match(
     /^https?:\/\/(?:www\.)?(github\.com|bitbucket\.org)\/(.+?)(?:\.git)?\/?$/i,
   );
-  const provider = match?.[1]?.toLowerCase() === "bitbucket.org" ? "bitbucket" : "github";
-  const fullName = match?.[2] ?? "";
-  const selectedRepo = match
-    ? `https://${provider === "github" ? "github.com" : "bitbucket.org"}/${fullName}`
-    : "";
+  const provider =
+    selected?.provider ?? (match?.[1]?.toLowerCase() === "bitbucket.org" ? "bitbucket" : "github");
+  const fullName = selected?.full_name ?? match?.[2] ?? "";
+  const selectedRepo = selected?.url ?? (match ? comparableURL(repo) : repo);
 
   useEffect(() => {
-    if (!match || !fullName.includes("/")) {
+    if ((!selected && !match) || !fullName.includes("/")) {
       setBranches([]);
       return;
     }
     let live = true;
     setLoadingBranches(true);
     api
-      .get<GitBranch[]>(`/${provider}/branches?repo=${encodeURIComponent(fullName)}`)
+      .get<GitBranch[]>(
+        provider === "gitlab" || provider === "gitea"
+          ? `/gitremotes/branches?repo=${encodeURIComponent(selectedRepo)}`
+          : `/${provider}/branches?repo=${encodeURIComponent(fullName)}`,
+      )
       .then((found) => {
         if (live) setBranches(found ?? []);
       })
@@ -104,7 +123,7 @@ export function GitSource({
     return () => {
       live = false;
     };
-  }, [match?.[0], fullName, provider]);
+  }, [match?.[0], fullName, provider, selectedRepo, selected]);
 
   const repoChoices: GlideSelectOption[] = repositories.map((entry) => ({
     value: entry.url,
@@ -112,12 +131,20 @@ export function GitSource({
       <span className="inline-flex min-w-0 items-center gap-2">
         {entry.provider === "github" ? (
           <GitHubIcon className="size-4 shrink-0" />
+        ) : entry.provider === "gitlab" ? (
+          <GitLabIcon className="size-4 shrink-0" />
+        ) : entry.provider === "gitea" ? (
+          <GiteaIcon className="size-4 shrink-0" />
         ) : (
           <GitBranchIcon className="size-4 shrink-0" />
         )}
         <span className="truncate">{entry.full_name}</span>
         <span className="text-xs text-muted-foreground">
-          {entry.provider === "github" ? "GitHub" : "Bitbucket"}
+          {entry.provider === "github"
+            ? "GitHub"
+            : entry.provider === "bitbucket"
+              ? "Bitbucket"
+              : new URL(entry.url).host}
         </span>
       </span>
     ),

@@ -149,7 +149,7 @@ var ErrImageCarriesTag = errors.New("give the image without a tag; the tag is it
 // names an image writes nothing.
 type ImageSource interface {
 	Check(ctx context.Context, a *Scoped) error
-	Resolve(ctx context.Context, a *Scoped, tag string, logs io.Writer) (Image, error)
+	Resolve(ctx context.Context, a *Scoped, tag, commit string, logs io.Writer) (Image, error)
 }
 
 // Image is what a deploy pulls: a reference, and the credentials to
@@ -191,7 +191,7 @@ func (s registrySource) Check(ctx context.Context, _ *Scoped) error {
 // loopback-published registry, not the public name. Pulling the public
 // name would hairpin out to the VPS's own address and require a
 // certificate to already exist, which must never block a deploy.
-func (s registrySource) Resolve(ctx context.Context, a *Scoped, tag string, _ io.Writer) (Image, error) {
+func (s registrySource) Resolve(ctx context.Context, a *Scoped, tag, _ string, _ io.Writer) (Image, error) {
 	host := s.registryHost(ctx)
 	if host == "" {
 		return Image{}, ErrNoRegistry
@@ -222,7 +222,7 @@ func (externalSource) Check(_ context.Context, a *Scoped) error {
 	return nil
 }
 
-func (s externalSource) Resolve(ctx context.Context, a *Scoped, tag string, _ io.Writer) (Image, error) {
+func (s externalSource) Resolve(ctx context.Context, a *Scoped, tag, _ string, _ io.Writer) (Image, error) {
 	if a.SourceImage == "" {
 		return Image{}, ErrImageRequired
 	}
@@ -244,7 +244,7 @@ func (s externalSource) Resolve(ctx context.Context, a *Scoped, tag string, _ io
 // plan Railpack worked out — is decided further down, where the source
 // is in hand.
 type repositorySource struct {
-	build func(ctx context.Context, a *Scoped, ref string, logs io.Writer) (Image, error)
+	build func(ctx context.Context, a *Scoped, ref, commit string, logs io.Writer) (Image, error)
 }
 
 // Check confirms there is something to build. Whether the repository
@@ -260,7 +260,7 @@ func (repositorySource) Check(_ context.Context, a *Scoped) error {
 // Resolve is the build. It runs inside the detached deploy, which is
 // what the Check/Resolve split is for: minutes of work with nobody
 // holding a connection open.
-func (s repositorySource) Resolve(ctx context.Context, a *Scoped, ref string, logs io.Writer) (Image, error) {
+func (s repositorySource) Resolve(ctx context.Context, a *Scoped, ref, commit string, logs io.Writer) (Image, error) {
 	if a.SourceRepo == "" {
 		return Image{}, ErrRepoRequired
 	}
@@ -271,7 +271,7 @@ func (s repositorySource) Resolve(ctx context.Context, a *Scoped, ref string, lo
 	// pushed to the instance's registry is the build's answer, not this
 	// one's: it depends on where the app runs, and only the thing doing
 	// the build knows what it did.
-	return s.build(ctx, a, ref, logs)
+	return s.build(ctx, a, ref, commit, logs)
 }
 
 // BuilderUsername is who a build logs in to this instance's own

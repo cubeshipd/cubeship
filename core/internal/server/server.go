@@ -22,6 +22,7 @@ import (
 	"cubeship/internal/extregistry"
 	"cubeship/internal/firewall"
 	"cubeship/internal/github"
+	"cubeship/internal/gitremote"
 	"cubeship/internal/machine"
 	"cubeship/internal/mesh"
 	"cubeship/internal/metrics"
@@ -78,6 +79,7 @@ type Server struct {
 	DNS         *dns.Service
 	GitHub      *github.Service
 	Bitbucket   *bitbucket.Service
+	GitRemotes  *gitremote.Service
 	Registry    *registry.Handler
 
 	// githubHandler is kept so a test can wait for the deploys a
@@ -225,12 +227,13 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	dnsProviders := dns.NewService(db, creds, cfg)
 	gh := github.NewService(db, cfg)
 	bb := bitbucket.NewService(db, cfg)
+	remotes := gitremote.NewService(db)
 	// One series service for every module below: an app, a database and
 	// the MinIO behind a managed store are the same question about
 	// three kinds of container.
 	series := metrics.NewService(db)
 	apps := app.NewService(db, projects,
-		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gitCredentials{gh, bb}, opts.PullRegistry),
+		app.NewOrchestrator(db, docker, cfg, registries, opts.Builder, gitCredentials{gh, bb, remotes}, opts.PullRegistry),
 		cfg, series)
 	apps.SetDataDir(opts.DataDir)
 
@@ -400,6 +403,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 		DNS:         dnsProviders,
 		GitHub:      gh,
 		Bitbucket:   bb,
+		GitRemotes:  remotes,
 		Registry:    registry.NewHandler(users, apps, cfg, opts.WebhookToken, opts.LocalRegistry),
 		frontend:    opts.Frontend,
 		router:      httpx.NewRouter(),
@@ -441,6 +445,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	srv.Backups.SetVolumes(appVolumes{apps: apps})
 	componentEngine, _ := docker.(components.Engine)
 	srv.Components = components.NewService(componentEngine, srv.Nodes)
+	srv.Shell.SetComponents(srv.Components)
 	srv.Machine.SetHosts(srv.Nodes)
 	srv.Backups.SetMachines(srv.Nodes)
 	if e, ok := docker.(bootstrap.PostgresDumper); ok {

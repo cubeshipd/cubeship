@@ -9,6 +9,7 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
 import Link from "@/components/navigation-link";
 import { SearchableSelect } from "@/components/searchable-select";
+import { SectionHeader } from "@/components/section-header";
 import { TextField } from "@/components/text-field";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -174,7 +175,8 @@ export function InstanceDomain({
   return (
     <>
       <Card>
-        <CardContent className="space-y-4">
+        <CardContent className="space-y-5 [&>.dashboard-section-header]:mb-0">
+          <SectionHeader title="Domain" sub="Address used by the dashboard, API and registry." />
           <ErrorAlert error={error} />
 
           <div className="grid grid-cols-12 items-start gap-4">

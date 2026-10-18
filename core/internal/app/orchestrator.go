@@ -126,9 +126,8 @@ type Orchestrator struct {
 	builderLogin buildkit.Login
 }
 
-// DeploymentIdentity is provenance attached to a deploy initiated by a
-// source control webhook. Empty fields mean the deploy was manual or came
-// from an image source.
+// DeploymentIdentity is provenance supplied by a source control webhook.
+// Manual Git deploys resolve it while the detached deploy runs.
 type DeploymentIdentity struct {
 	GitSHA    string
 	GitBranch string
@@ -255,7 +254,7 @@ func (o *Orchestrator) registryCredentials(ctx context.Context, image string) (*
 // no registry at all. An app on another machine takes it to the
 // instance's own registry, because an image loaded here is one no other
 // machine has ever heard of — see pushTarget.
-func (o *Orchestrator) buildFromRepository(ctx context.Context, a *Scoped, ref string, logs io.Writer) (Image, error) {
+func (o *Orchestrator) buildFromRepository(ctx context.Context, a *Scoped, ref, commit string, logs io.Writer) (Image, error) {
 	if o.builder == nil {
 		return Image{}, ErrNoBuilder
 	}
@@ -274,15 +273,19 @@ func (o *Orchestrator) buildFromRepository(ctx context.Context, a *Scoped, ref s
 	}
 
 	if Source(a.Source) == SourceRailpack {
-		if err := o.buildWithRailpack(ctx, a, ref, image, push, username, token, logs); err != nil {
+		if err := o.buildWithRailpack(ctx, a, ref, commit, image, push, username, token, logs); err != nil {
 			return Image{}, err
 		}
 		return Image{Ref: image, Local: !push.Push}, nil
 	}
 
 	target := a.SourceRepo
-	if ref != "" {
-		target += "#" + ref
+	buildRef := ref
+	if commit != "" {
+		buildRef = commit
+	}
+	if buildRef != "" {
+		target += "#" + buildRef
 	}
 	err = o.builder.Build(ctx, buildkit.Request{
 		ContextGit:  target,

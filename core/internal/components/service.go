@@ -171,6 +171,26 @@ func (s *Service) List(ctx context.Context, caller *user.User, server string) (I
 	return out, err
 }
 
+// ContainerForShell resolves only a running component from the fixed inventory.
+func (s *Service) ContainerForShell(ctx context.Context, caller *user.User, server, id string) (string, error) {
+	if _, err := definition(id); err != nil {
+		return "", err
+	}
+	inventory, err := s.List(ctx, caller, server)
+	if err != nil {
+		return "", err
+	}
+	for _, component := range inventory.Components {
+		if component.ID == id {
+			if component.Status != "running" {
+				return "", ErrUnavailable
+			}
+			return component.Container, nil
+		}
+	}
+	return "", ErrUnavailable
+}
+
 func (s *Service) Logs(ctx context.Context, caller *user.User, server, id, tail string) ([]byte, error) {
 	n, err := s.target(ctx, caller, server)
 	if err != nil {

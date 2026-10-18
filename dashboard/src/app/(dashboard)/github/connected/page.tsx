@@ -3,9 +3,7 @@
 import { useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { ErrorAlert } from "@/components/error-alert";
-import Link from "@/components/navigation-link";
-import { Notice } from "@/components/notice";
-import { api, type GitHubInstallation } from "@/lib/api";
+import { api } from "@/lib/api";
 import { message } from "@/lib/errors";
 
 // Where GitHub sends someone back after they install the App. It
@@ -22,9 +20,7 @@ export default function GitHubConnected() {
 
 function Landing() {
   const params = useSearchParams();
-  const [state, setState] = useState<"working" | "done" | "failed">("working");
   const [error, setError] = useState<string | null>(null);
-  const [account, setAccount] = useState("");
 
   const installationID = Number(params.get("installation_id") ?? 0);
   // The App asks for OAuth on install, so GitHub sends this back beside
@@ -36,7 +32,6 @@ function Landing() {
   useEffect(() => {
     if (!installationID) {
       setError("GitHub sent you back without an installation id, so there is nothing to record.");
-      setState("failed");
       return;
     }
     if (!code) {
@@ -45,44 +40,18 @@ function Landing() {
           "That happens when the App was registered before it asked for it — re-register this " +
           "instance's App from the Instance page and install it again.",
       );
-      setState("failed");
       return;
     }
 
-    // The account is not sent: it comes back from the daemon, which
-    // takes it from GitHub's own answer rather than from anything in
-    // this URL.
     api
-      .post<GitHubInstallation>(`/github`, {
+      .post<void>(`/github`, {
         installation_id: installationID,
         code,
       })
-      .then((created) => {
-        setAccount(created.account);
-        setState("done");
-      })
-      .catch((e) => {
-        setError(message(e));
-        setState("failed");
-      });
+      .then(() => window.location.replace("/git"))
+      .catch((e) => setError(message(e)));
   }, [installationID, code]);
 
-  return (
-    <>
-      {state === "working" && (
-        <p className="text-sm text-muted-foreground">Recording the installation…</p>
-      )}
-      {state === "done" && (
-        <Notice>
-          <code>{account}</code> is connected. Apps built from its repositories can now be cloned,
-          and a push to one deploys them.{" "}
-          <Link href="/projects" className="underline underline-offset-4">
-            Back to projects
-          </Link>
-          .
-        </Notice>
-      )}
-      {state === "failed" && <ErrorAlert error={error} />}
-    </>
-  );
+  if (error) return <ErrorAlert error={error} />;
+  return <p className="text-sm text-muted-foreground">Recording the installation…</p>;
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"cubeship/internal/app"
+	"cubeship/internal/components"
 	"cubeship/internal/node"
 	"cubeship/internal/platform/terminal"
 	"cubeship/internal/user"
@@ -18,10 +19,11 @@ import (
 
 // Service opens sessions.
 type Service struct {
-	apps      Apps
-	nodes     Nodes
-	local     Local
-	passwords Passwords
+	apps       Apps
+	nodes      Nodes
+	local      Local
+	passwords  Passwords
+	components *components.Service
 
 	mu sync.Mutex
 	// claims are sessions waiting for a worker to connect back, by id.
@@ -46,6 +48,8 @@ func NewService(apps Apps, nodes Nodes, local Local, passwords Passwords) *Servi
 // SetLocal replaces what opens programs on this machine. For a test,
 // which has no Docker to open one with.
 func (s *Service) SetLocal(l Local) { s.local = l }
+
+func (s *Service) SetComponents(c *components.Service) { s.components = c }
 
 // AppTarget is where a shell in an app opens, for caller.
 func (s *Service) AppTarget(ctx context.Context, caller *user.User, ref app.Reference, server string) (Target, error) {
@@ -77,7 +81,28 @@ func (s *Service) HostTarget(ctx context.Context, caller *user.User, name string
 	return Target{Label: "root on " + n.Slug, Host: true, Remote: !n.ControlPlane, NodeID: n.ID}, nil
 }
 
-// ConfirmPassword is the step a root shell from the dashboard takes
+func (s *Service) ComponentTarget(ctx context.Context, caller *user.User, server, id string) (Target, error) {
+	if s.components == nil {
+		return Target{}, components.ErrUnavailable
+	}
+	container, err := s.components.ContainerForShell(ctx, caller, server, id)
+	if err != nil {
+		return Target{}, err
+	}
+	n, err := s.nodes.ByName(ctx, server)
+	if err != nil {
+		return Target{}, err
+	}
+	if err := n.CanOpenShell(); err != nil {
+		return Target{}, err
+	}
+	return Target{
+		Label: id + " on " + server, Container: container,
+		Remote: !n.ControlPlane, NodeID: n.ID,
+	}, nil
+}
+
+// ConfirmPassword is the step a privileged shell from the dashboard takes
 // before it starts.
 func (s *Service) ConfirmPassword(ctx context.Context, caller *user.User, password string) error {
 	if password == "" {

@@ -24,6 +24,7 @@ import type {
   DNSProviderKind,
   DNSRecord,
   DNSZone,
+  GitRemoteConnection,
   ObjectListing,
   RegistryImage,
   RegistryRepository,
@@ -38,6 +39,7 @@ import { db, type Row, series } from "./db";
 const LATENCY_MS = 180;
 let signedIn = true;
 let bitbucketConnections: { id: number; account: string }[] = [];
+let gitRemoteConnections: GitRemoteConnection[] = [];
 
 type Handler = (p: string[], body?: unknown, query?: URLSearchParams) => unknown;
 
@@ -159,7 +161,26 @@ const routes: [string, string, Handler][] = [
       return { ...created, api_key: "csk_mock_0123456789abcdef" };
     },
   ],
-  ["GET", "/audit", () => ({ events: db.audit })],
+  [
+    "GET",
+    "/audit",
+    (_p, _body, query) => ({
+      events: db.audit.filter((event) => {
+        const target = query?.get("target")?.toLowerCase();
+        const from = query?.get("from");
+        const to = query?.get("to");
+        return (
+          (!query?.get("user") || event.username === query.get("user")) &&
+          (!query?.get("via") || event.via === query.get("via")) &&
+          (!query?.get("outcome") || event.outcome === query.get("outcome")) &&
+          (!target || `${event.summary} ${event.target}`.toLowerCase().includes(target)) &&
+          (!from || event.at >= from) &&
+          (!to || event.at <= to) &&
+          (!query?.get("before") || event.id < Number(query.get("before")))
+        );
+      }),
+    }),
+  ],
   ["GET", "/roles", () => ({ roles: db.roles, resources: db.resources })],
   [
     "POST",
@@ -200,7 +221,24 @@ const routes: [string, string, Handler][] = [
   ["PATCH", "/settings", (_p, body) => Object.assign(db.settings, body as Row)],
   ["PUT", "/settings", (_p, body) => Object.assign(db.settings, body as Row)],
   ["GET", "/updates", () => db.updates],
-  ["GET", "/release", () => ({ version: db.updates.current, notes: "", seen: true })],
+  ["GET", "/release", () => ({ version: db.updates.version, notes: "", seen: true })],
+  [
+    "GET",
+    "/releases",
+    () => ({
+      version: db.updates.version,
+      notes: [
+        {
+          version: db.updates.version,
+          date: "2026-10-17",
+          summary: "A clearer dashboard for managing this instance.",
+          body: "## Dashboard\n- Improved navigation and resource settings.\n- Clearer tables, filters and status displays.",
+        },
+      ],
+      unseen: [],
+    }),
+  ],
+  ["POST", "/releases/seen", () => null],
 
   // --- projects, environments, apps ---
   ["GET", "/projects", () => db.projects],
@@ -1095,6 +1133,46 @@ const routes: [string, string, Handler][] = [
         : [],
   ],
   ["GET", "/bitbucket/branches", () => [{ name: "main" }]],
+  ["GET", "/gitremotes", () => gitRemoteConnections],
+  [
+    "POST",
+    "/gitremotes",
+    (_p, body) => {
+      const input = body as { provider: "gitlab" | "gitea"; base_url: string };
+      const connection: GitRemoteConnection = {
+        id: gitRemoteConnections.length + 1,
+        provider: input.provider,
+        base_url: input.base_url.replace(/\/$/, ""),
+        account: "demo",
+        created_at: new Date().toISOString(),
+      };
+      gitRemoteConnections = [...gitRemoteConnections, connection];
+      return connection;
+    },
+  ],
+  [
+    "DELETE",
+    "/gitremotes/:id",
+    (p) => {
+      gitRemoteConnections = gitRemoteConnections.filter(
+        (connection) => connection.id !== Number(p[0]),
+      );
+    },
+  ],
+  ["GET", "/gitremotes/:id/webhook", () => ({ secret: "preview-webhook-secret" })],
+  [
+    "GET",
+    "/gitremotes/repositories",
+    () =>
+      gitRemoteConnections.map((connection) => ({
+        full_name: "demo/web",
+        url: `${connection.base_url}/demo/web.git`,
+        provider: connection.provider,
+        private: true,
+        default_branch: "main",
+      })),
+  ],
+  ["GET", "/gitremotes/branches", () => [{ name: "main" }]],
 ];
 
 // --- the switchboard ---
@@ -1763,7 +1841,7 @@ const runSteps: Record<string, string[]> = {
 
 function advanceRun(install: Row) {
   const run = (install.runs as Row[])[0];
-  if (!run || run.status !== "running") return;
+  if (run?.status !== "running") return;
   const steps = runSteps[run.kind as string];
   const polls = run.polls as number;
   if (polls < steps.length) {

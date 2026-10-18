@@ -18,6 +18,7 @@ import (
 	"cubeship/internal/extregistry"
 	"cubeship/internal/firewall"
 	"cubeship/internal/github"
+	"cubeship/internal/gitremote"
 	"cubeship/internal/machine"
 	"cubeship/internal/node"
 	"cubeship/internal/objectstore"
@@ -64,6 +65,7 @@ func (s *Server) OpenAPI() openapi.Document {
 		dns.NewHandler(s.DNS).OpenAPI(),
 		github.NewHandler(s.GitHub, s.Apps).OpenAPI(),
 		bitbucket.NewHandler(s.Bitbucket, s.Apps).OpenAPI(),
+		gitremote.NewHandler(s.GitRemotes, s.Apps).OpenAPI(),
 		s.Registry.OpenAPI(),
 		settings.NewHandler(s.Settings).OpenAPI(),
 		certificates.NewHandler(s.Certs).OpenAPI(),

@@ -1,6 +1,6 @@
 ---
 title: Built from a repository
-description: From a Dockerfile you wrote, or from a repository with no Dockerfile at all. Connect GitHub and a push deploys it.
+description: Build from a Dockerfile or source code, and deploy on push from GitHub, Bitbucket, GitLab or Gitea.
 ---
 
 Cubeship builds on the box. Two sources, and they differ in where the
@@ -29,23 +29,36 @@ It must be `https://`, `http://` or `git://`. The rule is about what the
 builder can fetch unaided: SSH needs a key this instance does not have,
 and a clone failing on a host key deep inside a build explains nothing.
 
-A private repository needs the instance's **GitHub App** installed on
-the account that owns it — see [Git providers](/docs/apps/source-git#deploying-on-push).
-A token is minted per build and never appears in a URL, a log or a
-deployment row.
+A private repository needs a connected Git provider under **Git providers**.
+GitHub uses a GitHub App; Bitbucket, GitLab and Gitea use a token. Credentials
+are passed to the builder separately from the repository URL and are not
+stored in a deployment row.
 
 ## Deploying on push
 
-Connect a GitHub account under **Git providers** and every push to the
-repository builds and deploys the app:
+Connect a provider under **Git providers** and pushes to its repositories
+can build and deploy the app. GitHub and Bitbucket register their hooks
+during connection. For GitLab and Gitea, add a push webhook in each
+repository using the URL and secret shown in the connection's **Webhook**
+dialog. Select JSON payloads; in Gitea, select the Gitea webhook type.
+
+GitLab.com and self-hosted GitLab instances need a personal access token
+with `read_api` and `read_repository`. Gitea instances need a token
+with `read:user`, `read:organization` and `read:repository`. Enter the
+instance's HTTPS base URL and token in **Git providers**. Cubeship lists
+repositories the token can access, including Gitea organization
+repositories. Add the webhook to any repository you want to deploy on
+push.
+
+For a connected repository:
 
 - An app with **no ref** deploys on a push to any branch.
 - An app with a ref deploys on a push to that branch — naming one is
   how you opt out of the others.
 - A tag is never a branch. Pushing a tag deploys nothing.
 
-Until GitHub is connected, and for a repository anywhere else, a deploy
-is something you ask for:
+For a repository without a connected provider or push webhook, deploy
+manually:
 
 ```bash
 cubeship app deploy shop/api                # the configured ref

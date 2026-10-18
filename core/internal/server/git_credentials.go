@@ -5,11 +5,13 @@ import (
 
 	"cubeship/internal/bitbucket"
 	"cubeship/internal/github"
+	"cubeship/internal/gitremote"
 )
 
 type gitCredentials struct {
 	github    *github.Service
 	bitbucket *bitbucket.Service
+	remotes   *gitremote.Service
 }
 
 func (c gitCredentials) CredentialsForRepository(ctx context.Context, raw string) (string, string, error) {
@@ -20,6 +22,10 @@ func (c gitCredentials) CredentialsForRepository(ctx context.Context, raw string
 	if _, ok := bitbucket.ParseRepositoryURL(raw); ok {
 		token, _, err := c.bitbucket.TokenForRepository(ctx, raw)
 		return "x-token-auth", token, err
+	}
+	username, token, _, err := c.remotes.CredentialsForRepository(ctx, raw)
+	if err != nil || token != "" {
+		return username, token, err
 	}
 	return "", "", nil
 }

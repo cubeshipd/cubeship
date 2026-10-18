@@ -1,13 +1,15 @@
 "use client";
 
-import { PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
+import { KeyRoundIcon, PencilIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { CredentialDialog } from "@/components/credential-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailPortal } from "@/components/header-rail";
+import { FilterPanel } from "@/components/filter-panel";
+import { GLIDE_FIELD_TRIGGER_CLASS, GlideSelect } from "@/components/glide-select";
 import { RowAction, RowActions } from "@/components/row-actions";
+import { SectionHeader } from "@/components/section-header";
 import { Button } from "@/components/ui/button";
 import { api, type Credential } from "@/lib/api";
 import { message } from "@/lib/errors";
@@ -29,6 +31,7 @@ export default function Credentials() {
   const [editing, setEditing] = useState<Credential | null>(null);
   const [deleting, setDeleting] = useState<Credential | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [usage, setUsage] = useState("");
 
   const reload = useCallback(() => {
     api
@@ -93,15 +96,34 @@ export default function Credentials() {
 
   return (
     <>
-      <RailPortal>
-        {
+      <SectionHeader
+        page
+        title="Credentials"
+        sub="Secrets shared by DNS providers, registries and other integrations."
+        actions={
           <Button onClick={() => setAdding(true)}>
             <PlusIcon />
             New credential
           </Button>
         }
-      </RailPortal>
+      />
       <ErrorAlert error={error} />
+
+      <FilterPanel>
+        <GlideSelect
+          label="Usage"
+          startIcon={<KeyRoundIcon className="size-4" />}
+          value={usage}
+          onChange={setUsage}
+          options={[
+            { value: "", label: "All credentials" },
+            { value: "used", label: "In use" },
+            { value: "unused", label: "Unused" },
+          ]}
+          className="w-full"
+          triggerClassName={GLIDE_FIELD_TRIGGER_CLASS}
+        />
+      </FilterPanel>
 
       <DataTable
         columns={columns}
@@ -110,7 +132,8 @@ export default function Credentials() {
         search={{
           placeholder: "Filter credentials",
           countLabel: { singular: "credential", plural: "credentials" },
-          by: (c) => [c.label, c.username],
+          by: (c) => [c.label, c.username, ...(c.in_use_by ?? [])],
+          filter: (c) => !usage || (c.in_use_by?.length ? "used" : "unused") === usage,
         }}
       />
 

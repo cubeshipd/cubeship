@@ -42,8 +42,8 @@ type User struct {
 	ID       int64
 	Username string
 	Role     Role
-	// Theme is which palette this person sees the dashboard in, empty
-	// for the default. A fact about the person rather than about the
+	// Theme is the chosen base and accent, empty for dark-cyan.
+	// A fact about the person rather than about the
 	// machine they opened it on — see Themes.
 	Theme string
 	// DisplayName is what the person is called, which a username often
@@ -161,33 +161,18 @@ func ValidEmail(s string) bool {
 	return found && local != "" && domain != "" && strings.Contains(domain, ".")
 }
 
-// Themes are the palettes the dashboard offers.
-//
-// **All of them are dark but `helix`**, and every one of them changes
-// only colour: the layout, the type and the square corners are the
-// product, and a theme that moved those would be a second interface to
-// keep working. Empty is the first.
-//
-// The list is here rather than in the dashboard because it is what the
-// daemon will accept, and two lists would be one to disagree with: a
-// browser sending a name this refuses is a preference that saves and
-// then is not there.
+// Themes combine a neutral light or dark base with an accent. The daemon
+// advertises only these names; older saved names remain valid below.
 var Themes = []string{
-	"cyan", "mono", "hacker", "red", "orange", "pink", "purple", "blue", "helix",
+	"dark-cyan", "dark-neutral", "dark-green", "dark-red", "dark-orange", "dark-pink", "dark-purple", "dark-blue",
+	"light-cyan", "light-neutral", "light-green", "light-red", "light-orange", "light-pink", "light-purple", "light-blue",
 }
 
-// DefaultTheme is the palette an account sees until it picks one, and
-// it is the one name in Themes with no block of its own in the
-// stylesheet: `:root` **is** cyan, and the other palettes are what
-// override it. So `""` and `"cyan"` paint the same interface, and the
-// picker offers the first — two entries somebody cannot tell apart is
-// worse than one.
-//
-// It is named here rather than only in the CSS because the list above
-// has to be able to say which of its entries is the one that needs no
-// block. See themes_test.go, which is what would otherwise read a
-// working default as a broken palette.
-const DefaultTheme = "cyan"
+// Empty and dark-cyan render the same default. The other names have
+// explicit stylesheet blocks, which themes_test.go keeps in sync.
+const DefaultTheme = "dark-cyan"
+
+var legacyThemes = []string{"cyan", "mono", "hacker", "red", "orange", "pink", "purple", "blue", "helix"}
 
 // ErrUnknownTheme is a palette this instance does not have.
 var ErrUnknownTheme = errors.New("no theme by that name")
@@ -197,7 +182,7 @@ func ValidTheme(s string) bool {
 	if s == "" {
 		return true
 	}
-	return slices.Contains(Themes, s)
+	return slices.Contains(Themes, s) || slices.Contains(legacyThemes, s)
 }
 
 // Is reports whether u holds at least min. RoleMember is anybody signed

@@ -1,10 +1,8 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { InstanceBackups } from "@/components/backups";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailTabs } from "@/components/header-rail";
 import { InstanceDomain } from "@/components/instance-domain";
 import { Notice } from "@/components/notice";
 import { PageLoading } from "@/components/page-loading";
@@ -13,29 +11,10 @@ import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { api, type Settings } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-export default function Instance() {
-  return (
-    <>
-      <Body />
-    </>
-  );
-}
-
-const TABS = ["domain", "updates", "backups"] as const;
-type Tab = (typeof TABS)[number];
-
-function Body() {
-  // Linkable, like every other tab strip here, and read through
-  // `useSearchParams` rather than `window` because this page renders on
-  // the server first.
-  const asked = useSearchParams().get("tab");
-  const [tab, setTab] = useState<Tab>(() =>
-    TABS.includes(asked as Tab) ? (asked as Tab) : "domain",
-  );
+export default function SettingsPage() {
   const [current, setCurrent] = useState<Settings | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,68 +25,54 @@ function Body() {
       .catch((e) => setError(message(e)));
   }, []);
 
-  if (!current)
-    return error ? (
-      <ErrorAlert error={error} />
-    ) : (
-      <PageLoading kind="form" label="Loading instance settings" />
-    );
-
   return (
     <>
-      <ErrorAlert error={error} />
+      <SectionHeader
+        page
+        title="Settings"
+        sub="Manage this instance's domain, updates and backups."
+      />
+      {!current ? (
+        error ? (
+          <ErrorAlert error={error} />
+        ) : (
+          <PageLoading kind="form" label="Loading instance settings" />
+        )
+      ) : (
+        <>
+          <ErrorAlert error={error} />
 
-      {!current.tls_enabled && (
-        <Notice tone="warning">
-          No certificates yet. Pick where this instance lives below — with a DNS provider connected,
-          that is the whole of it: the records are written and the certificates follow.
-        </Notice>
+          {!current.tls_enabled && (
+            <Notice tone="warning">
+              No certificates yet. Set a domain to request them; a connected DNS provider can create
+              the records automatically.
+            </Notice>
+          )}
+
+          <div className="space-y-6">
+            <InstanceDomain settings={current} onSaved={setCurrent} />
+
+            <Card>
+              <CardContent className="space-y-6 [&>.dashboard-section-header]:mb-0">
+                <SectionHeader
+                  title="Updates"
+                  sub="Schedule stable updates and choose whether to receive beta versions."
+                />
+                <AutoUpdate settings={current} onSaved={setCurrent} />
+                <div className="border-t border-border pt-6">
+                  <BetaVersions settings={current} onSaved={setCurrent} />
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Instance backups belong here: database and bucket backups
+              have their own screens. */}
+          <div className="mt-8">
+            <InstanceBackups />
+          </div>
+        </>
       )}
-
-      {/* Where the instance lives and when it replaces itself are two
-          unrelated decisions that happened to share a column. The
-          warning above stays outside them: it is about the instance
-          rather than about either tab, and on the Updates tab it would
-          be missing exactly when somebody is about to schedule a
-          replacement of something with no certificate. */}
-      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)} className="subrail-page">
-        <RailTabs>
-          <TabsList variant="line">
-            <TabsTrigger value="domain">Domain</TabsTrigger>
-            <TabsTrigger value="updates">Updates</TabsTrigger>
-            <TabsTrigger value="backups">Backups</TabsTrigger>
-          </TabsList>
-        </RailTabs>
-
-        <TabsContent value="domain">
-          <SectionHeader
-            title="Domain"
-            sub="The instance's own name. The dashboard and the API are served at it, the registry at registry.<domain>, and anything Cubeship grows later underneath — which is why a subdomain you hand over whole beats your apex."
-          />
-          <InstanceDomain settings={current} onSaved={setCurrent} />
-        </TabsContent>
-
-        <TabsContent value="updates">
-          <SectionHeader
-            title="Automatic updates"
-            sub="Update this instance every day at a time you choose. It replaces the daemon, the dashboard and every other machine in this cluster; your apps and databases keep running, and nothing can be changed here for the minute or so it takes."
-          />
-          <AutoUpdate settings={current} onSaved={setCurrent} />
-
-          <SectionHeader
-            title="Beta versions"
-            sub="Be offered betas and release candidates before they are stable, to try what is coming. Automatic updates stay on stable releases either way."
-          />
-          <BetaVersions settings={current} onSaved={setCurrent} />
-        </TabsContent>
-
-        {/* The instance backing itself up. Here rather than under
-            Backups in Platform, which is about the databases on this
-            box: this is about the box. */}
-        <TabsContent value="backups">
-          <InstanceBackups />
-        </TabsContent>
-      </Tabs>
     </>
   );
 }
@@ -125,35 +90,35 @@ function BetaVersions({
   const [error, setError] = useState<string | null>(null);
 
   return (
-    <Card>
-      <CardContent className="space-y-4">
-        <ErrorAlert error={error} />
-        <div className="flex items-start gap-3">
-          <Switch
-            id="beta-versions"
-            checked={!!settings.beta_versions}
-            disabled={busy}
-            onCheckedChange={async (v) => {
-              setBusy(true);
-              setError(null);
-              try {
-                onSaved(await api.put<Settings>("/settings", { beta_versions: v === true }));
-              } catch (err) {
-                setError(message(err));
-              } finally {
-                setBusy(false);
-              }
-            }}
-            className="mt-0.5"
-          />
-          <label htmlFor="beta-versions" className="text-xs leading-relaxed text-muted-foreground">
-            Receive beta versions — betas and release candidates. They may still have bugs. Turning
-            this off later keeps this instance where it is until a newer stable release comes out —
-            it never goes back a version.
-          </label>
-        </div>
-      </CardContent>
-    </Card>
+    <>
+      <ErrorAlert error={error} />
+      <div className="flex items-start gap-3">
+        <Switch
+          id="beta-versions"
+          checked={!!settings.beta_versions}
+          disabled={busy}
+          onCheckedChange={async (v) => {
+            setBusy(true);
+            setError(null);
+            try {
+              onSaved(await api.put<Settings>("/settings", { beta_versions: v === true }));
+            } catch (err) {
+              setError(message(err));
+            } finally {
+              setBusy(false);
+            }
+          }}
+          className="mt-0.5"
+        />
+        <label htmlFor="beta-versions" className="space-y-1 leading-relaxed">
+          <span className="block text-sm font-medium">Beta versions</span>
+          <span className="block text-xs text-muted-foreground">
+            Receive betas and release candidates. Turning this off waits for the next stable
+            release; it does not downgrade the instance.
+          </span>
+        </label>
+      </div>
+    </>
   );
 }
 
@@ -180,61 +145,59 @@ function AutoUpdate({ settings, onSaved }: { settings: Settings; onSaved: (s: Se
     (on && zone !== (settings.auto_update_timezone ?? ""));
 
   return (
-    <Card>
-      <CardContent>
-        <form
-          className="space-y-4"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            setError(null);
-            try {
-              onSaved(await api.put<Settings>("/settings", next));
-            } catch (err) {
-              setError(message(err));
-            } finally {
-              setBusy(false);
-            }
-          }}
-        >
-          <ErrorAlert error={error} />
+    <form
+      className="space-y-4"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        setError(null);
+        try {
+          onSaved(await api.put<Settings>("/settings", next));
+        } catch (err) {
+          setError(message(err));
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <ErrorAlert error={error} />
 
-          <div className="flex items-start gap-3">
-            <Switch
-              id="auto-update"
-              checked={on}
-              onCheckedChange={(v) => setOn(v === true)}
-              className="mt-0.5"
-            />
-            <label htmlFor="auto-update" className="text-xs leading-relaxed text-muted-foreground">
-              Update this instance automatically. Only stable releases — an instance left to update
-              itself should not wander onto a beta at three in the morning.
-            </label>
-          </div>
+      <div className="flex items-start gap-3">
+        <Switch
+          id="auto-update"
+          checked={on}
+          onCheckedChange={(v) => setOn(v === true)}
+          className="mt-0.5"
+        />
+        <label htmlFor="auto-update" className="space-y-1 leading-relaxed">
+          <span className="block text-sm font-medium">Automatic updates</span>
+          <span className="block text-xs text-muted-foreground">
+            Install stable releases at the time you choose.
+          </span>
+        </label>
+      </div>
 
-          {on && (
-            <div className="grid gap-4 sm:grid-cols-2">
-              <TextField
-                label="At"
-                type="time"
-                value={at}
-                onChange={(e) => setAt(e.target.value)}
-                hint="On a 24-hour clock. Pick an hour when nobody is deploying."
-              />
-              <TextField
-                label="Timezone"
-                value={zone}
-                onChange={(e) => setZone(e.target.value)}
-                hint="An IANA name. Empty is UTC, which is the server's clock rather than your night."
-              />
-            </div>
-          )}
+      {on && (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <TextField
+            label="At"
+            type="time"
+            value={at}
+            onChange={(e) => setAt(e.target.value)}
+            hint="On a 24-hour clock. Pick an hour when nobody is deploying."
+          />
+          <TextField
+            label="Timezone"
+            value={zone}
+            onChange={(e) => setZone(e.target.value)}
+            hint="An IANA name. Empty is UTC, which is the server's clock rather than your night."
+          />
+        </div>
+      )}
 
-          <Button type="submit" disabled={busy || !dirty}>
-            {busy ? "Saving..." : "Save"}
-          </Button>
-        </form>
-      </CardContent>
-    </Card>
+      <Button type="submit" disabled={busy || !dirty}>
+        {busy ? "Saving..." : "Save"}
+      </Button>
+    </form>
   );
 }

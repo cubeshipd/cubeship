@@ -1,13 +1,16 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { InfoIcon } from "lucide-react";
+import { InfoIcon, ShieldCheckIcon } from "lucide-react";
 import { useState } from "react";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { FilterPanel } from "@/components/filter-panel";
+import { GLIDE_FIELD_TRIGGER_CLASS, GlideSelect } from "@/components/glide-select";
 import Link from "@/components/navigation-link";
 import { Notice } from "@/components/notice";
 import { RowAction, RowActions } from "@/components/row-actions";
+import { SectionHeader } from "@/components/section-header";
 import { StatusBadge } from "@/components/status-badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { api, type CertificateReport, type MissingReason } from "@/lib/api";
@@ -30,6 +33,7 @@ export default function Certificates() {
     queryFn: () => api.get<CertificateReport>("/certificates"),
   });
   const [why, setWhy] = useState<Row | null>(null);
+  const [state, setState] = useState("");
 
   const data = report.data;
   const rows = data ? entries(data) : null;
@@ -90,6 +94,11 @@ export default function Certificates() {
 
   return (
     <>
+      <SectionHeader
+        page
+        title="Certificates"
+        sub="TLS certificates for names routed by this instance."
+      />
       <ErrorAlert error={report.error ? message(report.error) : null} />
 
       {data && !data.tls_enabled && (
@@ -102,6 +111,26 @@ export default function Certificates() {
         </Notice>
       )}
 
+      <FilterPanel>
+        <GlideSelect
+          label="State"
+          startIcon={<ShieldCheckIcon className="size-4" />}
+          value={state}
+          onChange={setState}
+          options={[
+            { value: "", label: "All states" },
+            { value: "waiting", label: "Waiting" },
+            { value: "elsewhere", label: "Elsewhere" },
+            { value: "valid", label: "Valid" },
+            { value: "expiring", label: "Expiring" },
+            { value: "expired", label: "Expired" },
+            { value: "unused", label: "Unused" },
+          ]}
+          className="w-full"
+          triggerClassName={GLIDE_FIELD_TRIGGER_CLASS}
+        />
+      </FilterPanel>
+
       <DataTable
         columns={columns}
         rows={rows}
@@ -109,6 +138,7 @@ export default function Certificates() {
           placeholder: "Filter names",
           countLabel: { singular: "certificate", plural: "certificates" },
           by: (r) => [r.host, r.state, r.issuer],
+          filter: (r) => !state || r.state === state,
         }}
         rowKey={(r) => r.host}
         empty="Nothing yet. The first is asked for when an app is first reached at a name this instance serves."

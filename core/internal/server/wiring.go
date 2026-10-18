@@ -19,6 +19,7 @@ import (
 	"cubeship/internal/extregistry"
 	"cubeship/internal/firewall"
 	"cubeship/internal/github"
+	"cubeship/internal/gitremote"
 	"cubeship/internal/machine"
 	"cubeship/internal/metrics"
 	"cubeship/internal/node"
@@ -155,6 +156,7 @@ func (s *Server) routes() {
 	s.githubHandler = github.NewHandler(s.GitHub, s.Apps)
 	s.githubHandler.Routes(s.router, auth)
 	bitbucket.NewHandler(s.Bitbucket, s.Apps).Routes(s.router, auth)
+	gitremote.NewHandler(s.GitRemotes, s.Apps).Routes(s.router, auth)
 	app.NewHandler(s.Apps).Routes(s.router, auth)
 	datastore.NewHandler(s.Datastores).Routes(s.router, auth)
 	objectstore.NewHandler(s.ObjectStores).Routes(s.router, auth)
@@ -180,6 +182,7 @@ func (s *Server) routes() {
 	s.Registry.CatalogueRoutes(s.router, auth)
 	s.githubHandler.WebhookRoutes(s.router)
 	bitbucket.NewHandler(s.Bitbucket, s.Apps).WebhookRoutes(s.router)
+	gitremote.NewHandler(s.GitRemotes, s.Apps).WebhookRoutes(s.router)
 
 	// Authenticated only: MCP is one POST for every tool, so the key
 	// policy and the log both work per tool, inside it.

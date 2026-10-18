@@ -21,8 +21,8 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"username":     openapi.String("The account this API key belongs to."),
 				"role":         openapi.String("Either `admin` or `member`."),
 				"has_password": openapi.Bool("Whether this account can sign in without an API key. It matters where a key is revoked: revoking the last one is allowed, and this is what says whether that leaves a way in."),
-				"theme":        openapi.String("Which palette this person sees the dashboard in. Absent for the default."),
-				"themes":       openapi.Array(openapi.String("A palette's name.")),
+				"theme":        openapi.String("The selected light or dark base and accent, absent for dark-cyan."),
+				"themes":       openapi.Array(openapi.String("A supported base-accent combination.")),
 				"display_name": openapi.String("What the person is called, which a username often is not. Absent when unset."),
 				"email":        openapi.String("Somewhere to reach whoever holds the account. **Nothing on this instance sends mail**; it is stored so an operator can tell whose account is whose, and it is never a second way to sign in."),
 				"avatar":       openapi.String("Upload version or legacy preset name. Use avatar_url to display the picture."),
@@ -31,7 +31,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 			"User": openapi.Object(map[string]*openapi.Schema{
 				"username":       openapi.String("The account."),
 				"role":           openapi.String("Either `admin` or `member`."),
-				"theme":          openapi.String("Which palette this person sees the dashboard in. Absent for the default."),
+				"theme":          openapi.String("The selected light or dark base and accent, absent for dark-cyan."),
 				"display_name":   openapi.String("What the person is called. Absent when unset."),
 				"email":          openapi.String("Somewhere to reach them. Absent when unset."),
 				"avatar":         openapi.String("Upload version or legacy preset name."),
@@ -203,7 +203,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Description: "**The caller's own, and there is no path parameter to say otherwise.** A preference somebody else can change is not a preference, and an admin renaming somebody else is not administration.\n\nEvery field is optional: one left out is left alone, and an empty string clears it — which is the only way a form can say \"no display name\".\n\n**Changing the username has a consequence worth knowing.** Sessions and API keys are held by account id, so both survive it. `docker login` is not: it sends the username alongside the key, so a push keeps being refused until you log in again under the new one.",
 					Tags:        []string{"Identity"},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"theme":        openapi.String("One of the palettes in `themes` on `GET /users/me`. An empty string is the default one, which is how it is turned off rather than a second field saying so.\n\nEvery palette is dark and every one changes only colour: the layout, the type and the square corners are the product, and a theme that moved those would be a second interface to keep working."),
+						"theme":        openapi.String("One of the base-accent combinations in `themes` on `GET /users/me`, such as `dark-orange` or `light-blue`. An empty string selects the default `dark-cyan`. Existing legacy palette names remain accepted for saved accounts."),
 						"username":     openapi.String("1-32 characters of lowercase letters, digits, dot, dash or underscore, starting with a letter or a digit. It is the segment in `/users/{username}` and what `docker login` sends."),
 						"display_name": openapi.String("At most 60 characters, and anything you like inside that: it is a name rather than an identifier, so nothing else about it is this instance's business."),
 						"email":        openapi.String("Checked shallowly — one `@` with something either side and a dot in the domain — because the only thing that proves an address is sending to it, and nothing here sends."),

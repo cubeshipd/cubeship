@@ -12,7 +12,8 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { GlideSelect } from "@/components/glide-select";
+import { FilterPanel } from "@/components/filter-panel";
+import { GLIDE_FIELD_TRIGGER_CLASS, GlideSelect } from "@/components/glide-select";
 import Link from "@/components/navigation-link";
 import { StatusBadge } from "@/components/status-badge";
 import StatusMark from "@/components/status-mark";
@@ -80,61 +81,71 @@ export function TemplateInstalls() {
     <>
       <ErrorAlert error={installs.error ? message(installs.error) : null} />
       {(installs.data || installs.isLoading) && (
-        <DataTable
-          columns={columns(setUninstalling)}
-          rows={installs.data ?? null}
-          rowKey={(install) => String(install.id)}
-          search={{
-            placeholder: "Search installed templates",
-            countLabel: { singular: "template", plural: "templates" },
-            by: (install) => [install.name, install.project, install.environment, install.release],
-            filter: (install) =>
-              category === "all" || installTags.get(install.id)?.includes(category) === true,
-            trailing: (
-              <GlideSelect
-                ariaLabel="Filter installed templates by category"
-                placeholder="All categories"
-                startIcon={<TagsIcon className="size-4" />}
-                triggerContent={
-                  <>
-                    <span className="flex min-w-0 items-center gap-2">
-                      <TagsIcon className="size-4 shrink-0 text-primary" aria-hidden="true" />
-                      <span className="truncate">
-                        {category === "all" ? "All categories" : category}
-                      </span>
+        <>
+          <FilterPanel>
+            <GlideSelect
+              label="Category"
+              startIcon={<TagsIcon className="size-4" />}
+              triggerContent={
+                <>
+                  <span className="flex min-w-0 items-center gap-2">
+                    <TagsIcon className="size-4 shrink-0 text-primary" aria-hidden="true" />
+                    <span className="truncate">
+                      {category === "all" ? "All categories" : category}
                     </span>
-                    <ChevronDownIcon
-                      className="size-4 shrink-0 text-muted-foreground"
-                      aria-hidden="true"
-                    />
-                  </>
-                }
-                options={categoryOptions}
-                value={category}
-                onChange={setCategory}
-                searchable
-                busy={catalog.isLoading}
-                emptyMessage="No categories found."
-                className="w-56 shrink-0"
-                triggerClassName="flex h-[38px] w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40"
-              />
-            ),
-          }}
-          empty={
-            <div className="flex min-h-56 flex-col items-center justify-center px-6 py-10 text-center">
-              <span className="mb-4 grid size-12 place-items-center rounded-xl border border-border bg-background text-muted-foreground">
-                <PackageCheckIcon className="size-5" />
-              </span>
-              <h2 className="text-base font-medium">No installed templates</h2>
-              <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                Templates you install will be listed here.
-              </p>
-              <Button variant="outline" className="mt-5" onClick={() => router.push("/templates")}>
-                Browse catalog
-              </Button>
-            </div>
-          }
-        />
+                  </span>
+                  <ChevronDownIcon
+                    className="size-4 shrink-0 text-muted-foreground"
+                    aria-hidden="true"
+                  />
+                </>
+              }
+              options={categoryOptions}
+              value={category}
+              onChange={setCategory}
+              searchable
+              busy={catalog.isLoading}
+              emptyMessage="No categories found."
+              className="w-full"
+              triggerClassName={GLIDE_FIELD_TRIGGER_CLASS}
+            />
+          </FilterPanel>
+          <DataTable
+            columns={columns(setUninstalling)}
+            rows={installs.data ?? null}
+            rowKey={(install) => String(install.id)}
+            search={{
+              placeholder: "Search installed templates",
+              countLabel: { singular: "template", plural: "templates" },
+              by: (install) => [
+                install.name,
+                install.project,
+                install.environment,
+                install.release,
+              ],
+              filter: (install) =>
+                category === "all" || installTags.get(install.id)?.includes(category) === true,
+            }}
+            empty={
+              <div className="flex min-h-56 flex-col items-center justify-center px-6 py-10 text-center">
+                <span className="mb-4 grid size-12 place-items-center rounded-xl border border-border bg-background text-muted-foreground">
+                  <PackageCheckIcon className="size-5" />
+                </span>
+                <h2 className="text-base font-medium">No installed templates</h2>
+                <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                  Templates you install will be listed here.
+                </p>
+                <Button
+                  variant="outline"
+                  className="mt-5"
+                  onClick={() => router.push("/templates")}
+                >
+                  Browse catalog
+                </Button>
+              </div>
+            }
+          />
+        </>
       )}
       {uninstalling && (
         <TemplateUninstallDialog

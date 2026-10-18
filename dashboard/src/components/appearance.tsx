@@ -1,98 +1,90 @@
 "use client";
 
-import { CheckIcon } from "lucide-react";
+import { CheckIcon, MoonIcon, SunIcon } from "lucide-react";
 import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { useTheme } from "@/components/theme";
 import { Card, CardContent } from "@/components/ui/card";
 
-// What each palette is called on screen, and the two colours that say
-// what it is without having to be applied.
-//
-// The swatch is the accent over the palette's own background, because
-// the accent alone tells you nothing: half of what makes one of these
-// different is what the surfaces underneath do.
-const PALETTES: Record<string, { label: string; note: string; bg: string; fg: string }> = {
-  "": { label: "Cubeship", note: "Cyan on near-black", bg: "#05070a", fg: "#2de2e6" },
-  mono: { label: "Mono", note: "No hue at all", bg: "#000000", fg: "#ededed" },
-  hacker: { label: "Hacker", note: "Green on black", bg: "#030603", fg: "#3dff7a" },
-  red: { label: "Red", note: "", bg: "#0a0405", fg: "#ff4d5e" },
-  orange: { label: "Orange", note: "", bg: "#0a0603", fg: "#ff9d2e" },
-  pink: { label: "Pink", note: "", bg: "#0a0409", fg: "#ff5cb8" },
-  purple: { label: "Purple", note: "", bg: "#07050e", fg: "#a97bff" },
-  blue: { label: "Blue", note: "Blue on navy", bg: "#03060f", fg: "#4d8dff" },
-  // The one light one, and the swatch is the only place in the
-  // picker where the accent is darker than the surface behind it —
-  // which is the whole of what it is.
-  helix: { label: "Helix", note: "Mono, the other way up", bg: "#ffffff", fg: "#0a0a0a" },
-};
+// Preview colours are literal so each choice remains visible before it is applied.
+const ACCENTS = {
+  cyan: { label: "Cyan", dark: "#2de2e6", light: "#007c85" },
+  neutral: { label: "Neutral", dark: "#ededed", light: "#0a0a0a" },
+  green: { label: "Green", dark: "#3dff7a", light: "#16793a" },
+  red: { label: "Red", dark: "#ff4d5e", light: "#c72c42" },
+  orange: { label: "Orange", dark: "#ff9d2e", light: "#a64b00" },
+  pink: { label: "Pink", dark: "#ff5cb8", light: "#af246f" },
+  purple: { label: "Purple", dark: "#a97bff", light: "#7041bb" },
+  blue: { label: "Blue", dark: "#4d8dff", light: "#265db8" },
+} as const;
 
-// Appearance is the palette this person sees the dashboard in.
-//
-// **The swatches are painted from literal colours, not from the CSS
-// variables**, and they have to be: every one of these is drawn while a
-// different palette is live, and a variable would make every one of them the
-// same colour as the current one.
 export function Appearance() {
   const me = useSession();
   const { theme, choose, busy } = useTheme(me);
-  // The daemon says which it has, so a palette added there appears here
-  // without this list being edited. One it does not know about is
-  // dropped rather than shown as a blank.
-  const offered = ["", ...(me.themes ?? [])].filter((t) => t === "" || t in PALETTES);
+  const base = theme.startsWith("light-") ? "light" : "dark";
+  const accent = theme.slice(base.length + 1);
+  const offered = new Set(me.themes ?? []);
 
   return (
-    <>
-      <SectionHeader
-        title="Theme"
-        sub="Colour only, and all of them dark but Helix. This is a console read beside a terminal — the layout, the type and the square corners are the same whichever you pick, and they are what the product is."
-      />
-      <Card>
-        <CardContent>
-          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {offered.map((name) => {
-              const palette = PALETTES[name];
-              const active = (theme || "") === name;
+    <Card>
+      <CardContent className="space-y-5 [&>.dashboard-section-header]:mb-0">
+        <SectionHeader title="Appearance" sub="Choose a base and an accent for your dashboard." />
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-medium text-muted-foreground">Base</legend>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {(["dark", "light"] as const).map((nextBase) => (
+              <button
+                key={nextBase}
+                type="button"
+                disabled={busy || !offered.has(`${nextBase}-${accent}`)}
+                onClick={() => choose(`${nextBase}-${accent}`)}
+                aria-pressed={base === nextBase}
+                className={`flex h-12 items-center gap-3 rounded-lg border px-3 text-sm transition-colors hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:opacity-50 ${base === nextBase ? "border-primary bg-primary/5" : "border-border bg-background"}`}
+              >
+                {nextBase === "dark" ? (
+                  <MoonIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                ) : (
+                  <SunIcon aria-hidden="true" className="size-4 shrink-0 text-muted-foreground" />
+                )}
+                <span className="flex-1 text-left">{nextBase === "dark" ? "Dark" : "Light"}</span>
+                {base === nextBase && <CheckIcon className="size-4 shrink-0 text-primary" />}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+        <fieldset className="space-y-2">
+          <legend className="text-xs font-medium text-muted-foreground">Accent</legend>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {Object.entries(ACCENTS).map(([name, palette]) => {
+              const active = accent === name;
+              const preview =
+                name === "neutral"
+                  ? base === "dark"
+                    ? "linear-gradient(135deg, #000 50%, #fff 50%)"
+                    : "linear-gradient(135deg, #fff 50%, #000 50%)"
+                  : palette[base];
               return (
                 <button
-                  key={name || "default"}
+                  key={name}
                   type="button"
-                  disabled={busy}
-                  onClick={() => choose(name)}
+                  disabled={busy || !offered.has(`${base}-${name}`)}
+                  onClick={() => choose(`${base}-${name}`)}
                   aria-pressed={active}
-                  className={
-                    active
-                      ? "flex items-center gap-3 border border-primary bg-secondary p-3 text-left"
-                      : "flex items-center gap-3 border border-border p-3 text-left transition-colors hover:border-border-strong hover:bg-secondary"
-                  }
+                  className={`flex h-12 min-w-0 items-center gap-3 rounded-lg border px-3 text-sm transition-colors hover:border-border-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 disabled:opacity-50 ${active ? "border-primary bg-primary/5" : "border-border bg-background"}`}
                 >
                   <span
-                    className="flex size-9 shrink-0 items-center justify-center border"
-                    style={{ background: palette.bg, borderColor: palette.fg }}
-                  >
-                    <span className="size-3.5" style={{ background: palette.fg }} />
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate font-medium text-xs uppercase tracking-wide">
-                      {palette.label}
-                    </span>
-                    {palette.note && (
-                      <span className="block truncate text-[11px] text-muted-foreground">
-                        {palette.note}
-                      </span>
-                    )}
-                  </span>
+                    aria-hidden="true"
+                    className="size-5 shrink-0 rounded-full ring-1 ring-foreground/25"
+                    style={{ background: preview }}
+                  />
+                  <span className="min-w-0 flex-1 truncate text-left">{palette.label}</span>
                   {active && <CheckIcon className="size-4 shrink-0 text-primary" />}
                 </button>
               );
             })}
           </div>
-          <p className="pt-4 text-[11px] text-muted-foreground">
-            Saved to your account, so it follows you to another browser rather than staying on this
-            machine.
-          </p>
-        </CardContent>
-      </Card>
-    </>
+        </fieldset>
+      </CardContent>
+    </Card>
   );
 }

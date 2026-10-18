@@ -193,13 +193,13 @@ type WhoAmIResponse struct {
 	// Not a secret: it is the caller's own account, and it is the same
 	// fact the sign-in page discovers by being used.
 	HasPassword bool `json:"has_password"`
-	// Theme is which palette this person sees the dashboard in, absent
-	// for the default. It is on this response rather than on one of
+	// Theme is the chosen base and accent, absent for dark-cyan.
+	// It is on this response rather than on one of
 	// its own because the dashboard already waits for this before it
 	// renders anything — a second request would be a second thing to
 	// wait for, and waiting is what a flash of the wrong colours is.
 	Theme string `json:"theme,omitempty"`
-	// Themes are the palettes this instance offers. Served rather than
+	// Themes are the combinations this instance offers. Served rather than
 	// compiled into the dashboard: the daemon is what refuses a name,
 	// and a second list is one to disagree with.
 	Themes []string `json:"themes,omitempty"`

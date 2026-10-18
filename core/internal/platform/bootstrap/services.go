@@ -263,6 +263,15 @@ func TraefikContainerOpts(cfg *config.Config, tls bool, acmeEmail string, ownNam
 		"--entrypoints.web.transport.respondingtimeouts.readtimeout=0",
 		"--entrypoints.websecure.transport.respondingtimeouts.readtimeout=0",
 		"--api.dashboard=false",
+		"--accesslog=true",
+		"--accesslog.format=json",
+		"--accesslog.fields.defaultmode=drop",
+		"--accesslog.fields.names.StartUTC=keep",
+		"--accesslog.fields.names.RequestHost=keep",
+		"--accesslog.fields.names.RequestMethod=keep",
+		"--accesslog.fields.names.DownstreamStatus=keep",
+		"--accesslog.fields.names.Duration=keep",
+		"--accesslog.fields.names.RouterName=keep",
 	}
 	if tls {
 		cmd = append(cmd,

@@ -6,7 +6,7 @@ import { useUpdateSession } from "@/components/session-context";
 import { api, type Me } from "@/lib/api";
 import { message } from "@/lib/errors";
 
-// Where the browser keeps its copy of the chosen palette.
+// Where the browser keeps its copy of the chosen base and accent.
 //
 // **The row on the account is what is true**, and this is what makes
 // the first paint right: the daemon has not been asked yet when the
@@ -16,17 +16,31 @@ import { message } from "@/lib/errors";
 const CACHED =
   process.env.NEXT_PUBLIC_CUBESHIP_DEMO === "1" ? "cubeship.demo.theme" : "cubeship.theme";
 
-/** applyTheme paints the interface in one of the palettes. */
+// Existing accounts keep their saved choice when the old palette names
+// become combinations of a neutral base and an accent.
+const LEGACY: Record<string, string> = {
+  cyan: "dark-cyan",
+  mono: "dark-neutral",
+  hacker: "dark-green",
+  red: "dark-red",
+  orange: "dark-orange",
+  pink: "dark-pink",
+  purple: "dark-purple",
+  blue: "dark-blue",
+  helix: "light-neutral",
+};
+
+function currentTheme(theme: string | undefined) {
+  return LEGACY[theme ?? ""] ?? (theme || "dark-cyan");
+}
+
+/** applyTheme paints the chosen base and accent. */
 export function applyTheme(theme: string | undefined) {
   const root = document.documentElement;
-  if (theme) {
-    root.setAttribute("data-theme", theme);
-  } else {
-    root.removeAttribute("data-theme");
-  }
+  const selected = currentTheme(theme);
+  root.setAttribute("data-theme", selected);
   try {
-    if (theme) localStorage.setItem(CACHED, theme);
-    else localStorage.removeItem(CACHED);
+    localStorage.setItem(CACHED, selected);
   } catch {
     // Storage turned off: the theme still applies, it just costs a
     // flash on the next load.
@@ -34,13 +48,13 @@ export function applyTheme(theme: string | undefined) {
 }
 
 /**
- * useTheme is the caller's palette, and how to change it.
+ * useTheme is the caller's base and accent, and how to change them.
  *
  * Saved to the account, because it is a fact about the person rather
  * than about the machine they opened this on.
  */
 export function useTheme(me: Me) {
-  const [theme, setTheme] = useState(me.theme ?? "");
+  const [theme, setTheme] = useState(currentTheme(me.theme));
   const [busy, setBusy] = useState(false);
   const update = useUpdateSession();
 
@@ -48,12 +62,12 @@ export function useTheme(me: Me) {
   // preference changed on another machine has to arrive here.
   useEffect(() => {
     applyTheme(me.theme);
-    setTheme(me.theme ?? "");
+    setTheme(currentTheme(me.theme));
   }, [me.theme]);
 
   const choose = useCallback(
     async (next: string) => {
-      if (busy) return;
+      if (busy || next === theme) return;
       const previous = theme;
       // Painted first, then saved. It is the one setting where the
       // result is the feedback, and a spinner between the click and the
@@ -82,7 +96,7 @@ export function useTheme(me: Me) {
 }
 
 /**
- * ThemeBoot paints the remembered palette before anything is fetched.
+ * ThemeBoot paints the remembered base and accent before anything is fetched.
  *
  * It runs as an inline script in the document head rather than as an
  * effect, because an effect runs after the first paint — which is the
@@ -93,7 +107,7 @@ export function ThemeBoot() {
     <script
       // biome-ignore lint/security/noDangerouslySetInnerHtml: a constant string, no interpolation
       dangerouslySetInnerHTML={{
-        __html: `try{var t=localStorage.getItem(${JSON.stringify(CACHED)});if(t)document.documentElement.setAttribute("data-theme",t)}catch(e){}`,
+        __html: `try{var t=localStorage.getItem(${JSON.stringify(CACHED)});if(t)document.documentElement.setAttribute("data-theme",(${JSON.stringify(LEGACY)})[t]||t)}catch(e){}`,
       }}
     />
   );

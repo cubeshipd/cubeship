@@ -1,18 +1,9 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* The dashboard is dark but for one palette. It is an infrastructure
-   console: it is read next to a terminal, for hours, and that is why
-   there is one light theme rather than a light/dark axis over all of
-   them.
-
-   The `dark` variant is wired to a class and <html> always carries it,
-   `helix` included — which sounds wrong and is not. Every `dark:` rule
-   in `ui/` reaches for a token this file defines (`input/30`,
-   `muted/50`, `destructive/40`), so under `helix` they resolve to that
-   palette's own values and render light. Making the class conditional
-   would turn the shadcn defaults back on for exactly one theme, which
-   is a second set of colours to keep honest — the thing this avoids. */
+/* Both bases use the same component tokens. The `dark:` variant stays
+   active on <html>; light mode replaces the tokens it resolves, rather
+   than falling back to a second set of component defaults. */
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* What the Base UI primitives mean by `data-horizontal:` — which is
@@ -27,38 +18,35 @@
 @custom-variant data-vertical (&[data-orientation="vertical"]);
 
 :root {
-  /* Surfaces. Near-black with a blue cast, four steps apart by a hair:
-     depth comes from 1px lines and glow, never from shadow. */
-  --background: #05070a;
-  --card: #080d13;
-  --popover: #0d1219;
-  --secondary: #10161f;
-  --muted: #10161f;
-  --accent: #16202c;
+  /* Neutral surfaces stay fixed while the accent changes. */
+  color-scheme: dark;
+  --background: #000000;
+  --card: #0a0a0a;
+  --popover: #0e0e0e;
+  --secondary: #141414;
+  --muted: #141414;
+  --accent: #1c1c1c;
 
   /* Text, in three levels — a label, a value and a hint are three
      different things, and flattening them is what makes a dense screen
      read as one grey mass. */
-  --foreground: #d7e3ec;
-  --card-foreground: #d7e3ec;
-  --popover-foreground: #d7e3ec;
-  --secondary-foreground: #d7e3ec;
-  --accent-foreground: #d7e3ec;
-  --muted-foreground: #94a6b6;
-  --subtle-foreground: #677e90;
+  --foreground: #ededed;
+  --card-foreground: #ededed;
+  --popover-foreground: #ededed;
+  --secondary-foreground: #ededed;
+  --accent-foreground: #ededed;
+  --muted-foreground: #999999;
+  --subtle-foreground: #707070;
 
   /* Lines. */
-  --border: #1e2c37;
-  --border-strong: #304452;
-  --input: #1d2b38;
+  --border: #242424;
+  --border-strong: #3a3a3a;
+  --input: #343434;
 
-  /* Cyan is the interface accent; magenta is the brand's second light,
-     used for glow and a second chart line and nothing you have to read. Neither
-     collides with the status colours below — which matters, because
-     green, amber and red already mean running, deploying and failed. */
+  /* Cyan is the default accent. Ring follows the selected accent. */
   --primary: #2de2e6;
-  --primary-foreground: #03151a;
-  --ring: #2de2e6;
+  --primary-foreground: #080808;
+  --ring: var(--primary);
   --magenta: #ff2e88;
 
   --success: #8dff5a;
@@ -95,243 +83,10 @@
   --radius: 0px;
 }
 
-/* The palettes.
- *
- * **Colour only.** The layout, the type and the square corners are the
- * product; a theme that moved those would be a second interface to keep
- * working. Each of these sets the surfaces, the lines and the accent,
- * and nothing else.
- *
- * **All of them are dark but one**, and that was the decision for a
- * long time: this is a console for a machine, read beside a terminal,
- * and a light one is the only screen on that desk that is. `helix` is
- * the exception, and it is one on purpose rather than the start of a
- * light/dark axis — see the block at the end of this list.
- *
- * The surfaces move with the accent rather than staying blue. A red
- * accent on a blue-cast near-black reads as two themes fighting, which
- * is what makes a recoloured interface look recoloured.
- */
-
-:root[data-theme="mono"] {
-  /* Vercel's answer: no hue at all, and the accent is the paper. It is
-     the one palette here where the accent is brighter than everything
-     rather than more saturated than everything. */
-  --background: #000000;
-  --card: #0a0a0a;
-  --popover: #0e0e0e;
-  --secondary: #141414;
-  --muted: #141414;
-  --accent: #1c1c1c;
-
-  --foreground: #ededed;
-  --card-foreground: #ededed;
-  --popover-foreground: #ededed;
-  --secondary-foreground: #ededed;
-  --accent-foreground: #ededed;
-  --muted-foreground: #8f8f8f;
-  --subtle-foreground: #5a5a5a;
-
-  --border: #1f1f1f;
-  --border-strong: #2e2e2e;
-  --input: #2a2a2a;
-
-  --primary: #ededed;
-  --primary-foreground: #0a0a0a;
-  --ring: #ededed;
-  --magenta: #8f8f8f;
-}
-
-:root[data-theme="hacker"] {
-  --background: #030603;
-  --card: #070d07;
-  --popover: #0a120a;
-  --secondary: #0d160d;
-  --muted: #0d160d;
-  --accent: #132013;
-
-  --foreground: #d5ecd5;
-  --card-foreground: #d5ecd5;
-  --popover-foreground: #d5ecd5;
-  --secondary-foreground: #d5ecd5;
-  --accent-foreground: #d5ecd5;
-  --muted-foreground: #77a077;
-  --subtle-foreground: #486348;
-
-  --border: #16281a;
-  --border-strong: #234a2b;
-  --input: #1c3a22;
-
-  --primary: #3dff7a;
-  --primary-foreground: #04170b;
-  --ring: #3dff7a;
-  --magenta: #b6ff3d;
-}
-
-:root[data-theme="red"] {
-  --background: #0a0405;
-  --card: #120709;
-  --popover: #170a0d;
-  --secondary: #1c0e11;
-  --muted: #1c0e11;
-  --accent: #281317;
-
-  --foreground: #f0dcde;
-  --card-foreground: #f0dcde;
-  --popover-foreground: #f0dcde;
-  --secondary-foreground: #f0dcde;
-  --accent-foreground: #f0dcde;
-  --muted-foreground: #a8848a;
-  --subtle-foreground: #6d5158;
-
-  --border: #2c161b;
-  --border-strong: #45242c;
-  --input: #3a1d24;
-
-  --primary: #ff4d5e;
-  --primary-foreground: #1a0407;
-  --ring: #ff4d5e;
-  --magenta: #ff8a3d;
-}
-
-:root[data-theme="orange"] {
-  --background: #0a0603;
-  --card: #120c06;
-  --popover: #171009;
-  --secondary: #1c140b;
-  --muted: #1c140b;
-  --accent: #281c10;
-
-  --foreground: #f0e4d6;
-  --card-foreground: #f0e4d6;
-  --popover-foreground: #f0e4d6;
-  --secondary-foreground: #f0e4d6;
-  --accent-foreground: #f0e4d6;
-  --muted-foreground: #a8907a;
-  --subtle-foreground: #6d5b4b;
-
-  --border: #2c2015;
-  --border-strong: #453322;
-  --input: #3a2a1c;
-
-  --primary: #ff9d2e;
-  --primary-foreground: #1a0d02;
-  --ring: #ff9d2e;
-  --magenta: #ffd63d;
-}
-
-:root[data-theme="pink"] {
-  --background: #0a0409;
-  --card: #12070f;
-  --popover: #170a13;
-  --secondary: #1c0d17;
-  --muted: #1c0d17;
-  --accent: #281220;
-
-  --foreground: #f0dceb;
-  --card-foreground: #f0dceb;
-  --popover-foreground: #f0dceb;
-  --secondary-foreground: #f0dceb;
-  --accent-foreground: #f0dceb;
-  --muted-foreground: #a884a0;
-  --subtle-foreground: #6d5167;
-
-  --border: #2c1626;
-  --border-strong: #45243b;
-  --input: #3a1d32;
-
-  --primary: #ff5cb8;
-  --primary-foreground: #1a0412;
-  --ring: #ff5cb8;
-  --magenta: #b96bff;
-}
-
-:root[data-theme="purple"] {
-  --background: #07050e;
-  --card: #0d0a17;
-  --popover: #110d1d;
-  --secondary: #151023;
-  --muted: #151023;
-  --accent: #1e1732;
-
-  --foreground: #e2dcf2;
-  --card-foreground: #e2dcf2;
-  --popover-foreground: #e2dcf2;
-  --secondary-foreground: #e2dcf2;
-  --accent-foreground: #e2dcf2;
-  --muted-foreground: #9086b0;
-  --subtle-foreground: #5b5375;
-
-  --border: #221b3a;
-  --border-strong: #362c58;
-  --input: #2d2449;
-
-  --primary: #a97bff;
-  --primary-foreground: #10062a;
-  --ring: #a97bff;
-  --magenta: #ff6bd6;
-}
-
-/* The one palette that had to be pushed away from the default rather
-   than simply chosen. Cubeship's own is cyan on a near-black with a
-   blue cast, so a blue accent laid on those same surfaces would have
-   been the default with the accent nudged — two entries in the picker
-   that are hard to tell apart is worse than six. So the surfaces go
-   properly navy, which is what every other palette here does with its
-   own hue, and the accent is an azure far enough from #2de2e6 to be a
-   different answer to the same question. */
-:root[data-theme="blue"] {
-  --background: #03060f;
-  --card: #070d1a;
-  --popover: #0a1120;
-  --secondary: #0d1626;
-  --muted: #0d1626;
-  --accent: #142036;
-
-  --foreground: #dbe4f7;
-  --card-foreground: #dbe4f7;
-  --popover-foreground: #dbe4f7;
-  --secondary-foreground: #dbe4f7;
-  --accent-foreground: #dbe4f7;
-  --muted-foreground: #8494b8;
-  --subtle-foreground: #53608a;
-
-  --border: #182740;
-  --border-strong: #26395c;
-  --input: #1e3050;
-
-  --primary: #4d8dff;
-  --primary-foreground: #030d20;
-  --ring: #4d8dff;
-  --magenta: #2de2e6;
-}
-
-/* Helix: the inverse of Mono.
- *
- * **Black ink on paper**, where mono is white light on black — the same
- * palette read the other way up, which is why it is named for the
- * strand that runs the opposite direction rather than for being light.
- * Every step is the mirror of mono's: the page is the extreme, the card
- * is four percent off it, and the accent is the page's opposite rather
- * than a hue.
- *
- * **The glow does not need a special case, and that is the test it
- * passed.** Every depth effect in this file is `var(--primary)` at low
- * opacity, so on paper the same rules render as ink bleed and a soft
- * shadow instead of neon — which is what a light console does with the
- * same geometry. Nothing about the layout, the lines or the corners
- * moved, exactly as for the other seven.
- *
- * **The status colours are the one thing that could not be mirrored.**
- * Green, amber and red mean running, deploying and failed, and the
- * bright versions tuned for a near-black page are unreadable on this
- * one — a lime `#8dff5a` on white is not a colour, it is a blank cell.
- * So they are re-picked here rather than inverted, which makes this the
- * only palette that touches them. The terminal's own eight are *not*
- * re-picked: the log panel is `bg-black` in every theme, which is the
- * whole reason those were declared once and never per palette.
- */
-:root[data-theme="helix"] {
+/* Base and accent are independent. Existing stored names are mapped to
+   these combinations by ThemeBoot before the first paint. */
+:root[data-theme^="light-"] {
+  color-scheme: light;
   --background: #ffffff;
   --card: #f7f7f7;
   --popover: #f2f2f2;
@@ -344,26 +99,65 @@
   --popover-foreground: #0a0a0a;
   --secondary-foreground: #0a0a0a;
   --accent-foreground: #0a0a0a;
-  /* Matched to mono's contrast against its own page rather than to its
-     hex: #8f8f8f is 7.2:1 on black and 3.2:1 on white, so mirroring the
-     number would have flattened the two text levels this interface is
-     built on. These carry the same ratios the other way. */
   --muted-foreground: #595959;
   --subtle-foreground: #878787;
 
   --border: #dedede;
   --border-strong: #c4c4c4;
   --input: #cdcdcd;
-
-  --primary: #0a0a0a;
-  --primary-foreground: #fafafa;
-  --ring: #0a0a0a;
-  --magenta: #595959;
+  --primary-foreground: #ffffff;
+  --magenta: #af246f;
 
   --success: #1a7f37;
   --warning: #9a6700;
   --destructive: #cf222e;
-  --destructive-foreground: #ffffff;
+}
+
+:root[data-theme="dark-neutral"] {
+  --primary: #ededed;
+}
+:root[data-theme="dark-green"] {
+  --primary: #3dff7a;
+}
+:root[data-theme="dark-red"] {
+  --primary: #ff4d5e;
+}
+:root[data-theme="dark-orange"] {
+  --primary: #ff9d2e;
+}
+:root[data-theme="dark-pink"] {
+  --primary: #ff5cb8;
+}
+:root[data-theme="dark-purple"] {
+  --primary: #a97bff;
+}
+:root[data-theme="dark-blue"] {
+  --primary: #4d8dff;
+}
+
+:root[data-theme="light-cyan"] {
+  --primary: #007c85;
+}
+:root[data-theme="light-neutral"] {
+  --primary: #0a0a0a;
+}
+:root[data-theme="light-green"] {
+  --primary: #16793a;
+}
+:root[data-theme="light-red"] {
+  --primary: #c72c42;
+}
+:root[data-theme="light-orange"] {
+  --primary: #a64b00;
+}
+:root[data-theme="light-pink"] {
+  --primary: #af246f;
+}
+:root[data-theme="light-purple"] {
+  --primary: #7041bb;
+}
+:root[data-theme="light-blue"] {
+  --primary: #265db8;
 }
 
 @theme inline {

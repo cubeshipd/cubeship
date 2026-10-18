@@ -1,16 +1,14 @@
 "use client";
 
 import { PlusIcon, Trash2Icon } from "lucide-react";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { Appearance } from "@/components/appearance";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { RailTabs } from "@/components/header-rail";
 import { ProfileImage } from "@/components/profile-image";
 import { RowAction, RowActions } from "@/components/row-actions";
-import { SearchBar } from "@/components/search-bar";
 import { SearchableSelect } from "@/components/searchable-select";
 import { SectionHeader } from "@/components/section-header";
 import { useSession, useUpdateSession } from "@/components/session-context";
@@ -24,7 +22,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ValueCard } from "@/components/value-card";
 import { type AccessRoles, type ApiKey, api, type Me } from "@/lib/api";
 import { message } from "@/lib/errors";
@@ -32,10 +29,7 @@ import { message } from "@/lib/errors";
 // The screen for everything that is **yours** rather than the
 // instance's: how you sign in, and what it looks like to you.
 //
-// Tabs rather than one long page, and reached from the menu under your
-// name rather than from the sidebar. The sidebar is what the instance
-// is made of and what you deploy on it; your own password is neither,
-// and it sat there as a section of one item.
+// Reached from the menu under your name rather than from the sidebar.
 //
 // Who else can reach the instance is *not* here — it is in Platform,
 // beside the credentials and the machines, because it is a fact about
@@ -43,29 +37,15 @@ import { message } from "@/lib/errors";
 // too.
 export default function Account() {
   return (
-    <Tabs defaultValue="general" className="subrail-page">
-      <RailTabs>
-        <TabsList variant="line">
-          <TabsTrigger value="general">General</TabsTrigger>
-          <TabsTrigger value="appearance">Appearance</TabsTrigger>
-          <TabsTrigger value="security">Security</TabsTrigger>
-          <TabsTrigger value="keys">API keys</TabsTrigger>
-        </TabsList>
-      </RailTabs>
-
-      <TabsContent value="general">
+    <>
+      <SectionHeader page title="Your settings" sub="Manage your profile, appearance and access." />
+      <div className="space-y-8">
         <General />
-      </TabsContent>
-      <TabsContent value="appearance">
         <Appearance />
-      </TabsContent>
-      <TabsContent value="security">
         <Password />
-      </TabsContent>
-      <TabsContent value="keys">
         <Keys />
-      </TabsContent>
-    </Tabs>
+      </div>
+    </>
   );
 }
 
@@ -129,52 +109,50 @@ function General() {
   }
 
   return (
-    <>
-      <SectionHeader title="You" />
-      <Card>
-        <CardContent>
-          <ProfileImage />
-          <ErrorAlert error={error} />
-          <form onSubmit={save} aria-busy={busy}>
-            <fieldset disabled={busy} className="space-y-4">
-              <TextField
-                label="Display name"
-                hint="What you are called, which a username often is not. Empty is fine — your username stands in."
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder={me.username}
-              />
-              <TextField
-                label="Username"
-                hint="Lowercase letters, digits, dot, dash or underscore. Sessions and API keys survive a change; `docker login` does not — it sends this alongside the key, so log in again after."
-                value={username}
-                spellCheck={false}
-                onChange={(e) => setUsername(e.target.value)}
-                className="font-mono"
-              />
-              <TextField
-                label="Email"
-                type="email"
-                hint="Nothing here sends mail. It is so whoever runs this box can tell whose account is whose, and it is never a second way to sign in."
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+    <Card>
+      <CardContent className="space-y-5 [&>.dashboard-section-header]:mb-0">
+        <SectionHeader title="Profile" sub="Your name and contact details on this instance." />
+        <ProfileImage />
+        <ErrorAlert error={error} />
+        <form onSubmit={save} aria-busy={busy}>
+          <fieldset disabled={busy} className="space-y-4">
+            <TextField
+              label="Display name"
+              hint="What you are called, which a username often is not. Empty is fine — your username stands in."
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+              placeholder={me.username}
+            />
+            <TextField
+              label="Username"
+              hint="Lowercase letters, digits, dot, dash or underscore. Sessions and API keys survive a change; `docker login` does not — it sends this alongside the key, so log in again after."
+              value={username}
+              spellCheck={false}
+              onChange={(e) => setUsername(e.target.value)}
+              className="font-mono"
+            />
+            <TextField
+              label="Email"
+              type="email"
+              hint="Nothing here sends mail. It is so whoever runs this box can tell whose account is whose, and it is never a second way to sign in."
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
 
-              <div className="flex items-center gap-3">
-                <ActionButton type="submit" busy={busy} disabled={!dirty}>
-                  Save
-                </ActionButton>
-                {saved && !dirty && (
-                  <span role="status" className="text-xs text-success">
-                    Changes saved.
-                  </span>
-                )}
-              </div>
-            </fieldset>
-          </form>
-        </CardContent>
-      </Card>
-    </>
+            <div className="flex items-center gap-3">
+              <ActionButton type="submit" busy={busy} disabled={!dirty}>
+                Save
+              </ActionButton>
+              {saved && !dirty && (
+                <span role="status" className="text-xs text-success">
+                  Changes saved.
+                </span>
+              )}
+            </div>
+          </fieldset>
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -196,7 +174,6 @@ function Keys() {
   const [keys, setKeys] = useState<ApiKey[] | null>(null);
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
   const [adding, setAdding] = useState(false);
-  const [filter, setFilter] = useState("");
   const [issued, setIssued] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -207,13 +184,6 @@ function Keys() {
       .catch((e) => setError(message(e)));
   }, []);
   useEffect(reload, [reload]);
-
-  const rows = useMemo(() => {
-    if (keys === null) return null;
-    const needle = filter.trim().toLowerCase();
-    if (!needle) return keys;
-    return keys.filter((k) => k.name.toLowerCase().includes(needle));
-  }, [keys, filter]);
 
   const last = (keys?.length ?? 0) <= 1;
 
@@ -314,29 +284,20 @@ function Keys() {
         />
       )}
 
-      <SearchBar
-        value={filter}
-        onChange={setFilter}
-        placeholder="Filter by name"
-        className="mb-4"
-        count={
-          keys && rows ? { value: rows.length, singular: "API key", plural: "API keys" } : undefined
-        }
-      />
-
       <DataTable
         columns={columns}
-        rows={rows}
+        rows={keys}
         rowKey={(k) => String(k.id)}
         loadingRows={3}
+        search={{
+          placeholder: "Filter API keys",
+          countLabel: { singular: "API key", plural: "API keys" },
+          by: (k) => [k.name, k.access_role],
+        }}
         empty={
-          filter.trim() ? (
-            "Nothing matches."
-          ) : (
-            <>
-              No keys. You need one for <code>cubeship login</code> and <code>docker login</code>.
-            </>
-          )
+          <>
+            No keys. You need one for <code>cubeship login</code> and <code>docker login</code>.
+          </>
         }
         className="mb-4"
       />
@@ -510,36 +471,34 @@ function Password() {
   }
 
   return (
-    <>
-      <SectionHeader title="Password" />
-      <Card>
-        <CardContent>
-          <ErrorAlert error={error} />
-          <form onSubmit={change} className="space-y-4">
-            <TextField
-              label="Current password"
-              type="password"
-              value={current}
-              onChange={(e) => setCurrent(e.target.value)}
-              autoComplete="current-password"
-            />
-            <TextField
-              label="New password"
-              hint="At least 12 characters. Every other session is signed out."
-              type="password"
-              value={next}
-              onChange={(e) => setNext(e.target.value)}
-              autoComplete="new-password"
-            />
-            <div className="flex items-center gap-3">
-              <ActionButton type="submit" busy={busy} variant="outline">
-                Change password
-              </ActionButton>
-              {done && <span className="text-xs text-muted-foreground">Changed.</span>}
-            </div>
-          </form>
-        </CardContent>
-      </Card>
-    </>
+    <Card>
+      <CardContent className="space-y-5 [&>.dashboard-section-header]:mb-0">
+        <SectionHeader title="Password" sub="Change how you sign in to the dashboard." />
+        <ErrorAlert error={error} />
+        <form onSubmit={change} className="space-y-4">
+          <TextField
+            label="Current password"
+            type="password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+            autoComplete="current-password"
+          />
+          <TextField
+            label="New password"
+            hint="At least 12 characters. Every other session is signed out."
+            type="password"
+            value={next}
+            onChange={(e) => setNext(e.target.value)}
+            autoComplete="new-password"
+          />
+          <div className="flex items-center gap-3">
+            <ActionButton type="submit" busy={busy} variant="outline">
+              Change password
+            </ActionButton>
+            {done && <span className="text-xs text-muted-foreground">Changed.</span>}
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   );
 }

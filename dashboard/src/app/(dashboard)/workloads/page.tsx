@@ -23,7 +23,8 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ContainerLogs } from "@/components/container-logs";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { GlideSelect } from "@/components/glide-select";
+import { FilterPanel } from "@/components/filter-panel";
+import { GLIDE_FIELD_TRIGGER_CLASS, GlideSelect } from "@/components/glide-select";
 import NavigationLink from "@/components/navigation-link";
 import { NewDatastoreDialog } from "@/components/new-datastore-dialog";
 import { NewWorkloadAppDialog } from "@/components/new-workload-app-dialog";
@@ -31,6 +32,7 @@ import { SectionHeader } from "@/components/section-header";
 import { useSession } from "@/components/session-context";
 import { StatusBadge } from "@/components/status-badge";
 import { AppShell } from "@/components/terminal-panel";
+import { buttonVariants } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   api,
@@ -64,9 +66,6 @@ const labels: Record<Workload["kind"], string> = {
   datastore: "Database",
   objectstore: "Object storage",
 };
-
-const filterSelectTriggerClass =
-  "flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-md border px-3 text-left text-sm text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50";
 
 function formatAge(startedAt?: string): string {
   if (!startedAt) return "—";
@@ -457,6 +456,7 @@ export default function WorkloadsPage() {
               ariaLabel="Create a workload"
               placeholder="Create"
               accent
+              triggerClassName={buttonVariants()}
               align="right"
               mobileAlign="left"
               startIcon={<PlusIcon className="size-4" />}
@@ -496,7 +496,7 @@ export default function WorkloadsPage() {
           ) : undefined
         }
       />
-      <div className="mb-4 grid grid-cols-2 gap-3 rounded-xl border border-border bg-card p-3 xl:grid-cols-4">
+      <FilterPanel>
         {can(me, "apps") && (
           <>
             <GlideSelect
@@ -511,7 +511,7 @@ export default function WorkloadsPage() {
               searchable
               startIcon={<FolderTreeIcon className="size-4" />}
               className="w-full"
-              triggerClassName={filterSelectTriggerClass}
+              triggerClassName={GLIDE_FIELD_TRIGGER_CLASS}
             />
             <GlideSelect
               label="Environment"
@@ -522,7 +522,7 @@ export default function WorkloadsPage() {
               searchable
               startIcon={<LayersIcon className="size-4" />}
               className="w-full"
-              triggerClassName={filterSelectTriggerClass}
+              triggerClassName={GLIDE_FIELD_TRIGGER_CLASS}
             />
           </>
         )}
@@ -537,7 +537,7 @@ export default function WorkloadsPage() {
           placeholder="All types"
           startIcon={<ShapesIcon className="size-4" />}
           className="w-full"
-          triggerClassName={filterSelectTriggerClass}
+          triggerClassName={GLIDE_FIELD_TRIGGER_CLASS}
         />
         <GlideSelect
           label="Status"
@@ -548,9 +548,9 @@ export default function WorkloadsPage() {
           searchable={statusChoices.length >= 8}
           startIcon={<ActivityIcon className="size-4" />}
           className="w-full"
-          triggerClassName={filterSelectTriggerClass}
+          triggerClassName={GLIDE_FIELD_TRIGGER_CLASS}
         />
-      </div>
+      </FilterPanel>
       <ErrorAlert error={actionError ?? (errors.length ? errors.join(" · ") : null)} />
       <DataTable
         columns={columns}

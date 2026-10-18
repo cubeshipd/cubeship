@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"cubeship/internal/envvar"
+	"cubeship/internal/platform/buildkit"
 	"cubeship/internal/platform/dockerx"
 )
 
@@ -68,7 +69,30 @@ func (o *Orchestrator) deploy(ctx context.Context, appID int64, tag string, depl
 	// Two deadlines rather than one: a build that took twenty minutes
 	// must not leave the swap with none of its own.
 	resolveCtx, cancelResolve := context.WithTimeout(ctx, BuildTimeout)
-	image, err := source.Resolve(resolveCtx, a, tag, logs)
+	if Source(a.Source).Builds() && d.GitSHA == "" {
+		branch := tag
+		if branch == "" {
+			branch = a.SourceRef
+		}
+		lookupCtx, cancelLookup := context.WithTimeout(resolveCtx, 30*time.Second)
+		username, token, err := o.cloneCredentials(lookupCtx, a)
+		if err == nil {
+			var sha, resolvedRef string
+			sha, resolvedRef, err = buildkit.ResolveCommit(lookupCtx, a.SourceRepo, branch, username, token)
+			if err == nil {
+				if saveErr := o.apps.SetDeploymentGitIdentity(lookupCtx, deploymentID, sha, resolvedRef); saveErr == nil {
+					d.GitSHA, d.GitBranch = sha, resolvedRef
+				} else {
+					log.Printf("deploy %d: could not record Git commit: %v", deploymentID, saveErr)
+				}
+			}
+		}
+		cancelLookup()
+		if err != nil {
+			fmt.Fprintf(logs, "Could not read the Git commit: %v\n", err)
+		}
+	}
+	image, err := source.Resolve(resolveCtx, a, tag, d.GitSHA, logs)
 	timedOut := errors.Is(resolveCtx.Err(), context.DeadlineExceeded)
 	cancelResolve()
 	if timedOut {

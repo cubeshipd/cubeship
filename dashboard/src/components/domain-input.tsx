@@ -115,6 +115,7 @@ export function DomainInput({
         <div className="space-y-2">
           <GlideSelect
             label={label}
+            className="w-full"
             placeholder="My DNS is elsewhere"
             emptyMessage="No DNS providers connected yet."
             value={providerID}

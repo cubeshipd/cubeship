@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   },
 };
 
-export const viewport: Viewport = { themeColor: "#05070a", colorScheme: "dark" };
+export const viewport: Viewport = { themeColor: "#000000" };
 
 // `dark` is on <html> rather than left to the system: the shadcn
 // primitives carry `dark:` rules and a visitor whose OS is set to light
@@ -40,9 +40,9 @@ export const viewport: Viewport = { themeColor: "#05070a", colorScheme: "dark" }
 // `data-theme`, written before the first paint by ThemeBoot — an effect
 // runs after it, which is the flash.
 //
-// **It stays on for `helix` too, which is the light one.** Every
-// `dark:` rule in `ui/` resolves a token this app's stylesheet defines,
-// so under that palette they render light along with everything else;
+// **It stays on for the light base too.** Every `dark:` rule in `ui/`
+// resolves a token this app's stylesheet defines, so under that base
+// they render light along with everything else;
 // taking the class off would turn the primitives' own light defaults on
 // for one theme and nothing else.
 //

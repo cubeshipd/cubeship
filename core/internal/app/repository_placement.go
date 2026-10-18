@@ -90,9 +90,8 @@ func scanScoped(row scanner) (*Scoped, error) {
 // BuildingFromRepository finds every app that builds from a repository
 // and has named no ref of its own.
 //
-// GitHub's webhook names "owner/name"; Bitbucket's includes its host.
-// Include the host when matching so same-named repositories on the two
-// providers cannot trigger each other's deployments.
+// GitHub's legacy webhook names "owner/name". Other providers pass a
+// qualified host and path so same-named repositories cannot overlap.
 //
 // An app with no ref tracks whatever branch it is told about. A named ref
 // tracks only that branch; the webhook branch is still the commit-ish passed
@@ -100,7 +99,7 @@ func scanScoped(row scanner) (*Scoped, error) {
 func (r *Repository) BuildingFromRepository(ctx context.Context, fullName, branch string) ([]*Scoped, error) {
 	rows, err := r.q.QueryContext(ctx, scopedQuery+`
 		WHERE a.source = ANY($1)
-		  AND lower(regexp_replace(regexp_replace(a.source_repo, '^https?://(www\.)?', ''), '(\.git)?/?$', '')) = lower(CASE WHEN $2 LIKE 'bitbucket.org/%' OR $2 LIKE 'github.com/%' THEN $2 ELSE 'github.com/' || $2 END)
+		  AND lower(regexp_replace(regexp_replace(a.source_repo, '^https?://(www\.)?', ''), '(\.git)?/?$', '')) = lower(regexp_replace(regexp_replace(CASE WHEN $2 LIKE '%://%' OR $2 LIKE 'bitbucket.org/%' OR $2 LIKE 'github.com/%' THEN $2 ELSE 'github.com/' || $2 END, '^https?://(www\.)?', ''), '(\.git)?/?$', ''))
 		  AND (a.source_ref = '' OR lower(a.source_ref) = lower($3))`,
 		[]string{string(SourceDockerfile), string(SourceRailpack)}, fullName, branch)
 	if err != nil {
