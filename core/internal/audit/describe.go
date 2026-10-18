@@ -148,6 +148,8 @@ var routes = map[string]phrase{
 	"DELETE /github/{id}":                  {"forget a GitHub installation", "forgot a GitHub installation", "", ""},
 	"POST /bitbucket":                      {"connect a Bitbucket account", "connected a Bitbucket account", "", ""},
 	"DELETE /bitbucket/{id}":               {"forget a Bitbucket account", "forgot a Bitbucket account", "", ""},
+	"POST /gitremotes":                     {"connect a GitLab or Gitea account", "connected a GitLab or Gitea account", "", ""},
+	"DELETE /gitremotes/{id}":              {"disconnect a GitLab or Gitea account", "disconnected a GitLab or Gitea account", "", ""},
 	"POST /hooks/bitbucket":                {"process a Bitbucket push", "processed a Bitbucket push", "", ""},
 	"POST /firewall/enable":                {"turn the firewall on", "turned the firewall on", "", ""},
 	"POST /firewall/disable":               {"turn the firewall off", "turned the firewall off", "", ""},

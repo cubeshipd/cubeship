@@ -58,6 +58,7 @@ func TestEveryRecordedRouteHasASentence(t *testing.T) {
 	unrecorded := map[string]bool{
 		"POST /setup": true, "POST /auth/login": true, "POST /mcp": true,
 		"POST /hooks/github": true, "POST /hooks/registry": true,
+		"POST /hooks/gitremotes/{id}": true,
 		"POST /nodes/agent/reconcile": true, "POST /nodes/agent/results/{id}": true,
 	}
 	for _, p := range append(f.Server.Patterns(), f.Server.InternalPatterns()...) {
