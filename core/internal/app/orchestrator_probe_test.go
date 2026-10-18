@@ -115,6 +115,8 @@ func TestWaitHealthyReturnsCancellation(t *testing.T) {
 func TestFailedProbeKeepsServingContainer(t *testing.T) {
 	d := &probeDocker{fakeDocker: fakeDocker{nextCreateID: "candidate", running: true}, failures: 100}
 	o, db, a := newDeployFixture(t, d)
+	o.HealthCheckAttempts = 2
+	o.HealthCheckInterval = 0
 	seedContainer(t, db, a.ID, "serving")
 	if _, err := db.ExecContext(context.Background(), "UPDATE apps SET health_path = '/ready' WHERE id = $1", a.ID); err != nil {
 		t.Fatal(err)
