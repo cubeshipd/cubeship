@@ -8,10 +8,11 @@ import {
   useTable,
 } from "@tanstack/react-table";
 import { cn } from "cn";
-import { ArrowDownIcon, ArrowUpIcon, InboxIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpIcon, ChevronRightIcon, InboxIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { LoadingRows } from "@/components/loading";
 import { SearchBar } from "@/components/search-bar";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
@@ -190,11 +191,7 @@ export function DataTable<T extends object>({
     <>
       {filter}
       <Card
-        className={cn(
-          "dashboard-data-table py-0",
-          mobileRow && "dashboard-data-table-has-mobile",
-          className,
-        )}
+        className={cn("dashboard-data-table py-0", "dashboard-data-table-has-mobile", className)}
       >
         {/* The scroll container is here rather than on the page, so a
           table that is genuinely wider than the pane scrolls inside its
@@ -284,23 +281,65 @@ export function DataTable<T extends object>({
             </TableBody>
           </Table>
         </div>
-        {mobileRow && (
-          <div className="dashboard-data-table-mobile">
-            {rows == null
-              ? ["one", "two", "three", "four", "five"]
-                  .slice(0, Math.min(loadingRows, 5))
-                  .map((key) => (
-                    <div key={key} className="h-24 animate-pulse rounded-lg bg-muted/40" />
-                  ))
-              : table
-                  .getRowModel()
-                  .rows.map((row, index) => (
-                    <div key={rowKey ? rowKey(row.original, index) : row.id}>
-                      {mobileRow(row.original)}
-                    </div>
-                  ))}
-          </div>
-        )}
+        <div className="dashboard-data-table-mobile">
+          {rows == null
+            ? ["one", "two", "three", "four", "five"]
+                .slice(0, Math.min(loadingRows, 5))
+                .map((key) => (
+                  <div key={key} className="h-24 animate-pulse rounded-lg bg-muted/40" />
+                ))
+            : table.getRowModel().rows.map((row, index) => (
+                <div key={rowKey ? rowKey(row.original, index) : row.id}>
+                  {mobileRow ? (
+                    mobileRow(row.original)
+                  ) : (
+                    <article className="min-w-0 rounded-lg border border-border bg-background p-3">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="min-w-0 flex-1 break-words text-sm font-medium">
+                          {columns[0].cell(row.original)}
+                        </div>
+                        {columns
+                          .slice(1)
+                          .filter((column) => !column.header)
+                          .map((column) => (
+                            <div key={column.id} className="shrink-0">
+                              {column.cell(row.original)}
+                            </div>
+                          ))}
+                        {onRowClick && (
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label={`Open ${rowKey ? rowKey(row.original, index) : "item"}`}
+                            onClick={() => onRowClick(row.original)}
+                          >
+                            <ChevronRightIcon />
+                          </Button>
+                        )}
+                      </div>
+                      {columns.some((column, index) => index > 0 && column.header) && (
+                        <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 border-t border-border pt-3 text-xs">
+                          {columns
+                            .slice(1)
+                            .filter((column) => column.header)
+                            .map((column) => (
+                              <div
+                                key={column.id}
+                                className={cn("min-w-0", column.wrap && "col-span-2")}
+                              >
+                                <dt className="text-muted-foreground">{column.header}</dt>
+                                <dd className="mt-0.5 min-w-0 break-words">
+                                  {column.cell(row.original)}
+                                </dd>
+                              </div>
+                            ))}
+                        </dl>
+                      )}
+                    </article>
+                  )}
+                </div>
+              ))}
+        </div>
       </Card>
     </>
   );

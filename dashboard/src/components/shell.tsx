@@ -37,7 +37,7 @@ import { InstanceUpdate } from "@/components/instance-update";
 import Link from "@/components/navigation-link";
 import { SessionLoading } from "@/components/page-loading";
 import { QueryProvider } from "@/components/query-provider";
-import { ReleaseNotes } from "@/components/release-notes";
+import { ReleaseNotes, useReleaseNotes } from "@/components/release-notes";
 import { ScrollToTop } from "@/components/scroll-to-top";
 import { SessionProvider } from "@/components/session-context";
 import { applyTheme } from "@/components/theme";
@@ -245,40 +245,25 @@ export function Shell({ children }: { children: ReactNode }) {
     setMe((current) => (current ? { ...current, ...change } : current));
   }, []);
 
-  const headerless = [
-    "/projects",
-    "/databases",
-    "/storage",
-    "/templates",
-    "/dns",
-    "/firewall",
-    "/registries",
-    "/git",
-    "/components",
-    "/settings",
-    "/credentials",
-    "/certificates",
-    "/users",
-    "/audit",
-    "/account",
-    "/release-notes",
-  ].some((route) => pathname === route || pathname.startsWith(`${route}/`));
-  const inlineMobileNav = [
-    "/templates",
-    "/dns",
-    "/firewall",
-    "/registries",
-    "/git",
-    "/components",
-    "/settings",
-    "/credentials",
-    "/certificates",
-    "/users",
-    "/audit",
-    "/account",
-    "/release-notes",
-  ].some((route) => pathname === route || pathname.startsWith(`${route}/`));
-
+  const headerless =
+    pathname === "/" ||
+    [
+      "/projects",
+      "/databases",
+      "/storage",
+      "/templates",
+      "/dns",
+      "/firewall",
+      "/registries",
+      "/git",
+      "/components",
+      "/settings",
+      "/credentials",
+      "/certificates",
+      "/users",
+      "/audit",
+      "/account",
+    ].some((route) => pathname === route || pathname.startsWith(`${route}/`));
   if (!me)
     return <SessionLoading error={sessionError} onRetry={() => setAttempt((value) => value + 1)} />;
 
@@ -311,16 +296,10 @@ export function Shell({ children }: { children: ReactNode }) {
                   tabIndex={-1}
                   className="dashboard-container dashboard-content"
                 >
-                  {inlineMobileNav && (
-                    <div className="-mt-4 mb-3 hidden justify-end max-[760px]:flex">
-                      <MobileNavigation me={me} />
-                    </div>
-                  )}
                   {children}
                 </div>
               ) : (
                 <HeaderRail
-                  navigation={<MobileNavigation me={me} />}
                   bare={
                     pathname === "/workloads" || pathname === "/servers" || pathname === "/backups"
                   }
@@ -336,6 +315,7 @@ export function Shell({ children }: { children: ReactNode }) {
               )}
               <ScrollToTop />
             </main>
+            <MobileTabBar me={me} />
           </div>
         </ReleaseNotes>
       </QueryProvider>
@@ -380,18 +360,36 @@ function Navigation({ me, onNavigate }: { me: Me; onNavigate?: () => void }) {
   );
 }
 
-export function MobileNavigation({ me }: { me: Me }) {
+function MobileTabBar({ me }: { me: Me }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const destinations = ["/", "/projects", "/workloads", "/databases"]
+    .map((href) => sections.flatMap((section) => section.items).find((item) => item.href === href))
+    .filter((item): item is NavItem => Boolean(item && offered(me, item)));
   // biome-ignore lint/correctness/useExhaustiveDependencies: close the mobile drawer after a route change
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger className="dashboard-menu-toggle" aria-label="Open navigation">
-        <MenuIcon className="size-5" />
-      </DialogTrigger>
+      <nav className="dashboard-mobile-tabbar" aria-label="Primary navigation">
+        {destinations.map((item) => {
+          const active =
+            pathname === item.href ||
+            item.owns?.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+          const Icon = item.icon;
+          return (
+            <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined}>
+              <Icon aria-hidden="true" className="size-5" />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+        <DialogTrigger className="dashboard-mobile-tabbar-menu" aria-label="Open menu">
+          <MenuIcon aria-hidden="true" className="size-5" />
+          <span>Menu</span>
+        </DialogTrigger>
+      </nav>
       <DialogContent className="dashboard-mobile-navigation">
         <DialogTitle className="sr-only">Navigation</DialogTitle>
         <div className="dashboard-brand">
@@ -431,6 +429,7 @@ function useSignOut() {
 
 function MobileUserMenu({ me }: { me: Me }) {
   const router = useRouter();
+  const openReleaseNotes = useReleaseNotes();
   const { signingOut, signOut } = useSignOut();
   const stars = useGitHubStars();
 
@@ -495,7 +494,7 @@ function MobileUserMenu({ me }: { me: Me }) {
       ]}
       onChange={(action) => {
         if (action === "account") router.push("/account");
-        else if (action === "release-notes") router.push("/release-notes");
+        else if (action === "release-notes") openReleaseNotes();
         else if (action === "github")
           window.open("https://github.com/cubeshipd/cubeship", "_blank", "noopener,noreferrer");
         else if (action === "sign-out") void signOut();
@@ -506,6 +505,7 @@ function MobileUserMenu({ me }: { me: Me }) {
 
 function DesktopUserMenu({ me }: { me: Me }) {
   const { signingOut, signOut } = useSignOut();
+  const openReleaseNotes = useReleaseNotes();
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -527,7 +527,7 @@ function DesktopUserMenu({ me }: { me: Me }) {
         <DropdownMenuItem render={<Link href="/account" />}>
           <SettingsIcon /> Your settings
         </DropdownMenuItem>
-        <DropdownMenuItem render={<Link href="/release-notes" />}>
+        <DropdownMenuItem onClick={openReleaseNotes}>
           <SparklesIcon /> Release notes
         </DropdownMenuItem>
         <GitHubStar />

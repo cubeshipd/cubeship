@@ -447,6 +447,7 @@ func New(db *database.DB, docker app.DockerAPI, opts Options) *Server {
 	srv.Components = components.NewService(componentEngine, srv.Nodes)
 	srv.Shell.SetComponents(srv.Components)
 	srv.Machine.SetHosts(srv.Nodes)
+	srv.Nodes.SetMachine(srv.Machine)
 	srv.Backups.SetMachines(srv.Nodes)
 	if e, ok := docker.(bootstrap.PostgresDumper); ok {
 		srv.Backups.SetInstance(&instanceDatabase{docker: e, owned: opts.OwnDatabase})

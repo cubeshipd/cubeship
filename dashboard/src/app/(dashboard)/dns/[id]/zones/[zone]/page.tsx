@@ -324,14 +324,12 @@ function RecordDialog({
           <div className="space-y-4 py-5">
             <ErrorAlert error={error} />
 
-            {/* Twelve columns, so the two short fields can be short
-                without the two long ones having to match them. What a
-                record is reads across the first row and what it points
-                at across the second. */}
-            <div className="grid grid-cols-12 items-start gap-4">
+            {/* The short fields share rows on wider screens; on a phone
+                each field needs enough width to read and edit. */}
+            <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-12">
               <SearchableSelect
                 label="Type"
-                fieldClassName="col-span-3"
+                fieldClassName="min-w-0 sm:col-span-3"
                 searchable
                 value={type}
                 onChange={setType}
@@ -339,14 +337,14 @@ function RecordDialog({
               />
               <TextField
                 label="Name"
-                fieldClassName="col-span-9"
+                fieldClassName="min-w-0 sm:col-span-9"
                 spellCheck={false}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 hint="The full name, not the part before the domain."
               />
 
-              <div className="col-span-9 space-y-2">
+              <div className="min-w-0 space-y-2 sm:col-span-9">
                 <Label className="text-xs text-muted-foreground">Value</Label>
                 {(type === "CNAME" ? values.slice(0, 1) : values).map((value, i) => (
                   // The index is the identity: these are positions in a
@@ -389,7 +387,7 @@ function RecordDialog({
 
               <TextField
                 label="TTL"
-                fieldClassName="col-span-3"
+                fieldClassName="min-w-0 sm:col-span-3"
                 value={ttl}
                 onChange={(e) => setTTL(e.target.value)}
                 hint="Seconds"

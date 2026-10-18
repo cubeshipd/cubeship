@@ -17,14 +17,14 @@ import Link from "@/components/navigation-link";
 import { NewDatastoreDialog } from "@/components/new-datastore-dialog";
 import { SearchBar } from "@/components/search-bar";
 import { useSession } from "@/components/session-context";
-import { MobileNavigation } from "@/components/shell";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
+import { WorkspaceActions } from "@/components/workspace-actions";
 import { can, datastoreLabel } from "@/lib/api";
 import { datastoresQuery } from "@/lib/dashboard-queries";
 import { message } from "@/lib/errors";
 
-type WorkspaceActions = {
+type DatabaseWorkspaceActions = {
   start?: () => void;
   stop?: () => void;
   logs?: () => void;
@@ -36,7 +36,7 @@ type WorkspaceActions = {
   error?: string | null;
 };
 
-const Actions = createContext<(value: WorkspaceActions) => void>(() => {});
+const Actions = createContext<(value: DatabaseWorkspaceActions) => void>(() => {});
 const CreateDatabase = createContext<() => void>(() => {});
 
 export function useDatabaseWorkspaceActions() {
@@ -61,7 +61,7 @@ export function DatabaseWorkspace({ children }: { children: ReactNode }) {
   const client = useQueryClient();
   const me = useSession();
   const inventory = useQuery(datastoresQuery);
-  const [actions, setActions] = useState<WorkspaceActions>({});
+  const [actions, setActions] = useState<DatabaseWorkspaceActions>({});
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const selected = pathname.split("/")[2] ?? "";
@@ -85,60 +85,52 @@ export function DatabaseWorkspace({ children }: { children: ReactNode }) {
     <Actions.Provider value={setActions}>
       <CreateDatabase.Provider value={() => setCreating(true)}>
         <div className="flex min-h-[calc(100dvh-156px)] min-w-0 flex-col lg:min-h-[calc(100dvh-100px)]">
-          <div className="mb-3 flex justify-end lg:hidden">
-            <MobileNavigation me={me} />
-          </div>
           <div className="grid min-w-0 flex-1 gap-5 lg:grid-cols-[13rem_minmax(0,1fr)]">
             <aside className="min-w-0 lg:sticky lg:top-4 lg:self-start">
-              <section className="mb-5">
-                <h2 className="mb-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  Actions
-                </h2>
-                <div className="grid gap-1">
-                  {canManage && (
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start"
-                      onClick={() => setCreating(true)}
-                    >
-                      <PlusIcon />
-                      New database
-                    </Button>
-                  )}
-                  {(actions.canStart || actions.canStop) && (
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start"
-                      disabled={actions.busy}
-                      onClick={actions.canStart ? actions.start : actions.stop}
-                    >
-                      {actions.canStart ? <PlayIcon /> : <PauseIcon />}
-                      {actions.busy ? "Working…" : actions.canStart ? "Start" : "Stop"}
-                    </Button>
-                  )}
-                  {actions.hasLogs && (
-                    <Button variant="ghost" className="w-full justify-start" onClick={actions.logs}>
-                      <FileTextIcon />
-                      Logs
-                    </Button>
-                  )}
-                  {actions.error && (
-                    <p role="alert" className="px-3 text-xs text-destructive">
-                      {actions.error}
-                    </p>
-                  )}
-                  {actions.delete && (
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start text-destructive transition-colors hover:bg-destructive/20 dark:hover:bg-destructive/20 hover:text-destructive"
-                      onClick={actions.delete}
-                    >
-                      <Trash2Icon />
-                      Delete database
-                    </Button>
-                  )}
-                </div>
-              </section>
+              <WorkspaceActions>
+                {canManage && (
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start"
+                    onClick={() => setCreating(true)}
+                  >
+                    <PlusIcon />
+                    New database
+                  </Button>
+                )}
+                {(actions.canStart || actions.canStop) && (
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start"
+                    disabled={actions.busy}
+                    onClick={actions.canStart ? actions.start : actions.stop}
+                  >
+                    {actions.canStart ? <PlayIcon /> : <PauseIcon />}
+                    {actions.busy ? "Working…" : actions.canStart ? "Start" : "Stop"}
+                  </Button>
+                )}
+                {actions.hasLogs && (
+                  <Button variant="ghost" className="w-full justify-start" onClick={actions.logs}>
+                    <FileTextIcon />
+                    Logs
+                  </Button>
+                )}
+                {actions.error && (
+                  <p role="alert" className="px-3 text-xs text-destructive">
+                    {actions.error}
+                  </p>
+                )}
+                {actions.delete && (
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start text-destructive transition-colors hover:bg-destructive/20 dark:hover:bg-destructive/20 hover:text-destructive"
+                    onClick={actions.delete}
+                  >
+                    <Trash2Icon />
+                    Delete database
+                  </Button>
+                )}
+              </WorkspaceActions>
 
               <h2 className="mb-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
                 Databases

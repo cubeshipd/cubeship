@@ -179,10 +179,10 @@ export function InstanceDomain({
           <SectionHeader title="Domain" sub="Address used by the dashboard, API and registry." />
           <ErrorAlert error={error} />
 
-          <div className="grid grid-cols-12 items-start gap-4">
+          <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-12">
             <SearchableSelect
               label="DNS provider"
-              fieldClassName="col-span-6"
+              fieldClassName="min-w-0 sm:col-span-6"
               placeholder="My DNS is elsewhere"
               empty="No DNS providers connected yet."
               value={providerID}
@@ -202,7 +202,7 @@ export function InstanceDomain({
             {automatic ? (
               <SearchableSelect
                 label="Zone"
-                fieldClassName="col-span-6"
+                fieldClassName="min-w-0 sm:col-span-6"
                 placeholder="Pick a domain"
                 empty="This credential reaches no zones."
                 value={zoneID}
@@ -213,7 +213,7 @@ export function InstanceDomain({
             ) : (
               <TextField
                 label="Domain"
-                fieldClassName="col-span-6"
+                fieldClassName="min-w-0 sm:col-span-6"
                 spellCheck={false}
                 placeholder="cubeship.example.com"
                 value={manualDomain}
@@ -226,17 +226,17 @@ export function InstanceDomain({
                 to say, and it is one word rather than a whole domain to
                 mistype. */}
             {automatic && zone && (
-              <div className="col-span-6 space-y-2">
+              <div className="min-w-0 space-y-2 sm:col-span-6">
                 <Label className="text-xs text-muted-foreground">Name</Label>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
                   <Input
                     aria-label="Subdomain"
-                    className="h-10 flex-1 px-3 text-sm"
+                    className="h-10 w-full min-w-0 px-3 text-sm sm:flex-1"
                     spellCheck={false}
                     value={subdomain}
                     onChange={(e) => setSubdomain(e.target.value)}
                   />
-                  <span className="shrink-0 font-mono text-sm text-muted-foreground">
+                  <span className="break-all font-mono text-sm text-muted-foreground">
                     .{zone.name}
                   </span>
                 </div>
@@ -246,7 +246,7 @@ export function InstanceDomain({
             {automatic && (
               <TextField
                 label="Points at"
-                fieldClassName="col-span-6"
+                fieldClassName="min-w-0 sm:col-span-6"
                 spellCheck={false}
                 value={ip}
                 onChange={(e) => setIP(e.target.value)}
@@ -262,7 +262,7 @@ export function InstanceDomain({
 
             <TextField
               label="Let's Encrypt contact address"
-              fieldClassName="col-span-12"
+              fieldClassName="min-w-0 sm:col-span-12"
               spellCheck={false}
               placeholder="you@example.com"
               value={email}

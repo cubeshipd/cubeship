@@ -477,7 +477,7 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
       )}
       {filtered.length > 0 && (
         <Card className="py-0">
-          <Table>
+          <Table className="table-fixed">
             <TableHeader>
               <TableRow>
                 {/* No padding on the right of the box: the name's own
@@ -494,7 +494,7 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
                   />
                 </TableHead>
                 <TableHead className="px-4">Repository</TableHead>
-                <TableHead className="px-4" />
+                <TableHead className="w-20 px-2 sm:w-40 sm:px-4" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -677,15 +677,17 @@ function RepoRows({
             <Checkbox aria-label={`Select ${name}`} checked={picked} onCheckedChange={onPick} />
           </TableCell>
         )}
-        <TableCell className="px-4 py-2.5 font-mono text-xs leading-6">{name}</TableCell>
+        <TableCell className="break-all px-2 py-2.5 font-mono text-xs leading-6 whitespace-normal sm:px-4">
+          {name}
+        </TableCell>
         {/* A flex row, not three things in a line of text: a count, a
             ghost button and an inline icon each sit on their own
             baseline, and the button's line-height is not the span's.
             One row, centred, with gaps instead of margins. */}
-        <TableCell className="px-4 py-2.5 whitespace-nowrap">
+        <TableCell className="px-2 py-2.5 whitespace-nowrap sm:px-4">
           <div className="flex items-center justify-end gap-2">
             {usage && (
-              <span className="font-mono text-[11px] leading-none text-muted-foreground">
+              <span className="hidden font-mono text-[11px] leading-none text-muted-foreground sm:inline">
                 {usage.images} · {bytes(usage.bytes)}
               </span>
             )}
@@ -717,48 +719,52 @@ function RepoRows({
                 {images.map((image) => (
                   <li
                     key={tagKey(name, imageRef(image))}
-                    className="flex items-center gap-4 py-1 font-mono text-xs select-none"
+                    className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 py-2 font-mono text-xs select-none sm:flex sm:gap-4 sm:py-1"
                   >
                     {selectable && (
                       <Checkbox
                         aria-label={`Select ${name}:${imageLabel(image)}`}
-                        className="shrink-0"
+                        className="row-span-2 shrink-0 sm:row-auto"
                         checked={tagPicked(name, imageRef(image))}
                         onCheckedChange={() => onPickTag(name, imageRef(image), images)}
                       />
                     )}
                     <span
-                      className={`min-w-0 flex-1 truncate ${image.tag ? "" : "text-subtle-foreground"}`}
+                      className={`min-w-0 truncate sm:flex-1 ${image.tag ? "" : "text-subtle-foreground"}`}
                     >
                       {imageLabel(image)}
                     </span>
-                    <span className="w-20 shrink-0 text-right text-muted-foreground">
-                      {image.size ? `${(image.size / 1_048_576).toFixed(0)} MB` : ""}
-                    </span>
-                    <span
-                      className="w-24 shrink-0 text-right text-muted-foreground"
-                      title={image.pushed_at ? "Push date" : image.created_at ? "Build date" : ""}
-                    >
-                      {image.pushed_at || image.created_at
-                        ? new Date(image.pushed_at ?? image.created_at ?? "").toLocaleDateString()
-                        : ""}
-                    </span>
-                    {/* The whole reference, which is what you paste
-                        somewhere else — the tag on its own is not
-                        something anything can pull. */}
-                    <CopyButton
-                      value={host ? `${host}/${name}:${image.tag}` : `${name}:${image.tag}`}
-                      label={`Copy ${name}:${image.tag}`}
-                      className="size-6 shrink-0 p-0"
-                    />
-                    {onDeleteTag && (
-                      <RowAction
-                        icon={Trash2Icon}
-                        label={`Delete ${imageLabel(image)}`}
-                        danger
-                        onClick={() => onDeleteTag(imageRef(image))}
+                    <div className="col-start-2 row-start-2 flex min-w-0 items-center gap-2 text-muted-foreground sm:contents">
+                      <span className="shrink-0 sm:w-20 sm:text-right">
+                        {image.size ? `${(image.size / 1_048_576).toFixed(0)} MB` : ""}
+                      </span>
+                      <span
+                        className="shrink-0 sm:w-24 sm:text-right"
+                        title={image.pushed_at ? "Push date" : image.created_at ? "Build date" : ""}
+                      >
+                        {image.pushed_at || image.created_at
+                          ? new Date(image.pushed_at ?? image.created_at ?? "").toLocaleDateString()
+                          : ""}
+                      </span>
+                    </div>
+                    <div className="col-start-3 row-span-2 row-start-1 flex items-center gap-1 sm:contents">
+                      {/* The whole reference, which is what you paste
+                          somewhere else — the tag on its own is not
+                          something anything can pull. */}
+                      <CopyButton
+                        value={host ? `${host}/${name}:${image.tag}` : `${name}:${image.tag}`}
+                        label={`Copy ${name}:${image.tag}`}
+                        className="size-6 shrink-0 p-0"
                       />
-                    )}
+                      {onDeleteTag && (
+                        <RowAction
+                          icon={Trash2Icon}
+                          label={`Delete ${imageLabel(image)}`}
+                          danger
+                          onClick={() => onDeleteTag(imageRef(image))}
+                        />
+                      )}
+                    </div>
                   </li>
                 ))}
               </ul>

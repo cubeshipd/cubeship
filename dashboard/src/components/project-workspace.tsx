@@ -20,7 +20,6 @@ import Link from "@/components/navigation-link";
 import { NewWorkloadAppDialog } from "@/components/new-workload-app-dialog";
 import { SearchBar } from "@/components/search-bar";
 import { useSession } from "@/components/session-context";
-import { MobileNavigation } from "@/components/shell";
 import { SlugField } from "@/components/slug-field";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,6 +30,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { WorkspaceActions } from "@/components/workspace-actions";
 import { api, can, type Environment } from "@/lib/api";
 import { projectsQuery } from "@/lib/dashboard-queries";
 import { message } from "@/lib/errors";
@@ -96,143 +96,135 @@ export function ProjectWorkspace({ children }: { children: ReactNode }) {
           : "min-w-0"
       }
     >
-      <div className="mb-3 flex justify-end lg:hidden">
-        <MobileNavigation me={me} />
-      </div>
       <div className="grid min-w-0 flex-1 gap-5 lg:grid-cols-[13rem_minmax(0,1fr)]">
         <aside className="min-w-0 lg:sticky lg:top-4 lg:self-start">
-          <section className="mb-5">
-            <h2 className="mb-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              Actions
-            </h2>
-            <div className="grid gap-1">
-              {insideApp ? (
-                <>
+          <WorkspaceActions>
+            {insideApp ? (
+              <>
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start"
+                  disabled={!appActions.deploy || appActions.deploying}
+                  onClick={() => void appActions.deploy?.()}
+                >
+                  <RocketIcon />
+                  Deploy
+                </Button>
+                {appActions.deployError && (
+                  <p role="alert" className="px-3 text-xs text-destructive">
+                    {appActions.deployError}
+                  </p>
+                )}
+                {appActions.canStop && (
                   <Button
                     variant="ghost"
                     className="w-full justify-start"
-                    disabled={!appActions.deploy || appActions.deploying}
-                    onClick={() => void appActions.deploy?.()}
+                    onClick={appActions.stop}
                   >
-                    <RocketIcon />
-                    Deploy
+                    <PauseIcon />
+                    Stop
                   </Button>
-                  {appActions.deployError && (
-                    <p role="alert" className="px-3 text-xs text-destructive">
-                      {appActions.deployError}
-                    </p>
-                  )}
-                  {appActions.canStop && (
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start"
-                      onClick={appActions.stop}
-                    >
-                      <PauseIcon />
-                      Stop
-                    </Button>
-                  )}
-                  {appActions.canStart && (
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start"
-                      disabled={appActions.starting}
-                      onClick={() => void appActions.start?.()}
-                    >
-                      <PlayIcon />
-                      {appActions.starting ? "Starting…" : "Start"}
-                    </Button>
-                  )}
-                  {appActions.actionError && (
-                    <p role="alert" className="px-3 text-xs text-destructive">
-                      {appActions.actionError}
-                    </p>
-                  )}
-                  {appActions.logs && (
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start"
-                      onClick={appActions.logs}
-                    >
-                      <FileTextIcon />
-                      Logs
-                    </Button>
-                  )}
-                  {appActions.shell && (
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start"
-                      onClick={appActions.shell}
-                    >
-                      <TerminalSquareIcon />
-                      Shell
-                    </Button>
-                  )}
+                )}
+                {appActions.canStart && (
                   <Button
                     variant="ghost"
-                    className="w-full justify-start text-destructive transition-colors hover:bg-destructive/20 dark:hover:bg-destructive/20 hover:text-destructive"
-                    disabled={!appActions.deleteApp}
-                    onClick={() => appActions.deleteApp?.()}
+                    className="w-full justify-start"
+                    disabled={appActions.starting}
+                    onClick={() => void appActions.start?.()}
                   >
-                    <Trash2Icon />
-                    Delete app
+                    <PlayIcon />
+                    {appActions.starting ? "Starting…" : "Start"}
                   </Button>
-                </>
-              ) : (
-                <>
-                  {canCreateApp && (
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start"
-                      onClick={() => setCreatingApp(true)}
-                    >
-                      <PlusIcon />
-                      New app
-                    </Button>
+                )}
+                {appActions.actionError && (
+                  <p role="alert" className="px-3 text-xs text-destructive">
+                    {appActions.actionError}
+                  </p>
+                )}
+                {appActions.logs && (
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start"
+                    onClick={appActions.logs}
+                  >
+                    <FileTextIcon />
+                    Logs
+                  </Button>
+                )}
+                {appActions.shell && (
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start"
+                    onClick={appActions.shell}
+                  >
+                    <TerminalSquareIcon />
+                    Shell
+                  </Button>
+                )}
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start text-destructive transition-colors hover:bg-destructive/20 dark:hover:bg-destructive/20 hover:text-destructive"
+                  disabled={!appActions.deleteApp}
+                  onClick={() => appActions.deleteApp?.()}
+                >
+                  <Trash2Icon />
+                  Delete app
+                </Button>
+              </>
+            ) : (
+              <>
+                {canCreateApp && (
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start"
+                    onClick={() => setCreatingApp(true)}
+                  >
+                    <PlusIcon />
+                    New app
+                  </Button>
+                )}
+                {selected && canManageProjects && (
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-start"
+                    onClick={() => setAddingEnvironment(true)}
+                  >
+                    <PlusIcon />
+                    New environment
+                  </Button>
+                )}
+                {selected &&
+                  canManageProjects &&
+                  routeEnvironment &&
+                  routeEnvironment !== "settings" && (
+                    <>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start text-destructive transition-colors hover:bg-destructive/20 dark:hover:bg-destructive/20 hover:text-destructive"
+                        disabled={routeEnvironment === "production"}
+                        title={
+                          routeEnvironment === "production"
+                            ? "The production environment cannot be deleted"
+                            : undefined
+                        }
+                        onClick={() => setDeletingEnvironment(true)}
+                      >
+                        <Trash2Icon />
+                        Delete environment
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="w-full justify-start text-destructive transition-colors hover:bg-destructive/20 dark:hover:bg-destructive/20 hover:text-destructive"
+                        onClick={() => setDeletingProject(true)}
+                      >
+                        <Trash2Icon />
+                        Delete project
+                      </Button>
+                    </>
                   )}
-                  {selected && canManageProjects && (
-                    <Button
-                      variant="ghost"
-                      className="w-full justify-start"
-                      onClick={() => setAddingEnvironment(true)}
-                    >
-                      <PlusIcon />
-                      New environment
-                    </Button>
-                  )}
-                  {selected &&
-                    canManageProjects &&
-                    routeEnvironment &&
-                    routeEnvironment !== "settings" && (
-                      <>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start text-destructive transition-colors hover:bg-destructive/20 dark:hover:bg-destructive/20 hover:text-destructive"
-                          disabled={routeEnvironment === "production"}
-                          title={
-                            routeEnvironment === "production"
-                              ? "The production environment cannot be deleted"
-                              : undefined
-                          }
-                          onClick={() => setDeletingEnvironment(true)}
-                        >
-                          <Trash2Icon />
-                          Delete environment
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          className="w-full justify-start text-destructive transition-colors hover:bg-destructive/20 dark:hover:bg-destructive/20 hover:text-destructive"
-                          onClick={() => setDeletingProject(true)}
-                        >
-                          <Trash2Icon />
-                          Delete project
-                        </Button>
-                      </>
-                    )}
-                </>
-              )}
-            </div>
-          </section>
+              </>
+            )}
+          </WorkspaceActions>
           <h2 className="mb-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
             Projects
           </h2>

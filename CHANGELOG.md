@@ -6,6 +6,34 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.12.0 — 2026-10-18
+
+Safer deployments, more Git providers, better instance maintenance, and a dashboard that works across desktop and mobile.
+
+### Added
+
+**Safer deployments.** Configured HTTP and TCP checks must pass before a new container takes traffic. Pre-deploy commands run against the candidate image and leave the serving version in place if they fail, time out, or are cancelled. Apps can set a stop signal and grace period, filter Git-triggered builds by changed paths, and pass allowlisted Dockerfile build arguments. Deployments record their source commit and branch; image-based deployments show their image instead.
+
+**Git providers.** Connect GitHub, Bitbucket Cloud, GitLab, or Gitea and choose repositories from one searchable Build Source list. GitLab supports self-hosted instances. Bitbucket uses a scoped API token rather than requiring an OAuth consumer, while existing OAuth connections remain available. GitLab and Gitea connections expose webhook URLs and secrets for deploy on push.
+
+**Node and service controls.** Connect and inspect worker nodes, open a node shell, and manage apps, databases, and object stores from their resource pages. Managed database and object-store credentials can be rotated from Access.
+
+### Changed
+
+**Instance maintenance.** The server storage view separates reclaimable Docker and BuildKit data from volumes and backups. Cleaning removes regenerable data only; the next build may take longer while its cache is recreated. The built-in registry shows image tag size and date when available and can reclaim unreferenced layers.
+
+**Dashboard.** Overview presents cluster resources and per-node capacity and usage. Resource workspaces, filters, settings, components, and account controls use consistent layouts. On phones, form controls use a 16 px font and a fixed five-item tab bar keeps primary navigation and the sidebar menu within reach. Release notes open in a dialog, and a completed update reloads the dashboard.
+
+### Fixed
+
+**Git connection and build reliability.** A deleted GitHub App can be registered again, private Bitbucket repositories build with their credential, and push events match the correct provider and selected branch. Successful provider connections return to Git Providers.
+
+**Networking and registry.** Deployment probes work across isolated Docker networks. Firewall rules cover Docker-published ports, DNS records can be filtered by type, and registry disk reclamation runs while the serving registry is safely stopped and restarted.
+
+### Upgrade notes
+
+Stable installs and automatic stable updates now use 0.12.0. Database migrations apply when the daemon starts; existing GitHub and Bitbucket connections are retained. To enable deploy on push for GitLab or Gitea, configure each repository with the webhook URL and secret shown in Git Providers. Docker cleanup retains volumes and backups, but its next build can be slower after cache removal.
+
 ## 0.12.0-rc.11 — 2026-10-17
 
 *Prerelease.*

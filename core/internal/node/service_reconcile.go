@@ -131,7 +131,18 @@ func (s *Service) List(ctx context.Context, caller *user.User) ([]*Node, error) 
 	if err := user.Allow(caller, user.ResServers, user.LevelView, ""); err != nil {
 		return nil, err
 	}
-	return s.Repo().List(ctx)
+	nodes, err := s.Repo().List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, n := range nodes {
+		if n.ControlPlane {
+			if err := s.localMachine(ctx, n); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return nodes, nil
 }
 
 // Get is one machine by name.
@@ -139,7 +150,34 @@ func (s *Service) Get(ctx context.Context, caller *user.User, name string) (*Nod
 	if err := user.Allow(caller, user.ResServers, user.LevelView, ""); err != nil {
 		return nil, err
 	}
-	return s.Repo().BySlug(ctx, name)
+	n, err := s.Repo().BySlug(ctx, name)
+	if err != nil {
+		return nil, err
+	}
+	if n.ControlPlane {
+		if err := s.localMachine(ctx, n); err != nil {
+			return nil, err
+		}
+	}
+	return n, nil
+}
+
+func (s *Service) localMachine(ctx context.Context, n *Node) error {
+	if s.machine == nil {
+		return nil
+	}
+	current, err := s.machine.Current(ctx)
+	if err != nil {
+		return err
+	}
+	n.Cores = current.Cores
+	n.MemoryTotalBytes = current.MemoryTotalBytes
+	n.DiskTotalBytes = current.DiskTotalBytes
+	if current.Sample != nil {
+		n.CPUPercent = &current.Sample.CPUPercent
+		n.MemoryBytes = &current.Sample.MemoryBytes
+	}
+	return nil
 }
 
 // Remove takes a machine out of the cluster.

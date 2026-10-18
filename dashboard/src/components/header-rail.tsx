@@ -96,15 +96,7 @@ export function RailTabs({ children }: { children: ReactNode }) {
   );
 }
 
-export function HeaderRail({
-  children,
-  navigation,
-  bare = false,
-}: {
-  children: ReactNode;
-  navigation?: ReactNode;
-  bare?: boolean;
-}) {
+export function HeaderRail({ children, bare = false }: { children: ReactNode; bare?: boolean }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   const [tabs, setTabs] = useState<HTMLElement | null>(null);
   const pathname = usePathname() ?? "/";
@@ -119,7 +111,6 @@ export function HeaderRail({
           a log, fifty environment variables, a deploy history. */}
       <div className="dashboard-header" data-bare={bare ? "" : undefined}>
         <div className="dashboard-container dashboard-header-inner">
-          {navigation}
           {!bare && (
             <>
               <nav aria-label="Breadcrumb" className="dashboard-breadcrumb">
