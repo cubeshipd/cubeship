@@ -56,7 +56,8 @@ func TestEveryRecordedRouteHasASentence(t *testing.T) {
 	f := servertest.New(t)
 	// Not behind authentication, so never recorded.
 	unrecorded := map[string]bool{
-		"POST /setup": true, "POST /auth/login": true, "POST /mcp": true,
+		"POST /setup": true, "POST /auth/login": true,
+		"POST /mcp": true, "GET /mcp": true, "DELETE /mcp": true,
 		"POST /hooks/github": true, "POST /hooks/registry": true,
 		"POST /hooks/gitremotes/{id}": true,
 		"POST /nodes/agent/reconcile": true, "POST /nodes/agent/results/{id}": true,

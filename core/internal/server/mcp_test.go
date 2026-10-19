@@ -89,6 +89,35 @@ func TestMCPRejectsUnauthenticatedRequests(t *testing.T) {
 	}
 }
 
+// Stateless mode does not offer a standalone SSE stream: the handler
+// must answer GET with 405 and Allow: POST. If GET /mcp is not
+// registered, the request falls through to the dashboard and returns
+// HTML 404 — which is what Cursor logged as "Failed to open SSE stream:
+// Not Found" after a successful connect.
+func TestMCPGETStandaloneSSEIsMethodNotAllowed(t *testing.T) {
+	f := servertest.New(t)
+	ts := f.HTTPServer(t)
+
+	req, err := http.NewRequest(http.MethodGet, ts.URL+"/mcp", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+f.AdminKey)
+	req.Header.Set("Accept", "text/event-stream")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("GET /mcp: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Fatalf("expected 405, got %d (Content-Type %q)", resp.StatusCode, resp.Header.Get("Content-Type"))
+	}
+	if allow := resp.Header.Get("Allow"); allow != "POST" {
+		t.Fatalf("Allow: got %q, want POST", allow)
+	}
+}
+
 // Every tool must be authorized exactly like the equivalent HTTP request.
 // The MCP surface is a second door onto the same house, not a way around
 // the locks.

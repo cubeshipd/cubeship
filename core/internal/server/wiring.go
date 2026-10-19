@@ -184,9 +184,17 @@ func (s *Server) routes() {
 	bitbucket.NewHandler(s.Bitbucket, s.Apps).WebhookRoutes(s.router)
 	gitremote.NewHandler(s.GitRemotes, s.Apps).WebhookRoutes(s.router)
 
-	// Authenticated only: MCP is one POST for every tool, so the key
-	// policy and the log both work per tool, inside it.
-	s.router.HandleRoot("POST /mcp", userHandler.Middleware(s.mcpHandler()))
+	// Authenticated Streamable HTTP: every method the MCP handler
+	// accepts goes through the same key middleware. POST carries
+	// JSON-RPC; in Stateless mode GET is answered 405 (no standalone
+	// SSE) and DELETE ends a session id. Registering only POST left GET
+	// to fall through to the dashboard, which returned HTML 404 and
+	// broke clients (Cursor) that open the optional SSE stream after
+	// connect.
+	mcp := userHandler.Middleware(s.mcpHandler())
+	s.router.HandleRoot("POST /mcp", mcp)
+	s.router.HandleRoot("GET /mcp", mcp)
+	s.router.HandleRoot("DELETE /mcp", mcp)
 
 	// A path under the prefix that matches no route is a wrong API call,
 	// not a dashboard route. Without this it would fall through to "GET
