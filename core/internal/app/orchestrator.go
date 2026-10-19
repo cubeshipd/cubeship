@@ -254,7 +254,16 @@ func (o *Orchestrator) registryCredentials(ctx context.Context, image string) (*
 // no registry at all. An app on another machine takes it to the
 // instance's own registry, because an image loaded here is one no other
 // machine has ever heard of — see pushTarget.
+//
+// A commit this app has already built successfully is not built again:
+// the previous image is reused and the deploy still recomputes env and
+// swaps containers. That is what pressing Deploy on the same SHA means.
 func (o *Orchestrator) buildFromRepository(ctx context.Context, a *Scoped, ref, commit string, logs io.Writer) (Image, error) {
+	if reused, ok, err := o.reuseBuiltImage(ctx, a.ID, commit, logs); err != nil {
+		return Image{}, err
+	} else if ok {
+		return reused, nil
+	}
 	if o.builder == nil {
 		return Image{}, ErrNoBuilder
 	}
