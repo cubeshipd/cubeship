@@ -6,8 +6,7 @@ on:
     types: [opened, synchronize, reopened, edited]
 
 permissions:
-  issues: write
-  pull-requests: read
+  pull-requests: write
 
 concurrency:
   group: pr-size-${{ github.event.pull_request.number }}
