@@ -117,7 +117,7 @@ type Entry = {
   label: string;
   // What the row is, before it is read. A screen wears the sidebar's
   // own icon — it *is* that entry — and everything else wears its
-  // kind's, from the map the rail shares.
+  // kind's, from the shared mark map.
   icon: typeof MarkIcon;
   detail?: string;
   kind: string;

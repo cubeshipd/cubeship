@@ -18,9 +18,9 @@ import Link from "@/components/navigation-link";
 import { NewObjectStoreDialog } from "@/components/new-object-store-dialog";
 import { SearchBar } from "@/components/search-bar";
 import { useSession } from "@/components/session-context";
-import { MobileNavigation } from "@/components/shell";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
+import { WorkspaceActions } from "@/components/workspace-actions";
 import { api, can, objectStorePath } from "@/lib/api";
 import { PROVIDER_ICONS } from "@/lib/credentials";
 import { storesQuery } from "@/lib/dashboard-queries";
@@ -90,64 +90,56 @@ export function StorageWorkspace({ children }: { children: ReactNode }) {
   return (
     <CreateContext.Provider value={() => setCreating(true)}>
       <div className="flex min-h-[calc(100dvh-156px)] min-w-0 flex-col lg:min-h-[calc(100dvh-100px)]">
-        <div className="mb-3 flex justify-end lg:hidden">
-          <MobileNavigation me={me} />
-        </div>
         <div className="grid min-w-0 flex-1 gap-5 lg:grid-cols-[13rem_minmax(0,1fr)]">
           <aside className="min-w-0 lg:sticky lg:top-4 lg:self-start">
-            <section className="mb-5">
-              <h2 className="mb-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Actions
-              </h2>
-              <div className="grid gap-1">
-                {canManage && (
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start"
-                    onClick={() => setCreating(true)}
-                  >
-                    <PlusIcon />
-                    Add storage
-                  </Button>
-                )}
-                {(canStart || canStop) && (
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start"
-                    disabled={busy}
-                    onClick={canStart ? () => void power("start") : () => setStopOpen(true)}
-                  >
-                    {canStart ? <PlayIcon /> : <PauseIcon />}
-                    {busy ? "Working…" : canStart ? "Start" : "Stop"}
-                  </Button>
-                )}
-                {store?.kind === "managed" && store.has_container && (
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start"
-                    onClick={() => setLogsOpen(true)}
-                  >
-                    <FileTextIcon />
-                    Logs
-                  </Button>
-                )}
-                {actionError?.store === store?.name && (
-                  <p role="alert" className="px-3 text-xs text-destructive">
-                    {actionError?.message}
-                  </p>
-                )}
-                {store && canManage && (
-                  <Button
-                    variant="ghost"
-                    className="w-full justify-start text-destructive transition-colors hover:bg-destructive/20 dark:hover:bg-destructive/20 hover:text-destructive"
-                    onClick={() => setDeleteOpen(true)}
-                  >
-                    <Trash2Icon />
-                    Delete storage
-                  </Button>
-                )}
-              </div>
-            </section>
+            <WorkspaceActions>
+              {canManage && (
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={() => setCreating(true)}
+                >
+                  <PlusIcon />
+                  Add storage
+                </Button>
+              )}
+              {(canStart || canStop) && (
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start"
+                  disabled={busy}
+                  onClick={canStart ? () => void power("start") : () => setStopOpen(true)}
+                >
+                  {canStart ? <PlayIcon /> : <PauseIcon />}
+                  {busy ? "Working…" : canStart ? "Start" : "Stop"}
+                </Button>
+              )}
+              {store?.kind === "managed" && store.has_container && (
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start"
+                  onClick={() => setLogsOpen(true)}
+                >
+                  <FileTextIcon />
+                  Logs
+                </Button>
+              )}
+              {actionError?.store === store?.name && (
+                <p role="alert" className="px-3 text-xs text-destructive">
+                  {actionError?.message}
+                </p>
+              )}
+              {store && canManage && (
+                <Button
+                  variant="ghost"
+                  className="w-full justify-start text-destructive transition-colors hover:bg-destructive/20 dark:hover:bg-destructive/20 hover:text-destructive"
+                  onClick={() => setDeleteOpen(true)}
+                >
+                  <Trash2Icon />
+                  Delete storage
+                </Button>
+              )}
+            </WorkspaceActions>
 
             <h2 className="mb-2 px-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               Object storage

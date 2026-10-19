@@ -216,7 +216,7 @@ function Detail({ name }: { name: string }) {
         <Tabs
           value={activeTab}
           onValueChange={(value) => setTab(value as Tab)}
-          className="subrail-page"
+          className="workspace-tabs"
         >
           <div className="app-tab-navigation">
             <TabsList variant="default" className="app-tab-list">

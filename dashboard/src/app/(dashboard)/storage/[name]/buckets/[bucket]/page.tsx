@@ -239,7 +239,7 @@ function Browser({ store, bucket }: { store: string; bucket: string }) {
         onValueChange={(value) =>
           selectTab(value as "overview" | "buckets" | "apps" | "access" | "resources")
         }
-        className="subrail-page"
+        className="workspace-tabs"
       >
         <div className="app-tab-navigation">
           <TabsList variant="default" className="app-tab-list">

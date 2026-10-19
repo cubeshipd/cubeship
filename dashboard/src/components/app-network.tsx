@@ -475,10 +475,10 @@ function AddDomainDialog({
           <div className="space-y-4 py-5">
             <ErrorAlert error={error} />
 
-            <div className="grid grid-cols-12 items-start gap-4">
+            <div className="grid grid-cols-1 items-start gap-4 sm:grid-cols-12">
               <SearchableSelect
                 label="DNS provider"
-                fieldClassName="col-span-12"
+                fieldClassName="min-w-0 sm:col-span-12"
                 placeholder="My DNS is elsewhere"
                 empty="No DNS providers connected yet."
                 value={providerID}
@@ -509,7 +509,7 @@ function AddDomainDialog({
               />
 
               {onInstanceDomain ? (
-                <div className="col-span-12 space-y-2">
+                <div className="min-w-0 space-y-2 sm:col-span-12">
                   <Label className="text-xs text-muted-foreground">Name</Label>
                   <div className="flex h-10 items-center overflow-x-auto border border-border bg-secondary/40 px-3 font-mono text-sm text-muted-foreground">
                     {suggested}
@@ -518,7 +518,7 @@ function AddDomainDialog({
               ) : automatic ? (
                 <SearchableSelect
                   label="Zone"
-                  fieldClassName="col-span-12"
+                  fieldClassName="min-w-0 sm:col-span-12"
                   placeholder="Pick a domain"
                   empty="This credential reaches no zones."
                   value={zoneID}
@@ -529,7 +529,7 @@ function AddDomainDialog({
               ) : (
                 <TextField
                   label="Domain"
-                  fieldClassName="col-span-12"
+                  fieldClassName="min-w-0 sm:col-span-12"
                   spellCheck={false}
                   placeholder="app.example.com"
                   value={manualHost}
@@ -538,18 +538,18 @@ function AddDomainDialog({
               )}
 
               {automatic && zone && (
-                <div className="col-span-12 space-y-2">
+                <div className="min-w-0 space-y-2 sm:col-span-12">
                   <Label className="text-xs text-muted-foreground">Name</Label>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-col items-start gap-2 sm:flex-row sm:items-center">
                     <Input
                       aria-label="Subdomain"
-                      className="h-10 flex-1 px-3 text-sm"
+                      className="h-10 w-full min-w-0 px-3 text-sm sm:flex-1"
                       spellCheck={false}
                       placeholder="app"
                       value={subdomain}
                       onChange={(e) => setSubdomain(e.target.value)}
                     />
-                    <span className="shrink-0 font-mono text-sm text-muted-foreground">
+                    <span className="break-all font-mono text-sm text-muted-foreground">
                       .{zone.name}
                     </span>
                   </div>
@@ -558,7 +558,7 @@ function AddDomainDialog({
 
               <TextField
                 label="Port"
-                fieldClassName="col-span-4"
+                fieldClassName="min-w-0 sm:col-span-4"
                 spellCheck={false}
                 placeholder="8080"
                 value={port}
@@ -567,12 +567,12 @@ function AddDomainDialog({
             </div>
 
             {host && !onInstanceDomain && (
-              <div className="border border-border px-3 py-2 font-mono text-xs">
-                <span className="w-8 shrink-0 text-muted-foreground">A</span>
-                <span className="ml-4">{host}</span>
-                <span className="ml-4 text-muted-foreground">{ip || "—"}</span>
+              <div className="flex flex-wrap gap-x-3 gap-y-1 border border-border px-3 py-2 font-mono text-xs">
+                <span className="text-muted-foreground">A</span>
+                <span className="min-w-0 break-all">{host}</span>
+                <span className="text-muted-foreground">{ip || "—"}</span>
                 {occupied.length > 0 && (
-                  <span className="ml-4 text-warning">
+                  <span className="min-w-0 break-all text-warning">
                     now {occupied[0].type} {occupied[0].values.join(", ")}
                   </span>
                 )}

@@ -214,9 +214,9 @@ func NewOrchestrator(db *database.DB, d DockerAPI, cfg *settings.Service, creds 
 		builder:              builder,
 		git:                  git,
 		localRegistry:        localRegistry,
-		HealthCheckAttempts:  10,
+		HealthCheckAttempts:  150,
 		HealthCheckSuccesses: 3,
-		HealthCheckInterval:  500 * time.Millisecond,
+		HealthCheckInterval:  2 * time.Second,
 	}
 }
 

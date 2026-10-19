@@ -85,7 +85,6 @@ export default function TemplatePage({ params }: PageProps<"/templates/[owner]/[
                 {tag}
               </span>
             ))}
-            <span className="font-mono text-xs text-subtle-foreground">{t.release.tag}</span>
             <a
               href={t.source_url}
               target="_blank"

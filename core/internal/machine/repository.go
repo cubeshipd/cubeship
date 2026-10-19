@@ -40,6 +40,22 @@ func (r *Repository) Insert(ctx context.Context, s Sample, nodes ...int64) error
 	return nil
 }
 
+// Latest returns the control plane's newest raw reading, before chart bucketing.
+func (r *Repository) Latest(ctx context.Context) (*Sample, error) {
+	var sample Sample
+	err := r.q.QueryRowContext(ctx,
+		`SELECT at, cpu_percent, memory_bytes FROM host_samples
+		 WHERE node_id = 0 ORDER BY at DESC LIMIT 1`).Scan(
+		&sample.At, &sample.CPUPercent, &sample.MemoryBytes)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read latest host sample: %w", err)
+	}
+	return &sample, nil
+}
+
 func nullable(v *float64) any {
 	if v == nil {
 		return nil

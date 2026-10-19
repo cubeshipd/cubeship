@@ -73,11 +73,6 @@ export function SessionLoading({
         </div>
       </aside>
       <main className="dashboard-main">
-        <div className="dashboard-header">
-          <div className="dashboard-container dashboard-header-inner">
-            <span className="text-sm text-muted-foreground">Opening your workspace</span>
-          </div>
-        </div>
         <div className="dashboard-container dashboard-content">
           {error ? (
             <div className="dashboard-loading-error" role="alert">

@@ -1,6 +1,15 @@
 "use client";
 
-import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { ErrorAlert } from "@/components/error-alert";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -11,6 +20,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { api, type Releases } from "@/lib/api";
+import { message } from "@/lib/errors";
+
+const ReleaseNotesContext = createContext<() => void>(() => {});
+
+export function useReleaseNotes() {
+  return useContext(ReleaseNotesContext);
+}
 
 // What changed, shown once after an upgrade.
 //
@@ -23,7 +39,9 @@ import { api, type Releases } from "@/lib/api";
 // read on the way up loses the notes to a stray refresh.
 export function ReleaseNotes({ children }: { children?: ReactNode }) {
   const [state, setState] = useState<Releases | null>(null);
-  const [open, setOpen] = useState(false);
+  const [view, setView] = useState<"unseen" | "history" | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const dismissed = useRef(false);
   // Where focus lands when it opens. The dialog's default is the first
   // focusable element, which is a link somewhere down the notes, so it
   // opened scrolled to an old release instead of the newest.
@@ -34,16 +52,32 @@ export function ReleaseNotes({ children }: { children?: ReactNode }) {
       .get<Releases>("/releases")
       .then((r) => {
         setState(r);
-        if (r.unseen.length > 0) setOpen(true);
+        setError(null);
+        if (r.unseen.length > 0 && !dismissed.current) {
+          setView((current) => current ?? "unseen");
+        }
       })
       // A dashboard whose release notes could not be read is a
       // dashboard, and nothing about this is worth an error banner over
       // the screen somebody actually opened.
-      .catch(() => {});
+      .catch((err) => setError(message(err)));
   }, []);
 
+  const openHistory = useCallback(() => {
+    setView("history");
+    if (!state) {
+      setError(null);
+      api
+        .get<Releases>("/releases")
+        .then(setState)
+        .catch((err) => setError(message(err)));
+    }
+  }, [state]);
+
   const dismiss = useCallback(async () => {
-    setOpen(false);
+    dismissed.current = true;
+    setView(null);
+    if (!state?.unseen.length) return;
     try {
       await api.post("/releases/seen", undefined);
       setState((s) => (s ? { ...s, unseen: [] } : s));
@@ -51,18 +85,14 @@ export function ReleaseNotes({ children }: { children?: ReactNode }) {
       // Nothing to do about it and nothing worth saying: the worst
       // case is the same notes once more.
     }
-  }, []);
+  }, [state]);
 
-  const pending = state?.unseen ?? [];
-  if (pending.length === 0) {
-    return <>{children}</>;
-  }
-
-  const many = pending.length > 1;
+  const notes = (view === "history" ? state?.notes : state?.unseen) ?? [];
+  const many = notes.length > 1;
   return (
-    <>
+    <ReleaseNotesContext.Provider value={openHistory}>
       {children}
-      <Dialog open={open} onOpenChange={(next) => !next && dismiss()}>
+      <Dialog open={view !== null} onOpenChange={(next) => !next && void dismiss()}>
         {/* A column rather than the primitive's grid: the header and the
           footer stay put and the notes scroll between them. Grid gave
           one tall box, so the button that dismisses this was below the
@@ -73,12 +103,18 @@ export function ReleaseNotes({ children }: { children?: ReactNode }) {
         >
           <DialogHeader className="shrink-0 border-border border-b p-4 pr-12">
             <DialogTitle>
-              {many
-                ? `What changed in ${pending.length} releases`
-                : `Cubeship ${pending[0].version}`}
+              {view === "history"
+                ? "Release notes"
+                : many
+                  ? `What changed in ${notes.length} releases`
+                  : `Cubeship ${notes[0]?.version ?? ""}`}
             </DialogTitle>
             <DialogDescription>
-              {many ? "Changes since your last visit, newest first." : pending[0].summary}
+              {view === "history"
+                ? `Changes up to Cubeship ${state?.version ?? "the current version"}, newest first.`
+                : many
+                  ? "Changes since your last visit, newest first."
+                  : (notes[0]?.summary ?? "Changes since your last visit.")}
             </DialogDescription>
           </DialogHeader>
 
@@ -87,12 +123,21 @@ export function ReleaseNotes({ children }: { children?: ReactNode }) {
             tabIndex={-1}
             className="min-w-0 flex-1 space-y-8 overflow-y-auto p-4 outline-none"
           >
-            {pending.map((note) => (
+            {error && <ErrorAlert error={error} />}
+            {!state && !error && (
+              <p className="text-sm text-muted-foreground">Loading release notes…</p>
+            )}
+            {state && notes.length === 0 && (
+              <p className="text-sm text-muted-foreground">No release notes for this build yet.</p>
+            )}
+            {notes.map((note) => (
               <section key={note.version} className="space-y-3">
-                {many && (
-                  <header className="flex items-baseline gap-3 border-border border-b pb-1">
-                    <h2 className="font-mono text-primary text-sm">{note.version}</h2>
-                    <span className="font-mono text-[11px] text-muted-foreground">{note.date}</span>
+                {(many || view === "history") && (
+                  <header className="border-border border-b pb-2">
+                    <h2 className="font-medium text-foreground text-sm">Cubeship {note.version}</h2>
+                    <p className="mt-1 text-muted-foreground text-xs">
+                      {note.date} · {note.summary}
+                    </p>
                   </header>
                 )}
                 <Notes body={note.body} />
@@ -101,11 +146,13 @@ export function ReleaseNotes({ children }: { children?: ReactNode }) {
           </div>
 
           <DialogFooter className="mx-0 mb-0 shrink-0 rounded-none border-border border-t p-4">
-            <Button onClick={dismiss}>Got it</Button>
+            <Button onClick={() => void dismiss()}>
+              {view === "history" ? "Close" : "Got it"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
+    </ReleaseNotesContext.Provider>
   );
 }
 

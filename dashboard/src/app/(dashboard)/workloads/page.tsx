@@ -207,7 +207,7 @@ export default function WorkloadsPage() {
     {
       id: "name",
       header: "Container",
-      width: 24,
+      width: 30,
       sortBy: (row) => row.name,
       cell: (row) => {
         const Icon =
@@ -246,15 +246,14 @@ export default function WorkloadsPage() {
     {
       id: "status",
       header: "Status",
-      width: 12,
+      width: 8,
       sortBy: (row) => row.status,
       cell: (row) => <StatusBadge value={row.status} />,
     },
     {
       id: "age",
       header: "Age",
-      width: 9,
-      align: "right",
+      width: 7,
       sortBy: (row) => row.usage?.started_at ?? "",
       cell: (row) => {
         const startedAt = row.usage?.started_at;
@@ -447,6 +446,7 @@ export default function WorkloadsPage() {
   return (
     <>
       <SectionHeader
+        page
         title="Containers"
         sub="Every app, database and managed object store running on this instance. CPU 100% is one core."
         actions={
@@ -553,6 +553,7 @@ export default function WorkloadsPage() {
       </FilterPanel>
       <ErrorAlert error={actionError ?? (errors.length ? errors.join(" · ") : null)} />
       <DataTable
+        className="[&_[data-slot=table]]:min-w-[960px] [&_[data-slot=table]]:table-auto"
         columns={columns}
         rows={pending ? null : filteredRows}
         rowKey={(row) => row.id}

@@ -2,6 +2,7 @@ package machine
 
 import (
 	"context"
+	"time"
 
 	"cubeship/internal/metrics"
 	"cubeship/internal/platform/database"
@@ -40,6 +41,25 @@ func (s *Service) Repo() *Repository { return NewRepository(s.db) }
 
 // Reader is how the collector and the tests reach the machine.
 func (s *Service) Reader() *Reader { return s.reader }
+
+// Current reads this machine's capacity and the newest fresh sample.
+func (s *Service) Current(ctx context.Context) (Telemetry, error) {
+	out := Telemetry{Cores: s.reader.Cores()}
+	if memory, err := s.reader.Memory(); err == nil {
+		out.MemoryTotalBytes = memory.Total
+	}
+	if disk, err := s.reader.Disk(); err == nil {
+		out.DiskTotalBytes = disk.Total
+	}
+	sample, err := s.Repo().Latest(ctx)
+	if err != nil {
+		return out, err
+	}
+	if sample != nil && time.Since(sample.At) <= 2*metrics.Interval {
+		out.Sample = sample
+	}
+	return out, nil
+}
 
 // Series is the machine's recent CPU, memory, disk and network.
 //

@@ -191,6 +191,7 @@ export default function Nodes() {
   return (
     <>
       <SectionHeader
+        page
         title="Nodes"
         sub="Connect and manage the machines in this instance. The control plane appears alongside worker nodes."
         actions={

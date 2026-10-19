@@ -12,6 +12,7 @@ import (
 	"github.com/distribution/reference"
 
 	"cubeship/internal/firewall"
+	"cubeship/internal/machine"
 	"cubeship/internal/mesh"
 	"cubeship/internal/platform/authkey"
 	"cubeship/internal/platform/database"
@@ -26,7 +27,8 @@ import (
 // What runs *on* a node is the placing module's business, and it will
 // reach this one through the Desired the agent already asks for.
 type Service struct {
-	db *database.DB
+	db      *database.DB
+	machine *machine.Service
 
 	// hub is what lets this instance ask a machine something. See
 	// commands.go: the answer to a machine's own poll is the only way
@@ -97,6 +99,8 @@ type BuilderCache interface {
 const meshLookupTTL = 30 * time.Second
 
 func NewService(db *database.DB) *Service { return &Service{db: db, hub: newHub()} }
+
+func (s *Service) SetMachine(machine *machine.Service) { s.machine = machine }
 
 func (s *Service) SetStorage(engine StorageEngine) { s.storage = engine }
 

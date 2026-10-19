@@ -87,6 +87,18 @@ func TestWaitHealthyRetriesUntilConsecutiveSuccesses(t *testing.T) {
 	}
 }
 
+func TestDefaultHealthCheckAllowsSlowStartup(t *testing.T) {
+	d := &probeDocker{fakeDocker: fakeDocker{running: true}, failures: 10}
+	o := NewOrchestrator(nil, d, nil, nil, nil, nil, "")
+	o.HealthCheckInterval = 0
+	if err := o.waitHealthy(context.Background(), "candidate", "/ready", 8080, false); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.httpCalls) != 13 {
+		t.Fatalf("probe calls = %d, want 10 failures and 3 successes", len(d.httpCalls))
+	}
+}
+
 func TestWaitHealthyReturnsCancellation(t *testing.T) {
 	d := &probeDocker{fakeDocker: fakeDocker{running: true}}
 	o := &Orchestrator{docker: d, HealthCheckAttempts: 2}
@@ -103,6 +115,8 @@ func TestWaitHealthyReturnsCancellation(t *testing.T) {
 func TestFailedProbeKeepsServingContainer(t *testing.T) {
 	d := &probeDocker{fakeDocker: fakeDocker{nextCreateID: "candidate", running: true}, failures: 100}
 	o, db, a := newDeployFixture(t, d)
+	o.HealthCheckAttempts = 2
+	o.HealthCheckInterval = 0
 	seedContainer(t, db, a.ID, "serving")
 	if _, err := db.ExecContext(context.Background(), "UPDATE apps SET health_path = '/ready' WHERE id = $1", a.ID); err != nil {
 		t.Fatal(err)

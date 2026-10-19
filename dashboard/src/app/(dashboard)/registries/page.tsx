@@ -4,15 +4,14 @@ import { BoxIcon, PlusIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 import { ActionButton } from "@/components/action-button";
+import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
-import { LoadingRows } from "@/components/loading";
 import { SearchBar } from "@/components/search-bar";
 import { SearchableSelect } from "@/components/searchable-select";
 import { SectionHeader } from "@/components/section-header";
 import { StatusBadge } from "@/components/status-badge";
 import { TextField } from "@/components/text-field";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -20,14 +19,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import {
   api,
   type Credential,
@@ -65,12 +56,11 @@ const PROVIDERS: Record<RegistryProvider, { label: string; field: string; placeh
   },
 };
 
+type RegistryRow = { kind: "own" } | { kind: "external"; credential: RegistryCredential };
+
 // Logins for registries Cubeship does not run. Cubeship's own registry
 // needs none of this — it authenticates each user with their API key.
 //
-// A table rather than cards: a login has four short facts and no shape
-// of its own, and what someone comes here to do is scan a list for one
-// of them.
 export default function Registries() {
   const [creds, setCreds] = useState<RegistryCredential[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -142,9 +132,89 @@ export default function Registries() {
 
   const needle = query.trim().toLowerCase();
   const matches = (...parts: (string | undefined)[]) =>
-    parts.some((p) => p !== undefined && p.toLowerCase().includes(needle));
+    parts.some((p) => p?.toLowerCase().includes(needle));
   const shown = (creds ?? []).filter((c) => matches(c.host, c.namespace, c.provider, c.username));
   const ownShown = matches(settings?.registry_host, "cubeship");
+  const rows: RegistryRow[] | null =
+    creds === null
+      ? null
+      : [
+          ...(ownShown ? [{ kind: "own" as const }] : []),
+          ...shown.map((credential) => ({ kind: "external" as const, credential })),
+        ];
+  const columns: Column<RegistryRow>[] = [
+    {
+      id: "registry",
+      header: "Registry",
+      width: 32,
+      wrap: true,
+      cell: (row) => (
+        <span className="font-mono text-xs">
+          {row.kind === "own" ? (
+            (settings?.registry_host ?? "not reachable until a domain is set")
+          ) : (
+            <>
+              {row.credential.host}
+              {row.credential.namespace && (
+                <span className="text-muted-foreground">/{row.credential.namespace}</span>
+              )}
+            </>
+          )}
+        </span>
+      ),
+    },
+    {
+      id: "provider",
+      header: "Provider",
+      width: 20,
+      cell: (row) => {
+        if (row.kind === "own") {
+          return (
+            <span className="inline-flex items-center gap-2 text-sm">
+              <BoxIcon className="size-4 shrink-0 text-primary" />
+              Cubeship
+            </span>
+          );
+        }
+        const Icon = providerIcon(row.credential.provider);
+        return (
+          <span className="inline-flex items-center gap-2 text-sm">
+            <Icon className="size-4 shrink-0" />
+            {PROVIDERS[row.credential.provider]?.label ?? row.credential.provider}
+          </span>
+        );
+      },
+    },
+    {
+      id: "credential",
+      header: "Credential",
+      width: 19,
+      cell: (row) =>
+        row.kind === "own"
+          ? "—"
+          : (accounts.find((a) => a.id === row.credential.credential_id)?.label ?? "—"),
+    },
+    {
+      id: "region",
+      header: "Region",
+      width: 13,
+      cell: (row) => (row.kind === "own" ? "—" : row.credential.region || "—"),
+    },
+    {
+      id: "status",
+      header: "Status",
+      width: 16,
+      cell: (row) => (
+        <span title={row.kind === "external" ? statuses[row.credential.id]?.detail : undefined}>
+          <StatusBadge
+            value={
+              row.kind === "own" ? "running" : (statuses[row.credential.id]?.state ?? "checking")
+            }
+          />
+        </span>
+      ),
+    },
+  ];
 
   return (
     <>
@@ -161,11 +231,6 @@ export default function Registries() {
       />
       <ErrorAlert error={error} />
 
-      {/* Hand-written rather than the DataTable's own, because this
-          table is: Cubeship's own registry is a row with no credential
-          behind it, always first, and it is matched here too — a filter
-          that could not hide the row you are looking for is a filter
-          that lies about the count. */}
       {creds && creds.length > 0 && (
         <SearchBar
           className="mb-4"
@@ -180,89 +245,25 @@ export default function Registries() {
         />
       )}
 
-      {
-        <Card className="py-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="px-4">Registry</TableHead>
-                <TableHead className="px-4">Provider</TableHead>
-                <TableHead className="px-4">Credential</TableHead>
-                <TableHead className="px-4">Region</TableHead>
-                <TableHead className="px-4">Status</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {/* Cubeship's own, always, and always first. It is not a
-                  credential — each user authenticates with their own API
-                  key — so there is nothing here to add or replace. */}
-              {ownShown && (
-                <TableRow
-                  className="cursor-pointer select-none"
-                  onClick={() => router.push("/registries/cubeship")}
-                >
-                  <TableCell className="px-4 py-2.5 font-mono text-xs">
-                    {settings?.registry_host ?? "not reachable until a domain is set"}
-                  </TableCell>
-                  <TableCell className="px-4 py-2.5">
-                    <span className="inline-flex items-center gap-2 text-sm">
-                      <BoxIcon className="size-4 shrink-0 text-primary" />
-                      Cubeship
-                    </span>
-                  </TableCell>
-                  {/* Cubeship's own takes no credential and lives in no
-                    region: each user authenticates with their own API
-                    key. */}
-                  <TableCell className="px-4 py-2.5 text-xs text-muted-foreground">—</TableCell>
-                  <TableCell className="px-4 py-2.5 text-xs text-muted-foreground">—</TableCell>
-                  <TableCell className="px-4 py-2.5">
-                    <StatusBadge value="running" />
-                  </TableCell>
-                </TableRow>
-              )}
+      <DataTable
+        columns={columns}
+        rows={rows}
+        loadingRows={2}
+        rowKey={(row) =>
+          row.kind === "own" ? "Cubeship registry" : `registry-${row.credential.id}`
+        }
+        onRowClick={(row) =>
+          row.kind === "own" ? router.push("/registries/cubeship") : open(row.credential)
+        }
+      />
 
-              {creds === null && <LoadingRows rows={2} columns={5} />}
-
-              {shown.map((c) => (
-                <TableRow key={c.id} className="cursor-pointer select-none" onClick={() => open(c)}>
-                  <TableCell className="px-4 py-2.5 font-mono text-xs">
-                    {c.host}
-                    {c.namespace && <span className="text-muted-foreground">/{c.namespace}</span>}
-                  </TableCell>
-                  <TableCell className="px-4 py-2.5 text-sm">
-                    <span className="inline-flex items-center gap-2">
-                      {(() => {
-                        const Icon = providerIcon(c.provider);
-                        return <Icon className="size-4 shrink-0" />;
-                      })()}
-                      {PROVIDERS[c.provider]?.label ?? c.provider}
-                    </span>
-                  </TableCell>
-                  <TableCell className="px-4 py-2.5 text-sm">
-                    {accounts.find((a) => a.id === c.credential_id)?.label ?? "—"}
-                  </TableCell>
-                  <TableCell className="px-4 py-2.5 font-mono text-xs text-muted-foreground">
-                    {c.region || "—"}
-                  </TableCell>
-                  <TableCell className="px-4 py-2.5" title={statuses[c.id]?.detail}>
-                    <StatusBadge value={statuses[c.id]?.state ?? "checking"} />
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </Card>
-      }
-
-      {
-        <NewRegistryDialog
-          path={path}
-          accounts={accounts}
-          open={adding}
-          onOpenChange={setAdding}
-          onCreated={reload}
-        />
-      }
+      <NewRegistryDialog
+        path={path}
+        accounts={accounts}
+        open={adding}
+        onOpenChange={setAdding}
+        onCreated={reload}
+      />
     </>
   );
 }

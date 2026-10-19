@@ -1,6 +1,7 @@
 "use client";
 
 import { use } from "react";
+import { DetailSectionHeader } from "@/components/detail-section-header";
 import { Notice } from "@/components/notice";
 import { useSession } from "@/components/session-context";
 import { TerminalPanel } from "@/components/terminal-panel";
@@ -19,5 +20,15 @@ export default function ServerShell({ params }: PageProps<"/servers/[name]/shell
   if (!canRootShell(me)) {
     return <Notice>Only an administrator can open a root shell on a server.</Notice>;
   }
-  return <TerminalPanel path={`/nodes/${encodeURIComponent(name)}/shell`} password />;
+  return (
+    <>
+      <DetailSectionHeader
+        backHref="/servers"
+        backLabel="Back to nodes"
+        title={`${name} shell`}
+        sub="Root terminal on this node."
+      />
+      <TerminalPanel path={`/nodes/${encodeURIComponent(name)}/shell`} password />
+    </>
+  );
 }
