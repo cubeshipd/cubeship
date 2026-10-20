@@ -46,3 +46,14 @@ has one. Docker Hub has no public catalogue, so an image there is typed.
 An image is pulled from the internet on every deploy that needs it, on
 whichever machine runs the app. A build source keeps the image on the
 box; an external one does not.
+
+A pull that dies mid-layer on a transient network error — connection
+reset, timeout, EOF — is tried a few times with backoff before the
+deploy fails. Auth refusals and a missing tag are not retried. Template
+installs still undo everything they created when a deploy fails after
+those retries; the retries only make that path rarer.
+
+If the box reaches registries over IPv6 and resets keep happening after
+retries, check the VPS provider's IPv6 path to that registry (GHCR is a
+common case). Preferring outbound IPv4 on the host is an operator fix
+when that path itself is broken — Cubeship does not force it.
