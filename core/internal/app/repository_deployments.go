@@ -290,6 +290,40 @@ func (r *Repository) CurrentDeployment(ctx context.Context, appID int64) (int64,
 	return id, true, nil
 }
 
+// SuccessfulImageForCommit is the newest image this app already built
+// for a Git commit, or "" when nothing succeeded for that SHA.
+//
+// Redeploying the same commit reuses it rather than building again —
+// the container still starts fresh with the env as it is now, which is
+// what pressing Deploy after changing a variable means.
+func (r *Repository) SuccessfulImageForCommit(ctx context.Context, appID int64, gitSHA string) (string, error) {
+	if gitSHA == "" {
+		return "", nil
+	}
+	rows, err := r.q.QueryContext(ctx,
+		`SELECT image_ref FROM deployments
+		 WHERE app_id = $1 AND git_sha = $2 AND status = $3
+		 ORDER BY created_at DESC, id DESC`,
+		appID, gitSHA, DeploymentSucceeded)
+	if err != nil {
+		return "", fmt.Errorf("find a built image for commit %s: %w", gitSHA, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var imageRef string
+		if err := rows.Scan(&imageRef); err != nil {
+			return "", fmt.Errorf("find a built image for commit %s: %w", gitSHA, err)
+		}
+		// StartDeployment records the tag asked for; only a row that
+		// reached SetDeploymentImage holds a reference a container can
+		// run. See resolvedImage.
+		if resolvedImage(imageRef) {
+			return imageRef, nil
+		}
+	}
+	return "", rows.Err()
+}
+
 // DeploymentToRun is the one a machine should be running for an app:
 // the newest that resolved to an image and did not fail.
 //

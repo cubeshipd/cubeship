@@ -22,6 +22,25 @@ type pushTarget struct {
 	Registry buildkit.Login
 }
 
+// reuseBuiltImage returns a prior successful build for commit when one
+// exists. Local is how the original build left the image: something
+// named cubeship-build/ never left this Engine, so pulling it would
+// look in a registry that has never heard of it.
+func (o *Orchestrator) reuseBuiltImage(ctx context.Context, appID int64, commit string, logs io.Writer) (Image, bool, error) {
+	if commit == "" {
+		return Image{}, false, nil
+	}
+	ref, err := o.apps.SuccessfulImageForCommit(ctx, appID, commit)
+	if err != nil {
+		return Image{}, false, err
+	}
+	if ref == "" {
+		return Image{}, false, nil
+	}
+	fmt.Fprintf(logs, "Commit %s was already built; reusing %s\n", commit, ref)
+	return Image{Ref: ref, Local: strings.HasPrefix(ref, "cubeship-build/")}, true, nil
+}
+
 // buildTarget is what the result is called and where it goes.
 //
 // An app on this machine keeps the old answer: a name that only has to

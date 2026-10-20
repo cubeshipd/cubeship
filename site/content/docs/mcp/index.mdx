@@ -18,6 +18,14 @@ with the same key. Point Claude Code, Cursor or whatever you run at it:
 }
 ```
 
+That URL is the **instance** (the daemon), path `/mcp` — the same host
+you open in a browser, not a separate dashboard port such as `:3000`.
+Auth is the API key in `Authorization` only: there is **no MCP OAuth**.
+In Cursor, put the block in `~/.cursor/mcp.json` (or the project's
+`.cursor/mcp.json`) and do not add an `auth` / OAuth section. Make a key
+under [Account → API keys](/docs/users/api-keys) (or
+`cubeship user api-key create cursor`).
+
 From there it can create a project, deploy an app, read the logs and how
 the last deploy ended, attach a database and set the variables, and
 install or update a template — the work of the dashboard, without the
