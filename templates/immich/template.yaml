@@ -34,7 +34,7 @@ apps:
   - key: ml
     name: machine-learning
     image: ghcr.io/immich-app/immich-machine-learning
-    tag: v3.3.3
+    tag: v3.3.4
     port: 3003
     health: /ping
     # The models it downloads on first use.
@@ -45,7 +45,7 @@ apps:
   - key: server
     name: immich
     image: ghcr.io/immich-app/immich-server
-    tag: v3.3.3
+    tag: v3.3.4
     port: 2283
     health: /api/server/ping
     domains:
