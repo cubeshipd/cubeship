@@ -7,7 +7,7 @@ require (
 	github.com/bmatcuk/doublestar/v4 v4.10.3
 	github.com/coder/websocket v1.8.15
 	github.com/distribution/reference v0.6.0
-	github.com/docker/cli v29.9.1+incompatible
+	github.com/docker/cli v29.9.2+incompatible
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/docker/go-connections v0.8.2
 	github.com/go-git/go-git/v5 v5.19.3
