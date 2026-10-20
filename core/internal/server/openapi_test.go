@@ -288,10 +288,12 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 	wantInternal := []string{
 		"/",
 		"/api/",
+		"DELETE /mcp",
 		"DELETE /users/me/api-keys/{id}",
 		"GET /apps/{project}/{env}/{name}/shell",
 		"GET /docs",
 		"GET /healthz",
+		"GET /mcp",
 		"GET /nodes/agent/shell/{id}",
 		"GET /nodes/{name}/components/{component}/shell",
 		"GET /nodes/{name}/shell",
@@ -319,13 +321,10 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 }
 
 // Every schema the document defines is pointed at, and every schema it
-// points at is defined.
-//
-// Both halves catch the same edit from opposite sides: removing the last
-// operation that used a schema leaves it defined and unreachable, and
-// removing a schema still referenced leaves the reference rendering
-// blank in the browser. Neither is a compile error, and neither shows up
-// anywhere but in the published document.
+// points at is defined. Both halves catch the same edit from opposite
+// sides: removing the last use leaves a schema unreachable, and removing
+// a still-referenced schema leaves a blank in the browser. Neither is a
+// compile error, and neither shows up anywhere but in the published document.
 func TestEverySchemaIsDefinedAndUsed(t *testing.T) {
 	f := servertest.New(t)
 	doc := f.Server.OpenAPI()

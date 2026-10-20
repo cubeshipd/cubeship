@@ -376,7 +376,9 @@ path it lives at, and a downloaded binary covers the same ground.
 ## MCP
 
 `https://your-instance/mcp` is the same API for an agent, authenticated
-with the same key. Point Claude Code, Cursor or whatever you run at it:
+with the same key. Point Claude Code, Cursor or whatever you run at it
+(instance URL, not a dashboard-only port; bearer header only — no MCP
+OAuth):
 
 ```json
 {
