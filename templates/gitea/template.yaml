@@ -28,7 +28,7 @@ apps:
     image: gitea/gitea
     # The rootless image: no OpenSSH server to supervise, and SSH cannot be
     # exposed here anyway.
-    tag: "28.1.0-rootless"
+    tag: "28.2.0-rootless"
     port: 3000
     health: /api/healthz
     domains:
