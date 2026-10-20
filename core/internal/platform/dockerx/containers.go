@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
@@ -164,7 +165,53 @@ type RegistryAuth struct {
 // Explicit credentials win. An operator who added a login for a host has
 // said what to use there, and silently preferring anything else would
 // make a failed pull impossible to explain.
+//
+// A transient transport failure — connection reset mid-layer, EOF,
+// timeout — is tried again a few times with backoff. Auth and "manifest
+// unknown" are not; those will not change on another attempt. Every
+// deploy path (apps, datastores, updates) goes through here, so the
+// retry lives once rather than at each caller.
 func (c *Client) PullImage(ctx context.Context, ref string, creds *RegistryAuth) error {
+	var last error
+	for attempt := 0; attempt < pullAttempts; attempt++ {
+		if attempt > 0 {
+			wait := pullRetryBackoff[attempt-1]
+			if err := sleepCtx(ctx, wait); err != nil {
+				return err
+			}
+		}
+		err := c.pullOnce(ctx, ref, creds)
+		if err == nil {
+			return nil
+		}
+		last = err
+		if attempt == pullAttempts-1 || !isTransientPullError(err) {
+			return err
+		}
+	}
+	return last
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+			return nil
+		}
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
+}
+
+func (c *Client) pullOnce(ctx context.Context, ref string, creds *RegistryAuth) error {
 	opts := image.PullOptions{}
 
 	auth, ok, err := c.authFor(ref, creds)

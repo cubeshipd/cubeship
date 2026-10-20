@@ -6,6 +6,22 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.12.2 — 2026-10-20
+
+Faster Git redeploys, more reliable registry pulls, and MCP clients that probe SSE after connect.
+
+### Fixed
+
+**Same Git commit does not rebuild.** Redeploying an app from a Git commit that already succeeded for that app reuses the built image instead of building again. Changing environment variables and pressing Deploy no longer waits on a full rebuild of unchanged source.
+
+**Transient registry pulls.** Image pulls that die mid-layer on a flaky network — connection reset, timeout, EOF, and similar — are tried a few times with short backoff before the deploy fails. Auth refusals and a missing tag still fail immediately. Template installs that fail after those retries still undo what they created.
+
+**MCP stream probes.** `GET` and `DELETE` on `/mcp` reach the MCP handler. Stateless streamable HTTP answers those with 405 and `Allow: POST`, so clients that open an optional SSE stream after connect (including Cursor) no longer fall through to the dashboard HTML 404. Authentication remains a bearer API key on the instance URL — not OAuth, and not the dashboard container on port 3000.
+
+### Upgrade notes
+
+No database migration is needed. Updating the daemon applies the deploy, pull and MCP fixes. If registry pulls over IPv6 still reset after retries, check the host's path to that registry (GHCR is a common case); preferring outbound IPv4 on the box is an operator fix when the path itself is broken.
+
 ## 0.12.1 — 2026-10-18
 
 Give slow-starting apps time to become ready and finish the dashboard header refresh.

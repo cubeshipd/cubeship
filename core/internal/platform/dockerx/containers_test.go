@@ -22,9 +22,13 @@ import (
 )
 
 type fakeAPI struct {
-	pulledRef               string
-	pulledAuth              string
-	pullStream              string
+	pulledRef  string
+	pulledAuth string
+	pullStream string
+	// pullStreams, when set, is drained one entry per ImagePull call so
+	// a retry can see a transient failure and then a clean stream.
+	pullStreams             []string
+	pullCalls               int
 	pullErr                 error
 	createdConfig           *container.Config
 	createdHostConfig       *container.HostConfig
@@ -66,10 +70,16 @@ type fakeAPI struct {
 func (f *fakeAPI) ImagePull(ctx context.Context, ref string, options image.PullOptions) (io.ReadCloser, error) {
 	f.pulledRef = ref
 	f.pulledAuth = options.RegistryAuth
+	f.pullCalls++
 	if f.pullErr != nil {
 		return nil, f.pullErr
 	}
-	return io.NopCloser(strings.NewReader(f.pullStream)), nil
+	stream := f.pullStream
+	if len(f.pullStreams) > 0 {
+		stream = f.pullStreams[0]
+		f.pullStreams = f.pullStreams[1:]
+	}
+	return io.NopCloser(strings.NewReader(stream)), nil
 }
 
 func (f *fakeAPI) ImageLoad(_ context.Context, r io.Reader, _ ...client.ImageLoadOption) (image.LoadResponse, error) {
