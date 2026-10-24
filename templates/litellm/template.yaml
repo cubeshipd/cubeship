@@ -39,7 +39,7 @@ apps:
     name: litellm
     # The published stable release; main-stable points at the same image.
     image: ghcr.io/berriai/litellm
-    tag: "v1.106.0"
+    tag: "v1.106.3"
     port: 4000
     # Answers without a key, and does not wait on the database.
     health: /health/liveliness
