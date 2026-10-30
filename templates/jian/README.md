@@ -10,12 +10,12 @@ on a domain and everything it keeps in a managed PostgreSQL.
 
 ## What it creates
 
-- **jian-web** — the panel, Jian `1.1.0` from `ghcr.io/lucasaarch/jian-web`,
+- **jian-web** — the panel, Jian `1.1.2` from `ghcr.io/lucasaarch/jian-web`,
   on the domain you choose. It is the only public door: it passes `/v1`,
   `/health`, `/openapi.json` and `/jian-remote.mjs` on to the gateway over
   the instance's private network, so the browser, channel webhooks, OAuth
   callbacks and remote workers all use the one domain.
-- **jian** — the gateway, Jian `1.1.0` from `ghcr.io/lucasaarch/jian-gateway`:
+- **jian** — the gateway, Jian `1.1.2` from `ghcr.io/lucasaarch/jian-gateway`:
   the API, the agents and the workers. It has no domain of its own; the web
   app reaches it at its private address, in `JIAN_GATEWAY_URL`. A volume at
   `/home/node` keeps the agents' workbench; everything else lives in the
