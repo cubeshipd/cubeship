@@ -66,9 +66,7 @@ func TestInternalRoutesAreNotDocumented(t *testing.T) {
 	}
 }
 
-// The document is the product's surface, not an inventory of routes.
-// Pinning the list here means removing something from it — or slipping
-// something machine-facing back in — is a deliberate edit.
+// Pinning the public surface here makes additions and removals deliberate.
 func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 	f := servertest.New(t)
 
@@ -207,6 +205,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"PATCH /apps/{project}/{env}/{name}",
 		"PATCH /apps/{project}/{env}/{name}/domains/{domainID}",
 		"PATCH /apps/{project}/{env}/{name}/env",
+		"PATCH /template-installs/{id}",
 		"PATCH /credentials/{id}",
 		"PATCH /datastores/{name}",
 		"PATCH /dns/{id}",
@@ -268,6 +267,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"POST /users",
 		"POST /users/{username}/password",
 		"PUT /apps/{project}/{env}/{name}/env",
+		"PUT /apps/{project}/{env}/{name}/networking",
 		"PUT /apps/{project}/{env}/{name}/volumes/{volumeID}/backups/schedule",
 		"PUT /datastores/{name}/backups/schedule",
 		"PUT /dns/{id}/records",

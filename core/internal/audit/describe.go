@@ -57,6 +57,7 @@ var routes = map[string]phrase{
 	"POST /apps/{project}/{env}/{name}/start":                   {"start app", "started app", "{project}/{env}/{name}", ""},
 	"POST /apps/{project}/{env}/{name}/stop":                    {"stop app", "stopped app", "{project}/{env}/{name}", ""},
 	"PATCH /apps/{project}/{env}/{name}":                        {"change", "changed", "{project}/{env}/{name}", "an app"},
+	"PUT /apps/{project}/{env}/{name}/networking":               {"configure networking for", "configured networking for", "{project}/{env}/{name}", "an app"},
 	"DELETE /apps/{project}/{env}/{name}":                       {"delete", "deleted", "{project}/{env}/{name}", "an app"},
 	"POST /apps/{project}/{env}/{name}/deploy":                  {"deploy", "deployed", "{project}/{env}/{name}", "an app"},
 	"POST /apps/{project}/{env}/{name}/deployments/{id}/cancel": {"cancel a deployment of", "cancelled a deployment of", "{project}/{env}/{name}", "an app"},
@@ -123,6 +124,7 @@ var routes = map[string]phrase{
 	"GET /backups/{id}/download":                                              {"download backup", "downloaded backup", "{id}", ""},
 
 	"POST /templates/{owner}/{repo}/installs": {"install", "installed", "{owner}/{repo}", "a template"},
+	"PATCH /template-installs/{id}":           {"name a template installation", "named a template installation", "{id}", ""},
 	"POST /template-installs/{id}/update":     {"update a template install", "updated a template install", "", ""},
 	"POST /template-installs/{id}/uninstall":  {"uninstall a template", "uninstalled a template", "", ""},
 
