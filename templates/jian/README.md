@@ -10,10 +10,16 @@ on a domain and everything it keeps in a managed PostgreSQL.
 
 ## What it creates
 
-- **jian** — Jian `0.1.0`, from `ghcr.io/lucasaarch/jian-gateway`. The API
-  answers on the domain you choose, and the panel under `/ui/` on the same
-  domain. A volume at `/home/node` keeps the agents' workbench; everything
-  else lives in the database, so a redeploy loses nothing.
+- **jian-web** — the panel, Jian `1.0.0` from `ghcr.io/lucasaarch/jian-web`,
+  on the domain you choose. It is the only public door: it passes `/v1`,
+  `/health`, `/openapi.json` and `/jian-remote.mjs` on to the gateway over
+  the instance's private network, so the browser, channel webhooks, OAuth
+  callbacks and remote workers all use the one domain.
+- **jian** — the gateway, Jian `1.0.0` from `ghcr.io/lucasaarch/jian-gateway`:
+  the API, the agents and the workers. It has no domain of its own; the web
+  app reaches it at its private address, in `JIAN_GATEWAY_URL`. A volume at
+  `/home/node` keeps the agents' workbench; everything else lives in the
+  database, so a redeploy loses nothing.
 - **jian-db** — PostgreSQL 17 with a database named `jian`, attached to the
   gateway. Profiles, sessions, history, memories, the run queue and the
   encrypted vault are all in it. Jian migrates it on start.
@@ -34,7 +40,7 @@ variable on the app whenever you left it blank.
 
 ## After installing
 
-1. Open `https://<your domain>/ui/` and sign in with the token.
+1. Open `https://<your domain>/` and sign in with the token.
 2. Under **Providers**, add a key for Anthropic, Gemini or OpenAI, or sign in
    with ChatGPT.
 3. Create a profile and talk to it.
@@ -100,27 +106,40 @@ link-local addresses stay blocked whatever it says.
 
 ## What does not work here
 
-- **Per-client rate limiting.** Jian limits requests by connection address and
-  does not trust `X-Forwarded-For`, so behind the instance's proxy every
-  client shares one limit.
-- **More than one copy.** Jian migrates on start and copies would race for
-  it, and an app with a volume runs as one copy on one server anyway.
+- **More than one copy of the gateway.** Jian migrates on start and copies
+  would race for it, and an app with a volume runs as one copy on one server
+  anyway.
+
+The gateway believes the client address the web app forwards only from
+private addresses (`JIAN_TRUSTED_PROXIES=uniquelocal`), so rate limits count
+per client. Never give the gateway a public domain while that is set.
 
 ## Updating Jian
 
-The Jian version is the image `tag` in `template.yaml`. Jian migrates its
-database on start and a migration does not undo itself: back the database up
-before changing the installed app to a newer image. Going back to an older
-image does not go back on the schema.
+The Jian version is the image `tag` of both apps in `template.yaml`; the web
+app and the gateway always run the same version. Jian migrates its database on
+start and a migration does not undo itself: back the database up before
+changing the installed apps to a newer image. Going back to an older image
+does not go back on the schema.
+
+From a version before 1.0.0, the gateway no longer serves the panel, and
+answers `/ui/` with a page explaining the move. Add a `jian-web` app with this
+template's settings and `JIAN_GATEWAY_URL` set to
+`http://cubeship-<project>-<environment>-jian:4310`, move the domain from the
+gateway to it, and set `JIAN_TRUSTED_PROXIES=uniquelocal` on the gateway.
+`JIAN_PUBLIC_URL` stays the same, and webhook, OAuth and worker addresses on
+that domain keep working. Open the panel at the domain's root: old `/ui/...`
+bookmarks lead nowhere.
 
 After updating, check each server under **MCP**. It can use a header, a local
 command or an OAuth sign-in, depending on its transport and authentication.
 
 ## Resources
 
-The gateway is limited to 1 CPU and 1 GiB of memory, and the database to the
-same. A Go or C build that an agent runs counts against the gateway's
-share. Raise `limits` in `template.yaml` if you need more.
+The gateway is limited to 1 CPU and 1 GiB of memory, the database to the
+same, and the web app to half a CPU and 512 MiB. A Go or C build that an
+agent runs counts against the gateway's share. Raise `limits` in
+`template.yaml` if you need more.
 
 ---
 

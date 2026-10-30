@@ -30,13 +30,11 @@ apps:
   - key: gateway
     name: jian
     image: ghcr.io/lucasaarch/jian-gateway
-    tag: "0.5.0"
-    # The API and the panel, under /ui/, on one port.
+    tag: "1.0.0"
+    # The API, the agents and the workers. No domain: the web app is the way in.
     port: 4310
     # The one route that answers without the token.
     health: /health
-    domains:
-      - host: ${input.domain}
     attach:
       # Writes DATABASE_URL, which is all Jian reads. It migrates on start.
       - database: db
@@ -53,3 +51,23 @@ apps:
       # Jian wants 32 bytes in base64: 43 characters and one `=`. Letters and
       # digits are all base64, so a generated 43-character secret is a key.
       JIAN_MASTER_KEYS: '{"v1":"${input.masterKey}="}'
+      # Believe the client address, scheme and host the web app forwards, from
+      # private addresses only: rate limits count per client and the panel
+      # cookie is marked Secure.
+      JIAN_TRUSTED_PROXIES: uniquelocal
+
+  - key: web
+    name: jian-web
+    image: ghcr.io/lucasaarch/jian-web
+    # Always the gateway's version.
+    tag: "1.0.0"
+    # The panel, which passes /v1, /health, /openapi.json and /jian-remote.mjs
+    # on to the gateway, so webhooks, OAuth callbacks and workers keep one origin.
+    port: 3000
+    # Its own liveness; /health is the gateway's.
+    health: /web/health
+    domains:
+      - host: ${input.domain}
+    limits: { cpu: 0.5, memory: 512Mi }
+    env:
+      JIAN_GATEWAY_URL: http://${app.gateway.internal}:${app.gateway.port}
