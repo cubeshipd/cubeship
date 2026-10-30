@@ -15,7 +15,7 @@ import {
 
 const workflow = ".github/workflows/issue-triage.yml";
 const generationStep = "Generate Gemini proposal";
-const maxManualAttemptsPerIssue = 4;
+const maxManualAttemptsPerIssue = 5;
 const keys = ["repo", "issueNumber", "issueId", "contentHash", "workflowSha", "runId"];
 const contextKeys = [
   "repo",
@@ -43,6 +43,28 @@ const fail = (code) => {
 const result = (reason, state = "blocked") => ({ state, reason });
 const same = (a, b) => exact(a, keys) && exact(b, keys) && keys.every((k) => a[k] === b[k]);
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// One-line JSON keeps provider-controlled text inert in GitHub Actions logs.
+function logSafe(value) {
+  if (Array.isArray(value)) return value.map(logSafe);
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        /api.?key|secret|password|authorization|credential/i.test(key) || /^(?:token)$/i.test(key)
+          ? "[REDACTED]"
+          : logSafe(item),
+      ]),
+    );
+  if (typeof value !== "string") return value;
+  return value
+    .replace(/\b(?:gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]{20,}|AIza[0-9A-Za-z_-]{20,}|sk_(?:live|test)_[A-Za-z0-9_-]{20,}|sk-[A-Za-z0-9_-]{20,}|npm_[A-Za-z0-9]{30,}|xox[baprs]-[A-Za-z0-9-]{20,})\b/g, "[REDACTED]")
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/-]+=*/gi, "Bearer [REDACTED]")
+    .replace(/\b(api[_ -]?key|access[_ -]?token|refresh[_ -]?token|password|client_secret)\b\s*[:=]\s*["']?[^\s,"'}]+/gi, "$1=[REDACTED]")
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, "[REDACTED PRIVATE KEY]");
+}
+function debug(event, details = {}) {
+  process.stdout.write(`${JSON.stringify(logSafe({ triage_debug: event, ...details }))}\n`);
+}
 export function createTransport(
   fetchImpl = globalThis.fetch,
   { now = Date.now, sleep = wait } = {},
@@ -755,6 +777,7 @@ function finalText(data) {
 }
 export async function generateOnce(a, transport = createTransport(), key, githubReadToken) {
   if (!config.enabled && !a?.context?.dryRun) return result("DISABLED");
+  let stage = "validate_input";
   try {
     inputArtifact(a);
     const c = a.context;
@@ -785,12 +808,18 @@ export async function generateOnce(a, transport = createTransport(), key, github
         thinkingConfig: { includeThoughts: false },
       },
     };
+    debug("gemini.request", {
+      model: config.model,
+      countTokensRequest: { generateContentRequest: { model: `models/${config.model}`, ...body } },
+      generateContentRequest: body,
+    });
     const base = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}`,
       options = {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       };
     await currentUnchanged(input, transport, githubReadToken);
+    stage = "count_tokens";
     const count = await request(
       `${base}:countTokens`,
       {
@@ -804,10 +833,25 @@ export async function generateOnce(a, transport = createTransport(), key, github
       providerStatuses,
       16384,
     );
-    if (count.status !== 200 || !integer(count.data?.totalTokens))
-      return providerFailure("TOKEN_COUNT_FAILED", count);
-    if (count.data.totalTokens > config.maxInputTokens) return result("TOKEN_LIMIT");
+    debug("gemini.count_tokens.response", {
+      status: count.status,
+      response: count.data ?? null,
+      retryAfter: count.retryAfter ?? null,
+    });
+    if (count.status !== 200 || !integer(count.data?.totalTokens)) {
+      const failure = providerFailure("TOKEN_COUNT_FAILED", count);
+      debug("gemini.count_tokens.failed", { result: failure });
+      return failure;
+    }
+    if (count.data.totalTokens > config.maxInputTokens) {
+      debug("gemini.count_tokens.limit_exceeded", {
+        totalTokens: count.data.totalTokens,
+        maxInputTokens: config.maxInputTokens,
+      });
+      return result("TOKEN_LIMIT");
+    }
     await currentUnchanged(input, transport, githubReadToken);
+    stage = "generate_content";
     const response = await request(
       `${base}:generateContent`,
       {
@@ -819,13 +863,40 @@ export async function generateOnce(a, transport = createTransport(), key, github
       providerStatuses,
       65536,
     );
-    if (response.status !== 200 || !response.data)
-      return providerFailure("GENERATION_FAILED", response);
-    const proposal = JSON.parse(finalText(response.data));
-    if (!record(proposal) || Object.hasOwn(proposal, "snapshot")) return result("INVALID_PROPOSAL");
+    debug("gemini.generate_content.response", {
+      status: response.status,
+      response: response.data ?? null,
+      retryAfter: response.retryAfter ?? null,
+    });
+    if (response.status !== 200 || !response.data) {
+      const failure = providerFailure("GENERATION_FAILED", response);
+      debug("gemini.generate_content.failed", { result: failure });
+      return failure;
+    }
+    stage = "validate_proposal";
+    const text = finalText(response.data);
+    let proposal;
+    try {
+      proposal = JSON.parse(text);
+    } catch (e) {
+      debug("gemini.proposal.parse_failed", { error: e.message, generatedText: text });
+      return result("INVALID_PROPOSAL");
+    }
+    if (!record(proposal) || Object.hasOwn(proposal, "snapshot")) {
+      debug("gemini.proposal.rejected", {
+        reason: "INVALID_PROPOSAL",
+        hasSnapshot: record(proposal) && Object.hasOwn(proposal, "snapshot"),
+        proposal,
+      });
+      return result("INVALID_PROPOSAL");
+    }
     // Workflow identity comes from the verified collector, never from model output.
     const decision = validateProposal({ ...proposal, snapshot: input.snapshot }, input);
-    if (decision.state !== "ready") return decision;
+    if (decision.state !== "ready") {
+      debug("gemini.proposal.rejected", { reason: decision.reason, proposal });
+      return decision;
+    }
+    debug("gemini.proposal.accepted", { proposal: decision.proposal });
     return {
       state: "ready",
       reason: "INFERRED",
@@ -833,6 +904,7 @@ export async function generateOnce(a, transport = createTransport(), key, github
       usage: usage(response.data.usageMetadata, count.data.totalTokens),
     };
   } catch (e) {
+    debug("gemini.failed", { stage, error: e?.message ?? String(e) });
     return safeFailure(e);
   }
 }

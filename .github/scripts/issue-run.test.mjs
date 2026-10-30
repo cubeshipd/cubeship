@@ -714,7 +714,7 @@ test("incomplete Actions history is retried twice and still fails closed", async
   assert.deepEqual(delays, [1000, 2000]);
   assert.equal(s.f.generation, 0);
 });
-test("manual live retry is bounded to four attempts for one failed Issue", async (t) => {
+test("manual live retry is bounded to five attempts for one failed Issue", async (t) => {
   const s = await setup(t), c = { ...context, event: "manual" };
   Object.assign(s.f.own, { event: "workflow_dispatch",
     display_title: `issue-triage:${repo}:12:500:manual` });
@@ -745,6 +745,11 @@ test("manual live retry is bounded to four attempts for one failed Issue", async
   s.f.history.push({ ...s.f.runRecord(104, 12), event: "workflow_dispatch", conclusion: "failure",
     display_title: `issue-triage:${repo}:12:104:manual` });
   s.f.jobs.set(104, { total_count: 1, jobs: [{ steps: [{ name: "Generate Gemini proposal",
+    status: "completed", conclusion: "skipped" }] }] });
+  assert.equal((await s.run.collectSnapshot(c, s.tr)).state, "ready");
+  s.f.history.push({ ...s.f.runRecord(105, 12), event: "workflow_dispatch", conclusion: "failure",
+    display_title: `issue-triage:${repo}:12:105:manual` });
+  s.f.jobs.set(105, { total_count: 1, jobs: [{ steps: [{ name: "Generate Gemini proposal",
     status: "completed", conclusion: "skipped" }] }] });
   assert.equal((await s.run.collectSnapshot(c, s.tr)).reason, "MANUAL_RETRY_REFUSED");
   assert.equal(s.f.generation, 0);
