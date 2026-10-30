@@ -7,9 +7,10 @@
 // takes on trust — and creates what the file declares: a project and
 // environment when they do not exist yet, databases, object stores and
 // apps, with their domains, attachments and variables, and then deploys
-// the apps. An update compares a newer release with the one installed and
-// applies what changed without deleting anything; an uninstall deletes the
-// apps, and the data only when asked to.
+// the apps. An update compares the template the catalog lists now with the
+// one installed and applies what changed, deleting nothing but the domains
+// it no longer declares; an uninstall deletes the apps, and the data only
+// when asked to.
 //
 // Every change runs detached from the request, recorded as it goes, and
 // a failure puts back exactly what that run changed.
@@ -160,6 +161,15 @@ type AppSnapshot struct {
 	// Env is each variable the update set, as it was before: null for
 	// one that did not exist.
 	Env map[string]*string `json:"env"`
+	// RemovedDomains is each domain the update took off the app, to give
+	// back.
+	RemovedDomains []SnapshotDomain `json:"removed_domains,omitempty"`
+}
+
+// SnapshotDomain is a domain as an app had it.
+type SnapshotDomain struct {
+	Host string `json:"host"`
+	Port int    `json:"port"`
 }
 
 var (
@@ -172,6 +182,7 @@ var (
 	ErrTooNew             = errors.New("this template needs a newer Cubeship than this instance runs")
 	ErrBusy               = errors.New("this installation is already being changed; wait for that to finish")
 	ErrNotInstalled       = errors.New("this installation is not installed")
+	ErrUpToDate           = errors.New("this installation already matches its template")
 )
 
 // InvalidTemplateError is a file the validator refused on this instance.

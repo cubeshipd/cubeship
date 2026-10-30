@@ -1,7 +1,7 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { ArrowLeftIcon, Trash2Icon } from "lucide-react";
+import { ArrowLeftIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import { use, useEffect, useState } from "react";
 import { CopyField } from "@/components/copy-field";
 import { ErrorAlert } from "@/components/error-alert";
@@ -12,9 +12,16 @@ import { StatusBadge } from "@/components/status-badge";
 import StatusMark from "@/components/status-mark";
 import { installStatus } from "@/components/template-installs";
 import { TemplateUninstallDialog } from "@/components/template-uninstall-dialog";
+import { TemplateUpdateDialog } from "@/components/template-update-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { api, type TemplateInstall, type TemplateResource, type TemplateRun } from "@/lib/api";
+import {
+  api,
+  type TemplateInstall,
+  type TemplateResource,
+  type TemplateRun,
+  type TemplateUpdatePreview,
+} from "@/lib/api";
 import { message } from "@/lib/errors";
 import { takeSecrets } from "@/lib/install-secrets";
 
@@ -24,10 +31,20 @@ import { takeSecrets } from "@/lib/install-secrets";
 export default function TemplateInstallPage({ params }: PageProps<"/templates/installs/[id]">) {
   const { id } = use(params);
   const [uninstalling, setUninstalling] = useState(false);
+  const [updating, setUpdating] = useState(false);
   const install = useQuery({
     queryKey: ["template-installs", id],
     queryFn: () => api.get<TemplateInstall>(`/template-installs/${id}`),
     refetchInterval: (q) => (q.state.data && !q.state.data.busy ? false : 2000),
+  });
+  const actionable = install.data?.status === "installed" && !install.data.busy;
+  // Compared again whenever the installation changes. A caller who may not
+  // update, or a catalog that does not answer, is simply no button.
+  const preview = useQuery({
+    queryKey: ["template-installs", id, "update", install.data?.updated_at],
+    queryFn: () => api.get<TemplateUpdatePreview>(`/template-installs/${id}/update`),
+    enabled: actionable,
+    retry: false,
   });
 
   // Read once and forgotten: this page is the one place they are shown.
@@ -41,7 +58,6 @@ export default function TemplateInstallPage({ params }: PageProps<"/templates/in
   if (!install.data) return <LoadingList rows={4} />;
   const i = install.data;
   const run = i.runs[0];
-  const actionable = i.status === "installed" && !i.busy;
   const gone = i.status === "failed" || i.status === "uninstalled";
   const owned = i.resources.filter((r) => r.kind !== "domain" && r.kind !== "attachment");
 
@@ -63,6 +79,12 @@ export default function TemplateInstallPage({ params }: PageProps<"/templates/in
         </div>
         <div className="flex items-center gap-3">
           {!i.busy && i.status !== "installed" && <StatusBadge value={installStatus(i)} />}
+          {actionable && preview.data?.available && (
+            <Button onClick={() => setUpdating(true)}>
+              <RefreshCwIcon />
+              Update
+            </Button>
+          )}
           {actionable && (
             <Button variant="outline" onClick={() => setUninstalling(true)}>
               <Trash2Icon />
@@ -160,6 +182,17 @@ export default function TemplateInstallPage({ params }: PageProps<"/templates/in
       </div>
 
       {uninstalling && <TemplateUninstallDialog install={i} open onOpenChange={setUninstalling} />}
+      {updating && preview.data && (
+        <TemplateUpdateDialog
+          install={i}
+          preview={preview.data}
+          open
+          onOpenChange={setUpdating}
+          onStarted={(handed) => {
+            if (Object.keys(handed).length > 0) setSecrets(handed);
+          }}
+        />
+      )}
     </>
   );
 }

@@ -695,6 +695,7 @@ const routes: [string, string, Handler][] = [
       return {
         from: install.release,
         to: "v1.3.0",
+        available: install.release !== "v1.3.0",
         changes: [
           {
             action: "change",

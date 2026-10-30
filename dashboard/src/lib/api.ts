@@ -1580,6 +1580,23 @@ export type TemplateInstall = {
 export type TemplateInstallStarted = { install: TemplateInstall; secrets: Record<string, string> };
 export type TemplateRunStarted = { run: TemplateRun; secrets?: Record<string, string> };
 
+export type TemplateChange = {
+  action: "create" | "change" | "remove" | "keep";
+  kind: string;
+  name: string;
+  detail?: string;
+};
+
+// An installation compared with the template the catalog lists now.
+// `available` is the two differing; commits alone do not count.
+export type TemplateUpdatePreview = {
+  from: string;
+  to: string;
+  available: boolean;
+  changes: TemplateChange[];
+  inputs: TemplateInput[];
+};
+
 export type SystemComponent = {
   id: string;
   name: string;

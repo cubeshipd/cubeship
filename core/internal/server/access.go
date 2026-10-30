@@ -93,6 +93,8 @@ var toolRules = map[string]toolRule{
 	"install_template":           tool(user.ResTemplates, user.LevelManage),
 	"list_template_installs":     tool(user.ResTemplates, user.LevelView),
 	"get_template_install":       tool(user.ResTemplates, user.LevelView),
+	"preview_template_update":    tool(user.ResTemplates, user.LevelView),
+	"update_template_install":    tool(user.ResTemplates, user.LevelManage),
 	"uninstall_template_install": tool(user.ResTemplates, user.LevelManage),
 }
 

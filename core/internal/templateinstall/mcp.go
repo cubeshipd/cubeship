@@ -41,6 +41,14 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Description: "One installation: what it created and its recent runs, with the step a running one is on and why a failed one failed. Historical update runs remain visible.",
 	}, t.get)
 	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "preview_template_update",
+		Description: "Compare an installation with the template the catalog lists now, changing nothing: available says whether they differ, and changes lists each app, database, store, variable, domain and attachment an update would create, change or remove, and what it leaves in place. inputs are questions it would need answered. Call this before update_template_install. Requires the admin role.",
+	}, t.preview)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "update_template_install",
+		Description: "Bring an installation in line with the template the catalog lists now, in the background. It applies what changed and deletes nothing but the domains the template no longer declares; if any step fails, the installation is put back as it was. Answer the questions preview_template_update listed in inputs. Requires the admin role.",
+	}, t.update)
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:        "uninstall_template_install",
 		Description: "Uninstall an installation in the background: its apps are deleted, and the project and environment it created once they are empty. Its databases and object stores are kept unless delete_data is true, which deletes them and their data permanently. Requires the admin role.",
 	}, t.uninstall)
@@ -126,6 +134,27 @@ func (t *Tools) get(ctx context.Context, _ *mcp.CallToolRequest, in idInput) (*m
 		return nil, Response{}, err
 	}
 	return nil, toResponse(*found), nil
+}
+
+func (t *Tools) preview(ctx context.Context, _ *mcp.CallToolRequest, in idInput) (*mcp.CallToolResult, Preview, error) {
+	preview, err := t.svc.PreviewUpdate(ctx, t.caller, in.ID)
+	if err != nil {
+		return nil, Preview{}, err
+	}
+	return nil, *preview, nil
+}
+
+type updateInput struct {
+	ID     int64             `json:"id" jsonschema:"the installation's id"`
+	Inputs map[string]string `json:"inputs,omitempty" jsonschema:"answers to the questions preview_template_update listed, by key"`
+}
+
+func (t *Tools) update(ctx context.Context, _ *mcp.CallToolRequest, in updateInput) (*mcp.CallToolResult, RunResponse, error) {
+	run, _, err := t.svc.Update(ctx, t.caller, in.ID, UpdateRequest{Inputs: in.Inputs})
+	if err != nil {
+		return nil, RunResponse{}, err
+	}
+	return nil, toRunResponse(run), nil
 }
 
 type uninstallInput struct {
