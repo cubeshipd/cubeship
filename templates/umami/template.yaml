@@ -25,7 +25,7 @@ apps:
     name: web
     image: ghcr.io/umami-software/umami
     # Umami 3 runs on Postgres only, so there is no DATABASE_TYPE to set.
-    tag: "3.4.0"
+    tag: "3.4.1"
     port: 3000
     health: /api/heartbeat
     domains:
