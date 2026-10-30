@@ -3,6 +3,7 @@ package traefik_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"cubeship/internal/platform/traefik"
 )
@@ -130,6 +131,19 @@ func TestAHealthPathTakesABrokenReplicaOutOfRotation(t *testing.T) {
 	// a dead one in for one more interval.
 	if !strings.Contains(out, "interval: 10s") || !strings.Contains(out, "timeout: 5s") {
 		t.Errorf("the check has no bounds on it:\n%s", out)
+	}
+}
+
+func TestHealthCheckCanProbeAContainerPortDifferentFromItsRoute(t *testing.T) {
+	out := traefik.RoutesYAML([]traefik.Route{{
+		App: "web/production/api", Host: "api.example.com",
+		Servers: []string{"http://one:8080"}, Health: "/ready", HealthPort: 4310,
+		HealthInterval: 7 * time.Second, HealthTimeout: 2 * time.Second,
+	}}, true)
+	for _, want := range []string{`path: "/ready"`, "port: 4310", "interval: 7s", "timeout: 2s"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("health configuration does not include %q:\n%s", want, out)
+		}
 	}
 }
 

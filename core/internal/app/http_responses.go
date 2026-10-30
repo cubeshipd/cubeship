@@ -119,10 +119,11 @@ type DomainResponse struct {
 	Port int `json:"port"`
 }
 
-func toDomains(domains []Domain) []DomainResponse {
+func toDomains(app *App) []DomainResponse {
+	domains := app.Domains
 	out := make([]DomainResponse, 0, len(domains))
 	for _, d := range domains {
-		out = append(out, DomainResponse{ID: d.ID, Host: d.Host, Port: d.Port})
+		out = append(out, DomainResponse{ID: d.ID, Host: d.Host, Port: domainPort(app, d)})
 	}
 	return out
 }

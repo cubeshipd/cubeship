@@ -4,6 +4,7 @@ import { XIcon } from "lucide-react";
 import { useCallback, useEffect, useId, useState } from "react";
 import { ActionButton } from "@/components/action-button";
 import { AppNetwork } from "@/components/app-network";
+import { AppNetworkingSettings } from "@/components/app-networking-settings";
 import { AppTCPPorts } from "@/components/app-tcp-ports";
 import { AppVolumes } from "@/components/app-volumes";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -93,6 +94,7 @@ export function AppConfiguration({
       <ErrorAlert error={error} />
       {section === "network" && (
         <div className="app-network-settings space-y-8">
+          <AppNetworkingSettings app={app} onSaved={onAppChange} />
           <AppNetwork app={app} onSaved={onAppChange} />
           <AppTCPPorts app={app} ports={ports} onChanged={reloadPorts} />
         </div>

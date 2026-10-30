@@ -16,9 +16,8 @@ import (
 // ErrNoListing is a registry that cannot say what it holds.
 //
 // Not every one can. The Docker Registry v2 API defines a catalogue
-// endpoint, and the two biggest public registries — Docker Hub and
-// GitHub's — disable it. That is their answer, not a failure here, and
-// saying so beats an empty list that reads as "you have nothing".
+// endpoint, and Docker Hub disables it. GHCR is handled through GitHub's
+// account-scoped package API instead of its unrelated public catalogue.
 var ErrNoListing = errors.New("this registry does not list what it holds")
 
 // Repositories lists what a credential's registry contains.
@@ -32,6 +31,9 @@ func (s *Service) Repositories(ctx context.Context, caller *user.User, id int64)
 		return listECRRepositories(ctx, s.client, c)
 	case ProviderDigitalOcean:
 		return listDORepositories(ctx, s.client, c)
+	}
+	if c.Host == "ghcr.io" {
+		return listGHCRRepositories(ctx, s.client, c)
 	}
 	return listV2Repositories(ctx, s.client, c)
 }

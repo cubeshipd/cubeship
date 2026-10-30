@@ -32,7 +32,10 @@ type Route struct {
 	// whether it is worth sending traffic to. Empty is no check, which
 	// is the default: a path is a thing only the app's author knows,
 	// and a wrong one takes every replica out of rotation at once.
-	Health string
+	Health         string
+	HealthPort     int
+	HealthInterval time.Duration
+	HealthTimeout  time.Duration
 }
 
 // How hard the edge looks at a replica before it stops trusting it.
@@ -132,8 +135,17 @@ func RoutesYAML(routes []Route, tls bool) string {
 		// before a visitor reaches it, rather than after.
 		if r.Health != "" {
 			fmt.Fprintf(&services, "        healthCheck:\n          path: %q\n", r.Health)
-			fmt.Fprintf(&services, "          interval: %s\n          timeout: %s\n",
-				HealthInterval, HealthTimeout)
+			if r.HealthPort > 0 {
+				fmt.Fprintf(&services, "          port: %d\n", r.HealthPort)
+			}
+			interval, timeout := r.HealthInterval, r.HealthTimeout
+			if interval <= 0 {
+				interval = HealthInterval
+			}
+			if timeout <= 0 {
+				timeout = HealthTimeout
+			}
+			fmt.Fprintf(&services, "          interval: %s\n          timeout: %s\n", interval, timeout)
 		}
 	}
 	out := "http:\n  routers:\n" + routers.String() + "  services:\n" + services.String()

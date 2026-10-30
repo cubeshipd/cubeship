@@ -94,10 +94,10 @@ func TestAPreviewSaysWhatAnUpdateWouldDoAndChangesNothing(t *testing.T) {
 		t.Errorf("preview = %+v", preview)
 	}
 	for _, want := range []Change{
-		{ActionChange, KindApp, "umami/production/web", "ghcr.io/umami-software/umami:3.3.1 → ghcr.io/umami-software/umami:3.4.0"},
-		{ActionCreate, KindDatabase, "umami-cache", "redis 7.4"},
-		{ActionChange, "variable", "SESSION_KEY", "set on umami/production/web"},
-		{ActionKeep, "variable", "SELF", "no longer in the template; left on umami/production/web"},
+		{ActionChange, KindApp, "umami/production/cubeship-umami-template-web", "ghcr.io/umami-software/umami:3.3.1 → ghcr.io/umami-software/umami:3.4.0"},
+		{ActionCreate, KindDatabase, "cubeship-umami-template-umami-cache", "redis 7.4"},
+		{ActionChange, "variable", "SESSION_KEY", "set on umami/production/cubeship-umami-template-web"},
+		{ActionKeep, "variable", "SELF", "no longer in the template; left on umami/production/cubeship-umami-template-web"},
 	} {
 		if !slices.Contains(preview.Changes, want) {
 			t.Errorf("no %+v in %+v", want, preview.Changes)
@@ -122,12 +122,12 @@ func TestAnUpdateAppliesTheTemplateAndRecordsIt(t *testing.T) {
 		updated.Commit != "def5678" || updated.Answers["timezone"] != "Europe/Lisbon" {
 		t.Fatalf("run = %+v, installation = %+v", done, updated)
 	}
-	web := f.w.app("umami/production/web")
+	web := f.w.app("umami/production/cubeship-umami-template-web")
 	if web.SourceTag != "3.4.0" || web.Env["SESSION_KEY"] != secrets["appSecret"] || web.Env["TZ"] != "Europe/Lisbon" ||
 		web.Env["SELF"] == "" {
 		t.Errorf("web = %s %v", web.SourceTag, web.Env)
 	}
-	if !slices.Contains(updated.Resources, Resource{KindDatabase, "cache", "umami-cache"}) {
+	if !slices.Contains(updated.Resources, Resource{KindDatabase, "cache", "cubeship-umami-template-umami-cache"}) {
 		t.Errorf("resources = %v", updated.Resources)
 	}
 	if _, _, err := f.s.Update(context.Background(), admin, in.ID, UpdateRequest{}); !errors.Is(err, ErrUpToDate) {
@@ -148,14 +148,14 @@ func TestAFailedUpdatePutsTheInstallationBack(t *testing.T) {
 	if done.Status != RunFailed || after.Release != "v1.1.0" || after.Status != StatusInstalled {
 		t.Fatalf("run = %+v, installation = %+v", done, after)
 	}
-	web := f.w.app("umami/production/web")
+	web := f.w.app("umami/production/cubeship-umami-template-web")
 	if web.SourceTag != "3.3.1" || web.Env["APP_SECRET"] != secrets["appSecret"] {
 		t.Errorf("web was not put back: %s %v", web.SourceTag, web.Env)
 	}
 	if _, set := web.Env["SESSION_KEY"]; set {
 		t.Errorf("a variable the update added is still set: %v", web.Env)
 	}
-	if !slices.Contains(f.w.events(), "delete database umami-cache") {
+	if !slices.Contains(f.w.events(), "delete database cubeship-umami-template-umami-cache") {
 		t.Errorf("the database the update created was left: %v", f.w.events())
 	}
 }
@@ -213,7 +213,7 @@ func TestAnUpdateMovesADomainToANewApp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := Change{ActionRemove, KindDomain, "analytics.example.com", "from umami/production/web; no longer in the template"}
+	want := Change{ActionRemove, KindDomain, "analytics.example.com", "from umami/production/cubeship-umami-template-web; no longer in the template"}
 	if !preview.Available || !slices.Contains(preview.Changes, want) || len(preview.Inputs) != 0 {
 		t.Fatalf("preview = %+v", preview)
 	}
@@ -222,11 +222,11 @@ func TestAnUpdateMovesADomainToANewApp(t *testing.T) {
 	if done.Status != RunSucceeded {
 		t.Fatalf("run = %+v", done)
 	}
-	web, front := f.w.app("umami/production/web"), f.w.app("umami/production/front")
+	web, front := f.w.app("umami/production/cubeship-umami-template-web"), f.w.app("umami/production/cubeship-umami-template-front")
 	if len(web.Domains) != 0 || len(front.Domains) != 1 || front.Domains[0].Host != "analytics.example.com" {
 		t.Errorf("web = %v, front = %v", web.Domains, front.Domains)
 	}
-	if front.Env["UPSTREAM"] != "http://cubeship-umami-production-web:3000" {
+	if front.Env["UPSTREAM"] != "http://cubeship-umami-production-cubeship-umami-template-web:3000" {
 		t.Errorf("front env = %v", front.Env)
 	}
 }
@@ -243,11 +243,11 @@ func TestAFailedUpdateGivesAMovedDomainBack(t *testing.T) {
 	if done.Status != RunFailed {
 		t.Fatalf("run = %+v", done)
 	}
-	web := f.w.app("umami/production/web")
+	web := f.w.app("umami/production/cubeship-umami-template-web")
 	if len(web.Domains) != 1 || web.Domains[0].Host != "analytics.example.com" {
 		t.Errorf("web domains = %v, events = %v", web.Domains, f.w.events())
 	}
-	if !slices.Contains(f.w.events(), "delete app umami/production/front") {
+	if !slices.Contains(f.w.events(), "delete app umami/production/cubeship-umami-template-front") {
 		t.Errorf("the app the update created was left: %v", f.w.events())
 	}
 }

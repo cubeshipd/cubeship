@@ -147,6 +147,24 @@ type tcpPortsOutput struct {
 	Ports []tcpPortOutput `json:"ports"`
 }
 
+type networkingInput struct {
+	Reference     string        `json:"reference" jsonschema:"the app's reference: project/environment/name"`
+	InternalPorts []int         `json:"internal_ports" jsonschema:"ports the app listens on inside its container"`
+	HealthChecks  []HealthCheck `json:"health_checks" jsonschema:"HTTP readiness checks; every check must pass before a new container is ready"`
+}
+
+func (t *Tools) configureNetworking(ctx context.Context, _ *mcp.CallToolRequest, in networkingInput) (*mcp.CallToolResult, Response, error) {
+	ref, err := ParseReference(in.Reference)
+	if err != nil {
+		return nil, Response{}, err
+	}
+	updated, err := t.svc.ConfigureNetworking(ctx, t.caller, ref, in.InternalPorts, in.HealthChecks)
+	if err != nil {
+		return nil, Response{}, err
+	}
+	return nil, toResponse(updated, t.svc.InstanceConfig(ctx)), nil
+}
+
 func (t *Tools) listTCPPorts(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, tcpPortsOutput, error) {
 	ref, err := ParseReference(in.App)
 	if err != nil {

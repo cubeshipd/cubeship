@@ -75,13 +75,15 @@ type Response struct {
 	Spread bool `json:"spread,omitempty"`
 	// HealthPath is what Traefik asks this app for before it trusts a
 	// container with traffic. Absent is no check, which is the default.
-	HealthPath       string     `json:"health_path,omitempty"`
-	PredeployCommand *Predeploy `json:"predeploy_command,omitempty"`
-	PredeployTimeout int64      `json:"predeploy_timeout,omitempty"`
-	StopGracePeriod  int64      `json:"stop_grace_period"`
-	StopSignal       string     `json:"stop_signal"`
-	WatchPaths       []string   `json:"watch_paths,omitempty"`
-	IgnorePaths      []string   `json:"ignore_paths,omitempty"`
+	HealthPath       string        `json:"health_path,omitempty"`
+	HealthChecks     []HealthCheck `json:"health_checks"`
+	InternalPorts    []int         `json:"internal_ports"`
+	PredeployCommand *Predeploy    `json:"predeploy_command,omitempty"`
+	PredeployTimeout int64         `json:"predeploy_timeout,omitempty"`
+	StopGracePeriod  int64         `json:"stop_grace_period"`
+	StopSignal       string        `json:"stop_signal"`
+	WatchPaths       []string      `json:"watch_paths,omitempty"`
+	IgnorePaths      []string      `json:"ignore_paths,omitempty"`
 	// Limits is what **one copy** of this app may take from the machine
 	// it runs on: three replicas under a one-core limit may take three
 	// cores. Zero in either half is no ceiling, which is the default
@@ -164,6 +166,14 @@ func toReplicas(a *Scoped) []ReplicaResponse {
 // instead of once per app in a listing.
 func toResponse(a *Scoped, in Instance) Response {
 	ref := ReferenceOf(a)
+	internalPorts := a.InternalPorts
+	if internalPorts == nil {
+		internalPorts = []int{}
+	}
+	healthChecks := a.HealthChecks
+	if healthChecks == nil {
+		healthChecks = []HealthCheck{}
+	}
 	var predeploy *Predeploy
 	if !a.Predeploy.Empty() {
 		p := a.Predeploy
@@ -171,14 +181,14 @@ func toResponse(a *Scoped, in Instance) Response {
 	}
 	r := Response{
 		Reference: ref.String(),
-		Name:      a.Name, Domains: toDomains(a.Domains),
+		Name:      a.Name, Domains: toDomains(&a.App),
 		Status: a.Status(), HasContainer: a.HasContainer(), Source: a.Source,
 		Project: a.ProjectSlug, Environment: a.EnvironmentSlug,
-		SuggestedHost:    SuggestedHostFor(ref, in.Domain),
-		InternalHost:     InternalHost(ref),
-		Nodes:            a.Nodes(),
-		Scale:            len(a.Replicas),
-		HealthPath:       a.HealthPath,
+		SuggestedHost: SuggestedHostFor(ref, in.Domain),
+		InternalHost:  InternalHost(ref),
+		Nodes:         a.Nodes(),
+		Scale:         len(a.Replicas),
+		HealthPath:    a.HealthPath, HealthChecks: healthChecks, InternalPorts: internalPorts,
 		PredeployCommand: predeploy,
 		PredeployTimeout: int64(a.Predeploy.Timeout / time.Second),
 		StopGracePeriod:  int64(a.StopGracePeriod / time.Second),
@@ -230,6 +240,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET /apps", auth(http.HandlerFunc(h.list)))
 	r.Handle("GET "+appPath, auth(http.HandlerFunc(h.get)))
 	r.Handle("PATCH "+appPath, auth(http.HandlerFunc(h.update)))
+	r.Handle("PUT "+appPath+"/networking", auth(http.HandlerFunc(h.configureNetworking)))
 	r.Handle("DELETE "+appPath, auth(http.HandlerFunc(h.delete)))
 	r.Handle("POST "+appPath+"/stop", auth(http.HandlerFunc(h.stop)))
 	r.Handle("POST "+appPath+"/start", auth(http.HandlerFunc(h.start)))
@@ -299,6 +310,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrBadHost), errors.Is(err, ErrHostIsTheInstance),
 		errors.Is(err, ErrHostRequired), errors.Is(err, ErrInvalidHealthPath),
+		errors.Is(err, ErrInvalidNetworking),
 		errors.Is(err, ErrInvalidLimits), errors.Is(err, ErrInvalidAutoscale), errors.Is(err, ErrInvalidPredeploy), errors.Is(err, ErrInvalidStopPolicy), errors.Is(err, ErrInvalidPathFilters):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.Is(err, ErrNoBuilder):

@@ -137,11 +137,19 @@ func (s *Service) prepare(ctx context.Context, caller *user.User, req Request) (
 		return nil, err
 	}
 
+	installationName := strings.TrimSpace(req.InstallationName)
+	if installationName == "" {
+		installationName = templateSlug(m.Name, req.Repo)
+	}
+	if err := checkSlug("installation_name", installationName); err != nil {
+		return nil, err
+	}
 	p := &plan{
 		owner: req.Owner, repo: req.Repo, release: release, manifest: m,
-		project:     or(req.Project, m.Project),
-		environment: or(req.Environment, m.Environment),
-		databases:   map[string]string{}, stores: map[string]string{}, apps: map[string]string{},
+		installationName: installationName,
+		project:          or(req.Project, m.Project),
+		environment:      or(req.Environment, m.Environment),
+		databases:        map[string]string{}, stores: map[string]string{}, apps: map[string]string{},
 		storeInputs: map[string]string{}, inputs: map[string]string{}, generated: map[string]string{},
 	}
 	if err := checkSlug("project", p.project); err != nil {
@@ -179,11 +187,21 @@ func (s *Service) prepare(ctx context.Context, caller *user.User, req Request) (
 	return p, nil
 }
 
+var templateNameSeparators = regexp.MustCompile(`[^a-z0-9]+`)
+
+func templateSlug(name, repo string) string {
+	name = strings.Trim(templateNameSeparators.ReplaceAllString(strings.ToLower(strings.TrimSpace(name)), "-"), "-")
+	if slug.Valid(name) {
+		return name
+	}
+	return repo
+}
+
 func (s *Service) nameDatabases(ctx context.Context, caller *user.User, p *plan, overrides map[string]string) error {
 	used := map[string]bool{}
 	for _, db := range p.manifest.Databases {
 		key := "databases." + db.Key
-		name := or(strings.TrimSpace(overrides[db.Key]), db.Name)
+		name := p.componentName(or(strings.TrimSpace(overrides[db.Key]), db.Name))
 		if err := checkSlug(key, name); err != nil {
 			return err
 		}
@@ -205,7 +223,7 @@ func (s *Service) nameStores(ctx context.Context, caller *user.User, p *plan, ov
 	used := map[string]bool{}
 	for _, st := range p.manifest.Stores {
 		key := "stores." + st.Key
-		name := or(strings.TrimSpace(overrides[st.Key]), st.Name)
+		name := p.componentName(or(strings.TrimSpace(overrides[st.Key]), st.Name))
 		if err := checkSlug(key, name); err != nil {
 			return err
 		}
@@ -227,7 +245,7 @@ func (s *Service) nameApps(ctx context.Context, caller *user.User, p *plan, over
 	used := map[string]bool{}
 	for _, a := range p.manifest.Apps {
 		key := "apps." + a.Key
-		name := or(strings.TrimSpace(overrides[a.Key]), a.Name)
+		name := p.componentName(or(strings.TrimSpace(overrides[a.Key]), a.Name))
 		if err := checkSlug(key, name); err != nil {
 			return err
 		}

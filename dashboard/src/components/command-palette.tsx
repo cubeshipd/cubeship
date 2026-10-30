@@ -173,7 +173,7 @@ export function CommandPalette({
       e.preventDefault();
       // The same chord closes it; the other one switches to that half
       // rather than shutting the box you are looking at.
-      setOpen((was) => (was && asked === modeRef.current ? false : true));
+      setOpen((was) => !(was && asked === modeRef.current));
       setMode(asked);
       setQuery("");
     };

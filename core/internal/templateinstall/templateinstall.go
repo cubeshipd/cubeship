@@ -91,7 +91,10 @@ type Install struct {
 	Commit      string
 	Project     string
 	Environment string
-	Status      string
+	// InstallationName distinguishes repeated installs of the same template.
+	// Empty only on installations created before names were introduced.
+	InstallationName string
+	Status           string
 	// Manifest is the template at the release installed, which an update
 	// compares the next one against.
 	Manifest *template.Normalized
@@ -176,13 +179,14 @@ var (
 	ErrNotFound = errors.New("template installation not found")
 	// ErrCatalogUnavailable is the catalog, or GitHub behind it, not
 	// answering — including on an instance that was given no catalog.
-	ErrCatalogUnavailable = errors.New("the template catalog could not be reached")
-	ErrTemplateNotFound   = errors.New("no template is listed at that address")
-	ErrReleaseNotFound    = errors.New("the catalog accepted no release of this template by that tag")
-	ErrTooNew             = errors.New("this template needs a newer Cubeship than this instance runs")
-	ErrBusy               = errors.New("this installation is already being changed; wait for that to finish")
-	ErrNotInstalled       = errors.New("this installation is not installed")
-	ErrUpToDate           = errors.New("this installation already matches its template")
+	ErrCatalogUnavailable  = errors.New("the template catalog could not be reached")
+	ErrTemplateNotFound    = errors.New("no template is listed at that address")
+	ErrReleaseNotFound     = errors.New("the catalog accepted no release of this template by that tag")
+	ErrTooNew              = errors.New("this template needs a newer Cubeship than this instance runs")
+	ErrBusy                = errors.New("this installation is already being changed; wait for that to finish")
+	ErrNotInstalled        = errors.New("this installation is not installed")
+	ErrUpToDate            = errors.New("this installation already matches its template")
+	ErrInstallationNameSet = errors.New("this installation already has a name")
 )
 
 // InvalidTemplateError is a file the validator refused on this instance.

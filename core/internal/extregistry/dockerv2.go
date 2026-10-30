@@ -437,7 +437,13 @@ func (v *v2Client) deleteManifest(ctx context.Context, repository, digest, scope
 // Layers shared between images are counted once per image that names
 // them, so the total is an upper bound rather than what the disk holds.
 func usageV2(ctx context.Context, client *http.Client, c *Credential) (*Usage, error) {
-	repos, err := listV2Repositories(ctx, client, c)
+	var repos []Repo
+	var err error
+	if c.Host == "ghcr.io" {
+		repos, err = listGHCRRepositories(ctx, client, c)
+	} else {
+		repos, err = listV2Repositories(ctx, client, c)
+	}
 	if err != nil {
 		return nil, err
 	}

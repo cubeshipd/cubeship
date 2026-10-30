@@ -203,7 +203,8 @@ func (s *Service) planUpdate(ctx context.Context, caller *user.User, id int64, g
 	up := &updatePlan{
 		plan: &plan{
 			owner: in.Owner, repo: in.Repo, release: chosen, manifest: m,
-			project: in.Project, environment: in.Environment,
+			installationName: in.InstallationName,
+			project:          in.Project, environment: in.Environment,
 			databases: map[string]string{}, stores: map[string]string{}, apps: map[string]string{},
 			storeInputs: map[string]string{}, inputs: map[string]string{}, generated: map[string]string{},
 		},
@@ -258,15 +259,16 @@ func (s *Service) compareDatabases(ctx context.Context, caller *user.User, up *u
 			continue
 		}
 		key := "databases." + db.Key
-		if err := checkSlug(key, db.Name); err != nil {
+		name := up.componentName(db.Name)
+		if err := checkSlug(key, name); err != nil {
 			return err
 		}
-		if _, err := s.datastores.Resolve(ctx, caller, db.Name, RoleToInstall); err == nil {
-			return &TakenError{Kind: "database", Name: db.Name}
+		if _, err := s.datastores.Resolve(ctx, caller, name, RoleToInstall); err == nil {
+			return &TakenError{Kind: "database", Name: name}
 		} else if !errors.Is(err, datastore.ErrNotFound) {
 			return err
 		}
-		up.databases[db.Key] = db.Name
+		up.databases[db.Key] = name
 		up.newDatabases[db.Key] = true
 		detail := strings.TrimSpace(db.Engine + " " + deref(db.Version))
 		if len(db.Extensions) > 0 {
@@ -275,7 +277,7 @@ func (s *Service) compareDatabases(ctx context.Context, caller *user.User, up *u
 			// once the database exists.
 			detail += " with " + strings.Join(db.Extensions, ", ")
 		}
-		up.change(ActionCreate, KindDatabase, db.Name, detail)
+		up.change(ActionCreate, KindDatabase, name, detail)
 	}
 	up.keepRemoved(KindDatabase, func(key string) bool {
 		return slices.ContainsFunc(up.manifest.Databases, func(d template.NormalizedDatabase) bool { return d.Key == key })
@@ -301,17 +303,18 @@ func (s *Service) compareStores(ctx context.Context, caller *user.User, up *upda
 			continue
 		}
 		key := "stores." + st.Key
-		if err := checkSlug(key, st.Name); err != nil {
+		name := up.componentName(st.Name)
+		if err := checkSlug(key, name); err != nil {
 			return err
 		}
-		if _, err := s.stores.Resolve(ctx, caller, st.Name, RoleToInstall); err == nil {
-			return &TakenError{Kind: "object store", Name: st.Name}
+		if _, err := s.stores.Resolve(ctx, caller, name, RoleToInstall); err == nil {
+			return &TakenError{Kind: "object store", Name: name}
 		} else if !errors.Is(err, objectstore.ErrNotFound) {
 			return err
 		}
-		up.stores[st.Key] = st.Name
+		up.stores[st.Key] = name
 		up.newStores[st.Key] = true
-		up.change(ActionCreate, KindStore, st.Name, "")
+		up.change(ActionCreate, KindStore, name, "")
 	}
 	up.keepRemoved(KindStore, func(key string) bool {
 		return slices.ContainsFunc(up.manifest.Stores, func(s template.NormalizedStore) bool { return s.Key == key })

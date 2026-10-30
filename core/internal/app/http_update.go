@@ -11,6 +11,23 @@ import (
 	"cubeship/internal/user"
 )
 
+func (h *Handler) configureNetworking(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		InternalPorts []int         `json:"internal_ports"`
+		HealthChecks  []HealthCheck `json:"health_checks"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	updated, err := h.svc.ConfigureNetworking(r.Context(), user.FromContext(r.Context()), refFrom(r), req.InternalPorts, req.HealthChecks)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toResponse(updated, h.svc.InstanceConfig(r.Context())))
+}
+
 func (h *Handler) create(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Name        string `json:"name"`

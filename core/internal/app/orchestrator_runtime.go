@@ -10,10 +10,16 @@ import (
 )
 
 func healthPort(a *Scoped) int {
+	if len(a.HealthChecks) > 0 {
+		return a.HealthChecks[0].Port
+	}
 	for _, d := range a.Domains {
 		if d.Port > 0 {
 			return d.Port
 		}
+	}
+	if len(a.InternalPorts) == 1 {
+		return a.InternalPorts[0]
 	}
 	if len(a.TCPPorts) > 0 {
 		return a.TCPPorts[0].ContainerPort

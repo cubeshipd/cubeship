@@ -43,7 +43,7 @@ import {
   type DNSZone,
   type Settings,
 } from "@/lib/api";
-import { DEFAULT_PORT, internalUrl, publicUrl } from "@/lib/app-urls";
+import { DEFAULT_PORT, defaultAppPort, internalUrl, publicUrl } from "@/lib/app-urls";
 import { providerIcon } from "@/lib/credentials";
 import { message } from "@/lib/errors";
 
@@ -73,7 +73,6 @@ const INSTANCE_DOMAIN = "instance";
 // than to add another one. Four empty fields below a list is the list
 // saying its real subject is the form.
 export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => void }) {
-  const [error, setError] = useState<string | null>(null);
   const [removing, setRemoving] = useState<AppDomain | null>(null);
   const [editing, setEditing] = useState<AppDomain | null>(null);
   const [adding, setAdding] = useState(false);
@@ -172,8 +171,6 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
           }
         />
 
-        <ErrorAlert error={error} />
-
         <div className="mb-4">
           <SearchBar
             className="mb-0"
@@ -205,6 +202,7 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
       </section>
 
       <AddDomainDialog
+        app={app}
         base={base}
         open={adding}
         onOpenChange={(v) => {
@@ -225,6 +223,7 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
       />
 
       <PortDialog
+        app={app}
         base={base}
         domain={editing}
         onOpenChange={(v) => !v && setEditing(null)}
@@ -232,8 +231,6 @@ export function AppNetwork({ app, onSaved }: { app: App; onSaved: (a: App) => vo
       />
 
       <InternalAddress app={app} />
-
-      <HealthCheck app={app} onSaved={onSaved} onError={setError} />
 
       <ConfirmDialog
         open={removing !== null}
@@ -270,11 +267,13 @@ function InternalAddress({ app }: { app: App }) {
 // input in it is a control nobody expects to find there, and every other
 // list in the dashboard edits a row the same way.
 function PortDialog({
+  app,
   base,
   domain,
   onOpenChange,
   onSaved,
 }: {
+  app: App;
   base: string;
   // The domain being edited, or null when nothing is.
   domain: AppDomain | null;
@@ -321,7 +320,7 @@ function PortDialog({
               placeholder={String(DEFAULT_PORT)}
               value={port}
               onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))}
-              hint={`What this name reaches inside the container. Leave it empty to serve it on ${DEFAULT_PORT}. The app keeps the routing it was deployed with until it is deployed again.`}
+              hint={`What this name reaches inside the container. Leave it empty to use ${defaultAppPort(app)}. The app keeps the routing it was deployed with until it is deployed again.`}
             />
           </div>
           <DialogFooter>
@@ -344,6 +343,7 @@ function PortDialog({
 // that order: adding a name Cubeship then cannot resolve would be an app
 // that says it is served somewhere nothing answers.
 function AddDomainDialog({
+  app,
   base,
   open,
   onOpenChange,
@@ -352,6 +352,7 @@ function AddDomainDialog({
   suggested,
   onSaved,
 }: {
+  app: App;
   base: string;
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -371,16 +372,17 @@ function AddDomainDialog({
   const [zoneID, setZoneID] = useState("");
   const [subdomain, setSubdomain] = useState("");
   const [manualHost, setManualHost] = useState("");
-  // The port is asked for, not detected. 8080 is where most things
-  // listen, so it is the value the field opens on rather than a
-  // placeholder somebody has to accept.
-  const [port, setPort] = useState(String(DEFAULT_PORT));
+  const [port, setPort] = useState(String(defaultAppPort(app)));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // The instance already knows which provider writes its own records and
   // what its address is. An app is on the same host, so both are the
   // right starting point rather than a second thing to answer.
+  useEffect(() => {
+    if (open) setPort(String(defaultAppPort(app)));
+  }, [open, app]);
+
   useEffect(() => {
     if (settings?.dns_provider_id) {
       setProviderID(settings.dns_provider_id);
@@ -454,7 +456,7 @@ function AddDomainDialog({
       onSaved(await api.post<App>(`${base}/domains`, { host, port: Number(port) || 0 }));
       setSubdomain("");
       setManualHost("");
-      setPort(String(DEFAULT_PORT));
+      setPort(String(defaultAppPort(app)));
       setConfirming(false);
       onOpenChange(false);
     } catch (err) {
@@ -560,7 +562,7 @@ function AddDomainDialog({
                 label="Port"
                 fieldClassName="min-w-0 sm:col-span-4"
                 spellCheck={false}
-                placeholder="8080"
+                placeholder={String(defaultAppPort(app))}
                 value={port}
                 onChange={(e) => setPort(e.target.value.replace(/\D/g, ""))}
               />
@@ -643,96 +645,5 @@ function AddDomainDialog({
         onConfirm={add}
       />
     </>
-  );
-}
-
-// What Traefik asks the app for before it trusts a container with
-// traffic.
-//
-// **Off by default, and that is the only safe default.** A check needs
-// a path, the path is something only the app's author knows, and a
-// wrong one does not degrade a name by halves — Traefik marks every
-// replica down at once and the name answers 503.
-//
-// What it buys is the case a retry cannot cover. An app on several
-// machines already routes around a replica that has *gone*: the edge
-// retries against the next one and nobody sees anything. A replica that
-// is up and broken answers the connection, so no retry ever fires for
-// it, and nothing but a check takes it out.
-function HealthCheck({
-  app,
-  onSaved,
-  onError,
-}: {
-  app: App;
-  onSaved: (a: App) => void;
-  onError: (e: string | null) => void;
-}) {
-  const current = app.health_path ?? "";
-  const [path, setPath] = useState(current);
-  const [busy, setBusy] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const dirty = path !== current;
-
-  return (
-    <Card>
-      <CardContent className="space-y-4">
-        <SectionHeader
-          title="Health check"
-          sub="Traefik checks this path before sending traffic. Leave it empty to disable health checks."
-        />
-        <form
-          className="space-y-4"
-          onSubmit={async (e) => {
-            e.preventDefault();
-            setBusy(true);
-            onError(null);
-            setSaved(false);
-            try {
-              onSaved(await api.patch<App>(`/apps/${app.reference}`, { health_path: path }));
-              setSaved(true);
-            } catch (err) {
-              onError(message(err));
-            }
-            setBusy(false);
-          }}
-        >
-          <TextField
-            label="Path"
-            placeholder="/healthz"
-            value={path}
-            onChange={(e) => {
-              setPath(e.target.value);
-              setSaved(false);
-            }}
-            hint="Must start with /. Checked every 10 seconds, with 5 seconds to respond."
-          />
-          {dirty && path !== "" && (
-            <Notice tone="warning">
-              A path this app does not answer 2xx or 3xx on takes every copy of it out of rotation,
-              and {app.domains.length > 0 ? "its names answer" : "it would answer"} 503 rather than
-              degrading. Check what the app actually serves before saving.
-            </Notice>
-          )}
-          {!dirty && current !== "" && app.nodes.length > 1 && (
-            <Notice>
-              A copy of this app that stops answering <code>{current}</code> is taken out of the
-              balancer and the rest go on serving. One that has gone needs no check — the edge
-              retries against the next machine on its own.
-            </Notice>
-          )}
-          <div className="flex items-center gap-3">
-            <ActionButton type="submit" busy={busy} disabled={!dirty}>
-              Save
-            </ActionButton>
-            {saved && !dirty && (
-              <span className="inline-flex items-center gap-1.5 font-mono text-[11px] text-success">
-                <CheckIcon className="size-3.5" /> Saved
-              </span>
-            )}
-          </div>
-        </form>
-      </CardContent>
-    </Card>
   );
 }

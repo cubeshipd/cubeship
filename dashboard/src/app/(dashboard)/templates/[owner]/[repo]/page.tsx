@@ -155,12 +155,18 @@ function InstallForm({
   manifest: TemplateManifest;
 }) {
   const router = useRouter();
+  const defaultName =
+    template.title
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-|-$/g, "") || template.name;
   // Where the apps go: a project that exists, picked, or a new one, named —
   // and inside an existing one, an environment it has or a new one.
   const [projectPick, setProjectPick] = useState(NEW);
   const [newProject, setNewProject] = useState(manifest.project);
   const [envPick, setEnvPick] = useState(NEW);
   const [newEnvironment, setNewEnvironment] = useState(manifest.environment);
+  const [installationName, setInstallationName] = useState(defaultName);
   const projects = useQuery({
     queryKey: ["projects"],
     queryFn: () => api.get<Project[]>("/projects"),
@@ -179,7 +185,6 @@ function InstallForm({
   }, [environments.data, manifest.environment]);
   const project = projectPick === NEW ? newProject.trim() : projectPick;
   const environment = projectPick === NEW || envPick === NEW ? newEnvironment.trim() : envPick;
-  const [names, setNames] = useState<Record<string, string>>({});
   const [inputs, setInputs] = useState<Record<string, string>>({});
   // The DNS records a domain input chose to have written, by input key.
   const [records, setRecords] = useState<Record<string, PendingRecord>>({});
@@ -206,12 +211,12 @@ function InstallForm({
     for (const a of manifest.apps) {
       for (const d of a.domains) {
         const key = /^\$\{input\.([A-Za-z][\w-]*)\}$/.exec(d.host)?.[1];
-        const name = names[`apps.${a.key}`] || a.name;
+        const name = `${installationName}-${a.name}`;
         if (key) out[key] = `${name}.${environment}.${project}.${domain}`;
       }
     }
     return out;
-  }, [settings.data, manifest.apps, names, environment, project]);
+  }, [settings.data, manifest.apps, installationName, environment, project]);
 
   useEffect(() => {
     setInputs((current) => {
@@ -223,28 +228,8 @@ function InstallForm({
     });
   }, [suggested]);
 
-  const nameFields = [
-    ...manifest.apps.map((a) => ({ id: `apps.${a.key}`, label: `App ${a.key}`, fallback: a.name })),
-    ...manifest.databases.map((d) => ({
-      id: `databases.${d.key}`,
-      label: `Database ${d.key}`,
-      fallback: d.name,
-    })),
-    ...manifest.stores.map((s) => ({
-      id: `stores.${s.key}`,
-      label: `Object store ${s.key}`,
-      fallback: s.name,
-    })),
-  ];
-
   async function install() {
     setError(null);
-    const pick = (kind: string) =>
-      Object.fromEntries(
-        Object.entries(names)
-          .filter(([id, value]) => id.startsWith(`${kind}.`) && value.trim() !== "")
-          .map(([id, value]) => [id.slice(kind.length + 1), value.trim()]),
-      );
     try {
       // The records first, the way adding an app's domain does it: a name
       // the install then routes that resolves nowhere is an app answering
@@ -264,7 +249,7 @@ function InstallForm({
         {
           project,
           environment,
-          names: { apps: pick("apps"), databases: pick("databases"), stores: pick("stores") },
+          installation_name: installationName.trim(),
           inputs,
         },
       );
@@ -289,11 +274,7 @@ function InstallForm({
           title="Install template"
           sub="The project and environment are created if needed. Failed installs are rolled back."
         />
-        {/* Two fields or three, one row either way: a third that wrapped
-              left a hole beside it. */}
-        <div
-          className={`grid gap-4 ${projectPick === NEW || envPick === NEW ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}
-        >
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <GlideSelect
             label="Project"
             value={projectPick}
@@ -348,6 +329,14 @@ function InstallForm({
               onChange={(e) => setNewEnvironment(e.target.value)}
             />
           )}
+          <TextField
+            label="Installation Name"
+            spellCheck={false}
+            value={installationName}
+            onChange={(e) => setInstallationName(e.target.value)}
+            placeholder={defaultName}
+            hint="Prefixes every app, database and object store in this installation."
+          />
         </div>
 
         {manifest.inputs.length > 0 && (
@@ -388,24 +377,6 @@ function InstallForm({
             )}
           </div>
         )}
-
-        <details className="group">
-          <summary className="cursor-pointer text-xs text-muted-foreground select-none hover:text-foreground">
-            Names on this instance
-          </summary>
-          <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            {nameFields.map((f) => (
-              <TextField
-                key={f.id}
-                label={f.label}
-                placeholder={f.fallback}
-                value={names[f.id] ?? ""}
-                onChange={(e) => setNames((current) => ({ ...current, [f.id]: e.target.value }))}
-                hint={f.id.startsWith("apps.") ? undefined : "Unique on the whole instance."}
-              />
-            ))}
-          </div>
-        </details>
 
         <ErrorAlert error={error} />
         <div className="flex justify-end border-t border-border pt-5">

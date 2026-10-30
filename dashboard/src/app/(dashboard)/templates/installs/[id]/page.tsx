@@ -1,8 +1,9 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeftIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import { use, useEffect, useState } from "react";
+import { ActionButton } from "@/components/action-button";
 import { CopyField } from "@/components/copy-field";
 import { ErrorAlert } from "@/components/error-alert";
 import { LoadingList } from "@/components/loading";
@@ -15,6 +16,16 @@ import { TemplateUninstallDialog } from "@/components/template-uninstall-dialog"
 import { TemplateUpdateDialog } from "@/components/template-update-dialog";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   api,
   type TemplateInstall,
@@ -30,6 +41,7 @@ import { takeSecrets } from "@/lib/install-secrets";
 // daemon, so what is left to say about one is why.
 export default function TemplateInstallPage({ params }: PageProps<"/templates/installs/[id]">) {
   const { id } = use(params);
+  const queryClient = useQueryClient();
   const [uninstalling, setUninstalling] = useState(false);
   const [updating, setUpdating] = useState(false);
   const install = useQuery({
@@ -57,12 +69,22 @@ export default function TemplateInstallPage({ params }: PageProps<"/templates/in
   if (install.error) return <ErrorAlert error={message(install.error)} />;
   if (!install.data) return <LoadingList rows={4} />;
   const i = install.data;
+  const needsName = i.status === "installed" && !i.installation_name;
   const run = i.runs[0];
   const gone = i.status === "failed" || i.status === "uninstalled";
   const owned = i.resources.filter((r) => r.kind !== "domain" && r.kind !== "attachment");
 
   return (
     <>
+      {needsName && (
+        <InstallationNameDialog
+          install={i}
+          onSaved={(updated) => {
+            queryClient.setQueryData(["template-installs", id], updated);
+            void queryClient.invalidateQueries({ queryKey: ["template-installs"] });
+          }}
+        />
+      )}
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div className="min-w-0">
           <Link
@@ -194,6 +216,72 @@ export default function TemplateInstallPage({ params }: PageProps<"/templates/in
         />
       )}
     </>
+  );
+}
+
+function InstallationNameDialog({
+  install,
+  onSaved,
+}: {
+  install: TemplateInstall;
+  onSaved: (install: TemplateInstall) => void;
+}) {
+  const [name, setName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    try {
+      const updated = await api.patch<TemplateInstall>(`/template-installs/${install.id}`, {
+        installation_name: name.trim(),
+      });
+      onSaved(updated);
+    } catch (cause) {
+      setError(message(cause));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={() => {}}>
+      <DialogContent showCloseButton={false}>
+        <form onSubmit={save} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>Name this installation</DialogTitle>
+            <DialogDescription>
+              Choose a name to identify it in Installed templates. Its existing apps and data keep
+              their current names.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="installation-name" className="text-xs text-muted-foreground">
+              Installation Name
+            </Label>
+            <Input
+              id="installation-name"
+              autoFocus
+              spellCheck={false}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={install.repo}
+            />
+            <p className="text-xs text-muted-foreground">
+              Use lowercase letters, numbers and dashes.
+            </p>
+          </div>
+          <ErrorAlert error={error} />
+          <DialogFooter>
+            <ActionButton type="submit" busy={busy} disabled={!name.trim()}>
+              Save name
+            </ActionButton>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }
 

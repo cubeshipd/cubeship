@@ -1,16 +1,23 @@
 "use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { type ReactNode, useEffect, useId } from "react";
 import { SearchableSelect } from "@/components/searchable-select";
 import { TextField } from "@/components/text-field";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import type { RegistryCredential } from "@/lib/api";
 import {
-  api,
-  type RegistryCredential,
-  type RegistryImage,
-  type RegistryRepository,
-} from "@/lib/api";
+  appTagsKey,
+  buildDataStaleTime,
+  imageTagsKey,
+  loadAppTags,
+  loadImageTags,
+  loadRegistryCredentials,
+  loadRegistryRepositories,
+  registryCredentialsKey,
+  registryRepositoriesKey,
+} from "@/lib/build-data";
 import { selectableImageTags } from "@/lib/image-tags";
 
 // Where a published image comes from: which registry, which image in it,
@@ -67,16 +74,14 @@ export function ImageSource({
   // tag listing there is asked for.
   appReference: string;
 }) {
-  const [registries, setRegistries] = useState<RegistryCredential[] | null>(null);
-  useEffect(() => {
-    api
-      .get<RegistryCredential[]>("/registries")
-      .then(setRegistries)
-      .catch(() => setRegistries([]));
-  }, []);
+  const registriesQuery = useQuery({
+    queryKey: registryCredentialsKey,
+    queryFn: loadRegistryCredentials,
+    staleTime: buildDataStaleTime,
+  });
 
   const onCubeship = value.registry === CUBESHIP;
-  const connected = registries ?? [];
+  const connected = registriesQuery.data ?? [];
   const picked = connected.find((r) => r.host === value.registry);
 
   // Docker Hub is in the list once: as the connected account when there
@@ -97,7 +102,7 @@ export function ImageSource({
           label="Registry"
           choices={choices}
           value={value.registry}
-          busy={registries === null}
+          busy={registriesQuery.isPending}
           onChange={(registry) =>
             // The image and the tag belong to the registry that was left,
             // so neither survives the move. Carrying them over is how a
@@ -180,33 +185,40 @@ function ImageField({
   value: string;
   onChange: (image: string) => void;
 }) {
-  const [repos, setRepos] = useState<RegistryRepository[] | null>(null);
-  const [listable, setListable] = useState(true);
+  const suggestionsID = useId();
+  const repositoriesQuery = useQuery({
+    queryKey: registryRepositoriesKey(registryID ?? 0),
+    queryFn: () => loadRegistryRepositories(registryID ?? 0),
+    enabled: registryID !== undefined,
+    staleTime: buildDataStaleTime,
+  });
+  const repos = repositoriesQuery.data ?? [];
+  const listable =
+    registryID !== undefined &&
+    !repositoriesQuery.isError &&
+    (repositoriesQuery.isPending || repos.length > 0);
+  const full = (name: string) => (host === DOCKER_HUB ? name : `${host}/${name}`);
 
-  useEffect(() => {
-    if (registryID === undefined) {
-      setListable(false);
-      return;
-    }
-    let live = true;
-    setRepos(null);
-    setListable(true);
-    api
-      .get<RegistryRepository[]>(`/registries/${registryID}/repositories`)
-      .then((r) => {
-        if (!live) return;
-        setRepos(r);
-        setListable(r.length > 0);
-      })
-      .catch(() => {
-        if (!live) return;
-        setRepos([]);
-        setListable(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [registryID]);
+  if (host === "ghcr.io") {
+    return (
+      <>
+        <TextField
+          label="Image"
+          value={value}
+          spellCheck={false}
+          list={suggestionsID}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder="ghcr.io/owner/image"
+          hint="Suggestions show packages this login can access. Type an exact public image path to use another GHCR package."
+        />
+        <datalist id={suggestionsID}>
+          {repos.map((repo) => (
+            <option key={repo.name} value={full(repo.name)} />
+          ))}
+        </datalist>
+      </>
+    );
+  }
 
   if (!listable) {
     return (
@@ -220,13 +232,12 @@ function ImageField({
     );
   }
 
-  const full = (name: string) => (host === DOCKER_HUB ? name : `${host}/${name}`);
   return (
     <SearchableSelect
       label="Image"
-      choices={(repos ?? []).map((r) => ({ value: full(r.name), label: r.name }))}
+      choices={repos.map((r) => ({ value: full(r.name), label: r.name }))}
       value={value}
-      busy={repos === null}
+      busy={repositoriesQuery.isPending}
       empty="This registry holds nothing yet."
       onChange={onChange}
     />
@@ -253,49 +264,18 @@ function TagField({
   value: string;
   onChange: (tag: string) => void;
 }) {
-  const [tags, setTags] = useState<RegistryImage[] | null>(null);
-  const [listable, setListable] = useState(true);
+  const tagsQuery = useQuery({
+    queryKey: image ? imageTagsKey(image) : appTagsKey(repository),
+    queryFn: () => (image ? loadImageTags(image) : loadAppTags(repository)),
+    enabled: !!image || !!repository,
+    staleTime: buildDataStaleTime,
+  });
+  const tags = tagsQuery.data ? selectableImageTags(tagsQuery.data) : null;
+  const listable = (!!image || !!repository) && (tagsQuery.isPending || (tags?.length ?? 0) > 0);
 
-  // `value` is deliberately not a dependency. This runs when the image
-  // changes, and reading the current selection inside it is what keeps
-  // it from overwriting a tag somebody just chose — listing it again
-  // because the selection moved would be the effect fighting the field.
-  // `onChange` is recreated by the form on each render, including after
-  // a tag selection; that must not fetch the same list again either.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: see above
   useEffect(() => {
-    if (!image && !repository) {
-      setTags([]);
-      return;
-    }
-    let live = true;
-    setTags(null);
-    setListable(true);
-    const path = image
-      ? `/registries/tags?image=${encodeURIComponent(image)}`
-      : `/registry/images?repository=${encodeURIComponent(repository)}`;
-    api
-      .get<RegistryImage[]>(path)
-      .then((found) => {
-        if (!live) return;
-        const choices = selectableImageTags(found);
-        setTags(choices);
-        setListable(choices.length > 0);
-        // The newest is the answer until somebody says otherwise, and
-        // it is only filled in when nothing is chosen: re-picking it
-        // over what somebody just selected would be this deciding for
-        // them twice.
-        if (choices.length > 0 && value === "") onChange(choices[0].tag);
-      })
-      .catch(() => {
-        if (!live) return;
-        setTags([]);
-        setListable(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [image, repository]);
+    if (tags?.length && value === "") onChange(tags[0].tag);
+  }, [onChange, tags, value]);
 
   if (!listable) {
     return (
@@ -320,7 +300,7 @@ function TagField({
       choices={(tags ?? []).map((t) => ({ value: t.tag, label: t.tag }))}
       value={value}
       placeholder={value || "Select a tag"}
-      busy={tags === null}
+      busy={tagsQuery.isPending}
       onChange={onChange}
       hint="Newest image first by publication or build date. This is the one the app runs until you change it."
     />

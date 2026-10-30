@@ -243,6 +243,16 @@ export type AppTCPPort = {
   created_at: string;
 };
 
+export type AppHealthCheck = {
+  path: string;
+  port: number;
+  initial_delay_seconds: number;
+  period_seconds: number;
+  timeout_seconds: number;
+  failure_threshold: number;
+  success_threshold: number;
+};
+
 // A volume's data kept after the volume was removed or its app deleted.
 export type VolumeOrphan = {
   id: number;
@@ -343,6 +353,8 @@ export type App = {
   // traffic. Absent is no check, which is the default: a wrong path
   // does not degrade a name, it takes every replica out at once.
   health_path?: string;
+  health_checks: AppHealthCheck[];
+  internal_ports: number[];
   // Command run from the new image before a deploy swaps containers.
   predeploy_command?: string | string[];
   predeploy_timeout?: number;
@@ -1561,7 +1573,10 @@ export type TemplateRun = {
 
 export type TemplateInstall = {
   id: number;
+  /** Display label, falling back to the template's name for old installations. */
   name: string;
+  /** Empty only for installations created before names were introduced. */
+  installation_name: string;
   owner: string;
   repo: string;
   release: string;

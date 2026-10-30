@@ -47,6 +47,18 @@ func (r *fakeRecords) CreateInstall(_ context.Context, in *Install) (*Install, e
 	return &c, nil
 }
 
+func (r *fakeRecords) SetInstallationName(_ context.Context, id int64, name string) (*Install, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	in, ok := r.installs[id]
+	if !ok || in.Status != StatusInstalled || in.InstallationName != "" {
+		return nil, ErrNotFound
+	}
+	in.InstallationName = name
+	r.installs[id] = in
+	return &in, nil
+}
+
 func (r *fakeRecords) SaveInstall(_ context.Context, in *Install) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -205,6 +217,19 @@ func umamiRequest() Request {
 		Inputs: map[string]string{"domain": "Analytics.Example.com"}}
 }
 
+func TestTemplateInstallationNameUsesTheTemplateTitleSlug(t *testing.T) {
+	for _, tc := range []struct{ title, repo, want string }{
+		{"Jian", "jian", "jian"},
+		{"Cal.com", "cal-com", "cal-com"},
+		{"Settings", "settings-template", "settings-template"},
+		{"!!!", "template", "template"},
+	} {
+		if got := templateSlug(tc.title, tc.repo); got != tc.want {
+			t.Errorf("templateSlug(%q, %q) = %q, want %q", tc.title, tc.repo, got, tc.want)
+		}
+	}
+}
+
 // install runs an install to its end and returns the installation and
 // its run as recorded.
 func (f *fixture) install(t *testing.T, req Request) (*Install, Run, map[string]string) {
@@ -228,7 +253,7 @@ func TestAnInstallCreatesWhatTheTemplateDeclaresAndDeploysIt(t *testing.T) {
 	if in.Status != StatusInstalled || run.Status != RunSucceeded || in.Release != "v1.1.0" || in.Commit != "abc1234" {
 		t.Fatalf("installation = %+v, run = %+v", in, run)
 	}
-	want := []Resource{{KindProject, "", "umami"}, {KindDatabase, "db", "umami-db"}, {KindApp, "web", "umami/production/web"}}
+	want := []Resource{{KindProject, "", "umami"}, {KindDatabase, "db", "cubeship-umami-template-umami-db"}, {KindApp, "web", "umami/production/cubeship-umami-template-web"}}
 	if !slices.Equal(in.Resources, want) || !slices.Equal(run.Created, want) {
 		t.Errorf("resources = %v, created = %v, want %v", in.Resources, run.Created, want)
 	}
@@ -238,9 +263,12 @@ func TestAnInstallCreatesWhatTheTemplateDeclaresAndDeploysIt(t *testing.T) {
 	if len(secrets["appSecret"]) != 32 {
 		t.Fatalf("generated secret = %q", secrets["appSecret"])
 	}
-	web := f.w.app("umami/production/web")
-	if web.Env["APP_SECRET"] != secrets["appSecret"] || web.Env["DB_HOST"] != "cubeship-db-umami-db" ||
-		web.Env["SELF"] != "http://cubeship-umami-production-web:3000" {
+	if in.InstallationName != "cubeship-umami-template" {
+		t.Fatalf("default installation name = %q, want cubeship-umami-template", in.InstallationName)
+	}
+	web := f.w.app("umami/production/cubeship-umami-template-web")
+	if web.Env["APP_SECRET"] != secrets["appSecret"] || web.Env["DB_HOST"] != "cubeship-db-cubeship-umami-template-umami-db" ||
+		web.Env["SELF"] != "http://cubeship-umami-production-cubeship-umami-template-web:3000" {
 		t.Errorf("variables = %v", web.Env)
 	}
 	if web.Limits.CPU != 1 || web.Limits.Memory != 1<<30 {
@@ -250,10 +278,10 @@ func TestAnInstallCreatesWhatTheTemplateDeclaresAndDeploysIt(t *testing.T) {
 		t.Errorf("database spec = %+v", spec)
 	}
 	for _, event := range []string{
-		"create app umami/production/web external ghcr.io/umami-software/umami:3.3.1",
-		"add domain analytics.example.com to umami/production/web",
-		"attach umami-db to umami/production/web",
-		"deploy umami/production/web",
+		"create app umami/production/cubeship-umami-template-web external ghcr.io/umami-software/umami:3.3.1",
+		"add domain analytics.example.com to umami/production/cubeship-umami-template-web",
+		"attach cubeship-umami-template-umami-db to umami/production/cubeship-umami-template-web",
+		"deploy umami/production/cubeship-umami-template-web",
 		// The installed release's icon, not the newest one the listing names.
 		"set image umami png of abc1234.png",
 	} {
@@ -269,12 +297,12 @@ func TestAFailedDeployUndoesEverythingTheInstallCreatedNewestFirst(t *testing.T)
 	in, run, _ := f.install(t, umamiRequest())
 
 	if in.Status != StatusFailed || run.Status != RunFailed ||
-		!strings.Contains(run.Error, "deploy app umami/production/web failed: container exited with status 1") {
+		!strings.Contains(run.Error, "deploy app umami/production/cubeship-umami-template-web failed: container exited with status 1") {
 		t.Fatalf("installation = %+v, run = %+v", in, run)
 	}
 	events := f.w.events()
 	undone := events[len(events)-3:]
-	if !slices.Equal(undone, []string{"delete app umami/production/web", "delete database umami-db", "delete project umami"}) {
+	if !slices.Equal(undone, []string{"delete app umami/production/cubeship-umami-template-web", "delete database cubeship-umami-template-umami-db", "delete project umami"}) {
 		t.Errorf("undone = %v", undone)
 	}
 }
@@ -317,12 +345,15 @@ func TestRefusalsCreateNothing(t *testing.T) {
 		check   func(error) bool
 	}{
 		"a database name already taken": {
-			prepare: func(w *world, _ *Request) { w.dbs["umami-db"] = true },
-			check:   func(err error) bool { var taken *TakenError; return errors.As(err, &taken) && taken.Name == "umami-db" },
+			prepare: func(w *world, _ *Request) { w.dbs["cubeship-umami-template-umami-db"] = true },
+			check: func(err error) bool {
+				var taken *TakenError
+				return errors.As(err, &taken) && taken.Name == "cubeship-umami-template-umami-db"
+			},
 		},
 		"an answer that is not a hostname": {
 			prepare: func(w *world, req *Request) {
-				w.dbs["umami-db"] = true
+				w.dbs["cubeship-umami-template-umami-db"] = true
 				req.Databases = map[string]string{"db": "analytics-db"}
 				req.Inputs["domain"] = "not a host"
 			},
@@ -406,11 +437,11 @@ func TestUninstallKeepsTheDataUnlessToldOtherwise(t *testing.T) {
 			t.Fatalf("keep=%v: run = %+v, installation = %+v", keep, done, after)
 		}
 		events := f.w.events()
-		if !slices.Contains(events, "delete app umami/production/web") || !slices.Contains(events, "delete project umami") {
+		if !slices.Contains(events, "delete app umami/production/cubeship-umami-template-web") || !slices.Contains(events, "delete project umami") {
 			t.Errorf("keep=%v: %v", keep, events)
 		}
-		if slices.Contains(events, "delete database umami-db") == keep {
-			t.Errorf("keep=%v, and the database was deleted: %v", keep, slices.Contains(events, "delete database umami-db"))
+		if slices.Contains(events, "delete database cubeship-umami-template-umami-db") == keep {
+			t.Errorf("keep=%v, and the database was deleted: %v", keep, slices.Contains(events, "delete database cubeship-umami-template-umami-db"))
 		}
 		if _, err := f.s.Uninstall(context.Background(), admin, in.ID, keep); !errors.Is(err, ErrNotInstalled) {
 			t.Errorf("uninstalling twice: %v", err)
@@ -438,7 +469,7 @@ func TestRecoverUndoesAnInstallAPreviousDaemonLeftRunning(t *testing.T) {
 	f := newFixture("0.7.0")
 	f.records.installs[1] = Install{ID: 1, Status: StatusInstalling}
 	f.records.runs[1] = Run{ID: 1, InstallID: 1, Kind: RunInstall, Status: RunRunning, CreatedBy: admin.ID,
-		Created: []Resource{{KindProject, "", "umami"}, {KindDatabase, "db", "umami-db"}}}
+		Created: []Resource{{KindProject, "", "umami"}, {KindDatabase, "db", "cubeship-umami-template-umami-db"}}}
 	f.records.installs[2] = Install{ID: 2, Status: StatusInstalling}
 	f.records.runs[2] = Run{ID: 2, InstallID: 2, Kind: RunInstall, Status: RunRunning,
 		Created: []Resource{{KindDatabase, "db", "orphan-db"}}}
@@ -446,7 +477,7 @@ func TestRecoverUndoesAnInstallAPreviousDaemonLeftRunning(t *testing.T) {
 	if err := f.s.Recover(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(f.w.events(), []string{"delete database umami-db", "delete project umami"}) {
+	if !slices.Equal(f.w.events(), []string{"delete database cubeship-umami-template-umami-db", "delete project umami"}) {
 		t.Errorf("events = %v", f.w.events())
 	}
 	for id := range f.records.runs {

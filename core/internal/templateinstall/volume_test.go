@@ -29,10 +29,10 @@ func TestAnInstallGivesAnAppItsVolumes(t *testing.T) {
 	if in.Status != StatusInstalled || run.Status != RunSucceeded {
 		t.Fatalf("installation = %+v, run = %+v", in, run)
 	}
-	if !slices.Contains(f.w.events(), "add volume /var/lib/rabbitmq to rabbit/production/broker") {
+	if !slices.Contains(f.w.events(), "add volume /var/lib/rabbitmq to rabbit/production/cubeship-rabbitmq-template-broker") {
 		t.Errorf("no volume was added: %v", f.w.events())
 	}
-	if v := f.w.app("rabbit/production/broker").Volumes; len(v) != 1 || v[0].Path != "/var/lib/rabbitmq" {
+	if v := f.w.app("rabbit/production/cubeship-rabbitmq-template-broker").Volumes; len(v) != 1 || v[0].Path != "/var/lib/rabbitmq" {
 		t.Errorf("the app's volumes are %+v", v)
 	}
 }
@@ -47,7 +47,7 @@ func TestUndoingAnInstallDeletesTheVolumeDataItWrote(t *testing.T) {
 	if in.Status != StatusFailed {
 		t.Fatalf("installation = %+v", in)
 	}
-	if !slices.Contains(f.w.events(), "delete app rabbit/production/broker and its volume data") {
+	if !slices.Contains(f.w.events(), "delete app rabbit/production/cubeship-rabbitmq-template-broker and its volume data") {
 		t.Errorf("the undo kept data only the install wrote: %v", f.w.events())
 	}
 }

@@ -251,6 +251,26 @@ func appPaths(refParams []openapi.Parameter, envRole, appPath string) map[string
 				},
 			},
 		},
+		appPath + "/networking": {
+			"put": {
+				OperationID: "configureAppNetworking",
+				Summary:     "Set internal ports and health checks",
+				Description: "Replaces the app's internal container ports and HTTP readiness checks. Every configured check must pass before each new container is ready. The first check also remains Traefik's ongoing per-replica health probe.",
+				Tags:        []string{"Apps"},
+				Parameters:  refParams,
+				RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+					"internal_ports": arrayOf(openapi.Integer("Port the app listens on inside its container, 1-65535."), "All internal ports declared by the app."),
+					"health_checks":  openapi.Array(openapi.Ref("AppHealthCheck")),
+				}, "internal_ports", "health_checks")),
+				Responses: openapi.Responses{
+					"200": openapi.JSONResponse("The app with its new networking configuration.", openapi.Ref("App")),
+					"400": openapi.TextResponse("An internal port or health check is invalid, or a check references a port not declared by the app."),
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.NotFound,
+				},
+			},
+		},
 		appPath + "/tcp-ports/{portID}": {
 			"delete": {
 				OperationID: "removeAppTCPPort",
@@ -441,14 +461,14 @@ func appPaths(refParams []openapi.Parameter, envRole, appPath string) map[string
 				OperationID: "addAppDomain",
 				Summary:     "Give an app a name to answer at",
 				Description: "An app can answer at several, and each names its own port — one image can expose more than one, and `api.example.com` and `admin.example.com` on one container are two of them.\n\n" +
-					"`port` is what this name reaches inside the container; omitted or 0 falls back to 8080.\n\n" +
+					"`port` is what this name reaches inside the container; omitted or 0 uses the app's only declared internal port, or 8080 when there are zero or multiple.\n\n" +
 					"A name is unique across the instance, not per app: Traefik routes by host and nothing else, so two apps claiming one name would give it two answers.\n\n" +
 					"**The container keeps the labels it was created with**, so a new name is not served until the app is redeployed. Admins only — where an app is served is a routing decision, the same weight as changing its source.",
 				Tags:       []string{"Apps"},
 				Parameters: refParams,
 				RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
 					"host": openapi.String("The name to serve this app at, as a DNS name. It has to resolve to this host before a certificate can issue, and it cannot be the instance's own domain or its registry's."),
-					"port": openapi.Integer("What it reaches inside the container. Omit to read it from the image."),
+					"port": openapi.Integer("What it reaches inside the container. Omit to use the only declared internal port, or 8080 when there are zero or multiple."),
 				}, "host")),
 				Responses: openapi.Responses{
 					"201": openapi.JSONResponse("The app, with the name added.", openapi.Ref("App")),

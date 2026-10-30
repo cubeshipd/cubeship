@@ -80,7 +80,7 @@ func (o *Orchestrator) swapInPlace(ctx context.Context, a *Scoped, replica Repli
 		restore()
 		return fmt.Errorf("start container: %w", err)
 	}
-	if err := o.waitHealthy(ctx, newID, a.HealthPath, healthPort(a), a.HealthPath == "" && len(a.TCPPorts) > 0); err != nil {
+	if err := o.waitAppHealthy(ctx, newID, a); err != nil {
 		o.removeContainer(ctx, newID, "abandoning a container that never became healthy")
 		restore()
 		return fmt.Errorf("health check timed out for container %s: %w", newID, err)
@@ -337,4 +337,66 @@ func (o *Orchestrator) waitHealthy(ctx context.Context, containerID, healthPath 
 		}
 	}
 	return lastErr
+}
+
+func (o *Orchestrator) waitAppHealthy(ctx context.Context, containerID string, a *Scoped) error {
+	if len(a.HealthChecks) == 0 {
+		return o.waitHealthy(ctx, containerID, a.HealthPath, healthPort(a), a.HealthPath == "" && len(a.TCPPorts) > 0)
+	}
+	prober, ok := o.docker.(healthProber)
+	if !ok {
+		return errors.New("docker client does not support health probes")
+	}
+	for _, raw := range a.HealthChecks {
+		check := defaultHealthCheck(raw)
+		if check.InitialDelaySeconds > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(check.InitialDelaySeconds) * time.Second):
+			}
+		}
+		successes, failures := 0, 0
+		var lastErr error
+		for attempt := 0; attempt < o.HealthCheckAttempts; attempt++ {
+			if err := ctx.Err(); err != nil {
+				return err
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(time.Duration(check.PeriodSeconds) * time.Second):
+			}
+			running, err := o.docker.IsRunning(ctx, containerID)
+			if err == nil && !running {
+				err = errors.New("container is not running")
+			}
+			if err == nil {
+				probeCtx, cancel := context.WithTimeout(ctx, time.Duration(check.TimeoutSeconds)*time.Second)
+				err = prober.ProbeHTTP(probeCtx, containerID, check.Path, check.Port)
+				cancel()
+			}
+			if err != nil {
+				lastErr = err
+				failures++
+				successes = 0
+				if failures >= check.FailureThreshold {
+					return fmt.Errorf("health check %s on port %d failed %d times: %w", check.Path, check.Port, failures, lastErr)
+				}
+				continue
+			}
+			failures = 0
+			successes++
+			if successes >= check.SuccessThreshold {
+				break
+			}
+		}
+		if successes < check.SuccessThreshold {
+			if lastErr == nil {
+				lastErr = errors.New("health check did not become ready")
+			}
+			return fmt.Errorf("health check %s on port %d: %w", check.Path, check.Port, lastErr)
+		}
+	}
+	return nil
 }

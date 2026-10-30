@@ -2,13 +2,15 @@ package app
 
 import (
 	"context"
+	"errors"
+	"slices"
+	"strings"
+	"time"
+
 	"cubeship/internal/platform/database"
 	"cubeship/internal/project"
 	"cubeship/internal/slug"
 	"cubeship/internal/user"
-	"errors"
-	"strings"
-	"time"
 )
 
 // Create registers an app in a project's environment and returns it,
@@ -154,6 +156,26 @@ func (s *Service) UpdateBuildArgs(ctx context.Context, caller *user.User, ref Re
 	return s.Resolve(ctx, caller, ref, user.LevelView)
 }
 
+// ConfigureNetworking replaces the app's declared container ports and
+// readiness checks. Every check must pass before a new container is ready.
+func (s *Service) ConfigureNetworking(ctx context.Context, caller *user.User, ref Reference, ports []int, checks []HealthCheck) (*Scoped, error) {
+	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
+	if err != nil {
+		return nil, err
+	}
+	checks, err = validateNetworking(ports, checks)
+	if err != nil {
+		return nil, err
+	}
+	if ports == nil {
+		ports = []int{}
+	}
+	if _, err := s.Repo().UpdateNetworking(ctx, a.ID, ports, checks); err != nil {
+		return nil, err
+	}
+	return s.Resolve(ctx, caller, ref, user.LevelView)
+}
+
 func (s *Service) UpdateWithPredeploy(ctx context.Context, caller *user.User, ref Reference, source *Source, origin *Origin, health *string, limits *Limits, auto *Autoscale, place *Placement, predeploy *Predeploy) (*Scoped, error) {
 	a, err := s.Resolve(ctx, caller, ref, user.LevelManage)
 	if err != nil {
@@ -194,6 +216,27 @@ func (s *Service) UpdateWithPredeploy(ctx context.Context, caller *user.User, re
 	// see ValidHealthPath.
 	if health != nil && !ValidHealthPath(*health) {
 		return nil, ErrInvalidHealthPath
+	}
+	var legacyHealthChecks []HealthCheck
+	legacyHealthPorts := slices.Clone(a.InternalPorts)
+	if health != nil {
+		legacyHealthChecks = slices.Clone(a.HealthChecks)
+		switch {
+		case *health == "":
+			legacyHealthChecks = []HealthCheck{}
+		case len(legacyHealthChecks) > 0:
+			legacyHealthChecks[0].Path = *health
+		default:
+			port := healthPort(a)
+			legacyHealthChecks = []HealthCheck{{Path: *health, Port: port}}
+			if !slices.Contains(legacyHealthPorts, port) {
+				legacyHealthPorts = append(legacyHealthPorts, port)
+			}
+		}
+		legacyHealthChecks, err = validateNetworking(legacyHealthPorts, legacyHealthChecks)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// The ceiling, checked here because a number the Engine refuses
@@ -237,6 +280,11 @@ func (s *Service) UpdateWithPredeploy(ctx context.Context, caller *user.User, re
 
 	if _, err := s.Repo().Update(ctx, a.ID, source, origin, health, limits, auto, predeploy); err != nil {
 		return nil, err
+	}
+	if health != nil {
+		if _, err := s.Repo().UpdateNetworking(ctx, a.ID, legacyHealthPorts, legacyHealthChecks); err != nil {
+			return nil, err
+		}
 	}
 
 	// A ceiling is the one thing about a container the Engine can

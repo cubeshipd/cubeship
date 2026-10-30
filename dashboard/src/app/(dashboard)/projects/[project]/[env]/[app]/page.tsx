@@ -1,5 +1,6 @@
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeftIcon,
   BracesIcon,
@@ -57,6 +58,21 @@ import {
   type EnvView,
   type ResolvedVar,
 } from "@/lib/api";
+import {
+  appTagsKey,
+  buildDataStaleTime,
+  gitBranchRequest,
+  gitRepositoriesKey,
+  imageTagsKey,
+  loadAppTags,
+  loadGitRepositories,
+  loadImageTags,
+  loadRegistryCredentials,
+  loadRegistryRepositories,
+  registryCredentialsKey,
+  registryHostForImage,
+  registryRepositoriesKey,
+} from "@/lib/build-data";
 import { message } from "@/lib/errors";
 
 // One app, under the environment it lives in — which is the only place
@@ -102,6 +118,7 @@ const stillRunning = "This deploy is still running. Wait for it to finish.";
 
 function Detail({ reference, project, env }: { reference: string; project: string; env: string }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const me = useSession();
   const { setActions } = useAppWorkspaceActions();
   const [app, setApp] = useState<App | null>(null);
@@ -201,6 +218,64 @@ function Detail({ reference, project, env }: { reference: string; project: strin
     starting,
   ]);
   useEffect(reload, [reload]);
+  useEffect(() => {
+    if (!app) return;
+
+    // Build data is slow to obtain from Git and registry providers. Load
+    // it while the operator is reading the app overview so opening Build
+    // does not start with a blank repository, image, or tag selector.
+    void queryClient.prefetchQuery({
+      queryKey: gitRepositoriesKey,
+      queryFn: loadGitRepositories,
+      staleTime: buildDataStaleTime,
+    });
+
+    if (app.source === "railpack" || app.source === "dockerfile") {
+      const branches = gitBranchRequest(app.repo ?? "");
+      if (branches) {
+        void queryClient.prefetchQuery({
+          queryKey: branches.key,
+          queryFn: branches.load,
+          staleTime: buildDataStaleTime,
+        });
+      }
+    }
+
+    if (app.source === "external" && app.image) {
+      void queryClient.prefetchQuery({
+        queryKey: imageTagsKey(app.image),
+        queryFn: () => loadImageTags(app.image ?? ""),
+        staleTime: buildDataStaleTime,
+      });
+      void queryClient
+        .prefetchQuery({
+          queryKey: registryCredentialsKey,
+          queryFn: loadRegistryCredentials,
+          staleTime: buildDataStaleTime,
+        })
+        .then(() => {
+          const host = registryHostForImage(app.image ?? "");
+          const registry = queryClient
+            .getQueryData<Awaited<ReturnType<typeof loadRegistryCredentials>>>(
+              registryCredentialsKey,
+            )
+            ?.find((credential) => credential.host === host);
+          if (registry) {
+            return queryClient.prefetchQuery({
+              queryKey: registryRepositoriesKey(registry.id),
+              queryFn: () => loadRegistryRepositories(registry.id),
+              staleTime: buildDataStaleTime,
+            });
+          }
+        });
+    } else if (app.source === "registry" && app.tag) {
+      void queryClient.prefetchQuery({
+        queryKey: appTagsKey(app.reference),
+        queryFn: () => loadAppTags(app.reference),
+        staleTime: buildDataStaleTime,
+      });
+    }
+  }, [app, queryClient]);
   useEffect(() => {
     if (typeof window === "undefined") return;
     const requested = new URLSearchParams(window.location.search).get("tab");

@@ -54,16 +54,17 @@ func (s *Service) compareApps(ctx context.Context, caller *user.User, up *update
 			continue
 		}
 		key := "apps." + a.Key
-		if err := checkSlug(key, a.Name); err != nil {
+		name := up.componentName(a.Name)
+		if err := checkSlug(key, name); err != nil {
 			return err
 		}
-		ref := app.Reference{Project: up.project, Environment: up.environment, Name: a.Name}
+		ref := app.Reference{Project: up.project, Environment: up.environment, Name: name}
 		if _, err := s.apps.Resolve(ctx, caller, ref, RoleToInstall); err == nil {
 			return &TakenError{Kind: "app", Name: ref.String()}
 		} else if !errors.Is(err, app.ErrNotFound) {
 			return err
 		}
-		up.apps[a.Key] = a.Name
+		up.apps[a.Key] = name
 		up.newApps[a.Key] = true
 		up.change(ActionCreate, KindApp, ref.String(), sourceLabel(a.Source))
 	}

@@ -1,17 +1,18 @@
 "use client";
 
+import { useQuery } from "@tanstack/react-query";
 import { GitBranchIcon } from "lucide-react";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import { ErrorAlert } from "@/components/error-alert";
 import { GlideSelect, type GlideSelectOption } from "@/components/glide-select";
 import { GiteaIcon, GitHubIcon, GitLabIcon } from "@/components/icons";
-import { ApiError, api, type GitBranch, type GitRepository } from "@/lib/api";
+import {
+  buildDataStaleTime,
+  gitBranchRequest,
+  gitRepositoriesKey,
+  loadGitRepositories,
+} from "@/lib/build-data";
 import { message } from "@/lib/errors";
-
-type RepositoryChoice = GitRepository & {
-  provider: "github" | "bitbucket" | "gitlab" | "gitea";
-  url: string;
-};
 
 const comparableURL = (url: string) => url.replace(/\.git\/?$/i, "").replace(/\/$/, "");
 
@@ -30,64 +31,15 @@ export function GitSource({
   onRepo: (url: string, defaultBranch: string) => void;
   onRef: (ref: string) => void;
 }) {
-  const [repositories, setRepositories] = useState<RepositoryChoice[]>([]);
-  const [branches, setBranches] = useState<GitBranch[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingBranches, setLoadingBranches] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const loadRepositories = useCallback(() => {
-    setLoading(true);
-    Promise.allSettled([
-      api.get<GitRepository[]>("/github/repositories"),
-      api.get<GitRepository[]>("/bitbucket/repositories"),
-      api.get<GitRepository[]>("/gitremotes/repositories"),
-    ])
-      .then(([github, bitbucket, remotes]) => {
-        const from = (
-          result: PromiseSettledResult<GitRepository[]>,
-          provider: "github" | "bitbucket",
-        ) =>
-          result.status === "fulfilled"
-            ? result.value.map((entry) => ({
-                ...entry,
-                provider,
-                url: `https://${provider === "github" ? "github.com" : "bitbucket.org"}/${entry.full_name}`,
-              }))
-            : [];
-        const remoteRepos =
-          remotes.status === "fulfilled"
-            ? remotes.value.filter(
-                (entry): entry is RepositoryChoice =>
-                  !!entry.url && (entry.provider === "gitlab" || entry.provider === "gitea"),
-              )
-            : [];
-        setRepositories([
-          ...from(github, "github"),
-          ...from(bitbucket, "bitbucket"),
-          ...remoteRepos,
-        ]);
-        const failure = [
-          github.status === "rejected" &&
-          (!(github.reason instanceof ApiError) || github.reason.status !== 409)
-            ? github.reason
-            : null,
-          bitbucket.status === "rejected" ? bitbucket.reason : null,
-          remotes.status === "rejected" ? remotes.reason : null,
-        ].find(Boolean);
-        setError(failure ? message(failure) : null);
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
-  useEffect(loadRepositories, [loadRepositories]);
-  useEffect(() => {
-    const recheck = () => {
-      if (document.visibilityState === "visible") loadRepositories();
-    };
-    window.addEventListener("visibilitychange", recheck);
-    return () => window.removeEventListener("visibilitychange", recheck);
-  }, [loadRepositories]);
+  const repositoryQuery = useQuery({
+    queryKey: gitRepositoriesKey,
+    queryFn: loadGitRepositories,
+    staleTime: buildDataStaleTime,
+  });
+  const repositories = repositoryQuery.data?.repositories ?? [];
+  const loading = repositoryQuery.isPending;
+  const error =
+    repositoryQuery.data?.error ?? (repositoryQuery.error ? message(repositoryQuery.error) : null);
 
   const selected = repositories.find((entry) => comparableURL(entry.url) === comparableURL(repo));
   const match = repo.match(
@@ -98,32 +50,16 @@ export function GitSource({
   const fullName = selected?.full_name ?? match?.[2] ?? "";
   const selectedRepo = selected?.url ?? (match ? comparableURL(repo) : repo);
 
-  useEffect(() => {
-    if ((!selected && !match) || !fullName.includes("/")) {
-      setBranches([]);
-      return;
-    }
-    let live = true;
-    setLoadingBranches(true);
-    api
-      .get<GitBranch[]>(
-        provider === "gitlab" || provider === "gitea"
-          ? `/gitremotes/branches?repo=${encodeURIComponent(selectedRepo)}`
-          : `/${provider}/branches?repo=${encodeURIComponent(fullName)}`,
-      )
-      .then((found) => {
-        if (live) setBranches(found ?? []);
-      })
-      .catch(() => {
-        if (live) setBranches([]);
-      })
-      .finally(() => {
-        if (live) setLoadingBranches(false);
-      });
-    return () => {
-      live = false;
-    };
-  }, [match?.[0], fullName, provider, selectedRepo, selected]);
+  const branchRequest =
+    (selected || match) && fullName.includes("/") ? gitBranchRequest(selectedRepo) : null;
+  const branchQuery = useQuery({
+    queryKey: branchRequest?.key ?? ["git-branches", "none", ""],
+    queryFn: branchRequest?.load ?? (() => Promise.resolve([])),
+    enabled: branchRequest !== null,
+    staleTime: buildDataStaleTime,
+  });
+  const branches = branchQuery.data ?? [];
+  const loadingBranches = branchQuery.isPending && branchRequest !== null;
 
   const repoChoices: GlideSelectOption[] = repositories.map((entry) => ({
     value: entry.url,

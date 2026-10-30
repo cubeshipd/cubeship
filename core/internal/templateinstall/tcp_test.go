@@ -41,8 +41,8 @@ func TestAnInstallPublishesAnAppsTCPPorts(t *testing.T) {
 		t.Fatalf("installation = %+v, run = %+v", in, run)
 	}
 	for _, want := range []string{
-		"publish port 22 of gitlab/production/gitlab on 2200",
-		"publish port 9418 of gitlab/production/gitlab on 0",
+		"publish port 22 of gitlab/production/cubeship-gitlab-template-gitlab on 2200",
+		"publish port 9418 of gitlab/production/cubeship-gitlab-template-gitlab on 0",
 	} {
 		if !slices.Contains(f.w.events(), want) {
 			t.Errorf("no %q: %v", want, f.w.events())

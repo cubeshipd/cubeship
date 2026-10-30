@@ -1,6 +1,7 @@
 "use client";
 
 import { SiGithub } from "@icons-pack/react-simple-icons";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   ActivityIcon,
   ArchiveIcon,
@@ -373,6 +374,7 @@ function UserMenu({ me, mobile = false }: { me: Me; mobile?: boolean }) {
 
 function useSignOut() {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const [signingOut, setSigningOut] = useState(false);
 
   async function signOut() {
@@ -380,6 +382,7 @@ function useSignOut() {
     setSigningOut(true);
     try {
       await api.post("/auth/logout");
+      queryClient.clear();
       router.replace("/login");
     } catch (error) {
       toast.error(message(error));

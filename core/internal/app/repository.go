@@ -20,7 +20,7 @@ func NewRepository(q database.Queryer) *Repository {
 }
 
 const columns = `id, project_id, environment_id, name, source, source_image,
-	 source_tag, source_repo, source_ref, source_dockerfile, health_path, scale, spread,
+	 source_tag, source_repo, source_ref, source_dockerfile, health_path, internal_ports, health_checks, scale, spread,
 	cpu_limit, memory_limit,
 	autoscale_min, autoscale_max, autoscale_cpu, autoscaled_at,
 	env, predeploy_command, predeploy_timeout, stop_grace_period, stop_signal, watch_paths, ignore_paths, build_args, created_at`
@@ -37,11 +37,11 @@ type scanner interface{ Scan(dest ...any) error }
 // app reported `autodeploy`, and the registry webhook redeployed apps
 // somebody had pinned to a version. Nothing failed; it just stopped
 // being true.
-func dests(a *App, envJSON, commandJSON, watchJSON, ignoreJSON, buildJSON *[]byte, timeout *int64, stopGrace *int64, stopSignal *string) []any {
+func dests(a *App, envJSON, commandJSON, watchJSON, ignoreJSON, buildJSON, portsJSON, checksJSON *[]byte, timeout *int64, stopGrace *int64, stopSignal *string) []any {
 	return []any{
 		&a.ID, &a.ProjectID, &a.EnvironmentID, &a.Name,
 		&a.Source, &a.SourceImage, &a.SourceTag, &a.SourceRepo, &a.SourceRef, &a.SourceDockerfile,
-		&a.HealthPath, &a.Scale, &a.Spread,
+		&a.HealthPath, portsJSON, checksJSON, &a.Scale, &a.Spread,
 		&a.Limits.CPU, &a.Limits.Memory,
 		&a.Autoscale.Min, &a.Autoscale.Max, &a.Autoscale.CPU, &a.Autoscale.At,
 		envJSON, commandJSON, timeout, stopGrace, stopSignal, watchJSON, ignoreJSON, buildJSON, &a.CreatedAt,
@@ -65,8 +65,8 @@ func scan(row scanner) (*App, error) {
 	var timeout int64
 	var stopGrace int64
 	var stopSignal string
-	var watchJSON, ignoreJSON, buildJSON []byte
-	if err := row.Scan(dests(&a, &envJSON, &commandJSON, &watchJSON, &ignoreJSON, &buildJSON, &timeout, &stopGrace, &stopSignal)...); err != nil {
+	var watchJSON, ignoreJSON, buildJSON, portsJSON, checksJSON []byte
+	if err := row.Scan(dests(&a, &envJSON, &commandJSON, &watchJSON, &ignoreJSON, &buildJSON, &portsJSON, &checksJSON, &timeout, &stopGrace, &stopSignal)...); err != nil {
 		return nil, err
 	}
 	if err := envvar.UnmarshalJSONB(envJSON, &a.Env); err != nil {
@@ -80,6 +80,16 @@ func scan(row scanner) (*App, error) {
 	a.Predeploy.Timeout = time.Duration(timeout) * time.Second
 	a.StopGracePeriod = time.Duration(stopGrace) * time.Second
 	a.StopSignal = stopSignal
+	if len(portsJSON) != 0 && string(portsJSON) != "null" {
+		if err := json.Unmarshal(portsJSON, &a.InternalPorts); err != nil {
+			return nil, fmt.Errorf("decode internal ports for app %q: %w", a.Name, err)
+		}
+	}
+	if len(checksJSON) != 0 && string(checksJSON) != "null" {
+		if err := json.Unmarshal(checksJSON, &a.HealthChecks); err != nil {
+			return nil, fmt.Errorf("decode health checks for app %q: %w", a.Name, err)
+		}
+	}
 	if len(watchJSON) != 0 && string(watchJSON) != "null" {
 		if err := json.Unmarshal(watchJSON, &a.WatchPaths); err != nil {
 			return nil, fmt.Errorf("decode watch paths for app %q: %w", a.Name, err)
@@ -210,6 +220,26 @@ func (r *Repository) UpdateBuildArgs(ctx context.Context, appID int64, args map[
 	a, err := scan(row)
 	if err != nil {
 		return nil, fmt.Errorf("update build args: %w", err)
+	}
+	return a, r.attach(ctx, []*App{a})
+}
+
+func (r *Repository) UpdateNetworking(ctx context.Context, appID int64, ports []int, checks []HealthCheck) (*App, error) {
+	portsJSON, err := json.Marshal(ports)
+	if err != nil {
+		return nil, fmt.Errorf("encode internal ports: %w", err)
+	}
+	checksJSON, err := json.Marshal(checks)
+	if err != nil {
+		return nil, fmt.Errorf("encode health checks: %w", err)
+	}
+	row := r.q.QueryRowContext(ctx, `UPDATE apps
+		SET internal_ports = $1::jsonb, health_checks = $2::jsonb,
+		    health_path = COALESCE((SELECT item->>'path' FROM jsonb_array_elements($2::jsonb) item LIMIT 1), '')
+		WHERE id = $3 RETURNING `+columns, portsJSON, checksJSON, appID)
+	a, err := scan(row)
+	if err != nil {
+		return nil, fmt.Errorf("update app networking: %w", err)
 	}
 	return a, r.attach(ctx, []*App{a})
 }

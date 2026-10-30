@@ -20,7 +20,7 @@ func NewRepository(q database.Queryer) *Repository {
 	return &Repository{q: q}
 }
 
-const installColumns = `id, owner, repo, release, commit_sha, project, environment, status,
+const installColumns = `id, owner, repo, release, commit_sha, project, environment, installation_name, status,
 	manifest, answers, resources, created_by, created_at, updated_at`
 
 const runColumns = `id, install_id, kind, from_release, to_release, status, step, error,
@@ -33,7 +33,7 @@ func scanInstall(row scanner) (*Install, error) {
 	var manifest, answers, resources []byte
 	var createdBy sql.NullInt64
 	if err := row.Scan(&in.ID, &in.Owner, &in.Repo, &in.Release, &in.Commit, &in.Project, &in.Environment,
-		&in.Status, &manifest, &answers, &resources, &createdBy, &in.CreatedAt, &in.UpdatedAt); err != nil {
+		&in.InstallationName, &in.Status, &manifest, &answers, &resources, &createdBy, &in.CreatedAt, &in.UpdatedAt); err != nil {
 		return nil, err
 	}
 	if string(manifest) != "null" {
@@ -111,15 +111,26 @@ func (r *Repository) CreateInstall(ctx context.Context, in *Install) (*Install, 
 		return nil, err
 	}
 	created, err := scanInstall(r.q.QueryRowContext(ctx, `
-		INSERT INTO template_installs (owner, repo, release, commit_sha, project, environment, status, manifest, answers, resources, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		INSERT INTO template_installs (owner, repo, release, commit_sha, project, environment, installation_name, status, manifest, answers, resources, created_by)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		RETURNING `+installColumns,
-		in.Owner, in.Repo, in.Release, in.Commit, in.Project, in.Environment, in.Status,
+		in.Owner, in.Repo, in.Release, in.Commit, in.Project, in.Environment, in.InstallationName, in.Status,
 		manifest, answers, resources, nullID(in.CreatedBy)))
 	if err != nil {
 		return nil, fmt.Errorf("record installation: %w", err)
 	}
 	return created, nil
+}
+
+func (r *Repository) SetInstallationName(ctx context.Context, id int64, name string) (*Install, error) {
+	in, err := scanInstall(r.q.QueryRowContext(ctx, `
+		UPDATE template_installs SET installation_name = $2, updated_at = now()
+		WHERE id = $1 AND status = 'installed' AND installation_name = ''
+		RETURNING `+installColumns, id, name))
+	if errors.Is(err, database.ErrNotFound) {
+		return nil, ErrNotFound
+	}
+	return in, err
 }
 
 func (r *Repository) SaveInstall(ctx context.Context, in *Install) error {

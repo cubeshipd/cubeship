@@ -6,8 +6,8 @@ import { CopyButton } from "@/components/copy-button";
 import { RowAction } from "@/components/row-actions";
 import { SectionHeader } from "@/components/section-header";
 import { Card } from "@/components/ui/card";
-import { type App, api, type Settings } from "@/lib/api";
-import { internalUrl, publicUrl } from "@/lib/app-urls";
+import { type App, type AppTCPPort, api, type Settings } from "@/lib/api";
+import { DEFAULT_PORT, internalUrl, publicUrl } from "@/lib/app-urls";
 
 // Every address an app answers at, to copy without opening its settings:
 // the internal one always, and each public name it has. Changing them is
@@ -17,13 +17,26 @@ export function AppAddresses({ app }: { app: App }) {
     queryKey: ["settings"],
     queryFn: () => api.get<Settings>("/settings"),
   });
-  const internal = internalUrl(app);
+  const published = useQuery({
+    queryKey: ["apps", app.reference, "tcp-ports"],
+    queryFn: () => api.get<AppTCPPort[]>(`/apps/${app.reference}/tcp-ports`),
+  });
+  const ports = [
+    ...new Set([
+      ...app.internal_ports,
+      ...app.domains.map((domain) => domain.port || DEFAULT_PORT),
+      ...(published.data ?? []).map((port) => port.container_port),
+    ]),
+  ].sort((a, b) => a - b);
+  if (ports.length === 0) ports.push(DEFAULT_PORT);
 
   return (
     <>
       <SectionHeader title="Networking" />
       <Card className="gap-0 divide-y divide-border py-0">
-        <Address kind="Internal" url={internal} />
+        {ports.map((port) => (
+          <Address key={`internal-${port}`} kind="Internal" url={internalUrl(app, port)} />
+        ))}
         {app.domains.map((d) => (
           <Address
             key={d.id}

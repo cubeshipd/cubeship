@@ -114,6 +114,12 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Name:        "list_app_tcp_ports",
 		Description: "List an app's published TCP ports: each port its container listens on and the host port of the control plane it is published on, for protocols that are not HTTP, such as SSH. Publishing one is not a tool.",
 	}, t.listTCPPorts)
+	mcp.AddTool(srv, &mcp.Tool{
+		Name:         "configure_app_networking",
+		InputSchema:  appToolSchema[networkingInput](),
+		OutputSchema: appToolSchema[Response](),
+		Description:  "Set an app's internal container ports and readiness health checks. Every check must pass before a new container is ready. Requires the member role.",
+	}, t.configureNetworking)
 }
 
 // Command inputs keep raw JSON to distinguish omission from an explicit clear.

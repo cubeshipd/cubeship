@@ -302,7 +302,7 @@ func (o *Orchestrator) swap(ctx context.Context, a *Scoped, replica Replica, ima
 		return fmt.Errorf("start container: %w", err)
 	}
 
-	if err := o.waitHealthy(ctx, newID, a.HealthPath, healthPort(a), a.HealthPath == "" && len(a.TCPPorts) > 0); err != nil {
+	if err := o.waitAppHealthy(ctx, newID, a); err != nil {
 		o.removeContainer(ctx, newID, "abandoning a container that never became healthy")
 		return fmt.Errorf("health check timed out for container %s: %w", newID, err)
 	}

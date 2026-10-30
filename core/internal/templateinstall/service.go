@@ -3,6 +3,7 @@ package templateinstall
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/url"
 	"slices"
@@ -80,6 +81,7 @@ type Users interface {
 // is one.
 type Records interface {
 	CreateInstall(ctx context.Context, in *Install) (*Install, error)
+	SetInstallationName(ctx context.Context, id int64, name string) (*Install, error)
 	SaveInstall(ctx context.Context, in *Install) error
 	Install(ctx context.Context, id int64) (*Install, error)
 	Installs(ctx context.Context) ([]*Install, error)
@@ -267,6 +269,42 @@ func (s *Service) Get(ctx context.Context, caller *user.User, id int64) (*Instal
 	return &Installed{Install: in, Runs: runs}, nil
 }
 
+// SetInstallationName gives a pre-existing installation the identity
+// introduced after it was created. Its resources keep their current names.
+func (s *Service) SetInstallationName(ctx context.Context, caller *user.User, id int64, name string) (*Installed, error) {
+	if err := user.Allow(caller, user.ResTemplates, RoleToInstall, ""); err != nil {
+		return nil, err
+	}
+	if err := checkSlug("installation_name", name); err != nil {
+		return nil, err
+	}
+	in, err := s.records.Install(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if in.Status != StatusInstalled {
+		return nil, ErrNotInstalled
+	}
+	if in.InstallationName != "" {
+		return nil, ErrInstallationNameSet
+	}
+	if _, err := s.records.SetInstallationName(ctx, id, name); err != nil {
+		if !errors.Is(err, ErrNotFound) {
+			return nil, err
+		}
+		// Another request may have named it after the read above.
+		latest, readErr := s.records.Install(ctx, id)
+		if readErr != nil {
+			return nil, readErr
+		}
+		if latest.InstallationName != "" {
+			return nil, ErrInstallationNameSet
+		}
+		return nil, ErrNotInstalled
+	}
+	return s.Get(ctx, caller, id)
+}
+
 func (s *Service) busy(ctx context.Context, installID int64) (bool, error) {
 	runs, err := s.records.Runs(ctx, installID)
 	return len(runs) > 0 && runs[0].Status == RunRunning, err
@@ -282,6 +320,9 @@ type Request struct {
 	// template's suggestion; either is created when it does not exist.
 	Project     string
 	Environment string
+	// InstallationName prefixes the resources created by this install.
+	// Empty callers retain compatibility by using the template repository name.
+	InstallationName string
 	// Databases, Stores and Apps rename what the template declares, by
 	// key. A key left out keeps the template's name.
 	Databases map[string]string
@@ -307,7 +348,8 @@ func (s *Service) Install(ctx context.Context, caller *user.User, req Request) (
 	}
 	in, err := s.records.CreateInstall(ctx, &Install{
 		Owner: p.owner, Repo: p.repo, Release: p.release.Tag, Commit: p.release.Commit,
-		Project: p.project, Environment: p.environment, Status: StatusInstalling,
+		Project: p.project, Environment: p.environment, InstallationName: p.installationName,
+		Status:   StatusInstalling,
 		Manifest: p.manifest, Answers: p.answers(), CreatedBy: caller.ID,
 	})
 	if err != nil {
@@ -341,9 +383,10 @@ func copyRun(r *Run) *Run {
 // plan is a request checked against the template and the instance, with
 // every name and answer settled.
 type plan struct {
-	owner, repo string
-	release     CatalogRelease
-	manifest    *template.Normalized
+	owner, repo      string
+	installationName string
+	release          CatalogRelease
+	manifest         *template.Normalized
 
 	project, environment string
 	createProject        bool
@@ -358,6 +401,13 @@ type plan struct {
 	storeInputs map[string]string
 	inputs      map[string]string
 	generated   map[string]string
+}
+
+func (p *plan) componentName(name string) string {
+	if p.installationName == "" {
+		return name
+	}
+	return p.installationName + "-" + name
 }
 
 // ReleaseOption is a release a template can be installed at.

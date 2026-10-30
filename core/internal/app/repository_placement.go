@@ -55,8 +55,8 @@ func scanScoped(row scanner) (*Scoped, error) {
 	var timeout int64
 	var stopGrace int64
 	var stopSignal string
-	var watchJSON, ignoreJSON, buildJSON []byte
-	into := append(dests(&s.App, &envJSON, &commandJSON, &watchJSON, &ignoreJSON, &buildJSON, &timeout, &stopGrace, &stopSignal), &s.ProjectSlug, &s.EnvironmentSlug)
+	var watchJSON, ignoreJSON, buildJSON, portsJSON, checksJSON []byte
+	into := append(dests(&s.App, &envJSON, &commandJSON, &watchJSON, &ignoreJSON, &buildJSON, &portsJSON, &checksJSON, &timeout, &stopGrace, &stopSignal), &s.ProjectSlug, &s.EnvironmentSlug)
 	if err := row.Scan(into...); err != nil {
 		return nil, err
 	}
@@ -66,6 +66,16 @@ func scanScoped(row scanner) (*Scoped, error) {
 	if len(commandJSON) != 0 && string(commandJSON) != "null" {
 		if err := json.Unmarshal(commandJSON, &s.Predeploy); err != nil {
 			return nil, fmt.Errorf("decode predeploy command for app %q: %w", s.Name, err)
+		}
+	}
+	if len(portsJSON) != 0 && string(portsJSON) != "null" {
+		if err := json.Unmarshal(portsJSON, &s.InternalPorts); err != nil {
+			return nil, fmt.Errorf("decode internal ports for app %q: %w", s.Name, err)
+		}
+	}
+	if len(checksJSON) != 0 && string(checksJSON) != "null" {
+		if err := json.Unmarshal(checksJSON, &s.HealthChecks); err != nil {
+			return nil, fmt.Errorf("decode health checks for app %q: %w", s.Name, err)
 		}
 	}
 	s.Predeploy.Timeout = time.Duration(timeout) * time.Second

@@ -58,11 +58,16 @@ func (s *Service) Routes(ctx context.Context) ([]traefik.Route, error) {
 
 	out := []traefik.Route{}
 	for _, a := range apps {
+		health, healthPort := a.HealthPath, healthPort(a)
+		healthInterval, healthTimeout := traefik.HealthInterval, traefik.HealthTimeout
+		if len(a.HealthChecks) > 0 {
+			check := a.HealthChecks[0]
+			health, healthPort = check.Path, check.Port
+			healthInterval = time.Duration(check.PeriodSeconds) * time.Second
+			healthTimeout = time.Duration(check.TimeoutSeconds) * time.Second
+		}
 		for _, d := range a.Domains {
-			port := d.Port
-			if port == 0 {
-				port = DefaultPort
-			}
+			port := domainPort(&a.App, d)
 			servers := backends(a, port)
 			if len(servers) == 0 {
 				// Nothing is running this app anywhere, so there is no
@@ -73,7 +78,8 @@ func (s *Service) Routes(ctx context.Context) ([]traefik.Route, error) {
 			}
 			out = append(out, traefik.Route{
 				App: ReferenceOf(a).String(), Host: d.Host,
-				Servers: servers, Health: a.HealthPath,
+				Servers: servers, Health: health, HealthPort: healthPort,
+				HealthInterval: healthInterval, HealthTimeout: healthTimeout,
 			})
 		}
 	}

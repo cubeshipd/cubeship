@@ -85,20 +85,21 @@ func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, in listInput) 
 }
 
 type installInput struct {
-	Owner         string            `json:"owner" jsonschema:"the template repository's owner on GitHub, from list_templates"`
-	Repo          string            `json:"repo" jsonschema:"the template repository's name"`
-	Project       string            `json:"project,omitempty" jsonschema:"the project to install into, created when it does not exist. Defaults to the template's suggestion"`
-	Environment   string            `json:"environment,omitempty" jsonschema:"the environment inside it, created when it does not exist. Defaults to the template's, usually production"`
-	Inputs        map[string]string `json:"inputs,omitempty" jsonschema:"answers to the template's inputs, by key: a domain, a choice, a store's name"`
-	DatabaseNames map[string]string `json:"database_names,omitempty" jsonschema:"rename a database the template declares, by its key. Database names are unique on the instance"`
-	StoreNames    map[string]string `json:"store_names,omitempty" jsonschema:"rename an object store the template declares, by its key"`
-	AppNames      map[string]string `json:"app_names,omitempty" jsonschema:"rename an app the template declares, by its key"`
+	Owner            string            `json:"owner" jsonschema:"the template repository's owner on GitHub, from list_templates"`
+	Repo             string            `json:"repo" jsonschema:"the template repository's name"`
+	InstallationName string            `json:"installation_name,omitempty" jsonschema:"a short identity for this installation; prefixes each app, database and object store. Defaults to the template name"`
+	Project          string            `json:"project,omitempty" jsonschema:"the project to install into, created when it does not exist. Defaults to the template's suggestion"`
+	Environment      string            `json:"environment,omitempty" jsonschema:"the environment inside it, created when it does not exist. Defaults to the template's, usually production"`
+	Inputs           map[string]string `json:"inputs,omitempty" jsonschema:"answers to the template's inputs, by key: a domain, a choice, a store's name"`
+	DatabaseNames    map[string]string `json:"database_names,omitempty" jsonschema:"rename a database the template declares, by its key. Database names are unique on the instance"`
+	StoreNames       map[string]string `json:"store_names,omitempty" jsonschema:"rename an object store the template declares, by its key"`
+	AppNames         map[string]string `json:"app_names,omitempty" jsonschema:"rename an app the template declares, by its key"`
 }
 
 func (t *Tools) install(ctx context.Context, _ *mcp.CallToolRequest, in installInput) (*mcp.CallToolResult, Response, error) {
 	started, _, err := t.svc.Install(ctx, t.caller, Request{
 		Owner: in.Owner, Repo: in.Repo,
-		Project: in.Project, Environment: in.Environment,
+		Project: in.Project, Environment: in.Environment, InstallationName: in.InstallationName,
 		Databases: in.DatabaseNames, Stores: in.StoreNames, Apps: in.AppNames,
 		Inputs: in.Inputs,
 	})

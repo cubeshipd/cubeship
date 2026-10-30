@@ -93,7 +93,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		errors.Is(err, ErrNamespaceRequired), errors.Is(err, ErrRegionRequired),
 		errors.Is(err, ErrInvalidRegion):
 		http.Error(w, err.Error(), http.StatusBadRequest)
-	case errors.Is(err, user.ErrUnauthenticated):
+	case errors.Is(err, user.ErrUnauthenticated), errors.Is(err, errUnauthorized):
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 	default:
 		// A login typed here is stored as a credential, so the refusals

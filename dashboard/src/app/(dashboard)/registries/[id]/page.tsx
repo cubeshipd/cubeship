@@ -79,8 +79,8 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
       .get<RegistryRepository[]>(`${base}/repositories`)
       .then(setRepos)
       .catch((e) => {
-        // 501 is the registry's own answer — Docker Hub and GitHub's
-        // disable the catalogue the Registry v2 API defines — and is
+        // 501 is the registry's own answer — Docker Hub disables the
+        // catalogue the Registry v2 API defines — and is
         // not a failure to report as one.
         if (e?.status === 501) {
           setUnsupported(true);
@@ -352,8 +352,8 @@ export default function RegistryDetail({ params }: PageProps<"/registries/[id]">
       )}
       {unsupported && (
         <Notice>
-          This registry does not list what it holds. Docker Hub and GitHub&apos;s disable the
-          catalogue the Registry v2 API defines — that is their answer, not a failure here.
+          This registry does not list what it holds. Docker Hub disables the catalogue the Registry
+          v2 API defines — that is their answer, not a failure here.
         </Notice>
       )}
       {repos?.length === 0 && !unsupported && (

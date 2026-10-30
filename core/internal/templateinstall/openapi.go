@@ -35,13 +35,15 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"finished_at": openapi.String("RFC 3339."),
 			}, "id", "kind", "status", "created", "created_at"),
 			"TemplateInstall": openapi.Object(map[string]*openapi.Schema{
-				"id":          openapi.Integer("Identifies the installation."),
-				"owner":       openapi.String(""),
-				"repo":        openapi.String(""),
-				"release":     openapi.String("The source commit, kept for compatibility with existing installation records."),
-				"commit":      openapi.String("The source commit used for this installation."),
-				"project":     openapi.String(""),
-				"environment": openapi.String(""),
+				"id":                openapi.Integer("Identifies the installation."),
+				"owner":             openapi.String(""),
+				"repo":              openapi.String(""),
+				"release":           openapi.String("The source commit, kept for compatibility with existing installation records."),
+				"commit":            openapi.String("The source commit used for this installation."),
+				"project":           openapi.String(""),
+				"environment":       openapi.String(""),
+				"name":              openapi.String("The installation name, or the template name for an older unnamed installation."),
+				"installation_name": openapi.String("The chosen name; empty only for installations created before names were introduced."),
 				"status": {Type: "string", Enum: []string{StatusInstalling, StatusInstalled, StatusFailed, StatusUninstalled},
 					Description: "failed is an install that did not finish and was undone."},
 				"resources":  openapi.Array(resource),
@@ -49,7 +51,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"busy":       openapi.Bool("A run is changing it now; nothing else may start until it ends."),
 				"created_at": openapi.String("RFC 3339."),
 				"updated_at": openapi.String("RFC 3339."),
-			}, "id", "owner", "repo", "release", "commit", "project", "environment", "status", "resources", "runs", "busy", "created_at", "updated_at"),
+			}, "id", "name", "installation_name", "owner", "repo", "release", "commit", "project", "environment", "status", "resources", "runs", "busy", "created_at", "updated_at"),
 			"TemplateUpdatePreview": openapi.Object(map[string]*openapi.Schema{
 				"from":      openapi.String("The commit the installed template was read at."),
 				"to":        openapi.String("The commit the catalog lists now."),
@@ -138,8 +140,9 @@ func (h *Handler) OpenAPI() openapi.Spec {
 					Tags:       []string{"Templates"},
 					Parameters: []openapi.Parameter{owner, repo},
 					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
-						"project":     openapi.String("Where the apps go. Defaults to the template's suggestion; created when missing."),
-						"environment": openapi.String("Defaults to the template's; created when missing."),
+						"project":           openapi.String("Where the apps go. Defaults to the template's suggestion; created when missing."),
+						"environment":       openapi.String("Defaults to the template's; created when missing."),
+						"installation_name": openapi.String("Prefixes each app, database and object store. Defaults to the template repository name."),
 						"names": openapi.Object(map[string]*openapi.Schema{
 							"databases": openapi.StringMap("Database names, by the template's key."),
 							"stores":    openapi.StringMap("Object store names, by key."),
@@ -192,6 +195,24 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				},
 			},
 			"/template-installs/{id}": {
+				"patch": {
+					OperationID: "nameTemplateInstall",
+					Summary:     "Name an older template installation",
+					Description: "Sets the identity on an installed template that predates installation names. Existing resources keep their current names. This can only be set once.",
+					Tags:        []string{"Templates"},
+					Parameters:  []openapi.Parameter{id},
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"installation_name": openapi.String("A lowercase slug used to identify this installation."),
+					}, "installation_name")),
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The named installation.", openapi.Ref("TemplateInstall")),
+						"400": openapi.TextResponse("The name is not a valid slug."),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("The installation is not installed or already has a name."),
+					},
+				},
 				"get": {
 					OperationID: "getTemplateInstall",
 					Summary:     "Get an installation",

@@ -131,7 +131,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"get": {
 					OperationID: "listRegistryRepositories",
 					Summary:     "List what a registry holds",
-					Description: "Not every registry can say. The Registry v2 API defines a catalogue endpoint and the two biggest public registries — Docker Hub and GitHub's — disable it; those answer 501, which is their answer rather than a failure here, and beats an empty list that reads as \"you have nothing\".\n\n" +
+					Description: "Docker Hub disables the Registry v2 catalogue endpoint and answers 501. GHCR is listed through GitHub's authenticated package API, limited to the account and organizations its login can access.\n\n" +
 						"Admins only.",
 					Tags:       []string{"Registries"},
 					Parameters: []openapi.Parameter{idParam},

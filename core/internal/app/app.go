@@ -63,7 +63,12 @@ type App struct {
 	// the container behind a name is worth sending traffic to. Empty is
 	// no check, and it is the default: see ValidHealthPath.
 	HealthPath string
-	Predeploy  Predeploy
+	// HealthChecks are the HTTP probes required for a new container to
+	// become ready. Every configured check must pass.
+	HealthChecks []HealthCheck
+	// InternalPorts are ports the app listens on inside its container.
+	InternalPorts []int
+	Predeploy     Predeploy
 	// Scale is how many copies were **asked for**, which is not how
 	// many there are — that is len(Replicas), and it is what every
 	// surface reports.

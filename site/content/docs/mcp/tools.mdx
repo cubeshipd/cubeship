@@ -202,6 +202,18 @@ Cancel an unfinished deployment before its swap, preserving the currently servin
 
 \* required
 
+### configure_app_networking
+
+Set an app's internal container ports and readiness health checks. Every check must pass before a new container is ready. Requires the member role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `health_checks` * | array | HTTP readiness checks; every check must pass before a new container is ready |
+| `internal_ports` * | array | ports the app listens on inside its container |
+| `reference` * | string | the app's reference: project/environment/name |
+
+\* required
+
 ### create_app
 
 Register a new app in a project and get its registry push path. environment defaults to "production" when omitted. Requires the member role.

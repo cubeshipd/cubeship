@@ -29,16 +29,17 @@ type RunResponse struct {
 
 // Response is one installation as the API returns it.
 type Response struct {
-	ID          int64      `json:"id"`
-	Name        string     `json:"name"`
-	Owner       string     `json:"owner"`
-	Repo        string     `json:"repo"`
-	Release     string     `json:"release"`
-	Commit      string     `json:"commit"`
-	Project     string     `json:"project"`
-	Environment string     `json:"environment"`
-	Status      string     `json:"status"`
-	Resources   []Resource `json:"resources"`
+	ID               int64      `json:"id"`
+	Name             string     `json:"name"`
+	InstallationName string     `json:"installation_name"`
+	Owner            string     `json:"owner"`
+	Repo             string     `json:"repo"`
+	Release          string     `json:"release"`
+	Commit           string     `json:"commit"`
+	Project          string     `json:"project"`
+	Environment      string     `json:"environment"`
+	Status           string     `json:"status"`
+	Resources        []Resource `json:"resources"`
 	// Runs is the most recent first; a listing carries only that one.
 	Runs []RunResponse `json:"runs"`
 	// Busy is a run changing it now: nothing else may start until it ends.
@@ -61,16 +62,20 @@ func toRunResponse(r *Run) RunResponse {
 
 func toResponse(i Installed) Response {
 	in := i.Install
-	name := in.Repo
-	if in.Manifest != nil && in.Manifest.Name != "" {
-		name = in.Manifest.Name
+	name := in.InstallationName
+	if name == "" {
+		name = in.Repo
+		if in.Manifest != nil && in.Manifest.Name != "" {
+			name = in.Manifest.Name
+		}
 	}
 	resources := in.Resources
 	if resources == nil {
 		resources = []Resource{}
 	}
 	out := Response{
-		ID: in.ID, Name: name, Owner: in.Owner, Repo: in.Repo, Release: in.Release, Commit: in.Commit,
+		ID: in.ID, Name: name, InstallationName: in.InstallationName,
+		Owner: in.Owner, Repo: in.Repo, Release: in.Release, Commit: in.Commit,
 		Project: in.Project, Environment: in.Environment, Status: in.Status, Resources: resources,
 		Runs: []RunResponse{}, Busy: i.Busy(), CreatedAt: in.CreatedAt, UpdatedAt: in.UpdatedAt,
 	}
@@ -100,6 +105,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET /template-icons/{repository}/{file}", auth(http.HandlerFunc(h.icon)))
 	r.Handle("GET /template-installs", auth(http.HandlerFunc(h.list)))
 	r.Handle("GET /template-installs/{id}", auth(http.HandlerFunc(h.get)))
+	r.Handle("PATCH /template-installs/{id}", auth(http.HandlerFunc(h.setInstallationName)))
 	r.Handle("GET /template-installs/{id}/update", auth(http.HandlerFunc(h.preview)))
 	r.Handle("POST /template-installs/{id}/update", auth(http.HandlerFunc(h.update)))
 	r.Handle("POST /template-installs/{id}/uninstall", auth(http.HandlerFunc(h.uninstall)))
@@ -116,7 +122,7 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.As(err, &input), errors.Is(err, slug.ErrInvalid), errors.Is(err, slug.ErrReserved):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.As(err, &taken), errors.Is(err, ErrTooNew), errors.Is(err, ErrBusy),
-		errors.Is(err, ErrNotInstalled), errors.Is(err, ErrUpToDate):
+		errors.Is(err, ErrNotInstalled), errors.Is(err, ErrUpToDate), errors.Is(err, ErrInstallationNameSet):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrNotFound), errors.Is(err, ErrTemplateNotFound), errors.Is(err, ErrReleaseNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -175,11 +181,12 @@ func (h *Handler) icon(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) install(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Release     string            `json:"release"`
-		Project     string            `json:"project"`
-		Environment string            `json:"environment"`
-		Names       Names             `json:"names"`
-		Inputs      map[string]string `json:"inputs"`
+		Release          string            `json:"release"`
+		Project          string            `json:"project"`
+		Environment      string            `json:"environment"`
+		InstallationName string            `json:"installation_name"`
+		Names            Names             `json:"names"`
+		Inputs           map[string]string `json:"inputs"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
@@ -191,7 +198,7 @@ func (h *Handler) install(w http.ResponseWriter, r *http.Request) {
 	}
 	started, secrets, err := h.svc.Install(r.Context(), user.FromContext(r.Context()), Request{
 		Owner: r.PathValue("owner"), Repo: r.PathValue("repo"), Release: req.Release,
-		Project: req.Project, Environment: req.Environment,
+		Project: req.Project, Environment: req.Environment, InstallationName: req.InstallationName,
 		Databases: req.Names.Databases, Stores: req.Names.Stores, Apps: req.Names.Apps,
 		Inputs: req.Inputs,
 	})
@@ -240,6 +247,26 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	found, err := h.svc.Get(r.Context(), user.FromContext(r.Context()), id)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, toResponse(*found))
+}
+
+func (h *Handler) setInstallationName(w http.ResponseWriter, r *http.Request) {
+	id, ok := installID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Name string `json:"installation_name"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	found, err := h.svc.SetInstallationName(r.Context(), user.FromContext(r.Context()), id, req.Name)
 	if err != nil {
 		WriteError(w, err)
 		return

@@ -200,9 +200,23 @@ var ErrRemote = errors.New("that app runs on another machine")
 // which half of it. See Service.checkPlacement.
 var ErrNotPlaceable = errors.New("this app cannot run on another machine yet")
 
-// DefaultPort is what a name reaches when nobody said otherwise. It is
-// the most common answer rather than a detected one — see Domain.Port.
+// DefaultPort is the fallback when a name has no explicit port and the
+// app has zero or multiple internal ports declared.
 const DefaultPort = 8080
+
+func appDefaultPort(a *App) int {
+	if len(a.InternalPorts) == 1 {
+		return a.InternalPorts[0]
+	}
+	return DefaultPort
+}
+
+func domainPort(a *App, domain Domain) int {
+	if domain.Port > 0 {
+		return domain.Port
+	}
+	return appDefaultPort(a)
+}
 
 // Network is the Docker network app containers must join. Traefik
 // resolves a container's backend IP on this network specifically (see the
@@ -400,8 +414,9 @@ var (
 type Domain struct {
 	ID   int64
 	Host string
-	// Port is what this name reaches inside the container. Zero falls
-	// back to DefaultPort.
+	// Port is what this name reaches inside the container. Zero uses the
+	// app's only declared internal port, or DefaultPort when there is not
+	// exactly one.
 	//
 	// It is asked for rather than detected. Cubeship used to read the
 	// image's EXPOSE, and that was a guess dressed as an answer: EXPOSE
