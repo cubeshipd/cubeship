@@ -217,6 +217,23 @@ func appPaths(refParams []openapi.Parameter, envRole, appPath string) map[string
 				},
 			},
 		},
+		appPath + "/deployments/{id}/rollback": {
+			"post": {
+				OperationID: "rollbackDeployment",
+				Summary:     "Roll back to an earlier deploy",
+				Description: "Starts a new deploy of the version an earlier one ran: the same image tag for an app that pulls an image, the same Git commit for an app that builds. A commit whose image is still in place is not built again; one whose image a later build replaced is built again from that commit.\n\nIt is an ordinary deploy in every other way — the app's current environment, its pre-deploy command, the health check and the swap — and the old container keeps serving until the new one is healthy. `restorable` on a deployment says in advance whether this is accepted.\n\nRefused (409) for a deploy that did not succeed, the one the app is already running, and one made before the app's source was changed to something that names its versions differently.",
+				Tags:        []string{"Apps"},
+				Parameters:  append(refParams, openapi.PathParam("id", "The id of the deployment to roll back to.")),
+				Responses: openapi.Responses{
+					"202": openapi.JSONResponse("The rollback deploy was accepted and is running.", openapi.Ref("Deployment")),
+					"400": openapi.TextResponse("The id is not a number."),
+					"401": openapi.Unauthorized,
+					"403": openapi.Forbidden,
+					"404": openapi.NotFound,
+					"409": openapi.TextResponse("That deployment's version cannot be run again; the message says why."),
+				},
+			},
+		},
 		appPath + "/tcp-ports": {
 			"get": {
 				OperationID: "listAppTCPPorts",

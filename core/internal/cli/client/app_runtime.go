@@ -62,6 +62,12 @@ func (c *Client) Deploy(ctx context.Context, ref, tag string) (Deployment, error
 		appPath(ref)+"/deploy", map[string]string{"tag": tag}, http.StatusAccepted, DefaultTimeout)
 }
 
+// Rollback starts a deploy of the version an earlier deployment ran.
+func (c *Client) Rollback(ctx context.Context, ref string, id int64) (Deployment, error) {
+	return request[Deployment](ctx, c, "roll back", http.MethodPost,
+		fmt.Sprintf("%s/deployments/%d/rollback", appPath(ref), id), nil, http.StatusAccepted, DefaultTimeout)
+}
+
 // WaitForDeployment blocks until a deploy finishes, or until ctx runs
 // out — in which case it returns the deployment as it stands, with no
 // error, because giving up on watching is not a failure.

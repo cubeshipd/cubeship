@@ -97,6 +97,12 @@ func (s *Service) Deployment(ctx context.Context, caller *user.User, ref Referen
 		return nil, err
 	}
 	d.Deletable = d.Done() || d.Stalled != nil
+	live, err := s.liveDeployment(ctx, a)
+	if err != nil {
+		return nil, err
+	}
+	d.Live = d.ID == live
+	markRestorable(a, []*Deployment{d})
 	return d, nil
 }
 
@@ -256,6 +262,7 @@ func (s *Service) Deployments(ctx context.Context, caller *user.User, ref Refere
 		// permanent.
 		d.Deletable = d.Done() || d.Stalled != nil
 	}
+	markRestorable(a, history)
 	return history, nil
 }
 
