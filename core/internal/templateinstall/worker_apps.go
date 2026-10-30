@@ -248,6 +248,22 @@ func (s *Service) restore(ctx context.Context, caller *user.User, ref app.Refere
 			return fmt.Errorf("set the variables back: %w", err)
 		}
 	}
+	// After removeAll, so a domain the update moved to a new app is free.
+	if len(snap.RemovedDomains) > 0 {
+		a, err := s.apps.Resolve(ctx, caller, ref, RoleToInstall)
+		if err != nil {
+			return fmt.Errorf("give the domains back: %w", err)
+		}
+		for _, d := range snap.RemovedDomains {
+			// Already back: a rollback the daemon restarted during.
+			if slices.ContainsFunc(a.Domains, func(have app.Domain) bool { return have.Host == d.Host }) {
+				continue
+			}
+			if _, err := s.apps.AddDomain(ctx, caller, ref, d.Host, d.Port); err != nil {
+				return fmt.Errorf("give %s back: %w", d.Host, err)
+			}
+		}
+	}
 	return nil
 }
 

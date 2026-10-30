@@ -115,6 +115,7 @@ type world struct {
 
 	specs       []datastore.Spec
 	deployFails bool
+	nextDomain  int64
 }
 
 func newWorld() *world {
@@ -245,14 +246,27 @@ func (f fakeApps) Update(_ context.Context, _ *user.User, ref app.Reference, sou
 
 func (f fakeApps) AddDomain(_ context.Context, _ *user.User, ref app.Reference, host string, port int) (*app.Scoped, error) {
 	f.mu.Lock()
+	// One app per name, as the unique index has it.
+	for _, other := range f.apps {
+		if slices.ContainsFunc(other.Domains, func(d app.Domain) bool { return d.Host == host }) {
+			f.mu.Unlock()
+			return nil, app.ErrDomainTaken
+		}
+	}
 	a := f.apps[ref.String()]
-	a.Domains = append(a.Domains, app.Domain{ID: int64(len(a.Domains) + 1), Host: host, Port: port})
+	f.nextDomain++
+	a.Domains = append(a.Domains, app.Domain{ID: f.nextDomain, Host: host, Port: port})
 	f.mu.Unlock()
 	f.did("add domain " + host + " to " + ref.String())
 	return &app.Scoped{}, nil
 }
 
 func (f fakeApps) RemoveDomain(_ context.Context, _ *user.User, ref app.Reference, id int64) (*app.Scoped, error) {
+	f.mu.Lock()
+	if a, ok := f.apps[ref.String()]; ok {
+		a.Domains = slices.DeleteFunc(slices.Clone(a.Domains), func(d app.Domain) bool { return d.ID == id })
+	}
+	f.mu.Unlock()
 	f.did("remove a domain from " + ref.String())
 	return &app.Scoped{}, nil
 }
