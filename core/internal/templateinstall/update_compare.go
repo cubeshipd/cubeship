@@ -86,8 +86,9 @@ func (up *updatePlan) keepRemoved(kind string, declared func(key string) bool) {
 
 func compareApp(old, a template.NormalizedApp) *appChange {
 	ch := &appChange{
-		source:   !sameJSON(unpinnedSource(old.Source), unpinnedSource(a.Source)),
-		settings: !sameJSON(settingsOf(old), settingsOf(a)),
+		source:     !sameJSON(unpinnedSource(old.Source), unpinnedSource(a.Source)),
+		settings:   !sameJSON(settingsOf(old), settingsOf(a)),
+		networking: !sameJSON(networkingOf(old), networkingOf(a)),
 	}
 	for _, name := range envNames(a) {
 		if value, ok := old.Env[name]; !ok || value != a.Env[name] {
@@ -127,14 +128,23 @@ func compareApp(old, a template.NormalizedApp) *appChange {
 	return ch
 }
 
+func networkingOf(a template.NormalizedApp) any {
+	return struct {
+		Ports  []int
+		Checks []template.NormalizedHealthCheck
+	}{a.InternalPorts, a.HealthChecks}
+}
+
 func settingsOf(a template.NormalizedApp) any {
 	return struct {
-		Health    *string
-		Limits    *template.NormalizedLimits
-		Scale     *int
-		Spread    bool
-		Autoscale *template.NormalizedAutoscale
-	}{a.Health, a.Limits, a.Scale, a.Spread, a.Autoscale}
+		Health        *string
+		Limits        *template.NormalizedLimits
+		Scale         *int
+		Spread        bool
+		Autoscale     *template.NormalizedAutoscale
+		InternalPorts []int
+		HealthChecks  []template.NormalizedHealthCheck
+	}{a.Health, a.Limits, a.Scale, a.Spread, a.Autoscale, a.InternalPorts, a.HealthChecks}
 }
 
 func sameJSON(a, b any) bool {

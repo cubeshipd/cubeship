@@ -24,7 +24,8 @@ on a domain and everything it keeps in a managed PostgreSQL.
   gateway. Profiles, sessions, history, memories, the run queue and the
   encrypted vault are all in it. Jian migrates it on start.
 
-It needs Cubeship 0.7.0 or newer, for the volume.
+It needs Cubeship 0.14.0-rc.1 or newer, for explicit per-port health checks
+and the gateway's volume.
 
 ## What you are asked
 

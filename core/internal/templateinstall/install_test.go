@@ -244,6 +244,13 @@ func (f fakeApps) Update(_ context.Context, _ *user.User, ref app.Reference, sou
 	return &app.Scoped{}, nil
 }
 
+func (f fakeApps) ConfigureNetworking(_ context.Context, _ *user.User, ref app.Reference, ports []int, checks []app.HealthCheck) (*app.Scoped, error) {
+	a := f.apps[ref.String()]
+	a.InternalPorts = append([]int(nil), ports...)
+	a.HealthChecks = append([]app.HealthCheck(nil), checks...)
+	return a, nil
+}
+
 func (f fakeApps) AddDomain(_ context.Context, _ *user.User, ref app.Reference, host string, port int) (*app.Scoped, error) {
 	f.mu.Lock()
 	// One app per name, as the unique index has it.

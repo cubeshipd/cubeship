@@ -65,6 +65,8 @@ type App struct {
 	Key, Name, Image, Tag, Repo, Ref, Build, Dockerfile string
 	Port                                                *int
 	Health                                              string
+	InternalPorts                                       []int
+	HealthChecks                                        []HealthCheck
 	Domains                                             []Domain
 	Attach                                              []Attach
 	Env                                                 map[string]string
@@ -74,6 +76,16 @@ type App struct {
 	Autoscale                                           *Autoscale
 	Volumes                                             []Volume
 	TCP                                                 []TCP
+}
+
+type HealthCheck struct {
+	Path                string
+	Port                int
+	InitialDelaySeconds int
+	PeriodSeconds       int
+	TimeoutSeconds      int
+	FailureThreshold    int
+	SuccessThreshold    int
 }
 
 // TCP is a port of an app's container published on a host port of the

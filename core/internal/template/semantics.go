@@ -156,6 +156,41 @@ func checkSemantics(m Manifest, doc *document) []Diagnostic {
 
 	for i, a := range m.Apps {
 		at := func(rest ...any) []any { return append([]any{"apps", i}, rest...) }
+		ports := map[int]bool{}
+		for j, port := range a.InternalPorts {
+			if ports[port] {
+				c.error("network.port-duplicate", fmt.Sprintf("internal port %d is listed twice", port), at("internal_ports", j), "")
+			}
+			ports[port] = true
+		}
+		if len(a.HealthChecks) > 20 {
+			c.error("health.count", "at most 20 health checks are allowed", at("health_checks"), "")
+		}
+		for j, check := range a.HealthChecks {
+			p := at("health_checks", j)
+			if problem := healthPathProblem(check.Path); problem != "" {
+				c.error("health.path", problem, append(p, "path"), "")
+			}
+			if !ports[check.Port] {
+				c.error("health.port", fmt.Sprintf("health check port %d must appear in internal_ports", check.Port), append(p, "port"), "")
+			}
+			period, timeout := check.PeriodSeconds, check.TimeoutSeconds
+			if period == 0 {
+				period = 10
+			}
+			if timeout == 0 {
+				timeout = 5
+			}
+			if timeout >= period {
+				c.error("health.timing", "health check timeout must be shorter than its period", p, "")
+			}
+		}
+		if len(a.InternalPorts) > 0 || len(a.HealthChecks) > 0 {
+			available, _ := Satisfies(m.MinCubeship, "0.14.0-rc.1")
+			if m.MinCubeship == "" || !available {
+				c.error("network.min-cubeship", "explicit internal ports and health checks need a minimum Cubeship version that includes app networking", at("internal_ports"), `set minCubeship: ">=0.14.0-rc.1"`)
+			}
+		}
 
 		building := a.Repo != "" || a.Build != ""
 		if a.Image == "" && !building {

@@ -1,7 +1,7 @@
 # yaml-language-server: $schema=https://cubeship.dev/schema/template/v1.json
 version: 1
 name: 'Jian'
-minCubeship: "0.7.0"
+minCubeship: ">=0.14.0-rc.1"
 project: jian
 
 inputs:
@@ -34,7 +34,10 @@ apps:
     # The API, the agents and the workers. No domain: the web app is the way in.
     port: 4310
     # The one route that answers without the token.
-    health: /health
+    internal_ports: [4310]
+    health_checks:
+      - path: /health
+        port: 4310
     attach:
       # Writes DATABASE_URL, which is all Jian reads. It migrates on start.
       - database: db
@@ -65,7 +68,10 @@ apps:
     # on to the gateway, so webhooks, OAuth callbacks and workers keep one origin.
     port: 3000
     # Its own liveness; /health is the gateway's.
-    health: /web/health
+    internal_ports: [3000]
+    health_checks:
+      - path: /web/health
+        port: 3000
     domains:
       - host: ${input.domain}
     limits: { cpu: 0.5, memory: 512Mi }

@@ -57,9 +57,10 @@ func (s *Service) applyUpdate(ctx context.Context, caller *user.User, run *Run, 
 			return fmt.Errorf("read the variables of app %s: %w", ref, err)
 		}
 		snap := AppSnapshot{
-			Ref: ref.String(), SourceChanged: ch.source, SettingsChanged: ch.settings,
+			Ref: ref.String(), SourceChanged: ch.source, SettingsChanged: ch.settings, NetworkingChanged: ch.networking,
 			Source: a.Source, Image: a.SourceImage, Tag: a.SourceTag, Repo: a.SourceRepo,
 			GitRef: a.SourceRef, Dockerfile: a.SourceDockerfile, Health: a.HealthPath,
+			InternalPorts: append([]int(nil), a.InternalPorts...), HealthChecks: append([]app.HealthCheck(nil), a.HealthChecks...),
 			CPU: a.Limits.CPU, Memory: a.Limits.Memory,
 			AutoscaleMin: a.Autoscale.Min, AutoscaleMax: a.Autoscale.Max, AutoscaleCPU: a.Autoscale.CPU,
 			Scale: a.Scale, Spread: a.Spread, Env: map[string]*string{},
@@ -163,6 +164,9 @@ func (s *Service) applyUpdate(ctx context.Context, caller *user.User, run *Run, 
 			}
 			if err == nil {
 				err = s.addTCPPorts(ctx, caller, up.plan, up.ref(a.Key), a.Key, ch.tcp, created)
+			}
+			if err == nil && ch.settings {
+				err = s.configure(ctx, caller, up.ref(a.Key), a)
 			}
 		default:
 			continue

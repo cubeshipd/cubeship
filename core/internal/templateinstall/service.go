@@ -37,6 +37,7 @@ type Apps interface {
 	Resolve(ctx context.Context, caller *user.User, ref app.Reference, need user.Level) (*app.Scoped, error)
 	Create(ctx context.Context, caller *user.User, projectSlug, envSlug, name string, source app.Source, origin app.Origin) (*app.Scoped, error)
 	Update(ctx context.Context, caller *user.User, ref app.Reference, source *app.Source, origin *app.Origin, health *string, limits *app.Limits, auto *app.Autoscale, place *app.Placement) (*app.Scoped, error)
+	ConfigureNetworking(ctx context.Context, caller *user.User, ref app.Reference, ports []int, checks []app.HealthCheck) (*app.Scoped, error)
 	AddDomain(ctx context.Context, caller *user.User, ref app.Reference, host string, port int) (*app.Scoped, error)
 	MergeEnv(ctx context.Context, caller *user.User, ref app.Reference, set envvar.Map, unset []string) (*app.Scoped, error)
 	Deploy(ctx context.Context, caller *user.User, ref app.Reference, tag string) (*app.Scoped, *app.Deployment, error)

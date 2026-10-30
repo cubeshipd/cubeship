@@ -185,6 +185,8 @@ both:
 | --- | --- | --- |
 | `port` | none | The port the app listens on. Also the default for a domain that names none. |
 | `health` | off | A path starting with `/`, no `?` or `#`, at most 255 characters. Strongly advised — see [`advice.no-health`](/docs/templates/diagnostics#adviceno-health). |
+| `internal_ports` | `[]` | The unique ports the app listens on inside its container. |
+| `health_checks` | `[]` | HTTP readiness checks; each `path` and `port` is required, and each port must appear in `internal_ports`. Optional timing fields match the app networking API. Available from Cubeship `0.14.0-rc.1`; set `minCubeship: ">=0.14.0-rc.1"`. |
 | `domains` | `[]` | See below. |
 
 Each entry under `domains` is `{ host, port }`. `host` must come from

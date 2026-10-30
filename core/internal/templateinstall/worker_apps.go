@@ -64,11 +64,20 @@ func (s *Service) configure(ctx context.Context, caller *user.User, ref app.Refe
 			place.Spread = &spread
 		}
 	}
-	if a.Health == nil && limits == nil && auto == nil && place == nil {
-		return nil
+	if a.Health != nil || limits != nil || auto != nil || place != nil {
+		if _, err := s.apps.Update(ctx, caller, ref, nil, nil, a.Health, limits, auto, place); err != nil {
+			return err
+		}
 	}
-	_, err := s.apps.Update(ctx, caller, ref, nil, nil, a.Health, limits, auto, place)
-	return err
+	if len(a.InternalPorts) > 0 || len(a.HealthChecks) > 0 {
+		checks := make([]app.HealthCheck, 0, len(a.HealthChecks))
+		for _, c := range a.HealthChecks {
+			checks = append(checks, app.HealthCheck{Path: c.Path, Port: c.Port, InitialDelaySeconds: c.InitialDelaySeconds, PeriodSeconds: c.PeriodSeconds, TimeoutSeconds: c.TimeoutSeconds, FailureThreshold: c.FailureThreshold, SuccessThreshold: c.SuccessThreshold})
+		}
+		_, err := s.apps.ConfigureNetworking(ctx, caller, ref, a.InternalPorts, checks)
+		return err
+	}
+	return nil
 }
 
 func sourceOf(a template.NormalizedApp) (app.Source, app.Origin) {
@@ -231,6 +240,11 @@ func (s *Service) restore(ctx context.Context, caller *user.User, ref app.Refere
 		place := app.Placement{Replicas: snap.Scale, Spread: &snap.Spread}
 		if _, err := s.apps.Update(ctx, caller, ref, nil, nil, &health, &limits, &auto, &place); err != nil {
 			return fmt.Errorf("set the settings back: %w", err)
+		}
+		if snap.NetworkingChanged {
+			if _, err := s.apps.ConfigureNetworking(ctx, caller, ref, snap.InternalPorts, snap.HealthChecks); err != nil {
+				return fmt.Errorf("set the networking back: %w", err)
+			}
 		}
 	}
 	if len(snap.Env) > 0 {

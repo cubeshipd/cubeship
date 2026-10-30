@@ -55,10 +55,11 @@ type UpdateRequest struct {
 }
 
 type appChange struct {
-	source   bool
-	settings bool
-	env      []string
-	domains  []template.NormalizedDomain
+	source     bool
+	settings   bool
+	networking bool
+	env        []string
+	domains    []template.NormalizedDomain
 	// dropped is the domains the template no longer gives the app. A domain
 	// holds no data, and a template that moves one to another app needs it
 	// free first.

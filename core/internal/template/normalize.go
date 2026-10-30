@@ -108,21 +108,33 @@ type NormalizedAutoscale struct {
 }
 
 type NormalizedApp struct {
-	Key          string               `json:"key"`
-	Name         string               `json:"name"`
-	Source       NormalizedSource     `json:"source"`
-	Port         *int                 `json:"port"`
-	Health       *string              `json:"health"`
-	Domains      []NormalizedDomain   `json:"domains"`
-	Attach       []NormalizedAttach   `json:"attach"`
-	Env          map[string]string    `json:"env"`
-	Limits       *NormalizedLimits    `json:"limits"`
-	Scale        *int                 `json:"scale"`
-	Spread       bool                 `json:"spread"`
-	Autoscale    *NormalizedAutoscale `json:"autoscale"`
-	Volumes      []NormalizedVolume   `json:"volumes"`
-	TCP          []NormalizedTCP      `json:"tcp"`
-	InternalHost string               `json:"internal_host"`
+	Key           string                  `json:"key"`
+	Name          string                  `json:"name"`
+	Source        NormalizedSource        `json:"source"`
+	Port          *int                    `json:"port"`
+	Health        *string                 `json:"health"`
+	InternalPorts []int                   `json:"internal_ports"`
+	HealthChecks  []NormalizedHealthCheck `json:"health_checks"`
+	Domains       []NormalizedDomain      `json:"domains"`
+	Attach        []NormalizedAttach      `json:"attach"`
+	Env           map[string]string       `json:"env"`
+	Limits        *NormalizedLimits       `json:"limits"`
+	Scale         *int                    `json:"scale"`
+	Spread        bool                    `json:"spread"`
+	Autoscale     *NormalizedAutoscale    `json:"autoscale"`
+	Volumes       []NormalizedVolume      `json:"volumes"`
+	TCP           []NormalizedTCP         `json:"tcp"`
+	InternalHost  string                  `json:"internal_host"`
+}
+
+type NormalizedHealthCheck struct {
+	Path                string `json:"path"`
+	Port                int    `json:"port"`
+	InitialDelaySeconds int    `json:"initial_delay_seconds"`
+	PeriodSeconds       int    `json:"period_seconds"`
+	TimeoutSeconds      int    `json:"timeout_seconds"`
+	FailureThreshold    int    `json:"failure_threshold"`
+	SuccessThreshold    int    `json:"success_threshold"`
 }
 
 // NormalizedTCP is a published port. Host is nil for the instance to pick
@@ -220,8 +232,9 @@ func normalize(m Manifest) Normalized {
 	for _, a := range m.Apps {
 		name := or(a.Name, a.Key)
 		na := NormalizedApp{
-			Key: a.Key, Name: name, Port: a.Port, Health: orNil(a.Health),
-			Domains: []NormalizedDomain{}, Attach: []NormalizedAttach{}, Env: a.Env,
+			Key: a.Key, Name: name, Port: a.Port, Health: orNil(a.Health), InternalPorts: append([]int{}, a.InternalPorts...),
+			HealthChecks: []NormalizedHealthCheck{},
+			Domains:      []NormalizedDomain{}, Attach: []NormalizedAttach{}, Env: a.Env,
 			Limits: limitsOf(a.Limits), Scale: a.Scale, Spread: a.Spread != nil && *a.Spread,
 			InternalHost: InternalHost(m.Project, m.Environment, name),
 		}
@@ -259,6 +272,22 @@ func normalize(m Manifest) Normalized {
 			na.Volumes = append(na.Volumes, NormalizedVolume{Path: clean})
 		}
 		na.TCP = []NormalizedTCP{}
+		for _, check := range a.HealthChecks {
+			period, timeout, failures, successes := check.PeriodSeconds, check.TimeoutSeconds, check.FailureThreshold, check.SuccessThreshold
+			if period == 0 {
+				period = 10
+			}
+			if timeout == 0 {
+				timeout = 5
+			}
+			if failures == 0 {
+				failures = 3
+			}
+			if successes == 0 {
+				successes = 1
+			}
+			na.HealthChecks = append(na.HealthChecks, NormalizedHealthCheck{Path: check.Path, Port: check.Port, InitialDelaySeconds: check.InitialDelaySeconds, PeriodSeconds: period, TimeoutSeconds: timeout, FailureThreshold: failures, SuccessThreshold: successes})
+		}
 		for _, tp := range a.TCP {
 			na.TCP = append(na.TCP, NormalizedTCP{Port: tp.Port, Host: orNil(tp.Host)})
 		}

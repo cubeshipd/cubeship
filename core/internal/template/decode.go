@@ -16,14 +16,15 @@ var keySets = map[string][]string{
 	"input":    {"key", "type", "label", "help", "required", "default", "pattern", "min", "max", "options", "generate"},
 	"database": {"key", "name", "engine", "version", "extensions", "username", "database", "expose", "limits"},
 	"store":    {"key", "name", "version", "buckets", "limits"},
-	"app": {"key", "name", "image", "tag", "repo", "ref", "build", "dockerfile", "port", "health",
+	"app": {"key", "name", "image", "tag", "repo", "ref", "build", "dockerfile", "port", "health", "internal_ports", "health_checks",
 		"domains", "attach", "env", "limits", "scale", "spread", "autoscale", "volumes", "tcp"},
-	"volume":    {"path"},
-	"tcp":       {"port", "host"},
-	"domain":    {"host", "port"},
-	"attach":    {"database", "store", "bucket", "prefix"},
-	"limits":    {"cpu", "memory"},
-	"autoscale": {"min", "max", "cpu"},
+	"volume":       {"path"},
+	"tcp":          {"port", "host"},
+	"domain":       {"host", "port"},
+	"health_check": {"path", "port", "initial_delay_seconds", "period_seconds", "timeout_seconds", "failure_threshold", "success_threshold"},
+	"attach":       {"database", "store", "bucket", "prefix"},
+	"limits":       {"cpu", "memory"},
+	"autoscale":    {"min", "max", "cpu"},
 }
 
 var inputBase = []string{"key", "type", "label", "help", "required"}
@@ -212,6 +213,45 @@ func (d *decoder) app(n *yaml.Node, path []any) App {
 	a.Dockerfile, _ = d.str(f, path, "dockerfile", false, nil)
 	a.Port = d.integerPtr(f, path, "port", &ports[0], &ports[1])
 	a.Health, _ = d.str(f, path, "health", false, nil)
+	for i, n := range d.list(f, path, "internal_ports") {
+		p := child(child(path, "internal_ports"), i)
+		var v int
+		parsed, err := strconv.Atoi(n.Value)
+		if n.Kind != yaml.ScalarNode || n.Tag != "!!int" || err != nil || parsed < 1 || parsed > 65535 {
+			d.fail("invalid_value", "an internal port is a number from 1 to 65535", p, "")
+		} else {
+			v = parsed
+			a.InternalPorts = append(a.InternalPorts, v)
+		}
+	}
+	for i, n := range d.list(f, path, "health_checks") {
+		p := child(child(path, "health_checks"), i)
+		hf := d.object(n, p, keySets["health_check"], keySets["health_check"])
+		if hf == nil {
+			continue
+		}
+		var check HealthCheck
+		check.Path, _ = d.str(hf, p, "path", true, nil)
+		if v := d.integerPtr(hf, p, "port", &ports[0], &ports[1]); v != nil {
+			check.Port = *v
+		} else {
+			d.fail("invalid_type", "port is required", child(p, "port"), "")
+		}
+		readTiming := func(key string, max float64) int {
+			min := float64(0)
+			v := d.integerPtr(hf, p, key, &min, &max)
+			if v == nil {
+				return 0
+			}
+			return *v
+		}
+		check.InitialDelaySeconds = readTiming("initial_delay_seconds", 3600)
+		check.PeriodSeconds = readTiming("period_seconds", 300)
+		check.TimeoutSeconds = readTiming("timeout_seconds", 60)
+		check.FailureThreshold = readTiming("failure_threshold", 20)
+		check.SuccessThreshold = readTiming("success_threshold", 20)
+		a.HealthChecks = append(a.HealthChecks, check)
+	}
 
 	for i, dn := range d.list(f, path, "domains") {
 		p := child(child(path, "domains"), i)

@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"cubeship/internal/app"
 	"cubeship/internal/template"
 )
 
@@ -144,23 +145,26 @@ type Run struct {
 // AppSnapshot is an app before an update changed it: enough to put back
 // what the update touched, and nothing it did not.
 type AppSnapshot struct {
-	Ref             string  `json:"ref"`
-	SourceChanged   bool    `json:"source_changed"`
-	SettingsChanged bool    `json:"settings_changed"`
-	Source          string  `json:"source"`
-	Image           string  `json:"image"`
-	Tag             string  `json:"tag"`
-	Repo            string  `json:"repo"`
-	GitRef          string  `json:"git_ref"`
-	Dockerfile      string  `json:"dockerfile"`
-	Health          string  `json:"health"`
-	CPU             float64 `json:"cpu"`
-	Memory          int64   `json:"memory_bytes"`
-	AutoscaleMin    int     `json:"autoscale_min"`
-	AutoscaleMax    int     `json:"autoscale_max"`
-	AutoscaleCPU    float64 `json:"autoscale_cpu"`
-	Scale           int     `json:"scale"`
-	Spread          bool    `json:"spread"`
+	Ref               string            `json:"ref"`
+	SourceChanged     bool              `json:"source_changed"`
+	SettingsChanged   bool              `json:"settings_changed"`
+	NetworkingChanged bool              `json:"networking_changed,omitempty"`
+	Source            string            `json:"source"`
+	Image             string            `json:"image"`
+	Tag               string            `json:"tag"`
+	Repo              string            `json:"repo"`
+	GitRef            string            `json:"git_ref"`
+	Dockerfile        string            `json:"dockerfile"`
+	Health            string            `json:"health"`
+	InternalPorts     []int             `json:"internal_ports,omitempty"`
+	HealthChecks      []app.HealthCheck `json:"health_checks,omitempty"`
+	CPU               float64           `json:"cpu"`
+	Memory            int64             `json:"memory_bytes"`
+	AutoscaleMin      int               `json:"autoscale_min"`
+	AutoscaleMax      int               `json:"autoscale_max"`
+	AutoscaleCPU      float64           `json:"autoscale_cpu"`
+	Scale             int               `json:"scale"`
+	Spread            bool              `json:"spread"`
 	// Env is each variable the update set, as it was before: null for
 	// one that did not exist.
 	Env map[string]*string `json:"env"`
