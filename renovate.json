@@ -1,10 +1,22 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended", ":semanticCommits"],
+  "enabledManagers": ["custom.regex", "dockerfile"],
   "timezone": "America/Sao_Paulo",
   "labels": ["dependencies"],
   "prConcurrentLimit": 5,
   "packageRules": [
+    {
+      "description": "Only Dockerfiles inside published templates receive base image updates.",
+      "matchManagers": ["dockerfile"],
+      "matchFileNames": [
+        "core/Dockerfile",
+        "core/test/integration/testapp/Dockerfile",
+        "dashboard/Dockerfile",
+        "site/Dockerfile"
+      ],
+      "enabled": false
+    },
     {
       "description": "'cubeship' is this repository's own package, wired in through a replace directive in the workspace, not a module anyone publishes. Renovate looks it up on the public proxy, finds nothing, and reports no-result. Skip it.",
       "matchManagers": ["gomod"],

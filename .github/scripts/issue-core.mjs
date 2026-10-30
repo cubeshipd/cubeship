@@ -65,10 +65,13 @@ export function eligibility(context, repo, issue) {
   )
     return blocked("UNTRUSTED_CONTEXT");
   if (
-    !["opened", "manualdry"].includes(context.event) ||
+    !["opened", "manualdry", "manual"].includes(context.event) ||
     typeof context.dryRun !== "boolean" ||
     (context.event === "manualdry" &&
-      (context.dryRun !== true || !["maintain", "admin"].includes(context.actorPermission)))
+      (context.dryRun !== true || !["maintain", "admin"].includes(context.actorPermission))) ||
+    (context.event === "manual" &&
+      (context.dryRun !== false || context.actorPermission !== "admin")) ||
+    (context.event === "opened" && context.dryRun !== false)
   )
     return blocked("UNTRUSTED_EVENT");
   if (

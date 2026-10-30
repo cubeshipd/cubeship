@@ -62,7 +62,7 @@ test("Issue-only trigger, repository queue and immutable provenance are explicit
     w,
     /^permissions: \{\}\nconcurrency:\n  group: issue-triage-\$\{\{ github.repository \}\}\n  cancel-in-progress: false\n  queue: max\n/m,
   );
-  assert.match(w, /run-name:.*issue-triage:\{0\}:dry.*issue-triage:\{0\}:\{1\}:\{2\}:live/);
+  assert.match(w, /run-name:.*issue-triage:\{0\}:dry.*issue-triage:\{0\}:\{1\}:\{2\}:manual.*issue-triage:\{0\}:\{1\}:\{2\}:live/);
   assert.match(w, /SOURCE_SHA: \$\{\{ github.workflow_sha \}\}/);
   assert.doesNotMatch(w, /github\.sha|github\.event\.issue\.(title|body)/);
   const j = jobs(w);
@@ -321,6 +321,11 @@ test("literal manual ID resolution is bounded, read-only and never logs source b
       fakeFetch,
       `import assert from 'node:assert/strict'; import {writeFileSync} from 'node:fs';
     globalThis.fetch = async (url, options) => {
+      if(url.includes('/collaborators/') && url.endsWith('/permission')) {
+        assert.equal(options.method,'GET');
+        const login=url.split('/collaborators/')[1].split('/')[0];
+        return Response.json({permission:login==='admin'?'admin':'maintain',user:{login}});
+      }
       assert.equal(url,'https://api.github.com/repos/cubeshipd/cubeship/issues/21');
       assert.equal(options.method,'GET'); assert.equal(options.redirect,'error');
       assert.equal(options.headers.Authorization,'Bearer synthetic-token');
@@ -359,6 +364,13 @@ test("literal manual ID resolution is bounded, read-only and never logs source b
     assert.equal(context.issueId, 321);
     assert.equal(Object.keys(context).length, 11);
     assert.ok(!readFileSync(join(dir, "issue-context.json"), "utf8").includes("marker"));
+    rmSync(join(dir, "issue-context.json"), { force: true });
+    const live = runShell(build, dir, { ...env, ISSUE_ACTOR: "admin", ISSUE_DRY_RUN: "false" });
+    assert.equal(live.status, 0, live.stderr);
+    const liveContext = JSON.parse(readFileSync(join(dir, "issue-context.json"), "utf8"));
+    assert.equal(liveContext.event, "manual");
+    assert.equal(liveContext.dryRun, false);
+    rmSync(join(dir, "issue-context.json"), { force: true });
     for (const mode of ["pr", "closed", "moved", "oversize", "http-failure"]) {
       rmSync(join(dir, "issue-context.json"), { force: true });
       const blocked = runShell(build, dir, { ...env, FIXTURE_CASE: mode });

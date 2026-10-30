@@ -234,6 +234,13 @@ test("eligibility accepts opened public Issues and maintainer manual dry runs", 
       issue(),
     ),
   );
+  ready(
+    core.eligibility(
+      { ...ctx(), event: "manual", actorPermission: "admin", dryRun: false },
+      repo(),
+      issue(),
+    ),
+  );
 });
 test("eligibility refuses private, PR, bot, closed, malformed, mismatched, wrong ref and rerun targets", () => {
   for (const r of [
@@ -266,6 +273,7 @@ test("eligibility refuses private, PR, bot, closed, malformed, mismatched, wrong
     { event: "edited" },
     { event: "manualdry", dryRun: false },
     { event: "manualdry", dryRun: true, actorPermission: "write" },
+    { event: "manual", dryRun: false, actorPermission: "maintain" },
   ])
     blocked(core.eligibility({ ...ctx(), ...change }, repo(), issue()));
 });

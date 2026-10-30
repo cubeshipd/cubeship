@@ -192,7 +192,7 @@ function fixture(config, core) {
     if (path.endsWith("/labels")) return Response.json(config.labels.map((name) => ({ name })));
     if (path.endsWith("/issue-field-values")) return Response.json(fields);
     if (path.endsWith("/comments")) return Response.json(comments);
-    if (path.endsWith("/permission")) return Response.json({ role_name: "maintain" });
+    if (path.endsWith("/permission")) return Response.json({ permission: "admin" });
     if (path === "/search/issues")
       return Response.json({ total_count: 0, incomplete_results: false, items: [] });
     if (path.endsWith("/runs/500")) return Response.json(own);
@@ -679,6 +679,51 @@ test("skipped and provenance-verified dry histories consume no admission slots",
   assert.equal((await s.run.collectSnapshot(context, s.tr)).state, "ready");
   s.f.history[0].event = "issues";
   assert.equal((await s.run.collectSnapshot(context, s.tr)).reason, "HISTORY_INCOMPLETE");
+});
+test("incomplete Actions history is retried twice and still fails closed", async (t) => {
+  const s = await setup(t), delays = [];
+  let reads = 0;
+  const retrying = s.run.createTransport(async (url, opts) => {
+    if (url.includes("issue-triage.yml/runs") && ++reads === 1)
+      return Response.json({ total_count: 2, workflow_runs: [s.f.own] });
+    return s.f.fetch(url, opts);
+  }, { now: s.tr.now, sleep: async (ms) => delays.push(ms) });
+  assert.equal((await s.run.collectSnapshot(context, retrying)).state, "ready");
+  assert.equal(reads, 2);
+  assert.deepEqual(delays, [1000]);
+  assert.equal(s.f.generation, 0);
+
+  reads = 0; delays.length = 0;
+  const incomplete = s.run.createTransport(async (url, opts) => {
+    if (url.includes("issue-triage.yml/runs")) {
+      reads++;
+      return Response.json({ total_count: 2, workflow_runs: [s.f.own] });
+    }
+    return s.f.fetch(url, opts);
+  }, { now: s.tr.now, sleep: async (ms) => delays.push(ms) });
+  assert.equal((await s.run.collectSnapshot(context, incomplete)).reason, "HISTORY_INCOMPLETE");
+  assert.equal(reads, 3);
+  assert.deepEqual(delays, [1000, 2000]);
+  assert.equal(s.f.generation, 0);
+});
+test("manual live retry admits only one failed original run for the same open Issue", async (t) => {
+  const s = await setup(t), c = { ...context, event: "manual" };
+  Object.assign(s.f.own, { event: "workflow_dispatch",
+    display_title: `issue-triage:${repo}:12:500:manual` });
+  const original = s.f.runRecord(100, 12, "completed");
+  original.conclusion = "failure";
+  s.f.history.push(original);
+  s.f.jobs.set(100, { total_count: 1, jobs: [{ steps: [{ name: "Generate Gemini proposal",
+    status: "completed", conclusion: "skipped" }] }] });
+  const first = await s.run.collectSnapshot(c, s.tr);
+  assert.equal(first.state, "ready", JSON.stringify(first));
+  assert.equal(s.f.generation, 0);
+  s.f.history.push({ ...s.f.runRecord(101, 12), event: "workflow_dispatch", conclusion: "failure",
+    display_title: `issue-triage:${repo}:12:101:manual` });
+  s.f.jobs.set(101, { total_count: 1, jobs: [{ steps: [{ name: "Generate Gemini proposal",
+    status: "completed", conclusion: "skipped" }] }] });
+  assert.equal((await s.run.collectSnapshot(c, s.tr)).reason, "MANUAL_RETRY_REFUSED");
+  assert.equal(s.f.generation, 0);
 });
 test("persistent sequential admission reaches hourly boundary and releases the exact old hour", async (t) => {
   const s = await setup(t);
