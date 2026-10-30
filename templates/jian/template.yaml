@@ -60,7 +60,7 @@ apps:
     name: jian-web
     image: ghcr.io/lucasaarch/jian-web
     # Always the gateway's version.
-    tag: "1.0.4"
+    tag: "1.0.5"
     # The panel, which passes /v1, /health, /openapi.json and /jian-remote.mjs
     # on to the gateway, so webhooks, OAuth callbacks and workers keep one origin.
     port: 3000
