@@ -170,6 +170,22 @@ test("English source remains unchanged and a missing English translation refuses
   blocked(core.validateProposal({ ...p, translation: null }, i));
 });
 
+test("English source preserves dotted words that are not file extensions", () => {
+  const source = {
+      title: "Deploy with Fly.io",
+      body: "For example, e.g. deploy the app there.",
+    },
+    i = input(source),
+    p = proposal(i);
+  p.translation = {
+    title: i.prose.title,
+    body: i.prose.body,
+    sourceLanguage: "en",
+    targetLanguage: "en",
+  };
+  ready(core.validateProposal(p, i));
+});
+
 test("pure Issue policy exports exist", () => {
   for (const name of [
     "eligibility",

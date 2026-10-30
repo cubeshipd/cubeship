@@ -402,9 +402,7 @@ const safeOutput = (s, prose) => {
       ? dottedTokens(prose.title + "\n" + prose.body)
       : [];
   return dottedTokens(s).every(
-    (token) =>
-      /\.(?:tsx?|jsx?|mjs|cjs|md|go|rs|py|json|ya?ml|toml|css|html|txt|sh|sql)$/.test(token) &&
-      source.includes(token),
+    (token) => source.includes(token),
   );
 };
 const candidateOriginsValid = (os, input) =>

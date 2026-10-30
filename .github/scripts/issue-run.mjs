@@ -15,7 +15,7 @@ import {
 
 const workflow = ".github/workflows/issue-triage.yml";
 const generationStep = "Generate Gemini proposal";
-const maxManualAttemptsPerIssue = 5;
+const maxManualAttemptsPerIssue = 6;
 const keys = ["repo", "issueNumber", "issueId", "contentHash", "workflowSha", "runId"];
 const contextKeys = [
   "repo",
