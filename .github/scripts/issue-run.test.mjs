@@ -718,11 +718,24 @@ test("manual live retry admits only one failed original run for the same open Is
   const first = await s.run.collectSnapshot(c, s.tr);
   assert.equal(first.state, "ready", JSON.stringify(first));
   assert.equal(s.f.generation, 0);
-  s.f.history.push({ ...s.f.runRecord(101, 12), event: "workflow_dispatch", conclusion: "failure",
-    display_title: `issue-triage:${repo}:12:101:manual` });
+  const noInference = { ...s.f.runRecord(101, 12), event: "workflow_dispatch", conclusion: "failure",
+    display_title: `issue-triage:${repo}:12:101:manual` };
+  s.f.history.push(noInference);
   s.f.jobs.set(101, { total_count: 1, jobs: [{ steps: [{ name: "Generate Gemini proposal",
     status: "completed", conclusion: "skipped" }] }] });
+  assert.equal((await s.run.collectSnapshot(c, s.tr)).state, "ready");
+  s.f.history.push({ ...s.f.runRecord(102, 12), event: "workflow_dispatch", conclusion: "failure",
+    display_title: `issue-triage:${repo}:12:102:manual` });
+  s.f.jobs.set(102, { total_count: 1, jobs: [{ steps: [{ name: "Generate Gemini proposal",
+    status: "completed", conclusion: "skipped" }] }] });
   assert.equal((await s.run.collectSnapshot(c, s.tr)).reason, "MANUAL_RETRY_REFUSED");
+  assert.equal(s.f.generation, 0);
+});
+test("pending queued runs are valid history and do not consume Gemini reservations", async (t) => {
+  const s = await setup(t), pending = { ...s.f.runRecord(101, 99, "pending"),
+    event: "workflow_dispatch", display_title: `issue-triage:${repo}:99:101:manual` };
+  s.f.history.push(pending);
+  assert.equal((await s.run.collectSnapshot(context, s.tr)).state, "ready");
   assert.equal(s.f.generation, 0);
 });
 test("persistent sequential admission reaches hourly boundary and releases the exact old hour", async (t) => {

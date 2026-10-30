@@ -218,7 +218,7 @@ function provenance(run, c, current = false) {
     !sha(run.head_sha) ||
     run.head_branch !== c.defaultBranch ||
     run.repository?.full_name !== c.repo ||
-    !["completed", "queued", "in_progress"].includes(run.status)
+    !["completed", "queued", "pending", "in_progress"].includes(run.status)
   )
     fail("HISTORY_INCOMPLETE");
   const dry = run.display_title === `issue-triage:${c.repo}:dry`;
@@ -281,7 +281,7 @@ async function history(c, transport, token, admit = true) {
     if (run.id === c.runId) continue;
     if (run.status === "in_progress") fail("CONCURRENT_RUN");
     if (p.dry) continue;
-    if (run.status === "queued") {
+    if (run.status === "queued" || run.status === "pending") {
       attempts.push({ ...p, status: run.status, runConclusion: run.conclusion });
       continue;
     }
@@ -311,13 +311,21 @@ async function history(c, transport, token, admit = true) {
   }
   if (!admit || c.dryRun) return;
   if (c.event === "manual") {
-    const previous = attempts.filter((a) => a.number === c.issueNumber);
+    const previous = attempts.filter((a) => a.number === c.issueNumber),
+      originals = previous.filter((a) => !a.manual),
+      earlierManual = previous.filter((a) => a.manual);
     if (
-      previous.length !== 1 ||
-      previous[0].manual ||
-      previous[0].id !== c.issueId ||
-      previous[0].status !== "completed" ||
-      previous[0].runConclusion !== "failure"
+      originals.length !== 1 ||
+      originals[0].id !== c.issueId ||
+      originals[0].status !== "completed" ||
+      originals[0].runConclusion !== "failure" ||
+      earlierManual.length > 1 ||
+      earlierManual.some(
+        (a) =>
+          a.status !== "completed" ||
+          a.runConclusion !== "failure" ||
+          a.generationConclusion !== "skipped",
+      )
     )
       fail("MANUAL_RETRY_REFUSED");
   } else if (reservations.some((r) => r.number === c.issueNumber || r.id === c.issueId)) {
