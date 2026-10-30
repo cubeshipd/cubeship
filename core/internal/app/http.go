@@ -238,6 +238,7 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET "+appPath+"/deployments/{id}", auth(http.HandlerFunc(h.deployment)))
 	r.Handle("DELETE "+appPath+"/deployments/{id}", auth(http.HandlerFunc(h.deleteDeployment)))
 	r.Handle("POST "+appPath+"/deployments/{id}/cancel", auth(http.HandlerFunc(h.cancelDeployment)))
+	r.Handle("POST "+appPath+"/deployments/{id}/rollback", auth(http.HandlerFunc(h.rollback)))
 	r.Handle("POST "+appPath+"/domains", auth(http.HandlerFunc(h.addDomain)))
 	r.Handle("PATCH "+appPath+"/domains/{domainID}", auth(http.HandlerFunc(h.setDomainPort)))
 	r.Handle("DELETE "+appPath+"/domains/{domainID}", auth(http.HandlerFunc(h.removeDomain)))
@@ -309,7 +310,7 @@ func WriteError(w http.ResponseWriter, err error) {
 		http.Error(w, "app has no running container yet", http.StatusConflict)
 	case errors.Is(err, ErrDeploymentNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
-	case errors.Is(err, ErrDeploymentRunning):
+	case errors.Is(err, ErrDeploymentRunning), errors.Is(err, ErrNotRestorable):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrNoSuchNode):
 		http.Error(w, err.Error(), http.StatusNotFound)

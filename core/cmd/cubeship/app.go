@@ -290,9 +290,46 @@ func newAppCmd() *cobra.Command {
 			return nil
 		},
 	}
+	rollbackCmd := &cobra.Command{
+		Use:   "rollback <app> <deployment-id>",
+		Short: "Deploy the version an earlier deployment ran",
+		Long: "Deploy again the image tag, or the Git commit, of an earlier\n" +
+			"deployment that succeeded. \"app deployments\" lists the ids.",
+		Args: cobra.ExactArgs(2),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			c, err := newAPIClient()
+			if err != nil {
+				return err
+			}
+			id, err := strconv.ParseInt(args[1], 10, 64)
+			if err != nil {
+				return fmt.Errorf("invalid deployment id: %w", err)
+			}
+			deployment, err := c.Rollback(context.Background(), args[0], id)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Rolling %s back to deploy %d...\n", args[0], id)
+			finished, err := c.WaitForDeployment(context.Background(), args[0], deployment.ID)
+			if err != nil {
+				return err
+			}
+			switch finished.Status {
+			case client.DeploymentSucceeded:
+				fmt.Printf("Rolled %s back to deploy %d\n", args[0], id)
+				return nil
+			case client.DeploymentFailed:
+				return fmt.Errorf("rollback failed: %s", finished.Error)
+			default:
+				fmt.Printf("Deploy %d is still running. Check it with: cubeship app deployments %s\n",
+					finished.ID, args[0])
+				return nil
+			}
+		},
+	}
 
 	appCmd.AddCommand(createCmd, listCmd, getCmd, deployCmd, deploymentsCmd, deleteCmd, logsCmd, newAppShellCmd(),
-		newAppPlaceCmd(), newAppLimitsCmd(), newAppAutoscaleCmd(), predeployCmd, cancelCmd, appEnvCommands(), newAppVolumeCmd(), newAppTCPCmd())
+		newAppPlaceCmd(), newAppLimitsCmd(), newAppAutoscaleCmd(), predeployCmd, cancelCmd, rollbackCmd, appEnvCommands(), newAppVolumeCmd(), newAppTCPCmd())
 	return appCmd
 }
 

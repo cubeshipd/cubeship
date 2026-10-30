@@ -70,6 +70,10 @@ func (t *Tools) Register(srv *mcp.Server) {
 		Description: "Cancel an unfinished deployment before its swap, preserving the currently serving version.",
 	}, t.cancelDeployment)
 	mcp.AddTool(srv, &mcp.Tool{
+		Name:        "rollback_app",
+		Description: "Roll an app back to an earlier deployment: deploys that deployment's image tag again, or its Git commit for an app that builds (reusing the image built for it when it is still there). The app's current environment applies. Only a deployment that succeeded and is not the one running can be rolled back to — get_app_deployments lists them. Waits for the deploy to finish and reports the outcome. Requires the member role.",
+	}, t.rollback)
+	mcp.AddTool(srv, &mcp.Tool{
 		Name:         "update_app",
 		InputSchema:  appToolSchema[updateInput](),
 		OutputSchema: appToolSchema[Response](),
@@ -353,6 +357,11 @@ func (t *Tools) list(ctx context.Context, _ *mcp.CallToolRequest, _ struct{}) (*
 
 type nameInput struct {
 	App string `json:"app" jsonschema:"app reference: project/environment/app, or project/app for production"`
+}
+
+type rollbackInput struct {
+	App string `json:"app" jsonschema:"app reference: project/environment/app, or project/app for production"`
+	ID  int64  `json:"deployment_id" jsonschema:"id of the earlier deployment to roll back to"`
 }
 
 type cancelDeploymentInput struct {

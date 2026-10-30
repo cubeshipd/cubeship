@@ -56,6 +56,7 @@ var toolRules = map[string]toolRule{
 	"set_app_env":           tool(user.ResApps, user.LevelManage),
 	"get_app_deployments":   tool(user.ResApps, user.LevelView),
 	"cancel_app_deployment": tool(user.ResApps, user.LevelManage),
+	"rollback_app":          tool(user.ResApps, user.LevelManage),
 	"update_app":            tool(user.ResApps, user.LevelManage),
 	"delete_app":            tool(user.ResApps, user.LevelManage),
 	"get_app_logs":          tool(user.ResApps, user.LevelView),

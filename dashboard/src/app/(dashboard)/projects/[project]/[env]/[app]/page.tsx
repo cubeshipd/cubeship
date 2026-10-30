@@ -12,6 +12,7 @@ import {
   NetworkIcon,
   PencilIcon,
   PlusIcon,
+  RotateCcwIcon,
   TerminalSquareIcon,
   Trash2Icon,
 } from "lucide-react";
@@ -99,6 +100,16 @@ const tabAliases: Record<string, Tab> = {
 // The one reason a deploy's record cannot be removed: the daemon is
 // still writing to it.
 const stillRunning = "This deploy is still running. Wait for it to finish.";
+
+// Why a row's rollback is off, or what it does when it is on.
+function rollbackTitle(d: Deployment): string {
+  if (d.restorable) {
+    return d.git_sha ? `Deploy commit ${d.git_sha.slice(0, 7)} again.` : `Deploy ${d.image} again.`;
+  }
+  if (d.live) return "The app is already running this deploy.";
+  if (d.status !== "succeeded") return "Only a deploy that succeeded can be rolled back to.";
+  return "This deploy's version cannot be named by the app's current source.";
+}
 
 function Detail({ reference, project, env }: { reference: string; project: string; env: string }) {
   const router = useRouter();
@@ -325,7 +336,12 @@ function Detail({ reference, project, env }: { reference: string; project: strin
             )}
             <MetricsSection path={path} />
             {app !== null && <AppAddresses app={app} />}
-            <Deployments reference={reference} deployed={deployed} onSettled={reload} />
+            <Deployments
+              reference={reference}
+              deployed={deployed}
+              canDeploy={canManageApp}
+              onSettled={reload}
+            />
           </TabsContent>
 
           <TabsContent value="environment">
@@ -421,9 +437,11 @@ function Detail({ reference, project, env }: { reference: string; project: strin
 function Deployments({
   reference,
   deployed,
+  canDeploy,
   onSettled,
 }: {
   reference: string;
+  canDeploy: boolean;
   // Bumped when the header deploys, which is the one thing that changes
   // this list from outside it.
   deployed: number;
@@ -432,6 +450,7 @@ function Deployments({
   const [list, setList] = useState<Deployment[] | null>(null);
   const [open, setOpen] = useState<Deployment | null>(null);
   const [deleting, setDeleting] = useState<Deployment | null>(null);
+  const [restoring, setRestoring] = useState<Deployment | null>(null);
   // The app's own name, which is what the confirmation asks somebody to
   // type before it takes the app off the air.
   const name = reference.split("/").pop() ?? reference;
@@ -532,6 +551,13 @@ function Deployments({
       cell: (d) => (
         <RowActions>
           <RowAction
+            icon={RotateCcwIcon}
+            label={`Roll back to deploy ${d.id}`}
+            disabled={!canDeploy || !d.restorable}
+            title={!canDeploy ? "You cannot deploy this app." : rollbackTitle(d)}
+            onClick={() => setRestoring(d)}
+          />
+          <RowAction
             icon={Trash2Icon}
             label={d.live ? `Take the app down` : `Delete deploy ${d.id}`}
             danger={d.deletable}
@@ -575,6 +601,31 @@ function Deployments({
         reference={reference}
         deployment={open}
         onOpenChange={(shown) => !shown && setOpen(null)}
+      />
+
+      <ConfirmDialog
+        open={restoring !== null}
+        onOpenChange={(shown) => !shown && setRestoring(null)}
+        title={`Roll back to deploy ${restoring?.id ?? ""}?`}
+        confirmLabel="Roll back"
+        description={
+          <>
+            Deploys{" "}
+            <code className="break-all text-foreground">
+              {restoring?.git_sha ? restoring.git_sha.slice(0, 7) : restoring?.image}
+            </code>{" "}
+            again, with the app's current environment. What is running now keeps serving until the
+            new container passes its health check.
+          </>
+        }
+        onConfirm={async () => {
+          if (!restoring) return;
+          const started = await api.post<Deployment>(`${path}/${restoring.id}/rollback`, {});
+          setRestoring(null);
+          reload();
+          onSettled();
+          setOpen(started);
+        }}
       />
 
       {/* Holding confirms removal of the app record or stopping a live app. */}

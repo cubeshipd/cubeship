@@ -217,6 +217,7 @@ func TestDocumentedSurfaceIsTheProductAPI(t *testing.T) {
 		"POST /apps",
 		"POST /apps/{project}/{env}/{name}/deploy",
 		"POST /apps/{project}/{env}/{name}/deployments/{id}/cancel",
+		"POST /apps/{project}/{env}/{name}/deployments/{id}/rollback",
 		"POST /apps/{project}/{env}/{name}/domains",
 		"POST /apps/{project}/{env}/{name}/start",
 		"POST /apps/{project}/{env}/{name}/stop",
