@@ -718,7 +718,7 @@ test("manual live retry admits only one failed original run for the same open Is
   const first = await s.run.collectSnapshot(c, s.tr);
   assert.equal(first.state, "ready", JSON.stringify(first));
   assert.equal(s.f.generation, 0);
-  const noInference = { ...s.f.runRecord(101, 12), event: "workflow_dispatch", conclusion: "failure",
+  const noInference = { ...s.f.runRecord(101, 12), event: "workflow_dispatch", conclusion: "cancelled",
     display_title: `issue-triage:${repo}:12:101:manual` };
   s.f.history.push(noInference);
   s.f.jobs.set(101, { total_count: 1, jobs: [{ steps: [{ name: "Generate Gemini proposal",

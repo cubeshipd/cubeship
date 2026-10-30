@@ -323,7 +323,7 @@ async function history(c, transport, token, admit = true) {
       earlierManual.some(
         (a) =>
           a.status !== "completed" ||
-          a.runConclusion !== "failure" ||
+          !["failure", "cancelled"].includes(a.runConclusion) ||
           a.generationConclusion !== "skipped",
       )
     )
