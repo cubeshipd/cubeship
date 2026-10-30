@@ -55,3 +55,32 @@ Everything the install created is deleted again, newest first, and the
 install says which step failed and why. A project or environment that
 existed before the install is never touched. If the daemon restarts in
 the middle of an install, it undoes that install when it comes back.
+
+## Updating an installation
+
+An installation keeps the template it was installed with. Its page in
+the dashboard compares that template with the one the catalog lists now,
+and when they differ it shows **Update** beside **Uninstall**. The
+comparison is of the files themselves: the catalog's commit moves
+whenever any template is published, so a new commit alone is no update.
+A change only to a source-built template's Dockerfile is not seen.
+
+**Update** first lists what it would do, changing nothing:
+
+| | |
+| --- | --- |
+| Create | Databases, stores, buckets, apps, domains, attachments, volumes and ports the template adds. |
+| Change | An app's image or source, its health check, limits or scale, and the variables the template sets. A value you set by hand on one of those variables is replaced. |
+| Remove | A domain the template no longer gives an app, so it can move to another. Nothing else is removed. |
+| Keep | What the template no longer declares, and what cannot change once it exists, like a database's engine and version. It is left as it is. |
+
+It asks only the questions the installation has no answer for. A secret
+it already generated is read back from the app that holds it. Then it
+runs in the background, and redeploys every app it created or changed.
+
+If a step fails, what the update created is deleted, the apps it changed
+are set back — removed domains included — and deployed as they were, and
+the installation keeps its template.
+
+An agent uses `preview_template_update` and `update_template_install`.
+Updating needs the admin role.

@@ -5,8 +5,8 @@ icon. The directory is its stable slug; `name` in the manifest is its display
 name. `version: 1` describes the YAML format, not a template release.
 
 Add or change templates here. Renovate updates their image tags and Dockerfile
-base images. Installed applications keep their existing configuration; changes
-here apply to new installations.
+base images. Changes here apply to new installations; an installed one keeps
+its configuration until somebody updates it from its page on the instance.
 
 Source-built apps use `repo: https://github.com/cubeshipd/cubeship` and
 `ref: master:templates/<slug>`. Keep the Dockerfile and everything it copies
