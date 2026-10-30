@@ -187,6 +187,7 @@ test("provider schema uses supported keywords while local validation rejects inv
   const i = input(),
     schema = core.responseSchema(i);
   assert.doesNotMatch(JSON.stringify(schema), /"(?:minLength|maxLength|pattern)":/);
+  assert.match(core.SYSTEM_INSTRUCTION, /Do not return a snapshot field/);
   const p = proposal(i);
   p.translation = {
     title: "Translated",

@@ -15,6 +15,7 @@ import {
 
 const workflow = ".github/workflows/issue-triage.yml";
 const generationStep = "Generate Gemini proposal";
+const maxManualAttemptsPerIssue = 4;
 const keys = ["repo", "issueNumber", "issueId", "contentHash", "workflowSha", "runId"];
 const contextKeys = [
   "repo",
@@ -319,7 +320,7 @@ async function history(c, transport, token, admit = true) {
       originals[0].id !== c.issueId ||
       originals[0].status !== "completed" ||
       originals[0].runConclusion !== "failure" ||
-      earlierManual.length > 2 ||
+      earlierManual.length >= maxManualAttemptsPerIssue ||
       earlierManual.some(
         (a) =>
           a.status !== "completed" ||
