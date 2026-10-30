@@ -8,7 +8,7 @@ func (h *Handler) OpenAPI() openapi.Spec {
 	id := openapi.PathParam("id", "The installation's id.")
 	unreachable := openapi.TextResponse("The catalog or GitHub could not be reached.")
 	resource := openapi.Object(map[string]*openapi.Schema{
-		"kind": {Type: "string", Enum: []string{KindProject, KindEnvironment, KindDatabase, KindStore, KindApp, KindDomain, KindAttachment}},
+		"kind": {Type: "string", Enum: []string{KindProject, KindEnvironment, KindDatabase, KindStore, KindApp, KindDomain, KindAttachment, KindVolume, KindTCPPort}},
 		"key":  openapi.String("The template's key for it. Absent for a project or an environment."),
 		"name": openapi.String("A slug; project/environment for an environment; an app's full reference; \"reference host\" for a domain; \"reference database name\" or \"reference store name bucket\" for an attachment."),
 	}, "kind", "name")
@@ -50,6 +50,19 @@ func (h *Handler) OpenAPI() openapi.Spec {
 				"created_at": openapi.String("RFC 3339."),
 				"updated_at": openapi.String("RFC 3339."),
 			}, "id", "owner", "repo", "release", "commit", "project", "environment", "status", "resources", "runs", "busy", "created_at", "updated_at"),
+			"TemplateUpdatePreview": openapi.Object(map[string]*openapi.Schema{
+				"from":      openapi.String("The commit the installed template was read at."),
+				"to":        openapi.String("The commit the catalog lists now."),
+				"available": openapi.Bool("The template the catalog lists differs from the one installed. Commits move with every publication, so the manifests are compared."),
+				"changes": openapi.Array(openapi.Object(map[string]*openapi.Schema{
+					"action": {Type: "string", Enum: []string{ActionCreate, ActionChange, ActionRemove, ActionKeep},
+						Description: "remove is a domain the template no longer gives an app; keep is something it no longer has, or cannot change: it is left as it is."},
+					"kind":   openapi.String("app, database, store, bucket, variable, domain, attachment, volume or tcp_port."),
+					"name":   openapi.String(""),
+					"detail": openapi.String("The change, in a sentence."),
+				}, "action", "kind", "name")),
+				"inputs": openapi.Array(openapi.Object(nil)),
+			}, "from", "to", "available", "changes", "inputs"),
 		},
 		Paths: map[string]openapi.PathItem{
 			"/templates": {
@@ -189,6 +202,48 @@ func (h *Handler) OpenAPI() openapi.Spec {
 						"200": openapi.JSONResponse("The installation.", openapi.Ref("TemplateInstall")),
 						"401": openapi.Unauthorized,
 						"404": openapi.NotFound,
+					},
+				},
+			},
+			"/template-installs/{id}/update": {
+				"get": {
+					OperationID: "previewTemplateUpdate",
+					Summary:     "Compare an installation with its template",
+					Description: "Reads the template the catalog lists now and compares it with the one installed, changing nothing: whether they differ, what an update would create, change or remove, what it leaves in place, and the questions it needs answered.",
+					Tags:        []string{"Templates"},
+					Parameters:  []openapi.Parameter{id},
+					Responses: openapi.Responses{
+						"200": openapi.JSONResponse("The comparison.", openapi.Ref("TemplateUpdatePreview")),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("The installation is not installed, the template needs a newer Cubeship, or a run is changing it."),
+						"422": openapi.TextResponse("The template's file did not validate on this instance."),
+						"502": unreachable,
+					},
+				},
+				"post": {
+					OperationID: "updateTemplateInstall",
+					Summary:     "Update an installation to its template",
+					Description: "Applies what the template the catalog lists now changed, in the background, deleting nothing but the domains it no longer declares. Every app it changes is recorded first; if any step fails, what the update created is deleted, those apps are set back and deployed as they were, and the installation keeps its template.\n\n" +
+						"`secrets` holds every secret the template adds that the instance generated, shown this once.",
+					Tags:       []string{"Templates"},
+					Parameters: []openapi.Parameter{id},
+					RequestBody: openapi.Body(openapi.Object(map[string]*openapi.Schema{
+						"inputs": openapi.StringMap("Answers to the questions the preview listed, by key."),
+					})),
+					Responses: openapi.Responses{
+						"202": openapi.JSONResponse("The update has started.", openapi.Object(map[string]*openapi.Schema{
+							"run":     openapi.Ref("TemplateRun"),
+							"secrets": openapi.StringMap("Generated secrets, by input key. Shown once."),
+						}, "run", "secrets")),
+						"400": openapi.TextResponse("An answer is missing or cannot be used."),
+						"401": openapi.Unauthorized,
+						"403": openapi.Forbidden,
+						"404": openapi.NotFound,
+						"409": openapi.TextResponse("Already matches its template, not installed, busy, or something the update would create already exists."),
+						"422": openapi.TextResponse("The template's file did not validate on this instance."),
+						"502": unreachable,
 					},
 				},
 			},

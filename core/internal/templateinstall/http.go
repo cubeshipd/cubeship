@@ -100,6 +100,8 @@ func (h *Handler) Routes(r *httpx.Router, auth func(http.Handler) http.Handler) 
 	r.Handle("GET /template-icons/{repository}/{file}", auth(http.HandlerFunc(h.icon)))
 	r.Handle("GET /template-installs", auth(http.HandlerFunc(h.list)))
 	r.Handle("GET /template-installs/{id}", auth(http.HandlerFunc(h.get)))
+	r.Handle("GET /template-installs/{id}/update", auth(http.HandlerFunc(h.preview)))
+	r.Handle("POST /template-installs/{id}/update", auth(http.HandlerFunc(h.update)))
 	r.Handle("POST /template-installs/{id}/uninstall", auth(http.HandlerFunc(h.uninstall)))
 }
 
@@ -114,7 +116,7 @@ func WriteError(w http.ResponseWriter, err error) {
 	case errors.As(err, &input), errors.Is(err, slug.ErrInvalid), errors.Is(err, slug.ErrReserved):
 		http.Error(w, err.Error(), http.StatusBadRequest)
 	case errors.As(err, &taken), errors.Is(err, ErrTooNew), errors.Is(err, ErrBusy),
-		errors.Is(err, ErrNotInstalled):
+		errors.Is(err, ErrNotInstalled), errors.Is(err, ErrUpToDate):
 		http.Error(w, err.Error(), http.StatusConflict)
 	case errors.Is(err, ErrNotFound), errors.Is(err, ErrTemplateNotFound), errors.Is(err, ErrReleaseNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -243,6 +245,39 @@ func (h *Handler) get(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, toResponse(*found))
+}
+
+func (h *Handler) preview(w http.ResponseWriter, r *http.Request) {
+	id, ok := installID(w, r)
+	if !ok {
+		return
+	}
+	preview, err := h.svc.PreviewUpdate(r.Context(), user.FromContext(r.Context()), id)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, preview)
+}
+
+func (h *Handler) update(w http.ResponseWriter, r *http.Request) {
+	id, ok := installID(w, r)
+	if !ok {
+		return
+	}
+	var req struct {
+		Inputs map[string]string `json:"inputs"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		http.Error(w, "invalid body", http.StatusBadRequest)
+		return
+	}
+	run, secrets, err := h.svc.Update(r.Context(), user.FromContext(r.Context()), id, UpdateRequest{Inputs: req.Inputs})
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusAccepted, map[string]any{"run": toRunResponse(run), "secrets": orEmpty(secrets)})
 }
 
 func (h *Handler) uninstall(w http.ResponseWriter, r *http.Request) {
