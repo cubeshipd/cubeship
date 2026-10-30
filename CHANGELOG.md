@@ -20,7 +20,6 @@ GHCR lists packages your credentials can access first, apps can declare internal
 
 **Named template installations.** Installation Name is a prefix applied to resources the template creates, and is shown as the installed template's identity. Older installed templates without a name ask for one when opened; naming them does not rename existing resources.
 
-**Template images.** Jian now installs gateway and web version 1.0.3. Metabase and LiteLLM templates receive their reviewed image updates.
 
 ### Upgrade notes
 

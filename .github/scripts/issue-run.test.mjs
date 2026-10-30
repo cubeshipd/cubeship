@@ -305,16 +305,24 @@ test("actual CLI isolates credentials and adds native metadata preserving origin
   assert.equal(
     (
       await run.runCLI(["infer", ctx, snapshot, artifact], {
-        env: { GEMINI_API_KEY: "fixture-google" },
+        env: { GEMINI_API_KEY: "fixture-google", GITHUB_API_TOKEN: "fixture-read-only" },
         transport: tr,
       })
     ).state,
     "ready",
   );
+  assert.ok(
+    f.calls.some(
+      ({ url, opts }) =>
+        url.startsWith("https://api.github.com/") &&
+        opts.headers.Authorization === "Bearer fixture-read-only",
+    ),
+  );
   assert.equal(f.generation, 1);
   const output = await readFile(artifact, "utf8");
   assert.ok(
     !output.includes("fixture-google") &&
+      !output.includes("fixture-read-only") &&
       !output.includes("opaque") &&
       !output.includes(original.body),
   );
@@ -706,7 +714,7 @@ test("incomplete Actions history is retried twice and still fails closed", async
   assert.deepEqual(delays, [1000, 2000]);
   assert.equal(s.f.generation, 0);
 });
-test("manual live retry admits only one failed original run for the same open Issue", async (t) => {
+test("manual live retry is bounded to three attempts for one failed Issue", async (t) => {
   const s = await setup(t), c = { ...context, event: "manual" };
   Object.assign(s.f.own, { event: "workflow_dispatch",
     display_title: `issue-triage:${repo}:12:500:manual` });
@@ -718,15 +726,20 @@ test("manual live retry admits only one failed original run for the same open Is
   const first = await s.run.collectSnapshot(c, s.tr);
   assert.equal(first.state, "ready", JSON.stringify(first));
   assert.equal(s.f.generation, 0);
-  const noInference = { ...s.f.runRecord(101, 12), event: "workflow_dispatch", conclusion: "cancelled",
+  const noInference = { ...s.f.runRecord(101, 12), event: "workflow_dispatch", conclusion: "failure",
     display_title: `issue-triage:${repo}:12:101:manual` };
   s.f.history.push(noInference);
   s.f.jobs.set(101, { total_count: 1, jobs: [{ steps: [{ name: "Generate Gemini proposal",
-    status: "completed", conclusion: "skipped" }] }] });
+    status: "completed", conclusion: "failure", started_at: "2026-10-12T05:59:00Z" }] }] });
   assert.equal((await s.run.collectSnapshot(c, s.tr)).state, "ready");
   s.f.history.push({ ...s.f.runRecord(102, 12), event: "workflow_dispatch", conclusion: "failure",
     display_title: `issue-triage:${repo}:12:102:manual` });
   s.f.jobs.set(102, { total_count: 1, jobs: [{ steps: [{ name: "Generate Gemini proposal",
+    status: "completed", conclusion: "failure", started_at: "2026-10-12T05:59:30Z" }] }] });
+  assert.equal((await s.run.collectSnapshot(c, s.tr)).state, "ready");
+  s.f.history.push({ ...s.f.runRecord(103, 12), event: "workflow_dispatch", conclusion: "failure",
+    display_title: `issue-triage:${repo}:12:103:manual` });
+  s.f.jobs.set(103, { total_count: 1, jobs: [{ steps: [{ name: "Generate Gemini proposal",
     status: "completed", conclusion: "skipped" }] }] });
   assert.equal((await s.run.collectSnapshot(c, s.tr)).reason, "MANUAL_RETRY_REFUSED");
   assert.equal(s.f.generation, 0);

@@ -82,13 +82,14 @@ test("credential and whole-writer gates preserve persistent skipped generation h
     /permissions:\n      contents: read\n      issues: read\n      actions: read/,
   );
   assert.match(j.infer, /name: Gemini inference\n    if: \$\{\{ always\(\) \}\}/);
-  assert.match(j.infer, /permissions: \{\}/);
+  assert.match(j.infer, /permissions:\n      actions: read\n      issues: read/);
   assert.doesNotMatch(j.infer, /GITHUB_TOKEN:|actions\/checkout/);
   assert.match(j.infer, /token: ''/);
   assert.equal(source().match(/secrets\.GEMINI_API_KEY/g)?.length, 1);
   const gen = step(j.infer, "Generate Gemini proposal");
   assert.match(gen, /if: \$\{\{ steps.gate.outputs.ready == 'true' \}\}/);
   assert.match(gen, /GEMINI_API_KEY: \$\{\{ secrets.GEMINI_API_KEY \}\}/);
+  assert.match(gen, /GITHUB_API_TOKEN/);
   for (const name of ["Bootstrap trusted inference scripts", "Prepare fresh inference directories"])
     assert.match(step(j.infer, name), /if: \$\{\{ steps.gate.outputs.ready == 'true' \}\}/);
   assert.match(

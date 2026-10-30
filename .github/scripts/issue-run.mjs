@@ -319,12 +319,11 @@ async function history(c, transport, token, admit = true) {
       originals[0].id !== c.issueId ||
       originals[0].status !== "completed" ||
       originals[0].runConclusion !== "failure" ||
-      earlierManual.length > 1 ||
+      earlierManual.length > 2 ||
       earlierManual.some(
         (a) =>
           a.status !== "completed" ||
-          !["failure", "cancelled"].includes(a.runConclusion) ||
-          a.generationConclusion !== "skipped",
+          !["failure", "cancelled"].includes(a.runConclusion),
       )
     )
       fail("MANUAL_RETRY_REFUSED");
@@ -753,15 +752,22 @@ function finalText(data) {
     fail("INVALID_RESPONSE");
   return p.text;
 }
-export async function generateOnce(a, transport = createTransport(), key) {
+export async function generateOnce(a, transport = createTransport(), key, githubReadToken) {
   if (!config.enabled && !a?.context?.dryRun) return result("DISABLED");
   try {
     inputArtifact(a);
     const c = a.context;
     // The serialized trusted collector admitted this exact same-run artifact.
-    await currentRun(c, transport);
+    await currentRun(c, transport, githubReadToken);
     // GitHub requires authentication for types; this same-run collector verified the pinned catalog.
-    const input = await prepared(c, transport, undefined, a.snapshot, a.candidates, config.types);
+    const input = await prepared(
+      c,
+      transport,
+      githubReadToken,
+      a.snapshot,
+      a.candidates,
+      config.types,
+    );
     if (c.dryRun) return { state: "ready", reason: "DRY_RUN_VALIDATED" };
     if (typeof key !== "string" || !key) return result("KEY_REQUIRED");
     const schema = responseSchema(input);
@@ -783,7 +789,7 @@ export async function generateOnce(a, transport = createTransport(), key) {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-goog-api-key": key },
       };
-    await currentUnchanged(input, transport);
+    await currentUnchanged(input, transport, githubReadToken);
     const count = await request(
       `${base}:countTokens`,
       {
@@ -800,7 +806,7 @@ export async function generateOnce(a, transport = createTransport(), key) {
     if (count.status !== 200 || !integer(count.data?.totalTokens))
       return providerFailure("TOKEN_COUNT_FAILED", count);
     if (count.data.totalTokens > config.maxInputTokens) return result("TOKEN_LIMIT");
-    await currentUnchanged(input, transport);
+    await currentUnchanged(input, transport, githubReadToken);
     const response = await request(
       `${base}:generateContent`,
       {
@@ -1112,7 +1118,12 @@ export async function runCLI(argv, { env = process.env, transport = createTransp
       const a = await readTransfer(inputPath);
       inputArtifact(a);
       if (contextKeys.some((k) => c[k] !== a.context[k])) fail("ARTIFACT_REFUSED");
-      const generated = await generateOnce(a, transport, c.dryRun ? undefined : env.GEMINI_API_KEY);
+      const generated = await generateOnce(
+        a,
+        transport,
+        c.dryRun ? undefined : env.GEMINI_API_KEY,
+        env.GITHUB_API_TOKEN,
+      );
       if (generated.state === "ready") await atomicJSON(outputPath, { ...generated, origin: a });
       return generated.state === "ready" ? result(generated.reason, generated.state) : generated;
     }

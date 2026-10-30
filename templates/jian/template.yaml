@@ -30,7 +30,7 @@ apps:
   - key: gateway
     name: jian
     image: ghcr.io/lucasaarch/jian-gateway
-    tag: "1.0.3"
+    tag: "1.0.4"
     # The API, the agents and the workers. No domain: the web app is the way in.
     port: 4310
     # The one route that answers without the token.
@@ -60,7 +60,7 @@ apps:
     name: jian-web
     image: ghcr.io/lucasaarch/jian-web
     # Always the gateway's version.
-    tag: "1.0.3"
+    tag: "1.0.4"
     # The panel, which passes /v1, /health, /openapi.json and /jian-remote.mjs
     # on to the gateway, so webhooks, OAuth callbacks and workers keep one origin.
     port: 3000

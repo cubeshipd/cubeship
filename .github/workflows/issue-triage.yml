@@ -65,7 +65,7 @@ jobs:
           cd .github/scripts
           sha256sum -c - <<'HASHES' > /dev/null
           6ffbeae5d811e36a750ea0608134857f6af455b6a8a118942c17251a8899b816  issue-core.mjs
-          529fe0d923a8b2eb9c903d3bc0b420197494c747b298d5bc2c2883586cd53644  issue-run.mjs
+          3409583774632d4a53c213d68b276735ff1d7352b1f5acdc7bd3fed8b38828d2  issue-run.mjs
           037d7b6b126b606d54b0420c73d0608b0c1d7be015b6be02d4bc344b2fddb6bb  issue-config.json
           HASHES
           node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
@@ -163,7 +163,9 @@ jobs:
     needs: collect
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    permissions: {}
+    permissions:
+      actions: read
+      issues: read
     outputs:
       ready: ${{ steps.generate.outputs.ready }}
     steps:
@@ -199,7 +201,7 @@ jobs:
           done
           sha256sum -c - <<'HASHES' > /dev/null
           6ffbeae5d811e36a750ea0608134857f6af455b6a8a118942c17251a8899b816  issue-core.mjs
-          529fe0d923a8b2eb9c903d3bc0b420197494c747b298d5bc2c2883586cd53644  issue-run.mjs
+          3409583774632d4a53c213d68b276735ff1d7352b1f5acdc7bd3fed8b38828d2  issue-run.mjs
           037d7b6b126b606d54b0420c73d0608b0c1d7be015b6be02d4bc344b2fddb6bb  issue-config.json
           HASHES
           node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
@@ -228,6 +230,7 @@ jobs:
         if: ${{ steps.gate.outputs.ready == 'true' }}
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GITHUB_API_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           node "$RUNNER_TEMP/issue-source/issue-run.mjs" infer "$RUNNER_TEMP/issue-context.json" "$RUNNER_TEMP/issue-snapshot" "$RUNNER_TEMP/issue-proposal/artifact.json"
@@ -268,7 +271,7 @@ jobs:
           cd .github/scripts
           sha256sum -c - <<'HASHES' > /dev/null
           6ffbeae5d811e36a750ea0608134857f6af455b6a8a118942c17251a8899b816  issue-core.mjs
-          529fe0d923a8b2eb9c903d3bc0b420197494c747b298d5bc2c2883586cd53644  issue-run.mjs
+          3409583774632d4a53c213d68b276735ff1d7352b1f5acdc7bd3fed8b38828d2  issue-run.mjs
           037d7b6b126b606d54b0420c73d0608b0c1d7be015b6be02d4bc344b2fddb6bb  issue-config.json
           HASHES
           node --input-type=module <<'NODE' >> "$GITHUB_OUTPUT"
