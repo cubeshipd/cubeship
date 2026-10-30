@@ -528,6 +528,9 @@ export type Deployment = {
   // app down. Reported apart from `deletable` because it is not a
   // refusal, it is a different act.
   live: boolean;
+  // Whether POST .../deployments/{id}/rollback would run this deploy's
+  // version again.
+  restorable: boolean;
   created_at: string;
 };
 

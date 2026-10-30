@@ -348,15 +348,18 @@ type DeploymentResponse struct {
 	StalledOn []string `json:"stalled_on,omitempty"`
 	// Live says the app is running this deploy — so deleting it takes
 	// the app down, which is why it is reported apart from Deletable.
-	Live      bool      `json:"live"`
-	CreatedAt time.Time `json:"created_at"`
+	Live bool `json:"live"`
+	// Restorable says this deploy's version can be run again with
+	// POST .../deployments/{id}/rollback.
+	Restorable bool      `json:"restorable"`
+	CreatedAt  time.Time `json:"created_at"`
 }
 
 func toDeploymentResponse(d *Deployment) DeploymentResponse {
 	return DeploymentResponse{
 		ID: d.ID, Status: d.Status, Skipped: d.Status == DeploymentSkipped, GitSHA: d.GitSHA, GitBranch: d.GitBranch, Image: d.ImageRef, Error: d.Error,
 		Phase: d.Phase, DurationMillis: d.Duration().Milliseconds(), Cancelled: d.Cancelled,
-		Logs: d.Logs, HasLogs: d.HasLogs, Deletable: d.Deletable, Live: d.Live,
+		Logs: d.Logs, HasLogs: d.HasLogs, Deletable: d.Deletable, Live: d.Live, Restorable: d.Restorable,
 		StalledOn: stalledOn(d),
 		CreatedAt: d.CreatedAt,
 	}
@@ -415,6 +418,22 @@ func (h *Handler) cancelDeployment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// rollback deploys the version an earlier deployment ran. See
+// Service.Rollback.
+func (h *Handler) rollback(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "invalid deployment id", http.StatusBadRequest)
+		return
+	}
+	_, deployment, err := h.svc.Rollback(r.Context(), user.FromContext(r.Context()), refFrom(r), id)
+	if err != nil {
+		WriteError(w, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusAccepted, toDeploymentResponse(deployment))
 }
 
 func (h *Handler) deployments(w http.ResponseWriter, r *http.Request) {

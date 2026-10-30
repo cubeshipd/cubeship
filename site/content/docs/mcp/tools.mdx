@@ -337,6 +337,17 @@ Take a name off an app. The app goes on answering there until it is next deploye
 
 \* required
 
+### rollback_app
+
+Roll an app back to an earlier deployment: deploys that deployment's image tag again, or its Git commit for an app that builds (reusing the image built for it when it is still there). The app's current environment applies. Only a deployment that succeeded and is not the one running can be rolled back to — get_app_deployments lists them. Waits for the deploy to finish and reports the outcome. Requires the member role.
+
+| Input | Type | What it is |
+| --- | --- | --- |
+| `app` * | string | app reference: project/environment/app, or project/app for production |
+| `deployment_id` * | integer | id of the earlier deployment to roll back to |
+
+\* required
+
 ### set_app_domain_port
 
 Change which port inside the container one of an app's names reaches — the fix when the proxy answers 502 but the container is healthy, because the app listens somewhere other than where the name points. The name keeps its certificate. It takes effect on the app's next deploy. Requires the admin role.

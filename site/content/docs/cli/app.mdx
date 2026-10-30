@@ -278,6 +278,15 @@ cubeship app predeploy <app> [--] <command> [args...] [flags]
 | `--shell` |  | run this shell command instead of argv |
 | `--timeout` |  | timeout in seconds (maximum 3600; default 600) |
 
+## cubeship app rollback
+
+Deploy again the image tag, or the Git commit, of an earlier
+deployment that succeeded. "app deployments" lists the ids.
+
+```bash
+cubeship app rollback <app> <deployment-id>
+```
+
 ## cubeship app shell
 
 Open an interactive shell inside an app's running container.

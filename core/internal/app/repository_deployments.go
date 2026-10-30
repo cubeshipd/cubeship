@@ -296,14 +296,25 @@ func (r *Repository) CurrentDeployment(ctx context.Context, appID int64) (int64,
 // Redeploying the same commit reuses it rather than building again —
 // the container still starts fresh with the env as it is now, which is
 // what pressing Deploy after changing a variable means.
+//
+// A build is named for its branch, so a later build of another commit
+// on that branch takes the same name. An image named again by a newer
+// deploy of a different commit no longer holds this one, and is skipped:
+// reusing it would run that other commit — which is what rolling back
+// to an older commit would otherwise do.
 func (r *Repository) SuccessfulImageForCommit(ctx context.Context, appID int64, gitSHA string) (string, error) {
 	if gitSHA == "" {
 		return "", nil
 	}
 	rows, err := r.q.QueryContext(ctx,
-		`SELECT image_ref FROM deployments
-		 WHERE app_id = $1 AND git_sha = $2 AND status = $3
-		 ORDER BY created_at DESC, id DESC`,
+		`SELECT d.image_ref FROM deployments d
+		 WHERE d.app_id = $1 AND d.git_sha = $2 AND d.status = $3
+		   AND NOT EXISTS (
+		     SELECT 1 FROM deployments n
+		     WHERE n.app_id = d.app_id AND n.image_ref = d.image_ref
+		       AND n.git_sha <> d.git_sha
+		       AND (n.created_at, n.id) > (d.created_at, d.id))
+		 ORDER BY d.created_at DESC, d.id DESC`,
 		appID, gitSHA, DeploymentSucceeded)
 	if err != nil {
 		return "", fmt.Errorf("find a built image for commit %s: %w", gitSHA, err)
