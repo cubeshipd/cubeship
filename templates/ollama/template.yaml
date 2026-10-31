@@ -9,7 +9,7 @@ apps:
   - key: server
     name: ollama
     image: ollama/ollama
-    tag: "0.40.6"
+    tag: "0.40.13"
     port: 11434
     health: /
     # No domain: Ollama's API has no authentication, and a public one would
