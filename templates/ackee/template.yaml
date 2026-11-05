@@ -33,7 +33,7 @@ apps:
   - key: web
     name: ackee
     image: electerious/ackee
-    tag: "3.6.1"
+    tag: "3.7.1"
     port: 3000
     # Ackee has no health route; the dashboard's page is the lightest one.
     health: /
