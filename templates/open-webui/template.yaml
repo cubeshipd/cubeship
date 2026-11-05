@@ -24,7 +24,7 @@ apps:
   - key: web
     name: open-webui
     image: ghcr.io/open-webui/open-webui
-    tag: v0.12.5
+    tag: v0.13.0
     port: 8080
     health: /health
     domains:
