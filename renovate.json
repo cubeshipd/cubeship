@@ -4,7 +4,7 @@
   "enabledManagers": ["custom.regex", "dockerfile"],
   "timezone": "America/Sao_Paulo",
   "labels": ["dependencies"],
-  "prConcurrentLimit": 5,
+  "prConcurrentLimit": 0,
   "packageRules": [
     {
       "description": "Only Dockerfiles inside published templates receive base image updates.",
@@ -49,6 +49,15 @@
       "matchFileNames": ["templates/signoz/clickhouse/Dockerfile"],
       "matchPackageNames": ["clickhouse/clickhouse-server"],
       "allowedVersions": "<26.0.0"
+    },
+    {
+      "description": "Jian's gateway and panel ship together at one version. Its template's structure is stable, so minor and patch releases merge once CI passes; majors still wait for review.",
+      "matchPackageNames": ["ghcr.io/lucasaarch/jian-gateway", "ghcr.io/lucasaarch/jian-web"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "Jian",
+      "prPriority": 10,
+      "automerge": true,
+      "platformAutomerge": true
     }
   ],
   "customManagers": [
