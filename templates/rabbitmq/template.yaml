@@ -29,7 +29,7 @@ apps:
   - key: broker
     name: rabbitmq
     image: rabbitmq
-    tag: "4.3.6-management"
+    tag: "4.4.0-management"
     # The management UI, which is what the domain and the health check
     # reach. Apps connect over AMQP on 5672 at the internal address.
     port: 15672
