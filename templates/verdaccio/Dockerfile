@@ -3,7 +3,7 @@
 # file into a container, so this image is that one with config.yaml in its
 # place, and a start command that first creates the admin account from the
 # template's inputs, since registration is closed.
-FROM verdaccio/verdaccio:7.0.2
+FROM verdaccio/verdaccio:7.1.0
 COPY config.yaml /verdaccio/conf/config.yaml
 COPY --chmod=755 htpasswd-add /opt/verdaccio/docker-bin/htpasswd-add
 # The image's own command, after the admin account.
