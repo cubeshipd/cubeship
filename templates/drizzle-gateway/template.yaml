@@ -18,7 +18,7 @@ apps:
   - key: web
     name: drizzle-gateway
     image: ghcr.io/drizzle-team/gateway
-    tag: "1.7.0"
+    tag: "1.8.0"
     port: 4983
     # Answers 200 without signing in, once the store in the volume is writable.
     health: /health
