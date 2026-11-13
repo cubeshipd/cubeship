@@ -429,6 +429,33 @@ const routes: [string, string, Handler][] = [
       return row;
     },
   ],
+  [
+    "POST",
+    "/apps/:a/:b/:c/deployments/:id/rollback",
+    (p) => {
+      const ref = p.slice(0, 3).join("/");
+      const from = (db.deployments[ref] ?? []).find((d) => String(d.id) === p[3]);
+      const row = {
+        id: Math.floor(Math.random() * 900) + 100,
+        status: "succeeded",
+        image: from?.image,
+        git_sha: from?.git_sha,
+        git_branch: from?.git_branch,
+        live: true,
+        deletable: true,
+        has_logs: false,
+        created_at: new Date().toISOString(),
+        finished_at: new Date().toISOString(),
+      };
+      for (const d of db.deployments[ref] ?? []) {
+        d.live = false;
+        d.restorable = d.status === "succeeded";
+      }
+      db.deployments[ref] ??= [];
+      db.deployments[ref].unshift(row);
+      return row;
+    },
+  ],
   ["GET", "/apps/:a/:b/:c/logs", () => sampleLog],
   ["GET", "/apps/:a/:b/:c/metrics", () => containerSeries(24, 512 * 1024 * 1024)],
   ["GET", "/apps/:a/:b/:c/domains", (p) => appOr404(p.join("/")).domains],

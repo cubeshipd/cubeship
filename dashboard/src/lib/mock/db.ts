@@ -532,6 +532,18 @@ export const db = {
         created_at: ago(220),
         finished_at: ago(219),
       },
+      {
+        id: 39,
+        status: "succeeded",
+        image: "registry.cubeship.example.com/web/production/api:v1.8.2",
+        tag: "v1.8.2",
+        live: false,
+        deletable: true,
+        restorable: true,
+        has_logs: false,
+        created_at: ago(260),
+        finished_at: ago(259),
+      },
     ],
     "web/production/worker": [
       {

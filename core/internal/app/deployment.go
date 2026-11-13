@@ -91,8 +91,11 @@ type Deployment struct {
 	//
 	// Filled by the service, which is what knows whether the app has a
 	// container at all.
-	Live      bool
-	CreatedAt time.Time
+	Live bool
+	// Restorable says Rollback would run this deploy's version again.
+	// Filled by the service; see rollbackTarget.
+	Restorable bool
+	CreatedAt  time.Time
 }
 
 // Deployment statuses.

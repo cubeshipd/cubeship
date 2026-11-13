@@ -41,16 +41,17 @@ func (t *Tools) deploy(ctx context.Context, _ *mcp.CallToolRequest, in deployInp
 }
 
 type deploymentOutput struct {
-	ID        int64  `json:"id"`
-	Status    string `json:"status" jsonschema:"pending, succeeded or failed"`
-	Phase     string `json:"phase"`
-	Duration  int64  `json:"duration_ms"`
-	Cancelled bool   `json:"cancelled"`
-	Image     string `json:"image"`
-	GitSHA    string `json:"git_sha,omitempty"`
-	GitBranch string `json:"git_branch,omitempty"`
-	Error     string `json:"error,omitempty" jsonschema:"why it failed, when it did"`
-	CreatedAt string `json:"created_at"`
+	ID         int64  `json:"id"`
+	Status     string `json:"status" jsonschema:"pending, succeeded or failed"`
+	Phase      string `json:"phase"`
+	Duration   int64  `json:"duration_ms"`
+	Cancelled  bool   `json:"cancelled"`
+	Image      string `json:"image"`
+	GitSHA     string `json:"git_sha,omitempty"`
+	GitBranch  string `json:"git_branch,omitempty"`
+	Error      string `json:"error,omitempty" jsonschema:"why it failed, when it did"`
+	Restorable bool   `json:"restorable" jsonschema:"whether rollback_app accepts this deployment"`
+	CreatedAt  string `json:"created_at"`
 }
 
 func (t *Tools) deployments(ctx context.Context, _ *mcp.CallToolRequest, in nameInput) (*mcp.CallToolResult, mcpx.List[deploymentOutput], error) {
@@ -66,10 +67,31 @@ func (t *Tools) deployments(ctx context.Context, _ *mcp.CallToolRequest, in name
 	for _, d := range history {
 		out = append(out, deploymentOutput{
 			ID: d.ID, Status: d.Status, Phase: d.Phase, Duration: d.Duration().Milliseconds(), Cancelled: d.Cancelled, Image: d.ImageRef, Error: d.Error, GitSHA: d.GitSHA, GitBranch: d.GitBranch,
-			CreatedAt: d.CreatedAt.Format(time.RFC3339),
+			Restorable: d.Restorable, CreatedAt: d.CreatedAt.Format(time.RFC3339),
 		})
 	}
 	return nil, mcpx.Of(out), nil
+}
+
+func (t *Tools) rollback(ctx context.Context, _ *mcp.CallToolRequest, in rollbackInput) (*mcp.CallToolResult, user.ActionResult, error) {
+	ref, err := ParseReference(in.App)
+	if err != nil {
+		return nil, user.ActionResult{}, err
+	}
+	a, deployment, err := t.svc.Rollback(ctx, t.caller, ref, in.ID)
+	if err != nil {
+		return nil, user.ActionResult{}, err
+	}
+	finished, waitErr := t.svc.WaitForDeployment(ctx, t.caller, ref, deployment.ID)
+	if waitErr != nil {
+		return nil, user.ActionResult{Message: fmt.Sprintf(
+			"rollback of %s to deployment %d is still running as deploy %d; check it with get_app_deployments",
+			a.Name, in.ID, deployment.ID)}, nil
+	}
+	if finished.Status == DeploymentFailed {
+		return nil, user.ActionResult{}, fmt.Errorf("rollback of %s to deployment %d failed: %s", a.Name, in.ID, finished.Error)
+	}
+	return nil, user.ActionResult{Message: fmt.Sprintf("rolled %s back to deployment %d", a.Name, in.ID)}, nil
 }
 
 func (t *Tools) cancelDeployment(ctx context.Context, _ *mcp.CallToolRequest, in cancelDeploymentInput) (*mcp.CallToolResult, user.ActionResult, error) {
