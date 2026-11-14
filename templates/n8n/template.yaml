@@ -25,7 +25,7 @@ apps:
   - key: web
     name: n8n
     image: n8nio/n8n
-    tag: "3.2.0"
+    tag: "3.2.2"
     port: 5678
     health: /healthz
     domains:
