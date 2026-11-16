@@ -1,18 +1,21 @@
 "use client";
 
-import { useQuery } from "@tanstack/react-query";
-import { LayersIcon } from "lucide-react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { LayersIcon, PlusIcon, Trash2Icon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { use, useState, useTransition } from "react";
 import { AppCard } from "@/components/app-card";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ErrorAlert } from "@/components/error-alert";
 import { GlideSelect } from "@/components/glide-select";
 import Link, { NavigationProgress } from "@/components/navigation-link";
+import { NewEnvironmentDialog } from "@/components/new-environment-dialog";
 import { NewWorkloadAppDialog } from "@/components/new-workload-app-dialog";
 import { PageLoading } from "@/components/page-loading";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { type App, api, type Environment } from "@/lib/api";
+import { type MenuItem, ResourceHeader } from "@/components/resource-header";
+import { useSession } from "@/components/session-context";
+import { Button, buttonVariants } from "@/components/ui/button";
+import { type App, api, can, type Environment } from "@/lib/api";
 import { message } from "@/lib/errors";
 import { usageShares, useContainerUsage } from "@/lib/usage";
 
@@ -28,14 +31,21 @@ export default function ProjectPage({ params }: PageProps<"/projects/[project]/[
 // production is the environment a project always has and cannot lose,
 // so it is where the project opens.
 const DEFAULT_ENV = "production";
+const ADD_ENV = "\u0000new-environment";
 
 function Detail({ project, env: wanted }: { project: string; env: string }) {
   const router = useRouter();
+  const me = useSession();
+  const queryClient = useQueryClient();
   const [navigating, startTransition] = useTransition();
 
   const [creatingApp, setCreatingApp] = useState(false);
+  const [addingEnvironment, setAddingEnvironment] = useState(false);
+  const [deletingEnvironment, setDeletingEnvironment] = useState(false);
+  const [deletingProject, setDeletingProject] = useState(false);
 
   const path = `/projects/${project}`;
+  const canManageProjects = can(me, "projects", "manage");
 
   // **Through the query cache, and that is what stops the blink.**
   //
@@ -89,45 +99,97 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
     });
   }
 
+  const menu: MenuItem[] = [
+    ...(canManageProjects && env && env !== DEFAULT_ENV
+      ? [
+          {
+            id: "delete-environment",
+            label: "Delete environment",
+            icon: <Trash2Icon className="size-4" />,
+            destructive: true,
+            onSelect: () => setDeletingEnvironment(true),
+          },
+        ]
+      : []),
+    ...(canManageProjects
+      ? [
+          {
+            id: "delete-project",
+            label: "Delete project",
+            icon: <Trash2Icon className="size-4" />,
+            destructive: true,
+            onSelect: () => setDeletingProject(true),
+          },
+        ]
+      : []),
+  ];
+
   return (
     <>
       <NavigationProgress pending={navigating} />
+      <ResourceHeader
+        crumbs={[{ label: "Projects", href: "/projects" }]}
+        title={project}
+        menu={menu}
+        menuLabel={`Actions for ${project}`}
+        actions={
+          <>
+            <GlideSelect
+              ariaLabel="Environment"
+              value={env}
+              options={[
+                ...known.map((slug) => ({ value: slug, label: slug })),
+                ...(canManageProjects
+                  ? [
+                      {
+                        value: ADD_ENV,
+                        label: (
+                          <span className="inline-flex items-center gap-2">
+                            <PlusIcon className="size-4" />
+                            Add environment
+                          </span>
+                        ),
+                        searchText: "add environment new",
+                      },
+                    ]
+                  : []),
+              ]}
+              onChange={(value) => (value === ADD_ENV ? setAddingEnvironment(true) : goTo(value))}
+              searchable
+              startIcon={<LayersIcon className="size-4" />}
+              align="right"
+              busy={envs.isPending}
+              disabled={known.length === 0}
+              triggerClassName={`${buttonVariants({ variant: "outline", size: "lg" })} min-w-40 justify-between`}
+            />
+            {can(me, "apps", "manage") && (
+              <Button size="lg" onClick={() => setCreatingApp(true)}>
+                <PlusIcon />
+                New app
+              </Button>
+            )}
+          </>
+        }
+      />
       <ErrorAlert error={error ? message(error) : null} />
-
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
-        <div className="flex flex-wrap items-end gap-2">
-          <GlideSelect
-            label="Environment"
-            value={env}
-            options={known.map((slug) => ({ value: slug, label: slug }))}
-            onChange={(value) => goTo(value)}
-            searchable
-            startIcon={<LayersIcon className="size-4" />}
-            className="w-52"
-            busy={envs.isPending}
-            disabled={known.length === 0}
-            triggerClassName="flex h-10 w-full cursor-pointer items-center justify-between gap-2 rounded-lg border border-border-strong bg-secondary px-3 text-left text-sm font-medium text-foreground transition-colors hover:border-primary/40 hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 disabled:cursor-not-allowed disabled:opacity-50"
-          />
-        </div>
-      </div>
 
       {apps.isPending && <PageLoading kind="grid" label="Loading apps" />}
 
       {shown?.length === 0 && (
-        <Card>
-          <CardContent className="flex items-center justify-between gap-4 py-2">
-            <span className="text-sm text-muted-foreground">
-              Nothing deployed in <code className="text-foreground">{env}</code> yet.
-            </span>
+        <div className="flex items-center justify-between gap-4 py-10">
+          <span className="text-sm text-muted-foreground">
+            Nothing deployed in <code className="text-foreground">{env}</code> yet.
+          </span>
+          {can(me, "apps", "manage") && (
             <Button variant="outline" onClick={() => setCreatingApp(true)}>
               Create an app
             </Button>
-          </CardContent>
-        </Card>
+          )}
+        </div>
       )}
 
       {shown && shown.length > 0 && (
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {shown.map((a) => (
             <AppCard
               key={a.reference}
@@ -143,7 +205,49 @@ function Detail({ project, env: wanted }: { project: string; env: string }) {
         onOpenChange={setCreatingApp}
         initialProject={project}
         initialEnvironment={env}
-        onCreated={(reference) => router.push(`/projects/${reference}`)}
+        onCreated={(reference) => {
+          setCreatingApp(false);
+          router.push(`/projects/${reference}`);
+        }}
+      />
+      <NewEnvironmentDialog
+        project={project}
+        open={addingEnvironment}
+        onOpenChange={setAddingEnvironment}
+        onCreated={(slug) => {
+          void queryClient.invalidateQueries({ queryKey: ["environments", project] });
+          void queryClient.invalidateQueries({ queryKey: ["projects"] });
+          router.push(`/projects/${project}/${slug}`);
+        }}
+      />
+      <ConfirmDialog
+        open={deletingEnvironment}
+        onOpenChange={setDeletingEnvironment}
+        title={`Delete environment ${env}?`}
+        description="The environment, the variables set on it and every app in it go — containers included. This cannot be undone."
+        holdToConfirm
+        confirmLabel="Delete environment"
+        onConfirm={async () => {
+          await api.del(`${path}/environments/${env}`);
+          await queryClient.invalidateQueries({ queryKey: ["apps"] });
+          await queryClient.invalidateQueries({ queryKey: ["projects"] });
+          await envs.refetch();
+          router.push(`${path}/${DEFAULT_ENV}`);
+        }}
+      />
+      <ConfirmDialog
+        open={deletingProject}
+        onOpenChange={setDeletingProject}
+        title={`Delete project ${project}?`}
+        description="Every environment in it and every app inside those go — containers included. This cannot be undone."
+        holdToConfirm
+        confirmLabel="Delete project"
+        onConfirm={async () => {
+          await api.del(path);
+          await queryClient.invalidateQueries({ queryKey: ["apps"] });
+          await queryClient.invalidateQueries({ queryKey: ["projects"] });
+          router.push("/projects");
+        }}
       />
     </>
   );

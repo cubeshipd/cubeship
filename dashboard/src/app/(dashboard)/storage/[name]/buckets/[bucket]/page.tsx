@@ -3,7 +3,6 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   AppWindowIcon,
-  ArrowLeftIcon,
   CpuIcon,
   DownloadIcon,
   FileIcon,
@@ -20,6 +19,7 @@ import { ActionButton } from "@/components/action-button";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { type Column, DataTable } from "@/components/data-table";
 import { ErrorAlert } from "@/components/error-alert";
+import { ResourceHeader } from "@/components/resource-header";
 import { RowAction, RowActions } from "@/components/row-actions";
 import { SectionHeader } from "@/components/section-header";
 import { TextField } from "@/components/text-field";
@@ -234,6 +234,13 @@ function Browser({ store, bucket }: { store: string; bucket: string }) {
 
   return (
     <>
+      <ResourceHeader
+        crumbs={[
+          { label: "Object storage", href: "/storage" },
+          { label: store, href: `/storage/${encodeURIComponent(store)}?tab=buckets` },
+        ]}
+        title={bucket}
+      />
       <Tabs
         value="buckets"
         onValueChange={(value) =>
@@ -271,14 +278,6 @@ function Browser({ store, bucket }: { store: string; bucket: string }) {
           <SectionHeader
             title={
               <span className="flex items-center gap-2">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Back to buckets"
-                  onClick={() => router.push(`/storage/${encodeURIComponent(store)}?tab=buckets`)}
-                >
-                  <ArrowLeftIcon />
-                </Button>
                 <Breadcrumbs bucket={bucket} prefix={prefix} onGo={go} />
               </span>
             }

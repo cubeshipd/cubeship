@@ -19,16 +19,15 @@
   width: var(--dashboard-sidebar-width);
   height: 100dvh;
   flex-shrink: 0;
-  border-right: 1px solid var(--border);
-  background: color-mix(in srgb, var(--card) 92%, var(--background));
+  background: var(--background);
 }
 .dashboard-brand {
   display: flex;
   align-items: center;
   flex-shrink: 0;
   gap: 12px;
-  height: 71px;
-  padding: 0 16px;
+  height: 64px;
+  padding: 0 24px;
   color: var(--foreground);
 }
 .dashboard-navigation {
@@ -36,156 +35,62 @@
   min-height: 0;
   overflow-y: auto;
   scrollbar-width: none;
-  padding: 8px 0 24px;
+  padding: 4px 0 24px;
 }
 .dashboard-navigation::-webkit-scrollbar {
   display: none;
 }
-.branched-menu {
-  position: relative;
+.dashboard-nav-group {
+  display: grid;
+  gap: 2px;
+  padding: 0 12px;
+}
+.dashboard-nav-group + .dashboard-nav-group {
+  margin-top: 18px;
+}
+.dashboard-nav-label {
+  padding: 0 12px 6px;
+  color: var(--subtle-foreground);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+.dashboard-nav-link {
   display: flex;
-  --bm-row: 36px;
-  width: calc(100% - 14px);
-  max-width: 100%;
-  margin-left: 14px;
-  flex-direction: column;
-  overflow-x: hidden;
-  color: var(--bm-ink);
-  font-size: 14px;
-  line-height: 1.2;
-  padding-left: 20px;
-}
-.branched-menu::before {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 14px;
-  width: 1px;
-  border-radius: 1px;
-  background: linear-gradient(
-    to bottom,
-    var(--border-strong) 0%,
-    var(--border-strong) 85%,
-    transparent 100%
-  );
-  content: "";
-}
-.branched-menu-section + .branched-menu-section {
-  margin-top: 0;
-}
-.branched-menu-heading {
-  display: flex;
-  width: 100%;
   align-items: center;
-  justify-content: space-between;
-  padding: 9px 10px 9px 14px;
-  border: 0;
-  background: transparent;
+  gap: 12px;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
   color: var(--muted-foreground);
-  font-size: 13px;
-  font-weight: 600;
-  text-align: left;
-  transition: color 160ms ease;
+  font-size: 13.5px;
+  text-decoration: none;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
 }
-.branched-menu-heading:hover,
-.branched-menu-section[data-open] .branched-menu-heading {
+.dashboard-nav-link:hover {
+  background: var(--secondary);
   color: var(--foreground);
 }
-.branched-menu-heading:focus-visible,
-.branched-menu-link:focus-visible {
+.dashboard-nav-link[data-active] {
+  background: color-mix(in srgb, var(--primary) 14%, transparent);
+  color: var(--foreground);
+  font-weight: 500;
+}
+.dashboard-nav-link[data-active] svg {
+  color: var(--primary);
+}
+.dashboard-nav-link:has([data-navigation-pending="true"]) {
+  color: var(--primary);
+}
+.dashboard-nav-link:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--primary) 72%, var(--foreground));
   outline-offset: 2px;
 }
-.branched-menu-marker {
-  position: absolute;
-  top: 0;
-  left: 14px;
-  z-index: 1;
-  width: 2px;
-  height: 16px;
-  border-radius: 2px;
-  background: var(--primary);
-  opacity: 0;
-  transition:
-    top 220ms cubic-bezier(0.23, 1, 0.32, 1),
-    opacity 150ms ease;
-}
-.branched-menu-marker[data-on] {
-  opacity: 1;
-}
-.branched-menu-fold {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 260ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.branched-menu-section[data-open] .branched-menu-fold {
-  grid-template-rows: 1fr;
-}
-.branched-menu-fold-inner {
-  min-height: 0;
-  overflow: hidden;
-}
-.branched-menu-children {
-  position: relative;
-  padding-block: 6px;
-  box-sizing: border-box;
-}
-.branched-menu-lines {
-  position: absolute;
-  inset: 0 auto auto 0;
-  overflow: visible;
-  pointer-events: none;
-}
-.branched-menu-line,
-.branched-menu-active-line {
-  fill: none;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 1.25px;
-}
-.branched-menu-line {
-  stroke: var(--border-strong);
-}
-.branched-menu-active-line {
-  stroke: var(--primary);
-  transition: stroke-dashoffset 380ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.branched-menu-link {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  height: var(--bm-row);
-  padding: 0 8px 0 40px;
-  font-size: 13px;
-  line-height: 1.25;
-  color: var(--muted-foreground);
-  text-decoration: none;
-  transition: color 140ms;
-}
-.branched-menu-link:hover {
-  color: var(--foreground);
-}
-.branched-menu-link[data-active] {
-  color: var(--primary);
-  font-weight: 600;
-}
-.branched-menu-icon {
-  display: inline-flex;
-  flex: 0 0 16px;
-  align-items: center;
-  justify-content: center;
-  color: var(--subtle-foreground);
-}
-.branched-menu-link[data-active] .branched-menu-icon {
-  color: var(--primary);
-}
-.branched-menu-link:has([data-navigation-pending="true"]) {
-  color: var(--primary);
-}
 .dashboard-account {
   flex-shrink: 0;
-  padding: 12px 14px;
-  border-top: 1px solid var(--border);
+  padding: 12px;
 }
 .dashboard-user-trigger {
   display: flex;
@@ -193,10 +98,10 @@
   min-width: 0;
   align-items: center;
   gap: 12px;
-  padding: 10px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--card);
+  padding: 8px 12px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
   text-align: left;
   transition:
     background 150ms ease,
@@ -204,7 +109,6 @@
 }
 .dashboard-user-trigger:hover {
   background: var(--secondary);
-  border-color: var(--border-strong);
 }
 .dashboard-user-name {
   display: grid;
@@ -320,6 +224,7 @@
 }
 .dashboard-section-header.dashboard-page-header {
   margin-top: 0;
+  margin-bottom: 24px;
 }
 .dashboard-section-header h2 {
   font-size: 20px;
@@ -439,13 +344,7 @@
 .dashboard-skip:focus {
   top: 12px;
 }
-:is(
-  .branched-menu-heading,
-  .branched-menu-link,
-  .dashboard-brand,
-  .dashboard-user-trigger,
-  .dashboard-stat
-):focus-visible {
+:is(.dashboard-brand, .dashboard-user-trigger, .dashboard-stat):focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: -2px;
 }
@@ -629,8 +528,8 @@
   .dashboard-sidebar {
     display: none;
   }
-  .dashboard-mobile-navigation .branched-menu {
-    --bm-row: 44px;
+  .dashboard-mobile-navigation .dashboard-nav-link {
+    height: 44px;
   }
   .dashboard-container {
     padding-inline: 20px;
@@ -718,7 +617,7 @@
     select,
     summary,
     input:not([type="checkbox"], [type="radio"], [type="hidden"], [type="file"]),
-    .branched-menu-link
+    .dashboard-nav-link
   ) {
     min-height: 44px;
   }
@@ -872,9 +771,6 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .branched-menu-fold,
-  .branched-menu-marker,
-  .branched-menu-active-line,
   .dashboard-resource-card {
     transition: none;
   }
@@ -938,4 +834,14 @@
   .public-demo-badge span {
     white-space: normal;
   }
+}
+
+/* Page titles: one step above section headings. Last, so the generic heading rules above do not need to out-rank it. */
+.dashboard-section-header.dashboard-page-header h2 {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+}
+.dashboard-section-header.dashboard-page-header p {
+  font-size: 13px;
 }

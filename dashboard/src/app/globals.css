@@ -20,12 +20,12 @@
 :root {
   /* Neutral surfaces stay fixed while the accent changes. */
   color-scheme: dark;
-  --background: #000000;
-  --card: #0a0a0a;
-  --popover: #0e0e0e;
-  --secondary: #141414;
-  --muted: #141414;
-  --accent: #1c1c1c;
+  --background: #09090b;
+  --card: #141417;
+  --popover: #18181b;
+  --secondary: #1d1d21;
+  --muted: #1d1d21;
+  --accent: #26262b;
 
   /* Text, in three levels — a label, a value and a hint are three
      different things, and flattening them is what makes a dense screen
@@ -39,9 +39,9 @@
   --subtle-foreground: #707070;
 
   /* Lines. */
-  --border: #242424;
-  --border-strong: #3a3a3a;
-  --input: #343434;
+  --border: #222226;
+  --border-strong: #34343a;
+  --input: #2c2c31;
 
   /* Cyan is the default accent. Ring follows the selected accent. */
   --primary: #2de2e6;
@@ -87,12 +87,12 @@
    these combinations by ThemeBoot before the first paint. */
 :root[data-theme^="light-"] {
   color-scheme: light;
-  --background: #ffffff;
-  --card: #f7f7f7;
-  --popover: #f2f2f2;
-  --secondary: #ededed;
-  --muted: #ededed;
-  --accent: #e3e3e3;
+  --background: #f4f4f6;
+  --card: #ffffff;
+  --popover: #ffffff;
+  --secondary: #e9e9ed;
+  --muted: #e9e9ed;
+  --accent: #e0e0e5;
 
   --foreground: #0a0a0a;
   --card-foreground: #0a0a0a;
@@ -102,9 +102,9 @@
   --muted-foreground: #595959;
   --subtle-foreground: #878787;
 
-  --border: #dedede;
-  --border-strong: #c4c4c4;
-  --input: #cdcdcd;
+  --border: #e4e4e8;
+  --border-strong: #cfcfd6;
+  --input: #d6d6dc;
   --primary-foreground: #ffffff;
   --magenta: #af246f;
 
@@ -189,13 +189,13 @@
   --font-sans: ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-jbmono), ui-monospace, SFMono-Regular, monospace;
 
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: 10px;
-  --radius-2xl: 14px;
-  --radius-3xl: 18px;
-  --radius-4xl: 22px;
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-xl: 14px;
+  --radius-2xl: 18px;
+  --radius-3xl: 22px;
+  --radius-4xl: 26px;
 }
 
 @layer base {
@@ -277,7 +277,7 @@
 
   /* Keep checkbox geometry consistent with the other controls. */
   [data-slot="checkbox"] {
-    border-radius: 4px;
+    border-radius: 6px;
   }
 
   /* Labels read as interface text. */
@@ -308,7 +308,7 @@
 
   /* Match the generated checkbox to the shared control shape. */
   [data-slot="checkbox"] {
-    border-radius: 4px;
+    border-radius: 6px;
     border-color: var(--input);
   }
 
@@ -332,8 +332,8 @@
 [data-slot="textarea"],
 [data-slot="select-trigger"] {
   font-family: var(--font-sans);
-  background-color: color-mix(in srgb, var(--card) 72%, var(--background));
-  border-radius: 6px;
+  background-color: var(--card);
+  border-radius: 10px;
 }
 
 [data-slot="input"][data-copyable] {
@@ -708,9 +708,9 @@
 /* Shared product surfaces; generated primitives keep their behavior. */
 [data-slot="card"] {
   --card-spacing: 1.25rem;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--background) 48%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-radius: 20px;
+  box-shadow: none;
 }
 [data-slot="card"][data-size="sm"] {
   --card-spacing: 1rem;
@@ -721,7 +721,7 @@
   letter-spacing: -0.02em;
 }
 [data-slot="button"] {
-  border-radius: 6px;
+  border-radius: 10px;
   font-weight: 500;
   letter-spacing: 0;
   text-transform: none;
