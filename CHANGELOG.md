@@ -6,6 +6,37 @@ Every release of Cubeship, newest first.
      there and run `make changelog`; editing this file is editing the
      copy rather than the thing. -->
 
+## 0.14.0-rc.3 — 2026-11-16
+
+*Prerelease.*
+
+Apps can roll back to an earlier deployment, and the dashboard has a simpler sidebar and resource pages.
+
+### Added
+
+**Roll an app back to an earlier deployment.** A rollback deploys again the
+image tag, or the Git commit, of an earlier deployment that succeeded. It goes
+through the same health check and swap as any deploy, with the app's current
+environment, and the old container keeps serving until the new one is
+healthy. It is available from the app's deployments in the dashboard, with
+`cubeship app rollback <app> <deployment-id>`, through the `rollback_app` MCP
+tool and at `POST /api/apps/{project}/{env}/{name}/deployments/{id}/rollback`.
+
+### Changed
+
+**A simpler dashboard.** The sidebar is a flat list in four groups instead of
+a branched menu. Projects, databases and object storage drop their side
+column: their lists follow the containers page, with filters, search and
+actions on each row, and their detail pages have a header with status and
+actions above tabs. The theme has rounder corners, fewer borders and larger
+page titles.
+
+### Fixed
+
+**Redeploying an older commit builds the right image.** Built images are
+named for their branch, so a commit whose image a newer build replaced is
+built again instead of reusing the wrong image.
+
 ## 0.14.0-rc.2 — 2026-10-30
 
 *Prerelease.*
