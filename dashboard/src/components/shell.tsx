@@ -16,6 +16,7 @@ import {
   LayoutTemplateIcon,
   LogOutIcon,
   MenuIcon,
+  PackageIcon,
   ScrollTextIcon,
   ServerCogIcon,
   ServerIcon,
@@ -28,7 +29,6 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
-import { BranchedMenu } from "@/components/branched-menu";
 import { Wordmark } from "@/components/brand";
 import { CommandPalette } from "@/components/command-palette";
 import { abbreviateGitHubStars, GitHubStar, useGitHubStars } from "@/components/github-star";
@@ -57,18 +57,18 @@ import { message } from "@/lib/errors";
 // nested pages active under the entry that contains them.
 export const sections: { label: string; items: NavItem[] }[] = [
   {
-    label: "General",
+    label: "",
     items: [{ href: "/", label: "Overview", icon: ActivityIcon }],
   },
   {
     label: "Workloads",
     items: [
       {
-        href: "/servers",
-        label: "Nodes",
-        icon: ServerIcon,
-        owns: ["/servers"],
-        resource: "servers",
+        href: "/projects",
+        label: "Projects",
+        icon: FolderTreeIcon,
+        owns: ["/projects", "/environments", "/apps"],
+        resource: ["projects", "apps"],
       },
       {
         href: "/workloads",
@@ -78,18 +78,18 @@ export const sections: { label: string; items: NavItem[] }[] = [
         resource: ["apps", "databases", "storage"],
       },
       {
-        href: "/projects",
-        label: "Projects",
-        icon: FolderTreeIcon,
-        owns: ["/projects", "/environments", "/apps"],
-        resource: ["projects", "apps"],
-      },
-      {
         href: "/templates",
         label: "Templates",
         icon: LayoutTemplateIcon,
         owns: ["/templates"],
         resource: "templates",
+      },
+      {
+        href: "/servers",
+        label: "Nodes",
+        icon: ServerIcon,
+        owns: ["/servers"],
+        resource: "servers",
       },
     ],
   },
@@ -124,15 +124,21 @@ export const sections: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/dns", label: "DNS Providers", icon: GlobeIcon, owns: ["/dns"], resource: "dns" },
       { href: "/firewall", label: "Firewall", icon: ShieldIcon, resource: "firewall" },
+      {
+        href: "/certificates",
+        label: "Certificates",
+        icon: ShieldCheckIcon,
+        resource: "certificates",
+      },
     ],
   },
   {
-    label: "Config",
+    label: "Settings",
     items: [
       {
         href: "/registries",
         label: "Registries",
-        icon: ContainerIcon,
+        icon: PackageIcon,
         owns: ["/registries"],
         resource: ["registries", "registry"],
       },
@@ -144,6 +150,15 @@ export const sections: { label: string; items: NavItem[] }[] = [
         resource: "git",
       },
       {
+        href: "/credentials",
+        label: "Credentials",
+        icon: KeyRoundIcon,
+        owns: ["/credentials"],
+        resource: "credentials",
+      },
+      { href: "/users", label: "Users", icon: UsersIcon, owns: ["/users"], admin: true },
+      { href: "/audit", label: "Audit log", icon: ScrollTextIcon, resource: "audit" },
+      {
         href: "/components",
         label: "Components",
         icon: ServerCogIcon,
@@ -151,31 +166,6 @@ export const sections: { label: string; items: NavItem[] }[] = [
         admin: true,
       },
       { href: "/settings", label: "Settings", icon: SettingsIcon, resource: "settings" },
-    ],
-  },
-  {
-    label: "Security",
-    items: [
-      {
-        href: "/credentials",
-        label: "Credentials",
-        icon: KeyRoundIcon,
-        owns: ["/credentials"],
-        resource: "credentials",
-      },
-      {
-        href: "/certificates",
-        label: "Certificates",
-        icon: ShieldCheckIcon,
-        resource: "certificates",
-      },
-    ],
-  },
-  {
-    label: "Access",
-    items: [
-      { href: "/users", label: "Users", icon: UsersIcon, owns: ["/users"], admin: true },
-      { href: "/audit", label: "Audit log", icon: ScrollTextIcon, resource: "audit" },
     ],
   },
 ];
@@ -289,38 +279,43 @@ export function Shell({ children }: { children: ReactNode }) {
 
 function Navigation({ me, onNavigate }: { me: Me; onNavigate?: () => void }) {
   const pathname = usePathname();
-  const items = sections
-    .map((section) => ({
-      label: section.label ?? "Workspace",
-      children: section.items
-        .filter((item) => offered(me, item))
-        .map((item) => {
-          const Icon = item.icon;
-          return {
-            value: item.href,
-            label: item.label,
-            icon: <Icon className="size-4" />,
-          };
-        }),
-    }))
-    .filter((section) => section.children.length > 0);
+  const groups = sections
+    .map((section) => ({ ...section, items: section.items.filter((item) => offered(me, item)) }))
+    .filter((section) => section.items.length > 0);
   const activeValue =
-    sections
+    groups
       .flatMap((section) => section.items)
       .find(
         (item) =>
-          offered(me, item) &&
-          (pathname === item.href ||
-            item.owns?.some((path) => pathname === path || pathname.startsWith(`${path}/`))),
+          pathname === item.href ||
+          item.owns?.some((path) => pathname === path || pathname.startsWith(`${path}/`)),
       )?.href ?? "";
 
   return (
-    <BranchedMenu
-      className="dashboard-navigation"
-      items={items}
-      activeValue={activeValue}
-      onSelect={onNavigate}
-    />
+    <nav className="dashboard-navigation" aria-label="Primary navigation">
+      {groups.map((section) => (
+        <div key={section.label || "home"} className="dashboard-nav-group">
+          {section.label && <p className="dashboard-nav-label">{section.label}</p>}
+          {section.items.map((item) => {
+            const Icon = item.icon;
+            const active = item.href === activeValue;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="dashboard-nav-link"
+                data-active={active || undefined}
+                aria-current={active ? "page" : undefined}
+                onClick={onNavigate}
+              >
+                <Icon aria-hidden="true" className="size-4 shrink-0" />
+                <span className="truncate">{item.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      ))}
+    </nav>
   );
 }
 

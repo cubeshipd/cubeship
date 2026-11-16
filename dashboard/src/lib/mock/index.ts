@@ -241,7 +241,15 @@ const routes: [string, string, Handler][] = [
   ["POST", "/releases/seen", () => null],
 
   // --- projects, environments, apps ---
-  ["GET", "/projects", () => db.projects],
+  [
+    "GET",
+    "/projects",
+    () =>
+      db.projects.map((p) => ({
+        ...p,
+        environments: (db.environments[p.slug as string] ?? []).map((e) => e.slug),
+      })),
+  ],
   // The picture is the one thing the preview cannot invent: there are
   // no bytes to serve and nothing to upload them to. Accepting the
   // write and remembering the flag is what the screen is actually
@@ -334,6 +342,7 @@ const routes: [string, string, Handler][] = [
         autodeploy: true,
         status: "down",
         has_container: false,
+        internal_ports: [],
         domains: [],
         nodes: ["control-plane"],
         replicas: [],
